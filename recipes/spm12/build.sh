@@ -47,7 +47,7 @@ neurodocker generate ${neurodocker_buildMode} \
    --env DEPLOY_BINS=run_spm12.sh:spm12 \
    --env PATH='$PATH':/opt/spm12:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
    --env DEPLOY_ENV_FORCE_SPMMCR="1" \
-   --env DEPLOY_ENV_SPMMCRCMD="BASEPATH/opt/spm12/run_spm12.sh BASEPATH/opt/mcr/v97/ script" \
+   --env DEPLOY_ENV_SPMMCRCMD="run_spm12.sh /opt/mcr/${MCR_VERSION}/ script" \
    --copy README.md /README.md \
   > ${toolName}_${toolVersion}.${neurodocker_buildExt}
 

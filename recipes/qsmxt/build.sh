@@ -2,7 +2,7 @@
 set -e
 
 export toolName='qsmxt'
-export toolVersion='6.3.2'
+export toolVersion='6.4.0'
 # Don't forget to update version change in README.md!!!!!
 
 if [ "$1" != "" ]; then
@@ -30,6 +30,7 @@ source ../main_setup.sh
 # - 1.3.0 (container update): Fixed FastSurfer to v1.1.1 due to seeming slowness in v2
 # - ...
 # - 3.2.0: Added fix for scikit-sparse due to Cython bug https://github.com/scikit-sparse/scikit-sparse/releases/tag/v0.4.9
+# - 6.3.2: Note that Julia v1.10 is not compatible with QSM.jl - created issue https://github.com/kamesy/QSM.jl/issues/8
 
 neurodocker generate ${neurodocker_buildMode} \
    --base-image ubuntu:18.04 \
@@ -56,7 +57,8 @@ neurodocker generate ${neurodocker_buildMode} \
    --run="rm -rf /usr/bin/python3.8 \
        && ln -s /opt/miniconda-latest/bin/python /usr/bin/python3.8 \
        && pip install qsmxt==${toolVersion} \
-       && pip install git+https://github.com/astewartau/nii2dcm.git@main#egg=nii2dcm" \
+       && pip install git+https://github.com/astewartau/nii2dcm.git@main#egg=nii2dcm \
+       && nextqsm --download_weights" \
    --env PATH="\${PATH}:/opt/miniconda-latest/bin" \
    --run="git clone --depth 1 --branch v1.1.1 https://github.com/Deep-MI/FastSurfer.git /opt/FastSurfer \
        && sed -i 's/cu113/cpu/g' /opt/FastSurfer/requirements.txt \
@@ -64,26 +66,20 @@ neurodocker generate ${neurodocker_buildMode} \
    --env FASTSURFER_HOME="/opt/FastSurfer" \
    --env PATH="\${PATH}:/opt/FastSurfer" \
    --copy test.sh /test.sh \
-   --run="pip install osfclient" \
-   --run="git clone --depth 1 --branch v1.0.1 https://github.com/QSMxT/NeXtQSM /opt/nextqsm \
-       && python -m osfclient -p zqfdc fetch nextqsm-weights.tar nextqsm-weights.tar \
-       && tar xf nextqsm-weights.tar -C /opt/nextqsm/checkpoints \
-       && rm nextqsm-weights.tar" \
-   --env PATH="\${PATH}:/opt/nextqsm/src_tensorflow" \
    --workdir="/opt/bru2" \
    --run="wget https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip \
        && unzip Bru2_Linux.zip \
        && rm Bru2_Linux.zip" \
    --env PATH="\${PATH}:/opt/bru2" \
    --workdir="/opt" \
-   --run="wget https://julialang-s3.julialang.org/bin/linux/x64/1.10/julia-1.10.0-linux-x86_64.tar.gz \
-       && tar zxvf julia-1.10.0-linux-x86_64.tar.gz \
-       && rm -rf julia-1.10.0-linux-x86_64.tar.gz" \
-   --env PATH="\${PATH}:/opt/julia-1.10.0/bin" \
+   --run="wget https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.3-linux-x86_64.tar.gz \
+       && tar zxvf julia-1.9.3-linux-x86_64.tar.gz \
+       && rm -rf julia-1.9.3-linux-x86_64.tar.gz" \
+   --env PATH="\${PATH}:/opt/julia-1.9.3/bin" \
    --workdir="/opt" \
-   --copy install_packages.jl  "/opt" \
+   --copy install_packages.jl "/opt" \
    --env JULIA_DEPOT_PATH="/opt/julia_depot" \
-   --run="julia  install_packages.jl \
+   --run="julia install_packages.jl \
        && chmod -R 755 /opt/julia_depot/packages/RomeoApp" \
    --env JULIA_DEPOT_PATH="~/.julia:/opt/julia_depot" \
    --workdir="/opt" \

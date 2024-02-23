@@ -2,8 +2,8 @@
 set -e
 
 export toolName='rstudio'
-export toolVersion='2023.09.1'
-export additionalVersion='494'
+export toolVersion='2023.12.1'
+export additionalVersion='402'
 # https://posit.co/download/rstudio-desktop/
 # based on this, but no CUDA (yet): https://github.com/Characterisation-Virtual-Laboratory/CharacterisationVL-Software/blob/master/R/Singularity.R_4.0.5
 

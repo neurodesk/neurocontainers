@@ -32,6 +32,7 @@ neurodocker generate ${neurodocker_buildMode} \
    --install wget git curl ca-certificates unzip        `# RECOMMENDED: install system packages` \
    --env PATH='$PATH':/opt/${toolName}-${toolVersion}/bin `# MANDATORY: add your tool executables to PATH` \
    --env DEPLOY_PATH=/opt/${toolName}-${toolVersion}/bin/ `# MANDATORY: define which directory's binaries should be exposed to module system (alternative: DEPLOY_BINS -> only exposes binaries in the list)` \
+   --env DEPLOY_BINS=bidscoin:bidscoiner:bidseditor:bidsmapper:bidsparticipants:deface:dicomsort:echocombine:medeface:physio2tsv:plotphysio:rawmapper:skullstrip:slicereport:dcm2niix:pydeface:spec2nii \
    --copy README.md /README.md                          `# MANDATORY: include readme file in container` \
    --copy license.txt /license.txt                          `# MANDATORY: include license file in container` \
    --copy * /neurodesk/                              `# MANDATORY: copy test scripts to /neurodesk folder - build.sh will be included as well, which is a good idea` \

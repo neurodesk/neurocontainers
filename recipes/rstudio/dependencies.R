@@ -1,5 +1,6 @@
 # R Script to install the dependencies
 if("devtools" %in% rownames(installed.packages()) == FALSE) {install.packages("devtools")}
+if("MRIcrotome" %in% rownames(installed.packages()) == FALSE) {devtools::install_github("Mouse-Imaging-Centre/MRIcrotome", upgrade_dependencies = FALSE)}
 if("RMINC" %in% rownames(installed.packages()) == FALSE) {devtools::install_github("Mouse-Imaging-Centre/RMINC", upgrade_dependencies = FALSE)}
 if("ProbBayes" %in% rownames(installed.packages()) == FALSE) {install.packages("ProbBayes")}
 if("bayesplot" %in% rownames(installed.packages()) == FALSE) {install.packages("bayesplot")}

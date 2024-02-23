@@ -1,6 +1,6 @@
 
 ----------------------------------
-## rstudio/toolVersion-576 ##
+## rstudio/toolVersion ##
 RStudio is an integrated development environment (IDE) for R. It includes a console, syntax-highlighting editor that supports direct code execution, as well as tools for plotting, history, debugging and workspace management.
 
 Example:
