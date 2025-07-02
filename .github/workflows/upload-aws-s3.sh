@@ -11,7 +11,7 @@ if ! command -v aws &>/dev/null; then
 fi
 
 # uploading to aws in the background:
-time aws s3 cp $IMAGE_HOME/${IMAGENAME}_${BUILDDATE}.simg s3://neurocontainers/temporary-builds-new/${IMAGENAME}_${BUILDDATE}.simg &
+time aws s3 cp $IMAGE_HOME/${IMAGENAME}_${BUILDDATE}.simg s3://neurocontainers/temporary-builds-new/${IMAGENAME}_${BUILDDATE}.simg
 # echo "[DEBUG] Done with uploading to AWS Object Storage!"
 
 # if curl --output /dev/null --silent --head --fail "https://neurocontainers.neurodesk.org/temporary-builds-new/${IMAGENAME}_${BUILDDATE}.simg"; then
