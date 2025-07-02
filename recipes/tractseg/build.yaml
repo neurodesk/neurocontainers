@@ -29,7 +29,6 @@ build:
         - libxt6
         - libgl1-mesa-glx
         - xvfb
-    # - user: jovyan
     - run: 
         - pip install packaging numpy
     - run:
