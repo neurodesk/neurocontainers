@@ -92,7 +92,7 @@ copyright:
     url: https://www.gnu.org/licenses/lgpl-3.0-standalone.html
 readme: |-
   ----------------------------------
-  ## deeplabcut/ ##
+  ## deeplabcut/2.3.11 ##
 
   DeepLabCut is a toolbox for state-of-the-art markerless pose estimation of animals performing various behaviors. As long as you can see (label) what you want to track, you can use this toolbox, as it is animal and object agnostic.
 
@@ -148,7 +148,7 @@ readme: |-
 
   Note: Citation content is wrapped in Jinja2 raw blocks to prevent template processing conflicts with BibTeX syntax.
 
-  To run container outside of this environment: ml deeplabcut/
+  To run container outside of this environment: ml deeplabcut/2.3.11
 
   ----------------------------------
 categories:
