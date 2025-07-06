@@ -115,8 +115,8 @@ jobs:
       - name: Build and export
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
-          context: .
-          file: ./build/${{ env.APPLICATION }}/${{ env.IMAGENAME }}.Dockerfile
+          context: ./build/${{ env.APPLICATION }}
+          file: ${{ env.IMAGENAME }}.Dockerfile
           load: true
           tags: ${{ env.IMAGEID }}:${{ env.BUILDDATE }}
           cache-from: type=registry,ref=${{ env.IMAGEID }}:latest
