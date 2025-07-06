@@ -40,6 +40,7 @@ jobs:
           SHORT_SHA=$(git rev-parse --short $GITHUB_SHA)
           BUILDDATE=`date +%Y%m%d`
           echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
+          echo "APPLICATION=$APPLICATION" >> $GITHUB_OUTPUT
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
           echo "BUILDDATE=$BUILDDATE" >> $GITHUB_ENV
           echo "BUILDDATE=$BUILDDATE" >> $GITHUB_OUTPUT
@@ -125,6 +126,7 @@ jobs:
           echo "Exporting IMAGENAME=${{ env.IMAGENAME }}"
           echo "IMAGEID=${{ env.IMAGEID }}" > metadata.env
           echo "IMAGENAME=${{ env.IMAGENAME }}" >> metadata.env
+
   
       - name: Upload build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -145,7 +147,7 @@ jobs:
       - name: Download build artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: build-artifact-${{ env.APPLICATION }}-${{ inputs.builddate }}
+          name: build-artifact-${{ needs.build.outputs.APPLICATION }}-${{ needs.build.outputs.BUILDDATE }}
           path: /tmp/artifact
 
       - name: Load metadata and image
@@ -170,5 +172,5 @@ jobs:
           echo "Image to be pushed:"
           docker images ${{ env.IMAGEID }}
 
-          echo "Pushing image with tag ${{ inputs.build-date }} and latest..."
+          echo "Pushing image with tag ${{ needs.build.outputs.BUILDDATE }} and latest..."
           docker push --all-tags ${{ env.IMAGEID }}
