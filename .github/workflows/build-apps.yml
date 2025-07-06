@@ -146,4 +146,3 @@ jobs:
           application: ${{ matrix.application }}
           runner: ${{ inputs.runner }}
           builddate: ${{ env.BUILDDATE }}
-        secrets: inherit
