@@ -37,7 +37,7 @@ jobs:
       - name: Set environment variables
         id: ENVVARS
         run: |
-          APPLICATION=${{ matrix.application }}
+          APPLICATION=${{ inputs.application }}
           SHORT_SHA=$(git rev-parse --short $GITHUB_SHA)
           BUILDDATE=`date +%Y%m%d`
           echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
@@ -130,7 +130,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: build-artifact-${{ matrix.application }}-${{ env.BUILDDATE }}
+          name: build-artifact-${{ inputs.application }}-${{ env.BUILDDATE }}
           path: |
             /tmp/image.tar
             metadata.env
@@ -139,6 +139,6 @@ jobs:
       - name: Trigger Push Workflow
         uses: ./.github/workflows/push-app.yml
         with:
-          application: ${{ matrix.application }}
+          application: ${{ inputs.application }}
           runner: ${{ inputs.runner }}
           builddate: ${{ env.BUILDDATE }}
