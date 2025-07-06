@@ -23,10 +23,6 @@ jobs:
   build:
     if: ${{ inputs.applications != '[]' }}
     runs-on: ${{ fromJSON(inputs.runner) }}
-    # strategy:
-    #   fail-fast: false
-    #   matrix:
-    #     application: ${{ fromJSON(inputs.applications) }}
     permissions:
       packages: write
       id-token: write
@@ -140,9 +136,9 @@ jobs:
             metadata.env
           retention-days: 1
   
-      # - name: Trigger Push Workflow
-      #   uses: ./.github/workflows/push-app.yml
-      #   with:
-      #     application: ${{ matrix.application }}
-      #     runner: ${{ inputs.runner }}
-      #     builddate: ${{ env.BUILDDATE }}
+      - name: Trigger Push Workflow
+        uses: ./.github/workflows/push-app.yml
+        with:
+          application: ${{ matrix.application }}
+          runner: ${{ inputs.runner }}
+          builddate: ${{ env.BUILDDATE }}

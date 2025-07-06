@@ -37,8 +37,12 @@ jobs:
 
   build-apps:
     needs: list-apps
-    uses: ./.github/workflows/build-apps.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        application: ${{ needs.list-apps.outputs.app_list }}
+    uses: ./.github/workflows/build-app.yml
     with:
-      applications: ${{ needs.list-apps.outputs.app_list }}
+      applications: ${{ matrix.application }}
       runner: ${{ needs.list-apps.outputs.runner }}
     secrets: inherit
