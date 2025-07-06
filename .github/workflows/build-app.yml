@@ -137,7 +137,7 @@ jobs:
   
   push:
     needs: build
-    runs-on: ${{ fromJSON(inputs.runner) }}
+    runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
 
