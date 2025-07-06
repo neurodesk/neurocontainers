@@ -31,7 +31,7 @@ jobs:
     - name: Select runner
       id: select_runner
       run: |
-        runner="$(echo "${{ github.event.inputs.runner }}" | tr -d " " | jq -rcR 'split(",")')"
+        runner="${{ github.event.inputs.runner }}"
         echo "runner=${runner}"
         echo "runner=${runner}" >> $GITHUB_OUTPUT
 
