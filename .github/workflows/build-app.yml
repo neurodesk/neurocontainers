@@ -137,6 +137,7 @@ jobs:
           retention-days: 1
   
   push:
+    needs: build
     runs-on: ${{ fromJSON(inputs.runner) }}
     permissions:
       packages: write
