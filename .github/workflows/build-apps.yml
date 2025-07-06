@@ -141,8 +141,9 @@ jobs:
           retention-days: 1
   
       - name: Trigger Push Workflow
-        uses: ./.github/workflows/push-app.yml
+        uses: ${{ github.repository }}/.github/workflows/push-app.yml@${{ github.sha }}
         with:
           application: ${{ matrix.application }}
           runner: ${{ inputs.runner }}
           builddate: ${{ env.BUILDDATE }}
+        secrets: inherit
