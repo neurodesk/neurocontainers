@@ -3,7 +3,7 @@ name: build-apps
 on:
   workflow_call:
     inputs:
-      applications:
+      application:
         required: true
         type: string
       runner:
@@ -21,7 +21,6 @@ env:
 
 jobs:
   build:
-    if: ${{ inputs.applications != '[]' }}
     runs-on: ${{ fromJSON(inputs.runner) }}
     permissions:
       packages: write
