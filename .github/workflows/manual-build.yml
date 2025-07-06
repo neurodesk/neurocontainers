@@ -35,7 +35,7 @@ jobs:
         echo "runner=${runner}"
         echo "runner=${runner}" >> $GITHUB_OUTPUT
 
-  build-apps:
+  build-app:
     needs: list-apps
     strategy:
       fail-fast: false
