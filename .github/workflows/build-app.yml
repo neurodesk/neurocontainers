@@ -136,9 +136,39 @@ jobs:
             metadata.env
           retention-days: 1
   
-      - name: Trigger Push Workflow
-        uses: ./.github/workflows/push-app.yml
+  push:
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    permissions:
+      packages: write
+
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          application: ${{ inputs.application }}
-          runner: ${{ inputs.runner }}
-          builddate: ${{ env.BUILDDATE }}
+          name: build-artifact-${{ inputs.application }}-${{ inputs.builddate }}
+          path: /tmp/artifact
+
+      - name: Load metadata and image
+        run: |
+          # Read the metadata file that was saved in the artifact
+          source /tmp/artifact/metadata.env
+          echo "IMAGENAME=${IMAGENAME}" >> $GITHUB_ENV
+          echo "IMAGEID=${IMAGEID}" >> $GITHUB_ENV
+
+          echo "Loading Docker image from tarball..."
+          docker load --input /tmp/artifact/image.tar
+
+      - name: Login to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push to GHCR
+        run: |
+          echo "Image to be pushed:"
+          docker images ${{ env.IMAGEID }}
+
+          echo "Pushing image with tag ${{ inputs.build-date }} and latest..."
+          docker push --all-tags ${{ env.IMAGEID }}
