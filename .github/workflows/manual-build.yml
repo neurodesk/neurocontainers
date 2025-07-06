@@ -43,6 +43,6 @@ jobs:
         application: ${{ fromJSON(needs.list-apps.outputs.app_list) }}
     uses: ./.github/workflows/build-app.yml
     with:
-      applications: ${{ matrix.application }}
+      application: ${{ matrix.application }}
       runner: ${{ needs.list-apps.outputs.runner }}
     secrets: inherit
