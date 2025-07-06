@@ -96,7 +96,7 @@ jobs:
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
           echo "IMAGEID=$IMAGEID" >> $GITHUB_ENV
-          echo "IMAGEID=$IMAGEID" >> $GITHUB_OUTPUT
+          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_ENV
 
       - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -117,7 +117,7 @@ jobs:
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
           context: .
-          file: ${{ env.IMAGENAME }}.Dockerfile
+          file: ${{ env.DOCKERFILE }}
           load: true
           tags: ${{ env.IMAGEID }}:${{ env.BUILDDATE }}
           cache-from: type=registry,ref=${{ env.IMAGEID }}:latest
