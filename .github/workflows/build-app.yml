@@ -129,7 +129,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: build-artifact-${{ inputs.application }}-${{ env.BUILDDATE }}
+          name: build-artifact-${{ env.APPLICATION }}-${{ env.BUILDDATE }}
           path: |
             /tmp/image.tar
             metadata.env
@@ -145,7 +145,7 @@ jobs:
       - name: Download build artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: build-artifact-${{ inputs.application }}-${{ inputs.builddate }}
+          name: build-artifact-${{ env.APPLICATION }}-${{ inputs.builddate }}
           path: /tmp/artifact
 
       - name: Load metadata and image
