@@ -30,6 +30,7 @@ jobs:
       APPLICATION: ${{ steps.ENVVARS.outputs.APPLICATION }}
       BUILDDATE: ${{ steps.ENVVARS.outputs.BUILDDATE }}
       IMAGENAME: ${{ steps.IMAGEVARS.outputs.IMAGENAME }}
+      IMAGENAME: ${{ steps.IMAGEVARS.outputs.IMAGEID }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         # with:
@@ -93,6 +94,7 @@ jobs:
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
           echo "IMAGEID=$IMAGEID" >> $GITHUB_ENV
+          echo "IMAGEID=$IMAGEID" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -120,22 +122,12 @@ jobs:
           cache-from: type=registry,ref=${{ env.IMAGEID }}:latest
           cache-to: type=inline
           outputs: type=docker,dest=/tmp/image.tar
-
-      - name: Create metadata file
-        run: |
-          echo "Exporting IMAGEID=${{ env.IMAGEID }}"
-          echo "Exporting IMAGENAME=${{ env.IMAGENAME }}"
-          echo "IMAGEID=${{ env.IMAGEID }}" > metadata.env
-          echo "IMAGENAME=${{ env.IMAGENAME }}" >> metadata.env
-
   
       - name: Upload build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: build-artifact-${{ env.APPLICATION }}-${{ env.BUILDDATE }}
-          path: |
-            /tmp/image.tar
-            metadata.env
+          name: ${{ env.APPLICATION }}-${{ env.BUILDDATE }}
+          path: ${{ runner.temp }}/${{ env.APPLICATION }}-${{ env.BUILDDATE }}.tar
           retention-days: 1
   
   push:
@@ -148,18 +140,11 @@ jobs:
       - name: Download build artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: build-artifact-${{ needs.build.outputs.APPLICATION }}-${{ needs.build.outputs.BUILDDATE }}
-          path: /tmp/artifact
+          name: ${{ needs.build.outputs.APPLICATION }}-${{ needs.build.outputs.BUILDDATE }}
+          path: ${{ runner.temp }}
 
       - name: Load metadata and image
-        run: |
-          # Read the metadata file that was saved in the artifact
-          source /tmp/artifact/metadata.env
-          echo "IMAGENAME=${IMAGENAME}" >> $GITHUB_ENV
-          echo "IMAGEID=${IMAGEID}" >> $GITHUB_ENV
-
-          echo "Loading Docker image from tarball..."
-          docker load --input /tmp/artifact/image.tar
+        run: docker load --input ${{ runner.temp }}/${{ needs.build.outputs.APPLICATION }}-${{ needs.build.outputs.BUILDDATE }}.tar
 
       - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -169,9 +154,4 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push to GHCR
-        run: |
-          echo "Image to be pushed:"
-          docker images ${{ env.IMAGEID }}
-
-          echo "Pushing image with tag ${{ needs.build.outputs.BUILDDATE }} and latest..."
-          docker push --all-tags ${{ env.IMAGEID }}
+        run: docker push --all-tags ${{ needs.build.outputs.IMAGEID }}
