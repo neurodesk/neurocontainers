@@ -30,7 +30,6 @@ jobs:
       APPLICATION: ${{ steps.ENVVARS.outputs.APPLICATION }}
       BUILDDATE: ${{ steps.ENVVARS.outputs.BUILDDATE }}
       IMAGENAME: ${{ steps.IMAGEVARS.outputs.IMAGENAME }}
-      IMAGEID: ${{ steps.IMAGEVARS.outputs.IMAGEID }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         # with:
@@ -95,7 +94,6 @@ jobs:
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
           echo "IMAGEID=$IMAGEID" >> $GITHUB_ENV
-          echo "IMAGEID=$IMAGEID" >> $GITHUB_OUTPUT
 
       - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -153,7 +151,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Debug IMAGEID
-        run: echo "IMAGEID=${{ needs.build.outputs.IMAGEID }}"
+      - name: Debug IMAGENAME
+        run: echo "IMAGENAME=${{ needs.build.outputs.IMAGENAME }}"
       - name: Push to GHCR
-        run: docker push --all-tags ${{ needs.build.outputs.IMAGEID }}
+        run: docker push --all-tags ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}
