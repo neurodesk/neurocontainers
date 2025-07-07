@@ -326,7 +326,7 @@ jobs:
     - name: Set environment variables
       id: ENVVARS
       run: |
-        APPLICATION=${{ matrix.application }}
+        APPLICATION=${{ inputs.application }}
         SHORT_SHA=$(git rev-parse --short $GITHUB_SHA)
         BUILDDATE=`date +%Y%m%d`
         echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
