@@ -156,4 +156,4 @@ jobs:
       - name: Push to GHCR
         run: |
           docker tag ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }} ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:latest
-          docker push --all-tags ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }}
+          docker push --all-tags ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}
