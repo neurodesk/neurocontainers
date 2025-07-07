@@ -89,6 +89,7 @@ jobs:
           IMAGEID=ghcr.io/$GITHUB_REPOSITORY/$IMAGENAME
           IMAGEID=$(echo $IMAGEID | tr '[A-Z]' '[a-z]')  
           echo "IMAGENAME: $IMAGENAME"
+          echo "IMAGEID: $IMAGEID"
           echo "IMAGENAME_TEST=${IMAGENAME//_/ }" >> $GITHUB_ENV
           echo "test command: bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE"
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
