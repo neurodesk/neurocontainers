@@ -56,9 +56,6 @@ jobs:
           echo "runner=ubuntu-22.04" >> $GITHUB_OUTPUT
         fi
 
-    - run: |
-        echo "runner=${{ steps.select_runner.outputs.runner }}"
-
   build-app:
     needs: list-apps
     strategy:
