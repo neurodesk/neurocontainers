@@ -258,7 +258,7 @@ jobs:
           retention-days: 1
 
   upload-nectar:
-    needs: build
+    needs: build-simg
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
