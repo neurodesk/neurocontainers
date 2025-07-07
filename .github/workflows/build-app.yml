@@ -190,6 +190,23 @@ jobs:
       packages: write
 
     steps:
+      - name: Free up space (optional)
+        if: env.FREEUPSPACE == 'true'
+        uses: easimon/maximize-build-space@fc881a613ad2a34aca9c9624518214ebc21dfc0c
+        with:
+          root-reserve-mb: 40000
+          swap-size-mb: 1024
+          remove-dotnet: "true"
+          remove-android: "true"
+          remove-haskell: "true"
+          overprovision-lvm: "true"
+      - name: Move docker installation (optional)
+        if: env.FREEUPSPACE == 'true'
+        run: |
+          sudo mv /var/lib/docker /home/runner/work/docker
+          sudo ln -s /home/runner/work/docker /var/lib/docker
+          sudo systemctl restart docker
+
       - name: Download image artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
