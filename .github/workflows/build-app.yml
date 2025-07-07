@@ -38,6 +38,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+
       - name: Set environment variables
         id: ENVVARS
         run: |
@@ -61,11 +62,13 @@ jobs:
       - name: Install builder dependencies
         run: |
           pip install -r requirements.txt
+
       - name: Generate Dockerfile and Release file
         id: generate
         run: |
           echo "APPLICATION: $APPLICATION"
           ./builder/build.py generate $APPLICATION --recreate --auto-build --generate-release
+
       - name: Set image variables
         id: IMAGEVARS
         run: |
@@ -76,7 +79,7 @@ jobs:
             exit 1
           fi
           IMAGENAME=$(echo $(basename $DOCKERFILE .Dockerfile) | tr '[A-Z]' '[a-z]')
-          IMAGEID=ghcr.io/$GITHUB_REPOSITORY/$IMAGENAME
+          IMAGEID=ghcr.io/${{ secrets.GH_REGISTRY }}/$IMAGENAME
           IMAGEID=$(echo $IMAGEID | tr '[A-Z]' '[a-z]')  
           echo "IMAGENAME: $IMAGENAME"
           echo "IMAGEID: $IMAGEID"
