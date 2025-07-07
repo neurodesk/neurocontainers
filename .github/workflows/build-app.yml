@@ -171,8 +171,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Push to GHCR
         run: |
-          docker tag ghcr.io/$GITHUB_REPOSITORY/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ghcr.io/$GITHUB_REPOSITORY/${{ needs.build-image.outputs.IMAGENAME }}:latest
-          docker push --all-tags ghcr.io/$GITHUB_REPOSITORY/${{ needs.build-image.outputs.IMAGENAME }}
+          docker tag ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:latest
+          docker push --all-tags ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}
 
   push-dockerhub:
     needs: build-image
@@ -206,8 +206,8 @@ jobs:
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
       - name: Push to DockerHub
         run: |
-          docker tag ghcr.io/$GITHUB_REPOSITORY/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }}
-          docker tag ghcr.io/$GITHUB_REPOSITORY/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build-image.outputs.IMAGENAME }}:latest
+          docker tag ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }}
+          docker tag ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build-image.outputs.IMAGENAME }}:latest
           docker push --all-tags ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build-image.outputs.IMAGENAME }}
 
   build-simg:
@@ -263,7 +263,7 @@ jobs:
       - name: Build simg file
         run: |
           echo "[DEBUG] building singularity image from docker image:"
-          time singularity build "/mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg" docker-daemon://ghcr.io/$GITHUB_REPOSITORY/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }}
+          time singularity build "/mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg" docker-daemon://ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }}
           echo "[DEBUG] done building singularity image from docker image!"
   
       - name: Upload simg artifact
