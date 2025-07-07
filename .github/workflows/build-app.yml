@@ -123,7 +123,7 @@ jobs:
         id: compareimages
         run: |
           ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ${{ env.IMAGEID }}:${{ env.BUILDDATE }})
-          echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENVs
+          echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
 
           if [ "$ROOTFS_NEW" = "$ROOTFS_CACHE" ]; then
             echo "Skipping push to registry. No changes found"
