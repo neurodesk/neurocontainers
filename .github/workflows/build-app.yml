@@ -107,7 +107,8 @@ jobs:
 
       - name: Get rootfs of cached image
         run: |
-          docker pull $IMAGEID:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' $IMAGEID:latest) || true
+          echo $IMAGEID
+          docker pull $IMAGEID:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' $IMAGEID:latest)
           echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_ENV
 
       - name: Build and export
