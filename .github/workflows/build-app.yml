@@ -240,7 +240,7 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
-      - name: Push to GHCR
+      - name: Push to DockerHub
         run: |
           docker tag ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }}
           docker tag ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build.outputs.IMAGENAME }}:latest
