@@ -56,10 +56,14 @@ jobs:
           echo "runner=[\"ubuntu-22.04\"]" >> $GITHUB_OUTPUT
         fi
 
-  build-apps:
+  build-app:
     needs: list-apps
-    uses: ./.github/workflows/build-apps.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        application: ${{ fromJSON(needs.list-apps.outputs.app_list) }}
+    uses: ./.github/workflows/build-app.yml
     with:
-      applications: ${{ needs.list-apps.outputs.app_list }}
+      application: ${{ matrix.application }}
       runner: ${{ needs.list-apps.outputs.runner }}
     secrets: inherit
