@@ -27,6 +27,7 @@ jobs:
       id-token: write
       contents: write
     outputs:
+      APPLICATION: ${{ steps.ENVVARS.outputs.APPLICATION }}
       BUILDDATE: ${{ steps.ENVVARS.outputs.BUILDDATE }}
       IMAGENAME: ${{ steps.IMAGEVARS.outputs.IMAGENAME }}
     steps:
