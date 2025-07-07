@@ -32,6 +32,7 @@ jobs:
       APPLICATION: ${{ steps.ENVVARS.outputs.APPLICATION }}
       IMAGENAME: ${{ steps.IMAGEVARS.outputs.IMAGENAME }}
       BUILDDATE: ${{ steps.ENVVARS.outputs.BUILDDATE }}
+      PUSHIMAGE: ${{ steps.compareimages.outputs.PUSHIMAGE }}
 
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -63,10 +64,10 @@ jobs:
           echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
 
-      - name: Install Builder Dependencies
+      - name: Install builder dependencies
         run: |
           pip install -r requirements.txt
-      - name: Generate Dockerfile and Release File
+      - name: Generate Dockerfile and Release file
         id: generate
         run: |
           echo "APPLICATION: $APPLICATION"
@@ -101,12 +102,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
 
-      - name: Get rootfs of cached image
+      - name: Pull latest image from registry and get rootfs
         run: |
           docker pull $IMAGEID:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' $IMAGEID:latest) || true
           echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_ENV
 
-      - name: Build and export
+      - name: Build and save new image 
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
           context: ./build/${{ env.APPLICATION }}
@@ -117,8 +118,22 @@ jobs:
           cache-from: type=registry,ref=${{ env.IMAGEID }}:latest
           cache-to: type=inline
           outputs: type=docker,dest=/mnt/tmp/${{ env.APPLICATION }}-${{ env.BUILDDATE }}.tar
-  
-      - name: Upload build artifact
+
+      - name: Compare new and cached images
+        id: compareimages
+        run: |
+          ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ${{ env.IMAGEID }}:${{ env.BUILDDATE }})
+          echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENVs
+
+          if [ "$ROOTFS_NEW" = "$ROOTFS_CACHE" ]; then
+            echo "Skipping push to registry. No changes found"
+          else
+            echo "Pushing to registry. Changes found"
+            echo "PUSHIMAGE=true" >> $GITHUB_ENV
+          fi
+
+      - name: Upload new image as build artifact (if changes found)
+        if: ${{ steps.compareimages.outputs.PUSHIMAGE == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ env.APPLICATION }}-${{ env.BUILDDATE }}
@@ -127,6 +142,7 @@ jobs:
   
   push-ghcr:
     needs: build-image
+    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -146,7 +162,7 @@ jobs:
           name: ${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}
           path: /mnt/tmp
 
-      - name: Load metadata and image
+      - name: Load Docker Image from Artifact
         run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
 
       - name: Login to GHCR
@@ -162,6 +178,7 @@ jobs:
 
   push-dockerhub:
     needs: build-image
+    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -181,7 +198,7 @@ jobs:
           name: ${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}
           path: /mnt/tmp
 
-      - name: Load metadata and image
+      - name: Load Docker Image from Artifact
         run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
 
       - name: Login to DockerHub
@@ -197,6 +214,7 @@ jobs:
 
   build-simg:
     needs: build-image
+    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -204,6 +222,7 @@ jobs:
       APPLICATION: ${{ needs.build-image.outputs.APPLICATION }}
       IMAGENAME: ${{ needs.build-image.outputs.IMAGENAME }}
       BUILDDATE: ${{ needs.build-image.outputs.BUILDDATE }}
+      PUSHIMAGE: ${{ needs.build-image.outputs.PUSHIMAGE }}
 
     steps:
       - name: Configure runner
@@ -240,7 +259,7 @@ jobs:
           name: ${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}
           path: /mnt/tmp
 
-      - name: Load metadata and image
+      - name: Load Docker Image from Artifact
         run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
 
       - name: Build simg file
@@ -258,6 +277,7 @@ jobs:
 
   upload-nectar:
     needs: build-simg
+    if: ${{ needs.build-simg.outputs.PUSHIMAGE == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -282,6 +302,7 @@ jobs:
   
   upload-s3:
     needs: build-simg
+    if: ${{ needs.build-simg.outputs.PUSHIMAGE == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -314,6 +335,7 @@ jobs:
 
   create-pr:
     needs: [build-image, push-ghcr, push-dockerhub, build-simg, upload-nectar, upload-s3]
+    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
