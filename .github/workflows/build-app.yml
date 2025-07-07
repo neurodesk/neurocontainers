@@ -30,7 +30,7 @@ jobs:
       APPLICATION: ${{ steps.ENVVARS.outputs.APPLICATION }}
       BUILDDATE: ${{ steps.ENVVARS.outputs.BUILDDATE }}
       IMAGENAME: ${{ steps.IMAGEVARS.outputs.IMAGENAME }}
-      IMAGENAME: ${{ steps.IMAGEVARS.outputs.IMAGEID }}
+      IMAGEID: ${{ steps.IMAGEVARS.outputs.IMAGEID }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         # with:
