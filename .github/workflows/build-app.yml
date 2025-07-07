@@ -20,7 +20,7 @@ env:
   OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
 
 jobs:
-  build-image:
+  build:
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -130,7 +130,7 @@ jobs:
           retention-days: 1
   
   push-ghcr:
-    needs: build-image
+    needs: build
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -157,7 +157,7 @@ jobs:
           docker push --all-tags ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}
   
   push-ghcr-sif:
-    needs: build-image
+    needs: build
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -220,7 +220,7 @@ jobs:
           retention-days: 1
 
   push-dockerhub:
-    needs: build-image
+    needs: build
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
