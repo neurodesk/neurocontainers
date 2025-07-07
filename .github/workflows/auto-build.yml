@@ -51,9 +51,9 @@ jobs:
       id: select_runner
       run: |
         if [ "${{ github.repository }}" = "neurodesk/neurocontainers" ]; then
-          echo "runner=[\"self-hosted\"]" >> $GITHUB_OUTPUT
+          echo "runner=\"self-hosted\"" >> $GITHUB_OUTPUT
         else
-          echo "runner=[\"ubuntu-22.04\"]" >> $GITHUB_OUTPUT
+          echo "runner=\"ubuntu-22.04\"" >> $GITHUB_OUTPUT
         fi
 
   build-app:
