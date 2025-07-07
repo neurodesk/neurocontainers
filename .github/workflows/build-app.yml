@@ -152,6 +152,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
+      - name: Debug IMAGEID
+        run: echo "IMAGEID=${{ needs.build.outputs.IMAGEID }}"
       - name: Push to GHCR
         run: docker push --all-tags ${{ needs.build.outputs.IMAGEID }}
