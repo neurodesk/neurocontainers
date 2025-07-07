@@ -109,7 +109,7 @@ jobs:
           tags: ${{ env.IMAGEID }}:${{ env.BUILDDATE }}
           cache-from: type=registry,ref=${{ env.IMAGEID }}:latest
           cache-to: type=inline
-          outputs: type=docker,dest=${{ runner.temp }}/${{ env.APPLICATION }}-${{ env.BUILDDATE }}.tar
+          outputs: type=docker,dest=/mnt/${{ env.APPLICATION }}-${{ env.BUILDDATE }}.tar
   
       - name: Upload build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -156,10 +156,10 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.build.outputs.APPLICATION }}-${{ needs.build.outputs.BUILDDATE }}
-          path: ${{ runner.temp }}
+          path: /mnt
 
       - name: Load metadata and image
-        run: docker load --input ${{ runner.temp }}/${{ needs.build.outputs.APPLICATION }}-${{ needs.build.outputs.BUILDDATE }}.tar
+        run: docker load --input /mnt/${{ needs.build.outputs.APPLICATION }}-${{ needs.build.outputs.BUILDDATE }}.tar
 
       - name: Login to DockerHub
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -219,7 +219,7 @@ jobs:
             rm -rf "$IMAGE_HOME/${IMAGENAME}_${BUILDDATE}.simg"
           fi
           echo "[DEBUG] building singularity image from docker image:"
-          time singularity build "${{ runner.temp }}/${{ needs.build.outputs.IMAGENAME }}_${{ needs.build.outputs.BUILDDATE }}.simg" docker-daemon://ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }}
+          time singularity build "/mnt/${{ needs.build.outputs.IMAGENAME }}_${{ needs.build.outputs.BUILDDATE }}.simg" docker-daemon://ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }}
           echo "[DEBUG] done building singularity image from docker image!"
   
       - name: Upload simg artifact
