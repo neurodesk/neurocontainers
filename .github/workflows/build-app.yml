@@ -121,7 +121,7 @@ jobs:
           tags: ${{ env.IMAGEID }}:${{ env.BUILDDATE }}
           cache-from: type=registry,ref=${{ env.IMAGEID }}:latest
           cache-to: type=inline
-          outputs: type=docker,dest=/tmp/image.tar
+          outputs: type=docker,dest=${{ runner.temp }}/${{ env.APPLICATION }}-${{ env.BUILDDATE }}.tar
   
       - name: Upload build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
