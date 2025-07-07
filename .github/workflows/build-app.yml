@@ -107,8 +107,7 @@ jobs:
 
       - name: Get rootfs of cached image
         run: |
-          echo $IMAGEID
-          docker pull $IMAGEID:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' $IMAGEID:latest)
+          docker pull $IMAGEID:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' $IMAGEID:latest) || true
           echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_ENV
 
       - name: Build and export
@@ -155,4 +154,6 @@ jobs:
       - name: Debug IMAGENAME
         run: echo "IMAGENAME=${{ needs.build.outputs.IMAGENAME }}"
       - name: Push to GHCR
-        run: docker push --all-tags ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}
+        run: |
+          docker tag ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }} ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:latest
+          docker push --all-tags ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }}
