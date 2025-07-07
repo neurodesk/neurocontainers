@@ -119,6 +119,7 @@ jobs:
       - name: Compare new and cached images
         id: compareimages
         run: |
+          docker images -a
           ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ${{ env.IMAGEID }}:${{ env.BUILDDATE }})
           echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
 
