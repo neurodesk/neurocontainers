@@ -127,7 +127,7 @@ jobs:
             echo "Skipping push to registry. No changes found"
           else
             echo "Pushing to registry. Changes found"
-            echo "PUSHIMAGE=true" >> $GITHUB_ENV
+            echo "PUSHIMAGE=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Upload new image as build artifact (if changes found)
