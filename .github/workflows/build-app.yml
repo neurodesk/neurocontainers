@@ -313,7 +313,7 @@ jobs:
         run: time aws s3 cp /mnt/tmp/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg s3://neurocontainers/temporary-builds-new/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg
 
   create-pr:
-    needs: [build-image, push-ghcr, push-dockerhub, build-simg, upload-nectar, upload-s3]
+    # needs: [build-image, push-ghcr, push-dockerhub, build-simg, upload-nectar, upload-s3]
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
