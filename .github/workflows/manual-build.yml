@@ -31,14 +31,18 @@ jobs:
     - name: Select runner
       id: select_runner
       run: |
-        runner="$(echo "${{ github.event.inputs.runner }}" | tr -d " " | jq -rcR 'split(",")')"
+        runner="${{ github.event.inputs.runner }}"
         echo "runner=${runner}"
         echo "runner=${runner}" >> $GITHUB_OUTPUT
 
-  build-apps:
+  build-app:
     needs: list-apps
-    uses: ./.github/workflows/build-apps.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        application: ${{ fromJSON(needs.list-apps.outputs.app_list) }}
+    uses: ./.github/workflows/build-app.yml
     with:
-      applications: ${{ needs.list-apps.outputs.app_list }}
+      application: ${{ matrix.application }}
       runner: ${{ needs.list-apps.outputs.runner }}
     secrets: inherit
