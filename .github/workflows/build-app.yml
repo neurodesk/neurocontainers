@@ -155,15 +155,15 @@ jobs:
         run: |
           docker tag ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }} ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:latest
           docker push --all-tags ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}
-  
-  push-ghcr-sif:
+
+  push-dockerhub:
     needs: build
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
 
     steps:
-      - name: Download build artifact
+      - name: Download image artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.build.outputs.APPLICATION }}-${{ needs.build.outputs.BUILDDATE }}
@@ -172,13 +172,34 @@ jobs:
       - name: Load metadata and image
         run: docker load --input ${{ runner.temp }}/${{ needs.build.outputs.APPLICATION }}-${{ needs.build.outputs.BUILDDATE }}.tar
 
-      - name: Login to GHCR
+      - name: Login to DockerHub
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
         with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Push to GHCR
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: Push to DockerHub
+        run: |
+          docker tag ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }}
+          docker tag ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build.outputs.IMAGENAME }}:latest
+          docker push --all-tags ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build.outputs.IMAGENAME }}
+
+  build-simg:
+    needs: build
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      packages: write
+
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.build.outputs.APPLICATION }}-${{ needs.build.outputs.BUILDDATE }}
+          path: ${{ runner.temp }}
+
+      - name: Load metadata and image
+        run: docker load --input ${{ runner.temp }}/${{ needs.build.outputs.APPLICATION }}-${{ needs.build.outputs.BUILDDATE }}.tar
+
+      - name: Build simg file
         run: |
           # install apptainer if no singularity executable is available
           if ! command -v singularity &>/dev/null; then
@@ -212,36 +233,29 @@ jobs:
           time singularity build "${{ runner.temp }}/${{ needs.build.outputs.IMAGENAME }}_${{ needs.build.outputs.BUILDDATE }}.simg" docker-daemon://ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }}
           echo "[DEBUG] done building singularity image from docker image!"
   
-      - name: Upload build artifact
+      - name: Upload simg artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ needs.build.outputs.IMAGENAME }}_${{ needs.build.outputs.BUILDDATE }}.simg
           path: ${{ runner.temp }}/${{ needs.build.outputs.IMAGENAME }}_${{ needs.build.outputs.BUILDDATE }}.simg
           retention-days: 1
 
-  push-dockerhub:
+  upload-nectar:
     needs: build
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
 
     steps:
-      - name: Download build artifact
+      - name: Download simg artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: ${{ needs.build.outputs.APPLICATION }}-${{ needs.build.outputs.BUILDDATE }}
-          path: ${{ runner.temp }}
+          name: ${{ needs.build.outputs.IMAGENAME }}_${{ needs.build.outputs.BUILDDATE }}.simg
+          path: ${{ runner.temp }}/${{ needs.build.outputs.IMAGENAME }}_${{ needs.build.outputs.BUILDDATE }}.simg
 
-      - name: Load metadata and image
-        run: docker load --input ${{ runner.temp }}/${{ needs.build.outputs.APPLICATION }}-${{ needs.build.outputs.BUILDDATE }}.tar
-
-      - name: Login to DockerHub
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-      - name: Push to DockerHub
+      - name: Upload simg to Nectar
         run: |
-          docker tag ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }}
-          docker tag ghcr.io/$GITHUB_REPOSITORY/${{ needs.build.outputs.IMAGENAME }}:${{ needs.build.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build.outputs.IMAGENAME }}:latest
-          docker push --all-tags ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build.outputs.IMAGENAME }}
+          echo "[DEBUG] Attempting upload to Nectar Object Storage:"
+          time rclone copy ${{ runner.temp }}/${{ needs.build.outputs.IMAGENAME }}_${{ needs.build.outputs.BUILDDATE }}.simg nectar:/neurodesk/temporary-builds-new
+          echo "[DEBUG] Done with uploading to Nectar Object Storage!"
+
