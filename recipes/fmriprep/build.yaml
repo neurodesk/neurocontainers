@@ -1,26 +1,18 @@
 name: fmriprep
-
-version: 24.1.1
-
+version: 25.1.3
 copyright:
   - license: Apache-2.0
     url: https://github.com/nipreps/fmriprep/blob/master/LICENSE
-    
 architectures:
   - x86_64
-
 build:
   kind: neurodocker
-
   base-image: nipreps/fmriprep:{{ context.version }}
   pkg-manager: apt
-
-  directives: []
-
-deploy:
-  bins:
-    - fmriprep
-
+  directives:
+    - deploy:
+        bins:
+          - fmriprep
 readme: |-
   ----------------------------------
   ## fmriprep/{{ context.version }} ##
@@ -28,38 +20,6 @@ readme: |-
 
   usage:
   ```
-  fmriprep [-h] [--version] [--skip_bids_validation]
-                  [--participant-label PARTICIPANT_LABEL [PARTICIPANT_LABEL ...]]
-                  [-t TASK_ID] [--echo-idx ECHO_IDX] [--bids-filter-file FILE]
-                  [--anat-derivatives PATH] [--bids-database-dir PATH]
-                  [--nprocs NPROCS] [--omp-nthreads OMP_NTHREADS]
-                  [--mem MEMORY_GB] [--low-mem] [--use-plugin FILE]
-                  [--anat-only] [--boilerplate_only] [--md-only-boilerplate]
-                  [--error-on-aroma-warnings] [-v]
-                  [--ignore {fieldmaps,slicetiming,sbref,t2w,flair} [{fieldmaps,slicetiming,sbref,t2w,flair} ...]]
-                  [--longitudinal]
-                  [--output-spaces [OUTPUT_SPACES [OUTPUT_SPACES ...]]]
-                  [--bold2t1w-init {register,header}] [--bold2t1w-dof {6,9,12}]
-                  [--force-bbr] [--force-no-bbr] [--medial-surface-nan]
-                  [--dummy-scans DUMMY_SCANS] [--random-seed _RANDOM_SEED]
-                  [--use-aroma]
-                  [--aroma-melodic-dimensionality AROMA_MELODIC_DIM]
-                  [--return-all-components]
-                  [--fd-spike-threshold REGRESSORS_FD_TH]
-                  [--dvars-spike-threshold REGRESSORS_DVARS_TH]
-                  [--skull-strip-template SKULL_STRIP_TEMPLATE]
-                  [--skull-strip-fixed-seed]
-                  [--skull-strip-t1w {auto,skip,force}] [--fmap-bspline]
-                  [--fmap-no-demean] [--use-syn-sdc] [--force-syn]
-                  [--fs-license-file FILE] [--fs-subjects-dir PATH]
-                  [--no-submm-recon] [--cifti-output [{91k,170k}] |
-                  --fs-no-reconall] [-w WORK_DIR] [--clean-workdir]
-                  [--resource-monitor] [--reports-only] [--config-file FILE]
-                  [--write-graph] [--stop-on-first-crash] [--notrack]
-                  [--debug {compcor,all} [{compcor,all} ...]] [--sloppy]
-                  bids_dir output_dir {participant}
-
-  example:
   fmriprep replace_with_bidsdirectory replace_with_outputdirecotry participant --fs-license-file ~/.license.txt
   ```
 
@@ -68,7 +28,6 @@ readme: |-
   To run applications outside of this container: ml fmriprep/{{ context.version }}
 
   ----------------------------------
-
 categories:
-  - "functional imaging"
-  - "workflows"
+  - functional imaging
+  - workflows
