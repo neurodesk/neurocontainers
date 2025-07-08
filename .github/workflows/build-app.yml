@@ -285,6 +285,8 @@ jobs:
         run: |
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
+          # Install rclone
+          sudo -v ; curl https://rclone.org/install.sh | sudo bash
           
       - name: Download simg artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
