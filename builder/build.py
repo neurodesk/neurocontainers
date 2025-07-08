@@ -499,6 +499,7 @@ class BuildContext(object):
         if "url" in file:
             # Check if running in Pyodide environment
             import sys
+
             if "pyodide" in sys.modules:
                 # In Pyodide, create a dummy file entry for check_only mode
                 print(f"Pyodide environment: skipping file download for {file['url']}")
@@ -599,9 +600,25 @@ class BuildContext(object):
             base, pkg_manager, build_directive.get("add-default-template", True)
         )
 
+        # Add the ll command as a convenience alias for ls -la
         builder.run_command("printf '#!/bin/bash\\nls -la' > /usr/bin/ll")
         builder.run_command("chmod +x /usr/bin/ll")
+
+        # Create the global mount points
         builder.run_command("mkdir -p " + " ".join(GLOBAL_MOUNT_POINT_LIST))
+
+        # Automatically install tzdata on Debian systems and set timezone to UTC
+        if pkg_manager == "apt" and build_directive.get("add-tzdata", True):
+            # Set non-interactive frontend to avoid prompts
+            builder.set_environment("DEBIAN_FRONTEND", "noninteractive")
+            # Set timezone to UTC
+            builder.set_environment("TZ", "UTC")
+            # Install tzdata package
+            builder.install_packages(["tzdata"])
+            # Configure timezone to UTC
+            builder.run_command(
+                "ln -snf /usr/share/zoneinfo/UTC /etc/localtime && echo UTC > /etc/timezone"
+            )
 
         def add_directive(directive, locals):
             if "condition" in directive:
