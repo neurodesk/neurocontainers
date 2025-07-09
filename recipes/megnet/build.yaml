@@ -1,4 +1,4 @@
-name: magnet
+name: megnet
 version: 1.0.0
 architectures:
   - x86_64
@@ -32,7 +32,7 @@ categories:
   - electrophysiology
 readme: |-
   ----------------------------------
-  ## magnet/1.0.0 ##
+  ## megnet/1.0.0 ##
 
   MEGNET pipelines for MEG data analysis
 
@@ -48,7 +48,7 @@ readme: |-
 
   ```
 
-  To run container outside of this environment: ml magnet/1.0.0
+  To run container outside of this environment: ml megnet/1.0.0
 
   ----------------------------------
 copyright:
