@@ -125,14 +125,14 @@ jobs:
           tags: ${{ env.IMAGEID }}:${{ env.BUILDDATE }}
           cache-from: type=registry,ref=${{ env.IMAGEID }}:latest
           cache-to: type=inline
-          outputs: type=docker,dest=/mnt/tmp/${{ env.APPLICATION }}-${{ env.BUILDDATE }}.tar
+          outputs: type=docker,dest=/mnt/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
 
       - name: Compare new and cached images
         id: compareimages
         env:
           DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
         run: |
-          docker load --input /mnt/tmp/${{ env.APPLICATION }}-${{ env.BUILDDATE }}.tar
+          docker load --input /mnt/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
           ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ${{ env.IMAGEID }}:${{ env.BUILDDATE }})
           echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
           
@@ -148,8 +148,8 @@ jobs:
       - name: Upload new image as build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ${{ env.APPLICATION }}-${{ env.BUILDDATE }}
-          path: /mnt/tmp/${{ env.APPLICATION }}-${{ env.BUILDDATE }}.tar
+          name: ${{ env.IMAGENAME }}-${{ env.BUILDDATE }}
+          path: /mnt/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
           retention-days: 7
   
   push-ghcr:
@@ -171,11 +171,11 @@ jobs:
       - name: Download build artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: ${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}
+          name: ${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}
           path: /mnt/tmp/
 
       - name: Load Docker Image from Artifact
-        run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
+        run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
 
       - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -209,11 +209,11 @@ jobs:
       - name: Download image artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: ${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}
+          name: ${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}
           path: /mnt/tmp/
 
       - name: Load Docker Image from Artifact
-        run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
+        run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
 
       - name: Login to DockerHub
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -267,11 +267,11 @@ jobs:
       - name: Download image artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: ${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}
+          name: ${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}
           path: /mnt/tmp/
 
       - name: Load Docker Image from Artifact
-        run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
+        run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
 
       - name: Build simg file
         run: |
