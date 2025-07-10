@@ -9,18 +9,18 @@ on:
       runner:
         required: true
         type: string
-      force_push_ghcr:
-        required: true
-        type: boolean
-      force_push_dockerhub:
-        required: true
-        type: boolean
-      force_upload_nectar:
-        required: true
-        type: boolean
-      force_upload_s3:
-        required: true
-        type: boolean
+      # force_push_ghcr:
+      #   required: true
+      #   type: boolean
+      # force_push_dockerhub:
+      #   required: true
+      #   type: boolean
+      # force_upload_nectar:
+      #   required: true
+      #   type: boolean
+      # force_upload_s3:
+      #   required: true
+      #   type: boolean
 
 jobs:
   build-image:
