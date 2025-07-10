@@ -9,6 +9,22 @@ on:
       runner:
         required: true
         type: string
+      force_push_ghcr:
+        required: false
+        type: boolean
+        default: false
+      force_push_dockerhub:
+        required: false
+        type: boolean
+        default: false
+      force_upload_nectar:
+        required: false
+        type: boolean
+        default: false
+      force_upload_s3:
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   build-image:
@@ -134,7 +150,7 @@ jobs:
   
   push-ghcr:
     needs: build-image
-    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
+    if: ${{ (needs.build-image.outputs.PUSHIMAGE == 'true') || inputs.force_push_ghcr }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -173,7 +189,7 @@ jobs:
 
   push-dockerhub:
     needs: build-image
-    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
+    if: ${{ (needs.build-image.outputs.PUSHIMAGE == 'true') || inputs.force_push_dockerhub }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -212,7 +228,7 @@ jobs:
 
   build-simg:
     needs: build-image
-    # if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
+    if: ${{ (needs.build-image.outputs.PUSHIMAGE == 'true') || inputs.force_upload_nectar || inputs.force_upload_s3 }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -275,7 +291,7 @@ jobs:
 
   upload-nectar:
     needs: build-simg
-    # if: ${{ needs.build-simg.outputs.PUSHIMAGE == 'true' }}
+    if: ${{ (needs.build-simg.outputs.PUSHIMAGE == 'true') || inputs.force_upload_nectar }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -308,7 +324,7 @@ jobs:
   
   upload-s3:
     needs: build-simg
-    if: ${{ needs.build-simg.outputs.PUSHIMAGE == 'true' }}
+    if: ${{ (needs.build-simg.outputs.PUSHIMAGE == 'true') || inputs.force_upload_s3 }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
