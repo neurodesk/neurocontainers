@@ -28,6 +28,14 @@ on:
         required: false
         type: string
 
+# Workflow needs the following set in GitHub
+# - secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION
+# - secrets.GH_REGISTRY
+# - secrets.DOCKERHUB_USERNAME
+# - secrets.DOCKERHUB_PASSWORD
+# - secrets.DOCKERHUB_ORG
+# - secrets.AWS_ROLE_ARN
+
 jobs:
   build-image:
     runs-on: ${{ inputs.runner }}
