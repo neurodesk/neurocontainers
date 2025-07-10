@@ -135,13 +135,12 @@ jobs:
             echo "PUSHIMAGE=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Upload new image as build artifact (if changes found)
-        if: ${{ steps.compareimages.outputs.PUSHIMAGE }}
+      - name: Upload new image as build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ env.APPLICATION }}-${{ env.BUILDDATE }}
           path: /mnt/tmp/${{ env.APPLICATION }}-${{ env.BUILDDATE }}.tar
-          retention-days: 1
+          retention-days: 7
   
   push-ghcr:
     needs: build-image
@@ -275,7 +274,7 @@ jobs:
         with:
           name: ${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
           path: /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
-          retention-days: 1
+          retention-days: 7
 
   upload-nectar:
     needs: [build-image, build-simg]
