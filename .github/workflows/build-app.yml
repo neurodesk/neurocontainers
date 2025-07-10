@@ -163,7 +163,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}
-          path: /mnt/tmp
+          path: /mnt/tmp/
 
       - name: Load Docker Image from Artifact
         run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
@@ -201,7 +201,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}
-          path: /mnt/tmp
+          path: /mnt/tmp/
 
       - name: Load Docker Image from Artifact
         run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
@@ -259,7 +259,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}
-          path: /mnt/tmp
+          path: /mnt/tmp/
 
       - name: Load Docker Image from Artifact
         run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.APPLICATION }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
