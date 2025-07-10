@@ -53,6 +53,7 @@ jobs:
     - name: Set build inputs
       id: build_inputs
       run: |
+      
         echo "force_push_ghcr=${{ github.event.inputs.force_push_ghcr }}" >> $GITHUB_OUTPUT
         echo "force_push_dockerhub=${{ github.event.inputs.force_push_dockerhub }}" >> $GITHUB_OUTPUT
         echo "force_upload_nectar=${{ github.event.inputs.force_upload_nectar }}" >> $GITHUB_OUTPUT
@@ -68,12 +69,8 @@ jobs:
     with:
       application: ${{ matrix.application }}
       runner: ${{ needs.list-apps.outputs.runner }}
-      # force_push_ghcr: ${{ needs.list-apps.outputs.force_push_ghcr }}
-      # force_push_dockerhub: ${{ needs.list-apps.outputs.force_push_dockerhub }}
-      # force_upload_nectar: ${{ needs.list-apps.outputs.force_upload_nectar }}
-      # force_upload_s3: ${{ needs.list-apps.outputs.force_upload_s3 }}
-      force_push_ghcr: false
-      force_push_dockerhub: false
-      force_upload_nectar: false
-      force_upload_s3: false
+      force_push_ghcr: "${{ needs.list-apps.outputs.force_push_ghcr }}"
+      force_push_dockerhub: "${{ needs.list-apps.outputs.force_push_dockerhub }}"
+      force_upload_nectar: "${{ needs.list-apps.outputs.force_upload_nectar }}"
+      force_upload_s3: "${{ needs.list-apps.outputs.force_upload_s3 }}"
     secrets: inherit
