@@ -14,22 +14,6 @@ on:
         options: 
         - "ubuntu-22.04"
         - "self-hosted"
-      force_push_ghcr:
-        description: 'Force push to GHCR'
-        type: boolean
-        required: false
-      force_push_dockerhub:
-        description: 'Force push to DockerHub'
-        type: boolean
-        required: false
-      force_upload_nectar:
-        description: 'Force upload to Nectar'
-        type: boolean
-        required: false
-      force_upload_s3:
-        description: 'Force upload to S3'
-        type: boolean
-        required: false
 
 jobs:
   list-apps:
@@ -65,8 +49,4 @@ jobs:
     with:
       application: ${{ matrix.application }}
       runner: ${{ needs.list-apps.outputs.runner }}
-      force_push_ghcr: ${{ needs.list-apps.outputs.force_push_ghcr }}
-      force_push_dockerhub: ${{ needs.list-apps.outputs.force_push_dockerhub }}
-      force_upload_nectar: ${{ needs.list-apps.outputs.force_upload_nectar }}
-      force_upload_s3: ${{ needs.list-apps.outputs.force_upload_s3 }}
     secrets: inherit
