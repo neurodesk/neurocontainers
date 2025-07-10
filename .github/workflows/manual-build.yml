@@ -37,6 +37,10 @@ jobs:
     outputs:
       app_list: ${{ steps.process_app_list.outputs.app_list }}
       runner: ${{ steps.select_runner.outputs.runner }}
+      force_push_ghcr: ${{ steps.build_inputs.outputs.force_push_ghcr }}
+      force_push_dockerhub: ${{ steps.build_inputs.outputs.force_push_dockerhub }}
+      force_upload_nectar: ${{ steps.build_inputs.outputs.force_upload_nectar }}
+      force_upload_s3: ${{ steps.build_inputs.outputs.force_upload_s3 }}
     steps:
     - name: Process input list of applications
       id: process_app_list
@@ -50,6 +54,13 @@ jobs:
         runner="${{ github.event.inputs.runner }}"
         echo "runner=${runner}"
         echo "runner=${runner}" >> $GITHUB_OUTPUT
+    - name: Set build inputs
+      id: build_inputs
+      run: |
+        echo "force_push_ghcr=${{ github.event.inputs.force_push_ghcr }}" >> $GITHUB_OUTPUT
+        echo "force_push_dockerhub=${{ github.event.inputs.force_push_dockerhub }}" >> $GITHUB_OUTPUT
+        echo "force_upload_nectar=${{ github.event.inputs.force_upload_nectar }}" >> $GITHUB_OUTPUT
+        echo "force_upload_s3=${{ github.event.inputs.force_upload_s3 }}" >> $GITHUB_OUTPUT
 
   build-app:
     needs: list-apps
@@ -61,8 +72,8 @@ jobs:
     with:
       application: ${{ matrix.application }}
       runner: ${{ needs.list-apps.outputs.runner }}
-      force_push_ghcr: ${{ github.event.inputs.force_push_ghcr }}
-      force_push_dockerhub: ${{ github.event.inputs.force_push_dockerhub }}
-      force_upload_nectar: ${{ github.event.inputs.force_upload_nectar }}
-      force_upload_s3: ${{ github.event.inputs.force_upload_s3 }}
+      force_push_ghcr: ${{ needs.list-apps.outputs.force_push_ghcr }}
+      force_push_dockerhub: ${{ needs.list-apps.outputs.force_push_dockerhub }}
+      force_upload_nectar: ${{ needs.list-apps.outputs.force_upload_nectar }}
+      force_upload_s3: ${{ needs.list-apps.outputs.force_upload_s3 }}
     secrets: inherit
