@@ -24,6 +24,9 @@ on:
       force_upload_s3:
         required: false
         type: string
+      force_create_pr:
+        required: false
+        type: string
 
 jobs:
   build-image:
@@ -132,7 +135,7 @@ jobs:
           docker load --input /mnt/tmp/${{ env.APPLICATION }}-${{ env.BUILDDATE }}.tar
           ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ${{ env.IMAGEID }}:${{ env.BUILDDATE }})
           echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
-
+          
           if [ "$DISABLE_AUTO_UPLOAD" = "true" ]; then
             echo "Auto-upload is disabled. Skipping push to registry."
           elif [ "$ROOTFS_NEW" = "$ROOTFS_CACHE" ]; then
@@ -151,7 +154,7 @@ jobs:
   
   push-ghcr:
     needs: build-image
-    if: ${{ needs.build-image.outputs.PUSHIMAGE || inputs.force_push_ghcr }}
+    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_push_ghcr == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -189,7 +192,7 @@ jobs:
 
   push-dockerhub:
     needs: build-image
-    if: ${{ needs.build-image.outputs.PUSHIMAGE || inputs.force_push_dockerhub }}
+    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_push_dockerhub == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -227,7 +230,7 @@ jobs:
 
   build-simg:
     needs: build-image
-    if: ${{ needs.build-image.outputs.PUSHIMAGE || inputs.force_upload_nectar || inputs.force_upload_s3 }}
+    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -285,7 +288,7 @@ jobs:
 
   upload-nectar:
     needs: [build-image, build-simg]
-    if: ${{ needs.build-image.outputs.PUSHIMAGE || inputs.force_upload_nectar }}
+    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_upload_nectar == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -317,7 +320,7 @@ jobs:
   
   upload-s3:
     needs: [build-image, build-simg]
-    if: ${{ needs.build-image.outputs.PUSHIMAGE || inputs.force_upload_s3 }}
+    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_upload_s3 == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -351,7 +354,7 @@ jobs:
 
   create-pr:
     needs: [build-image, push-ghcr, push-dockerhub, build-simg, upload-nectar, upload-s3]
-    if: ${{ always() && needs.build-image.outputs.PUSHIMAGE }}
+    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_create_pr == 'true'}}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
