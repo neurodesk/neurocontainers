@@ -9,6 +9,18 @@ on:
       runner:
         required: true
         type: string
+      force_push_ghcr:
+        required: false
+        type: string
+      force_push_dockerhub:
+        required: false
+        type: string
+      force_upload_nectar:
+        required: false
+        type: string
+      force_upload_s3:
+        required: false
+        type: string
 
 jobs:
   build-image:
@@ -124,7 +136,7 @@ jobs:
           fi
 
       - name: Upload new image as build artifact (if changes found)
-        # if: ${{ steps.compareimages.outputs.PUSHIMAGE == 'true' }}
+        if: ${{ steps.compareimages.outputs.PUSHIMAGE }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ env.APPLICATION }}-${{ env.BUILDDATE }}
@@ -133,7 +145,7 @@ jobs:
   
   push-ghcr:
     needs: build-image
-    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
+    if: ${{ needs.build-image.outputs.PUSHIMAGE || inputs.force_push_ghcr }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -171,7 +183,7 @@ jobs:
 
   push-dockerhub:
     needs: build-image
-    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
+    if: ${{ needs.build-image.outputs.PUSHIMAGE || inputs.force_push_dockerhub }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -209,15 +221,10 @@ jobs:
 
   build-simg:
     needs: build-image
-    # if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
+    if: ${{ needs.build-image.outputs.PUSHIMAGE || inputs.force_upload_nectar || inputs.force_upload_s3 }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
-    outputs:
-      APPLICATION: ${{ needs.build-image.outputs.APPLICATION }}
-      IMAGENAME: ${{ needs.build-image.outputs.IMAGENAME }}
-      BUILDDATE: ${{ needs.build-image.outputs.BUILDDATE }}
-      PUSHIMAGE: ${{ needs.build-image.outputs.PUSHIMAGE }}
 
     steps:
       - name: Configure runner
@@ -271,8 +278,8 @@ jobs:
           retention-days: 1
 
   upload-nectar:
-    needs: build-simg
-    if: ${{ needs.build-simg.outputs.PUSHIMAGE == 'true' }}
+    needs: [build-image, build-simg]
+    if: ${{ needs.build-image.outputs.PUSHIMAGE || inputs.force_upload_nectar }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -288,7 +295,7 @@ jobs:
       - name: Download simg artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: ${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg
+          name: ${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
           path: /mnt/tmp/
 
       - name: Upload simg to Nectar
@@ -299,12 +306,12 @@ jobs:
         run: |
           echo "[DEBUG] Attempting upload to Nectar Object Storage:"
           rclone config create nectar swift env_auth true
-          rclone copy /mnt/tmp/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg nectar:/neurodesk/
+          rclone copy /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg nectar:/neurodesk/
           echo "[DEBUG] Done with uploading to Nectar Object Storage!"
   
   upload-s3:
-    needs: build-simg
-    # if: ${{ needs.build-simg.outputs.PUSHIMAGE == 'true' }}
+    needs: [build-image, build-simg]
+    if: ${{ needs.build-image.outputs.PUSHIMAGE || inputs.force_upload_s3 }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -323,7 +330,7 @@ jobs:
       - name: Download simg artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: ${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg
+          name: ${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
           path: /mnt/tmp/
 
       - name: Install AWS CLI
@@ -334,11 +341,11 @@ jobs:
           fi
 
       - name: Upload to AWS S3
-        run: aws s3 cp /mnt/tmp/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg s3://neurocontainers/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg
+        run: aws s3 cp /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg s3://neurocontainers/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
 
   create-pr:
     needs: [build-image, push-ghcr, push-dockerhub, build-simg, upload-nectar, upload-s3]
-    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
+    if: ${{ always() && needs.build-image.outputs.PUSHIMAGE }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
