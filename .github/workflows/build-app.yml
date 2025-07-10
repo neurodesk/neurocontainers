@@ -461,7 +461,7 @@ jobs:
 
         Or, for testing directly with Apptainer/Singularity:
         \`\`\`bash
-        curl -X GET https://neurocontainers.neurodesk.org/temporary-builds-new/${IMAGENAME}_${BUILDDATE}.simg -O
+        curl -X GET https://neurocontainers.neurodesk.org/${IMAGENAME}_${BUILDDATE}.simg -O
         singularity shell --overlay /tmp/apptainer_overlay ${IMAGENAME}_${BUILDDATE}.simg
         \`\`\`
 
