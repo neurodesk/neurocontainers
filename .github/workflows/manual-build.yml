@@ -17,15 +17,19 @@ on:
       force_push_ghcr:
         description: 'Force push to GHCR'
         type: boolean
+        required: false
       force_push_dockerhub:
         description: 'Force push to DockerHub'
         type: boolean
+        required: false
       force_upload_nectar:
         description: 'Force upload to Nectar'
         type: boolean
+        required: false
       force_upload_s3:
         description: 'Force upload to S3'
         type: boolean
+        required: false
 
 jobs:
   list-apps:
@@ -53,10 +57,10 @@ jobs:
     - name: Set build inputs
       id: build_inputs
       run: |
-        echo "force_push_ghcr=${{ github.event.inputs.force_push_ghcr }}" >> $GITHUB_OUTPUT
-        echo "force_push_dockerhub=${{ github.event.inputs.force_push_dockerhub }}" >> $GITHUB_OUTPUT
-        echo "force_upload_nectar=${{ github.event.inputs.force_upload_nectar }}" >> $GITHUB_OUTPUT
-        echo "force_upload_s3=${{ github.event.inputs.force_upload_s3 }}" >> $GITHUB_OUTPUT
+        echo "force_push_ghcr=\"${{ github.event.inputs.force_push_ghcr }}\"" >> $GITHUB_OUTPUT
+        echo "force_push_dockerhub=\"${{ github.event.inputs.force_push_dockerhub }}\"" >> $GITHUB_OUTPUT
+        echo "force_upload_nectar=\"${{ github.event.inputs.force_upload_nectar }}\"" >> $GITHUB_OUTPUT
+        echo "force_upload_s3=\"${{ github.event.inputs.force_upload_s3 }}\"" >> $GITHUB_OUTPUT
 
   build-app:
     needs: list-apps
