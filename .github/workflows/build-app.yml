@@ -70,10 +70,15 @@ jobs:
 
       - name: Configure runner
         run: |
-          sudo mkdir -p /mnt/tmp
-          sudo chown $USER /mnt/tmp
-          sudo mkdir -p /mnt/docker
-          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          BASE_PATH=/mnt
+          if [ "${{ inputs.runner }}" = "self-hosted" ]; then
+            BASE_PATH=/storage
+          fi
+          echo "BASE_PATH=$BASE_PATH" >> $GITHUB_ENV
+          sudo mkdir -p $BASE_PATH/tmp
+          sudo chown $USER $BASE_PATH/tmp
+          sudo mkdir -p $BASE_PATH/docker
+          echo "{\"data-root\": \"$BASE_PATH/docker\"}" | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
 
       - name: Install builder dependencies
@@ -133,14 +138,14 @@ jobs:
           tags: ${{ env.IMAGEID }}:${{ env.BUILDDATE }}
           cache-from: type=registry,ref=${{ env.IMAGEID }}:latest
           cache-to: type=inline
-          outputs: type=docker,dest=/mnt/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+          outputs: type=docker,dest=${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
 
       - name: Compare new and cached images
         id: compareimages
         env:
           DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
         run: |
-          docker load --input /mnt/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+          docker load --input ${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
           ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ${{ env.IMAGEID }}:${{ env.BUILDDATE }})
           echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
           
@@ -157,13 +162,13 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ env.IMAGENAME }}-${{ env.BUILDDATE }}
-          path: /mnt/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+          path: ${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
           retention-days: 7
   
   push-ghcr:
     needs: build-image
     if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_push_ghcr == 'true' }}
-    runs-on: ${{ inputs.runner }}
+    runs-on: ubuntu-22.04
     permissions:
       packages: write
 
@@ -201,7 +206,7 @@ jobs:
   push-dockerhub:
     needs: build-image
     if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_push_dockerhub == 'true' }}
-    runs-on: ${{ inputs.runner }}
+    runs-on: ubuntu-22.04
     permissions:
       packages: write
 
@@ -239,7 +244,7 @@ jobs:
   build-simg:
     needs: build-image
     if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' }}
-    runs-on: ${{ inputs.runner }}
+    runs-on: ubuntu-22.04
     permissions:
       packages: write
 
@@ -297,7 +302,7 @@ jobs:
   upload-nectar:
     needs: [build-image, build-simg]
     if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_upload_nectar == 'true' }}
-    runs-on: ${{ inputs.runner }}
+    runs-on: ubuntu-22.04
     permissions:
       packages: write
 
@@ -329,7 +334,7 @@ jobs:
   upload-s3:
     needs: [build-image, build-simg]
     if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_upload_s3 == 'true' }}
-    runs-on: ${{ inputs.runner }}
+    runs-on: ubuntu-22.04
     permissions:
       packages: write
       id-token: write
@@ -363,7 +368,7 @@ jobs:
   create-pr:
     needs: [build-image, push-ghcr, push-dockerhub, build-simg, upload-nectar, upload-s3]
     if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_create_pr == 'true'}}
-    runs-on: ${{ inputs.runner }}
+    runs-on: ubuntu-22.04
     permissions:
       packages: write
       id-token: write
