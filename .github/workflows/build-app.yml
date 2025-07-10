@@ -307,7 +307,7 @@ jobs:
   
   upload-s3:
     needs: build-simg
-    if: ${{ needs.build-simg.outputs.PUSHIMAGE == 'true' }}
+    # if: ${{ needs.build-simg.outputs.PUSHIMAGE == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
