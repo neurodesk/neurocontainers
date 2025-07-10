@@ -297,7 +297,9 @@ jobs:
       - name: Upload simg to Nectar
         run: |
           echo "[DEBUG] Attempting upload to Nectar Object Storage:"
-          time rclone copy /mnt/tmp/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg nectar:/neurodesk/temporary-builds-new
+          # time rclone copy /mnt/tmp/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg nectar:/neurodesk/temporary-builds-new
+          rclone config create nectar swift env_auth true
+          time rclone copy /mnt/tmp/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg nectar:/neurodesk/
           echo "[DEBUG] Done with uploading to Nectar Object Storage!"
   
   upload-s3:
