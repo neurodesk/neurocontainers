@@ -9,6 +9,9 @@ on:
       runner:
         required: true
         type: string
+      disable_auto_upload:
+        required: false
+        type: string
       force_push_ghcr:
         required: false
         type: string
@@ -123,13 +126,17 @@ jobs:
 
       - name: Compare new and cached images
         id: compareimages
+        env:
+          DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
         run: |
           docker load --input /mnt/tmp/${{ env.APPLICATION }}-${{ env.BUILDDATE }}.tar
           ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ${{ env.IMAGEID }}:${{ env.BUILDDATE }})
           echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
 
-          if [ "$ROOTFS_NEW" = "$ROOTFS_CACHE" ]; then
-            echo "Skipping push to registry. No changes found"
+          if [ "$DISABLE_AUTO_UPLOAD" = "true" ]; then
+            echo "Auto-upload is disabled. Skipping push to registry."
+          elif [ "$ROOTFS_NEW" = "$ROOTFS_CACHE" ]; then
+            echo "No changes found. Skipping push to registry. "
           else
             echo "Pushing to registry. Changes found"
             echo "PUSHIMAGE=true" >> $GITHUB_OUTPUT
