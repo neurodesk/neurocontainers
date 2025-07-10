@@ -69,8 +69,8 @@ jobs:
     with:
       application: ${{ matrix.application }}
       runner: ${{ needs.list-apps.outputs.runner }}
-      force_push_ghcr: "${{ needs.list-apps.outputs.force_push_ghcr }}"
-      force_push_dockerhub: "${{ needs.list-apps.outputs.force_push_dockerhub }}"
-      force_upload_nectar: "${{ needs.list-apps.outputs.force_upload_nectar }}"
-      force_upload_s3: "${{ needs.list-apps.outputs.force_upload_s3 }}"
+      force_push_ghcr: "${{ github.event.inputs.force_push_ghcr }}"
+      force_push_dockerhub: "${{ github.event.inputs.force_push_dockerhub }}"
+      force_upload_nectar: "${{ github.event.inputs.force_upload_nectar }}"
+      force_upload_s3: "${{ github.event.inputs.force_upload_s3 }}"
     secrets: inherit
