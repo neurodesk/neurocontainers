@@ -212,7 +212,7 @@ jobs:
 
   build-simg:
     needs: build-image
-    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
+    # if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -275,7 +275,7 @@ jobs:
 
   upload-nectar:
     needs: build-simg
-    if: ${{ needs.build-simg.outputs.PUSHIMAGE == 'true' }}
+    # if: ${{ needs.build-simg.outputs.PUSHIMAGE == 'true' }}
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
@@ -333,134 +333,134 @@ jobs:
       - name: Upload to AWS S3
         run: time aws s3 cp /mnt/tmp/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg s3://neurocontainers/temporary-builds-new/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg
 
-  create-pr:
-    needs: [build-image, push-ghcr, push-dockerhub, build-simg, upload-nectar, upload-s3]
-    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
-    runs-on: ${{ inputs.runner }}
-    permissions:
-      packages: write
-      id-token: write
-      contents: read
-    steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      with:
-        token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
-    - name: Set environment variables
-      id: ENVVARS
-      run: |
-        APPLICATION=${{ inputs.application }}
-        SHORT_SHA=$(git rev-parse --short $GITHUB_SHA)
-        BUILDDATE=`date +%Y%m%d`
-        echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
-        echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
-        echo "BUILDDATE=$BUILDDATE" >> $GITHUB_ENV
-        echo "BUILDDATE=$BUILDDATE" >> $GITHUB_OUTPUT
-    - name: Install Builder Dependencies
-      run: |
-        pip install -r requirements.txt
-    - name: Generate Dockerfile and Release File
-      id: generate
-      run: |
-        echo "APPLICATION: $APPLICATION"
-        ./builder/build.py generate $APPLICATION --recreate --auto-build --generate-release
+  # create-pr:
+  #   needs: [build-image, push-ghcr, push-dockerhub, build-simg, upload-nectar, upload-s3]
+  #   if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' }}
+  #   runs-on: ${{ inputs.runner }}
+  #   permissions:
+  #     packages: write
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #   - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+  #     with:
+  #       token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+  #   - name: Set environment variables
+  #     id: ENVVARS
+  #     run: |
+  #       APPLICATION=${{ inputs.application }}
+  #       SHORT_SHA=$(git rev-parse --short $GITHUB_SHA)
+  #       BUILDDATE=`date +%Y%m%d`
+  #       echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
+  #       echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
+  #       echo "BUILDDATE=$BUILDDATE" >> $GITHUB_ENV
+  #       echo "BUILDDATE=$BUILDDATE" >> $GITHUB_OUTPUT
+  #   - name: Install Builder Dependencies
+  #     run: |
+  #       pip install -r requirements.txt
+  #   - name: Generate Dockerfile and Release File
+  #     id: generate
+  #     run: |
+  #       echo "APPLICATION: $APPLICATION"
+  #       ./builder/build.py generate $APPLICATION --recreate --auto-build --generate-release
 
-    - name: Create Release File Pull Request
-      if: steps.generate.outputs.container_name
-      env:
-        GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
-        CONTAINER_NAME: ${{ steps.generate.outputs.container_name }}
-        CONTAINER_VERSION: ${{ steps.generate.outputs.container_version }}
-        RELEASE_CONTENT: ${{ steps.generate.outputs.release_file_content }}
-      run: |
-        gh auth setup-git
+  #   - name: Create Release File Pull Request
+  #     if: steps.generate.outputs.container_name
+  #     env:
+  #       GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+  #       CONTAINER_NAME: ${{ steps.generate.outputs.container_name }}
+  #       CONTAINER_VERSION: ${{ steps.generate.outputs.container_version }}
+  #       RELEASE_CONTENT: ${{ steps.generate.outputs.release_file_content }}
+  #     run: |
+  #       gh auth setup-git
 
-        # Configure git
-        git config --global user.name "neurocontainers-bot"
-        git config --global user.email "neurocontainers-bot@neurodesk.github.io"
+  #       # Configure git
+  #       git config --global user.name "neurocontainers-bot"
+  #       git config --global user.email "neurocontainers-bot@neurodesk.github.io"
 
-        # Create a new branch for the release
-        BRANCH_NAME="release/${CONTAINER_NAME}-${CONTAINER_VERSION}-$(date +%Y%m%d-%H%M%S)"
-        git checkout -b "$BRANCH_NAME"
+  #       # Create a new branch for the release
+  #       BRANCH_NAME="release/${CONTAINER_NAME}-${CONTAINER_VERSION}-$(date +%Y%m%d-%H%M%S)"
+  #       git checkout -b "$BRANCH_NAME"
 
-        # Create the release file
-        RELEASE_DIR="releases/${CONTAINER_NAME}"
-        RELEASE_FILE="${RELEASE_DIR}/${CONTAINER_VERSION}.json"
+  #       # Create the release file
+  #       RELEASE_DIR="releases/${CONTAINER_NAME}"
+  #       RELEASE_FILE="${RELEASE_DIR}/${CONTAINER_VERSION}.json"
 
-        mkdir -p "$RELEASE_DIR"
-        echo "$RELEASE_CONTENT" > "$RELEASE_FILE"
+  #       mkdir -p "$RELEASE_DIR"
+  #       echo "$RELEASE_CONTENT" > "$RELEASE_FILE"
 
-        # Check if this is a new file or an update
-        if git ls-files --error-unmatch "$RELEASE_FILE" 2>/dev/null; then
-          ACTION="Update"
-        else
-          ACTION="Add"
-        fi
+  #       # Check if this is a new file or an update
+  #       if git ls-files --error-unmatch "$RELEASE_FILE" 2>/dev/null; then
+  #         ACTION="Update"
+  #       else
+  #         ACTION="Add"
+  #       fi
 
-        # Add and commit the release file
-        git add "$RELEASE_FILE"
-        git commit -m "${ACTION} release file for ${CONTAINER_NAME} ${CONTAINER_VERSION}
+  #       # Add and commit the release file
+  #       git add "$RELEASE_FILE"
+  #       git commit -m "${ACTION} release file for ${CONTAINER_NAME} ${CONTAINER_VERSION}
 
-        Auto-generated release file from container build.
+  #       Auto-generated release file from container build.
 
-        🤖 Generated by neurocontainers CI"
+  #       🤖 Generated by neurocontainers CI"
 
-        # Push the branch
-        git push origin "$BRANCH_NAME"
+  #       # Push the branch
+  #       git push origin "$BRANCH_NAME"
 
-        # Create pull request
-        gh pr create \
-          --title "${ACTION} release for ${CONTAINER_NAME} ${CONTAINER_VERSION}" \
-          --body "## Summary
+  #       # Create pull request
+  #       gh pr create \
+  #         --title "${ACTION} release for ${CONTAINER_NAME} ${CONTAINER_VERSION}" \
+  #         --body "## Summary
 
-        This PR ${ACTION,,}s the release file for **${CONTAINER_NAME} ${CONTAINER_VERSION}**.
+  #       This PR ${ACTION,,}s the release file for **${CONTAINER_NAME} ${CONTAINER_VERSION}**.
 
-        ## Changes
+  #       ## Changes
 
-        - ${ACTION} \`${RELEASE_FILE}\` with container metadata
-        - Generated automatically from successful container build
-        - Contains categories and GUI applications from build.yaml
+  #       - ${ACTION} \`${RELEASE_FILE}\` with container metadata
+  #       - Generated automatically from successful container build
+  #       - Contains categories and GUI applications from build.yaml
 
-        ## Testing Instructions
+  #       ## Testing Instructions
 
-        To test this container on Neurodesk (either a local installation or https://play.neurodesk.org/):
-        \`\`\`bash
-        bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } ${BUILDDATE}
-        \`\`\`
+  #       To test this container on Neurodesk (either a local installation or https://play.neurodesk.org/):
+  #       \`\`\`bash
+  #       bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } ${BUILDDATE}
+  #       \`\`\`
 
-        Or, for testing directly with Apptainer/Singularity:
-        \`\`\`bash
-        curl -X GET https://neurocontainers.neurodesk.org/temporary-builds-new/${IMAGENAME}_${BUILDDATE}.simg -O
-        singularity shell --overlay /tmp/apptainer_overlay ${IMAGENAME}_${BUILDDATE}.simg
-        \`\`\`
+  #       Or, for testing directly with Apptainer/Singularity:
+  #       \`\`\`bash
+  #       curl -X GET https://neurocontainers.neurodesk.org/temporary-builds-new/${IMAGENAME}_${BUILDDATE}.simg -O
+  #       singularity shell --overlay /tmp/apptainer_overlay ${IMAGENAME}_${BUILDDATE}.simg
+  #       \`\`\`
 
-        ## Review Checklist
+  #       ## Review Checklist
 
-        - [ ] Release file format is correct
-        - [ ] Categories are appropriate for this container
-        - [ ] GUI applications (if any) are correctly defined
-        - [ ] Version and build date are accurate
-        - [ ] Container has been tested using the commands above
+  #       - [ ] Release file format is correct
+  #       - [ ] Categories are appropriate for this container
+  #       - [ ] GUI applications (if any) are correctly defined
+  #       - [ ] Version and build date are accurate
+  #       - [ ] Container has been tested using the commands above
 
-        ## Next Steps
+  #       ## Next Steps
 
-        After merging this PR:
-        1. The apps.json update workflow will automatically regenerate apps.json from all release files
-        2. A PR will be created to the neurocommand repository
-        3. The container will become available in neurodesk
+  #       After merging this PR:
+  #       1. The apps.json update workflow will automatically regenerate apps.json from all release files
+  #       2. A PR will be created to the neurocommand repository
+  #       3. The container will become available in neurodesk
 
-        If additional releases are needed:
-        - Add to apps.json to release to Neurodesk: https://github.com/NeuroDesk/neurocommand/edit/main/neurodesk/apps.json
-        - Or add to the Open Recon recipes: https://github.com/NeuroDesk/openrecon/tree/main/recipes
+  #       If additional releases are needed:
+  #       - Add to apps.json to release to Neurodesk: https://github.com/NeuroDesk/neurocommand/edit/main/neurodesk/apps.json
+  #       - Or add to the Open Recon recipes: https://github.com/NeuroDesk/openrecon/tree/main/recipes
 
-        🤖 Generated by neurocontainers CI | Created by @${GITHUB_ACTOR}" \
-          --head "$BRANCH_NAME" \
-          --base main \
-          --label "automated" \
-          --label "release"
+  #       🤖 Generated by neurocontainers CI | Created by @${GITHUB_ACTOR}" \
+  #         --head "$BRANCH_NAME" \
+  #         --base main \
+  #         --label "automated" \
+  #         --label "release"
 
-        echo "✅ Pull request created for ${CONTAINER_NAME} ${CONTAINER_VERSION}"
-    - name: Generate job output
-      run: |
-        echo "The container has been successfully build. To test the container, run this:" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
-        echo "bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE" >> $GITHUB_STEP_SUMMARY
+  #       echo "✅ Pull request created for ${CONTAINER_NAME} ${CONTAINER_VERSION}"
+  #   - name: Generate job output
+  #     run: |
+  #       echo "The container has been successfully build. To test the container, run this:" >> $GITHUB_STEP_SUMMARY
+  #       echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
+  #       echo "bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE" >> $GITHUB_STEP_SUMMARY
