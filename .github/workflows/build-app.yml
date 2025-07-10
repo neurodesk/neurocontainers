@@ -279,10 +279,6 @@ jobs:
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
-    env:
-      OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
-      OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
-      OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
 
     steps:
       - name: Configure runner
@@ -299,10 +295,12 @@ jobs:
           path: /mnt/tmp/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg
 
       - name: Upload simg to Nectar
+        env:
+          OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
+          OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
+          OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
         run: |
           echo "[DEBUG] Attempting upload to Nectar Object Storage:"
-          # time rclone copy /mnt/tmp/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg nectar:/neurodesk/temporary-builds-new
-          # rclone config create nectar swift env_auth true
           time rclone copy /mnt/tmp/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg nectar:/neurodesk/
           echo "[DEBUG] Done with uploading to Nectar Object Storage!"
   
