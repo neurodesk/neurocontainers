@@ -292,7 +292,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg
-          path: /mnt/tmp/${{ needs.build-simg.outputs.IMAGENAME }}_${{ needs.build-simg.outputs.BUILDDATE }}.simg
+          path: /mnt/tmp/
 
       - name: Upload simg to Nectar
         env:
