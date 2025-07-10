@@ -10,16 +10,6 @@ on:
         required: true
         type: string
 
-env:
-  GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
-  DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
-  # OS_PASSWORD: ${{ secrets.SWIFT_OS_PASSWORD }}
-  # OS_PROJECT_ID: ${{ secrets.SWIFT_OS_PROJECT_ID }}
-  # OS_USERNAME: ${{ secrets.SWIFT_OS_USERNAME }}
-  OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
-  OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
-  OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
-
 jobs:
   build-image:
     runs-on: ${{ inputs.runner }}
@@ -28,6 +18,9 @@ jobs:
       packages: write
       id-token: write
       contents: write
+
+    env:
+      GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
 
     outputs:
       APPLICATION: ${{ steps.ENVVARS.outputs.APPLICATION }}
@@ -146,6 +139,9 @@ jobs:
     permissions:
       packages: write
 
+    env:
+      GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+
     steps:
       - name: Configure runner
         run: |
@@ -181,6 +177,9 @@ jobs:
     runs-on: ${{ inputs.runner }}
     permissions:
       packages: write
+
+    env:
+      DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
 
     steps:
       - name: Configure runner
