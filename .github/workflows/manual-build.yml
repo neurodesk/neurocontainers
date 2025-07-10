@@ -16,19 +16,15 @@ on:
         - "self-hosted"
       force_push_ghcr:
         description: 'Force push to GHCR'
-        required: false
         type: boolean
       force_push_dockerhub:
         description: 'Force push to DockerHub'
-        required: false
         type: boolean
       force_upload_nectar:
         description: 'Force upload to Nectar'
-        required: false
         type: boolean
       force_upload_s3:
         description: 'Force upload to S3'
-        required: false
         type: boolean
 
 jobs:
