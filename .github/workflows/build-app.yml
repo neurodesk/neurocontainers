@@ -128,17 +128,23 @@ jobs:
           docker pull $IMAGEID:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' $IMAGEID:latest) || true
           echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_ENV
 
-      - name: Build and save new image 
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
-        with:
-          context: ./build/${{ env.APPLICATION }}
-          file: ./build/${{ env.APPLICATION }}/${{ env.IMAGENAME }}.Dockerfile
-          push: false
-          load: true
-          tags: ${{ env.IMAGEID }}:${{ env.BUILDDATE }}
-          cache-from: type=registry,ref=${{ env.IMAGEID }}:latest
-          cache-to: type=inline
-          outputs: type=docker,dest=${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+      - name: Build new image
+        run: docker build ./build/${APPLICATION} --file ./build/${APPLICATION}/${IMAGENAME}.Dockerfile --tag ${IMAGEID}:${BUILDDATE} --cache-from ${IMAGEID}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+
+      - name: Save new image to file
+        run: docker save ${IMAGEID}:${BUILDDATE} -o ${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+
+      # - name: Build and save new image 
+      #   uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+      #   with:
+      #     context: ./build/${{ env.APPLICATION }}
+      #     file: ./build/${{ env.APPLICATION }}/${{ env.IMAGENAME }}.Dockerfile
+      #     push: false
+      #     load: true
+      #     tags: ${{ env.IMAGEID }}:${{ env.BUILDDATE }}
+      #     cache-from: type=registry,ref=${{ env.IMAGEID }}:latest
+      #     cache-to: type=inline
+      #     outputs: type=docker,dest=${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
 
       - name: Compare new and cached images
         id: compareimages
