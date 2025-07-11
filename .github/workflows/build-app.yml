@@ -307,6 +307,13 @@ jobs:
           docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
           rm /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
 
+      - name: Debug storage
+        run: |
+          sudo df -ha
+          sudo du -sh /
+          sudo du -sh /mnt
+          sudo du -sh /mnt/*
+
       - name: Build simg file
         run: |
           echo "[DEBUG] building singularity image from docker image:"
