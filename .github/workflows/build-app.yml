@@ -303,7 +303,9 @@ jobs:
           path: /mnt/tmp/
 
       - name: Load Docker Image from Artifact
-        run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
+        run: |
+          docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
+          rm /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
 
       - name: Build simg file
         run: |
