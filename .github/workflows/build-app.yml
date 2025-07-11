@@ -268,10 +268,18 @@ jobs:
           echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
 
-          sudo mkdir -p /mnt/apptainer/cache
-          sudo chown $USER /mnt/apptainer/cache
+          sudo mkdir -p /mnt/apptainer/cache /mnt/apptainer/tmp
+          sudo chown $USER /mnt/apptainer/cache /mnt/apptainer/tmp
+
           APPTAINER_CACHEDIR=/mnt/apptainer/cache
           echo "APPTAINER_CACHEDIR=$APPTAINER_CACHEDIR" >> $GITHUB_ENV
+          APPTAINER_TMPDIR=/mnt/apptainer/tmp
+          echo "APPTAINER_TMPDIR=$APPTAINER_TMPDIR" >> $GITHUB_ENV
+          
+          SINGULARITY_CACHEDIR=/mnt/apptainer/cache
+          echo "SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR" >> $GITHUB_ENV
+          SINGULARITY_TMPDIR=/mnt/apptainer/tmp
+          echo "SINGULARITY_TMPDIR=$SINGULARITY_TMPDIR" >> $GITHUB_ENV
 
           sudo apt-get install -y software-properties-common
           sudo add-apt-repository -y ppa:apptainer/ppa
