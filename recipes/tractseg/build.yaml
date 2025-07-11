@@ -29,18 +29,17 @@ build:
         - libxt6
         - libgl1-mesa-glx
         - xvfb
-    - run: 
+    - run:
         - pip install packaging numpy
     - run:
         - pip install TractSeg==2.9
     - run:
-       - pip install -q wheel scipy nilearn matplotlib scikit-image nibabel dipy fury joblib seaborn cython
+        - pip install -q wheel scipy nilearn matplotlib scikit-image nibabel dipy fury joblib seaborn cython
     - run:
-       - pip install -q torch==1.6.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+        - pip install -q torch==1.6.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
     - run:
-        - # create `weights_dir=absolute_path_to_where_you_want_it` in `~/.tractseg/config.txt`
         - mkdir -p ~/.tractseg && echo "weights_dir=/opt/miniconda/share/TractSeg/weights" > ~/.tractseg/config.txt
-    - run: 
+    - run:
         - download_all_pretrained_weights
     - template:
         name: fsl
@@ -49,6 +48,8 @@ build:
     - deploy:
         bins:
           - TractSeg
+          - Tracking
+          - Tractometry
 structured_readme:
   description: Tool for fast and accurate white matter bundle segmentation from Diffusion MRI. It can create bundle segmentations, segmentations of the endregions of bundles and Tract Orientation Maps (TOMs). Moreover, it can do tracking on the TOMs creating bundle-specific tractogram and do Tractometry analysis on those.
   example: TractSeg -i Diffusion.nii.gz --raw_diffusion_input
