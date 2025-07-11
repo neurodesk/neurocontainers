@@ -50,12 +50,11 @@ jobs:
     - name: Select runner
       id: select_runner
       run: |
-        "runner=ubuntu-22.04" >> $GITHUB_OUTPUT
-        # if [ "${{ github.repository }}" = "neurodesk/neurocontainers" ]; then
-        #   echo "runner=self-hosted" >> $GITHUB_OUTPUT
-        # else
-        #   echo "runner=ubuntu-22.04" >> $GITHUB_OUTPUT
-        # fi
+        if [ "${{ github.repository }}" = "neurodesk/neurocontainers" ]; then
+          echo "runner=self-hosted" >> $GITHUB_OUTPUT
+        else
+          echo "runner=ubuntu-22.04" >> $GITHUB_OUTPUT
+        fi
 
   build-app:
     needs: list-apps
