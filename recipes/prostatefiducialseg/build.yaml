@@ -50,28 +50,32 @@ build:
 
         - include: macros/openrecon/neurodocker.yaml
 
-        # install pip packages
+        # install large pip packages
         - run:
               - pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-              - pip install nibabel SimpleITK osfclient torchio
+              - pip install torchio
+
+        # install small pip packages
+        - run:
+              - pip install SimpleITK nibabel osfclient pandas scikit-learn
 
         # download model
         - workdir: /opt
         - run:
               - mkdir -p /opt/models
-              - osf -p f7hjv fetch T1-20250428-163831-0-best1.pth /opt/models/model.pth
+              - osf -p f7hjv fetch T1-20250710-100733-0-best.pth /opt/models/model.pth
 
         # clone prostate segmentation repository
         - workdir: /opt
         - run:
               - git clone https://github.com/astewartau/prostate-fiducial-seg.git
               - cd /opt/prostate-fiducial-seg
-              - git checkout 6daa4e3
-              - chmod +x predict2.py
+              - git checkout 267e0a5
+              - chmod +x simple_predict.py
         - environment:
               PATH: /opt/prostate-fiducial-seg:$PATH
-        - copy: prostatefiducialseg.py /opt/code/python-ismrmrd-server/prostatefiducialseg.py
+        - copy: prostatefiducialseg.py /opt/code/python-ismrmrd-server/prostatefiducialseg.py 
 
 deploy:
     bins:
-        - predict2.py
+        - simple_predict.py
