@@ -1,20 +1,15 @@
 import ismrmrd
-import os
-import itertools
 import logging
 import traceback
 import numpy as np
-import numpy.fft as fft
-import xml.dom.minidom
 import base64
-import ctypes
-import re
 import mrdhelper
 import constants
-from time import perf_counter
 import nibabel as nib
 import subprocess
 
+from skimage.segmentation import find_boundaries
+import SimpleITK as sitk
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
@@ -137,6 +132,20 @@ def process(connection, config, metadata):
         connection.send_close()
 
 
+def apply_homogeneity_correction(image_data):
+    # 1) NumPy → SITK
+    sitk_image = sitk.GetImageFromArray(image_data)
+    # 2) Float32 input for N4
+    sitk_image = sitk.Cast(sitk_image, sitk.sitkFloat32)
+    # 3) Otsu mask → UInt8
+    mask = sitk.OtsuThreshold(sitk_image, 0, 1, 200)
+    mask = sitk.Cast(mask, sitk.sitkUInt8)
+    # 4) N4 on floats + uint8 mask
+    corrected = sitk.N4BiasFieldCorrection(sitk_image, mask)
+    # 5) Back to NumPy (still float)
+    return sitk.GetArrayFromImage(corrected)
+
+
 def process_image(images, connection, config, metadata):
     if len(images) == 0:
         return []
@@ -193,6 +202,10 @@ def process_image(images, connection, config, metadata):
     data = data[:,:,0,0,:]
     logging.debug("Squeezed to 3D: %s" % (data.shape,))
 
+    # ——— Homogeneity correction ———
+    logging.info("Applying N4 bias‐field correction")
+    data = apply_homogeneity_correction(data)
+
     xform = np.eye(4)
     # data = np.rot90(data, k=-1, axes=(0, 1)) # tried (0,2)
     new_img = nib.nifti1.Nifti1Image(data, xform)
@@ -201,27 +214,37 @@ def process_image(images, connection, config, metadata):
     # subprocess.run(["cp", "t1_from_h5.nii", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
     # debug
 
-    subprocess.run(["predict2.py", "-i", "t1_from_h5.nii", "-m", "/opt/models/model.pth", "-o", "output"])
+    subprocess.run(["simple_predict.py", "--input", "t1_from_h5.nii", "--model", "/opt/models/model.pth", "--output", "output"])
 
     logging.info("Config: \n%s", config)
 
-    print('Prediction done')
+    logging.info('Prediction done')
     # TODO add t1_from_h5.nii AND MAKE THIS 4D
 
     # subprocess.run(["cp", "output/prob_class0.nii.gz", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
     # subprocess.run(["cp", "output/prob_class1.nii.gz", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
     # subprocess.run(["cp", "output/prob_class2.nii.gz", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
 
-    segmentation_img = nib.load('output/prob_class1.nii.gz')
+    logging.info('Loading segmentation image')
+    segmentation_img = nib.load('output/pred_seeds.nii.gz')
     segmentation = segmentation_img.get_fdata()
     # segmentation = segmentation[:, :, :, None, None]
     # segmentation = segmentation.transpose((0, 1, 3, 4, 2))
 
+    logging.info('Loading T1 image')
     data_img = nib.load('t1_from_h5.nii')
     data = data_img.get_fdata()
 
-    # make marker segmentations white in the image:
-    data = data + segmentation * 2000
+    # Create a binary mask of your seeds
+    seed_mask = (segmentation > 0)
+
+    # Find the voxels at the edges of that mask
+    boundaries = find_boundaries(seed_mask, mode='outer')
+
+    # Overlay the outline on every slice
+    for z in range(boundaries.shape[2]):
+        rows, cols = np.where(boundaries[:, :, z])
+        data[rows, cols, z] = data.max()
 
     data = data[:, :, :, None, None]
     data = data.transpose((0, 1, 3, 4, 2))
