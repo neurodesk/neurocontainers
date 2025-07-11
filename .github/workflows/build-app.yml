@@ -123,13 +123,18 @@ jobs:
       # - name: Set up Docker Buildx
       #   uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
 
+      - name: Debug storage
+        run: df -ha
+
       - name: Pull latest image from registry and get rootfs
         run: |
           docker pull $IMAGEID:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' $IMAGEID:latest) || true
           echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_ENV
 
       - name: Build new image
-        run: docker build ./build/${APPLICATION} --file ./build/${APPLICATION}/${IMAGENAME}.Dockerfile --tag ${IMAGEID}:${BUILDDATE} --cache-from ${IMAGEID}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+        run: |
+          cd ./build/${APPLICATION}
+          docker build . --file ${IMAGENAME}.Dockerfile --tag ${IMAGEID}:${BUILDDATE} --cache-from ${IMAGEID}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
 
       - name: Save new image to file
         run: docker save ${IMAGEID}:${BUILDDATE} -o ${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
