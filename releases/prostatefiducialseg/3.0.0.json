@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "prostatefiducialseg 3.0.0": {
+      "version": "20250711",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "other"
+  ]
+}
