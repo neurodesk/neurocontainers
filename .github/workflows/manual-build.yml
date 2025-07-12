@@ -44,6 +44,16 @@ on:
         required: false
         type: boolean
         default: false
+      skip_docker_build:
+        description: 'Skip Docker build and use latest GHCR image'
+        required: false
+        type: boolean
+        default: false
+      skip_simg_build:
+        description: 'Skip Singularity/Apptainer build'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   list-apps:
@@ -81,4 +91,6 @@ jobs:
       force_upload_nectar: ${{ github.event.inputs.force_upload_nectar }}
       force_upload_s3: ${{ github.event.inputs.force_upload_s3 }}
       force_create_pr: ${{ github.event.inputs.force_create_pr }}
+      skip_docker_build: ${{ github.event.inputs.skip_docker_build }}
+      skip_simg_build: ${{ github.event.inputs.skip_simg_build }}
     secrets: inherit

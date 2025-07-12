@@ -27,6 +27,12 @@ on:
       force_create_pr:
         required: false
         type: string
+      skip_docker_build:
+        required: false
+        type: string
+      skip_simg_build:
+        required: false
+        type: string
 
 # Workflow needs the following set in GitHub
 # - secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION
@@ -49,6 +55,7 @@ jobs:
       APPLICATION: ${{ steps.ENVVARS.outputs.APPLICATION }}
       IMAGENAME: ${{ steps.IMAGEVARS.outputs.IMAGENAME }}
       BUILDDATE: ${{ steps.ENVVARS.outputs.BUILDDATE }}
+      IMAGETAG: ${{ steps.set_image_tag.outputs.IMAGETAG }}
       PUSHIMAGE: ${{ steps.compareimages.outputs.PUSHIMAGE }}
 
     steps:
@@ -113,6 +120,15 @@ jobs:
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
           echo "IMAGEID=$IMAGEID" >> $GITHUB_ENV
 
+      - name: Set image tag for build steps
+        id: set_image_tag
+        run: |
+          if [ "${{ inputs.skip_docker_build }}" = "true" ]; then
+            echo "IMAGETAG=latest" >> $GITHUB_OUTPUT
+          else
+            echo "IMAGETAG=${{ env.BUILDDATE }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
         with:
@@ -132,11 +148,13 @@ jobs:
           echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_ENV
 
       - name: Build new image
+        if: inputs.skip_docker_build != 'true'
         run: |
           cd ./build/${APPLICATION}
           docker build . --file ${IMAGENAME}.Dockerfile --tag ${IMAGEID}:${BUILDDATE} --cache-from ${IMAGEID}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
 
       - name: Save new image to file
+        if: inputs.skip_docker_build != 'true'
         run: docker save ${IMAGEID}:${BUILDDATE} -o ${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
 
       # - name: Build and save new image 
@@ -153,6 +171,7 @@ jobs:
 
       - name: Compare new and cached images
         id: compareimages
+        if: inputs.skip_docker_build != 'true'
         env:
           DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
         run: |
@@ -170,6 +189,7 @@ jobs:
           fi
 
       - name: Upload new image as build artifact
+        if: inputs.skip_docker_build != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ env.IMAGENAME }}-${{ env.BUILDDATE }}
@@ -199,6 +219,7 @@ jobs:
           path: /mnt/tmp/
 
       - name: Load Docker Image from Artifact
+        if: inputs.skip_docker_build != 'true'
         run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
 
       - name: Login to GHCR
@@ -237,6 +258,7 @@ jobs:
           path: /mnt/tmp/
 
       - name: Load Docker Image from Artifact
+        if: inputs.skip_docker_build != 'true'
         run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
 
       - name: Login to DockerHub
@@ -315,12 +337,14 @@ jobs:
           sudo du -sh /mnt/*
 
       - name: Build simg file
+        if: inputs.skip_simg_build != 'true'
         run: |
           echo "[DEBUG] building singularity image from docker image:"
-          time singularity build "/mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg" docker://ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }}
+          time singularity build "/mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg" docker://ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.IMAGETAG }}
           echo "[DEBUG] done building singularity image from docker image!"
   
       - name: Upload simg artifact
+        if: inputs.skip_simg_build != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
@@ -343,6 +367,7 @@ jobs:
           sudo -v ; curl https://rclone.org/install.sh | sudo bash
           
       - name: Download simg artifact
+        if: inputs.skip_simg_build != 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
@@ -378,6 +403,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
       - name: Download simg artifact
+        if: inputs.skip_simg_build != 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
