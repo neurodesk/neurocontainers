@@ -191,7 +191,7 @@ jobs:
         env:
           DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
         run: |
-          ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ${IMAGEID}:${BUILDDATE}
+          ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ${IMAGEID}:${BUILDDATE})
           echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
           
           if [ "$DISABLE_AUTO_UPLOAD" = "true" ]; then
