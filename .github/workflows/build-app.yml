@@ -55,7 +55,7 @@ jobs:
       APPLICATION: ${{ steps.ENVVARS.outputs.APPLICATION }}
       IMAGENAME: ${{ steps.IMAGEVARS.outputs.IMAGENAME }}
       BUILDDATE: ${{ steps.ENVVARS.outputs.BUILDDATE }}
-      IMAGETAG: ${{ steps.set_image_tag.outputs.IMAGETAG }}
+      IMAGETAG: ${{ steps.IMAGEVARS.outputs.IMAGETAG }}
       PUSHIMAGE: ${{ steps.compareimages.outputs.PUSHIMAGE }}
 
     steps:
