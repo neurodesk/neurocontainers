@@ -139,20 +139,29 @@ jobs:
       # - name: Set up Docker Buildx
       #   uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
 
-      - name: Debug storage
-        run: df -ha
+      # - name: Pull latest image from registry and get rootfs
+      #   if: inputs.skip_docker_build != 'true'
+      #   run: |
+      #     docker pull $IMAGEID:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' $IMAGEID:latest) || true
+      #     echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_ENV
 
-      - name: Pull latest image from registry and get rootfs
-        if: inputs.skip_docker_build != 'true'
+      - name: Debug storage
         run: |
-          docker pull $IMAGEID:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' $IMAGEID:latest) || true
-          echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_ENV
+          sudo df -ha
+          sudo du -sh /mnt
+          sudo du -sh /mnt/*
 
       - name: Build new image
         if: inputs.skip_docker_build != 'true'
         run: |
           cd ./build/${APPLICATION}
           docker build . --file ${IMAGENAME}.Dockerfile --tag ${IMAGEID}:${BUILDDATE} --cache-from ${IMAGEID}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+          
+      - name: Debug storage
+        run: |
+          sudo df -ha
+          sudo du -sh /mnt
+          sudo du -sh /mnt/*
 
       - name: Save new image to file
         if: inputs.skip_docker_build != 'true'
@@ -197,6 +206,35 @@ jobs:
           path: ${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
           retention-days: 7
   
+  # get-latest-rootfs:
+  #   needs: build-image
+  #   if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_push_ghcr == 'true' }}
+  #   runs-on: ubuntu-22.04
+  #   permissions:
+  #     packages: write
+
+  #   steps:
+  #     - name: Configure runner
+  #       run: |
+  #         sudo mkdir -p /mnt/tmp
+  #         sudo chown $USER /mnt/tmp
+  #         sudo mkdir -p /mnt/docker
+  #         echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+  #         sudo systemctl restart docker
+
+  #     - name: Login to GHCR
+  #       uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+  #       with:
+  #         registry: ghcr.io
+  #         username: ${{ github.repository_owner }}
+  #         password: ${{ secrets.GITHUB_TOKEN }}
+
+  #     - name: Pull latest image from registry and get rootfs
+  #       if: inputs.skip_docker_build != 'true'
+  #       run: |
+  #         docker pull ghcr.io/${GH_REGISTRY}/${{ needs.build-image.outputs.IMAGENAME }}:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${{ needs.build-image.outputs.IMAGENAME }}:latest) || true
+  #         echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_ENV
+
   push-ghcr:
     needs: build-image
     if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_push_ghcr == 'true' }}
