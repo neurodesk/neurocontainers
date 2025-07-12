@@ -155,20 +155,13 @@ jobs:
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
           echo "IMAGEID=$IMAGEID" >> $GITHUB_ENV
-
-      - name: Debug storage
-        run: |
-          sudo df -ha
-          sudo du -sh /mnt
-          sudo du -sh /mnt/*
-
-      - name: Set image tag for build steps
-        id: set_image_tag
-        run: |
           if [ "${{ inputs.skip_docker_build }}" = "true" ]; then
             echo "IMAGETAG=latest" >> $GITHUB_OUTPUT
           else
-            echo "IMAGETAG=${{ env.BUILDDATE }}" >> $GITHUB_OUTPUT
+            echo "IMAGETAG=${BUILDDATE}" >> $GITHUB_OUTPUT
+
+      - name: Debug Dockerfile
+        run: cat ./build/${APPLICATION}/${IMAGENAME}.Dockerfile
 
       - name: Debug storage
         run: |
