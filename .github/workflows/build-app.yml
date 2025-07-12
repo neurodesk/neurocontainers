@@ -95,6 +95,7 @@ jobs:
 
       - name: Configure runner
         run: |
+          sudo swapoff -a
           BASE_PATH=/mnt
           if [ "${{ inputs.runner }}" = "self-hosted" ]; then
             BASE_PATH=/storage
@@ -309,6 +310,7 @@ jobs:
     steps:
       - name: Configure runner
         run: |
+          sudo swapoff -a
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
           sudo mkdir -p /mnt/docker
@@ -349,6 +351,7 @@ jobs:
     steps:
       - name: Configure runner
         run: |
+          sudo swapoff -a
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
           sudo mkdir -p /mnt/docker
@@ -388,6 +391,7 @@ jobs:
     steps:
       - name: Configure runner
         run: |
+          sudo swapoff -a
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
           sudo mkdir -p /mnt/docker
@@ -472,6 +476,7 @@ jobs:
     steps:
       - name: Configure runner
         run: |
+          sudo swapoff -a
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
           # Install rclone
@@ -505,6 +510,7 @@ jobs:
     steps:
       - name: Configure runner
         run: |
+          sudo swapoff -a
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
 
