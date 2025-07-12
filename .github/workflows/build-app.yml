@@ -118,6 +118,8 @@ jobs:
       - name: Pull latest image from registry and get rootfs
         id: getrootfs
         if: inputs.skip_docker_build != 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           docker pull ghcr.io/${GH_REGISTRY}/${{ env.IMAGENAME }}:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${{ env.IMAGENAME }}:latest) || true
           echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_OUTPUT
@@ -204,6 +206,8 @@ jobs:
 
       - name: Build new image
         if: inputs.skip_docker_build != 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           cd ./build/${APPLICATION}
           docker build . --file ${IMAGENAME}.Dockerfile --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --cache-from ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
@@ -217,6 +221,8 @@ jobs:
           
       - name: Save new image to file
         if: inputs.skip_docker_build != 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: docker save ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} -o /tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
           
       - name: Debug storage
@@ -242,6 +248,7 @@ jobs:
         if: inputs.skip_docker_build != 'true'
         env:
           DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE})
           echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
@@ -338,10 +345,11 @@ jobs:
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
       - name: Push to DockerHub
         env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
           DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
         run: |
-          docker tag ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }}
-          docker tag ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build-image.outputs.IMAGENAME }}:latest
+          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }}
+          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.build-image.outputs.IMAGENAME }}:latest
           docker push --all-tags ${DOCKERHUB_ORG}/${{ needs.build-image.outputs.IMAGENAME }}
 
   build-simg:
@@ -416,9 +424,11 @@ jobs:
 
       - name: Build simg file
         if: inputs.skip_simg_build != 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           echo "[DEBUG] building singularity image from docker image:"
-          time singularity build "/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" docker://ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.IMAGETAG }}
+          time singularity build "/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" docker://ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.IMAGETAG }}
           echo "[DEBUG] done building singularity image from docker image!"
         continue-on-error: true
 
