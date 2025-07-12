@@ -348,9 +348,9 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
           DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
         run: |
-          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }}
-          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.build-image.outputs.IMAGENAME }}:latest
-          docker push --all-tags ${DOCKERHUB_ORG}/${{ needs.build-image.outputs.IMAGENAME }}
+          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }}
+          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}:latest
+          docker push --all-tags ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}
 
   build-simg:
     needs: [config, build-image, push-ghcr, push-dockerhub]
@@ -407,13 +407,13 @@ jobs:
       # - name: Download image artifact
       #   uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
       #   with:
-      #     name: ${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}
+      #     name: ${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}
       #     path: /mnt/tmp/
 
       # - name: Load Docker Image from Artifact
       #   run: |
-      #     docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
-      #     rm /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
+      #     docker load --input /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
+      #     rm /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
 
       - name: Debug storage
         run: |
@@ -467,7 +467,7 @@ jobs:
         if: inputs.skip_simg_build != 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: ${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
+          name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
           path: /mnt/tmp/
 
       - name: Upload simg to Nectar
@@ -478,7 +478,7 @@ jobs:
         run: |
           echo "[DEBUG] Attempting upload to Nectar Object Storage:"
           rclone config create nectar swift env_auth true
-          rclone copy /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg nectar:/neurodesk/
+          rclone copy /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg nectar:/neurodesk/
           echo "[DEBUG] Done with uploading to Nectar Object Storage!"
   
   upload-s3:
