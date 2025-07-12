@@ -161,6 +161,12 @@ jobs:
             echo "IMAGETAG=${BUILDDATE}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Debug storage
+        run: |
+          sudo df -ha
+          sudo du -sh /mnt
+          sudo du -sh /mnt/*
+
       - name: Debug Dockerfile
         run: cat ./build/${APPLICATION}/${IMAGENAME}.Dockerfile
 
@@ -196,7 +202,7 @@ jobs:
         if: inputs.skip_docker_build != 'true'
         run: |
           cd ./build/${APPLICATION}
-          docker build . --file ${IMAGENAME}.Dockerfile --tag ${IMAGEID}:${BUILDDATE} --cache-from ${IMAGEID}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+          docker build . --file ${IMAGENAME}.Dockerfile --tag ${IMAGEID}:${BUILDDATE} --cache-from ${IMAGEID}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}" || true
           
       - name: Debug storage
         run: |
