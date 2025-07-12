@@ -159,6 +159,7 @@ jobs:
             echo "IMAGETAG=latest" >> $GITHUB_OUTPUT
           else
             echo "IMAGETAG=${BUILDDATE}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Debug Dockerfile
         run: cat ./build/${APPLICATION}/${IMAGENAME}.Dockerfile
@@ -168,7 +169,6 @@ jobs:
           sudo df -ha
           sudo du -sh /mnt
           sudo du -sh /mnt/*
-          fi
 
       - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
