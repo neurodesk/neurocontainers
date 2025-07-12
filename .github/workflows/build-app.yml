@@ -177,12 +177,6 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Debug storage
-        run: |
-          sudo df -ha
-          sudo du -sh /mnt
-          sudo du -sh /mnt/*
-
       # - name: Set up Docker Buildx
       #   uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
 
