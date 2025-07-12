@@ -162,10 +162,16 @@ jobs:
           sudo df -ha
           sudo du -sh /mnt
           sudo du -sh /mnt/*
-
+          
       - name: Save new image to file
         if: inputs.skip_docker_build != 'true'
-        run: docker save ${IMAGEID}:${BUILDDATE} -o ${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+        run: docker save ${IMAGEID}:${BUILDDATE} -o /tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+          
+      - name: Debug storage
+        run: |
+          sudo df -ha
+          sudo du -sh /mnt
+          sudo du -sh /mnt/*
 
       # - name: Build and save new image 
       #   uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
@@ -177,7 +183,7 @@ jobs:
       #     tags: ${{ env.IMAGEID }}:${{ env.BUILDDATE }}
       #     cache-from: type=registry,ref=${{ env.IMAGEID }}:latest
       #     cache-to: type=inline
-      #     outputs: type=docker,dest=${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+      #     outputs: type=docker,dest=/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
 
       - name: Compare new and cached images
         id: compareimages
@@ -185,8 +191,7 @@ jobs:
         env:
           DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
         run: |
-          docker load --input ${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
-          ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ${{ env.IMAGEID }}:${{ env.BUILDDATE }})
+          ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ${IMAGEID}:${BUILDDATE}
           echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
           
           if [ "$DISABLE_AUTO_UPLOAD" = "true" ]; then
@@ -203,7 +208,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ env.IMAGENAME }}-${{ env.BUILDDATE }}
-          path: ${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+          path: /tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
           retention-days: 7
   
   # get-latest-rootfs:
@@ -255,11 +260,11 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}
-          path: /mnt/tmp/
+          path: /tmp/
 
       - name: Load Docker Image from Artifact
         if: inputs.skip_docker_build != 'true'
-        run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
+        run: docker load --input /tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
 
       - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -294,11 +299,11 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}
-          path: /mnt/tmp/
+          path: /tmp/
 
       - name: Load Docker Image from Artifact
         if: inputs.skip_docker_build != 'true'
-        run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
+        run: docker load --input /tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
 
       - name: Login to DockerHub
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -379,7 +384,7 @@ jobs:
         if: inputs.skip_simg_build != 'true'
         run: |
           echo "[DEBUG] building singularity image from docker image:"
-          time singularity build "/mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg" docker://ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.IMAGETAG }}
+          time singularity build "/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg" docker://ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.IMAGETAG }}
           echo "[DEBUG] done building singularity image from docker image!"
   
       - name: Upload simg artifact
@@ -387,7 +392,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
-          path: /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
+          path: /tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
           retention-days: 7
 
   upload-nectar:
