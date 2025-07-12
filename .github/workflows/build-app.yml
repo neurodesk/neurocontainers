@@ -334,7 +334,8 @@ jobs:
         run: |
           sudo df -ha
           sudo du -sh /mnt
-          sudo du -sh /mnt/apptainer/* /mnt/docker/*
+          sudo du -sh /mnt/*
+          sudo du -sh /mnt/apptainer/*
 
       - name: Build simg file
         if: inputs.skip_simg_build != 'true'
