@@ -43,28 +43,30 @@ on:
 # - secrets.AWS_ROLE_ARN
 
 jobs:
-  build-image:
-    runs-on: ${{ inputs.runner }}
-
-    permissions:
-      packages: write
-      id-token: write
-      contents: write
-
+  config:
+    runs-on: ubuntu-22.04
     outputs:
-      APPLICATION: ${{ steps.ENVVARS.outputs.APPLICATION }}
-      IMAGENAME: ${{ steps.IMAGEVARS.outputs.IMAGENAME }}
-      BUILDDATE: ${{ steps.ENVVARS.outputs.BUILDDATE }}
-      IMAGETAG: ${{ steps.set_image_tag.outputs.IMAGETAG }}
-      PUSHIMAGE: ${{ steps.compareimages.outputs.PUSHIMAGE }}
-
+      APPLICATION: ${{ steps.envars.outputs.APPLICATION }}
+      BUILDDATE: ${{ steps.envars.outputs.BUILDDATE }}
+      IMAGETAG: ${{ steps.envars.outputs.IMAGETAG }}
+      IMAGENAME: ${{ steps.imgvars.outputs.IMAGENAME }}
+      ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Configure runner
+        run: |
+          sudo mkdir -p /mnt/tmp
+          sudo chown $USER /mnt/tmp
+          sudo mkdir -p /mnt/docker
+          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
 
       - name: Set environment variables
-        id: ENVVARS
+        id: envars
         run: |
           APPLICATION=${{ inputs.application }}
           SHORT_SHA=$(git rev-parse --short $GITHUB_SHA)
@@ -74,19 +76,11 @@ jobs:
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
           echo "BUILDDATE=$BUILDDATE" >> $GITHUB_ENV
           echo "BUILDDATE=$BUILDDATE" >> $GITHUB_OUTPUT
-
-      - name: Configure runner
-        run: |
-          BASE_PATH=/mnt
-          if [ "${{ inputs.runner }}" = "self-hosted" ]; then
-            BASE_PATH=/storage
+          if [ "${{ inputs.skip_docker_build }}" = "true" ]; then
+            echo "IMAGETAG=latest" >> $GITHUB_OUTPUT
+          else
+            echo "IMAGETAG=${BUILDDATE}" >> $GITHUB_OUTPUT
           fi
-          echo "BASE_PATH=$BASE_PATH" >> $GITHUB_ENV
-          sudo mkdir -p $BASE_PATH/tmp
-          sudo chown $USER $BASE_PATH/tmp
-          sudo mkdir -p $BASE_PATH/docker
-          echo "{\"data-root\": \"$BASE_PATH/docker\"}" | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
 
       - name: Install builder dependencies
         run: |
@@ -99,7 +93,7 @@ jobs:
           ./builder/build.py generate $APPLICATION --recreate --auto-build --generate-release
 
       - name: Set image variables
-        id: IMAGEVARS
+        id: imgvars
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
@@ -110,24 +104,86 @@ jobs:
             exit 1
           fi
           IMAGENAME=$(echo $(basename $DOCKERFILE .Dockerfile) | tr '[A-Z]' '[a-z]')
-          IMAGEID=ghcr.io/${GH_REGISTRY}/$IMAGENAME
-          IMAGEID=$(echo $IMAGEID | tr '[A-Z]' '[a-z]')  
           echo "IMAGENAME: $IMAGENAME"
-          echo "IMAGEID: $IMAGEID"
+          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
+          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
+
+      - name: Login to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull latest image from registry and get rootfs
+        id: getrootfs
+        if: inputs.skip_docker_build != 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          docker pull ghcr.io/${GH_REGISTRY}/${{ env.IMAGENAME }}:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${{ env.IMAGENAME }}:latest) || true
+          echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_OUTPUT
+
+  build-image:
+    needs: config
+    runs-on: ${{ inputs.runner }}
+    outputs:
+      IMGDIFFERS: ${{ steps.imgcompare.outputs.IMGDIFFERS }}
+
+    permissions:
+      packages: write
+      id-token: write
+      contents: write
+    env:
+      APPLICATION: ${{ needs.config.outputs.APPLICATION }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
+      IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
+      ROOTFS_CACHE: ${{ needs.config.outputs.ROOTFS_CACHE }}
+    steps:
+      - name: Configure runner
+        run: |
+          sudo swapoff -a && sudo rm -rf /mnt/*
+          BASE_PATH=/mnt
+          if [ "${{ inputs.runner }}" = "self-hosted" ]; then
+            BASE_PATH=/storage
+          fi
+          echo "BASE_PATH=$BASE_PATH" >> $GITHUB_ENV
+          sudo mkdir -p $BASE_PATH/tmp
+          sudo chown $USER $BASE_PATH/tmp
+          sudo mkdir -p $BASE_PATH/docker
+          echo "{\"data-root\": \"$BASE_PATH/docker\"}" | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+
+      - name: Install builder dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Generate Dockerfile and Release file
+        id: generate
+        run: |
+          echo "APPLICATION: $APPLICATION"
+          ./builder/build.py generate $APPLICATION --recreate --auto-build --generate-release
+
+      - name: Set image variables
+        id: imgvars
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          DOCKERFILE=`basename $(find ./build/$APPLICATION/ -type f -iname "*.Dockerfile" | head -1)`
+          # if the dockerfile is not found, exit with error
+          if [ -z "$DOCKERFILE" ]; then
+            echo "Dockerfile not found for $APPLICATION"
+            exit 1
+          fi
+          echo "IMAGENAME: $IMAGENAME"
           echo "IMAGENAME_TEST=${IMAGENAME//_/ }" >> $GITHUB_ENV
           echo "test command: bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE"
-          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
-          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
-          echo "IMAGEID=$IMAGEID" >> $GITHUB_ENV
-
-      - name: Set image tag for build steps
-        id: set_image_tag
-        run: |
-          if [ "${{ inputs.skip_docker_build }}" = "true" ]; then
-            echo "IMAGETAG=latest" >> $GITHUB_OUTPUT
-          else
-            echo "IMAGETAG=${{ env.BUILDDATE }}" >> $GITHUB_OUTPUT
-          fi
 
       - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -139,24 +195,41 @@ jobs:
       # - name: Set up Docker Buildx
       #   uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
 
-      - name: Debug storage
-        run: df -ha
+      - name: Debug Dockerfile
+        run: cat ./build/${APPLICATION}/${IMAGENAME}.Dockerfile
 
-      - name: Pull latest image from registry and get rootfs
-        if: inputs.skip_docker_build != 'true'
+      - name: Debug storage
         run: |
-          docker pull $IMAGEID:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' $IMAGEID:latest) || true
-          echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_ENV
+          sudo df -ha
+          sudo du -sh /mnt
+          sudo du -sh /mnt/*
 
       - name: Build new image
         if: inputs.skip_docker_build != 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           cd ./build/${APPLICATION}
-          docker build . --file ${IMAGENAME}.Dockerfile --tag ${IMAGEID}:${BUILDDATE} --cache-from ${IMAGEID}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
-
+          docker build . --file ${IMAGENAME}.Dockerfile --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --cache-from ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+        continue-on-error: true
+          
+      - name: Debug storage
+        run: |
+          sudo df -ha
+          sudo du -sh /mnt
+          sudo du -sh /mnt/*
+          
       - name: Save new image to file
         if: inputs.skip_docker_build != 'true'
-        run: docker save ${IMAGEID}:${BUILDDATE} -o ${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: docker save ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} -o /tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+          
+      - name: Debug storage
+        run: |
+          sudo df -ha
+          sudo du -sh /mnt
+          sudo du -sh /mnt/*
 
       # - name: Build and save new image 
       #   uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
@@ -165,19 +238,19 @@ jobs:
       #     file: ./build/${{ env.APPLICATION }}/${{ env.IMAGENAME }}.Dockerfile
       #     push: false
       #     load: true
-      #     tags: ${{ env.IMAGEID }}:${{ env.BUILDDATE }}
-      #     cache-from: type=registry,ref=${{ env.IMAGEID }}:latest
+      #     tags: ghcr.io/${{ secrets.GH_REGISTRY }}/${{ env.IMAGENAME }}:${{ env.BUILDDATE }}
+      #     cache-from: type=registry,ref=ghcr.io/${{ secrets.GH_REGISTRY }}/${{ env.IMAGENAME }}:latest
       #     cache-to: type=inline
-      #     outputs: type=docker,dest=${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+      #     outputs: type=docker,dest=/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
 
       - name: Compare new and cached images
-        id: compareimages
+        id: imgcompare
         if: inputs.skip_docker_build != 'true'
         env:
           DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          docker load --input ${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
-          ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ${{ env.IMAGEID }}:${{ env.BUILDDATE }})
+          ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE})
           echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
           
           if [ "$DISABLE_AUTO_UPLOAD" = "true" ]; then
@@ -186,7 +259,7 @@ jobs:
             echo "No changes found. Skipping push to registry. "
           else
             echo "Pushing to registry. Changes found"
-            echo "PUSHIMAGE=true" >> $GITHUB_OUTPUT
+            echo "IMGDIFFERS=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Upload new image as build artifact
@@ -194,12 +267,12 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ env.IMAGENAME }}-${{ env.BUILDDATE }}
-          path: ${{ env.BASE_PATH }}/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+          path: /tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
           retention-days: 7
-  
+
   push-ghcr:
-    needs: build-image
-    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_push_ghcr == 'true' }}
+    needs: [config, build-image]
+    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_ghcr == 'true' }}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
@@ -207,6 +280,7 @@ jobs:
     steps:
       - name: Configure runner
         run: |
+          sudo swapoff -a && sudo rm -rf /mnt/*
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
           sudo mkdir -p /mnt/docker
@@ -216,12 +290,12 @@ jobs:
       - name: Download build artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: ${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}
-          path: /mnt/tmp/
+          name: ${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}
+          path: /tmp/
 
       - name: Load Docker Image from Artifact
         if: inputs.skip_docker_build != 'true'
-        run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
+        run: docker load --input /tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
 
       - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -229,16 +303,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Push to GHCR
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ghcr.io/${GH_REGISTRY}/${{ needs.build-image.outputs.IMAGENAME }}:latest
-          docker push --all-tags ghcr.io/${GH_REGISTRY}/${{ needs.build-image.outputs.IMAGENAME }}
+          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }} ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:latest
+          docker push --all-tags ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}
 
   push-dockerhub:
-    needs: build-image
-    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_push_dockerhub == 'true' }}
+    needs: [config, build-image]
+    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_dockerhub == 'true' }}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
@@ -246,6 +321,7 @@ jobs:
     steps:
       - name: Configure runner
         run: |
+          sudo swapoff -a && sudo rm -rf /mnt/*
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
           sudo mkdir -p /mnt/docker
@@ -255,12 +331,12 @@ jobs:
       - name: Download image artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: ${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}
-          path: /mnt/tmp/
+          name: ${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}
+          path: /tmp/
 
       - name: Load Docker Image from Artifact
         if: inputs.skip_docker_build != 'true'
-        run: docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
+        run: docker load --input /tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
 
       - name: Login to DockerHub
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -269,15 +345,16 @@ jobs:
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
       - name: Push to DockerHub
         env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
           DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
         run: |
-          docker tag ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }}
-          docker tag ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.BUILDDATE }} ${{ secrets.DOCKERHUB_ORG }}/${{ needs.build-image.outputs.IMAGENAME }}:latest
-          docker push --all-tags ${DOCKERHUB_ORG}/${{ needs.build-image.outputs.IMAGENAME }}
+          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }}
+          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}:latest
+          docker push --all-tags ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}
 
   build-simg:
-    needs: build-image
-    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false' }}
+    needs: [config, build-image, push-ghcr, push-dockerhub]
+    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false' }}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
@@ -285,6 +362,7 @@ jobs:
     steps:
       - name: Configure runner
         run: |
+          sudo swapoff -a && sudo rm -rf /mnt/*
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
           sudo mkdir -p /mnt/docker
@@ -319,16 +397,23 @@ jobs:
           # export PATH="/mnt/apptainer/bin:$PATH"
           # echo "/mnt/apptainer/bin" >> $GITHUB_PATH
 
+      - name: Login to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       # - name: Download image artifact
       #   uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
       #   with:
-      #     name: ${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}
+      #     name: ${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}
       #     path: /mnt/tmp/
 
       # - name: Load Docker Image from Artifact
       #   run: |
-      #     docker load --input /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
-      #     rm /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}-${{ needs.build-image.outputs.BUILDDATE }}.tar
+      #     docker load --input /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
+      #     rm /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
 
       - name: Debug storage
         run: |
@@ -339,22 +424,32 @@ jobs:
 
       - name: Build simg file
         if: inputs.skip_simg_build != 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           echo "[DEBUG] building singularity image from docker image:"
-          time singularity build "/mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg" docker://ghcr.io/${{ secrets.GH_REGISTRY }}/${{ needs.build-image.outputs.IMAGENAME }}:${{ needs.build-image.outputs.IMAGETAG }}
+          time singularity build "/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" docker://ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.IMAGETAG }}
           echo "[DEBUG] done building singularity image from docker image!"
+        continue-on-error: true
+
+      - name: Debug storage
+        run: |
+          sudo df -ha
+          sudo du -sh /mnt
+          sudo du -sh /mnt/*
+          sudo du -sh /mnt/apptainer/*
   
       - name: Upload simg artifact
         if: inputs.skip_simg_build != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
-          path: /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
+          name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          path: /tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
           retention-days: 7
 
   upload-nectar:
-    needs: [build-image, build-simg]
-    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_upload_nectar == 'true' }}
+    needs: [config, build-image, build-simg]
+    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' }}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
@@ -362,6 +457,7 @@ jobs:
     steps:
       - name: Configure runner
         run: |
+          sudo swapoff -a && sudo rm -rf /mnt/*
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
           # Install rclone
@@ -371,7 +467,7 @@ jobs:
         if: inputs.skip_simg_build != 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: ${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
+          name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
           path: /mnt/tmp/
 
       - name: Upload simg to Nectar
@@ -382,12 +478,12 @@ jobs:
         run: |
           echo "[DEBUG] Attempting upload to Nectar Object Storage:"
           rclone config create nectar swift env_auth true
-          rclone copy /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg nectar:/neurodesk/
+          rclone copy /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg nectar:/neurodesk/
           echo "[DEBUG] Done with uploading to Nectar Object Storage!"
   
   upload-s3:
-    needs: [build-image, build-simg]
-    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_upload_s3 == 'true' }}
+    needs: [config, build-image, build-simg]
+    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_s3 == 'true' }}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
@@ -395,6 +491,7 @@ jobs:
     steps:
       - name: Configure runner
         run: |
+          sudo swapoff -a && sudo rm -rf /mnt/*
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
 
@@ -407,7 +504,7 @@ jobs:
         if: inputs.skip_simg_build != 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: ${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
+          name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
           path: /mnt/tmp/
 
       - name: Install AWS CLI
@@ -418,11 +515,11 @@ jobs:
           fi
 
       - name: Upload to AWS S3
-        run: aws s3 cp /mnt/tmp/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg s3://neurocontainers/${{ needs.build-image.outputs.IMAGENAME }}_${{ needs.build-image.outputs.BUILDDATE }}.simg
+        run: aws s3 cp /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg s3://neurocontainers/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
 
   create-pr:
     needs: [build-image, push-ghcr, push-dockerhub, build-simg, upload-nectar, upload-s3]
-    if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_create_pr == 'true'}}
+    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true'}}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
