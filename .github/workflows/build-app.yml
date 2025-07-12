@@ -379,7 +379,7 @@ jobs:
           docker push --all-tags ${DOCKERHUB_ORG}/${{ needs.build-image.outputs.IMAGENAME }}
 
   build-simg:
-    needs: build-image
+    needs: [build-image, push-ghcr, push-dockerhub]
     if: ${{ needs.build-image.outputs.PUSHIMAGE == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false' }}
     runs-on: ubuntu-22.04
     permissions:
