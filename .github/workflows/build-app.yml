@@ -272,6 +272,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Push to GHCR
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
@@ -361,6 +362,13 @@ jobs:
           # sudo make -C builddir install
           # export PATH="/mnt/apptainer/bin:$PATH"
           # echo "/mnt/apptainer/bin" >> $GITHUB_PATH
+
+      - name: Login to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # - name: Download image artifact
       #   uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
