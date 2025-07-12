@@ -50,7 +50,6 @@ jobs:
       BUILDDATE: ${{ steps.envars.outputs.BUILDDATE }}
       IMAGETAG: ${{ steps.envars.outputs.IMAGETAG }}
       IMAGENAME: ${{ steps.imgvars.outputs.IMAGENAME }}
-      IMAGEID: ${{ steps.imgvars.outputs.IMAGEID }}
       ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
     steps:
       - name: Configure runner
@@ -105,14 +104,9 @@ jobs:
             exit 1
           fi
           IMAGENAME=$(echo $(basename $DOCKERFILE .Dockerfile) | tr '[A-Z]' '[a-z]')
-          IMAGEID=ghcr.io/${GH_REGISTRY}/$IMAGENAME
-          IMAGEID=$(echo $IMAGEID | tr '[A-Z]' '[a-z]')  
           echo "IMAGENAME: $IMAGENAME"
-          echo "IMAGEID: $IMAGEID"
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
-          echo "IMAGEID=$IMAGEID" >> $GITHUB_OUTPUT
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
-          echo "IMAGEID=$IMAGEID" >> $GITHUB_ENV
 
       - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -142,7 +136,6 @@ jobs:
       APPLICATION: ${{ needs.config.outputs.APPLICATION }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
       IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
-      IMAGEID: ${{ needs.config.outputs.IMAGEID }}
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
       ROOTFS_CACHE: ${{ needs.config.outputs.ROOTFS_CACHE }}
     steps:
@@ -187,7 +180,6 @@ jobs:
             exit 1
           fi
           echo "IMAGENAME: $IMAGENAME"
-          echo "IMAGEID: $IMAGEID"
           echo "IMAGENAME_TEST=${IMAGENAME//_/ }" >> $GITHUB_ENV
           echo "test command: bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE"
 
@@ -214,7 +206,7 @@ jobs:
         if: inputs.skip_docker_build != 'true'
         run: |
           cd ./build/${APPLICATION}
-          docker build . --file ${IMAGENAME}.Dockerfile --tag ${IMAGEID}:${BUILDDATE} --cache-from ${IMAGEID}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+          docker build . --file ${IMAGENAME}.Dockerfile --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --cache-from ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
         continue-on-error: true
           
       - name: Debug storage
@@ -225,7 +217,7 @@ jobs:
           
       - name: Save new image to file
         if: inputs.skip_docker_build != 'true'
-        run: docker save ${IMAGEID}:${BUILDDATE} -o /tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+        run: docker save ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} -o /tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
           
       - name: Debug storage
         run: |
@@ -240,8 +232,8 @@ jobs:
       #     file: ./build/${{ env.APPLICATION }}/${{ env.IMAGENAME }}.Dockerfile
       #     push: false
       #     load: true
-      #     tags: ${{ env.IMAGEID }}:${{ env.BUILDDATE }}
-      #     cache-from: type=registry,ref=${{ env.IMAGEID }}:latest
+      #     tags: ghcr.io/${{ secrets.GH_REGISTRY }}/${{ env.IMAGENAME }}:${{ env.BUILDDATE }}
+      #     cache-from: type=registry,ref=ghcr.io/${{ secrets.GH_REGISTRY }}/${{ env.IMAGENAME }}:latest
       #     cache-to: type=inline
       #     outputs: type=docker,dest=/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
 
@@ -251,7 +243,7 @@ jobs:
         env:
           DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
         run: |
-          ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ${IMAGEID}:${BUILDDATE})
+          ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE})
           echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
           
           if [ "$DISABLE_AUTO_UPLOAD" = "true" ]; then
