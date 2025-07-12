@@ -143,6 +143,7 @@ jobs:
         run: df -ha
 
       - name: Pull latest image from registry and get rootfs
+        if: inputs.skip_docker_build != 'true'
         run: |
           docker pull $IMAGEID:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' $IMAGEID:latest) || true
           echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_ENV
