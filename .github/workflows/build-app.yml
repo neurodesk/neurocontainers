@@ -528,6 +528,7 @@ jobs:
     env:
       APPLICATION: ${{ needs.config.outputs.APPLICATION }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
