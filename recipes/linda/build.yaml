@@ -23,6 +23,7 @@ build:
     - test:
         name: testScript
         script: R
+  add-default-template: false
 categories:
   - structural imaging
 readme: |-
