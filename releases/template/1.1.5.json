@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "template 1.1.5": {
+      "version": "20250714",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "other"
+  ]
+}
