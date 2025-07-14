@@ -1,0 +1,54 @@
+name: linda
+version: 0.5.1
+architectures:
+  - x86_64
+structured_readme:
+  description: Lesion Identification with Neighborhood Data Analysis. LINDA is an R package for automatic segmentation of chronic stroke lesions.
+  example: |-
+    R
+    library(LINDA)
+    filename = '/path/to/patient/T1.nii.gz'
+    outputs = linda_predict(filename)
+  documentation: https://github.com/dorianps/LINDA
+  citation: 'Pustina, D., Coslett, H. B., Turkeltaub, P. E., Tustison, N., Schwartz, M. F., & Avants, B. (2016). Automated segmentation of chronic stroke lesions using LINDA: Lesion identification with neighborhood data analysis. Hum Brain Mapp, 37(4), 1405-1421. https://doi.org/10.1002/hbm.23110 '
+build:
+  kind: neurodocker
+  base-image: dorianps/linda
+  pkg-manager: apt
+  directives:
+    - deploy:
+        bins:
+          - R
+          - rstudio
+    - test:
+        name: testScript
+        script: R
+categories:
+  - structural imaging
+readme: |-
+  ----------------------------------
+  ## linda/0.5.1 ##
+
+  Lesion Identification with Neighborhood Data Analysis. LINDA is an R package for automatic segmentation of chronic stroke lesions.
+
+  Example:
+  ```
+  R
+  library(LINDA)
+  filename = '/path/to/patient/T1.nii.gz'
+  outputs = linda_predict(filename)
+  ```
+
+  More documentation can be found here: https://github.com/dorianps/LINDA
+
+  Citation:
+  ```
+  Pustina, D., Coslett, H. B., Turkeltaub, P. E., Tustison, N., Schwartz, M. F., & Avants, B. (2016). Automated segmentation of chronic stroke lesions using LINDA: Lesion identification with neighborhood data analysis. Hum Brain Mapp, 37(4), 1405-1421. https://doi.org/10.1002/hbm.23110
+  ```
+
+  To run container outside of this environment: ml linda/0.5.1
+
+  ----------------------------------
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/dorianps/LINDA?tab=Apache-2.0-1-ov-file#readme
