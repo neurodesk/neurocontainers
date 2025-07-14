@@ -324,7 +324,7 @@ class ReleaseContainerDownloader:
 
         # Base URLs for NeuroContainers
         self.base_urls = [
-            "https://neurocontainers.neurodesk.org/temporary-builds-new",
+            "https://neurocontainers.neurodesk.org",
         ]
 
     def download_from_release(
@@ -332,7 +332,7 @@ class ReleaseContainerDownloader:
     ) -> Optional[str]:
         """Download container using release build information"""
         # The primary format for release containers includes the build date
-        # URL format: https://neurocontainers.neurodesk.org/temporary-builds-new/{name}_{version}_{build_date}.simg
+        # URL format: https://neurocontainers.neurodesk.org/{name}_{version}_{build_date}.simg
         filenames = [
             f"{name}_{version}_{build_date}.simg",  # Primary format for releases
         ]
