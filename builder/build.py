@@ -543,6 +543,10 @@ class BuildContext(object):
             }
 
     def file_exists(self, filename: str) -> bool:
+        # First check in recipe directory, then in build directory
+        if os.path.exists(os.path.join(self.recipe_path, filename)):
+            return True
+        
         if self.build_directory is None:
             raise ValueError("Build directory not set.")
 
