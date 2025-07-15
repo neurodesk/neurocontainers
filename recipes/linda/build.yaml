@@ -24,6 +24,7 @@ build:
         name: testScript
         script: R
   add-default-template: false
+  add-tzdata: false
 categories:
   - structural imaging
 readme: |-
