@@ -13,6 +13,8 @@ build:
     - deploy:
         bins:
           - fmriprep
+  add-default-template: false
+  add-tzdata: false
 readme: |-
   ----------------------------------
   ## fmriprep/{{ context.version }} ##
@@ -21,7 +23,7 @@ readme: |-
   usage:
   ```
   fmriprep replace_with_bidsdirectory replace_with_outputdirecotry participant --fs-license-file ~/.license.txt
-  
+
   ```
 
   More documentation can be found here: https://fmriprep.org/en/stable/
