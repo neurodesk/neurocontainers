@@ -741,6 +741,14 @@ class BuildContext(object):
                         filename = args[0]
                         raise ValueError(f"File {filename} does not exist.")
 
+                    # Copy file from recipe directory to build directory if it exists in recipe
+                    import os as os_module
+                    recipe_file_path = os_module.path.join(self.recipe_path, arg)
+                    build_file_path = os_module.path.join(self.build_directory, arg)
+                    
+                    if os_module.path.exists(recipe_file_path) and not os_module.path.exists(build_file_path):
+                        shutil.copy2(recipe_file_path, build_file_path)
+
                 builder.copy(*args)  # type: ignore
             elif "group" in directive:
                 variables = {**locals}
