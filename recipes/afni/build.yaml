@@ -125,7 +125,6 @@ build:
         DEPLOY_PATH: /usr/local/abin/
 
     - copy: dependencies.R /opt
-    - copy: test.sh /test.sh
     - copy: test.tgz /opt/test.tgz
     - copy: license.txt /opt/freesurfer-7.4.1/license.txt
 
