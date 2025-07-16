@@ -107,7 +107,7 @@ build:
     - run:
         - curl -O https://afni.nimh.nih.gov/pub/dist/bin/misc/@update.afni.binaries
         - tcsh @update.afni.binaries -package linux_ubuntu_24_64 -do_extras
-        - mv abin /usr/local/abin
+        - mv /root/abin /usr/local/abin
 
     - environment:
         PATH: /usr/local/abin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
