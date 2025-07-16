@@ -87,6 +87,7 @@ build:
         - r-base-dev
         - cmake
         - bc
+        - git
         - libxext-dev
         - libxmu-dev
         - libxpm-dev
@@ -95,13 +96,18 @@ build:
         - libxi-dev
         - libglib2.0-dev
 
+    - run:
+        - cd /usr/include/GL
+        - mv GLwDrawA.h GLwDrawA.h.orig
+        - sed 's/GLAPI WidgetClass/extern GLAPI WidgetClass/' GLwDrawA.h.orig > /tmp/GLwDrawA.h
+        - mv /tmp/GLwDrawA.h GLwDrawA.h
+
     - workdir: /opt
 
     - run:
-        - curl -O https://afni.nimh.nih.gov/pub/dist/tgz/linux_ubuntu_24_64.tgz
-        - tar -xf linux_ubuntu_24_64.tgz
-        - mv linux_ubuntu_24_64 /usr/local/abin
-        - rm -f linux_ubuntu_24_64.tgz
+        - curl -O https://afni.nimh.nih.gov/pub/dist/bin/misc/@update.afni.binaries
+        - tcsh @update.afni.binaries -package linux_ubuntu_24_64 -do_extras
+        - mv abin /usr/local/abin
 
     - environment:
         PATH: /usr/local/abin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
@@ -114,7 +120,7 @@ build:
         - rm -f linux_ubuntu_24_R-4.3_libs.tgz
 
     - run:
-        - "@afni_R_package_install ALL"
+        - rPkgsInstall -pkgs ALL
 
     - template:
         name: freesurfer
