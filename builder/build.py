@@ -742,6 +742,7 @@ class BuildContext(object):
                         raise ValueError(f"File {filename} does not exist.")
 
                     # Copy file from recipe directory to build directory if it exists in recipe
+                    # This ensures that files referenced in copy directives are available in the Docker build context
                     import os as os_module
                     recipe_file_path = os_module.path.join(self.recipe_path, arg)
                     build_file_path = os_module.path.join(self.build_directory, arg)
