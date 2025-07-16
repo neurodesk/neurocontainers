@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "afni 25.2.03": {
+      "version": "20250716",
+      "exec": ""
+    },
+    "sumaGUI-afni 25.2.03": {
+      "version": "20250716",
+      "exec": "suma"
+    }
+  },
+  "categories": [
+    "functional imaging"
+  ]
+}
