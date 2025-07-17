@@ -122,6 +122,48 @@ build:
     - run:
         - rPkgsInstall -pkgs ALL
 
+    - run:
+        - |
+          # AFNI Version Check - validate installed version matches expected version
+          echo "=== AFNI Version Check ==="
+          echo "Expected version: {{ context.version }}"
+          
+          # Check if AFNI is installed
+          if ! command -v afni_system_check.py >/dev/null 2>&1; then
+            echo "✗ ERROR: afni_system_check.py not found - AFNI may not be installed"
+            exit 1
+          fi
+          
+          if ! command -v afni >/dev/null 2>&1; then
+            echo "✗ ERROR: afni executable not found"
+            exit 1
+          fi
+          
+          # Check AFNI binaries directory
+          if [ ! -d "/usr/local/abin" ]; then
+            echo "✗ ERROR: AFNI binaries directory not found"
+            exit 1
+          fi
+          
+          echo "✓ AFNI installation checks passed"
+          
+          # Get version from afni_system_check.py
+          echo "=== Getting AFNI Version ==="
+          VERSION_OUTPUT=$(afni_system_check.py -check_all 2>&1)
+          
+          # Check if we can find expected version in the output
+          if echo "$VERSION_OUTPUT" | grep -q "{{ context.version }}"; then
+            echo "✓ SUCCESS: Found expected version {{ context.version }}"
+          else
+            echo "✗ ERROR: Expected version {{ context.version }} not found in system check output"
+            echo "Version check output (first 20 lines):"
+            echo "$VERSION_OUTPUT" | head -20
+            echo "This indicates a version mismatch. Build failed."
+            exit 1
+          fi
+          
+          echo "✓ AFNI version validation completed successfully"
+
     - template:
         name: freesurfer
         version: 7.4.1
