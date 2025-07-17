@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "linda 0.5.1": {
+      "version": "20250715",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "structural imaging"
+  ]
+}
