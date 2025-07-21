@@ -135,6 +135,30 @@ class ContainerDownloader:
         
         return None
 
+    def cleanup_downloaded_container(self, container_path: str, verbose: bool = False) -> bool:
+        """Remove a downloaded container file from cache"""
+        if not container_path or not os.path.exists(container_path):
+            return False
+            
+        # Only remove files from our cache directory to avoid accidents
+        cache_path = os.path.abspath(self.cache_dir)
+        container_abs_path = os.path.abspath(container_path)
+        
+        if not container_abs_path.startswith(cache_path):
+            if verbose:
+                print(f"Skipping cleanup: {container_path} is not in cache directory")
+            return False
+            
+        try:
+            os.remove(container_path)
+            if verbose:
+                print(f"Cleaned up downloaded container: {container_path}")
+            return True
+        except Exception as e:
+            if verbose:
+                print(f"Failed to cleanup container {container_path}: {e}")
+            return False
+
 
 class PRTestRunner:
     """Main PR test runner orchestrator"""
@@ -144,6 +168,7 @@ class PRTestRunner:
         self.git_detector = GitChangeDetector(repo_path)
         self.downloader = ContainerDownloader()
         self.tester = ContainerTester()
+        self.downloaded_containers = []  # Track downloaded containers for cleanup
         
         # Select the best runtime
         try:

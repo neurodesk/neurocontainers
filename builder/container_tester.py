@@ -324,7 +324,7 @@ class ReleaseContainerDownloader:
 
         # Base URLs for NeuroContainers
         self.base_urls = [
-            "https://neurocontainers.neurodesk.org",
+            "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk",
         ]
 
     def download_from_release(
@@ -332,7 +332,7 @@ class ReleaseContainerDownloader:
     ) -> Optional[str]:
         """Download container using release build information"""
         # The primary format for release containers includes the build date
-        # URL format: https://neurocontainers.neurodesk.org/{name}_{version}_{build_date}.simg
+        # URL format: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/{name}_{version}_{build_date}.simg
         filenames = [
             f"{name}_{version}_{build_date}.simg",  # Primary format for releases
         ]
@@ -349,6 +349,8 @@ class ReleaseContainerDownloader:
             for base_url in self.base_urls:
                 url = f"{base_url}/{filename}"
                 print(f"Attempting to download: {url}")
+                print(f"Note: Container will be cached in {self.cache_dir}")
+                print("Use --cleanup to remove after testing or --cleanup-all to remove all cached containers")
 
                 try:
                     urllib.request.urlretrieve(url, cache_path)
@@ -375,6 +377,58 @@ class ReleaseContainerDownloader:
             pass
         return None
 
+    def cleanup_downloaded_container(self, container_path: str, verbose: bool = False) -> bool:
+        """Remove a downloaded container file from cache"""
+        if not container_path or not os.path.exists(container_path):
+            return False
+            
+        # Only remove files from our cache directory to avoid accidents
+        cache_path = os.path.abspath(self.cache_dir)
+        container_abs_path = os.path.abspath(container_path)
+        
+        if not container_abs_path.startswith(cache_path):
+            if verbose:
+                print(f"Skipping cleanup: {container_path} is not in cache directory")
+            return False
+            
+        try:
+            os.remove(container_path)
+            if verbose:
+                print(f"Cleaned up downloaded container: {container_path}")
+            return True
+        except Exception as e:
+            if verbose:
+                print(f"Failed to cleanup container {container_path}: {e}")
+            return False
+
+    def cleanup_all_cache(self, verbose: bool = False) -> int:
+        """Remove all downloaded containers from cache directory"""
+        if not os.path.exists(self.cache_dir):
+            if verbose:
+                print("Cache directory does not exist")
+            return 0
+            
+        removed_count = 0
+        try:
+            for filename in os.listdir(self.cache_dir):
+                if filename.endswith(('.sif', '.simg')):
+                    file_path = os.path.join(self.cache_dir, filename)
+                    try:
+                        os.remove(file_path)
+                        removed_count += 1
+                        if verbose:
+                            print(f"Removed cached container: {filename}")
+                    except Exception as e:
+                        if verbose:
+                            print(f"Failed to remove {filename}: {e}")
+        except Exception as e:
+            if verbose:
+                print(f"Failed to list cache directory: {e}")
+                
+        if verbose:
+            print(f"Cleaned up {removed_count} cached container(s)")
+        return removed_count
+
 
 class ContainerTester:
     """Main container testing orchestrator"""
@@ -385,6 +439,7 @@ class ContainerTester:
         self.release_downloader = ReleaseContainerDownloader()
         self.test_extractor = None
         self.selected_runtime = None
+        self.downloaded_container_path = None  # Track downloaded containers for cleanup
 
     def select_runtime(self, preferred: str = None) -> ContainerRuntime:
         """Select the best available container runtime"""
@@ -446,6 +501,7 @@ class ContainerTester:
                 name, version, build_date
             )
             if downloaded_path:
+                self.downloaded_container_path = downloaded_path  # Track for cleanup
                 return downloaded_path
 
         if location == "auto" or location == "docker":
@@ -672,10 +728,47 @@ class ContainerTester:
                 "return_code": -1,
             }
 
+    def cleanup_downloaded_containers(self, verbose: bool = False) -> bool:
+        """Clean up any containers downloaded during testing"""
+        if not self.downloaded_container_path:
+            if verbose:
+                print("No downloaded containers to clean up")
+            return True
+            
+        success = self.release_downloader.cleanup_downloaded_container(
+            self.downloaded_container_path, verbose
+        )
+        
+        # Reset the tracked path after cleanup
+        if success:
+            self.downloaded_container_path = None
+            
+        return success
+
+    def cleanup_all_cached_containers(self, verbose: bool = False) -> int:
+        """Clean up all cached containers"""
+        return self.release_downloader.cleanup_all_cache(verbose)
+
+    def __enter__(self):
+        """Context manager entry"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with automatic cleanup"""
+        self.cleanup_downloaded_containers(verbose=False)
+
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Portable Container Testing Tool for NeuroContainers"
+        description="Portable Container Testing Tool for NeuroContainers",
+        epilog="""
+Examples:
+  %(prog)s mycontainer:1.0 --cleanup                 # Test and cleanup downloaded container
+  %(prog)s mycontainer:1.0 --auto-cleanup            # Test with automatic cleanup on exit
+  %(prog)s --cleanup-all                             # Remove all cached containers
+  %(prog)s --list-containers                         # List available containers in CVMFS
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
     parser.add_argument(
@@ -706,11 +799,42 @@ def main():
     parser.add_argument(
         "--release-file", help="Path to release JSON file for build date extraction"
     )
+    parser.add_argument(
+        "--cleanup", action="store_true", 
+        help="Remove downloaded container files after testing"
+    )
+    parser.add_argument(
+        "--cleanup-all", action="store_true",
+        help="Remove all cached container files and exit"
+    )
+    parser.add_argument(
+        "--auto-cleanup", action="store_true",
+        help="Automatically cleanup downloaded containers on exit (even if tests fail)"
+    )
 
     args = parser.parse_args()
 
     tester = ContainerTester()
 
+    # Handle cleanup-all option and exit early
+    if args.cleanup_all:
+        count = tester.cleanup_all_cached_containers(args.verbose)
+        print(f"Cleaned up {count} cached container file(s)")
+        return
+
+    # Use context manager for automatic cleanup if requested
+    if args.auto_cleanup:
+        with tester:
+            return run_tests(args, tester)
+    else:
+        return run_tests(args, tester)
+
+
+def run_tests(args, tester):
+    """Run the actual tests - separated to work with context manager"""
+
+def run_tests(args, tester):
+    """Run the actual tests - separated to work with context manager"""
     # List containers if requested
     if args.list_containers:
         if tester.cvmfs.is_available():
@@ -789,9 +913,14 @@ def main():
             print(f"Found {len(test_config['tests'])} tests")
 
         # Run tests
-        results = tester.run_test_suite(
-            container_ref, test_config, args.gpu, args.verbose
-        )
+        try:
+            results = tester.run_test_suite(
+                container_ref, test_config, args.gpu, args.verbose
+            )
+        finally:
+            # Clean up downloaded containers if requested (even if tests fail)
+            if args.cleanup or args.auto_cleanup:
+                tester.cleanup_downloaded_containers(args.verbose)
 
     if not args.list_containers:
         # Output results

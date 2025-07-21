@@ -147,6 +147,7 @@ jobs:
               "${{ matrix.release.name }}:${{ matrix.release.version }}" \
               --runtime apptainer \
               --location auto \
+              --cleanup \
               --release-file "../${{ matrix.release.file }}" \
               --test-config "../${{ steps.find-tests.outputs.test-config }}" \
               --output test-results-${{ matrix.release.name }}.json \
