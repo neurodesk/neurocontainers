@@ -25,7 +25,7 @@ tests:
         script: |
           R
           library(cmdstanr)
-          cmdstanr::set_cmdstan_path("/opt/cmdstan-2.35.0/")
+          cmdstanr::set_cmdstan_path("/opt/cmdstan-2.36.0/")
           file <- file.path(cmdstan_path(), "examples", "bernoulli", "bernoulli.stan")
           mod <- cmdstan_model(file)
           mod$print()
@@ -44,7 +44,7 @@ tests:
     3dLMEr:
       - name: Test 3dLMEr functions
         script: |
-          tar xvzf test.tgz
+          tar xvzf /opt/test.tgz
           bash run.LMEr.txt
     
     suma:
