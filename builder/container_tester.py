@@ -71,10 +71,23 @@ class DockerRuntime(ContainerRuntime):
         gpu: bool = False,
         working_dir: str = "/test",
     ) -> subprocess.CompletedProcess:
-        cmd = ["docker", "run", "--rm"]
+        # Check if the image exists locally before trying to run it
+        if not self._image_exists_locally(container_ref):
+            # Return a failed result with helpful error message
+            error_msg = (
+                f"Container image '{container_ref}' not found locally.\n"
+                f"For recipe testing, you need to build the container first:\n"
+                f"  python builder/build.py generate {container_ref.split(':')[0]} --build\n"
+                f"Or use a container from CVMFS/releases with --location cvmfs"
+            )
+            return subprocess.CompletedProcess(
+                args=["docker", "run"],
+                returncode=1,
+                stdout="",
+                stderr=error_msg
+            )
 
-        # Override entrypoint to allow running our test script
-        cmd.extend(["--entrypoint", "/bin/bash"])
+        cmd = ["docker", "run", "--rm"]
 
         # Add volumes
         if volumes:
@@ -89,9 +102,22 @@ class DockerRuntime(ContainerRuntime):
         cmd.extend(["-w", working_dir])
 
         # Add container and command
-        cmd.extend([container_ref, "-c", test_script])
+        cmd.extend([container_ref, "bash", "-c", test_script])
 
         return subprocess.run(cmd, capture_output=True, text=True)
+
+    def _image_exists_locally(self, container_ref: str) -> bool:
+        """Check if a Docker image exists locally"""
+        try:
+            result = subprocess.run(
+                ["docker", "image", "inspect", container_ref],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
 
     def extract_file(
         self, container_ref: str, file_path: str, output_path: str
@@ -299,7 +325,6 @@ class TestDefinitionExtractor:
             "name": config.get("name", "unknown"),
             "version": config.get("version", "unknown"),
             "tests": tests,
-            "build": config.get("build", {}),  # Include build config for container resolution
         }
 
     def _walk_directives(
@@ -469,7 +494,7 @@ class ContainerTester:
         raise RuntimeError("No container runtime available")
 
     def find_container(
-        self, name: str, version: str, location: str = "auto", release_file: str = None, test_config: Dict[str, Any] = None
+        self, name: str, version: str, location: str = "auto", release_file: str = None
     ) -> Optional[str]:
         """Find a container across different locations"""
         if location == "auto" or location == "cvmfs":
@@ -509,11 +534,8 @@ class ContainerTester:
                 return downloaded_path
 
         if location == "auto" or location == "docker":
-            # For Docker, use base-image from test config if available, otherwise use name:version
-            if test_config and "build" in test_config and "base-image" in test_config["build"]:
-                return test_config["build"]["base-image"]
-            else:
-                return f"{name}:{version}"
+            # For Docker, the container reference is the tag
+            return f"{name}:{version}"
 
         return None
 
@@ -536,7 +558,7 @@ class ContainerTester:
         }
 
         for test in test_config.get("tests", []):
-            test_result = self._run_single_test(container_ref, test, test_config, gpu, verbose)
+            test_result = self._run_single_test(container_ref, test, gpu, verbose)
             results["test_results"].append(test_result)
 
             if test_result["status"] == "passed":
@@ -548,37 +570,10 @@ class ContainerTester:
 
         return results
 
-    def _extract_environment_setup(self, directives: List[Dict[str, Any]]) -> str:
-        """Extract environment setup from build directives"""
-        env_lines = []
-        workdir_cmd = ""
-        
-        for directive in directives:
-            if "environment" in directive:
-                env_vars = directive["environment"]
-                for key, value in env_vars.items():
-                    # Handle PATH specially to expand $PATH
-                    if key == "PATH" and "$PATH" in value:
-                        env_lines.append(f'export {key}="{value.replace("$PATH", "$PATH")}"')
-                    else:
-                        env_lines.append(f'export {key}="{value}"')
-            elif "workdir" in directive:
-                workdir_cmd = f"cd {directive['workdir']}"
-        
-        # Combine environment setup
-        setup_parts = []
-        if env_lines:
-            setup_parts.extend(env_lines)
-        if workdir_cmd:
-            setup_parts.append(workdir_cmd)
-            
-        return " && ".join(setup_parts) if setup_parts else ""
-
     def _run_single_test(
         self,
         container_ref: str,
         test: Dict[str, Any],
-        test_config: Dict[str, Any],
         gpu: bool = False,
         verbose: bool = False,
     ) -> Dict[str, Any]:
@@ -611,12 +606,6 @@ class ContainerTester:
             script = test["script"]
             if isinstance(script, list):
                 script = " && ".join(script)
-
-            # Prepend environment setup from build config if available
-            if test_config and "build" in test_config and "directives" in test_config["build"]:
-                env_setup = self._extract_environment_setup(test_config["build"]["directives"])
-                if env_setup:
-                    script = f"{env_setup}\n{script}"
 
             # Create test volume and handle prep steps if needed
             volumes = []
@@ -925,14 +914,9 @@ def run_tests(args, tester):
 
     # Find container (skip if just listing and if not already found)
     if not args.list_containers:
-        # Load test configuration early if provided as file, to use for container resolution
-        test_config = None
-        if args.test_config:
-            test_config = tester.test_extractor.extract_from_file(args.test_config)
-        
         if container_ref is None:
             container_ref = tester.find_container(
-                name, version, args.location, args.release_file, test_config
+                name, version, args.location, args.release_file
             )
         if not container_ref:
             print(f"Error: Container {name}:{version} not found", file=sys.stderr)
@@ -942,13 +926,13 @@ def run_tests(args, tester):
         if args.verbose:
             print(f"Found container: {container_ref}")
 
-        # Load test configuration if not already loaded
-        if test_config is None:
-            if args.test_config:
-                test_config = tester.test_extractor.extract_from_file(args.test_config)
-            else:
-                # Try to extract from container
-                test_config = tester.test_extractor.extract_from_container(container_ref)
+        # Load test configuration
+        test_config = None
+        if args.test_config:
+            test_config = tester.test_extractor.extract_from_file(args.test_config)
+        else:
+            # Try to extract from container
+            test_config = tester.test_extractor.extract_from_container(container_ref)
 
         if not test_config or not test_config.get("tests"):
             print("Error: No test configuration found", file=sys.stderr)
