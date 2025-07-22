@@ -1,0 +1,22 @@
+name: Build ARM64 Container
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-arm64:
+    runs-on: [self-hosted, linux, arm64]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Build ARM64 container
+      run: |
+        podman build --platform linux/arm64 -t my-app:arm64 .
+        podman tag my-app:arm64 registry.example.com/my-app:arm64
+        
+    - name: Push container
+      run: |
+        echo "${{ secrets.REGISTRY_PASSWORD }}" | podman login -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin registry.example.com
+        podman push registry.example.com/my-app:arm64
