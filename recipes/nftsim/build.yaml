@@ -4,7 +4,7 @@ architectures:
   - x86_64
 structured_readme:
   description: NFTsim is a neural field simulation framework for large-scale brain dynamics. This container allows users to simulate various neural models including corticothalamic and cortical circuits using configuration files.
-  example: ./bin/nftsim -i ./configs/eirs-corticothalamic.conf -o eirs-corticothalamic.output
+  example: nftsim -i /app/configs/eirs-corticothalamic.conf -o eirs-corticothalamic.output
   documentation: https://github.com/BrainDynamicsUSYD/nftsim
   citation: ''
 build:
@@ -12,14 +12,14 @@ build:
   base-image: ghcr.io/farwa-abbas/nftsim:1.0.0
   pkg-manager: apt
   directives:
-    - file:
-        name: Dockerfile
-        filename: /app/Dockerfile
+    - environment:
+        PATH: /app/bin:$PATH
+    - workdir: /app
     - deploy:
         bins:
-          - /app/bin/
+          - nftsim
         path:
-          - /app/bin/nftsim
+          - /app/bin
           - /app/configs
     - test:
         name: testScript
@@ -36,14 +36,14 @@ build:
 
           # Test 2: Check if config file exists
           echo "Testing config file access..."
-          if [ ! -f "./configs/eirs-corticothalamic.conf" ]; then
-              echo "ERROR: Config file not found at ./configs/eirs-corticothalamic.conf"
+          if [ ! -f "/app/configs/eirs-corticothalamic.conf" ]; then
+              echo "ERROR: Config file not found at /app/configs/eirs-corticothalamic.conf"
               exit 1
           fi
 
           # Test 3: Run nftsim with the config file
           echo "Testing nftsim execution with config..."
-          ./bin/nftsim -i ./configs/eirs-corticothalamic.conf -o eirs-corticothalamic.output
+          nftsim -i /app/configs/eirs-corticothalamic.conf -o eirs-corticothalamic.output
           if [ $? -ne 0 ]; then
               echo "ERROR: nftsim execution failed"
               exit 1
@@ -70,7 +70,7 @@ readme: |-
 
   Example:
   ```
-  ./bin/nftsim -i ./configs/eirs-corticothalamic.conf -o eirs-corticothalamic.output
+  nftsim -i /app/configs/eirs-corticothalamic.conf -o eirs-corticothalamic.output
   ```
 
   More documentation can be found here: https://github.com/BrainDynamicsUSYD/nftsim
