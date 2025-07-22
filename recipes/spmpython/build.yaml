@@ -1,0 +1,128 @@
+name: spmpython
+version: 25.1.2.post1
+copyright:
+  - name: GPL-2.0
+    url: https://github.com/spm/spm-python/blob/main/LICENCE
+architectures:
+  - x86_64
+build:
+  kind: neurodocker
+  base-image: ubuntu:16.04
+  pkg-manager: apt
+  directives:
+    - install: wget unzip ca-certificates dbus-x11
+    - template:
+        name: miniconda
+        conda_install: python=3.12 traits nipype numpy scipy h5py scikit-image
+        version: 4.7.12.1
+        install_path: /opt/miniconda
+        pip_install: spm-python install_matlab_runtime
+    - run:
+        - install_matlab_runtime --version R2025a --yes --install-path /opt/mcr
+    - environment:
+        PATH: /opt/mcr/R2025a/bin:$PATH
+        XAPPLRESDIR: /opt/mcr/R2025a/x11/app-defaults
+        LD_LIBRARY_PATH: /opt/mcr/R2025a/runtime/glnxa64:/opt/mcr/R2025a/bin/glnxa64:/opt/mcr/R2025a/sys/os/glnxa64:/opt/mcr/R2025a/sys/opengl/lib/glnxa64
+        MCR_CACHE_ROOT: /tmp/mcr_cache
+readme: |-
+  ----------------------------------
+  ## spmpython/25.1.2.post1 ##
+
+  ___  ____  __  __
+    / __)(  _ \(  \/  )
+    \__ \ )___/ )    (   Statistical Parametric Mapping
+    (___/(__)  (_/\/\_)  SPM - https://www.fil.ion.ucl.ac.uk/spm/
+
+  Copyright (C) 1991,1994-2025 Wellcome Centre for Human Neuroimaging
+
+
+
+
+  **The Python interface to SPM**
+
+  SPM-Python allows full access to all SPM functions without a commercial license. It supports in-memory transfer of
+  - User-defined MATLAB classes
+  - Function handles
+  - N-dimensional cell arrays
+  - N-dimensional structure arrays
+
+  Example:
+  ```
+  import spm
+  import numpy as np
+
+  # Create an empty 1D Cell array with a shape of (3,)
+  c = spm.Cell(3)
+
+  # Populate the Cell array with data
+  c[0] = "Hello"
+  c[1] = "World"
+  c[2] = 42
+
+  # Print the Cell array
+  print("Initial Cell array:", c.tolist())
+
+  # Add a new element in (undefined) index 4
+  c[4] = "New Element"
+
+  # Print the updated Cell array
+  print("Updated Cell array:", c.tolist())
+  ```
+
+  More documentation can be found here: https://github.com/spm/spm-python
+
+  Citation:
+  ```
+  Tierney, T. M., Alexander, N. A., Labra Avila, N., Balbastre, Y., Barnes, G., Bezsudnova, Y., Brudfors, M., Eckstein, K., Flandin, G., Friston, K., Jafarian, A., Kowalczyk, O. S., Litvak, V., Medrano, J., Mellor, S., O'Neill, G., Parr, T., Razi, A., Timms, R., & Zeidman, P. (2025). SPM 25: open source neuroimaging analysis software. arXiv preprint arXiv:2501.12081. https://arxiv.org/abs/2501.12081
+  ```
+
+  To run container outside of this environment: ml spmpython/25.1.2.post1
+
+  ----------------------------------
+categories:
+  - functional imaging
+  - image segmentation
+  - image registration
+  - structural imaging
+structured_readme:
+  description: |2-
+       ___  ____  __  __
+      / __)(  _ \(  \/  )
+      \__ \ )___/ )    (   Statistical Parametric Mapping
+      (___/(__)  (_/\/\_)  SPM - https://www.fil.ion.ucl.ac.uk/spm/
+
+    Copyright (C) 1991,1994-2025 Wellcome Centre for Human Neuroimaging
+
+
+
+
+    **The Python interface to SPM**
+
+    SPM-Python allows full access to all SPM functions without a commercial license. It supports in-memory transfer of
+    - User-defined MATLAB classes
+    - Function handles
+    - N-dimensional cell arrays
+    - N-dimensional structure arrays
+  example: |-
+    import spm
+    import numpy as np
+
+    # Create an empty 1D Cell array with a shape of (3,)
+    c = spm.Cell(3)
+
+    # Populate the Cell array with data
+    c[0] = "Hello"
+    c[1] = "World"
+    c[2] = 42
+
+    # Print the Cell array
+    print("Initial Cell array:", c.tolist())
+
+    # Add a new element in (undefined) index 4
+    c[4] = "New Element"
+
+    # Print the updated Cell array
+    print("Updated Cell array:", c.tolist())
+  documentation: https://github.com/spm/spm-python
+  citation: 'Tierney, T. M., Alexander, N. A., Labra Avila, N., Balbastre, Y., Barnes, G., Bezsudnova, Y., Brudfors, M., Eckstein, K., Flandin, G., Friston, K., Jafarian, A., Kowalczyk, O. S., Litvak, V., Medrano, J., Mellor, S., O''Neill, G., Parr, T., Razi, A., Timms, R., & Zeidman, P. (2025). SPM 25: open source neuroimaging analysis software. arXiv preprint arXiv:2501.12081. https://arxiv.org/abs/2501.12081'
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADaUlEQVR4AeySW0ibZxjHf/lyUHOYmXGZrpVKccqmGQp2bq6IsFgV7NCbDSpS3Nhu1hth3QauVaZlQ5iIUHAn1N2MUXUncUSUMt0UBA9Dp4SwuKv0wmji0rVqYr6+bwKRYKXS0rt+vP+P9/C8///z/N9HMYytqMeFbXxVPf/FXfW1T+8cGwqP+Xsi8ECDj7YovIca3IL/ArC//0CiowIOC2wHiLqGCV90curq2zz3cRPh5nPsD/ezO/Erv7U+w59XjUlY/raKW3NfsRe6BaqapJUsENqOEbUYbuP/x4PH42F9fZ1tr4crORZ2J3/h6fR0waEmwfe3i/Y3M/CMvMddv/sIAaGs/ushY3Garq4uZmdnsdvtlJWVsbq6SltbGydDfjSa+P2Ojg4KCwspLS1ldHSUpqYmXnleT9D7O9HITjxI/A8qiEZRA34cp3LENkxMTLCxscHc3By1tbVMT09jNRnFWdwCn88XE56fn6exsRFVJNjc3MxOYF0I7Iq4+DgQkKnp9czMzBAOh+nu7mZpaYnOzk6sVisVFRUsLi5CnB+LxYLNZiM/P5/+/n5RmYbBwUEUXaqYH9AqFp2ChFmrwfhUOuHMLIqLixkbG6OgoIDW1la8Xi8LCwtotVpQNMhP2uj3+3G73bEKXC5X7E523hlsViMZJk0MivfrNiT++vIKF7/5DHMowObmJnV1daSlpeFwOJicnKSkpIT29na0arz83t5eKisrY5DV1NTUcPkNEz+//D43svL4wZ4bgxINiLaUCAZRdnbo6elB+iuzlFhZWcHpdBKJRCgqKkpYtLa2xp7vD0pNM3xQHeGnllQu10K64X/U8O0EEmYZFIVnU1IYGhpCEfORkRHMZnPMFmmTTqdjampKaiZwoVzHJ/UGPjqvp8qhxZSSOEpMEgIpgvSM6HH3zZsMDAzQ0NBAKBSKZS6tGR8f57vr18XFqMDxR0JAPp1DdMY10RWfX7pEZmYm9fX1lJeXoxfdVV1dzYWcHELbQdElGvr6+o6lkhCQ0bKKKkE8LB70WlYWLy4v07C1xQ2xXj57lndyc/m+xc6Pwm/p+at5CtokBsmSjEPHspITqam8lZ3Nh6dP867I2in6/aTYyzUaef2lNM4Jv6XnL5x4CIFk/UdfHarg0SmTGZ4IJPtxn9U9AAAA//9+mhM5AAAABklEQVQDAB3GeVeKwQg2AAAAAElFTkSuQmCC
