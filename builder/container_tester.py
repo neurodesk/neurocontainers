@@ -617,9 +617,6 @@ class ContainerTester:
                 env_setup = self._extract_environment_setup(test_config["build"]["directives"])
                 if env_setup:
                     script = f"{env_setup}\n{script}"
-                    if verbose:
-                        print(f"Environment setup: {env_setup}")
-                        print(f"Final script: {script}")
 
             # Create test volume and handle prep steps if needed
             volumes = []
