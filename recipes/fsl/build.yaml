@@ -21,7 +21,7 @@ gui_apps:
 options:
   workshop:
     description: "Include FSL course data"
-    default: true
+    default: false
     version_suffix: ".workshop"
 
 architectures:
