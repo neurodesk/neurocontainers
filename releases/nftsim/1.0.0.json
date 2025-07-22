@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "nftsim 1.0.0": {
+      "version": "20250722",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "programming",
+    "hippocampus"
+  ]
+}
