@@ -94,15 +94,6 @@ jobs:
           docker --version
           apptainer --version || singularity --version
 
-      - name: Set up container cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/neurocontainers
-          key: container-cache-${{ matrix.release.name }}-${{ matrix.release.version }}
-          restore-keys: |
-            container-cache-${{ matrix.release.name }}-
-            container-cache-
-
       - name: Debug matrix values
         run: |
           echo "Matrix release data:"
