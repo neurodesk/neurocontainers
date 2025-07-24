@@ -1,5 +1,5 @@
 name: nftsim
-version: 1.0.0
+version: 1.0.2
 architectures:
   - x86_64
 structured_readme:
@@ -9,7 +9,7 @@ structured_readme:
   citation: ''
 build:
   kind: neurodocker
-  base-image: ghcr.io/farwa-abbas/nftsim:1.0.0
+  base-image: ghcr.io/farwa-abbas/nftsim:1.0.2
   pkg-manager: apt
   directives:
     - environment:
@@ -64,7 +64,7 @@ categories:
   - hippocampus
 readme: |-
   ----------------------------------
-  ## nftsim/1.0.0 ##
+  ## nftsim/1.0.2 ##
 
   NFTsim is a neural field simulation framework for large-scale brain dynamics. This container allows users to simulate various neural models including corticothalamic and cortical circuits using configuration files.
 
@@ -80,6 +80,6 @@ readme: |-
 
   ```
 
-  To run container outside of this environment: ml nftsim/1.0.0
+  To run container outside of this environment: ml nftsim/1.0.2
 
   ----------------------------------
