@@ -1,8 +1,10 @@
 name: build-app
 
 permissions:
-  contents: read
+  contents: write
   pull-requests: write
+  packages: write
+  id-token: write
 
 on:
   workflow_call:
