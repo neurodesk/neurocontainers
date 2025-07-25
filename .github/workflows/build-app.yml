@@ -208,7 +208,6 @@ jobs:
         run: |
           sudo df -ha
           sudo du -sh /mnt
-          sudo du -sh /mnt/*
 
       - name: Build new image
         if: inputs.skip_docker_build != 'true'
