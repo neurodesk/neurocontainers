@@ -222,7 +222,6 @@ jobs:
         run: |
           sudo df -ha
           sudo du -sh /mnt
-          sudo du -sh /mnt/*
           
       - name: Save new image to file
         if: inputs.skip_docker_build != 'true'
@@ -234,7 +233,6 @@ jobs:
         run: |
           sudo df -ha
           sudo du -sh /mnt
-          sudo du -sh /mnt/*
 
       # - name: Build and save new image 
       #   uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
@@ -424,8 +422,6 @@ jobs:
         run: |
           sudo df -ha
           sudo du -sh /mnt
-          sudo du -sh /mnt/*
-          sudo du -sh /mnt/apptainer/*
 
       - name: Build simg file
         if: inputs.skip_simg_build != 'true'
@@ -441,8 +437,6 @@ jobs:
         run: |
           sudo df -ha
           sudo du -sh /mnt
-          sudo du -sh /mnt/*
-          sudo du -sh /mnt/apptainer/*
   
       - name: Upload simg artifact
         if: inputs.skip_simg_build != 'true'
