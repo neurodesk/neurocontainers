@@ -1,0 +1,106 @@
+name: segmentator
+version: 1.6.1
+architectures:
+  - x86_64
+structured_readme:
+  description: 3D MRI data exploration and segmentation tool.
+  example: segmentator --help
+  documentation: https://github.com/ofgulban/segmentator/wiki
+  citation: |-
+    Gulban, O. F., Schneider, M., Marquardt, I., Haast, R., & De Martino, F. (2023). A scalable method to improve gray matter segmentation at ultra high field MRI. In (Version v1.6.1) Zenodo. 
+    Gulban, O. F., Schneider, M., Marquardt, I., Haast, R. A. M., & De Martino, F. (2018). A scalable method to improve gray matter segmentation at ultra high field MRI. PLoS One, 13(6), e0198335. https://doi.org/10.1371/journal.pone.0198335 
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: miniconda
+        version: py310_25.5.1-0
+        install_path: /opt/miniconda
+    - group:
+        - file:
+            name: myscript
+            contents: |
+              #!/bin/bash
+              set -e
+
+              apt-get update -qq && apt-get install -y -q --no-install-recommends unzip
+
+              curl -fsSL -o /tmp/segmentator.tar.gz https://github.com/ofgulban/segmentator/archive/refs/tags/v1.6.1.tar.gz
+              mkdir -p /opt
+              tar -xzf /tmp/segmentator.tar.gz -C /opt
+              mv /opt/segmentator-1.6.1 /opt/segmentator
+
+              pip install -e /opt/segmentator
+
+              rm /tmp/segmentator.tar.gz
+        - run:
+            - cp {{ get_file("myscript") }} /usr/local/bin/myscript
+            - chmod +x /usr/local/bin/myscript
+        - environment:
+            PATH: $PATH:/usr/local/bin
+        - deploy:
+            bins:
+              - myscript
+      custom: shellScript
+      customParams:
+        name: myscript
+        path: /usr/local/bin
+        content: |
+          #!/bin/bash
+          set -e
+
+          apt-get update -qq && apt-get install -y -q --no-install-recommends unzip
+
+          curl -fsSL -o /tmp/segmentator.tar.gz https://github.com/ofgulban/segmentator/archive/refs/tags/v1.6.1.tar.gz
+          mkdir -p /opt
+          tar -xzf /tmp/segmentator.tar.gz -C /opt
+          mv /opt/segmentator-1.6.1 /opt/segmentator
+
+          pip install -e /opt/segmentator
+
+          rm /tmp/segmentator.tar.gz
+        executable: true
+        addToPath: true
+        makeDeployBin: true
+    - deploy:
+        path:
+          - /opt/segmentator
+          - /opt/miniconda
+    - test:
+        name: testScript
+        script: |-
+          #!/bin/bash
+          set -e
+          echo "Testing Segmentator import..."
+          python -c "import segmentator; print('Segmentator version:', segmentator.__version__)"
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA49JREFUSEu1lVlME1EUhv9pyyIIOFjrFhfEuFBwwwZNqkZRMb4Y9R1B3DcEl6BPxhBJUBAxhvjQuNQVF8AAL1rQREUxhgQkSFxI1Np2QMW2WutMZ8y9bYGWtkKMN5l0Znrn/87577nnMkfvLZYkScLAC4DPs/c///fkWRRF8hN0PnOkZpE0VMFgoFABMAXVaSEBgSIMFZD/fAoYGMG/ChKtgQEwh+9qhmzRUDz3X0sKCOSh8FuE86cLEkRERMnByAYv5FAWnTl0Z6EP4Od3Hm9f9OLJdRMmqKZCEAT0WI2Yt2Y0RsQq8PDiZ/C/3JUTaGg2xEO9chTkYe6AmIO3U/ssctgENFebsXzmJhQUFCA+Pp5q2Gw2lJaWQnf7FJw9EbCYegKKl5SU4ObTE0hKj6MAMpgDtxa4MxAlfOqw49llOz68N6Gurg7Z2dlISEhAeXk50tLSMH3GNNjtNpg/d6OoqAj19fU+oM7OTkzWClB7ADQDL8AliHjzvBe/2hJhMBiQl5eHsrIyKsCyLGpqapCbmwuj6SMspm5kZmZCr9cPyiR1PYukFbH9GeTdnEctEl0i3r204sE5M6xWKxQKBVpbW1FbWwudToeuri4qphqnpIDGxka0t7f3AUh5Hz12AMtylFAlRkCCu1wZL4BkYOyww6AzYgKbiOLiYqSnpyMyMpJObGlpgUajgVLFUot4nqeXdxA7xk4ahaU5Soz1AKhF+2/MpWvg/CGguYrDu8c8FbVYLPTb5ORkahWBFRYW4uy5M0EtimblWLJZCdW08P4Mcq/PoblQQDWHvRtPUn/lcrmPvyRaYte2HVvBmYOvgTZrNKbMHwGZwlNF+66lUADvdOGV4Stiv6VSoaqqKgpyOBy0ZEn0+fn5uHpND4u5GxUVFbQYBo62tjaETzUjOWMkFBGMex8QgLdMLe8duF/xCaeLziMrK6vvW7LZGhoasG7jWsREx4Ezfwm4DyorK3FctwUpGTH9gD1X1H0bTeBFfHxlR9MNDjJnDLRaLTiOQ1NTExVMyYjD60e2kDtZvSoG6tUkA49FBODTi0QJtq88jB0/YOvmER4tQ+yYMLDjw+BySfjO/YbokkgfoAqkHMmtu4tKCI+SgZ2oACP3tIrd+qT/2653XZ49qF3TyPyOUW+fH+55wey8NCtguw4lOJwzehDgb4e4/4Hyt/nM9gszhmVRMOuCvQ8I+Jcz2h/0B4ImEb3eEdfzAAAAAElFTkSuQmCC
+readme: |-
+  ----------------------------------
+  ## segmentator/1.6.1 ##
+
+  3D MRI data exploration and segmentation tool.
+
+  Example:
+  ```
+  segmentator --help
+  ```
+
+  More documentation can be found here: https://github.com/ofgulban/segmentator/wiki
+
+  Citation:
+  ```
+  Gulban, O. F., Schneider, M., Marquardt, I., Haast, R., & De Martino, F. (2023). A scalable method to improve gray matter segmentation at ultra high field MRI. In (Version v1.6.1) Zenodo. 
+  Gulban, O. F., Schneider, M., Marquardt, I., Haast, R. A. M., & De Martino, F. (2018). A scalable method to improve gray matter segmentation at ultra high field MRI. PLoS One, 13(6), e0198335. https://doi.org/10.1371/journal.pone.0198335
+  ```
+
+  To run container outside of this environment: ml segmentator/1.6.1
+
+  ----------------------------------
+categories:
+  - structural imaging
+  - image segmentation
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/ofgulban/segmentator?tab=BSD-3-Clause-1-ov-file
