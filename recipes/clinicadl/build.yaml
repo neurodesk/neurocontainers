@@ -20,8 +20,13 @@ build:
         name: miniconda
         version: py310_25.5.1-0
         install_path: /opt/miniconda
-        conda_install: python=3.10
-        pip_install: clinicadl clinica
+        create_env: clinicadlEnv
+        conda_install:
+          - python=3.10
+          - pip
+        pip_install:
+          - clinicadl
+          - clinica
     - template:
         name: fsl
         version: 6.0.7.16
@@ -47,6 +52,7 @@ build:
         name: testScript
         script: |-
           #!/bin/bash
+          export PATH="/opt/miniconda/envs/clinicadlEnv/bin:$PATH"
           clinica --version
           clinicadl -h | head -n 5
           fslmaths --version
