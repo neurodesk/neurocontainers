@@ -17,16 +17,16 @@ build:
   pkg-manager: apt
   directives:
     - template:
-        name: miniconda
-        version: py310_25.5.1-0
-        install_path: /opt/miniconda
-        create_env: clinicadlEnv
-        conda_install:
-          - python=3.10
-          - pip
-        pip_install:
-          - clinicadl
-          - clinica
+    name: miniconda
+    version: py310_25.5.1-0
+    install_path: /opt/miniconda
+    conda_install:
+      - python=3.10
+      - pip
+    - run: |
+        source /opt/miniconda/bin/activate
+        conda create -y -n clinicadlEnv python=3.10 pip
+        conda run -n clinicadlEnv pip install clinicadl clinica
     - template:
         name: fsl
         version: 6.0.7.16
