@@ -1,24 +1,398 @@
 name: metabody
 version: 1.0.0
 architectures:
-    - x86_64
-
-files:
-    - name: metabody.py
-      filename: metabody.py
-
+  - x86_64
 build:
-    kind: neurodocker
-    base-image: vnmd/afni:25.2.03
-    pkg-manager: apt
+  kind: neurodocker
+  base-image: vnmd/afni:25.2.03
+  pkg-manager: apt
+  directives:
+    - file:
+        name: metabody.py
+        contents: |-
+          import ismrmrd
+          import logging
+          import traceback
+          import numpy as np
+          import base64
+          import mrdhelper
+          import constants
+          import nibabel as nib
+          import subprocess
 
-    directives:
-        - environment:
-              DEBIAN_FRONTEND: noninteractive
-        - install: bzip2 ca-certificates git wget build-essential
+          from skimage.segmentation import find_boundaries
+          import SimpleITK as sitk
 
-        - include: macros/openrecon/neurodocker.yaml
+          # Folder for debug output files
+          debugFolder = "/tmp/share/debug"
 
-        - copy: metabody.py /opt/code/python-ismrmrd-server/metabody.py 
+          def process(connection, config, metadata):
+              logging.info("Config: \n%s", config)
+
+              # Metadata should be MRD formatted header, but may be a string
+              # if it failed conversion earlier
+              try:
+                  # Disabled due to incompatibility between PyXB and Python 3.8:
+                  # https://github.com/pabigot/pyxb/issues/123
+                  # # logging.info("Metadata: \n%s", metadata.toxml('utf-8'))
+
+                  logging.info("Incoming dataset contains %d encodings", len(metadata.encoding))
+                  logging.info("First encoding is of type '%s', with a matrix size of (%s x %s x %s) and a field of view of (%s x %s x %s)mm^3", 
+                      metadata.encoding[0].trajectory, 
+                      metadata.encoding[0].encodedSpace.matrixSize.x, 
+                      metadata.encoding[0].encodedSpace.matrixSize.y, 
+                      metadata.encoding[0].encodedSpace.matrixSize.z, 
+                      metadata.encoding[0].encodedSpace.fieldOfView_mm.x, 
+                      metadata.encoding[0].encodedSpace.fieldOfView_mm.y, 
+                      metadata.encoding[0].encodedSpace.fieldOfView_mm.z)
+
+              except:
+                  logging.info("Improperly formatted metadata: \n%s", metadata)
+
+              # Continuously parse incoming data parsed from MRD messages
+              currentSeries = 0
+              acqGroup = []
+              imgGroup = []
+              waveformGroup = []
+              try:
+                  for item in connection:
+                      # ----------------------------------------------------------
+                      # Raw k-space data messages
+                      # ----------------------------------------------------------
+                      if isinstance(item, ismrmrd.Acquisition):
+                          # Accumulate all imaging readouts in a group
+                          if (not item.is_flag_set(ismrmrd.ACQ_IS_NOISE_MEASUREMENT) and
+                              not item.is_flag_set(ismrmrd.ACQ_IS_PARALLEL_CALIBRATION) and
+                              not item.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA) and
+                              not item.is_flag_set(ismrmrd.ACQ_IS_NAVIGATION_DATA)):
+                              acqGroup.append(item)
+
+                          # When this criteria is met, run process_raw() on the accumulated
+                          # data, which returns images that are sent back to the client.
+                          if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
+                              logging.info("Processing a group of k-space data")
+                              image = process_raw(acqGroup, connection, config, metadata)
+                              connection.send_image(image)
+                              acqGroup = []
+
+                      # ----------------------------------------------------------
+                      # Image data messages
+                      # ----------------------------------------------------------
+                      elif isinstance(item, ismrmrd.Image):
+                          # When this criteria is met, run process_group() on the accumulated
+                          # data, which returns images that are sent back to the client.
+                          # e.g. when the series number changes:
+                          if item.image_series_index != currentSeries:
+                              logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
+                              currentSeries = item.image_series_index
+                              image = process_image(imgGroup, connection, config, metadata)
+                              connection.send_image(image)
+                              imgGroup = []
+
+                          # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
+                          if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
+                              imgGroup.append(item)
+                          else:
+                              tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
+                              tmpMeta['Keep_image_geometry']    = 1
+                              item.attribute_string = tmpMeta.serialize()
+
+                              connection.send_image(item)
+                              continue
+
+                      # ----------------------------------------------------------
+                      # Waveform data messages
+                      # ----------------------------------------------------------
+                      elif isinstance(item, ismrmrd.Waveform):
+                          waveformGroup.append(item)
+
+                      elif item is None:
+                          break
+
+                      else:
+                          logging.error("Unsupported data type %s", type(item).__name__)
+
+                  # Extract raw ECG waveform data. Basic sorting to make sure that data 
+                  # is time-ordered, but no additional checking for missing data.
+                  # ecgData has shape (5 x timepoints)
+                  if len(waveformGroup) > 0:
+                      waveformGroup.sort(key = lambda item: item.time_stamp)
+                      ecgData = [item.data for item in waveformGroup if item.waveform_id == 0]
+                      ecgData = np.concatenate(ecgData,1)
+
+                  # Process any remaining groups of raw or image data.  This can 
+                  # happen if the trigger condition for these groups are not met.
+                  # This is also a fallback for handling image data, as the last
+                  # image in a series is typically not separately flagged.
+                  if len(acqGroup) > 0:
+                      logging.info("Processing a group of k-space data (untriggered)")
+                      image = process_raw(acqGroup, connection, config, metadata)
+                      connection.send_image(image)
+                      acqGroup = []
+
+                  if len(imgGroup) > 0:
+                      logging.info("Processing a group of images (untriggered)")
+                      image = process_image(imgGroup, connection, config, metadata)
+                      connection.send_image(image)
+                      imgGroup = []
+
+              except Exception as e:
+                  logging.error(traceback.format_exc())
+                  connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
+
+              finally:
+                  connection.send_close()
 
 
+          def apply_homogeneity_correction(image_data):
+              # 1) NumPy → SITK
+              sitk_image = sitk.GetImageFromArray(image_data)
+              # 2) Float32 input for N4
+              sitk_image = sitk.Cast(sitk_image, sitk.sitkFloat32)
+              # 3) Otsu mask → UInt8
+              mask = sitk.OtsuThreshold(sitk_image, 0, 1, 200)
+              mask = sitk.Cast(mask, sitk.sitkUInt8)
+              # 4) N4 on floats + uint8 mask
+              corrected = sitk.N4BiasFieldCorrection(sitk_image, mask)
+              # 5) Back to NumPy (still float)
+              return sitk.GetArrayFromImage(corrected)
+
+
+          def process_image(images, connection, config, metadata):
+              if len(images) == 0:
+                  return []
+
+              # Create folder, if necessary
+              # if not os.path.exists(debugFolder):
+              #     os.makedirs(debugFolder)
+              #     logging.debug("Created folder " + debugFolder + " for debug output files")
+
+              # logging.debug("Processing data with %d images of type %s", len(images), ismrmrd.get_dtype_from_data_type(images[0].data_type))
+
+              # Note: The MRD Image class stores data as [cha z y x]
+
+              # Extract image data into a 5D array of size [img cha z y x]
+              data = np.stack([img.data                              for img in images])
+              head = [img.getHead()                                  for img in images]
+              meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in images]
+
+              # Diagnostic info
+              matrix    = np.array(head[0].matrix_size  [:]) 
+              fov       = np.array(head[0].field_of_view[:])
+              voxelsize = fov/matrix
+              read_dir  = np.array(images[0].read_dir )
+              phase_dir = np.array(images[0].phase_dir)
+              slice_dir = np.array(images[0].slice_dir)
+              logging.info(f'MRD computed maxtrix [x y z] : {matrix   }')
+              logging.info(f'MRD computed fov     [x y z] : {fov      }')
+              logging.info(f'MRD computed voxel   [x y z] : {voxelsize}')
+              logging.info(f'MRD read_dir         [x y z] : {read_dir }')
+              logging.info(f'MRD phase_dir        [x y z] : {phase_dir}')
+              logging.info(f'MRD slice_dir        [x y z] : {slice_dir}')
+
+              logging.debug("Original image data before transposing is %s" % (data.shape,))
+
+              # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions
+              # data = data.transpose((3, 4, 2, 1, 0))
+              # t1.h5 is 40 x 1 x 1 x 320 x 320
+              # data = data.transpose((3, 4, 0, 1, 2))
+              # after resorting it should be: 320 x 320 x 40 x 1 x 1
+              data = data.transpose((3, 4, 2, 1, 0))
+
+              # Display MetaAttributes for first image
+              # logging.debug("MetaAttributes[0]: %s", ismrmrd.Meta.serialize(meta[0]))
+
+              # Optional serialization of ICE MiniHeader
+              # if 'IceMiniHead' in meta[0]:
+              #     logging.debug("IceMiniHead[0]: %s", base64.b64decode(meta[0]['IceMiniHead']).decode('utf-8'))
+
+              logging.debug("Original image data after transposing is %s" % (data.shape,))
+
+              # convert data to nifti using nibabel
+              # prostatefiducialseg needs 3D data:
+              # data = np.squeeze(data)
+              data = data[:,:,0,0,:]
+              logging.debug("Squeezed to 3D: %s" % (data.shape,))
+
+              # ——— Homogeneity correction ———
+              logging.info("Applying N4 bias‐field correction")
+              data = apply_homogeneity_correction(data)
+
+              xform = np.eye(4)
+              # data = np.rot90(data, k=-1, axes=(0, 1)) # tried (0,2)
+              new_img = nib.nifti1.Nifti1Image(data, xform)
+              nib.save(new_img, 't1_from_h5.nii')
+              # debug
+              # subprocess.run(["cp", "t1_from_h5.nii", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
+              # debug
+
+              subprocess.run(["simple_predict.py", "--input", "t1_from_h5.nii", "--model", "/opt/models/model.pth", "--output", "output"])
+
+              logging.info("Config: \n%s", config)
+
+              logging.info('Prediction done')
+              # TODO add t1_from_h5.nii AND MAKE THIS 4D
+
+              # subprocess.run(["cp", "output/prob_class0.nii.gz", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
+              # subprocess.run(["cp", "output/prob_class1.nii.gz", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
+              # subprocess.run(["cp", "output/prob_class2.nii.gz", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
+
+              logging.info('Loading segmentation image')
+              segmentation_img = nib.load('output/pred_seeds.nii.gz')
+              segmentation = segmentation_img.get_fdata()
+              # segmentation = segmentation[:, :, :, None, None]
+              # segmentation = segmentation.transpose((0, 1, 3, 4, 2))
+
+              logging.info('Loading T1 image')
+              data_img = nib.load('t1_from_h5.nii')
+              data = data_img.get_fdata()
+
+              # Create a binary mask of your seeds
+              seed_mask = (segmentation > 0)
+
+              # Find the voxels at the edges of that mask
+              boundaries = find_boundaries(seed_mask, mode='outer')
+
+              # Overlay the outline on every slice
+              for z in range(boundaries.shape[2]):
+                  rows, cols = np.where(boundaries[:, :, z])
+                  data[rows, cols, z] = data.max()
+
+              data = data[:, :, :, None, None]
+              data = data.transpose((0, 1, 3, 4, 2))
+
+              # Determine max value (12 or 16 bit)
+              BitsStored = 12
+              # if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
+              #     BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
+              maxVal = 2**BitsStored - 1
+
+              # Normalize Data and convert to int16
+              data = data.astype(np.float64)
+              data *= maxVal/data.max()
+              data = np.around(data)
+              data = data.astype(np.int16)
+
+              currentSeries = 0
+
+              # Re-slice image data back into 2D images
+              imagesOut = [None] * data.shape[-1]
+              # segmentationOut = [None] * data.shape[-1]
+              for iImg in range(data.shape[-1]):
+                  # Create new MRD instance for the final image
+                  # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
+                  # from_array() should be called with 'transpose=False' to avoid warnings, and when called
+                  # with this option, can take input as: [cha z y x], [z y x], or [y x]
+                  # imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
+                  imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
+                  # segmentationOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
+
+                  # Create a copy of the original fixed header and update the data_type
+                  # (we changed it to int16 from all other types)
+                  oldHeader = head[iImg]
+                  oldHeader.data_type = imagesOut[iImg].data_type
+
+                  # Unused example, as images are grouped by series before being passed into this function now
+                  # oldHeader.image_series_index = currentSeries+1
+
+                  # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
+                  if mrdhelper.get_meta_value(meta[iImg], 'IceMiniHead') is not None:
+                      if mrdhelper.extract_minihead_bool_param(base64.b64decode(meta[iImg]['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
+                          currentSeries += 1
+
+                  imagesOut[iImg].setHead(oldHeader)
+
+                  # Create a copy of the original ISMRMRD Meta attributes and update
+                  tmpMeta = meta[iImg]
+                  tmpMeta['DataRole']                       = 'Image'
+                  tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'PROSTATEFIDUCIALSEG']
+                  tmpMeta['WindowCenter']                   = str((maxVal+1)/2)
+                  tmpMeta['WindowWidth']                    = str((maxVal+1))
+                  tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon'
+                  tmpMeta['Keep_image_geometry']            = 1
+
+                  # logging.info("Creating ROI_example")
+                  # tmpMeta['ROI_example'] = create_example_roi(data.shape)
+
+                  # Example for sending ROIs
+                  # if ('parameters' in config) and ('options' in config['parameters']):
+                  # if config['parameters']['options'] == 'roi':
+                  logging.info("Creating ROI_example")
+                  tmpMeta['ROI_example'] = create_example_roi(data.shape)
+
+                  #     # Example for setting colormap
+                  #     if config['parameters']['options'] == 'colormap':
+                  #         tmpMeta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
+
+                  # Add image orientation directions to MetaAttributes if not already present
+                  if tmpMeta.get('ImageRowDir') is None:
+                      tmpMeta['ImageRowDir'] = ["{:.18f}".format(oldHeader.read_dir[0]), "{:.18f}".format(oldHeader.read_dir[1]), "{:.18f}".format(oldHeader.read_dir[2])]
+
+                  if tmpMeta.get('ImageColumnDir') is None:
+                      tmpMeta['ImageColumnDir'] = ["{:.18f}".format(oldHeader.phase_dir[0]), "{:.18f}".format(oldHeader.phase_dir[1]), "{:.18f}".format(oldHeader.phase_dir[2])]
+
+                  metaXml = tmpMeta.serialize()
+                  # logging.debug("Image MetaAttributes: %s", xml.dom.minidom.parseString(metaXml).toprettyxml())
+                  logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
+
+                  imagesOut[iImg].attribute_string = metaXml
+
+              return imagesOut
+
+          # Create an example ROI <3
+          def create_example_roi(img_size):
+              t = np.linspace(0, 2*np.pi)
+              x = 16*np.power(np.sin(t), 3)
+              y = -13*np.cos(t) + 5*np.cos(2*t) + 2*np.cos(3*t) + np.cos(4*t)
+
+              # Place ROI in bottom right of image, offset and scaled to 10% of the image size
+              x = (x-np.min(x)) / (np.max(x) - np.min(x))
+              y = (y-np.min(y)) / (np.max(y) - np.min(y))
+              x = (x * 0.08*img_size[0]) + 0.82*img_size[0]
+              y = (y * 0.10*img_size[1]) + 0.80*img_size[1]
+
+              rgb = (1,0,0)  # Red, green, blue color -- normalized to 1
+              thickness  = 1 # Line thickness
+              style      = 0 # Line style (0 = solid, 1 = dashed)
+              visibility = 1 # Line visibility (0 = false, 1 = true)
+
+
+              roi = mrdhelper.create_roi(x, y, rgb, thickness, style, visibility)
+              return roi
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install: bzip2 ca-certificates git wget build-essential
+    - include: macros/openrecon/neurodocker.yaml
+    - copy: metabody.py /opt/code/python-ismrmrd-server/metabody.py
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAABAdJREFUSEuVll1MW2UYx/9vPwZdzyhNaWCsEJkaM4FudHMyL6g6GxISvIFELgQMEZNxYVScmjEzTcwqGvQSr4yRK4mJQgsNw4YpCnKDk49pM1NjpWXlo9/M9esc874H+3HWjnmSk/a85zzn9/z/7/s+zyFPvb8nCIIAgU8jEduCXKUFkSnBxiQnn4ojueeHgjsKQAZ68DzPfgs9T8fJufdigvhgCnu+X6Esq4bisJ4FSAMTES/i4b9xuPo0A0hfKn2eAZqvRDOAsPs6ZEo11MfOYP/92Qz5NKKen8An/wFX90xRgFQRA9BMqILwH7O4G/Sg4tSLIPKSTIY0k3TiDnZ++RyHyuvAHX/uvhblKiFn3w1nFIRuXcPu6lcwnP8ACq4qzyJqjc85hPL6F3DkYcuDW0QBuQo8jkE89PxnUBuaASITLRJ4RP+ah8d+AdWWj/MU5M5DoUknT1wOCXw6icDNb/HnRD/Lmh5HzZdRYeoHlbd74wtszl3J3COKEgipeOZa+kfXfBEa40uAvBTkzFBQEPgUA5xIfoOpqSlEo1EYmjpwzDJM1wG8ziG4F7+ETqdDR0cHrs8vYHdrsyBgZGQEV7/2Q9PYC6JQgZy+FGAKgr9NoD49AbvdzgLPnmvBjuECBMihuvUJbt74mY13dnbi+x8XsH3bB6vViunp6TyQy+VC+ngvyhp7RQWFALFYjCkZsDpAZAp8ONCMrq4ucByXB+jp6cHY2Ng9SrRPvomyhh5RQdM7O8wiqqCBn2QKbDYbzGYzNBoNC/b7/VhaWkJ7e3seYG5uDuvr6xkAXRCDl6yoOP8pSqpMzN6CgNbWVszMzMBkMiEUCsHtdsNisWB2djYPkEwmQc//DrqiyisfyQDoZiWn3t5mcxD6fRKNgo0pqKmpwcrKChwOB8LhMLq7u1FbW4tAIHCgRXJ1FSqeHcGhyn0FJ9/aYhZJAcPDw2hra0M8Hsfi4iL6+voeCEDV6J7+CKq6VlYNiPGiXwS4JmEU7BkFer0ey8vLTH1LSwvW1taygPkFbPt9GB0dhdPpzJvk1dVV3FaZwZ18BUShFgHUorCLWmRnq8dgMMDr9SISiUAul0OtVkOr1TIA2wc/LGB3u/A+GB8fR//V77KAhsFNpiDssmFjeqDo7sy9wQphuvhOPmJ8GZyxH0TJgYiANOJBNxJhj9gHWKPhcXdrBVRdaWUTW3ICeKTuBCHwCchVeoAQVtYzMaBxgKxUC0X5o4BMCVL/hk/saPsNILeeJyMbrIwry2qLdqxCHS2vXD/+upeVa2lVzF7z2SyLtEhpfG7C5MRrG3kKDiq/xRMRW+w9HU0KOKiJ/98EyGOveg6wKPt1cT8rin5VFAIUm/Tc8WIvlI7/C4x73bYDDgBDAAAAAElFTkSuQmCC
+categories:
+  - functional imaging
+structured_readme:
+  description: this tool will compute a body map based on fMRI data
+  example: metabody --help
+  documentation: ''
+  citation: ''
+readme: |-
+  ----------------------------------
+  ## metabody/1.0.0 ##
+
+  this tool will compute a body map based on fMRI data
+
+  Example:
+  ```
+  metabody --help
+  ```
+
+  More documentation can be found here: 
+
+  Citation:
+  ```
+
+  ```
+
+  To run container outside of this environment: ml metabody/1.0.0
+
+  ----------------------------------
+copyright:
+  - license: BSD-2-Clause
+    url: https://opensource.org/licenses/BSD-2-Clause
