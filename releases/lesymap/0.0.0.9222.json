@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "lesymap 0.0.0.9222": {
+      "version": "20250730",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "workflows",
+    "statistics"
+  ]
+}
