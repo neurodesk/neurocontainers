@@ -16,9 +16,9 @@ build:
   directives:
     - template:
         name: miniconda
-        version: py37_4.8.2
+        version: py310_25.5.1-0
         install_path: /opt/miniconda
-        conda_install: matplotlib=3.1.1 numpy=1.22.0 nibabel=2.5.1 scipy=1.3.1
+        conda_install: matplotlib=3.1.1 numpy=1.22.0 nibabel=2.5.1 scipy=1.3.1 python=3.6
         pip_install: compoda=0.3.5
         mamba: true
     - run:
