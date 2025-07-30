@@ -1,0 +1,33 @@
+tests:
+  - name: Test prostatefiducialseg
+    script: |
+
+      # === TEST PREDICTION STANDALONE ===
+
+      # simple_predict.py \
+      #   --input /host/home/ashley/repos/prostate/test/t1_new.nii \
+      #   --model /opt/models/model.pth \
+      #   --output /host/home/ashley/repos/prostate/test/output
+
+      # === TEST PREDICTION WITH OPENRECON ===
+
+      # Convert input DICOMs to ISMRMRD format
+      # python /opt/code/python-ismrmrd-server/dicom2mrd.py \
+      #   -o /buildhostdirectory/t1.h5 \
+      #   /buildhostdirectory/t1_dcm
+
+      # # Start OpenRecon server
+      # python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
+      # sleep 5
+
+      # # Run OpenRecon client
+      # python3 /opt/code/python-ismrmrd-server/client.py \
+      #   -G dataset \
+      #   -o /buildhostdirectory/output.h5 \
+      #   /buildhostdirectory/t1.h5 \
+      #   -c prostatefiducialseg
+
+      # Convert output ISMRMRD to DICOM
+      # python3 /opt/code/python-ismrmrd-server/mrd2dicom.py \
+      #   -o /host/home/ashley/repos/prostate/test/output_dcm \
+      #   /host/home/ashley/repos/prostate/test/output.h5

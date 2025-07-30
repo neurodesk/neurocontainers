@@ -1,0 +1,24 @@
+name: metabody
+version: 1.0.0
+architectures:
+    - x86_64
+
+files:
+    - name: metabody.py
+      filename: metabody.py
+
+build:
+    kind: neurodocker
+    base-image: vnmd/afni:25.2.03
+    pkg-manager: apt
+
+    directives:
+        - environment:
+              DEBIAN_FRONTEND: noninteractive
+        - install: bzip2 ca-certificates git wget build-essential
+
+        - include: macros/openrecon/neurodocker.yaml
+
+        - copy: metabody.py /opt/code/python-ismrmrd-server/metabody.py 
+
+
