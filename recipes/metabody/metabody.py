@@ -8,7 +8,7 @@ import constants
 import nibabel as nib
 import subprocess
 
-from skimage.segmentation import find_boundaries
+from skimage.output import find_boundaries
 import SimpleITK as sitk
 
 # Folder for debug output files
@@ -132,19 +132,6 @@ def process(connection, config, metadata):
         connection.send_close()
 
 
-def apply_homogeneity_correction(image_data):
-    # 1) NumPy → SITK
-    sitk_image = sitk.GetImageFromArray(image_data)
-    # 2) Float32 input for N4
-    sitk_image = sitk.Cast(sitk_image, sitk.sitkFloat32)
-    # 3) Otsu mask → UInt8
-    mask = sitk.OtsuThreshold(sitk_image, 0, 1, 200)
-    mask = sitk.Cast(mask, sitk.sitkUInt8)
-    # 4) N4 on floats + uint8 mask
-    corrected = sitk.N4BiasFieldCorrection(sitk_image, mask)
-    # 5) Back to NumPy (still float)
-    return sitk.GetArrayFromImage(corrected)
-
 
 def process_image(images, connection, config, metadata):
     if len(images) == 0:
@@ -200,51 +187,33 @@ def process_image(images, connection, config, metadata):
     # prostatefiducialseg needs 3D data:
     # data = np.squeeze(data)
     data = data[:,:,0,0,:]
-    logging.debug("Squeezed to 3D: %s" % (data.shape,))
-
-    # ——— Homogeneity correction ———
-    logging.info("Applying N4 bias‐field correction")
-    data = apply_homogeneity_correction(data)
+    logging.debug("Squeezed to 4D: %s" % (data.shape,))
 
     xform = np.eye(4)
     # data = np.rot90(data, k=-1, axes=(0, 1)) # tried (0,2)
     new_img = nib.nifti1.Nifti1Image(data, xform)
-    nib.save(new_img, 't1_from_h5.nii')
+    nib.save(new_img, 'nifti_from_h5.nii')
     # debug
-    # subprocess.run(["cp", "t1_from_h5.nii", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
+    # subprocess.run(["cp", "nifti_from_h5.nii", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
     # debug
 
-    subprocess.run(["simple_predict.py", "--input", "t1_from_h5.nii", "--model", "/opt/models/model.pth", "--output", "output"])
+
+
+    ## WRITE AFNI SCRIPTS HERE!!!!    
+    # subprocess.run(["afni_something_something.py", "--input", "nifti_from_h5.nii", "--model", "/opt/models/model.pth", "--output", "output"])
 
     logging.info("Config: \n%s", config)
 
-    logging.info('Prediction done')
-    # TODO add t1_from_h5.nii AND MAKE THIS 4D
+    logging.info('Processing done')
 
-    # subprocess.run(["cp", "output/prob_class0.nii.gz", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
-    # subprocess.run(["cp", "output/prob_class1.nii.gz", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
-    # subprocess.run(["cp", "output/prob_class2.nii.gz", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
+    logging.info('Loading output image')
+    output_img = nib.load('output/pred_seeds.nii.gz')
+    output = output_img.get_fdata()
 
-    logging.info('Loading segmentation image')
-    segmentation_img = nib.load('output/pred_seeds.nii.gz')
-    segmentation = segmentation_img.get_fdata()
-    # segmentation = segmentation[:, :, :, None, None]
-    # segmentation = segmentation.transpose((0, 1, 3, 4, 2))
-
-    logging.info('Loading T1 image')
-    data_img = nib.load('t1_from_h5.nii')
+    logging.info('Loading Output image')
+    data_img = nib.load('nifti_from_h5.nii')
     data = data_img.get_fdata()
 
-    # Create a binary mask of your seeds
-    seed_mask = (segmentation > 0)
-
-    # Find the voxels at the edges of that mask
-    boundaries = find_boundaries(seed_mask, mode='outer')
-
-    # Overlay the outline on every slice
-    for z in range(boundaries.shape[2]):
-        rows, cols = np.where(boundaries[:, :, z])
-        data[rows, cols, z] = data.max()
 
     data = data[:, :, :, None, None]
     data = data.transpose((0, 1, 3, 4, 2))
@@ -265,7 +234,7 @@ def process_image(images, connection, config, metadata):
 
     # Re-slice image data back into 2D images
     imagesOut = [None] * data.shape[-1]
-    # segmentationOut = [None] * data.shape[-1]
+    # outputOut = [None] * data.shape[-1]
     for iImg in range(data.shape[-1]):
         # Create new MRD instance for the final image
         # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
@@ -273,7 +242,7 @@ def process_image(images, connection, config, metadata):
         # with this option, can take input as: [cha z y x], [z y x], or [y x]
         # imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
         imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
-        # segmentationOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
+        # outputOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
 
         # Create a copy of the original fixed header and update the data_type
         # (we changed it to int16 from all other types)
@@ -299,15 +268,6 @@ def process_image(images, connection, config, metadata):
         tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon'
         tmpMeta['Keep_image_geometry']            = 1
 
-        # logging.info("Creating ROI_example")
-        # tmpMeta['ROI_example'] = create_example_roi(data.shape)
-
-        # Example for sending ROIs
-        # if ('parameters' in config) and ('options' in config['parameters']):
-        # if config['parameters']['options'] == 'roi':
-        logging.info("Creating ROI_example")
-        tmpMeta['ROI_example'] = create_example_roi(data.shape)
-
         #     # Example for setting colormap
         #     if config['parameters']['options'] == 'colormap':
         #         tmpMeta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
@@ -326,24 +286,3 @@ def process_image(images, connection, config, metadata):
         imagesOut[iImg].attribute_string = metaXml
 
     return imagesOut
-
-# Create an example ROI <3
-def create_example_roi(img_size):
-    t = np.linspace(0, 2*np.pi)
-    x = 16*np.power(np.sin(t), 3)
-    y = -13*np.cos(t) + 5*np.cos(2*t) + 2*np.cos(3*t) + np.cos(4*t)
-
-    # Place ROI in bottom right of image, offset and scaled to 10% of the image size
-    x = (x-np.min(x)) / (np.max(x) - np.min(x))
-    y = (y-np.min(y)) / (np.max(y) - np.min(y))
-    x = (x * 0.08*img_size[0]) + 0.82*img_size[0]
-    y = (y * 0.10*img_size[1]) + 0.80*img_size[1]
-
-    rgb = (1,0,0)  # Red, green, blue color -- normalized to 1
-    thickness  = 1 # Line thickness
-    style      = 0 # Line style (0 = solid, 1 = dashed)
-    visibility = 1 # Line visibility (0 = false, 1 = true)
-
-
-    roi = mrdhelper.create_roi(x, y, rgb, thickness, style, visibility)
-    return roi

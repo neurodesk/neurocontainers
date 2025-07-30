@@ -34,3 +34,4 @@ sifs/
 output_dcm
 *.egg-info
 __pycache__/
+dicoms
