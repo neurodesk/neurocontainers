@@ -14,6 +14,8 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - environment:
+        LD_LIBRARY_PATH: ''
     - template:
         name: miniconda
         version: py310_25.5.1-0
@@ -39,8 +41,9 @@ build:
         name: dcm2niix
         version: latest
     - deploy:
-        path:
-          - /opt/miniconda
+        path: []
+        bins:
+          - clinica
     - test:
         name: testScript
         script: |-
