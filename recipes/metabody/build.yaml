@@ -24,11 +24,8 @@ build:
     directives:
         - environment:
               DEBIAN_FRONTEND: noninteractive
-        - install: bzip2 ca-certificates git wget build-essential
+        - install: bzip2 ca-certificates git wget build-essential software-properties-common
 
- - install:
-        - software-properties-common
-    
         - run:
             - add-apt-repository universe -y
         
@@ -135,6 +132,3 @@ build:
 
         - copy: metabody.py /opt/code/python-ismrmrd-server/metabody.py 
 
-
-categories:
-  - "functional imaging"
