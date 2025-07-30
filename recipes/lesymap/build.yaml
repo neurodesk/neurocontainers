@@ -20,6 +20,7 @@ build:
         name: testScript
         script: R
   add-default-template: false
+  add-tzdata: false
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAaNJREFUSEtjTFj66z8DkYCDlYGB89QPhk+fiNbCwDhqAaHQHWZB9PvHF4ar2/oZLqxtBvtcQFqTwTZrAYOwvAHDxxe3GY7PTmN4cfMYzlBRUQ1nMDNvZuDkEoerQQkimAUZrtIMycnJDKIKehgW3Dq9g4GXlxfDksuXLzMEBbcSZ0GmmwxDSkoKg7CcDlYLrly5wlBWVoZiyYsXLxgYGI2pY8H+/fsZ/P39MXxBdBAR8sH79+8ZNm3ahGLBxIkTGSSlCxlUVMMYmJjY8McBIQu4ubkZfvz4gWJBREQEw4dPHtSxAFcQ2dpPJc0CDm4BBsPQegY+CVWGb++fMVzfMYnh4bWTDLgs0DcsZtDVy2VgZxckHESpqakMoaGhKMFw6NAhhrt37zLcuXOHobW1FSMVPXrMw2Bl08vAwyNL2IK0tDSMVJKens7Q09ODNR88e/aMwcIyiTgLYDmZUEGGLi8r547fgn9/fzO8f3yF4cfHlxhm//7xmeH7mwcMPK+5GZiZpRgYGZkw1LCwcDIICesxsLHxYQ8iQi4erdEIhRDDyAwiAIK1aYC2KOpEAAAAAElFTkSuQmCC
 categories:
   - workflows
