@@ -18,10 +18,10 @@ build:
     - run:
         - tar -xvzf QuPath-v0.6.0-Linux.tar.xz
         - mv QuPath /usr/local/bin
-        - chmod u+x /usr/local/bin/QuPath/bin/QuPath
+        - chmod u+x /usr/local/bin/QuPath
     - deploy:
         path:
-          - /usr/local/bin/QuPath/bin/QuPath
+          - /usr/local/bin/QuPath
     - test:
         name: testScript
         script: |-
