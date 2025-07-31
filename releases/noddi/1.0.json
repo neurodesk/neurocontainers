@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "noddi 1.0": {
+      "version": "20250730",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ]
+}
