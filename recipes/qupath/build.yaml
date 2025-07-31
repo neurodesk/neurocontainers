@@ -12,9 +12,16 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - file:
+        name: QuPath-v0.6.0
+        url: https://github.com/qupath/qupath/releases/download/v0.6.0/QuPath-v0.6.0-Linux.tar.xz
+    - run:
+        - tar -xvzf QuPath-v0.6.0-Linux.tar.xz
+        - mv QuPath /usr/local/bin
+        - chmod u+x /usr/local/bin/QuPath/bin/QuPath
     - deploy:
         path:
-          - /usr/local/bin/qupath
+          - /usr/local/bin/QuPath/bin/QuPath
     - test:
         name: testScript
         script: |-
