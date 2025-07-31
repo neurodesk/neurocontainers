@@ -1,0 +1,84 @@
+name: mricron
+version: 1.0.20190902
+copyright:
+  - license: BSD-2-Clause
+    url: https://github.com/neurolabusc/MRIcron/blob/master/license.txt
+architectures:
+  - x86_64
+  - aarch64
+build:
+  kind: neurodocker
+  base-image: centos:7
+  pkg-manager: yum
+  directives:
+    - group:
+        - install: wget unzip ca-certificates gtk2 pigz
+    - group:
+        - workdir: /opt
+        - run:
+            - wget --quiet -O MRIcon_linux.zip  'https://github.com/neurolabusc/MRIcron/releases/download/v{{ context.version }}/MRIcron_linux.zip'
+            - unzip MRIcon_linux.zip
+            - rm -rf MRIcon_linux.zip
+        - environment:
+            PATH: /opt/mricron:/opt/mricron/Resources:$PATH
+    - environment:
+        LC_ALL: C.UTF-8
+        LANG: C.UTF-8
+    - deploy:
+        path:
+          - /opt/mricron
+        bins:
+          - MRIcron
+          - dcm2niix
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+    - boutique:
+        name: mricron
+        description: MRIcron is a cross-platform NIfTI format image viewer. It can load  multiple layers of images, generate volume renderings and draw regions  of interest. It also provides dcm2niix for converting DICOM images to  NIfTI format.
+        tool-version: v{{ context.version }}
+        schema-version: '0.5'
+        command-line: MRIcron [OPTIONS] [IMAGE_FILE]
+        inputs:
+          - name: image_file
+            id: image_file
+            description: NIfTI format image file to view
+            type: File
+            optional: true
+            value-key: '[IMAGE_FILE]'
+categories:
+  - visualization
+  - structural imaging
+  - file conversion
+structured_readme:
+  description: MRIcron is a cross-platform NIfTI format image viewer. It can load multiple  layers of images, generate volume renderings and draw regions of interest.  It also includes dcm2niix for converting DICOM images to NIfTI format.
+  example: |-
+    ml mricron/1.0.20190902
+    MRIcron
+    dcm2niix -h
+  documentation: https://www.nitrc.org/plugins/mwiki/index.php/mricron:MainPage
+  citation: 'Rorden C, Brett M. Stereotaxic display of brain lesions.  Behav Neurol. 2000;12(4):191-200. doi: 10.1155/2000/421719'
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAD2klEQVR4AdRUXUwcVRT+7rA/tsDGKmqMCikUkJ/smthkUVTU9KHaB9rEVBMiD42xQdDqAw9osg9uJDEBSWqyq32okURDUxITExtedFP83cSitM0ui62bhm76w0/LskB3d+be3nNnl+0ApftamHPvnO+ce74535lZzXHqvFD24z/C/v1p4fjprOnn8Tv2h34Ii+j+o2Ju79dFm4b8H+dA4hKQyeQR6y4EjGtXkMyuWvF7eAUCmSiuJSBuzMu7TS49CyMeQ4brmwTvDlkJlhYhEnGAull3RqSS0KfPQcj/daEtXQsBslmIqbNA+pb1kJQHsjv9wpQVL8KzEsinE+fPSJnmrEezGfALEYjlJStehGcSrC7DOHEMxvEvwCfDyL7zOvifPwOGAXFzAXrwMxgBaf/HsP+Xz1ExdniDtf3ux8fRE/h1fgppnl2jNgly7vDwMISUIxQKQcTOAbdWQNI8OHNR4Tw3m66uLuVTbt7+XYjjyKkv8dHlkwjNRaAL+VbKuhYCxpiEgNbWVnCS6upliItRfHDwgMIZM+PKkUtLSwuampqU9fX1obGxEce+PY7T81GkdHOOFgJ5Bul0Gna7HQee3gn+Vwj879/Q0dGBVCpFYYtNT08jEokoGxgYQDKZRGVlJa6nk1g1zO+pQJBrX9d1xONx9PT0wPgugPLoGdTU1IBks1SXTm1tLerq6uB2u9Hf3w+Xy4WxsTE4NTtsmlnaXGVy/mKMYWRkRMlEGBER6fj4OLkWC4fDiMVimJycBElE3ft8Pjy3Yxdctm0qdwMBoUNDQ3A4HGhvb0dnZyeoEA2TYncazaChoQEejweBQABOpxN+vx+zmSUYmw05f3h2dhYzMzPo7e0FyRAMBvMhy04zqFpwwL1Qju7ubqysrCi5aAYZbqjcQgc5zRQql9HRUSWTIb8FkkxCG65SmxPvVr2KD6tfw55HmtWQaQ5zsoOUsclbRDKQUaXBwUHaMDExIX+auLrPx5QjF86FXAG7ZkNpiVMRNDc344+b/yG+fB1cflOayqBFvkWkd1lZGXlIJBJgjMHr9SqfCLVclyQZYwzJxUUVK5PFd25/FPX19XDKOXBZSwXkYhLYHdCe3wPbp8GC+Y5C2/cmSt77ZA0r9wfh8xzEV55DGHn2fXzzzGFUy8Ll8o15+8kXcHL3EYUH3YdQXfoYNPkQJoHNDlbbBG33iwXzvoySfW+h5KW9a5jD24bOmja88bhXaf5KRSOe2vawKlS1vQLk0yxof+KBHfL5AZNA3a5bmAZWtQtwmYnrokW72paZssUt40UEtyYoosC9Uu5/gtsAAAD///gZdJIAAAAGSURBVAMAyynHs/Zh3LkAAAAASUVORK5CYII=
+readme: |-
+  ----------------------------------
+  ## mricron/1.0.20190902 ##
+
+  MRIcron is a cross-platform NIfTI format image viewer. It can load multiple  layers of images, generate volume renderings and draw regions of interest.  It also includes dcm2niix for converting DICOM images to NIfTI format.
+
+  Example:
+  ```
+  ml mricron/1.0.20190902
+  MRIcron
+  dcm2niix -h
+  ```
+
+  More documentation can be found here: https://www.nitrc.org/plugins/mwiki/index.php/mricron:MainPage
+
+  Citation:
+  ```
+  Rorden C, Brett M. Stereotaxic display of brain lesions.  Behav Neurol. 2000;12(4):191-200. doi: 10.1155/2000/421719
+  ```
+
+  To run container outside of this environment: ml mricron/1.0.20190902
+
+  ----------------------------------
