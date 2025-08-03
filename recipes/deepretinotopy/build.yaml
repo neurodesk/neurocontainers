@@ -1,5 +1,5 @@
 name: deepretinotopy
-version: 1.0.11
+version: 1.0.12
 
 copyright:
   - license: GPL-3.0
@@ -24,17 +24,23 @@ build:
     - template:
         name: miniconda
         conda_install: python=3.12.8
-        pip_install: packaging osfclient==0.0.5 nibabel
+        pip_install: packaging osfclient==0.0.5 nibabel sympy==1.13.1
         version: latest
 
     - run:
-        - pip3 install torch==2.5.1 torchvision --index-url https://download.pytorch.org/whl/cpu
+        - conda config --set channel_priority flexible
+        - conda config --remove channels pkgs/r || true
+        - conda tos accept -c defaults
+        - conda tos accept -c nvidia
 
     - run:
-        - pip install torch_geometric==2.6.1
+        - conda install pytorch==2.5.1 torchvision==0.20.1 pytorch-cuda=12.4 -c pytorch -c nvidia
 
     - run:
-        - pip install torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.5.1+cpu.html
+        - pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.5.1+cu124.html
+
+    - run:
+        - pip install torch_geometric
 
     - run:
         - python -c "import torch" 2>/dev/null || { echo "Failed to import module"; exit 1; }
@@ -72,7 +78,7 @@ readme: |-
   ----------------------------------
   ## deepretinotopy/{{ context.version }} ##
 
-  This container has FreeSurfer 7.3.2, Connectome Workbench v1.5.0, PyTorch 2.5.1 (cpu), and PyTorch geometric 2.6.1 (cpu). These packages are required for data preparation and model inference.
+  This container has FreeSurfer 7.3.2, Connectome Workbench v1.5.0, PyTorch 2.5.1 (gpu), and PyTorch geometric 2.6.1 (gpu). These packages are required for data preparation and model inference.
 
   Example:
   ```
