@@ -540,7 +540,7 @@ jobs:
         run: aws s3 cp /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg s3://neurocontainers/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
 
   create-pr:
-    needs: [config, build-image, push-ghcr, push-dockerhub, build-simg, upload-nectar, upload-s3]
+    needs: [config, build-image, push-dockerhub, build-simg, upload-nectar, upload-s3]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true'}}
     runs-on: ubuntu-22.04
     permissions:
