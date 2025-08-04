@@ -28,15 +28,9 @@ build:
         version: latest
 
     - run:
-        - pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
-
-    - run:
-        - pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.5.1+cu124.html
-
-    - run:
-        - pip install torch_geometric
-
-    - run:
+        - pip install --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+        - pip install --no-cache-dir pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.5.1+cu124.html
+        - pip install --no-cache-dir torch_geometric
         - python -c "import torch" 2>/dev/null || { echo "Failed to import module"; exit 1; }
         - python -c "import torch_geometric; print('PyG working')"
 
@@ -50,13 +44,15 @@ build:
         - for file in "${files_to_download[@]}"; do path="${file:15}"; mkdir -p "${path%/*}"; chmod 777 "${path%/*}"; osf -p ermbz fetch "$file" "$path"; echo "$file"; new_path=$(echo "$path" | sed -E 's/model[0-9]+/model/'); mv "$path" "$new_path"; echo "Renamed $path to $new_path"; done
 
     - run:
-      - yum clean all
-      - rm -rf /var/cache/yum/*
-      - rm -rf /var/cache/dnf/*
-      - rm -rf /var/lib/dnf/history.sqlite*
-      - rm -rf /var/lib/rpm/Packages
-      - rm -rf /tmp/*
-      - rm -rf ~/.cache/pip/*
+        - yum clean all
+        - rm -rf /var/cache/yum/*
+        - rm -rf /var/cache/dnf/*
+        - rm -rf /var/lib/dnf/history.sqlite*
+        - rm -rf /var/lib/rpm/Packages
+        - rm -rf /tmp/*
+        - rm -rf ~/.cache/pip/*
+        - rm -rf /opt/miniconda/lib/python3.12/site-packages/torchvision/datasets/*
+        - rm -rf /opt/miniconda/lib/python3.12/site-packages/*/__pycache__/*
 
     - workdir: /opt/deepRetinotopy_TheToolbox
 
