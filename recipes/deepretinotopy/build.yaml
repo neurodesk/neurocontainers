@@ -78,7 +78,8 @@ readme: |-
   ----------------------------------
   ## deepretinotopy/{{ context.version }} ##
 
-  This container has FreeSurfer 7.3.2, Connectome Workbench v1.5.0, PyTorch 2.5.1 (gpu), and PyTorch geometric 2.6.1 (gpu). These packages are required for data preparation and model inference.
+  This container has FreeSurfer 7.3.2, Connectome Workbench v1.5.0, PyTorch 2.5.1 (gpu), and PyTorch geometric 2.6.1 (gpu). These packages are required for data preparation and model inference. 
+  Use this container for GPU inference and 1.0.11 for CPU inference.
 
   Example:
   ```
