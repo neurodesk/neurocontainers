@@ -227,7 +227,7 @@ jobs:
         if: inputs.skip_docker_build != 'true'
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
-        run: docker save ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} -o /tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+        run: docker save ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} -o /mnt/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
           
       - name: Debug storage
         run: |
@@ -270,7 +270,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ env.IMAGENAME }}-${{ env.BUILDDATE }}
-          path: /tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+          path: /mnt/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
           retention-days: 7
 
   push-ghcr:
@@ -294,11 +294,11 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}
-          path: /tmp/
+          path: /mnt/tmp/
 
       - name: Load Docker Image from Artifact
         if: inputs.skip_docker_build != 'true'
-        run: docker load --input /tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
+        run: docker load --input /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
 
       - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -335,11 +335,11 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}
-          path: /tmp/
+          path: /mnt/tmp/
 
       - name: Load Docker Image from Artifact
         if: inputs.skip_docker_build != 'true'
-        run: docker load --input /tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
+        run: docker load --input /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
 
       - name: Login to DockerHub
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -429,7 +429,7 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           echo "[DEBUG] building singularity image from docker image:"
-          time singularity build "/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" docker://ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.IMAGETAG }}
+          time singularity build "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" docker://ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.IMAGETAG }}
           echo "[DEBUG] done building singularity image from docker image!"
         continue-on-error: true
 
@@ -443,7 +443,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
-          path: /tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          path: /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
           retention-days: 7
 
   upload-nectar:
@@ -642,3 +642,4 @@ jobs:
         echo "The container has been successfully build. To test the container, run this:" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
         echo "bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE" >> $GITHUB_STEP_SUMMARY
+
