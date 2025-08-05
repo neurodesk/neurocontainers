@@ -35,13 +35,13 @@ categories:
   - functional imaging
 readme: |-
   ----------------------------------
-  ## qupath/0.0.1 ##
+  ## qupath/0.6.0 ##
 
   QuPath is an open-source software for bioimage analysis, especially digital pathology.
 
   Example:
   ```
-  qupath --help
+  QuPath --help
   ```
 
   More documentation can be found here: https://qupath.github.io/
