@@ -40,7 +40,7 @@ build:
         - libqt5opengl5
         - libqt5gui5
         - libqt5core5a
-        - libtiff6-dev
+        - libtiff-dev
         - libtiff6
         - libfftw3-dev
         - liblapack3
