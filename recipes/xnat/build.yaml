@@ -1,0 +1,442 @@
+name: xnat
+version: 1.9.2.1
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+
+  directives:
+    - install: tomcat9 postgresql openjdk-8-jre-headless wget sudo
+
+    # Configure Tomcat
+    - group:
+        - file:
+            name: server.xml
+            contents: |
+              <?xml version="1.0" encoding="UTF-8"?>
+              <!--
+                Licensed to the Apache Software Foundation (ASF) under one or more
+                contributor license agreements.  See the NOTICE file distributed with
+                this work for additional information regarding copyright ownership.
+                The ASF licenses this file to You under the Apache License, Version 2.0
+                (the "License"); you may not use this file except in compliance with
+                the License.  You may obtain a copy of the License at
+
+                    http://www.apache.org/licenses/LICENSE-2.0
+
+                Unless required by applicable law or agreed to in writing, software
+                distributed under the License is distributed on an "AS IS" BASIS,
+                WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+                See the License for the specific language governing permissions and
+                limitations under the License.
+              -->
+              <Server port="8005" shutdown="SHUTDOWN">
+                <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
+                <Listener className="org.apache.catalina.core.AprLifecycleListener" SSLEngine="on" />
+                <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
+                <Listener className="org.apache.catalina.mbeans.GlobalResourcesLifecycleListener" />
+                <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
+
+                <GlobalNamingResources>
+                  <Resource name="UserDatabase" auth="Container"
+                            type="org.apache.catalina.UserDatabase"
+                            description="User database that can be updated and saved"
+                            factory="org.apache.catalina.users.MemoryUserDatabaseFactory"
+                            pathname="conf/tomcat-users.xml" />
+                </GlobalNamingResources>
+
+                <Service name="Catalina">
+                  <Connector port="8080" protocol="HTTP/1.1"
+                             address="0.0.0.0"
+                             connectionTimeout="20000"
+                             redirectPort="8443"
+                             maxThreads="200"
+                             minSpareThreads="25"
+                             maxConnections="8192"
+                             acceptCount="100"
+                             enableLookups="false"
+                             URIEncoding="UTF-8" />
+
+                  <!-- Define an AJP 1.3 Connector on port 8009 -->
+                  <Connector protocol="AJP/1.3"
+                             address="0.0.0.0"
+                             port="8009"
+                             redirectPort="8443"
+                             secretRequired="false" />
+
+                  <Engine name="Catalina" defaultHost="localhost">
+                    <Realm className="org.apache.catalina.realm.LockOutRealm">
+                      <Realm className="org.apache.catalina.realm.UserDatabaseRealm"
+                             resourceName="UserDatabase"/>
+                    </Realm>
+
+                    <Host name="localhost" appBase="webapps"
+                          unpackWARs="true" autoDeploy="true">
+                      
+                      <Valve className="org.apache.catalina.valves.AccessLogValve" directory="logs"
+                             prefix="localhost_access_log" suffix=".txt"
+                             pattern="%h %l %u %t &quot;%r&quot; %s %b" />
+                    </Host>
+                  </Engine>
+                </Service>
+              </Server>
+
+        - run:
+            - mkdir -p /usr/share/tomcat9/conf
+            - cp {{ get_file("server.xml") }} /usr/share/tomcat9/conf/server.xml
+
+    - group:
+        - file:
+            name: xnat-conf.properties.template
+            contents: |
+              datasource.driver=org.postgresql.Driver
+              datasource.url=jdbc:postgresql://localhost/xnat
+              datasource.username=xnat
+              datasource.password=xnat
+
+              hibernate.dialect=org.hibernate.dialect.PostgreSQL9Dialect
+              hibernate.hbm2ddl.auto=update
+              hibernate.show_sql=false
+              hibernate.cache.use_second_level_cache=true
+              hibernate.cache.use_query_cache=true
+
+              spring.http.multipart.max-file-size=1073741824
+              spring.http.multipart.max-request-size=1073741824
+
+        - run:
+            - mkdir -p /opt/xnat-config
+            - cp {{ get_file("xnat-conf.properties.template") }} /opt/xnat-config/xnat-conf.properties.template
+
+    # Configure Tomcat with proper default servlet
+    - group:
+        - file:
+            name: web-default.xml
+            contents: |
+              <?xml version="1.0" encoding="UTF-8"?>
+              <web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee"
+                       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                       xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee
+                                           http://xmlns.jcp.org/xml/ns/javaee/web-app_3_1.xsd"
+                       version="3.1">
+                
+                <!-- Default servlet for serving static resources -->
+                <servlet>
+                  <servlet-name>default</servlet-name>
+                  <servlet-class>org.apache.catalina.servlets.DefaultServlet</servlet-class>
+                  <init-param>
+                    <param-name>debug</param-name>
+                    <param-value>0</param-value>
+                  </init-param>
+                  <init-param>
+                    <param-name>listings</param-name>
+                    <param-value>false</param-value>
+                  </init-param>
+                  <load-on-startup>1</load-on-startup>
+                </servlet>
+                
+                <!-- JSP servlet -->
+                <servlet>
+                  <servlet-name>jsp</servlet-name>
+                  <servlet-class>org.apache.jasper.servlet.JspServlet</servlet-class>
+                  <init-param>
+                    <param-name>fork</param-name>
+                    <param-value>false</param-value>
+                  </init-param>
+                  <init-param>
+                    <param-name>xpoweredBy</param-name>
+                    <param-value>false</param-value>
+                  </init-param>
+                  <load-on-startup>3</load-on-startup>
+                </servlet>
+                
+                <!-- Default servlet mapping -->
+                <servlet-mapping>
+                  <servlet-name>default</servlet-name>
+                  <url-pattern>/</url-pattern>
+                </servlet-mapping>
+                
+                <!-- JSP servlet mapping -->
+                <servlet-mapping>
+                  <servlet-name>jsp</servlet-name>
+                  <url-pattern>*.jsp</url-pattern>
+                  <url-pattern>*.jspx</url-pattern>
+                </servlet-mapping>
+                
+                <!-- Session config -->
+                <session-config>
+                  <session-timeout>30</session-timeout>
+                </session-config>
+                
+                <!-- MIME mappings for common static resources -->
+                <mime-mapping>
+                  <extension>css</extension>
+                  <mime-type>text/css</mime-type>
+                </mime-mapping>
+                <mime-mapping>
+                  <extension>js</extension>
+                  <mime-type>application/javascript</mime-type>
+                </mime-mapping>
+                <mime-mapping>
+                  <extension>json</extension>
+                  <mime-type>application/json</mime-type>
+                </mime-mapping>
+                <mime-mapping>
+                  <extension>jpg</extension>
+                  <mime-type>image/jpeg</mime-type>
+                </mime-mapping>
+                <mime-mapping>
+                  <extension>jpeg</extension>
+                  <mime-type>image/jpeg</mime-type>
+                </mime-mapping>
+                <mime-mapping>
+                  <extension>png</extension>
+                  <mime-type>image/png</mime-type>
+                </mime-mapping>
+                <mime-mapping>
+                  <extension>gif</extension>
+                  <mime-type>image/gif</mime-type>
+                </mime-mapping>
+                <mime-mapping>
+                  <extension>ico</extension>
+                  <mime-type>image/x-icon</mime-type>
+                </mime-mapping>
+                <mime-mapping>
+                  <extension>svg</extension>
+                  <mime-type>image/svg+xml</mime-type>
+                </mime-mapping>
+                <mime-mapping>
+                  <extension>woff</extension>
+                  <mime-type>font/woff</mime-type>
+                </mime-mapping>
+                <mime-mapping>
+                  <extension>woff2</extension>
+                  <mime-type>font/woff2</mime-type>
+                </mime-mapping>
+                <mime-mapping>
+                  <extension>ttf</extension>
+                  <mime-type>font/ttf</mime-type>
+                </mime-mapping>
+                <mime-mapping>
+                  <extension>eot</extension>
+                  <mime-type>application/vnd.ms-fontobject</mime-type>
+                </mime-mapping>
+                <mime-mapping>
+                  <extension>vm</extension>
+                  <mime-type>text/plain</mime-type>
+                </mime-mapping>
+                
+                <!-- Welcome files -->
+                <welcome-file-list>
+                  <welcome-file>index.html</welcome-file>
+                  <welcome-file>index.htm</welcome-file>
+                  <welcome-file>index.jsp</welcome-file>
+                </welcome-file-list>
+              </web-app>
+
+        - run:
+            - cp {{ get_file("web-default.xml") }} /opt/xnat-config/web-default.xml
+
+    # Download and extract the XNAT web application
+    - group:
+        - file:
+            name: xnat-web-{{ context.version }}.war
+            url: https://api.bitbucket.org/2.0/repositories/xnatdev/xnat-web/downloads/xnat-web-{{ context.version }}.war
+
+        - run:
+            - mkdir -p /opt/xnat-webapp
+            - unzip -o -d /opt/xnat-webapp {{ get_file("xnat-web-" + context.version + ".war") }}
+
+    # Create PostgreSQL initialization script
+    - group:
+        - file:
+            name: init-postgres.sh
+            contents: |
+              #!/bin/bash
+              set -e
+
+              PGDATA="$1"
+              POSTGRES_USER="$2"
+              POSTGRES_PASSWORD="$3"
+              POSTGRES_DB="$4"
+
+              echo "Initializing PostgreSQL database..."
+
+              # Initialize the database cluster with specific options to avoid permission issues
+              # The superuser will be the current system user (jovyan)
+              /usr/lib/postgresql/12/bin/initdb -D "${PGDATA}" --auth-local=trust --auth-host=md5
+
+              # Update PostgreSQL configuration to use local directories
+              cat >> "${PGDATA}/postgresql.conf" <<EOF
+              # Custom settings for containerized environment
+              unix_socket_directories = '${PGDATA}'
+              port = 5432
+              listen_addresses = 'localhost,127.0.0.1'
+              EOF
+
+              # Update pg_hba.conf to allow local connections
+              cat > "${PGDATA}/pg_hba.conf" <<EOF
+              # Allow local connections
+              local   all             all                                     trust
+              host    all             all             127.0.0.1/32            md5
+              host    all             all             ::1/128                 md5
+              EOF
+
+              # Start PostgreSQL temporarily to create user and database
+              /usr/lib/postgresql/12/bin/postgres -D "${PGDATA}" &
+              PG_PID=$!
+
+              # Wait for PostgreSQL to start
+              echo "Waiting for PostgreSQL to start..."
+              for i in {1..30}; do
+                  if /usr/lib/postgresql/12/bin/pg_isready -h "${PGDATA}" -p 5432 >/dev/null 2>&1; then
+                      break
+                  fi
+                  sleep 1
+              done
+
+              # Create user and database
+              echo "Creating PostgreSQL user and database..."
+              # When running as non-root, the superuser is the current system user (jovyan)
+              # First, we need to create a database for jovyan user to avoid the "database does not exist" error
+              /usr/lib/postgresql/12/bin/createdb -h "${PGDATA}" -p 5432 -U jovyan jovyan || true
+
+              # Now create the xnat user and database
+              /usr/lib/postgresql/12/bin/psql -h "${PGDATA}" -p 5432 -U jovyan -d postgres <<SQL
+              CREATE USER ${POSTGRES_USER} WITH PASSWORD '${POSTGRES_PASSWORD}';
+              CREATE DATABASE ${POSTGRES_DB} OWNER ${POSTGRES_USER};
+              GRANT ALL PRIVILEGES ON DATABASE ${POSTGRES_DB} TO ${POSTGRES_USER};
+              SQL
+
+              # Stop PostgreSQL
+              echo "Stopping temporary PostgreSQL instance..."
+              kill $PG_PID
+              wait $PG_PID || true
+
+              echo "PostgreSQL initialization complete."
+
+        - run:
+            - cp {{ get_file("init-postgres.sh") }} /usr/bin/init-postgres
+            - chmod +x /usr/bin/init-postgres
+
+    # Configure Entrypoint Script
+    - group:
+        - file:
+            name: entrypoint.sh
+            contents: |
+              #!/bin/bash
+              set -e
+
+              # Set all environment variables
+              export XNAT_VERSION="{{ context.version }}"
+              export CATALINA_HOME=/usr/share/tomcat9
+              export CATALINA_BASE="${PWD}/xnat-runtime/tomcat"
+              export XNAT_HOME="${PWD}/xnat-runtime/xnat-home"
+              export XNAT_ROOT="${PWD}/xnat-runtime"
+              export PGDATA="${PWD}/xnat-runtime/postgresql"
+              export POSTGRES_USER=xnat
+              export POSTGRES_PASSWORD=xnat
+              export POSTGRES_DB=xnat
+
+              # Set Tomcat memory options
+              export CATALINA_OPTS="-Xms256m -Xmx4g -Dxnat.home=${XNAT_HOME}"
+
+              echo "=== XNAT Container Starting ==="
+              echo "Working directory: ${PWD}"
+              echo "XNAT_ROOT: ${XNAT_ROOT}"
+              echo "XNAT_HOME: ${XNAT_HOME}"
+              echo "CATALINA_BASE: ${CATALINA_BASE}"
+              echo "PGDATA: ${PGDATA}"
+
+              # Create all necessary directories
+              echo "Creating runtime directories..."
+              mkdir -p "${XNAT_ROOT}"
+              mkdir -p "${XNAT_HOME}/config"
+              mkdir -p "${XNAT_HOME}/logs"
+              mkdir -p "${XNAT_HOME}/work"
+              mkdir -p "${XNAT_HOME}/cache"
+              mkdir -p "${XNAT_HOME}/plugins"
+              mkdir -p "${CATALINA_BASE}/conf"
+              mkdir -p "${CATALINA_BASE}/logs"
+              mkdir -p "${CATALINA_BASE}/temp"
+              mkdir -p "${CATALINA_BASE}/work"
+              mkdir -p "${CATALINA_BASE}/webapps/ROOT"
+              mkdir -p "${PGDATA}"
+
+              # Copy Tomcat configuration
+              echo "Setting up Tomcat configuration..."
+              cp -r ${CATALINA_HOME}/conf/* "${CATALINA_BASE}/conf/" 2>/dev/null || true
+
+              # Use our custom server.xml
+              cp /usr/share/tomcat9/conf/server.xml "${CATALINA_BASE}/conf/server.xml"
+
+              # Create tomcat-users.xml to avoid the SEVERE error
+              cat > "${CATALINA_BASE}/conf/tomcat-users.xml" <<EOF
+              <?xml version="1.0" encoding="UTF-8"?>
+              <tomcat-users xmlns="http://tomcat.apache.org/xml"
+                            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                            xsi:schemaLocation="http://tomcat.apache.org/xml tomcat-users.xsd"
+                            version="1.0">
+              </tomcat-users>
+              EOF
+
+              # Copy our default web.xml which includes servlet mappings
+              cp /opt/xnat-config/web-default.xml "${CATALINA_BASE}/conf/web.xml"
+              echo "Global web.xml configured with default servlet mappings"
+
+              # Copy XNAT webapp
+              echo "Deploying XNAT webapp..."
+              cp -r /opt/xnat-webapp/* "${CATALINA_BASE}/webapps/ROOT/"
+
+              # Verify web.xml exists
+              if [ -f "${CATALINA_BASE}/webapps/ROOT/WEB-INF/web.xml" ]; then
+                  echo "XNAT web.xml found and deployed successfully"
+              else
+                  echo "WARNING: web.xml not found in XNAT webapp!"
+              fi
+
+              # Configure XNAT properties
+              echo "Configuring XNAT properties..."
+              cp /opt/xnat-config/xnat-conf.properties.template "${XNAT_HOME}/config/xnat-conf.properties"
+
+              # Initialize PostgreSQL if needed
+              if [ ! -f "${PGDATA}/PG_VERSION" ]; then
+                  /usr/bin/init-postgres "${PGDATA}" "${POSTGRES_USER}" "${POSTGRES_PASSWORD}" "${POSTGRES_DB}"
+              fi
+
+              # Start PostgreSQL with custom socket directory
+              echo "Starting PostgreSQL..."
+              /usr/lib/postgresql/12/bin/postgres -D "${PGDATA}" &
+              POSTGRES_PID=$!
+
+              # Wait for PostgreSQL to be ready
+              echo "Waiting for PostgreSQL to be ready..."
+              for i in {1..30}; do
+                  if /usr/lib/postgresql/12/bin/pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
+                      echo "PostgreSQL is ready!"
+                      break
+                  fi
+                  sleep 1
+              done
+
+              # Start Tomcat
+              ${CATALINA_HOME}/bin/catalina.sh run
+
+        - run:
+            - cp {{ get_file("entrypoint.sh") }} /usr/bin/xnat
+            - chmod +x /usr/bin/xnat
+
+        - user: jovyan
+
+        - deploy:
+            bins:
+              - xnat
+
+categories:
+  - data organisation
+
+readme: xnat
