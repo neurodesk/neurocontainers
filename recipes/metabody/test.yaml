@@ -1,27 +1,28 @@
 tests:
-  - name: Test prostatefiducialseg
+  - name: Test metabody
+    manual: true
     script: |
 
 
       # === TEST PREDICTION WITH OPENRECON ===
 
       # Convert input DICOMs to ISMRMRD format
-      # python /opt/code/python-ismrmrd-server/dicom2mrd.py \
-      #   -o /buildhostdirectory/input.h5 \
-      #   /buildhostdirectory/dicoms
+      python /opt/code/python-ismrmrd-server/dicom2mrd.py \
+        -o /buildhostdirectory/input.h5 \
+        /buildhostdirectory/dicoms
 
       # # Start OpenRecon server
-      # python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
-      # sleep 5
+      python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
+      sleep 5
 
       # # Run OpenRecon client
-      # python3 /opt/code/python-ismrmrd-server/client.py \
-      #   -G dataset \
-      #   -o /buildhostdirectory/output.h5 \
-      #   /buildhostdirectory/input.h5 \
-      #   -c metabody
+      python3 /opt/code/python-ismrmrd-server/client.py \
+        -G dataset \
+        -o /buildhostdirectory/output.h5 \
+        /buildhostdirectory/input.h5 \
+        -c metabody
 
       # Convert output ISMRMRD to DICOM
-      # python3 /opt/code/python-ismrmrd-server/mrd2dicom.py \
-      #   -o /host/home/ashley/repos/prostate/test/output_dcm \
-      #   /host/home/ashley/repos/prostate/test/output.h5
+      python3 /opt/code/python-ismrmrd-server/mrd2dicom.py \
+        -o /buildhostdirectory/output_dcm \
+        /buildhostdirectory/output.h5
