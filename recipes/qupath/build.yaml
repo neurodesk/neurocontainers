@@ -12,7 +12,7 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
-    - install: xz-utils libx11-6 libxext6 libxrender1 libxtst6 libxi6 libxxf86vm1 libgl1 libglu1-mesa libxcomposite1 libxcursor1 libxdamage1 libxrandr2
+    - install: xz-utils libgtk-3-0 libglib2.0-0 libx11-6 libxext6 libxrender1 libxtst6 libxi6 libxxf86vm1 libgl1 libglu1-mesa libxcomposite1 libxcursor1 libxdamage1 libxrandr2
     - file:
         name: QuPath-v0.6.0-Linux.tar.xz
         url: https://github.com/qupath/qupath/releases/download/v0.6.0/QuPath-v0.6.0-Linux.tar.xz
