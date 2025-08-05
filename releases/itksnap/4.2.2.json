@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "itksnap 4.2.2": {
+      "version": "20250805",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "visualization"
+  ]
+}
