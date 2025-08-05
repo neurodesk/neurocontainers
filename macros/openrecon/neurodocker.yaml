@@ -6,7 +6,6 @@ directives:
   - install:
       - build-essential
       - libxslt1.1
-      - libhdf5-dev
       - libboost-program-options1.74.0
       - libpugixml1v5
       - vim

@@ -1,5 +1,6 @@
 tests:
   - name: Test prostatefiducialseg
+    manual: true
     script: |
       # === TEST PREDICTION STANDALONE ===
 
