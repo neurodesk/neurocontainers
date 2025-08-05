@@ -120,6 +120,10 @@ build:
             - pip install git+https://github.com/astewartau/nii2dcm.git@qsm
             - pip install nextqsm
             - nextqsm --download_weights
+        - deploy:
+            bins:
+              - nii2dcm
+              - nextqsm
     - group:
         - run:
             - >-
