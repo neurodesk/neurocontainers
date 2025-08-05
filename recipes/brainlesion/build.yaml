@@ -19,7 +19,7 @@ build:
         name: miniconda
         version: py310_25.5.1-0
         install_path: /opt/miniconda
-        pip_install: panoptica deep_quality_estimation petu gliomoda brainles-aurora brats brainles-preprocessing
+        pip_install: loguru==0.7.3 panoptica deep_quality_estimation petu gliomoda brainles-aurora brats brainles-preprocessing
     - deploy:
         bins:
           - python
