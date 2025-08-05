@@ -32,18 +32,16 @@ build:
     - install:
         - dbus-x11
         - less
-        - python3-distutils
         - mesa-common-dev
         - libglu1-mesa
-        - qt5-default
         - libqt5svg5-dev
         - wget
         - libqt5opengl5-dev
         - libqt5opengl5
         - libqt5gui5
         - libqt5core5a
-        - libtiff5-dev
-        - libtiff5
+        - libtiff-dev
+        - libtiff6
         - libfftw3-dev
         - liblapack3
 
