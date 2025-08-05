@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "qupath 0.6.0": {
+      "version": "20250805",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging",
+    "data organisation"
+  ]
+}
