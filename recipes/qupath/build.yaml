@@ -4,7 +4,7 @@ architectures:
   - x86_64
 structured_readme:
   description: QuPath is an open-source software for bioimage analysis, especially digital pathology.
-  example: qupath --help
+  example: QuPath --help
   documentation: https://qupath.github.io/
   citation: ''
 build:
@@ -12,7 +12,7 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
-    - install: xz-utils
+    - install: xz-utils libx11-6 libxext6 libxrender1 libxtst6 libxi6
     - file:
         name: QuPath-v0.6.0-Linux.tar.xz
         url: https://github.com/qupath/qupath/releases/download/v0.6.0/QuPath-v0.6.0-Linux.tar.xz
