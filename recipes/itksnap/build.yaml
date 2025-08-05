@@ -1,5 +1,7 @@
 name: itksnap
 version: 4.2.2
+# make sure to update the download link below: https://www.itksnap.org/pmwiki/pmwiki.php?n=Downloads.SNAP4
+# they started including the build date: e.g. 20241202
 architectures:
   - x86_64
 structured_readme:
@@ -13,17 +15,16 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
-    - install: curl ca-certificates unzip  mlocate binutils libqt5gui5 libopengl0
-    - workdir: /opt/itksnap-4.2.2
+    - install: curl ca-certificates unzip binutils libqt5gui5 libopengl0
+    - workdir: /opt/itksnap-{{ context.version }}
     - run:
-        - |-
-          curl -fsSL -o /example_data.zip https://www.nitrc.org/frs/download.php/750/MRI-crop.zip  \
-                      && unzip /example_data.zip \
-                      && rm /example_data.zip
-        - curl -fsSL --retry 5 https://ixpeering.dl.sourceforge.net/project/itk-snap/itk-snap/4.2.2/itksnap-4.2.2-Linux-gcc64.tar.gz | tar -xz --strip-components=1 -C /opt/itksnap-4.2.2
+        - curl -fsSL -o /example_data.zip https://www.nitrc.org/frs/download.php/750/MRI-crop.zip
+        - unzip /example_data.zip
+        - rm /example_data.zip
+        - curl -fsSL --retry 5 https://sourceforge.net/projects/itk-snap/files/itk-snap/{{ context.version }}/itksnap-{{ context.version }}-20241202-Linux-x86_64.tar.gz | tar -xz --strip-components=1 -C /opt/itksnap-{{ context.version }}
     - environment:
         QT_QPA_PLATFORM: xcb
-        PATH: '''$PATH'':/opt/${toolName}-${toolVersion}/bin/'
+        PATH: $PATH:/opt/itksnap-{{ context.version }}/bin
     - deploy:
         bins:
           - itksnap
@@ -38,7 +39,7 @@ categories:
   - visualization
 readme: |-
   ----------------------------------
-  ## itksnap/4.2.2 ##
+  ## itksnap/{{ context.version }} ##
 
   itksnap is an image viewer for DICOM and NII files and supports manual segmentation of data.
 
@@ -54,9 +55,29 @@ readme: |-
   Paul A. Yushkevich, Joseph Piven, Heather Cody Hazlett, Rachel Gimpel Smith, Sean Ho, James C. Gee, and Guido Gerig. User-guided 3D active contour segmentation of anatomical structures: Significantly improved efficiency and reliability. Neuroimage 2006 Jul 1;31(3):1116-28.
   ```
 
-  To run container outside of this environment: ml itksnap/4.2.2
+  To run container outside of this environment: ml itksnap/{{ context.version }}
 
   ----------------------------------
 copyright:
   - license: LGPL-3.0-only
     url: https://github.com/pyushkevich/itksnap?tab=GPL-3.0-1-ov-file#readme
+
+
+# needed for centos, but libcurl error: libX11 libglvnd-glx libglvnd-opengl libxkbcommon libglvnd-egl fontconfig dbus-libs
+
+ #  --env QT_QPA_PLATFORM="xcb" forces xcb under wayland - this was otherwise causing a library error
+
+# This is to fix qt library error in centos 7:
+# --run="find /opt/itksnap-4.0.2/ -name '*.so' | xargs strip --remove-section=.note.ABI-tag" \
+# https://github.com/microsoft/WSL/issues/3023
+
+
+
+# # Troubleshooting:
+# export QT_QPA_PLATFORM=wayland
+# export QT_DEBUG_PLUGINS=1
+# itksnap
+# apt update
+# apt install -y mlocate
+# updatedb
+# locate libQt6Core.so.6

@@ -10,7 +10,7 @@ jsonschema==4.23.0
 jsonschema-specifications==2024.10.1
 markupsafe==3.0.2
 mypy-extensions==1.0.0
-neurodocker==2.0.1
+neurodocker==2.0.2
 packaging==24.2
 pyyaml==6.0.2
 referencing==0.36.2
