@@ -1,0 +1,64 @@
+name: brainlesion
+version: 1.0.0
+architectures:
+  - x86_64
+structured_readme:
+  description: |-
+    BrainLesion Suite (BLS) is a modular and open-source framework for brain lesion image analysis in Python. Developed by an international consortium of researchers, BLS enables efficient, reproducible, and customizable pipelines for processing and analyzing multi-modal brain image data.
+
+    Whether you're a radiologist, researcher, data scientist, or clinician, BLS empowers you to build robust workflows from raw data organization to segmentation, synthesis, and evaluation.
+  example: ''
+  documentation: https://github.com/BrainLesion/
+  citation: 'Kofler, F., Rosier, M., Astaraki, M., Möller, H., Mekki, I. I., Buchner, J. A., Schmick, A., Pfiffer, A., Oswald, E., Zimmer, L., Rosa, E. de la, Pati, S., Canisius, J., Piffer, A., Baid, U., Valizadeh, M., Linardos, A., Peeken, J. C., Shit, S., … Menze, B. (2025). BrainLesion Suite: A Flexible and User-Friendly Framework for Modular Brain Lesion Image Analysis arXiv preprint arXiv:2507.09036'
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: miniconda
+        version: py310_25.5.1-0
+        install_path: /opt/miniconda
+        pip_install: panoptica deep_quality_estimation petu gliomoda brainles-aurora brats brainles-preprocessing
+    - deploy:
+        bins:
+          - python
+    - test:
+        name: testScript
+        script: |-
+          #!/bin/bash
+          python --version
+          exit 1
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA4hJREFUSEvtlV1MW2UYx3+npYcOus51UMYcH6NlfpAZiSFFTYWwjWEzEnWhFAaYsU0YJXOZnQkxXphseMFmAtFCjGZtsl3Mqy3DLJELNQtW0UTC3A2ouAxBFmI/oF0K/TA9kyb9AOut8SQnOTnv/zy/5/k/z/seoWy8I0qGV65cicd/lsVgKMMvQPgf8E9e/YcsigTW8F69i9sxlVC1qN+Oqr6M7KfzEGZXmL80nuKKsGcvsmeqEKrrkD31LIjZcU3conXAYJ2N9vb2hCA+n4/W1la+ic5gKdmP3W5PWA+FQkxPT1PbYMJ9zIas6iWQyyWNcOpHU1SQ7+J7t4KfL48ztP8cZrOZ8vJyZDIZer2e0dFR/H4/j1fpOXbIIgGqq6tZXl6WgphMJgYGBhgbG+PlD528eLSByvxsOgPXEc7/oJU2WtbqDm45gpwwvkdTUxNKpTKe5eTkJDqdDo1uJyeOdEgAjUaD2+2Oa7xeLwsLC5w+XofdvEbh1sCjCtYBwUCU284Ax2tHJDscDgeCIEgVGI1GKejZi+/Q2dAiPRsMBjwej5SIxWKhr6+PwcFBvvvMRr9ZRKsWNga0tbWxtLQkCXJycqTb5XJxoOUwr5uaU3oQ0wWDQbRaLf2vBml5IQul4lFxaStItqi7u5vh4WEqKiqoqamJ9yBmiyiKdHV10dPTw9DQEH9+fQ7rQQW5fw9SRoDS0lJmZ2fp7e0lEonEe/B8iY/8rQLO2yFpCCYmJrh2vp53X1HwWO4mFjU3N9PY2CiVWFlZic1mk5qqVqulEY71oGhXHiNH/ZTkCbx1dRXnF3PMz8/T323gglmkaMcGgM6a4ZR9EBtHq9XKzdEJWix1EqCwoIBPOnyU75TRd22V96/cJVZpcUEOl08qMD4pRyak6cFXn/rTnl/btukoKm7gpzsfSeuiqOLjMwbqi118cGuNi5+vSe/z1QLOruxUQHgtyh8zYfyeSBywJWs7K65LeLxbUKv3EAx68K/8DkQRBDnagr3YDx7mt/uL/PogQjgCchk8UShjtybJonRph6YucP9b86Yn8r6SXzhZaNxQE5+iZEVk5k3ufdm7afD1xdf2XaE29+202rQA1cMD3Lsxgs+X2e9aqRQ4/dwpdoevp0BSAKJchf/mFHNz4YyyXxfFrHqj7AjRhw8SvksBZOL7RuR0ViUAVItnuHPD+q8yTxYnQ/4CysSosaI6GD0AAAAASUVORK5CYII=
+categories:
+  - structural imaging
+  - image segmentation
+  - workflows
+  - data organisation
+  - machine learning
+readme: |-
+  ----------------------------------
+  ## brainlesion/1.0.0 ##
+
+  BrainLesion Suite (BLS) is a modular and open-source framework for brain lesion image analysis in Python. Developed by an international consortium of researchers, BLS enables efficient, reproducible, and customizable pipelines for processing and analyzing multi-modal brain image data.
+
+  Whether you're a radiologist, researcher, data scientist, or clinician, BLS empowers you to build robust workflows from raw data organization to segmentation, synthesis, and evaluation.
+
+  Example:
+  ```
+
+  ```
+
+  More documentation can be found here: https://github.com/BrainLesion/
+
+  Citation:
+  ```
+  Kofler, F., Rosier, M., Astaraki, M., Möller, H., Mekki, I. I., Buchner, J. A., Schmick, A., Pfiffer, A., Oswald, E., Zimmer, L., Rosa, E. de la, Pati, S., Canisius, J., Piffer, A., Baid, U., Valizadeh, M., Linardos, A., Peeken, J. C., Shit, S., … Menze, B. (2025). BrainLesion Suite: A Flexible and User-Friendly Framework for Modular Brain Lesion Image Analysis arXiv preprint arXiv:2507.09036
+  ```
+
+  To run container outside of this environment: ml brainlesion/1.0.0
+
+  ----------------------------------
+copyright:
+  - license: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
