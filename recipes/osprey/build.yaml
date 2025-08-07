@@ -1,0 +1,58 @@
+name: osprey
+version: 2.9.0
+architectures:
+  - x86_64
+structured_readme:
+  description: |+
+    Osprey is an all-in-one software suite for state-of-the art processing and quantitative analysis of in-vivo magnetic resonance spectroscopy (MRS) data.
+
+  example: Osprey
+  documentation: https://schorschinho.github.io/osprey/
+  citation: 'G Oeltzschner, HJ Zöllner, SCN Hui, M Mikkelsen, MG Saleh, S Tapper, RAE Edden. Osprey: Open-Source Processing, Reconstruction & Estimation of Magnetic Resonance Spectroscopy Data. J Neurosci Meth 343:108827 (2020).'
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - workdir: /opt
+    - file:
+        name: UbuntuGUI.zip
+        url: https://github.com/schorschinho/osprey/releases/download/v.2.9.0/UbuntuGUI.zip
+    - run:
+        - unzip UbuntuGUI.zip
+    - deploy:
+        bins:
+          - Osprey
+    - test:
+        name: testScript
+        script: |-
+          #!/bin/bash
+          # Write your test script here
+          exit 1
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA6FJREFUSEu1ll1sU2UYx39vP7d12owWumZr1w7HgrBFsMMgUVmIUdHAIPgRY+CGkCALRqOSwYQl06iRbYI3hg9vHG5cmMwb2FCDEkFjHAPJhiWTGWWT4qCDdWt7ej7MOWwJsw1dNnmTc/fm/T3/5/k//xzheOo1jXt4xD0HbP+gddYK8nKsjCdSGfsgZgsoKSzgmeVl/D54nZ/7rnAzlpwCmhHAbrUgTIL11RUs8LlQFIVEIkHDe3sZsxbiKvRjtlgM0LQBjlw7yxYHyLPbqCzzkp9rQ1EVVEUmFouxa9c7fN76hfGov6wCT3EpTte87IDHlpazbtVSNFVD0/QHFVRVMarWAZfCv/HoiieQZTltBkKIzACP636eXL6YqkVB+vv76erqMh70egvJdzjo7e1lbc1a2tva2b2n4a4mT2tRRVkxLz39CCe//Zra2lpDfjQaNR6x2WyYzWbGx8dxu90MDw9n3aA0wJqVSxiL9LNhQw2Pr8xFCPjhVJxEYmZuTgN89MaLLCh7AG/RNUwm+PSwh+drhghflLJWm+lCGqBu0ypCoRAlgRts3urkwrkk+z+OEiiZTzAYQNP0YU+o0UBWZGPAZ878ePdFS44OE/2rD6ddIxwOI0kSkUgEn89HfX09paVB/H5/movklGTc7ej4ile3bU93kr7J0tgIg+e6MlcgBM3NzQSDQRRFTgPoe2BYVpE5eOgz2tqOMjIywtDQ34brxOa3PtQi4dMwIVuvenBwEK/Xa3z6aWlpmRZAB+l7MvDHAN3dPVRWLkK8svVt7eaVi5jMFs7+2su6Lbtp378T79wCoyUzASjqhCpZRqx/4WUtFR/FWVTOnMBDJG79Q6TvlBEB+tF939TURCAQyNqiSQWTgJPnBxAbt+3Uon9ewPfws1hy8rl1tZ8bl8/qMWUA5nk8NDY24nbNMXqtx4SmqrfjYiKLJmdwJyCelKiua0VsqWvWrvZ+j69qDWar3ajeNT+ExZ6X7gjAbrcSWuhnboGDJeVFhtJMgH0dP3Ggs+d2FqlyCpMRrwJNVRAmc9alui/PzqbnqnA7c6cAFFlm75enOXyiB4E4NO24zkRcvWIhyx4sNgBJSeK785d58+BxRuPG1reZzOaGWQFybBZ2bKzm3SPf0PnLJa6NxEhIsm7598euJ/bQfSAlnKtf1yzm7C25U4Eky6jqf8JPEBeaOCGEtmO0c1948v7/8FchjppUPlGsIjl+rKUbmEL+F202RFlLFFTCAAAAAElFTkSuQmCC
+categories:
+  - spectroscopy
+readme: |-
+  ----------------------------------
+  ## osprey/2.9.0 ##
+
+  Osprey is an all-in-one software suite for state-of-the art processing and quantitative analysis of in-vivo magnetic resonance spectroscopy (MRS) data.
+
+  Example:
+  ```
+  Osprey
+  ```
+
+  More documentation can be found here: https://schorschinho.github.io/osprey/
+
+  Citation:
+  ```
+  G Oeltzschner, HJ Zöllner, SCN Hui, M Mikkelsen, MG Saleh, S Tapper, RAE Edden. Osprey: Open-Source Processing, Reconstruction & Estimation of Magnetic Resonance Spectroscopy Data. J Neurosci Meth 343:108827 (2020).
+  ```
+
+  To run container outside of this environment: ml osprey/2.9.0
+
+  ----------------------------------
+copyright:
+  - license: MIT
+    url: https://github.com/schorschinho/osprey?tab=MIT-1-ov-file#readme
