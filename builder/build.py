@@ -72,8 +72,8 @@ def load_description_file(recipe_dir: str) -> typing.Any:
     
     # Validate the recipe using attrs schema
     try:
-        from .validation import validate_recipe_dict
-        validate_recipe_dict(recipe_dict)
+        import builder.validation as validation
+        validation.validate_recipe_dict(recipe_dict)
     except ImportError:
         # If validation module is not available, skip validation
         print("Warning: Recipe validation module not available, skipping validation")
