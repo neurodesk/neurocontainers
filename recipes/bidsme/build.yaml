@@ -1,0 +1,81 @@
+name: bidsme
+version: 1.9.3
+architectures:
+  - x86_64
+categories:
+  - bids apps
+structured_readme:
+  description: |
+    BIDSme is a an open-source python tool that converts source-level (raw) neuroimaging datasets to BIDS-conformed, and was developed by Nikita BELIY at the CRC.
+  example: |
+    To run BIDSme in JupyterLab production mode:
+    docker run \
+    -v "$path_to/rawdata_prod:/mnt/rawdata:ro" \ 
+    -v "$path_to/prepared_prod:/mnt/prepared" \
+    -v "$path_to/bidsified_prod:/mnt/bidsified" \
+    -v "$path_to/configuration:/mnt/configuration" \
+    -p 8888:8888 \
+    bidsme lab prod
+  documentation: https://github.com/CyclotronResearchCentre/BIDSme_containerisation
+  citation: ''
+build:
+  kind: neurodocker
+  base-image: bradley987/bidsme:1.9.3
+  pkg-manager: apt
+  directives:
+    - deploy:
+        type: docker
+        image: bradley987/bidsme:1.9.3
+        entrypoint: /entrypoint.sh
+        workdir: /mnt
+        mounts:
+          - host_path: ${NEURODESK_PATH}/rawdata
+            container_path: /mnt/rawdata
+            mode: ro
+          - host_path: ${NEURODESK_PATH}/prepared
+            container_path: /mnt/prepared
+            mode: rw
+          - host_path: ${NEURODESK_PATH}/bidsified
+            container_path: /mnt/bidsified
+            mode: rw
+          - host_path: ${NEURODESK_PATH}/configuration
+            container_path: /mnt/configuration
+            mode: rw
+        cmd: []
+    - test:
+        name: testScript
+        script: |-
+          #!/bin/bash
+          echo "Running test script..."
+          echo "[INFO] Interactive shell in /mnt"
+          cd /mnt
+          exec /bin/sh
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAC40lEQVRIS7WWzU8TQRjGn6HdbU0gwYgHEw8eTTCRBMOBSy8eMIGDF/0HeiuX3vxMPEiCFbAark0IbksBPwA1HkRFLQsoBSt7M41GJZxEExMOJOw6H7vbnZ2iicIkm25ndt/fzPs8884S/cmaA8cBb/TXYffBy+33+vzxUL8/Huon+uMPIvo+BGcxBWCfggvAowpd9d6mxU8xTQzRZt4LDbyLZetLFfb8M18XfqPFgKPHQE6cEumcMeAqx/+TrnMg8QNyHNavTa/WAK4WtjmLnYELAhBuzS1o6L0G+3qvNNKQnQQ52CIAAU2JNrUiuYg9wAGDF2FZFlpbW/nzW1tbKJfLSKVSWPv8Ffj1E8PDw4jH40gmk2jIToBQeNgwRHtY9l3kpWnHfA57SAAymQwKhQKamprQ19eHzs5OtLW18TgS4NY4XcFhxY0CENCACW4vMMAlDujv74dhGDxgR0cHSqUSdF2vCwBbQcgwRHuw7AM8N9mLLxRAY2MjXwGbfSKRUAFD40DzIWWTEu3+O38fOD++w5mdgmMtw/lowVpd8TVgETc3N9HT0wPTNBUAGSxSDQIAV2ii3Xtb2weeixboCrKXpRTFYjF0d3cjl8tx6Pr6uqQBGRirAdw43L7RySXVRSxF2SuKBuy9jY0NpNNpFItFGXCzIACB4CzlJDqxqLiIa3D7quQibwX5fB7t7e2oVCoyIJOv7YNA6RGAkPL24kvYdwTA2wfb29uoVqvctiMjI6oGDOBqECw9JDq+oNjUWZrjgLpNpyXjzHlgelQaJjcMDpDqGn2CRIumDKCdzrdPcGia/HyyG00DWo4Ax08Cehx4Sm3pNZaB02eBmFyLhMhj87V9EBCo3qHzp6obnrn3PokWSmIf7ENwsYL8G1H/wmeCWxWVWQeqpXJQ1YlDIhSwW/C/nXS7pSV4fpOI8VoFuDP5l5xLHwfMRZG7r5QTbS9m7jmQREbnpBPtf3PO3w9o8RuaMJy6cMscygAAAABJRU5ErkJggg==
+readme: |-
+  ----------------------------------
+  ## bidsme/{{ context.version }} ##
+
+  BIDSme is a an open-source python tool that converts source-level (raw) neuroimaging datasets to BIDS-conformed, and was developed by Nikita BELIY at the CRC.
+
+  Example:
+  ```
+  To run BIDSme in JupyterLab production mode:
+  docker run \
+  -v "$path_to/rawdata_prod:/mnt/rawdata:ro" \ 
+  -v "$path_to/prepared_prod:/mnt/prepared" \
+  -v "$path_to/bidsified_prod:/mnt/bidsified" \
+  -v "$path_to/configuration:/mnt/configuration" \
+  -p 8888:8888 \
+  bidsme lab prod
+  ```
+
+  More documentation can be found here: https://github.com/CyclotronResearchCentre/BIDSme_containerisation
+
+  Citation:
+  ```
+
+  ```
+
+  To run container outside of this environment: ml bidsme/{{ context.version }}
+
+  ----------------------------------
