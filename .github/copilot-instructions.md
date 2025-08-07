@@ -242,6 +242,14 @@ deploy:
 2. **Missing test configs**: Not all recipes have test.yaml files
 3. **Runtime selection**: Tests auto-select Docker > Apptainer > Singularity
 
+### Known Repository Issues
+The repository contains some recipes with YAML syntax errors or broken builds. These are existing issues not related to your changes:
+- Some recipes have malformed YAML (e.g., clinicadl)
+- Some builds fail due to upstream source unavailability
+- Some containers are marked as drafts and skip auto-building
+
+The validation tools (`./builder/test_all.sh`) will continue processing even when encountering broken recipes. Focus on ensuring your changes work correctly rather than fixing unrelated existing issues.
+
 ## Validation Workflows
 
 ### Pre-commit Validation
