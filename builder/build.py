@@ -513,6 +513,8 @@ class BuildContext(object):
                     url,
                     check_only=check_only,
                     insecure=file.get("insecure", False),
+                    retry=file.get("retry", 1),
+                    curl_options=file.get("curl_options", ""),
                 )
 
                 if "executable" in file and file["executable"]:
@@ -1016,7 +1018,7 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def download_with_cache(url, check_only=False, insecure=False):
+def download_with_cache(url, check_only=False, insecure=False, retry=1, curl_options=""):
     # download with curl to a temporary file
     if shutil.which("curl") is None:
         raise ValueError("curl not found in PATH.")
@@ -1028,8 +1030,18 @@ def download_with_cache(url, check_only=False, insecure=False):
 
     # Make the output filename and check if it exists
     output_filename = os.path.join(cache_dir, filename)
+    temp_filename = output_filename + ".tmp"
+    
     if os.path.exists(output_filename):
-        return output_filename
+        # Validate cached file is not corrupted
+        if os.path.getsize(output_filename) > 0:
+            return output_filename
+        else:
+            print(f"Cached file {output_filename} is empty, removing and re-downloading")
+            try:
+                os.remove(output_filename)
+            except OSError as e:
+                print(f"Warning: Failed to remove empty cached file: {e}")
 
     # Skip download if check_only is True
     if check_only:
@@ -1038,19 +1050,234 @@ def download_with_cache(url, check_only=False, insecure=False):
         print("Check only mode: skipping file download.")
         return output_filename
 
-    # download the file
-    print(f"Downloading {url} to {output_filename}")
-    # Use full argument names for curl for clarity
-    curl_args = ["curl", "--location", "--output", output_filename, url]
-    if insecure:
-        curl_args.append("--insecure")
+    # Ensure retry is at least 1
+    retry = max(1, retry)
+    
+    # download the file with retry logic
+    for attempt in range(retry):
+        try:
+            print(f"Downloading {url} to {output_filename} (attempt {attempt + 1}/{retry})")
+            
+            # Use full argument names for curl for clarity
+            curl_args = ["curl", "--location", "--output", temp_filename]
+            
+            # Add resumable download support
+            resume_size = 0
+            if os.path.exists(temp_filename):
+                # Get file size and try to resume
+                file_size = os.path.getsize(temp_filename)
+                if file_size > 0:
+                    # Validate partial file is not corrupted by checking if it's suspiciously small
+                    # for a retry (likely an error page or corrupted)
+                    if attempt > 0 and file_size < 1024:
+                        print(f"Partial file is suspiciously small ({file_size} bytes), removing and starting fresh")
+                        try:
+                            os.remove(temp_filename)
+                        except OSError:
+                            pass
+                    else:
+                        curl_args.extend(["--continue-at", str(file_size)])
+                        resume_size = file_size
+                        print(f"Resuming download from byte {file_size}")
+            
+            # Add robust curl options for HTTP/2 issues and retries
+            curl_args.extend([
+                "--http1.1",  # Force HTTP/1.1 to avoid HTTP/2 issues
+                "--retry", "15",  # Increased from 10
+                "--retry-delay", "10",  # Increased from 5
+                "--retry-all-errors",
+                "--retry-max-time", "600",  # Increased from 300 (10 minutes)
+                "--connect-timeout", "60",  # Increased from 30
+                "--max-time", "3600",  # Increased from 1800 (1 hour max)
+                "--fail",
+                "--show-error",
+                "--silent"
+            ])
+            
+            if insecure:
+                curl_args.append("--insecure")
+            
+            # Add custom curl options if provided
+            if curl_options:
+                # Split curl_options string and add to args
+                # Handle quoted arguments properly
+                import shlex
+                additional_args = shlex.split(curl_options)
+                curl_args.extend(additional_args)
+            
+            # Add the URL last
+            curl_args.append(url)
 
-    subprocess.check_call(
-        curl_args,
-        stdout=subprocess.DEVNULL,
-    )
+            subprocess.check_call(
+                curl_args,
+                stdout=subprocess.DEVNULL,
+            )
+            
+            # Validate downloaded file
+            if os.path.exists(temp_filename):
+                file_size = os.path.getsize(temp_filename)
+                if file_size == 0:
+                    raise ValueError("Downloaded file is empty")
+                elif file_size < 1024 and resume_size == 0:
+                    # Very small file on fresh download might be an error page
+                    print(f"Warning: Downloaded file is suspiciously small ({file_size} bytes)")
+                
+                # Move temp file to final location if download was successful
+                shutil.move(temp_filename, output_filename)
+                print(f"Successfully downloaded {url} ({file_size} bytes)")
+                return output_filename
+            else:
+                raise ValueError("Download completed but file not found")
+            
+        except subprocess.CalledProcessError as e:
+            print(f"Download attempt {attempt + 1}/{retry} failed with exit code {e.returncode}")
+            
+            # Handle different curl error codes
+            if e.returncode == 18:  # CURL_PARTIAL_FILE
+                print("Partial file transfer detected (HTTP/2 stream issue or connection closed)")
+            elif e.returncode == 92:  # CURL_HTTP2_STREAM
+                print("HTTP/2 stream error detected")
+            elif e.returncode == 28:  # CURL_OPERATION_TIMEDOUT
+                print("Operation timed out")
+            
+            # Clean up potentially corrupted temp file based on error type and size
+            if os.path.exists(temp_filename):
+                file_size = os.path.getsize(temp_filename)
+                should_remove = False
+                
+                # Remove file if:
+                # 1. It's very small (likely error page)
+                # 2. It's the last attempt (clean up completely)
+                # 3. Specific curl errors that indicate corruption
+                if file_size < 1024:
+                    should_remove = True
+                    print(f"Removing small/corrupted temp file: {temp_filename} ({file_size} bytes)")
+                elif attempt == retry - 1:
+                    should_remove = True
+                    print(f"Last attempt failed, removing temp file: {temp_filename}")
+                elif e.returncode in [92, 18]:  # HTTP/2 or partial file errors
+                    should_remove = True
+                    print(f"HTTP/2 or partial file error, removing temp file for fresh retry")
+                else:
+                    print(f"Keeping partial download ({file_size} bytes) for potential resume")
+                
+                if should_remove:
+                    try:
+                        os.remove(temp_filename)
+                        print(f"Cleaned up temp file: {temp_filename}")
+                    except OSError as cleanup_error:
+                        print(f"Warning: Failed to clean up temp file {temp_filename}: {cleanup_error}")
+            
+            # If this was the last attempt, re-raise the exception
+            if attempt == retry - 1:
+                print(f"All {retry} download attempts failed for {url}")
+                raise ValueError(f"Failed to download {url} after {retry} attempts. Last error: curl exit code {e.returncode}")
+            
+            # Wait a bit before retrying (exponential backoff with jitter)
+            import time
+            import random
+            base_wait = min(60, 2 ** attempt)  # Cap at 60 seconds
+            jitter = random.uniform(0.5, 1.5)  # Add some randomness
+            wait_time = int(base_wait * jitter)
+            print(f"Waiting {wait_time} seconds before retry...")
+            time.sleep(wait_time)
+        
+        except Exception as e:
+            print(f"Unexpected error during download attempt {attempt + 1}/{retry}: {e}")
+            
+            # Clean up temp file on unexpected error
+            if os.path.exists(temp_filename):
+                try:
+                    os.remove(temp_filename)
+                    print(f"Cleaned up temp file after unexpected error: {temp_filename}")
+                except OSError as cleanup_error:
+                    print(f"Warning: Failed to clean up temp file {temp_filename}: {cleanup_error}")
+            
+            # If this was the last attempt, re-raise the exception
+            if attempt == retry - 1:
+                print(f"All {retry} download attempts failed for {url}")
+                raise ValueError(f"Failed to download {url} after {retry} attempts. Last error: {e}")
+            
+            # Wait before retrying
+            import time
+            wait_time = min(60, 2 ** attempt)
+            print(f"Waiting {wait_time} seconds before retry...")
+            time.sleep(wait_time)
 
-    return output_filename
+    # This should never be reached due to the exception handling above
+    raise ValueError(f"Unexpected error: download failed for {url}")
+
+
+def cleanup_cached_file(url):
+    """
+    Clean up a cached file by URL. Useful for removing corrupted downloads.
+    Also removes any associated temp files.
+    
+    Args:
+        url (str): The URL that was used to cache the file
+        
+    Returns:
+        bool: True if file was successfully removed, False otherwise
+    """
+    cache_dir = get_cache_dir()
+    filename = sha256(url.encode("utf-8"))
+    output_filename = os.path.join(cache_dir, filename)
+    temp_filename = output_filename + ".tmp"
+    
+    success = True
+    
+    # Remove main cached file
+    if os.path.exists(output_filename):
+        try:
+            os.remove(output_filename)
+            print(f"Cleaned up cached file for {url}")
+        except OSError as e:
+            print(f"Failed to clean up cached file {output_filename}: {e}")
+            success = False
+    
+    # Remove temp file if it exists
+    if os.path.exists(temp_filename):
+        try:
+            os.remove(temp_filename)
+            print(f"Cleaned up temp file for {url}")
+        except OSError as e:
+            print(f"Failed to clean up temp file {temp_filename}: {e}")
+            success = False
+    
+    return success
+
+
+def cleanup_temp_files():
+    """
+    Clean up all temporary download files in the cache directory.
+    This is useful for cleanup after interrupted downloads.
+    
+    Returns:
+        int: Number of temp files cleaned up
+    """
+    cache_dir = get_cache_dir()
+    if not os.path.exists(cache_dir):
+        return 0
+    
+    temp_files = []
+    for filename in os.listdir(cache_dir):
+        if filename.endswith('.tmp'):
+            temp_files.append(os.path.join(cache_dir, filename))
+    
+    cleaned = 0
+    for temp_file in temp_files:
+        try:
+            os.remove(temp_file)
+            print(f"Cleaned up temp file: {temp_file}")
+            cleaned += 1
+        except OSError as e:
+            print(f"Failed to clean up temp file {temp_file}: {e}")
+    
+    if cleaned > 0:
+        print(f"Cleaned up {cleaned} temporary download files")
+    
+    return cleaned
+    return False
 
 
 def get_build_platform(arch: str) -> str:
@@ -1880,11 +2107,59 @@ def main(args):
     init_parser.add_argument("name", help="Name of the recipe to create")
     init_parser.add_argument("version", help="Version of the recipe to create")
 
+    cleanup_parser = command.add_parser(
+        "cleanup",
+        help="Clean up cached files and temporary downloads",
+    )
+    cleanup_parser.add_argument(
+        "--url", 
+        help="URL of specific cached file to clean up"
+    )
+    cleanup_parser.add_argument(
+        "--temp-files", 
+        action="store_true",
+        help="Clean up all temporary download files"
+    )
+    cleanup_parser.add_argument(
+        "--all", 
+        action="store_true",
+        help="Clean up all cached files and temp files"
+    )
+
     args = root.parse_args()
 
     repo_path = get_repo_path()
 
-    if args.command == "init":
+    if args.command == "cleanup":
+        if args.url:
+            # Clean up specific URL
+            success = cleanup_cached_file(args.url)
+            if success:
+                print(f"Successfully cleaned up cached file for: {args.url}")
+            else:
+                print(f"Failed to clean up cached file for: {args.url}")
+                sys.exit(1)
+        elif args.temp_files:
+            # Clean up temp files
+            count = cleanup_temp_files()
+            print(f"Cleaned up {count} temporary files")
+        elif args.all:
+            # Clean up everything
+            cache_dir = get_cache_dir()
+            if os.path.exists(cache_dir):
+                try:
+                    shutil.rmtree(cache_dir)
+                    print(f"Cleaned up entire cache directory: {cache_dir}")
+                except OSError as e:
+                    print(f"Failed to clean up cache directory: {e}")
+                    sys.exit(1)
+            else:
+                print("Cache directory does not exist")
+        else:
+            # Default: just clean up temp files
+            count = cleanup_temp_files()
+            print(f"Cleaned up {count} temporary files")
+    elif args.command == "init":
         init_new_recipe(
             repo_path,
             args.name,

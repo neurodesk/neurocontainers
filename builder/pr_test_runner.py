@@ -16,6 +16,7 @@ Features:
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -89,7 +90,7 @@ class ContainerDownloader:
     
     def download_sif(self, name: str, version: str, 
                      base_url: str = None) -> Optional[str]:
-        """Download a .sif container file"""
+        """Download a .sif container file with robust error handling and retry logic"""
         # Default base URLs to try
         base_urls = [
             base_url,
@@ -101,8 +102,9 @@ class ContainerDownloader:
         
         filename = f"{name}_{version}.sif"
         cache_path = os.path.join(self.cache_dir, filename)
+        temp_path = cache_path + ".tmp"
         
-        # Check if already cached
+        # Check if already cached and complete
         if os.path.exists(cache_path):
             print(f"Using cached container: {cache_path}")
             return cache_path
@@ -112,15 +114,115 @@ class ContainerDownloader:
             url = f"{base_url}/{filename}"
             print(f"Attempting to download: {url}")
             
-            try:
-                urllib.request.urlretrieve(url, cache_path)
-                print(f"Successfully downloaded: {cache_path}")
-                return cache_path
-            except Exception as e:
-                print(f"Failed to download from {url}: {e}")
-                continue
+            # Try up to 3 times per URL
+            for attempt in range(3):
+                try:
+                    # Use curl for more robust downloading with resumable downloads
+                    if shutil.which("curl") is not None:
+                        success = self._download_with_curl(url, temp_path, cache_path, attempt)
+                        if success:
+                            return cache_path
+                    else:
+                        # Fallback to urllib if curl is not available
+                        success = self._download_with_urllib(url, temp_path, cache_path, attempt)
+                        if success:
+                            return cache_path
+                            
+                except Exception as e:
+                    print(f"Download attempt {attempt + 1}/3 failed from {url}: {e}")
+                    # Clean up partial download if it's small (likely error page)
+                    if os.path.exists(temp_path):
+                        file_size = os.path.getsize(temp_path)
+                        if file_size < 1024:  # Less than 1KB
+                            try:
+                                os.remove(temp_path)
+                                print(f"Cleaned up small/corrupted temp file")
+                            except OSError:
+                                pass
+                    
+                    if attempt < 2:  # Not the last attempt
+                        import time
+                        wait_time = 2 ** attempt  # 1s, 2s exponential backoff
+                        print(f"Waiting {wait_time} seconds before retry...")
+                        time.sleep(wait_time)
+                    continue
+            
+            # Clean up temp file after all attempts for this URL failed
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                    print(f"Cleaned up temp file after all attempts failed for {url}")
+                except OSError:
+                    pass
         
         return None
+    
+    def _download_with_curl(self, url: str, temp_path: str, final_path: str, attempt: int) -> bool:
+        """Download using curl with resumable downloads"""
+        import subprocess
+        
+        print(f"Downloading with curl: {url} (attempt {attempt + 1}/3)")
+        
+        curl_args = [
+            "curl",
+            "--location",
+            "--output", temp_path,
+            "--http1.1",  # Force HTTP/1.1 to avoid HTTP/2 issues
+            "--retry", "5",
+            "--retry-delay", "10",
+            "--retry-all-errors",
+            "--retry-max-time", "600",  # 10 minutes
+            "--connect-timeout", "30",
+            "--max-time", "3600",  # 1 hour max for large files
+            "--fail",
+            "--show-error",
+            "--silent"
+        ]
+        
+        # Add resume support if temp file exists
+        if os.path.exists(temp_path):
+            file_size = os.path.getsize(temp_path)
+            if file_size > 0:
+                curl_args.extend(["--continue-at", str(file_size)])
+                print(f"Resuming download from byte {file_size}")
+        
+        curl_args.append(url)
+        
+        try:
+            subprocess.check_call(curl_args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            # Move temp file to final location if download was successful
+            if os.path.exists(temp_path):
+                shutil.move(temp_path, final_path)
+                print(f"Successfully downloaded: {final_path}")
+                return True
+            else:
+                print("Download completed but file not found")
+                return False
+                
+        except subprocess.CalledProcessError as e:
+            print(f"Curl download failed with exit code {e.returncode}")
+            return False
+    
+    def _download_with_urllib(self, url: str, temp_path: str, final_path: str, attempt: int) -> bool:
+        """Fallback download using urllib"""
+        print(f"Downloading with urllib: {url} (attempt {attempt + 1}/3)")
+        
+        try:
+            urllib.request.urlretrieve(url, temp_path)
+            
+            # Move temp file to final location if download was successful
+            if os.path.exists(temp_path):
+                shutil.move(temp_path, final_path)
+                print(f"Successfully downloaded: {final_path}")
+                return True
+            else:
+                print("Download completed but file not found")
+                return False
+                
+        except Exception as e:
+            print(f"Urllib download failed: {e}")
+            return False
     
     def find_local_sif(self, name: str, version: str, 
                       search_dirs: List[str] = None) -> Optional[str]:
@@ -136,7 +238,7 @@ class ContainerDownloader:
         return None
 
     def cleanup_downloaded_container(self, container_path: str, verbose: bool = False) -> bool:
-        """Remove a downloaded container file from cache"""
+        """Remove a downloaded container file from cache, including temp files"""
         if not container_path or not os.path.exists(container_path):
             return False
             
@@ -150,9 +252,18 @@ class ContainerDownloader:
             return False
             
         try:
+            # Remove the main file
             os.remove(container_path)
             if verbose:
                 print(f"Cleaned up downloaded container: {container_path}")
+            
+            # Also remove temp file if it exists
+            temp_path = container_path + ".tmp"
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+                if verbose:
+                    print(f"Cleaned up temp file: {temp_path}")
+            
             return True
         except Exception as e:
             if verbose:
