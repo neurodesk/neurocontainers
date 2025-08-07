@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "bidsme 1.9.3": {
+      "version": "20250807",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "bids apps"
+  ]
+}
