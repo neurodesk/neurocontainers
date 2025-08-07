@@ -68,7 +68,21 @@ def load_description_file(recipe_dir: str) -> typing.Any:
         raise ValueError(f"Description file {description_file} does not exist.")
 
     with open(description_file, "r") as f:
-        return yaml.safe_load(f)
+        recipe_dict = yaml.safe_load(f)
+    
+    # Validate the recipe using attrs schema
+    try:
+        from .validation import validate_recipe_dict
+        validate_recipe_dict(recipe_dict)
+    except ImportError:
+        # If validation module is not available, skip validation
+        print("Warning: Recipe validation module not available, skipping validation")
+    except Exception as e:
+        print(f"Warning: Recipe validation failed: {e}")
+        # For now, continue with build but print warning
+        # In the future, this could be made into a hard error
+    
+    return recipe_dict
 
 
 _jinja_env = jinja2.Environment(undefined=jinja2.StrictUndefined)
