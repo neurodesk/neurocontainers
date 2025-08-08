@@ -3,13 +3,13 @@ version: 1.9.3
 architectures:
   - x86_64
 categories:
-  - bids apps
+  - data organisation
 structured_readme:
   description: |
     BIDSme is a an open-source python tool that converts source-level (raw) neuroimaging datasets to BIDS-conformed, and was developed by Nikita BELIY at the CRC.
   example: |
     bidsme
-  documentation: https://github.com/CyclotronResearchCentre/BIDSme_containerisation
+  documentation: https://github.com/CyclotronResearchCentre/bidsme/blob/dev/doc/cli-interface.md
   citation: ''
 build:
   kind: neurodocker
@@ -42,7 +42,7 @@ build:
         script: |-
           #!/bin/bash
           bidsme
-icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAC40lEQVRIS7WWzU8TQRjGn6HdbU0gwYgHEw8eTTCRBMOBSy8eMIGDF/0HeiuX3vxMPEiCFbAark0IbksBPwA1HkRFLQsoBSt7M41GJZxEExMOJOw6H7vbnZ2iicIkm25ndt/fzPs8884S/cmaA8cBb/TXYffBy+33+vzxUL8/Huon+uMPIvo+BGcxBWCfggvAowpd9d6mxU8xTQzRZt4LDbyLZetLFfb8M18XfqPFgKPHQE6cEumcMeAqx/+TrnMg8QNyHNavTa/WAK4WtjmLnYELAhBuzS1o6L0G+3qvNNKQnQQ52CIAAU2JNrUiuYg9wAGDF2FZFlpbW/nzW1tbKJfLSKVSWPv8Ffj1E8PDw4jH40gmk2jIToBQeNgwRHtY9l3kpWnHfA57SAAymQwKhQKamprQ19eHzs5OtLW18TgS4NY4XcFhxY0CENCACW4vMMAlDujv74dhGDxgR0cHSqUSdF2vCwBbQcgwRHuw7AM8N9mLLxRAY2MjXwGbfSKRUAFD40DzIWWTEu3+O38fOD++w5mdgmMtw/lowVpd8TVgETc3N9HT0wPTNBUAGSxSDQIAV2ii3Xtb2weeixboCrKXpRTFYjF0d3cjl8tx6Pr6uqQBGRirAdw43L7RySXVRSxF2SuKBuy9jY0NpNNpFItFGXCzIACB4CzlJDqxqLiIa3D7quQibwX5fB7t7e2oVCoyIJOv7YNA6RGAkPL24kvYdwTA2wfb29uoVqvctiMjI6oGDOBqECw9JDq+oNjUWZrjgLpNpyXjzHlgelQaJjcMDpDqGn2CRIumDKCdzrdPcGia/HyyG00DWo4Ax08Cehx4Sm3pNZaB02eBmFyLhMhj87V9EBCo3qHzp6obnrn3PokWSmIf7ENwsYL8G1H/wmeCWxWVWQeqpXJQ1YlDIhSwW/C/nXS7pSV4fpOI8VoFuDP5l5xLHwfMRZG7r5QTbS9m7jmQREbnpBPtf3PO3w9o8RuaMJy6cMscygAAAABJRU5ErkJggg==
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAypJREFUSEullstPE1EUxr/blrb2IYXSRNmIke7qio1B1ESKCSas3OAjbkwhTVgYH6E2VqMGW/QvwODCrZGkEkCCGoGKtmI1huhgYqLSgBvATUEq0xkzd6btvFqa2KSdzvN3vu/cc86QO/MenucB4aewBZT74nF6tHiNuA9wnPhHfr/8OeT2O494qwygDypdUwJVDkx4LrmVaigDECPmOHnk4gMrBaRWRAHyiEsXVBexnkXyAMjNt+6KCuT5qcZzdS4poJzn5SwSbNvOceDzNBvUMmMNQAzapJMbb+olgOQ1Byx/YTE6sIH1DE1A8XOwswb7Wkyo3UPw/slffJ1m6bnmViOOBc2wu4kmRyQyVy9ZJHnOASuMCFj9yYIQUgSwLItEIoFAfyd4A4uJR59hNptx4pxXAVAs0+uv67QKGBZjA5tYXWIxNDSEaDQKh8OBSCSC7u5uBINBxKcfYOYpQwH+s8042lujr0AOoAkSFCyWALFYDOFwmKrw+XxYWFhAKBTCw8f3MTepD1AoCM/WCXUqVSjAczxWFvMYvysqYBgGyWQSTqcTfr8fdrsdHo8Hu/ZmMTsqAc4040ivqahAXvlEF8DkMRbdxNoSi1wuh2w2C4PBAJfLBY7j0NXVhQ/fppAYFwHtAqDHBEcDkbUOMafk2oyLL6xdus7zPH4JCmJ/KEBukdVqRSaTod+29hZ8TC4WAW0Bo76C0LRLaxGTx8SgFiAEkEql4PV60djkxqf5EuBwwAiHtEwVFvW/qlVWspSDZ4NbVMHIyAiGh4dppH19fejo6EA8Hsf5nlNIz4mA46cPoC0g5EDsuqVqBogAUFSyCqCug3Q6TZNta9zE7OgXWCyWIsBWr27rALn6crdGgZCDyXs5/F5WVnKh4nwnTdhY5/A9KZ7ff8iA1gtCDpQKaLsWAOpelF3jsfojD45VtmcYCGwuwFZHsJ7JY3uLDhIYLQTuJgKTVVzu8mVPrrxwlmnX1U24neYFufzcqWnX1Q2U6uYFuTTlKNOuxTZcfubKrShYo9Ou1YCdhrh8CZabF4pedHHSXqVF2ogrv4WIDhA9wP/MaPXbyT8ddu68r55lfgAAAABJRU5ErkJggg==
 readme: |-
   ----------------------------------
   ## bidsme/{{ context.version }} ##
@@ -54,7 +54,7 @@ readme: |-
   bidsme
   ```
 
-  More documentation can be found here: https://github.com/CyclotronResearchCentre/BIDSme_containerisation
+  More documentation can be found here: https://github.com/CyclotronResearchCentre/bidsme/blob/dev/doc/cli-interface.md
 
   Citation:
   ```
