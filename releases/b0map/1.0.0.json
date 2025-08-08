@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "b0map 1.0.0": {
+      "version": "20250808",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "other"
+  ]
+}
