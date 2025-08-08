@@ -208,7 +208,6 @@ def process_image(imgGroup, connection, config, mrdHeader):
 
     opre_sendoriginal = mrdhelper.get_json_config_param(config, 'sendoriginal', default=False, type='bool')
     opre_interleaved = mrdhelper.get_json_config_param(config, 'interleaved', default=False, type='bool')
-    opre_b1output = mrdhelper.get_json_config_param(config, 'b0output', default='pu', type='str')
     delta_te = mrdhelper.get_json_config_param(config, 'delta_te', default=5.0, type='float')
     opre_mask_nerode = mrdhelper.get_json_config_param(config, 'masknerode', default=2, type='int')
     opre_mask_ndilate = mrdhelper.get_json_config_param(config, 'maskndilate', default=4, type='int')
