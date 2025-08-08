@@ -266,7 +266,12 @@ class NeuroDockerBuilder:
         :return: The generated Dockerfile as a string.
         """
 
-        from neurodocker.reproenv.renderers import DockerRenderer
+        try:
+            from neurodocker.reproenv.renderers import DockerRenderer
+        except ImportError:
+            raise ImportError(
+                "neurodocker is not installed. Please install it with: pip install neurodocker"
+            )
 
         if (
             len(
@@ -878,7 +883,18 @@ class BuildContext(object):
         builder.copy("README.md", "/README.md")
         builder.copy("build.yaml", "/build.yaml")
 
-        output = builder.generate()
+        try:
+            output = builder.generate()
+        except ImportError as e:
+            if "neurodocker" in str(e):
+                # In environments where neurodocker is not available (like CI), 
+                # we can't generate the actual Dockerfile but we can still validate the recipe
+                raise ImportError(
+                    "neurodocker is not installed. This is required for Dockerfile generation. "
+                    "Please install it with: pip install neurodocker"
+                ) from e
+            else:
+                raise
 
         # Hack to remove the localedef installation since neurodocker adds it.
         if build_directive.get("fix-locale-def"):
@@ -1496,21 +1512,31 @@ def generate_from_description(
     )
 
     # Write Dockerfile
+    dockerfile_generated = False
     if ctx.build_kind == "neurodocker":
-        if check_only:
-            # In check-only mode, skip neurodocker generation to avoid dependency issues
-            print(f"✅ Recipe validation passed for {ctx.name}")
-            print("Skipping Dockerfile generation in check-only mode")
-            return ctx
-        else:
+        try:
             dockerfile = ctx.build_neurodocker(ctx.build_info, locals=locals)
             with open(os.path.join(ctx.build_directory, ctx.dockerfile_name), "w") as f:
                 f.write(dockerfile)
+            dockerfile_generated = True
+        except ImportError as e:
+            if "neurodocker" in str(e) and check_only:
+                # In check-only mode, we can skip Dockerfile generation if neurodocker is missing
+                # This allows tests to run in CI environments without neurodocker installed
+                print(f"⚠️  neurodocker not available, skipping Dockerfile generation for {ctx.name}")
+                print("   Recipe validation was successful")
+                dockerfile_generated = False
+            else:
+                # In normal mode or for other import errors, re-raise the error
+                raise
     else:
         raise ValueError("Build kind not supported.")
 
     if check_only:
-        print("Dockerfile generated successfully at", ctx.dockerfile_name)
+        if dockerfile_generated:
+            print("Dockerfile generated successfully at", ctx.dockerfile_name)
+        else:
+            print("Recipe validation completed (Dockerfile generation skipped)")
         return ctx
 
     return ctx
