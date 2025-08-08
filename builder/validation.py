@@ -34,16 +34,23 @@ CATEGORIES = [
     "quantitative imaging",
     "image reconstruction", 
     "conversion",
+    "file conversion",  # Legacy category name
     "quality control",
     "tractography",
     "preprocessing",
     "motion correction",
     "statistical analysis",
+    "statistics",  # Legacy category name
     "modeling",
     "simulation",
     "workflows",
     "data organisation",
     "bids apps",
+    "programming",  # For development tools
+    "phase processing",  # For phase imaging tools
+    "molecular biology",  # For molecular/biological tools
+    "hippocampus",  # For hippocampus-specific tools
+    "spectroscopy",  # For spectroscopy tools
     "other"
 ]
 
@@ -134,6 +141,9 @@ class FileInfo:
     filename: Optional[str] = attrs.field(default=None)
     contents: Optional[str] = attrs.field(default=None)
     url: Optional[str] = attrs.field(default=None, validator=attrs.validators.optional(validate_url))
+    executable: Optional[bool] = attrs.field(default=None)
+    insecure: Optional[bool] = attrs.field(default=None)
+    retry: Optional[int] = attrs.field(default=None)
 
 
 # ============================================================================
@@ -150,6 +160,7 @@ class BuiltinTest:
 class ScriptTest:
     name: str = attrs.field(validator=validate_non_empty_string)
     script: str = attrs.field(validator=validate_non_empty_string)
+    manual: Optional[bool] = attrs.field(default=None)
 
 
 # ============================================================================
@@ -297,6 +308,8 @@ class NeuroDockerBuildRecipe:
     pkg_manager: str = attrs.field(validator=validate_non_empty_string)
     directives: List[Any] = attrs.field()  # List of directives
     add_default_template: Optional[bool] = attrs.field(default=None)
+    add_tzdata: Optional[bool] = attrs.field(default=None)
+    fix_locale_def: Optional[bool] = attrs.field(default=None)
 
 
 # ============================================================================
@@ -323,6 +336,7 @@ class ContainerRecipe:
     description: Optional[str] = attrs.field(default=None)
     options: Optional[Dict[str, Any]] = attrs.field(default=None)
     variables: Optional[Dict[str, Any]] = attrs.field(default=None)
+    epoch: Optional[int] = attrs.field(default=None)
 
     @architectures.validator
     def _validate_architectures(self, attribute, value):
@@ -515,6 +529,10 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
             build_dict["pkg_manager"] = build_dict.pop("pkg-manager")
         if "add-default-template" in build_dict:
             build_dict["add_default_template"] = build_dict.pop("add-default-template")
+        if "add-tzdata" in build_dict:
+            build_dict["add_tzdata"] = build_dict.pop("add-tzdata")
+        if "fix-locale-def" in build_dict:
+            build_dict["fix_locale_def"] = build_dict.pop("fix-locale-def")
         
         # Parse directives
         directives = []
