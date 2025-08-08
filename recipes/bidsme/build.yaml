@@ -16,27 +16,8 @@ build:
   base-image: bradley987/bidsme:1.9.3
   pkg-manager: apt
   directives:
-    - deploy:
-        type: docker
-        image: bradley987/bidsme:1.9.3
-        entrypoint: /entrypoint.sh
-        workdir: /mnt
-        mounts:
-          - host_path: ${NEURODESK_PATH}/rawdata
-            container_path: /mnt/rawdata
-            mode: ro
-          - host_path: ${NEURODESK_PATH}/prepared
-            container_path: /mnt/prepared
-            mode: rw
-          - host_path: ${NEURODESK_PATH}/bidsified
-            container_path: /mnt/bidsified
-            mode: rw
-          - host_path: ${NEURODESK_PATH}/configuration
-            container_path: /mnt/configuration
-            mode: rw
-        cmd: []
-        bins:
-          - bidsme
+    - environment:
+        MPLCONFIGDIR: ~/.config/matplotlib-bidsme
     - test:
         name: testScript
         script: |-
