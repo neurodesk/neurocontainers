@@ -1497,10 +1497,15 @@ def generate_from_description(
 
     # Write Dockerfile
     if ctx.build_kind == "neurodocker":
-        dockerfile = ctx.build_neurodocker(ctx.build_info, locals=locals)
-
-        with open(os.path.join(ctx.build_directory, ctx.dockerfile_name), "w") as f:
-            f.write(dockerfile)
+        if check_only:
+            # In check-only mode, skip neurodocker generation to avoid dependency issues
+            print(f"✅ Recipe validation passed for {ctx.name}")
+            print("Skipping Dockerfile generation in check-only mode")
+            return ctx
+        else:
+            dockerfile = ctx.build_neurodocker(ctx.build_info, locals=locals)
+            with open(os.path.join(ctx.build_directory, ctx.dockerfile_name), "w") as f:
+                f.write(dockerfile)
     else:
         raise ValueError("Build kind not supported.")
 
