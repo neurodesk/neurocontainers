@@ -1,0 +1,50 @@
+name: ospreybids
+version: 4.2.1
+architectures:
+  - x86_64
+structured_readme:
+  description: This tool is used in the Healthy Brain and Child Development (HBCD) study for processing magnetic resonance spectroscopy (MRS) data. The tool acts as a BIDS extension to the OSPREY pipeline.
+  example: osprey
+  documentation: https://osprey-bids.readthedocs.io/en/latest/index.html
+  citation: 'G Oeltzschner, HJ Zöllner, SCN Hui, M Mikkelsen, MG Saleh, S Tapper, RAE Edden. Osprey: Open-Source Processing, Reconstruction & Estimation of Magnetic Resonance Spectroscopy Data. J Neurosci Meth 343:108827 (2020).'
+build:
+  kind: neurodocker
+  base-image: dcanumn/osprey-bids:v4.2.1
+  pkg-manager: apt
+  directives:
+    - deploy:
+        bins:
+          - osprey
+    - test:
+        name: testScript
+        script: |-
+          #!/bin/bash
+          osprey
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA8xJREFUSEu1lW9IG2ccx7+XuzNnkiZp1DSpjTqMdUSk+9OttUI7WoZ0rKtzG4W+GqOwiHMlMF8U34xChowU1+3N2BjkxaBIWxjri8E2JGotWzfTgY3ptLZuJt3SKcYYE+PdPTfuib0kpKVU6cHBPc/DfT+/P9/neRhjx+ksAAFP6WHq3jqjPCVtKst8OPDtlgEmgwBCCDJr62Wxbhmws8aK9uebIEkyxsLTWEimSyCbBtgsJryytxnOGiua6nbg2vg4Br8MwlTbAovNrkGeGHCq6xD92SBUoNFlh6IoUAhBf38/Pjt/HjZHPQSjCe0dJ/DLT5cf34M3D7+IpvodWkS19u3atyp+6dJF+P2fIB6PY2FhQVuzVjuwvJh4NODVthYc2edBBc+B1elK6hqLxdDb2wuPx4PBwUFks6rTH/6Ulai5wYmTr+1DBcugp6cHwWBwSy4uAeh5jjqixWVG4Fw/Rke/o+Jzd0Vks5tzcwmgcZcd7x1vQyAQwMSNczj6uhF7ntPjA28Cf4Rzm8qkDHCwpQY+nw+hUAht7ZVoOyBg6MIK4jEJ3d3d4Dg275yNNxKJYGRk9PE9kMUckJyD3cxheHiYOqL+mSW8/NIxWMzP0p3q9b4PltWBEBmyLIPIBDdvTiIUGoEkSxgauoipqWj5RktEr0IhErLJRMliKpVCa2sr+vr64HQ6qHBenIDIEoU+mJMkCeHwDfh8H2F65jbVYVk2b9O740OasBpZOp0Gz/MwGAx03u/3Y/dudz5qFaICNmBaNipMljF75w79XyEyLSPT2fWOIotrVEi/rQoOz0G6ELv1G+5NT8BqtSIQ+BRut7tMXAM+yIQGQAqBEBnMG8c7FXWr681V2Nl6hILU8dLfk1iO36Ljs2c/htvdmC/JRhZ58aJMtPnCXDYngnn75LuKmEmhfn8XFSOSSIWTsSmwvB4sL8Db7UVd3S5aGkUhqLZUlooXNb1QOoLJufv5Hsz/fgWuvccoYHUxhvt/XgMvbIOlthnGKhd0HK/1iGN16DzkgZ5nUFttKnJUaUZjkXn4vgnJFJD6ZwZmZ5MGSM5HYGvYg0qr45H+tpkFHN3fCLtVzUZt/IYBiIwr129j4PJ15CQSKDuLxLU05FwGgqVwpj+MwuoYeBqqcPgFlyYe/WsJI5E5XBiLYiWTO7P64+cDT3wfFMMsJj0OeBwgCsH3v84gPPsvZhNLWF+XetKL2a8x8ZW4pUufYYBKPUeZ/y1nsLYu9kHR/bzKyVH88AU9vBhjx+nNHZOFVIJ8jvGpw+RKZlWNujjL/wGQn0hM3doSvAAAAABJRU5ErkJggg==
+categories:
+  - bids apps
+  - spectroscopy
+readme: |-
+  ----------------------------------
+  ## ospreybids/{{ context.version }} ##
+
+  This tool is used in the Healthy Brain and Child Development (HBCD) study for processing magnetic resonance spectroscopy (MRS) data. The tool acts as a BIDS extension to the OSPREY pipeline.
+
+  Example:
+  ```
+  osprey
+  ```
+
+  More documentation can be found here: https://osprey-bids.readthedocs.io/en/latest/index.html
+
+  Citation:
+  ```
+  G Oeltzschner, HJ Zöllner, SCN Hui, M Mikkelsen, MG Saleh, S Tapper, RAE Edden. Osprey: Open-Source Processing, Reconstruction & Estimation of Magnetic Resonance Spectroscopy Data. J Neurosci Meth 343:108827 (2020).
+  ```
+
+  To run container outside of this environment: ml ospreybids/{{ context.version }}
+
+  ----------------------------------
+copyright:
+  - license: MIT
+    url: https://github.com/DCAN-Labs/OSPREY_BIDS?tab=MIT-1-ov-file#readme
