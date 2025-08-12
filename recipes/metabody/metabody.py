@@ -8,8 +8,9 @@ import constants
 import nibabel as nib
 import subprocess
 
-from skimage.output import find_boundaries
+from skimage.segmentation import find_boundaries
 import SimpleITK as sitk
+import os
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
@@ -173,6 +174,12 @@ def process_image(images, connection, config, metadata):
     # data = data.transpose((3, 4, 0, 1, 2))
     # after resorting it should be: 320 x 320 x 40 x 1 x 1
     data = data.transpose((3, 4, 2, 1, 0))
+    
+    
+    # Alternative in case the above fails.
+    # Transpose to [x y z img cha]
+    # data = data.transpose((4, 3, 2, 0, 1))
+
 
     # Display MetaAttributes for first image
     # logging.debug("MetaAttributes[0]: %s", ismrmrd.Meta.serialize(meta[0]))
@@ -187,35 +194,44 @@ def process_image(images, connection, config, metadata):
     # prostatefiducialseg needs 3D data:
     # data = np.squeeze(data)
     data = data[:,:,0,0,:]
+    
+    
+    # Alternative in case the above fails.
+    # Squeeze to 4D
+    # data = data[:,:,:,:,0]
+    
+
     logging.debug("Squeezed to 4D: %s" % (data.shape,))
 
     xform = np.eye(4)
     # data = np.rot90(data, k=-1, axes=(0, 1)) # tried (0,2)
     new_img = nib.nifti1.Nifti1Image(data, xform)
-    nib.save(new_img, 'nifti_from_h5.nii')
+    # nib.save(new_img, 'nifti_from_h5.nii')
     # debug
     # subprocess.run(["cp", "nifti_from_h5.nii", "/host/home/ubuntu/neurocontainers/recipes/prostatefiducialseg/"])
     # debug
 
-
-
-    ## WRITE AFNI SCRIPTS HERE!!!!    
-    # subprocess.run(["afni_something_something.py", "--input", "nifti_from_h5.nii", "--model", "/opt/models/model.pth", "--output", "output"])
+    ## WRITE AFNI SCRIPTS HERE!!!!
+    # subprocess.run(["dcm2niix", "-o", "/buildhostdirectory", "-f", "nifti_from_h5", "/buildhostdirectory/dicoms"])
+    logging.info('Running AFNI processing')
+    subprocess.run(["/opt/code/afni_processing.sh", "--input", "nifti_from_h5.nii", "--output", "output_afni"])
+    logging.info('Running image transformation for showing stats')
+    show_stats('output_afni/output_image.nii', 'output_afni/stats.nii')
 
     logging.info("Config: \n%s", config)
 
     logging.info('Processing done')
 
-    logging.info('Loading output image')
-    output_img = nib.load('output/pred_seeds.nii.gz')
-    output = output_img.get_fdata()
+    # logging.info('Loading output image')
+    # output_img = nib.load('output/pred_seeds.nii.gz')
+    # output = output_img.get_fdata()
 
     logging.info('Loading Output image')
-    data_img = nib.load('nifti_from_h5.nii')
+    data_img = nib.load('output_image.nii')
     data = data_img.get_fdata()
 
 
-    data = data[:, :, :, None, None]
+    data = data[:, :, :, :, None]
     data = data.transpose((0, 1, 3, 4, 2))
 
     # Determine max value (12 or 16 bit)
@@ -262,7 +278,7 @@ def process_image(images, connection, config, metadata):
         # Create a copy of the original ISMRMRD Meta attributes and update
         tmpMeta = meta[iImg]
         tmpMeta['DataRole']                       = 'Image'
-        tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'PROSTATEFIDUCIALSEG']
+        tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'METABODY']
         tmpMeta['WindowCenter']                   = str((maxVal+1)/2)
         tmpMeta['WindowWidth']                    = str((maxVal+1))
         tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon'
@@ -286,3 +302,67 @@ def process_image(images, connection, config, metadata):
         imagesOut[iImg].attribute_string = metaXml
 
     return imagesOut
+
+
+def show_stats(img_path, stats_img_path, output_path='./'):
+    img = nib.load(img_path)
+    data = img.get_fdata()
+    data = data[..., 0]
+    norm_data = normalise_data(data)
+
+    stats_img = nib.load(stats_img_path)
+    stats_data = stats_img.get_fdata()
+    stats_data = stats_data[..., 0, :]
+
+    # Get stats labels from AFNI.
+    result = subprocess.run(
+        ["3dinfo", "-label", stats_img_path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=True
+    )
+    labels = result.stdout.strip().split('|')
+    logging.info(f'Labels: {labels}')
+
+    # Create pairs of coefficients and their t-stat values.
+    coefs_stats = []
+    for lab in labels:
+        if 'Tstat' in lab:
+            coef = [ii for ii in labels if ii == lab.replace('Tstat', 'Coef')]
+            if len(coef) != 1:
+                print(f'Found wrong number of coefficients: {len(coef)}')
+            coef = coef[0]
+            coefs_stats.append((coef, lab))
+
+    logging.info(f'Coef & Tstat pairs: {coefs_stats}')
+
+    output_data = []
+    for coef_label, tstat_label in coefs_stats:
+        coef_idx = labels.index(coef_label)
+        stat_idx = labels.index(tstat_label)
+
+        # Find all data that have coefficients above a certain threshold
+        #  (top 10% for example) and set their values to above the max value
+        # of the normalised data.
+        current_stats_data = np.squeeze(stats_data[..., stat_idx])
+        thresh = np.quantile(current_stats_data, 0.9)
+
+        above_idx = current_stats_data >= thresh
+        data_copy = norm_data.copy()
+        data_copy[above_idx] = 2
+        output_data.append(data_copy)
+
+    output_data = np.stack(output_data, axis=-1)
+    output_img = nib.nifti1.Nifti1Image(output_data, img.affine)
+    nib.save(output_img, os.path.join(output_path, 'output_image.nii'))
+
+
+def normalise_data(data):
+    min_val = np.min(data)
+    max_val = np.max(data)
+    normalized_data = (data - min_val) / (max_val - min_val)
+
+    return normalized_data
+
+    
