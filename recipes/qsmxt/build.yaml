@@ -152,7 +152,7 @@ build:
             PATH: $PATH:/opt/FastSurfer
         - deploy:
             path:
-              - /opt/FastSurfer
+              - /opt/FastSurfer 
         - test:
             name: Test FastSurfer
             manual: true
