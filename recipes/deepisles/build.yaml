@@ -1,0 +1,72 @@
+name: deepisles
+version: '1.1'
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/ezequieldlrosa/DeepIsles/blob/main/LICENSE
+architectures:
+  - x86_64
+structured_readme:
+  description: |-
+    DeepISLES: State-of-the-art ischemic stroke lesion segmentation in MRI. 
+    DeepISLES is an out-of-the-box software tool for processing MRI scans and segmenting ischemic stroke lesions, developed in collaboration with leading teams from the ISLES'22 MICCAI Challenge.
+  example: |
+    # Example usage
+
+    ```bash
+    # Run the containerized tool
+    docker run --rm deepisles:1.1
+    ```
+
+    Try DeepISLES out with the provided example data:
+
+     python scripts/predict.py
+  documentation: https://github.com/ezequieldlrosa/DeepIsles
+  citation: |
+    de la Rosa, E., Reyes, M., Liew, S. L., Hutton, A., Wiest, R., Kaesmacher, J., Hanning, U., Hakim, A., Zubal, R., Valenzuela, W., Robben, D., Sima, D. M., Anania, V., Brys, A., Meakin, J. A., Mickan, A., Broocks, G., Heitkamp, C., Gao, S.,…Wiestler, B. (2025). DeepISLES: a clinically validated ischemic stroke segmentation model from the ISLES'22 challenge. Nat Commun, 16(1), 7357. https://doi.org/10.1038/s41467-025-62373-x 
+
+    Hernandez Petzsche, M. R., de la Rosa, E., Hanning, U., Wiest, R., Valenzuela, W., Reyes, M., Meyer, M., Liew, S. L., Kofler, F., Ezhov, I., Robben, D., Hutton, A., Friedrich, T., Zarth, T., Burkle, J., Baran, T. A., Menze, B., Broocks, G., Meyer, L.,…Kirschke, J. S. (2022). ISLES 2022: A multi-center magnetic resonance imaging stroke lesion segmentation dataset. Sci Data, 9(1), 762. https://doi.org/10.1038/s41597-022-01875-5 
+readme: |-
+  ----------------------------------
+  ## deepisles/{{ context.version }} ##
+
+  DeepISLES: State-of-the-art ischemic stroke lesion segmentation in MRI. 
+  DeepISLES is an out-of-the-box software tool for processing MRI scans and segmenting ischemic stroke lesions, developed in collaboration with leading teams from the ISLES'22 MICCAI Challenge.
+
+  Example:
+  ```
+  # Example usage
+
+  ```bash
+  # Run the containerized tool
+  docker run --rm deepisles:1.1
+  ```
+
+  Try DeepISLES out with the provided example data:
+
+   python scripts/predict.py
+  ```
+
+  More documentation can be found here: https://github.com/ezequieldlrosa/DeepIsles
+
+  Citation:
+  ```
+  de la Rosa, E., Reyes, M., Liew, S. L., Hutton, A., Wiest, R., Kaesmacher, J., Hanning, U., Hakim, A., Zubal, R., Valenzuela, W., Robben, D., Sima, D. M., Anania, V., Brys, A., Meakin, J. A., Mickan, A., Broocks, G., Heitkamp, C., Gao, S.,…Wiestler, B. (2025). DeepISLES: a clinically validated ischemic stroke segmentation model from the ISLES'22 challenge. Nat Commun, 16(1), 7357. https://doi.org/10.1038/s41467-025-62373-x 
+
+  Hernandez Petzsche, M. R., de la Rosa, E., Hanning, U., Wiest, R., Valenzuela, W., Reyes, M., Meyer, M., Liew, S. L., Kofler, F., Ezhov, I., Robben, D., Hutton, A., Friedrich, T., Zarth, T., Burkle, J., Baran, T. A., Menze, B., Broocks, G., Meyer, L.,…Kirschke, J. S. (2022). ISLES 2022: A multi-center magnetic resonance imaging stroke lesion segmentation dataset. Sci Data, 9(1), 762. https://doi.org/10.1038/s41597-022-01875-5
+  ```
+
+  To run container outside of this environment: ml deepisles/{{ context.version }}
+
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: isleschallenge/deepisles
+  pkg-manager: apt
+  directives:
+    - deploy:
+        path: []
+        bins:
+          - python
+categories:
+  - image segmentation
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA21JREFUSEuVVllIVFEY/s511OvMuETWJESkTWSIS4QtCoVvpk5TPakRESVk0qtLlNiiD0MZo1Ka2mP0IJRSPQiiKRQklKDZgtpMyzhmuYyCpnPnxrnLbPeOy4EL99z7n//7v+8/5/8PWWzX8jwP+B4edPjP5ffg73Tu8QjmoE7U/JCFNp3gMZRBaCA1hyTAD/VLXK1aCUCO2rdQjFDJaC2GwfYCgL8EG3MoRhpKIn9FyFxLlAoDn4Pg3KynebA9mWuRGahLEdqhMrlqkpLZ5iiB7dIK8KjPjZvPVsWV0sjYRVCQHoZDSQTaCIKqjlUMfhODURunDhBUndAgXi/mksw8FCUSAHrdYA/fQmVlpXctRZ+ZmUFZWRn0kx34YOfRNzyH6Ohohf/h4WFUn89AZW6YACDsor8PWC+D1tduaI/cQUVFBVJSUgSDoqIilJSUwGAwoKCgAJ/evcLQ+DxGRkZQXl4eAOJ0OpGiH/cC8DyhALJEPFr73NAeFQEIIQGLFxYW4HA4kH1wHyYcLvT29sJsNitYmDMIKigDnfiLTDexXokogC5LBNgdz8BarEGsFqh5zqGmuQeZmZkwbNVjctqF2dlZdHV1BQBYrVZcSpuAKY2BhpEkWgug8awGxu0MmnrcyLnyFCaTCVtiWEz9cUGn02F5eTkAoLCwEFmalziZLgIISf7dKOeAR3s/p2CwZxtBfTeHqw2DiIuLQ+r+JIFBKInqTjMwpRJoGEmiqQZZIh5trznos305uJavQTQLPBmKwdDXaXR2duLiuTOwT4YGuHyM4EIWgxhWAnBaI705oAxkgNzcXMEiMTERFosFLMvCaDSCX/yOjzYXxsbGUFtbq9hF4dNvcCOPQUKsJBEFoNtpaYXH4wEq0W3FObDZbCgtLYVztBtuDnj7eV71HNBdVpyzE9UCgFg8ieO+zIBH+wCHuhec6gnNTyMwpzNo7vfgvT30ST6+l+B6HkFCjCQRBaBIqxyPL5PAlMsjIEPyQau1ngWSDQQrHDDq8OAfrSbSfx6B5T1SAyTvAPQREoNf9RGbLNe+vkFjVCuG9LvcwMjPe6JE/h0teC6W4I3Uf5WO9uOuzGAj5VrpIDgwRUfzAYhJUetogU1//Zbqb0/slnBFRwMCI/WXaHOXAIDYLRFr3ipCJ1H9khB8O/kPaXpCv7e+XJ0AAAAASUVORK5CYII=
