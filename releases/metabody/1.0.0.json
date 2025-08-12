@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "metabody 1.0.0": {
+      "version": "20250812",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "other"
+  ]
+}
