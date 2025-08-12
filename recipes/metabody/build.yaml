@@ -130,5 +130,14 @@ build:
 
         - include: macros/openrecon/neurodocker.yaml
 
-        - copy: metabody.py /opt/code/python-ismrmrd-server/metabody.py 
+        - copy: metabody.py /opt/code/python-ismrmrd-server/metabody.py
+        - copy: afni_processing.sh /opt/code/afni_processing.sh
+        - run:
+              - mkdir -p /opt/code/stim_times
+              - git clone https://github.com/thomshaw92/BodyLocaliser.git /opt/code/BodyLocaliser
+              - cp /opt/code/BodyLocaliser/sub-1_TBS/sub-1_run-1*.1D /opt/code/stim_times/
+
+        # install small pip packages
+        - run:
+              - pip install SimpleITK nibabel pandas scikit-learn dcm2niix
 
