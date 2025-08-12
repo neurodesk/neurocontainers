@@ -1,5 +1,5 @@
 name: freesurfer
-version: 8.0.0
+version: 8.1.0
 
 copyright:
   - name: freesurfer license
@@ -94,9 +94,9 @@ build:
         - xauth
 
     - run:
-        - wget --quiet https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}-beta/freesurfer_ubuntu22-{{ context.version }}-beta_amd64.deb
-        - dpkg -i freesurfer_ubuntu22-{{ context.version }}-beta_amd64.deb
-        - rm -rf freesurfer_ubuntu22-{{ context.version }}-beta_amd64.deb
+        - wget --quiet https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}/freesurfer_ubuntu22-{{ context.version }}_amd64.deb
+        - dpkg -i freesurfer_ubuntu22-{{ context.version }}_amd64.deb
+        - rm -rf freesurfer_ubuntu22-{{ context.version }}_amd64.deb
 
     - workdir: /opt/freesurfer-{{ context.version }}
 
@@ -156,8 +156,8 @@ build:
         PATH: $PATH:/opt/workbench/:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/tktools:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/mni/bin
 
     - run:
-        - ln -s /usr/local/freesurfer/{{ context.version }}-beta/* /usr/local/freesurfer/
-        - ln -s /usr/local/freesurfer/{{ context.version }}-beta/* /opt/freesurfer-{{ context.version }}
+        - ln -s /usr/local/freesurfer/{{ context.version }}/* /usr/local/freesurfer/
+        - ln -s /usr/local/freesurfer/{{ context.version }}/* /opt/freesurfer-{{ context.version }}
 
     - workdir: /opt/freesurfer-{{ context.version }}/bin/
 
