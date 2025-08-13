@@ -1,5 +1,5 @@
 name: deepretinotopy
-version: 1.0.12
+version: 1.0.13
 
 copyright:
   - license: GPL-3.0
@@ -39,7 +39,7 @@ build:
     - run:
         - git clone https://github.com/felenitaribeiro/deepRetinotopy_TheToolbox.git
         - cd deepRetinotopy_TheToolbox
-        - git checkout 52c46a1ecfc8e96a53853db0d6dbde3b024d085e
+        - git checkout e6ad07db7a91298967da11da54cd220895fe632c
         - files_to_download=("osfstorage/new_models/deepRetinotopy_polarAngle_LH_model5.pt" "osfstorage/new_models/deepRetinotopy_eccentricity_LH_model2.pt" "osfstorage/new_models/deepRetinotopy_pRFsize_LH_model5.pt" "osfstorage/new_models/deepRetinotopy_polarAngle_RH_model4.pt" "osfstorage/new_models/deepRetinotopy_eccentricity_RH_model2.pt" "osfstorage/new_models/deepRetinotopy_pRFsize_RH_model5.pt")
         - for file in "${files_to_download[@]}"; do path="${file:15}"; mkdir -p "${path%/*}"; chmod 777 "${path%/*}"; osf -p ermbz fetch "$file" "$path"; echo "$file"; new_path=$(echo "$path" | sed -E 's/model[0-9]+/model/'); mv "$path" "$new_path"; echo "Renamed $path to $new_path"; done
 
