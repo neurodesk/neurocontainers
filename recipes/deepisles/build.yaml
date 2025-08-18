@@ -49,6 +49,7 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - install: git
     - run:
         - git clone https://github.com/ezequieldlrosa/DeepIsles.git
         - cd DeepIsles
