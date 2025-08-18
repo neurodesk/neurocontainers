@@ -13,7 +13,6 @@ structured_readme:
     ```bash
     # Run the containerized tool (assuming you are already inside the container)
     import cbig_network_correspondence as cnc
-
     ```
   documentation: https://rubykong.github.io/cbig_network_correspondence
   citation: "Kong, R., Spreng, R. N., Xue, A., Betzel, R. F., Cohen, J. R., Damoiseaux, J. S., De Brigard, F., Eickhoff, S. B., Fornito, A., Gratton, C., Gordon, E. M., Holmes, A. J., Laird, A. R., Larson-Prior, L., Nickerson, L. D., Pinho, A. L., Razi, A., Sadaghiani, S., Shine, J. M.,…Uddin, L. Q. (2025). A network correspondence toolbox for quantitative evaluation of novel neuroimaging results. Nat Commun, 16(1), 2930. https://doi.org/10.1038/s41467-025-58176-9 "
@@ -30,7 +29,6 @@ readme: |-
   ```bash
   # Run the containerized tool (assuming you are already inside the container)
   import cbig_network_correspondence as cnc
-
   ```
   ```
 
