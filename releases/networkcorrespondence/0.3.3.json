@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "networkcorrespondence 0.3.3": {
+      "version": "20250818",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "structural imaging",
+    "data organisation"
+  ]
+}
