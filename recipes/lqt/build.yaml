@@ -1,0 +1,133 @@
+name: lqt
+version: "20250818"
+copyright:
+  - name: NONE
+    url: https://github.com/jdwor/LQT
+architectures:
+  - x86_64
+structured_readme:
+  description: |-
+    LQT is an R implementation of the lesion quantification toolkit, based on the paper “Lesion Quantification Toolkit: A MATLAB software tool for estimating grey matter damage and white matter disconnections in patients with focal brain lesions” by Griffis et al. The LQT is “a publicly available software package for quantifying the structural impacts of focal brain lesions. It uses atlas-based approaches to estimate parcel-level grey matter lesion loads and multiple measures of white matter disconnection severity that include tract-level disconnection measures, voxel-wise disconnection maps, and parcel-wise disconnection matrices. The toolkit also estimates lesion-induced increases in the lengths of the shortest structural paths between parcel pairs, which provide information about changes in higher-order structural network topology.”
+
+    The R package creates data structures necessary for applying the methods directly to MNI-registered lesion maps from either a single patient or a full study. The package then allows the user to create figures for visualization and summary, and to compile analysis-ready datasets for research.
+  example: |-
+    # Example usage
+
+    ```bash
+    # Run R interactively in the container
+    docker run --rm -it lqt:20250818 R
+
+    # Execute an R script
+    docker run --rm -v /path/to/your/script.R:/script.R lqt:20250818 Rscript /script.R
+
+    # Test that the package is available
+    docker run --rm lqt:20250818 R --slave -e "library(LQT); cat('LQT is available!\\n')"
+
+    ```
+  documentation: |-
+    This container includes:
+    - R 4.4.0
+    - The R package LQT from https://github.com/jdwor/LQT
+    - Additional CRAN packages: none
+    - Additional Bioconductor packages: none
+    - System dependencies: none
+    - Deployed scripts: none
+
+    For detailed package documentation, see: https://github.com/jdwor/LQT
+  citation: "Please cite the original authors of the LQT package when using this container. Repository: https://github.com/jdwor/LQT"
+readme: |-
+  ----------------------------------
+  ## lqt/{{ context.version }} ##
+
+  LQT is an R implementation of the lesion quantification toolkit, based on the paper “Lesion Quantification Toolkit: A MATLAB software tool for estimating grey matter damage and white matter disconnections in patients with focal brain lesions” by Griffis et al. The LQT is “a publicly available software package for quantifying the structural impacts of focal brain lesions. It uses atlas-based approaches to estimate parcel-level grey matter lesion loads and multiple measures of white matter disconnection severity that include tract-level disconnection measures, voxel-wise disconnection maps, and parcel-wise disconnection matrices. The toolkit also estimates lesion-induced increases in the lengths of the shortest structural paths between parcel pairs, which provide information about changes in higher-order structural network topology.”
+
+  The R package creates data structures necessary for applying the methods directly to MNI-registered lesion maps from either a single patient or a full study. The package then allows the user to create figures for visualization and summary, and to compile analysis-ready datasets for research.
+
+  Example:
+  ```
+  # Example usage
+
+  ```bash
+  # Run R interactively in the container
+  docker run --rm -it lqt:20250818 R
+
+  # Execute an R script
+  docker run --rm -v /path/to/your/script.R:/script.R lqt:20250818 Rscript /script.R
+
+  # Test that the package is available
+  docker run --rm lqt:20250818 R --slave -e "library(LQT); cat('LQT is available!\\n')"
+
+  ```
+  ```
+
+  More documentation can be found here: This container includes:
+  - R 4.4.0
+  - The R package LQT from https://github.com/jdwor/LQT
+  - Additional CRAN packages: none
+  - Additional Bioconductor packages: none
+  - System dependencies: none
+  - Deployed scripts: none
+
+  For detailed package documentation, see: https://github.com/jdwor/LQT
+
+  Citation:
+  ```
+  Please cite the original authors of the LQT package when using this container. Repository: https://github.com/jdwor/LQT
+  ```
+
+  To run container outside of this environment: ml lqt/{{ context.version }}
+
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - r-base=4.4.0*
+        - r-base-dev
+    - run:
+        - R --slave -e "if (!require('devtools', quietly = TRUE)) install.packages('devtools', repos='https://cloud.r-project.org/'); devtools::install_github('jdwor/LQT', dependencies=TRUE, upgrade='never'); cat('Installed LQT from GitHub\n')"
+    - test:
+        name: verify_r_installation
+        script: |-
+          # Test R installation
+          R --version
+          echo "Testing R package installation..."
+          R --slave -e "
+            # Check R version
+            cat('R version:', R.version.string, '\n')
+            
+            # Test main package
+            tryCatch({
+              library(LQT)
+              cat('Successfully loaded LQT\n')
+              
+              # Try to get package info
+              pkg_info <- packageDescription('LQT')
+              if (!is.na(pkg_info)) {
+                cat('Package version:', pkg_info[['Version']], '\n')
+                cat('Package title:', pkg_info[['Title']], '\n')
+              }
+            }, error = function(e) {
+              cat('Warning: Could not load LQT:', e[['message']], '\n')
+              cat('Installed packages:\n')
+              print(installed.packages()[,c('Package', 'Version')])
+            })
+            
+            # List key installed packages
+            key_packages <- c()
+            if (length(key_packages) > 0) {
+              cat('Checking additional packages:\n')
+              for (pkg in key_packages) {
+                if (require(pkg, character.only = TRUE, quietly = TRUE)) {
+                  cat('  ✓', pkg, '\n')
+                } else {
+                  cat('  ✗', pkg, '(not found)\n')
+                }
+              }
+            }
+          "
+categories:
+  - structural imaging
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEoklEQVR4AWRUbUidZRi+nvecM9zMCpdrtj5YkUw9Z9BwEqII1oYE/ThZEEn1w+iH60+HLRlBCFG5MPtR4PzZp+nsYzlpUs5sfuQ2t9I5W04JRAkilePGmR49z+7rPj7HI76893tfz3V/P89zjhfoGrPbzozaQOefNvDjHzZw+kpSfrhsA9+PWP93l2zg24vW33EhKaeGrb/9d+tvG1LxtQ5Yv4jv637r++q89X35m/V90Wd9n/+q4hlrwcfIhyIKIEeRheOo1XedF5P6kac/bYrVsPHxrASkC53TxSYSsrQpEaCJnU6PJYb4Oxuxx6qsTpKYOlVfipOjkHNafcSmnGjHax6SaeK5DhmUwtKFw+yKmN2ksCR12OmUXWyKmUOwp8UEsABxqhtZKKZNsL6CHWdux2CiC0B8RU3u46agH7GniSUQq6tIDPyM+HNFiFcdRPz5YiQGfwH5lM/ybSQuD2CtIYKct1/B4c6TuDvyAhIn34OdvArE4+K6cV6czhPGFdfDKy8vF8qitLR0Ew8mP38W5Zd+wtLgOczNzaGrqwvz8/P4v/MbFPW2ww6fg1lZBjuXJOAUHqu4PdvICBgjZplM939tDYnrowiOD6KnpweLi4uIRCLIyMhAWVmZhCcw1NeLnP4u2Om/oDHrsXqLII+k0wkEbnqVj90CRi/g0xPvy46tIi8vDx+3dmDlQBn6R6+ipKQEnueh8fgx2BvjgEwBKcBEHqtxCoojaVARJ/L2ZhR2Zhr5+fmYnJxELG8/fMc+hPf6cXhvfYS/1/xYWFhAMBgE/p0B5AJoLonXCbRLzbj1o/vJjpYWsWPHDkSjUWDnbmB7JsAbJGdjMrMQi8XUzrPCWjyZiAW0Q7mzspFJMu2rNnFSSraAyUOhEJjE3lpCYqgHiXePwI4OIzs7G7Ozs7D+AGA8uJ0RlPwvAh+XjJgyOa7Bdvo64PNjbGwMmZmZCEXnYOVq3nfmM4yMjKCurk4PvKWlBWbXA8C2DBiJpyQLMLETMfCtqKhAeHsc4X8uIvzfBPJ9q6itraUJvb29OPTYg8jKykJBQQEaGhr02ra1tQF79uoUOr3szJZfsmaQT319PTo6OlLS1NSEG4s3EQ6HdYru7m5MTU1p58vLy8jNzUVNTQ3s2XaYmSm9kToB9wrSvVYU3dfXB2PMFqmsrIR5dB9OX0smLSwsRHV1Naj5e2hubk5egJxc2Lvu0QLMqbeIBSQnzCOPy7VrhHdUruDRE6JFIg3wKG9+AHO4Cqb2HRhZT+QVo3XJYOLA0zCvRnCk8ROcunIN5lAVcO9O2QN5pWGPVVRggPv3wASLYPYXw4REggeBUJrs3QdIdyb/CZhnXoR59mWgtBJ48imY1+pgXnoDyH1YMssrydm4x3suqYVB8j8Emx/a6ENnYuqUhyQhZ4x8s3fB7H4IIBbe+SUnkNPm70AnoVHWPBtdE5MTcZz6rvPOR7l1HyZ3fPIWYePRbmUpPW1MJIEMEhrknVZMGwmKYMcxD7HHyhosRmKtLNjplE04YserlinIpYvy4uv01gmkE1ZnEDugFir5SiBtygvjtPqITSid0PH0vQMAAP//1qNY7QAAAAZJREFUAwDC5EHp9HkRBwAAAABJRU5ErkJggg==
