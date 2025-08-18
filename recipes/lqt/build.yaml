@@ -9,7 +9,7 @@ structured_readme:
   description: |-
     LQT is an R implementation of the lesion quantification toolkit, based on the paper “Lesion Quantification Toolkit: A MATLAB software tool for estimating grey matter damage and white matter disconnections in patients with focal brain lesions” by Griffis et al. The LQT is “a publicly available software package for quantifying the structural impacts of focal brain lesions. It uses atlas-based approaches to estimate parcel-level grey matter lesion loads and multiple measures of white matter disconnection severity that include tract-level disconnection measures, voxel-wise disconnection maps, and parcel-wise disconnection matrices. The toolkit also estimates lesion-induced increases in the lengths of the shortest structural paths between parcel pairs, which provide information about changes in higher-order structural network topology.”
 
-    The R package creates data structures necessary for applying the methods directly to MNI-registered lesion maps from either a single patient or a full study. The package then allows the user to create figures for visualization and summary, and to compile analysis-ready datasets for research.
+    The R package creates data structures necessary for applying the methods directly to MNI-registered lesion maps from either a single patient or a full study. The package then allows the user to create figures for visualisation and summary, and to compile analysis-ready datasets for research.
   example: |-
     # Example usage
 
@@ -24,16 +24,7 @@ structured_readme:
     docker run --rm lqt:20250818 R --slave -e "library(LQT); cat('LQT is available!\\n')"
 
     ```
-  documentation: |-
-    This container includes:
-    - R 4.4.0
-    - The R package LQT from https://github.com/jdwor/LQT
-    - Additional CRAN packages: none
-    - Additional Bioconductor packages: none
-    - System dependencies: none
-    - Deployed scripts: none
-
-    For detailed package documentation, see: https://github.com/jdwor/LQT
+  documentation: https://github.com/jdwor/LQT
   citation: "Please cite the original authors of the LQT package when using this container. Repository: https://github.com/jdwor/LQT"
 readme: |-
   ----------------------------------
@@ -41,7 +32,7 @@ readme: |-
 
   LQT is an R implementation of the lesion quantification toolkit, based on the paper “Lesion Quantification Toolkit: A MATLAB software tool for estimating grey matter damage and white matter disconnections in patients with focal brain lesions” by Griffis et al. The LQT is “a publicly available software package for quantifying the structural impacts of focal brain lesions. It uses atlas-based approaches to estimate parcel-level grey matter lesion loads and multiple measures of white matter disconnection severity that include tract-level disconnection measures, voxel-wise disconnection maps, and parcel-wise disconnection matrices. The toolkit also estimates lesion-induced increases in the lengths of the shortest structural paths between parcel pairs, which provide information about changes in higher-order structural network topology.”
 
-  The R package creates data structures necessary for applying the methods directly to MNI-registered lesion maps from either a single patient or a full study. The package then allows the user to create figures for visualization and summary, and to compile analysis-ready datasets for research.
+  The R package creates data structures necessary for applying the methods directly to MNI-registered lesion maps from either a single patient or a full study. The package then allows the user to create figures for visualisation and summary, and to compile analysis-ready datasets for research.
 
   Example:
   ```
@@ -60,15 +51,7 @@ readme: |-
   ```
   ```
 
-  More documentation can be found here: This container includes:
-  - R 4.4.0
-  - The R package LQT from https://github.com/jdwor/LQT
-  - Additional CRAN packages: none
-  - Additional Bioconductor packages: none
-  - System dependencies: none
-  - Deployed scripts: none
-
-  For detailed package documentation, see: https://github.com/jdwor/LQT
+  More documentation can be found here: https://github.com/jdwor/LQT
 
   Citation:
   ```
