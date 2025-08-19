@@ -107,6 +107,7 @@ build:
                 - libgomp=11.2.0=h1234567_1
                 - libsodium=1.0.18=h36c2ea0_1
                 - libstdcxx-ng=11.2.0=h1234567_1
+                - libx11
                 - matplotlib-inline=0.1.7=pyhd8ed1ab_0
                 - ncurses=6.4=h6a678d5_0
                 - nest-asyncio=1.6.0=pyhd8ed1ab_0
@@ -184,8 +185,7 @@ build:
             mamba: true
         - run:
             - cp {{ get_file("environment.yml") }} /tmp/environment.yml
-            - conda config --set channel_priority flexible
-            - conda env create -f /tmp/environment.yml
+            - mamba env create -f /tmp/environment.yml
             - rm /tmp/environment.yml
         - environment:
             CONDA_DEFAULT_ENV: NCT_env
@@ -221,6 +221,7 @@ build:
             - libgomp=11.2.0=h1234567_1
             - libsodium=1.0.18=h36c2ea0_1
             - libstdcxx-ng=11.2.0=h1234567_1
+            - libx11
             - matplotlib-inline=0.1.7=pyhd8ed1ab_0
             - ncurses=6.4=h6a678d5_0
             - nest-asyncio=1.6.0=pyhd8ed1ab_0
@@ -297,12 +298,15 @@ build:
         mamba: true
         cleanup: true
     - deploy:
-        bins: []
+        bins:
+          - python
     - run:
         - pip install cbig_network_correspondence
     - test:
         name: verify_installation
         script: |-
+          python3
+
           import cbig_network_correspondence as cnc
 
           atlas_names_list = ["EG17","MG360J12"]
