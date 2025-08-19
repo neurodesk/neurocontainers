@@ -1,0 +1,288 @@
+name: networkcorrespondancetoolkit
+version: 0.3.3
+copyright:
+  - license: MIT
+    url: https://github.com/rubykong/cbig_network_correspondence/blob/master/LICENCE
+architectures:
+  - x86_64
+structured_readme:
+  description: This toolbox was used to explore the network correspondence between networks across different atlases.
+  example: |
+    import cbig_network_correspondence as cnc
+
+    atlas_names_list = ["EG17","MG360J12"]
+    example = cnc.load_example
+    # the example config file
+    print(example.example_config)
+    # the path to the example data
+    print(example.example_nii)
+    ref_params = cnc.compute_overlap_with_atlases.DataParams(example.example_config, example.example_nii)
+    cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"~/NCTexample/example_results")
+  documentation: https://github.com/rubykong/cbig_network_correspondence
+  citation: "Kong, R., Spreng, R. N., Xue, A., Betzel, R. F., Cohen, J. R., Damoiseaux, J. S., De Brigard, F., Eickhoff, S. B., Fornito, A., Gratton, C., Gordon, E. M., Holmes, A. J., Laird, A. R., Larson-Prior, L., Nickerson, L. D., Pinho, A. L., Razi, A., Sadaghiani, S., Shine, J. M.,…Uddin, L. Q. (2025). A network correspondence toolbox for quantitative evaluation of novel neuroimaging results. Nat Commun, 16(1), 2930. https://doi.org/10.1038/s41467-025-58176-9 "
+readme: |-
+  ----------------------------------
+  ## networkcorrespondancetoolkit/{{ context.version }} ##
+
+  This toolbox was used to explore the network correspondence between networks across different atlases.
+
+  Example:
+  ```
+  import cbig_network_correspondence as cnc
+
+  atlas_names_list = ["EG17","MG360J12"]
+  example = cnc.load_example
+  # the example config file
+  print(example.example_config)
+  # the path to the example data
+  print(example.example_nii)
+  ref_params = cnc.compute_overlap_with_atlases.DataParams(example.example_config, example.example_nii)
+  cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"~/NCTexample/example_results")
+  ```
+
+  More documentation can be found here: https://github.com/rubykong/cbig_network_correspondence
+
+  Citation:
+  ```
+  Kong, R., Spreng, R. N., Xue, A., Betzel, R. F., Cohen, J. R., Damoiseaux, J. S., De Brigard, F., Eickhoff, S. B., Fornito, A., Gratton, C., Gordon, E. M., Holmes, A. J., Laird, A. R., Larson-Prior, L., Nickerson, L. D., Pinho, A. L., Razi, A., Sadaghiani, S., Shine, J. M.,…Uddin, L. Q. (2025). A network correspondence toolbox for quantitative evaluation of novel neuroimaging results. Nat Commun, 16(1), 2930. https://doi.org/10.1038/s41467-025-58176-9
+  ```
+
+  To run container outside of this environment: ml networkcorrespondancetoolkit/{{ context.version }}
+
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - group:
+        - file:
+            name: environment.yml
+            contents: |-
+              name: NCT_env
+              channels:
+                - conda-forge
+                - defaults
+              dependencies:
+                - _libgcc_mutex=0.1=main
+                - _openmp_mutex=5.1=1_gnu
+                - asttokens=2.4.1=pyhd8ed1ab_0
+                - backcall=0.2.0=pyh9f0ad1d_0
+                - ca-certificates=2024.6.2=hbcca054_0
+                - comm=0.2.2=pyhd8ed1ab_0
+                - debugpy=1.6.7=py39h6a678d5_0
+                - decorator=5.1.1=pyhd8ed1ab_0
+                - entrypoints=0.4=pyhd8ed1ab_0
+                - executing=2.0.1=pyhd8ed1ab_0
+                - ipykernel=6.29.4=pyh3099207_0
+                - ipython=8.12.0=pyh41d4057_0
+                - jedi=0.19.1=pyhd8ed1ab_0
+                - jupyter_client=7.3.4=pyhd8ed1ab_0
+                - jupyter_core=5.7.2=py39hf3d152e_0
+                - ld_impl_linux-64=2.38=h1181459_1
+                - libffi=3.4.4=h6a678d5_1
+                - libgcc-ng=11.2.0=h1234567_1
+                - libgomp=11.2.0=h1234567_1
+                - libsodium=1.0.18=h36c2ea0_1
+                - libstdcxx-ng=11.2.0=h1234567_1
+                - libx11
+                - matplotlib-inline=0.1.7=pyhd8ed1ab_0
+                - ncurses=6.4=h6a678d5_0
+                - nest-asyncio=1.6.0=pyhd8ed1ab_0
+                - openssl=3.0.13=h7f8727e_2
+                - parso=0.8.4=pyhd8ed1ab_0
+                - pexpect=4.9.0=pyhd8ed1ab_0
+                - pickleshare=0.7.5=py_1003
+                - pip=24.0=py39h06a4308_0
+                - platformdirs=4.2.2=pyhd8ed1ab_0
+                - prompt-toolkit=3.0.47=pyha770c72_0
+                - prompt_toolkit=3.0.47=hd8ed1ab_0
+                - psutil=5.9.0=py39h5eee18b_0
+                - ptyprocess=0.7.0=pyhd3deb0d_0
+                - pure_eval=0.2.2=pyhd8ed1ab_0
+                - pygments=2.18.0=pyhd8ed1ab_0
+                - python=3.9.19=h955ad1f_1
+                - python_abi=3.9=2_cp39
+                - pyzmq=25.1.2=py39h6a678d5_0
+                - readline=8.2=h5eee18b_0
+                - setuptools=69.5.1=py39h06a4308_0
+                - six=1.16.0=pyh6c4a22f_0
+                - sqlite=3.45.3=h5eee18b_0
+                - stack_data=0.6.2=pyhd8ed1ab_0
+                - tk=8.6.14=h39e8969_0
+                - tornado=6.1=py39hb9d737c_3
+                - traitlets=5.14.3=pyhd8ed1ab_0
+                - typing_extensions=4.12.2=pyha770c72_0
+                - wcwidth=0.2.13=pyhd8ed1ab_0
+                - wheel=0.43.0=py39h06a4308_0
+                - xz=5.4.6=h5eee18b_1
+                - zeromq=4.3.5=h6a678d5_0
+                - zlib=1.2.13=h5eee18b_1
+                - pip:
+                  - brainspace==0.1.10
+                  - certifi==2024.6.2
+                  - charset-normalizer==3.3.2
+                  - colorcet==3.1.0
+                  - contourpy==1.2.1
+                  - cycler==0.12.1
+                  - fonttools==4.53.0
+                  - gitdb==4.0.11
+                  - gitpython==3.1.43
+                  - idna==3.7
+                  - importlib-resources==6.4.0
+                  - joblib==1.4.2
+                  - kiwisolver==1.4.5
+                  - lxml==5.2.2
+                  - matplotlib==3.9.0
+                  - natsort==8.4.0
+                  - nibabel==5.2.1
+                  - nilearn==0.10.4
+                  - numpy==1.26.4
+                  - packaging==24.1
+                  - pandas==2.2.2
+                  - pillow==10.3.0
+                  - plottable==0.1.5
+                  - pyparsing==3.1.2
+                  - python-dateutil==2.9.0.post0
+                  - pytz==2024.1
+                  - regfusion==0.1.0
+                  - requests==2.32.3
+                  - scikit-learn==1.5.0
+                  - scipy==1.13.1
+                  - seaborn==0.13.2
+                  - smmap==5.0.1
+                  - threadpoolctl==3.5.0
+                  - tzdata==2024.1
+                  - urllib3==2.2.1
+                  - vtk==9.3.0
+                  - zipp==3.19.2
+        - template:
+            name: miniconda
+            version: latest
+            install_path: /opt/miniconda
+            mamba: true
+        - run:
+            - cp {{ get_file("environment.yml") }} /tmp/environment.yml
+            - mamba env create -f /tmp/environment.yml
+            - rm /tmp/environment.yml
+        - environment:
+            CONDA_DEFAULT_ENV: NCT_env
+            PATH: /opt/miniconda/envs/NCT_env/bin:$PATH
+        - run:
+            - echo "conda activate NCT_env" >> ~/.bashrc
+      custom: minicondaYaml
+      customParams:
+        environment_yaml: |-
+          name: NCT_env
+          channels:
+            - conda-forge
+            - defaults
+          dependencies:
+            - _libgcc_mutex=0.1=main
+            - _openmp_mutex=5.1=1_gnu
+            - asttokens=2.4.1=pyhd8ed1ab_0
+            - backcall=0.2.0=pyh9f0ad1d_0
+            - ca-certificates=2024.6.2=hbcca054_0
+            - comm=0.2.2=pyhd8ed1ab_0
+            - debugpy=1.6.7=py39h6a678d5_0
+            - decorator=5.1.1=pyhd8ed1ab_0
+            - entrypoints=0.4=pyhd8ed1ab_0
+            - executing=2.0.1=pyhd8ed1ab_0
+            - ipykernel=6.29.4=pyh3099207_0
+            - ipython=8.12.0=pyh41d4057_0
+            - jedi=0.19.1=pyhd8ed1ab_0
+            - jupyter_client=7.3.4=pyhd8ed1ab_0
+            - jupyter_core=5.7.2=py39hf3d152e_0
+            - ld_impl_linux-64=2.38=h1181459_1
+            - libffi=3.4.4=h6a678d5_1
+            - libgcc-ng=11.2.0=h1234567_1
+            - libgomp=11.2.0=h1234567_1
+            - libsodium=1.0.18=h36c2ea0_1
+            - libstdcxx-ng=11.2.0=h1234567_1
+            - libx11
+            - matplotlib-inline=0.1.7=pyhd8ed1ab_0
+            - ncurses=6.4=h6a678d5_0
+            - nest-asyncio=1.6.0=pyhd8ed1ab_0
+            - openssl=3.0.13=h7f8727e_2
+            - parso=0.8.4=pyhd8ed1ab_0
+            - pexpect=4.9.0=pyhd8ed1ab_0
+            - pickleshare=0.7.5=py_1003
+            - pip=24.0=py39h06a4308_0
+            - platformdirs=4.2.2=pyhd8ed1ab_0
+            - prompt-toolkit=3.0.47=pyha770c72_0
+            - prompt_toolkit=3.0.47=hd8ed1ab_0
+            - psutil=5.9.0=py39h5eee18b_0
+            - ptyprocess=0.7.0=pyhd3deb0d_0
+            - pure_eval=0.2.2=pyhd8ed1ab_0
+            - pygments=2.18.0=pyhd8ed1ab_0
+            - python=3.9.19=h955ad1f_1
+            - python_abi=3.9=2_cp39
+            - pyzmq=25.1.2=py39h6a678d5_0
+            - readline=8.2=h5eee18b_0
+            - setuptools=69.5.1=py39h06a4308_0
+            - six=1.16.0=pyh6c4a22f_0
+            - sqlite=3.45.3=h5eee18b_0
+            - stack_data=0.6.2=pyhd8ed1ab_0
+            - tk=8.6.14=h39e8969_0
+            - tornado=6.1=py39hb9d737c_3
+            - traitlets=5.14.3=pyhd8ed1ab_0
+            - typing_extensions=4.12.2=pyha770c72_0
+            - wcwidth=0.2.13=pyhd8ed1ab_0
+            - wheel=0.43.0=py39h06a4308_0
+            - xz=5.4.6=h5eee18b_1
+            - zeromq=4.3.5=h6a678d5_0
+            - zlib=1.2.13=h5eee18b_1
+            - pip:
+              - brainspace==0.1.10
+              - certifi==2024.6.2
+              - charset-normalizer==3.3.2
+              - colorcet==3.1.0
+              - contourpy==1.2.1
+              - cycler==0.12.1
+              - fonttools==4.53.0
+              - gitdb==4.0.11
+              - gitpython==3.1.43
+              - idna==3.7
+              - importlib-resources==6.4.0
+              - joblib==1.4.2
+              - kiwisolver==1.4.5
+              - lxml==5.2.2
+              - matplotlib==3.9.0
+              - natsort==8.4.0
+              - nibabel==5.2.1
+              - nilearn==0.10.4
+              - numpy==1.26.4
+              - packaging==24.1
+              - pandas==2.2.2
+              - pillow==10.3.0
+              - plottable==0.1.5
+              - pyparsing==3.1.2
+              - python-dateutil==2.9.0.post0
+              - pytz==2024.1
+              - regfusion==0.1.0
+              - requests==2.32.3
+              - scikit-learn==1.5.0
+              - scipy==1.13.1
+              - seaborn==0.13.2
+              - smmap==5.0.1
+              - threadpoolctl==3.5.0
+              - tzdata==2024.1
+              - urllib3==2.2.1
+              - vtk==9.3.0
+              - zipp==3.19.2
+        environment_name: NCT_env
+        install_path: /opt/miniconda
+        activate_env: true
+        mamba: true
+        cleanup: true
+    - deploy:
+        path: []
+        bins:
+          - python
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+categories:
+  - image registration
+  - data organisation
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAACsElEQVR4AdRTX2hSURz+jtd5bzPd3J+g3Fo0ke0lNSIw255G0aoFG/aWiD341PZUg+gl6KnHjYmPYRS0hgQbQbSnGA4qMMYGUTIkRuAWLP+0mVNu91zx5tFrKFjQhe/wO+f7zv1+37nnah68PyLWi4fRk2LS7RZ3R0bqhgZ/+fn3BqLY3EhMgsKBiEQsj4OfzXNhDGj3Xz/mkficB62bkUUxyO2JePNoD+H7KQS9uwhNfse3LwUkEwU8vZ3EvTPbuOPYhGVxEabl5Zrwb2xgO5dTelMMSivBYFDqXsT0zQDWX2eRTRePKx6PIxKJyLJUKiVrRClmOdbW1mS+fKgyIITIvM/nQ+KtGZ8iOWQzRRNCihwVrK6uYmhoiMH4+DilGFQZUDYnRcxkMnj2+AVezWSw+e53ZMpT7OzsYGVlhUEsFqMUA1UDGtvr9WJwcBA0SfmOUga73Y7Z2VkGFosFwyYT2rVaZYtGqSqKcDiMaDSKubk58DxfwQI9PT2yOW2gBNpQpbCmARWOjY1Bp9MhFArRKYOlpSXo9XoGi9INY0TS5I8GW1tbCAQCcLvd6OjokORA8XPLpeqwub+PH4WCwtU04FsJ7KMCpqamkE6nYTAYlE206O3txcTEBAOXy4V1SZupx6DzOIfTVwWcvyHA4/HQdzJwOBxYWFhgMD8/z2jopCqB3++HIAiUg96kge2SgA/xlyCEwOl0gt4io9EIQkgVzGazvK98UAw4HcHAMA/PTLuMi5OHYejSoOuEFlemDbh21wDbBT1uWa14YrPhuZRADZN9fWhTu6acdHWPDWhhPaeT0X9Wh9Z2Dej6UasW9ssCnNfb4Ovvx2h3N0Y6O1Xhkv4Do5pBeSy1uoUn6DvF4xDHqdE115QjqqkoI7gWAk46ezTwNGTQwHsV6f9v8AsAAP///RRFWAAAAAZJREFUAwDZqyq94qgs5QAAAABJRU5ErkJggg==
