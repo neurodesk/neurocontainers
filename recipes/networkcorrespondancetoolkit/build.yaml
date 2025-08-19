@@ -55,6 +55,7 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - install: libx11-6
     - group:
         - file:
             name: environment.yml
@@ -63,10 +64,10 @@ build:
             name: miniconda
             version: latest
             install_path: /opt/miniconda
-            mamba: false
+            mamba: true
         - run:
             - cp {{ get_file("environment.yml") }} /tmp/environment.yml
-            - mamba env create -f /tmp/environment.yml
+            - conda env create -f /tmp/environment.yml
             - rm /tmp/environment.yml
         - environment:
             CONDA_DEFAULT_ENV: NCT_env
