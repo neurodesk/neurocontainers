@@ -63,7 +63,7 @@ build:
             name: miniconda
             version: latest
             install_path: /opt/miniconda
-            mamba: true
+            mamba: false
         - run:
             - cp {{ get_file("environment.yml") }} /tmp/environment.yml
             - mamba env create -f /tmp/environment.yml
