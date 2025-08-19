@@ -163,7 +163,8 @@ build:
             mamba: true
         - run:
             - cp {{ get_file("environment.yml") }} /tmp/environment.yml
-            - mamba env create -f /tmp/environment.yml
+            - conda config --set channel_priority flexible
+            - conda env create -f /tmp/environment.yml
             - rm /tmp/environment.yml
         - environment:
             CONDA_DEFAULT_ENV: NCT_env
