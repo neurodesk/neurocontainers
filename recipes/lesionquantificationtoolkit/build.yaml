@@ -64,9 +64,7 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
-    - install:
-        - r-base
-        - r-base-dev
+    - install: r-base r-base-dev libgsl-dev
     - run:
         - R --slave -e " options(repos = c(CRAN = 'https://cloud.r-project.org')); if (!requireNamespace('remotes', quietly = TRUE))    install.packages('remotes'); remotes::install_github('jdwor/LQT',    dependencies = NA, upgrade = 'never', build_vignettes = FALSE ); cat('Installed LQT from GitHub (', 'jdwor/LQT',  )\n') "
     - test:
