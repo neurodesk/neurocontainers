@@ -136,11 +136,6 @@ def patch_yaml_to_use_github(data, github_url):
     paths = set(deploy.get("path", [])) | {f"/opt/{repo_name}", f"/opt/{repo_name}/bin"}
     y["deploy"] = {**deploy, "path": sorted(paths)}
 
-    # tests = y.get("tests", {})
-    # hc = list(tests.get("healthcheck", []))
-    # hc.append(f"/usr/local/bin/smoke-{repo_name}.sh")
-    # y["tests"] = {**tests, "healthcheck": hc}
-
     return y
 
 def auto_rebuild_with_github(yaml_path="./build.yaml", output_path="build_patched.yaml"):
@@ -168,7 +163,7 @@ def auto_rebuild_with_github(yaml_path="./build.yaml", output_path="build_patche
     else:
         print(" Failed to guess GitHub repo. Please fix manually.")
 
-#set the command "input" and output
+#set the command "input"  and output
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Patch build.yaml to rebuild from GitHub when base image is invalid."
