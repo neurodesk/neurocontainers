@@ -20,7 +20,7 @@ ARCHITECTURES = ["x86_64", "aarch64"]
 # Categories from the UI - this should match CATEGORIES in the UI
 CATEGORIES = [
     "image registration",
-    "structural imaging", 
+    "structural imaging",
     "image segmentation",
     "functional imaging",
     "diffusion imaging",
@@ -32,7 +32,7 @@ CATEGORIES = [
     "machine learning",
     "visualization",
     "quantitative imaging",
-    "image reconstruction", 
+    "image reconstruction",
     "conversion",
     "file conversion",  # Legacy category name
     "quality control",
@@ -51,12 +51,12 @@ CATEGORIES = [
     "molecular biology",  # For molecular/biological tools
     "hippocampus",  # For hippocampus-specific tools
     "spectroscopy",  # For spectroscopy tools
-    "other"
+    "other",
 ]
 
 INCLUDE_MACROS = [
     "openrecon/neurodocker.yaml",
-    "macros/openrecon/neurodocker.yaml"  # Support both formats
+    "macros/openrecon/neurodocker.yaml",  # Support both formats
 ]
 
 
@@ -64,16 +64,21 @@ INCLUDE_MACROS = [
 # Validation Functions
 # ============================================================================
 
+
 def validate_architecture(instance, attribute, value):
     """Validate architecture is in allowed list"""
     if value not in ARCHITECTURES:
-        raise ValueError(f"Architecture '{value}' not supported. Must be one of: {ARCHITECTURES}")
+        raise ValueError(
+            f"Architecture '{value}' not supported. Must be one of: {ARCHITECTURES}"
+        )
 
 
 def validate_category(instance, attribute, value):
     """Validate category is in allowed list"""
     if value not in CATEGORIES:
-        raise ValueError(f"Category '{value}' not supported. Must be one of: {CATEGORIES}")
+        raise ValueError(
+            f"Category '{value}' not supported. Must be one of: {CATEGORIES}"
+        )
 
 
 def validate_non_empty_string(instance, attribute, value):
@@ -85,28 +90,36 @@ def validate_non_empty_string(instance, attribute, value):
 def validate_url(instance, attribute, value):
     """Basic URL validation"""
     if value and not (value.startswith("http://") or value.startswith("https://")):
-        raise ValueError(f"{attribute.name} must be a valid URL starting with http:// or https://")
+        raise ValueError(
+            f"{attribute.name} must be a valid URL starting with http:// or https://"
+        )
 
 
 # ============================================================================
 # Copyright Info
 # ============================================================================
 
+
 @attrs.define
 class CustomCopyrightInfo:
     name: str = attrs.field(validator=validate_non_empty_string)
-    url: Optional[str] = attrs.field(default=None, validator=attrs.validators.optional(validate_url))
+    url: Optional[str] = attrs.field(
+        default=None, validator=attrs.validators.optional(validate_url)
+    )
 
 
-@attrs.define 
+@attrs.define
 class SPDXCopyrightInfo:
     license: str = attrs.field(validator=validate_non_empty_string)
-    url: Optional[str] = attrs.field(default=None, validator=attrs.validators.optional(validate_url))
+    url: Optional[str] = attrs.field(
+        default=None, validator=attrs.validators.optional(validate_url)
+    )
 
 
 # ============================================================================
 # Structured Readme
 # ============================================================================
+
 
 @attrs.define
 class StructuredReadme:
@@ -117,13 +130,15 @@ class StructuredReadme:
 
 
 # ============================================================================
-# GUI Apps Info  
+# GUI Apps Info
 # ============================================================================
+
 
 @attrs.define
 class GUIApp:
     name: str = attrs.field(validator=validate_non_empty_string)
     exec: str = attrs.field(validator=validate_non_empty_string)
+
 
 @attrs.define
 class DeployInfo:
@@ -135,12 +150,15 @@ class DeployInfo:
 # File Info
 # ============================================================================
 
+
 @attrs.define
 class FileInfo:
     name: str = attrs.field(validator=validate_non_empty_string)
     filename: Optional[str] = attrs.field(default=None)
     contents: Optional[str] = attrs.field(default=None)
-    url: Optional[str] = attrs.field(default=None, validator=attrs.validators.optional(validate_url))
+    url: Optional[str] = attrs.field(
+        default=None, validator=attrs.validators.optional(validate_url)
+    )
     executable: Optional[bool] = attrs.field(default=None)
     insecure: Optional[bool] = attrs.field(default=None)
     retry: Optional[int] = attrs.field(default=None)
@@ -149,6 +167,7 @@ class FileInfo:
 # ============================================================================
 # Test Info
 # ============================================================================
+
 
 @attrs.define
 class BuiltinTest:
@@ -160,12 +179,14 @@ class BuiltinTest:
 class ScriptTest:
     name: str = attrs.field(validator=validate_non_empty_string)
     script: str = attrs.field(validator=validate_non_empty_string)
+    executable: Optional[str] = attrs.field(default=None)
     manual: Optional[bool] = attrs.field(default=None)
 
 
 # ============================================================================
 # Template
 # ============================================================================
+
 
 @attrs.define
 class Template:
@@ -183,6 +204,7 @@ class Template:
 # ============================================================================
 # Directive Base Classes
 # ============================================================================
+
 
 @attrs.define
 class BaseDirective:
@@ -260,6 +282,7 @@ class EntrypointDirective:
     entrypoint: str = attrs.field(validator=validate_non_empty_string)
     condition: Optional[str] = attrs.field(default=None)
 
+
 @attrs.define
 class IncludeDirective:
     include: str = attrs.field()
@@ -268,7 +291,9 @@ class IncludeDirective:
     @include.validator
     def _validate_include(self, attribute, value):
         if value not in INCLUDE_MACROS:
-            raise ValueError(f"Include macro '{value}' not supported. Must be one of: {INCLUDE_MACROS}")
+            raise ValueError(
+                f"Include macro '{value}' not supported. Must be one of: {INCLUDE_MACROS}"
+            )
 
 
 @attrs.define
@@ -301,6 +326,7 @@ class GroupDirective:
 # Build Recipe
 # ============================================================================
 
+
 @attrs.define
 class NeuroDockerBuildRecipe:
     kind: Literal["neurodocker"] = attrs.field()
@@ -316,6 +342,7 @@ class NeuroDockerBuildRecipe:
 # Main Container Recipe Schema
 # ============================================================================
 
+
 @attrs.define
 class ContainerRecipe:
     name: str = attrs.field(validator=validate_non_empty_string)
@@ -323,9 +350,13 @@ class ContainerRecipe:
     architectures: List[str] = attrs.field(validator=attrs.validators.min_len(1))
     build: NeuroDockerBuildRecipe = attrs.field()
     icon: Optional[str] = attrs.field(default=None)
-    copyright: Optional[List[Union[CustomCopyrightInfo, SPDXCopyrightInfo]]] = attrs.field(default=None)
+    copyright: Optional[List[Union[CustomCopyrightInfo, SPDXCopyrightInfo]]] = (
+        attrs.field(default=None)
+    )
     readme: Optional[str] = attrs.field(default=None)
-    readme_url: Optional[str] = attrs.field(default=None, validator=attrs.validators.optional(validate_url))
+    readme_url: Optional[str] = attrs.field(
+        default=None, validator=attrs.validators.optional(validate_url)
+    )
     structured_readme: Optional[StructuredReadme] = attrs.field(default=None)
     files: Optional[List[FileInfo]] = attrs.field(default=None)
     deploy: Optional[DeployInfo] = attrs.field(default=None)
@@ -342,97 +373,71 @@ class ContainerRecipe:
     def _validate_architectures(self, attribute, value):
         for arch in value:
             if arch not in ARCHITECTURES:
-                raise ValueError(f"Architecture '{arch}' not supported. Must be one of: {ARCHITECTURES}")
+                raise ValueError(
+                    f"Architecture '{arch}' not supported. Must be one of: {ARCHITECTURES}"
+                )
 
     @categories.validator
     def _validate_categories(self, attribute, value):
         if value:
             for category in value:
                 if category not in CATEGORIES:
-                    raise ValueError(f"Category '{category}' not supported. Must be one of: {CATEGORIES}")
+                    raise ValueError(
+                        f"Category '{category}' not supported. Must be one of: {CATEGORIES}"
+                    )
 
 
 # ============================================================================
 # Validation Functions
 # ============================================================================
 
+
 def parse_directive_from_dict(directive_dict: Dict[str, Any]) -> Any:
     """Parse a directive dict into the appropriate directive class"""
     # Remove condition if present for processing
     condition = directive_dict.get("condition")
-    
+
     if "environment" in directive_dict:
         return EnvironmentDirective(
-            condition=condition,
-            environment=directive_dict["environment"]
+            condition=condition, environment=directive_dict["environment"]
         )
     elif "install" in directive_dict:
-        return InstallDirective(
-            condition=condition,
-            install=directive_dict["install"]
-        )
+        return InstallDirective(condition=condition, install=directive_dict["install"])
     elif "workdir" in directive_dict:
         return WorkingDirectoryDirective(
-            condition=condition,
-            workdir=directive_dict["workdir"]
+            condition=condition, workdir=directive_dict["workdir"]
         )
     elif "run" in directive_dict:
-        return RunCommandDirective(
-            condition=condition,
-            run=directive_dict["run"]
-        )
+        return RunCommandDirective(condition=condition, run=directive_dict["run"])
     elif "variables" in directive_dict:
         return VariableDirective(
-            condition=condition,
-            variables=directive_dict["variables"]
+            condition=condition, variables=directive_dict["variables"]
         )
     elif "template" in directive_dict:
         template = Template.from_dict(directive_dict["template"].copy())
-        return TemplateDirective(
-            condition=condition,
-            template=template
-        )
+        return TemplateDirective(condition=condition, template=template)
     elif "deploy" in directive_dict:
         deploy_info = DeployInfo(**directive_dict["deploy"])
-        return DeployDirective(
-            condition=condition,
-            deploy=deploy_info
-        )
+        return DeployDirective(condition=condition, deploy=deploy_info)
     elif "user" in directive_dict:
-        return UserDirective(
-            condition=condition,
-            user=directive_dict["user"]
-        )
+        return UserDirective(condition=condition, user=directive_dict["user"])
     elif "copy" in directive_dict:
-        return CopyDirective(
-            condition=condition,
-            copy=directive_dict["copy"]
-        )
+        return CopyDirective(condition=condition, copy=directive_dict["copy"])
     elif "file" in directive_dict:
         file_info = FileInfo(**directive_dict["file"])
-        return FileDirective(
-            condition=condition,
-            file=file_info
-        )
+        return FileDirective(condition=condition, file=file_info)
     elif "test" in directive_dict:
         test_data = directive_dict["test"]
         if "builtin" in test_data:
             test_obj = BuiltinTest(**test_data)
         else:
             test_obj = ScriptTest(**test_data)
-        return TestDirective(
-            condition=condition,
-            test=test_obj
-        )
+        return TestDirective(condition=condition, test=test_obj)
     elif "include" in directive_dict:
-        return IncludeDirective(
-            condition=condition,
-            include=directive_dict["include"]
-        )
+        return IncludeDirective(condition=condition, include=directive_dict["include"])
     elif "entrypoint" in directive_dict:
         return EntrypointDirective(
-            condition=condition,
-            entrypoint=directive_dict["entrypoint"]
+            condition=condition, entrypoint=directive_dict["entrypoint"]
         )
     elif "boutique" in directive_dict:
         # Handle boutique descriptor
@@ -444,40 +449,50 @@ def parse_directive_from_dict(directive_dict: Dict[str, Any]) -> Any:
             boutique_data["schema_version"] = boutique_data.pop("schema-version")
         if "command-line" in boutique_data:
             boutique_data["command_line"] = boutique_data.pop("command-line")
-        
+
         # Extract core fields
-        core_fields = ["name", "description", "tool_version", "schema_version", "command_line", "inputs"]
+        core_fields = [
+            "name",
+            "description",
+            "tool_version",
+            "schema_version",
+            "command_line",
+            "inputs",
+        ]
         core_data = {k: boutique_data.pop(k) for k in core_fields if k in boutique_data}
-        
-        boutique_descriptor = BoutiquesDescriptor(**core_data, additional_props=boutique_data)
-        return BoutiqueDirective(
-            condition=condition,
-            boutique=boutique_descriptor
+
+        boutique_descriptor = BoutiquesDescriptor(
+            **core_data, additional_props=boutique_data
         )
+        return BoutiqueDirective(condition=condition, boutique=boutique_descriptor)
     elif "group" in directive_dict:
         # Handle group directive recursively
         group_directives = []
         for group_item in directive_dict["group"]:
             group_directives.append(parse_directive_from_dict(group_item))
-        
+
         return GroupDirective(
             condition=condition,
             custom=directive_dict.get("custom"),
             customParams=directive_dict.get("customParams"),
-            group=group_directives
+            group=group_directives,
         )
     else:
         raise ValueError(f"Unknown directive type in: {directive_dict}")
 
 
-def parse_copyright_from_dict(copyright_dict: Dict[str, Any]) -> Union[CustomCopyrightInfo, SPDXCopyrightInfo]:
+def parse_copyright_from_dict(
+    copyright_dict: Dict[str, Any],
+) -> Union[CustomCopyrightInfo, SPDXCopyrightInfo]:
     """Parse copyright dict into appropriate copyright class"""
     if "license" in copyright_dict:
         return SPDXCopyrightInfo(**copyright_dict)
     elif "name" in copyright_dict:
         return CustomCopyrightInfo(**copyright_dict)
     else:
-        raise ValueError("Copyright entry must have either 'license' (SPDX) or 'name' (custom) field")
+        raise ValueError(
+            "Copyright entry must have either 'license' (SPDX) or 'name' (custom) field"
+        )
 
 
 def parse_test_from_dict(test_dict: Dict[str, Any]) -> Union[BuiltinTest, ScriptTest]:
@@ -493,20 +508,20 @@ def parse_test_from_dict(test_dict: Dict[str, Any]) -> Union[BuiltinTest, Script
 def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
     """
     Validate a recipe dictionary and return a ContainerRecipe instance.
-    
+
     Args:
         recipe_dict: Dictionary loaded from YAML
-        
+
     Returns:
         ContainerRecipe instance
-        
+
     Raises:
         ValueError: If validation fails
     """
     try:
         # Make a copy to avoid modifying the original
         recipe_copy = recipe_dict.copy()
-        
+
         # Parse copyright if present
         if "copyright" in recipe_copy and recipe_copy["copyright"]:
             copyright_list = []
@@ -514,14 +529,16 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
                 copyright_obj = parse_copyright_from_dict(copyright_item)
                 copyright_list.append(copyright_obj)
             recipe_copy["copyright"] = copyright_list
-        
+
         # Parse structured_readme if present
         if "structured_readme" in recipe_copy and recipe_copy["structured_readme"]:
-            recipe_copy["structured_readme"] = StructuredReadme(**recipe_copy["structured_readme"])
-        
+            recipe_copy["structured_readme"] = StructuredReadme(
+                **recipe_copy["structured_readme"]
+            )
+
         # Parse build recipe
         build_dict = recipe_copy["build"].copy()
-        
+
         # Handle hyphenated field names
         if "base-image" in build_dict:
             build_dict["base_image"] = build_dict.pop("base-image")
@@ -533,17 +550,17 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
             build_dict["add_tzdata"] = build_dict.pop("add-tzdata")
         if "fix-locale-def" in build_dict:
             build_dict["fix_locale_def"] = build_dict.pop("fix-locale-def")
-        
+
         # Parse directives
         directives = []
         for directive_dict in build_dict["directives"]:
             directive_obj = parse_directive_from_dict(directive_dict)
             directives.append(directive_obj)
         build_dict["directives"] = directives
-        
+
         build_recipe = NeuroDockerBuildRecipe(**build_dict)
         recipe_copy["build"] = build_recipe
-        
+
         # Parse files if present
         if "files" in recipe_copy and recipe_copy["files"]:
             files_list = []
@@ -551,11 +568,11 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
                 file_obj = FileInfo(**file_dict)
                 files_list.append(file_obj)
             recipe_copy["files"] = files_list
-        
+
         # Parse deploy if present
         if "deploy" in recipe_copy and recipe_copy["deploy"]:
             recipe_copy["deploy"] = DeployInfo(**recipe_copy["deploy"])
-        
+
         # Parse tests if present
         if "tests" in recipe_copy and recipe_copy["tests"]:
             tests_list = []
@@ -563,7 +580,7 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
                 test_obj = parse_test_from_dict(test_dict)
                 tests_list.append(test_obj)
             recipe_copy["tests"] = tests_list
-        
+
         # Parse gui_apps if present
         if "gui_apps" in recipe_copy and recipe_copy["gui_apps"]:
             gui_apps_list = []
@@ -571,10 +588,10 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
                 gui_app_obj = GUIApp(**gui_app_dict)
                 gui_apps_list.append(gui_app_obj)
             recipe_copy["gui_apps"] = gui_apps_list
-        
+
         # Create and return the container recipe
         return ContainerRecipe(**recipe_copy)
-        
+
     except Exception as e:
         raise ValueError(f"Recipe validation failed: {str(e)}")
 
@@ -582,26 +599,26 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
 def validate_recipe_file(file_path: str) -> ContainerRecipe:
     """
     Validate a YAML recipe file.
-    
+
     Args:
         file_path: Path to the YAML file
-        
+
     Returns:
         ContainerRecipe instance
-        
+
     Raises:
         ValueError: If validation fails
         FileNotFoundError: If file doesn't exist
     """
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path, "r") as f:
             recipe_dict = yaml.safe_load(f)
-        
+
         if not recipe_dict:
             raise ValueError("Recipe file is empty or invalid YAML")
-        
+
         return validate_recipe_dict(recipe_dict)
-        
+
     except yaml.YAMLError as e:
         raise ValueError(f"Invalid YAML syntax: {str(e)}")
     except FileNotFoundError:
@@ -611,10 +628,10 @@ def validate_recipe_file(file_path: str) -> ContainerRecipe:
 def get_validation_errors(recipe_dict: Dict[str, Any]) -> List[str]:
     """
     Get a list of validation errors for a recipe without raising exceptions.
-    
+
     Args:
         recipe_dict: Dictionary loaded from YAML
-        
+
     Returns:
         List of error messages (empty if valid)
     """
@@ -630,13 +647,13 @@ def get_validation_errors(recipe_dict: Dict[str, Any]) -> List[str]:
 if __name__ == "__main__":
     import sys
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Validate neurocontainer YAML recipes")
     parser.add_argument("file", help="Path to YAML recipe file to validate")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    
+
     args = parser.parse_args()
-    
+
     try:
         recipe = validate_recipe_file(args.file)
         print(f"✓ Recipe {recipe.name} v{recipe.version} is valid")
