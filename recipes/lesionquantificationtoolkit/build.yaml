@@ -1,0 +1,117 @@
+name: lesionquantificationtoolkit
+version: 0.1.0
+copyright:
+  - name: NONE
+    url: https://github.com/jdwor/LQT
+architectures:
+  - x86_64
+structured_readme:
+  description: |-
+    LQT is an R implementation of the lesion quantification toolkit, based on the paper “Lesion Quantification Toolkit: A MATLAB software tool for estimating grey matter damage and white matter disconnections in patients with focal brain lesions” by Griffis et al. The LQT is “a publicly available software package for quantifying the structural impacts of focal brain lesions. It uses atlas-based approaches to estimate parcel-level grey matter lesion loads and multiple measures of white matter disconnection severity that include tract-level disconnection measures, voxel-wise disconnection maps, and parcel-wise disconnection matrices. The toolkit also estimates lesion-induced increases in the lengths of the shortest structural paths between parcel pairs, which provide information about changes in higher-order structural network topology.”
+
+    The R package creates data structures necessary for applying the methods directly to MNI-registered lesion maps from either a single patient or a full study. The package then allows the user to create figures for visualization and summary, and to compile analysis-ready datasets for research.
+  example: |-
+    ########### Set up config structure ###########
+    pat_ids = paste0("Subject", 1:45)
+    lesion_paths = list.files('/Users/JaneGoodall/Study/LesionMasks',
+                              full.names = TRUE)
+    parcel_path = system.file("extdata","Schaefer_Yeo_Plus_Subcort",
+                              "100Parcels7Networks.nii.gz",package="LQT")
+    out_path = '/Users/JaneGoodall/Study/Results'
+
+    cfg = create_cfg_object(pat_ids=pat_ids,
+                            lesion_paths=lesion_paths,
+                            parcel_path=parcel_path,
+                            out_path=out_path)
+  documentation: https://github.com/jdwor/LQT
+  citation: "Please cite the original authors of the LQT package when using this container. Repository: https://github.com/jdwor/LQT"
+readme: |-
+  ----------------------------------
+  ## lesionquantificationtoolkit/{{ context.version }} ##
+
+  LQT is an R implementation of the lesion quantification toolkit, based on the paper “Lesion Quantification Toolkit: A MATLAB software tool for estimating grey matter damage and white matter disconnections in patients with focal brain lesions” by Griffis et al. The LQT is “a publicly available software package for quantifying the structural impacts of focal brain lesions. It uses atlas-based approaches to estimate parcel-level grey matter lesion loads and multiple measures of white matter disconnection severity that include tract-level disconnection measures, voxel-wise disconnection maps, and parcel-wise disconnection matrices. The toolkit also estimates lesion-induced increases in the lengths of the shortest structural paths between parcel pairs, which provide information about changes in higher-order structural network topology.”
+
+  The R package creates data structures necessary for applying the methods directly to MNI-registered lesion maps from either a single patient or a full study. The package then allows the user to create figures for visualization and summary, and to compile analysis-ready datasets for research.
+
+  Example:
+  ```
+  ########### Set up config structure ###########
+  pat_ids = paste0("Subject", 1:45)
+  lesion_paths = list.files('/Users/JaneGoodall/Study/LesionMasks',
+                            full.names = TRUE)
+  parcel_path = system.file("extdata","Schaefer_Yeo_Plus_Subcort",
+                            "100Parcels7Networks.nii.gz",package="LQT")
+  out_path = '/Users/JaneGoodall/Study/Results'
+
+  cfg = create_cfg_object(pat_ids=pat_ids,
+                          lesion_paths=lesion_paths,
+                          parcel_path=parcel_path,
+                          out_path=out_path)
+  ```
+
+  More documentation can be found here: https://github.com/jdwor/LQT
+
+  Citation:
+  ```
+  Please cite the original authors of the LQT package when using this container. Repository: https://github.com/jdwor/LQT
+  ```
+
+  To run container outside of this environment: ml lesionquantificationtoolkit/{{ context.version }}
+
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - install: r-base r-base-dev libgsl-dev
+    - run:
+        - |-
+          R --slave -e "options(repos = c(CRAN = 'https://cloud.r-project.org')); \
+            if (!requireNamespace('remotes', quietly = TRUE)) install.packages('remotes'); \
+            remotes::install_github('jdwor/LQT', dependencies = NA, upgrade = 'never', build_vignettes = FALSE); \
+            cat('Installed LQT from GitHub (', 'jdwor/LQT', ")\n")"
+    - test:
+        name: verify_r_installation
+        script: |-
+          # Test R installation
+          R --version
+          echo "Testing R package installation..."
+          R --slave -e "
+            # Check R version
+            cat('R version:', R.version.string, '\n')
+            
+            # Test main package
+            tryCatch({
+              library("LQT")
+              cat('Successfully loaded LQT\n')
+              
+              # Try to get package info
+              pkg_info <- packageDescription('LQT')
+              if (!is.na(pkg_info)) {
+                cat('Package version:', pkg_info[['Version']], '\n')
+                cat('Package title:', pkg_info[['Title']], '\n')
+              }
+            }, error = function(e) {
+              cat('Warning: Could not load LQT:', 
+                  e[['message']], '\n')
+              cat('Installed packages:\n')
+              print(installed.packages()[,c('Package', 'Version')])
+            })
+            
+            # List key installed packages
+            key_packages <- c()
+            if (length(key_packages) > 0) {
+              cat('Checking additional packages:\n')
+              for (pkg in key_packages) {
+                if (require(pkg, character.only = TRUE, quietly = TRUE)) {
+                  cat('  ✓', pkg, '\n')
+                } else {
+                  cat('  ✗', pkg, '(not found)\n')
+                }
+              }
+            }
+          "
+categories:
+  - structural imaging
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAyJJREFUSEulll9IU1Ecx79ndxvUmjHRCBL/oNlT9FApBT1kKtGLFS3mWzA3m/Um+JT1ZCb44kNIFgQxFUsspz70ZCy1f1rkhAjci8EUBE3BbVCeG+fcu3vPvXdbWIPLHff+7u9zvt9zzu93iGMqJhNZhizLQOYCtP/sufZeeM5jWRilIDxc+F7IQ5yTi2qkEpALlIHz92aQkND8PXFMfDUANBXCCC0JTQoNyik1DIA4GUAdOZdqCtCsEK0SrVTjc1lJHONfLBb9j+dmkALIMrniJO7Fc5gtcrz6rAPSSeyOh0FHBnhOUlIB2+17IOXVkBMroI/uQ/6+qHic5UfONoBcDwIHC7VVSBwvF3SLUjug42E8rDsJv98PZ0W1Aig7qgAGurH1aQZut9uSPhaL4cTNdtgYoMDDVyObU2Ifm9f3QToJGhlE/4VTaGlpgb2sCqStEzamYJUp6MbW/CyWlpbQ0dFhgKytrSFeXA7iDZgUjM3rFqWS2I2E0V9/WgPY2joVBQww8IADpqen0dTUZFFBztQrgAKPYhFXMPpRsCgJOjEoACpBQndByqoABnjcwwGbm5uIRCIGQF9fH+LnLoPU1gGSpAMcKoB7xhSYALaQoEAFuFwupNNpA8Dn82Gq6BhQcx6w2/VJtr/4IKyilKKgoYZbJJVWwha6A1LKFPwAfdKDrYW53BbdaOcAIklKyeEWPX9vtGhySAe43LBd8wOHS4CNddDXo9j+tpgbcKkZpOEqsP+AMAcj76yAxloEAgF4vV6DDdFoFPF4HMvLy+jq6rKsorntX0DzLaCwWLCIATI7OZ0CZQoaaxEMBi2rpLW1Fb29vVn3QSKRQMnFKyDNbUDhIWUfsEsanpW1ep5KQp4aBh17mnO35n1xvAbEFwI8qgI+B8OzuoLd36ArceDnBqurSi6q3lM7kNdXgX0uwFMEEDasTGNS7sTphHykQolRXSHS0Iyx2JmK1V8bTI7yrgHsg2/5EPO2xv/oF0QKRw0KLKAsivbSLywAcz3P26NzdUCx6UvP3libvjZ5ppNCntOD4VCQDyAG/lOPVpNnrP4DyBU6yJdc+PAAAAAASUVORK5CYII=
