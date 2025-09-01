@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "osprey 2.9.0": {
+      "version": "20250828",
+      "exec": ""
+    },
+    "ospreyGUI-osprey 2.9.0": {
+      "version": "20250828",
+      "exec": "Osprey"
+    }
+  },
+  "categories": [
+    "spectroscopy"
+  ]
+}
