@@ -115,6 +115,13 @@ jobs:
       - name: List artifacts
         run: ls -la sifs
 
+      - name: Prepare /mnt for container /tmp
+        run: |
+          set -euxo pipefail
+          # Ensure a writable tmp area on the host we can bind into the container
+          sudo mkdir -p /mnt/tmp
+          sudo chown "$USER" /mnt/tmp
+
       - name: Build SIF via builder image (BuildKit inside container)
         env:
           RECIPE: ${{ matrix.recipe }}
@@ -128,6 +135,7 @@ jobs:
           apptainer exec \
             --fakeroot \
             --writable-tmpfs \
+            --bind "/mnt/tmp:/tmp" \
             --bind "$PWD:/workspace" \
             "$BUILDER_SIF" \
             bash -lc "cd /workspace && sf-make \"${RECIPE}\" --ignore-architectures"
