@@ -39,7 +39,9 @@ jobs:
         run: |
           set -euxo pipefail
           # Build via Docker and convert to SIF (avoids requiring host BuildKit)
-          sf-build builder --ignore-architectures --build-sif
+          sf-build builder --ignore-architectures
+          mkdir sifs/
+          apptainer build sifs/builder.sif docker-daemon://builder:0.1
 
       - name: Upload builder SIF artifact
         uses: actions/upload-artifact@v4
