@@ -7,11 +7,21 @@ on:
         description: "Debug mode (only run niimath test)"
         type: boolean
         default: true
+      architecture:
+        description: "Target architecture (x86_64 or arm64)"
+        type: choice
+        required: true
+        default: x86_64
+        options:
+          - x86_64
+          - arm64
 
 jobs:
   build-builder-sif:
     name: Build builder.sif
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    env:
+      ARCH: ${{ github.event.inputs.architecture || 'x86_64' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,7 +49,7 @@ jobs:
         run: |
           set -euxo pipefail
           # Build via Docker and convert to SIF (avoids requiring host BuildKit)
-          sf-build builder --ignore-architectures
+          sf-build builder --ignore-architectures --architecture "${ARCH}"
           mkdir sifs/
           apptainer build sifs/builder.sif docker-daemon://builder:0.1
 
@@ -51,7 +61,7 @@ jobs:
 
   prepare-matrix:
     name: Discover recipes
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     outputs:
       recipes: ${{ steps.set-matrix.outputs.recipes }}
     steps:
@@ -90,7 +100,7 @@ jobs:
   build-or-test-recipe:
     name: Recipe ${{ matrix.recipe }}
     needs: [prepare-matrix, build-builder-sif]
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event.inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -125,6 +135,7 @@ jobs:
       - name: Build SIF via builder image (BuildKit inside container)
         env:
           RECIPE: ${{ matrix.recipe }}
+          ARCH: ${{ github.event.inputs.architecture || 'x86_64' }}
         run: |
           set -euxo pipefail
           # Use the builder SIF to run sf-make; bind the repo so it can access recipes
@@ -138,4 +149,4 @@ jobs:
             --bind "/mnt/tmp:/tmp" \
             --bind "$PWD:/workspace" \
             "$BUILDER_SIF" \
-            bash -lc "cd /workspace && sf-make \"${RECIPE}\" --ignore-architectures"
+            bash -lc "cd /workspace && sf-make \"${RECIPE}\" --ignore-architectures --architecture \"${ARCH}\""
