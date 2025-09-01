@@ -305,6 +305,7 @@ class LocalBuildContext(object):
         self.run_args = []
         self.mounted_cache = False
         self.cache_id = cache_id
+        self.local_mounts = {}
 
     def try_mount_cache(self):
         target = "/.neurocontainer-cache/" + self.cache_id
@@ -321,6 +322,17 @@ class LocalBuildContext(object):
         )
         self.mounted_cache = True
 
+        return target
+
+    def try_mount_local(self, key):
+        if key in self.local_mounts:
+            return self.local_mounts[key]
+
+        target = f"/.neurocontainer-local/{key}"
+        self.run_args.append(
+            f"--mount=type=bind,from={key},source=/,target={target},readonly"
+        )
+        self.local_mounts[key] = target
         return target
 
     def ensure_context_cached(self, cache_filename, guest_filename):
@@ -362,9 +374,20 @@ class LocalBuildContext(object):
         else:
             raise ValueError("File has no cached path or context path.")
 
+    def get_local(self, key):
+        if not self.has_local(key):
+            raise ValueError(f"Local file {key} not found.")
+
+        return self.try_mount_local(key)
+
+    def has_local(self, key):
+        return self.context.has_local(key)
+
     def methods(self):
         return {
             "get_file": self.get_file,
+            "has_local": self.has_local,
+            "get_local": self.get_local,
         }
 
 
@@ -405,6 +428,7 @@ class BuildContext(object):
         self.lint_error = False
         self.deploy_bins = []
         self.deploy_path = []
+        self.local_context = {}
         self.check_only = check_only
 
     def lint_fail(self, message):
@@ -419,6 +443,12 @@ class BuildContext(object):
             "default": default,
             "version_suffix": version_suffix,
         }
+
+    def add_local_context(self, key, local_path):
+        self.local_context[key] = local_path
+
+    def has_local(self, key):
+        return key in self.local_context
 
     def set_option(self, key, value):
         if key not in self.options:
@@ -1423,6 +1453,7 @@ def generate_from_description(
     recreate_output_dir: bool = False,
     check_only: bool = False,
     gpu: bool = False,
+    local_context: str | None = None,
 ) -> BuildContext | None:
     if max_parallel_jobs is None:
         max_parallel_jobs = os.cpu_count()
@@ -1454,6 +1485,9 @@ def generate_from_description(
     ctx = BuildContext(repo_path, recipe_path, name, version, arch, check_only)
     ctx.set_max_parallel_jobs(max_parallel_jobs)
     ctx.gpu = gpu
+    if local_context:
+        key, local_path = local_context.split("=", 1)
+        ctx.add_local_context(key, local_path)
 
     locals = {}
 
@@ -1602,24 +1636,31 @@ def build_and_run_container(
     build_sif=False,
     generate_release=False,
     gpu=False,
+    local_context=None,
 ):
     if not shutil.which("docker"):
         raise ValueError("Docker not found in PATH.")
 
+    docker_args = [
+        "docker",
+        "build",
+        "--platform",
+        get_build_platform(architecture),
+        "-f",
+        dockerfile_name,
+        "-t",
+        tag,
+    ]
+
+    if local_context is not None:
+        key, value = local_context.split("=", 1)
+        value = os.path.abspath(value)
+        docker_args += ["--build-context", key + "=" + value]
+
     # Shell out to Docker
     # docker-py does not support using BuildKit
     subprocess.check_call(
-        [
-            "docker",
-            "build",
-            "--platform",
-            get_build_platform(architecture),
-            "-f",
-            dockerfile_name,
-            "-t",
-            tag,
-            ".",
-        ],
+        docker_args + ["."],
         cwd=build_directory,
     )
     print("Docker image built successfully at", tag)
@@ -1894,7 +1935,12 @@ def autodetect_recipe_path(repo_path: str, path: str) -> str | None:
 
 
 def generate_dockerfile(
-    repo_path, recipe_path, architecture=None, ignore_architecture=False, gpu=False
+    repo_path,
+    recipe_path,
+    architecture=None,
+    ignore_architecture=False,
+    gpu=False,
+    local_context=None,
 ):
     build_directory = os.path.join(repo_path, "build")
 
@@ -1909,6 +1955,7 @@ def generate_dockerfile(
         ignore_architecture=ignore_architecture,
         recreate_output_dir=True,
         gpu=gpu,
+        local_context=local_context,
     )
 
 
@@ -1949,6 +1996,7 @@ def generate_and_build(
     ignore_architecture=False,
     generate_release=False,
     gpu=False,
+    local_context=None,
 ):
     ctx = generate_dockerfile(
         repo_path,
@@ -1956,6 +2004,7 @@ def generate_and_build(
         architecture=architecture,
         ignore_architecture=ignore_architecture,
         gpu=gpu,
+        local_context=local_context,
     )
     if ctx is None:
         print("Recipe generation failed.")
@@ -1986,6 +2035,7 @@ def generate_and_build(
         login=login,
         generate_release=generate_release,
         gpu=gpu,
+        local_context=local_context,
     )
 
 
@@ -2019,6 +2069,10 @@ def build_main(login=False):
         action="store_true",
         help="Enable GPU support by adding --gpus all to Docker run commands",
     )
+    root.add_argument(
+        "--local",
+        help="Add local directories into the build context",
+    )
 
     args = root.parse_args()
 
@@ -2026,10 +2080,14 @@ def build_main(login=False):
 
     recipe_path = ""
     if args.name == None:
-        recipe_path = autodetect_recipe_path(repo_path, os.getcwd())
-        if recipe_path is None:
-            print("No recipe found in current directory.")
-            sys.exit(1)
+        # if build.yaml exists in the current directory then use it.
+        if os.path.exists("build.yaml"):
+            recipe_path = os.getcwd()
+        else:
+            recipe_path = autodetect_recipe_path(repo_path, os.getcwd())
+            if recipe_path is None:
+                print("No recipe found in current directory.")
+                sys.exit(1)
     else:
         recipe_path = get_recipe_directory(repo_path, args.name)
 
@@ -2041,6 +2099,7 @@ def build_main(login=False):
         ignore_architecture=args.ignore_architectures,
         generate_release=args.generate_release,
         gpu=args.gpu,
+        local_context=args.local,
     )
 
 
