@@ -98,11 +98,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
       - name: Install Apptainer
         run: |
           set -euxo pipefail
@@ -118,12 +113,6 @@ jobs:
 
       - name: List artifacts
         run: ls -la sifs
-
-      - name: Install builder tooling (host)
-        run: |
-          set -euxo pipefail
-          python -m pip install --upgrade pip
-          pip install -e .
 
       - name: Build SIF via builder image (BuildKit inside container)
         env:

@@ -1736,10 +1736,6 @@ def build_and_run_container(
                     subprocess.check_call(["docker", "load"], stdin=f)
                 print("Docker image loaded successfully")
 
-            # Generate release file if in CI or auto-build mode
-            if should_generate_release_file(generate_release):
-                generate_release_file(name, version, load_description_file(recipe_path))
-
             if login:
                 print(
                     "Login shell is not supported with BuildKit mode; skipping interactive run."
