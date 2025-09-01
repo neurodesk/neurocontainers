@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "builder 0.1": {
+      "version": "20250901",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "programming"
+  ]
+}
