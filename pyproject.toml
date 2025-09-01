@@ -20,3 +20,4 @@ packages = ["builder"]
     sf-login = "builder.build:login_main"
     sf-test = "builder.build:test_main"
     sf-init = "builder.build:init_main"
+    sf-make = "builder.build:sf_make_main"

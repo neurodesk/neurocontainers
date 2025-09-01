@@ -36,13 +36,12 @@ build:
         - pip install --break-system-packages --editable .
       condition: context.has_local("neurocontainers")
 
+    - environment:
+        XDG_RUNTIME_DIR: /tmp/buildkit
+
     - deploy:
         bins:
-          - sf-build
-          - sf-init
-
-    - run:
-        - cp {{ get_file("entrypoint.sh") }} /usr/bin/build-dockerfile
+          - sf-make
 
     - entrypoint: bash
 
@@ -50,24 +49,19 @@ build:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
 
-
-# BUILDKITD_FLAGS="--rootless --oci-worker-no-process-sandbox --oci-worker-snapshotter=native" \
-#   buildctl-daemonless.sh build \
-#     --frontend=dockerfile.v0 \
-#     --local context=. \
-#     --local dockerfile=. \
-#     --output type=docker,name=niimath:latest > ~/out.tar
-
-
 readme: |-
   ----------------------------------
   ## builder/{{ context.version }} ##
 
   NeuroContainers builder and BuildKit packaged with Neurodesk.
 
-  Example:
+  Examples:
   ```
-  sf-build recipe.yaml
+  # Build and run with Docker
+  sf-build my-recipe
+
+  # Make a SIF via BuildKit + Apptainer (no Docker daemon)
+  sf-make /path/to/recipes/my-recipe
   ```
 
   More documentation can be found here: 
@@ -85,6 +79,8 @@ categories:
   - programming
 structured_readme:
   description: NeuroContainers builder and BuildKit packaged with Neurodesk.
-  example: sf-build recipe.yaml
+  example: |
+    sf-build my-recipe
+    sf-make /path/to/recipes/my-recipe
   documentation: ""
   citation: ""
