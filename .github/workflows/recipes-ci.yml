@@ -81,7 +81,8 @@ jobs:
               echo "No recipes found" >&2
               RECIPES='[]'
             else
-              RECIPES="[${names[*]}]"
+              # Join the JSON-quoted names with commas to form valid JSON array
+              RECIPES="[$(IFS=,; echo "${names[*]}")]"
             fi
           fi
           echo "recipes=$RECIPES" >> "$GITHUB_OUTPUT"
