@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "spinalcordtoolbox 5.8": {
+      "version": "20230117",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "spine"
+  ]
+}

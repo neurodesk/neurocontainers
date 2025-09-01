@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "brainlifecli 1.7.0": {
+      "version": "20241003",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "workflows"
+  ]
+}

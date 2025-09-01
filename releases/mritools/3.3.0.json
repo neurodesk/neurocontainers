@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "mritools 3.3.0": {
+      "version": "20220224",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "phase processing"
+  ]
+}

@@ -1,4 +1,4 @@
 #!/bin/bash
 export MLM_LICENSE_FILE=${HOME}/Downloads
 echo 'MLM_LICENSE_FILE='${MLM_LICENSE_FILE}
-/opt/matlab/R2022a/bin/matlab "$@"
+/opt/matlab/R2022b/bin/matlab "$@"

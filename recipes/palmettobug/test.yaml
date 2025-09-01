@@ -1,0 +1,5 @@
+tests:
+  - name: Test palmettobug
+    script: |
+      python3 --version #should be 3.9
+      palmettobug

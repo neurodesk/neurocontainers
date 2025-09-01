@@ -1,1 +1,0 @@
-/afm01 /afm02 /cvmfs /90days /30days /QRISdata /RDS /data /short /proc_temp /TMPDIR /nvme /neurodesktop-storage /local /gpfs1 /working /winmounts /state /tmp /autofs /cluster /local_mount /scratch /clusterdata /nvmescratch

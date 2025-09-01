@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "matlab 2022a": {
+      "version": "20231207",
+      "exec": ""
+    },
+    "matlabGUI-matlab 2022a": {
+      "version": "20231207",
+      "exec": "matlab"
+    }
+  },
+  "categories": [
+    "programming",
+    "visualization"
+  ]
+}

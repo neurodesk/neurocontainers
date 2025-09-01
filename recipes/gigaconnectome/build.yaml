@@ -1,0 +1,155 @@
+name: gigaconnectome
+version: 0.6.0
+architectures:
+  - x86_64
+structured_readme:
+  description: >-
+    Functional connectivity is a common approach in analysing resting state fMRI
+    data. The Python tool Nilearn provides utilities to extract and denoise
+    time-series on a parcellation. Nilearn also has methods to compute
+    functional connectivity. While Nilearn provides useful methods to generate
+    connectomes, there is no standalone one stop solution to generate
+    connectomes from fMRIPrep outputs. giga-connectome (a BIDS-app!) combines
+    Nilearn and TemplateFlow to denoise the data, generate timeseries, and most
+    critically giga-connectome generates functional connectomes directly from
+    fMRIPrep outputs. The workflow comes with several built-in denoising
+    strategies and there are several choices of atlases (MIST, Schaefer 7
+    networks, DiFuMo, Harvard-Oxford). Users can customise their own strategies
+    and atlases using the configuration json files.
+  example: |-
+    ml gigaconnectome/0.6.0
+
+    giga_connectome [-h] [-v]
+                           [--participant-label PARTICIPANT_LABEL [PARTICIPANT_LABEL ...]]
+                           [-a ATLASES_DIR] [-w WORK_DIR] [--atlas ATLAS]
+                           [--denoise-strategy DENOISE_STRATEGY]
+                           [--smoothing_fwhm SMOOTHING_FWHM] [--reindex-bids]
+                           [--bids-filter-file BIDS_FILTER_FILE]
+                           [--calculate-intranetwork-average-correlation]
+                           [--verbosity {0,1,2,3}]
+                           bids_dir output_dir {participant}
+  documentation: https://giga-connectome.readthedocs.io/en/stable/index.html
+  citation: >-
+    Please cite the following paper if you are using giga-connectome in your
+    work:
+
+
+    @article{Wang2025,
+        doi = {10.21105/joss.07061},
+        url = {https://doi.org/10.21105/joss.07061},
+        year = {2025}, publisher = {The Open Journal},
+        volume = {10},
+        number = {110},
+        pages = {7061},
+        author = {Hao-Ting Wang and Rémi Gau and Natasha Clarke and Quentin Dessain and Lune Bellec},
+        title = {Giga Connectome: a BIDS-app for time series and functional connectome extraction},
+        journal = {Journal of Open Source Software}
+    }
+
+    giga-connectome uses nilearn under the hood, hence please consider cite
+    nilearn using the Zenodo DOI:
+
+
+    @software{Nilearn,
+        author = {Nilearn contributors},
+        license = {BSD-4-Clause},
+        title = {{nilearn}},
+        url = {https://github.com/nilearn/nilearn},
+        doi = {https://doi.org/10.5281/zenodo.8397156}
+    }
+build:
+  kind: neurodocker
+  base-image: bids/giga_connectome:0.6.0
+  pkg-manager: apt
+  directives: []
+readme: >-
+  ----------------------------------
+
+  ## gigaconnectome/0.6.0 ##
+
+
+  Functional connectivity is a common approach in analysing resting state fMRI
+  data. The Python tool Nilearn provides utilities to extract and denoise
+  time-series on a parcellation. Nilearn also has methods to compute functional
+  connectivity. While Nilearn provides useful methods to generate connectomes,
+  there is no standalone one stop solution to generate connectomes from fMRIPrep
+  outputs. giga-connectome (a BIDS-app!) combines Nilearn and TemplateFlow to
+  denoise the data, generate timeseries, and most critically giga-connectome
+  generates functional connectomes directly from fMRIPrep outputs. The workflow
+  comes with several built-in denoising strategies and there are several choices
+  of atlases (MIST, Schaefer 7 networks, DiFuMo, Harvard-Oxford). Users can
+  customise their own strategies and atlases using the configuration json files.
+
+
+  Example:
+
+  ```
+
+  ml gigaconnectome/0.6.0
+
+
+  giga_connectome [-h] [-v]
+                         [--participant-label PARTICIPANT_LABEL [PARTICIPANT_LABEL ...]]
+                         [-a ATLASES_DIR] [-w WORK_DIR] [--atlas ATLAS]
+                         [--denoise-strategy DENOISE_STRATEGY]
+                         [--smoothing_fwhm SMOOTHING_FWHM] [--reindex-bids]
+                         [--bids-filter-file BIDS_FILTER_FILE]
+                         [--calculate-intranetwork-average-correlation]
+                         [--verbosity {0,1,2,3}]
+                         bids_dir output_dir {participant}
+  ```
+
+
+  More documentation can be found here:
+  https://giga-connectome.readthedocs.io/en/stable/index.html
+
+
+  Citation:
+
+  ```
+
+  {% raw %}
+
+  Please cite the following paper if you are using giga-connectome in your work:
+
+
+  @article{Wang2025,
+      doi = {10.21105/joss.07061},
+      url = {https://doi.org/10.21105/joss.07061},
+      year = {2025}, publisher = {The Open Journal},
+      volume = {10},
+      number = {110},
+      pages = {7061},
+      author = {Hao-Ting Wang and Rémi Gau and Natasha Clarke and Quentin Dessain and Lune Bellec},
+      title = {Giga Connectome: a BIDS-app for time series and functional connectome extraction},
+      journal = {Journal of Open Source Software}
+  }
+
+  giga-connectome uses nilearn under the hood, hence please consider cite
+  nilearn using the Zenodo DOI:
+
+
+  @software{Nilearn,
+      author = {Nilearn contributors},
+      license = {BSD-4-Clause},
+      title = {{nilearn}},
+      url = {https://github.com/nilearn/nilearn},
+      doi = {https://doi.org/10.5281/zenodo.8397156}
+  }
+
+  {% endraw %}
+
+  ```
+
+
+  Note: Citation content is wrapped in Jinja2 raw blocks to prevent template
+  processing conflicts with BibTeX syntax.
+
+
+  To run container outside of this environment: ml gigaconnectome/0.6.0
+
+
+  ----------------------------------
+copyright:
+  - license: MIT
+    url: https://opensource.org/license/mit/

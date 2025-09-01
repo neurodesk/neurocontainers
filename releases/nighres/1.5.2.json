@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "nighres 1.5.2": {
+      "version": "20250203",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "structural imaging"
+  ]
+}

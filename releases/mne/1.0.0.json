@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "mne 1.0.0": {
+      "version": "20220325",
+      "exec": ""
+    },
+    "code-mne 1.0.0": {
+      "version": "20220325",
+      "exec": "code"
+    }
+  },
+  "categories": [
+    "electrophysiology"
+  ]
+}

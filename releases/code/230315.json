@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "vscodeGUI-code 230315": {
+      "version": "20230315",
+      "exec": "code"
+    },
+    "code 230315": {
+      "version": "20230315",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "programming"
+  ]
+}

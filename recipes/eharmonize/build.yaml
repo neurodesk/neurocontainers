@@ -1,0 +1,62 @@
+name: eharmonize
+version: 1.0.0
+architectures:
+  - x86_64
+structured_readme:
+  description: ENIGMA Harmonization (eharmonize) is a python-based package that harmonizes provided data to included lifespan reference curves. The package is currently set up for outputs of the ENIGMA-DTI pipeline.
+  example: eharmonize --help
+  documentation: https://github.com/ahzhu/eharmonize
+  citation: "ahzhu. (2025). ahzhu/eharmonize: Initial Release (v0.0.0). Zenodo. https://doi.org/10.5281/zenodo.15116825"
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - install: git openssh-client
+    - run:
+        - mkdir -p ~/.ssh
+        - ssh-keyscan github.com >> ~/.ssh/known_hosts
+    - template:
+        name: miniconda
+        version: latest
+        install_path: /opt/miniconda
+    - run:
+        - cd /opt
+        - git clone https://github.com/ahzhu/eharmonize.git
+        - cd eharmonize
+        # Replace git+ssh://git@ with https:// in setup.py to avoid SSH issues
+        - sed -i "s/git+ssh:\/\/git@/git+https:\/\//" setup.py
+        - python -m pip install --no-cache-dir .
+    - deploy:
+        path: []
+        bins:
+          - eharmonize
+    - test:
+        name: Basic Test
+        script: eharmonize --help
+readme: |-
+  ----------------------------------
+  ## eharmonize/1.0.0 ##
+
+  ENIGMA Harmonization (eharmonize) is a python-based package that harmonizes provided data to included lifespan reference curves. The package is currently set up for outputs of the ENIGMA-DTI pipeline.
+
+  Example:
+  ```
+  eharmonize --help
+  ```
+
+  More documentation can be found here: https://github.com/ahzhu/eharmonize
+
+  Citation:
+  ```
+  ahzhu. (2025). ahzhu/eharmonize: Initial Release (v0.0.0). Zenodo. https://doi.org/10.5281/zenodo.15116825
+  ```
+
+  To run container outside of this environment: ml eharmonize/1.0.0
+
+  ----------------------------------
+copyright:
+  - name: "Unknown "
+    url: https://github.com/ahzhu/eharmonize
+categories:
+  - data organisation

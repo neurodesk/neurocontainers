@@ -1,0 +1,57 @@
+name: batchheudiconv
+version: 1.0.0
+architectures:
+  - x86_64
+structured_readme:
+  description: A set of scripts to help convert DICOM files to BIDS format using heudiconv. Each study is managed as a self-contained workspace with organized directory structure
+  example: |-
+    bh01_prep_dir.sh <study_name>
+    bh02_sort_dicom.sh <study_name>
+    bh03_make_subjlist.sh <study_name> "<pattern>"
+    bh04_make_heuristic.sh <study_name>
+    bh05_make_bids.sh <study_name>
+  documentation: https://github.com/kytk/batch-heudiconv
+  citation: ''
+build:
+  kind: neurodocker
+  base-image: kytk/batch-heudiconv
+  pkg-manager: apt
+  directives:
+    - deploy:
+        path:
+          - /opt/batch-heudiconv
+        bins: []
+    - test:
+        name: Basic
+        script: bh01_prep_dir.sh
+categories:
+  - workflows
+  - data organisation
+copyright:
+  - license: GPL-3.0-only
+    url: https://www.gnu.org/licenses/gpl-3.0-standalone.html
+readme: |-
+  ----------------------------------
+  ## batchheudiconv/1.0.0 ##
+
+  A set of scripts to help convert DICOM files to BIDS format using heudiconv. Each study is managed as a self-contained workspace with organized directory structure
+
+  Example:
+  ```
+  bh01_prep_dir.sh <study_name>
+  bh02_sort_dicom.sh <study_name>
+  bh03_make_subjlist.sh <study_name> "<pattern>"
+  bh04_make_heuristic.sh <study_name>
+  bh05_make_bids.sh <study_name>
+  ```
+
+  More documentation can be found here: https://github.com/kytk/batch-heudiconv
+
+  Citation:
+  ```
+
+  ```
+
+  To run container outside of this environment: ml batchheudiconv/1.0.0
+
+  ----------------------------------

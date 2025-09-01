@@ -1,0 +1,20 @@
+{
+  "name": "Neurocontainers Build Environment",
+  "postCreateCommand": "python3 -m pip install --upgrade pip && python3 -m pip install -r requirements.txt && python3 -m pip install -e .",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "privileged": true,
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "h5web.vscode-h5web"
+      ]
+    }
+  },
+  "remoteEnv": {
+    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
+    "PATH": "${localEnv:PATH}:${localWorkspaceFolder}/builder"
+  }
+}

@@ -1,0 +1,113 @@
+name: spm12
+version: r7771
+
+copyright:
+  - license: GPL-2.0
+    url: https://github.com/spm/spm12/blob/main/LICENCE.txt
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:16.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - wget
+        - unzip
+        - ca-certificates
+        - openjdk-8-jre
+        - dbus-x11
+
+    - environment:
+        MATLAB_VERSION: R2019b
+        MCR_UPDATE: "9"
+        MCR_VERSION: v97
+
+    - template:
+        name: matlabmcr
+        install_path: /opt/mcr
+        version: 2019b
+
+    - environment:
+        MCR_INHIBIT_CTF_LOCK: "1"
+        SPM_HTML_BROWSER: "0"
+        SPM_REVISION: r7771
+        SPM_VERSION: "12"
+
+    - run:
+        - wget --no-check-certificate --progress=bar:force -P /opt https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/spm12_r7771_Linux_R2019b.zip
+        - unzip -q /opt/spm12_r7771_Linux_R2019b.zip -d /opt
+        - rm -f /opt/spm12_r7771_Linux_R2019b.zip
+
+    - environment:
+        LD_LIBRARY_PATH: /opt/mcr/v97/runtime/glnxa64:/opt/mcr/v97/bin/glnxa64:/opt/mcr/v97/sys/os/glnxa64:/opt/mcr/v97/sys/opengl/lib/glnxa64:/opt/mcr/v97/extern/bin/glnxa64
+
+    - run:
+        - /opt/spm12/spm12 function exit
+        - chmod +x /opt/spm12/*
+
+    - template:
+        name: miniconda
+        conda_install: python=3.6 traits nipype numpy scipy h5py scikit-image
+        version: 4.7.12.1
+
+    - environment:
+        DEPLOY_ENV_FORCE_SPMMCR: "1"
+        DEPLOY_ENV_SPMMCRCMD: run_spm12.sh /opt/mcr/v97/ script
+        PATH: $PATH:/opt/spm12:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        XAPPLRESDIR: /opt/mcr/v97/x11/app-defaults
+
+deploy:
+  bins:
+    - spm12
+
+readme: |-
+  ----------------------------------
+  ## spm12/{{ context.version }} ##
+  SPM12 standalone with Matlab Compiler Runtime
+
+  Example:
+  ```
+  run_spm12.sh /opt/mcr/v97/
+  ```
+
+  Example with nipype:
+  ```
+  pip install osfclient
+
+  osf -p bt4ez fetch TOMCAT_DIB/sub-01/ses-01_7T/anat/sub-01_ses-01_7T_T1w_defaced.nii.gz /neurodesktop-storage/sub-01_ses-01_7T_T1w_defaced.nii.gz
+
+  gunzip /neurodesktop-storage/sub-01_ses-01_7T_T1w_defaced.nii.gz
+
+  python
+  ```
+  ```
+  import nipype.interfaces.spm as spm
+
+  matlab_cmd = 'run_spm12.sh /opt/mcr/v97/ script'
+  spm.SPMCommand.set_mlab_paths(matlab_cmd=matlab_cmd, use_mcr=True)
+
+  norm12 = spm.Normalize12()
+  norm12.inputs.image_to_align = '/neurodesktop-storage/sub-01_ses-01_7T_T1w_defaced.nii'
+  norm12.run()
+  ```
+
+  More documentation can be found here: https://www.fil.ion.ucl.ac.uk/spm/doc/
+
+  To run container outside of this environment: ml spm12/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - "functional imaging"
+  - "image segmentation"
+  - "image registration"
+  - "structural imaging"
+
+gui_apps:
+  - name: "spm12GUI"
+    exec: "bash run_spm12.sh /opt/mcr/v97/"

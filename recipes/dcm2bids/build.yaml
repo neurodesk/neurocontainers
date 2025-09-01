@@ -1,0 +1,39 @@
+name: dcm2bids
+version: 3.2.0
+
+copyright:
+  - license: GPL-3.0
+    url: https://github.com/UNFmontreal/Dcm2Bids/blob/master/LICENSE.txt
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: unfmontreal/dcm2bids:{{ context.version }}
+  pkg-manager: apt
+
+  directives:
+  - run:
+      - chmod a+rwx /dcm2bids/dcm2bids -R 
+  - user: dcm2bidsuser
+
+deploy:
+  bins:
+    - dcm2bids
+
+readme: |
+  ## dcm2bids/{{ context.version }} ##
+  ---- 
+
+  Description:
+  dcm2bids reorganises NIfTI files using dcm2niix into the Brain Imaging Data Structure (BIDS). 
+
+  Example: 
+  dcm2bids -d DICOM_DIR -p PARTICIPANT_ID -s SESSION_ID -c CONFIG_FILE --auto_extract_entities 
+
+  https://unfmontreal.github.io/Dcm2Bids
+
+categories:
+  - "data organisation"

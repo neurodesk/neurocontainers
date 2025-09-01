@@ -1,0 +1,99 @@
+name: Update apps.json
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+    paths:
+      - "releases/**/*.json"
+  workflow_dispatch:
+
+jobs:
+  update-apps-json:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout neurocontainers repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Generate apps.json
+        run: |
+          python3 tools/generate_apps_json.py --output apps.json
+
+      - name: Create pull request
+        env:
+          GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+        run: |
+          gh auth setup-git
+
+          gh repo clone neurodesk/neurocommand neurocommand -- --depth=1
+
+          cd neurocommand
+
+          # Configure git
+          git config user.name "neurocontainers-bot"
+          git config user.email "neurocontainers-bot@neurodesk.github.io"
+
+          # Create a new branch for the update
+          BRANCH_NAME="update-apps-json-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH_NAME"
+
+          # Copy the generated apps.json
+          cp ../apps.json neurodesk/apps.json
+
+          # Check if there are any changes
+          if ! git diff --quiet neurodesk/apps.json; then
+            echo "Changes detected in apps.json"
+            
+            # Add and commit changes
+            git add neurodesk/apps.json
+            git commit -m "Update apps.json from neurocontainers releases
+            
+            Auto-generated from release files in neurocontainers repo.
+            
+            🤖 Generated with neurocontainers automation"
+            
+            # Push the branch
+            git push origin "$BRANCH_NAME"
+            
+            # Create pull request
+            gh pr create \
+              --title "Update apps.json from neurocontainers releases" \
+              --body "$(cat <<'EOF'
+          ## Summary
+
+          This PR updates apps.json based on the latest release files from the neurocontainers repository.
+
+          ## Changes
+
+          - Updated apps.json with latest container releases
+          - Generated automatically from individual release files
+
+          ## Test Plan
+
+          - [ ] Verify apps.json format is correct
+          - [ ] Check that all expected containers are present
+          - [ ] Test container availability after merge
+
+          🤖 Generated with neurocontainers automation
+          EOF
+          )" \
+              --head "$BRANCH_NAME" \
+              --base main
+
+            echo "Pull request created successfully"
+          else
+            echo "No changes detected in apps.json"
+          fi

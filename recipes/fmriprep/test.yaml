@@ -1,0 +1,36 @@
+tests:
+  - name: fmriprep Full Test
+
+    manual: true
+
+    prep:
+      - name: Get Dataset
+        image: ghcr.io/neurodesk/datalad_1.1.5:latest
+        script: |
+          git config --global user.email "user@neurodesk.org"
+          git config --global user.name "Neurodesk User"
+
+          datalad install https://github.com/OpenNeuroDatasets/ds000102.git
+          cd ds000102 && datalad get sub-08
+
+    script: |
+      echo "Steffen.Bollmann@cai.uq.edu.au" > ~/.license
+      echo "21029" >> ~/.license
+      echo "*Cqyn12sqTCxo" >> ~/.license
+      echo "FSxgcvGkNR59Y" >> ~/.license
+
+      export SUBJECTS_DIR=$PWD/fmriprep-freesurfer-dir
+      export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=2 
+      export MPLCONFIGDIR=~/matplotlib-mpldir 
+
+      mkdir $SUBJECTS_DIR
+
+      fmriprep ds000102/ fmriprep-output participant \
+        --fs-license-file ~/.license \
+        --output-spaces T1w MNI152NLin2009cAsym fsaverage fsnative \
+        --participant-label 08 \
+        --nprocs $ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS \
+        --mem 10000 \
+        --skip_bids_validation \
+        --fs-subjects-dir $SUBJECTS_DIR \
+        -v

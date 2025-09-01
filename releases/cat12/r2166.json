@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "cat12GUI-cat12 r2166": {
+      "version": "20230601",
+      "exec": "bash run_spm12.sh /opt/mcr/v93/"
+    },
+    "cat12 r2166": {
+      "version": "20230601",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "image registration",
+    "structural imaging"
+  ]
+}

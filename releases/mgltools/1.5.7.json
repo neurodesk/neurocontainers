@@ -1,0 +1,23 @@
+{
+  "apps": {
+    "mgltools 1.5.7": {
+      "version": "20230313",
+      "exec": ""
+    },
+    "pmvGUI-mgltools 1.5.7": {
+      "version": "20230313",
+      "exec": "pmv"
+    },
+    "visionGUI-mgltools 1.5.7": {
+      "version": "20230313",
+      "exec": "vision"
+    },
+    "adtGUI-mgltools 1.5.7": {
+      "version": "20230313",
+      "exec": "adt"
+    }
+  },
+  "categories": [
+    "molecular biology"
+  ]
+}

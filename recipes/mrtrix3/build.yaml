@@ -1,0 +1,101 @@
+name: mrtrix3
+version: 3.0.7
+
+copyright:
+  - license: MPL-2.0
+    url: https://github.com/MRtrix3/mrtrix3/blob/master/LICENCE.txt
+    
+architectures:
+  - x86_64
+  
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: fsl
+        version: 6.0.7.16
+
+    - template:
+        name: mrtrix3
+        build_processes: "1"
+        method: source
+        version: "{{ context.version }}"
+
+    - template:
+        name: ants
+        version: 2.4.3
+
+    - workdir: /opt/mrtrix3-"{{ context.version }}"
+
+    - install:
+        - dbus-x11
+        - less
+        - mesa-common-dev
+        - libglu1-mesa
+        - libqt5svg5-dev
+        - wget
+        - libqt5opengl5-dev
+        - libqt5opengl5
+        - libqt5gui5
+        - libqt5core5a
+        - libtiff-dev
+        - libtiff6
+        - libfftw3-dev
+        - liblapack3
+
+    - run:
+        - python3 configure
+
+    - run:
+        - python3 build
+
+    - run:
+        - ln -s /usr/bin/python3 /usr/bin/python
+
+    - workdir: /opt/acpcdetect_V2.1
+
+    - run:
+        - wget https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/acpcdetect_V2.1_LinuxCentOS6.7.tar.gz
+        - tar zxvf acpcdetect_V2.1_LinuxCentOS6.7.tar.gz
+        - rm -rf acpcdetect_V2.1_LinuxCentOS6.7.tar.gz
+
+    - environment:
+        ARTHOME: /opt/acpcdetect_V2.1/
+        PATH: $PATH:/opt/acpcdetect_V2.1/bin
+
+deploy:
+  path:
+    - /opt/mrtrix3-"{{ context.version }}"/bin/
+    - /opt/acpcdetect_V2.1/bin
+
+readme: |
+  ----------------------------------
+  ## mrtrix3/{{ context.version }} ##
+  MRtrix3 provides a set of tools to perform various types of diffusion MRI analyses, from various forms of tractography through to next-generation group-level analyses. It is designed with consistency, performance, and stability in mind, and is freely available under an open-source license.
+
+
+  Example:
+  ```
+  mrview
+  ```
+
+  More documentation can be found here: https://mrtrix.readthedocs.io/en/latest/
+
+  Citation:
+  ```
+  J.-D. Tournier, R. E. Smith, D. Raffelt, R. Tabbara, T. Dhollander, M. Pietsch, D. Christiaens, B. Jeurissen, C.-H. Yeh, and A. Connelly. MRtrix3: A fast, flexible and open software framework for medical image processing and visualisation. NeuroImage, 202 (2019), pp. 116\u201337.
+  ```
+
+
+  To run container outside of this environment: ml mrtrix3/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - "diffusion imaging"
+
+gui_apps:
+  - name: "mrviewGUI"
+    exec: "mrview"

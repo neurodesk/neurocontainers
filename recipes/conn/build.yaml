@@ -1,0 +1,60 @@
+name: conn
+version: 22a
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - template:
+        name: matlabmcr
+        method: binaries
+        version: 2022a
+
+    - workdir: /opt/conn-22a/
+
+    - install:
+        - wget
+
+    - run:
+        - wget --no-check-certificate --progress=bar:force -P /opt/conn-22a/ https://www.nitrc.org/frs/download.php/13733/conn22a_glnxa64.zip
+        - unzip -q conn22a_glnxa64.zip -d /opt/conn-22a/
+        - rm -f conn22a_glnxa64.zip
+
+    - install:
+        - openjdk-8-jre
+
+    - environment:
+        PATH: /opt/conn-22a/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+deploy:
+  bins:
+    - conn
+
+readme: |-
+  ----------------------------------
+  ## conn/{{ context.version }} ##
+  conn standalone with Matlab Compiler Runtime
+
+  Example:
+  ```
+  conn
+  ```
+
+  More documentation can be found here: https://web.conn-toolbox.org/tutorials
+
+  To run container outside of this environment: ml conn/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - "functional imaging"
+
+gui_apps:
+  - name: "connGUI"
+    exec: "conn"

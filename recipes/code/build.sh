@@ -2,7 +2,7 @@
 set -e
 
 export toolName='code'
-export toolVersion='230315'
+export toolVersion='240320'
 export juliaVersion='1.6.3'
 export GO_VERSION="1.17.2" 
 export SINGULARITY_VERSION="3.9.3" 
@@ -19,14 +19,14 @@ fi
 source ../main_setup.sh
 
 neurodocker generate ${neurodocker_buildMode} \
-   --base-image debian:9 \
+   --base-image debian \
    --pkg-manager apt \
    --env DEBIAN_FRONTEND=noninteractive \
    --run="printf '#!/bin/bash\nls -la' > /usr/bin/ll" \
    --run="chmod +x /usr/bin/ll" \
    --run="mkdir -p ${mountPointList}" \
    --miniconda version=latest \
-      conda_install="python=3.8 nipype jupyter nb_conda_kernels h5py seaborn numpy" \
+      conda_install="python=3.11 nipype jupyter nb_conda_kernels h5py seaborn numpy" \
       pip_install="osfclient" \
    --install midori xdg-utils  python-pyqt5 unzip git apt-transport-https ca-certificates coreutils \
       curl gnome-keyring gnupg libnotify4 wget libnss3 libxkbfile1 libsecret-1-0 libgtk-3-0 libxss1 libgbm1 libxshmfence1 libasound2 \

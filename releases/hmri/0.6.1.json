@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "hmriGUI-hmri 0.6.1": {
+      "version": "20231107",
+      "exec": "bash run_spm12.sh /opt/mcr/R2023a fmri"
+    },
+    "hmri 0.6.1": {
+      "version": "20231107",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "quantitative imaging",
+    "structural imaging"
+  ]
+}

@@ -1,0 +1,313 @@
+name: linda
+version: 0.5.1
+architectures:
+  - x86_64
+structured_readme:
+  description: Lesion Identification with Neighborhood Data Analysis. LINDA is an R package for automatic segmentation of chronic stroke lesions.
+  example: |-
+    In R Kernel
+    R
+    library(LINDA)
+    filename = '/path/to/patient/T1.nii.gz'
+    outputs = linda_predict(filename)
+
+    In command line
+    ./linda_predict.sh /path/to/patient/T1.nii.gz
+    ./linda_predict.sh /path/to/patient/T1.nii.gz /custom/output/directory
+  documentation: https://github.com/dorianps/LINDA
+  citation: "Pustina, D., Coslett, H. B., Turkeltaub, P. E., Tustison, N., Schwartz, M. F., & Avants, B. (2016). Automated segmentation of chronic stroke lesions using LINDA: Lesion identification with neighborhood data analysis. Hum Brain Mapp, 37(4), 1405-1421. https://doi.org/10.1002/hbm.23110 "
+build:
+  kind: neurodocker
+  base-image: dorianps/linda
+  pkg-manager: apt
+  directives:
+    - deploy:
+        bins:
+          - R
+          - rstudio
+    - group:
+        - file:
+            name: linda_predict.sh
+            contents: |-
+              #!/bin/bash
+
+              # Linda prediction wrapper script for Neurodesk
+              # Usage: ./linda_predict.sh <input_file> [output_directory]
+
+              set -e  # Exit on any error
+
+              # Function to display usage
+              usage() {
+                  echo "Usage: $0 <input_T1_file> [output_directory]"
+                  echo ""
+                  echo "Arguments:"
+                  echo "  input_T1_file      Path to the T1.nii.gz file"
+                  echo "  output_directory   Optional: Directory to save outputs (default: same as input file directory)"
+                  echo ""
+                  echo "Example:"
+                  echo "  $0 /data/patient001/T1.nii.gz"
+                  echo "  $0 /data/patient001/T1.nii.gz /results/patient001"
+                  exit 1
+              }
+
+              # Check if at least one argument is provided
+              if [ $# -lt 1 ]; then
+                  echo "Error: Missing required argument"
+                  usage
+              fi
+
+              # Get input arguments
+              INPUT_FILE="$1"
+              OUTPUT_DIR="${2:-$(dirname "$INPUT_FILE")}"
+
+              # Validate input file exists
+              if [ ! -f "$INPUT_FILE" ]; then
+                  echo "Error: Input file '$INPUT_FILE' not found"
+                  exit 1
+              fi
+
+              # Create output directory if it doesn't exist
+              mkdir -p "$OUTPUT_DIR"
+
+              # Get absolute paths
+              INPUT_FILE=$(realpath "$INPUT_FILE")
+              OUTPUT_DIR=$(realpath "$OUTPUT_DIR")
+
+              echo "Starting Linda prediction..."
+              echo "Input file: $INPUT_FILE"
+              echo "Output directory: $OUTPUT_DIR"
+
+              # Create temporary R script
+              TEMP_R_SCRIPT=$(mktemp /tmp/linda_predict_XXXXXX.R)
+
+              cat > "$TEMP_R_SCRIPT" << EOF
+              # Load LINDA library
+              library(LINDA)
+
+              # Set input file path
+              filename <- '$INPUT_FILE'
+
+              # Run Linda prediction
+              cat("Running Linda prediction on:", filename, "\n")
+              outputs <- linda_predict(filename)
+
+              # Save outputs to specified directory
+              output_dir <- '$OUTPUT_DIR'
+
+              # Print summary of outputs
+              cat("Linda prediction completed successfully!\n")
+              cat("Output directory:", output_dir, "\n")
+
+              # Save the outputs object as RData file
+              output_file <- file.path(output_dir, "linda_outputs.RData")
+              save(outputs, file = output_file)
+              cat("Results saved to:", output_file, "\n")
+
+              # If outputs contain specific components, save them separately
+              if (is.list(outputs)) {
+                  # Print available output components
+                  cat("Output components:\n")
+                  print(names(outputs))
+                  
+                  # Save each component if possible
+                  for (name in names(outputs)) {
+                      component_file <- file.path(output_dir, paste0("linda_", name, ".RData"))
+                      component_data <- outputs[[name]]
+                      save(component_data, file = component_file)
+                      cat("Saved component", name, "to:", component_file, "\n")
+                  }
+              }
+
+              cat("Linda prediction workflow completed!\n")
+              EOF
+
+              # Run the R script
+              echo "Executing Linda prediction..."
+              Rscript "$TEMP_R_SCRIPT"
+
+              # Check if the main output file was created
+              if [ -f "$OUTPUT_DIR/linda_outputs.RData" ]; then
+                  echo ""
+                  echo "SUCCESS: Linda prediction completed successfully!"
+                  echo "Results saved in: $OUTPUT_DIR"
+                  echo ""
+                  echo "Output files:"
+                  ls -la "$OUTPUT_DIR"/linda_*
+              else
+                  echo "ERROR: Linda prediction may have failed - no output file found"
+                  exit 1
+              fi
+
+              # Clean up temporary R script
+              rm -f "$TEMP_R_SCRIPT"
+
+              echo "linda-predict.sh completed successfully!"
+        - run:
+            - cp {{ get_file("linda_predict.sh") }} /usr/local/bin/linda_predict.sh
+            - chmod +x /usr/local/bin/linda_predict.sh
+        - environment:
+            PATH: $PATH:/usr/local/bin
+        - deploy:
+            bins:
+              - linda_predict.sh
+      custom: shellScript
+      customParams:
+        name: linda_predict.sh
+        path: /usr/local/bin
+        content: |-
+          #!/bin/bash
+
+          # Linda prediction wrapper script for Neurodesk
+          # Usage: ./linda_predict.sh <input_file> [output_directory]
+
+          set -e  # Exit on any error
+
+          # Function to display usage
+          usage() {
+              echo "Usage: $0 <input_T1_file> [output_directory]"
+              echo ""
+              echo "Arguments:"
+              echo "  input_T1_file      Path to the T1.nii.gz file"
+              echo "  output_directory   Optional: Directory to save outputs (default: same as input file directory)"
+              echo ""
+              echo "Example:"
+              echo "  $0 /data/patient001/T1.nii.gz"
+              echo "  $0 /data/patient001/T1.nii.gz /results/patient001"
+              exit 1
+          }
+
+          # Check if at least one argument is provided
+          if [ $# -lt 1 ]; then
+              echo "Error: Missing required argument"
+              usage
+          fi
+
+          # Get input arguments
+          INPUT_FILE="$1"
+          OUTPUT_DIR="${2:-$(dirname "$INPUT_FILE")}"
+
+          # Validate input file exists
+          if [ ! -f "$INPUT_FILE" ]; then
+              echo "Error: Input file '$INPUT_FILE' not found"
+              exit 1
+          fi
+
+          # Create output directory if it doesn't exist
+          mkdir -p "$OUTPUT_DIR"
+
+          # Get absolute paths
+          INPUT_FILE=$(realpath "$INPUT_FILE")
+          OUTPUT_DIR=$(realpath "$OUTPUT_DIR")
+
+          echo "Starting Linda prediction..."
+          echo "Input file: $INPUT_FILE"
+          echo "Output directory: $OUTPUT_DIR"
+
+          # Create temporary R script
+          TEMP_R_SCRIPT=$(mktemp /tmp/linda_predict_XXXXXX.R)
+
+          cat > "$TEMP_R_SCRIPT" << EOF
+          # Load LINDA library
+          library(LINDA)
+
+          # Set input file path
+          filename <- '$INPUT_FILE'
+
+          # Run Linda prediction
+          cat("Running Linda prediction on:", filename, "\n")
+          outputs <- linda_predict(filename)
+
+          # Save outputs to specified directory
+          output_dir <- '$OUTPUT_DIR'
+
+          # Print summary of outputs
+          cat("Linda prediction completed successfully!\n")
+          cat("Output directory:", output_dir, "\n")
+
+          # Save the outputs object as RData file
+          output_file <- file.path(output_dir, "linda_outputs.RData")
+          save(outputs, file = output_file)
+          cat("Results saved to:", output_file, "\n")
+
+          # If outputs contain specific components, save them separately
+          if (is.list(outputs)) {
+              # Print available output components
+              cat("Output components:\n")
+              print(names(outputs))
+              
+              # Save each component if possible
+              for (name in names(outputs)) {
+                  component_file <- file.path(output_dir, paste0("linda_", name, ".RData"))
+                  component_data <- outputs[[name]]
+                  save(component_data, file = component_file)
+                  cat("Saved component", name, "to:", component_file, "\n")
+              }
+          }
+
+          cat("Linda prediction workflow completed!\n")
+          EOF
+
+          # Run the R script
+          echo "Executing Linda prediction..."
+          Rscript "$TEMP_R_SCRIPT"
+
+          # Check if the main output file was created
+          if [ -f "$OUTPUT_DIR/linda_outputs.RData" ]; then
+              echo ""
+              echo "SUCCESS: Linda prediction completed successfully!"
+              echo "Results saved in: $OUTPUT_DIR"
+              echo ""
+              echo "Output files:"
+              ls -la "$OUTPUT_DIR"/linda_*
+          else
+              echo "ERROR: Linda prediction may have failed - no output file found"
+              exit 1
+          fi
+
+          # Clean up temporary R script
+          rm -f "$TEMP_R_SCRIPT"
+
+          echo "linda-predict.sh completed successfully!"
+        executable: true
+        addToPath: true
+        makeDeployBin: true
+    - test:
+        name: testScript
+        script: R
+  add-default-template: false
+  add-tzdata: false
+categories:
+  - structural imaging
+readme: |-
+  ----------------------------------
+  ## linda/{{ context.version }} ##
+
+  Lesion Identification with Neighborhood Data Analysis. LINDA is an R package for automatic segmentation of chronic stroke lesions.
+
+  Example:
+  ```
+  In R Kernel
+  R
+  library(LINDA)
+  filename = '/path/to/patient/T1.nii.gz'
+  outputs = linda_predict(filename)
+
+  In command line
+  ./linda_predict.sh /path/to/patient/T1.nii.gz
+  ./linda_predict.sh /path/to/patient/T1.nii.gz /custom/output/directory
+  ```
+
+  More documentation can be found here: https://github.com/dorianps/LINDA
+
+  Citation:
+  ```
+  Pustina, D., Coslett, H. B., Turkeltaub, P. E., Tustison, N., Schwartz, M. F., & Avants, B. (2016). Automated segmentation of chronic stroke lesions using LINDA: Lesion identification with neighborhood data analysis. Hum Brain Mapp, 37(4), 1405-1421. https://doi.org/10.1002/hbm.23110
+  ```
+
+  To run container outside of this environment: ml linda/{{ context.version }}
+
+  ----------------------------------
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/dorianps/LINDA?tab=Apache-2.0-1-ov-file#readme
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAsBJREFUSEullktPE1EYht9vLqzcEE2MbkBducNSNGinKzX9Ia7cuTPGmLJwa1z4C4xKvAQlSmKLSoG2WGiLIJGVcWU0MSHuTKAzx5zLzJw5p0UJi6aX+eY8877freTPfWbEGBhjQPwCks/89+S69ruI5WFRBBLh2v3aOTT0ZlNFyoBBoBgurpsg7UDzfvJfb2QAiQrtCa0DDYUZ5VGUeQAa4gD15EKqEZBYoVulW6niB1lJ/uy6ZdFhPDdBEtAnuXoSLYv2doG9Pa5Xhrku4HrSGtMi/1U3AxBJ6vXAWgsI792SN/EzbtwFjQeiCFhnGdH928k15/odUL4IOI4sEi1H5L/s2EkOQ0StBRQ6FdRqNQRBgJV8SR6iAOdbc2g2myiVSpg/cyEB6NXGc0reTDvtg5jMFazWUOhWBaBYLKKRuyoUCEC3jsn2W9TrdQk4PQFwODmyfzIKZtqpRXEfhKEFaCqAsKgPQKgjZZHeaN6L1b4WCQXr86mCc1ekgigCW29gslNJFFRPTYDyQapAB/gKkCmv2KJP7zIAJ1eQSTYA86N5IB+AHNfqI/Ket7JVxGcLT/LaIgIdMHYZpADggG41VTA6LtUpi/Q+Iu/ZR9sirmBtEYWN94mC+pGToLNjQMTAvn7BxZ1vKWCEAwqA46YDUyWbvKcr9rBTgGDzgwCUy2VsbW0ldb+9vY3h4WENkBPqOMCcqhJgdnKvJy1SgORk9aFSqWBqairpg+qIAmhlGueU3OkGs+Y5V9BeQvSgbJ7d9ztduwnkLg2waLphj4ooBH5+B/v1AwjDtHH47OGz5vcOsPsHOHoc8HwQfz92QvWX0Wjuk3rWImNY/XPBDBjvse3kPV4WyH1X4yH2BbmPliyLMvugj6KD7AsLYM7zfXf0oA2ojwr3Yc3ug/9d6gP+hehlTybAnOcH3tEKGuf0L8gmlshQmm/+AAAAAElFTkSuQmCC

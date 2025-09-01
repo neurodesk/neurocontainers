@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "bidsappbrainsuite 21a": {
+      "version": "20230618",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "bids apps"
+  ]
+}

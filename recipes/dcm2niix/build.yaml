@@ -1,0 +1,63 @@
+name: dcm2niix
+version: v1.0.20240202
+
+copyright:
+  - name: dcm2niix license
+    url: https://github.com/rordenlab/dcm2niix/blob/master/license.txt
+
+architectures:
+  - x86_64
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - git
+        - wget
+        - ca-certificates
+        - pigz
+
+    - workdir: /opt/dcm2niix-{{ context.version }}
+
+    - run:
+        - curl -fLO https://github.com/rordenlab/dcm2niix/releases/download/{{ context.version }}/dcm2niix_lnx.zip
+        - unzip dcm2niix_lnx.zip
+        - chmod a+rwx /opt/dcm2niix-{{ context.version }}/dcm2niix
+        - rm -rf dcm2niix_lnx.zip
+
+    - environment:
+        PATH: $PATH:/opt/dcm2niix-{{ context.version }}
+
+deploy:
+  path:
+    - /opt/dcm2niix-{{ context.version }}
+
+readme: |-
+  ----------------------------------
+  ## dcm2niix/{{ context.version }}' ##
+  dcm2niix is designed to convert neuroimaging data from the DICOM format to the NIfTI format. This web page hosts the developmental source code - a compiled version for Linux, MacOS, and Windows of the most recent stable release is included with MRIcroGL. A full manual for this software is available in the form of a NITRC wiki.
+
+  Example:
+  ```
+  ./dcm2niix ./test-dicom-dir -b y
+  ```
+
+  More documentation can be found here: (https://github.com/rordenlab/dcm2niix?tab=readme-ov-file)
+
+  To make the executables and scripts inside this container transparently available in the command line of environments where Neurocommand is installed: ml dcm2niix/{{ context.version }}
+
+  Citation:
+  ```
+  Li X, Morgan PS, Ashburner J, Smith J, Rorden C (2016) The first step for neuroimaging data analysis: DICOM to NIfTI conversion. J Neurosci Methods. 264:47-56. doi: 10.1016/j.jneumeth.2016.03.001. PMID: 26945974
+  ```
+
+  License: This software is open source. The bulk of the code is covered by the BSD license. Some units are either public domain (nifti*.*, miniz.c) or use the MIT license (ujpeg.cpp). See the license.txt file for more details.
+  https://github.com/rordenlab/dcm2niix/blob/master/license.txt
+
+  ----------------------------------
+
+categories:
+  - "data organisation"

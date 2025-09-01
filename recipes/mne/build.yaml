@@ -1,0 +1,127 @@
+name: mne
+version: 1.7.1
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/mne-tools/mne-bids-pipeline/blob/main/LICENSE.txt
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - midori
+        - xdg-utils
+        - python3-pyqt5
+        - unzip
+        - git
+        - apt-transport-https
+        - ca-certificates
+        - coreutils
+        - curl
+        - gnome-keyring
+        - gnupg
+        - libnotify4
+        - wget
+        - libnss3
+        - libxkbfile1
+        - libsecret-1-0
+        - libgtk-3-0
+        - libxss1
+        - libgbm1
+        - libxshmfence1
+        - libasound2
+        - libglu1-mesa
+        - libgl1-mesa-dri
+        - mesa-utils
+        - libgl1-mesa-glx
+
+    - template:
+        name: miniconda
+        env_name: base
+        version: 4.7.12
+
+    - run:
+        - conda install -c conda-forge -n base mamba=0.24.0
+
+    - run:
+        - mamba create --override-channels --channel=conda-forge --name=mne-1.7.1 urllib3=2.2.1 mne=1.7.1
+
+    - run:
+        - wget -O vscode.deb 'https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64'
+        - apt install ./vscode.deb
+        - rm -rf ./vscode.deb
+
+    - run:
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.python
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.vscode-pylance
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-keymap
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-renderers
+
+    - environment:
+        DONT_PROMPT_WSL_INSTALL: "1"
+
+    - workdir: /opt/
+
+    - run:
+        - curl -fsSL https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz | tar xz
+
+    - run:
+        - chmod a+rwx /opt/mne-bids-pipeline-main -R
+
+    - copy: code /usr/local/sbin/
+
+    - run:
+        - chmod a+x /usr/local/sbin/code
+        - chmod a+rwx /opt/vscode-extensions -R
+
+    - environment:
+        RUNLEVEL: "3"
+        XDG_RUNTIME_DIR: ~/.vscode
+
+    - user: neuro
+
+deploy:
+  bins:
+    - code
+
+readme: |-
+  ----------------------------------
+  ## mne/{{ context.version }} ##
+  Python MNE environment with VScode
+
+  Example:
+  ```
+  code
+  ```
+  Or:
+  ```
+  source /opt/miniconda-4.7.12/etc/profile.d/conda.sh
+  conda activate mne-{{ context.version }}
+  ```
+
+  More documentation can be found here: https://mne.tools/stable/index.html
+  To cite MNE Python see here: https://mne.tools/stable/overview/cite.html
+
+
+  To run applications outside of this container: ml mne/1.0.3
+  Note the use of the module system does not currently interface with MNE and conda environments in this container
+  ----------------------------------
+
+files:
+  - name: code
+    contents: |-
+      #!/usr/bin/env sh
+      /usr/bin/code --extensions-dir=/opt/vscode-extensions
+
+categories:
+  - "electrophysiology"

@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "pcntoolkit 0.35": {
+      "version": "20250628",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "statistics"
+  ]
+}

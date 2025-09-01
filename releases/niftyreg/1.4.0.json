@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "niftyreg 1.4.0": {
+      "version": "20220317",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "image registration"
+  ]
+}

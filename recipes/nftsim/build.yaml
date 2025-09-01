@@ -1,0 +1,85 @@
+name: nftsim
+version: 1.0.2
+architectures:
+  - x86_64
+structured_readme:
+  description: NFTsim is a neural field simulation framework for large-scale brain dynamics. This container allows users to simulate various neural models including corticothalamic and cortical circuits using configuration files.
+  example: nftsim -i /app/configs/eirs-corticothalamic.conf -o eirs-corticothalamic.output
+  documentation: https://github.com/BrainDynamicsUSYD/nftsim
+  citation: ''
+build:
+  kind: neurodocker
+  base-image: ghcr.io/farwa-abbas/nftsim:1.0.2
+  pkg-manager: apt
+  directives:
+    - environment:
+        PATH: /app/bin:$PATH
+    - workdir: /app
+    - deploy:
+        bins:
+          - nftsim
+        path:
+          - /app/bin
+          - /app/configs
+    - test:
+        name: testScript
+        script: |-
+          #!/bin/bash
+
+          # Test 1: Check if nftsim binary exists and shows help
+          echo "Testing nftsim --help..."
+          nftsim --help
+          if [ $? -ne 0 ]; then
+              echo "ERROR: nftsim --help failed"
+              exit 1
+          fi
+
+          # Test 2: Check if config file exists
+          echo "Testing config file access..."
+          if [ ! -f "/app/configs/eirs-corticothalamic.conf" ]; then
+              echo "ERROR: Config file not found at /app/configs/eirs-corticothalamic.conf"
+              exit 1
+          fi
+
+          # Test 3: Run nftsim with the config file
+          echo "Testing nftsim execution with config..."
+          nftsim -i /app/configs/eirs-corticothalamic.conf -o eirs-corticothalamic.output
+          if [ $? -ne 0 ]; then
+              echo "ERROR: nftsim execution failed"
+              exit 1
+          fi
+
+          # Test 4: Check if output file was created
+          echo "Testing output file generation..."
+          if [ ! -f "eirs-corticothalamic.output" ]; then
+              echo "ERROR: Output file not created"
+              exit 1
+          fi
+
+          echo "All tests passed successfully!"
+          exit 0
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAmlJREFUSEvllV1IU2EYx39nO9Ol0+bmV2OKlSbrJvHKCNNVEEJ2ISIOdpOVBOK9trooqBulEALropJFFwVRF12si31I131c2qhdhNJGbay1g+3jbHEmSmuuTpk39XIuDu/hOb/3ef7P83+FjL89j9qlrWYqcI7PiaTaCIR/D5DPgyCUqcBWS5TLw9vlNPVGLaYabSnlbwAWX68SS8icPFSNTvwhla0AsnKeJ88lHJfChZNbG0TuTjfR1VHJ9Ydxrt6LFfZrjSYS8bX3zVZDcwt9A6MYzY2FzxtdtA64GegkEAgQCoW4MN7FlLOOB74k+45eY3h4GIu1lbOnTzE7O1vyf0mS2N1uUwdQoicnJ6mK3edjXMY+eoOhoaECYPzMGDMzM/T39yPL8gYomUyyEo6qAwSDQdra2jCbzSiBbre7BCCKYhFAIakuUW9vL36/H4/Hw+Dg4KaA+fn5IsDc3ByWvd207+9Go13rwrIa2Gw2nE4nLpeLnp4eJiYmSjJIp9NFOjgcDj5JonrA0tISkUiEbDaL1+tVVaLDx0d+D2C32/H5fESjUfR6fZHIigZdB49R32gFQXkEDLV17DTVIwiaX5fogGWZl8EUt9zPUEBKG37fRTW1RvoGHDS37EEo4y8/1eDiSBxpNcf0HZlwOEwqlSqagz8CrE+ykt/jK7vo7qzk8kKM208TJZO8o8rAkRNOdRkoRhdayRD6kCGXA40GOqw6Wpt0vI9kePEmxaPFr0R0dir0BsSKCjSCpmAJ1TXGstah+sKRc/DqncBCcAwZcXtutCxVnA+M80Va3R4AW7FrVUf6LwHfAA+Ur1jBngS7AAAAAElFTkSuQmCC
+categories:
+  - programming
+  - hippocampus
+readme: |-
+  ----------------------------------
+  ## nftsim/1.0.2 ##
+
+  NFTsim is a neural field simulation framework for large-scale brain dynamics. This container allows users to simulate various neural models including corticothalamic and cortical circuits using configuration files.
+
+  Example:
+  ```
+  nftsim -i /app/configs/eirs-corticothalamic.conf -o eirs-corticothalamic.output
+  ```
+
+  More documentation can be found here: https://github.com/BrainDynamicsUSYD/nftsim
+
+  Citation:
+  ```
+
+  ```
+
+  To run container outside of this environment: ml nftsim/1.0.2
+
+  ----------------------------------

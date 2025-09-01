@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "topaz 0.2.5": {
+      "version": "20240313",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "cryo EM"
+  ]
+}

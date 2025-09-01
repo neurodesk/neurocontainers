@@ -1,0 +1,38 @@
+name: connectomeworkbench
+version: 2.0.1
+
+copyright:
+  - license: GPL-2.0
+    url: http://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+    
+architectures:
+  - x86_64
+
+files:
+  - name: license.txt
+    filename: license.txt
+
+build:
+  kind: neurodocker
+
+  base-image: neurodebian:bookworm-non-free
+  pkg-manager: apt
+
+  directives:
+    - install: connectome-workbench
+
+    - template:
+        name: freesurfer
+        version: 7.1.1
+
+    - copy: license.txt /opt/freesurfer-7.1.1/license.txt
+
+deploy:
+  bins:
+    - wb_view
+    - wb_command
+    - wb_shortcuts
+
+categories:
+  - "functional imaging"
+  - "data organisation"

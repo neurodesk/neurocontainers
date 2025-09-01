@@ -1,0 +1,79 @@
+name: vesselboost
+version: 1.0.3
+
+copyright:
+  - license: MIT
+    url: https://github.com/KMarshallX/VesselBoost/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: pytorch/pytorch:2.4.0-cuda11.8-cudnn9-runtime
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - include: macros/openrecon/neurodocker.yaml
+
+    - workdir: /opt
+
+    - run:
+        - git clone https://github.com/KMarshallX/VesselBoost.git
+        - cd VesselBoost
+        - chmod a+x angiboost.py
+
+    - workdir: /opt/VesselBoost/
+
+    - run:
+        - pip install -r requirements.txt
+
+    - workdir: /opt/VesselBoost/saved_models
+
+    - run:
+        - osf -p abk4p fetch osfstorage/pretrained_models/manual_0429
+
+    - run:
+        - osf -p abk4p fetch osfstorage/pretrained_models/omelette1_0429
+
+    - run:
+        - osf -p abk4p fetch osfstorage/pretrained_models/omelette2_0429
+
+    - workdir: /opt/VesselBoost/
+
+    - environment:
+        PATH: $PATH:/opt/VesselBoost/
+
+    - copy: vesselboost.py /opt/code/python-ismrmrd-server/vesselboost.py
+
+deploy:
+  bins:
+    - python
+
+readme: |-
+  ----------------------------------
+  ## Vesselboost/{{ context.version }} ##
+  This containers provides an interactive deep learning vessel segmentation algorithm
+
+  Example:
+  ```
+  prediction.py --ds_path $path_to_images --out_path $path_to_output --pretrained $path_to_pretrained_model --prep_mode 4
+
+  ```
+
+  More documentation can be found here: https://github.com/KMarshallX/VesselBoost
+
+  To run applications outside of this container: ml vesselboost/{{ context.version }}
+
+  ----------------------------------
+
+files:
+  - name: vesselboost.py
+    filename: vesselboost.py
+
+categories:
+  - "image segmentation"

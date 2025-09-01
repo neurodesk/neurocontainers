@@ -1,0 +1,56 @@
+name: sigviewer
+version: 0.6.4
+
+copyright:
+  - license: GPL-3.0
+    url: https://github.com/cbrnr/sigviewer/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: neurodebian:bullseye
+
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - sigviewer
+
+deploy:
+  bins:
+    - sigviewer
+
+readme: |-
+  ----------------------------------
+  ## sigviewer/{{ context.version }} ##
+  SigViewer is a viewing application for biosignals such as EEG or MEG time series.
+  In addition to viewing raw data, SigViewer can also create, edit, and display event information
+  (such as annotations or artifact selections).
+
+  Example:
+  ```
+  sigviewer
+  ```
+
+  More documentation can be found here: https://github.com/cbrnr/sigviewer
+
+  To run applications outside of this container: ml sigviewer/{{ context.version }}
+
+  Citation:
+  ```
+
+  ```
+
+  ----------------------------------
+
+categories:
+  - "electrophysiology"
+
+gui_apps:
+  - name: "sigviewerGUI"
+    exec: "sigviewer"

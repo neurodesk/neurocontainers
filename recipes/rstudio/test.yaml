@@ -1,0 +1,5 @@
+tests:
+  #test if all packages are installed correctly. This should not give an error:
+  - name: Test rstudio
+    script: |
+      Rscript /opt/dependencies.R

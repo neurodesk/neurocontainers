@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "niistat 1.0.20191216": {
+      "version": "20220111",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "functional imaging"
+  ]
+}

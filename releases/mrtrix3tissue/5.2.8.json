@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "mrtrix3tissue 5.2.8": {
+      "version": "20201111",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ]
+}

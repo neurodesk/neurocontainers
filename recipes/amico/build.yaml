@@ -1,0 +1,142 @@
+name: amico
+version: 2.1.0
+architectures:
+  - x86_64
+structured_readme:
+  description: >-
+    Accelerated Microstructure Imaging via Convex Optimization (AMICO) from
+    diffusion MRI data
+  example: |-
+    python
+    import amico
+  documentation: https://github.com/daducci/AMICO/wiki
+  citation: >-
+    Accelerated Microstructure Imaging via Convex Optimization (AMICO) from
+    diffusion MRI data
+
+    Alessandro Daducci, Erick Canales-Rodriguez, Hui Zhang, Tim Dyrby, Daniel C
+    Alexander, Jean-Philippe Thiran
+
+    Neuroimage 105 (2015): 32-44.
+    https://doi.org/10.1016/j.neuroimage.2014.10.026
+
+
+    Orientationally invariant indices of axon diameter and density from
+    diffusion MRI
+
+    Daniel C Alexander, Penny L Hubbard, Matt G Hall, Elizabeth A Moore, Maurice
+    Ptito, Geoff J M Parker, Tim B Dyrby
+
+    Neuroimage 52.4 (2010): 1374-1389.
+    https://doi.org/10.1016/j.neuroimage.2010.05.043
+
+
+    NODDI: practical in vivo neurite orientation dispersion and density imaging
+    of the human brain
+
+    Hui Zhang, Torben Schneider, Claudia A Wheeler-Kingshott, Daniel C Alexander
+
+    Neuroimage 61.4 (2012): 1000-1016.
+    https://doi.org/10.1016/j.neuroimage.2012.03.072
+
+
+    SANDI: A compartment-based model for non-invasive apparent soma and neurite
+    imaging by diffusion MRI
+
+    Marco Palombo, Andrada Ianus, Michele Guerreri, Daniel Nunes, Daniel C.
+    Alexander, Noam Shemesh, Hui Zhang
+
+    Neuroimage 215 (2020): 116835.
+    https://doi.org/10.1016/j.neuroimage.2020.116835
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: miniconda
+        version: latest
+        install_path: /opt/miniconda
+        pip_install: dmri-amico
+    - deploy:
+        path: []
+        bins:
+          - python
+categories:
+  - diffusion imaging
+readme: >-
+  ----------------------------------
+
+  ## amico/2.1.0 ##
+
+
+  Accelerated Microstructure Imaging via Convex Optimization (AMICO) from
+  diffusion MRI data
+
+
+  Example:
+
+  \\\`\\\`\\\`
+
+  python
+
+  import amico
+
+  \\\`\\\`\\\`
+
+
+  More documentation can be found here: https://github.com/daducci/AMICO/wiki
+
+
+  Citation:
+
+  \\\`\\\`\\\`
+
+  Accelerated Microstructure Imaging via Convex Optimization (AMICO) from
+  diffusion MRI data
+
+  Alessandro Daducci, Erick Canales-Rodriguez, Hui Zhang, Tim Dyrby, Daniel C
+  Alexander, Jean-Philippe Thiran
+
+  Neuroimage 105 (2015): 32-44. https://doi.org/10.1016/j.neuroimage.2014.10.026
+
+
+  Orientationally invariant indices of axon diameter and density from diffusion
+  MRI
+
+  Daniel C Alexander, Penny L Hubbard, Matt G Hall, Elizabeth A Moore, Maurice
+  Ptito, Geoff J M Parker, Tim B Dyrby
+
+  Neuroimage 52.4 (2010): 1374-1389.
+  https://doi.org/10.1016/j.neuroimage.2010.05.043
+
+
+  NODDI: practical in vivo neurite orientation dispersion and density imaging of
+  the human brain
+
+  Hui Zhang, Torben Schneider, Claudia A Wheeler-Kingshott, Daniel C Alexander
+
+  Neuroimage 61.4 (2012): 1000-1016.
+  https://doi.org/10.1016/j.neuroimage.2012.03.072
+
+
+  SANDI: A compartment-based model for non-invasive apparent soma and neurite
+  imaging by diffusion MRI
+
+  Marco Palombo, Andrada Ianus, Michele Guerreri, Daniel Nunes, Daniel C.
+  Alexander, Noam Shemesh, Hui Zhang
+
+  Neuroimage 215 (2020): 116835.
+  https://doi.org/10.1016/j.neuroimage.2020.116835
+
+  \\\`\\\`\\\`
+
+
+  To run container outside of this environment: ml amico/2.1.0
+
+
+  ----------------------------------
+copyright:
+  - name: AMICO software license agreement
+    url: https://github.com/daducci/AMICO/blob/master/LICENSE
+

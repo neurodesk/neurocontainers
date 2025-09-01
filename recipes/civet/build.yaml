@@ -1,0 +1,99 @@
+name: civet
+version: 2.1.1
+draft: true # this recipe doesn't work
+copyright:
+  - name: CIVET license
+    url: https://github.com/aces/CIVET_Full_Project/blob/master/LICENSE
+  - license: GPL-2.0
+    url: http://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+  - license: LGPL-2.1
+    url: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+  - name: CGAL license
+    url: https://www.cgal.org/license.html
+ 
+architectures:
+    - x86_64
+
+build:
+    kind: neurodocker
+
+    base-image: ubuntu:18.04
+    pkg-manager: apt
+
+    directives:
+        - environment:
+              DEBIAN_FRONTEND: noninteractive
+
+        - install:
+              - perl
+              - imagemagick
+              - gnuplot-nox
+              - locales
+              - gsfonts
+              - libtext-format-perl
+              - build-essential
+              - automake
+              - libtool
+              - bison
+              - libz-dev
+              - libjpeg-dev
+              - libxmu-dev
+              - libxi-dev
+              - libqt4-dev
+              - libpng-dev
+              - libtiff-dev
+              - liblcms2-dev
+              - flex
+              - libx11-dev
+              - freeglut3-dev
+              - git-lfs
+              - ca-certificates
+
+        - run:
+              - rm /bin/sh && ln -s /bin/bash /bin/sh
+
+        - run:
+              - "git config --global url.https://github.com/.insteadOf git@github.com:"
+
+        - workdir: /
+        - run:
+              - git clone git@github.com:aces/CIVET_Full_Project.git
+        - workdir: /CIVET_Full_Project/
+
+        - run:
+              - git lfs pull
+
+        - run:
+              - mkdir -p Linux-x86_64/SRC
+
+        - run:
+              - tar -zxf TGZ/netpbm-10.35.94.tgz -C /CIVET_Full_Project/Linux-x86_64/SRC
+
+        - run:
+              - cp provision/netpbm/Makefile.config /CIVET_Full_Project/Linux-x86_64/SRC/netpbm-10.35.94
+
+        - run:
+              - sed -i 's/make /make -j 4 /g' install.sh && bash install.sh
+
+        - workdir: /CIVET_Full_Project/Linux-x86_64
+
+        - run:
+              - rm -r SRC building man info
+
+        - run:
+              - chmod --recursive u+rX,g+rX,o+rX /CIVET_Full_Project
+
+        - environment:
+              BRAINVIEW: /CIVET_Full_Project/Linux-x86_64/share/brain-view
+              CIVET_JOB_SCHEDULER: DEFAULT
+              LD_LIBRARY_PATH: /CIVET_Full_Project/Linux-x86_64/lib
+              MINC_COMPRESS: "4"
+              MINC_FORCE_V2: "1"
+              MNI_DATAPATH: /CIVET_Full_Project/Linux-x86_64/share
+              PATH: /CIVET_Full_Project/Linux-x86_64/CIVET-2.1.1:/CIVET_Full_Project/Linux-x86_64/CIVET-2.1.1/progs:/CIVET_Full_Project/Linux-x86_64/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+              PERL5LIB: /CIVET_Full_Project/Linux-x86_64/perl
+              R_LIBS: /CIVET_Full_Project/Linux-x86_64/R_LIBS
+              VOLUME_CACHE_THRESHOLD: "-1"
+
+readme: |
+    civet/{{ context.version }}

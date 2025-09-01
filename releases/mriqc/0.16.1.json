@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "mriqc 0.16.1": {
+      "version": "20210917",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "data organisation",
+    "functional imaging",
+    "quality control",
+    "workflows"
+  ]
+}

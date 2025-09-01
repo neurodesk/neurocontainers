@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "bidsappspm 0.0.20": {
+      "version": "20230629",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "bids apps"
+  ]
+}

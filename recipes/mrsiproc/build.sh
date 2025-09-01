@@ -3,16 +3,17 @@ set -e
 
 # this template file builds datalad and is then used as a docker base image for layer caching + it contains examples for various things like github install, curl, ...
 export toolName='mrsiproc'
-export toolVersion='0.1.0' # the version number cannot contain a "-" - try to use x.x.x notation always
+export toolVersion='0.2.0' # the version number cannot contain a "-" - try to use x.x.x notation always
 export matlabVersion='2021b' # this has to match the version on which the matlab scripts were compiled
 export matlabUpdateVersion='6'
 export mincVersion='1.9.15'
 export lcmodelVersion='6.3'
 export hdbetVersion='1.0' # note the hdbet doesn't really have a version
-export fslVersion='6.0.7.1'
+export fslVersion='6.0.7.1' # build on ubuntu 20.04
 export minicondaVersion='latest'
 export dcm2niixVersion='003f0d19f1e57b0129c9dcf3e653f51ca3559028' # copied from qsmxt
-export juliaVersion='1.9.3'
+export juliaVersion='1.10.4'
+export freesurferVersion='7.4.1'
 
 # Don't forget to update version change in README.md!!!!!
 # toolName or toolVersion CANNOT contain capital letters or dashes or underscores (Docker registry does not accept this!)
@@ -37,6 +38,7 @@ source ../main_setup.sh
 neurodocker generate ${neurodocker_buildMode} \
    --base-image vnmd/fsl_${fslVersion} \
    --pkg-manager apt \
+   --run="mkdir -p ${mountPointList}" \
    --user=root `# otherwise some permission denied error occurs during docker build` \
    --dcm2niix method=source version=${dcm2niixVersion} \
    --minc version=${mincVersion} \
@@ -106,7 +108,7 @@ neurodocker generate ${neurodocker_buildMode} \
    \
    --env LD_LIBRARY_PATH="\${LD_LIBRARY_PATH}:/opt/MATLAB_Runtime_R${matlabVersion}/R${matlabVersion}/runtime/glnxa64:/opt/MATLAB_Runtime_R${matlabVersion}/R${matlabVersion}/bin/glnxa64:/opt/MATLAB_Runtime_R${matlabVersion}/R${matlabVersion}/sys/os/glnxa64:/opt/MATLAB_Runtime_R${matlabVersion}/R${matlabVersion}/extern/bin/glnxa64" \
    --workdir /opt `# Add Julia with MRSI packages` \
-   --run="wget https://julialang-s3.julialang.org/bin/linux/x64/${juliaVersion:0:3}/julia-${juliaVersion}-linux-x86_64.tar.gz && \
+   --run="wget https://julialang-s3.julialang.org/bin/linux/x64/${juliaVersion:0:4}/julia-${juliaVersion}-linux-x86_64.tar.gz && \
       tar zxvf julia-${juliaVersion}-linux-x86_64.tar.gz && \
       rm -rf julia-${juliaVersion}-linux-x86_64.tar.gz" \
    --env PATH="\${PATH}:/opt/julia-${juliaVersion}/bin" \
@@ -116,17 +118,23 @@ neurodocker generate ${neurodocker_buildMode} \
       && chmod -R 755 /opt/julia_depot/packages/MRSI" \
    --env JULIA_DEPOT_PATH="~/.julia:/opt/julia_depot" \
    \
+   --workdir /opt `# Add freesurfer` \
+   --install language-pack-en gettext xterm x11-apps csh tcsh xorg xorg-dev xserver-xorg-video-intel libwayland-cursor0 \
+   --run="wget --quiet https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/${freesurferVersion}/freesurfer_ubuntu20-${freesurferVersion}_amd64.deb \
+            && dpkg -i freesurfer_ubuntu20-${freesurferVersion}_amd64.deb" \
+   --env PATH="\${PATH}:/usr/local/freesurfer/${freesurferVersion}-1" \
+   \
    --workdir /opt `# Add MRSI pipeline scripts` \
    --install parallel \
    --run="git clone https://github.com/korbinian90/mrsi_pipeline_neurodesk.git && \
       cd mrsi_pipeline_neurodesk && \
-      git checkout 64945adbc03581e1d92210d76cc4674836c7f803" \
+      git checkout 02ed0178bf2d7be3ec0406fee92333ae86de377d" \
    --env PATH="\${PATH}:/opt/mrsi_pipeline_neurodesk/Part1:/opt/mrsi_pipeline_neurodesk/Part2" \
    --copy update_mrsi.sh /opt/mrsi_pipeline_neurodesk \
    --run="chmod a+x /opt/mrsi_pipeline_neurodesk/update_mrsi.sh" \
    --env PATH="/neurodesktop-storage/mrsi_pipeline_neurodesk/Part1:/neurodesktop-storage/mrsi_pipeline_neurodesk/Part2:/opt/mrsi_pipeline_neurodesk:\${PATH}" \
    --env DEPLOY_PATH="/opt/mrsi_pipeline_neurodesk/Part1:/opt/mrsi_pipeline_neurodesk/Part2" \
-   --env DEPLOY_BINS="julia:python:dcm2niix:nii2mnc:dcm2mnc:rawtominc:mnc2nii:bet:hd-bet:lcmodel:parallel:fsl:fslmaths:Part1_ProcessMRSI.sh:Part2_EvaluateMRSI.sh:update_mrsi.sh:fid_1.300000ms.basis:LCModel_Control_Template.m" \
+   --env DEPLOY_BINS="julia:python:bc:dcm2niix:nii2mnc:dcm2mnc:rawtominc:mincresample:mincmath:minctoraw:mnc2nii:bet:hd-bet:mri_synthseg:lcmodel:parallel:fsl:fslmaths:Part1_ProcessMRSI.sh:Part2_EvaluateMRSI.sh:update_mrsi.sh:fid_1.300000ms.basis:LCModel_Control_Template.m:LCModel_Control_Volunteers_WatRef.m" \
    \
    --copy README.md /README.md                          `# include README file in container` \
    \

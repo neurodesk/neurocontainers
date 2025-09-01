@@ -1,0 +1,4 @@
+tests:
+  - name: Test dcm2niix
+    script: |
+      dcm2niix

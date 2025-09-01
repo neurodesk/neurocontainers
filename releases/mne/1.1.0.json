@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "mneextended 1.1.0": {
+      "version": "20220819",
+      "exec": ""
+    },
+    "codemneextended-mneextended 1.1.0": {
+      "version": "20220819",
+      "exec": "code"
+    }
+  },
+  "categories": [
+    "electrophysiology"
+  ]
+}

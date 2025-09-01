@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "bidsappbaracus 1.1.4": {
+      "version": "20230612",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "bids apps"
+  ]
+}

@@ -29,6 +29,7 @@ neurodocker generate ${neurodocker_buildMode} \
     --run="mkdir -p ${mountPointList}" \
     --add ./brkraw.tar.gz / \
     --env PATH='$PATH':/usr/local/bin/ \
+    --env DEPLOY_BINS=brkraw \
     --copy README.md /README.md \
 > ${imageName}.${neurodocker_buildExt}
 

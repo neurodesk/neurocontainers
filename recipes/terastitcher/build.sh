@@ -28,7 +28,7 @@ neurodocker generate ${neurodocker_buildMode} \
    --run="mkdir -p ${mountPointList}"                      `# create folders for singularity bind points` \
    --install curl ca-certificates`# install apt-get packages` \
    --workdir /opt/${toolName}-${toolVersion}/           `# create install directory` \
-   --run="curl -fsSL --retry 5 https://objectstorage.us-ashburn-1.oraclecloud.com/n/sd63xuke79z3/b/neurodesk/o/TeraStitcher-portable-1.11.10-Linux.tar.gz | tar -xz -C /opt/${toolName}-${toolVersion} --strip-components 1" `# download a github release file and unpack` \
+   --run="curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/TeraStitcher-portable-1.11.10-Linux.tar.gz | tar -xz -C /opt/${toolName}-${toolVersion} --strip-components 1" `# download a github release file and unpack` \
    --env PATH='$PATH':/opt/${toolName}-${toolVersion}   `# set PATH` \
    --env DEPLOY_PATH=/opt/${toolName}-${toolVersion}/           `# specify a path where ALL binary files will be exposed outside the container for the module system. Never expose a directory with system commands (like /bin/ /usr/bin ...)` \
    --copy README.md /README.md                          `# include readme file in container` \

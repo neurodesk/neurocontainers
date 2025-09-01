@@ -29,6 +29,6 @@ pkgdef brkraw {
     pkg python3-tkinter
 
     exec brkraw {
-        pip install bruker'[SimpleITK]'
+        pip install brkraw'[SimpleITK]'==0.3.11
     }    
 }

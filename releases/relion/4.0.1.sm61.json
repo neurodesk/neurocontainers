@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "relion 4.0.1.sm61": {
+      "version": "20240528",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "cryo EM"
+  ]
+}

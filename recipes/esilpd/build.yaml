@@ -1,0 +1,169 @@
+name: esilpd
+version: 0.0.1
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/mne-tools/mne-python/blob/main/LICENSE.txt
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: debian:11
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - midori
+        - xdg-utils
+        - software-properties-common
+        - libstdc++6
+        - gcc-10-base
+        - python3-pyqt5
+        - unzip
+        - git
+        - apt-transport-https
+        - ca-certificates
+        - coreutils
+        - curl
+        - gnome-keyring
+        - gnupg
+        - libnotify4
+        - wget
+        - libnss3
+        - libxkbfile1
+        - libsecret-1-0
+        - libgtk-3-0
+        - libgcc1
+        - libc6
+        - libxss1
+        - libgbm1
+        - libxshmfence1
+        - libasound2
+        - libglu1-mesa
+        - libgl1-mesa-dri
+        - mesa-utils
+        - libgl1-mesa-glx
+        - binutils
+
+    - run:
+        - strings /usr/lib/x86_64-linux-gnu/libstdc++.so.6 | grep GLIBCXX
+
+    - run:
+        - wget -q https://developer.download.nvidia.com/compute/cuda/repos/debian11/x86_64/cuda-keyring_1.0-1_all.deb
+        - dpkg -i cuda-keyring_1.0-1_all.deb
+        - rm cuda-keyring_1.0-1_all.deb
+
+    - run:
+        - apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/debian11/x86_64/7fa2af80.pub
+        - add-apt-repository 'deb https://developer.download.nvidia.com/compute/cuda/repos/debian11/x86_64/ /'
+        - add-apt-repository contrib
+
+    - install:
+        - cuda-11-5
+        - nsight-compute-2022.2.0
+
+    - run:
+        - wget -q https://developer.download.nvidia.com/compute/redist/cudnn/v8.3.0/cudnn-11.5-linux-x64-v8.3.0.98.tgz
+        - tar -xvf cudnn-11.5-linux-x64-v8.3.0.98.tgz
+        - rm cudnn-11.5-linux-x64-v8.3.0.98.tgz
+        - chmod a+r cuda/include/cudnn*.h cuda/lib64/libcudnn*
+        - ln -s cuda/include/cudnn*.h /usr/local/cuda/include
+        - cp -P cuda/lib64/libcudnn* /usr/local/cuda/lib64
+
+    - template:
+        name: miniconda
+        env_name: base
+        version: 4.7.12
+
+    - run:
+        - conda install -c conda-forge mamba=0.24.0
+
+    - run:
+        - mamba create --override-channels --channel=conda-forge --name=esilpd-0.0.1 python=3.9 mne
+
+    - run:
+        - . activate esilpd-0.0.1
+        - pip3 install --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
+        - rm -rf ~/.cache/pip/*
+
+    - run:
+        - . activate esilpd-0.0.1
+        - pip3 install --no-cache-dir jax osfclient ipykernel scikit-image pybids seaborn argh joblib torchaudio odl[testing,show]
+        - rm -rf ~/.cache/pip/*
+
+    - run:
+        - wget -q -O vscode.deb 'https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64'
+        - apt install ./vscode.deb
+        - rm -rf ./vscode.deb
+
+    - run:
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.python
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.vscode-pylance
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-keymap
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-renderers
+
+    - environment:
+        DONT_PROMPT_WSL_INSTALL: "1"
+
+    - workdir: /opt/
+
+    - run:
+        - curl -fsSL https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz | tar xz
+        - chmod a+rwx /opt/mne-bids-pipeline-main -R
+
+    - environment:
+        LD_LIBRARY_PATH: $LD_LIBRARY_PATH:/usr/local/cuda/lib64
+
+    - copy: code /usr/local/sbin/
+
+    - run:
+        - chmod a+x /usr/local/sbin/code
+
+    - run:
+        - chmod a+rwx /opt/vscode-extensions -R
+
+    - environment:
+        XDG_RUNTIME_DIR: /neurodesktop-storage
+
+    - user: neuro
+
+deploy:
+  bins:
+    - code
+
+readme: |
+  ----------------------------------
+  ## esilpd/{{ context.version }} ##
+  for EEG/MEG modeling and analysis
+  MNE 1.0.3+PyTorch1.11_cuda_11.3+jax 0.3.13 with CUDA11.5 with cudnn 8.3.0
+  https://mne.tools/stable/index.html
+
+  Example:
+  ```
+  ```
+
+  More documentation can be found here: link_to_documentation
+
+  To run applications outside of this container: ml esilpd/{{ context.version }}
+
+  Citation:
+  ```
+  Alexandre Gramfort, Martin Luessi, Eric Larson, Denis A. Engemann, Daniel Strohmeier, Christian Brodbeck, Roman Goj, Mainak Jas, Teon Brooks, Lauri Parkkonen, and Matti S. H\xE4m\xE4l\xE4inen. MEG and EEG data analysis with MNE-Python. Frontiers in Neuroscience, 7(267):1\u201313, 2013. doi:10.3389/fnins.2013.00267.
+
+  Paszke, A., Gross, S., Massa, F., Lerer, A., Bradbury, J., Chanan, G., \u2026 Chintala, S. (2019). PyTorch: An Imperative Style, High-Performance Deep Learning Library. In Advances in Neural Information Processing Systems 32 (pp. 8024\u20138035). Curran Associates, Inc. Retrieved from http://papers.neurips.cc/paper/9015-pytorch-an-imperative-style-high-performance-deep-learning-library.pdf
+  ```
+
+  ----------------------------------"
+
+files:
+  - name: code
+    contents: |-
+      #!/usr/bin/env sh
+      /usr/bin/code --extensions-dir=/opt/vscode-extensions

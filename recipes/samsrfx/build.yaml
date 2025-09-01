@@ -1,0 +1,66 @@
+name: samsrfx
+version: v10.004
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - template:
+        name: matlabmcr
+        method: binaries
+        version: 2023b
+
+    - install:
+        - wget
+        - openjdk-8-jre
+        - dbus-x11
+        - libgbm-dev
+
+    - workdir: /opt/samsrfx-v10.004/
+
+    - run:
+        - wget --no-check-certificate --progress=bar:force -P /opt/samsrfx-v10.004/ https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/samsrf_v10.004.zip
+        - unzip -q samsrf_v10.004.zip -d /opt/samsrfx-v10.004/
+        - chmod a+x /opt/samsrfx-v10.004/samsrf/SamSrfX
+        - rm -f samsrf_v10.004.zip
+
+    - run:
+        - echo 'cd /opt/samsrfx-v10.004/samsrf' > samsrfx
+        - echo './run_SamSrfX.sh /opt/MCR-2023b/R2023b/' >> samsrfx
+        - chmod a+x samsrfx
+
+    - environment:
+        PATH: $PATH:/opt/samsrfx-v10.004/
+
+deploy:
+  bins:
+    - samsrfx
+
+readme: |-
+  ----------------------------------
+  ## samsrfx/{{ context.version }} ##
+  SamsrfX standalone with Matlab Compiler Runtime
+
+  Example:
+  ```
+  samsrfx
+  ```
+
+  More documentation can be found here: https://github.com/samsrf/samsrf
+
+  To run container outside of this environment: ml samsrfx/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - "functional imaging"
+
+gui_apps:
+  - name: "samsrfxGUI"
+    exec: "samsrfx"

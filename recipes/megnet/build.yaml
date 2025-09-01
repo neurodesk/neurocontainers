@@ -1,0 +1,56 @@
+name: megnet
+version: 1.0.0
+architectures:
+  - x86_64
+structured_readme:
+  description: MEGNET pipelines for MEG data analysis
+  example: python xxx.py config_file
+  documentation: https://github.com/SwinburneNeuroimaging/MEGNET
+  citation: ''
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: miniconda
+        version: py310_25.5.1-0
+        install_path: /opt/miniconda
+        conda_install: python jupyterlab mne mne-bids mne-connectivity hdf5storage ipympl nb_conda_kernels pydicom seaborn openpyxl pip
+        pip_install: tabulate pyyaml easydict
+        conda_opts: '-C conda-forge'
+    - install: git
+    - run:
+        - git clone https://github.com/SwinburneNeuroimaging/MEGNET.git
+        - python setup.py
+    - deploy:
+        path: []
+        bins:
+          - python
+          - megnet
+categories:
+  - electrophysiology
+readme: |-
+  ----------------------------------
+  ## megnet/1.0.0 ##
+
+  MEGNET pipelines for MEG data analysis
+
+  Example:
+  ```
+  python xxx.py config_file
+  ```
+
+  More documentation can be found here: https://github.com/SwinburneNeuroimaging/MEGNET
+
+  Citation:
+  ```
+
+  ```
+
+  To run container outside of this environment: ml megnet/1.0.0
+
+  ----------------------------------
+copyright:
+  - license: MIT
+    url: https://opensource.org/license/mit/

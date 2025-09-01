@@ -1,0 +1,57 @@
+name: afib1
+version: 1.6.0
+architectures:
+    - x86_64
+
+files:
+    - name: afib1.py
+      filename: afib1.py
+
+build:
+    kind: neurodocker
+    base-image: ubuntu:22.04
+    pkg-manager: apt
+
+    directives:
+        - environment:
+              DEBIAN_FRONTEND: noninteractive
+        - install: bzip2 ca-certificates git wget build-essential python3-pip python-is-python3
+
+        # Add OpenRecon macro
+        - include: macros/openrecon/neurodocker.yaml
+
+        #BET2 application
+        - install:
+              - gcc-aarch64-linux-gnu cmake make build-essential
+
+        - workdir: /opt/code
+        - run:
+              - git clone https://github.com/Bostrix/FSL-BET2
+              - cd FSL-BET2
+              - mkdir build
+              - cd build
+              - cmake ..
+              - make
+
+        - environment:
+              PATH: ${PATH}:/opt/code/FSL-BET2/bin
+
+        #openrecon application
+        - copy: afib1.py /opt/code/python-ismrmrd-server/afib1.py
+
+deploy:
+    path:
+        - /opt/code/FSL-BET2/bin
+
+readme: |-
+    ----------------------------------
+    ## afib1/{{ context.version }} ##
+    Example for building an openrecon container in Neurodesk
+
+    you can build this recipe with:
+    ```bash
+    source .venv/bin/activate
+    ./builder/build.py generate afib1 --recreate --build --login --architecture x86_64
+    ```
+
+    ----------------------------------

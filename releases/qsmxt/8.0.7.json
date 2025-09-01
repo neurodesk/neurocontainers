@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "qsmxt 8.0.7": {
+      "version": "20250529",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "phase processing",
+    "quantitative imaging",
+    "structural imaging",
+    "workflows"
+  ]
+}

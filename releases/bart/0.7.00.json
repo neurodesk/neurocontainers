@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "bart 0.7.00": {
+      "version": "20210302",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "image reconstruction"
+  ]
+}

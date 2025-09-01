@@ -1,0 +1,51 @@
+name: lesymap
+version: 0.0.0.9222
+architectures:
+  - x86_64
+structured_readme:
+  description: Lesion to Symptom Mapping in R. LESYMAP maps the specific brain areas responsible for cognitive deficits by taking a series of lesion maps and a vector of behavioral scores. Both univariate (t-test, Brunner-Munzel, regression) and multivariate (sparse canonical corelations) tests are available. LESYMAP is built to run both real and simulated lesion-to-symptom mapping analyses.
+  example: 'library(LESYMAP) '
+  documentation: https://dorianps.github.io/LESYMAP/
+  citation: 'Pustina, D., Avants, B., Faseyitan, O. K., Medaglia, J. D., & Coslett, H. B. (2018). Improved accuracy of lesion to symptom mapping with multivariate sparse canonical correlations. Neuropsychologia, 115, 154-166. https://doi.org/10.1016/j.neuropsychologia.2017.08.027 '
+build:
+  kind: neurodocker
+  base-image: dorianps/lesymap:20220701
+  pkg-manager: apt
+  directives:
+    - deploy:
+        bins:
+          - R
+          - rstudio
+    - test:
+        name: testScript
+        script: R
+  add-default-template: false
+  add-tzdata: false
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAaNJREFUSEtjTFj66z8DkYCDlYGB89QPhk+fiNbCwDhqAaHQHWZB9PvHF4ar2/oZLqxtBvtcQFqTwTZrAYOwvAHDxxe3GY7PTmN4cfMYzlBRUQ1nMDNvZuDkEoerQQkimAUZrtIMycnJDKIKehgW3Dq9g4GXlxfDksuXLzMEBbcSZ0GmmwxDSkoKg7CcDlYLrly5wlBWVoZiyYsXLxgYGI2pY8H+/fsZ/P39MXxBdBAR8sH79+8ZNm3ahGLBxIkTGSSlCxlUVMMYmJjY8McBIQu4ubkZfvz4gWJBREQEw4dPHtSxAFcQ2dpPJc0CDm4BBsPQegY+CVWGb++fMVzfMYnh4bWTDLgs0DcsZtDVy2VgZxckHESpqakMoaGhKMFw6NAhhrt37zLcuXOHobW1FSMVPXrMw2Bl08vAwyNL2IK0tDSMVJKens7Q09ODNR88e/aMwcIyiTgLYDmZUEGGLi8r547fgn9/fzO8f3yF4cfHlxhm//7xmeH7mwcMPK+5GZiZpRgYGZkw1LCwcDIICesxsLHxYQ8iQi4erdEIhRDDyAwiAIK1aYC2KOpEAAAAAElFTkSuQmCC
+categories:
+  - workflows
+  - statistics
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/dorianps/LESYMAP?tab=Apache-2.0-1-ov-file
+readme: |-
+  ----------------------------------
+  ## lesymap/0.0.0.9222 ##
+
+  Lesion to Symptom Mapping in R. LESYMAP maps the specific brain areas responsible for cognitive deficits by taking a series of lesion maps and a vector of behavioral scores. Both univariate (t-test, Brunner-Munzel, regression) and multivariate (sparse canonical corelations) tests are available. LESYMAP is built to run both real and simulated lesion-to-symptom mapping analyses.
+
+  Example:
+  ```
+  library(LESYMAP)
+  ```
+
+  More documentation can be found here: https://dorianps.github.io/LESYMAP/
+
+  Citation:
+  ```
+  Pustina, D., Avants, B., Faseyitan, O. K., Medaglia, J. D., & Coslett, H. B. (2018). Improved accuracy of lesion to symptom mapping with multivariate sparse canonical correlations. Neuropsychologia, 115, 154-166. https://doi.org/10.1016/j.neuropsychologia.2017.08.027
+  ```
+
+  To run container outside of this environment: ml lesymap/0.0.0.9222
+
+  ----------------------------------

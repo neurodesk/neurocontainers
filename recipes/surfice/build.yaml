@@ -1,0 +1,76 @@
+name: surfice
+version: 1.0.20210730
+
+copyright:
+  - license: BSD-2-Clause
+    url: https://github.com/neurolabusc/surf-ice/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - wget
+        - unzip
+        - ca-certificates
+        - libgtk2.0-0
+        - libqt5pas1
+        - appmenu-gtk2-module
+        - libglu1-mesa
+
+    - workdir: /opt
+
+    - run:
+        - wget --quiet -O surfice_linux.zip 'https://github.com/neurolabusc/surf-ice/releases/download/v1.0.20210730/surfice_linux.zip'
+        - unzip surfice_linux.zip
+        - rm -rf surfice_linux.zip
+
+    - run:
+        - wget --quiet -O libqt5pas1_2.9-0_amd64.deb 'https://github.com/davidbannon/libqt5pas/releases/download/v1.2.9/libqt5pas1_2.9-0_amd64.deb'
+        - apt install ./libqt5pas1_2.9-0_amd64.deb
+        - rm -rf libqt5pas1_2.9-0_amd64.deb
+
+    - environment:
+        PATH: /opt/Surf_Ice:/opt/Surf_Ice/Resources:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+
+deploy:
+  bins:
+    - surfice_qt5
+
+readme: |-
+  ----------------------------------
+  ## surfice/{{ context.version }} ##
+  Surf Ice, a simple tool for visualizing connectome networks, tractography and statistical maps on top of anatomical brain images. It is closely related to MRIcroGL, but where MRIcroGL is a volume renderer; Surf Ice is a surface renderer
+
+
+  Example:
+  ```
+  surfice
+  ```
+
+  More documentation can be found here: https://www.nitrc.org/plugins/mwiki/index.php/surfice:MainPage
+
+  To run applications outside of this container: ml surfice/{{ context.version }}
+
+  Citation:
+  ```
+  Rorden C, Brett M. Stereotaxic display of brain lesions. Behav Neurol. 2000;12(4):191-200. doi: 10.1155/2000/421719. PMID: 11568431.
+  ```
+
+  ----------------------------------
+
+categories:
+  - "visualization"
+
+gui_apps:
+  - name: "surficeGUI"
+    exec: "surfice"

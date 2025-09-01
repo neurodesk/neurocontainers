@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "rstudio 1.4.1106": {
+      "version": "20211014",
+      "exec": ""
+    },
+    "rstudioGUI-rstudio 1.4.1106": {
+      "version": "20211014",
+      "exec": "rstudio"
+    }
+  },
+  "categories": [
+    "statistics"
+  ]
+}

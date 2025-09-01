@@ -1,0 +1,46 @@
+name: mipav
+version: 11.3.3
+architectures:
+  - x86_64
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+  directives:
+    - workdir: /opt
+    - install:
+        - libfreetype6
+        - libgl1-mesa-glx
+        - libxrender1
+        - libxtst6
+        - libxi6
+    - file:
+        name: mipav_unix_{{ context.version }}.sh
+        url: >-
+          https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/mipav_unix_11_3_3.sh
+    - run:
+      - sh {{ get_file("mipav_unix_"+ context.version +".sh") }} -q
+    - environment:
+        PATH: /usr/local/mipav:${PATH}
+copyright:
+  - name: Medical Image Processing, Analysis and Visualization
+    url: https://mipav.cit.nih.gov/clickwrap.php
+readme: |-
+  ----------------------------------
+  ## mipav/{{ context.version }} ##
+  The MIPAV (Medical Image Processing, Analysis, and Visualization) application
+  enables quantitative analysis and visualization of medical images of numerous
+  modalities such as PET, MRI, CT, or microscopy.
+
+  Example:
+  ```
+  mipav
+  ```
+
+  More documentation can be found here: https://mipav.cit.nih.gov/index.php
+
+  License: Medical Image Processing, Analysis and Visualization License - https://mipav.cit.nih.gov/clickwrap.php
+
+  To run container outside of this environment: ml mipav/{{ context.version }}
+
+  ----------------------------------

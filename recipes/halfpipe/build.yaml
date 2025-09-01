@@ -1,0 +1,48 @@
+name: halfpipe
+version: 1.2.3
+architectures:
+  - x86_64
+structured_readme:
+  description: ENIGMA HALFpipe is a user-friendly software that facilitates reproducible analysis of fMRI data
+  example: halfpipe
+  documentation: https://github.com/HALFpipe/HALFpipe
+  citation: |-
+    ENIGMA HALFpipe: Interactive, reproducible, and efficient analysis for resting-state and task-based fMRI data
+    Lea Waller et al. Hum Brain Mapp. 2022.
+build:
+  kind: neurodocker
+  base-image: halfpipe/halfpipe:1.2.3
+  pkg-manager: apt
+  directives:
+    - deploy:
+        path: []
+        bins:
+          - halfpipe
+categories:
+  - functional imaging
+  - workflows
+readme: |-
+  ----------------------------------
+  ## Halfpipe/1.2.3 ##
+
+  ENIGMA HALFpipe is a user-friendly software that facilitates reproducible analysis of fMRI data
+
+  Example:
+  ```
+  halfpipe
+  ```
+
+  More documentation can be found here: https://github.com/HALFpipe/HALFpipe
+
+  Citation:
+  ```
+  ENIGMA HALFpipe: Interactive, reproducible, and efficient analysis for resting-state and task-based fMRI data
+  Lea Waller et al. Hum Brain Mapp. 2022.
+  ```
+
+  To run container outside of this environment: ml Halfpipe/1.2.3
+
+  ----------------------------------
+copyright:
+  - license: GPL-3.0-or-later
+    url: https://www.gnu.org/licenses/gpl-3.0-standalone.html

@@ -1,0 +1,148 @@
+name: deepsif
+version: 0.0.1
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/bfinl/DeepSIF/blob/main/LICENSE.txt
+
+architectures:
+  - x86_64
+
+files:
+  - name: generate_tvb_data
+    executable: true
+    contents: |
+      #!/bin/bash
+
+      /opt/miniconda-4.7.12/envs/deepsif-{{ context.version }}/bin/python3 DeepSIF/forward/generate_tvb_data.py $@
+
+build:
+  kind: neurodocker
+
+  base-image: debian:11
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - midori
+        - xdg-utils
+        - pkg-config
+        - software-properties-common
+        - libstdc++6
+        - gcc-10-base
+        - python3-pyqt5
+        - unzip
+        - git
+        - apt-transport-https
+        - ca-certificates
+        - coreutils
+        - curl
+        - gnome-keyring
+        - gnupg
+        - libnotify4
+        - wget
+        - libnss3
+        - libxkbfile1
+        - libsecret-1-0
+        - libgtk-3-0
+        - libgcc1
+        - libc6
+        - libxss1
+        - libgbm1
+        - libxshmfence1
+        - libasound2
+        - libglu1-mesa
+        - libgl1-mesa-dri
+        - mesa-utils
+        - libgl1-mesa-glx
+        - binutils
+
+    - run:
+        - wget -q https://developer.download.nvidia.com/compute/cuda/repos/debian11/x86_64/cuda-keyring_1.0-1_all.deb
+        - dpkg -i cuda-keyring_1.0-1_all.deb
+        - rm cuda-keyring_1.0-1_all.deb
+
+    - run:
+        - apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/debian11/x86_64/7fa2af80.pub
+        - add-apt-repository 'deb https://developer.download.nvidia.com/compute/cuda/repos/debian11/x86_64/ /'
+        - add-apt-repository contrib
+
+    - install:
+        - cuda-11-5
+        - nsight-compute-2022.2.0
+
+    - run:
+        - wget -q https://developer.download.nvidia.com/compute/redist/cudnn/v8.3.0/cudnn-11.5-linux-x64-v8.3.0.98.tgz
+        - tar -xvf cudnn-11.5-linux-x64-v8.3.0.98.tgz
+        - rm cudnn-11.5-linux-x64-v8.3.0.98.tgz
+        - chmod a+r cuda/include/cudnn*.h cuda/lib64/libcudnn*
+        - ln -s cuda/include/cudnn*.h /usr/local/cuda/include
+        - cp -P cuda/lib64/libcudnn* /usr/local/cuda/lib64
+
+    - template:
+        name: miniconda
+        env_name: base
+        version: 4.7.12
+
+    - run:
+        - conda install -c conda-forge mamba=0.24.0
+
+    - run:
+        - mamba create --override-channels --channel=conda-forge --name=deepsif-0.0.1 python=3.7 mne nomkl numba scipy numpy networkx scikit-learn cython pip numexpr psutil psycopg2 pytables scikit-image simplejson cherrypy docutils werkzeug matplotlib-base h5py
+
+    - run:
+        - . activate deepsif-0.0.1
+        - pip3 install --no-cache-dir torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu113
+        - rm -rf ~/.cache/pip/*
+
+    - run:
+        - . activate deepsif-0.0.1
+        - pip3 install --no-cache-dir formencode cfflib jinja2 nibabel sqlalchemy sqlalchemy-migrate allensdk tvb-gdist typing BeautifulSoup4 subprocess32 flask-restplus python-keycloak mako pybids tvb-library tvb-framework
+        - rm -rf ~/.cache/pip/*
+
+    - environment:
+        DONT_PROMPT_WSL_INSTALL: "1"
+
+    - workdir: /opt/
+
+    - run:
+        - curl -fsSL https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz | tar xz
+        - chmod a+rwx /opt/mne-bids-pipeline-main -R
+
+    - environment:
+        LD_LIBRARY_PATH: $LD_LIBRARY_PATH:/usr/local/cuda/lib64
+        RUNLEVEL: "3"
+        XDG_RUNTIME_DIR: /neurodesk-storage
+
+    - copy: generate_tvb_data /usr/bin
+
+deploy:
+  bins:
+    - generate_tvb_data
+
+readme: |-
+  ----------------------------------
+  ## deepsif/{{ context.version }} ##
+  Container environment for Deep Learning based Source Imaging Framework (DeepSIF)
+  Including pytorch, numpy mne h5py tvb and cuda11.5 cudnn 8.3.0.98
+
+  Example:
+  ```
+  singularity exec --nv deepsif.simg /opt/miniconda-4.7.12/envs/deepsif-{{ context.version }}/bin/python3 DeepSIF/forward/generate_tvb_data.py --a_start 0 --a_end 994
+  ```
+
+  More documentation can be found here: https://github.com/bfinl/DeepSIF
+  The python environment: /opt/miniconda-4.7.12/envs/deepsif-{{ context.version }}/bin/python3
+
+  This container does not contain MATLAB.
+
+  To run applications outside of this container: ml deepsif/{{ context.version }}
+
+  Citation:
+  ```
+  Sun, R., Sohrabpour, A., Worrell, G. A., & He, B. (2022). Deep neural networks constrained by neural mass models improve electrophysiological source imaging of spatiotemporal brain dynamics. Proceedings of the National Academy of Sciences of the United States of America, 119(31), e2201128119. https://www.pnas.org/doi/full/10.1073/pnas.2201128119
+  ```
+
+  ----------------------------------

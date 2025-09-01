@@ -1,11 +1,17 @@
 name: auto-build
 
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+  id-token: write
+
 on:
   push:
     paths:
       - recipes/**
     branches:
-      - master
+      - main
 
 jobs:
   list-apps:
@@ -15,12 +21,12 @@ jobs:
       app_list: ${{ steps.find_changed_recipes.outputs.app_list }}
       runner: ${{ steps.select_runner.outputs.runner }}
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - name: Find all recipe directories with changes
       id: find_changed_dirs
-      uses: tj-actions/changed-files@v41
+      uses: tj-actions/changed-files@2f7c5bfce28377bc069a65ba478de0a74aa0ca32
       with:
         files: "recipes/**"
         dir_names: "true"
@@ -50,17 +56,21 @@ jobs:
     - name: Select runner
       id: select_runner
       run: |
-        if [ "${{ github.repository }}" = "NeuroDesk/neurocontainers" ]; then
-          # echo "runner=[\"cirun-oracle--${{ github.run_id }}\"]" >> $GITHUB_OUTPUT
-          echo "runner=[\"self-hosted\"]" >> $GITHUB_OUTPUT
-        else
-          echo "runner=[\"ubuntu-22.04\"]" >> $GITHUB_OUTPUT
-        fi
+        echo "runner=ubuntu-22.04" >> $GITHUB_OUTPUT
+        # if [ "${{ github.repository }}" = "neurodesk/neurocontainers" ]; then
+        #   echo "runner=self-hosted" >> $GITHUB_OUTPUT
+        # else
+        #   echo "runner=ubuntu-22.04" >> $GITHUB_OUTPUT
+        # fi
 
-  build-apps:
+  build-app:
     needs: list-apps
-    uses: ./.github/workflows/build-apps.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        application: ${{ fromJSON(needs.list-apps.outputs.app_list) }}
+    uses: ./.github/workflows/build-app.yml
     with:
-      applications: ${{ needs.list-apps.outputs.app_list }}
+      application: ${{ matrix.application }}
       runner: ${{ needs.list-apps.outputs.runner }}
     secrets: inherit

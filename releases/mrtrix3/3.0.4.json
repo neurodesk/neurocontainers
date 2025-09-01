@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "mrtrix3 3.0.4": {
+      "version": "20240320",
+      "exec": ""
+    },
+    "mrviewGUI-mrtrix3 3.0.4": {
+      "version": "20240320",
+      "exec": "mrview"
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ]
+}

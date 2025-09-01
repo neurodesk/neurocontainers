@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "julia 1.4.1": {
+      "version": "20210105",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "programming"
+  ]
+}

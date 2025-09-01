@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "mrsiproc 0.0.1": {
+      "version": "20230503",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "spectroscopy"
+  ]
+}

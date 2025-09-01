@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "rstudio 2023.09.1": {
+      "version": "20231207",
+      "exec": ""
+    },
+    "rstudioGUI-rstudio 2023.09.1": {
+      "version": "20231207",
+      "exec": "rstudio"
+    }
+  },
+  "categories": [
+    "statistics"
+  ]
+}

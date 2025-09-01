@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "julia 1.9.4": {
+      "version": "20240405",
+      "exec": ""
+    },
+    "vscodeGUI-julia 1.9.4": {
+      "version": "20240405",
+      "exec": "code"
+    },
+    "REPLGUI-julia 1.9.4": {
+      "version": "20240405",
+      "exec": "julia"
+    }
+  },
+  "categories": [
+    "programming"
+  ]
+}

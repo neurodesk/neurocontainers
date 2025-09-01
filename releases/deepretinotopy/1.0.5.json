@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "deepretinotopy 1.0.5": {
+      "version": "20240609",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "machine learning",
+    "functional imaging"
+  ]
+}

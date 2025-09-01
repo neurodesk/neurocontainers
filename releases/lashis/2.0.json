@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "lashis 2.0": {
+      "version": "20210211",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "hippocampus"
+  ]
+}

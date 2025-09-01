@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "brainnetviewer 1.7.20191031": {
+      "version": "20240904",
+      "exec": ""
+    },
+    "brainnetviewerGUI-brainnetviewer 1.7.20191031": {
+      "version": "20240904",
+      "exec": "brainnetviewer"
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "visualization"
+  ]
+}

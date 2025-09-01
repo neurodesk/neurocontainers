@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "synthstrip 7.4.1": {
+      "version": "20240913",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "image segmentation"
+  ]
+}

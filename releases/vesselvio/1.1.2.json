@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "vesselvio 1.1.2": {
+      "version": "20230428",
+      "exec": ""
+    },
+    "vesselvioGUI-vesselvio 1.1.2": {
+      "version": "20230428",
+      "exec": "vesselvio"
+    }
+  },
+  "categories": [
+    "visualization"
+  ]
+}

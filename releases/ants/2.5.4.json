@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "ants 2.5.4": {
+      "version": "20250423",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "image registration",
+    "structural imaging",
+    "image segmentation"
+  ]
+}

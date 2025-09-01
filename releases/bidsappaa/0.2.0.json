@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "bidsappaa 0.2.0": {
+      "version": "20230613",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "bids apps"
+  ]
+}

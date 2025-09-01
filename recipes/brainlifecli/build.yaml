@@ -1,0 +1,73 @@
+name: brainlifecli
+version: 1.7.0
+
+copyright:
+  - license: MIT
+    url: https://github.com/brainlife/cli/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - ca-certificates
+        - curl
+        - gnupg
+
+    - run:
+        - mkdir -p /etc/apt/keyrings
+        - curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+        - echo 'deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main' | tee /etc/apt/sources.list.d/nodesource.list
+
+    - install:
+        - nodejs
+
+    - run:
+        - npm install -g npm@10.2.4
+        - npm install -g brainlife
+
+    - environment:
+        PATH: /usr/local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+
+deploy:
+  bins:
+    - bl
+
+readme: |-
+  ----------------------------------
+  ## brainlifecli/{{ context.version }} ##
+  With brainlife CLI, you can ..
+
+  Upload/download data from your computer.
+  Upload data stored in BIDS format.
+  Submit Apps, and monitor (you can fully script data processing through brainlife)
+  Query projects, data, datatypes, etc.
+
+  Example:
+  ```
+  bl login --ttl 7
+  bl project query --help
+  bl data upload --help
+  ```
+
+  More documentation can be found here: https://brainlife.io/docs/cli/install/
+
+  To make the executables and scripts inside this container transparently available in the command line of environments where Neurocommand is installed: ml brainlifecli/{{ context.version }}
+
+  Citation:
+  ```
+  Hayashi, S., Caron, B.A., Heinsfeld, A.S. et al. brainlife.io: a decentralized and open-source cloud platform to support neuroscience research. Nat Methods (2024). https://doi.org/10.1038/s41592-024-02237-2
+  ```
+
+  License: MIT, https://github.com/brainlife/cli?tab=MIT-1-ov-file#readme
+
+  ----------------------------------
+
+categories:
+  - "workflows"

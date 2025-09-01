@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 set -e
 
-# this template file builds datalad and is then used as a docker base image for layer caching + it contains examples for various things like github install, curl, ...
 export toolName='matlab'
-export toolVersion='2022a' #the version number cannot contain a "-" - try to use x.x.x notation always
-# Don't forget to update version change in README.md!!!!!
-# toolName or toolVersion CANNOT contain capital letters or dashes or underscores (Docker registry does not accept this!)
+export toolVersion='2022b' 
+# https://hub.docker.com/r/mathworks/matlab-deep-learning
+# update version in matlab wrapper script:
+grep -q $toolVersion matlab && echo "Found" || exit 2
 
 # !!!!
 # You can test the container build locally by running `bash build.sh -ds`
 # !!!!
-
 
 export GO_VERSION="1.17.2" 
 export SINGULARITY_VERSION="3.9.3" 
@@ -31,13 +30,12 @@ source ../main_setup.sh
 ##########################################################################################################################################
 neurodocker generate ${neurodocker_buildMode} \
    --base-image mathworks/matlab-deep-learning:r${toolVersion}                 `# use Matlab deep learning 2022a docker container provided by Mathworks` \
-   --user root                                          `# change user to root, as the Matlab container runs with Matlab user` \
    --env DEBIAN_FRONTEND=noninteractive                 `# The matlab image uses Ubuntu, so it's Debian` \
    --pkg-manager apt                                    `# desired package manager, has to match the base image (e.g. debian needs apt; centos needs yum)` \
    --run="printf '#!/bin/bash\nls -la' > /usr/bin/ll"   `# define the ll command to show detailed list including hidden files`  \
    --run="chmod +x /usr/bin/ll"                         `# make ll command executable`  \
    --run="mkdir -p ${mountPointList}"                      `# create folders for singularity bind points` \
-   --install wget git curl ca-certificates datalad unzip libfftw3-3 apt-transport-https coreutils\
+   --install csh wget git curl ca-certificates datalad unzip libfftw3-3 apt-transport-https coreutils\
    cryptsetup squashfs-tools lua-bit32 lua-filesystem lua-json lua-lpeg lua-posix lua-term lua5.2 lmod imagemagick less nano tree \
    gcc libzstd1 zlib1g-dev zip build-essential uuid-dev libgpgme-dev libseccomp-dev pkg-config \
    --miniconda version=latest \
@@ -70,6 +68,9 @@ neurodocker generate ${neurodocker_buildMode} \
    --copy module.sh /usr/share/ \
   > ${imageName}.${neurodocker_buildExt}                `# LAST COMMENT; NOT FOLLOWED BY BACKSLASH!`
 
+
+# this is a workaround for a neurodocker bug assuming root user before it can be set
+sed -i '/^FROM/a USER root' ${imageName}.${neurodocker_buildExt} # add USER root after FROM line
 
 # improvements: combine copy and chmod in one line
 

@@ -1,5 +1,11 @@
 name: manual-build
 
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+  id-token: write
+  
 on:
   workflow_dispatch:
     inputs:
@@ -14,6 +20,46 @@ on:
         options: 
         - "ubuntu-22.04"
         - "self-hosted"
+      disable_auto_upload:
+        description: 'Disable auto upload to registries'
+        required: false
+        type: boolean
+        default: false
+      force_push_ghcr:
+        description: 'Force push to GHCR'
+        required: false
+        type: boolean
+        default: false
+      force_push_dockerhub:
+        description: 'Force push to DockerHub'
+        required: false
+        type: boolean
+        default: false
+      force_upload_nectar:
+        description: 'Force upload to Nectar'
+        required: false
+        type: boolean
+        default: false
+      force_upload_s3:
+        description: 'Force upload to S3'
+        required: false
+        type: boolean
+        default: false
+      force_create_pr:
+        description: 'Force create Pull Request'
+        required: false
+        type: boolean
+        default: false
+      skip_docker_build:
+        description: 'Skip Docker build and use latest GHCR image'
+        required: false
+        type: boolean
+        default: false
+      skip_simg_build:
+        description: 'Skip Singularity/Apptainer build'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   list-apps:
@@ -31,14 +77,26 @@ jobs:
     - name: Select runner
       id: select_runner
       run: |
-        runner="$(echo "${{ github.event.inputs.runner }}" | tr -d " " | jq -rcR 'split(",")')"
+        runner="${{ github.event.inputs.runner }}"
         echo "runner=${runner}"
         echo "runner=${runner}" >> $GITHUB_OUTPUT
 
-  build-apps:
+  build-app:
     needs: list-apps
-    uses: ./.github/workflows/build-apps.yml
+    strategy:
+      fail-fast: false
+      matrix:
+        application: ${{ fromJSON(needs.list-apps.outputs.app_list) }}
+    uses: ./.github/workflows/build-app.yml
     with:
-      applications: ${{ needs.list-apps.outputs.app_list }}
+      application: ${{ matrix.application }}
       runner: ${{ needs.list-apps.outputs.runner }}
+      disable_auto_upload: ${{ github.event.inputs.disable_auto_upload }}
+      force_push_ghcr: ${{ github.event.inputs.force_push_ghcr }}
+      force_push_dockerhub: ${{ github.event.inputs.force_push_dockerhub }}
+      force_upload_nectar: ${{ github.event.inputs.force_upload_nectar }}
+      force_upload_s3: ${{ github.event.inputs.force_upload_s3 }}
+      force_create_pr: ${{ github.event.inputs.force_create_pr }}
+      skip_docker_build: ${{ github.event.inputs.skip_docker_build }}
+      skip_simg_build: ${{ github.event.inputs.skip_simg_build }}
     secrets: inherit

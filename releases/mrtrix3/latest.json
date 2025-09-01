@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "mrtrix3src latest": {
+      "version": "latest",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ]
+}

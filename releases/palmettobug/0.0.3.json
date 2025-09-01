@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "palmettobug 0.0.3": {
+      "version": "20250424",
+      "exec": ""
+    },
+    "palmettobugGUI-palmettobug 0.0.3": {
+      "version": "20250424",
+      "exec": "palmettobug"
+    }
+  },
+  "categories": [
+    "molecular biology"
+  ]
+}

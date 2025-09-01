@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "mitkdiffusion 1.2.0": {
+      "version": "20230720",
+      "exec": ""
+    },
+    "mitkdiffusionGUI-mitkdiffusion 1.2.0": {
+      "version": "20230720",
+      "exec": "MitkDiffusion.sh"
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ]
+}

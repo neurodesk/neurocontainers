@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "aidamri 1.1": {
+      "version": "20210708",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "rodent imaging"
+  ]
+}

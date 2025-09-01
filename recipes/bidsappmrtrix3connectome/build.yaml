@@ -1,0 +1,51 @@
+name: bidsappmrtrix3connectome
+
+version: 0.5.3
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/bids-apps/MRtrix3_connectome/blob/master/LICENSE
+   
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: bids/mrtrix3_connectome:0.5.3
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PATH: ${PATH}:/
+    - entrypoint: bash
+
+deploy:
+  path:
+    - /opt/mrtrix3/bin
+    - /usr/lib/ants
+    - /opt/freesurfer/bin
+    - /opt/freesurfer/mni/bin
+    - /opt/fsl/bin
+    - /opt/ROBEX
+    - /
+
+readme: |-
+  ----------------------------------
+  ## bidsappmrtrix3connectome/{{ context.version }} ##
+  This BIDS App enables generation and subsequent group analysis of structural connectomes generated from diffusion MRI data. The analysis pipeline relies primarily on the MRtrix3 software package, and includes a number of state-of-the-art methods for image processing, tractography reconstruction, connectome generation and inter-subject connection density normalisation.
+
+  Example:
+  ```
+  mrtrix3_connectome.py bids_dir output_dir analysis_level [ options ]
+  ```
+
+  More documentation can be found here: https://github.com/bids-apps/MRtrix3_connectome
+
+  To make the executables and scripts inside this container transparently available in the command line of environments where Neurocommand is installed: ml bidsappmrtrix3connectome/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - "bids apps"

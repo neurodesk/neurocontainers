@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "halfpipe 1.2.3": {
+      "version": "20250623",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "workflows"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "oshyx 0.4": {
+      "version": "20220620",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "image segmentation"
+  ]
+}

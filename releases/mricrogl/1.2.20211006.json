@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "mricrogl 1.2.20211006": {
+      "version": "20220111",
+      "exec": ""
+    },
+    "mricroglGUI-mricrogl 1.2.20211006": {
+      "version": "20220111",
+      "exec": "MRIcroGL"
+    }
+  },
+  "categories": [
+    "visualization"
+  ]
+}

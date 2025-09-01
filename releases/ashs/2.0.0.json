@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "ashs 2.0.0": {
+      "version": "20210105",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "hippocampus"
+  ]
+}

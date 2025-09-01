@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "freesurfer 7.1.1": {
+      "version": "20211216",
+      "exec": ""
+    },
+    "freeviewGUI-freesurfer 7.1.1": {
+      "version": "20211216",
+      "exec": "freeview"
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging"
+  ]
+}

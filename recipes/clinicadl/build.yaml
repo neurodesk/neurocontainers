@@ -1,0 +1,87 @@
+name: clinicadl
+version: 1.6.1
+architectures:
+  - x86_64
+structured_readme:
+  description: |-
+    Framework for the reproducible processing of neuroimaging data with deep learning methods
+    ClinicaDL is the deep learning extension of Clinica, a Python library to process neuroimaging data in BIDS format.
+  example: ml clinicadl
+  documentation: clinicadl.aramislab.fr/
+  citation: |-
+    Thibeau-Sutre, E., Díaz, M., Hassanaly, R., Routier, A., Dormont, D., Colliot, O., Burgos, N.: ‘ClinicaDL: an open-source deep learning software for reproducible neuroimaging processing‘, 2021.
+    Routier, A., Burgos, N., Díaz, M., Bacci, M., Bottani, S., El-Rifai O., Fontanella, S., Gori, P., Guillon, J., Guyot, A., Hassanaly, R., Jacquemont, T., Lu, P., Marcoux, A., Moreau, T., Samper-González, J., Teichmann, M., Thibeau-Sutre, E., Vaillant G., Wen, J., Wild, A., Habert, M.-O., Durrleman, S., and Colliot, O.: ‘Clinica: An Open Source Software Platform for Reproducible Clinical Neuroscience Studies’, 2021. doi:10.3389/fninf.2021.689675
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: miniconda
+        version: py310_25.5.1-0
+        install_path: /opt/miniconda
+        conda_install:
+          - python=3.10
+          - pip
+    - run:
+        - source /opt/miniconda/bin/activate && conda create -y -n clinicadlEnv python=3.10 pip
+        - conda run -n clinicadlEnv pip install clinicadl clinica
+    - template:
+        name: fsl
+        version: 6.0.7.16
+    - template:
+        name: spm12
+        version: r7771
+    - template:
+        name: freesurfer
+        version: 7.4.1
+    - template:
+        name: ants
+        version: 2.4.3
+    - template:
+        name: mrtrix3
+        version: 3.0.4
+    - template:
+        name: dcm2niix
+        version: latest
+    - deploy:
+        path:
+          - /opt/miniconda
+    - test:
+        name: testScript
+        script: |-
+          #!/bin/bash
+          export PATH="/opt/miniconda/envs/clinicadlEnv/bin:$PATH"
+          clinica --version
+          clinicadl -h | head -n 5
+          fslmaths --version
+          recon-all --version
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA3BJREFUSEu1lV1MU2cYx39HKhcGloEVqJkSCdkyPhLINgxkQEKmmLlkGUOo4vwY29zGQvTCzGUXA5Wwm8mNCXd4wYIX3pTtZjAvCFm2mDpGBUOWoPQUpqnWUvFAoYdzavp2nLWHtqsxnqRp3tO3z////J73fR7p408D4XA4TOwHiFtv/GZ+H1nruh75SrpfOvnJYjjdgMmEUhmQTrT7UwokcpjKkHm/EIh18LwBI7FiDUjHTvrSRpQOc3MthUBytuusrgaQkMiwZCFJGSkPQyID0kcnHpoQaShPZDzyzyzMX6OyspBAIMDs7GNee/00uh7CeeOMwBB53tp7GdvO/cAWQzwO0dHjDwxEuq7hf+RiynWewcGLNDQ0GIFUVaWjo4Nfrz+mcLeXsbExamtrWVPtmwRiiUhtx7xGBsGgl8mJC1wZ+Iq6ujo6Ozvp7++npKSEoaEhysrKqKjYS07ONiEQ2RNca6XA9k7yDP4T0PF6/2D27++Q5SkGBgZob2/nlV3voWmrqKFJRkdH6enpwefzxQi0UGDbFycQl8Hho/cFIl1Xkd3D5O+4jsPhEHiWlAPsLmxCUeaZuPk1j3xOgay+vt4QWFk9lJ6ApoW4O3uVN99wCyylpaXkWs+xI+9tQmt+brkuMu9xJBTIL4giSniK7G33RA00TcUjO9DXf8TpdNLd3c0vozspsDWgKB4mJ77h0g8dDA8PxyFaDjazIZCop0mtR/75F5GG1/sbN37/gmBwEZfLxbsHz7KnqI3FxWnyrDcFlpqaGjIzMw1EC/eKyc2tAimawVbLS2Rlv4okZYq11HJ4wTimEad//fktfZdOYbfb6evro7e3l/LycuFcURRsNptRg66uLqanp42jPDMzg7JcSVHxl1gs2eJeCIGN1CKFnvf8xK3Jc4yPj1NVVWX82e/309jYiFveSmlJNAPzMzIywmenBuMFmls9cb0oFFpCdl9jynUBq9VKdXW1cDk3N0defj3brdXM3P5+U/CNF7sK2ygq+pwMS3YUUUTA3It0fZ0nS3cIBG4TXLlPOKyRlV3MyzkVqKrCyrIHPRwdNBjDSiywxNRAIPqwRX6x7brpkHtTu45tVub2+6zzQvqgeS5pu050cVLN7oQXzSzwf0M8nYzietH7TXeeCZH5tppH5KaJlkjgeWa02cBT7D1jbdy4T7UAAAAASUVORK5CYII=
+readme: |-
+  ----------------------------------
+  ## clinicadl/1.6.1 ##
+
+  Framework for the reproducible processing of neuroimaging data with deep learning methods
+  ClinicaDL is the deep learning extension of Clinica, a Python library to process neuroimaging data in BIDS format.
+
+  Example:
+  ```
+  ml clinicadl
+  ```
+
+  More documentation can be found here: clinicadl.aramislab.fr/
+
+  Citation:
+  ```
+  Thibeau-Sutre, E., Díaz, M., Hassanaly, R., Routier, A., Dormont, D., Colliot, O., Burgos, N.: ‘ClinicaDL: an open-source deep learning software for reproducible neuroimaging processing‘, 2021.
+  Routier, A., Burgos, N., Díaz, M., Bacci, M., Bottani, S., El-Rifai O., Fontanella, S., Gori, P., Guillon, J., Guyot, A., Hassanaly, R., Jacquemont, T., Lu, P., Marcoux, A., Moreau, T., Samper-González, J., Teichmann, M., Thibeau-Sutre, E., Vaillant G., Wen, J., Wild, A., Habert, M.-O., Durrleman, S., and Colliot, O.: ‘Clinica: An Open Source Software Platform for Reproducible Clinical Neuroscience Studies’, 2021. doi:10.3389/fninf.2021.689675
+  ```
+
+  To run container outside of this environment: ml clinicadl/1.6.1
+
+  ----------------------------------
+categories:
+  - workflows
+copyright:
+  - license: MIT
+    url: https://github.com/aramis-lab/clinicadl?tab=MIT-1-ov-file

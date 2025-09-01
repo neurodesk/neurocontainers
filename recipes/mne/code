@@ -1,2 +1,0 @@
-#!/usr/bin/env sh
-/usr/bin/code --extensions-dir=/opt/vscode-extensions

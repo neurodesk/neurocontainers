@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "fsl 6.0.3": {
+      "version": "20200905",
+      "exec": ""
+    },
+    "fsleyesGUI-fsl 6.0.3": {
+      "version": "20200905",
+      "exec": "fsleyes"
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "structural imaging",
+    "diffusion imaging",
+    "image segmentation",
+    "image registration"
+  ]
+}

@@ -1,0 +1,7 @@
+version: 1
+builder: ubuntu@noble
+commands:
+    - bash -c "source /etc/profile;/root/Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge3;source /opt/miniforge3/bin/activate;mamba install -y vtk itk vmtk python=3.10;tar caf /vmtk.tar.gz /opt/miniforge3"
+files:
+    - https://github.com/conda-forge/miniforge/releases/download/24.7.1-2/Miniforge3-Linux-x86_64.sh
+output: /vmtk.tar.gz

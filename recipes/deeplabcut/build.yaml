@@ -1,0 +1,155 @@
+name: deeplabcut
+version: 2.3.11
+architectures:
+  - x86_64
+structured_readme:
+  description: DeepLabCut is a toolbox for state-of-the-art markerless pose estimation of animals performing various behaviors. As long as you can see (label) what you want to track, you can use this toolbox, as it is animal and object agnostic.
+  example: |-
+    python
+    import deeplabcut
+  documentation: https://deeplabcut.github.io/DeepLabCut/README.html
+  citation: |-
+    @article{Mathisetal2018,
+        title = {DeepLabCut: markerless pose estimation of user-defined body parts with deep learning},
+        author = {Alexander Mathis and Pranav Mamidanna and Kevin M. Cury and Taiga Abe  and Venkatesh N. Murthy and Mackenzie W. Mathis and Matthias Bethge},
+        journal = {Nature Neuroscience},
+        year = {2018},
+        url = {https://www.nature.com/articles/s41593-018-0209-y}}
+
+     @article{NathMathisetal2019,
+        title = {Using DeepLabCut for 3D markerless pose estimation across species and behaviors},
+        author = {Nath*, Tanmay and Mathis*, Alexander and Chen, An Chi and Patel, Amir and Bethge, Matthias and Mathis, Mackenzie W},
+        journal = {Nature Protocols},
+        year = {2019},
+        url = {https://doi.org/10.1038/s41596-019-0176-0}}
+        
+    @InProceedings{Mathis_2021_WACV,
+        author    = {Mathis, Alexander and Biasi, Thomas and Schneider, Steffen and Yuksekgonul, Mert and Rogers, Byron and Bethge, Matthias and Mathis, Mackenzie W.},
+        title     = {Pretraining Boosts Out-of-Domain Robustness for Pose Estimation},
+        booktitle = {Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
+        month     = {January},
+        year      = {2021},
+        pages     = {1859-1868}}
+        
+    @article{Lauer2022MultianimalPE,
+        title={Multi-animal pose estimation, identification and tracking with DeepLabCut},
+        author={Jessy Lauer and Mu Zhou and Shaokai Ye and William Menegas and Steffen Schneider and Tanmay Nath and Mohammed Mostafizur Rahman and     Valentina Di Santo and Daniel Soberanes and Guoping Feng and Venkatesh N. Murthy and George Lauder and Catherine Dulac and M. Mathis and Alexander Mathis},
+        journal={Nature Methods},
+        year={2022},
+        volume={19},
+        pages={496 - 504}}
+
+    @article{Ye2024SuperAnimal,
+        title={SuperAnimal pretrained pose estimation models for behavioral analysis},
+        author={Shaokai Ye and Anastasiia Filippova and Jessy Lauer and Steffen Schneider and Maxime Vidal and and Tian Qiu and Alexander Mathis and Mackenzie W. Mathis},
+        journal={Nature Communications},
+        year={2024},
+        volume={15}}
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - file:
+        name: deeplabcut_env.yaml
+        contents: |
+          name: DEEPLABCUT
+          channels:
+            - conda-forge
+            - defaults
+          dependencies:
+            - python=3.10
+            - pip
+            - ipython
+            - jupyter
+            - nb_conda
+            - notebook<7.0.0
+            - ffmpeg
+            - pytables==3.8.0
+            - pip:
+              - torch
+              - torchvision
+              - deeplabcut[gui,modelzoo,wandb]==3.0.0rc8
+    - copy: deeplabcut_env.yaml /opt/deeplabcut_env.yaml
+    - template:
+        name: miniconda
+        version: latest
+        install_path: /opt/miniconda
+        env_name: deeplabcut
+        mamba: true
+        yaml_file: /opt/deeplabcut_env.yaml
+    - deploy:
+        path: []
+        bins:
+          - python
+    - environment:
+        PATH: /opt/miniconda/envs/deeplabcut/bin:$PATH
+    - test:
+        name: Simple Exec Test
+        script: python -c "import deeplabcut"
+copyright:
+  - license: LGPL-3.0-only
+    url: https://www.gnu.org/licenses/lgpl-3.0-standalone.html
+readme: |-
+  ----------------------------------
+  ## deeplabcut/2.3.11 ##
+
+  DeepLabCut is a toolbox for state-of-the-art markerless pose estimation of animals performing various behaviors. As long as you can see (label) what you want to track, you can use this toolbox, as it is animal and object agnostic.
+
+  Example:
+  ```
+  python
+  import deeplabcut
+  ```
+
+  More documentation can be found here: https://deeplabcut.github.io/DeepLabCut/README.html
+
+  Citation:
+  ```
+  {% raw %}
+  @article{Mathisetal2018,
+      title = {DeepLabCut: markerless pose estimation of user-defined body parts with deep learning},
+      author = {Alexander Mathis and Pranav Mamidanna and Kevin M. Cury and Taiga Abe  and Venkatesh N. Murthy and Mackenzie W. Mathis and Matthias Bethge},
+      journal = {Nature Neuroscience},
+      year = {2018},
+      url = {https://www.nature.com/articles/s41593-018-0209-y}}
+
+   @article{NathMathisetal2019,
+      title = {Using DeepLabCut for 3D markerless pose estimation across species and behaviors},
+      author = {Nath*, Tanmay and Mathis*, Alexander and Chen, An Chi and Patel, Amir and Bethge, Matthias and Mathis, Mackenzie W},
+      journal = {Nature Protocols},
+      year = {2019},
+      url = {https://doi.org/10.1038/s41596-019-0176-0}}
+      
+  @InProceedings{Mathis_2021_WACV,
+      author    = {Mathis, Alexander and Biasi, Thomas and Schneider, Steffen and Yuksekgonul, Mert and Rogers, Byron and Bethge, Matthias and Mathis, Mackenzie W.},
+      title     = {Pretraining Boosts Out-of-Domain Robustness for Pose Estimation},
+      booktitle = {Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
+      month     = {January},
+      year      = {2021},
+      pages     = {1859-1868}}
+      
+  @article{Lauer2022MultianimalPE,
+      title={Multi-animal pose estimation, identification and tracking with DeepLabCut},
+      author={Jessy Lauer and Mu Zhou and Shaokai Ye and William Menegas and Steffen Schneider and Tanmay Nath and Mohammed Mostafizur Rahman and     Valentina Di Santo and Daniel Soberanes and Guoping Feng and Venkatesh N. Murthy and George Lauder and Catherine Dulac and M. Mathis and Alexander Mathis},
+      journal={Nature Methods},
+      year={2022},
+      volume={19},
+      pages={496 - 504}}
+
+  @article{Ye2024SuperAnimal,
+      title={SuperAnimal pretrained pose estimation models for behavioral analysis},
+      author={Shaokai Ye and Anastasiia Filippova and Jessy Lauer and Steffen Schneider and Maxime Vidal and and Tian Qiu and Alexander Mathis and Mackenzie W. Mathis},
+      journal={Nature Communications},
+      year={2024},
+      volume={15}}
+  {% endraw %}
+  ```
+
+  Note: Citation content is wrapped in Jinja2 raw blocks to prevent template processing conflicts with BibTeX syntax.
+
+  To run container outside of this environment: ml deeplabcut/2.3.11
+
+  ----------------------------------
+categories:
+  - machine learning

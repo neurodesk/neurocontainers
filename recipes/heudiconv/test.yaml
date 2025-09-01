@@ -1,0 +1,4 @@
+tests:
+  - name: Test heudiconv
+    script: |
+      heudiconv

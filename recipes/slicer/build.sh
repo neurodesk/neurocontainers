@@ -28,7 +28,7 @@ neurodocker generate ${neurodocker_buildMode} \
    --run="pip install h11==0.11 monailabel" \
    --run="curl -fsSL --retry 5 ${downloadLink} | tar -xz -C /opt/ " \
    --workdir /opt/Slicer-${toolVersion}-linux-amd64/NA-MIC/ \
-   --run="curl -fsSL --retry 5 https://objectstorage.us-ashburn-1.oraclecloud.com/p/b_NtFg0a37NZ-3nJfcTk_LSCadJUyN7IkhhVDB7pv8GGQ2e0brg8kYUnAwFfYb6N/n/sd63xuke79z3/b/neurodesk/o/MONAILabel30893.tar.gz \
+   --run="curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/MONAILabel30893.tar.gz \
       | tar -xz -C /opt/Slicer-${toolVersion}-linux-amd64/NA-MIC/ --strip-components 1" \
    --install nvidia-cuda-toolkit \
    --env DEPLOY_PATH=/opt/Slicer-${toolVersion}-linux-amd64/bin \

@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "itksnapGUI-itksnap 3.8.0": {
+      "version": "20201208",
+      "exec": "itksnap /MRIcrop-orig.gipl"
+    },
+    "itksnap 3.8.0": {
+      "version": "20201208",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "visualization"
+  ]
+}

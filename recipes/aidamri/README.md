@@ -16,4 +16,6 @@ More documentation can be found here: https://github.com/aswendtlab/AIDAmri
 
 To run container outside of this environment: ml aidamri/1.1
 
+License: GPL3, https://github.com/Aswendt-Lab/AIDAmri?tab=GPL-3.0-1-ov-file#readme
+
 ----------------------------------

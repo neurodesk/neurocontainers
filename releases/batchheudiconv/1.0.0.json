@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "batchheudiconv 1.0.0": {
+      "version": "20250628",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "workflows",
+    "data organisation"
+  ]
+}

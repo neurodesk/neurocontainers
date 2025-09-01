@@ -1,0 +1,53 @@
+name: xcpd
+version: 0.10.7
+architectures:
+  - x86_64
+structured_readme:
+  description: An fMRI post-processing BIDS App designed to prepare fMRI data for resting-state functional connectivity analyses.
+  example: |-
+    xcp_d /path/to/fmriprep_dir \
+       /path/to/output_dir \
+       participant \ # analysis_level
+       --mode <mode> \ # required
+       --participant-label <label> # optional
+  documentation: https://xcp-d.readthedocs.io/en/latest/usage.html
+  citation: 'Mehta, K., Salo, T., Madison, T. J., Adebimpe, A., Bassett, D. S., Bertolero, M., ... & Satterthwaite, T. D. (2024). XCP-D: A Robust Pipeline for the post-processing of fMRI data. Imaging Neuroscience, 2, 1-26. doi:10.1162/imag_a_00257.'
+build:
+  kind: neurodocker
+  base-image: pennlinc/xcp_d:0.10.7
+  pkg-manager: apt
+  directives:
+    - deploy:
+        path: []
+        bins:
+          - xcp_d
+categories:
+  - functional imaging
+readme: |-
+  ----------------------------------
+  ## xcpd/0.10.7 ##
+
+  An fMRI post-processing BIDS App designed to prepare fMRI data for resting-state functional connectivity analyses.
+
+  Example:
+  ```
+  xcp_d /path/to/fmriprep_dir \
+     /path/to/output_dir \
+     participant \ # analysis_level
+     --mode <mode> \ # required
+     --participant-label <label> # optional
+  ```
+
+  More documentation can be found here: https://xcp-d.readthedocs.io/en/latest/usage.html
+
+  Citation:
+  ```
+  Mehta, K., Salo, T., Madison, T. J., Adebimpe, A., Bassett, D. S., Bertolero, M., ... & Satterthwaite, T. D. (2024). XCP-D: A Robust Pipeline for the post-processing of fMRI data. Imaging Neuroscience, 2, 1-26. doi:10.1162/imag_a_00257.
+  ```
+
+  To run container outside of this environment: ml xcpd/0.10.7
+
+  ----------------------------------
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/PennLINC/xcp_d?tab=BSD-3-Clause-1-ov-file#readme

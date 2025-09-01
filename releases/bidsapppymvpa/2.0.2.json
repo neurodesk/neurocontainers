@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "bidsapppymvpa 2.0.2": {
+      "version": "20230629",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "bids apps"
+  ]
+}

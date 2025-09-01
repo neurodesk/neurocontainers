@@ -1,0 +1,4 @@
+tests:
+  - name: Test dafne
+    script: |
+      dafne

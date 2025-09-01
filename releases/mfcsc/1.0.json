@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "mfcsc 1.0": {
+      "version": "20230306",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "diffusion imaging"
+  ]
+}

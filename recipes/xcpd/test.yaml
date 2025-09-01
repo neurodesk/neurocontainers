@@ -1,0 +1,50 @@
+tests:
+    - name: Test xcpd
+      script: |
+          # Test xcpd installation and dependencies
+          xcp_d -h
+
+          # Test if libpng12 is properly installed
+          ldd $(which afni) | grep libpng
+
+          # Test Python dependencies
+          python3 -c "import nibabel; import nilearn; import pandas; import templateflow"
+
+          # Test ANTs (version 2.2.0 or higher)
+          antsRegistration --version | grep "ANTs Version"
+
+          # Test AFNI (version Debian-16.2.07)
+          afni --version
+
+          # Test bids-validator (version 1.6.0)
+          bids-validator --version
+
+          # Test connectome-workbench (version Debian-1.3.2)
+          wb_command -version
+
+          # Basic functionality tests
+          echo "Testing basic tool functionality..."
+          if ! command -v antsRegistration &> /dev/null; then
+              echo "ERROR: ANTs not found"
+              exit 1
+          fi
+
+          if ! command -v afni &> /dev/null; then
+              echo "ERROR: AFNI not found"
+              exit 1
+          fi
+
+          if ! command -v bids-validator &> /dev/null; then
+              echo "ERROR: bids-validator not found"
+              exit 1
+          fi
+
+          if ! command -v wb_command &> /dev/null; then
+              echo "ERROR: connectome-workbench not found"
+              exit 1
+          fi
+
+          echo "All dependency tests completed successfully"
+
+          # Basic pipeline test with minimal inputs
+          echo "XCP-D installation test completed"

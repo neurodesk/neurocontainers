@@ -1,0 +1,44 @@
+tests:
+  - name: Test prostatefiducialseg
+    manual: true
+    script: |
+      # === TEST PREDICTION STANDALONE ===
+
+      # simple_predict.py \
+      #   --input /host/home/ashley/repos/prostate/test/t1_new.nii \
+      #   --model /opt/models/model.pth \
+      #   --output /host/home/ashley/repos/prostate/test/output
+
+      # === TEST PREDICTION WITH OPENRECON ===
+      OUT_NAME=QSM_VOLUNTEER_newmodel
+      IN_DIR=/buildhostdirectory/IN_DATA/QSM_VOLUNTEER_300425/DICOM/25042924/in
+
+      IN_H5=/buildhostdirectory/${OUT_NAME}-in.h5
+      OUT_DIR=/buildhostdirectory/${OUT_NAME}-dcm
+      OUT_H5=/buildhostdirectory/${OUT_NAME}-out.h5
+
+      # Convert input DICOMs to ISMRMRD format
+      rm $IN_H5
+      python /opt/code/python-ismrmrd-server/dicom2mrd.py \
+        -o $IN_H5 \
+        $IN_DIR
+
+      # Start OpenRecon server
+      python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
+      sleep 5
+
+      # Run OpenRecon client
+      rm -rf $OUT_H5
+      python3 /opt/code/python-ismrmrd-server/client.py \
+        -G dataset \
+        -o $OUT_H5 \
+        $IN_H5 \
+        -c prostatefiducialseg
+
+      # Convert output ISMRMRD to DICOM
+      rm -rf $OUT_DIR
+      mkdir $OUT_DIR
+      python3 /opt/code/python-ismrmrd-server/mrd2dicom.py \
+        -o $OUT_DIR \
+        $OUT_H5
+        

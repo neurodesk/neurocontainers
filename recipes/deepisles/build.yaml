@@ -1,0 +1,111 @@
+name: deepisles
+version: "1.1"
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/ezequieldlrosa/DeepIsles/blob/main/LICENSE
+architectures:
+  - x86_64
+structured_readme:
+  description: DeepISLES is an out-of-the-box software tool for processing MRI scans and segmenting ischemic stroke lesions, developed in collaboration with leading teams from the ISLES'22 MICCAI Challenge.
+  example: python scripts/predict.py
+  documentation: https://github.com/ezequieldlrosa/DeepIsles
+  citation: |-
+    de la Rosa, E., Reyes, M., Liew, S. L., Hutton, A., Wiest, R., Kaesmacher, J., ... & Wiestler, B. (2025).
+    DeepISLES: A clinically validated ischemic stroke segmentation model from the ISLES'22 challenge
+    Nature Communications
+
+    Hernandez Petzsche, M. R., de la Rosa, E., Hanning, U., Wiest, R., Valenzuela, W., Reyes, M., ... & Kirschke, J. S. (2022).
+    ISLES 2022: A multi-center magnetic resonance imaging stroke lesion segmentation dataset.
+    Scientific Data, 9(1), 762
+readme: |-
+  ----------------------------------
+  ## deepisles/{{ context.version }} ##
+
+  DeepISLES is an out-of-the-box software tool for processing MRI scans and segmenting ischemic stroke lesions, developed in collaboration with leading teams from the ISLES'22 MICCAI Challenge.
+
+  Example:
+  ```
+  python scripts/predict.py
+  ```
+
+  More documentation can be found here: https://github.com/ezequieldlrosa/DeepIsles
+
+  Citation:
+  ```
+  de la Rosa, E., Reyes, M., Liew, S. L., Hutton, A., Wiest, R., Kaesmacher, J., ... & Wiestler, B. (2025).
+  DeepISLES: A clinically validated ischemic stroke segmentation model from the ISLES'22 challenge
+  Nature Communications
+
+  Hernandez Petzsche, M. R., de la Rosa, E., Hanning, U., Wiest, R., Valenzuela, W., Reyes, M., ... & Kirschke, J. S. (2022).
+  ISLES 2022: A multi-center magnetic resonance imaging stroke lesion segmentation dataset.
+  Scientific Data, 9(1), 762
+  ```
+
+  To run container outside of this environment: ml deepisles/{{ context.version }}
+
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - install: git
+    - run:
+        - git clone https://github.com/ezequieldlrosa/DeepIsles.git
+        - cd DeepIsles
+    - group:
+        - file:
+            name: environment.yml
+            contents: |-
+              conda create --name deepisles python=3.8.0 pip=23.3.1
+              conda activate deepisles
+              conda install pytorch==1.11.0 torchvision==0.12.0 torchaudio==0.11.0 cudatoolkit=11.3 -c pytorch
+              conda install -c conda-forge openslide-python
+              conda install python=3.8.0 # important, since pytorch triggers the installation of later python versions
+              pip install -e ./src/SEALS/
+              pip install -e ./src/FACTORIZER/model/factorizer/
+              pip install -e ./src/HD-BET
+              pip install -r requirements.txt
+        - template:
+            name: miniconda
+            version: latest
+            install_path: /opt/miniconda
+            mamba: true
+        - run:
+            - cp {{ get_file("environment.yml") }} /tmp/environment.yml
+            - conda config --set channel_priority flexible
+            - conda env create -f /tmp/environment.yml
+            - rm /tmp/environment.yml
+        - environment:
+            CONDA_DEFAULT_ENV: myenv
+            PATH: /opt/miniconda/envs/myenv/bin:$PATH
+        - run:
+            - echo "conda activate myenv" >> ~/.bashrc
+      custom: minicondaYaml
+      customParams:
+        environment_yaml: |-
+          conda create --name deepisles python=3.8.0 pip=23.3.1
+          conda activate deepisles
+          conda install pytorch==1.11.0 torchvision==0.12.0 torchaudio==0.11.0 cudatoolkit=11.3 -c pytorch
+          conda install -c conda-forge openslide-python
+          conda install python=3.8.0 # important, since pytorch triggers the installation of later python versions
+          pip install -e ./src/SEALS/
+          pip install -e ./src/FACTORIZER/model/factorizer/
+          pip install -e ./src/HD-BET
+          pip install -r requirements.txt
+        environment_name: myenv
+        install_path: /opt/miniconda
+        activate_env: true
+        mamba: true
+        cleanup: true
+    - deploy:
+        path: []
+        bins:
+          - python
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+categories:
+  - structural imaging
+  - image segmentation
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAkNJREFUSEvtlU9Ik2EYwH/ft5mzbx/OCkcDi9lKxQRJJmEY1MnDhv0R2vDQH91h7VIQbpSXEjus0+gSIR4r6DQjoihGdDAPBrY1CobMijXLtskqbRsuHCituT9dy/f8vO/vfX7v8zyv8H1cylLhEqrUNOmeM/8zU+EOEDYB5Vz9Q4qWUnDrWZrh+6m8rDv0Isc6lHTtE1FLEt13d5MKvCpqRjxqQjFwCaFuRy5mXdEaQHHgKi6Xa/2AbDZLLBbD4XCwPfGAsfd7WZh6gSzLBRC/30/7hculAcqOazidTlpbW3MHWK1WbDYbWq0Wk8nE45kgseAMgUCAoaGhPEg0GmV2V3NlAEEQ8jYnk0kikQgtBw+RmJvF5/PR29tbkEVZRWsZNNaL3B6sZpsk4LyX4srNpxiNRuR6LYvRT8TjcSYmJvIAHo+HsPk04hETKKs2foPfAWO2alp0Ijcepuk6dwez2UyNpo7Fz/NIksTy8nIewGKx8MjQ+XeApp0i171pBt1TaDQa9uxvy2VQTJHy4khlgNU3GOnbQu1WgfFJiem3X/B6vfSdHSDxYa4oQHHKhuLEGZBrSyvq6enJBej1etxuNyqVCoPBQCSdJfbuDaFQiNHR0YIqmkwrUJwfRqjXVd4H4XAYu93O15CP16KBhemXG/bBapU1HLeWBvzZyWtXPGlUYumW6X+iL93JnYc3BmRWIPhxhehi4f8jq6CtQSQjqmn/5ib+Y6noqBCqaxAam0FS5ysqN3Zzc2XzRyun6f9U9At1e2GQ7+yPhQAAAABJRU5ErkJggg==

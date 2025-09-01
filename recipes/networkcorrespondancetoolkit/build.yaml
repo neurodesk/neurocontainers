@@ -1,0 +1,153 @@
+name: networkcorrespondancetoolkit
+version: 0.3.3
+
+copyright:
+  - license: MIT
+    url: https://github.com/rubykong/cbig_network_correspondence/blob/master/LICENCE
+
+architectures:
+  - x86_64
+
+structured_readme:
+  description: This toolbox was used to explore the network correspondence between networks across different atlases.
+  example: |
+    import cbig_network_correspondence as cnc
+
+    atlas_names_list = ["EG17","MG360J12"]
+    example = cnc.load_example
+    # the example config file
+    print(example.example_config)
+    # the path to the example data
+    print(example.example_nii)
+    ref_params = cnc.compute_overlap_with_atlases.DataParams(example.example_config, example.example_nii)
+    cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"~/NCTexample/example_results")
+  documentation: https://github.com/rubykong/cbig_network_correspondence
+  citation: "Kong, R., Spreng, R. N., Xue, A., Betzel, R. F., Cohen, J. R., Damoiseaux, J. S., De Brigard, F., Eickhoff, S. B., Fornito, A., Gratton, C., Gordon, E. M., Holmes, A. J., Laird, A. R., Larson-Prior, L., Nickerson, L. D., Pinho, A. L., Razi, A., Sadaghiani, S., Shine, J. M.,…Uddin, L. Q. (2025). A network correspondence toolbox for quantitative evaluation of novel neuroimaging results. Nat Commun, 16(1), 2930. https://doi.org/10.1038/s41467-025-58176-9 "
+
+readme: |-
+  ----------------------------------
+  ## networkcorrespondancetoolkit/{{ context.version }} ##
+
+  This toolbox was used to explore the network correspondence between networks across different atlases.
+
+  Example:
+  ```
+  import cbig_network_correspondence as cnc
+
+  atlas_names_list = ["EG17","MG360J12"]
+  example = cnc.load_example
+  # the example config file
+  print(example.example_config)
+  # the path to the example data
+  print(example.example_nii)
+  ref_params = cnc.compute_overlap_with_atlases.DataParams(example.example_config, example.example_nii)
+  cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"~/NCTexample/example_results")
+  ```
+
+  More documentation can be found here: https://github.com/rubykong/cbig_network_correspondence
+
+  Citation:
+  ```
+  Kong, R., Spreng, R. N., Xue, A., Betzel, R. F., Cohen, J. R., Damoiseaux, J. S., De Brigard, F., Eickhoff, S. B., Fornito, A., Gratton, C., Gordon, E. M., Holmes, A. J., Laird, A. R., Larson-Prior, L., Nickerson, L. D., Pinho, A. L., Razi, A., Sadaghiani, S., Shine, J. M.,…Uddin, L. Q. (2025). A network correspondence toolbox for quantitative evaluation of novel neuroimaging results. Nat Commun, 16(1), 2930. https://doi.org/10.1038/s41467-025-58176-9
+  ```
+
+  To run container outside of this environment: ml networkcorrespondancetoolkit/{{ context.version }}
+
+  ----------------------------------
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - file:
+        name: environment.yml
+        url: https://raw.githubusercontent.com/rubykong/cbig_network_correspondence/refs/heads/master/NCT_env.yml
+
+    - variables:
+        install_path: /opt/miniconda
+
+    - workdir: /opt
+
+    - environment:
+        CONDA_DIR: "{{ local.install_path }}"
+        PATH: "{{ local.install_path }}/bin:$PATH"
+
+    - file:
+        name: miniconda.sh
+        url: https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+
+    - run:
+        - export PATH="{{ local.install_path }}/bin:$PATH"
+        - bash {{ get_file("miniconda.sh")}} -b -p {{ local.install_path }}
+
+        # Accept the license agreement
+        - conda tos accept
+
+        # Update conda and set channels
+        - conda update -yq -nbase conda
+        - conda config --system --prepend channels conda-forge
+
+        # strict channel priority breaks this recipe.
+        # - conda config --set channel_priority strict
+
+        # Set conda options for reproducibility
+        - conda config --system --set auto_update_conda false
+        - conda config --system --set show_channel_urls true
+
+        # Create the environment from the environment.yml file
+        - conda env create -f {{ get_file("environment.yml") }}
+        - conda init bash
+
+        # Clean up
+        - sync && conda clean --all --yes && sync
+        - rm -rf ~/.cache/pip/*
+
+    - environment:
+        CONDA_DEFAULT_ENV: NCT_env
+        PATH: /opt/miniconda/envs/NCT_env/bin:$PATH
+
+    - run:
+        - echo "conda activate NCT_env" >> ~/.bashrc
+
+    - install: libx11-6 libgl1 libxext6 libsm6 libxrender1 git
+
+    - run:
+        - python3 -m pip install --no-cache-dir cbig_network_correspondence
+
+    - deploy:
+        bins:
+          - python3
+          - python
+
+    - test:
+        name: NCT Test
+        executable: python3
+        script: |
+          import cbig_network_correspondence as cnc
+          import os
+
+          os.makedirs(os.path.expanduser('~/NCTexample/example_results'), exist_ok=True)
+
+          atlas_names_list = ["EG17","MG360J12"]
+          example = cnc.load_example
+          # the example config file
+          print(example.example_config)
+          # the path to the example data
+          print(example.example_nii)
+          ref_params = cnc.compute_overlap_with_atlases.DataParams(example.example_config, example.example_nii)
+          cnc.compute_overlap_with_atlases.network_correspondence(ref_params, atlas_names_list,"~/NCTexample/example_results")
+
+          print("NCT test ran successfully")
+
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+
+categories:
+  - image registration
+  - data organisation
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAACsElEQVR4AdRTX2hSURz+jtd5bzPd3J+g3Fo0ke0lNSIw255G0aoFG/aWiD341PZUg+gl6KnHjYmPYRS0hgQbQbSnGA4qMMYGUTIkRuAWLP+0mVNu91zx5tFrKFjQhe/wO+f7zv1+37nnah68PyLWi4fRk2LS7RZ3R0bqhgZ/+fn3BqLY3EhMgsKBiEQsj4OfzXNhDGj3Xz/mkficB62bkUUxyO2JePNoD+H7KQS9uwhNfse3LwUkEwU8vZ3EvTPbuOPYhGVxEabl5Zrwb2xgO5dTelMMSivBYFDqXsT0zQDWX2eRTRePKx6PIxKJyLJUKiVrRClmOdbW1mS+fKgyIITIvM/nQ+KtGZ8iOWQzRRNCihwVrK6uYmhoiMH4+DilGFQZUDYnRcxkMnj2+AVezWSw+e53ZMpT7OzsYGVlhUEsFqMUA1UDGtvr9WJwcBA0SfmOUga73Y7Z2VkGFosFwyYT2rVaZYtGqSqKcDiMaDSKubk58DxfwQI9PT2yOW2gBNpQpbCmARWOjY1Bp9MhFArRKYOlpSXo9XoGi9INY0TS5I8GW1tbCAQCcLvd6OjokORA8XPLpeqwub+PH4WCwtU04FsJ7KMCpqamkE6nYTAYlE206O3txcTEBAOXy4V1SZupx6DzOIfTVwWcvyHA4/HQdzJwOBxYWFhgMD8/z2jopCqB3++HIAiUg96kge2SgA/xlyCEwOl0gt4io9EIQkgVzGazvK98UAw4HcHAMA/PTLuMi5OHYejSoOuEFlemDbh21wDbBT1uWa14YrPhuZRADZN9fWhTu6acdHWPDWhhPaeT0X9Wh9Z2Dej6UasW9ssCnNfb4Ovvx2h3N0Y6O1Xhkv4Do5pBeSy1uoUn6DvF4xDHqdE115QjqqkoI7gWAk46ezTwNGTQwHsV6f9v8AsAAP///RRFWAAAAAZJREFUAwDZqyq94qgs5QAAAABJRU5ErkJggg==

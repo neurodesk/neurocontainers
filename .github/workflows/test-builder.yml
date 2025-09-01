@@ -1,0 +1,29 @@
+name: test-builder
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  push:
+    paths:
+      - builder/*
+
+jobs:
+  test-builder:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create Virtual Environment
+        run: |
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Run Tests
+        run: |
+          source venv/bin/activate
+          ./builder/test_all.sh

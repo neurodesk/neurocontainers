@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "convert3d 1.0.0": {
+      "version": "20210104",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}

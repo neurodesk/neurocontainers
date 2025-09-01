@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "aslprep 0.6.0": {
+      "version": "20240318",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "quantitative imaging",
+    "workflows"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "dcm2niix v1.0.20240202": {
+      "version": "20241125",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}

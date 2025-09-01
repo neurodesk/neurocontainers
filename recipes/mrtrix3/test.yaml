@@ -1,0 +1,11 @@
+tests:
+  # shouldn't through any errors (e.g. distutils, no python available ...)
+  - name: Basic test
+    script: |
+      dwifslpreproc
+
+  # should open up ok -> needs QT and doesn't come from neurodocker -> we tried a pull request, but it didn't get merged.
+  - name: GUI Test
+    manual: true
+    script: |
+      mrview

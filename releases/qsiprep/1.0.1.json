@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "qsiprep 1.0.1": {
+      "version": "20250407",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ]
+}

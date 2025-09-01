@@ -1,0 +1,94 @@
+name: dicomtools
+version: 1.0.0
+
+copyright:
+  - name: dcmtk license
+    url: https://support.dcmtk.org/docs/file_copyright.html
+  - name: dcm2niix license
+    url: https://github.com/rordenlab/dcm2niix/blob/master/license.txt
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:24.10
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - wget
+        - zip
+        - libgl1
+        - libgtk2.0-0
+        - dcmtk
+        - xmedcon
+        - pigz
+        - libxcb-cursor0
+
+    - template:
+        name: dcm2niix
+        method: source
+        version: latest
+
+deploy:
+  bins:
+    - xmedcon
+
+readme: |-
+  ----------------------------------
+  ## dicomtools/{{ context.version }} ##
+  Contains a collection of tools useful for DICOM to BIDS conversion
+
+  Tools included:
+  ```
+  dcm2niix: dicom to nifti conversion https://github.com/rordenlab/dcm2niix
+  dcmtk: https://support.dcmtk.org/docs/pages.html
+      dcm2json: Convert DICOM file and data set to JSON.
+      dcm2pdf: Extract PDF file from DICOM encapsulated PDF.
+      dcm2xml: Convert DICOM file and data set to XML.
+      dcmcjpls: Encode DICOM file to JPEG-LS transfer syntax.
+      dcmcrle: Encode DICOM file to RLE transfer syntax.
+      dcmdjpls: Decode JPEG-LS compressed DICOM file.
+      dcmdspfn: Export standard display curves to a text file.
+      dcmftest: Test if file uses DICOM part 10 format.
+      dcmicmp: Compare DICOM images and compute difference metrics.
+      dcml2pnm: Convert DICOM images to PGM/PPM, PNG, TIFF, or BMP.
+      dcmmkdir: Create a DICOMDIR file.
+      dcmodify: Modify DICOM files.
+      dcmprscp: DICOM basic grayscale print management SCP.
+      dcmpschk: Checking tool for presentation states.
+      dcmpsprt: Read DICOM images and presentation states and render print job.
+      dcmpssnd: Network send for presentation state viewer.
+      dcmqrscp: DICOM image archive (central test node).
+      dcmquant: Convert DICOM color images to palette color.
+      dcmscale: Scale DICOM images.
+      dcmsign: Sign and verify DICOM files.
+      dcm2pnm: Convert DICOM images to PGM/PPM, PNG, TIFF, or BMP.
+      dcmcjpeg: Encode DICOM file to JPEG transfer syntax.
+      dcmconv: Convert DICOM file encoding.
+      dcmdjpeg: Decode JPEG-compressed DICOM file.
+      dcmdrle: Decode RLE-compressed DICOM file.
+      dcmdump: Dump DICOM file and data set.
+      dcmgpdir: Create a general-purpose DICOMDIR.
+      dcmj2pnm: Convert DICOM images to PGM/PPM, PNG, TIFF, JPEG, or BMP.
+      dcmmkcrv: Add 2D curve data to image.
+      dcmmklut: Create DICOM look-up tables.
+      dcmp2pgm: Read DICOM image and presentation state and render bitmap.
+      dcmprscu: Print spooler for presentation state viewer.
+      dcmpsmk: Create DICOM grayscale softcopy presentation state.
+      dcmpsrcv: Network receive for presentation state viewer.
+      dcmqridx: Register a DICOM image file in an image database index file.
+      dcmqrti: The Terminal Initiator Telnet Client Program.
+      dcmrecv: Simple DICOM storage SCP (receiver).
+      dcmsend: Simple DICOM storage SCU (sender).
+  xmedcon: GUI X Window System Medical Image Conversion Utility - https://xmedcon.sourceforge.io/
+  ```
+
+  To run container outside of this environment: ml dicomtools/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - "data organisation"

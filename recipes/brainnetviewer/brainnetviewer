@@ -1,0 +1,3 @@
+#!/bin/bash
+
+exec /run_BrainNet.sh /opt/matlab/v94 $@

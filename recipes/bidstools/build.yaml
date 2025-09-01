@@ -1,0 +1,84 @@
+name: bidstools
+version: 1.0.4
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - gcc
+
+    - template:
+        name: miniconda
+        conda_install: python=3.11
+        mamba: "true"
+        pip_install: heudiconv traits
+        version: latest
+
+    - install:
+        - wget
+        - zip
+        - libgl1
+        - libgtk2.0-0
+        - dcmtk
+        - xmedcon
+        - pigz
+        - libxcb-cursor0
+
+    - workdir: /opt/bru2
+
+    - run:
+        - wget https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip
+        - unzip Bru2_Linux.zip
+
+    - template:
+        name: dcm2niix
+        method: source
+        version: latest
+
+    - environment:
+        PATH: $PATH:/opt/bru2
+
+deploy:
+  bins:
+    - heudiconv
+
+readme: |-
+  ----------------------------------
+  ## bidstools/1.0.2 ##
+  Contains a collection of tools useful for DICOM to BIDS conversion
+
+  Tools included:
+  ```
+  dcm2niix: https://github.com/rordenlab/dcm2niix
+  dcmtk: https://support.dcmtk.org/docs/pages.html
+      dcmdump
+      dump2dcm
+      dcmconv
+      dcm2json
+      dcmodify
+      img2dcm
+      dcm2pnm
+      dcmicmp
+  xmedcon: https://xmedcon.sourceforge.io/
+  heudiconv: https://heudiconv.readthedocs.io/en/latest/heuristics.html
+  Bru2Nii: https://github.com/neurolabusc/Bru2Nii
+  ```
+
+  Example converting Bruker data to Nifti
+  ```
+  Bru2 -o /Users/cr/dir2/out /Users/cr/dir/acqp
+  ```
+
+  To run container outside of this environment: ml bidstools/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - "data organisation"

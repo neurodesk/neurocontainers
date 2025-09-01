@@ -1,0 +1,69 @@
+name: hcpasl
+version: 1.0.0
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/physimals/hcp-asl/blob/master/LICENSE
+    
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - install: wget curl git
+
+    - template:
+        name: miniconda
+        version: latest
+        conda_install: "python=3.11 numpy scipy"
+        pip_install: "git+https://github.com/physimals/hcp-asl.git nibabel"
+
+    - template:
+        name: fsl
+        version: 6.0.5.1
+
+    - template:
+        name: freesurfer
+        version: 7.4.1
+
+    - install: connectome-workbench
+
+    - run:
+        - git clone https://github.com/Washington-University/HCPpipelines.git /opt/HCPpipelines
+
+    - environment:
+        CARET7DIR: /usr/local/workbench/
+        HCPPIPEDIR: /opt/HCPpipelines
+
+    - workdir: /opt
+
+deploy:
+  bins:
+    - process_hcp_asl
+
+readme: |
+  ## hcpasl/{{ context.version }} ##
+  HCP-ASL is a tool for processing ASL (Arterial Spin Labeling) data following the Human Connectome Project (HCP) minimal preprocessing pipelines. It provides a complete pipeline for processing ASL data, including motion correction, distortion correction, and calibration.
+
+  The tool requires FSL, FreeSurfer, Workbench and HCP Pipelines as dependencies which are all included in this container.
+
+  Example:
+  ```
+  process_hcp_asl --help
+  process_hcp_asl --subid ${Subjectid} --subdir ${SubDir} --mbpcasl ${mbpcasl} --fmap_ap ${SEFM_AP} --fmap_pa ${SEFM_PA} --grads ${GradientCoeffs}
+  ```
+
+  More documentation can be found here: https://github.com/physimals/hcp-asl
+
+  To run container outside of this environment: ml hcpasl/{{ context.version }}
+
+  Citation:
+  ```
+  If you use HCP-ASL in your research, please cite:
+  https://github.com/physimals/hcp-asl
+  ```

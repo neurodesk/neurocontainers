@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "laynii 2.2.1": {
+      "version": "20220701",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "functional imaging"
+  ]
+}

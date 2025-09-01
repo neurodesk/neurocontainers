@@ -1,0 +1,54 @@
+name: arfiproc
+version: 1.0.0
+architectures:
+    - x86_64
+
+files:
+    - name: arfiproc.py
+      filename: arfiproc.py
+
+build:
+    kind: neurodocker
+    base-image: ubuntu:22.04
+    pkg-manager: apt
+
+    directives:
+        - environment:
+              DEBIAN_FRONTEND: noninteractive
+
+        - install: bzip2 ca-certificates git wget build-essential python3-pip python-is-python3
+
+        - include: macros/openrecon/neurodocker.yaml
+
+        #openrecon application
+        - copy: arfiproc.py /opt/code/python-ismrmrd-server/arfiproc.py
+
+deploy:
+    bins:
+        - python3
+
+readme: |-
+    ----------------------------------
+    ## arfiproc/{{ context.version }} ##
+    Example for building an openrecon container in Neurodesk
+
+    make sure that neurodocker is installed:
+    ```
+    python -m pip install neurodocker
+    #export PATH=$PATH:~/.local/lib/python3.12/site-packages/bin
+    ```
+    export PATH=$PATH:~/.local/bin
+
+
+
+    make sure the requirements are installed:
+    ```
+    pip install -r requirements.txt
+    ```
+
+    you can build this recipe with:
+    ```bash
+    ./builder/build.py generate arfiproc --recreate --build --login --architecture x86_64
+    ```
+
+    ----------------------------------

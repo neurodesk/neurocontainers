@@ -1,0 +1,18 @@
+{
+  "apps": {
+    "slicer 4.11.20200930": {
+      "version": "20201108",
+      "exec": ""
+    },
+    "3DSlicerGUI-slicer 4.11.20200930": {
+      "version": "20201108",
+      "exec": "Slicer"
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "image registration",
+    "structural imaging",
+    "visualization"
+  ]
+}

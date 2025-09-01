@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "fastcsr 1.0": {
+      "version": "20231213",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "image segmentation"
+  ]
+}

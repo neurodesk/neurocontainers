@@ -1,0 +1,65 @@
+name: brainstorm
+version: "3.211130"
+
+copyright:
+  - license: GPL-3.0
+    url: https://github.com/brainstorm-tools/brainstorm3/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:18.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - curl
+        - unzip
+        - ca-certificates
+        - openjdk-8-jre
+        - dbus-x11
+
+    - template:
+        name: matlabmcr
+        install_path: /opt/MCR
+        version: 2020a
+
+    - workdir: /opt/brainstorm-3.211130/
+
+    - run:
+        - curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/brainstorm3.211130_mcr2020a.tar.gz       | tar -xz -C /opt/brainstorm-3.211130/ --strip-components 1
+
+    - environment:
+        PATH: /opt/brainstorm-3.211130/:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+
+deploy:
+  bins:
+    - brainstorm3.command
+  path:
+    - /opt/brainstorm-3.211130/
+
+readme: |-
+  ----------------------------------
+  ## brainstorm / {{ context.version }} ##
+  Standalone (compiled) version of Brainstorm3 GUI with MATLAB runtime
+
+  Example:
+  ```
+  brainstorm3.command /opt/MCR/v98
+  ```
+
+  More documentation can be found here: https://neuroimage.usc.edu/brainstorm/Introduction
+
+  To run applications outside of this container: ml brainstorm/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - "electrophysiology"
+
+gui_apps:
+  - name: "brainstormGUI"
+    exec: "brainstorm3.command /opt/MCR/v98/"

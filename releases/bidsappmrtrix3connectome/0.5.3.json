@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "bidsappmrtrix3connectome 0.5.3": {
+      "version": "20230615",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "bids apps"
+  ]
+}

@@ -1,0 +1,81 @@
+name: tractseg
+version: '2.9'
+architectures:
+  - x86_64
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/MIC-DKFZ/TractSeg/blob/master/LICENSE
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: mrtrix3
+        version: 3.0.4
+    - template:
+        name: miniconda
+        version: py37_23.1.0-1
+        install_path: /opt/miniconda
+        mamba: true
+    - install:
+        - gcc
+        - g++
+        - libc6-dev
+        - build-essential
+        - python3-dev
+        - libx11-6
+        - libxext6
+        - libxt6
+        - libgl1-mesa-glx
+        - xvfb
+    - run:
+        - pip install packaging numpy
+    - run:
+        - pip install TractSeg==2.9
+    - run:
+        - pip install -q wheel scipy nilearn matplotlib scikit-image nibabel dipy fury joblib seaborn cython
+    - run:
+        - pip install -q torch==1.6.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+    - run:
+        - mkdir -p ~/.tractseg && echo "weights_dir=/opt/miniconda/share/TractSeg/weights" > ~/.tractseg/config.txt
+    - run:
+        - download_all_pretrained_weights
+    - template:
+        name: fsl
+        version: 6.0.7.16
+    - user: jovyan
+    - deploy:
+        bins:
+          - TractSeg
+          - Tracking
+          - Tractometry
+structured_readme:
+  description: Tool for fast and accurate white matter bundle segmentation from Diffusion MRI. It can create bundle segmentations, segmentations of the endregions of bundles and Tract Orientation Maps (TOMs). Moreover, it can do tracking on the TOMs creating bundle-specific tractogram and do Tractometry analysis on those.
+  example: TractSeg -i Diffusion.nii.gz --raw_diffusion_input
+  documentation: https://github.com/MIC-DKFZ/TractSeg/blob/master/Readme.md
+  citation: 'Wasserthal, Jakob, Peter Neher, and Klaus H. Maier-Hein. “TractSeg - Fast and Accurate White Matter Tract Segmentation.” NeuroImage 183 (2018): 239–53. https://doi.org/10.1016/j.neuroimage.2018.07.070.'
+readme: |-
+  ----------------------------------
+  ## tractseg/2.9 ##
+
+  Tool for fast and accurate white matter bundle segmentation from Diffusion MRI. It can create bundle segmentations, segmentations of the endregions of bundles and Tract Orientation Maps (TOMs). Moreover, it can do tracking on the TOMs creating bundle-specific tractogram and do Tractometry analysis on those.
+
+  Example:
+  ```
+  mkdir -p ~/.tractseg && echo "weights_dir=/opt/miniconda/share/TractSeg/weights" > ~/.tractseg/config.txt
+  TractSeg -i Diffusion.nii.gz --raw_diffusion_input
+  ```
+
+  More documentation can be found here: https://github.com/MIC-DKFZ/TractSeg/blob/master/Readme.md
+
+  Citation:
+  ```
+  Wasserthal, Jakob, Peter Neher, and Klaus H. Maier-Hein. “TractSeg - Fast and Accurate White Matter Tract Segmentation.” NeuroImage 183 (2018): 239–53. https://doi.org/10.1016/j.neuroimage.2018.07.070.
+  ```
+
+  To run container outside of this environment: ml tractseg/2.9
+
+  ----------------------------------
+categories:
+  - diffusion imaging

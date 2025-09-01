@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "surfice 1.0.20210730": {
+      "version": "20211218",
+      "exec": ""
+    },
+    "surficeGUI-surfice 1.0.20210730": {
+      "version": "20211218",
+      "exec": "surfice"
+    }
+  },
+  "categories": [
+    "visualization"
+  ]
+}

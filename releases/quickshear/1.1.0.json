@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "quickshear 1.1.0": {
+      "version": "20240606",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}

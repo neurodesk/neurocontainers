@@ -1,0 +1,76 @@
+name: mricrogl
+version: 1.2.20211006
+
+copyright:
+  - name: mricrogl license
+    url: https://github.com/rordenlab/MRIcroGL/blob/master/license.txt
+    
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - wget
+        - unzip
+        - ca-certificates
+        - libgtk2.0-0
+        - libqt5pas1
+        - appmenu-gtk2-module
+        - libglu1-mesa
+        - pigz
+
+    - workdir: /opt
+
+    - run:
+        - wget --quiet -O MRIcroGL_linux_includes_Python.zip 'https://github.com/rordenlab/MRIcroGL/releases/download/v{{ context.version }}/MRIcroGL_linux_includes_Python.zip'
+        - unzip MRIcroGL_linux_includes_Python.zip
+        - rm -rf MRIcroGL_linux_includes_Python.zip
+
+    - run:
+        - wget --quiet -O libqt5pas1_2.9-0_amd64.deb 'https://github.com/davidbannon/libqt5pas/releases/download/v1.2.9/libqt5pas1_2.9-0_amd64.deb'
+        - apt install ./libqt5pas1_2.9-0_amd64.deb
+        - rm -rf libqt5pas1_2.9-0_amd64.deb
+
+    - environment:
+        PATH: /opt/MRIcroGL:/opt/MRIcroGL/Resources:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+
+deploy:
+  bins:
+    - dcm2niix
+
+readme: |-
+  ----------------------------------
+  ## mricrogl/{{ context.version }} ##
+  MRIcroGL is a cross-platform tool for viewing DICOM and NIfTI format images. It provides a drag-and-drop user interface as well as a scripting language. Please see the wiki page from more details. Note that the wiki page describes version 1.0 of the software, while this Github page is for the upcoming version 1.2. The changes are in general subtle, but the scripting has changed quite a bit.
+
+
+  Example:
+  ```
+  MRIcroGL
+  ```
+
+  More documentation can be found here: https://www.nitrc.org/plugins/mwiki/index.php/mricrogl:MainPage
+
+  To run applications outside of this container: ml mricrogl/{{ context.version }}
+
+  Citation:
+  ```
+  Rorden C, Brett M. Stereotaxic display of brain lesions. Behav Neurol. 2000;12(4):191-200. doi: 10.1155/2000/421719. PMID: 11568431.
+  ```
+
+  ----------------------------------
+
+categories:
+  - "visualization"
+
+gui_apps:
+  - name: "mricroglGUI"
+    exec: "MRIcroGL"

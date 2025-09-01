@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "connGUI-conn 22a": {
+      "version": "20231115",
+      "exec": "conn"
+    },
+    "conn 22a": {
+      "version": "20231115",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "functional imaging"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "pydeface 2.0.2": {
+      "version": "20250206",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "image segmentation"
+  ]
+}

@@ -1,0 +1,7 @@
+more off
+pkg load io
+pkg unload nan
+pkg load nan
+pkg load statistics
+pkg load miscellaneous
+pkg load general

@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "glmsingle 1.2": {
+      "version": "20240520",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "functional imaging"
+  ]
+}

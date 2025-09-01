@@ -1,6 +1,6 @@
 # this template file builds itksnap and is then used as a docker base image for layer caching
 export toolName='aidamri'
-export toolVersion='1.1'
+export toolVersion='2.0'
 export niftyreg_version='1.4.0'
 export niftyreg_commit_sha='83d8d1182ed4c227ce4764f1fdab3b1797eecd8d'
 # Don't forget to update version change in README.md!!!!!

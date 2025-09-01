@@ -1,0 +1,668 @@
+name: build-app
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+  id-token: write
+
+on:
+  workflow_call:
+    inputs:
+      application:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+      disable_auto_upload:
+        required: false
+        type: string
+      force_push_ghcr:
+        required: false
+        type: string
+      force_push_dockerhub:
+        required: false
+        type: string
+      force_upload_nectar:
+        required: false
+        type: string
+      force_upload_s3:
+        required: false
+        type: string
+      force_create_pr:
+        required: false
+        type: string
+      skip_docker_build:
+        required: false
+        type: string
+      skip_simg_build:
+        required: false
+        type: string
+
+# Workflow needs the following set in GitHub
+# - secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION
+# - secrets.GH_REGISTRY
+# - secrets.DOCKERHUB_USERNAME
+# - secrets.DOCKERHUB_PASSWORD
+# - secrets.DOCKERHUB_ORG
+# - secrets.AWS_ROLE_ARN
+
+jobs:
+  config:
+    runs-on: ubuntu-22.04
+    outputs:
+      APPLICATION: ${{ steps.envars.outputs.APPLICATION }}
+      BUILDDATE: ${{ steps.envars.outputs.BUILDDATE }}
+      IMAGETAG: ${{ steps.envars.outputs.IMAGETAG }}
+      IMAGENAME: ${{ steps.imgvars.outputs.IMAGENAME }}
+      ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
+    steps:
+      - name: Configure runner
+        run: |
+          sudo mkdir -p /mnt/tmp
+          sudo chown $USER /mnt/tmp
+          sudo mkdir -p /mnt/docker
+          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+
+      - name: Set environment variables
+        id: envars
+        run: |
+          APPLICATION=${{ inputs.application }}
+          SHORT_SHA=$(git rev-parse --short $GITHUB_SHA)
+          BUILDDATE=`date +%Y%m%d`
+          echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
+          echo "APPLICATION=$APPLICATION" >> $GITHUB_OUTPUT
+          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
+          echo "BUILDDATE=$BUILDDATE" >> $GITHUB_ENV
+          echo "BUILDDATE=$BUILDDATE" >> $GITHUB_OUTPUT
+          if [ "${{ inputs.skip_docker_build }}" = "true" ]; then
+            echo "IMAGETAG=latest" >> $GITHUB_OUTPUT
+          else
+            echo "IMAGETAG=${BUILDDATE}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install builder dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Generate Dockerfile and Release file
+        id: generate
+        run: |
+          echo "APPLICATION: $APPLICATION"
+          ./builder/build.py generate $APPLICATION --recreate --auto-build --generate-release
+
+      - name: Set image variables
+        id: imgvars
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          DOCKERFILE=`basename $(find ./build/$APPLICATION/ -type f -iname "*.Dockerfile" | head -1)`
+          # if the dockerfile is not found, exit with error
+          if [ -z "$DOCKERFILE" ]; then
+            echo "Dockerfile not found for $APPLICATION"
+            exit 1
+          fi
+          IMAGENAME=$(echo $(basename $DOCKERFILE .Dockerfile) | tr '[A-Z]' '[a-z]')
+          echo "IMAGENAME: $IMAGENAME"
+          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
+          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
+
+      - name: Login to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull latest image from registry and get rootfs
+        id: getrootfs
+        if: inputs.skip_docker_build != 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          docker pull ghcr.io/${GH_REGISTRY}/${{ env.IMAGENAME }}:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${{ env.IMAGENAME }}:latest) || true
+          echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_OUTPUT
+
+  build-image:
+    needs: config
+    runs-on: ${{ inputs.runner }}
+    outputs:
+      IMGDIFFERS: ${{ steps.imgcompare.outputs.IMGDIFFERS }}
+
+    permissions:
+      packages: write
+      id-token: write
+      contents: write
+    env:
+      APPLICATION: ${{ needs.config.outputs.APPLICATION }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
+      IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
+      ROOTFS_CACHE: ${{ needs.config.outputs.ROOTFS_CACHE }}
+    steps:
+      - name: Configure runner
+        run: |
+          sudo swapoff -a && sudo rm -rf /mnt/*
+          BASE_PATH=/mnt
+          if [ "${{ inputs.runner }}" = "self-hosted" ]; then
+            BASE_PATH=/storage
+          fi
+          echo "BASE_PATH=$BASE_PATH" >> $GITHUB_ENV
+          sudo mkdir -p $BASE_PATH/tmp
+          sudo chown $USER $BASE_PATH/tmp
+          sudo mkdir -p $BASE_PATH/docker
+          echo "{\"data-root\": \"$BASE_PATH/docker\"}" | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+
+      - name: Install builder dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Generate Dockerfile and Release file
+        id: generate
+        run: |
+          echo "APPLICATION: $APPLICATION"
+          ./builder/build.py generate $APPLICATION --recreate --auto-build --generate-release
+
+      - name: Set image variables
+        id: imgvars
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          DOCKERFILE=`basename $(find ./build/$APPLICATION/ -type f -iname "*.Dockerfile" | head -1)`
+          # if the dockerfile is not found, exit with error
+          if [ -z "$DOCKERFILE" ]; then
+            echo "Dockerfile not found for $APPLICATION"
+            exit 1
+          fi
+          echo "IMAGENAME: $IMAGENAME"
+          echo "IMAGENAME_TEST=${IMAGENAME//_/ }" >> $GITHUB_ENV
+          echo "test command: bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE"
+
+      - name: Login to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # - name: Set up Docker Buildx
+      #   uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+
+      - name: Debug Dockerfile
+        run: cat ./build/${APPLICATION}/${IMAGENAME}.Dockerfile
+
+      - name: Debug storage
+        run: |
+          sudo df -ha
+          sudo du -sh /mnt
+
+      - name: Build new image
+        if: inputs.skip_docker_build != 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          cd ./build/${APPLICATION}
+          docker build . --file ${IMAGENAME}.Dockerfile --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --cache-from ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+        continue-on-error: true
+          
+      - name: Debug storage
+        run: |
+          sudo df -ha
+          sudo du -sh /mnt
+          
+      # - name: Save new image to file
+      #   if: inputs.skip_docker_build != 'true'
+      #   env:
+      #     GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+      #   run: docker save ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} -o /tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+          
+      # - name: Debug storage
+      #   run: |
+      #     sudo df -ha
+      #     sudo du -sh /mnt
+      #     sudo du -sh /mnt/*
+
+      # - name: Build and save new image 
+      #   uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+      #   with:
+      #     context: ./build/${{ env.APPLICATION }}
+      #     file: ./build/${{ env.APPLICATION }}/${{ env.IMAGENAME }}.Dockerfile
+      #     push: false
+      #     load: true
+      #     tags: ghcr.io/${{ secrets.GH_REGISTRY }}/${{ env.IMAGENAME }}:${{ env.BUILDDATE }}
+      #     cache-from: type=registry,ref=ghcr.io/${{ secrets.GH_REGISTRY }}/${{ env.IMAGENAME }}:latest
+      #     cache-to: type=inline
+      #     outputs: type=docker,dest=/tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+
+      - name: Compare new and cached images
+        id: imgcompare
+        if: inputs.skip_docker_build != 'true'
+        env:
+          DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE})
+          echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
+          
+          if [ "$DISABLE_AUTO_UPLOAD" = "true" ]; then
+            echo "Auto-upload is disabled. Skipping push to registry."
+          elif [ "$ROOTFS_NEW" = "$ROOTFS_CACHE" ]; then
+            echo "No changes found. Skipping push to registry. "
+          else
+            echo "Pushing to registry. Changes found"
+            echo "IMGDIFFERS=true" >> $GITHUB_OUTPUT
+          fi
+
+      # - name: Upload new image as build artifact
+      #   if: inputs.skip_docker_build != 'true'
+      #   uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      #   with:
+      #     name: ${{ env.IMAGENAME }}-${{ env.BUILDDATE }}
+      #     path: /tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
+      #     retention-days: 7
+        
+      - name: Push to GHCR
+        if: steps.imgcompare.outputs.IMGDIFFERS == 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          docker tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest
+          docker push ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}
+          docker push ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest
+
+  # push-ghcr:
+  #   needs: [config, build-image]
+  #   if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_ghcr == 'true' }}
+  #   runs-on: ubuntu-22.04
+  #   permissions:
+  #     packages: write
+
+  #   steps:
+  #     - name: Configure runner
+  #       run: |
+  #         sudo swapoff -a && sudo rm -rf /mnt/*
+  #         sudo mkdir -p /mnt/tmp
+  #         sudo chown $USER /mnt/tmp
+  #         sudo mkdir -p /mnt/docker
+  #         echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+  #         sudo systemctl restart docker
+
+  #     - name: Download build artifact
+  #       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+  #       with:
+  #         name: ${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}
+  #         path: /tmp/
+
+  #     - name: Load Docker Image from Artifact
+  #       if: inputs.skip_docker_build != 'true'
+  #       run: docker load --input /tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
+
+  #     - name: Login to GHCR
+  #       uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+  #       with:
+  #         registry: ghcr.io
+  #         username: ${{ github.repository_owner }}
+  #         password: ${{ secrets.GITHUB_TOKEN }}
+
+  #     - name: Push to GHCR
+  #       env:
+  #         GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+  #       run: |
+  #         docker tag ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }} ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:latest
+  #         docker push --all-tags ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}
+
+  push-dockerhub:
+    needs: [config, build-image]
+    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_dockerhub == 'true' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      packages: write
+
+    steps:
+      - name: Configure runner
+        run: |
+          sudo swapoff -a && sudo rm -rf /mnt/*
+          sudo mkdir -p /mnt/tmp
+          sudo chown $USER /mnt/tmp
+          sudo mkdir -p /mnt/docker
+          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Login to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull latest image from registry
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          docker pull ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }}
+
+      # - name: Download image artifact
+      #   uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      #   with:
+      #     name: ${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}
+      #     path: /tmp/
+
+      # - name: Load Docker Image from Artifact
+      #   if: inputs.skip_docker_build != 'true'
+      #   run: docker load --input /tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
+
+      - name: Login to DockerHub
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+      - name: Push to DockerHub
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+          DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
+        run: |
+          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }}
+          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}:latest
+          docker push --all-tags ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}
+
+  build-simg:
+    needs: [config, build-image, push-dockerhub]
+    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      packages: write
+
+    steps:
+      - name: Configure runner
+        run: |
+          sudo swapoff -a && sudo rm -rf /mnt/*
+          sudo mkdir -p /mnt/tmp
+          sudo chown $USER /mnt/tmp
+          sudo mkdir -p /mnt/docker
+          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+          sudo mkdir -p /mnt/apptainer/cache /mnt/apptainer/tmp
+          sudo chown $USER /mnt/apptainer/cache /mnt/apptainer/tmp
+
+          APPTAINER_CACHEDIR=/mnt/apptainer/cache
+          echo "APPTAINER_CACHEDIR=$APPTAINER_CACHEDIR" >> $GITHUB_ENV
+          APPTAINER_TMPDIR=/mnt/apptainer/tmp
+          echo "APPTAINER_TMPDIR=$APPTAINER_TMPDIR" >> $GITHUB_ENV
+          
+          SINGULARITY_CACHEDIR=/mnt/apptainer/cache
+          echo "SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR" >> $GITHUB_ENV
+          SINGULARITY_TMPDIR=/mnt/apptainer/tmp
+          echo "SINGULARITY_TMPDIR=$SINGULARITY_TMPDIR" >> $GITHUB_ENV
+
+          sudo apt-get install -y software-properties-common
+          sudo add-apt-repository -y ppa:apptainer/ppa
+          sudo apt-get update
+          sudo apt-get install -y apptainer
+
+          # sudo mkdir -p /mnt/apptainer
+          # sudo chown $USER /mnt/apptainer
+          # git clone https://github.com/apptainer/apptainer.git /mnt/apptainer
+          # cd /mnt/apptainer
+          # ./mconfig --prefix=/mnt/apptainer
+          # make -C builddir
+          # sudo make -C builddir install
+          # export PATH="/mnt/apptainer/bin:$PATH"
+          # echo "/mnt/apptainer/bin" >> $GITHUB_PATH
+
+      - name: Login to GHCR
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # - name: Download image artifact
+      #   uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+      #   with:
+      #     name: ${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}
+      #     path: /mnt/tmp/
+
+      # - name: Load Docker Image from Artifact
+      #   run: |
+      #     docker load --input /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
+      #     rm /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
+
+      - name: Debug storage
+        run: |
+          sudo df -ha
+          sudo du -sh /mnt
+
+      - name: Build simg file
+        if: inputs.skip_simg_build != 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          echo "[DEBUG] building singularity image from docker image:"
+          time singularity build "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" docker://ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.IMAGETAG }}
+          echo "[DEBUG] done building singularity image from docker image!"
+        continue-on-error: true
+
+      - name: Debug storage
+        run: |
+          sudo df -ha
+          sudo du -sh /mnt
+  
+      - name: Upload simg artifact
+        if: inputs.skip_simg_build != 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          path: /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          retention-days: 7
+
+  upload-nectar:
+    needs: [config, build-image, build-simg]
+    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      packages: write
+
+    steps:
+      - name: Configure runner
+        run: |
+          sudo swapoff -a && sudo rm -rf /mnt/*
+          sudo mkdir -p /mnt/tmp
+          sudo chown $USER /mnt/tmp
+          # Install rclone
+          sudo -v ; curl https://rclone.org/install.sh | sudo bash
+          
+      - name: Download simg artifact
+        if: inputs.skip_simg_build != 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          path: /mnt/tmp/
+
+      - name: Upload simg to Nectar
+        env:
+          OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
+          OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
+          OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
+        run: |
+          echo "[DEBUG] Attempting upload to Nectar Object Storage:"
+          rclone config create nectar swift env_auth true
+          rclone copy /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg nectar:/neurodesk/
+          echo "[DEBUG] Done with uploading to Nectar Object Storage!"
+  
+  upload-s3:
+    needs: [config, build-image, build-simg]
+    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_s3 == 'true' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      packages: write
+      id-token: write
+    steps:
+      - name: Configure runner
+        run: |
+          sudo swapoff -a && sudo rm -rf /mnt/*
+          sudo mkdir -p /mnt/tmp
+          sudo chown $USER /mnt/tmp
+
+      - name: Configure aws credentials
+        uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-2
+      - name: Download simg artifact
+        if: inputs.skip_simg_build != 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          path: /mnt/tmp/
+
+      - name: Install AWS CLI
+        run: |
+          if ! command -v aws &>/dev/null; then
+            echo "[DEBUG] Installing AWS CLI"
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install && rm -rf aws awscliv2.zip
+          fi
+
+      - name: Upload to AWS S3
+        run: aws s3 cp /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg s3://neurocontainers/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+
+  create-pr:
+    needs: [config, build-image, push-dockerhub, build-simg, upload-nectar, upload-s3]
+    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true'}}
+    runs-on: ubuntu-22.04
+    permissions:
+      packages: write
+      id-token: write
+      contents: read
+    env:
+      APPLICATION: ${{ needs.config.outputs.APPLICATION }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
+      SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      with:
+        token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+    - name: Install Builder Dependencies
+      run: |
+        pip install -r requirements.txt
+    - name: Generate Dockerfile and Release File
+      id: generate
+      run: |
+        echo "APPLICATION: $APPLICATION"
+        ./builder/build.py generate $APPLICATION --recreate --auto-build --generate-release
+
+    - name: Create Release File Pull Request
+      if: steps.generate.outputs.container_name
+      env:
+        GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+        CONTAINER_NAME: ${{ steps.generate.outputs.container_name }}
+        CONTAINER_VERSION: ${{ steps.generate.outputs.container_version }}
+        RELEASE_CONTENT: ${{ steps.generate.outputs.release_file_content }}
+      run: |
+        gh auth setup-git
+
+        # Configure git
+        git config --global user.name "neurocontainers-bot"
+        git config --global user.email "neurocontainers-bot@neurodesk.github.io"
+
+        # Create a new branch for the release
+        BRANCH_NAME="release/${CONTAINER_NAME}-${CONTAINER_VERSION}-$(date +%Y%m%d-%H%M%S)"
+        git checkout -b "$BRANCH_NAME"
+
+        # Create the release file
+        RELEASE_DIR="releases/${CONTAINER_NAME}"
+        RELEASE_FILE="${RELEASE_DIR}/${CONTAINER_VERSION}.json"
+
+        mkdir -p "$RELEASE_DIR"
+        echo "$RELEASE_CONTENT" > "$RELEASE_FILE"
+
+        # Check if this is a new file or an update
+        if git ls-files --error-unmatch "$RELEASE_FILE" 2>/dev/null; then
+          ACTION="Update"
+        else
+          ACTION="Add"
+        fi
+
+        # Add and commit the release file
+        git add "$RELEASE_FILE"
+        git commit -m "${ACTION} release file for ${CONTAINER_NAME} ${CONTAINER_VERSION}
+
+        Auto-generated release file from container build.
+
+        🤖 Generated by neurocontainers CI"
+
+        # Push the branch
+        git push origin "$BRANCH_NAME"
+
+        # Create pull request
+        gh pr create \
+          --title "${ACTION} release for ${CONTAINER_NAME} ${CONTAINER_VERSION}" \
+          --body "## Summary
+
+        This PR ${ACTION,,}s the release file for **${CONTAINER_NAME} ${CONTAINER_VERSION}**.
+
+        ## Changes
+
+        - ${ACTION} \`${RELEASE_FILE}\` with container metadata
+        - Generated automatically from successful container build
+        - Contains categories and GUI applications from build.yaml
+
+        ## Testing Instructions
+
+        To test this container on Neurodesk (either a local installation or https://play.neurodesk.org/):
+        \`\`\`bash
+        bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } ${BUILDDATE}
+        \`\`\`
+
+        Or, for testing directly with Apptainer/Singularity:
+        \`\`\`bash
+        curl -X GET https://neurocontainers.neurodesk.org/${IMAGENAME}_${BUILDDATE}.simg -O
+        singularity shell --overlay /tmp/apptainer_overlay ${IMAGENAME}_${BUILDDATE}.simg
+        \`\`\`
+
+        ## Review Checklist
+
+        - [ ] Release file format is correct
+        - [ ] Categories are appropriate for this container
+        - [ ] GUI applications (if any) are correctly defined
+        - [ ] Version and build date are accurate
+        - [ ] Container has been tested using the commands above
+
+        ## Next Steps
+
+        After merging this PR:
+        1. The apps.json update workflow will automatically regenerate apps.json from all release files
+        2. A PR will be created to the neurocommand repository
+        3. The container will become available in neurodesk
+
+        If additional releases are needed:
+        - Add to apps.json to release to Neurodesk: https://github.com/NeuroDesk/neurocommand/edit/main/neurodesk/apps.json
+        - Or add to the Open Recon recipes: https://github.com/NeuroDesk/openrecon/tree/main/recipes
+
+        🤖 Generated by neurocontainers CI | Created by @${GITHUB_ACTOR}" \
+          --head "$BRANCH_NAME" \
+          --base main \
+          --label "automated" \
+          --label "release"
+
+        echo "✅ Pull request created for ${CONTAINER_NAME} ${CONTAINER_VERSION}"
+    - name: Generate job output
+      run: |
+        echo "The container has been successfully build. To test the container, run this:" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
+        echo "bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE" >> $GITHUB_STEP_SUMMARY
+

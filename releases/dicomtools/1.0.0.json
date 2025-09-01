@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "dicomtools 1.0.0": {
+      "version": "20250204",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}

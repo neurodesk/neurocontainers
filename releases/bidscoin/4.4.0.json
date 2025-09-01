@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "bidscoin 4.4.0": {
+      "version": "20241003",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}

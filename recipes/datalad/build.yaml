@@ -1,0 +1,44 @@
+name: datalad
+version: 1.1.5
+
+copyright:
+  - license: MIT
+    url: https://spdx.org/licenses/MIT.html
+  - license: BSD-3-Clause
+    url: https://spdx.org/licenses/BSD-3-Clause.html
+  - license: BSD-2-Clause
+    url: https://spdx.org/licenses/BSD-2-Clause.html
+
+architectures:
+- x86_64
+build:
+  kind: neurodocker
+  base-image: neurodebian:bookworm-non-free
+  pkg-manager: apt
+  directives:
+  - install:
+    - datalad 
+    - datalad-container
+
+deploy:
+  bins: 
+    - datalad
+
+readme: |
+  ## datalad/{{context.version}} ##
+  DataLad is a data management and distribution platform providing access to a wide range of data resources. Git for data using git-annex as backend.
+
+  Examples:
+  ```
+  git config --global user.email "user@neurodesk.github.io"
+  git config --global user.name "Neurodesk User"
+  datalad install https://github.com/psychoinformatics-de/studyforrest-data-phase2.git
+  datalad create -h
+  datalad --help
+  ```
+
+  More documentation can be found here: http://docs.datalad.org/en/latest/
+
+  You may also want to read the guide: http://handbook.datalad.org/en/latest/
+
+  To run container outside of this environment: ml datalad/{{context.version}}

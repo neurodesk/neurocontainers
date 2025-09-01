@@ -1,0 +1,23 @@
+tests:
+  - name: Simple Deploy Bins/Path Test
+    builtin: test_deploy.sh
+
+  - name: Test openreconexample
+    script: |
+      # Convert input DICOMs to ISMRMRD format
+      python /opt/code/python-ismrmrd-server/dicom2mrd.py \
+        -o /buildhostdirectory/t1.h5 \
+        /buildhostdirectory/dicom_data
+
+      # Start OpenRecon server
+      python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
+      sleep 5
+
+      rm /buildhostdirectory/output.h5
+      python3 /opt/code/python-ismrmrd-server/client.py \
+        -G dataset \
+        -o /buildhostdirectory/output.h5 \
+        /buildhostdirectory/input_data.h5 \
+        -c arfiproc
+
+      # Check output h5 data in "H5Web" VS code plugin viewer

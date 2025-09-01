@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "globusGUI-globus 3.2.2": {
+      "version": "20230620",
+      "exec": "globusconnectpersonal -gui"
+    },
+    "globus 3.2.2": {
+      "version": "20230620",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}

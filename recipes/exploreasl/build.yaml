@@ -1,0 +1,68 @@
+name: exploreasl
+version: 1.11.0
+architectures:
+  - x86_64
+structured_readme:
+  description: >-
+    ExploreASL is a pipeline and toolbox for image processing and statistics of
+    arterial spin labeling perfusion MR images. It is designed as a multi-OS,
+    open-source, collaborative framework that facilitates cross-pollination
+    between image processing method developers and clinical investigators.
+  example: ExploreASL
+  documentation: https://exploreasl.github.io/Documentation/1.11.0/
+  citation: >-
+    Mutsaerts, H., & Petr, J. (2023). ExploreASL/ExploreASL: ExploreASL v1.10.1
+    (v1.11.0). Zenodo. https://doi.org/10.5281/zenodo.8326499
+build:
+  kind: neurodocker
+  base-image: exploreasl/xasl:1.11.0
+  pkg-manager: apt
+  directives:
+    - deploy:
+        path: []
+        bins:
+          - ExploreASL
+categories:
+  - workflows
+readme: >-
+  ----------------------------------
+
+  ## exploreasl/1.11.0 ##
+
+
+  ExploreASL is a pipeline and toolbox for image processing and statistics of
+  arterial spin labeling perfusion MR images. It is designed as a multi-OS,
+  open-source, collaborative framework that facilitates cross-pollination
+  between image processing method developers and clinical investigators.
+
+
+  Example:
+
+  ```
+
+  ExploreASL
+
+  ```
+
+
+  More documentation can be found here:
+  https://exploreasl.github.io/Documentation/1.11.0/
+
+
+  Citation:
+
+  ```
+
+  Mutsaerts, H., & Petr, J. (2023). ExploreASL/ExploreASL: ExploreASL v1.10.1
+  (v1.11.0). Zenodo. https://doi.org/10.5281/zenodo.8326499
+
+  ```
+
+
+  To run container outside of this environment: ml exploreasl/1.11.0
+
+
+  ----------------------------------
+copyright:
+  - name: Provisionary license ExploreASL
+    url: https://github.com/ExploreASL/ExploreASL/blob/main/LICENSE-EXPLOREASL

@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "tractseg 2.9": {
+      "version": "20250702",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ]
+}

@@ -1,0 +1,59 @@
+name: workshopdemo
+version: 1.0.0
+architectures:
+  - x86_64
+structured_readme:
+  description: This tool was commited for the workshop.
+  example: hello
+  documentation: https://github.com/neurodesk/neurocontainers
+  citation: Brainhack 2025
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: matlabmcr
+        version: 2023b
+    - install: hello
+categories:
+  - functional imaging
+  - workflows
+readme: >-
+  ----------------------------------
+
+  ## workshopdemo/1.0.0 ##
+
+
+  This tool was commited for the workshop.
+
+
+  Example:
+
+  ```
+
+  hello
+
+  ```
+
+
+  More documentation can be found here:
+  https://github.com/neurodesk/neurocontainers
+
+
+  Citation:
+
+  ```
+
+  Brainhack 2025
+
+  ```
+
+
+  To run container outside of this environment: ml workshopdemo/1.0.0
+
+
+  ----------------------------------
+copyright:
+  - license: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0

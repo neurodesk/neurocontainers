@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "niimath 1.0.0": {
+      "version": "20250617",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}

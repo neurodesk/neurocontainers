@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "bidstools 1.0.3": {
+      "version": "20231030",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "fmriprep 23.2.1": {
+      "version": "20240402",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "workflows"
+  ]
+}

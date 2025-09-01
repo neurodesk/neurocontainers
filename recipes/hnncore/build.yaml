@@ -1,0 +1,56 @@
+name: hnncore
+version: "0.3"
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/jonescompneurolab/hnn-core/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - python3.9
+        - python3-pip
+        - libpython3-dev
+        - build-essential
+        - openmpi-bin
+        - openmpi-doc
+        - libopenmpi-dev
+
+    - run:
+        - pip install numpy scipy matplotlib NEURON
+
+    - run:
+        - pip install ipywidgets voila scikit-learn joblib mpi4py psutil
+
+    - run:
+        - pip install hnn_core hnn_core[opt] hnn_core[gui]
+
+deploy:
+  bins:
+    - hnn-gui
+
+readme: |-
+  ## hnncore/{{ context.version }} ##
+   ----
+
+   Description:
+   Simulation and optimization of neural circuits for MEG/EEG source estimates
+
+   Example:
+   hnn-gui
+
+   https://jonescompneurolab.github.io/hnn-core
+
+categories:
+  - "electrophysiology"

@@ -19,4 +19,5 @@ More documentation can be found here: https://sites.google.com/view/ashs-dox/qui
 
 To run container outside of this environment: ml ashs/2.0.0
 
+License: GNU General Public License (GPL)
 ----------------------------------

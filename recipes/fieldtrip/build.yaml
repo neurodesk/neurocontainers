@@ -1,0 +1,62 @@
+name: fieldtrip
+version: "20220617"
+
+copyright:
+  - license: GPL-3.0
+    url: https://github.com/fieldtrip/fieldtrip?tab=GPL-3.0-1-ov-file#readme
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:18.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - curl
+        - unzip
+        - ca-certificates
+        - openjdk-8-jre
+        - dbus-x11
+
+    - template:
+        name: matlabmcr
+        install_path: /opt/MCR
+        version: 2020b
+
+    - workdir: /opt/fieldtrip-{{ context.version }}/
+
+    - run:
+        - curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/fieldtrip{{ context.version }}_mcr2020b.tar.gz | tar -xz -C /opt/fieldtrip-{{ context.version }}/ --strip-components 1
+        - chmod +x /opt/fieldtrip-{{ context.version }}/*
+
+    - environment:
+        PATH: /opt/fieldtrip-{{ context.version }}/:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+
+deploy:
+  bins:
+    - run_fieldtrip.sh
+
+readme: |-
+  ----------------------------------
+  ## fieldtrip/{{ context.version }} ##
+  Standalone (compiled) version of FieldTrip with MATLAB runtime
+
+  Example:
+  ```
+  run_fieldtrip.sh /opt/MCR/v99 yourscript.m
+  ```
+
+  More documentation can be found here: https://www.fieldtriptoolbox.org/tutorial/
+
+  To run applications outside of this container: ml fieldtrip/{{ context.version }}
+
+  Please cite the FieldTrip reference paper when you have used FieldTrip in your study.
+  Robert Oostenveld, Pascal Fries, Eric Maris, and Jan-Mathijs Schoffelen. FieldTrip: Open Source Software for Advanced Analysis of MEG, EEG, and Invasive Electrophysiological Data. Computational Intelligence and Neuroscience, vol. 2011, Article ID 156869, 9 pages, 2011. doi:10.1155/2011/156869.
+  ----------------------------------
+
+categories:
+  - "electrophysiology"

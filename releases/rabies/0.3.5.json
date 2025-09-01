@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "rabies 0.3.5": {
+      "version": "20220111",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "rodent imaging"
+  ]
+}

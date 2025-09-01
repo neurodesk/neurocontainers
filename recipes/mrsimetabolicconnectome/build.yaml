@@ -1,0 +1,62 @@
+name: mrsimetabolicconnectome
+version: 1.0.0
+architectures:
+  - x86_64
+structured_readme:
+  description: |+
+    This repository provides tools and preprocessing utilites to construct a within-subject Metabolic Similarity Matrix (MeSiM) based on MRSI scans, as detailed in preprint and preparing files for a voxel-based analysis as detailed in preprint
+
+  example: |
+    BIDSDATAPATH=<bids_data> python $DEVANALYSEPATH/experiments/Preprocessing/registration_mrsi_to_t1.py --group Dummy-Project --ref_met CrPCr --subject_id S001 --session V1 --nthreads 16
+  documentation: https://github.com/MRSI-Psychosis-UP/MRSI-Metabolic-Connectome
+  citation: |-
+    Constructing the Human Brain Metabolic Connectome Using MR Spectroscopic Imaging: Insights into Biochemical Organization, Cytoarchitectonic Similarity and Gene Co-expression Networks Federico Lucchetti, Edgar Céléreau, Pascal Steullet, Yasser Alemán-Gómez, Patric Hagmann, Antoine Klauser, Paul Klauser
+    bioRxiv 2025.03.10.642332; doi: https://doi.org/10.1101/2025.03.10.642332
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - run:
+        - cd /opt
+        - git clone https://github.com/MRSI-Psychosis-UP/MRSI-Metabolic-Connectome.git
+    - template:
+        name: miniconda
+        version: latest
+        install_path: /opt/miniconda
+    - run:
+        - cd /opt/MRSI-Metabolic-Connectome
+        - conda env create -n mrsitooldemo_env -f environment.yaml
+    - environment:
+        DEVANALYSEPATH: /opt/MRSI-Metabolic-Connectome
+        PATH: /opt/miniconda/envs/mrsitooldemo_env/bin:$PATH
+    - test:
+        name: Basic Test Script
+        script: python $DEVANALYSEPATH/experiments/Preprocessing/registration_mrsi_to_t1.py --help
+readme: |-
+  ----------------------------------
+  ## mrsimetabolicconnectome/1.0.0 ##
+
+  This repository provides tools and preprocessing utilites to construct a within-subject Metabolic Similarity Matrix (MeSiM) based on MRSI scans, as detailed in preprint and preparing files for a voxel-based analysis as detailed in preprint
+
+  Example:
+  ```
+  BIDSDATAPATH=<bids_data> python $DEVANALYSEPATH/experiments/Preprocessing/registration_mrsi_to_t1.py --group Dummy-Project --ref_met CrPCr --subject_id S001 --session V1 --nthreads 16
+  ```
+
+  More documentation can be found here: https://github.com/MRSI-Psychosis-UP/MRSI-Metabolic-Connectome
+
+  Citation:
+  ```
+  Constructing the Human Brain Metabolic Connectome Using MR Spectroscopic Imaging: Insights into Biochemical Organization, Cytoarchitectonic Similarity and Gene Co-expression Networks Federico Lucchetti, Edgar Céléreau, Pascal Steullet, Yasser Alemán-Gómez, Patric Hagmann, Antoine Klauser, Paul Klauser
+  bioRxiv 2025.03.10.642332; doi: https://doi.org/10.1101/2025.03.10.642332
+  ```
+
+  To run container outside of this environment: ml mrsimetabolicconnectome/1.0.0
+
+  ----------------------------------
+copyright:
+  - name: SOFTWARE LICENSE AGREEMENT FOR ACADEMIC NON-COMMERCIAL RESEARCH PURPOSES ONLY
+    url: https://github.com/MRSI-Psychosis-UP/MRSI-Metabolic-Connectome/blob/main/LICENSE
+categories:
+  - workflows

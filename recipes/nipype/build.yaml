@@ -1,0 +1,247 @@
+name: nipype
+version: 1.8.5
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/nipy/nipype/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - environment:
+        GOPATH: $HOME/go
+        PATH: $PATH:/usr/local/go/bin:/bin:/opt/spm12
+
+    - template:
+        name: matlabmcr
+        install_path: /opt/mcr
+        version: 2019b
+
+    - install:
+        - wget
+        - curl
+        - libglib2.0-dev
+        - ca-certificates
+        - build-essential
+        - libseccomp-dev
+        - pkg-config
+        - squashfs-tools
+        - cryptsetup
+
+    - run:
+        - wget https://dl.google.com/go/go1.19.linux-amd64.tar.gz
+        - tar -C /usr/local -xzvf go1.19.linux-amd64.tar.gz
+        - rm go1.19.linux-amd64.tar.gz
+        - mkdir -p /src/github.com/sylabs
+        - cd /src/github.com/sylabs
+        - wget https://github.com/sylabs/singularity/releases/download/v3.10.2/singularity-ce-3.10.2.tar.gz
+        - tar -xzvf singularity-ce-3.10.2.tar.gz
+        - cd singularity-ce-3.10.2
+        - ./mconfig --without-suid --prefix=/usr/local/singularity
+        - make -C builddir
+        - make -C builddir install
+        - cd ..
+        - rm -rf singularity-ce-3.10.2
+        - rm -rf /usr/local/go
+        - ln -s /usr/local/singularity/bin/singularity /bin/
+
+    - template:
+        name: miniconda
+        conda_install: python=3.9 nipype=1.8.5 traits scipy scikit-learn scikit-image jupyter nb_conda_kernels h5py seaborn numpy
+        pip_install: osfclient pybids
+        version: latest
+
+    - install:
+        - xdg-utils
+        - python-pyqt5.qwt-doc
+        - unzip
+        - git
+        - apt-transport-https
+        - ca-certificates
+        - coreutils
+        - curl
+        - gnome-keyring
+        - gnupg
+        - libnotify4
+        - wget
+        - libnss3
+        - libxkbfile1
+        - libsecret-1-0
+        - libgtk-3-0
+        - libxss1
+        - libgbm1
+        - libxshmfence1
+        - libasound2
+        - cryptsetup
+        - squashfs-tools
+        - lua-bit32
+        - lua-filesystem
+        - lua-json
+        - lua-lpeg
+        - lua-posix
+        - lua-term
+        - lua5.2
+        - lmod
+        - imagemagick
+        - less
+        - nano
+        - tree
+        - gcc
+        - graphviz
+        - libzstd1
+        - zlib1g-dev
+        - zip
+        - build-essential
+        - uuid-dev
+        - libgpgme-dev
+        - libseccomp-dev
+        - pkg-config
+        - openjdk-8-jre
+        - dbus-x11
+
+    - environment:
+        MATLAB_VERSION: R2019b
+        MCR_INHIBIT_CTF_LOCK: "1"
+        MCR_UPDATE: "9"
+        MCR_VERSION: v97
+        SPM_HTML_BROWSER: "0"
+        SPM_REVISION: r7771
+        SPM_VERSION: "12"
+
+    - run:
+        - wget -O vscode.deb 'https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64'
+        - apt install ./vscode.deb
+        - rm -rf ./vscode.deb
+
+    - workdir: /opt
+
+    - run:
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.python
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.vscode-pylance
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-keymap
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-renderers
+
+    - environment:
+        DONT_PROMPT_WSL_INSTALL: "1"
+
+    - copy: code /usr/local/sbin/
+
+    - run:
+        - chmod a+x /usr/local/sbin/code
+
+    - run:
+        - wget --no-check-certificate --progress=bar:force -P /opt https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/spm12_r7771_Linux_R2019b.zip
+        - unzip -q /opt/spm12_r7771_Linux_R2019b.zip -d /opt
+        - rm -f /opt/spm12_r7771_Linux_R2019b.zip
+
+    - environment:
+        LD_LIBRARY_PATH: /opt/mcr/v97/runtime/glnxa64:/opt/mcr/v97/bin/glnxa64:/opt/mcr/v97/sys/os/glnxa64:/opt/mcr/v97/sys/opengl/lib/glnxa64:/opt/mcr/v97/extern/bin/glnxa64
+
+    - run:
+        - /opt/spm12/spm12 function exit
+        - chmod +x /opt/spm12/*
+
+    - environment:
+        XAPPLRESDIR: /opt/mcr/v97/x11/app-defaults
+
+    - copy: module.sh /usr/share/
+
+    - user: neuro
+
+deploy:
+  bins:
+    - python
+
+readme: |-
+  ----------------------------------
+  ## nipype/{{ context.version }} ##
+  Python environment with VScode and singularity to run Nipype workflows
+
+  Setup:
+  ```
+  # load required software (except spm, because SPM is build into the nipype container)
+  ml fsl/6.0.5.1
+  ml afni/22.1.14
+
+  # download test data
+  osf -p bt4ez fetch osfstorage/TOMCAT_DIB/sub-01/ses-01_7T/anat/sub-01_ses-01_7T_T1w_defaced.nii.gz ./sub-01_ses-01_7T_T1w_defaced.nii.gz
+
+  gunzip /neurodesktop-storage/sub-01_ses-01_7T_T1w_defaced.nii.gz
+
+  # start python
+  python
+  ```
+
+  Python code:
+  ```
+  import nipype.interfaces.spm as spm
+  from nipype.interfaces import fsl
+  from nipype.interfaces import afni
+
+  matlab_cmd = '/opt/spm12/run_spm12.sh /opt/mcr/v97/ script'
+  spm.SPMCommand.set_mlab_paths(matlab_cmd=matlab_cmd, use_mcr=True)
+
+  norm12 = spm.Normalize12()
+  norm12.inputs.image_to_align = '/neurodesktop-storage/sub-01_ses-01_7T_T1w_defaced.nii'
+  norm12.run()
+
+  btr = fsl.BET()
+  btr.inputs.in_file = '/neurodesktop-storage/sub-01_ses-01_7T_T1w_defaced.nii'
+  btr.inputs.frac = 0.4
+  btr.inputs.out_file = '/neurodesktop-storage/sub-01_ses-01_7T_T1w_defaced_brain.nii'
+  res = btr.run()
+
+  edge3 = afni.Edge3()
+  edge3.inputs.in_file = '/neurodesktop-storage/sub-01_ses-01_7T_T1w_defaced.nii'
+  edge3.inputs.out_file = '/neurodesktop-storage/sub-01_ses-01_7T_T1w_defaced_edges.nii'
+  edge3.inputs.datum = 'byte'
+  res = edge3.run()
+  ```
+
+  You can also use VS code and a jupyter notebook session in their to perform your analysis. Just type `code` in the terminal and enjoy :)
+
+
+
+
+  More documentation can be found here: https://nipype.readthedocs.io/en/latest/
+
+  To run applications outside of this container: ml nipype/{{ context.version }}
+
+  ----------------------------------
+
+files:
+  - name: code
+    contents: |-
+      #!/usr/bin/env sh
+      /usr/bin/code --extensions-dir=/opt/vscode-extensions
+
+  - name: module.sh
+    contents: |-
+      # system-wide profile.modules                                          #
+      # Initialize modules for all sh-derivative shells                      #
+      #----------------------------------------------------------------------#
+      trap "" 1 2 3
+
+      case "$0" in
+          -bash|bash|*/bash) . /usr/share/lmod/6.6/init/bash ;;
+             -ksh|ksh|*/ksh) . /usr/share/lmod/6.6/init/ksh ;;
+             -zsh|zsh|*/zsh) . /usr/share/lmod/6.6/init/zsh ;;
+                -sh|sh|*/sh) . /usr/share/lmod/6.6/init/sh ;;
+                          *) . /usr/share/lmod/6.6/init/sh ;;  # default for scripts
+      esac
+
+      trap - 1 2 3
+
+categories:
+  - "workflows"

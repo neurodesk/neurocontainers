@@ -1,0 +1,126 @@
+name: deepretinotopy
+version: 1.0.15
+
+copyright:
+  - license: GPL-3.0
+    url: https://github.com/felenitaribeiro/deepRetinotopy_TheToolbox/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ghcr.io/neurodesk/freesurfer_7.3.2:20230216
+  pkg-manager: yum
+
+  # Delete the line containing localedef which is added automatically by NeuroDocker.
+  fix-locale-def: true
+
+  directives:
+    - install:
+        - git
+
+    - template:
+        name: miniconda
+        conda_install: python=3.12.8
+        pip_install: packaging osfclient==0.0.5 nibabel sympy==1.13.1
+        version: latest
+
+    - run:
+        - pip install --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+        - pip install --no-cache-dir pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.5.1+cu124.html
+        - pip install --no-cache-dir torch_geometric
+        - python -c "import torch" 2>/dev/null || { echo "Failed to import module"; exit 1; }
+        - python -c "import torch_geometric; print('PyG working')"
+
+    - workdir: /opt
+
+    - run:
+        - git clone https://github.com/felenitaribeiro/deepRetinotopy_TheToolbox.git
+        - cd deepRetinotopy_TheToolbox
+        - git checkout a8c1ed9382026a0ff2ad8a161a450a1d479a82ad
+        - files_to_download=("osfstorage/new_models/deepRetinotopy_polarAngle_LH_model5.pt" "osfstorage/new_models/deepRetinotopy_eccentricity_LH_model2.pt" "osfstorage/new_models/deepRetinotopy_pRFsize_LH_model5.pt" "osfstorage/new_models/deepRetinotopy_polarAngle_RH_model4.pt" "osfstorage/new_models/deepRetinotopy_eccentricity_RH_model2.pt" "osfstorage/new_models/deepRetinotopy_pRFsize_RH_model5.pt")
+        - for file in "${files_to_download[@]}"; do path="${file:15}"; mkdir -p "${path%/*}"; chmod 777 "${path%/*}"; osf -p ermbz fetch "$file" "$path"; echo "$file"; new_path=$(echo "$path" | sed -E 's/model[0-9]+/model/'); mv "$path" "$new_path"; echo "Renamed $path to $new_path"; done
+
+    - run:
+        - yum clean all
+        - rm -rf /var/cache/yum/*
+        - rm -rf /var/cache/dnf/*
+        - rm -rf /var/lib/dnf/history.sqlite*
+        - rm -rf /var/lib/rpm/Packages
+        - rm -rf /tmp/*
+        - rm -rf ~/.cache/pip/*
+        - rm -rf /opt/miniconda/lib/python3.12/site-packages/torchvision/datasets/*
+        - rm -rf /opt/miniconda/lib/python3.12/site-packages/*/__pycache__/*
+
+    - workdir: /opt/deepRetinotopy_TheToolbox
+
+    - environment:
+        PATH: /opt/workbench/workbench/bin_rh_linux64/:/opt/deepRetinotopy_TheToolbox/:/opt/deepRetinotopy_TheToolbox/main/:/opt/deepRetinotopy_TheToolbox/utils/:$PATH
+
+deploy:
+  bins:
+    - wb_view
+    - wb_command
+    - wb_shortcuts
+    - python
+    - deepRetinotopy
+    - signMaps
+    - 1_native2fsaverage.sh
+    - 2_inference.py
+    - 3_fsaverage2native.sh
+    - 4_signmaps.py
+    - transform_polarangle_lh.py
+    - midthickness_surf.py
+
+readme: |-
+  ----------------------------------
+  ## deepretinotopy/{{ context.version }} ##
+
+  This container has FreeSurfer 7.3.2, Connectome Workbench v1.5.0, PyTorch 2.5.1 (gpu), and PyTorch geometric 2.6.1 (gpu). These packages are required for data preparation and model inference. 
+  Use this container for GPU inference and 1.0.11 for CPU inference.
+
+  Example:
+  ```
+  wb_command
+  wb_view
+  wb_shortcuts
+  deepRetinotopy
+  ```
+
+  More documentation can be found here: https://github.com/felenitaribeiro/deepRetinotopy_TheToolbox
+
+  To run the container outside of this environment: ml deepretinotopy/{{ context.version }}
+
+  Citation:
+  ```{% raw %}
+  @article{Ribeiro2022,
+    author = {Ribeiro, Fernanda L and Bollmann, Steffen and Cunnington, Ross and Puckett, Alexander M},
+    arxivId = {2203.08312},
+    journal = {arXiv},
+    keywords = {Geometric deep learning, high-resolution fMRI, vision, retinotopy, explainable AI},
+    title = {{An explainability framework for cortical surface-based deep learning}},
+    url = {https://arxiv.org/abs/2203.08312},
+    year = {2022}
+  }
+
+
+  @article{Ribeiro2021,
+    author = {Ribeiro, Fernanda L and Bollmann, Steffen and Puckett, Alexander M},
+    doi = {https://doi.org/10.1016/j.neuroimage.2021.118624},
+    issn = {1053-8119},
+    journal = {NeuroImage},
+    keywords = {cortical surface, high-resolution fMRI, machine learning, manifold, visual hierarchy,Vision},
+    pages = {118624},
+    title = {{Predicting the retinotopic organization of human visual cortex from anatomy using geometric deep learning}},
+    url = {https://www.sciencedirect.com/science/article/pii/S1053811921008971},
+    year = {2021}
+  }
+  {% endraw %}```
+
+  ----------------------------------
+
+categories:
+  - "machine learning"
+  - "functional imaging"

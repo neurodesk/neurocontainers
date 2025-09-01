@@ -14,6 +14,7 @@ To make the executables and scripts inside this container transparently availabl
 License:
 ```
 Please register and make sure to read and adhere to the license if you use Cartool: https://sites.google.com/site/cartoolcommunity/about-cartool/cartool-registration?authuser=0
+Cartool is free if you use it for public research and non-commercial purposes. Cartool is not free if you are either working with private funding (private research), and/or using Cartool for some commercial purpose (making money through its use)
 ```
 
 Citation:

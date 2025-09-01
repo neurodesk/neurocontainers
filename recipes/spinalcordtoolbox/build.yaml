@@ -1,0 +1,103 @@
+name: spinalcordtoolbox
+version: "6.4"
+
+copyright:
+  - license: LGPL-3.0
+    url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - gcc
+        - ca-certificates
+        - libmpich-dev
+        - python3-pyqt5
+        - git
+        - curl
+        - bzip2
+        - libglib2.0-0
+        - rsync
+
+    - run:
+        - curl -fsSL --retry 5 https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/6.4.tar.gz | tar -xz -C /opt/
+
+    - workdir: /opt/spinalcordtoolbox-6.4
+
+    - run:
+        - chmod a+rwx /opt/spinalcordtoolbox-6.4/ -R
+
+    - user: spinalcordtoolbox
+
+    - run:
+        - yes | ./install_sct -i
+
+    - environment:
+        PATH: /opt/spinalcordtoolbox-6.4/bin/:/bin/:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+        SCT_DIR: /opt/spinalcordtoolbox-6.4/
+
+    - run:
+        - sct_deepseg -install-task seg_exvivo_gm-wm_t2
+
+    - run:
+        - sct_deepseg -install-task seg_tumor-edema-cavity_t1-t2
+
+    - run:
+        - sct_deepseg -install-task seg_tumor_t2
+
+    - run:
+        - sct_deepseg -install-task seg_mice_gm
+
+    - run:
+        - sct_deepseg -install-task seg_mice_sc
+
+    - run:
+        - sct_deepseg -install-task seg_sc_t2star
+
+    - run:
+        - bash /opt/spinalcordtoolbox-6.4/batch_processing.sh
+
+deploy:
+  path:
+    - /opt/spinalcordtoolbox-6.4/bin/
+
+readme: |-
+  ----------------------------------
+  ## spinalcordtoolbox/{{ context.version }} ##
+  CT tools process MRI data (NIfTI files) and can do fully automatic tasks such as:
+  - Segmentation of the spinal cord and gray matter
+  - Segmentation of pathologies (eg. multiple sclerosis lesions)
+  - Detection of anatomical highlights (eg. ponto-medullary junction, spinal cord centerline, vertebral levels)
+  - Registration to template, and deformation (eg. straightening)
+  - Motion correction for diffusion and functional MRI time series
+
+  Computation of quantitative MRI metrics (eg. diffusion tensor imaging, magnetization transfer)
+  - Texture analysis (eg. grey level co-occurrence matrix)
+  - Extraction of metrics within anatomical regions (eg. white matter tracts)
+
+  SCT also has low-level tools:
+  - Help out with manual labeling and segmentation with a Graphical User Interface (GUI)
+  - GUI plugin for FSLeyes
+  - Warping field creation and application
+  - NIFTI volume manipulation tools for common operations
+
+  More documentation can be found here: https://spinalcordtoolbox.com/en/latest/user_section/getting-started.html
+
+  To run container outside of this environment: ml spinalcordtoolbox/{{ context.version }}
+
+  license: LGPLv3 (https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE)
+
+  ----------------------------------
+
+categories:
+  - "spine"

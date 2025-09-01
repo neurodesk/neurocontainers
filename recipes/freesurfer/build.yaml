@@ -1,0 +1,240 @@
+name: freesurfer
+version: 8.1.0
+
+copyright:
+  - name: freesurfer license
+    url: https://github.com/freesurfer/freesurfer/blob/dev/LICENSE.txt
+    
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - octave
+        - wget
+        - language-pack-en
+        - binutils
+        - libx11-dev
+        - gettext
+        - xterm
+        - x11-apps
+        - perl
+        - make
+        - csh
+        - tcsh
+        - file
+        - bc
+        - xorg
+        - xorg-dev
+        - xserver-xorg-video-intel
+        - libncurses5
+        - libbsd0
+        - libegl1
+        - libexpat1
+        - libfontconfig1
+        - libfreetype6
+        - libgl1
+        - libglib2.0-0
+        - libglu1-mesa
+        - libglvnd0
+        - libglx0
+        - libgomp1
+        - libice6
+        - libicu70
+        - libjpeg62
+        - libmd0
+        - libopengl0
+        - libpcre2-16-0
+        - libpng16-16
+        - libquadmath0
+        - libsm6
+        - libx11-6
+        - libx11-xcb1
+        - libxau6
+        - libxcb-icccm4
+        - libxcb-image0
+        - libxcb-keysyms1
+        - libxcb-randr0
+        - libxcb-render-util0
+        - libxcb-render0
+        - libxcb-shape0
+        - libxcb-shm0
+        - libxcb-sync1
+        - libxcb-util1
+        - libxcb-xfixes0
+        - libxcb-xinerama0
+        - libxcb-xinput0
+        - libxcb-xkb1
+        - libxcb1
+        - libxdmcp6
+        - libxext6
+        - libxft2
+        - libxi6
+        - libxkbcommon-x11-0
+        - libxkbcommon0
+        - libxmu6
+        - libxrender1
+        - libxss1
+        - libxt6
+        - mesa-utils
+        - unzip
+        - libncurses5
+        - libgomp1
+        - openjdk-8-jdk
+        - xvfb
+        - xauth
+
+    - run:
+        - wget --quiet https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}/freesurfer_ubuntu22-{{ context.version }}_amd64.deb
+        - dpkg -i freesurfer_ubuntu22-{{ context.version }}_amd64.deb
+        - rm -rf freesurfer_ubuntu22-{{ context.version }}_amd64.deb
+
+    - workdir: /opt/freesurfer-{{ context.version }}
+
+    - template:
+        name: matlabmcr
+        install_path: /opt/MCR2014b
+        version: 2014b
+
+    - run:
+        - ln -s /opt/MCR2014b/v84/ /opt/freesurfer-{{ context.version }}/MCRv84
+
+    - environment:
+        LD_LIBRARY_PATH: ""
+
+    - template:
+        name: matlabmcr
+        install_path: /opt/MCR2019b
+        version: 2019b
+
+    - run:
+        - ln -s /opt/MCR2019b/v97/ /opt/freesurfer-{{ context.version }}/MCRv97
+
+    - environment:
+        FIX_VERTEX_AREA: ""
+        FMRI_ANALYSIS_DIR: /opt/freesurfer-{{ context.version }}/fsfast
+        FREESURFER_HOME: /opt/freesurfer-{{ context.version }}
+        FSFAST_HOME: /opt/freesurfer-{{ context.version }}/fsfast
+        FSF_OUTPUT_FORMAT: nii.gz
+        FS_MCRROOT: /opt/MCR2019b/v97/
+        FS_OCTAVE_BIN: /usr/bin/octave
+        FS_OCTAVE_LIB: /usr/lib/x86_64-linux-gnu/octave/6.4.0
+        FS_OVERRIDE: "0"
+        FS_USE_OCTAVE: "1"
+        FUNCTIONALS_DIR: /opt/freesurfer-{{ context.version }}/sessions
+        LOCAL_DIR: /opt/freesurfer-{{ context.version }}/local
+        MINC_BIN_DIR: /opt/freesurfer-{{ context.version }}/mni/bin
+        MINC_LIB_DIR: /opt/freesurfer-{{ context.version }}/mni/lib
+        MNI_DATAPATH: /opt/freesurfer-{{ context.version }}/mni/data
+        MNI_DIR: /opt/freesurfer-{{ context.version }}/mni
+        MNI_PERL5LIB: /opt/freesurfer-{{ context.version }}/mni/share/perl5
+        OS: Linux
+        PERL5LIB: /opt/freesurfer-{{ context.version }}/mni/share/perl5
+        SHLVL: "1"
+        SUBJECTS_DIR: ~/freesurfer-subjects-dir
+        TERM: xterm
+
+    - workdir: /opt/workbench/
+
+    - run:
+        - wget --quiet -O workbench.zip 'https://humanconnectome.org/storage/app/media/workbench/workbench-linux64-v2.0.1.zip'
+        - unzip workbench.zip
+        - rm -rf workbench.zip
+
+    - environment:
+        FREESURFER: /opt/freesurfer-{{ context.version }}
+        LD_LIBRARY_PATH: $LD_LIBRARY_PATH:/usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib/:/usr/lib64/:/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/opengl/lib/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64
+        PATH: $PATH:/opt/workbench/:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/tktools:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/mni/bin
+
+    - run:
+        - ln -s /usr/local/freesurfer/{{ context.version }}/* /usr/local/freesurfer/
+        - ln -s /usr/local/freesurfer/{{ context.version }}/* /opt/freesurfer-{{ context.version }}
+
+    - workdir: /opt/freesurfer-{{ context.version }}/bin/
+
+    - run:
+        - wget https://raw.githubusercontent.com/freesurfer/freesurfer/refs/heads/dev/AANsegment/linux_x86_64/segmentNuclei
+        - mv segmentNuclei segmentNuclei_mcr84
+        - chmod a+rwx segmentNuclei_mcr84
+
+    - copy:
+        - segmentNuclei
+        - /opt/freesurfer-{{ context.version }}/bin/segmentNuclei
+
+    - run:
+        - chmod a+rwx /opt/freesurfer-{{ context.version }}/bin/segmentNuclei
+
+    - copy:
+        - license.txt
+        - /opt/freesurfer-{{ context.version }}/license.txt
+
+deploy:
+  path:
+    - /opt/freesurfer-{{ context.version }}/bin/
+    - /opt/freesurfer-{{ context.version }}/fsfast/bin/
+
+readme: |-
+  ----------------------------------
+  ## freesurfer/{{ context.version }} ##
+  FreeSurfer contains a set of programs with a common focus of analyzing magnetic resonance imaging scans of brain tissue. It is an important tool in functional brain mapping and contains tools to conduct both volume based and surface based analysis.
+
+  Example:
+  ```
+  # start freesurfer from application menu or load freesurfer via module load command
+  mkdir /neurodesktop-storage/freesurfer_output
+  export SUBJECTS_DIR=/neurodesktop-storage/freesurfer_output
+  export SINGULARITYENV_SUBJECTS_DIR=$SUBJECTS_DIR
+  recon-all -subject subjectname -i invol1.nii.gz -all
+  ```
+
+  More documentation can be found here: https://surfer.nmr.mgh.harvard.edu/fswiki/recon-all
+
+  To run container outside of this environment: ml freesurfer/{{ context.version }}
+
+  Citation: see https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferMethodsCitation
+
+  License: Custom License https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
+  ----------------------------------
+
+files:
+  - name: segmentNuclei
+    contents: |-
+      #!/usr/bin/env bash
+      LD_LIBRARY_PATH=/opt/MCR2014b/v84/runtime/glnxa64:/opt/MCR2014b/v84/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv84/bin segmentNuclei_mcr84 $@
+
+  - name: license.txt
+    contents: |-
+      s.bollmann@uq.edu.au
+      53024
+       *CgH0liqb0e9g
+       FSVt2Z862iDJk
+
+# debug segmentSubjectT1_autoEstimateAlveusML:
+# dnf install strace -y
+# strace segmentSubjectT1_autoEstimateAlveusML
+# this failed because java-1.8.0-openjdk wasn't installed!
+# solution found here: https://github.com/baxpr/freesurfer720/blob/master/Dockerfile
+# for this we needed centos 8 and that's why we can't use the neurodocker version right now
+
+# debug qt and freeview library errors:
+# yum update -y
+# yum install mlocate
+# updatedb
+# locate libQt5XcbQpa.so.5
+
+categories:
+  - "image segmentation"
+  - "structural imaging"
+
+gui_apps:
+  - name: "freeviewGUI"
+    exec: "freeview"

@@ -1,0 +1,54 @@
+name: bidsme
+version: 1.9.3
+architectures:
+  - x86_64
+categories:
+  - data organisation
+structured_readme:
+  description: |
+    BIDSme is a an open-source python tool that converts source-level (raw) neuroimaging datasets to BIDS-conformed, and was developed by Nikita BELIY at the CRC.
+  example: |
+    bidsme
+  documentation: https://github.com/CyclotronResearchCentre/bidsme/blob/dev/doc/cli-interface.md
+  citation: ''
+build:
+  kind: neurodocker
+  base-image: bradley987/bidsme:1.9.3
+  pkg-manager: apt
+  directives:
+    - environment:
+        MPLCONFIGDIR: ~/.config/matplotlib-bidsme
+    - test:
+        name: testScript
+        script: |-
+          #!/bin/bash
+          bidsme
+    - deploy:
+        path: []
+        bins:
+          - bidsme
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAypJREFUSEullstPE1EUxr/blrb2IYXSRNmIke7qio1B1ESKCSas3OAjbkwhTVgYH6E2VqMGW/QvwODCrZGkEkCCGoGKtmI1huhgYqLSgBvATUEq0xkzd6btvFqa2KSdzvN3vu/cc86QO/MenucB4aewBZT74nF6tHiNuA9wnPhHfr/8OeT2O494qwygDypdUwJVDkx4LrmVaigDECPmOHnk4gMrBaRWRAHyiEsXVBexnkXyAMjNt+6KCuT5qcZzdS4poJzn5SwSbNvOceDzNBvUMmMNQAzapJMbb+olgOQ1Byx/YTE6sIH1DE1A8XOwswb7Wkyo3UPw/slffJ1m6bnmViOOBc2wu4kmRyQyVy9ZJHnOASuMCFj9yYIQUgSwLItEIoFAfyd4A4uJR59hNptx4pxXAVAs0+uv67QKGBZjA5tYXWIxNDSEaDQKh8OBSCSC7u5uBINBxKcfYOYpQwH+s8042lujr0AOoAkSFCyWALFYDOFwmKrw+XxYWFhAKBTCw8f3MTepD1AoCM/WCXUqVSjAczxWFvMYvysqYBgGyWQSTqcTfr8fdrsdHo8Hu/ZmMTsqAc4040ivqahAXvlEF8DkMRbdxNoSi1wuh2w2C4PBAJfLBY7j0NXVhQ/fppAYFwHtAqDHBEcDkbUOMafk2oyLL6xdus7zPH4JCmJ/KEBukdVqRSaTod+29hZ8TC4WAW0Bo76C0LRLaxGTx8SgFiAEkEql4PV60djkxqf5EuBwwAiHtEwVFvW/qlVWspSDZ4NbVMHIyAiGh4dppH19fejo6EA8Hsf5nlNIz4mA46cPoC0g5EDsuqVqBogAUFSyCqCug3Q6TZNta9zE7OgXWCyWIsBWr27rALn6crdGgZCDyXs5/F5WVnKh4nwnTdhY5/A9KZ7ff8iA1gtCDpQKaLsWAOpelF3jsfojD45VtmcYCGwuwFZHsJ7JY3uLDhIYLQTuJgKTVVzu8mVPrrxwlmnX1U24neYFufzcqWnX1Q2U6uYFuTTlKNOuxTZcfubKrShYo9Ou1YCdhrh8CZabF4pedHHSXqVF2ogrv4WIDhA9wP/MaPXbyT8ddu68r55lfgAAAABJRU5ErkJggg==
+readme: |-
+  ----------------------------------
+  ## bidsme/{{ context.version }} ##
+
+  BIDSme is a an open-source python tool that converts source-level (raw) neuroimaging datasets to BIDS-conformed, and was developed by Nikita BELIY at the CRC.
+
+  Example:
+  ```
+  bidsme
+  ```
+
+  More documentation can be found here: https://github.com/CyclotronResearchCentre/bidsme/blob/dev/doc/cli-interface.md
+
+  Citation:
+  ```
+
+  ```
+
+  To run container outside of this environment: ml bidsme/{{ context.version }}
+
+  ----------------------------------
+copyright:
+  - license: GPL-2.0-only
+    url: https://github.com/CyclotronResearchCentre/bidsme?tab=GPL-2.0-1-ov-file#readme

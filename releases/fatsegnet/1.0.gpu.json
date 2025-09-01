@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "fatsegnet 1.0.gpu": {
+      "version": "20201212",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "body"
+  ]
+}

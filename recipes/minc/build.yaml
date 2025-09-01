@@ -1,0 +1,54 @@
+name: minc
+version: 1.9.18
+
+copyright:
+  - license: GPL-3.0
+    url: https://github.com/BIC-MNI/minc-toolkit?tab=License-1-ov-file
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:18.04
+  pkg-manager: apt
+
+  directives:
+    - template:
+        name: minc
+        version: 1.9.18
+
+deploy:
+  path:
+    - /opt/minc-1.9.18/bin/
+    - /opt/minc-1.9.18/volgenmodel-nipype/extra-scripts
+    - /opt/minc-1.9.18/pipeline
+
+readme: |-
+  ----------------------------------
+  ## minc/{{ context.version }} ##
+  This software repository contains open-source tools developed at the McConnell Brain Imaging Centre, Montreal Neurological Institute The main documentation site for this repository is located at wikibooks
+
+
+  Example:
+  ```
+  register
+  mincmath
+  minctracc
+  ```
+
+  More documentation can be found here: http://bic-mni.github.io/ and http://bic-mni.github.io/man-pages/
+
+  To run container outside of this environment: ml minc/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - "image segmentation"
+  - "image registration"
+  - "structural imaging"
+
+gui_apps:
+  - name: "registerGUI"
+    exec: "register"

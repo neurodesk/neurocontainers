@@ -9,8 +9,13 @@ Estrada, Santiago, et al. "FatSegNet: A fully automated deep learning pipeline f
 
 Example:
 ```
-fatsegnet
+python3 tool/run_FatSegNet.py \
+-i /YOUR_INFPUT_FOLDER \
+-outp /YOUR_OUTPUT_FOLDER\
+-loc
 ```
+
+Note: This container requires an NVIDIA GPU to run.
 
 More documentation can be found here: https://github.com/Deep-MI/FatSegNet
 

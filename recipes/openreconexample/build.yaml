@@ -1,0 +1,72 @@
+name: openreconexample
+version: 1.0.0
+architectures:
+    - x86_64
+
+files:
+    - name: openreconexample.py
+      filename: openreconexample.py
+
+build:
+    kind: neurodocker
+    base-image: ubuntu:22.04
+    pkg-manager: apt
+
+    directives:
+        - environment:
+              DEBIAN_FRONTEND: noninteractive
+        - install: bzip2 ca-certificates git wget build-essential python3-pip python-is-python3
+
+        - include: macros/openrecon/neurodocker.yaml
+
+        #BET2 application
+        - install:
+              - gcc-aarch64-linux-gnu cmake make build-essential
+
+        - run:
+              - git clone https://github.com/Bostrix/FSL-BET2
+              - cd FSL-BET2
+              - mkdir build
+              - cd build
+              - cmake ..
+              - make
+
+        - environment:
+              PATH: ${PATH}:/opt/code/FSL-BET2/bin
+
+        #openrecon application
+        - copy: openreconexample.py /opt/code/python-ismrmrd-server/openreconexample.py
+
+deploy:
+    path:
+        - /opt/code/FSL-BET2/bin
+
+readme: |-
+    ----------------------------------
+    ## openreconexample/{{ context.version }} ##
+    Example for building an openrecon container in Neurodesk
+
+    make sure that docker is installed: https://www.docker.com/
+
+    make sure that neurodocker is installed:
+    ```
+    python -m pip install neurodocker
+    ```
+
+    #add it to the path, this depends on your python installation!, some examples below:
+    ```
+    export PATH=$PATH:~/.local/bin
+    export PATH=$PATH:~/.local/lib/python3.12/site-packages/bin
+    ```
+
+    make sure the requirements are installed:
+    ```
+    pip install -r requirements.txt
+    ```
+
+    you can build this recipe with:
+    ```bash
+    ./builder/build.py generate openreconexample --recreate --build --login --architecture x86_64
+    ```
+
+    ----------------------------------

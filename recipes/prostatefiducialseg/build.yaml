@@ -1,0 +1,81 @@
+name: prostatefiducialseg
+version: 6.0.0
+architectures:
+    - x86_64
+
+readme_url: https://raw.githubusercontent.com/astewartau/prostate/refs/heads/main/README.md
+
+variables:
+    conda_version: "4.12.0"
+    conda_download_url:
+        try:
+            - value: "https://repo.anaconda.com/miniconda/Miniconda3-py39_{{ context.conda_version }}-Linux-x86_64.sh"
+              condition: arch=="x86_64"
+
+files:
+    - name: prostatefiducialseg.py
+      filename: prostatefiducialseg.py
+
+build:
+    kind: neurodocker
+    base-image: ubuntu:22.04
+    pkg-manager: apt
+
+    directives:
+        - environment:
+              DEBIAN_FRONTEND: noninteractive
+        - install: bzip2 ca-certificates git wget build-essential
+
+        # Miniconda installer
+        - workdir: /tmp
+        - run:
+              - curl -fsSL -o miniconda.sh {{ context.conda_download_url }}
+              - bash miniconda.sh -b -p /opt/miniconda-{{ context.conda_version }}
+              - rm miniconda.sh
+        - environment:
+              PATH: /opt/miniconda-{{ context.conda_version }}/bin:$PATH
+        - run:
+              - conda config --system --prepend channels conda-forge
+              - conda config --system --set channel_priority strict
+              - conda clean --all --yes
+
+        # install mamba to speed up installs
+        - run:
+              - conda install mamba
+              - mamba clean --all --yes
+
+        - run:
+              - mamba install -y --name base "python=3.10"
+              - mamba clean --all --yes
+
+        - include: macros/openrecon/neurodocker.yaml
+
+        # install large pip packages
+        - run:
+              - pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+              - pip install torchio
+
+        # install small pip packages
+        - run:
+              - pip install SimpleITK nibabel osfclient pandas scikit-learn
+
+        # download model
+        - workdir: /opt
+        - run:
+              - mkdir -p /opt/models
+              - osf -p f7hjv fetch T1-20250730-021818-0-best.pth /opt/models/model.pth
+
+        # clone prostate segmentation repository
+        - workdir: /opt
+        - run:
+              - git clone https://github.com/astewartau/prostate-fiducial-seg.git
+              - cd /opt/prostate-fiducial-seg
+              - git checkout 0aacf08
+              - chmod +x simple_predict.py
+        - environment:
+              PATH: /opt/prostate-fiducial-seg:$PATH
+        - copy: prostatefiducialseg.py /opt/code/python-ismrmrd-server/prostatefiducialseg.py 
+
+deploy:
+    bins:
+        - simple_predict.py

@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "qsirecon 1.1.0": {
+      "version": "20250423",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ]
+}

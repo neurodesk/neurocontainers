@@ -1,0 +1,59 @@
+name: fitlins
+version: 0.11.0
+epoch: 1
+architectures:
+  - x86_64
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - install: graphviz
+    - template:
+        name: miniconda
+        version: py39_25.5.1-0
+        install_path: /opt/miniconda
+        mamba: true
+    - run:
+        - conda install mkl=2021.4 mkl-service=2.4 numpy=1.21 scipy=1.8 networkx=2.7 scikit-learn=1.0 scikit-image matplotlib=3.5 seaborn=0.11 pytables=3.6 pandas=1.3 pytest nbformat nb_conda traits=6.2
+    - run:
+        - pip install fitlins=0.11.0
+    - run: 
+        - conda install -c leej3 afni-minimal
+  add-default-template: true
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/poldracklab/fitlins/blob/master/LICENSE
+readme: |-
+  ----------------------------------
+  ## fitlins/0.11.0 ##
+
+  FitLins is a tool for estimating linear models, defined by the BIDS Stats-Models specification proposal, to BIDS-formatted datasets.
+
+  FitLins is developed against fMRIPrep-preprocessed datasets, but is intended to work with any dataset following the BIDS Derivatives draft specification.
+
+  Example:
+  ```
+  fitlins data/bids_root/ out/ participant -d data/derivatives/fmriprep/ -w work/
+  ```
+
+  More documentation can be found here: https://fitlins.readthedocs.io/en/latest/index.html
+
+  Citation:
+  ```
+  https://zenodo.org/records/7217447
+  ```
+
+  To run container outside of this environment: ml fitlins/0.11.0
+
+  ----------------------------------
+categories:
+  - functional imaging
+structured_readme:
+  description: |-
+    FitLins is a tool for estimating linear models, defined by the BIDS Stats-Models specification proposal, to BIDS-formatted datasets.
+
+    FitLins is developed against fMRIPrep-preprocessed datasets, but is intended to work with any dataset following the BIDS Derivatives draft specification.
+  example: '  fitlins data/bids_root/ out/ participant -d data/derivatives/fmriprep/ -w work/'
+  documentation: '  https://fitlins.readthedocs.io/en/latest/index.html'
+  citation: https://zenodo.org/records/7217447

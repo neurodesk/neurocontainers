@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "romeo 3.2.4": {
+      "version": "20211015",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "phase processing"
+  ]
+}

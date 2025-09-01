@@ -1,0 +1,120 @@
+name: quickshear
+version: 1.1.0
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/nipy/quickshear/blob/master/LICENSE
+
+architectures:
+    - x86_64
+
+build:
+    kind: neurodocker
+
+    base-image: freesurfer/synthstrip:1.6
+    pkg-manager: apt
+
+    directives:
+        - environment:
+              DEBIAN_FRONTEND: noninteractive
+
+        - workdir: /opt
+
+        - install:
+              - wget
+              - git
+              - curl
+              - ca-certificates
+              - python3
+              - python3-pip
+
+        - run:
+              - pip install quickshear==1.2.0
+
+        - install:
+              - build-essential
+              - libxslt1.1
+              - libhdf5-103
+              - libboost-program-options1.74.0
+              - libpugixml1v5
+              - vim
+              - dos2unix
+              - git
+              - cmake
+              - g++
+              - libhdf5-dev
+              - libxml2-dev
+              - libxslt1-dev
+              - libboost-all-dev
+              - libfftw3-dev
+              - libpugixml-dev
+
+        - workdir: /opt/code
+
+        - run:
+              - git clone https://github.com/ismrmrd/ismrmrd.git
+              - cd ./ismrmrd
+              - cmake .
+              - make -j $(nproc)
+              - make install
+
+        - run:
+              - git clone https://github.com/ismrmrd/siemens_to_ismrmrd.git
+              - cd siemens_to_ismrmrd
+              - mkdir build
+              - cd build
+              - cmake ..
+              - make -j $(nproc)
+              - make install
+
+        - run:
+              - pip3 install h5py ismrmrd matplotlib pydicom pynetdicom nibabel
+
+        - run:
+              - git clone https://github.com/ismrmrd/ismrmrd-python-tools.git
+              - cd ismrmrd-python-tools
+              - pip3 install --no-cache-dir .
+
+        - run:
+              - git clone https://github.com/kspaceKelvin/python-ismrmrd-server
+              - find /opt/code/python-ismrmrd-server -name "*.sh" -exec chmod +x {} \;
+              - find /opt/code/python-ismrmrd-server -name "*.sh" | xargs dos2unix
+
+        - copy: invertcontrast.py /opt/code/python-ismrmrd-server/invertcontrast.py
+
+        - entrypoint: bash
+
+deploy:
+    bins:
+        - quickshear
+
+readme: |
+    ----------------------------------
+    ## quickshear/{{ context.version }} ##
+    Quickshear uses a skull stripped version of an anatomical image as a reference to deface the unaltered anatomical image.
+
+    Example:
+    ```
+    mri_synthstrip -i input.nii.gz -o stripped.nii.gz -m mask.nii.gz
+    quickshear input.nii.gz mask.nii.gz defaced.nii.gz
+    ```
+
+    More documentation can be found here: [link_to_documentation](https://github.com/nipy/quickshear)
+
+    To make the executables and scripts inside this container transparently available in the command line of environments where Neurocommand is installed: ml quickshear/{{ context.version }}
+
+    Citation:
+    ```
+    Schimke, Nakeisha, and John Hale. \u201CQuickshear defacing for neuroimages.\u201D Proceedings of the 2nd USENIX conference on Health security and privacy. USENIX Association, 2011.
+    ```
+
+    Licenses: BSD-3-Clause license
+
+    ----------------------------------
+
+files:
+    - name: invertcontrast.py
+      filename: invertcontrast.py
+
+categories:
+  - "data organisation"

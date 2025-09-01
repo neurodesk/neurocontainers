@@ -1,0 +1,120 @@
+# this template file builds cat12, new versions here: http://141.35.69.218/cat12/?C=M;O=D
+name: cat12
+version: "12.9"
+draft: true
+
+copyright:
+  - license: GPL-2.0
+    url: https://github.com/ChristianGaser/cat12?tab=GPL-2.0-1-ov-file#readme
+    
+# https://github.com/ChristianGaser/cat12/releases
+# with 12.9 we use the new versioning scheme instead of the old (r****)
+
+# inspired by: https://github.com/m-wierzba/cat-container/blob/master/Singularity
+# discussed here: https://github.com/ReproNim/neurodocker/issues/407
+
+architectures:
+  - x86_64
+
+variables:
+  matlab_version: 2023b
+  cat12_version: "{{ context.version }}_R{{ context.matlab_version }}"
+
+files:
+  - name: cat12.zip
+    url: https://dbm.neuro.uni-jena.de/cat12/CAT{{ context.version }}_R{{ context.matlab_version }}_MCR_Linux.zip
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:16.04
+  pkg-manager: apt
+
+  directives:
+    - template:
+        name: matlabmcr
+        version: "{{ context.matlab_version }}"
+        install_path: /opt/mcr
+
+    - template:
+        name: miniconda
+        version: latest
+        conda_install: "python=3.9 traits nipype numpy scipy h5py scikit-image"
+        pip_install: "osfclient"
+
+    - group:
+        # Based on: https://github.com/ReproNim/neurodocker/blob/91e3247ffb0d176f77c3ac3b3837acf8f252fd06/neurodocker/templates/cat12.yaml
+        - install: ca-certificates curl unzip
+        - run:
+            # Install cat12
+            - unzip -q {{ get_file("cat12.zip") }} -d /tmp
+            - mkdir -p {{ local.install_path }}
+            - mv /tmp/*{{ context.cat12_version }}*/* {{ local.install_path }}/
+            - chmod -R 777 {{ local.install_path }}
+        - run:
+            # Test
+            - "{{ local.install_path }}/spm12 function exit"
+            # Fix m file
+            - rm {{ local.install_path }}/spm12_mcr/home/gaser/gaser/spm/spm12/toolbox/cat12/cat_long_main.m
+            - cp {{ local.install_path }}/spm12_mcr/home/gaser/gaser/spm/spm12/toolbox/cat12/cat_long_main.txt {{ local.install_path }}/spm12_mcr/home/gaser/gaser/spm/spm12/toolbox/cat12/cat_long_main.m
+        - environment:
+            FORCE_SPMMCR: "1"
+            SPM_HTML_BROWSER: "0"
+            MCR_INHIBIT_CTF_LOCK: "1"
+            SPMROOT: "{{ local.install_path }}"
+            PATH: "{{ local.install_path }}:$PATH"
+      with:
+        install_path: /opt/cat12
+
+deploy:
+  bins:
+    - run_spm12.sh
+    - spm12
+
+readme: |
+  ----------------------------------
+  ## cat12/{{ context.version }} ##
+  SPM12 standalone with CAT12 toolbox in Matlab Compiler Runtime
+
+  Example:
+  ```
+  run_spm12.sh /opt/mcr/v93/
+  ```
+
+  Example with nipype:
+  ```
+  osf -p bt4ez fetch TOMCAT_DIB/sub-01/ses-01_7T/anat/sub-01_ses-01_7T_T1w_defaced.nii.gz /neurodesktop-storage/sub-01_ses-01_7T_T1w_defaced.nii.gz
+
+  gunzip /neurodesktop-storage/sub-01_ses-01_7T_T1w_defaced.nii.gz
+
+  python
+  ```
+
+  in python run:
+  ```
+  import nipype.interfaces.spm as spm
+
+  matlab_cmd = '/opt/cat12/run_spm12.sh /opt/mcr/v93/ script'
+  spm.SPMCommand.set_mlab_paths(matlab_cmd=matlab_cmd, use_mcr=True)
+
+  import nipype.interfaces.cat12 as cat12
+
+  cat = cat12.CAT12Segment(in_files='/neurodesktop-storage/sub-01_ses-01_7T_T1w_defaced.nii')
+  cat.run() 
+
+  ```
+
+  More documentation can be found here: http://141.35.69.218/cat12/CAT12-Manual.pdf
+
+  To run container outside of this environment: ml cat12/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - "image segmentation"
+  - "image registration"
+  - "structural imaging"
+
+gui_apps:
+  - name: "cat12GUI"
+    exec: "bash run_spm12.sh /opt/mcr/v93/"

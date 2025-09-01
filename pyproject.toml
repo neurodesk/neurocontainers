@@ -1,0 +1,23 @@
+[project]
+name = "neurocontainers"
+version = "0.1.0"
+description = "Neurocontainers YAML Build System"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "jinja2>=3.1.6",
+    "pyyaml>=6.0.2",
+    "neurodocker>=1.0.1",
+    "attrs>=23.0.0",
+]
+
+[tool.setuptools]
+packages = ["builder"]
+
+[project.scripts]
+    sf-generate = "builder.build:generate_main"
+    sf-build = "builder.build:build_main"
+    sf-login = "builder.build:login_main"
+    sf-test = "builder.build:test_main"
+    sf-init = "builder.build:init_main"
+    sf-make = "builder.build:sf_make_main"

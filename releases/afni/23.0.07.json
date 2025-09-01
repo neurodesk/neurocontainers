@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "afni 23.0.07": {
+      "version": "20230302",
+      "exec": ""
+    },
+    "sumaGUI-afni 23.0.07": {
+      "version": "20230302",
+      "exec": "suma"
+    }
+  },
+  "categories": [
+    "functional imaging"
+  ]
+}

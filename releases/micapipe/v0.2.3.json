@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "micapipe v0.2.3": {
+      "version": "20241030",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "structural imaging",
+    "diffusion imaging",
+    "functional imaging",
+    "workflows"
+  ]
+}

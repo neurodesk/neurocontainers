@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "elastix 5.1.0": {
+      "version": "20230407",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "image registration"
+  ]
+}

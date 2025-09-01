@@ -1,0 +1,193 @@
+name: afni
+version: 25.2.03
+# https://hub.docker.com/r/afni/afni_make_build/tags
+# https://afni.nimh.nih.gov/about_afni
+
+copyright:
+  - license: GPL-3.0
+    url: https://afni.nimh.nih.gov/legal_info
+
+architectures:
+  - x86_64
+
+structured_readme:
+  description: AFNI (Analysis of Functional NeuroImages) is a leading software suite of C, Python, R programs and shell scripts primarily developed for the analysis and display of anatomical and functional MRI (FMRI) data. It is freely available (both in source code and in precompiled binaries) for research purposes. The software is made to run on virtually any Unix system with X11 and Motif displays. Binary Packages are provided for MacOS and Linux systems including Fedora, Ubuntu (including Ubuntu under the Windows Subsystem for Linux) 
+  example: |-
+    To setup AFNI you need to run these commands on first use
+    cp /opt/afni-latest/AFNI.afnirc ~/.afnirc
+    suma -update_env
+    apsearch -update_all_afni_help
+    # but don't add the commands to your .bashrc because this will cause errors outside of the AFNI container
+    # If you like to setup autocompletion for afni you need to run this any time you use the AFNI container:
+    ahdir=`apsearch -afni_help_dir`
+    if [ -f "$ahdir/all_progs.COMP.bash" ]
+    then
+      . $ahdir/all_progs.COMP.bash
+    fi
+    #example commands:
+    suma
+    afni
+  documentation: https://afni.nimh.nih.gov/pub/dist/doc/htmldoc/index.html
+  citation: 'Cox RW (1996). AFNI: software for analysis and visualization of functional magnetic resonance neuroimages. Comput Biomed Res 29(3):162-173. doi:10.1006/cbmr.1996.0014
+      https://pubmed.ncbi.nlm.nih.gov/8812068/
+      RW Cox, JS Hyde (1997). Software tools for analysis and visualization of FMRI Data. NMR in Biomedicine, 10: 171-178.
+      https://pubmed.ncbi.nlm.nih.gov/9430344/'
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - software-properties-common
+    
+    - run:
+        - add-apt-repository universe -y
+    
+    - install:
+        - libgdal-dev
+        - libopenblas-dev
+        - libnode-dev
+        - libudunits2-dev
+        - r-base
+        - r-base-dev
+        - tcsh
+        - xfonts-base
+        - libssl-dev
+        - python-is-python3
+        - python3-matplotlib
+        - python3-numpy
+        - python3-flask
+        - python3-flask-cors
+        - python3-pil
+        - gsl-bin
+        - netpbm
+        - gnome-tweaks
+        - libjpeg62
+        - xvfb
+        - xterm
+        - vim
+        - curl
+        - gedit
+        - evince
+        - eog
+        - libglu1-mesa-dev
+        - libglw1-mesa-dev
+        - libxm4
+        - build-essential
+        - libcurl4-openssl-dev
+        - libxml2-dev
+        - libgfortran-14-dev
+        - libgomp1
+        - gnome-terminal
+        - nautilus
+        - firefox
+        - xfonts-100dpi
+        - r-base-dev
+        - cmake
+        - bc
+        - git
+        - libxext-dev
+        - libxmu-dev
+        - libxpm-dev
+        - libgsl-dev
+        - libglut-dev
+        - libxi-dev
+        - libglib2.0-dev
+
+    - run:
+        - cd /usr/include/GL
+        - mv GLwDrawA.h GLwDrawA.h.orig
+        - sed 's/GLAPI WidgetClass/extern GLAPI WidgetClass/' GLwDrawA.h.orig > /tmp/GLwDrawA.h
+        - mv /tmp/GLwDrawA.h GLwDrawA.h
+
+    - workdir: /opt
+
+    - run:
+        - curl -O https://afni.nimh.nih.gov/pub/dist/bin/misc/@update.afni.binaries
+        - tcsh @update.afni.binaries -package linux_ubuntu_24_64 -do_extras
+        - mv /root/abin /usr/local/abin
+
+    - environment:
+        PATH: /usr/local/abin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+        R_LIBS: /usr/local/share/R-4.3
+
+    - run:
+        - curl -O https://afni.nimh.nih.gov/pub/dist/tgz/package_libs/linux_ubuntu_24_R-4.3_libs.tgz
+        - tar -xf linux_ubuntu_24_R-4.3_libs.tgz
+        - mv linux_ubuntu_24_R-4.3_libs /usr/local/share/R-4.3
+        - rm -f linux_ubuntu_24_R-4.3_libs.tgz
+
+    - run:
+        - rPkgsInstall -pkgs ALL
+
+    - run:
+        - |
+          # AFNI Version Check - validate installed version matches expected version
+          echo "=== AFNI Version Check ==="
+          echo "Expected version: {{ context.version }}"
+          
+          # Check if AFNI is installed
+          if ! command -v afni_system_check.py >/dev/null 2>&1; then
+            echo "✗ ERROR: afni_system_check.py not found - AFNI may not be installed"
+            exit 1
+          fi
+          
+          if ! command -v afni >/dev/null 2>&1; then
+            echo "✗ ERROR: afni executable not found"
+            exit 1
+          fi
+          
+          # Check AFNI binaries directory
+          if [ ! -d "/usr/local/abin" ]; then
+            echo "✗ ERROR: AFNI binaries directory not found"
+            exit 1
+          fi
+          
+          echo "✓ AFNI installation checks passed"
+          
+          # Get version from afni_system_check.py
+          echo "=== Getting AFNI Version ==="
+          VERSION_OUTPUT=$(afni_system_check.py -check_all 2>&1)
+          
+          # Check if we can find expected version in the output
+          if echo "$VERSION_OUTPUT" | grep -q "{{ context.version }}"; then
+            echo "✓ SUCCESS: Found expected version {{ context.version }}"
+          else
+            echo "✗ ERROR: Expected version {{ context.version }} not found in system check output"
+            echo "Version check output (first 20 lines):"
+            echo "$VERSION_OUTPUT" | head -20
+            echo "This indicates a version mismatch. Build failed."
+            exit 1
+          fi
+          
+          echo "✓ AFNI version validation completed successfully"
+
+    - template:
+        name: freesurfer
+        version: 7.4.1
+
+    - environment:
+        SUBJECTS_DIR: "~/freesurfer-subjects-dir"
+        DEPLOY_PATH: /usr/local/abin/
+
+    - copy: dependencies.R /opt
+    - copy: test.tgz /opt/test.tgz
+    - copy: license.txt /opt/freesurfer-7.4.1/license.txt
+
+    - run:
+        - Rscript /opt/dependencies.R
+
+    - workdir: /opt
+
+deploy:
+  path:
+    - /usr/local/abin/
+
+categories:
+  - "functional imaging"
+
+gui_apps:
+  - name: "sumaGUI"
+    exec: "suma"

@@ -1,0 +1,55 @@
+name: heudiconv
+version: 1.3.1
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/nipy/heudiconv/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: nipy/heudiconv:1.3.1
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - copy: test.sh /test.sh
+
+deploy:
+  bins:
+    - heudiconv
+
+readme: |
+  ----------------------------------
+  ## heudiconv/{{ context.version }} ##
+  heudiconv is a flexible DICOM converter for organizing brain imaging data into structured directory layouts.
+
+  Example:
+  ```
+  heudiconv  --files dicom/219/itbs/*/*.dcm -o Nifti -f Nifti/code/heuristic1.py -s 219 -ss itbs -c dcm2niix -b --minmeta --overwrite
+  ```
+
+  More documentation can be found here: https://heudiconv.readthedocs.io/en/latest/quickstart.html
+
+  To make the executables and scripts inside this container transparently available in the command line of environments where Neurocommand is installed: ml heudiconv/{{ context.version }}
+
+  Citation:
+  ```
+  Halchenko, Yaroslav O., Mathias Goncalves, Satrajit Ghosh, Pablo Velasco, Matteo Visconti Di Oleggio Castello, Taylor Salo, John T. Wodder Ii, et al. \u201CHeuDiConv \u2014 Flexible DICOM Conversion into Structureddirectory Layouts.\u201D Journal of Open Source Software 9, no. 99 (July 3, 2024): 5839. https://doi.org/10.21105/joss.05839.
+  ```
+
+  License: Apache License, Version 2.0
+
+  ----------------------------------
+
+files:
+  - name: test.sh
+    contents: heudiconv
+
+categories:
+  - "data organisation"

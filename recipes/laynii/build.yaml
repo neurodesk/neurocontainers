@@ -1,0 +1,78 @@
+name: laynii
+version: 2.2.1
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/layerfMRI/LAYNII/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:18.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - wget
+        - ca-certificates
+        - unzip
+
+    - workdir: /opt/laynii-2.2.1/
+
+    - run:
+        - wget https://github.com/layerfMRI/LAYNII/releases/download/v2.2.1/LayNii_v2.2.1_Linux64.zip
+        - unzip LayNii_v2.2.1_Linux64.zip
+        - rm LayNii_v2.2.1_Linux64.zip
+
+    - environment:
+        PATH: $PATH:/opt/laynii-2.2.1/
+
+deploy:
+  path:
+    - /opt/laynii-2.2.1/
+
+readme: |-
+  ----------------------------------
+  ## LayNii/{{ context.version }} ##
+  LayNii is a standalone software suite for mesoscopic (functional) magnetic resonance imaging (e.g. layer-fMRI).
+  It is a collection of C++ programs that depend only on a C++ compiler.
+  The purpose of this package is to provide layer-analysis software that are not (yet) included in the other major MRI analysis software.
+
+  Example:
+  ```
+  cp -r /opt/laynii-{{ context.version }}/test_data/ ~
+  cd ~/test_data
+  LN2_LAYERS -rim sc_rim.nii -nr_layers 10 -equivol
+  LN2_LAYER_SMOOTH -input sc_VASO_act.nii -layer_file sc_layers.nii -FWHM 1
+  LN_BOCO -Nulled lo_Nulled_intemp.nii -BOLD lo_BOLD_intemp.nii
+  ```
+
+  Tests:
+  ```
+  cp -r /opt/laynii-{{ context.version }}/ ~
+  cd ~/laynii-{{ context.version }}/test_data
+  ./tests.sh
+  ```
+
+  More documentation can be found here: https://github.com/layerfMRI/LAYNII
+  Algorithm explanations can be found here: https://thingsonthings.org/
+  and here: https://layerfmri.com/category/laynii/
+  Video tutorials of how to use LayNii are available here: https://youtube.com/playlist?list=PLs_umVHtShfadNm8brOweXHUSmqVDTk4q
+
+  To run applications outside of this container: ml laynii/{{ context.version }}
+
+  Citation:
+  ```
+  Huber, L., Poser, B. A., Bandettini, P. A., Arora, K., Wagstyl, K., Cho, S., Goense, J., Nothnagel, N., Morgan, A. T., van den Hurk, J., Mueller A. K., Reynolds, R. C., Glen, D. R., Goebel, R. W., Gulban, O. F. (2021). LayNii: A software suite for layer-fMRI. NeuroImage, 118091. https://doi.org/10.1016/j.neuroimage.2021.118091
+  ```
+
+  ----------------------------------
+
+categories:
+  - "functional imaging"

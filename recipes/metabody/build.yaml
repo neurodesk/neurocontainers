@@ -1,0 +1,143 @@
+name: metabody
+version: 1.0.0
+architectures:
+    - x86_64
+
+files:
+    - name: metabody.py
+      filename: metabody.py
+
+readme_url: https://raw.githubusercontent.com/astewartau/prostate/refs/heads/main/README.md
+
+variables:
+    conda_version: "4.12.0"
+    conda_download_url:
+        try:
+            - value: "https://repo.anaconda.com/miniconda/Miniconda3-py39_{{ context.conda_version }}-Linux-x86_64.sh"
+              condition: arch=="x86_64"
+
+build:
+    kind: neurodocker
+    base-image: ubuntu:24.04
+    pkg-manager: apt
+
+    directives:
+        - environment:
+              DEBIAN_FRONTEND: noninteractive
+        - install: bzip2 ca-certificates git wget build-essential software-properties-common
+
+        - run:
+            - add-apt-repository universe -y
+        
+        - install:
+            - libgdal-dev
+            - libopenblas-dev
+            - libnode-dev
+            - libudunits2-dev
+            - r-base
+            - r-base-dev
+            - tcsh
+            - xfonts-base
+            - libssl-dev
+            - python-is-python3
+            - python3-matplotlib
+            - python3-numpy
+            - python3-flask
+            - python3-flask-cors
+            - python3-pil
+            - gsl-bin
+            - netpbm
+            - gnome-tweaks
+            - libjpeg62
+            - xvfb
+            - xterm
+            - vim
+            - curl
+            - gedit
+            - evince
+            - eog
+            - libglu1-mesa-dev
+            - libglw1-mesa-dev
+            - libxm4
+            - build-essential
+            - libcurl4-openssl-dev
+            - libxml2-dev
+            - libgfortran-14-dev
+            - libgomp1
+            - gnome-terminal
+            - nautilus
+            - firefox
+            - xfonts-100dpi
+            - r-base-dev
+            - cmake
+            - bc
+            - git
+            - libxext-dev
+            - libxmu-dev
+            - libxpm-dev
+            - libgsl-dev
+            - libglut-dev
+            - libxi-dev
+            - libglib2.0-dev
+
+        - run:
+            - cd /usr/include/GL
+            - mv GLwDrawA.h GLwDrawA.h.orig
+            - sed 's/GLAPI WidgetClass/extern GLAPI WidgetClass/' GLwDrawA.h.orig > /tmp/GLwDrawA.h
+            - mv /tmp/GLwDrawA.h GLwDrawA.h
+
+        - workdir: /opt
+
+        - run:
+            - curl -O https://afni.nimh.nih.gov/pub/dist/bin/misc/@update.afni.binaries
+            - tcsh @update.afni.binaries -package linux_ubuntu_24_64 -do_extras
+            - mv /root/abin /usr/local/abin
+
+        - environment:
+            PATH: /usr/local/abin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+            R_LIBS: /usr/local/share/R-4.3
+
+        - run:
+            - curl -O https://afni.nimh.nih.gov/pub/dist/tgz/package_libs/linux_ubuntu_24_R-4.3_libs.tgz
+            - tar -xf linux_ubuntu_24_R-4.3_libs.tgz
+            - mv linux_ubuntu_24_R-4.3_libs /usr/local/share/R-4.3
+            - rm -f linux_ubuntu_24_R-4.3_libs.tgz
+
+        - run:
+            - rPkgsInstall -pkgs ALL
+
+       # Miniconda installer
+        - workdir: /tmp
+        - run:
+              - curl -fsSL -o miniconda.sh {{ context.conda_download_url }}
+              - bash miniconda.sh -b -p /opt/miniconda-{{ context.conda_version }}
+              - rm miniconda.sh
+        - environment:
+              PATH: /opt/miniconda-{{ context.conda_version }}/bin:$PATH
+        - run:
+              - conda config --system --prepend channels conda-forge
+              - conda config --system --set channel_priority strict
+              - conda clean --all --yes
+
+        # install mamba to speed up installs
+        - run:
+              - conda install mamba
+              - mamba clean --all --yes
+
+        - run:
+              - mamba install -y --name base "python=3.10"
+              - mamba clean --all --yes
+
+        - include: macros/openrecon/neurodocker.yaml
+
+        - copy: metabody.py /opt/code/python-ismrmrd-server/metabody.py
+        - copy: afni_processing.sh /opt/code/afni_processing.sh
+        - run:
+              - mkdir -p /opt/code/stim_times
+              - git clone https://github.com/thomshaw92/BodyLocaliser.git /opt/code/BodyLocaliser
+              - cp /opt/code/BodyLocaliser/sub-1_TBS/sub-1_run-1*.1D /opt/code/stim_times/
+
+        # install small pip packages
+        - run:
+              - pip install SimpleITK nibabel pandas scikit-learn dcm2niix
+

@@ -1,0 +1,52 @@
+builder: neurodocker
+
+directives:
+  - workdir: /opt/code
+
+  - install:
+      - build-essential
+      - libxslt1.1
+      - libboost-program-options1.74.0
+      - libpugixml1v5
+      - vim
+      - dos2unix
+      - git
+      - cmake
+      - g++
+      - libhdf5-dev
+      - libxml2-dev
+      - libxslt1-dev
+      - libboost-all-dev
+      - libfftw3-dev
+      - libpugixml-dev
+
+  - run:
+      - git clone https://github.com/ismrmrd/ismrmrd.git
+      - cd ./ismrmrd
+      - cmake .
+      - make -j {{ parallel_jobs }}
+      - make install
+
+  - run:
+      - git clone https://github.com/ismrmrd/siemens_to_ismrmrd.git
+      - cd siemens_to_ismrmrd
+      - mkdir build
+      - cd build
+      - cmake ..
+      - make -j {{ parallel_jobs }}
+      - make install
+
+  - run:
+      - pip3 install h5py ismrmrd matplotlib pydicom==3.0.1 pynetdicom nibabel scipy scikit-image 
+
+  - run:
+      - git clone https://github.com/ismrmrd/ismrmrd-python-tools.git
+      - cd ismrmrd-python-tools
+      - pip3 install --no-cache-dir .
+
+  - run:
+      - git clone https://github.com/kspaceKelvin/python-ismrmrd-server
+      - find /opt/code/python-ismrmrd-server -name "*.sh" -exec chmod +x {} \;
+      - find /opt/code/python-ismrmrd-server -name "*.sh" | xargs dos2unix
+    # replace 'invertcontrast' in main.py with 'default_replace_with_valid_name' to avoid running 
+      - sed -i 's/invertcontrast/default_replace_with_valid_name/g' /opt/code/python-ismrmrd-server/main.py

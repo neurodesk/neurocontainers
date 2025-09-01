@@ -1,0 +1,112 @@
+name: niimath
+version: 1.0.20250529
+copyright:
+  - license: BSD-2-Clause
+    url: https://github.com/rordenlab/niimath/blob/master/LICENSE
+architectures:
+  - x86_64
+  - aarch64
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+  directives:
+    - install: build-essential git libz-dev file
+    - group:
+        - variables:
+            github_url: https://github.com/rordenlab/niimath.git
+            revision: 99a2e19526b0e4192b27cfd577729c72afec88c2
+        - run:
+            - git clone {{ local.github_url }} /tmp/niimath
+            - cd /tmp/niimath
+            - git reset --hard {{ local.revision }}
+            - cd ./src
+            - make static -j{{ parallel_jobs }}
+            - cp niimath /usr/bin
+            - rm -rf /tmp/niimath
+    - deploy:
+        bins:
+          - niimath
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+    - test:
+        name: Test NiiMath
+        script: |
+          #!/usr/bin/env bash
+          file /usr/bin/niimath
+          niimath
+categories:
+  - data organisation
+structured_readme:
+  description: >-
+    It is said that `imitation is the sincerest form of flattery`. This project
+    emulates the popular
+    [fslmaths](https://fsl.fmrib.ox.ac.uk/fslcourse/lectures/practicals/intro3/index.html)
+    tool. fslmaths is advertised as a `general image calculator` and is not only
+    one of the foundational tools for FSL's brain imaging pipelines (such as
+    [FEAT](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT)), but has also been
+    widely adopted by many tools. This popularity suggests that it fulfills an
+    important niche. While scientists are often encouraged to discover novel
+    solutions, it sometimes seems that replication is undervalued. Here are some
+    specific reasons for creating this tool:
+  example: >-
+    niimath provides the same commands as
+    [fslmaths](https://mandymejia.com/fsl-maths-commands/), so you can use it
+    just as you would fslmaths. If you are brave, you can even rename it
+    fslmaths and use it as a drop in replacement. You can also modify your
+    environment variables to unleash advanced features:
+  documentation: https://github.com/rordenlab/niimath
+  citation: >-
+    Rorden C, Webster M, Drake C, Jenkinson M, Clayden JD, Li N, Hanayik T
+    (2024) niimath and fslmaths: replication as a method to enhance popular
+    neuroimaging tools. Aperture Neuro.4. doi:10.52294/001c.94384
+readme: >-
+  ----------------------------------
+
+  ## niimath/1.0.0 ##
+
+
+  It is said that `imitation is the sincerest form of flattery`. This project
+  emulates the popular
+  [fslmaths](https://fsl.fmrib.ox.ac.uk/fslcourse/lectures/practicals/intro3/index.html)
+  tool. fslmaths is advertised as a `general image calculator` and is not only
+  one of the foundational tools for FSL's brain imaging pipelines (such as
+  [FEAT](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT)), but has also been widely
+  adopted by many tools. This popularity suggests that it fulfills an important
+  niche. While scientists are often encouraged to discover novel solutions, it
+  sometimes seems that replication is undervalued. Here are some specific
+  reasons for creating this tool:
+
+
+  Example:
+
+  ```
+
+  niimath provides the same commands as
+  [fslmaths](https://mandymejia.com/fsl-maths-commands/), so you can use it just
+  as you would fslmaths. If you are brave, you can even rename it fslmaths and
+  use it as a drop in replacement. You can also modify your environment
+  variables to unleash advanced features:
+
+  ```
+
+
+  More documentation can be found here: https://github.com/rordenlab/niimath
+
+
+  Citation:
+
+  ```
+
+  Rorden C, Webster M, Drake C, Jenkinson M, Clayden JD, Li N, Hanayik T (2024)
+  niimath and fslmaths: replication as a method to enhance popular neuroimaging
+  tools. Aperture Neuro.4. doi:10.52294/001c.94384
+
+  ```
+
+
+  To run container outside of this environment: ml niimath/1.0.0
+
+
+  ----------------------------------

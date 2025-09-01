@@ -1,0 +1,84 @@
+name: gouhfi
+version: 0.0.1
+architectures:
+  - x86_64
+structured_readme:
+  description: GOUHFI is a fully automatic, contrast- and resolution-agnostic, DL-based brain segmentation tool optimized for Ultra-High Field MRI (UHF-MRI)
+  example: |
+    export GOUHFI_HOME=/opt/GOUHFI
+
+    run_brain_extraction -i /path/to/input_dir [-o /path/to/output_dir] [--modality t1] [--dilatation_voxels 2] [--mask_folder /path/to/new/masked] [--skip_morpho --rename ]
+
+    run_gouhfi -i /path/to/input_data -o /path/to/output_dir [--np N] [--folds "0 1 2 3 4"] [--reorder_labels] [--cpu]
+  documentation: https://github.com/mafortin/GOUHFI
+  citation: |-
+    @article{fortin2025gouhfi,
+      title={GOUHFI: a novel contrast- and resolution-agnostic segmentation tool for Ultra-High Field MRI},
+      author={Fortin, Marc-Antoine and Kristoffersen, Anne Louise and Larsen, Michael Staff and Lamalle, Laurent and Stirnberg, Ruediger and Goa, Paal Erik},
+      journal={arXiv preprint arXiv:2505.11445},
+      year={2025},
+      doi={10.48550/arXiv.2505.11445}
+    }
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: miniconda
+        version: py310_25.5.1-0
+        install_path: /opt/miniconda
+        pip_install: torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+        conda_install: python=3.10
+    - install:
+        - git
+        - unzip
+    - run:
+        - cd /opt
+        - git clone https://github.com/mafortin/GOUHFI.git
+        - cd GOUHFI
+        - pip install -e .
+    - file:
+        name: GOUHFI.zip
+        url: https://zenodo.org/records/15255556/files/GOUHFI.zip?download=1
+    - run:
+        - cd /opt/GOUHFI/trained_model/
+        - unzip {{ get_file("GOUHFI.zip") }}
+categories:
+  - image segmentation
+readme: |-
+  ----------------------------------
+  ## gouhfi/0.0.1 ##
+
+  GOUHFI is a fully automatic, contrast- and resolution-agnostic, DL-based brain segmentation tool optimized for Ultra-High Field MRI (UHF-MRI)
+
+  Example:
+  ```
+  export GOUHFI_HOME=/opt/GOUHFI
+
+  # run_brain_extraction -i /path/to/input_dir [-o /path/to/output_dir] [--modality t1] [--dilatation_voxels 2] [--mask_folder /path/to/new/masked] [--skip_morpho --rename ]
+  run_brain_extraction -i $GOUHFI_HOME/test_data/input-images-raw/ -o .
+
+  # run_gouhfi -i /path/to/input_data -o /path/to/output_dir [--np N] [--folds "0 1 2 3 4"] [--reorder_labels] [--cpu]
+  run_goufhi -i $GOUHFI_HOME/test_data/input-images-lia-brain-extracted/single-sub/ -o .
+  ```
+
+  More documentation can be found here: https://github.com/mafortin/GOUHFI
+
+  Citation:
+  ```
+  @article{fortin2025gouhfi,
+    title={GOUHFI: a novel contrast- and resolution-agnostic segmentation tool for Ultra-High Field MRI},
+    author={Fortin, Marc-Antoine and Kristoffersen, Anne Louise and Larsen, Michael Staff and Lamalle, Laurent and Stirnberg, Ruediger and Goa, Paal Erik},
+    journal={arXiv preprint arXiv:2505.11445},
+    year={2025},
+    doi={10.48550/arXiv.2505.11445}
+  }
+  ```
+
+  To run container outside of this environment: ml gouhfi/0.0.1
+
+  ----------------------------------
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/mafortin/GOUHFI?tab=Apache-2.0-1-ov-file#readme

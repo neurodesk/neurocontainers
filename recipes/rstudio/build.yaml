@@ -1,0 +1,154 @@
+name: rstudio
+version: 2023.12.1
+
+copyright:
+  - license: AGPL-3.0
+    url: https://spdx.org/licenses/AGPL-3.0.html
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - workdir: /opt
+
+    - install:
+        - locales
+        - software-properties-common
+
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        LANGUAGE: en_AU.UTF-8
+        LC_ALL: en_AU.UTF-8
+
+    - run:
+        - locale-gen en_AU.UTF-8
+
+    - install:
+        - wget
+        - ubuntu-desktop
+        - vim
+        - software-properties-common
+        - git
+        - cmake
+        - mesa-utils
+        - sudo
+        - build-essential
+        - python3-pip
+        - python3-pyqt5
+        - pyqt5-dev
+        - python3-tk
+        - python3-pandas
+        - python3-fire
+        - dirmngr
+        - gnupg
+        - apt-transport-https
+        - ca-certificates
+        - software-properties-common
+        - r-base
+        - gdebi-core
+        - libssl-dev
+        - curl
+        - libxml2-dev
+        - libcurl4-openssl-dev
+        - libharfbuzz-dev
+        - libfribidi-dev
+        - libclang-dev
+        - libpq5
+        - libfftw3-dev
+        - gpg-agent
+        - libgfortran-9-dev
+        - libblas-dev
+        - libblas64-dev
+        - liblapack-dev
+        - gfortran
+        - libudunits2-dev
+        - r-cran-ncdf4
+        - libgdal-dev
+        - libproj-dev
+        - libgeos-dev
+        - libudunits2-dev
+        - libnode-dev
+        - libcairo2-dev
+        - libnetcdf-dev
+
+    - workdir: /opt
+
+    - run:
+        - wget https://download1.rstudio.org/electron/jammy/amd64/rstudio-2023.12.1-402-amd64.deb
+
+    - run:
+        - gdebi -q -n /opt/rstudio-2023.12.1-402-amd64.deb
+
+    - run:
+        - rm -rf rstudio-2023.12.1-402-amd64.deb
+
+    - copy: dependencies.R /opt
+
+    - run:
+        - Rscript /opt/dependencies.R
+
+    - environment:
+        LD_LIBRARY_PATH: "/usr/local/cuda/lib64/stubs:/usr/local/cuda/lib64/:/usr/local/cuda/lib:"
+        PATH: /usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin:/usr/local/cuda/bin
+
+deploy:
+  bins:
+    - rstudio
+
+readme: |-
+  ----------------------------------
+  ## rstudio/{{ context.version }} ##
+  RStudio is an integrated development environment (IDE) for R. It includes a console, syntax-highlighting editor that supports direct code execution, as well as tools for plotting, history, debugging and workspace management.
+
+  Example:
+  ```
+  rstudio
+  Rscript
+  ```
+
+  More documentation can be found here: https://www.rstudio.com/
+
+  ----------------------------------
+
+files:
+  - name: dependencies.R
+    contents: |-
+      # R Script to install the dependencies
+      if("devtools" %in% rownames(installed.packages()) == FALSE) {install.packages("devtools")}
+      if("MRIcrotome" %in% rownames(installed.packages()) == FALSE) {devtools::install_github("Mouse-Imaging-Centre/MRIcrotome", upgrade_dependencies = FALSE)}
+      if("RMINC" %in% rownames(installed.packages()) == FALSE) {devtools::install_github("Mouse-Imaging-Centre/RMINC", upgrade_dependencies = FALSE)}
+      if("ProbBayes" %in% rownames(installed.packages()) == FALSE) {install.packages("ProbBayes")}
+      if("bayesplot" %in% rownames(installed.packages()) == FALSE) {install.packages("bayesplot")}
+      if("brms" %in% rownames(installed.packages()) == FALSE) {install.packages("brms")}
+      if("rstan" %in% rownames(installed.packages()) == FALSE) {install.packages("rstan")}
+      if("Rcpp" %in% rownames(installed.packages()) == FALSE) {install.packages("Rcpp")}
+      if("reticulate" %in% rownames(installed.packages()) == FALSE) {install.packages("reticulate")}
+      if("fastICA" %in% rownames(installed.packages()) == FALSE) {install.packages("fastICA")}
+      if("forge" %in% rownames(installed.packages()) == FALSE) {install.packages("forge")}
+      if("rmarkdown" %in% rownames(installed.packages()) == FALSE) {install.packages("rmarkdown")}
+      if("plotly" %in% rownames(installed.packages()) == FALSE) {install.packages("plotly")}
+      if("shiny" %in% rownames(installed.packages()) == FALSE) {install.packages("shiny")}
+      if("tidyverse" %in% rownames(installed.packages()) == FALSE) {install.packages("tidyverse")}
+      if("RColorBrewer" %in% rownames(installed.packages()) == FALSE) {install.packages("RColorBrewer")}
+      if("paletteer" %in% rownames(installed.packages()) == FALSE) {install.packages("paletteer")}
+      if("ggpubr" %in% rownames(installed.packages()) == FALSE) {install.packages("ggpubr")}
+      if("ggthemes" %in% rownames(installed.packages()) == FALSE) {install.packages("ggthemes")}
+      if("rbokeh" %in% rownames(installed.packages()) == FALSE) {remotes::install_github("bokeh/rbokeh")}
+      if("RcppCNPy" %in% rownames(installed.packages()) == FALSE) {install.packages("RcppCNPy")}
+      if("R.matlab" %in% rownames(installed.packages()) == FALSE) {install.packages("R.matlab")}
+      if("caret" %in% rownames(installed.packages()) == FALSE) {install.packages("caret", dependencies = TRUE)}
+      if("car" %in% rownames(installed.packages()) == FALSE) {install.packages("car")}
+      if("BayesFactor" %in% rownames(installed.packages()) == FALSE) {install.packages("BayesFactor", dependencies = TRUE)}
+
+categories:
+  - "statistics"
+
+gui_apps:
+  - name: "rstudioGUI"
+    exec: "rstudio"

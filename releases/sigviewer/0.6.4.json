@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "sigviewer 0.6.4": {
+      "version": "20220315",
+      "exec": ""
+    },
+    "sigviewerGUI-sigviewer 0.6.4": {
+      "version": "20220315",
+      "exec": "sigviewer"
+    }
+  },
+  "categories": [
+    "electrophysiology"
+  ]
+}

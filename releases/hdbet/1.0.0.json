@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "hdbet 1.0.0": {
+      "version": "20210318",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "image segmentation"
+  ]
+}

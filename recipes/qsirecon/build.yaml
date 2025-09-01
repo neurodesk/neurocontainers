@@ -1,0 +1,60 @@
+name: qsirecon
+version: 1.1.0
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/pennlinc/qsirecon/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: pennlinc/qsirecon:{{ context.version }}
+  pkg-manager: apt
+
+  directives: []
+
+deploy:
+  bins:
+    - qsirecon
+
+readme: |-
+  ----------------------------------
+  ## qsirecon/{{ context.version }} ##
+  QSIRecon builds post-processing workflows that produce many of the biologically-interesting dMRI derivatives used for hypothesis testing. The main goal of QSIRecon is to make the state-of-the-art methods available in Dipy, MRTrix, DSI Studio, PyAFQ and other software packages easy to apply on preprocessed dMRI data. QSIRecon is companion software for XCP-D, doing for dMRI what XCP-D does for BOLD.
+
+  usage:
+  ```
+  usage: qsirecon [-h]
+                [--participant-label PARTICIPANT_LABEL [PARTICIPANT_LABEL ...]]
+                [--session-id SESSION_ID [SESSION_ID ...]]
+                [-d PACKAGE=PATH [PACKAGE=PATH ...]] [--bids-filter-file FILE]
+                [--bids-database-dir PATH] [--nprocs NPROCS]
+                [--omp-nthreads OMP_NTHREADS] [--mem MEMORY_MB] [--low-mem]
+                [--use-plugin FILE] [--sloppy] [--boilerplate-only]
+                [--reports-only]
+                [--report-output-level {root,subject,session}] [--infant]
+                [--b0-threshold B0_THRESHOLD]
+                [--output-resolution OUTPUT_RESOLUTION]
+                [--fs-license-file PATH] [--recon-spec RECON_SPEC]
+                [--input-type {qsiprep,ukb,hcpya}] [--fs-subjects-dir PATH]
+                [--skip-odf-reports] [--atlases ATLAS [ATLAS ...]] [--version]
+                [-v] [-w WORK_DIR] [--resource-monitor] [--config-file FILE]
+                [--write-graph] [--stop-on-first-crash] [--notrack]
+                [--debug {pdb,all} [{pdb,all} ...]]
+                input_dir output_dir {participant}
+
+  example:
+  qsirecon data/bids_root/ out/ participant -w work/
+  ```
+
+  More documentation can be found here: https://qsirecon.readthedocs.io/en/latest/index.html
+
+  To run applications outside of this container: ml qsirecon/{{ context.version }}
+
+  ------------------
+
+categories:
+  - "diffusion imaging"

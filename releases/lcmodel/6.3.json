@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "lcmodel 6.3": {
+      "version": "20220222",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "spectroscopy"
+  ]
+}

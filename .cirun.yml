@@ -1,8 +1,0 @@
-runners:
-  - name: cirun-oracle
-    cloud: oracle
-    instance_type: VM.Standard2.1
-    machine_image: ocid1.image.oc1.eu-frankfurt-1.aaaaaaaakafaxdrc47g2kkhykusxzoomckdpshwenpbn44sgbbwpzfu33lwq
-    region: eu-frankfurt-1
-    labels:
-      - cirun-oracle

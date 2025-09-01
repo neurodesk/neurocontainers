@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "brainstorm 3.211130": {
+      "version": "20211207",
+      "exec": ""
+    },
+    "brainstormGUI-brainstorm 3.211130": {
+      "version": "20211207",
+      "exec": "brainstorm3.command /opt/MCR/v98/"
+    }
+  },
+  "categories": [
+    "electrophysiology"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "minc 1.9.17": {
+      "version": "20210105",
+      "exec": ""
+    },
+    "registerGUI-minc 1.9.17": {
+      "version": "20210105",
+      "exec": "register"
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "image registration",
+    "structural imaging"
+  ]
+}

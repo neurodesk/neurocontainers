@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "fieldtrip 20211114": {
+      "version": "20211206",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "electrophysiology"
+  ]
+}

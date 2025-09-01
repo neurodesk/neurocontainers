@@ -1,0 +1,76 @@
+name: hmri
+version: 0.6.1
+
+copyright:
+  - license: GPL-2.0
+    url: https://github.com/hMRI-group/hMRI-toolbox/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - wget
+        - unzip
+        - ca-certificates
+        - openjdk-8-jre
+        - dbus-x11
+
+    - template:
+        name: matlabmcr
+        install_path: /opt/mcr
+        version: 2023a
+
+    - environment:
+        DEPLOY_ENV_FORCE_SPMMCR: "1"
+        LD_LIBRARY_PATH: $LD_LIBRARY_PATH:/opt/mcr/R2023a/runtime/glnxa64:/opt/mcr/R2023a/bin/glnxa64:/opt/mcr/R2023a/sys/os/glnxa64:/opt/mcr/R2023a/sys/opengl/lib/glnxa64:/opt/mcr/R2023a/extern/bin/glnxa64
+        MATLAB_VERSION: R2023a
+        MCR_INHIBIT_CTF_LOCK: "1"
+        MCR_UPDATE: "9"
+        MCR_VERSION: R2023a
+        PATH: $PATH:/opt/standalone-hMRItoolboxv0.6.1
+        SPM_HTML_BROWSER: "0"
+        SPM_REVISION: r7771
+        SPM_VERSION: "12"
+        XAPPLRESDIR: /opt/mcr/R2023a/x11/app-defaults
+
+    - run:
+        - wget --no-check-certificate --progress=bar:force -P /opt https://github.com/hMRI-group/hMRI-toolbox/releases/download/v0.6.1/standalone-hMRItoolboxv0.6.1.zip
+        - unzip -q /opt/standalone-hMRItoolboxv0.6.1.zip -d /opt
+        - rm -f /opt/standalone-hMRItoolboxv0.6.1.zip
+        - /opt/standalone-hMRItoolboxv0.6.1/spm12 function exit
+        - chmod a+rx /opt/standalone-hMRItoolboxv0.6.1/ -R
+
+deploy:
+  bins:
+    - spm12
+
+readme: |-
+  ----------------------------------
+  ## hmri/{{ context.version }} ##
+  SPM12 standalone with hMRI toolbox in Matlab Compiler Runtime
+
+  Example:
+  ```
+  run_spm12.sh /opt/mcr/R2023a fmri
+  ```
+
+  More documentation can be found here: https://hmri-group.github.io/hMRI-toolbox/
+
+  To run container outside of this environment: ml hmri/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - "quantitative imaging"
+  - "structural imaging"
+
+gui_apps:
+  - name: "hmriGUI"
+    exec: "bash run_spm12.sh /opt/mcr/R2023a fmri"
