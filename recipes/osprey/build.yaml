@@ -49,22 +49,34 @@ build:
       - cp {{ get_file("ospreyCMD") }} /opt/ospreyCMD
     - run:
         - chmod +x /opt/ospreyCMD
+    - file:
+        name: ospreyGUI
+        contents: |-
+          #!/bin/bash
+
+          /opt/UbuntuGUI/run_Osprey.sh /opt/MCR/R2023a/ $@
+    - run:
+      - cp {{ get_file("ospreyGUI") }} /opt/ospreyGUI
+    - run:
+        - chmod +x /opt/ospreyGUI
     - environment:
         LD_LIBRARY_PATH: ""
     - template:
         name: matlabmcr
         install_path: /opt/MCR
         version: 2023a
+    - environment:
+        PATH: $PATH:/opt
     - deploy:
         bins:
-          - Osprey
+          - ospreyGUI
           - ospreyCMD
     - test:
         name: testScript
         script: |-
           #!/bin/bash
           # Write your test script here
-          if ! command -v Osprey &> /dev/null; then
+          if ! command -v ospreyGUI &> /dev/null; then
               echo "Osprey command not found"
               exit 1
           fi
@@ -77,7 +89,7 @@ categories:
   - spectroscopy
 gui_apps:
   - name: "ospreyGUI"
-    exec: "Osprey"
+    exec: "ospreyGUI"
 readme: |-
   ----------------------------------
   ## osprey/{{ context.version }} ##
@@ -87,7 +99,7 @@ readme: |-
   Example:
   GUI:
   ```
-  Osprey
+  ospreyGUI
   ```
   Command-line tool:
   ```
