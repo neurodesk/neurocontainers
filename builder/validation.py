@@ -363,6 +363,7 @@ class ContainerRecipe:
     tests: Optional[List[Union[BuiltinTest, ScriptTest]]] = attrs.field(default=None)
     categories: Optional[List[str]] = attrs.field(default=None)
     gui_apps: Optional[List[GUIApp]] = attrs.field(default=None)
+    apptainer_args: Optional[List[str]] = attrs.field(default=None)
     draft: Optional[bool] = attrs.field(default=None)
     description: Optional[str] = attrs.field(default=None)
     options: Optional[Dict[str, Any]] = attrs.field(default=None)

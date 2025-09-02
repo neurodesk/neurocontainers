@@ -111,6 +111,8 @@ def generate_release_file(
     # Extract categories from build.yaml
     categories = recipe.get("categories", ["other"])
 
+    apptainer_args = recipe.get("apptainer_args", [])
+
     # Extract GUI applications from build.yaml
     gui_apps = recipe.get("gui_apps", [])
 
@@ -120,7 +122,13 @@ def generate_release_file(
 
     # Create release data structure
     release_data = {
-        "apps": {cli_app_name: {"version": build_date, "exec": ""}},
+        "apps": {
+            cli_app_name: {
+                "version": build_date,
+                "exec": "",
+                "apptainer_args": apptainer_args,
+            }
+        },
         "categories": categories,
     }
 
@@ -130,6 +138,7 @@ def generate_release_file(
         release_data["apps"][gui_app_name] = {
             "version": build_date,
             "exec": gui_app["exec"],
+            "apptainer_args": apptainer_args,
         }
 
     # Convert to JSON string for potential GitHub Actions use
@@ -1637,6 +1646,7 @@ def build_and_run_container(
     generate_release=False,
     gpu=False,
     local_context=None,
+    mount: str | None = None,
     use_buildkit: bool = False,
     load_into_docker: bool = False,
 ):
@@ -1659,8 +1669,6 @@ def build_and_run_container(
         bk_flags = [
             f"--addr=unix://{sock}",
             f"--root={root_dir}",
-            "--oci-worker-snapshotter=native",
-            "--oci-worker-no-process-sandbox",
         ]
 
         print(f"Starting buildkitd (XDG_RUNTIME_DIR={xdg_runtime_dir})…")
@@ -1822,6 +1830,11 @@ def build_and_run_container(
             "-v",
             abs_path + ":/buildhostdirectory",
         ]
+
+        if mount:
+            host, container = mount.split(":", 1)
+            host = os.path.abspath(host)
+            docker_run_cmd.extend(["-v", f"{host}:{container}"])
 
         if gpu:
             docker_run_cmd.extend(["--gpus", "all"])
@@ -2138,6 +2151,7 @@ def generate_and_build(
     generate_release=False,
     gpu=False,
     local_context=None,
+    mount: str | None = None,
     use_buildkit: bool = False,
     load_into_docker: bool = False,
 ):
@@ -2179,6 +2193,7 @@ def generate_and_build(
         generate_release=generate_release,
         gpu=gpu,
         local_context=local_context,
+        mount=mount,
         use_buildkit=use_buildkit,
         load_into_docker=load_into_docker,
     )
@@ -2219,6 +2234,10 @@ def build_main(login=False):
         help="Add local directories into the build context",
     )
     root.add_argument(
+        "--mount",
+        help="Mount a host directory into the container (host:container)",
+    )
+    root.add_argument(
         "--use-buildkit",
         action="store_true",
         help="Use buildkitd/buildctl instead of Docker CLI",
@@ -2255,6 +2274,7 @@ def build_main(login=False):
         generate_release=args.generate_release,
         gpu=args.gpu,
         local_context=args.local,
+        mount=args.mount,
         use_buildkit=args.use_buildkit,
         load_into_docker=args.load_into_docker,
     )
@@ -2286,6 +2306,15 @@ def sf_make_main():
     root.add_argument(
         "--local",
         help="Add local directories into the build context (key=path)",
+    )
+    root.add_argument(
+        "--mount",
+        help="Mount a host directory into the container (host:container)",
+    )
+    root.add_argument(
+        "--use-docker",
+        action="store_true",
+        help="Use Docker for building instead of BuildKit",
     )
 
     args = root.parse_args()
@@ -2337,7 +2366,8 @@ def sf_make_main():
         generate_release=False,
         gpu=False,
         local_context=args.local,
-        use_buildkit=True,
+        mount=args.mount,
+        use_buildkit=args.use_docker == False,
     )
 
 
