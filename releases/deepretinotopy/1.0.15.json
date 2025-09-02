@@ -1,8 +1,9 @@
 {
   "apps": {
     "deepretinotopy 1.0.15": {
-      "version": "20250820",
-      "exec": ""
+      "version": "20250902",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
