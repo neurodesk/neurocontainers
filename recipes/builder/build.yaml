@@ -1,5 +1,5 @@
 name: builder
-version: "0.1"
+version: "0.2"
 
 architectures:
   - x86_64
