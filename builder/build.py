@@ -111,6 +111,8 @@ def generate_release_file(
     # Extract categories from build.yaml
     categories = recipe.get("categories", ["other"])
 
+    apptainer_args = recipe.get("apptainer_args", [])
+
     # Extract GUI applications from build.yaml
     gui_apps = recipe.get("gui_apps", [])
 
@@ -120,7 +122,13 @@ def generate_release_file(
 
     # Create release data structure
     release_data = {
-        "apps": {cli_app_name: {"version": build_date, "exec": ""}},
+        "apps": {
+            cli_app_name: {
+                "version": build_date,
+                "exec": "",
+                "apptainer_args": apptainer_args,
+            }
+        },
         "categories": categories,
     }
 
@@ -130,6 +138,7 @@ def generate_release_file(
         release_data["apps"][gui_app_name] = {
             "version": build_date,
             "exec": gui_app["exec"],
+            "apptainer_args": apptainer_args,
         }
 
     # Convert to JSON string for potential GitHub Actions use

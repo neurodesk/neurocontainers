@@ -12,7 +12,9 @@ copyright:
 build:
   kind: neurodocker
   base-image: moby/buildkit:latest
-  pkg-manager: apt # technially apk since the base uses 
+
+  # required since the package has a Alpine base.
+  pkg-manager: apt # required so NeuroDocker doesn't complain. Technically incorrect
   add-default-template: false
   add-tzdata: false
 
@@ -29,6 +31,7 @@ build:
         - pip install --break-system-packages --editable .
       condition: not context.has_local("neurocontainers")
 
+    # Pull from local repo if available
     - run:
         - cp -R {{ get_local("neurocontainers") }} /
         - ls -la neurocontainers
@@ -36,6 +39,7 @@ build:
         - pip install --break-system-packages --editable .
       condition: context.has_local("neurocontainers")
 
+    # Override since /home/user sits on a readonly filesystem.
     - environment:
         XDG_RUNTIME_DIR: /tmp/buildkit
 
@@ -43,11 +47,17 @@ build:
         bins:
           - sf-make
 
+    # Override since starting a buildkit daemon is not useful.
     - entrypoint: bash
 
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
+
+# Required for BuildKit.
+apptainer_args:
+  - --fakeroot
+  - --writable-tmpfs
 
 readme: |-
   ----------------------------------
@@ -57,30 +67,13 @@ readme: |-
 
   Examples:
   ```
-  # Build and run with Docker
-  sf-build my-recipe
-
   # Make a SIF via BuildKit + Apptainer (no Docker daemon)
   sf-make /path/to/recipes/my-recipe
-  ```
-
-  More documentation can be found here: 
-
-  Citation:
-  ```
-
   ```
 
   To run container outside of this environment: ml builder/{{ context.version }}
 
   ----------------------------------
-icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAECUlEQVR4AYyUa0ybVRjH/29Xu5rpsETAKAUZmRuzA8uEAps6NHgJF2/zXrUwjAriNeEixiuK+knED3xUExUjMWgjyTAsoWRsKGIygrcv2hA3KFNXsKyOtsfzP9vp2sqYpb/zPM//PD3P877nCaa9z70tGp59S9Q/86bwPN0tHn7qDcVDT74uHmzpEu4nXhMPNL8q7m96RXHf4y+Lex97Sdzz6IuKux55QZA9jZ3izr3PizsaOsTt9e3iNk+bwiSEQOqHGjmXrnNoSWo+Y1WAm2cjFovhbHur6Yn59E2sohO1T0uo06ZCnVDXNtVnTEyswiSifVpCjdAn2qcliZr2ta7jpCeYHBvCyBfvY+TLD7CfeD/EwZHP8cPUGP4JL+PbUS98Qx9hVOIb+hh/BH5H+EQIB/b148Dwp4qDX3/GxhUslnQHfx47CiN6AmU7tqPs6kK4ih1YFw3h8Df78dUnvQgc9cNqjsGxJQ+BI7/ipCwaWTkp/d+Ql52JTNsGHJvzJ92ZKqDKcZEDVVFRgf7+fnR0dKCzsxPj4+Pw+/3YVrAVy38HUVVVhZ6eHmbLg5RRS2trKzwej/LZOWGgCvB9EQpkfn4eLpcLpaWlyMrKwvT0NFpaWhCLRrkdR0D+pYy57FEWPqXzTHUH8V+s4SwsLKy6qztN3KRGqJkikRUszM3i58OHEFo6Tk11PTExATIzMwOr1Yquri6YTOvUvl5E7FSnOtaWh2tMhmFg/frzcWFaOsznWVROMBhEd3e3ore3F1H5arxeL2Kx5Fekkk8vhmGc9s4YFjEBBjZstCErOx8WWQjyEw6HMTg4qOjr60NzczMqKytht9uxtLSEtLQ0mQUE/wrgiP8X5XNvcXERFotVNhJTqAJcVMYaS11dHUKhEHj5Pp8PNpsN1dXV+On7Mfw4NYqmpiaUlJRgeHgYF118adJJaopYhOidnJyc+CRQ58g2NjYiEoliTk5YbW2tuhPe0ezsLNra2tDe3o7J76aQ73DFfxufIh5CWGBgYACGYSSRkZEB79A+lN94N4p3VePQxCScTifcbjdqamqQm5uLd959D85dNbhgYzqPiZP0v8ie78C24mtR4LwmjqPkepTdsAe7a+thk49/iX0zdt/agO2uKiyvmBE4HkZB8XXYeYsb6ZnZqnt2Tti0vGQokcHlVxRi61U7FVuKKkA2FexA5mV5ckRVquqM45q96UoUlt+EovKbkbO5CGazJX6OSpILz0y6Awq6cqrPeDUS81fbVwVkMfVlgnJSFuqEsrapPmMNcwhjVYBdEIqEPtE+LUnUtK91HWur9TMvluUk3JBGfbVPS5SYsiTq2qclTE2aosTqTDgX/yf/P0/Aqvpg7dOSRJ2xZi39XwAAAP//6do1UwAAAAZJREFUAwCwYK1XDWHoJwAAAABJRU5ErkJggg==
+
 categories:
   - programming
-structured_readme:
-  description: NeuroContainers builder and BuildKit packaged with Neurodesk.
-  example: |
-    sf-build my-recipe
-    sf-make /path/to/recipes/my-recipe
-  documentation: ""
-  citation: ""
