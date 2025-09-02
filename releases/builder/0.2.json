@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "builder 0.2": {
+      "version": "20250902",
+      "exec": "",
+      "apptainer_args": [
+        "--fakeroot",
+        "--writable-tmpfs"
+      ]
+    }
+  },
+  "categories": [
+    "programming"
+  ]
+}
