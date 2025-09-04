@@ -30,9 +30,6 @@ build:
         bins:
           - MRIcron
           - dcm2niix
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
     - boutique:
         name: mricron
         description: MRIcron is a cross-platform NIfTI format image viewer. It can load  multiple layers of images, generate volume renderings and draw regions  of interest. It also provides dcm2niix for converting DICOM images to  NIfTI format.

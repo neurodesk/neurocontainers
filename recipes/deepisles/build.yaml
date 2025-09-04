@@ -102,9 +102,6 @@ build:
         path: []
         bins:
           - python
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
 categories:
   - structural imaging
   - image segmentation
