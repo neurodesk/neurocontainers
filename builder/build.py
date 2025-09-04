@@ -111,6 +111,8 @@ def generate_release_file(
     # Extract categories from build.yaml
     categories = recipe.get("categories", ["other"])
 
+    apptainer_args = recipe.get("apptainer_args", [])
+
     # Extract GUI applications from build.yaml
     gui_apps = recipe.get("gui_apps", [])
 
@@ -120,7 +122,13 @@ def generate_release_file(
 
     # Create release data structure
     release_data = {
-        "apps": {cli_app_name: {"version": build_date, "exec": ""}},
+        "apps": {
+            cli_app_name: {
+                "version": build_date,
+                "exec": "",
+                "apptainer_args": apptainer_args,
+            }
+        },
         "categories": categories,
     }
 
@@ -130,6 +138,7 @@ def generate_release_file(
         release_data["apps"][gui_app_name] = {
             "version": build_date,
             "exec": gui_app["exec"],
+            "apptainer_args": apptainer_args,
         }
 
     # Convert to JSON string for potential GitHub Actions use
@@ -305,6 +314,7 @@ class LocalBuildContext(object):
         self.run_args = []
         self.mounted_cache = False
         self.cache_id = cache_id
+        self.local_mounts = {}
 
     def try_mount_cache(self):
         target = "/.neurocontainer-cache/" + self.cache_id
@@ -321,6 +331,17 @@ class LocalBuildContext(object):
         )
         self.mounted_cache = True
 
+        return target
+
+    def try_mount_local(self, key):
+        if key in self.local_mounts:
+            return self.local_mounts[key]
+
+        target = f"/.neurocontainer-local/{key}"
+        self.run_args.append(
+            f"--mount=type=bind,from={key},source=/,target={target},readonly"
+        )
+        self.local_mounts[key] = target
         return target
 
     def ensure_context_cached(self, cache_filename, guest_filename):
@@ -362,9 +383,20 @@ class LocalBuildContext(object):
         else:
             raise ValueError("File has no cached path or context path.")
 
+    def get_local(self, key):
+        if not self.has_local(key):
+            raise ValueError(f"Local file {key} not found.")
+
+        return self.try_mount_local(key)
+
+    def has_local(self, key):
+        return self.context.has_local(key)
+
     def methods(self):
         return {
             "get_file": self.get_file,
+            "has_local": self.has_local,
+            "get_local": self.get_local,
         }
 
 
@@ -405,6 +437,7 @@ class BuildContext(object):
         self.lint_error = False
         self.deploy_bins = []
         self.deploy_path = []
+        self.local_context = {}
         self.check_only = check_only
 
     def lint_fail(self, message):
@@ -419,6 +452,12 @@ class BuildContext(object):
             "default": default,
             "version_suffix": version_suffix,
         }
+
+    def add_local_context(self, key, local_path):
+        self.local_context[key] = local_path
+
+    def has_local(self, key):
+        return key in self.local_context
 
     def set_option(self, key, value):
         if key not in self.options:
@@ -1423,6 +1462,7 @@ def generate_from_description(
     recreate_output_dir: bool = False,
     check_only: bool = False,
     gpu: bool = False,
+    local_context: str | None = None,
 ) -> BuildContext | None:
     if max_parallel_jobs is None:
         max_parallel_jobs = os.cpu_count()
@@ -1454,6 +1494,9 @@ def generate_from_description(
     ctx = BuildContext(repo_path, recipe_path, name, version, arch, check_only)
     ctx.set_max_parallel_jobs(max_parallel_jobs)
     ctx.gpu = gpu
+    if local_context:
+        key, local_path = local_context.split("=", 1)
+        ctx.add_local_context(key, local_path)
 
     locals = {}
 
@@ -1602,24 +1645,170 @@ def build_and_run_container(
     build_sif=False,
     generate_release=False,
     gpu=False,
+    local_context=None,
+    mount: str | None = None,
+    use_buildkit: bool = False,
+    load_into_docker: bool = False,
 ):
+    if use_buildkit:
+        # Build using buildkitd + buildctl (no host Docker daemon required)
+        if not shutil.which("buildkitd"):
+            raise ValueError("buildkitd not found in PATH.")
+        if not shutil.which("buildctl"):
+            raise ValueError("buildctl not found in PATH.")
+
+        # Runtime/setup paths (can be overridden by env)
+        xdg_runtime_dir = os.environ.get("XDG_RUNTIME_DIR", "/tmp/buildkit")
+        root_dir = os.environ.get("ROOTDIR", "/tmp/buildkit-root")
+        sock = os.path.join(xdg_runtime_dir, "buildkitd.sock")
+
+        os.makedirs(xdg_runtime_dir, exist_ok=True)
+        os.makedirs(root_dir, exist_ok=True)
+
+        # Start buildkitd
+        bk_flags = [
+            f"--addr=unix://{sock}",
+            f"--root={root_dir}",
+        ]
+
+        print(f"Starting buildkitd (XDG_RUNTIME_DIR={xdg_runtime_dir})…")
+        bk_proc = subprocess.Popen(["buildkitd", *bk_flags])
+
+        try:
+            # Wait until the daemon is ready
+            import time
+
+            for _ in range(40):
+                if os.path.exists(sock):
+                    try:
+                        subprocess.check_call(
+                            [
+                                "buildctl",
+                                "--addr",
+                                f"unix://{sock}",
+                                "debug",
+                                "workers",
+                            ],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        break
+                    except subprocess.CalledProcessError:
+                        pass
+                time.sleep(0.25)
+
+            if not os.path.exists(sock):
+                raise RuntimeError("buildkitd did not become ready")
+
+            # Build with buildctl (Dockerfile frontend)
+            platform = get_build_platform(architecture)
+
+            image_tar = os.path.join(build_directory, f"{name}_{version}.docker.tar")
+
+            buildctl_cmd = [
+                "buildctl",
+                "--addr",
+                f"unix://{sock}",
+                "build",
+                "--frontend=dockerfile.v0",
+                "--local",
+                "context=.",
+                "--local",
+                "dockerfile=.",
+                "--opt",
+                f"filename={dockerfile_name}",
+                "--opt",
+                f"platform={platform}",
+                "--output",
+                f"type=docker,name={tag}",
+            ]
+
+            # Support additional named local build contexts (for RUN --mount=from=<key>)
+            if local_context is not None:
+                key, value = local_context.split("=", 1)
+                value = os.path.abspath(value)
+                buildctl_cmd.extend(["--local", f"{key}={value}"])
+
+            print(
+                f"Building Dockerfile via buildctl in {build_directory} → {os.path.basename(image_tar)}"
+            )
+            with open(image_tar, "wb") as out_f:
+                subprocess.check_call(buildctl_cmd, cwd=build_directory, stdout=out_f)
+
+            print(f"Image archive created: {image_tar}")
+
+            # Optionally load into host docker if available and requested
+            if load_into_docker and shutil.which("docker"):
+                print(f"Loading image into Docker daemon: {tag}")
+                with open(image_tar, "rb") as f:
+                    subprocess.check_call(["docker", "load"], stdin=f)
+                print("Docker image loaded successfully")
+
+            if login:
+                print(
+                    "Login shell is not supported with BuildKit mode; skipping interactive run."
+                )
+
+            if build_sif:
+                print("Building Singularity image from docker-archive…")
+                sif_cli = shutil.which("singularity") or shutil.which("apptainer")
+                if not sif_cli:
+                    raise ValueError(
+                        "Neither 'singularity' nor 'apptainer' found in PATH."
+                    )
+                output_filename = os.path.join("sifs", f"{name}_{version}.sif")
+                if not os.path.exists("sifs"):
+                    os.makedirs("sifs")
+                subprocess.check_call(
+                    [
+                        sif_cli,
+                        "build",
+                        "--force",
+                        output_filename,
+                        "docker-archive://" + image_tar,
+                    ],
+                )
+                print("Singularity image built successfully as", output_filename)
+
+            return
+
+        finally:
+            try:
+                bk_proc.terminate()
+            except Exception:
+                pass
+            try:
+                bk_proc.wait(timeout=5)
+            except Exception:
+                try:
+                    bk_proc.kill()
+                except Exception:
+                    pass
+
+    # Default: use host Docker CLI
     if not shutil.which("docker"):
         raise ValueError("Docker not found in PATH.")
+
+    docker_args = [
+        "docker",
+        "build",
+        "--platform",
+        get_build_platform(architecture),
+        "-f",
+        dockerfile_name,
+        "-t",
+        tag,
+    ]
+
+    if local_context is not None:
+        key, value = local_context.split("=", 1)
+        value = os.path.abspath(value)
+        docker_args += ["--build-context", key + "=" + value]
 
     # Shell out to Docker
     # docker-py does not support using BuildKit
     subprocess.check_call(
-        [
-            "docker",
-            "build",
-            "--platform",
-            get_build_platform(architecture),
-            "-f",
-            dockerfile_name,
-            "-t",
-            tag,
-            ".",
-        ],
+        docker_args + ["."],
         cwd=build_directory,
     )
     print("Docker image built successfully at", tag)
@@ -1642,6 +1831,11 @@ def build_and_run_container(
             abs_path + ":/buildhostdirectory",
         ]
 
+        if mount:
+            host, container = mount.split(":", 1)
+            host = os.path.abspath(host)
+            docker_run_cmd.extend(["-v", f"{host}:{container}"])
+
         if gpu:
             docker_run_cmd.extend(["--gpus", "all"])
 
@@ -1656,8 +1850,9 @@ def build_and_run_container(
     if build_sif:
         print("Building Singularity image...")
 
-        if not shutil.which("singularity"):
-            raise ValueError("Singularity not found in PATH.")
+        sif_cli = shutil.which("singularity") or shutil.which("apptainer")
+        if not sif_cli:
+            raise ValueError("Neither 'singularity' nor 'apptainer' found in PATH.")
 
         output_filename = os.path.join("sifs", f"{name}_{version}.sif")
         if not os.path.exists("sifs"):
@@ -1665,7 +1860,7 @@ def build_and_run_container(
 
         subprocess.check_call(
             [
-                "singularity",
+                sif_cli,
                 "build",
                 "--force",
                 output_filename,
@@ -1894,7 +2089,12 @@ def autodetect_recipe_path(repo_path: str, path: str) -> str | None:
 
 
 def generate_dockerfile(
-    repo_path, recipe_path, architecture=None, ignore_architecture=False, gpu=False
+    repo_path,
+    recipe_path,
+    architecture=None,
+    ignore_architecture=False,
+    gpu=False,
+    local_context=None,
 ):
     build_directory = os.path.join(repo_path, "build")
 
@@ -1909,6 +2109,7 @@ def generate_dockerfile(
         ignore_architecture=ignore_architecture,
         recreate_output_dir=True,
         gpu=gpu,
+        local_context=local_context,
     )
 
 
@@ -1949,6 +2150,10 @@ def generate_and_build(
     ignore_architecture=False,
     generate_release=False,
     gpu=False,
+    local_context=None,
+    mount: str | None = None,
+    use_buildkit: bool = False,
+    load_into_docker: bool = False,
 ):
     ctx = generate_dockerfile(
         repo_path,
@@ -1956,6 +2161,7 @@ def generate_and_build(
         architecture=architecture,
         ignore_architecture=ignore_architecture,
         gpu=gpu,
+        local_context=local_context,
     )
     if ctx is None:
         print("Recipe generation failed.")
@@ -1986,6 +2192,10 @@ def generate_and_build(
         login=login,
         generate_release=generate_release,
         gpu=gpu,
+        local_context=local_context,
+        mount=mount,
+        use_buildkit=use_buildkit,
+        load_into_docker=load_into_docker,
     )
 
 
@@ -2019,6 +2229,24 @@ def build_main(login=False):
         action="store_true",
         help="Enable GPU support by adding --gpus all to Docker run commands",
     )
+    root.add_argument(
+        "--local",
+        help="Add local directories into the build context",
+    )
+    root.add_argument(
+        "--mount",
+        help="Mount a host directory into the container (host:container)",
+    )
+    root.add_argument(
+        "--use-buildkit",
+        action="store_true",
+        help="Use buildkitd/buildctl instead of Docker CLI",
+    )
+    root.add_argument(
+        "--load-into-docker",
+        action="store_true",
+        help="After BuildKit build, docker load the resulting image tar if Docker is available",
+    )
 
     args = root.parse_args()
 
@@ -2026,10 +2254,14 @@ def build_main(login=False):
 
     recipe_path = ""
     if args.name == None:
-        recipe_path = autodetect_recipe_path(repo_path, os.getcwd())
-        if recipe_path is None:
-            print("No recipe found in current directory.")
-            sys.exit(1)
+        # if build.yaml exists in the current directory then use it.
+        if os.path.exists("build.yaml"):
+            recipe_path = os.getcwd()
+        else:
+            recipe_path = autodetect_recipe_path(repo_path, os.getcwd())
+            if recipe_path is None:
+                print("No recipe found in current directory.")
+                sys.exit(1)
     else:
         recipe_path = get_recipe_directory(repo_path, args.name)
 
@@ -2041,11 +2273,102 @@ def build_main(login=False):
         ignore_architecture=args.ignore_architectures,
         generate_release=args.generate_release,
         gpu=args.gpu,
+        local_context=args.local,
+        mount=args.mount,
+        use_buildkit=args.use_buildkit,
+        load_into_docker=args.load_into_docker,
     )
 
 
 def login_main():
     build_main(login=True)
+
+
+def sf_make_main():
+    root = argparse.ArgumentParser(
+        description="Build a recipe directory into a SIF using BuildKit (no Docker required)",
+    )
+    # add a optional name positional argument
+    root.add_argument(
+        "name",
+        help="Name of the recipe to generate",
+        type=str,
+        nargs="?",
+    )
+    root.add_argument(
+        "--architecture",
+        help="Architecture to build for",
+        default=platform.machine(),
+    )
+    root.add_argument(
+        "--ignore-architectures", action="store_true", help="Ignore architecture checks"
+    )
+    root.add_argument(
+        "--local",
+        help="Add local directories into the build context (key=path)",
+    )
+    root.add_argument(
+        "--mount",
+        help="Mount a host directory into the container (host:container)",
+    )
+    root.add_argument(
+        "--use-docker",
+        action="store_true",
+        help="Use Docker for building instead of BuildKit",
+    )
+
+    args = root.parse_args()
+
+    repo_path = get_repo_path()
+
+    recipe_path = ""
+    if args.name == None:
+        # if build.yaml exists in the current directory then use it.
+        if os.path.exists("build.yaml"):
+            recipe_path = os.getcwd()
+        else:
+            recipe_path = autodetect_recipe_path(repo_path, os.getcwd())
+            if recipe_path is None:
+                print("No recipe found in current directory.")
+                sys.exit(1)
+    else:
+        recipe_path = get_recipe_directory(repo_path, args.name)
+
+    # Generate Dockerfile and build context from the provided recipe directory
+    ctx = generate_dockerfile(
+        repo_path,
+        recipe_path,
+        architecture=args.architecture,
+        ignore_architecture=args.ignore_architectures,
+        gpu=False,
+        local_context=args.local,
+    )
+    if ctx is None:
+        print("Recipe generation failed.")
+        sys.exit(1)
+
+    if ctx.dockerfile_name is None or ctx.build_directory is None or ctx.tag is None:
+        raise ValueError(
+            "Context not fully generated (missing Dockerfile, build dir, or tag)"
+        )
+
+    print(f"Making SIF for {ctx.name}:{ctx.version} from {recipe_path}")
+    build_and_run_container(
+        ctx.dockerfile_name,
+        ctx.name,
+        ctx.version,
+        ctx.tag,
+        ctx.arch,
+        recipe_path,
+        ctx.build_directory,
+        login=False,
+        build_sif=True,
+        generate_release=False,
+        gpu=False,
+        local_context=args.local,
+        mount=args.mount,
+        use_buildkit=args.use_docker == False,
+    )
 
 
 def test_main():
@@ -2203,6 +2526,16 @@ def main(args):
         action="store_true",
         help="Enable GPU support by adding --gpus all to Docker run commands",
     )
+    build_parser.add_argument(
+        "--use-buildkit",
+        action="store_true",
+        help="Use buildkitd/buildctl instead of Docker CLI",
+    )
+    build_parser.add_argument(
+        "--load-into-docker",
+        action="store_true",
+        help="After BuildKit build, docker load the resulting image tar if Docker is available",
+    )
 
     init_parser = command.add_parser(
         "init",
@@ -2329,6 +2662,8 @@ def main(args):
                 build_sif=args.build_sif,
                 generate_release=args.generate_release,
                 gpu=args.gpu,
+                use_buildkit=args.use_buildkit,
+                load_into_docker=args.load_into_docker,
             )
     else:
         root.print_help()

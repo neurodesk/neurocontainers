@@ -18,6 +18,8 @@ Run `sf-generate <name>` to generate a `Dockerfile`. If your in the same directo
 
 Run `sf-build <name>` to generate and build the `Dockerfile`. This should be used instead of `docker build` since the context is generated in a separate `build` directory.
 
+Run `sf-make <recipe_dir>` to build a Singularity/Apptainer SIF using BuildKit without a Docker daemon. This generates a docker-archive and then builds a SIF (saved under `./sifs/`).
+
 A common workflow involves building the container and running a command inside it. You can run `sf-login <name>` to build a container and immediately drop into a shell.
 
 ### Architecture Options
@@ -38,6 +40,9 @@ sf-build myrecipe --architecture x86_64 --ignore-architectures
 
 # Build and generate release files
 sf-build myrecipe --generate-release
+
+# Make a SIF via BuildKit + Apptainer
+sf-make ./recipes/myrecipe
 ```
 
 ## Recipe Syntax

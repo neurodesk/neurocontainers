@@ -52,26 +52,42 @@ jobs:
               // Decode base64
               const base64Content = match[1].trim();
               const compressedBuffer = Buffer.from(base64Content, 'base64');
-              
+
               // Decompress using pako (deflate)
               const decompressed = pako.inflate(compressedBuffer, { to: 'string' });
               const yamlContent = decompressed;
-              
+
               // Parse YAML to validate and get name
               const parsedYaml = yaml.load(yamlContent);
-              
+
               if (!parsedYaml.name) {
                 core.setFailed('YAML must contain a "name" field');
                 return;
               }
-              
+
+              // Sanitize the name: allow lowercase letters and digits only
+              const rawName = String(parsedYaml.name);
+              const normalized = rawName.normalize('NFKD').toLowerCase();
+              if (!normalized.match(/^[a-z0-9]+$/)) {
+                core.setFailed('Invalid recipe name after sanitization: must contain only lowercase letters and numbers');
+                return;
+              }
+
+              // Ensure the path stays within the recipes directory
+              const recipesRoot = path.resolve('recipes');
+              const recipeDir = path.resolve(recipesRoot, normalized);
+              if (!recipeDir.startsWith(recipesRoot + path.sep)) {
+                core.setFailed('Recipe path escapes the recipes directory');
+                return;
+              }
+
               // Create recipe directory and write file directly
-              const recipeDir = path.join('recipes', parsedYaml.name);
               fs.mkdirSync(recipeDir, { recursive: true });
               fs.writeFileSync(path.join(recipeDir, 'build.yaml'), yamlContent);
-              
-              core.setOutput('name', parsedYaml.name);
-              core.setOutput('parsed', JSON.stringify(parsedYaml));
+
+              // Expose sanitized name
+              core.setOutput('name', normalized);
+              core.setOutput('parsed', JSON.stringify({ ...parsedYaml, name: normalized }));
             } catch (error) {
               core.setFailed(`Failed to process encoded content: ${error.message}`);
             }
@@ -79,38 +95,51 @@ jobs:
       - name: Create branch name
         id: create-branch
         run: |
+          set -euo pipefail
           BRANCH_NAME="contribution-${{ github.event.issue.number }}-${{ steps.parse-yaml.outputs.name }}"
-          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          # Safely write multiline or special characters to GITHUB_OUTPUT
+          {
+            echo 'branch_name<<EOF'
+            echo "$BRANCH_NAME"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create new branch
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git checkout -b ${{ steps.create-branch.outputs.branch_name }}
+          git checkout -b "${{ steps.create-branch.outputs.branch_name }}"
 
       - name: Check if file exists
         id: check-file
         run: |
+          set -euo pipefail
           FILE_PATH="recipes/${{ steps.parse-yaml.outputs.name }}/build.yaml"
           if [ -f "$FILE_PATH" ]; then
-            echo "file_exists=true" >> $GITHUB_OUTPUT
-            echo "file_path=$FILE_PATH" >> $GITHUB_OUTPUT
-            echo "action=update" >> $GITHUB_OUTPUT
+            echo "file_exists=true" >> "$GITHUB_OUTPUT"
+            { echo 'file_path<<EOF'; echo "$FILE_PATH"; echo 'EOF'; } >> "$GITHUB_OUTPUT"
+            echo "action=update" >> "$GITHUB_OUTPUT"
           else
-            echo "file_exists=false" >> $GITHUB_OUTPUT
-            echo "file_path=$FILE_PATH" >> $GITHUB_OUTPUT
-            echo "action=add" >> $GITHUB_OUTPUT
+            echo "file_exists=false" >> "$GITHUB_OUTPUT"
+            { echo 'file_path<<EOF'; echo "$FILE_PATH"; echo 'EOF'; } >> "$GITHUB_OUTPUT"
+            echo "action=add" >> "$GITHUB_OUTPUT"
           fi
 
 
       - name: Commit changes
         run: |
+          set -euo pipefail
           git add recipes/
-          git commit --author="${{ github.event.issue.user.login }} <${{ github.event.issue.user.id }}+${{ github.event.issue.user.login }}@users.noreply.github.com>" -m "${{ steps.check-file.outputs.action == 'add' && 'Add' || 'Update' }} recipe for ${{ steps.parse-yaml.outputs.name }} from issue #${{ github.event.issue.number }}"
-
+          # Prepare commit message safely
+          cat > commitmsg.txt <<'EOF'
+          ${{ steps.check-file.outputs.action == 'add' && 'Add' || 'Update' }} recipe for ${{ steps.parse-yaml.outputs.name }} from issue #${{ github.event.issue.number }}
+          EOF
+          AUTHOR="${{ github.event.issue.user.login }} <${{ github.event.issue.user.id }}+${{ github.event.issue.user.login }}@users.noreply.github.com>"
+          git commit --author="$AUTHOR" -F commitmsg.txt
       - name: Push branch
         run: |
-          git push origin ${{ steps.create-branch.outputs.branch_name }}
+          set -euo pipefail
+          git push origin "${{ steps.create-branch.outputs.branch_name }}"
 
       - name: Create pull request
         id: create-pr

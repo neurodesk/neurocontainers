@@ -1,0 +1,79 @@
+name: builder
+version: "0.2"
+
+architectures:
+  - x86_64
+  - aarch64
+
+copyright:
+  - license: MIT
+    url: https://opensource.org/license/mit/
+
+build:
+  kind: neurodocker
+  base-image: moby/buildkit:latest
+
+  # required since the package has a Alpine base.
+  pkg-manager: apt # required so NeuroDocker doesn't complain. Technically incorrect
+  add-default-template: false
+  add-tzdata: false
+
+  directives:
+    # Install basic dependencies
+    - run:
+        - apk add --no-cache git bash python3 py3-pip cmd:useradd apptainer curl ca-certificates
+
+    - workdir: /
+
+    - run:
+        - git clone https://github.com/neurodesk/neurocontainers.git
+        - cd neurocontainers
+        - pip install --break-system-packages --editable .
+      condition: not context.has_local("neurocontainers")
+
+    # Pull from local repo if available
+    - run:
+        - cp -R {{ get_local("neurocontainers") }} /
+        - ls -la neurocontainers
+        - cd neurocontainers
+        - pip install --break-system-packages --editable .
+      condition: context.has_local("neurocontainers")
+
+    # Override since /home/user sits on a readonly filesystem.
+    - environment:
+        XDG_RUNTIME_DIR: /tmp/buildkit
+
+    - deploy:
+        bins:
+          - sf-make
+
+    # Override since starting a buildkit daemon is not useful.
+    - entrypoint: bash
+
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+
+# Required for BuildKit.
+apptainer_args:
+  - --fakeroot
+  - --writable-tmpfs
+
+readme: |-
+  ----------------------------------
+  ## builder/{{ context.version }} ##
+
+  NeuroContainers builder and BuildKit packaged with Neurodesk.
+
+  Examples:
+  ```
+  # Make a SIF via BuildKit + Apptainer (no Docker daemon)
+  sf-make /path/to/recipes/my-recipe
+  ```
+
+  To run container outside of this environment: ml builder/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - programming
