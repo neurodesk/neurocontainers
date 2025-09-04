@@ -107,7 +107,7 @@ def open_issue(title, body):
 
 if __name__ == "__main__":
     files = glob.glob("../recipes/**/*.y*ml", recursive=True)
-    #print("Files matched:", files)
+    print("Files matched:", files)
     for path in files:
         try:
             with open(path, encoding="utf-8") as f:
