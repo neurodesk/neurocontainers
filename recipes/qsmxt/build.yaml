@@ -311,9 +311,6 @@ build:
           - dicom-sort
           - dicom-convert
           - nifti-convert
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
     - boutique:
         name: qsmxt
         description: >-

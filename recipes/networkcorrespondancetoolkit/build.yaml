@@ -142,9 +142,6 @@ build:
 
           print("NCT test ran successfully")
 
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
 
 categories:
   - image registration

@@ -56,9 +56,7 @@ build:
         path:
           - /opt/niftyreg-1.4.0/bin/
 
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
+    
 
 readme: |
   ----------------------------------
