@@ -154,20 +154,20 @@ jobs:
             bash -lc "cd /workspace && sf-make \"${RECIPE}\" --ignore-architectures --architecture \"${ARCH}\""
 
       - name: Set up Python for testing
-        if: ${{ inputs['run-tests'] == 'true' }}
+        if: ${{ github.event.inputs['run-tests'] == 'true' }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install builder tooling (for tests)
-        if: ${{ inputs['run-tests'] == 'true' }}
+        if: ${{ github.event.inputs['run-tests'] == 'true' }}
         run: |
           set -euxo pipefail
           python -m pip install --upgrade pip
           pip install -e .
 
       - name: Determine recipe version
-        if: ${{ inputs['run-tests'] == 'true' }}
+        if: ${{ github.event.inputs['run-tests'] == 'true' }}
         id: get-version
         run: |
           python - <<'PY'
@@ -182,7 +182,7 @@ jobs:
           PY
 
       - name: Run container tests (apptainer)
-        if: ${{ inputs['run-tests'] == 'true' }}
+        if: ${{ github.event.inputs['run-tests'] == 'true' }}
         env:
           RECIPE: ${{ matrix.recipe }}
           VERSION: ${{ steps.get-version.outputs.version }}
