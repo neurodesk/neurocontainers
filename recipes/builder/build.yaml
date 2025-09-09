@@ -50,9 +50,6 @@ build:
     # Override since starting a buildkit daemon is not useful.
     - entrypoint: bash
 
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
 
 # Required for BuildKit.
 apptainer_args:

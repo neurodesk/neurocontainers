@@ -7,6 +7,10 @@ on:
         description: "Debug mode (only run niimath test)"
         type: boolean
         default: true
+      run-tests:
+        description: "Run tests for each built container"
+        type: boolean
+        default: false
       architecture:
         description: "Target architecture (x86_64 or arm64)"
         type: choice
@@ -148,3 +152,46 @@ jobs:
             --bind "$PWD:/workspace" \
             "$BUILDER_SIF" \
             bash -lc "cd /workspace && sf-make \"${RECIPE}\" --ignore-architectures --architecture \"${ARCH}\""
+
+      - name: Set up Python for testing
+        if: ${{ github.event.inputs['run-tests'] == 'true' }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install builder tooling (for tests)
+        if: ${{ github.event.inputs['run-tests'] == 'true' }}
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Determine recipe version
+        if: ${{ github.event.inputs['run-tests'] == 'true' }}
+        id: get-version
+        run: |
+          python - <<'PY'
+          import yaml, os
+          p = f"recipes/${{ matrix.recipe }}/build.yaml"
+          with open(p) as f:
+              d = yaml.safe_load(f)
+          version = d.get('version','latest')
+          print(f"Detected version: {version}")
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
+              out.write(f"version={version}\n")
+          PY
+
+      - name: Run container tests (apptainer)
+        if: ${{ github.event.inputs['run-tests'] == 'true' }}
+        env:
+          RECIPE: ${{ matrix.recipe }}
+          VERSION: ${{ steps.get-version.outputs.version }}
+        run: |
+          set -euxo pipefail
+          echo "Testing ${RECIPE}:${VERSION} using local SIF"
+          python builder/container_tester.py \
+            "${RECIPE}:${VERSION}" \
+            --runtime apptainer \
+            --location local \
+            --test-config "recipes/${RECIPE}/build.yaml" \
+            --verbose

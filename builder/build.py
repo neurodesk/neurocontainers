@@ -2046,6 +2046,19 @@ def get_all_tests(description_file: typing.Any, recipe_path: str) -> list[dict]:
 
     walk_directives(directives)
 
+    # Ensure we always include the default builtin deploy test unless already present
+    has_builtin = any(
+        (isinstance(t, dict) and t.get("builtin") == "test_deploy.sh") for t in tests
+    )
+    if not has_builtin:
+        tests.insert(
+            0,
+            {
+                "name": "Simple Deploy Bins/Path Test",
+                "builtin": "test_deploy.sh",
+            },
+        )
+
     return tests
 
 

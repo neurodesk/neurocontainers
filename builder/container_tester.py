@@ -292,6 +292,19 @@ class TestDefinitionExtractor:
         if "tests" in config:
             tests.extend(config["tests"])
 
+        # Ensure an implicit builtin deploy test is present unless already defined
+        has_builtin = any(
+            isinstance(t, dict) and t.get("builtin") == "test_deploy.sh" for t in tests
+        )
+        if not has_builtin:
+            tests.insert(
+                0,
+                {
+                    "name": "Simple Deploy Bins/Path Test",
+                    "builtin": "test_deploy.sh",
+                },
+            )
+
         return {
             "name": config.get("name", "unknown"),
             "version": config.get("version", "unknown"),
