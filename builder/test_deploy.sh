@@ -24,35 +24,60 @@ function test_file {
     test_file_linking $filename
 }
 
-function test_file_linking {
+function get_file_magic {
     filename=$1
 
-    # if the file starts with a shabang test it recursively
-    if [ "$(head -n 1 $filename | grep '#!')" ]; then
-        # Get just the interpreter
-        interpreter=$(head -n 1 $filename | grep '#!' | awk '{print $1}' | cut -c 3-)
-
-        echo "File $filename is a script using $interpreter."
-
-        # Check if the interpreter works
-        test_file $interpreter
-
-        return 0
+    # if the file is a symbolic link, get the target file
+    if [ -L "$filename" ]; then
+        filename=$(readlink -f "$filename")
     fi
 
-    # If the file is dynamically linked, check if the libraries exist
-    if ldd "$filename" &>/dev/null; then
-        echo "File $filename is dynamically linked."
-        for j in $(ldd "$filename" | awk '{print $3}'); do
-            if [ -f "$j" ]; then
-                echo "Library $j exists."
-            else
-                echo "Library $j does not exist."
-                exit 1
-            fi
-        done
+    file "$filename"
+}
+
+function test_file_linking {
+    local filename=$1
+
+    # If the file is an ELF binary check if it is statically or dynamically linked
+    if get_file_magic "$filename" | grep -q "ELF"; then
+        if ldd "$filename" &>/dev/null; then
+            echo "File $filename is dynamically linked."
+            while read -r _ _ libpath _; do
+                if [ -n "$libpath" ] && [ "$libpath" != "not" ]; then
+                    if [ -f "$libpath" ]; then
+                        echo "Library $libpath exists."
+                    else
+                        echo "Library $libpath does not exist."
+                        exit 1
+                    fi
+                fi
+            done < <(ldd "$filename")
+        else
+            echo "File $filename is statically linked."
+        fi
     else
-        echo "File $i is staticky linked."
+        # Check for shebang
+        local first_line
+        IFS= read -r first_line < "$filename"
+        if [[ $first_line == \#!* ]]; then
+            # Strip '#!' and leading whitespace
+            local interpreter_line="${first_line#\#!}"
+            interpreter_line="${interpreter_line#"${interpreter_line%%[![:space:]]*}"}"
+
+            # Split interpreter+args
+            local interpreter=${interpreter_line%% *}
+            local args=${interpreter_line#"$interpreter"}
+            args="${args#"${args%%[![:space:]]*}"}" # trim leading spaces if any
+
+            echo "File $filename is a script using interpreter: $interpreter ${args}"
+
+            # Validate interpreter exists
+            test_file "$interpreter"
+
+            return 0
+        else
+            echo "File $filename is not an ELF binary or a script."
+        fi
     fi
 }
 
