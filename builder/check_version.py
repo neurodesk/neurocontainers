@@ -134,8 +134,7 @@ if __name__ == "__main__":
         name = data.get("name", os.path.basename(path))
         cur  = str(data.get("version", "")).strip()
         if not cur:
-            print("version missing")
-            continue
+            raise ValueError("version missing")
         print(f"Handling file: {path}")
         print(f"Check: name={name}, current_version={cur}, upstream_repo={repo}")
         up = latest_stable(repo)

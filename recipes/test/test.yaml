@@ -1,5 +1,5 @@
 name: bart
-version: 0.8.00   # 故意写旧版，触发更新提示
+version: 0.8.00   
 
 copyright:
   - license: BSD-3-Clause
@@ -10,7 +10,7 @@ architectures:
 
 auto_update:
   method: github_release
-  repo: mrirecon/bart   # 上游仓库
+  repo: mrirecon/bart  
 
 build:
   kind: neurodocker
@@ -45,8 +45,7 @@ deploy:
 readme: |-
   ----------------------------------
   ## bart/{{ context.version }} ##
-  (略，同原文)
-  ----------------------------------
 
-categories:
-  - "image reconstruction"
+  BART (Berkeley Advanced Reconstruction Toolbox) is an open-source toolbox for computational magnetic resonance imaging (MRI) reconstruction and related image processing tasks.  
+  It provides a large collection of fast, GPU-enabled command-line tools for iterative reconstruction, parallel imaging, compressed sensing, and quantitative MRI.
+
