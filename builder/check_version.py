@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 import os, glob, yaml, requests, traceback
 from packaging import version as V
 
@@ -126,8 +126,7 @@ if __name__ == "__main__":
         method = au.get("method")
         repo   = au.get("repo")
         if method != "github_release":
-            #the operation of other methods like pypi, conda, git_tag ...
-            continue
+            raise ValueError(f"FATAL: {path} has unsupported auto_update.method={method!r}")
         if not repo:
             print("auto_update.repo missing")
             continue

@@ -1,7 +1,7 @@
 name: Auto Update Recipes
 on:
   schedule:
-    - cron: "0 3 * * 1"   # 每周一 03:00 UTC
+    - cron: "0 3 * * 1"   # every Monday 
   workflow_dispatch:
 
 permissions:
@@ -21,4 +21,4 @@ jobs:
       - name: Run updater
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python builder/check.py
+        run: python builder/check_version.py
