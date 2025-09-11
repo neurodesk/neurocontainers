@@ -171,19 +171,28 @@ jobs:
         run: |
           echo "Running Trivy vulnerability scan..."
 
+          # Convert severity to uppercase for Trivy
+          case "${{ inputs.severity_threshold }}" in
+            "low") TRIVY_SEVERITY="LOW,MEDIUM,HIGH,CRITICAL" ;;
+            "medium") TRIVY_SEVERITY="MEDIUM,HIGH,CRITICAL" ;;
+            "high") TRIVY_SEVERITY="HIGH,CRITICAL" ;;
+            "critical") TRIVY_SEVERITY="CRITICAL" ;;
+            *) TRIVY_SEVERITY="MEDIUM,HIGH,CRITICAL" ;;
+          esac
+
           # Run Trivy scan with JSON output
           trivy image \
             --format json \
             --output "${{ env.SCAN_OUTPUT_DIR }}/trivy_results.json" \
             --timeout "${{ inputs.max_scan_timeout }}s" \
-            --severity HIGH,CRITICAL \
+            --severity "$TRIVY_SEVERITY" \
             "${{ inputs.container_image }}"
 
           # Generate human-readable report
           trivy image \
             --format table \
             --output "${{ env.SCAN_OUTPUT_DIR }}/trivy_report.txt" \
-            --severity "${{ inputs.severity_threshold | upper }}" \
+            --severity "$TRIVY_SEVERITY" \
             "${{ inputs.container_image }}"
 
       - name: Run Semgrep static analysis
