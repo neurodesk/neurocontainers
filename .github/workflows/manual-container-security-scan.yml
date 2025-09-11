@@ -133,10 +133,33 @@ jobs:
           mkdir -p cache
           mkdir -p base_scans
 
+      - name: Login to GitHub Container Registry
+        if: contains(inputs.container_image, 'ghcr.io')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Pull container image for scanning
         run: |
           echo "Pulling container image: ${{ inputs.container_image }}"
-          docker pull "${{ inputs.container_image }}"
+          
+          # Try to pull the image, with better error handling
+          if ! docker pull "${{ inputs.container_image }}"; then
+            echo "❌ Failed to pull image: ${{ inputs.container_image }}"
+            echo "This could be due to:"
+            echo "  - Image doesn't exist"
+            echo "  - Authentication required"
+            echo "  - Network issues"
+            echo "  - Registry unavailable"
+            echo ""
+            echo "If this is a private image, ensure proper authentication is configured."
+            echo "For GHCR images, the workflow will attempt to authenticate automatically."
+            exit 1
+          fi
+
+          echo "✅ Successfully pulled image: ${{ inputs.container_image }}"
 
           # Get image information
           docker inspect "${{ inputs.container_image }}" > ${{ env.SCAN_OUTPUT_DIR }}/image_info.json
