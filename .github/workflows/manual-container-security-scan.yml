@@ -1,0 +1,356 @@
+name: Manual Container Security Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      container_image:
+        description: "Container image to scan (e.g., ghcr.io/neurodesk/julia:1.9.4)"
+        required: true
+        type: string
+        default: "ghcr.io/neurodesk/julia:latest"
+      scanner_tool:
+        description: "Vulnerability scanner to use"
+        required: true
+        type: choice
+        options:
+          - grype
+          - trivy
+          - both
+        default: "grype"
+      enable_semgrep:
+        description: "Enable Semgrep static analysis"
+        required: false
+        type: boolean
+        default: true
+      severity_threshold:
+        description: "Minimum severity level to report"
+        required: false
+        type: choice
+        options:
+          - low
+          - medium
+          - high
+          - critical
+        default: "medium"
+      max_scan_timeout:
+        description: "Maximum scan timeout in seconds"
+        required: false
+        type: number
+        default: 1800
+      semgrep_timeout:
+        description: "Semgrep scan timeout in seconds"
+        required: false
+        type: number
+        default: 900
+
+env:
+  SCAN_OUTPUT_DIR: scan_results
+  TEMP_DIR: temp_scan
+
+jobs:
+  container-security-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          # Update package lists
+          sudo apt-get update
+
+          # Install required system packages
+          sudo apt-get install -y \
+            docker.io \
+            jq \
+            curl \
+            wget \
+            git
+
+          # Ensure Docker is running
+          sudo systemctl start docker
+          sudo systemctl enable docker
+
+          # Add user to docker group for non-root access
+          sudo usermod -aG docker $USER
+          newgrp docker || true
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+          # Install additional scanning dependencies
+          pip install \
+            flask \
+            jinja2 \
+            requests \
+            pyyaml \
+            jsonschema
+
+      - name: Install vulnerability scanners
+        run: |
+          # Install Grype
+          if [[ "${{ inputs.scanner_tool }}" == "grype" || "${{ inputs.scanner_tool }}" == "both" ]]; then
+            echo "Installing Grype..."
+            curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+            grype version
+          fi
+
+          # Install Trivy
+          if [[ "${{ inputs.scanner_tool }}" == "trivy" || "${{ inputs.scanner_tool }}" == "both" ]]; then
+            echo "Installing Trivy..."
+            sudo apt-get install -y wget apt-transport-https gnupg
+            wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+            echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+            sudo apt-get update
+            sudo apt-get install -y trivy
+            trivy --version
+          fi
+
+          # Pull Semgrep Docker image if needed
+          if [[ "${{ inputs.enable_semgrep }}" == "true" ]]; then
+            echo "Pulling Semgrep Docker image..."
+            docker pull returntocorp/semgrep:latest
+          fi
+
+      - name: Create output directories
+        run: |
+          mkdir -p ${{ env.SCAN_OUTPUT_DIR }}
+          mkdir -p ${{ env.TEMP_DIR }}
+          mkdir -p cache
+          mkdir -p base_scans
+
+      - name: Pull container image for scanning
+        run: |
+          echo "Pulling container image: ${{ inputs.container_image }}"
+          docker pull "${{ inputs.container_image }}"
+
+          # Get image information
+          docker inspect "${{ inputs.container_image }}" > ${{ env.SCAN_OUTPUT_DIR }}/image_info.json
+
+      - name: Run Grype vulnerability scan
+        if: inputs.scanner_tool == 'grype' || inputs.scanner_tool == 'both'
+        run: |
+          echo "Running Grype vulnerability scan..."
+
+          # Run Grype scan with JSON output
+          grype "${{ inputs.container_image }}" \
+            --output json \
+            --file "${{ env.SCAN_OUTPUT_DIR }}/grype_results.json" \
+            --timeout "${{ inputs.max_scan_timeout }}s"
+
+          # Generate human-readable report
+          grype "${{ inputs.container_image }}" \
+            --output table \
+            --file "${{ env.SCAN_OUTPUT_DIR }}/grype_report.txt"
+
+          # Filter by severity if specified
+          if [[ "${{ inputs.severity_threshold }}" != "low" ]]; then
+            grype "${{ inputs.container_image }}" \
+              --output json \
+              --file "${{ env.SCAN_OUTPUT_DIR }}/grype_filtered.json" \
+              --severity "${{ inputs.severity_threshold }}"
+          fi
+
+      - name: Run Trivy vulnerability scan
+        if: inputs.scanner_tool == 'trivy' || inputs.scanner_tool == 'both'
+        run: |
+          echo "Running Trivy vulnerability scan..."
+
+          # Run Trivy scan with JSON output
+          trivy image \
+            --format json \
+            --output "${{ env.SCAN_OUTPUT_DIR }}/trivy_results.json" \
+            --timeout "${{ inputs.max_scan_timeout }}s" \
+            --severity HIGH,CRITICAL \
+            "${{ inputs.container_image }}"
+
+          # Generate human-readable report
+          trivy image \
+            --format table \
+            --output "${{ env.SCAN_OUTPUT_DIR }}/trivy_report.txt" \
+            --severity "${{ inputs.severity_threshold | upper }}" \
+            "${{ inputs.container_image }}"
+
+      - name: Run Semgrep static analysis
+        if: inputs.enable_semgrep == true
+        run: |
+          echo "Running Semgrep static analysis..."
+
+          # Create container to extract filesystem
+          container_id=$(docker create "${{ inputs.container_image }}")
+
+          # Extract container filesystem
+          temp_extract_dir="${{ env.TEMP_DIR }}/container_fs"
+          mkdir -p "$temp_extract_dir"
+          docker export "$container_id" | tar -xf - -C "$temp_extract_dir" 2>/dev/null || true
+
+          # Run Semgrep analysis
+          timeout "${{ inputs.semgrep_timeout }}" docker run --rm \
+            -v "$PWD/$temp_extract_dir":/src \
+            -v "$PWD/${{ env.SCAN_OUTPUT_DIR }}":/output \
+            returntocorp/semgrep:latest \
+            --config=auto \
+            --config=p/security-audit \
+            --config=p/secrets \
+            --json \
+            --output=/output/semgrep_results.json \
+            /src || echo "Semgrep completed with warnings"
+
+          # Generate human-readable Semgrep report
+          if [[ -f "${{ env.SCAN_OUTPUT_DIR }}/semgrep_results.json" ]]; then
+            docker run --rm \
+              -v "$PWD/${{ env.SCAN_OUTPUT_DIR }}":/output \
+              returntocorp/semgrep:latest \
+              --config=auto \
+              --config=p/security-audit \
+              --config=p/secrets \
+              --sarif \
+              --output=/output/semgrep_sarif.json \
+              /dev/null 2>/dev/null || true
+          fi
+
+          # Cleanup
+          docker rm "$container_id" || true
+          rm -rf "$temp_extract_dir"
+
+      - name: Generate consolidated security report
+        run: |
+          echo "Generating consolidated security report..."
+
+          # Create summary report
+          cat > "${{ env.SCAN_OUTPUT_DIR }}/security_scan_summary.md" << EOF
+          # Container Security Scan Report
+
+          **Container Image:** \`${{ inputs.container_image }}\`
+          **Scan Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          **Scanner:** ${{ inputs.scanner_tool }}
+          **Semgrep Enabled:** ${{ inputs.enable_semgrep }}
+          **Severity Threshold:** ${{ inputs.severity_threshold }}
+
+          ## Scan Configuration
+          - Max Scan Timeout: ${{ inputs.max_scan_timeout }} seconds
+          - Semgrep Timeout: ${{ inputs.semgrep_timeout }} seconds
+
+          ## Results Summary
+          EOF
+
+          # Add Grype results if available
+          if [[ -f "${{ env.SCAN_OUTPUT_DIR }}/grype_results.json" ]]; then
+            grype_vulns=$(jq -r '.matches | length' "${{ env.SCAN_OUTPUT_DIR }}/grype_results.json" 2>/dev/null || echo "0")
+            echo "- **Grype Vulnerabilities Found:** $grype_vulns" >> "${{ env.SCAN_OUTPUT_DIR }}/security_scan_summary.md"
+          fi
+
+          # Add Trivy results if available
+          if [[ -f "${{ env.SCAN_OUTPUT_DIR }}/trivy_results.json" ]]; then
+            trivy_vulns=$(jq -r '[.Results[]?.Vulnerabilities[]?] | length' "${{ env.SCAN_OUTPUT_DIR }}/trivy_results.json" 2>/dev/null || echo "0")
+            echo "- **Trivy Vulnerabilities Found:** $trivy_vulns" >> "${{ env.SCAN_OUTPUT_DIR }}/security_scan_summary.md"
+          fi
+
+          # Add Semgrep results if available
+          if [[ -f "${{ env.SCAN_OUTPUT_DIR }}/semgrep_results.json" ]]; then
+            semgrep_issues=$(jq -r '.results | length' "${{ env.SCAN_OUTPUT_DIR }}/semgrep_results.json" 2>/dev/null || echo "0")
+            echo "- **Semgrep Static Analysis Issues:** $semgrep_issues" >> "${{ env.SCAN_OUTPUT_DIR }}/security_scan_summary.md"
+          fi
+
+          echo "" >> "${{ env.SCAN_OUTPUT_DIR }}/security_scan_summary.md"
+          echo "## Files Generated" >> "${{ env.SCAN_OUTPUT_DIR }}/security_scan_summary.md"
+          ls -la "${{ env.SCAN_OUTPUT_DIR }}/" | grep -v '^total' | awk '{print "- " $9}' >> "${{ env.SCAN_OUTPUT_DIR }}/security_scan_summary.md"
+
+      - name: Upload security scan results
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-security-scan-results
+          path: |
+            ${{ env.SCAN_OUTPUT_DIR }}/
+            !${{ env.SCAN_OUTPUT_DIR }}/*.log
+          retention-days: 30
+
+      - name: Upload Semgrep SARIF results
+        if: inputs.enable_semgrep == true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ env.SCAN_OUTPUT_DIR }}/semgrep_sarif.json
+          category: semgrep-container-analysis
+        continue-on-error: true
+
+      - name: Check for critical vulnerabilities
+        run: |
+          echo "Checking for critical vulnerabilities..."
+          critical_found=false
+
+          # Check Grype results for critical vulnerabilities
+          if [[ -f "${{ env.SCAN_OUTPUT_DIR }}/grype_results.json" ]]; then
+            critical_grype=$(jq -r '[.matches[] | select(.vulnerability.severity == "Critical")] | length' "${{ env.SCAN_OUTPUT_DIR }}/grype_results.json" 2>/dev/null || echo "0")
+            if [[ "$critical_grype" -gt 0 ]]; then
+              echo "⚠️  Found $critical_grype critical vulnerabilities in Grype scan"
+              critical_found=true
+            fi
+          fi
+
+          # Check Trivy results for critical vulnerabilities
+          if [[ -f "${{ env.SCAN_OUTPUT_DIR }}/trivy_results.json" ]]; then
+            critical_trivy=$(jq -r '[.Results[]?.Vulnerabilities[]? | select(.Severity == "CRITICAL")] | length' "${{ env.SCAN_OUTPUT_DIR }}/trivy_results.json" 2>/dev/null || echo "0")
+            if [[ "$critical_trivy" -gt 0 ]]; then
+              echo "⚠️  Found $critical_trivy critical vulnerabilities in Trivy scan"
+              critical_found=true
+            fi
+          fi
+
+          # Check Semgrep for high-severity security issues
+          if [[ -f "${{ env.SCAN_OUTPUT_DIR }}/semgrep_results.json" ]]; then
+            high_semgrep=$(jq -r '[.results[] | select(.extra.severity == "ERROR")] | length' "${{ env.SCAN_OUTPUT_DIR }}/semgrep_results.json" 2>/dev/null || echo "0")
+            if [[ "$high_semgrep" -gt 0 ]]; then
+              echo "⚠️  Found $high_semgrep high-severity issues in Semgrep analysis"
+              critical_found=true
+            fi
+          fi
+
+          if [[ "$critical_found" == "true" ]]; then
+            echo "❌ Critical security issues found! Please review the scan results."
+            echo "critical_vulnerabilities_found=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ No critical vulnerabilities found."
+            echo "critical_vulnerabilities_found=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Display scan summary
+        run: |
+          echo "=== CONTAINER SECURITY SCAN SUMMARY ==="
+          cat "${{ env.SCAN_OUTPUT_DIR }}/security_scan_summary.md"
+          echo ""
+          echo "📁 Scan results have been uploaded as artifacts."
+          echo "🔍 Review the detailed reports for complete vulnerability information."
+
+          if [[ -f "${{ env.SCAN_OUTPUT_DIR }}/grype_report.txt" ]]; then
+            echo ""
+            echo "=== GRYPE SCAN PREVIEW ==="
+            head -20 "${{ env.SCAN_OUTPUT_DIR }}/grype_report.txt" || true
+          fi
+
+          if [[ -f "${{ env.SCAN_OUTPUT_DIR }}/trivy_report.txt" ]]; then
+            echo ""
+            echo "=== TRIVY SCAN PREVIEW ==="
+            head -20 "${{ env.SCAN_OUTPUT_DIR }}/trivy_report.txt" || true
+          fi
+
+      - name: Cleanup temporary files
+        if: always()
+        run: |
+          echo "Cleaning up temporary files..."
+          rm -rf ${{ env.TEMP_DIR }}
+          docker system prune -f || true
