@@ -267,7 +267,8 @@ jobs:
           cat > "${{ env.SCAN_OUTPUT_DIR }}/security_scan_summary.md" << EOF
           # Container Security Scan Report
 
-          **Container Image:** \`${{ inputs.container_image }}\`
+          **Container Image:** \`$IMAGE_TO_SCAN\`
+          **Original Image:** \`${{ inputs.container_image }}\`
           **Scan Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
           **Scanner:** ${{ inputs.scanner_tool }}
           **Semgrep Enabled:** ${{ inputs.enable_semgrep }}
