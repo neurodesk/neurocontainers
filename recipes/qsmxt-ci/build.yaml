@@ -69,7 +69,7 @@ boutiques:
     schema-version: '0.5'
     command-line: >-
       qsmxt [BIDS_DIR] [OUTPUT_DIR] 
-      --premade bet 
+      --premade bet
       --qsm_algorithm tgv
       --tgv_iterations [TGV_ITERATIONS]
       --tgv_alphas [TGV_ALPHA1] [TGV_ALPHA2]
@@ -107,7 +107,7 @@ boutiques:
         id: run
         description: BIDS run ID
         type: String
-        optional: true
+        optional: true 
         value-key: '[RUN]'
       - name: tgv_iterations
         id: tgv_iterations
