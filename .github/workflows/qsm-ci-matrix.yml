@@ -1,0 +1,397 @@
+name: QSM-CI Algorithm Matrix
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+  id-token: write
+
+on:
+  push:
+    paths:
+      - recipes/qsmxt-ci/**
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      algorithms:
+        description: 'Algorithms to test (comma-separated)'
+        required: false
+        default: 'qsm-tgv,qsm-nextqsm,qsm-rts,qsm-tv'
+      datasets:
+        description: 'Datasets to test (comma-separated)'  
+        required: false
+        default: 'phantom,sim_sub1'
+      container_path:
+        description: 'Container path (registry or local)'
+        required: false
+        default: 'astewartau/qsmxt-ci:latest'
+
+jobs:
+  build-container:
+    runs-on: ubuntu-22.04
+    outputs:
+      container_tag: ${{ steps.build.outputs.container_tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build QSMxT-CI container
+        id: build
+        uses: ./.github/workflows/build-app.yml
+        with:
+          application: qsmxt-ci
+          runner: ubuntu-22.04
+        secrets: inherit
+
+      - name: Export container tag
+        run: |
+          echo "container_tag=astewartau/qsmxt-ci:${{ github.sha }}" >> $GITHUB_OUTPUT
+
+  extract-descriptors:
+    needs: build-container
+    runs-on: ubuntu-22.04
+    outputs:
+      descriptors: ${{ steps.extract.outputs.descriptors }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          pip install boutiques --user
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Extract Boutiques descriptors
+        id: extract
+        run: |
+          # Extract descriptors from built container
+          CONTAINER="${{ needs.build-container.outputs.container_tag }}"
+          mkdir -p descriptors
+          
+          # Use extraction script
+          chmod +x scripts/extract_descriptors.sh
+          ./scripts/extract_descriptors.sh "$CONTAINER" descriptors/
+          
+          # List extracted descriptors
+          DESCRIPTORS=$(ls descriptors/*.json | xargs -I {} basename {} .json | tr '\n' ',' | sed 's/,$//')
+          echo "descriptors=$DESCRIPTORS" >> $GITHUB_OUTPUT
+          echo "Found descriptors: $DESCRIPTORS"
+
+      - name: Upload descriptors as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: qsm-descriptors
+          path: descriptors/*.json
+
+  prepare-test-data:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download QSM test datasets
+        run: |
+          mkdir -p test-data
+          
+          # Download phantom data from OSF (placeholder - use actual QSM-CI data)
+          # wget -O test-data/phantom.tar.gz "https://osf.io/download/phantom_qsm_data.tar.gz"
+          # tar -xzf test-data/phantom.tar.gz -C test-data/
+          
+          # For now, create synthetic test data
+          python3 << 'EOF'
+          import os
+          import numpy as np
+          import json
+          import nibabel as nib
+          
+          # Create phantom dataset
+          os.makedirs("test-data/phantom/sub-01/anat", exist_ok=True)
+          os.makedirs("test-data/phantom/derivatives/ground_truth", exist_ok=True)
+          
+          # Create multi-echo data (simplified)
+          dims = (64, 64, 32)
+          n_echoes = 4
+          
+          for echo in range(1, n_echoes + 1):
+              # Magnitude data
+              mag_data = np.random.randn(*dims) + 2
+              mag_img = nib.Nifti1Image(mag_data, np.eye(4))
+              nib.save(mag_img, f"test-data/phantom/sub-01/anat/sub-01_echo-{echo}_part-mag_T2starw.nii.gz")
+              
+              # Phase data
+              phase_data = np.random.randn(*dims) * 0.5
+              phase_img = nib.Nifti1Image(phase_data, np.eye(4))
+              nib.save(phase_img, f"test-data/phantom/sub-01/anat/sub-01_echo-{echo}_part-phase_T2starw.nii.gz")
+          
+          # Ground truth susceptibility map
+          chi_data = np.random.randn(*dims) * 0.1
+          chi_img = nib.Nifti1Image(chi_data, np.eye(4))
+          nib.save(chi_img, "test-data/phantom/derivatives/ground_truth/chi.nii.gz")
+          
+          # ROI mask
+          roi_data = np.ones(dims)
+          roi_img = nib.Nifti1Image(roi_data, np.eye(4))
+          nib.save(roi_img, "test-data/phantom/derivatives/ground_truth/roi.nii.gz")
+          
+          # BIDS dataset_description.json
+          dataset_desc = {
+              "Name": "QSM-CI Test Phantom",
+              "BIDSVersion": "1.8.0",
+              "DatasetType": "raw"
+          }
+          with open("test-data/phantom/dataset_description.json", "w") as f:
+              json.dump(dataset_desc, f, indent=2)
+          
+          print("Created phantom test dataset")
+          EOF
+
+      - name: Upload test data as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: qsm-test-data
+          path: test-data/
+
+  qsm-algorithm-matrix:
+    needs: [build-container, extract-descriptors, prepare-test-data]
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        algorithm: ${{ fromJSON(format('["{0}"]', needs.extract-descriptors.outputs.descriptors)) }}
+        dataset: [phantom]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          pip install boutiques nibabel scipy scikit-learn scikit-image pandas --user
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          
+          # Install Singularity if needed
+          sudo apt-get update
+          sudo apt-get install -y singularity-container
+
+      - name: Download descriptors
+        uses: actions/download-artifact@v4
+        with:
+          name: qsm-descriptors
+          path: descriptors/
+
+      - name: Download test data  
+        uses: actions/download-artifact@v4
+        with:
+          name: qsm-test-data
+          path: test-data/
+
+      - name: Setup algorithm inputs
+        id: setup
+        run: |
+          ALGORITHM="${{ matrix.algorithm }}"
+          DATASET="${{ matrix.dataset }}"
+          
+          # Create inputs JSON for this algorithm
+          cat > inputs.json << EOF
+          {
+            "bids_dir": "test-data/$DATASET",
+            "output_dir": "results/$ALGORITHM/$DATASET",
+            "subject": "01"
+          }
+          EOF
+          
+          # Add algorithm-specific parameters
+          case "$ALGORITHM" in
+            qsm-tgv)
+              python3 -c "
+          import json
+          with open('inputs.json', 'r') as f: data = json.load(f)
+          data.update({'tgv_iterations': 100, 'tgv_alpha1': 0.0015, 'tgv_alpha2': 0.0005})
+          with open('inputs.json', 'w') as f: json.dump(data, f, indent=2)
+          "
+              ;;
+            qsm-rts|qsm-tv)
+              python3 -c "
+          import json
+          with open('inputs.json', 'r') as f: data = json.load(f)
+          data.update({'unwrapping': 'romeo', 'bf_algorithm': 'vsharp'})
+          with open('inputs.json', 'w') as f: json.dump(data, f, indent=2)
+          "
+              ;;
+          esac
+          
+          echo "Created inputs for $ALGORITHM on $DATASET:"
+          cat inputs.json
+
+      - name: Execute QSM algorithm
+        id: execute
+        run: |
+          ALGORITHM="${{ matrix.algorithm }}"
+          CONTAINER="${{ needs.build-container.outputs.container_tag }}"
+          
+          echo "Executing $ALGORITHM using container $CONTAINER"
+          
+          # Validate descriptor
+          bosh validate "descriptors/${ALGORITHM}.json"
+          
+          # Execute via Boutiques
+          mkdir -p "results/$ALGORITHM/${{ matrix.dataset }}"
+          
+          bosh exec launch \
+            "descriptors/${ALGORITHM}.json" \
+            "inputs.json" \
+            --imagepath "$CONTAINER" \
+            --verbose || {
+              echo "Boutiques execution failed, capturing logs..."
+              echo "execution_status=failed" >> $GITHUB_OUTPUT
+              exit 1
+            }
+          
+          echo "execution_status=success" >> $GITHUB_OUTPUT
+
+      - name: Run QSM evaluation
+        id: evaluate
+        if: steps.execute.outputs.execution_status == 'success'
+        run: |
+          ALGORITHM="${{ matrix.algorithm }}"
+          DATASET="${{ matrix.dataset }}"
+          
+          # Check if ground truth exists
+          GROUND_TRUTH="test-data/$DATASET/derivatives/ground_truth/chi.nii.gz"
+          ROI="test-data/$DATASET/derivatives/ground_truth/roi.nii.gz"
+          
+          if [ -f "$GROUND_TRUTH" ] && [ -f "$ROI" ]; then
+            # Find QSM output
+            QSM_OUTPUT=$(find "results/$ALGORITHM/$DATASET" -name "*chi*.nii.gz" -o -name "*Chimap*.nii.gz" | head -1)
+            
+            if [ -f "$QSM_OUTPUT" ]; then
+              echo "Running evaluation for $ALGORITHM on $DATASET"
+              
+              # Use evaluation script from recipe
+              python3 "recipes/qsmxt-ci/qsm_ci_evaluate.py" \
+                --estimate "$QSM_OUTPUT" \
+                --ground_truth "$GROUND_TRUTH" \
+                --roi "$ROI" \
+                --output_dir "results/$ALGORITHM/$DATASET/metrics"
+              
+              # Display results
+              if [ -f "results/$ALGORITHM/$DATASET/metrics/metrics.json" ]; then
+                echo "=== Results for $ALGORITHM on $DATASET ==="
+                cat "results/$ALGORITHM/$DATASET/metrics/metrics.json" | jq '.'
+                echo "evaluation_status=success" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "Warning: No QSM output found for evaluation"
+              echo "evaluation_status=no_output" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "No ground truth available for evaluation"
+            echo "evaluation_status=no_ground_truth" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload algorithm results
+        uses: actions/upload-artifact@v4
+        with:
+          name: qsm-results-${{ matrix.algorithm }}-${{ matrix.dataset }}
+          path: results/${{ matrix.algorithm }}/${{ matrix.dataset }}/
+
+      - name: Report status
+        run: |
+          ALGORITHM="${{ matrix.algorithm }}"
+          DATASET="${{ matrix.dataset }}"
+          EXEC_STATUS="${{ steps.execute.outputs.execution_status }}"
+          EVAL_STATUS="${{ steps.evaluate.outputs.evaluation_status }}"
+          
+          echo "## QSM-CI Results: $ALGORITHM on $DATASET" >> $GITHUB_STEP_SUMMARY
+          echo "- Execution: $EXEC_STATUS" >> $GITHUB_STEP_SUMMARY
+          echo "- Evaluation: $EVAL_STATUS" >> $GITHUB_STEP_SUMMARY
+          
+          # Add metrics if available
+          if [ -f "results/$ALGORITHM/$DATASET/metrics/metrics.json" ]; then
+            echo "- Metrics:" >> $GITHUB_STEP_SUMMARY
+            python3 -c "
+          import json
+          with open('results/$ALGORITHM/$DATASET/metrics/metrics.json') as f:
+              metrics = json.load(f)
+          for k, v in metrics.items():
+              print(f'  - {k}: {v:.6f}')
+          " >> $GITHUB_STEP_SUMMARY
+          fi
+
+  generate-comparison:
+    needs: [qsm-algorithm-matrix]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: qsm-results-*
+          path: all-results/
+
+      - name: Generate algorithm comparison
+        run: |
+          pip install pandas matplotlib seaborn --user
+          
+          python3 << 'EOF'
+          import os
+          import json
+          import pandas as pd
+          
+          # Collect all metrics
+          results = []
+          
+          for root, dirs, files in os.walk("all-results"):
+              if "metrics.json" in files:
+                  metrics_file = os.path.join(root, "metrics.json")
+                  
+                  # Extract algorithm and dataset from path
+                  path_parts = root.split(os.sep)
+                  algorithm = dataset = None
+                  
+                  for i, part in enumerate(path_parts):
+                      if part.startswith("qsm-results-"):
+                          parts = part.replace("qsm-results-", "").split("-")
+                          if len(parts) >= 2:
+                              algorithm = parts[0] if parts[0].startswith("qsm-") else f"qsm-{parts[0]}"
+                              dataset = parts[1]
+                          break
+                  
+                  if algorithm and dataset:
+                      with open(metrics_file) as f:
+                          metrics = json.load(f)
+                      
+                      result = {"algorithm": algorithm, "dataset": dataset}
+                      result.update(metrics)
+                      results.append(result)
+          
+          if results:
+              df = pd.DataFrame(results)
+              print("QSM-CI Algorithm Comparison")
+              print("=" * 40)
+              print(df.to_string(index=False))
+              
+              # Save as CSV
+              df.to_csv("qsm_comparison.csv", index=False)
+              print(f"\nSaved comparison to qsm_comparison.csv")
+          else:
+              print("No results found for comparison")
+          EOF
+
+      - name: Upload comparison results
+        uses: actions/upload-artifact@v4
+        with:
+          name: qsm-comparison
+          path: qsm_comparison.csv
+
+      - name: Add comparison to summary
+        run: |
+          if [ -f qsm_comparison.csv ]; then
+            echo "## QSM-CI Algorithm Comparison" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat qsm_comparison.csv >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
