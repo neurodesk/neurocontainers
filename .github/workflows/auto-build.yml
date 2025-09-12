@@ -41,8 +41,8 @@ jobs:
         
         app_list='['
         for APPLICATION in $(echo "${changed_recipes}" | jq -r '.[]'); do
-          AUTOBUILD=$(cat .github/workflows/build-config.json | jq ".${APPLICATION} .autoBuild")
-          [ "$AUTOBUILD" == "null" ] && AUTOBUILD=$(cat .github/workflows/build-config.json | jq ".default .autoBuild")
+          AUTOBUILD=$(cat .github/workflows/build-config.json | jq -r ".\"${APPLICATION}\".autoBuild")
+          [ "$AUTOBUILD" == "null" ] && AUTOBUILD=$(cat .github/workflows/build-config.json | jq -r ".default.autoBuild")
           if [ "$AUTOBUILD" = "true" ]; then
               app_list+="\"${APPLICATION}\","
           else
