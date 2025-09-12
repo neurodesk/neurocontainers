@@ -11,7 +11,7 @@ on:
     paths:
       - recipes/qsmxt-ci/**
     branches:
-      - main
+      - master
   workflow_dispatch:
     inputs:
       algorithms:

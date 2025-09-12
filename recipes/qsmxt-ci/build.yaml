@@ -49,7 +49,7 @@ build:
         QSM_CI_DATA: /opt/qsm-ci-data
     
     - run:
-        - chmod +x /opt/qsm-ci/runner.sh
+        - chmod +x /opt/qsm-ci/runner.sh 
         - chmod +x /scripts/extract_descriptors.sh
 
 deploy:
