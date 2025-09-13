@@ -34,15 +34,20 @@ echo "Output directory: $OUTPUT_DIR"
 # Create output directory
 mkdir -p "$OUTPUT_DIR"
 
-# Check if container exists
+# Check if container exists and determine type
 if [[ "$CONTAINER_PATH" == docker://* ]]; then
     echo "Using Docker image: $CONTAINER_PATH"
     CONTAINER_TYPE="docker"
 elif [[ -f "$CONTAINER_PATH" ]]; then
     echo "Using Singularity image: $CONTAINER_PATH"
     CONTAINER_TYPE="singularity"
+elif [[ "$CONTAINER_PATH" =~ ^[a-zA-Z0-9._/-]+:[a-zA-Z0-9._-]+$ ]]; then
+    # Looks like a Docker registry URL (registry/image:tag format)
+    echo "Using Docker registry image: $CONTAINER_PATH"
+    CONTAINER_TYPE="docker"
 else
     echo "Error: Container not found at $CONTAINER_PATH"
+    echo "Expected: docker://registry/image:tag, /path/to/file.sif, or registry/image:tag"
     exit 1
 fi
 
