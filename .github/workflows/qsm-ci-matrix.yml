@@ -26,7 +26,7 @@ on:
       container_path:
         description: 'Container path (registry or local)'
         required: false
-        default: 'astewartau/qsmxt-ci:latest'
+        default: 'astewartau/qsmxtci:latest'
 
 jobs:
   check-trigger:
@@ -50,7 +50,7 @@ jobs:
             echo "Auto-build completed - running QSM-CI tests"
             echo "should_run=true" >> $GITHUB_OUTPUT
             # Use the latest tag from auto-build (includes date)
-            echo "container_tag=astewartau/qsmxt-ci:latest" >> $GITHUB_OUTPUT
+            echo "container_tag=astewartau/qsmxtci:latest" >> $GITHUB_OUTPUT
           fi
 
   extract-descriptors:
