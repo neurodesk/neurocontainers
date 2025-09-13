@@ -31,12 +31,12 @@ on:
 jobs:
   check-trigger:
     runs-on: ubuntu-22.04
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success')
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run'
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
       container_tag: ${{ steps.check.outputs.container_tag }}
     steps:
-      - name: Check if qsmxt-ci was built
+      - name: Check if qsmxtci was built
         id: check
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -44,10 +44,13 @@ jobs:
             echo "should_run=true" >> $GITHUB_OUTPUT
             echo "container_tag=${{ inputs.container_path }}" >> $GITHUB_OUTPUT
           else
-            # Check if the auto-build was for qsmxt-ci
-            # For now, we'll assume any successful auto-build completion should trigger
-            # In a full implementation, we'd check the workflow run details
-            echo "Auto-build completed - running QSM-CI tests"
+            echo "Auto-build workflow completed"
+            echo "Workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
+            
+            # Always run QSM-CI tests when auto-build workflow completes
+            # even if some jobs failed (e.g., qsmxt-ci cleanup jobs)
+            # as long as qsmxtci container was likely built
+            echo "Running QSM-CI tests"
             echo "should_run=true" >> $GITHUB_OUTPUT
             # Use the latest tag from auto-build (includes date)
             echo "container_tag=astewartau/qsmxtci:latest" >> $GITHUB_OUTPUT
