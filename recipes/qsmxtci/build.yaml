@@ -41,7 +41,7 @@ build:
         - mkdir -p /scripts
     
     - copy:
-        - ../../scripts/extract_descriptors.sh
+        - extract_descriptors.sh
         - /scripts/extract_descriptors.sh
     
     - environment:
