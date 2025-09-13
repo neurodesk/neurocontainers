@@ -179,10 +179,6 @@ jobs:
         run: |
           pip install boutiques nibabel scipy scikit-learn scikit-image pandas --user
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          
-          # Install Singularity if needed
-          sudo apt-get update
-          sudo apt-get install -y singularity-container
 
       - name: Download descriptors
         uses: actions/download-artifact@v4
