@@ -96,6 +96,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install Python dependencies
+        run: |
+          pip install numpy nibabel --user
+
       - name: Download QSM test datasets
         run: |
           mkdir -p test-data
