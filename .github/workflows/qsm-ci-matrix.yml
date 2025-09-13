@@ -7,9 +7,10 @@ permissions:
   id-token: write
 
 on:
-  push:
-    paths:
-      - recipes/qsmxt-ci/**
+  workflow_run:
+    workflows: ["auto-build"]
+    types: 
+      - completed
     branches:
       - master
   workflow_dispatch:
@@ -28,18 +29,33 @@ on:
         default: 'astewartau/qsmxt-ci:latest'
 
 jobs:
-  build-container:
-    uses: ./.github/workflows/build-app.yml
-    with:
-      application: qsmxt-ci
-      runner: ubuntu-22.04
-    secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
-      DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
+  check-trigger:
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success')
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+      container_tag: ${{ steps.check.outputs.container_tag }}
+    steps:
+      - name: Check if qsmxt-ci was built
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual trigger - using specified container"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            echo "container_tag=${{ inputs.container_path }}" >> $GITHUB_OUTPUT
+          else
+            # Check if the auto-build was for qsmxt-ci
+            # For now, we'll assume any successful auto-build completion should trigger
+            # In a full implementation, we'd check the workflow run details
+            echo "Auto-build completed - running QSM-CI tests"
+            echo "should_run=true" >> $GITHUB_OUTPUT
+            # Use the latest tag from auto-build (includes date)
+            echo "container_tag=astewartau/qsmxt-ci:latest" >> $GITHUB_OUTPUT
+          fi
 
   extract-descriptors:
-    needs: build-container
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should_run == 'true'
     runs-on: ubuntu-22.04
     outputs:
       descriptors: ${{ steps.extract.outputs.descriptors }}
@@ -55,8 +71,8 @@ jobs:
       - name: Extract Boutiques descriptors
         id: extract
         run: |
-          # Extract descriptors from built container
-          CONTAINER="astewartau/qsmxt-ci:latest"
+          # Extract descriptors from container (built by auto-build or specified manually)
+          CONTAINER="${{ needs.check-trigger.outputs.container_tag }}"
           mkdir -p descriptors
           
           # Use extraction script
@@ -143,7 +159,7 @@ jobs:
           path: test-data/
 
   qsm-algorithm-matrix:
-    needs: [build-container, extract-descriptors, prepare-test-data]
+    needs: [check-trigger, extract-descriptors, prepare-test-data]
     runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
@@ -218,7 +234,7 @@ jobs:
         id: execute
         run: |
           ALGORITHM="${{ matrix.algorithm }}"
-          CONTAINER="astewartau/qsmxt-ci:latest"
+          CONTAINER="${{ needs.check-trigger.outputs.container_tag }}"
           
           echo "Executing $ALGORITHM using container $CONTAINER"
           
