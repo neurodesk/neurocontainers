@@ -39,10 +39,13 @@ jobs:
       - name: Check if qsmxtci was built
         id: check
         run: |
+          echo "Event name: ${{ github.event_name }}"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "Manual trigger - using specified container"
+            CONTAINER_PATH="${{ inputs.container_path || 'astewartau/qsmxtci:latest' }}"
             echo "should_run=true" >> $GITHUB_OUTPUT
-            echo "container_tag=${{ inputs.container_path }}" >> $GITHUB_OUTPUT
+            echo "container_tag=$CONTAINER_PATH" >> $GITHUB_OUTPUT
+            echo "Using container: $CONTAINER_PATH"
           else
             echo "Auto-build workflow completed"
             echo "Workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
@@ -55,6 +58,7 @@ jobs:
             # Use the latest tag from auto-build (includes date)
             echo "container_tag=astewartau/qsmxtci:latest" >> $GITHUB_OUTPUT
           fi
+          echo "Final outputs: should_run=true, container_tag set"
 
   extract-descriptors:
     needs: check-trigger
