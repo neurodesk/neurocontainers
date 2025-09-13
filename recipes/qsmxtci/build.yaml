@@ -142,7 +142,7 @@ build:
         tags:
           algorithm: tgv
           category: qsm-reconstruction
-        custom-properties:
+        custom:
           qsm-ci-config:
             unwrapping: integrated
             background_field_removal: integrated
@@ -212,7 +212,7 @@ build:
           algorithm: nextqsm
           category: qsm-reconstruction
           method: deep-learning
-        custom-properties:
+        custom:
           qsm-ci-config:
             unwrapping: romeo
             background_field_removal: integrated
@@ -302,7 +302,7 @@ build:
         tags:
           algorithm: rts
           category: qsm-reconstruction
-        custom-properties:
+        custom:
           qsm-ci-config:
             unwrapping: configurable
             background_field_removal: configurable
@@ -393,7 +393,7 @@ build:
         tags:
           algorithm: tv
           category: qsm-reconstruction
-        custom-properties:
+        custom:
           qsm-ci-config:
             unwrapping: configurable
             background_field_removal: configurable
