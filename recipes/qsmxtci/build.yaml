@@ -51,6 +51,352 @@ build:
     - run:
         - chmod +x /opt/qsm-ci/runner.sh 
         - chmod +x /scripts/extract_descriptors.sh
+    
+    # Multiple Boutiques descriptors for different QSM algorithms
+    # Each descriptor formally defines one algorithm's interface
+    
+    - boutique:
+        name: qsm-tgv
+        description: QSM reconstruction using Total Generalized Variation
+        tool-version: v8.1.3
+        schema-version: '0.5'
+        command-line: >-
+          qsmxt [BIDS_DIR] [OUTPUT_DIR] 
+          --premade bet
+          --qsm_algorithm tgv
+          --tgv_iterations [TGV_ITERATIONS]
+          --tgv_alphas [TGV_ALPHA1] [TGV_ALPHA2]
+          --subjects [SUBJECT]
+          --sessions [SESSION]
+          --runs [RUN]
+          --auto_yes
+          [EXTRA_ARGS]
+        inputs:
+          - name: bids_dir
+            id: bids_dir
+            description: Input BIDS directory
+            type: String
+            optional: false
+            value-key: '[BIDS_DIR]'
+          - name: output_dir
+            id: output_dir
+            description: Output directory
+            type: String
+            optional: false
+            value-key: '[OUTPUT_DIR]'
+          - name: subject
+            id: subject
+            description: BIDS subject ID (without 'sub-' prefix)
+            type: String
+            optional: false
+            value-key: '[SUBJECT]'
+          - name: session
+            id: session
+            description: BIDS session ID
+            type: String
+            optional: true
+            value-key: '[SESSION]'
+          - name: run
+            id: run
+            description: BIDS run ID
+            type: String
+            optional: true 
+            value-key: '[RUN]'
+          - name: tgv_iterations
+            id: tgv_iterations
+            description: Number of TGV iterations
+            type: Number
+            default: 1000
+            optional: true
+            value-key: '[TGV_ITERATIONS]'
+          - name: tgv_alpha1
+            id: tgv_alpha1
+            description: TGV regularization parameter alpha1
+            type: Number
+            default: 0.0015
+            optional: true
+            value-key: '[TGV_ALPHA1]'
+          - name: tgv_alpha2
+            id: tgv_alpha2
+            description: TGV regularization parameter alpha2
+            type: Number
+            default: 0.0005
+            optional: true
+            value-key: '[TGV_ALPHA2]'
+          - name: extra_args
+            id: extra_args
+            description: Additional QSMxT arguments
+            type: String
+            optional: true
+            value-key: '[EXTRA_ARGS]'
+        output-files:
+          - name: qsm_map
+            id: qsm_map
+            description: Quantitative susceptibility map
+            path-template: "[OUTPUT_DIR]/qsm/sub-[SUBJECT]_chi.nii.gz"
+          - name: metrics
+            id: metrics
+            description: Evaluation metrics (if ground truth available)
+            path-template: "[OUTPUT_DIR]/metrics/metrics.json"
+            optional: true
+        tags:
+          algorithm: tgv
+          category: qsm-reconstruction
+        custom-properties:
+          qsm-ci-config:
+            unwrapping: integrated
+            background_field_removal: integrated
+            reference_region: mean
+            
+    - boutique:
+        name: qsm-nextqsm
+        description: QSM reconstruction using NeXtQSM deep learning
+        tool-version: v8.1.3
+        schema-version: '0.5'
+        command-line: >-
+          qsmxt [BIDS_DIR] [OUTPUT_DIR]
+          --premade nextqsm
+          --subjects [SUBJECT]
+          --sessions [SESSION]
+          --runs [RUN]
+          --auto_yes
+          [EXTRA_ARGS]
+        inputs:
+          - name: bids_dir
+            id: bids_dir
+            description: Input BIDS directory
+            type: String
+            optional: false
+            value-key: '[BIDS_DIR]'
+          - name: output_dir
+            id: output_dir
+            description: Output directory
+            type: String
+            optional: false
+            value-key: '[OUTPUT_DIR]'
+          - name: subject
+            id: subject
+            description: BIDS subject ID (without 'sub-' prefix)
+            type: String
+            optional: false
+            value-key: '[SUBJECT]'
+          - name: session
+            id: session
+            description: BIDS session ID
+            type: String
+            optional: true
+            value-key: '[SESSION]'
+          - name: run
+            id: run
+            description: BIDS run ID
+            type: String
+            optional: true
+            value-key: '[RUN]'
+          - name: extra_args
+            id: extra_args
+            description: Additional QSMxT arguments
+            type: String
+            optional: true
+            value-key: '[EXTRA_ARGS]'
+        output-files:
+          - name: qsm_map
+            id: qsm_map
+            description: Quantitative susceptibility map
+            path-template: "[OUTPUT_DIR]/qsm/sub-[SUBJECT]_chi.nii.gz"
+          - name: metrics
+            id: metrics
+            description: Evaluation metrics (if ground truth available)
+            path-template: "[OUTPUT_DIR]/metrics/metrics.json"
+            optional: true
+        tags:
+          algorithm: nextqsm
+          category: qsm-reconstruction
+          method: deep-learning
+        custom-properties:
+          qsm-ci-config:
+            unwrapping: romeo
+            background_field_removal: integrated
+            
+    - boutique:
+        name: qsm-rts
+        description: QSM reconstruction using Rapid Two-Step algorithm
+        tool-version: v8.1.3
+        schema-version: '0.5'
+        command-line: >-
+          qsmxt [BIDS_DIR] [OUTPUT_DIR]
+          --qsm_algorithm rts
+          --unwrapping_algorithm [UNWRAPPING]
+          --bf_algorithm [BF_ALGORITHM]
+          --subjects [SUBJECT]
+          --sessions [SESSION]
+          --runs [RUN]
+          --auto_yes
+          [EXTRA_ARGS]
+        inputs:
+          - name: bids_dir
+            id: bids_dir
+            description: Input BIDS directory
+            type: String
+            optional: false
+            value-key: '[BIDS_DIR]'
+          - name: output_dir
+            id: output_dir
+            description: Output directory
+            type: String
+            optional: false
+            value-key: '[OUTPUT_DIR]'
+          - name: subject
+            id: subject
+            description: BIDS subject ID (without 'sub-' prefix)
+            type: String
+            optional: false
+            value-key: '[SUBJECT]'
+          - name: session
+            id: session
+            description: BIDS session ID
+            type: String
+            optional: true
+            value-key: '[SESSION]'
+          - name: run
+            id: run
+            description: BIDS run ID
+            type: String
+            optional: true
+            value-key: '[RUN]'
+          - name: unwrapping
+            id: unwrapping
+            description: Phase unwrapping algorithm
+            type: String
+            default: romeo
+            optional: true
+            value-key: '[UNWRAPPING]'
+            value-choices:
+              - romeo
+              - laplacian
+          - name: bf_algorithm
+            id: bf_algorithm
+            description: Background field removal algorithm
+            type: String
+            default: vsharp
+            optional: true
+            value-key: '[BF_ALGORITHM]'
+            value-choices:
+              - vsharp
+              - pdf
+          - name: extra_args
+            id: extra_args
+            description: Additional QSMxT arguments
+            type: String
+            optional: true
+            value-key: '[EXTRA_ARGS]'
+        output-files:
+          - name: qsm_map
+            id: qsm_map
+            description: Quantitative susceptibility map
+            path-template: "[OUTPUT_DIR]/qsm/sub-[SUBJECT]_chi.nii.gz"
+          - name: metrics
+            id: metrics
+            description: Evaluation metrics (if ground truth available)
+            path-template: "[OUTPUT_DIR]/metrics/metrics.json"
+            optional: true
+        tags:
+          algorithm: rts
+          category: qsm-reconstruction
+        custom-properties:
+          qsm-ci-config:
+            unwrapping: configurable
+            background_field_removal: configurable
+            two_pass: true
+            
+    - boutique:
+        name: qsm-tv
+        description: QSM reconstruction using Total Variation
+        tool-version: v8.1.3
+        schema-version: '0.5'
+        command-line: >-
+          qsmxt [BIDS_DIR] [OUTPUT_DIR]
+          --qsm_algorithm tv
+          --unwrapping_algorithm [UNWRAPPING]
+          --bf_algorithm [BF_ALGORITHM]
+          --subjects [SUBJECT]
+          --sessions [SESSION]
+          --runs [RUN]
+          --auto_yes
+          [EXTRA_ARGS]
+        inputs:
+          - name: bids_dir
+            id: bids_dir
+            description: Input BIDS directory
+            type: String
+            optional: false
+            value-key: '[BIDS_DIR]'
+          - name: output_dir
+            id: output_dir
+            description: Output directory
+            type: String
+            optional: false
+            value-key: '[OUTPUT_DIR]'
+          - name: subject
+            id: subject
+            description: BIDS subject ID (without 'sub-' prefix)
+            type: String
+            optional: false
+            value-key: '[SUBJECT]'
+          - name: session
+            id: session
+            description: BIDS session ID
+            type: String
+            optional: true
+            value-key: '[SESSION]'
+          - name: run
+            id: run
+            description: BIDS run ID
+            type: String
+            optional: true
+            value-key: '[RUN]'
+          - name: unwrapping
+            id: unwrapping
+            description: Phase unwrapping algorithm
+            type: String
+            default: romeo
+            optional: true
+            value-key: '[UNWRAPPING]'
+            value-choices:
+              - romeo
+              - laplacian
+          - name: bf_algorithm
+            id: bf_algorithm
+            description: Background field removal algorithm
+            type: String
+            default: pdf
+            optional: true
+            value-key: '[BF_ALGORITHM]'
+            value-choices:
+              - vsharp
+              - pdf
+          - name: extra_args
+            id: extra_args
+            description: Additional QSMxT arguments
+            type: String
+            optional: true
+            value-key: '[EXTRA_ARGS]'
+        output-files:
+          - name: qsm_map
+            id: qsm_map
+            description: Quantitative susceptibility map
+            path-template: "[OUTPUT_DIR]/qsm/sub-[SUBJECT]_chi.nii.gz"
+          - name: metrics
+            id: metrics
+            description: Evaluation metrics (if ground truth available)
+            path-template: "[OUTPUT_DIR]/metrics/metrics.json"
+            optional: true
+        tags:
+          algorithm: tv
+          category: qsm-reconstruction
+        custom-properties:
+          qsm-ci-config:
+            unwrapping: configurable
+            background_field_removal: configurable
 
 deploy:
   path:
@@ -59,348 +405,6 @@ deploy:
     - qsmxt
     - runner.sh
     - evaluate.py
-
-# Multiple Boutiques descriptors for different QSM algorithms
-# Each descriptor formally defines one algorithm's interface
-boutiques:
-  - name: qsm-tgv
-    description: QSM reconstruction using Total Generalized Variation
-    tool-version: v8.1.3
-    schema-version: '0.5'
-    command-line: >-
-      qsmxt [BIDS_DIR] [OUTPUT_DIR] 
-      --premade bet
-      --qsm_algorithm tgv
-      --tgv_iterations [TGV_ITERATIONS]
-      --tgv_alphas [TGV_ALPHA1] [TGV_ALPHA2]
-      --subjects [SUBJECT]
-      --sessions [SESSION]
-      --runs [RUN]
-      --auto_yes
-      [EXTRA_ARGS]
-    inputs:
-      - name: bids_dir
-        id: bids_dir
-        description: Input BIDS directory
-        type: String
-        optional: false
-        value-key: '[BIDS_DIR]'
-      - name: output_dir
-        id: output_dir
-        description: Output directory
-        type: String
-        optional: false
-        value-key: '[OUTPUT_DIR]'
-      - name: subject
-        id: subject
-        description: BIDS subject ID (without 'sub-' prefix)
-        type: String
-        optional: false
-        value-key: '[SUBJECT]'
-      - name: session
-        id: session
-        description: BIDS session ID
-        type: String
-        optional: true
-        value-key: '[SESSION]'
-      - name: run
-        id: run
-        description: BIDS run ID
-        type: String
-        optional: true 
-        value-key: '[RUN]'
-      - name: tgv_iterations
-        id: tgv_iterations
-        description: Number of TGV iterations
-        type: Number
-        default: 1000
-        optional: true
-        value-key: '[TGV_ITERATIONS]'
-      - name: tgv_alpha1
-        id: tgv_alpha1
-        description: TGV regularization parameter alpha1
-        type: Number
-        default: 0.0015
-        optional: true
-        value-key: '[TGV_ALPHA1]'
-      - name: tgv_alpha2
-        id: tgv_alpha2
-        description: TGV regularization parameter alpha2
-        type: Number
-        default: 0.0005
-        optional: true
-        value-key: '[TGV_ALPHA2]'
-      - name: extra_args
-        id: extra_args
-        description: Additional QSMxT arguments
-        type: String
-        optional: true
-        value-key: '[EXTRA_ARGS]'
-    output-files:
-      - name: qsm_map
-        id: qsm_map
-        description: Quantitative susceptibility map
-        path-template: "[OUTPUT_DIR]/qsm/sub-[SUBJECT]_chi.nii.gz"
-      - name: metrics
-        id: metrics
-        description: Evaluation metrics (if ground truth available)
-        path-template: "[OUTPUT_DIR]/metrics/metrics.json"
-        optional: true
-    tags:
-      algorithm: tgv
-      category: qsm-reconstruction
-    custom-properties:
-      qsm-ci-config:
-        unwrapping: integrated
-        background_field_removal: integrated
-        reference_region: mean
-        
-  - name: qsm-nextqsm
-    description: QSM reconstruction using NeXtQSM deep learning
-    tool-version: v8.1.3
-    schema-version: '0.5'
-    command-line: >-
-      qsmxt [BIDS_DIR] [OUTPUT_DIR]
-      --premade nextqsm
-      --subjects [SUBJECT]
-      --sessions [SESSION]
-      --runs [RUN]
-      --auto_yes
-      [EXTRA_ARGS]
-    inputs:
-      - name: bids_dir
-        id: bids_dir
-        description: Input BIDS directory
-        type: String
-        optional: false
-        value-key: '[BIDS_DIR]'
-      - name: output_dir
-        id: output_dir
-        description: Output directory
-        type: String
-        optional: false
-        value-key: '[OUTPUT_DIR]'
-      - name: subject
-        id: subject
-        description: BIDS subject ID (without 'sub-' prefix)
-        type: String
-        optional: false
-        value-key: '[SUBJECT]'
-      - name: session
-        id: session
-        description: BIDS session ID
-        type: String
-        optional: true
-        value-key: '[SESSION]'
-      - name: run
-        id: run
-        description: BIDS run ID
-        type: String
-        optional: true
-        value-key: '[RUN]'
-      - name: extra_args
-        id: extra_args
-        description: Additional QSMxT arguments
-        type: String
-        optional: true
-        value-key: '[EXTRA_ARGS]'
-    output-files:
-      - name: qsm_map
-        id: qsm_map
-        description: Quantitative susceptibility map
-        path-template: "[OUTPUT_DIR]/qsm/sub-[SUBJECT]_chi.nii.gz"
-      - name: metrics
-        id: metrics
-        description: Evaluation metrics (if ground truth available)
-        path-template: "[OUTPUT_DIR]/metrics/metrics.json"
-        optional: true
-    tags:
-      algorithm: nextqsm
-      category: qsm-reconstruction
-      method: deep-learning
-    custom-properties:
-      qsm-ci-config:
-        unwrapping: romeo
-        background_field_removal: integrated
-        
-  - name: qsm-rts
-    description: QSM reconstruction using Rapid Two-Step algorithm
-    tool-version: v8.1.3
-    schema-version: '0.5'
-    command-line: >-
-      qsmxt [BIDS_DIR] [OUTPUT_DIR]
-      --qsm_algorithm rts
-      --unwrapping_algorithm [UNWRAPPING]
-      --bf_algorithm [BF_ALGORITHM]
-      --subjects [SUBJECT]
-      --sessions [SESSION]
-      --runs [RUN]
-      --auto_yes
-      [EXTRA_ARGS]
-    inputs:
-      - name: bids_dir
-        id: bids_dir
-        description: Input BIDS directory
-        type: String
-        optional: false
-        value-key: '[BIDS_DIR]'
-      - name: output_dir
-        id: output_dir
-        description: Output directory
-        type: String
-        optional: false
-        value-key: '[OUTPUT_DIR]'
-      - name: subject
-        id: subject
-        description: BIDS subject ID (without 'sub-' prefix)
-        type: String
-        optional: false
-        value-key: '[SUBJECT]'
-      - name: session
-        id: session
-        description: BIDS session ID
-        type: String
-        optional: true
-        value-key: '[SESSION]'
-      - name: run
-        id: run
-        description: BIDS run ID
-        type: String
-        optional: true
-        value-key: '[RUN]'
-      - name: unwrapping
-        id: unwrapping
-        description: Phase unwrapping algorithm
-        type: String
-        default: romeo
-        optional: true
-        value-key: '[UNWRAPPING]'
-        value-choices:
-          - romeo
-          - laplacian
-      - name: bf_algorithm
-        id: bf_algorithm
-        description: Background field removal algorithm
-        type: String
-        default: vsharp
-        optional: true
-        value-key: '[BF_ALGORITHM]'
-        value-choices:
-          - vsharp
-          - pdf
-      - name: extra_args
-        id: extra_args
-        description: Additional QSMxT arguments
-        type: String
-        optional: true
-        value-key: '[EXTRA_ARGS]'
-    output-files:
-      - name: qsm_map
-        id: qsm_map
-        description: Quantitative susceptibility map
-        path-template: "[OUTPUT_DIR]/qsm/sub-[SUBJECT]_chi.nii.gz"
-      - name: metrics
-        id: metrics
-        description: Evaluation metrics (if ground truth available)
-        path-template: "[OUTPUT_DIR]/metrics/metrics.json"
-        optional: true
-    tags:
-      algorithm: rts
-      category: qsm-reconstruction
-    custom-properties:
-      qsm-ci-config:
-        unwrapping: configurable
-        background_field_removal: configurable
-        two_pass: true
-        
-  - name: qsm-tv
-    description: QSM reconstruction using Total Variation
-    tool-version: v8.1.3
-    schema-version: '0.5'
-    command-line: >-
-      qsmxt [BIDS_DIR] [OUTPUT_DIR]
-      --qsm_algorithm tv
-      --unwrapping_algorithm [UNWRAPPING]
-      --bf_algorithm [BF_ALGORITHM]
-      --subjects [SUBJECT]
-      --sessions [SESSION]
-      --runs [RUN]
-      --auto_yes
-      [EXTRA_ARGS]
-    inputs:
-      - name: bids_dir
-        id: bids_dir
-        description: Input BIDS directory
-        type: String
-        optional: false
-        value-key: '[BIDS_DIR]'
-      - name: output_dir
-        id: output_dir
-        description: Output directory
-        type: String
-        optional: false
-        value-key: '[OUTPUT_DIR]'
-      - name: subject
-        id: subject
-        description: BIDS subject ID (without 'sub-' prefix)
-        type: String
-        optional: false
-        value-key: '[SUBJECT]'
-      - name: session
-        id: session
-        description: BIDS session ID
-        type: String
-        optional: true
-        value-key: '[SESSION]'
-      - name: run
-        id: run
-        description: BIDS run ID
-        type: String
-        optional: true
-        value-key: '[RUN]'
-      - name: unwrapping
-        id: unwrapping
-        description: Phase unwrapping algorithm
-        type: String
-        default: romeo
-        optional: true
-        value-key: '[UNWRAPPING]'
-        value-choices:
-          - romeo
-          - laplacian
-      - name: bf_algorithm
-        id: bf_algorithm
-        description: Background field removal algorithm
-        type: String
-        default: pdf
-        optional: true
-        value-key: '[BF_ALGORITHM]'
-        value-choices:
-          - vsharp
-          - pdf
-      - name: extra_args
-        id: extra_args
-        description: Additional QSMxT arguments
-        type: String
-        optional: true
-        value-key: '[EXTRA_ARGS]'
-    output-files:
-      - name: qsm_map
-        id: qsm_map
-        description: Quantitative susceptibility map
-        path-template: "[OUTPUT_DIR]/qsm/sub-[SUBJECT]_chi.nii.gz"
-      - name: metrics
-        id: metrics
-        description: Evaluation metrics (if ground truth available)
-        path-template: "[OUTPUT_DIR]/metrics/metrics.json"
-        optional: true
-    tags:
-      algorithm: tv
-      category: qsm-reconstruction
-    custom-properties:
-      qsm-ci-config:
-        unwrapping: configurable
-        background_field_removal: configurable
 
 categories:
   - quantitative susceptibility mapping
