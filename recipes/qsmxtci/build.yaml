@@ -9,7 +9,7 @@ architectures:
 
 build:
   kind: neurodocker
-  base-image: vnmd/qsmxt_8.1.3:20241201
+  base-image: vnmd/qsmxt_8.1.3:latest
   pkg-manager: apt
   
   directives:
