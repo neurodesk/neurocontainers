@@ -210,7 +210,7 @@ jobs:
           {
             "bids_dir": "test-data/$DATASET",
             "output_dir": "results/$ALGORITHM/$DATASET",
-            "subject": "01"
+            "subjects": "01"
           }
           EOF
           
