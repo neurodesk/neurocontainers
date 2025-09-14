@@ -254,7 +254,7 @@ jobs:
           {
             "bids_dir": "test-data/phantom",
             "output_dir": "results/${algorithm}/phantom",
-            "subjects": "01"
+            "subject": "01"
           }
           EOF
 
