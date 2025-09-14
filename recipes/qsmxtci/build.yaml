@@ -69,7 +69,7 @@ build:
           --qsm_algorithm tgv
           --tgv_iterations [TGV_ITERATIONS]
           --tgv_alphas [TGV_ALPHA1] [TGV_ALPHA2]
-          --subjects [SUBJECT]
+          --subjects sub-[SUBJECT]
           --sessions [SESSION]
           --runs [RUN]
           --auto_yes
@@ -162,7 +162,7 @@ build:
         command-line: >-
           qsmxt [BIDS_DIR] [OUTPUT_DIR]
           --premade nextqsm
-          --subjects [SUBJECT]
+          --subjects sub-[SUBJECT]
           --sessions [SESSION]
           --runs [RUN]
           --auto_yes
@@ -236,7 +236,7 @@ build:
           --qsm_algorithm rts
           --unwrapping_algorithm [UNWRAPPING]
           --bf_algorithm [BF_ALGORITHM]
-          --subjects [SUBJECT]
+          --subjects sub-[SUBJECT]
           --sessions [SESSION]
           --runs [RUN]
           --auto_yes
@@ -330,7 +330,7 @@ build:
           --qsm_algorithm tv
           --unwrapping_algorithm [UNWRAPPING]
           --bf_algorithm [BF_ALGORITHM]
-          --subjects [SUBJECT]
+          --subjects sub-[SUBJECT]
           --sessions [SESSION]
           --runs [RUN]
           --auto_yes
