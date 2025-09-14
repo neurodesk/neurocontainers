@@ -212,7 +212,7 @@ jobs:
             fi
 
             # Create algorithm-specific inputs
-            echo '{"bids_dir": "test-data/phantom", "output_dir": "results/'${algorithm}'/phantom", "subject": "01"}' > inputs_${algorithm}.json
+            echo '{"bids_dir": "test-data/phantom", "output_dir": "results/'${algorithm}'/phantom", "subject": "1"}' > inputs_${algorithm}.json
 
             # Add algorithm-specific parameters
             case "$algorithm" in
