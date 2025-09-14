@@ -241,15 +241,22 @@ jobs:
             ls -la test-data/phantom/
             ls -la test-data/phantom/sub*/
 
-            if timeout 300 bosh exec launch \
+            echo "Running bosh exec launch command..."
+            echo "Descriptor: descriptors/${algorithm}.json"
+            echo "Inputs: inputs_${algorithm}.json"
+            echo "Image: astewartau/${{ env.IMAGENAME }}:testing"
+
+            if timeout 3600 bosh exec launch \
               "descriptors/${algorithm}.json" \
               "inputs_${algorithm}.json" \
               --imagepath "astewartau/${{ env.IMAGENAME }}:testing" \
-              --verbose; then
+              --verbose 2>&1 | tee ${algorithm}_execution.log; then
               echo "✅ $algorithm execution successful"
               TEST_RESULTS="${TEST_RESULTS}${algorithm}:PASS "
             else
               echo "❌ $algorithm execution failed"
+              echo "Last 50 lines of execution log:"
+              tail -50 ${algorithm}_execution.log
               TEST_RESULTS="${TEST_RESULTS}${algorithm}:FAIL "
               FAILED_TESTS="${FAILED_TESTS}${algorithm} "
               continue
