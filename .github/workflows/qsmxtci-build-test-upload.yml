@@ -270,38 +270,53 @@ jobs:
                 echo "Running evaluation for $algorithm..."
                 mkdir -p "results/${algorithm}/phantom/metrics"
 
+                # Export variables for Python script
+                export GROUND_TRUTH="$GROUND_TRUTH"
+                export QSM_OUTPUT="$QSM_OUTPUT"
+                export ROI="$ROI"
+                export ALGO="$algorithm"
+
                 # Use evaluation script from recipe (simplified version)
-                python3 -c "
-import nibabel as nib
-import numpy as np
-import json
-from scipy.stats import pearsonr
-from sklearn.metrics import mean_squared_error
+                python3 << 'EOF'
+                import nibabel as nib
+                import numpy as np
+                import json
+                from scipy.stats import pearsonr
+                from sklearn.metrics import mean_squared_error
+                import sys
+                import os
 
-# Load data
-gt = nib.load('$GROUND_TRUTH').get_fdata()
-est = nib.load('$QSM_OUTPUT').get_fdata()
-roi = nib.load('$ROI').get_fdata().astype(bool)
+                # Get variables from environment
+                ground_truth = os.environ.get('GROUND_TRUTH')
+                qsm_output = os.environ.get('QSM_OUTPUT')
+                roi_mask = os.environ.get('ROI')
+                algorithm = os.environ.get('ALGO')
 
-# Apply ROI mask
-gt_roi = gt[roi]
-est_roi = est[roi]
+                # Load data
+                gt = nib.load(ground_truth).get_fdata()
+                est = nib.load(qsm_output).get_fdata()
+                roi = nib.load(roi_mask).get_fdata().astype(bool)
 
-# Calculate metrics
-correlation, _ = pearsonr(gt_roi.flatten(), est_roi.flatten())
-rmse = np.sqrt(mean_squared_error(gt_roi.flatten(), est_roi.flatten()))
+                # Apply ROI mask
+                gt_roi = gt[roi]
+                est_roi = est[roi]
 
-metrics = {
-    'correlation': float(correlation),
-    'rmse': float(rmse),
-    'algorithm': '$algorithm'
-}
+                # Calculate metrics
+                correlation, _ = pearsonr(gt_roi.flatten(), est_roi.flatten())
+                rmse = np.sqrt(mean_squared_error(gt_roi.flatten(), est_roi.flatten()))
 
-with open('results/${algorithm}/phantom/metrics/metrics.json', 'w') as f:
-    json.dump(metrics, f, indent=2)
+                metrics = {
+                    'correlation': float(correlation),
+                    'rmse': float(rmse),
+                    'algorithm': algorithm
+                }
 
-print(f'✓ Evaluation complete: correlation={correlation:.4f}, rmse={rmse:.6f}')
-                "
+                output_path = f'results/{algorithm}/phantom/metrics/metrics.json'
+                with open(output_path, 'w') as f:
+                    json.dump(metrics, f, indent=2)
+
+                print(f'✓ Evaluation complete: correlation={correlation:.4f}, rmse={rmse:.6f}')
+                EOF
 
                 if [ -f "results/${algorithm}/phantom/metrics/metrics.json" ]; then
                   echo "  Results:"
