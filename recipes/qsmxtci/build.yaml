@@ -30,7 +30,7 @@ build:
     # Copy evaluation scripts
     - copy:
         - qsm_ci_evaluate.py
-        - /opt/qsm-ci/evaluate.py 
+        - /opt/qsm-ci/evaluate.py
     
     - copy:
         - qsm_ci_runner.sh
