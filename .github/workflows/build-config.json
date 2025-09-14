@@ -20,7 +20,7 @@
         "freeUpSpace": true
     },
     "qsmxtci": {
-        "autoBuild": true,
+        "autoBuild": false,
         "freeUpSpace": true
     }
 }
