@@ -34,7 +34,7 @@ build:
     
     - copy:
         - qsm_ci_runner.sh
-        - /opt/qsm-ci/runner.sh 
+        - /opt/qsm-ci/runner.sh
     
     # Create extraction script location
     - run:
@@ -106,21 +106,21 @@ build:
             id: tgv_iterations
             description: Number of TGV iterations
             type: Number
-            default: 1000
+            default-value: 1000
             optional: true
             value-key: '[TGV_ITERATIONS]'
           - name: tgv_alpha1
             id: tgv_alpha1
             description: TGV regularization parameter alpha1
             type: Number
-            default: 0.0015
+            default-value: 0.0015
             optional: true
             value-key: '[TGV_ALPHA1]'
           - name: tgv_alpha2
             id: tgv_alpha2
             description: TGV regularization parameter alpha2
             type: Number
-            default: 0.0005
+            default-value: 0.0005
             optional: true
             value-key: '[TGV_ALPHA2]'
           - name: extra_args
@@ -267,7 +267,7 @@ build:
             id: unwrapping
             description: Phase unwrapping algorithm
             type: String
-            default: romeo
+            default-value: romeo
             optional: true
             value-key: '[UNWRAPPING]'
             value-choices:
@@ -277,7 +277,7 @@ build:
             id: bf_algorithm
             description: Background field removal algorithm
             type: String
-            default: vsharp
+            default-value: vsharp
             optional: true
             value-key: '[BF_ALGORITHM]'
             value-choices:
@@ -358,7 +358,7 @@ build:
             id: unwrapping
             description: Phase unwrapping algorithm
             type: String
-            default: romeo
+            default-value: romeo
             optional: true
             value-key: '[UNWRAPPING]'
             value-choices:
@@ -368,7 +368,7 @@ build:
             id: bf_algorithm
             description: Background field removal algorithm
             type: String
-            default: pdf
+            default-value: pdf
             optional: true
             value-key: '[BF_ALGORITHM]'
             value-choices:
