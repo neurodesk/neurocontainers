@@ -246,21 +246,83 @@ jobs:
             echo "Inputs: inputs_${algorithm}.json"
             echo "Image: astewartau/${{ env.IMAGENAME }}:testing"
 
-            if timeout 3600 bosh exec launch \
+            # Run bosh exec and capture output
+            timeout 3600 bosh exec launch \
               "descriptors/${algorithm}.json" \
               "inputs_${algorithm}.json" \
               --imagepath "astewartau/${{ env.IMAGENAME }}:testing" \
-              --verbose 2>&1 | tee ${algorithm}_execution.log; then
-              echo "✅ $algorithm execution successful"
-              TEST_RESULTS="${TEST_RESULTS}${algorithm}:PASS "
-            else
-              echo "❌ $algorithm execution failed"
+              --verbose 2>&1 | tee ${algorithm}_execution.log
+
+            BOSH_EXIT_CODE=${PIPESTATUS[0]}
+
+            # Check for multiple failure conditions
+            EXECUTION_FAILED=false
+            FAILURE_REASON=""
+
+            # Check bosh exit code
+            if [ $BOSH_EXIT_CODE -ne 0 ]; then
+              EXECUTION_FAILED=true
+              FAILURE_REASON="bosh exec returned non-zero exit code: $BOSH_EXIT_CODE"
+            fi
+
+            # Check for segmentation fault in the log
+            if grep -q "Segmentation fault" ${algorithm}_execution.log; then
+              EXECUTION_FAILED=true
+              FAILURE_REASON="Segmentation fault detected"
+            fi
+
+            # Check for Exit code 1 in the log
+            if grep -q "Exit code" ${algorithm}_execution.log | grep -q "1"; then
+              EXECUTION_FAILED=true
+              FAILURE_REASON="Container exited with non-zero code"
+            fi
+
+            # Check for nipype errors
+            if grep -q "nipype.pipeline.engine.nodes.NodeExecutionError" ${algorithm}_execution.log; then
+              EXECUTION_FAILED=true
+              FAILURE_REASON="Nipype execution error detected"
+            fi
+
+            # Check for FileNotFoundError which indicates failed processing
+            if grep -q "FileNotFoundError: No such file or directory" ${algorithm}_execution.log; then
+              EXECUTION_FAILED=true
+              FAILURE_REASON="Expected output files not generated"
+            fi
+
+            if [ "$EXECUTION_FAILED" = "true" ]; then
+              echo "❌ $algorithm execution failed: $FAILURE_REASON"
               echo "Last 50 lines of execution log:"
               tail -50 ${algorithm}_execution.log
               TEST_RESULTS="${TEST_RESULTS}${algorithm}:FAIL "
               FAILED_TESTS="${FAILED_TESTS}${algorithm} "
               continue
             fi
+
+            # Verify expected output files exist
+            echo "Checking for expected output files..."
+            EXPECTED_OUTPUT_FOUND=false
+
+            # Look for QSM output files (chi maps)
+            QSM_OUTPUT=$(find "results/${algorithm}/phantom" -name "*chi*.nii*" -o -name "*Chimap*.nii*" -o -name "*qsm*.nii*" 2>/dev/null | head -1)
+
+            if [ -n "$QSM_OUTPUT" ] && [ -f "$QSM_OUTPUT" ]; then
+              echo "✓ Found QSM output: $QSM_OUTPUT"
+              EXPECTED_OUTPUT_FOUND=true
+            else
+              echo "❌ No QSM output file found in results/${algorithm}/phantom"
+              echo "Expected files matching patterns: *chi*.nii*, *Chimap*.nii*, or *qsm*.nii*"
+              echo "Directory contents:"
+              find "results/${algorithm}/phantom" -type f -name "*.nii*" 2>/dev/null || echo "  No .nii files found"
+
+              EXECUTION_FAILED=true
+              FAILURE_REASON="Expected QSM output files not generated"
+              TEST_RESULTS="${TEST_RESULTS}${algorithm}:FAIL "
+              FAILED_TESTS="${FAILED_TESTS}${algorithm} "
+              continue
+            fi
+
+            echo "✅ $algorithm execution completed successfully with output files"
+            TEST_RESULTS="${TEST_RESULTS}${algorithm}:PASS "
 
             # Run evaluation if ground truth is available
             GROUND_TRUTH="test-data/phantom/derivatives/qsm-forward/sub-1/anat/sub-1_Chimap.nii"
