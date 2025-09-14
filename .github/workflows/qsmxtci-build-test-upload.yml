@@ -194,6 +194,11 @@ jobs:
           echo "Generated BIDS structure:"
           find test-data/phantom -type f -name "*.nii*" | head -10
 
+          echo "BIDS directory structure:"
+          ls -la test-data/phantom/
+          echo "Subject directories:"
+          ls -la test-data/phantom/sub*/
+
       - name: Run QSM algorithm tests
         id: run-tests
         run: |
@@ -230,6 +235,12 @@ jobs:
             mkdir -p "results/${algorithm}/phantom"
 
             echo "Executing $algorithm..."
+            echo "Input parameters:"
+            cat "inputs_${algorithm}.json"
+            echo "BIDS directory contents before execution:"
+            ls -la test-data/phantom/
+            ls -la test-data/phantom/sub*/
+
             if timeout 300 bosh exec launch \
               "descriptors/${algorithm}.json" \
               "inputs_${algorithm}.json" \

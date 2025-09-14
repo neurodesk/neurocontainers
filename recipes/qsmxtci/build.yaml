@@ -33,7 +33,7 @@ build:
         - /opt/qsm-ci/evaluate.py
     
     - copy:
-        - qsm_ci_runner.sh 
+        - qsm_ci_runner.sh
         - /opt/qsm-ci/runner.sh
     
     # Create extraction script location
