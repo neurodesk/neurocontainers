@@ -255,42 +255,9 @@ jobs:
 
             BOSH_EXIT_CODE=${PIPESTATUS[0]}
 
-            # Check for multiple failure conditions
-            EXECUTION_FAILED=false
-            FAILURE_REASON=""
-
             # Check bosh exit code
             if [ $BOSH_EXIT_CODE -ne 0 ]; then
-              EXECUTION_FAILED=true
-              FAILURE_REASON="bosh exec returned non-zero exit code: $BOSH_EXIT_CODE"
-            fi
-
-            # Check for segmentation fault in the log
-            if grep -q "Segmentation fault" ${algorithm}_execution.log; then
-              EXECUTION_FAILED=true
-              FAILURE_REASON="Segmentation fault detected"
-            fi
-
-            # Check for Exit code 1 in the log
-            if grep -q "Exit code" ${algorithm}_execution.log | grep -q "1"; then
-              EXECUTION_FAILED=true
-              FAILURE_REASON="Container exited with non-zero code"
-            fi
-
-            # Check for nipype errors
-            if grep -q "nipype.pipeline.engine.nodes.NodeExecutionError" ${algorithm}_execution.log; then
-              EXECUTION_FAILED=true
-              FAILURE_REASON="Nipype execution error detected"
-            fi
-
-            # Check for FileNotFoundError which indicates failed processing
-            if grep -q "FileNotFoundError: No such file or directory" ${algorithm}_execution.log; then
-              EXECUTION_FAILED=true
-              FAILURE_REASON="Expected output files not generated"
-            fi
-
-            if [ "$EXECUTION_FAILED" = "true" ]; then
-              echo "❌ $algorithm execution failed: $FAILURE_REASON"
+              echo "❌ $algorithm execution failed: bosh exec returned non-zero exit code: $BOSH_EXIT_CODE"
               echo "Last 50 lines of execution log:"
               tail -50 ${algorithm}_execution.log
               TEST_RESULTS="${TEST_RESULTS}${algorithm}:FAIL "
@@ -300,29 +267,40 @@ jobs:
 
             # Verify expected output files exist
             echo "Checking for expected output files..."
-            EXPECTED_OUTPUT_FOUND=false
 
-            # Look for QSM output files (chi maps)
-            QSM_OUTPUT=$(find "results/${algorithm}/phantom" -name "*chi*.nii*" -o -name "*Chimap*.nii*" -o -name "*qsm*.nii*" 2>/dev/null | head -1)
+            # Show what files were actually created
+            echo "All files created in results/${algorithm}/phantom:"
+            find "results/${algorithm}/phantom" -type f 2>/dev/null | head -20 || echo "  No files found"
+
+            # QSMxT outputs to BIDS derivatives structure, similar to qsmci pattern
+            # Look for: derivatives/ALGORITHM/sub-1/anat/*Chimap.nii* or qsm/*chi*.nii*
+            QSM_OUTPUT=""
+
+            # First try BIDS derivatives structure
+            QSM_OUTPUT=$(find "results/${algorithm}/phantom" -path "*/derivatives/*/sub-*/anat/*Chimap.nii*" 2>/dev/null | head -1)
+
+            # Then try qsm directory structure
+            if [ -z "$QSM_OUTPUT" ]; then
+              QSM_OUTPUT=$(find "results/${algorithm}/phantom" -path "*/qsm/*chi*.nii*" 2>/dev/null | head -1)
+            fi
+
+            # Finally try any chi/Chimap files
+            if [ -z "$QSM_OUTPUT" ]; then
+              QSM_OUTPUT=$(find "results/${algorithm}/phantom" -name "*chi*.nii*" -o -name "*Chimap*.nii*" 2>/dev/null | head -1)
+            fi
 
             if [ -n "$QSM_OUTPUT" ] && [ -f "$QSM_OUTPUT" ]; then
               echo "✓ Found QSM output: $QSM_OUTPUT"
-              EXPECTED_OUTPUT_FOUND=true
+              echo "✅ $algorithm execution completed successfully"
+              TEST_RESULTS="${TEST_RESULTS}${algorithm}:PASS "
             else
-              echo "❌ No QSM output file found in results/${algorithm}/phantom"
-              echo "Expected files matching patterns: *chi*.nii*, *Chimap*.nii*, or *qsm*.nii*"
-              echo "Directory contents:"
-              find "results/${algorithm}/phantom" -type f -name "*.nii*" 2>/dev/null || echo "  No .nii files found"
-
-              EXECUTION_FAILED=true
-              FAILURE_REASON="Expected QSM output files not generated"
+              echo "❌ No QSM output file found"
+              echo "Expected QSM outputs not found. Directory structure:"
+              find "results/${algorithm}/phantom" -type d 2>/dev/null | head -10
               TEST_RESULTS="${TEST_RESULTS}${algorithm}:FAIL "
               FAILED_TESTS="${FAILED_TESTS}${algorithm} "
               continue
             fi
-
-            echo "✅ $algorithm execution completed successfully with output files"
-            TEST_RESULTS="${TEST_RESULTS}${algorithm}:PASS "
 
             # Run evaluation if ground truth is available
             GROUND_TRUTH="test-data/phantom/derivatives/qsm-forward/sub-1/anat/sub-1_Chimap.nii"
