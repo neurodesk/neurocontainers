@@ -44,7 +44,7 @@ build:
     # Copy algorithm files
     - copy:
         - main.sh
-        - /opt/qsm/main.sh
+        - /opt/qsm/main.sh 
 
     - copy:
         - pipeline.jl

@@ -269,6 +269,9 @@ jobs:
         algorithm: ${{ fromJson(needs.generate-qsm-matrix.outputs.qsm_algorithms) }}
       fail-fast: false  # Continue other tests if one fails
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Download descriptors artifact
         uses: actions/download-artifact@v4
         with:
