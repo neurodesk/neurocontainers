@@ -22,7 +22,7 @@ build:
         - python3-pip
 
     - run:
-        - pip3 install nibabel scipy 
+        - pip3 install nibabel scipy
 
     # Install FSL with neurodocker template
     - template:
