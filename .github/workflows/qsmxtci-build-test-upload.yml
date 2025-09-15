@@ -315,21 +315,21 @@ jobs:
         run: |
           echo "Collecting results from all algorithm tests..."
 
-          # Get results from all matrix jobs
-          RESULTS='${{ toJson(needs.test-algorithms.result) }}'
-          echo "Matrix job results: $RESULTS"
+          # Get results from all matrix jobs - this gives us the overall result of the matrix job
+          MATRIX_RESULT='${{ needs.test-algorithms.result }}'
+          echo "Matrix job overall result: $MATRIX_RESULT"
 
-          # Check if all tests passed
-          if echo "$RESULTS" | jq -e 'all(. == "success")' > /dev/null; then
+          # For matrix jobs, if the overall result is 'success', all matrix runs passed
+          # If it's 'failure', at least one matrix run failed
+          if [ "$MATRIX_RESULT" = "success" ]; then
             echo "✅ All algorithm tests passed"
             echo "all_passed=true" >> $GITHUB_OUTPUT
           else
             echo "❌ Some algorithm tests failed"
             echo "all_passed=false" >> $GITHUB_OUTPUT
 
-            # Show which ones failed
-            echo "Failed tests:"
-            echo "$RESULTS" | jq -r 'to_entries[] | select(.value != "success") | .key'
+            # The matrix job failed, but we don't have individual results here
+            echo "Matrix job result: $MATRIX_RESULT"
           fi
 
       - name: Decide on upload
