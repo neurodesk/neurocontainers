@@ -137,29 +137,79 @@ fi
 echo "[INFO] Echo times: ${ECHO_TIMES[@]}"
 echo "[INFO] Field strength: $FIELD_STRENGTH T"
 
-# Create a simple mask (you might want to use a more sophisticated approach)
-echo "[INFO] Creating brain mask..."
+# Create mask using Otsu thresholding (more robust for phantom data)
+echo "[INFO] Creating mask using Otsu thresholding..."
 MASK_FILE="$ANAT_DIR/mask.nii.gz"
 
-# Use first magnitude image to create mask
-if command -v bet > /dev/null; then
-    bet "${MAG_FILES[0]}" "$ANAT_DIR/temp_brain" -m -f 0.3
-    mv "$ANAT_DIR/temp_brain_mask.nii.gz" "$MASK_FILE"
-    rm -f "$ANAT_DIR/temp_brain.nii.gz"
-else
-    # Simple threshold-based mask if bet not available
-    echo "[WARNING] FSL bet not available, creating simple threshold mask"
-    python3 -c "
+python3 -c "
 import nibabel as nib
 import numpy as np
+from scipy import ndimage
+
+# Load magnitude image
 mag = nib.load('${MAG_FILES[0]}')
 data = mag.get_fdata()
-threshold = np.percentile(data[data > 0], 20)
+
+# Otsu thresholding implementation
+def otsu_threshold(image):
+    # Flatten and remove zeros
+    hist_data = image[image > 0].flatten()
+    if len(hist_data) == 0:
+        return 0
+
+    # Create histogram
+    hist, bin_edges = np.histogram(hist_data, bins=256)
+    bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+    # Calculate weights and means
+    total_weight = np.sum(hist)
+    total_mean = np.sum(bin_centers * hist) / total_weight
+
+    max_variance = 0
+    threshold = 0
+
+    weight1 = 0
+    sum1 = 0
+
+    for i in range(len(hist)):
+        weight1 += hist[i]
+        if weight1 == 0:
+            continue
+
+        weight2 = total_weight - weight1
+        if weight2 == 0:
+            break
+
+        sum1 += bin_centers[i] * hist[i]
+        mean1 = sum1 / weight1
+        mean2 = (total_mean * total_weight - sum1) / weight2
+
+        # Between class variance
+        variance = weight1 * weight2 * (mean1 - mean2) ** 2
+
+        if variance > max_variance:
+            max_variance = variance
+            threshold = bin_centers[i]
+
+    return threshold
+
+# Apply Otsu thresholding
+threshold = otsu_threshold(data)
+print(f'Otsu threshold: {threshold}')
+
+# Create mask
 mask = data > threshold
+
+# Clean up mask with morphological operations
+mask = ndimage.binary_fill_holes(mask)
+mask = ndimage.binary_opening(mask, structure=np.ones((3,3,3)))
+mask = ndimage.binary_closing(mask, structure=np.ones((3,3,3)))
+
+# Save mask
 mask_img = nib.Nifti1Image(mask.astype(np.uint8), mag.affine, mag.header)
 nib.save(mask_img, '$MASK_FILE')
+print(f'Mask saved to $MASK_FILE')
 "
-fi
 
 # Create inputs.json for Julia pipeline
 INPUTS_JSON="inputs.json"
