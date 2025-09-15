@@ -395,12 +395,7 @@ jobs:
               wget -q https://raw.githubusercontent.com/neurocontainers/neurocontainers/master/recipes/qsmxtci/qsm_ci_evaluate.py -O qsm_ci_evaluate.py
 
               if [ -f "qsm_ci_evaluate.py" ]; then
-                python3 qsm_ci_evaluate.py \
-                  --estimate "$QSM_OUTPUT" \
-                  --ground_truth "$GROUND_TRUTH" \
-                  --roi "$ROI" \
-                  --output_dir "results/${algorithm}/phantom/metrics" \
-                  --algorithm "$algorithm" || echo "Warning: Evaluation failed, continuing..."
+                python3 qsm_ci_evaluate.py --estimate "$QSM_OUTPUT" --ground_truth "$GROUND_TRUTH" --roi "$ROI" --output_dir "results/${algorithm}/phantom/metrics" --algorithm "$algorithm" || echo "Warning: Evaluation failed, continuing..."
               else
                 echo "Warning: Could not download evaluation script, skipping metrics calculation"
               fi
