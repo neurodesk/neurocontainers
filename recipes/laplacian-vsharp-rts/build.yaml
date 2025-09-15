@@ -24,16 +24,13 @@ build:
     - run:
         - pip3 install nibabel
 
-    # Install miniconda and FSL tools
+    # Install FSL with neurodocker template
     - template:
-        name: miniconda
-        conda_install: -c conda-forge -c https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/ fsl-libvis fsl-avwutils fsl-flirt fsl-bet
-        version: latest
+        name: fsl
+        version: 6.0.7.16
 
     - environment:
-        FSLDIR: /opt/miniconda-latest
         FSLOUTPUTTYPE: NIFTI_GZ
-        PATH: $PATH:/opt/miniconda-latest/bin
 
     - workdir: /opt/qsm
 
