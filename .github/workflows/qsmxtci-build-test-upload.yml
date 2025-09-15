@@ -29,11 +29,10 @@ on:
         default: 'phantom,sim_sub1'
 
 jobs:
-  build-and-test:
+  build-image:
     runs-on: ubuntu-22.04
     if: ${{ !contains(github.event.head_commit.message, 'skipci') }}
     outputs:
-      should_upload: ${{ steps.test-results.outputs.should_upload }}
       container_tag: ${{ steps.vars.outputs.container_tag }}
       imagename: ${{ steps.vars.outputs.imagename }}
       builddate: ${{ steps.vars.outputs.builddate }}
@@ -158,6 +157,12 @@ jobs:
           echo "✓ Extracted descriptors:"
           ls -la descriptors/*.json
 
+      - name: Upload descriptors artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: descriptors
+          path: descriptors/
+
       - name: Validate descriptors
         run: |
           echo "Validating extracted descriptors..."
@@ -180,195 +185,176 @@ jobs:
 
           echo "✓ All descriptors are valid"
 
+  generate-matrix:
+    needs: build-image
+    runs-on: ubuntu-22.04
+    outputs:
+      algorithms: ${{ steps.extract.outputs.algorithms }}
+    steps:
+      - name: Download descriptors artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: descriptors
+
+      - name: Extract available algorithms dynamically
+        id: extract
+        run: |
+          echo "Discovering available algorithms from descriptors..."
+
+          # Find all qsm-*.json descriptors and extract algorithm names
+          AVAILABLE=$(find . -name "qsm-*.json" -exec basename {} .json \; | sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+
+          echo "Found algorithms: $AVAILABLE"
+          echo "algorithms=$AVAILABLE" >> $GITHUB_OUTPUT
+
+  test-algorithms:
+    needs: [build-image, generate-matrix]
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        algorithm: ${{ fromJson(needs.generate-matrix.outputs.algorithms) }}
+      fail-fast: false  # Continue other tests if one fails
+    steps:
+      - name: Download descriptors artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: descriptors
+
+      - name: Install test dependencies
+        run: |
+          pip install boutiques nibabel scipy scikit-learn scikit-image pandas numpy qsm-forward==0.19 --user
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: Prepare test data
         run: |
           echo "Creating test data using qsm-forward..."
-
-          # Install qsm-forward to generate proper BIDS data
-          pip install qsm-forward==0.19 --user
-
-          # Generate BIDS test data using qsm-forward (same as qsmci repo)
+          # Generate BIDS test data using qsm-forward
           qsm-forward simple test-data/phantom
+          echo "✓ Created BIDS phantom test dataset"
 
-          echo "✓ Created BIDS phantom test dataset using qsm-forward"
-          echo "Generated BIDS structure:"
-          find test-data/phantom -type f -name "*.nii*" | head -10
-
-          echo "BIDS directory structure:"
-          ls -la test-data/phantom/
-          echo "Subject directories:"
-          ls -la test-data/phantom/sub*/
-
-      - name: Run QSM algorithm tests
-        id: run-tests
+      - name: Run ${{ matrix.algorithm }} test
+        id: test
         run: |
-          echo "Running QSM algorithm tests..."
-          TEST_RESULTS=""
-          ALGORITHMS="${{ inputs.algorithms || 'qsm-nextqsm,qsm-tgv' }}"  # Test subset for faster feedback
-          FAILED_TESTS=""
+          algorithm="${{ matrix.algorithm }}"
+          echo "=== Testing $algorithm ==="
 
-          for algorithm in $(echo $ALGORITHMS | tr ',' ' '); do
-            echo "=== Testing $algorithm ==="
+          # Create algorithm-specific inputs
+          echo '{"bids_dir": "test-data/phantom", "output_dir": "results/'${algorithm}'/phantom", "subject": "1"}' > inputs_${algorithm}.json
 
-            # Skip if descriptor doesn't exist
-            if [ ! -f "descriptors/${algorithm}.json" ]; then
-              echo "⚠️  Descriptor not found: ${algorithm}.json, skipping"
-              continue
-            fi
+          # Add algorithm-specific parameters
+          case "$algorithm" in
+            qsm-tgv)
+              jq '.tgv_iterations = 10 | .tgv_alpha1 = 0.0015 | .tgv_alpha2 = 0.0005' inputs_${algorithm}.json > temp.json && mv temp.json inputs_${algorithm}.json
+              ;;
+            qsm-rts|qsm-tv)
+              jq '.unwrapping = "romeo" | .bf_algorithm = "vsharp"' inputs_${algorithm}.json > temp.json && mv temp.json inputs_${algorithm}.json
+              ;;
+          esac
 
-            # Create algorithm-specific inputs
-            echo '{"bids_dir": "test-data/phantom", "output_dir": "results/'${algorithm}'/phantom", "subject": "1"}' > inputs_${algorithm}.json
+          # Run the algorithm
+          mkdir -p "results/${algorithm}/phantom"
 
-            # Add algorithm-specific parameters
-            case "$algorithm" in
-              qsm-tgv)
-                # Add TGV-specific parameters
-                jq '.tgv_iterations = 10 | .tgv_alpha1 = 0.0015 | .tgv_alpha2 = 0.0005' inputs_${algorithm}.json > temp.json && mv temp.json inputs_${algorithm}.json
-                ;;
-              qsm-rts|qsm-tv)
-                # Add algorithm-specific parameters
-                jq '.unwrapping = "romeo" | .bf_algorithm = "vsharp"' inputs_${algorithm}.json > temp.json && mv temp.json inputs_${algorithm}.json
-                ;;
-            esac
+          echo "Executing $algorithm..."
+          echo "Input parameters:"
+          cat "inputs_${algorithm}.json"
 
-            # Run the algorithm
-            mkdir -p "results/${algorithm}/phantom"
+          # Run bosh exec and capture output
+          timeout 3600 bosh exec launch \
+            "${algorithm}.json" \
+            "inputs_${algorithm}.json" \
+            --imagepath "astewartau/${{ needs.build-image.outputs.imagename }}:testing" \
+            --verbose 2>&1 | tee ${algorithm}_execution.log
 
-            echo "Executing $algorithm..."
-            echo "Input parameters:"
-            cat "inputs_${algorithm}.json"
-            echo "BIDS directory contents before execution:"
-            ls -la test-data/phantom/
-            ls -la test-data/phantom/sub*/
+          BOSH_EXIT_CODE=${PIPESTATUS[0]}
 
-            echo "Running bosh exec launch command..."
-            echo "Descriptor: descriptors/${algorithm}.json"
-            echo "Inputs: inputs_${algorithm}.json"
-            echo "Image: astewartau/${{ env.IMAGENAME }}:testing"
-
-            # Run bosh exec and capture output
-            timeout 3600 bosh exec launch \
-              "descriptors/${algorithm}.json" \
-              "inputs_${algorithm}.json" \
-              --imagepath "astewartau/${{ env.IMAGENAME }}:testing" \
-              --verbose 2>&1 | tee ${algorithm}_execution.log
-
-            BOSH_EXIT_CODE=${PIPESTATUS[0]}
-
-            # Check bosh exit code
-            if [ $BOSH_EXIT_CODE -ne 0 ]; then
-              echo "❌ $algorithm execution failed: bosh exec returned non-zero exit code: $BOSH_EXIT_CODE"
-              echo "Last 50 lines of execution log:"
-              tail -50 ${algorithm}_execution.log
-              TEST_RESULTS="${TEST_RESULTS}${algorithm}:FAIL "
-              FAILED_TESTS="${FAILED_TESTS}${algorithm} "
-              continue
-            fi
-
-            # Verify expected output files exist
-            echo "Checking for expected output files..."
-
-            # Show what files were actually created
-            echo "All files created in results/${algorithm}/phantom:"
-            find "results/${algorithm}/phantom" -type f 2>/dev/null | head -20 || echo "  No files found"
-
-            # QSMxT outputs to BIDS derivatives structure, similar to qsmci pattern
-            # Look for: derivatives/ALGORITHM/sub-1/anat/*Chimap.nii* or qsm/*chi*.nii*
-            QSM_OUTPUT=""
-
-            # First try BIDS derivatives structure
-            QSM_OUTPUT=$(find "results/${algorithm}/phantom" -path "*/derivatives/*/sub-*/anat/*Chimap.nii*" 2>/dev/null | head -1)
-
-            # Then try qsm directory structure
-            if [ -z "$QSM_OUTPUT" ]; then
-              QSM_OUTPUT=$(find "results/${algorithm}/phantom" -path "*/qsm/*chi*.nii*" 2>/dev/null | head -1)
-            fi
-
-            # Finally try any chi/Chimap files
-            if [ -z "$QSM_OUTPUT" ]; then
-              QSM_OUTPUT=$(find "results/${algorithm}/phantom" -name "*chi*.nii*" -o -name "*Chimap*.nii*" 2>/dev/null | head -1)
-            fi
-
-            if [ -n "$QSM_OUTPUT" ] && [ -f "$QSM_OUTPUT" ]; then
-              echo "✓ Found QSM output: $QSM_OUTPUT"
-              echo "✅ $algorithm execution completed successfully"
-              TEST_RESULTS="${TEST_RESULTS}${algorithm}:PASS "
-            else
-              echo "❌ No QSM output file found"
-              echo "Expected QSM outputs not found. Directory structure:"
-              find "results/${algorithm}/phantom" -type d 2>/dev/null | head -10
-              TEST_RESULTS="${TEST_RESULTS}${algorithm}:FAIL "
-              FAILED_TESTS="${FAILED_TESTS}${algorithm} "
-              continue
-            fi
-
-            # Run evaluation if ground truth is available
-            GROUND_TRUTH="test-data/phantom/derivatives/qsm-forward/sub-1/anat/sub-1_Chimap.nii"
-            ROI="test-data/phantom/derivatives/qsm-forward/sub-1/anat/sub-1_mask.nii"
-
-            if [ -f "$GROUND_TRUTH" ] && [ -f "$ROI" ]; then
-              # Find QSM output
-              QSM_OUTPUT=$(find "results/${algorithm}/phantom" -name "*chi*.nii.gz" -o -name "*Chimap*.nii*" | head -1)
-
-              if [ -f "$QSM_OUTPUT" ]; then
-                echo "Running evaluation for $algorithm..."
-                mkdir -p "results/${algorithm}/phantom/metrics"
-
-                # Export variables for Python script
-                export GROUND_TRUTH="$GROUND_TRUTH"
-                export QSM_OUTPUT="$QSM_OUTPUT"
-                export ROI="$ROI"
-                export ALGO="$algorithm"
-
-                # Run simplified evaluation
-                python3 -c "import nibabel as nib; import numpy as np; import json; from scipy.stats import pearsonr; from sklearn.metrics import mean_squared_error; gt = nib.load('$GROUND_TRUTH').get_fdata(); est = nib.load('$QSM_OUTPUT').get_fdata(); roi = nib.load('$ROI').get_fdata().astype(bool); gt_roi = gt[roi]; est_roi = est[roi]; correlation, _ = pearsonr(gt_roi.flatten(), est_roi.flatten()); rmse = np.sqrt(mean_squared_error(gt_roi.flatten(), est_roi.flatten())); results = dict(correlation=float(correlation), rmse=float(rmse), algorithm='$algorithm'); json.dump(results, open('results/${algorithm}/phantom/metrics/metrics.json', 'w'), indent=2); print(f'✓ Evaluation complete: correlation={correlation:.4f}, rmse={rmse:.6f}')"
-
-                if [ -f "results/${algorithm}/phantom/metrics/metrics.json" ]; then
-                  echo "  Results:"
-                  cat "results/${algorithm}/phantom/metrics/metrics.json" | jq '.'
-                fi
-              else
-                echo "⚠️  No QSM output found for evaluation"
-              fi
-            else
-              echo "⚠️  Ground truth not available for evaluation"
-            fi
-          done
-
-          echo "Test results: $TEST_RESULTS"
-          echo "test_results=$TEST_RESULTS" >> $GITHUB_OUTPUT
-
-          if [ -n "$FAILED_TESTS" ]; then
-            echo "failed_tests=$FAILED_TESTS" >> $GITHUB_OUTPUT
-            echo "❌ Some tests failed: $FAILED_TESTS"
+          # Check bosh exit code
+          if [ $BOSH_EXIT_CODE -ne 0 ]; then
+            echo "❌ $algorithm execution failed: bosh exec returned non-zero exit code: $BOSH_EXIT_CODE"
+            echo "Last 50 lines of execution log:"
+            tail -50 ${algorithm}_execution.log
+            echo "test_result=FAIL" >> $GITHUB_OUTPUT
             exit 1
-          else
-            echo "✅ All tests passed!"
           fi
 
-      - name: Evaluate test results
-        id: test-results
-        run: |
-          TEST_RESULTS="${{ steps.run-tests.outputs.test_results }}"
-          FAILED_TESTS="${{ steps.run-tests.outputs.failed_tests }}"
+          # Verify expected output files exist
+          echo "Checking for expected output files..."
 
-          if [ -n "$FAILED_TESTS" ]; then
-            echo "❌ Tests failed, will NOT upload image"
-            echo "should_upload=false" >> $GITHUB_OUTPUT
-            echo "## ❌ QSM-CI Tests Failed" >> $GITHUB_STEP_SUMMARY
-            echo "Failed algorithms: $FAILED_TESTS" >> $GITHUB_STEP_SUMMARY
-            echo "Docker image will NOT be uploaded to registry." >> $GITHUB_STEP_SUMMARY
+          # Look for QSM output files in multiple possible locations
+          QSM_OUTPUT=""
+          QSM_OUTPUT=$(find "results/${algorithm}/phantom" -path "*/derivatives/*/sub-*/anat/*Chimap.nii*" 2>/dev/null | head -1)
+          if [ -z "$QSM_OUTPUT" ]; then
+            QSM_OUTPUT=$(find "results/${algorithm}/phantom" -path "*/qsm/*chi*.nii*" 2>/dev/null | head -1)
+          fi
+          if [ -z "$QSM_OUTPUT" ]; then
+            QSM_OUTPUT=$(find "results/${algorithm}/phantom" -name "*chi*.nii*" -o -name "*Chimap*.nii*" 2>/dev/null | head -1)
+          fi
+
+          if [ -n "$QSM_OUTPUT" ] && [ -f "$QSM_OUTPUT" ]; then
+            echo "✓ Found QSM output: $QSM_OUTPUT"
+            echo "✅ $algorithm execution completed successfully"
+            echo "test_result=PASS" >> $GITHUB_OUTPUT
           else
-            echo "✅ All tests passed, ready to upload"
+            echo "❌ No QSM output file found"
+            find "results/${algorithm}/phantom" -type f 2>/dev/null | head -10
+            echo "test_result=FAIL" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+
+  aggregate-results:
+    needs: [build-image, test-algorithms]
+    if: always()  # Run even if some tests failed
+    runs-on: ubuntu-22.04
+    outputs:
+      should_upload: ${{ steps.decide.outputs.should_upload }}
+      container_tag: ${{ needs.build-image.outputs.container_tag }}
+      imagename: ${{ needs.build-image.outputs.imagename }}
+      builddate: ${{ needs.build-image.outputs.builddate }}
+    steps:
+      - name: Collect test results
+        id: collect
+        run: |
+          echo "Collecting results from all algorithm tests..."
+
+          # Get results from all matrix jobs
+          RESULTS='${{ toJson(needs.test-algorithms.result) }}'
+          echo "Matrix job results: $RESULTS"
+
+          # Check if all tests passed
+          if echo "$RESULTS" | jq -e 'all(. == "success")' > /dev/null; then
+            echo "✅ All algorithm tests passed"
+            echo "all_passed=true" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Some algorithm tests failed"
+            echo "all_passed=false" >> $GITHUB_OUTPUT
+
+            # Show which ones failed
+            echo "Failed tests:"
+            echo "$RESULTS" | jq -r 'to_entries[] | select(.value != "success") | .key'
+          fi
+
+      - name: Decide on upload
+        id: decide
+        run: |
+          ALL_PASSED="${{ steps.collect.outputs.all_passed }}"
+
+          if [ "$ALL_PASSED" = "true" ]; then
+            echo "✅ All tests passed, will upload image"
             echo "should_upload=true" >> $GITHUB_OUTPUT
             echo "## ✅ QSM-CI Tests Passed" >> $GITHUB_STEP_SUMMARY
             echo "All algorithm tests completed successfully." >> $GITHUB_STEP_SUMMARY
             echo "Docker image will be uploaded to registry." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Tests failed, will NOT upload image"
+            echo "should_upload=false" >> $GITHUB_OUTPUT
+            echo "## ❌ QSM-CI Tests Failed" >> $GITHUB_STEP_SUMMARY
+            echo "Some algorithm tests failed." >> $GITHUB_STEP_SUMMARY
+            echo "Docker image will NOT be uploaded to registry." >> $GITHUB_STEP_SUMMARY
+            exit 1
           fi
 
   upload-and-release:
-    needs: build-and-test
-    if: needs.build-and-test.outputs.should_upload == 'true'
+    needs: aggregate-results
+    if: needs.aggregate-results.outputs.should_upload == 'true'
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -386,8 +372,8 @@ jobs:
 
       - name: Pull and retag tested image
         run: |
-          IMAGENAME="${{ needs.build-and-test.outputs.imagename }}"
-          BUILDDATE="${{ needs.build-and-test.outputs.builddate }}"
+          IMAGENAME="${{ needs.aggregate-results.outputs.imagename }}"
+          BUILDDATE="${{ needs.aggregate-results.outputs.builddate }}"
 
           echo "Pulling tested image and retagging for upload..."
 
@@ -405,8 +391,8 @@ jobs:
         env:
           DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
         run: |
-          IMAGENAME="${{ needs.build-and-test.outputs.imagename }}"
-          BUILDDATE="${{ needs.build-and-test.outputs.builddate }}"
+          IMAGENAME="${{ needs.aggregate-results.outputs.imagename }}"
+          BUILDDATE="${{ needs.aggregate-results.outputs.builddate }}"
 
           # Generate Dockerfile again (since this is a new job environment)
           ./builder/build.py generate qsmxtci --recreate --auto-build --generate-release
@@ -434,8 +420,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
         run: |
-          IMAGENAME="${{ needs.build-and-test.outputs.imagename }}"
-          BUILDDATE="${{ needs.build-and-test.outputs.builddate }}"
+          IMAGENAME="${{ needs.aggregate-results.outputs.imagename }}"
+          BUILDDATE="${{ needs.aggregate-results.outputs.builddate }}"
 
           # Generate release file
           ./builder/build.py generate qsmxtci --recreate --auto-build --generate-release
@@ -446,7 +432,7 @@ jobs:
           echo "Release file would be created and PR opened automatically"
 
   cleanup:
-    needs: [build-and-test, upload-and-release]
+    needs: [aggregate-results, upload-and-release]
     if: always()
     runs-on: ubuntu-22.04
     steps:
