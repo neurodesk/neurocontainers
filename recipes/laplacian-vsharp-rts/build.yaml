@@ -1,0 +1,165 @@
+name: laplacian-vsharp-rts
+version: 1.0.0
+copyright:
+  - license: MIT
+    url: https://github.com/kamesy/QSM.jl
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - wget
+        - build-essential
+        - libfftw3-dev
+        - jq
+        - curl
+
+    - workdir: /opt/qsm
+
+    # Copy algorithm files
+    - copy:
+        - main.sh
+        - /opt/qsm/main.sh
+
+    - copy:
+        - pipeline.jl
+        - /opt/qsm/pipeline.jl
+
+    - copy:
+        - install_packages.jl
+        - /opt/qsm/install_packages.jl
+
+    - run:
+        - chmod +x /opt/qsm/main.sh
+
+    - environment:
+        PATH: $PATH:/opt/qsm
+
+    # Boutiques descriptor for laplacian + V-SHARP + RTS algorithm
+    - boutique:
+        name: laplacian-vsharp-rts
+        description: QSM reconstruction using Laplacian unwrapping, V-SHARP background removal, and RTS dipole inversion
+        tool-version: v1.0.0
+        schema-version: '0.5'
+        container-image:
+          type: docker
+          image: astewartau/laplacian-vsharp-rts_1.0.0:latest
+        command-line: >-
+          main.sh [BIDS_DIR] [OUTPUT_DIR]
+          --subject [SUBJECT]
+          --session [SESSION]
+          --run [RUN]
+          [EXTRA_ARGS]
+        inputs:
+          - name: bids_dir
+            id: bids_dir
+            description: Input BIDS directory
+            type: String
+            optional: false
+            value-key: '[BIDS_DIR]'
+          - name: output_dir
+            id: output_dir
+            description: Output directory
+            type: String
+            optional: false
+            value-key: '[OUTPUT_DIR]'
+          - name: subject
+            id: subject
+            description: BIDS subject ID (without 'sub-' prefix)
+            type: String
+            optional: false
+            value-key: '[SUBJECT]'
+          - name: session
+            id: session
+            description: BIDS session ID
+            type: String
+            optional: true
+            value-key: '[SESSION]'
+          - name: run
+            id: run
+            description: BIDS run ID
+            type: String
+            optional: true
+            value-key: '[RUN]'
+          - name: extra_args
+            id: extra_args
+            description: Additional arguments
+            type: String
+            optional: true
+            value-key: '[EXTRA_ARGS]'
+        output-files:
+          - name: qsm_map
+            id: qsm_map
+            description: Quantitative susceptibility map
+            path-template: "[OUTPUT_DIR]/derivatives/laplacian-vsharp-rts/sub-[SUBJECT]/anat/sub-[SUBJECT]_Chimap.nii.gz"
+          - name: metrics
+            id: metrics
+            description: Evaluation metrics (if ground truth available)
+            path-template: "[OUTPUT_DIR]/metrics/metrics.json"
+            optional: true
+        tags:
+          algorithm: laplacian-vsharp-rts
+          category: qsm-reconstruction
+          domain: quantitative-susceptibility-mapping
+          unwrapping: laplacian
+          background-removal: vsharp
+          dipole-inversion: rts
+          evaluation: qsm-ci
+          language: julia
+        custom:
+          qsm-ci-config:
+            unwrapping: laplacian
+            background_field_removal: vsharp
+            dipole_inversion: rts
+            framework: julia-qsm
+          evaluation-config:
+            type: qsm
+            output-patterns: ["*Chimap*.nii*", "*chi*.nii*", "*qsm*.nii*", "out.nii.gz"]
+            ground-truth-pattern: "*Chimap.nii"
+            roi-pattern: "*mask.nii"
+            metrics: ["correlation", "rmse", "ssim"]
+            evaluation-framework: qsm-ci
+
+deploy:
+  path:
+    - /opt/qsm
+  bins:
+    - main.sh
+
+categories:
+  - quantitative susceptibility mapping
+  - phase processing
+  - julia
+
+readme: |-
+  ----------------------------------
+  ## Laplacian V-SHARP RTS/{{ context.version }} ##
+
+  QSM reconstruction using Julia-based QSM.jl package with:
+  - Laplacian phase unwrapping
+  - V-SHARP background field removal
+  - RTS (Rapid Two-Step) dipole inversion
+
+  This algorithm provides a pure Julia implementation of the QSM pipeline
+  with proven algorithms for each step.
+
+  ## References
+  - Unwrapping: Schofield MA, Zhu Y. Fast phase unwrapping algorithm for interferometric applications. Optics letters. 2003.
+  - Background removal: Wu B, Li W, Guidon A et al. Whole brain susceptibility mapping using compressed sensing. MRM. 2012.
+  - Dipole inversion: Kames C, Wiggermann V, Rauscher A. Rapid two-step dipole inversion for susceptibility mapping with sparsity priors. Neuroimage. 2018.
+  - QSM.jl package: Kames C. kamesy/QSM.jl. GitHub; 2024.
+
+  Example usage:
+  ```bash
+  singularity exec laplacian-vsharp-rts.sif main.sh /data/bids /output --subject 1
+  ```
+
+  The algorithm expects multi-echo BIDS data and outputs susceptibility maps
+  in BIDS derivatives format.
+
+  ----------------------------------
