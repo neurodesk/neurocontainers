@@ -288,18 +288,35 @@ jobs:
           # Create ground truth directory structure for evaluation
           mkdir -p test-data/phantom/derivatives/ground_truth
 
+          echo "Looking for qsm-forward output files..."
+          find test-data/phantom -name "*chi*" -o -name "*mask*" | head -10
+
           # Copy chi map as ground truth (qsm-forward saves it in derivatives/qsm-forward/)
-          if [ -f "test-data/phantom/derivatives/qsm-forward/sub-1/anat/sub-1_Chimap.nii" ]; then
-            cp test-data/phantom/derivatives/qsm-forward/sub-1/anat/sub-1_Chimap.nii \
-               test-data/phantom/derivatives/ground_truth/chi.nii.gz
-            gzip test-data/phantom/derivatives/ground_truth/chi.nii 2>/dev/null || true
+          CHI_FILE=$(find test-data/phantom -name "*Chimap*" -o -name "*chi*" | head -1)
+          if [ -f "$CHI_FILE" ]; then
+            echo "Found chi file: $CHI_FILE"
+            cp "$CHI_FILE" test-data/phantom/derivatives/ground_truth/chi.nii.gz
+            # Handle gzip if needed
+            if [[ "$CHI_FILE" != *.gz ]]; then
+              gzip test-data/phantom/derivatives/ground_truth/chi.nii.gz 2>/dev/null || true
+            fi
+          else
+            echo "No chi file found, creating dummy ground truth"
+            echo "Available files:"
+            find test-data/phantom -type f | head -10
           fi
 
           # Copy mask as ROI
-          if [ -f "test-data/phantom/derivatives/qsm-forward/sub-1/anat/sub-1_mask.nii" ]; then
-            cp test-data/phantom/derivatives/qsm-forward/sub-1/anat/sub-1_mask.nii \
-               test-data/phantom/derivatives/ground_truth/roi.nii.gz
-            gzip test-data/phantom/derivatives/ground_truth/roi.nii 2>/dev/null || true
+          MASK_FILE=$(find test-data/phantom -name "*mask*" | head -1)
+          if [ -f "$MASK_FILE" ]; then
+            echo "Found mask file: $MASK_FILE"
+            cp "$MASK_FILE" test-data/phantom/derivatives/ground_truth/roi.nii.gz
+            # Handle gzip if needed
+            if [[ "$MASK_FILE" != *.gz ]]; then
+              gzip test-data/phantom/derivatives/ground_truth/roi.nii.gz 2>/dev/null || true
+            fi
+          else
+            echo "No mask file found"
           fi
 
           echo "✓ Created BIDS phantom test dataset with ground truth"
@@ -390,14 +407,25 @@ jobs:
             if [ -f "$GROUND_TRUTH" ] && [ -f "$ROI" ]; then
               echo ""
               echo "Running QSM evaluation metrics..."
+              echo "QSM Output: $QSM_OUTPUT"
+              echo "Ground Truth: $GROUND_TRUTH"
+              echo "ROI: $ROI"
 
-              # Download and run the evaluation script
-              wget -q https://raw.githubusercontent.com/neurocontainers/neurocontainers/master/recipes/qsmxtci/qsm_ci_evaluate.py -O qsm_ci_evaluate.py
+              # Check if files actually exist
+              ls -la "$QSM_OUTPUT" "$GROUND_TRUTH" "$ROI" || echo "Some files are missing"
+
+              # Use the evaluation script from the repository
+              cp recipes/qsmxtci/qsm_ci_evaluate.py qsm_ci_evaluate.py
 
               if [ -f "qsm_ci_evaluate.py" ]; then
-                python3 qsm_ci_evaluate.py --estimate "$QSM_OUTPUT" --ground_truth "$GROUND_TRUTH" --roi "$ROI" --output_dir "results/${algorithm}/phantom/metrics" --algorithm "$algorithm" || echo "Warning: Evaluation failed, continuing..."
+                echo "Running evaluation script..."
+                python3 qsm_ci_evaluate.py --estimate "$QSM_OUTPUT" --ground_truth "$GROUND_TRUTH" --roi "$ROI" --output_dir "results/${algorithm}/phantom/metrics" --algorithm "$algorithm" || {
+                  echo "Warning: Evaluation failed with exit code $?, continuing..."
+                  echo "Checking if ground truth files were created correctly..."
+                  find test-data/phantom -name "*.nii*" | head -10
+                }
               else
-                echo "Warning: Could not download evaluation script, skipping metrics calculation"
+                echo "Warning: Could not find evaluation script, skipping metrics calculation"
               fi
 
               # Display metrics if available
