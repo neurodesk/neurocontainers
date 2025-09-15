@@ -121,10 +121,23 @@ echo "[INFO] Found ${#MAG_FILES[@]} magnitude files and ${#PHASE_FILES[@]} phase
 echo "[INFO] JSON file: $JSON_FILE"
 
 # Extract metadata from JSON
-ECHO_TIMES=($(jq -r '.EchoTime // empty' "$JSON_FILE"))
-if [ ${#ECHO_TIMES[@]} -eq 0 ]; then
-    # Try to get from multiple echo files
-    ECHO_TIMES=($(find "$ANAT_INPUT_DIR" -name "sub-${SUBJECT}*echo-*T2starw.json" | sort | xargs -I {} jq -r '.EchoTime' {}))
+# For multi-echo data, we need to extract echo times from individual echo files
+if [ -n "$RUN" ]; then
+    ECHO_JSON_FILES=($(find "$ANAT_INPUT_DIR" -name "sub-${SUBJECT}*run-${RUN}*echo-*T2starw.json" | sort))
+else
+    ECHO_JSON_FILES=($(find "$ANAT_INPUT_DIR" -name "sub-${SUBJECT}*echo-*T2starw.json" | sort))
+fi
+
+if [ ${#ECHO_JSON_FILES[@]} -gt 0 ]; then
+    # Extract echo times from individual echo files
+    ECHO_TIMES=()
+    for json_file in "${ECHO_JSON_FILES[@]}"; do
+        echo_time=$(jq -r '.EchoTime' "$json_file")
+        ECHO_TIMES+=("$echo_time")
+    done
+else
+    # Fallback to single JSON file
+    ECHO_TIMES=($(jq -r '.EchoTime // empty' "$JSON_FILE"))
 fi
 
 FIELD_STRENGTH=$(jq -r '.MagneticFieldStrength // 3.0' "$JSON_FILE")
