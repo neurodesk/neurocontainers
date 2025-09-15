@@ -425,87 +425,9 @@ jobs:
             exit 1
           fi
 
-  upload-and-release:
-    needs: aggregate-results
-    if: needs.aggregate-results.outputs.should_upload == 'true'
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
-      pull-requests: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-
-      - name: Pull and retag tested image
-        run: |
-          IMAGENAME="${{ needs.aggregate-results.outputs.imagename }}"
-          BUILDDATE="${{ needs.aggregate-results.outputs.builddate }}"
-
-          echo "Pulling tested image and retagging for upload..."
-
-          # Pull the tested image (this should be available from the previous job)
-          # Note: In practice, you might need to use a different approach since
-          # GitHub Actions jobs run in separate environments
-          echo "This step would pull the tested image and retag it"
-          echo "For now, we'll trigger a rebuild since the image was tested locally"
-
-      - name: Install builder dependencies
-        run: |
-          pip install -r requirements.txt
-
-      - name: Rebuild and upload image
-        env:
-          DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
-        run: |
-          IMAGENAME="${{ needs.aggregate-results.outputs.imagename }}"
-          BUILDDATE="${{ needs.aggregate-results.outputs.builddate }}"
-
-          # Generate Dockerfile again (since this is a new job environment)
-          ./builder/build.py generate qsmxtci --recreate --auto-build --generate-release
-
-          # Rebuild image (since we can't easily transfer between job environments)
-          cd ./build/qsmxtci
-          docker build . \
-            --file ${IMAGENAME}.Dockerfile \
-            --tag ${DOCKERHUB_ORG}/${IMAGENAME}:${BUILDDATE} \
-            --tag ${DOCKERHUB_ORG}/${IMAGENAME}:latest \
-            --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" \
-            --label "GITHUB_SHA=$(git rev-parse --short $GITHUB_SHA)"
-
-          echo "Pushing to DockerHub..."
-          docker push ${DOCKERHUB_ORG}/${IMAGENAME}:${BUILDDATE}
-          docker push ${DOCKERHUB_ORG}/${IMAGENAME}:latest
-
-          echo "✅ Successfully uploaded Docker image"
-          echo "## ✅ Docker Image Uploaded" >> $GITHUB_STEP_SUMMARY
-          echo "- Image: \`${DOCKERHUB_ORG}/${IMAGENAME}:${BUILDDATE}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Latest: \`${DOCKERHUB_ORG}/${IMAGENAME}:latest\`" >> $GITHUB_STEP_SUMMARY
-
-      - name: Create release PR
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
-        run: |
-          IMAGENAME="${{ needs.aggregate-results.outputs.imagename }}"
-          BUILDDATE="${{ needs.aggregate-results.outputs.builddate }}"
-
-          # Generate release file
-          ./builder/build.py generate qsmxtci --recreate --auto-build --generate-release
-
-          # This would create the release PR similar to the original workflow
-          # For now, just output the success message
-          echo "✅ Ready to create release PR for ${IMAGENAME}:${BUILDDATE}"
-          echo "Release file would be created and PR opened automatically"
 
   cleanup:
-    needs: [aggregate-results, upload-and-release]
+    needs: [aggregate-results]
     if: always()
     runs-on: ubuntu-22.04
     steps:
