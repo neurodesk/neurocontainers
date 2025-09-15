@@ -132,9 +132,9 @@ deploy:
     - main.sh
 
 categories:
-  - quantitative susceptibility mapping
   - phase processing
-  - julia
+  - image reconstruction
+  - quantitative imaging
 
 readme: |-
   ----------------------------------

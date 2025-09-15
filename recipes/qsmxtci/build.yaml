@@ -459,8 +459,8 @@ deploy:
     - evaluate.py
 
 categories:
-  - quantitative susceptibility mapping
   - phase processing
+  - image reconstruction
   - quantitative imaging
 
 readme: |-
