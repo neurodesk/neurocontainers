@@ -282,9 +282,27 @@ jobs:
       - name: Prepare test data
         run: |
           echo "Creating test data using qsm-forward..."
-          # Generate BIDS test data using qsm-forward
-          qsm-forward simple test-data/phantom
-          echo "✓ Created BIDS phantom test dataset"
+          # Generate BIDS test data using qsm-forward with ground truth
+          qsm-forward simple test-data/phantom --save-chi --save-mask
+
+          # Create ground truth directory structure for evaluation
+          mkdir -p test-data/phantom/derivatives/ground_truth
+
+          # Copy chi map as ground truth (qsm-forward saves it in derivatives/qsm-forward/)
+          if [ -f "test-data/phantom/derivatives/qsm-forward/sub-1/anat/sub-1_Chimap.nii" ]; then
+            cp test-data/phantom/derivatives/qsm-forward/sub-1/anat/sub-1_Chimap.nii \
+               test-data/phantom/derivatives/ground_truth/chi.nii.gz
+            gzip test-data/phantom/derivatives/ground_truth/chi.nii 2>/dev/null || true
+          fi
+
+          # Copy mask as ROI
+          if [ -f "test-data/phantom/derivatives/qsm-forward/sub-1/anat/sub-1_mask.nii" ]; then
+            cp test-data/phantom/derivatives/qsm-forward/sub-1/anat/sub-1_mask.nii \
+               test-data/phantom/derivatives/ground_truth/roi.nii.gz
+            gzip test-data/phantom/derivatives/ground_truth/roi.nii 2>/dev/null || true
+          fi
+
+          echo "✓ Created BIDS phantom test dataset with ground truth"
 
       - name: Run ${{ matrix.algorithm }} test
         id: test
@@ -364,6 +382,108 @@ jobs:
           if [ -n "$QSM_OUTPUT" ] && [ -f "$QSM_OUTPUT" ]; then
             echo "✓ Found QSM output: $QSM_OUTPUT"
             echo "✅ $algorithm execution completed successfully"
+
+            # Run evaluation if ground truth exists
+            GROUND_TRUTH="test-data/phantom/derivatives/ground_truth/chi.nii.gz"
+            ROI="test-data/phantom/derivatives/ground_truth/roi.nii.gz"
+
+            if [ -f "$GROUND_TRUTH" ] && [ -f "$ROI" ]; then
+              echo ""
+              echo "Running QSM evaluation metrics..."
+
+              # Download the evaluation script from the repository
+              wget -q https://raw.githubusercontent.com/neurocontainers/neurocontainers/master/recipes/qsmxtci/qsm_ci_evaluate.py -O qsm_ci_evaluate.py || {
+                echo "Failed to download evaluation script, creating inline..."
+                # Fallback: create a minimal evaluation script inline
+                cat > qsm_ci_evaluate.py << 'EVAL_SCRIPT'
+#!/usr/bin/env python
+import json
+import argparse
+import os
+import numpy as np
+import nibabel as nib
+from sklearn.metrics import mean_squared_error
+from scipy.stats import pearsonr
+
+def calculate_rmse(pred_data, ref_data):
+    return np.sqrt(mean_squared_error(ref_data, pred_data))
+
+def calculate_nrmse(pred_data, ref_data):
+    rmse = calculate_rmse(pred_data, ref_data)
+    data_range = np.max(ref_data) - np.min(ref_data)
+    return rmse / data_range if data_range != 0 else 0
+
+def calculate_cc(pred_data, ref_data):
+    correlation, _ = pearsonr(pred_data.flatten(), ref_data.flatten())
+    return correlation
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--estimate', required=True)
+parser.add_argument('--ground_truth', required=True)
+parser.add_argument('--roi', required=True)
+parser.add_argument('--output_dir', required=True)
+parser.add_argument('--algorithm')
+args = parser.parse_args()
+
+# Load data
+estimate_nii = nib.load(args.estimate)
+estimate_data = estimate_nii.get_fdata()
+truth_nii = nib.load(args.ground_truth)
+truth_data = truth_nii.get_fdata()
+roi_nii = nib.load(args.roi)
+roi_data = roi_nii.get_fdata().astype(bool)
+
+# Apply ROI mask
+pred_roi = estimate_data[roi_data]
+ref_roi = truth_data[roi_data]
+
+# Calculate metrics
+metrics = {
+    'RMSE': float(calculate_rmse(pred_roi, ref_roi)),
+    'NRMSE': float(calculate_nrmse(pred_roi, ref_roi)),
+    'CC': float(calculate_cc(pred_roi, ref_roi)),
+}
+
+if args.algorithm:
+    metrics['algorithm'] = args.algorithm
+
+# Save metrics
+os.makedirs(args.output_dir, exist_ok=True)
+metrics_file = os.path.join(args.output_dir, 'metrics.json')
+
+with open(metrics_file, 'w') as f:
+    json.dump(metrics, f, indent=2)
+
+print(f"Metrics saved to: {metrics_file}")
+print("\nEvaluation Results:")
+print("-" * 40)
+for metric, value in metrics.items():
+    if metric != 'algorithm':
+        print(f"{metric:8s}: {value:.6f}")
+EVAL_SCRIPT
+              }
+
+              # Run evaluation
+              python3 qsm_ci_evaluate.py \
+                --estimate "$QSM_OUTPUT" \
+                --ground_truth "$GROUND_TRUTH" \
+                --roi "$ROI" \
+                --output_dir "results/${algorithm}/phantom/metrics" \
+                --algorithm "$algorithm" || {
+                  echo "Warning: Evaluation failed, continuing..."
+                }
+
+              # Display metrics if available
+              if [ -f "results/${algorithm}/phantom/metrics/metrics.json" ]; then
+                echo ""
+                echo "=== QSM Evaluation Metrics for $algorithm ==="
+                cat "results/${algorithm}/phantom/metrics/metrics.json" | python3 -m json.tool
+                echo ""
+              fi
+            else
+              echo "No ground truth available for evaluation"
+            fi
+
             echo "test_result=PASS" >> $GITHUB_OUTPUT
           else
             echo "❌ No QSM output file found matching expected patterns"
