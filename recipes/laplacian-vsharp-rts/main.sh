@@ -16,20 +16,37 @@ EXTRA_ARGS=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --subject)
-            SUBJECT="$2"
-            shift 2
+            if [[ -n "$2" ]] && [[ "$2" != --* ]]; then
+                SUBJECT="$2"
+                shift 2
+            else
+                shift 1
+            fi
             ;;
         --session)
-            SESSION="$2"
-            shift 2
+            if [[ -n "$2" ]] && [[ "$2" != --* ]]; then
+                SESSION="$2"
+                shift 2
+            else
+                shift 1
+            fi
             ;;
         --run)
-            RUN="$2"
-            shift 2
+            if [[ -n "$2" ]] && [[ "$2" != --* ]]; then
+                RUN="$2"
+                shift 2
+            else
+                shift 1
+            fi
             ;;
         --*)
-            EXTRA_ARGS="$EXTRA_ARGS $1 $2"
-            shift 2
+            if [[ -n "$2" ]] && [[ "$2" != --* ]]; then
+                EXTRA_ARGS="$EXTRA_ARGS $1 $2"
+                shift 2
+            else
+                EXTRA_ARGS="$EXTRA_ARGS $1"
+                shift 1
+            fi
             ;;
         *)
             if [ -z "$BIDS_DIR" ]; then
@@ -166,27 +183,34 @@ EOF
 echo "[INFO] Created inputs.json:"
 cat "$INPUTS_JSON"
 
-# Download and setup Julia
-echo "[INFO] Downloading Julia"
-apt-get update
-apt-get install wget build-essential libfftw3-dev python3 python3-pip -y
+# Check if Julia is already installed (in container)
+if command -v julia > /dev/null; then
+    echo "[INFO] Julia already installed"
+    JULIA_CMD="julia"
+else
+    # Download and setup Julia
+    echo "[INFO] Downloading Julia"
+    apt-get update
+    apt-get install wget build-essential libfftw3-dev python3 python3-pip -y
 
-# Install nibabel for mask creation
-pip3 install nibabel
+    # Install nibabel for mask creation
+    pip3 install nibabel
 
-wget https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.4-linux-x86_64.tar.gz
-tar xf julia-1.9.4-linux-x86_64.tar.gz
+    wget https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.4-linux-x86_64.tar.gz
+    tar xf julia-1.9.4-linux-x86_64.tar.gz
+    JULIA_CMD="julia-1.9.4/bin/julia"
+
+    echo "[INFO] Installing Julia packages"
+    $JULIA_CMD /opt/qsm/install_packages.jl
+fi
 
 echo "[DEBUG] Available disk space:"
 df -h
 echo "[DEBUG] Available memory:"
 free -h
 
-echo "[INFO] Installing Julia packages"
-julia-1.9.4/bin/julia /opt/qsm/install_packages.jl
-
 echo "[INFO] Starting reconstruction with QSM.jl"
-julia-1.9.4/bin/julia /opt/qsm/pipeline.jl
+$JULIA_CMD /opt/qsm/pipeline.jl
 
 # Move output to BIDS derivatives location
 if [ -f "out.nii.gz" ]; then
