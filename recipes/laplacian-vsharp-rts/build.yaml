@@ -57,9 +57,7 @@ build:
     - run:
         - chmod +x /opt/qsm/main.sh
 
-    # Pre-install Julia packages
-    - run:
-        - julia /opt/qsm/install_packages.jl
+    # Julia packages will be installed at runtime to avoid compilation issues
 
     - environment:
         PATH: $PATH:/opt/qsm

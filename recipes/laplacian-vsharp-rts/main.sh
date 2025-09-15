@@ -187,6 +187,10 @@ cat "$INPUTS_JSON"
 if command -v julia > /dev/null; then
     echo "[INFO] Julia already installed"
     JULIA_CMD="julia"
+
+    # Install packages at runtime to avoid precompilation issues
+    echo "[INFO] Installing Julia packages at runtime"
+    $JULIA_CMD /opt/qsm/install_packages.jl
 else
     # Download and setup Julia
     echo "[INFO] Downloading Julia"
