@@ -29,7 +29,7 @@ build:
     
     # Copy evaluation scripts
     - copy:
-        - qsm_ci_evaluate.py 
+        - qsm_ci_evaluate.py
         - /opt/qsm-ci/evaluate.py
     
     - copy:
@@ -72,6 +72,7 @@ build:
           --subjects sub-[SUBJECT]
           --sessions [SESSION]
           --runs [RUN]
+          --masking_algorithm threshold
           --auto_yes
           [EXTRA_ARGS]
         inputs:
@@ -165,6 +166,7 @@ build:
           --subjects sub-[SUBJECT]
           --sessions [SESSION]
           --runs [RUN]
+          --masking_algorithm threshold
           --auto_yes
           [EXTRA_ARGS]
         inputs:
@@ -239,6 +241,7 @@ build:
           --subjects sub-[SUBJECT]
           --sessions [SESSION]
           --runs [RUN]
+          --masking_algorithm threshold
           --auto_yes
           [EXTRA_ARGS]
         inputs:
@@ -333,6 +336,7 @@ build:
           --subjects sub-[SUBJECT]
           --sessions [SESSION]
           --runs [RUN]
+          --masking_algorithm threshold
           --auto_yes
           [EXTRA_ARGS]
         inputs:

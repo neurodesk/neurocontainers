@@ -219,10 +219,6 @@ jobs:
             # Create algorithm-specific inputs
             echo '{"bids_dir": "test-data/phantom", "output_dir": "results/'${algorithm}'/phantom", "subject": "1"}' > inputs_${algorithm}.json
 
-            # Add masking_algorithm threshold to all algorithms via extra_args
-            # Using array format to ensure proper argument separation
-            jq '.extra_args = ["--masking_algorithm", "threshold"]' inputs_${algorithm}.json > temp.json && mv temp.json inputs_${algorithm}.json
-
             # Add algorithm-specific parameters
             case "$algorithm" in
               qsm-tgv)
