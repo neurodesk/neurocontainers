@@ -1,4 +1,4 @@
-name: QSMxT-CI Build, Test, and Upload
+name: QSM Algorithm CI - Build, Test, and Upload
 
 permissions:
   contents: write
@@ -9,7 +9,7 @@ permissions:
 on:
   push:
     paths:
-      - recipes/qsmxtci/**
+      - recipes/**/build.yaml  # Trigger on any recipe changes
     branches:
       - master
   workflow_dispatch:
@@ -51,13 +51,43 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Detect changed recipe
+        id: detect-recipe
+        run: |
+          # Detect which recipe was changed
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          echo "Changed files: $CHANGED_FILES"
+
+          # Find recipe directory from changed build.yaml files
+          RECIPE_DIR=""
+          for file in $CHANGED_FILES; do
+            if [[ "$file" == recipes/*/build.yaml ]]; then
+              RECIPE_DIR=$(dirname "$file")
+              break
+            fi
+          done
+
+          if [ -z "$RECIPE_DIR" ]; then
+            echo "No recipe build.yaml changes detected, using qsmxtci as default"
+            RECIPE_DIR="recipes/qsmxtci"
+          fi
+
+          RECIPE_NAME=$(basename "$RECIPE_DIR")
+          echo "Detected recipe: $RECIPE_NAME"
+          echo "recipe_name=$RECIPE_NAME" >> $GITHUB_OUTPUT
+          echo "recipe_dir=$RECIPE_DIR" >> $GITHUB_OUTPUT
+
       - name: Set environment variables
         id: vars
         run: |
-          APPLICATION=qsmxtci
+          RECIPE_NAME="${{ steps.detect-recipe.outputs.recipe_name }}"
+          APPLICATION="$RECIPE_NAME"
           SHORT_SHA=$(git rev-parse --short $GITHUB_SHA)
           BUILDDATE=`date +%Y%m%d`
-          IMAGENAME=qsmxtci_8.1.3
+
+          # Get version from build.yaml
+          VERSION=$(yq eval '.version' ${{ steps.detect-recipe.outputs.recipe_dir }}/build.yaml)
+          IMAGENAME="${RECIPE_NAME}_${VERSION}"
           CONTAINER_TAG=astewartau/${IMAGENAME}:${BUILDDATE}
 
           echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
@@ -81,8 +111,9 @@ jobs:
 
       - name: Generate Dockerfile and Release file
         run: |
-          echo "Generating Dockerfile for qsmxtci"
-          ./builder/build.py generate qsmxtci --recreate --auto-build --generate-release
+          RECIPE_NAME="${{ steps.detect-recipe.outputs.recipe_name }}"
+          echo "Generating Dockerfile for $RECIPE_NAME"
+          ./builder/build.py generate "$RECIPE_NAME" --recreate --auto-build --generate-release
 
       - name: Login to DockerHub
         uses: docker/login-action@v3
@@ -114,17 +145,18 @@ jobs:
       - name: Build Docker image (local only)
         if: steps.check-rebuild.outputs.needs_rebuild == 'true'
         run: |
-          cd ./build/qsmxtci
+          RECIPE_NAME="${{ steps.detect-recipe.outputs.recipe_name }}"
+          cd "./build/$RECIPE_NAME"
           echo "Building image locally (not pushing yet)..."
           docker build . \
-            --file qsmxtci_8.1.3.Dockerfile \
+            --file ${{ env.IMAGENAME }}.Dockerfile \
             --tag ${{ env.CONTAINER_TAG }} \
             --tag astewartau/${{ env.IMAGENAME }}:testing \
             --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" \
             --label "GITHUB_SHA=${SHORT_SHA}"
 
           echo "✓ Docker image built successfully"
-          docker images | grep qsmxtci
+          docker images | grep "$RECIPE_NAME"
 
       - name: Install test dependencies
         run: |
@@ -185,34 +217,56 @@ jobs:
 
           echo "✓ All descriptors are valid"
 
-  generate-matrix:
+  generate-qsm-matrix:
     needs: build-image
     runs-on: ubuntu-22.04
     outputs:
-      algorithms: ${{ steps.extract.outputs.algorithms }}
+      qsm_algorithms: ${{ steps.extract-qsm.outputs.qsm_algorithms }}
     steps:
       - name: Download descriptors artifact
         uses: actions/download-artifact@v4
         with:
           name: descriptors
 
-      - name: Extract available algorithms dynamically
-        id: extract
+      - name: Extract QSM algorithms using tags
+        id: extract-qsm
         run: |
-          echo "Discovering available algorithms from descriptors..."
+          echo "Discovering QSM algorithms from descriptor tags..."
 
-          # Find all qsm-*.json descriptors and extract algorithm names
-          AVAILABLE=$(find . -name "qsm-*.json" -exec basename {} .json \; | sort | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          # Find all descriptors tagged for QSM evaluation
+          QSM_ALGOS=()
+          for descriptor in *.json; do
+            if [ -f "$descriptor" ]; then
+              # Check if this descriptor is tagged for QSM evaluation
+              EVALUATION=$(jq -r '.tags.evaluation // empty' "$descriptor" 2>/dev/null)
+              CATEGORY=$(jq -r '.tags.category // empty' "$descriptor" 2>/dev/null)
+              DOMAIN=$(jq -r '.tags.domain // empty' "$descriptor" 2>/dev/null)
 
-          echo "Found algorithms: $AVAILABLE"
-          echo "algorithms=$AVAILABLE" >> $GITHUB_OUTPUT
+              if [[ "$EVALUATION" == "qsm-ci" ]] || [[ "$CATEGORY" == "qsm-reconstruction" ]] || [[ "$DOMAIN" == "quantitative-susceptibility-mapping" ]]; then
+                ALGO_NAME=$(jq -r '.name' "$descriptor")
+                QSM_ALGOS+=("$ALGO_NAME")
+                echo "✓ Found QSM algorithm: $ALGO_NAME"
+              fi
+            fi
+          done
 
-  test-algorithms:
-    needs: [build-image, generate-matrix]
+          # Convert to JSON array
+          QSM_ALGOS_JSON=$(printf '%s\n' "${QSM_ALGOS[@]}" | jq -R -s -c 'split("\n") | map(select(length > 0))')
+
+          echo "QSM algorithms discovered: $QSM_ALGOS_JSON"
+          echo "qsm_algorithms=$QSM_ALGOS_JSON" >> $GITHUB_OUTPUT
+
+          if [ ${#QSM_ALGOS[@]} -eq 0 ]; then
+            echo "⚠️  No QSM algorithms found in descriptors"
+            exit 1
+          fi
+
+  test-qsm-algorithms:
+    needs: [build-image, generate-qsm-matrix]
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        algorithm: ${{ fromJson(needs.generate-matrix.outputs.algorithms) }}
+        algorithm: ${{ fromJson(needs.generate-qsm-matrix.outputs.qsm_algorithms) }}
       fail-fast: false  # Continue other tests if one fails
     steps:
       - name: Download descriptors artifact
@@ -276,17 +330,35 @@ jobs:
             exit 1
           fi
 
-          # Verify expected output files exist
-          echo "Checking for expected output files..."
+          # Get output patterns from descriptor's evaluation config
+          echo "Checking for expected output files using descriptor configuration..."
 
-          # Look for QSM output files in multiple possible locations
+          # Extract output patterns from the descriptor
+          OUTPUT_PATTERNS=$(jq -r '.custom."evaluation-config"."output-patterns"[]? // empty' "${algorithm}.json" 2>/dev/null)
+
+          if [ -z "$OUTPUT_PATTERNS" ]; then
+            echo "⚠️  No output patterns found in descriptor, using defaults"
+            OUTPUT_PATTERNS="*chi*.nii* *Chimap*.nii* *qsm*.nii*"
+          fi
+
+          echo "Using output patterns: $OUTPUT_PATTERNS"
+
+          # Look for QSM output files using patterns from descriptor
           QSM_OUTPUT=""
-          QSM_OUTPUT=$(find "results/${algorithm}/phantom" -path "*/derivatives/*/sub-*/anat/*Chimap.nii*" 2>/dev/null | head -1)
+          for pattern in $OUTPUT_PATTERNS; do
+            QSM_OUTPUT=$(find "results/${algorithm}/phantom" -name "$pattern" 2>/dev/null | head -1)
+            if [ -n "$QSM_OUTPUT" ] && [ -f "$QSM_OUTPUT" ]; then
+              echo "✓ Found QSM output matching pattern '$pattern': $QSM_OUTPUT"
+              break
+            fi
+          done
+
+          # Also try common QSM locations
           if [ -z "$QSM_OUTPUT" ]; then
-            QSM_OUTPUT=$(find "results/${algorithm}/phantom" -path "*/qsm/*chi*.nii*" 2>/dev/null | head -1)
+            QSM_OUTPUT=$(find "results/${algorithm}/phantom" -path "*/derivatives/*/sub-*/anat/*Chimap.nii*" 2>/dev/null | head -1)
           fi
           if [ -z "$QSM_OUTPUT" ]; then
-            QSM_OUTPUT=$(find "results/${algorithm}/phantom" -name "*chi*.nii*" -o -name "*Chimap*.nii*" 2>/dev/null | head -1)
+            QSM_OUTPUT=$(find "results/${algorithm}/phantom" -path "*/qsm/*chi*.nii*" 2>/dev/null | head -1)
           fi
 
           if [ -n "$QSM_OUTPUT" ] && [ -f "$QSM_OUTPUT" ]; then
@@ -294,14 +366,15 @@ jobs:
             echo "✅ $algorithm execution completed successfully"
             echo "test_result=PASS" >> $GITHUB_OUTPUT
           else
-            echo "❌ No QSM output file found"
+            echo "❌ No QSM output file found matching expected patterns"
+            echo "Directory contents:"
             find "results/${algorithm}/phantom" -type f 2>/dev/null | head -10
             echo "test_result=FAIL" >> $GITHUB_OUTPUT
             exit 1
           fi
 
   aggregate-results:
-    needs: [build-image, test-algorithms]
+    needs: [build-image, test-qsm-algorithms]
     if: always()  # Run even if some tests failed
     runs-on: ubuntu-22.04
     outputs:
@@ -310,22 +383,22 @@ jobs:
       imagename: ${{ needs.build-image.outputs.imagename }}
       builddate: ${{ needs.build-image.outputs.builddate }}
     steps:
-      - name: Collect test results
+      - name: Collect QSM test results
         id: collect
         run: |
-          echo "Collecting results from all algorithm tests..."
+          echo "Collecting results from all QSM algorithm tests..."
 
           # Get results from all matrix jobs - this gives us the overall result of the matrix job
-          MATRIX_RESULT='${{ needs.test-algorithms.result }}'
-          echo "Matrix job overall result: $MATRIX_RESULT"
+          MATRIX_RESULT='${{ needs.test-qsm-algorithms.result }}'
+          echo "QSM test matrix job overall result: $MATRIX_RESULT"
 
           # For matrix jobs, if the overall result is 'success', all matrix runs passed
           # If it's 'failure', at least one matrix run failed
           if [ "$MATRIX_RESULT" = "success" ]; then
-            echo "✅ All algorithm tests passed"
+            echo "✅ All QSM algorithm tests passed"
             echo "all_passed=true" >> $GITHUB_OUTPUT
           else
-            echo "❌ Some algorithm tests failed"
+            echo "❌ Some QSM algorithm tests failed"
             echo "all_passed=false" >> $GITHUB_OUTPUT
 
             # The matrix job failed, but we don't have individual results here
