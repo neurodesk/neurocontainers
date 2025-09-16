@@ -29,17 +29,34 @@ build:
     
     # Copy evaluation scripts
     - copy:
-        - qsm_ci_evaluate.py 
-        - /opt/qsm-ci/evaluate.py 
-    
+        - qsm_ci_evaluate.py
+        - /opt/qsm-ci/evaluate.py
+
     - copy:
         - qsm_ci_runner.sh
-        - /opt/qsm-ci/runner.sh 
-    
+        - /opt/qsm-ci/runner.sh
+
+    # Copy algorithm scripts
+    - copy:
+        - qsm_tgv_algorithm.jl
+        - /opt/qsm-ci/qsm_tgv_algorithm.jl
+
+    - copy:
+        - qsm_nextqsm_algorithm.py
+        - /opt/qsm-ci/qsm_nextqsm_algorithm.py
+
+    - copy:
+        - qsm_rts_algorithm.py
+        - /opt/qsm-ci/qsm_rts_algorithm.py
+
+    - copy:
+        - qsm_tv_algorithm.py
+        - /opt/qsm-ci/qsm_tv_algorithm.py
+
     # Create extraction script location
     - run:
-        - mkdir -p /scripts 
-    
+        - mkdir -p /scripts
+
     - copy:
         - extract_descriptors.sh
         - /scripts/extract_descriptors.sh
@@ -49,8 +66,10 @@ build:
         QSM_CI_DATA: /opt/qsm-ci-data
     
     - run:
-        - chmod +x /opt/qsm-ci/runner.sh 
+        - chmod +x /opt/qsm-ci/runner.sh
         - chmod +x /scripts/extract_descriptors.sh
+        - chmod +x /opt/qsm-ci/*.jl
+        - chmod +x /opt/qsm-ci/*.py
     
     # Multiple Boutiques descriptors for different QSM algorithms
     # Each descriptor formally defines one algorithm's interface
@@ -64,48 +83,55 @@ build:
           type: docker
           image: astewartau/qsmxtci_8.1.3:latest
         command-line: >-
-          qsmxt [BIDS_DIR] [OUTPUT_DIR]
-          --premade bet
-          --qsm_algorithm tgv
+          qsm_tgv_algorithm.jl [OUTPUT_FILE]
+          --mag_files [MAG_FILES]
+          --phase_files [PHASE_FILES]
+          --echo_times [ECHO_TIMES]
+          --field_strength [FIELD_STRENGTH]
+          --mask_file [MASK_FILE]
           --tgv_iterations [TGV_ITERATIONS]
-          --tgv_alphas [TGV_ALPHA1] [TGV_ALPHA2]
-          --subjects sub-[SUBJECT]
-          --sessions [SESSION]
-          --runs [RUN]
-          --masking_algorithm threshold
-          --auto_yes
-          [EXTRA_ARGS]
+          --tgv_alpha1 [TGV_ALPHA1]
+          --tgv_alpha2 [TGV_ALPHA2]
         inputs:
-          - name: bids_dir
-            id: bids_dir
-            description: Input BIDS directory
+          - name: magnitude_files
+            id: magnitude_files
+            description: Multi-echo magnitude images
+            type: File
+            list: true
+            optional: false
+            value-key: '[MAG_FILES]'
+          - name: phase_files
+            id: phase_files
+            description: Multi-echo phase images
+            type: File
+            list: true
+            optional: false
+            value-key: '[PHASE_FILES]'
+          - name: echo_times
+            id: echo_times
+            description: Echo times in seconds
+            type: Number
+            list: true
+            optional: false
+            value-key: '[ECHO_TIMES]'
+          - name: field_strength
+            id: field_strength
+            description: Magnetic field strength in Tesla
+            type: Number
+            optional: false
+            value-key: '[FIELD_STRENGTH]'
+          - name: mask_file
+            id: mask_file
+            description: Brain mask file
+            type: File
+            optional: false
+            value-key: '[MASK_FILE]'
+          - name: output_file
+            id: output_file
+            description: Output QSM map file path
             type: String
             optional: false
-            value-key: '[BIDS_DIR]'
-          - name: output_dir
-            id: output_dir
-            description: Output directory
-            type: String
-            optional: false
-            value-key: '[OUTPUT_DIR]'
-          - name: subject
-            id: subject
-            description: BIDS subject ID (without 'sub-' prefix)
-            type: String
-            optional: false
-            value-key: '[SUBJECT]'
-          - name: session
-            id: session
-            description: BIDS session ID
-            type: String
-            optional: true
-            value-key: '[SESSION]'
-          - name: run
-            id: run
-            description: BIDS run ID
-            type: String
-            optional: true 
-            value-key: '[RUN]'
+            value-key: '[OUTPUT_FILE]'
           - name: tgv_iterations
             id: tgv_iterations
             description: Number of TGV iterations
@@ -127,21 +153,15 @@ build:
             default-value: 0.0005
             optional: true
             value-key: '[TGV_ALPHA2]'
-          - name: extra_args
-            id: extra_args
-            description: Additional QSMxT arguments
-            type: String
-            optional: true
-            value-key: '[EXTRA_ARGS]'
         output-files:
           - name: qsm_map
             id: qsm_map
             description: Quantitative susceptibility map
-            path-template: "[OUTPUT_DIR]/qsm/sub-[SUBJECT]_chi.nii.gz"
+            path-template: "[OUTPUT_FILE]"
           - name: metrics
             id: metrics
             description: Evaluation metrics (if ground truth available)
-            path-template: "[OUTPUT_DIR]/metrics/metrics.json"
+            path-template: "metrics.json"
             optional: true
         tags:
           evaluation: qsm-ci.yml
@@ -158,60 +178,61 @@ build:
           type: docker
           image: astewartau/qsmxtci_8.1.3:latest
         command-line: >-
-          qsmxt [BIDS_DIR] [OUTPUT_DIR]
-          --premade nextqsm
-          --subjects sub-[SUBJECT]
-          --sessions [SESSION]
-          --runs [RUN]
-          --masking_algorithm threshold
-          --auto_yes
-          [EXTRA_ARGS]
+          qsm_nextqsm_algorithm.py [OUTPUT_FILE]
+          --mag_files [MAG_FILES]
+          --phase_files [PHASE_FILES]
+          --echo_times [ECHO_TIMES]
+          --field_strength [FIELD_STRENGTH]
+          --mask_file [MASK_FILE]
         inputs:
-          - name: bids_dir
-            id: bids_dir
-            description: Input BIDS directory
+          - name: magnitude_files
+            id: magnitude_files
+            description: Multi-echo magnitude images
+            type: File
+            list: true
+            optional: false
+            value-key: '[MAG_FILES]'
+          - name: phase_files
+            id: phase_files
+            description: Multi-echo phase images
+            type: File
+            list: true
+            optional: false
+            value-key: '[PHASE_FILES]'
+          - name: echo_times
+            id: echo_times
+            description: Echo times in seconds
+            type: Number
+            list: true
+            optional: false
+            value-key: '[ECHO_TIMES]'
+          - name: field_strength
+            id: field_strength
+            description: Magnetic field strength in Tesla
+            type: Number
+            optional: false
+            value-key: '[FIELD_STRENGTH]'
+          - name: mask_file
+            id: mask_file
+            description: Brain mask file
+            type: File
+            optional: false
+            value-key: '[MASK_FILE]'
+          - name: output_file
+            id: output_file
+            description: Output QSM map file path
             type: String
             optional: false
-            value-key: '[BIDS_DIR]'
-          - name: output_dir
-            id: output_dir
-            description: Output directory
-            type: String
-            optional: false
-            value-key: '[OUTPUT_DIR]'
-          - name: subject
-            id: subject
-            description: BIDS subject ID (without 'sub-' prefix)
-            type: String
-            optional: false
-            value-key: '[SUBJECT]'
-          - name: session
-            id: session
-            description: BIDS session ID
-            type: String
-            optional: true
-            value-key: '[SESSION]'
-          - name: run
-            id: run
-            description: BIDS run ID
-            type: String
-            optional: true
-            value-key: '[RUN]'
-          - name: extra_args
-            id: extra_args
-            description: Additional QSMxT arguments
-            type: String
-            optional: true
-            value-key: '[EXTRA_ARGS]'
+            value-key: '[OUTPUT_FILE]'
         output-files:
           - name: qsm_map
             id: qsm_map
             description: Quantitative susceptibility map
-            path-template: "[OUTPUT_DIR]/qsm/sub-[SUBJECT]_chi.nii.gz"
+            path-template: "[OUTPUT_FILE]"
           - name: metrics
             id: metrics
             description: Evaluation metrics (if ground truth available)
-            path-template: "[OUTPUT_DIR]/metrics/metrics.json"
+            path-template: "metrics.json"
             optional: true
         tags:
           evaluation: qsm-ci.yml
@@ -228,47 +249,54 @@ build:
           type: docker
           image: astewartau/qsmxtci_8.1.3:latest
         command-line: >-
-          qsmxt [BIDS_DIR] [OUTPUT_DIR]
-          --qsm_algorithm rts
-          --unwrapping_algorithm [UNWRAPPING]
+          qsm_rts_algorithm.py [OUTPUT_FILE]
+          --mag_files [MAG_FILES]
+          --phase_files [PHASE_FILES]
+          --echo_times [ECHO_TIMES]
+          --field_strength [FIELD_STRENGTH]
+          --mask_file [MASK_FILE]
+          --unwrapping [UNWRAPPING]
           --bf_algorithm [BF_ALGORITHM]
-          --subjects sub-[SUBJECT]
-          --sessions [SESSION]
-          --runs [RUN]
-          --masking_algorithm threshold
-          --auto_yes
-          [EXTRA_ARGS]
         inputs:
-          - name: bids_dir
-            id: bids_dir
-            description: Input BIDS directory
+          - name: magnitude_files
+            id: magnitude_files
+            description: Multi-echo magnitude images
+            type: File
+            list: true
+            optional: false
+            value-key: '[MAG_FILES]'
+          - name: phase_files
+            id: phase_files
+            description: Multi-echo phase images
+            type: File
+            list: true
+            optional: false
+            value-key: '[PHASE_FILES]'
+          - name: echo_times
+            id: echo_times
+            description: Echo times in seconds
+            type: Number
+            list: true
+            optional: false
+            value-key: '[ECHO_TIMES]'
+          - name: field_strength
+            id: field_strength
+            description: Magnetic field strength in Tesla
+            type: Number
+            optional: false
+            value-key: '[FIELD_STRENGTH]'
+          - name: mask_file
+            id: mask_file
+            description: Brain mask file
+            type: File
+            optional: false
+            value-key: '[MASK_FILE]'
+          - name: output_file
+            id: output_file
+            description: Output QSM map file path
             type: String
             optional: false
-            value-key: '[BIDS_DIR]'
-          - name: output_dir
-            id: output_dir
-            description: Output directory
-            type: String
-            optional: false
-            value-key: '[OUTPUT_DIR]'
-          - name: subject
-            id: subject
-            description: BIDS subject ID (without 'sub-' prefix)
-            type: String
-            optional: false
-            value-key: '[SUBJECT]'
-          - name: session
-            id: session
-            description: BIDS session ID
-            type: String
-            optional: true
-            value-key: '[SESSION]'
-          - name: run
-            id: run
-            description: BIDS run ID
-            type: String
-            optional: true
-            value-key: '[RUN]'
+            value-key: '[OUTPUT_FILE]'
           - name: unwrapping
             id: unwrapping
             description: Phase unwrapping algorithm
@@ -289,21 +317,15 @@ build:
             value-choices:
               - vsharp
               - pdf
-          - name: extra_args
-            id: extra_args
-            description: Additional QSMxT arguments
-            type: String
-            optional: true
-            value-key: '[EXTRA_ARGS]'
         output-files:
           - name: qsm_map
             id: qsm_map
             description: Quantitative susceptibility map
-            path-template: "[OUTPUT_DIR]/qsm/sub-[SUBJECT]_chi.nii.gz"
+            path-template: "[OUTPUT_FILE]"
           - name: metrics
             id: metrics
             description: Evaluation metrics (if ground truth available)
-            path-template: "[OUTPUT_DIR]/metrics/metrics.json"
+            path-template: "metrics.json"
             optional: true
         tags:
           evaluation: qsm-ci.yml
@@ -320,47 +342,54 @@ build:
           type: docker
           image: astewartau/qsmxtci_8.1.3:latest
         command-line: >-
-          qsmxt [BIDS_DIR] [OUTPUT_DIR]
-          --qsm_algorithm tv
-          --unwrapping_algorithm [UNWRAPPING]
+          qsm_tv_algorithm.py [OUTPUT_FILE]
+          --mag_files [MAG_FILES]
+          --phase_files [PHASE_FILES]
+          --echo_times [ECHO_TIMES]
+          --field_strength [FIELD_STRENGTH]
+          --mask_file [MASK_FILE]
+          --unwrapping [UNWRAPPING]
           --bf_algorithm [BF_ALGORITHM]
-          --subjects sub-[SUBJECT]
-          --sessions [SESSION]
-          --runs [RUN]
-          --masking_algorithm threshold
-          --auto_yes
-          [EXTRA_ARGS]
         inputs:
-          - name: bids_dir
-            id: bids_dir
-            description: Input BIDS directory
+          - name: magnitude_files
+            id: magnitude_files
+            description: Multi-echo magnitude images
+            type: File
+            list: true
+            optional: false
+            value-key: '[MAG_FILES]'
+          - name: phase_files
+            id: phase_files
+            description: Multi-echo phase images
+            type: File
+            list: true
+            optional: false
+            value-key: '[PHASE_FILES]'
+          - name: echo_times
+            id: echo_times
+            description: Echo times in seconds
+            type: Number
+            list: true
+            optional: false
+            value-key: '[ECHO_TIMES]'
+          - name: field_strength
+            id: field_strength
+            description: Magnetic field strength in Tesla
+            type: Number
+            optional: false
+            value-key: '[FIELD_STRENGTH]'
+          - name: mask_file
+            id: mask_file
+            description: Brain mask file
+            type: File
+            optional: false
+            value-key: '[MASK_FILE]'
+          - name: output_file
+            id: output_file
+            description: Output QSM map file path
             type: String
             optional: false
-            value-key: '[BIDS_DIR]'
-          - name: output_dir
-            id: output_dir
-            description: Output directory
-            type: String
-            optional: false
-            value-key: '[OUTPUT_DIR]'
-          - name: subject
-            id: subject
-            description: BIDS subject ID (without 'sub-' prefix)
-            type: String
-            optional: false
-            value-key: '[SUBJECT]'
-          - name: session
-            id: session
-            description: BIDS session ID
-            type: String
-            optional: true
-            value-key: '[SESSION]'
-          - name: run
-            id: run
-            description: BIDS run ID
-            type: String
-            optional: true
-            value-key: '[RUN]'
+            value-key: '[OUTPUT_FILE]'
           - name: unwrapping
             id: unwrapping
             description: Phase unwrapping algorithm
@@ -381,21 +410,15 @@ build:
             value-choices:
               - vsharp
               - pdf
-          - name: extra_args
-            id: extra_args
-            description: Additional QSMxT arguments
-            type: String
-            optional: true
-            value-key: '[EXTRA_ARGS]'
         output-files:
           - name: qsm_map
             id: qsm_map
             description: Quantitative susceptibility map
-            path-template: "[OUTPUT_DIR]/qsm/sub-[SUBJECT]_chi.nii.gz"
+            path-template: "[OUTPUT_FILE]"
           - name: metrics
             id: metrics
             description: Evaluation metrics (if ground truth available)
-            path-template: "[OUTPUT_DIR]/metrics/metrics.json"
+            path-template: "metrics.json"
             optional: true
         tags:
           evaluation: qsm-ci.yml
@@ -410,6 +433,10 @@ deploy:
     - qsmxt
     - runner.sh
     - evaluate.py
+    - qsm_tgv_algorithm.jl
+    - qsm_nextqsm_algorithm.py
+    - qsm_rts_algorithm.py
+    - qsm_tv_algorithm.py
 
 categories:
   - phase processing

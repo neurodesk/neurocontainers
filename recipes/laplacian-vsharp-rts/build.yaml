@@ -54,8 +54,13 @@ build:
         - install_packages.jl
         - /opt/qsm/install_packages.jl
 
+    - copy:
+        - laplacian_vsharp_rts_algorithm.jl
+        - /opt/qsm/laplacian_vsharp_rts_algorithm.jl
+
     - run:
         - chmod +x /opt/qsm/main.sh
+        - chmod +x /opt/qsm/*.jl
 
     # Julia packages will be installed at runtime to avoid compilation issues
 
@@ -72,59 +77,61 @@ build:
           type: docker
           image: astewartau/laplacian-vsharp-rts_1.0.0:latest
         command-line: >-
-          main.sh [BIDS_DIR] [OUTPUT_DIR]
-          --subject [SUBJECT]
-          [SESSION]
-          [RUN]
-          [EXTRA_ARGS]
+          laplacian_vsharp_rts_algorithm.jl [OUTPUT_FILE]
+          --mag_files [MAG_FILES]
+          --phase_files [PHASE_FILES]
+          --echo_times [ECHO_TIMES]
+          --field_strength [FIELD_STRENGTH]
+          --mask_file [MASK_FILE]
         inputs:
-          - name: bids_dir
-            id: bids_dir
-            description: Input BIDS directory
+          - name: magnitude_files
+            id: magnitude_files
+            description: Multi-echo magnitude images
+            type: File
+            list: true
+            optional: false
+            value-key: '[MAG_FILES]'
+          - name: phase_files
+            id: phase_files
+            description: Multi-echo phase images
+            type: File
+            list: true
+            optional: false
+            value-key: '[PHASE_FILES]'
+          - name: echo_times
+            id: echo_times
+            description: Echo times in seconds
+            type: Number
+            list: true
+            optional: false
+            value-key: '[ECHO_TIMES]'
+          - name: field_strength
+            id: field_strength
+            description: Magnetic field strength in Tesla
+            type: Number
+            optional: false
+            value-key: '[FIELD_STRENGTH]'
+          - name: mask_file
+            id: mask_file
+            description: Brain mask file
+            type: File
+            optional: false
+            value-key: '[MASK_FILE]'
+          - name: output_file
+            id: output_file
+            description: Output QSM map file path
             type: String
             optional: false
-            value-key: '[BIDS_DIR]'
-          - name: output_dir
-            id: output_dir
-            description: Output directory
-            type: String
-            optional: false
-            value-key: '[OUTPUT_DIR]'
-          - name: subject
-            id: subject
-            description: BIDS subject ID (without 'sub-' prefix)
-            type: String
-            optional: false
-            value-key: '[SUBJECT]'
-          - name: session
-            id: session
-            description: BIDS session ID
-            type: String
-            optional: true
-            value-key: '[SESSION]'
-            command-line-flag: '--session'
-          - name: run
-            id: run
-            description: BIDS run ID
-            type: String
-            optional: true
-            value-key: '[RUN]'
-            command-line-flag: '--run'
-          - name: extra_args
-            id: extra_args
-            description: Additional arguments
-            type: String
-            optional: true
-            value-key: '[EXTRA_ARGS]'
+            value-key: '[OUTPUT_FILE]'
         output-files:
           - name: qsm_map
             id: qsm_map
             description: Quantitative susceptibility map
-            path-template: "[OUTPUT_DIR]/derivatives/laplacian-vsharp-rts/sub-[SUBJECT]/anat/sub-[SUBJECT]_Chimap.nii.gz"
+            path-template: "[OUTPUT_FILE]"
           - name: metrics
             id: metrics
             description: Evaluation metrics (if ground truth available)
-            path-template: "[OUTPUT_DIR]/metrics/metrics.json"
+            path-template: "metrics.json"
             optional: true
         tags:
           evaluation: qsm-ci.yml
@@ -137,6 +144,7 @@ deploy:
     - /opt/qsm
   bins:
     - main.sh
+    - laplacian_vsharp_rts_algorithm.jl
 
 categories:
   - phase processing

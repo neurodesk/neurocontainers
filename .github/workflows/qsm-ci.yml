@@ -328,16 +328,38 @@ jobs:
           algorithm="${{ matrix.algorithm }}"
           echo "=== Testing $algorithm ==="
 
-          # Create algorithm-specific inputs
-          echo '{"bids_dir": "test-data/phantom", "output_dir": "results/'${algorithm}'/phantom", "subject": "1"}' > inputs_${algorithm}.json
+          # Parse BIDS to extract files and metadata for subject
+          echo "Parsing BIDS directory for subject 1..."
+          python3 descriptors/parse_bids.py test-data/phantom --subject 1 --output parsed_${algorithm}.json
+
+          if [ ! -f "parsed_${algorithm}.json" ]; then
+            echo "❌ BIDS parsing failed - no parsed data found"
+            exit 1
+          fi
+
+          echo "Parsed BIDS data:"
+          cat "parsed_${algorithm}.json" | jq '.'
+
+          # Transform parsed data to Boutiques input format
+          jq --arg output_file "results/${algorithm}/phantom/qsm_output.nii.gz" '{
+            magnitude_files: [.mag_nii[]],
+            phase_files: [.phase_nii[]],
+            echo_times: .EchoTime,
+            field_strength: .MagneticFieldStrength,
+            mask_file: .mask,
+            output_file: $output_file
+          }' "parsed_${algorithm}.json" > base_inputs_${algorithm}.json
 
           # Add algorithm-specific parameters
           case "$algorithm" in
             qsm-tgv)
-              jq '.tgv_iterations = 10 | .tgv_alpha1 = 0.0015 | .tgv_alpha2 = 0.0005' inputs_${algorithm}.json > temp.json && mv temp.json inputs_${algorithm}.json
+              jq '.tgv_iterations = 10 | .tgv_alpha1 = 0.0015 | .tgv_alpha2 = 0.0005' base_inputs_${algorithm}.json > inputs_${algorithm}.json
               ;;
             qsm-rts|qsm-tv)
-              jq '.unwrapping = "romeo" | .bf_algorithm = "vsharp"' inputs_${algorithm}.json > temp.json && mv temp.json inputs_${algorithm}.json
+              jq '.unwrapping = "romeo" | .bf_algorithm = "vsharp"' base_inputs_${algorithm}.json > inputs_${algorithm}.json
+              ;;
+            *)
+              cp base_inputs_${algorithm}.json inputs_${algorithm}.json
               ;;
           esac
 
