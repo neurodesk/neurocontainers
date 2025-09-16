@@ -422,13 +422,17 @@ jobs:
 
               if [ -f "qsm_ci_evaluate.py" ]; then
                 echo "Running evaluation script..."
-                python3 qsm_ci_evaluate.py --estimate "$QSM_OUTPUT" --ground_truth "$GROUND_TRUTH" --roi "$ROI" --output_dir "results/${algorithm}/phantom/metrics" --algorithm "$algorithm" || {
-                  echo "Warning: Evaluation failed with exit code $?, continuing..."
+                if ! python3 qsm_ci_evaluate.py --estimate "$QSM_OUTPUT" --ground_truth "$GROUND_TRUTH" --roi "$ROI" --output_dir "results/${algorithm}/phantom/metrics" --algorithm "$algorithm"; then
+                  echo "❌ Evaluation failed with exit code $?"
                   echo "Checking if ground truth files were created correctly..."
                   find test-data/phantom -name "*.nii*" | head -10
-                }
+                  echo "test_result=FAIL" >> $GITHUB_OUTPUT
+                  exit 1
+                fi
               else
-                echo "Warning: Could not find evaluation script, skipping metrics calculation"
+                echo "❌ Could not find evaluation script"
+                echo "test_result=FAIL" >> $GITHUB_OUTPUT
+                exit 1
               fi
 
               # Display metrics if available

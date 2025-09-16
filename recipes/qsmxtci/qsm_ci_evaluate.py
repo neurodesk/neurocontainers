@@ -11,7 +11,7 @@ import numpy as np
 import nibabel as nib
 from sklearn.metrics import mean_squared_error
 from skimage.metrics import structural_similarity
-from sklearn.metrics import normalized_mutual_information_score
+from sklearn.metrics import normalized_mutual_info_score
 from scipy.ndimage import gaussian_laplace
 from scipy.stats import pearsonr
 
@@ -60,7 +60,7 @@ def calculate_nmi(pred_data, ref_data):
                                 np.linspace(pred_data.min(), pred_data.max(), n_bins))
     ref_discrete = np.digitize(ref_data.flatten(), 
                                np.linspace(ref_data.min(), ref_data.max(), n_bins))
-    return normalized_mutual_information_score(ref_discrete, pred_discrete)
+    return normalized_mutual_info_score(ref_discrete, pred_discrete)
 
 def calculate_gxe(pred_data, ref_data):
     """Calculate Gradient Difference Error"""
