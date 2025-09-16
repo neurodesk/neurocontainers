@@ -85,11 +85,13 @@ jobs:
           fi
         done
 
-        echo "workflows_json=$workflows_json" >> $GITHUB_OUTPUT
-        echo "Evaluation workflows found: $workflows_json"
+        # Compact the JSON to avoid multiline issues
+        workflows_json_compact=$(echo "$workflows_json" | jq -c .)
+        echo "workflows_json=$workflows_json_compact" >> $GITHUB_OUTPUT
+        echo "Evaluation workflows found: $workflows_json_compact"
 
         # Debug: show if workflows were found
-        if [ "$workflows_json" = "{}" ]; then
+        if [ "$workflows_json_compact" = "{}" ]; then
           echo "⚠️  No evaluation workflows found in changed recipes"
         else
           echo "✅ Found evaluation workflows to trigger"
