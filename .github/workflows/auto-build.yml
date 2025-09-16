@@ -101,9 +101,11 @@ jobs:
     - name: Trigger evaluation workflows
       if: steps.check_workflows.outputs.workflows_json != '{}'
       uses: actions/github-script@v7
+      env:
+        WORKFLOWS_JSON: ${{ steps.check_workflows.outputs.workflows_json }}
       with:
         script: |
-          const workflowsData = JSON.parse('${{ steps.check_workflows.outputs.workflows_json }}');
+          const workflowsData = JSON.parse(process.env.WORKFLOWS_JSON);
 
           for (const [workflowFile, recipes] of Object.entries(workflowsData)) {
             console.log(`Triggering workflow: ${workflowFile} for recipes: ${recipes.join(', ')}`);
