@@ -43,7 +43,7 @@ build:
 
     # Copy algorithm files
     - copy:
-        - main.sh 
+        - main.sh
         - /opt/qsm/main.sh
 
     - copy:
