@@ -98,6 +98,29 @@ jobs:
           echo "✅ Found evaluation workflows to trigger"
         fi
 
+    - name: Trigger evaluation workflows
+      if: steps.check_workflows.outputs.workflows_json != '{}'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const workflowsData = JSON.parse('${{ steps.check_workflows.outputs.workflows_json }}');
+
+          for (const [workflowFile, recipes] of Object.entries(workflowsData)) {
+            console.log(`Triggering workflow: ${workflowFile} for recipes: ${recipes.join(', ')}`);
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: workflowFile,
+              ref: 'master',
+              inputs: {
+                algorithms: recipes.join(',')
+              }
+            });
+
+            console.log(`Successfully triggered ${workflowFile}`);
+          }
+
     - name: Select runner
       id: select_runner
       run: |
@@ -119,35 +142,3 @@ jobs:
       application: ${{ matrix.application }}
       runner: ${{ needs.list-apps.outputs.runner }}
     secrets: inherit
-
-  trigger-evaluation-workflows:
-    needs: list-apps
-    if: needs.list-apps.outputs.workflows_json != '{}'
-    runs-on: ubuntu-22.04
-    steps:
-    - name: Debug workflows JSON
-      run: |
-        echo "Workflows JSON: ${{ needs.list-apps.outputs.workflows_json }}"
-        echo "Condition check: ${{ needs.list-apps.outputs.workflows_json != '{}' }}"
-
-    - name: Trigger evaluation workflows
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const workflowsData = JSON.parse('${{ needs.list-apps.outputs.workflows_json }}');
-
-          for (const [workflowFile, recipes] of Object.entries(workflowsData)) {
-            console.log(`Triggering workflow: ${workflowFile} for recipes: ${recipes.join(', ')}`);
-
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: workflowFile,
-              ref: 'master',
-              inputs: {
-                algorithms: recipes.join(',')
-              }
-            });
-
-            console.log(`Successfully triggered ${workflowFile}`);
-          }
