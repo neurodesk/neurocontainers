@@ -20,6 +20,7 @@ jobs:
     outputs:
       app_list: ${{ steps.find_changed_recipes.outputs.app_list }}
       runner: ${{ steps.select_runner.outputs.runner }}
+      workflows_json: ${{ steps.check_workflows.outputs.workflows_json }}
     steps:
     - uses: actions/checkout@v4
       with:
@@ -53,6 +54,39 @@ jobs:
         app_list+=']'
         echo "app_list=${app_list}"
         echo "app_list=${app_list}" >> $GITHUB_OUTPUT
+
+    - name: Check for evaluation workflows
+      id: check_workflows
+      if: steps.find_changed_dirs.outputs.any_changed == 'true'
+      run: |
+        echo "Checking for evaluation workflows in changed recipes..."
+
+        # Create a JSON object to store workflow -> recipes mapping
+        workflows_json="{}"
+
+        for APPLICATION in $(echo "${{ steps.find_changed_recipes.outputs.changed_recipes }}" | jq -r '.[]'); do
+          echo "Checking $APPLICATION for evaluation tags..."
+          if [ -f "recipes/$APPLICATION/build.yaml" ]; then
+            # Extract evaluation tag value
+            EVALUATION=$(grep -oP 'evaluation:\s*\K[^\s]+' "recipes/$APPLICATION/build.yaml" 2>/dev/null || echo "")
+            if [ -n "$EVALUATION" ]; then
+              echo "✓ Found evaluation workflow '$EVALUATION' for recipe: $APPLICATION"
+
+              # Add to JSON object
+              workflows_json=$(echo "$workflows_json" | jq --arg workflow "$EVALUATION" --arg recipe "$APPLICATION" '
+                if has($workflow) then
+                  .[$workflow] += [$recipe]
+                else
+                  .[$workflow] = [$recipe]
+                end
+              ')
+            fi
+          fi
+        done
+
+        echo "workflows_json=$workflows_json" >> $GITHUB_OUTPUT
+        echo "Evaluation workflows found: $workflows_json"
+
     - name: Select runner
       id: select_runner
       run: |
@@ -74,3 +108,30 @@ jobs:
       application: ${{ matrix.application }}
       runner: ${{ needs.list-apps.outputs.runner }}
     secrets: inherit
+
+  trigger-evaluation-workflows:
+    needs: list-apps
+    if: needs.list-apps.outputs.workflows_json != '{}'
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Trigger evaluation workflows
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const workflowsData = JSON.parse('${{ needs.list-apps.outputs.workflows_json }}');
+
+          for (const [workflowFile, recipes] of Object.entries(workflowsData)) {
+            console.log(`Triggering workflow: ${workflowFile} for recipes: ${recipes.join(', ')}`);
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: workflowFile,
+              ref: 'master',
+              inputs: {
+                algorithms: recipes.join(',')
+              }
+            });
+
+            console.log(`Successfully triggered ${workflowFile}`);
+          }

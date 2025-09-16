@@ -144,22 +144,10 @@ build:
             path-template: "[OUTPUT_DIR]/metrics/metrics.json"
             optional: true
         tags:
-          algorithm: tgv
-          category: qsm-reconstruction
-          domain: quantitative-susceptibility-mapping
-          evaluation: qsm-ci
+          evaluation: qsmxtci-build-test-upload.yml
         custom:
-          qsm-ci-config:
-            unwrapping: integrated
-            background_field_removal: integrated
-            reference_region: mean
           evaluation-config:
-            type: qsm
             output-patterns: ["*chi*.nii*", "*Chimap*.nii*", "*qsm*.nii*"]
-            ground-truth-pattern: "*Chimap.nii"
-            roi-pattern: "*mask.nii"
-            metrics: ["correlation", "rmse", "ssim"]
-            evaluation-framework: qsm-ci
             
     - boutique:
         name: qsm-nextqsm
@@ -226,22 +214,10 @@ build:
             path-template: "[OUTPUT_DIR]/metrics/metrics.json"
             optional: true
         tags:
-          algorithm: nextqsm
-          category: qsm-reconstruction
-          domain: quantitative-susceptibility-mapping
-          method: deep-learning
-          evaluation: qsm-ci
+          evaluation: qsmxtci-build-test-upload.yml
         custom:
-          qsm-ci-config:
-            unwrapping: romeo
-            background_field_removal: integrated
           evaluation-config:
-            type: qsm
             output-patterns: ["*chi*.nii*", "*Chimap*.nii*", "*qsm*.nii*"]
-            ground-truth-pattern: "*Chimap.nii"
-            roi-pattern: "*mask.nii"
-            metrics: ["correlation", "rmse", "ssim"]
-            evaluation-framework: qsm-ci
             
     - boutique:
         name: qsm-rts
@@ -330,22 +306,10 @@ build:
             path-template: "[OUTPUT_DIR]/metrics/metrics.json"
             optional: true
         tags:
-          algorithm: rts
-          category: qsm-reconstruction
-          domain: quantitative-susceptibility-mapping
-          evaluation: qsm-ci
+          evaluation: qsmxtci-build-test-upload.yml
         custom:
-          qsm-ci-config:
-            unwrapping: configurable
-            background_field_removal: configurable
-            two_pass: true
           evaluation-config:
-            type: qsm
             output-patterns: ["*chi*.nii*", "*Chimap*.nii*", "*qsm*.nii*"]
-            ground-truth-pattern: "*Chimap.nii"
-            roi-pattern: "*mask.nii"
-            metrics: ["correlation", "rmse", "ssim"]
-            evaluation-framework: qsm-ci
             
     - boutique:
         name: qsm-tv
@@ -434,21 +398,10 @@ build:
             path-template: "[OUTPUT_DIR]/metrics/metrics.json"
             optional: true
         tags:
-          algorithm: tv
-          category: qsm-reconstruction
-          domain: quantitative-susceptibility-mapping
-          evaluation: qsm-ci
+          evaluation: qsmxtci-build-test-upload.yml
         custom:
-          qsm-ci-config:
-            unwrapping: configurable
-            background_field_removal: configurable
           evaluation-config:
-            type: qsm
             output-patterns: ["*chi*.nii*", "*Chimap*.nii*", "*qsm*.nii*"]
-            ground-truth-pattern: "*Chimap.nii"
-            roi-pattern: "*mask.nii"
-            metrics: ["correlation", "rmse", "ssim"]
-            evaluation-framework: qsm-ci
 
 deploy:
   path:

@@ -44,7 +44,7 @@ build:
     # Copy algorithm files
     - copy:
         - main.sh 
-        - /opt/qsm/main.sh 
+        - /opt/qsm/main.sh
 
     - copy:
         - pipeline.jl
@@ -127,27 +127,10 @@ build:
             path-template: "[OUTPUT_DIR]/metrics/metrics.json"
             optional: true
         tags:
-          algorithm: laplacian-vsharp-rts
-          category: qsm-reconstruction
-          domain: quantitative-susceptibility-mapping
-          unwrapping: laplacian
-          background-removal: vsharp
-          dipole-inversion: rts
-          evaluation: qsm-ci
-          language: julia
+          evaluation: qsmxtci-build-test-upload.yml
         custom:
-          qsm-ci-config:
-            unwrapping: laplacian
-            background_field_removal: vsharp
-            dipole_inversion: rts
-            framework: julia-qsm
           evaluation-config:
-            type: qsm
             output-patterns: ["*Chimap*.nii*", "*chi*.nii*", "*qsm*.nii*", "out.nii.gz"]
-            ground-truth-pattern: "*Chimap.nii"
-            roi-pattern: "*mask.nii"
-            metrics: ["correlation", "rmse", "ssim"]
-            evaluation-framework: qsm-ci
 
 deploy:
   path:

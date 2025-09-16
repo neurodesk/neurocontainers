@@ -14,6 +14,9 @@ from skimage.metrics import structural_similarity
 from sklearn.metrics import normalized_mutual_info_score
 from scipy.ndimage import gaussian_laplace
 from scipy.stats import pearsonr
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend
+import matplotlib.pyplot as plt
 
 def calculate_rmse(pred_data, ref_data):
     """Calculate Root Mean Square Error"""
@@ -95,6 +98,54 @@ def all_metrics(pred_data, ref_data, roi):
     
     return metrics
 
+def create_sagittal_visualization(estimate_data, ground_truth_data, roi_data, output_path, algorithm_name):
+    """Create sagittal view comparison visualization"""
+    # Get middle sagittal slice
+    sagittal_slice = estimate_data.shape[0] // 2
+
+    # Extract sagittal slices
+    est_sagittal = estimate_data[sagittal_slice, :, :]
+    gt_sagittal = ground_truth_data[sagittal_slice, :, :]
+    roi_sagittal = roi_data[sagittal_slice, :, :].astype(bool)
+
+    # Create figure with subplots
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+
+    # Common colormap and range
+    vmin = min(np.min(est_sagittal), np.min(gt_sagittal))
+    vmax = max(np.max(est_sagittal), np.max(gt_sagittal))
+
+    # Plot ground truth
+    im1 = axes[0].imshow(gt_sagittal.T, cmap='gray', vmin=vmin, vmax=vmax, origin='lower')
+    axes[0].set_title('Ground Truth', fontsize=12)
+    axes[0].axis('off')
+
+    # Plot reconstruction
+    im2 = axes[1].imshow(est_sagittal.T, cmap='gray', vmin=vmin, vmax=vmax, origin='lower')
+    axes[1].set_title(f'{algorithm_name} Reconstruction', fontsize=12)
+    axes[1].axis('off')
+
+    # Plot difference with ROI overlay
+    diff = est_sagittal - gt_sagittal
+    diff_masked = np.where(roi_sagittal, diff, np.nan)
+    im3 = axes[2].imshow(diff_masked.T, cmap='RdBu_r', origin='lower')
+    axes[2].set_title('Difference (ROI)', fontsize=12)
+    axes[2].axis('off')
+
+    # Add colorbars
+    plt.colorbar(im1, ax=axes[0], shrink=0.8)
+    plt.colorbar(im2, ax=axes[1], shrink=0.8)
+    plt.colorbar(im3, ax=axes[2], shrink=0.8)
+
+    plt.suptitle(f'QSM Reconstruction Comparison: {algorithm_name}', fontsize=14)
+    plt.tight_layout()
+
+    # Save the figure
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+
+    print(f"Sagittal visualization saved to: {output_path}")
+
 def main():
     parser = argparse.ArgumentParser(description='Evaluate QSM reconstruction metrics')
     parser.add_argument('--estimate', required=True, help='Path to estimated QSM')
@@ -134,7 +185,13 @@ def main():
         json.dump(metrics, f, indent=2)
     
     print(f"Metrics saved to: {metrics_file}")
-    
+
+    # Create visualization
+    print("Creating sagittal visualization...")
+    algorithm_name = args.algorithm if args.algorithm else "Unknown"
+    viz_file = os.path.join(args.output_dir, f'{algorithm_name}_sagittal_comparison.png')
+    create_sagittal_visualization(estimate_data, truth_data, roi_data, viz_file, algorithm_name)
+
     # Print metrics
     print("\nEvaluation Results:")
     print("-" * 40)

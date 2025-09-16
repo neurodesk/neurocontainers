@@ -7,11 +7,6 @@ permissions:
   id-token: write
 
 on:
-  push:
-    paths:
-      - recipes/**/build.yaml  # Trigger on any recipe changes
-    branches:
-      - master
   workflow_dispatch:
     inputs:
       force_rebuild:
@@ -239,10 +234,8 @@ jobs:
             if [ -f "$descriptor" ]; then
               # Check if this descriptor is tagged for QSM evaluation
               EVALUATION=$(jq -r '.tags.evaluation // empty' "$descriptor" 2>/dev/null)
-              CATEGORY=$(jq -r '.tags.category // empty' "$descriptor" 2>/dev/null)
-              DOMAIN=$(jq -r '.tags.domain // empty' "$descriptor" 2>/dev/null)
 
-              if [[ "$EVALUATION" == "qsm-ci" ]] || [[ "$CATEGORY" == "qsm-reconstruction" ]] || [[ "$DOMAIN" == "quantitative-susceptibility-mapping" ]]; then
+              if [[ "$EVALUATION" == "qsmxtci-build-test-upload.yml" ]]; then
                 ALGO_NAME=$(jq -r '.name' "$descriptor")
                 QSM_ALGOS+=("$ALGO_NAME")
                 echo "✓ Found QSM algorithm: $ALGO_NAME"
@@ -279,7 +272,7 @@ jobs:
 
       - name: Install test dependencies
         run: |
-          pip install boutiques nibabel scipy scikit-learn scikit-image pandas numpy qsm-forward==0.19 --user
+          pip install boutiques nibabel scipy scikit-learn scikit-image pandas numpy matplotlib qsm-forward==0.19 --user
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Prepare test data
@@ -447,12 +440,21 @@ jobs:
                 echo ""
 
                 # Add metrics to GitHub Actions summary
-                echo "## QSM Evaluation Metrics for $algorithm" >> $GITHUB_STEP_SUMMARY
+                echo "## QSM Evaluation Results for $algorithm" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+
+
+                echo "### Evaluation Metrics" >> $GITHUB_STEP_SUMMARY
                 echo "" >> $GITHUB_STEP_SUMMARY
                 echo '```json' >> $GITHUB_STEP_SUMMARY
                 cat "results/${algorithm}/phantom/metrics/metrics.json" | python3 -m json.tool >> $GITHUB_STEP_SUMMARY
                 echo '```' >> $GITHUB_STEP_SUMMARY
                 echo "" >> $GITHUB_STEP_SUMMARY
+
+                # Upload visualization as artifact
+                if [ -f "$VIZ_FILE" ]; then
+                  echo "Uploading visualization artifact: $VIZ_FILE"
+                fi
               fi
             else
               echo "No ground truth available for evaluation"
@@ -466,6 +468,16 @@ jobs:
             echo "test_result=FAIL" >> $GITHUB_OUTPUT
             exit 1
           fi
+
+      - name: Upload QSM outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.algorithm }}-outputs
+          path: |
+            results/${{ matrix.algorithm }}/phantom/derivatives/${{ matrix.algorithm }}/sub-1/anat/*Chimap*.nii.gz
+            results/${{ matrix.algorithm }}/phantom/metrics/*.png
+          if-no-files-found: ignore
 
   aggregate-results:
     needs: [build-image, test-qsm-algorithms]
