@@ -144,7 +144,7 @@ build:
             path-template: "[OUTPUT_DIR]/metrics/metrics.json"
             optional: true
         tags:
-          evaluation: qsmxtci-build-test-upload.yml
+          evaluation: qsm-ci.yml
         custom:
           evaluation-config:
             output-patterns: ["*chi*.nii*", "*Chimap*.nii*", "*qsm*.nii*"]
@@ -214,7 +214,7 @@ build:
             path-template: "[OUTPUT_DIR]/metrics/metrics.json"
             optional: true
         tags:
-          evaluation: qsmxtci-build-test-upload.yml
+          evaluation: qsm-ci.yml
         custom:
           evaluation-config:
             output-patterns: ["*chi*.nii*", "*Chimap*.nii*", "*qsm*.nii*"]
@@ -306,7 +306,7 @@ build:
             path-template: "[OUTPUT_DIR]/metrics/metrics.json"
             optional: true
         tags:
-          evaluation: qsmxtci-build-test-upload.yml
+          evaluation: qsm-ci.yml
         custom:
           evaluation-config:
             output-patterns: ["*chi*.nii*", "*Chimap*.nii*", "*qsm*.nii*"]
@@ -398,7 +398,7 @@ build:
             path-template: "[OUTPUT_DIR]/metrics/metrics.json"
             optional: true
         tags:
-          evaluation: qsmxtci-build-test-upload.yml
+          evaluation: qsm-ci.yml
         custom:
           evaluation-config:
             output-patterns: ["*chi*.nii*", "*Chimap*.nii*", "*qsm*.nii*"]

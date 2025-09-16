@@ -7,7 +7,7 @@ permissions:
   id-token: write
 
 on:
-  # Disabled automatic trigger - now handled by qsmxtci-build-test-upload.yml
+  # Disabled automatic trigger - now handled by qsm-ci.yml
   # workflow_run:
   #   workflows: ["auto-build"]
   #   types:

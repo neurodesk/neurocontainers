@@ -1,4 +1,5 @@
-name: QSM Algorithm CI - Build, Test, and Upload
+name: QSM-CI - Evaluation
+run-name: "qsm-ci: ${{ inputs.algorithms || 'qsm-tgv,qsm-nextqsm,qsm-rts,qsm-tv' }}"
 
 permissions:
   contents: write
@@ -235,7 +236,7 @@ jobs:
               # Check if this descriptor is tagged for QSM evaluation
               EVALUATION=$(jq -r '.tags.evaluation // empty' "$descriptor" 2>/dev/null)
 
-              if [[ "$EVALUATION" == "qsmxtci-build-test-upload.yml" ]]; then
+              if [[ "$EVALUATION" == "qsm-ci.yml" ]]; then
                 ALGO_NAME=$(jq -r '.name' "$descriptor")
                 QSM_ALGOS+=("$ALGO_NAME")
                 echo "✓ Found QSM algorithm: $ALGO_NAME"

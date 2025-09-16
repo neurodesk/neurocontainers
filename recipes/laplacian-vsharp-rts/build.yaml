@@ -127,7 +127,7 @@ build:
             path-template: "[OUTPUT_DIR]/metrics/metrics.json"
             optional: true
         tags:
-          evaluation: qsmxtci-build-test-upload.yml
+          evaluation: qsm-ci.yml
         custom:
           evaluation-config:
             output-patterns: ["*Chimap*.nii*", "*chi*.nii*", "*qsm*.nii*", "out.nii.gz"]
