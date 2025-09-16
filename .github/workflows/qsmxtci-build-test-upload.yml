@@ -445,6 +445,14 @@ jobs:
                 echo "=== QSM Evaluation Metrics for $algorithm ==="
                 cat "results/${algorithm}/phantom/metrics/metrics.json" | python3 -m json.tool
                 echo ""
+
+                # Add metrics to GitHub Actions summary
+                echo "## QSM Evaluation Metrics for $algorithm" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo '```json' >> $GITHUB_STEP_SUMMARY
+                cat "results/${algorithm}/phantom/metrics/metrics.json" | python3 -m json.tool >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
               fi
             else
               echo "No ground truth available for evaluation"
@@ -501,7 +509,6 @@ jobs:
             echo "should_upload=true" >> $GITHUB_OUTPUT
             echo "## ✅ QSM-CI Tests Passed" >> $GITHUB_STEP_SUMMARY
             echo "All algorithm tests completed successfully." >> $GITHUB_STEP_SUMMARY
-            echo "Docker image will be uploaded to registry." >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ Tests failed, will NOT upload image"
             echo "should_upload=false" >> $GITHUB_OUTPUT
