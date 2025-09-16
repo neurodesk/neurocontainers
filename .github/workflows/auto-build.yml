@@ -54,6 +54,7 @@ jobs:
         app_list+=']'
         echo "app_list=${app_list}"
         echo "app_list=${app_list}" >> $GITHUB_OUTPUT
+        echo "changed_recipes=${changed_recipes}" >> $GITHUB_OUTPUT
 
     - name: Check for evaluation workflows
       id: check_workflows
@@ -64,7 +65,7 @@ jobs:
         # Create a JSON object to store workflow -> recipes mapping
         workflows_json="{}"
 
-        for APPLICATION in $(echo "${{ steps.find_changed_recipes.outputs.changed_recipes }}" | jq -r '.[]'); do
+        for APPLICATION in $(echo '${{ steps.find_changed_recipes.outputs.changed_recipes }}' | jq -r '.[]'); do
           echo "Checking $APPLICATION for evaluation tags..."
           if [ -f "recipes/$APPLICATION/build.yaml" ]; then
             # Extract evaluation tag value
@@ -86,6 +87,13 @@ jobs:
 
         echo "workflows_json=$workflows_json" >> $GITHUB_OUTPUT
         echo "Evaluation workflows found: $workflows_json"
+
+        # Debug: show if workflows were found
+        if [ "$workflows_json" = "{}" ]; then
+          echo "⚠️  No evaluation workflows found in changed recipes"
+        else
+          echo "✅ Found evaluation workflows to trigger"
+        fi
 
     - name: Select runner
       id: select_runner
@@ -114,6 +122,11 @@ jobs:
     if: needs.list-apps.outputs.workflows_json != '{}'
     runs-on: ubuntu-22.04
     steps:
+    - name: Debug workflows JSON
+      run: |
+        echo "Workflows JSON: ${{ needs.list-apps.outputs.workflows_json }}"
+        echo "Condition check: ${{ needs.list-apps.outputs.workflows_json != '{}' }}"
+
     - name: Trigger evaluation workflows
       uses: actions/github-script@v7
       with:
