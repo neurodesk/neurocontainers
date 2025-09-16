@@ -298,10 +298,12 @@ jobs:
           CHI_FILE=$(find test-data/phantom -name "*Chimap*" -o -name "*chi*" | head -1)
           if [ -f "$CHI_FILE" ]; then
             echo "Found chi file: $CHI_FILE"
-            cp "$CHI_FILE" test-data/phantom/derivatives/ground_truth/chi.nii.gz
-            # Handle gzip if needed
-            if [[ "$CHI_FILE" != *.gz ]]; then
-              gzip test-data/phantom/derivatives/ground_truth/chi.nii.gz 2>/dev/null || true
+            # Copy and gzip if needed
+            if [[ "$CHI_FILE" == *.gz ]]; then
+              cp "$CHI_FILE" test-data/phantom/derivatives/ground_truth/chi.nii.gz
+            else
+              cp "$CHI_FILE" test-data/phantom/derivatives/ground_truth/chi.nii
+              gzip test-data/phantom/derivatives/ground_truth/chi.nii
             fi
           else
             echo "No chi file found, creating dummy ground truth"
@@ -313,10 +315,12 @@ jobs:
           MASK_FILE=$(find test-data/phantom -name "*mask*" | head -1)
           if [ -f "$MASK_FILE" ]; then
             echo "Found mask file: $MASK_FILE"
-            cp "$MASK_FILE" test-data/phantom/derivatives/ground_truth/roi.nii.gz
-            # Handle gzip if needed
-            if [[ "$MASK_FILE" != *.gz ]]; then
-              gzip test-data/phantom/derivatives/ground_truth/roi.nii.gz 2>/dev/null || true
+            # Copy and gzip if needed
+            if [[ "$MASK_FILE" == *.gz ]]; then
+              cp "$MASK_FILE" test-data/phantom/derivatives/ground_truth/roi.nii.gz
+            else
+              cp "$MASK_FILE" test-data/phantom/derivatives/ground_truth/roi.nii
+              gzip test-data/phantom/derivatives/ground_truth/roi.nii
             fi
           else
             echo "No mask file found"
