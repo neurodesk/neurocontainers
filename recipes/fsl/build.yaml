@@ -1,7 +1,7 @@
 name: fsl
 # check for latest version: http://fsl.fmrib.ox.ac.uk/fsldownloads
 # check if latest version is in neurodocker https://github.com/ReproNim/neurodocker/blob/master/neurodocker/templates/fsl.yaml
-version: 6.0.7.16
+version: 6.0.7.18
 
 copyright:
   - name: fsl license
@@ -30,7 +30,7 @@ architectures:
 build:
   kind: neurodocker
 
-  base-image: ubuntu:20.04
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
