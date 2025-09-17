@@ -179,12 +179,22 @@ jobs:
             --output table \
             --file "${{ env.SCAN_OUTPUT_DIR }}/grype_report.txt"
 
-          # Filter by severity if specified (with timeout)
-          if [[ "${{ inputs.severity_threshold }}" != "low" ]]; then
-            timeout "${{ inputs.max_scan_timeout }}" grype "${{ inputs.container_image }}" \
-              --output json \
-              --file "${{ env.SCAN_OUTPUT_DIR }}/grype_filtered.json" \
-              --severity "${{ inputs.severity_threshold }}"
+          # Filter by severity if specified (post-process JSON results)
+          if [[ "${{ inputs.severity_threshold }}" != "low" && -f "${{ env.SCAN_OUTPUT_DIR }}/grype_results.json" ]]; then
+            echo "Filtering results by severity: ${{ inputs.severity_threshold }}"
+            
+            # Define severity levels for filtering
+            case "${{ inputs.severity_threshold }}" in
+              "medium") severity_filter='["Medium","High","Critical"]' ;;
+              "high") severity_filter='["High","Critical"]' ;;
+              "critical") severity_filter='["Critical"]' ;;
+              *) severity_filter='["Low","Medium","High","Critical"]' ;;
+            esac
+            
+            # Filter JSON results by severity
+            jq --argjson severities "$severity_filter" \
+              '.matches = (.matches | map(select(.vulnerability.severity as $sev | $severities | index($sev))))' \
+              "${{ env.SCAN_OUTPUT_DIR }}/grype_results.json" > "${{ env.SCAN_OUTPUT_DIR }}/grype_filtered.json"
           fi
 
       - name: Run Trivy vulnerability scan
@@ -352,10 +362,10 @@ jobs:
           fi
 
           if [[ "$critical_found" == "true" ]]; then
-            echo "❌ Critical security issues found! Please review the scan results."
+            echo " Critical security issues found! Please review the scan results."
             echo "critical_vulnerabilities_found=true" >> $GITHUB_OUTPUT
           else
-            echo "✅ No critical vulnerabilities found."
+            echo "No critical vulnerabilities found."
             echo "critical_vulnerabilities_found=false" >> $GITHUB_OUTPUT
           fi
 
