@@ -169,20 +169,19 @@ jobs:
         run: |
           echo "Running Grype vulnerability scan..."
 
-          # Run Grype scan with JSON output
-          grype "${{ inputs.container_image }}" \
+          # Run Grype scan with JSON output (with timeout)
+          timeout "${{ inputs.max_scan_timeout }}" grype "${{ inputs.container_image }}" \
             --output json \
-            --file "${{ env.SCAN_OUTPUT_DIR }}/grype_results.json" \
-            --timeout "${{ inputs.max_scan_timeout }}s"
+            --file "${{ env.SCAN_OUTPUT_DIR }}/grype_results.json"
 
-          # Generate human-readable report
-          grype "${{ inputs.container_image }}" \
+          # Generate human-readable report (with timeout)
+          timeout "${{ inputs.max_scan_timeout }}" grype "${{ inputs.container_image }}" \
             --output table \
             --file "${{ env.SCAN_OUTPUT_DIR }}/grype_report.txt"
 
-          # Filter by severity if specified
+          # Filter by severity if specified (with timeout)
           if [[ "${{ inputs.severity_threshold }}" != "low" ]]; then
-            grype "${{ inputs.container_image }}" \
+            timeout "${{ inputs.max_scan_timeout }}" grype "${{ inputs.container_image }}" \
               --output json \
               --file "${{ env.SCAN_OUTPUT_DIR }}/grype_filtered.json" \
               --severity "${{ inputs.severity_threshold }}"
