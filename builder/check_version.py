@@ -61,17 +61,27 @@ def latest_stable(repo):
 
     return None
 
+#return true if have newer version,false if is up to date and none if need manual check
 def newer(a, b):
-    na, nb = (a or "").lstrip("v"), (b or "").lstrip("v")
+    def clean(s: str) -> str:
+        s = (s or "").strip()
+        s = s.lstrip("vV")          
+        s = s.replace("_", ".")    
+        s = s.split("+", 1)[0]      # +meta
+        s = s.split("-", 1)[0]      # -suffix
+        return s
+
+    na, nb = clean(a), clean(b)
     try:
-        result = V.parse(nb) > V.parse(na)
-        dbg(f"Version compare: current={na} upstream={nb} -> upstream_is_newer={result}")
-        return result
+        va = V.parse(na)
+        vb = V.parse(nb)
     except Exception as e:
-        dbg("packaging.version parse failed, fallback to string compare:", e)
-        result = nb > na
-        dbg(f"String compare: current={na} upstream={nb} -> upstream_is_newer={result}")
-        return result
+        dbg("version parse failed:", e)
+        return None  # we can not compare strings
+
+    result = vb > va
+    dbg(f"Version compare: current={va} upstream={vb} -> upstream_is_newer={result}")
+    return result
 
 def issue_exists(fp):
     if not REPO:
@@ -94,15 +104,23 @@ def issue_exists(fp):
         dbg(traceback.format_exc())
         return False
 
-def open_issue(title, body):
+def open_issue(title, body, labels=None):
+    if labels is None:
+        labels = ["auto-update"]
+    if not REPO:
+        print("GITHUB_REPOSITORY not set; skip creating issue.")
+        return
     print("=== Would open issue ===")
     print("Title:", title)
     print("Body:\n", body)
+    print("Labels:", labels)
     print("========================")
-    r = S.post(f"https://api.github.com/repos/{REPO}/issues",
-    json={"title": title, "body": body, "labels": ["auto-update"]}, timeout=20)
+    r = S.post(
+        f"https://api.github.com/repos/{REPO}/issues",
+        json={"title": title, "body": body, "labels": labels},
+        timeout=20
+    )
     r.raise_for_status()
-
 
 
 if __name__ == "__main__":
@@ -118,9 +136,9 @@ if __name__ == "__main__":
         if not isinstance(data, dict):
             continue
 
-        au = data.get("auto_update") or {}
+        au = data.get("auto_update")
         if not isinstance(au, dict):
-            print("auto_update missing or not a dict.")
+            #print(f"{path}: auto_update missing or not a dict, skip.")
             continue
 
         method = au.get("method")
@@ -142,17 +160,40 @@ if __name__ == "__main__":
         if not up:
             print("no upstream tag/release")
             continue
+        cmp = newer(cur, up)
 
-        if not newer(cur, up):
-            print(f"current version is Up-to-date ).")
-            continue
+        if cmp is None:
+            # manula check if meet strings
+            fp = f"{path} -> {up} (manual-verify)"
+            print("Fingerprint:", fp)
+            if issue_exists(fp):
+                print("duplicate issue already open for this fingerprint (manual verify).")
+            else:
+                title = f"[manual] Verify upstream version for {name}: current={cur}, upstream_tag={up}"
+                body  = (
+                    f"- Recipe: {path}\n"
+                    f"- Current version: {cur}\n"
+                    f"- Upstream tag: {up}\n"
+                    f"- Repo: {repo}\n\n"
+                    "Packaging cannot parse one/both versions after cleaning. Please verify manually."
+                )
+                open_issue(title, body, labels=["auto-update", "manual-review"])
 
-        fp = f"{path} -> {up}"
-        print("Fingerprint:", fp)
-        if issue_exists(fp):
-            print("duplicate issue already open for this fingerprint.")
-            continue
+        elif not cmp:
+            print("current version is Up-to-date.")
 
-        title = f"{name} {cur} may update to {up}"
-        body  = f"-Recipe: {path} -Current version: {cur} -Upstream version: {up} -Repo:{repo}\n"
-        open_issue(title, body)
+        # detect newer version update
+        else:
+            fp = f"{path} -> {up}"
+            print("Fingerprint:", fp)
+            if issue_exists(fp):
+                print("duplicate issue already open for this fingerprint.")
+            else:
+                title = f"{name} {cur} may update to {up}"
+                body  = (
+                    f"- Recipe: {path}\n"
+                    f"- Current version: {cur}\n"
+                    f"- Upstream version: {up}\n"
+                    f"- Repo: {repo}\n"
+                )
+                open_issue(title, body, labels=["auto-update"])
