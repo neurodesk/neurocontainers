@@ -1,0 +1,40 @@
+# File Processing Tool Configuration
+
+# Multiple ways to specify files - you can use any combination:
+
+# Option 1: Multiple glob patterns
+glob_patterns:
+  - "recipes/*/build.yaml"
+  - "macros/*/neurodocker.yaml"
+
+# Option 2: Explicit file list
+files:
+  - builder/README.md
+  - builder/build.py
+
+# Template for the system prompt (supports Go text/template syntax)
+# Available variables: .FileCount, .Files, .FilesJSON
+system_prompt: |
+  You are an AI assistant that analyzes files and provides insights based on the user's prompt. 
+  The files are provided in JSON format with their paths, content, and detected file types for easier processing.
+
+  You are analyzing {{.FileCount}} files total.
+
+# Template for the user prompt (supports Go text/template syntax)
+# Available variables: .FileCount, .Files, .FilesJSON
+user_prompt: |
+  Here are the files I need you to analyze:
+
+  {{.FilesJSON}}
+
+  The overall goals we have as a project is to make the packaging more accessible to regular scientists
+  not just expert devops, and to make the containers more reproducible and reliable. For this reason you
+  should focus on suggestions that improve usability and focus on making recipes easier to write.
+
+  I know you'll see many issues with the overall project but your job is to figure out useful abstractions
+  within the context of the existing system. Understand that YAML files are written with a graphical interface
+  and not by hand.
+
+# Output configuration
+output_file: "analysis.md"
+model: "gpt-5"
