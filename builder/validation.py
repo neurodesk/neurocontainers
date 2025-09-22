@@ -23,6 +23,7 @@ CATEGORIES = [
     "structural imaging",
     "image segmentation",
     "functional imaging",
+    "rodent imaging",
     "diffusion imaging",
     "spine",
     "connectomics",
