@@ -1,0 +1,11 @@
+{
+  "apps": {
+    "xnat 1.9.2.1": {
+      "version": "20250805",
+      "exec": ""
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}
