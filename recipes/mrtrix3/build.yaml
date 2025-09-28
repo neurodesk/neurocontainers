@@ -5,7 +5,6 @@ copyright:
     url: https://github.com/MRtrix3/mrtrix3/blob/master/LICENCE.txt
 architectures:
   - x86_64
-  - aarch64
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
