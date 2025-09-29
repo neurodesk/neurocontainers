@@ -137,6 +137,7 @@ jobs:
     outputs:
       issue-number: ${{ steps.issue.outputs.issue-number }}
       issue-url: ${{ steps.issue.outputs.issue-url }}
+      skip-comment-id: ${{ steps.skip-comment.outputs.comment-id }}
     steps:
       - name: Open tracking issue
         id: issue
@@ -193,7 +194,8 @@ jobs:
             bodyLines.push(`Recipes with releases: ${released}`);
             bodyLines.push(`Recipes without releases: ${missing}`);
             bodyLines.push('');
-            bodyLines.push('Each container (or skipped recipe) will add a comment below as testing progresses.');
+            bodyLines.push('Containers that execute tests will add a comment below as results arrive.');
+            bodyLines.push('Skipped containers and early failures update the first comment in this issue.');
 
             const body = bodyLines.join('\n');
 
@@ -207,6 +209,30 @@ jobs:
             core.setOutput('issue-number', issue.number.toString());
             core.setOutput('issue-url', issue.html_url);
 
+      - name: Create skip summary comment
+        id: skip-comment
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ steps.issue.outputs.issue-number }}
+        with:
+          script: |
+            const issueNumber = Number(process.env.ISSUE_NUMBER);
+            const body = [
+              '### Containers skipped or failed before tests',
+              '',
+              '_This comment updates automatically during the run._',
+              '',
+            ].join('\n');
+
+            const { data: comment } = await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              body,
+            });
+
+            core.setOutput('comment-id', comment.id.toString());
+
   test-containers:
     needs: [prepare-matrix, create-issue]
     runs-on: ubuntu-latest
@@ -216,6 +242,7 @@ jobs:
         container: ${{ fromJson(needs.prepare-matrix.outputs.containers) }}
     env:
       ISSUE_NUMBER: ${{ needs.create-issue.outputs.issue-number }}
+      SKIP_COMMENT_ID: ${{ needs.create-issue.outputs.skip-comment-id }}
       ARCHITECTURE: ${{ github.event.inputs.architecture || 'x86_64' }}
     steps:
       - name: Checkout
@@ -325,7 +352,7 @@ jobs:
 
             with open(path, 'w', encoding='utf-8') as handle:
                 json.dump(payload, handle, indent=2)
-            PY
+          PY
           fi
 
           exit "$exit_code"
@@ -365,6 +392,160 @@ jobs:
               json.dump(payload, handle, indent=2)
           PY
 
+      - name: Classify test outcome
+        id: classify
+        env:
+          RESULTS_PATH: builder/test-results-${{ matrix.container.recipe }}.json
+          RECIPE: ${{ matrix.container.recipe }}
+          VERSION: ${{ matrix.container.version || '' }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          recipe = os.environ['RECIPE']
+          version = os.environ.get('VERSION', '').strip()
+          container = f"{recipe}:{version}" if version else recipe
+
+          results_path = Path(os.environ['RESULTS_PATH'])
+          classification = 'tested'
+          update_shared = False
+          message = ''
+          reason = ''
+
+          if results_path.exists():
+              try:
+                  data = json.loads(results_path.read_text(encoding='utf-8'))
+              except Exception:
+                  data = {}
+          else:
+              data = {}
+
+          total = data.get('total_tests', data.get('total', 0)) or 0
+          failed = data.get('failed', 0) or 0
+          skipped = data.get('skipped', 0) or 0
+
+          tests = data.get('test_results') or []
+          for entry in tests:
+              reason = (entry.get('stderr') or entry.get('stdout') or '').strip()
+              if reason:
+                  break
+
+          if not results_path.exists():
+              classification = 'missing_results'
+              update_shared = True
+              icon = '❌'
+              tag = 'failed before tests'
+              reason = reason or 'No result file was produced.'
+          elif int(total) == 0:
+              update_shared = True
+              if skipped and not failed:
+                  classification = 'skipped'
+                  icon = '⚠️'
+                  tag = 'skipped'
+                  reason = reason or 'No release metadata found; container not tested.'
+              else:
+                  classification = 'failed_no_tests'
+                  icon = '❌'
+                  tag = 'failed before tests'
+                  reason = reason or 'container_tester failed before running tests.'
+          else:
+              classification = 'tested'
+
+          reason = ' '.join(reason.split()) if reason else ''
+          if reason and len(reason) > 240:
+              reason = reason[:237] + '...'
+
+          if update_shared:
+              message_reason = reason or 'No additional details available.'
+              icon = locals().get('icon', '❔')
+              tag = locals().get('tag', 'update')
+              message = f"- {icon} `{container}` {tag} — {message_reason}"
+
+          output_path = Path(os.environ['GITHUB_OUTPUT'])
+          with output_path.open('a', encoding='utf-8') as handle:
+              handle.write(f"classification={classification}\n")
+              handle.write(f"update_shared_comment={'true' if update_shared else 'false'}\n")
+
+              if update_shared and message:
+                  update_dir = Path('builder')
+                  update_dir.mkdir(parents=True, exist_ok=True)
+                  update_file = update_dir / f"shared-update-{recipe}.txt"
+                  update_file.write_text(message + '\n', encoding='utf-8')
+                  handle.write(f"update_file={update_file.as_posix()}\n")
+          PY
+
+      - name: Acquire skip/no-test comment lock
+        if: ${{ steps.classify.outputs.update_shared_comment == 'true' }}
+        uses: softprops/turnstyle@v1
+        with:
+          same-branch-only: false
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Update shared skip comment
+        if: ${{ steps.classify.outputs.update_shared_comment == 'true' }}
+        uses: actions/github-script@v7
+        env:
+          COMMENT_ID: ${{ env.SKIP_COMMENT_ID }}
+          UPDATE_FILE: ${{ steps.classify.outputs.update_file }}
+        with:
+          script: |
+            const fs = require('fs');
+            const commentId = Number(process.env.COMMENT_ID || '0');
+            if (!commentId) {
+              core.warning('Skip comment id is not available; skipping update.');
+              return;
+            }
+
+            const updatePath = process.env.UPDATE_FILE;
+            if (!updatePath || !fs.existsSync(updatePath)) {
+              core.info('No update message found for shared comment.');
+              return;
+            }
+
+            const message = fs.readFileSync(updatePath, 'utf8').trim();
+            if (!message) {
+              core.info('Shared comment message is empty; nothing to append.');
+              return;
+            }
+
+            const header = [
+              '### Containers skipped or failed before tests',
+              '',
+              '_This comment updates automatically during the run._',
+              '',
+            ];
+
+            const { data: existing } = await github.rest.issues.getComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: commentId,
+            });
+
+            const entries = [];
+            if (existing.body) {
+              for (const line of existing.body.split('\n')) {
+                if (line.startsWith('- ')) {
+                  entries.push(line.trim());
+                }
+              }
+            }
+
+            if (!entries.includes(message)) {
+              entries.push(message);
+            }
+
+            const body = header.concat(entries).join('\n');
+
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: commentId,
+              body,
+            });
+
       - name: Prepare issue comment
         env:
           RECIPE: ${{ matrix.container.recipe }}
@@ -387,7 +568,7 @@ jobs:
             builder/comment-${{ matrix.container.recipe }}.md
 
       - name: Post comment to tracking issue
-        if: always()
+        if: ${{ steps.classify.outputs.update_shared_comment != 'true' }}
         uses: actions/github-script@v7
         env:
           ISSUE_NUMBER: ${{ env.ISSUE_NUMBER }}
