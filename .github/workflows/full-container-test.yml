@@ -1,0 +1,528 @@
+name: full-container-test
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: "Target architecture (for reference only)"
+        type: choice
+        default: x86_64
+        options:
+          - x86_64
+          - arm64
+      recipes:
+        description: "Comma-separated recipe names to test (leave blank for all)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  prepare-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      containers: ${{ steps.collect.outputs.containers }}
+      count: ${{ steps.collect.outputs.count }}
+      total_recipes: ${{ steps.collect.outputs.total_recipes }}
+      filter_applied: ${{ steps.collect.outputs.filter_applied }}
+      targets: ${{ steps.collect.outputs.targets }}
+      requested_count: ${{ steps.collect.outputs.requested_count }}
+      missing_targets: ${{ steps.collect.outputs.missing_targets }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Discover released containers
+        id: collect
+        env:
+          TARGET_RECIPES: ${{ github.event.inputs.recipes }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path('.')
+          recipes_dir = root / 'recipes'
+          releases_dir = root / 'releases'
+
+          target_env = os.environ.get('TARGET_RECIPES', '').strip()
+          requested = [entry.strip() for entry in target_env.split(',')] if target_env else []
+          requested = [r for r in requested if r]
+          requested_set = set(requested)
+
+          containers_all = []
+          available_names = set()
+
+          for build_file in sorted(recipes_dir.glob('*/build.yaml')):
+              recipe = build_file.parent.name
+              if recipe == 'builder':
+                  continue
+
+              available_names.add(recipe)
+
+              release_path = releases_dir / recipe
+              latest_file = None
+              latest_build_date = ''
+              latest_version = ''
+
+              if release_path.exists():
+                  for candidate in release_path.glob('*.json'):
+                      try:
+                          data = json.loads(candidate.read_text(encoding='utf-8'))
+                      except Exception:
+                          continue
+
+                      apps = data.get('apps', {})
+                      build_date = ''
+                      if apps:
+                          first_value = next(iter(apps.values()))
+                          build_date = str(first_value.get('version', '')).strip()
+
+                      version = candidate.stem
+
+                      if latest_file is None:
+                          latest_file = candidate
+                          latest_build_date = build_date
+                          latest_version = version
+                      else:
+                          if build_date and (not latest_build_date or build_date > latest_build_date):
+                              latest_file = candidate
+                              latest_build_date = build_date
+                              latest_version = version
+                          elif build_date == latest_build_date and version > latest_version:
+                              latest_file = candidate
+                              latest_version = version
+
+              if latest_file is not None:
+                  containers_all.append({
+                      'recipe': recipe,
+                      'version': latest_version,
+                      'release_file': str(latest_file.as_posix()),
+                      'build_date': latest_build_date,
+                      'has_release': True,
+                  })
+              else:
+                  containers_all.append({
+                      'recipe': recipe,
+                      'version': '',
+                      'release_file': '',
+                      'build_date': '',
+                      'has_release': False,
+                  })
+
+          if requested_set:
+              containers = [c for c in containers_all if c['recipe'] in requested_set]
+          else:
+              containers = containers_all
+
+          missing_targets = sorted(requested_set - available_names) if requested_set else []
+
+          output_path = os.environ['GITHUB_OUTPUT']
+          with open(output_path, 'a', encoding='utf-8') as handle:
+              handle.write(f"containers={json.dumps(containers)}\n")
+              handle.write(f"count={len(containers)}\n")
+              handle.write(f"total_recipes={len(containers_all)}\n")
+              handle.write(f"filter_applied={'true' if requested_set else 'false'}\n")
+              handle.write(f"targets={json.dumps(requested)}\n")
+              handle.write(f"requested_count={len(requested)}\n")
+              handle.write(f"missing_targets={json.dumps(missing_targets)}\n")
+          PY
+
+  create-issue:
+    needs: prepare-matrix
+    runs-on: ubuntu-latest
+    outputs:
+      issue-number: ${{ steps.issue.outputs.issue-number }}
+      issue-url: ${{ steps.issue.outputs.issue-url }}
+    steps:
+      - name: Open tracking issue
+        id: issue
+        uses: actions/github-script@v7
+        env:
+          CONTAINERS: ${{ needs.prepare-matrix.outputs.containers }}
+          ARCHITECTURE: ${{ github.event.inputs.architecture || 'x86_64' }}
+          TOTAL_RECIPES: ${{ needs.prepare-matrix.outputs.total_recipes }}
+          FILTER_APPLIED: ${{ needs.prepare-matrix.outputs.filter_applied }}
+          TARGETS: ${{ needs.prepare-matrix.outputs.targets }}
+          REQUESTED_COUNT: ${{ needs.prepare-matrix.outputs.requested_count }}
+          MISSING_TARGETS: ${{ needs.prepare-matrix.outputs.missing_targets }}
+        with:
+          script: |
+            const containers = JSON.parse(process.env.CONTAINERS || '[]');
+            const total = containers.length;
+            const released = containers.filter(c => c.has_release).length;
+            const missing = total - released;
+
+            const totalRecipes = Number(process.env.TOTAL_RECIPES || total);
+            const filterApplied = (process.env.FILTER_APPLIED || 'false').toLowerCase() === 'true';
+            const requestedCount = Number(process.env.REQUESTED_COUNT || 0);
+
+            let targets = [];
+            let missingTargets = [];
+            try { targets = JSON.parse(process.env.TARGETS || '[]'); } catch (error) { targets = []; }
+            try { missingTargets = JSON.parse(process.env.MISSING_TARGETS || '[]'); } catch (error) { missingTargets = []; }
+
+            const title = `Container test run ${new Date().toISOString()}`;
+            const bodyLines = [
+              `This issue tracks an automated test run covering ${total} recipe(s).`,
+              '',
+              `Architecture: ${process.env.ARCHITECTURE}`,
+              `Workflow: ${context.workflow}`,
+              `Run ID: ${context.runId}`,
+              `Triggered by: @${context.actor}`,
+              '',
+            ];
+
+            if (filterApplied) {
+              const targetSummary = targets.length ? targets.join(', ') : '(none specified)';
+              const requestedTotal = requestedCount || targets.length;
+              bodyLines.push(`Requested recipes (${requestedTotal}): ${targetSummary}`);
+              if (missingTargets.length) {
+                bodyLines.push(`⚠️ Not found in repository: ${missingTargets.join(', ')}`);
+              }
+            } else {
+              bodyLines.push(`Requested recipes: all (${totalRecipes})`);
+            }
+
+            bodyLines.push('');
+            bodyLines.push(`Recipes discovered: ${totalRecipes}`);
+            bodyLines.push(`Recipes selected: ${total}`);
+            bodyLines.push(`Recipes with releases: ${released}`);
+            bodyLines.push(`Recipes without releases: ${missing}`);
+            bodyLines.push('');
+            bodyLines.push('Each container (or skipped recipe) will add a comment below as testing progresses.');
+
+            const body = bodyLines.join('\n');
+
+            const { data: issue } = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+            });
+
+            core.setOutput('issue-number', issue.number.toString());
+            core.setOutput('issue-url', issue.html_url);
+
+  test-containers:
+    needs: [prepare-matrix, create-issue]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        container: ${{ fromJson(needs.prepare-matrix.outputs.containers) }}
+    env:
+      ISSUE_NUMBER: ${{ needs.create-issue.outputs.issue-number }}
+      ARCHITECTURE: ${{ github.event.inputs.architecture || 'x86_64' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Apptainer
+        run: |
+          set -euxo pipefail
+          sudo add-apt-repository -y ppa:apptainer/ppa
+          sudo apt-get update
+          sudo apt-get install -y apptainer
+
+      - name: Install builder dependencies
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Collect recipe metadata
+        id: meta
+        env:
+          RECIPE: ${{ matrix.container.recipe }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          import yaml
+
+          recipe = os.environ['RECIPE']
+          build_path = Path('recipes') / recipe / 'build.yaml'
+          data = yaml.safe_load(build_path.read_text(encoding='utf-8'))
+
+          test_config = ''
+          has_tests = False
+          test_yaml = build_path.parent / 'test.yaml'
+          if test_yaml.exists():
+              test_config = str(test_yaml)
+              has_tests = True
+          elif data.get('tests'):
+              test_config = str(build_path)
+              has_tests = True
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as handle:
+              handle.write(f"has_tests={'true' if has_tests else 'false'}\n")
+              if test_config:
+                  handle.write(f"test_config={test_config}\n")
+          PY
+
+      - name: Run container tests
+        id: tests
+        if: ${{ matrix.container.has_release }}
+        env:
+          RECIPE: ${{ matrix.container.recipe }}
+          VERSION: ${{ matrix.container.version }}
+          RELEASE_FILE: ${{ matrix.container.release_file }}
+          TEST_CONFIG: ${{ steps.meta.outputs.test_config }}
+        run: |
+          set +e
+          CONTAINER_REF="${RECIPE}:${VERSION}"
+          RESULTS_PATH="builder/test-results-${RECIPE}.json"
+
+          python builder/container_tester.py "$CONTAINER_REF" \
+            --runtime apptainer \
+            --location auto \
+            --release-file "$RELEASE_FILE" \
+            --test-config "$TEST_CONFIG" \
+            --output "$RESULTS_PATH" \
+            --cleanup \
+            --verbose
+
+          exit_code=$?
+          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
+
+          if [ ! -f "$RESULTS_PATH" ]; then
+            export RESULTS_PATH CONTAINER_REF EXIT_CODE=$exit_code
+            python - <<'PY'
+            import json
+            import os
+
+            path = os.environ['RESULTS_PATH']
+            ref = os.environ['CONTAINER_REF']
+            exit_code = int(os.environ['EXIT_CODE'])
+
+            payload = {
+                "container": ref,
+                "runtime": "apptainer",
+                "total_tests": 0,
+                "passed": 0,
+                "failed": 1,
+                "skipped": 0,
+                "test_results": [
+                    {
+                        "name": "container_tester",
+                        "status": "failed",
+                        "stdout": "",
+                        "stderr": f"container_tester exited with code {exit_code}",
+                        "return_code": exit_code,
+                    }
+                ],
+            }
+
+            with open(path, 'w', encoding='utf-8') as handle:
+                json.dump(payload, handle, indent=2)
+            PY
+          fi
+
+          exit "$exit_code"
+        continue-on-error: true
+
+      - name: Register skipped result (no release)
+        if: ${{ !matrix.container.has_release }}
+        env:
+          RECIPE: ${{ matrix.container.recipe }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+
+          recipe = os.environ['RECIPE']
+          path = f"builder/test-results-{recipe}.json"
+
+          payload = {
+              "container": recipe,
+              "runtime": "apptainer",
+              "total_tests": 0,
+              "passed": 0,
+              "failed": 0,
+              "skipped": 1,
+              "test_results": [
+                  {
+                      "name": "release lookup",
+                      "status": "skipped",
+                      "stdout": "",
+                      "stderr": "No release metadata found; container not tested.",
+                      "return_code": 0,
+                  }
+              ],
+          }
+
+          with open(path, 'w', encoding='utf-8') as handle:
+              json.dump(payload, handle, indent=2)
+          PY
+
+      - name: Prepare issue comment
+        env:
+          RECIPE: ${{ matrix.container.recipe }}
+          VERSION: ${{ matrix.container.version || 'unknown' }}
+        run: |
+          python builder/format_test_results.py \
+            --results "builder/test-results-${RECIPE}.json" \
+            --recipe "${RECIPE}" \
+            --version "${VERSION}" \
+            --output "builder/comment-${RECIPE}.md" \
+            --status-output "builder/status-${RECIPE}.txt"
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.container.recipe }}
+          path: |
+            builder/test-results-${{ matrix.container.recipe }}.json
+            builder/comment-${{ matrix.container.recipe }}.md
+
+      - name: Post comment to tracking issue
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ env.ISSUE_NUMBER }}
+          RECIPE: ${{ matrix.container.recipe }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = `builder/comment-${process.env.RECIPE}.md`;
+            let body = `⚠️ No comment generated for ${process.env.RECIPE}.`;
+            if (fs.existsSync(path)) {
+                body = fs.readFileSync(path, 'utf8');
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER),
+              body,
+            });
+
+  finalize:
+    needs: [test-containers, create-issue]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Download all test artifacts
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-results-*
+          merge-multiple: true
+          path: test-results
+
+      - name: Build summary
+        id: summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          base = Path('test-results')
+          total = passed = failed = skipped = 0
+          lines = ["## Aggregated Results", ""]
+          emoji = {"passed": "✅", "failed": "❌", "skipped": "⚠️"}
+
+          if base.exists():
+              for json_file in sorted(base.glob('test-results-*.json')):
+                  name = json_file.stem.replace('test-results-', '')
+                  data = json.loads(json_file.read_text(encoding='utf-8'))
+                  failed_tests = data.get('failed', 0)
+                  total_tests = data.get('total_tests', data.get('total', 0))
+
+                  if failed_tests > 0:
+                      status = 'failed'
+                      failed += 1
+                  elif total_tests == 0:
+                      status = 'skipped'
+                      skipped += 1
+                  else:
+                      status = 'passed'
+                      passed += 1
+
+                  total += 1
+                  lines.append(f"- {emoji.get(status, '❔')} `{name}` — {status}")
+          else:
+              lines.append('- No artifacts were produced.')
+
+          lines.append("")
+          lines.append(f"**Totals:** {passed} passed, {failed} failed, {skipped} skipped (out of {total})")
+
+          Path('summary.md').write_text('\n'.join(lines), encoding='utf-8')
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as gh:
+              gh.write(f"total={total}\n")
+              gh.write(f"passed={passed}\n")
+              gh.write(f"failed={failed}\n")
+              gh.write(f"skipped={skipped}\n")
+          PY
+
+      - name: Post summary comment
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ needs.create-issue.outputs.issue-number }}
+        with:
+          script: |
+            const fs = require('fs');
+            let body = 'No results were generated.';
+            if (fs.existsSync('summary.md')) {
+              body = fs.readFileSync('summary.md', 'utf8');
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER),
+              body,
+            });
+
+      - name: Update issue body
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          ISSUE_NUMBER: ${{ needs.create-issue.outputs.issue-number }}
+        with:
+          script: |
+            const total = Number('${{ steps.summary.outputs.total || '0' }}');
+            const passed = Number('${{ steps.summary.outputs.passed || '0' }}');
+            const failed = Number('${{ steps.summary.outputs.failed || '0' }}');
+            const skipped = Number('${{ steps.summary.outputs.skipped || '0' }}');
+
+            const headline = failed > 0
+              ? `❌ ${failed} container(s) failed`
+              : (skipped > 0
+                  ? `⚠️ ${skipped} container(s) skipped`
+                  : '✅ All containers passed');
+
+            const body = [
+              '### Test Run Summary',
+              '',
+              `- Containers processed: ${total}`,
+              `- Passed: ${passed}`,
+              `- Failed: ${failed}`,
+              `- Skipped: ${skipped}`,
+              '',
+              headline,
+              '',
+              'Detailed comments are available below in this issue.',
+            ].join('\n');
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number(process.env.ISSUE_NUMBER),
+              body,
+            });
