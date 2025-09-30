@@ -1,0 +1,9 @@
+/.gocache
+/.gomodcache
+/.gopath
+/.gotmp
+
+.env
+
+/data
+/local
