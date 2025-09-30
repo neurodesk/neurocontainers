@@ -38,7 +38,9 @@ jobs:
           cache: true
 
       - name: Build static dashboard
-        run: go run ./dashboard --out public --releases-dir releases --recipes-dir recipes --apps-json dashboard/apps.json
+        run: |
+          cd dashboard
+          go run . --out ../public --releases-dir ../releases --recipes-dir ../recipes --apps-json ./apps.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
