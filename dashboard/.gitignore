@@ -5,5 +5,8 @@
 
 .env
 
+apps.json
+
 /data
 /local
+/public
