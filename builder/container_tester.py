@@ -169,7 +169,7 @@ class ApptainerRuntime(ContainerRuntime):
             final_script = test_script
         else:
             final_script = test_script
-            
+
         cmd.extend([container_ref, "bash", "-c", final_script])
 
         return subprocess.run(cmd, capture_output=True, text=True)
@@ -292,18 +292,17 @@ class TestDefinitionExtractor:
         if "tests" in config:
             tests.extend(config["tests"])
 
-        # Ensure an implicit builtin deploy test is present unless already defined
-        has_builtin = any(
-            isinstance(t, dict) and t.get("builtin") == "test_deploy.sh" for t in tests
+        # Ensure builtin tests are always present unless already defined
+        def ensure_builtin(default_test, position=0):
+            if not any(
+                isinstance(t, dict) and t.get("builtin") == default_test["builtin"]
+                for t in tests
+            ):
+                tests.insert(position, dict(default_test))
+
+        ensure_builtin(
+            {"name": "Simple Deploy Bins/Path Test", "builtin": "test_deploy.sh"}
         )
-        if not has_builtin:
-            tests.insert(
-                0,
-                {
-                    "name": "Simple Deploy Bins/Path Test",
-                    "builtin": "test_deploy.sh",
-                },
-            )
 
         return {
             "name": config.get("name", "unknown"),
@@ -363,7 +362,9 @@ class ReleaseContainerDownloader:
                 url = f"{base_url}/{filename}"
                 print(f"Attempting to download: {url}")
                 print(f"Note: Container will be cached in {self.cache_dir}")
-                print("Use --cleanup to remove after testing or --cleanup-all to remove all cached containers")
+                print(
+                    "Use --cleanup to remove after testing or --cleanup-all to remove all cached containers"
+                )
 
                 try:
                     urllib.request.urlretrieve(url, cache_path)
@@ -390,20 +391,22 @@ class ReleaseContainerDownloader:
             pass
         return None
 
-    def cleanup_downloaded_container(self, container_path: str, verbose: bool = False) -> bool:
+    def cleanup_downloaded_container(
+        self, container_path: str, verbose: bool = False
+    ) -> bool:
         """Remove a downloaded container file from cache"""
         if not container_path or not os.path.exists(container_path):
             return False
-            
+
         # Only remove files from our cache directory to avoid accidents
         cache_path = os.path.abspath(self.cache_dir)
         container_abs_path = os.path.abspath(container_path)
-        
+
         if not container_abs_path.startswith(cache_path):
             if verbose:
                 print(f"Skipping cleanup: {container_path} is not in cache directory")
             return False
-            
+
         try:
             os.remove(container_path)
             if verbose:
@@ -420,11 +423,11 @@ class ReleaseContainerDownloader:
             if verbose:
                 print("Cache directory does not exist")
             return 0
-            
+
         removed_count = 0
         try:
             for filename in os.listdir(self.cache_dir):
-                if filename.endswith(('.sif', '.simg')):
+                if filename.endswith((".sif", ".simg")):
                     file_path = os.path.join(self.cache_dir, filename)
                     try:
                         os.remove(file_path)
@@ -437,7 +440,7 @@ class ReleaseContainerDownloader:
         except Exception as e:
             if verbose:
                 print(f"Failed to list cache directory: {e}")
-                
+
         if verbose:
             print(f"Cleaned up {removed_count} cached container(s)")
         return removed_count
@@ -462,7 +465,7 @@ class ContainerTester:
                 runtime_names = [runtime.name]
                 if runtime.name == "apptainer":
                     runtime_names.append("singularity")
-                
+
                 if preferred.lower() in runtime_names and runtime.is_available():
                     self.selected_runtime = runtime
                     self.test_extractor = TestDefinitionExtractor(runtime)
@@ -594,12 +597,12 @@ class ContainerTester:
             # Create test volume and handle prep steps if needed
             volumes = []
             volume_name = None
-            
+
             # Only create volumes for Docker runtime if prep steps exist
             if "prep" in test and self.selected_runtime.name == "docker":
                 volume_name = self._create_test_volume(container_ref)
                 volumes = [{"host": volume_name, "container": "/test"}]
-                
+
                 # Run prep steps
                 for prep in test["prep"]:
                     self._run_prep_step(prep, volume_name, verbose)
@@ -628,11 +631,11 @@ class ContainerTester:
         """Create a Docker test volume"""
         if self.selected_runtime.name != "docker":
             return None
-            
+
         # Generate volume name from container reference
         cleaned_ref = container_ref.replace(":", "-").replace("/", "-")
         volume_name = f"neurocontainer-test-{cleaned_ref}"
-        
+
         # Remove existing volume if it exists
         try:
             subprocess.run(
@@ -643,21 +646,21 @@ class ContainerTester:
             )
         except Exception:
             pass
-            
+
         # Create new volume
         subprocess.run(
             ["docker", "volume", "create", volume_name],
             stdout=subprocess.DEVNULL,
             check=True,
         )
-        
+
         return volume_name
 
     def _cleanup_test_volume(self, volume_name: str):
         """Clean up a Docker test volume"""
         if self.selected_runtime.name != "docker" or not volume_name:
             return
-            
+
         try:
             subprocess.run(
                 ["docker", "volume", "rm", volume_name],
@@ -668,28 +671,35 @@ class ContainerTester:
         except Exception:
             pass
 
-    def _run_prep_step(self, prep: Dict[str, Any], volume_name: str, verbose: bool = False):
+    def _run_prep_step(
+        self, prep: Dict[str, Any], volume_name: str, verbose: bool = False
+    ):
         """Run a test preparation step"""
         if self.selected_runtime.name != "docker":
             return
-            
+
         name = prep.get("name")
-        image = prep.get("image") 
+        image = prep.get("image")
         script = prep.get("script")
-        
+
         if not name or not image or not script:
             raise ValueError("Prep step must have name, image, and script")
-            
+
         if verbose:
             print(f"Running prep step: {name}")
-            
+
         cmd = [
-            "docker", "run", "--rm",
-            "-v", f"{volume_name}:/test",
+            "docker",
+            "run",
+            "--rm",
+            "-v",
+            f"{volume_name}:/test",
             image,
-            "bash", "-c", f"set -ex\ncd /test\n{script}"
+            "bash",
+            "-c",
+            f"set -ex\ncd /test\n{script}",
         ]
-        
+
         subprocess.run(cmd, check=True)
 
     def _run_builtin_test(
@@ -699,9 +709,9 @@ class ContainerTester:
         gpu: bool = False,
         verbose: bool = False,
     ) -> Dict[str, Any]:
-        """Run a builtin test (like test_deploy.sh)"""
+        """Run a builtin test (like test_deploy.sh or test_builder.sh)"""
         builtin_name = test["builtin"]
-        
+
         if verbose:
             print(f"Running builtin test: {builtin_name}")
 
@@ -747,15 +757,15 @@ class ContainerTester:
             if verbose:
                 print("No downloaded containers to clean up")
             return True
-            
+
         success = self.release_downloader.cleanup_downloaded_container(
             self.downloaded_container_path, verbose
         )
-        
+
         # Reset the tracked path after cleanup
         if success:
             self.downloaded_container_path = None
-            
+
         return success
 
     def cleanup_all_cached_containers(self, verbose: bool = False) -> int:
@@ -781,7 +791,7 @@ Examples:
   %(prog)s --cleanup-all                             # Remove all cached containers
   %(prog)s --list-containers                         # List available containers in CVMFS
         """,
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
     parser.add_argument(
@@ -813,16 +823,19 @@ Examples:
         "--release-file", help="Path to release JSON file for build date extraction"
     )
     parser.add_argument(
-        "--cleanup", action="store_true", 
-        help="Remove downloaded container files after testing"
+        "--cleanup",
+        action="store_true",
+        help="Remove downloaded container files after testing",
     )
     parser.add_argument(
-        "--cleanup-all", action="store_true",
-        help="Remove all cached container files and exit"
+        "--cleanup-all",
+        action="store_true",
+        help="Remove all cached container files and exit",
     )
     parser.add_argument(
-        "--auto-cleanup", action="store_true",
-        help="Automatically cleanup downloaded containers on exit (even if tests fail)"
+        "--auto-cleanup",
+        action="store_true",
+        help="Automatically cleanup downloaded containers on exit (even if tests fail)",
     )
 
     args = parser.parse_args()
@@ -845,6 +858,7 @@ Examples:
 
 def run_tests(args, tester):
     """Run the actual tests - separated to work with context manager"""
+
 
 def run_tests(args, tester):
     """Run the actual tests - separated to work with context manager"""
@@ -872,10 +886,18 @@ def run_tests(args, tester):
     # Parse container reference if provided
     if args.container:
         # Check if it's a file path
-        if os.path.exists(args.container) or args.container.startswith("/") or args.container.startswith("./"):
+        if (
+            os.path.exists(args.container)
+            or args.container.startswith("/")
+            or args.container.startswith("./")
+        ):
             # It's a file path, use it directly
             container_ref = args.container
-            name = os.path.basename(args.container).split("_")[0] if "_" in os.path.basename(args.container) else "unknown"
+            name = (
+                os.path.basename(args.container).split("_")[0]
+                if "_" in os.path.basename(args.container)
+                else "unknown"
+            )
             version = "latest"
         elif ":" in args.container and not args.container.endswith((".sif", ".simg")):
             # It's a name:version format

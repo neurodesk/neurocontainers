@@ -14,10 +14,14 @@ dependencies = [
 [tool.setuptools]
 packages = ["builder"]
 
+[tool.uv]
+package = true
+
 [project.scripts]
     sf-generate = "builder.build:generate_main"
     sf-build = "builder.build:build_main"
     sf-login = "builder.build:login_main"
     sf-test = "builder.build:test_main"
+    sf-test-remote = "builder.build:test_remote_main"
     sf-init = "builder.build:init_main"
     sf-make = "builder.build:sf_make_main"

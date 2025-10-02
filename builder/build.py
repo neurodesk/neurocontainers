@@ -1031,6 +1031,104 @@ def get_recipe_directory(repo_path, name):
     return os.path.join(repo_path, "recipes", name)
 
 
+def find_latest_release_file(release_dir):
+    """Select the most recent release metadata file for a recipe.
+
+    Mirrors the selection strategy used by the CI workflow: prefer the
+    highest build date, and fall back to the lexicographically greatest
+    version when build dates match or are missing.
+    """
+
+    if not os.path.isdir(release_dir):
+        return None, None
+
+    latest_path = None
+    latest_build_date = ""
+    latest_version = ""
+
+    for entry in sorted(os.listdir(release_dir)):
+        if not entry.endswith(".json"):
+            continue
+
+        candidate_path = os.path.join(release_dir, entry)
+        candidate_version = entry[:-5]
+        build_date = ""
+
+        try:
+            with open(candidate_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            apps = data.get("apps", {}) or {}
+            if apps:
+                first_value = next(iter(apps.values()))
+                build_date = str(first_value.get("version", "")).strip()
+        except Exception:
+            build_date = ""
+
+        if latest_path is None:
+            latest_path = candidate_path
+            latest_build_date = build_date
+            latest_version = candidate_version
+            continue
+
+        if build_date and (not latest_build_date or build_date > latest_build_date):
+            latest_path = candidate_path
+            latest_build_date = build_date
+            latest_version = candidate_version
+        elif build_date == latest_build_date and candidate_version > latest_version:
+            latest_path = candidate_path
+            latest_version = candidate_version
+
+    return latest_path, latest_version
+
+
+def discover_test_config(recipe_dir):
+    """Return the default test configuration file for a recipe, if available."""
+
+    test_yaml = os.path.join(recipe_dir, "test.yaml")
+    if os.path.isfile(test_yaml):
+        return test_yaml
+
+    build_yaml = os.path.join(recipe_dir, "build.yaml")
+    if os.path.isfile(build_yaml):
+        try:
+            with open(build_yaml, "r", encoding="utf-8") as handle:
+                data = yaml.safe_load(handle) or {}
+        except Exception:
+            data = {}
+
+        if data.get("tests"):
+            return build_yaml
+
+        build_section = data.get("build") or {}
+        directives = build_section.get("directives")
+
+        def contains_test(entry):
+            if isinstance(entry, dict):
+                if "test" in entry:
+                    return True
+
+                for key in ("group", "directives"):
+                    if key in entry:
+                        if contains_test(entry[key]):
+                            return True
+
+                for value in entry.values():
+                    if contains_test(value):
+                        return True
+
+            if isinstance(entry, list):
+                for item in entry:
+                    if contains_test(item):
+                        return True
+
+            return False
+
+        if contains_test(directives):
+            return build_yaml
+
+    return None
+
+
 def init_new_recipe(repo_path: str, name: str, version: str):
     if name == "" or version == "":
         raise ValueError("Name and version cannot be empty.")
@@ -1927,7 +2025,7 @@ def run_builtin_test(tag, test, gpu=False):
 
 
 def run_docker_test(tag, test, gpu=False):
-    if test.get("builtin") == "test_deploy.sh":
+    if test.get("builtin") in {"test_deploy.sh"}:
         return run_builtin_test(tag, test.get("builtin"), gpu=gpu)
 
     script = test.get("script")
@@ -2046,18 +2144,17 @@ def get_all_tests(description_file: typing.Any, recipe_path: str) -> list[dict]:
 
     walk_directives(directives)
 
-    # Ensure we always include the default builtin deploy test unless already present
-    has_builtin = any(
-        (isinstance(t, dict) and t.get("builtin") == "test_deploy.sh") for t in tests
+    # Ensure builtin tests are always present unless explicitly disabled
+    def ensure_builtin(default_test, position=0):
+        if not any(
+            isinstance(t, dict) and t.get("builtin") == default_test["builtin"]
+            for t in tests
+        ):
+            tests.insert(position, dict(default_test))
+
+    ensure_builtin(
+        {"name": "Simple Deploy Bins/Path Test", "builtin": "test_deploy.sh"}
     )
-    if not has_builtin:
-        tests.insert(
-            0,
-            {
-                "name": "Simple Deploy Bins/Path Test",
-                "builtin": "test_deploy.sh",
-            },
-        )
 
     return tests
 
@@ -2433,6 +2530,245 @@ def test_main():
     )
 
     run_tests(recipe_path, gpu=args.gpu)
+
+
+def test_remote_main():
+    """Run release container tests for a single recipe using local tooling."""
+
+    root = argparse.ArgumentParser(
+        description="Run release container tests for a single Neurocontainer",
+    )
+
+    root.add_argument("recipe", help="Name of the recipe to test")
+    root.add_argument(
+        "--version",
+        help="Container version to test; defaults to the latest release metadata",
+    )
+    root.add_argument(
+        "--release-file",
+        help="Path to a specific release JSON file (overrides automatic lookup)",
+    )
+    root.add_argument(
+        "--runtime",
+        choices=["docker", "apptainer", "singularity"],
+        help="Preferred container runtime (defaults to auto-detection)",
+    )
+    root.add_argument(
+        "--location",
+        choices=["auto", "cvmfs", "local", "release", "docker"],
+        default="auto",
+        help="Where to source the container from",
+    )
+    root.add_argument(
+        "--test-config",
+        help="Override the test configuration file (defaults to recipe test.yaml/build.yaml)",
+    )
+    root.add_argument(
+        "-o",
+        "--output",
+        help="Path to write JSON test results (defaults to builder/test-results-<recipe>.json)",
+    )
+    root.add_argument(
+        "--gpu", action="store_true", help="Enable GPU support when running tests"
+    )
+    root.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Remove downloaded container after testing",
+    )
+    root.add_argument(
+        "--auto-cleanup",
+        action="store_true",
+        help="Automatically remove downloaded container even if tests fail",
+    )
+    root.add_argument(
+        "--cleanup-all",
+        action="store_true",
+        help="Remove all cached containers and exit",
+    )
+    root.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose output"
+    )
+
+    args = root.parse_args()
+
+    try:
+        from .container_tester import ContainerTester
+    except ImportError:  # pragma: no cover - fallback when running as script
+        from builder.container_tester import ContainerTester
+
+    tester = ContainerTester()
+
+    if args.cleanup_all:
+        count = tester.cleanup_all_cached_containers(args.verbose)
+        print(f"Cleaned up {count} cached container file(s)")
+        return
+
+    repo_path = get_repo_path()
+    recipe_dir = get_recipe_directory(repo_path, args.recipe)
+
+    if not os.path.isdir(recipe_dir):
+        print(f"Error: Recipe directory not found: {recipe_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    # Determine release metadata path and version
+    release_path = args.release_file
+    version = args.version
+
+    def _resolve_release(candidate):
+        if os.path.isabs(candidate):
+            return candidate
+
+        cwd_candidate = os.path.abspath(os.path.join(os.getcwd(), candidate))
+        if os.path.isfile(cwd_candidate):
+            return cwd_candidate
+
+        repo_candidate = os.path.abspath(os.path.join(repo_path, candidate))
+        if os.path.isfile(repo_candidate):
+            return repo_candidate
+
+        return candidate
+
+    if release_path:
+        release_path = _resolve_release(release_path)
+        if not os.path.isfile(release_path):
+            print(
+                f"Error: Release metadata not found at {release_path}", file=sys.stderr
+            )
+            sys.exit(1)
+
+        if not version:
+            version = os.path.splitext(os.path.basename(release_path))[0]
+    else:
+        releases_dir = os.path.join(repo_path, "releases", args.recipe)
+
+        if version:
+            candidate = os.path.join(releases_dir, f"{version}.json")
+            if os.path.isfile(candidate):
+                release_path = candidate
+            else:
+                print(
+                    f"Error: Release metadata for version {version} not found at {candidate}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        else:
+            release_path, version = find_latest_release_file(releases_dir)
+            if not release_path or not version:
+                print(
+                    "Error: No release metadata found for recipe; provide --version or --release-file",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+    if args.verbose:
+        print(f"Using release metadata: {release_path}")
+        print(f"Testing recipe {args.recipe} version {version}")
+
+    # Resolve test configuration path
+    test_config_path = args.test_config
+    build_yaml_path = os.path.join(recipe_dir, "build.yaml")
+    if test_config_path:
+        if not os.path.isabs(test_config_path):
+            candidate = os.path.abspath(os.path.join(os.getcwd(), test_config_path))
+            if os.path.isfile(candidate):
+                test_config_path = candidate
+            else:
+                candidate = os.path.join(recipe_dir, test_config_path)
+                if os.path.isfile(candidate):
+                    test_config_path = candidate
+                else:
+                    print(
+                        f"Error: Test configuration not found at {test_config_path}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+        else:
+            if not os.path.isfile(test_config_path):
+                print(
+                    f"Error: Test configuration not found at {test_config_path}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+    else:
+        test_config_path = discover_test_config(recipe_dir)
+        if not test_config_path:
+            print(
+                "Warning: No explict test configuration found; looking in build.yaml/test.yaml",
+                file=sys.stderr,
+            )
+            test_config_path = (
+                build_yaml_path if os.path.isfile(build_yaml_path) else None
+            )
+
+    if args.verbose:
+        print(f"Using test configuration: {test_config_path}")
+
+    try:
+        runtime = tester.select_runtime(args.runtime)
+    except RuntimeError as exc:
+        print(f"Error selecting runtime: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.verbose:
+        print(f"Selected runtime: {runtime.name}")
+
+    container_ref = tester.find_container(
+        args.recipe, version, location=args.location, release_file=release_path
+    )
+
+    if not container_ref:
+        print(
+            f"Error: Unable to locate container {args.recipe}:{version} (location={args.location})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if args.verbose:
+        print(f"Resolved container reference: {container_ref}")
+
+    try:
+        test_config = tester.test_extractor.extract_from_file(test_config_path)
+    except Exception as exc:
+        print(f"Error loading test configuration: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if not test_config or not test_config.get("tests"):
+        print("Error: Test configuration has no tests defined", file=sys.stderr)
+        sys.exit(1)
+
+    if args.verbose:
+        print(f"Discovered {len(test_config['tests'])} tests")
+
+    try:
+        results = tester.run_test_suite(
+            container_ref, test_config, gpu=args.gpu, verbose=args.verbose
+        )
+    finally:
+        if args.cleanup or args.auto_cleanup:
+            tester.cleanup_downloaded_containers(verbose=args.verbose)
+
+    output_path = args.output
+    if not output_path:
+        output_path = os.path.join(
+            repo_path, "builder", f"test-results-{args.recipe}.json"
+        )
+    else:
+        output_path = os.path.abspath(output_path)
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+    with open(output_path, "w", encoding="utf-8") as handle:
+        json.dump(results, handle, indent=2)
+
+    print(f"\nTest results written to {output_path}")
+    print(f"Container: {container_ref}")
+    print(f"  Total: {results['total_tests']}")
+    print(f"  Passed: {results['passed']}")
+    print(f"  Failed: {results['failed']}")
+    print(f"  Skipped: {results['skipped']}")
+
+    sys.exit(1 if results["failed"] > 0 else 0)
 
 
 def init_main():
