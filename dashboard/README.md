@@ -13,7 +13,7 @@ run harvested from GitHub issues.
    ```
 2. Render the static site (outputs to `dashboard/dist/` by default):
    ```bash
-   ./go.sh run . \
+   go run . \
      --out dist \
      --releases-dir ../releases \
      --recipes-dir ../recipes \
