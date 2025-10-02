@@ -352,7 +352,7 @@ jobs:
 
             with open(path, 'w', encoding='utf-8') as handle:
                 json.dump(payload, handle, indent=2)
-          PY
+            PY
           fi
 
           exit "$exit_code"

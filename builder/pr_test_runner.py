@@ -373,9 +373,12 @@ class PRTestRunner:
                 test_config = self.tester.test_extractor.extract_from_container(container_path)
             
             if not test_config or not test_config.get("tests"):
-                result["error"] = "No test configuration found"
-                return result
-            
+                if verbose:
+                    print("  No test configuration found; using builtin defaults")
+                test_config = self.tester.test_extractor.default_test_config(
+                    name, version
+                )
+
             # Run tests
             test_results = self.tester.run_test_suite(
                 container_path, test_config, gpu=False, verbose=verbose

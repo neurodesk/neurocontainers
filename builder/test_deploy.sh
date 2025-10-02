@@ -37,15 +37,32 @@ record_result() {
     esac
 }
 
-get_file_magic() {
+is_elf_binary() {
     local filename="$1"
 
-    # Resolve symbolic links to inspect the target file
     if [ -L "$filename" ]; then
-        filename=$(readlink -f "$filename")
+        local resolved
+        resolved=$(readlink -f "$filename" 2>/dev/null || true)
+        if [ -n "$resolved" ]; then
+            filename="$resolved"
+        fi
     fi
 
-    file "$filename"
+    if [ ! -r "$filename" ]; then
+        return 1
+    fi
+
+    local magic=""
+    local IFS=
+    if ! IFS= read -r -n 4 magic < "$filename"; then
+        return 1
+    fi
+
+    if [ "${#magic}" -lt 4 ]; then
+        return 1
+    fi
+
+    [ "$magic" = $'\177ELF' ]
 }
 
 normalise_path() {
@@ -131,7 +148,7 @@ parse_ldd_output() {
 test_file_linking() {
     local filename="$1"
 
-    if get_file_magic "$filename" | grep -q "ELF"; then
+    if is_elf_binary "$filename"; then
         local ldd_output
         if ldd_output=$(ldd "$filename" 2>&1); then
             record_result "file.linkage:$filename" "passed" "File $filename is dynamically linked."
