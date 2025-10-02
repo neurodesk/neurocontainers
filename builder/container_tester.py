@@ -253,6 +253,21 @@ class TestDefinitionExtractor:
     def __init__(self, runtime: ContainerRuntime):
         self.runtime = runtime
 
+    def _ensure_builtin_tests(self, tests: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Ensure core builtin checks are present in the test list"""
+        default_test = {
+            "name": "Simple Deploy Bins/Path Test",
+            "builtin": "test_deploy.sh",
+        }
+
+        if not any(
+            isinstance(test, dict) and test.get("builtin") == default_test["builtin"]
+            for test in tests
+        ):
+            tests.insert(0, dict(default_test))
+
+        return tests
+
     def extract_from_container(self, container_ref: str) -> Optional[Dict[str, Any]]:
         """Extract test definitions from embedded YAML in container"""
         # Try to extract build.yaml from container
@@ -292,21 +307,21 @@ class TestDefinitionExtractor:
         if "tests" in config:
             tests.extend(config["tests"])
 
-        # Ensure builtin tests are always present unless already defined
-        def ensure_builtin(default_test, position=0):
-            if not any(
-                isinstance(t, dict) and t.get("builtin") == default_test["builtin"]
-                for t in tests
-            ):
-                tests.insert(position, dict(default_test))
-
-        ensure_builtin(
-            {"name": "Simple Deploy Bins/Path Test", "builtin": "test_deploy.sh"}
-        )
+        self._ensure_builtin_tests(tests)
 
         return {
             "name": config.get("name", "unknown"),
             "version": config.get("version", "unknown"),
+            "tests": tests,
+        }
+
+    def default_test_config(self, name: str = "unknown", version: str = "unknown") -> Dict[str, Any]:
+        """Return a minimal test configuration when none is defined"""
+        tests: List[Dict[str, Any]] = []
+        self._ensure_builtin_tests(tests)
+        return {
+            "name": name,
+            "version": version,
             "tests": tests,
         }
 
@@ -941,8 +956,22 @@ def run_tests(args, tester):
             test_config = tester.test_extractor.extract_from_container(container_ref)
 
         if not test_config or not test_config.get("tests"):
-            print("Error: No test configuration found", file=sys.stderr)
-            sys.exit(1)
+            if args.verbose:
+                print(
+                    "No test configuration found; falling back to builtin test suite"
+                )
+
+            inferred_name = name or "unknown"
+            inferred_version = version or "unknown"
+
+            # Derive a name from the container reference if possible
+            if (inferred_name == "unknown" or not inferred_name) and container_ref:
+                base_name = os.path.basename(container_ref)
+                inferred_name = os.path.splitext(base_name)[0] or "unknown"
+
+            test_config = tester.test_extractor.default_test_config(
+                inferred_name, inferred_version
+            )
 
         if args.verbose:
             print(f"Found {len(test_config['tests'])} tests")
