@@ -16,13 +16,15 @@ Features:
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
-import yaml
-from typing import Dict, List, Optional, Any
-import shutil
 import urllib.request
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import yaml
 
 
 class ContainerRuntime:
@@ -315,10 +317,39 @@ class TestDefinitionExtractor:
             "tests": tests,
         }
 
-    def default_test_config(self, name: str = "unknown", version: str = "unknown") -> Dict[str, Any]:
-        """Return a minimal test configuration when none is defined"""
+    def _read_script_contents(self, script_path: Path) -> Optional[str]:
+        """Load legacy shell script contents if available."""
+
+        try:
+            return script_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+
+    def default_test_config(
+        self,
+        name: str = "unknown",
+        version: str = "unknown",
+        *,
+        legacy_script: Optional[Path] = None,
+    ) -> Dict[str, Any]:
+        """Return a minimal test configuration when none is defined.
+
+        Optionally registers a legacy ``test.sh`` script as a container test.
+        """
+
         tests: List[Dict[str, Any]] = []
         self._ensure_builtin_tests(tests)
+
+        if legacy_script is not None:
+            script_content = self._read_script_contents(legacy_script)
+            if script_content is not None:
+                tests.append(
+                    {
+                        "name": f"Legacy script test ({legacy_script.name})",
+                        "script": script_content,
+                    }
+                )
+
         return {
             "name": name,
             "version": version,
