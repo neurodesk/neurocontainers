@@ -218,7 +218,7 @@ class ContainerTestRunner:
                 return None, version, message
             raise FileNotFoundError(message)
 
-        latest_path, latest_version = find_latest_release_file(releases_dir)
+        latest_path, latest_version, _ = find_latest_release_file(releases_dir)
         if latest_path and latest_version:
             return latest_path, latest_version, None
 

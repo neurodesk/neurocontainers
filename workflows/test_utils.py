@@ -25,12 +25,17 @@ def resolve_path(candidate: str | Path, *, repo_root: Path, cwd: Path | None = N
     return path.resolve()
 
 
-def find_latest_release_file(release_dir: str | Path) -> Tuple[Optional[Path], Optional[str]]:
-    """Select the most recent release metadata file for a recipe."""
+def find_latest_release_file(
+    release_dir: str | Path,
+) -> Tuple[Optional[Path], Optional[str], Optional[str]]:
+    """Select the most recent release metadata file for a recipe.
+
+    Returns the path, release version and build date (if available).
+    """
 
     release_path = Path(release_dir)
     if not release_path.is_dir():
-        return None, None
+        return None, None, None
 
     latest_path: Optional[Path] = None
     latest_build_date = ""
@@ -67,9 +72,9 @@ def find_latest_release_file(release_dir: str | Path) -> Tuple[Optional[Path], O
             latest_version = candidate_version
 
     if latest_path is None:
-        return None, None
+        return None, None, None
 
-    return latest_path, latest_version
+    return latest_path, latest_version, latest_build_date or None
 
 
 def discover_test_config(recipe_dir: str | Path) -> Optional[Path]:
