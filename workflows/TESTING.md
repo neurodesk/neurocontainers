@@ -1,18 +1,18 @@
 # Container Testing Workflow
 
-This document describes how container tests are defined, executed locally, and automated through the GitHub Actions workflows in this repository. The focus is on the tooling under `builder/` and the CI entry points that exercise it.
+This document describes how container tests are defined, executed locally, and automated through the GitHub Actions workflows in this repository. The focus is on the tooling under `workflows/` and the CI entry points that exercise it.
 
 ## Test Definitions and Tooling
 
 - **Test sources** live beside each recipe. The default location is `recipes/<name>/test.yaml`; when that file is absent, the tooling falls back to the `tests` block embedded in `recipes/<name>/build.yaml`. Each test entry generally specifies a shell script snippet and optional mounts or GPU requirements.
-- **`builder/container_tester.py`** is the canonical test runner. It discovers containers via CVMFS, local SIF files, or release metadata, selects an available runtime (Apptainer/Singularity or Docker), extracts test definitions, and executes each test. Key flags you will see in CI:
+- **`workflows/test_runner.py`** provides the high-level `ContainerTestRunner` used by local commands, the full-matrix script, and GitHub Actions. Internally it relies on `workflows/container_tester.py`, which handles runtime selection, container discovery, and test execution. Key flags you will see in CI:
   - `--runtime apptainer` forces the Apptainer/Singularity backend.
   - `--location auto` searches CVMFS first, then local `./sifs`, then downloads via release metadata, and finally falls back to Docker tags.
   - `--release-file …` injects build-date information so downloads come from the correct storage path.
   - `--cleanup` deletes any downloaded artifacts after tests finish; `--output` writes a JSON summary used for reporting.
-- **`builder/generate_test_report.py`** turns the JSON summary into a PR-friendly Markdown report. GitHub Actions uploads both the JSON and Markdown outputs as artifacts and uses the Markdown for inline comments.
-- **`builder/format_test_results.py`** converts a single container’s JSON results into Markdown suitable for GitHub issue comments.
-- **`builder/pr_test_runner.py`** provides a higher-level interface that scans git diff to find updated recipes. It is useful for local validation (`test-containers.sh test-pr`) but is not wired into the current Actions workflows; instead, the workflows invoke `container_tester.py` directly.
+- **`workflows/generate_test_report.py`** turns the JSON summary into a PR-friendly Markdown report. GitHub Actions uploads both the JSON and Markdown outputs as artifacts and uses the Markdown for inline comments.
+- **`workflows/format_test_results.py`** converts a single container’s JSON results into Markdown suitable for GitHub issue comments.
+- **`workflows/pr_test_runner.py`** provides a higher-level interface that scans git diff to find updated recipes. It is useful for local validation (`test-containers.sh test-pr`) but is not wired into the current Actions workflows; instead, the workflows invoke `container_tester.py` directly.
 
 ## GitHub Actions Entry Points
 
@@ -25,8 +25,8 @@ This workflow runs automatically when a pull request targeting `master` or `main
    - Checks out the repo and installs Python requirements.
    - Verifies container runtimes (`docker`, `apptainer` or `singularity`) so the self-hosted machine has the necessary binaries.
    - Locates the test definition by preferring `recipes/<name>/test.yaml` and falling back to `recipes/<name>/build.yaml` (`find-tests` step).
-   - Runs `python builder/container_tester.py "<name>:<version>" --runtime apptainer --location auto --cleanup --release-file … --test-config … --output test-results-<name>.json --verbose`. The `continue-on-error` flag lets subsequent steps gather logs even when tests fail.
-   - Generates Markdown via `builder/generate_test_report.py` and uploads both the JSON and Markdown artifacts as `test-results-<name>`.
+   - Runs the shared runner with `cleanup` enabled so downloaded artifacts are removed once tests finish. The `continue-on-error` flag lets subsequent steps gather logs even when tests fail.
+   - Generates Markdown via `workflows/generate_test_report.py` and uploads both the JSON and Markdown artifacts as `test-results-<name>`.
    - Uses `actions/github-script` to post (or update) a PR comment containing the Markdown report for that specific container.
 3. **`summarize-results` job** (Ubuntu runner) aggregates every `test-results-*.json` artifact, prints a count of passed/failed recipes, and updates a single “Container Test Summary” PR comment. If any container failed, this job calls `core.setFailed`, which fails the workflow and surfaces red status in the PR checks.
 
@@ -51,45 +51,39 @@ This manually triggered workflow supports large-scale or architecture-specific v
 3. **`prepare-matrix` job** walks `recipes/*/build.yaml` (skipping the `builder` recipe) to produce the matrix of recipe names. In debug mode the list is reduced to speed iteration.
 4. **`build-or-test-recipe` job** runs per recipe:
    - Downloads the cached `builder.sif`, prepares a writable `/mnt/tmp`, and uses Apptainer + `sf-make` inside the SIF to build the target recipe SIF.
-   - When `run-tests` is true, the job sets up Python, reads the version from the recipe’s `build.yaml`, then executes `python builder/container_tester.py "<recipe>:<version>" --runtime apptainer --location local --test-config recipes/<recipe>/build.yaml --verbose`. Because the freshly built SIF resides in the workspace, the runner uses the `--location local` resolution path instead of downloading.
+   - When `run-tests` is true, the job invokes the shared runner so the same reporting logic generates JSON, Markdown comments, and detailed reports. Because the freshly built SIF resides in the workspace, the runner uses the `--location local` resolution path instead of downloading.
 
 The workflow defaults to `debug=true` and `run-tests=false`, so full container testing is opt-in; maintainers enable testing when they need deeper validation across many recipes or architectures.
 
 ### Builder Linting – `.github/workflows/test-builder.yml`
 
-While not a runtime test, this workflow protects the builder tooling whenever files under `builder/` change. It creates a Python virtual environment, installs `requirements.txt`, and runs `./builder/test_all.sh`. The script validates every recipe (`builder/validation.py`) and performs a “check-only” build via `builder/build.py generate … --check-only`. Failures here usually indicate malformed recipe metadata that would prevent the container tests from running downstream.
+While not a runtime test, this workflow protects the builder tooling whenever files under `builder/` change. It creates a Python virtual environment, installs `requirements.txt`, and runs `./workflows/test_all.sh`. The script validates every recipe (`builder/validation.py`) and performs a “check-only” build via `builder/build.py generate … --check-only`. Failures here usually indicate malformed recipe metadata that would prevent the container tests from running downstream.
 
 ## Reproducing CI Runs Locally
 
 1. **Set up dependencies**: ensure Apptainer/Singularity (or Docker) is installed, create a virtual environment, and `pip install -r requirements.txt`.
 2. **Single container or release**:
    ```bash
-   python builder/container_tester.py "dcm2niix:v1.0.20240202" \
+   sf-test-remote dcm2niix \
+     --version v1.0.20240202 \
+     --release-file releases/dcm2niix/v1.0.20240202.json \
      --runtime apptainer \
      --location auto \
-     --release-file releases/dcm2niix/v1.0.20240202.json \
-     --cleanup \
-     --output test-results.json \
-     --verbose
-   python builder/generate_test_report.py test-results.json dcm2niix v1.0.20240202 --output test-report.md
+     --cleanup
    ```
    This mirrors the invocation inside `test-release-pr.yml` and produces the same artifacts.
 3. **Recipe-focused check** (simulates `recipes-ci` when `run-tests=true`):
    ```bash
-   python builder/container_tester.py "<name>:<version>" \
-     --runtime apptainer \
-     --location local \
-     --test-config recipes/<name>/build.yaml \
-     --verbose
+   sf-test-remote <name> --version <version> --location local --runtime apptainer --cleanup
    ```
    Make sure the corresponding `sifs/<name>_<version>.sif` exists, e.g. by running `sf-make <name>` first.
-4. **Convenience wrapper**: `./test-containers.sh` offers shortcuts such as `./test-containers.sh test <name:version>` and `./test-containers.sh test-pr`, which chains through `builder/pr_test_runner.py` to exercise every recipe touched by your local branch.
+4. **Convenience wrapper**: `./test-containers.sh` offers shortcuts such as `./test-containers.sh test <name:version>` and `./test-containers.sh test-pr`, which chains through `workflows/pr_test_runner.py` to exercise every recipe touched by your local branch.
 
 ## Outputs, Reporting, and Cleanup
 
 - CI stores raw JSON results as `builder/test-results-<name>.json` and Markdown summaries as `builder/test-report-<name>.md`. These are uploaded as artifacts and embedded into PR comments.
 - `container_tester.py` exits non-zero when any test fails. The GitHub Actions steps run with `continue-on-error: true`, but the final summarizing job converts failures into a failed workflow run.
-- Release-driven tests run with `--cleanup`, which deletes downloaded SIFs after completion. Locally you can reuse cached downloads (`~/.cache/neurocontainers`) or purge everything with `python builder/container_tester.py --cleanup-all`.
+- Release-driven tests run with `--cleanup`, which deletes downloaded SIFs after completion. Locally you can reuse cached downloads (`~/.cache/neurocontainers`) or purge everything with `sf-test-remote --cleanup-all`.
 - When CVMFS is mounted, `--location auto` serves containers directly without downloads; otherwise the release metadata path is used.
 
 By following the commands above and reviewing the referenced workflows, you can replicate, debug, and extend the automated container testing pipeline used by NeuroContainers.

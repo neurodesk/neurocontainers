@@ -64,8 +64,8 @@ Use the comprehensive testing system:
 ./test-containers.sh test-pr                 # Test containers in PR changes
 
 # Direct testing (more control)
-python builder/container_tester.py <container:version> --runtime docker --location local --verbose
-python builder/container_tester.py <container:version> --test-config recipes/<name>/test.yaml --verbose
+sf-test-remote <name> --version <version> --runtime docker --location local --cleanup
+sf-test-remote <name> --version <version> --test-config recipes/<name>/test.yaml --cleanup
 ```
 
 ### Validation and Linting
@@ -75,7 +75,7 @@ Always run validation before committing:
 codespell .
 
 # Recipe validation - check all recipes in ~5 seconds  
-source env/bin/activate && ./builder/test_all.sh
+source env/bin/activate && ./workflows/test_all.sh
 
 # Test specific recipe generation
 python builder/build.py generate <recipe-name> --recreate --check-only
@@ -162,9 +162,9 @@ sf-login <recipe>  # Drops into container shell after build
 ```bash
 # Full validation workflow
 source env/bin/activate
-./builder/test_all.sh                    # Validate all recipes (~5 seconds)
+./workflows/test_all.sh                    # Validate all recipes (~5 seconds)
 codespell .                             # Check spelling (~1.5 seconds)  
-python builder/pr_test_runner.py        # Test PR changes
+python workflows/pr_test_runner.py        # Test PR changes
 
 # Test specific container end-to-end
 ./test-containers.sh test-recipe <recipe-name>
@@ -248,7 +248,7 @@ The repository contains some recipes with YAML syntax errors or broken builds. T
 - Some builds fail due to upstream source unavailability
 - Some containers are marked as drafts and skip auto-building
 
-The validation tools (`./builder/test_all.sh`) will continue processing even when encountering broken recipes. Focus on ensuring your changes work correctly rather than fixing unrelated existing issues.
+The validation tools (`./workflows/test_all.sh`) will continue processing even when encountering broken recipes. Focus on ensuring your changes work correctly rather than fixing unrelated existing issues.
 
 ## Validation Workflows
 
@@ -256,14 +256,14 @@ The validation tools (`./builder/test_all.sh`) will continue processing even whe
 Always run before committing changes:
 ```bash
 source env/bin/activate
-./builder/test_all.sh         # Validate recipe syntax
+./workflows/test_all.sh         # Validate recipe syntax
 codespell .                   # Check spelling
 ```
 
 ### Pull Request Testing
 For testing PR changes:
 ```bash
-python builder/pr_test_runner.py --verbose --report markdown
+python workflows/pr_test_runner.py --verbose --report markdown
 ./test-containers.sh test-pr
 ```
 
