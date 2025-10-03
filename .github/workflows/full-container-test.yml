@@ -54,7 +54,7 @@ jobs:
               {
                   'recipe': spec.recipe,
                   'version': spec.version,
-                  'release_file': spec.release_file,
+                  'release_file': spec.release_file.as_posix() if spec.release_file else None,
                   'build_date': spec.build_date,
                   'has_release': spec.has_release,
               }

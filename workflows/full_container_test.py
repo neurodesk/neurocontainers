@@ -4,14 +4,28 @@
 from __future__ import annotations
 
 import argparse
+import json
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
-from workflows.reporting import build_aggregate_summary, write_text
-from workflows.test_runner import ContainerTestRunner, TestOutcome, TestRequest
-from workflows.test_utils import find_latest_release_file
+from workflows.reporting import (
+    build_aggregate_summary,
+    build_comment,
+    build_report,
+    write_text,
+)
+from workflows.test_runner import (
+    COMMENT_PREFIX,
+    REPORT_PREFIX,
+    RESULTS_PREFIX,
+    STATUS_PREFIX,
+    ContainerTestRunner,
+    TestOutcome,
+    TestRequest,
+)
+from workflows.test_utils import discover_test_config, find_latest_release_file
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RECIPES_DIR = REPO_ROOT / "recipes"
@@ -27,6 +41,11 @@ class ContainerSpec:
     release_file: Optional[Path]
     has_release: bool
     build_date: Optional[str]
+
+    def __post_init__(self) -> None:
+        if isinstance(self.release_file, str):
+            stripped = self.release_file.strip()
+            self.release_file = Path(stripped) if stripped else None
 
     @property
     def reference(self) -> str:
@@ -128,6 +147,77 @@ def headline_from_totals(totals: dict) -> str:
     if skipped:
         return f"⚠️ {skipped} container(s) skipped"
     return "✅ All containers passed"
+
+
+def determine_test_config(recipe: str) -> Tuple[bool, Optional[str]]:
+    """Return whether a recipe has tests and the resolved config path."""
+
+    recipe_dir = RECIPES_DIR / recipe
+    if not recipe_dir.is_dir():
+        return False, None
+
+    config_path = discover_test_config(recipe_dir)
+    if not config_path:
+        return False, None
+
+    return True, config_path.as_posix()
+
+
+def _load_results(recipe: str, results_dir: Path = ARTIFACTS_DIR) -> Dict[str, object]:
+    results_path = results_dir / f"{RESULTS_PREFIX}{recipe}.json"
+    if not results_path.is_file():
+        return {}
+    try:
+        return json.loads(results_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def summarize_result(spec: ContainerSpec) -> None:
+    """Generate a markdown summary file for a container's test run."""
+
+    data = _load_results(spec.recipe)
+    version = spec.version or data.get("version") or "unknown"
+
+    report_text = build_report(data, spec.recipe, str(version or "unknown"))
+    report_path = ARTIFACTS_DIR / f"{REPORT_PREFIX}{spec.recipe}.md"
+    write_text(report_path, report_text)
+
+
+def format_comment(spec: ContainerSpec) -> None:
+    """Ensure a Markdown comment and status file exist for the container."""
+
+    data = _load_results(spec.recipe)
+    version = spec.version or data.get("version") or "unknown"
+
+    comment_text, status = build_comment(data, spec.recipe, str(version or "unknown"))
+
+    comment_path = ARTIFACTS_DIR / f"{COMMENT_PREFIX}{spec.recipe}.md"
+    write_text(comment_path, comment_text)
+
+    status_path = ARTIFACTS_DIR / f"{STATUS_PREFIX}{spec.recipe}.txt"
+    write_text(status_path, status + "\n")
+
+
+def aggregate_summary(results_root: str | Path) -> Dict[str, int]:
+    """Build an aggregate summary from downloaded test-result artifacts."""
+
+    root = Path(results_root)
+    entries: List[Tuple[str, Dict[str, object]]] = []
+
+    if root.is_dir():
+        pattern = f"{RESULTS_PREFIX}*.json"
+        for path in sorted(root.rglob(pattern)):
+            name = path.stem[len(RESULTS_PREFIX) :]
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, FileNotFoundError):
+                payload = {}
+            entries.append((name, payload))
+
+    summary_markdown, totals = build_aggregate_summary(entries)
+    write_text(SUMMARY_PATH, summary_markdown)
+    return totals
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
