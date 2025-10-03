@@ -499,6 +499,9 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download all test artifacts
         if: always()
         continue-on-error: true
