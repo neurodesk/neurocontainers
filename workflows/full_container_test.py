@@ -26,6 +26,7 @@ class ContainerSpec:
     version: str
     release_file: Optional[Path]
     has_release: bool
+    build_date: Optional[str]
 
     @property
     def reference(self) -> str:
@@ -57,7 +58,7 @@ def discover_containers(requested: Sequence[str]) -> Tuple[List[ContainerSpec], 
             continue
 
         available_names.add(recipe)
-        release_path, version = find_latest_release_file(RELEASES_DIR / recipe)
+        release_path, version, build_date = find_latest_release_file(RELEASES_DIR / recipe)
         has_release = release_path is not None
         specs.append(
             ContainerSpec(
@@ -65,6 +66,7 @@ def discover_containers(requested: Sequence[str]) -> Tuple[List[ContainerSpec], 
                 version=version or "",
                 release_file=release_path,
                 has_release=has_release,
+                build_date=build_date,
             )
         )
 
