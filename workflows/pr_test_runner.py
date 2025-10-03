@@ -340,10 +340,13 @@ class PRTestRunner:
         name = recipe["name"]
         version = recipe["version"]
         recipe_dir = recipe["recipe_dir"]
+        legacy_script_path = Path(recipe_dir) / "test.sh"
+        if not legacy_script_path.is_file():
+            legacy_script_path = None
         
         if verbose:
             print(f"\nTesting recipe: {name}:{version}")
-        
+
         result = {
             "name": name,
             "version": version,
@@ -376,7 +379,9 @@ class PRTestRunner:
                 if verbose:
                     print("  No test configuration found; using builtin defaults")
                 test_config = self.tester.test_extractor.default_test_config(
-                    name, version
+                    name,
+                    version,
+                    legacy_script=legacy_script_path,
                 )
 
             # Run tests
