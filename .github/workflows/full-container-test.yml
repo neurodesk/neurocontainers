@@ -42,93 +42,34 @@ jobs:
           python - <<'PY'
           import json
           import os
-          from pathlib import Path
 
-          root = Path('.')
-          recipes_dir = root / 'recipes'
-          releases_dir = root / 'releases'
+          from workflows.full_container_test import discover_containers
 
           target_env = os.environ.get('TARGET_RECIPES', '').strip()
-          requested = [entry.strip() for entry in target_env.split(',')] if target_env else []
-          requested = [r for r in requested if r]
-          requested_set = set(requested)
+          requested = [entry.strip() for entry in target_env.split(',') if entry.strip()]
 
-          containers_all = []
-          available_names = set()
+          containers, missing, total_available = discover_containers(requested)
 
-          for build_file in sorted(recipes_dir.glob('*/build.yaml')):
-              recipe = build_file.parent.name
-              if recipe == 'builder':
-                  continue
-
-              available_names.add(recipe)
-
-              release_path = releases_dir / recipe
-              latest_file = None
-              latest_build_date = ''
-              latest_version = ''
-
-              if release_path.exists():
-                  for candidate in release_path.glob('*.json'):
-                      try:
-                          data = json.loads(candidate.read_text(encoding='utf-8'))
-                      except Exception:
-                          continue
-
-                      apps = data.get('apps', {})
-                      build_date = ''
-                      if apps:
-                          first_value = next(iter(apps.values()))
-                          build_date = str(first_value.get('version', '')).strip()
-
-                      version = candidate.stem
-
-                      if latest_file is None:
-                          latest_file = candidate
-                          latest_build_date = build_date
-                          latest_version = version
-                      else:
-                          if build_date and (not latest_build_date or build_date > latest_build_date):
-                              latest_file = candidate
-                              latest_build_date = build_date
-                              latest_version = version
-                          elif build_date == latest_build_date and version > latest_version:
-                              latest_file = candidate
-                              latest_version = version
-
-              if latest_file is not None:
-                  containers_all.append({
-                      'recipe': recipe,
-                      'version': latest_version,
-                      'release_file': str(latest_file.as_posix()),
-                      'build_date': latest_build_date,
-                      'has_release': True,
-                  })
-              else:
-                  containers_all.append({
-                      'recipe': recipe,
-                      'version': '',
-                      'release_file': '',
-                      'build_date': '',
-                      'has_release': False,
-                  })
-
-          if requested_set:
-              containers = [c for c in containers_all if c['recipe'] in requested_set]
-          else:
-              containers = containers_all
-
-          missing_targets = sorted(requested_set - available_names) if requested_set else []
+          serialized = [
+              {
+                  'recipe': spec.recipe,
+                  'version': spec.version,
+                  'release_file': spec.release_file,
+                  'build_date': spec.build_date,
+                  'has_release': spec.has_release,
+              }
+              for spec in containers
+          ]
 
           output_path = os.environ['GITHUB_OUTPUT']
           with open(output_path, 'a', encoding='utf-8') as handle:
-              handle.write(f"containers={json.dumps(containers)}\n")
-              handle.write(f"count={len(containers)}\n")
-              handle.write(f"total_recipes={len(containers_all)}\n")
-              handle.write(f"filter_applied={'true' if requested_set else 'false'}\n")
+              handle.write(f"containers={json.dumps(serialized)}\n")
+              handle.write(f"count={len(serialized)}\n")
+              handle.write(f"total_recipes={total_available}\n")
+              handle.write(f"filter_applied={'true' if requested else 'false'}\n")
               handle.write(f"targets={json.dumps(requested)}\n")
               handle.write(f"requested_count={len(requested)}\n")
-              handle.write(f"missing_targets={json.dumps(missing_targets)}\n")
+              handle.write(f"missing_targets={json.dumps(missing)}\n")
           PY
 
   create-issue:
@@ -251,14 +192,11 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install Apptainer
-        run: |
-          set -euxo pipefail
-          sudo add-apt-repository -y ppa:apptainer/ppa
-          sudo apt-get update
-          sudo apt-get install -y apptainer
+      - uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.4.3
 
       - name: Install builder dependencies
         run: |
@@ -273,23 +211,11 @@ jobs:
         run: |
           python - <<'PY'
           import os
-          from pathlib import Path
 
-          import yaml
+          from workflows.full_container_test import determine_test_config
 
           recipe = os.environ['RECIPE']
-          build_path = Path('recipes') / recipe / 'build.yaml'
-          data = yaml.safe_load(build_path.read_text(encoding='utf-8'))
-
-          test_config = ''
-          has_tests = False
-          test_yaml = build_path.parent / 'test.yaml'
-          if test_yaml.exists():
-              test_config = str(test_yaml)
-              has_tests = True
-          elif data.get('tests'):
-              test_config = str(build_path)
-              has_tests = True
+          has_tests, test_config = determine_test_config(recipe)
 
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as handle:
               handle.write(f"has_tests={'true' if has_tests else 'false'}\n")
@@ -299,98 +225,57 @@ jobs:
 
       - name: Run container tests
         id: tests
-        if: ${{ matrix.container.has_release }}
         env:
           RECIPE: ${{ matrix.container.recipe }}
           VERSION: ${{ matrix.container.version }}
           RELEASE_FILE: ${{ matrix.container.release_file }}
+          HAS_RELEASE: ${{ matrix.container.has_release }}
           TEST_CONFIG: ${{ steps.meta.outputs.test_config }}
         run: |
-          set +e
-          CONTAINER_REF="${RECIPE}:${VERSION}"
-          RESULTS_PATH="builder/test-results-${RECIPE}.json"
-
-          python builder/container_tester.py "$CONTAINER_REF" \
-            --runtime apptainer \
-            --location auto \
-            --release-file "$RELEASE_FILE" \
-            --test-config "$TEST_CONFIG" \
-            --output "$RESULTS_PATH" \
-            --cleanup \
-            --verbose
-
-          exit_code=$?
-          echo "exit_code=$exit_code" >> "$GITHUB_OUTPUT"
-
-          if [ ! -f "$RESULTS_PATH" ]; then
-            export RESULTS_PATH CONTAINER_REF EXIT_CODE=$exit_code
-            python - <<'PY'
-            import json
-            import os
-
-            path = os.environ['RESULTS_PATH']
-            ref = os.environ['CONTAINER_REF']
-            exit_code = int(os.environ['EXIT_CODE'])
-
-            payload = {
-                "container": ref,
-                "runtime": "apptainer",
-                "total_tests": 0,
-                "passed": 0,
-                "failed": 1,
-                "skipped": 0,
-                "test_results": [
-                    {
-                        "name": "container_tester",
-                        "status": "failed",
-                        "stdout": "",
-                        "stderr": f"container_tester exited with code {exit_code}",
-                        "return_code": exit_code,
-                    }
-                ],
-            }
-
-            with open(path, 'w', encoding='utf-8') as handle:
-                json.dump(payload, handle, indent=2)
-            PY
-          fi
-
-          exit "$exit_code"
-        continue-on-error: true
-
-      - name: Register skipped result (no release)
-        if: ${{ !matrix.container.has_release }}
-        env:
-          RECIPE: ${{ matrix.container.recipe }}
-        run: |
+          mkdir -p builder
           python - <<'PY'
-          import json
+          from pathlib import Path
           import os
+          import sys
+
+          from workflows.test_runner import ContainerTestRunner, TestRequest
 
           recipe = os.environ['RECIPE']
-          path = f"builder/test-results-{recipe}.json"
+          version = os.environ.get('VERSION') or None
+          release_file = os.environ.get('RELEASE_FILE') or None
+          has_release = os.environ.get('HAS_RELEASE', 'false').lower() == 'true'
+          test_config = os.environ.get('TEST_CONFIG') or None
 
-          payload = {
-              "container": recipe,
-              "runtime": "apptainer",
-              "total_tests": 0,
-              "passed": 0,
-              "failed": 0,
-              "skipped": 1,
-              "test_results": [
-                  {
-                      "name": "release lookup",
-                      "status": "skipped",
-                      "stdout": "",
-                      "stderr": "No release metadata found; container not tested.",
-                      "return_code": 0,
-                  }
-              ],
-          }
+          runner = ContainerTestRunner()
+          request = TestRequest(
+              recipe=recipe,
+              version=version,
+              release_file=release_file if release_file else None,
+              test_config=test_config if (test_config and test_config.strip()) else None,
+              runtime='apptainer',
+              location='auto',
+              cleanup=True,
+              auto_cleanup=False,
+              verbose=True,
+              allow_missing_release=not has_release,
+              allow_missing_tests=True,
+              output_dir=Path('builder'),
+              results_path=Path(f'builder/test-results-{recipe}.json'),
+          )
 
-          with open(path, 'w', encoding='utf-8') as handle:
-              json.dump(payload, handle, indent=2)
+          outcome = runner.run(request)
+          print(f"Status: {outcome.status}")
+          if outcome.reason:
+              print(f"Reason: {outcome.reason}")
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as handle:
+              handle.write(f"status={outcome.status}\n")
+              if outcome.reason:
+                  handle.write(f"reason={outcome.reason}\n")
+
+          sys.exit(0 if outcome.status != 'failed' else 1)
           PY
+        continue-on-error: true
 
       - name: Classify test outcome
         id: classify
@@ -398,81 +283,62 @@ jobs:
           RESULTS_PATH: builder/test-results-${{ matrix.container.recipe }}.json
           RECIPE: ${{ matrix.container.recipe }}
           VERSION: ${{ matrix.container.version || '' }}
+          RELEASE_FILE: ${{ matrix.container.release_file }}
+          HAS_RELEASE: ${{ matrix.container.has_release }}
+          STATUS: ${{ steps.tests.outputs.status }}
+          REASON: ${{ steps.tests.outputs.reason }}
         run: |
           python - <<'PY'
-          import json
           import os
+          import json
           from pathlib import Path
+
+          from workflows.full_container_test import (
+              classify_outcome,
+              Classification,
+          )
+          from workflows.test_runner import TestOutcome
+          from workflows.reporting import determine_status
 
           recipe = os.environ['RECIPE']
           version = os.environ.get('VERSION', '').strip()
-          container = f"{recipe}:{version}" if version else recipe
+          release_file = os.environ.get('RELEASE_FILE', '') or None
+          reason = os.environ.get('REASON')
+          status_override = os.environ.get('STATUS')
 
           results_path = Path(os.environ['RESULTS_PATH'])
-          classification = 'tested'
-          update_shared = False
-          message = ''
-          reason = ''
-
-          if results_path.exists():
-              try:
-                  data = json.loads(results_path.read_text(encoding='utf-8'))
-              except Exception:
-                  data = {}
-          else:
+          try:
+              data = json.loads(results_path.read_text(encoding='utf-8'))
+          except Exception:
               data = {}
 
-          total = data.get('total_tests', data.get('total', 0)) or 0
-          failed = data.get('failed', 0) or 0
-          skipped = data.get('skipped', 0) or 0
+          status = status_override or determine_status(data)
 
-          tests = data.get('test_results') or []
-          for entry in tests:
-              reason = (entry.get('stderr') or entry.get('stdout') or '').strip()
-              if reason:
-                  break
+          outcome = TestOutcome(
+              recipe=recipe,
+              version=version,
+              status=status,
+              results=data,
+              results_path=results_path,
+              release_file=Path(release_file) if release_file else None,
+              reason=reason,
+          )
 
-          if not results_path.exists():
-              classification = 'missing_results'
-              update_shared = True
-              icon = '❌'
-              tag = 'failed before tests'
-              reason = reason or 'No result file was produced.'
-          elif int(total) == 0:
-              update_shared = True
-              if skipped and not failed:
-                  classification = 'skipped'
-                  icon = '⚠️'
-                  tag = 'skipped'
-                  reason = reason or 'No release metadata found; container not tested.'
-              else:
-                  classification = 'failed_no_tests'
-                  icon = '❌'
-                  tag = 'failed before tests'
-                  reason = reason or 'container_tester failed before running tests.'
-          else:
-              classification = 'tested'
-
-          reason = ' '.join(reason.split()) if reason else ''
-          if reason and len(reason) > 240:
-              reason = reason[:237] + '...'
-
-          if update_shared:
-              message_reason = reason or 'No additional details available.'
-              icon = locals().get('icon', '❔')
-              tag = locals().get('tag', 'update')
-              message = f"- {icon} `{container}` {tag} — {message_reason}"
+          classification: Classification = classify_outcome(outcome)
+          print(classification.message)
 
           output_path = Path(os.environ['GITHUB_OUTPUT'])
           with output_path.open('a', encoding='utf-8') as handle:
-              handle.write(f"classification={classification}\n")
-              handle.write(f"update_shared_comment={'true' if update_shared else 'false'}\n")
+              handle.write(f"classification={classification.status}\n")
+              handle.write(f"update_shared_comment={'true' if classification.update_shared else 'false'}\n")
 
-              if update_shared and message:
-                  update_dir = Path('builder')
-                  update_dir.mkdir(parents=True, exist_ok=True)
-                  update_file = update_dir / f"shared-update-{recipe}.txt"
-                  update_file.write_text(message + '\n', encoding='utf-8')
+          if classification.update_shared and classification.message:
+              update_dir = Path('builder')
+              update_dir.mkdir(parents=True, exist_ok=True)
+              update_file = update_dir / f"shared-update-{recipe}.txt"
+              update_file.write_text(classification.message + '\n', encoding='utf-8')
+
+              with output_path.open('a', encoding='utf-8') as handle:
                   handle.write(f"update_file={update_file.as_posix()}\n")
           PY
 
@@ -546,17 +412,56 @@ jobs:
               body,
             });
 
+      - name: Summarize deploy test output
+        if: always()
+        env:
+          RECIPE: ${{ matrix.container.recipe }}
+          VERSION: ${{ matrix.container.version || '' }}
+          RELEASE_FILE: ${{ matrix.container.release_file }}
+          HAS_RELEASE: ${{ matrix.container.has_release }}
+        run: |
+          python - <<'PY'
+          import os
+
+          from workflows.full_container_test import ContainerSpec, summarize_result
+
+          recipe = os.environ['RECIPE']
+          version = os.environ.get('VERSION', '')
+          release_file = os.environ.get('RELEASE_FILE', '')
+          has_release = os.environ.get('HAS_RELEASE', 'false').lower() == 'true'
+
+          spec = ContainerSpec(
+              recipe=recipe,
+              version=version,
+              release_file=release_file,
+              build_date='',
+              has_release=has_release,
+          )
+          summarize_result(spec)
+          PY
+
       - name: Prepare issue comment
         env:
           RECIPE: ${{ matrix.container.recipe }}
           VERSION: ${{ matrix.container.version || 'unknown' }}
         run: |
-          python builder/format_test_results.py \
-            --results "builder/test-results-${RECIPE}.json" \
-            --recipe "${RECIPE}" \
-            --version "${VERSION}" \
-            --output "builder/comment-${RECIPE}.md" \
-            --status-output "builder/status-${RECIPE}.txt"
+          python - <<'PY'
+          import os
+
+          from workflows.full_container_test import ContainerSpec, format_comment
+
+          recipe = os.environ['RECIPE']
+          version = os.environ.get('VERSION', 'unknown')
+
+          spec = ContainerSpec(
+              recipe=recipe,
+              version=version,
+              release_file='',
+              build_date='',
+              has_release=True,
+          )
+          format_comment(spec)
+          PY
 
       - name: Upload test artifacts
         if: always()
@@ -607,47 +512,17 @@ jobs:
         id: summary
         run: |
           python - <<'PY'
-          import json
           import os
-          from pathlib import Path
 
-          base = Path('test-results')
-          total = passed = failed = skipped = 0
-          lines = ["## Aggregated Results", ""]
-          emoji = {"passed": "✅", "failed": "❌", "skipped": "⚠️"}
+          from workflows.full_container_test import aggregate_summary
 
-          if base.exists():
-              for json_file in sorted(base.glob('test-results-*.json')):
-                  name = json_file.stem.replace('test-results-', '')
-                  data = json.loads(json_file.read_text(encoding='utf-8'))
-                  failed_tests = data.get('failed', 0)
-                  total_tests = data.get('total_tests', data.get('total', 0))
-
-                  if failed_tests > 0:
-                      status = 'failed'
-                      failed += 1
-                  elif total_tests == 0:
-                      status = 'skipped'
-                      skipped += 1
-                  else:
-                      status = 'passed'
-                      passed += 1
-
-                  total += 1
-                  lines.append(f"- {emoji.get(status, '❔')} `{name}` — {status}")
-          else:
-              lines.append('- No artifacts were produced.')
-
-          lines.append("")
-          lines.append(f"**Totals:** {passed} passed, {failed} failed, {skipped} skipped (out of {total})")
-
-          Path('summary.md').write_text('\n'.join(lines), encoding='utf-8')
+          totals = aggregate_summary('test-results')
 
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as gh:
-              gh.write(f"total={total}\n")
-              gh.write(f"passed={passed}\n")
-              gh.write(f"failed={failed}\n")
-              gh.write(f"skipped={skipped}\n")
+              gh.write(f"total={totals.get('total', 0)}\n")
+              gh.write(f"passed={totals.get('passed', 0)}\n")
+              gh.write(f"failed={totals.get('failed', 0)}\n")
+              gh.write(f"skipped={totals.get('skipped', 0)}\n")
           PY
 
       - name: Post summary comment
