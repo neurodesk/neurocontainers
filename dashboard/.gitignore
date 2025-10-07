@@ -1,0 +1,12 @@
+/.gocache
+/.gomodcache
+/.gopath
+/.gotmp
+
+.env
+
+apps.json
+
+/data
+/local
+/public

@@ -1,0 +1,120 @@
+name: irkernel
+version: 4.4.3
+copyright:
+  - license: GPL-2.0-or-later
+    url: https://www.r-project.org/Licenses/
+architectures:
+  - x86_64
+structured_readme:
+  description: R kernel in notebook
+  example: |-
+    # Example usage
+
+    ```bash
+    # Run the containerized tool (assuming you are already inside the container)
+    R --help
+    ```
+  documentation: https://github.com/jupyter/docker-stacks/blob/main/images/r-notebook
+  citation: "R Core Team (2020). R: A language and environment statistical computing. R Foundation for Statistical Computing, Vienna, Austria. URL https://www.R-project.org/."
+readme: |-
+  ----------------------------------
+  ## irkernel/{{ context.version }} ##
+
+  R kernel in notebook
+
+  Example:
+  ```
+  # Example usage
+
+  ```bash
+  # Run the containerized tool (assuming you are already inside the container)
+  R --help
+  ```
+  ```
+
+  More documentation can be found here: https://github.com/jupyter/docker-stacks/blob/main/images/r-notebook
+
+  Citation:
+  ```
+  R Core Team (2020). R: A language and environment statistical computing. R Foundation for Statistical Computing, Vienna, Austria. URL https://www.R-project.org/.
+  ```
+
+  To run container outside of this environment: ml irkernel/{{ context.version }}
+
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: quay.io/jupyter/minimal-notebook
+  pkg-manager: apt
+  directives:
+    - user: root
+    - run:
+        - |-
+          apt-get update --yes && \
+              apt-get install --yes --no-install-recommends \
+              fonts-dejavu \
+              unixodbc \
+              unixodbc-dev \
+              r-cran-rodbc \
+              gfortran \
+              gcc \
+              cmake \
+              build-essential \
+              libssl-dev \
+              libcurl4-openssl-dev \
+              libxml2-dev \
+              libgit2-dev \
+              libfontconfig1-dev \
+              libcairo2-dev \
+              libharfbuzz-dev \
+              libfribidi-dev \
+              libfreetype6-dev \
+              libpng-dev \
+              libtiff5-dev \
+              libjpeg-dev \
+              pkg-config && \
+              apt-get clean && rm -rf /var/lib/apt/lists/*
+    - run:
+        - rm -rf "/home/${NB_USER}/.cache/"
+    - user: ${NB_UID}
+    - run:
+        - |-
+          mamba install --yes \
+              'r-base' \
+              'r-caret' \
+              'r-crayon' \
+              'r-devtools' \
+              'r-e1071' \
+              'r-forecast' \
+              'r-hexbin' \
+              'r-htmltools' \
+              'r-htmlwidgets' \
+              'r-irkernel' \
+              'r-nycflights13' \
+              'r-randomforest' \
+              'r-rcurl' \
+              'r-rmarkdown' \
+              'r-rodbc' \
+              'r-rsqlite' \
+              'r-shiny' \
+              'r-tidymodels' \
+              'r-tidyverse' \
+              'gdal' \
+              'geos' \
+              'proj' \
+              'udunits2' \
+              'unixodbc' && \
+              mamba clean --all -f -y && \
+              fix-permissions "${CONDA_DIR}" && \
+              fix-permissions "/home/${NB_USER}"
+    - deploy:
+        path:
+          - /opt/conda/share/jupyter/kernels/ir
+          - /opt/conda/share/jupyter/kernels/python3
+        bins:
+          - jupyter
+          - jupyter-lab
+          - jupyter-notebook
+categories:
+  - programming
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAE0ElEQVR4AYxVTWhcVRQ+9zalIImmLhSttTOFLix00U1RXGmTZtqkaXVq0qRoZtI0LU3ciCBEIRBwIQpSUBqo9oWI1pDEmBKbmL/JrwluRFdiCRMIaQtKQQJqM3PP8Tv3ZZKMiejjfe/cd36+79x739yxtM01PT29O5Wai6RSqcj4+GTl6PiUjIxNyvDohHw7kpKh4XG5NTQqA4PDlX2Dg5G+vsHIwMDA7m2oKE8gNTWbUGTFdopxaaYCgPpFmBTMsIC3IkQs/QXOpm0BpR3bzt6+bxKKzUJeYPK7+fqJmbnAEAVgCoS5IkfILLQBxngTIMJeHDkiFcZQgLqgp/dm0NPTX0+47OTMXJVk3RVxLrFBJOQcezKIkYLR+YYV+MTH1c/rTaAGgo454YSvdPX0VVkUdYlIIUCCIIOI2WEsHiyyqEBscYflJyvKy8zJijJTeTJmTleeMC+dKjdo7jmNs/CiIB/QBguzGddlebM6xgIB8VaGYDuOlx2NnoiVRMuPH4vGYrG7mPWWOx6vnD/zcmW0Kn4qWn3mdBS70wGRWdSThSoJOhddT5DrO6bX67ImeTx2NKls0aaZ0v1NM8H+pqkg4jERPH05h1Sw91Iq2HNpLMTF0eCr7kzDKlNSmKd0ibCWolOCxXyYundaOV9e/sI9JVeIkYNiOMEkCQLQS8LAorOEQojxTn6s8dni4oW3p4oaMxlzxrJ27dcc5SQ/oeuq0tLS3ynvQkxyjnAAEThAHQ6go34JraF9JPTmO/PFSQgIOg9xoqzkMKq23qyuHAF69KSo8XbjXZdZM+HxQszuPb9E4mfBt8Pgdk9VEF8UkmBM8gV+N0khlyTDSfjfgjcNuymPdJOFGJ2w8C/bUavP0yMHN14FswdYvl9qP9qx3H7M4w6lP0Tg51z3SPRCWCIm3QdhKVfnvyFHHhL8I0vEPOX2FRniXTqDMBouaSiAz5Tx7ff03awJg9s90TVaRJrvjI0c2XNhOLHnwmDiiYsjjc5Sl5B5MaxErghprlVF8PsiYfNRa2urP5/CxNwTv2wMfS4KdRZGqFZw9jBZnF/cjnBJLu4tHCC9bhkFLEwOnyqLKz546PDCl91fX9Z4DgghlwH1iD4wFg8VU4eAR7H2vmCdjb5x6N5fFkvzG+Ngwx4QYDGOuGz2487Pu88GwY2IFitQD7NBTiL3QbYIJ4b5YsatljQ8c+eVh2y2yqL7OJb2NoefKqmFEL48ubFjh01DJHHw0QdHQKZc62SgbLt7LRZF7me5zlWe0YmzBemR5UcuCGXjtjp+ako4m2QWgAkz8CIsGEMUxMG+otVaZRf4BATw0bOPrdRevfpp0HJ4iZ5/fAU9wouYxmFoYWUXvfvD3vAfrbo6PnuuJt6RMdkoOzmPrjaEsAHiiRndexl90MM73RH8ZySs0Kv7C/9EDHNSZh/1YgccmQN5X0yypmaxrq76el3dWZNM1pr6+nNGcL5nnNwPa3URfDFlmPweNL/eaD5owVkn0rLG7cWQhVf+JE8Ani13Q8Nr0eGlwrawAE8oQZTGlovampsbo+sFQj8iuqQx2DURHBXrCf9joMUKJSDivIpfO07egvb7cD4Ic8iL/OcMUIBNdz45LMRaw5lPDwfuIiq6JsJ/YLie/zcAAAD//4AJBFwAAAAGSURBVAMAI+oCDnUecU0AAAAASUVORK5CYII=
