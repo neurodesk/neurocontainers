@@ -1,19 +1,18 @@
-
 import os, glob, yaml, requests, traceback
-from packaging import version as V
+from packaging import version
 
-DEBUG = False  # change it to true if wanna see detailed process
+DEBUG = True  # change it to true if wanna see detailed process
 
 def dbg(*args):
     if DEBUG:
         print("[DEBUG]", *args)
 
 TOKEN = os.getenv("GITHUB_TOKEN")
-REPO  = os.getenv("GITHUB_REPOSITORY")  
-S = requests.Session()
-S.headers.update({"Accept": "application/vnd.github+json"})
+REPO  = os.getenv("GITHUB_REPOSITORY")
+session = requests.Session()
+session.headers.update({"Accept": "application/vnd.github+json"})
 if TOKEN:
-    S.headers.update({"Authorization": f"Bearer {TOKEN}"})
+    session.headers.update({"Authorization": f"Bearer {TOKEN}"})
     print("GITHUB_TOKEN set status: YES" )
 else:
     print("GITHUB_TOKEN set status: NO" )
@@ -24,19 +23,19 @@ print(f"GITHUB_REPOSITORY={REPO}")
 def latest_stable(repo):
     dbg(f"Query releases for {repo}")
     try:
-        r = S.get(f"https://api.github.com/repos/{repo}/releases", timeout=20)
-        dbg("GET releases status:", r.status_code)
-        if r.status_code == 200:
-            for rel in r.json():
+        response = session.get(f"https://api.github.com/repos/{repo}/releases", timeout=20)
+        dbg("GET releases status:", response.status_code)
+        if response.status_code == 200:
+            for rel in response.json():
                 dbg("  release:", {"tag": rel.get("tag_name"), "draft": rel.get("draft"), "pre": rel.get("prerelease")})
                 if not rel.get("draft") and not rel.get("prerelease"):
                     tag = rel.get("tag_name") or rel.get("name")
                     dbg("  picked stable release tag:", tag)
                     return tag
-        elif r.status_code == 404:
+        elif response.status_code == 404:
             dbg("No releases endpoint (404), will fallback to tags.")
         else:
-            dbg("Releases request unexpected:", r.text[:300])
+            dbg("Releases request unexpected:", response.text[:300])
     except Exception as e:
         dbg("Releases request error:", e)
         dbg(traceback.format_exc())
@@ -44,43 +43,43 @@ def latest_stable(repo):
     # fallback: tags
     dbg(f"Fallback to tags for {repo}")
     try:
-        r = S.get(f"https://api.github.com/repos/{repo}/tags", timeout=20)
-        dbg("GET tags status:", r.status_code)
-        if r.status_code == 200:
-            data = r.json()
+        response = session.get(f"https://api.github.com/repos/{repo}/tags", timeout=20)
+        dbg("GET tags status:", response.status_code)
+        if response.status_code == 200:
+            data = response.json()
             if data:
                 dbg("Top tag:", data[0].get("name"))
                 return data[0]["name"]
             else:
                 dbg("No tags found.")
         else:
-            dbg("Tags request unexpected:", r.text[:300])
+            dbg("Tags request unexpected:", response.text[:300])
     except Exception as e:
         dbg("Tags request error:", e)
         dbg(traceback.format_exc())
 
     return None
 
-#return true if have newer version,false if is up to date and none if need manual check
-def newer(a, b):
-    def clean(s: str) -> str:
-        s = (s or "").strip()
-        s = s.lstrip("vV")          
-        s = s.replace("_", ".")    
-        s = s.split("+", 1)[0]      # +meta
-        s = s.split("-", 1)[0]      # -suffix
-        return s
+# return true if have newer version,false if is up to date and none if need manual check
+def newer(current_version, upstream_version):
+    def clean(ver_str: str) -> str:
+        ver_str = (ver_str or "").strip()
+        ver_str = ver_str.lstrip("vV")
+        ver_str = ver_str.replace("_", ".")
+        ver_str = ver_str.split("+", 1)[0]      # +meta
+        ver_str = ver_str.split("-", 1)[0]      # -suffix
+        return ver_str
 
-    na, nb = clean(a), clean(b)
+    clean_current, clean_upstream = clean(current_version), clean(upstream_version)
     try:
-        va = V.parse(na)
-        vb = V.parse(nb)
+        ver_current = version.parse(clean_current)
+        ver_upstream = version.parse(clean_upstream)
     except Exception as e:
         dbg("version parse failed:", e)
         return None  # we can not compare strings
 
-    result = vb > va
-    dbg(f"Version compare: current={va} upstream={vb} -> upstream_is_newer={result}")
+    result = ver_upstream > ver_current
+    dbg(f"Version compare: current={ver_current} upstream={ver_upstream} -> upstream_is_newer={result}")
     return result
 
 def issue_exists(fp):
@@ -90,14 +89,14 @@ def issue_exists(fp):
     q = f'repo:{REPO} in:title "{fp}" state:open'
     dbg("Search issues query:", q)
     try:
-        r = S.get("https://api.github.com/search/issues", params={"q": q}, timeout=20)
-        dbg("Search issues status:", r.status_code)
-        if r.status_code == 200:
-            count = r.json().get("total_count", 0)
+        response = session.get("https://api.github.com/search/issues", params={"q": q}, timeout=20)
+        dbg("Search issues status:", response.status_code)
+        if response.status_code == 200:
+            count = response.json().get("total_count", 0)
             dbg("Open issues with fp count:", count)
             return count > 0
         else:
-            dbg("Search issues unexpected:", r.text[:300])
+            dbg("Search issues unexpected:", response.text[:300])
             return False
     except Exception as e:
         dbg("Search issues error:", e)
@@ -115,12 +114,12 @@ def open_issue(title, body, labels=None):
     print("Body:\n", body)
     print("Labels:", labels)
     print("========================")
-    r = S.post(
+    response = session.post(
         f"https://api.github.com/repos/{REPO}/issues",
         json={"title": title, "body": body, "labels": labels},
         timeout=20
     )
-    r.raise_for_status()
+    response.raise_for_status()
 
 
 if __name__ == "__main__":

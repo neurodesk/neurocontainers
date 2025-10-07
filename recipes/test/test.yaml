@@ -26,21 +26,21 @@ build:
         - libpng-dev
         - libopenblas-dev
 
-    - workdir: /opt/bart-0.8.00/
+    - workdir: /opt/bart-{{ context.version }}/
 
     - run:
-        - curl -fsSL --retry 5 https://github.com/mrirecon/bart/archive/v0.8.00.tar.gz | tar -xz -C /opt/bart-0.8.00/ --strip-components 1
+        - curl -fsSL --retry 5 https://github.com/mrirecon/bart/archive/v{{ context.version }}.tar.gz | tar -xz -C /opt/bart-{{ context.version }}/ --strip-components 1
 
     - run:
         - CUDA_BASE=/usr/local/cuda/ CUDA_LIB=lib64 CUDA=1 make -j 8
 
     - environment:
-        PATH: /opt/bart-0.8.00:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
-        TOOLBOX_PATH: /opt/bart-0.8.00/
+        PATH: /opt/bart-{{ context.version }}:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+        TOOLBOX_PATH: /opt/bart-{{ context.version }}/
 
 deploy:
   path:
-    - /opt/bart-0.8.00/
+    - /opt/bart-{{ context.version }}/
 
 readme: |-
   ----------------------------------
@@ -48,4 +48,3 @@ readme: |-
 
   BART (Berkeley Advanced Reconstruction Toolbox) is an open-source toolbox for computational magnetic resonance imaging (MRI) reconstruction and related image processing tasks.  
   It provides a large collection of fast, GPU-enabled command-line tools for iterative reconstruction, parallel imaging, compressed sensing, and quantitative MRI.
-
