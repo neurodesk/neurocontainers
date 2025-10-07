@@ -44,6 +44,7 @@ build:
   kind: neurodocker
   base-image: ghcr.io/tinyrange/tinyrange:v{{ context.version }}
   pkg-manager: apt
+  add-tzdata: false
   directives:
     - deploy:
         path: []
