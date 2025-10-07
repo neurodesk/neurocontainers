@@ -42,7 +42,7 @@ readme: |-
   ----------------------------------
 build:
   kind: neurodocker
-  base-image: ghcr.io/tinyrange/tinyrange:{{ context.version }}
+  base-image: ghcr.io/tinyrange/tinyrange:v{{ context.version }}
   pkg-manager: apt
   directives:
     - deploy:
