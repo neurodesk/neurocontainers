@@ -1,0 +1,396 @@
+{{ template "base.html" . }}
+
+{{ define "content" }}
+<div class="space-y-8">
+    <header class="space-y-2 text-center">
+        <h1 class="text-3xl font-semibold text-slate-900">Container Release Progress</h1>
+        <p class="text-sm text-slate-600">Track release coverage, app parity, and outstanding actions for each
+            container.</p>
+    </header>
+
+    {{ with .Summary }}
+    <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="overflow-x-auto">
+            <table class="w-full min-w-[640px] table-fixed border-separate border-spacing-y-1 text-sm">
+                <thead>
+                    <tr class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <th class="rounded-l-lg px-4 py-3 text-left">Metric</th>
+                        <th class="px-4 py-3 text-left">Value</th>
+                        <th class="rounded-r-lg px-4 py-3 text-left">Details</th>
+                    </tr>
+                </thead>
+                <tbody class="align-middle">
+                    <tr class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <td class="px-4 pb-2 pt-4" colspan="3">Container Coverage</td>
+                    </tr>
+                    <tr class="rounded-lg bg-white shadow-sm ring-1 ring-slate-200/70">
+                        <td class="rounded-l-lg px-4 py-3 font-medium text-slate-700">Total containers</td>
+                        <td class="px-4 py-3">
+                            <span class="text-lg font-semibold text-slate-900">{{ .TotalContainers }}</span>
+                        </td>
+                        <td class="rounded-r-lg px-4 py-3 text-slate-500">Total tracked containers</td>
+                    </tr>
+                    <tr class="rounded-lg bg-white shadow-sm ring-1 ring-slate-200/70">
+                        <td class="rounded-l-lg px-4 py-3 font-medium text-slate-700">Released</td>
+                        <td class="px-4 py-3">
+                            <span class="text-lg font-semibold text-emerald-700">{{ .ReleasedContainers }}</span>
+                        </td>
+                        <td class="rounded-r-lg px-4 py-3 text-slate-500">Containers with published releases</td>
+                    </tr>
+                    <tr class="rounded-lg bg-white shadow-sm ring-1 ring-slate-200/70">
+                        <td class="rounded-l-lg px-4 py-3 font-medium text-slate-700">Unreleased</td>
+                        <td class="px-4 py-3">
+                            <span class="text-lg font-semibold text-amber-700">{{ .UnreleasedContainers }}</span>
+                        </td>
+                        <td class="rounded-r-lg px-4 py-3 text-slate-500">Awaiting first release</td>
+                    </tr>
+                    <tr class="rounded-lg bg-white shadow-sm ring-1 ring-slate-200/70">
+                        <td class="rounded-l-lg px-4 py-3 font-medium text-slate-700">Missing build.yaml</td>
+                        <td class="px-4 py-3">
+                            <span class="text-lg font-semibold text-rose-700">{{ .MissingBuildYAML }}</span>
+                        </td>
+                        <td class="rounded-r-lg px-4 py-3 text-slate-500">No build definition present</td>
+                    </tr>
+
+                    <tr class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <td class="px-4 pb-2 pt-6" colspan="3">Test Outcomes</td>
+                    </tr>
+                    <tr class="rounded-lg bg-white shadow-sm ring-1 ring-slate-200/70">
+                        <td class="rounded-l-lg px-4 py-3 font-medium text-slate-700">Tests OK</td>
+                        <td class="px-4 py-3">
+                            <span class="text-lg font-semibold text-emerald-700">{{ .TestsPassed }}</span>
+                        </td>
+                        <td class="rounded-r-lg px-4 py-3 text-slate-500">Latest run passed</td>
+                    </tr>
+                    <tr class="rounded-lg bg-white shadow-sm ring-1 ring-slate-200/70">
+                        <td class="rounded-l-lg px-4 py-3 font-medium text-slate-700">Tests failing</td>
+                        <td class="px-4 py-3">
+                            <span class="text-lg font-semibold text-rose-700">{{ .TestsFailed }}</span>
+                        </td>
+                        <td class="rounded-r-lg px-4 py-3 text-slate-500">Latest run failed</td>
+                    </tr>
+                    <tr class="rounded-lg bg-white shadow-sm ring-1 ring-slate-200/70">
+                        <td class="rounded-l-lg px-4 py-3 font-medium text-slate-700">Tests skipped</td>
+                        <td class="px-4 py-3">
+                            <span class="text-lg font-semibold text-amber-700">{{ .TestsSkipped }}</span>
+                        </td>
+                        <td class="rounded-r-lg px-4 py-3 text-slate-500">Skipped in latest run</td>
+                    </tr>
+                    <tr class="rounded-lg bg-white shadow-sm ring-1 ring-slate-200/70">
+                        <td class="rounded-l-lg px-4 py-3 font-medium text-slate-700">Tests unknown</td>
+                        <td class="px-4 py-3">
+                            <span class="text-lg font-semibold text-slate-700">{{ .TestsUnknown }}</span>
+                        </td>
+                        <td class="rounded-r-lg px-4 py-3 text-slate-500">No status from latest run</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {{ end }}
+
+    {{ if .TestRun }}
+    <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="flex flex-col gap-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h2 class="text-xl font-semibold text-slate-900">Latest Container Test Run</h2>
+                    <p class="text-sm text-slate-600">
+                        {{ $created := .TestRun.CreatedAt }}
+                        {{ if $created.IsZero }}
+                        Pulled from GitHub API.
+                        {{ else }}
+                        Reported {{ $created.Format "2006-01-02 15:04 MST" }}.
+                        {{ end }}
+                        {{ if .TestRun.IssueURL }}
+                        <a href="{{ .TestRun.IssueURL }}" class="ml-2 text-indigo-600 hover:text-indigo-500">View
+                            issue</a>
+                        {{ end }}
+                    </p>
+                </div>
+                <div class="grid grid-cols-2 gap-4 text-right text-sm">
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Processed</p>
+                        <p class="text-base font-semibold text-slate-900">{{ .TestRun.Summary.ContainersProcessed }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Passed</p>
+                        <p class="text-base font-semibold text-emerald-700">{{ .TestRun.Summary.Passed }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Failed</p>
+                        <p class="text-base font-semibold text-rose-700">{{ .TestRun.Summary.Failed }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs uppercase tracking-wide text-slate-500">Skipped</p>
+                        <p class="text-base font-semibold text-amber-700">{{ .TestRun.Summary.Skipped }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <p class="text-xs text-slate-500">Detailed logs for each container appear in the sections below.</p>
+        </div>
+    </section>
+    {{ end }}
+
+    {{ if .ContainerGroups }}
+    <div class="space-y-10">
+        {{ range .ContainerGroups }}
+        <section class="space-y-6">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 class="text-lg font-semibold text-slate-900">{{ .Title }}</h2>
+                <span class="text-xs uppercase tracking-wide text-slate-500">{{ len .Containers }} container{{ if ne
+                    (len .Containers) 1 }}s{{ end }}</span>
+            </div>
+
+            <div class="space-y-6">
+                {{ range .Containers }}
+                {{ $hasReleases := gt (len .ReleaseVersions) 0 }}
+                {{ $hasApps := gt (len .AppVersions) 0 }}
+                {{ $hasMissing := gt (len .MissingVersions) 0 }}
+                {{ $hasExtra := gt (len .ExtraVersions) 0 }}
+                <section class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div class="flex flex-col gap-4">
+                        <div class="flex flex-wrap items-center justify-between gap-4">
+                            <div>
+                                <h3 class="text-xl font-semibold text-slate-900">{{ .Name }}</h3>
+                                <p class="text-sm text-slate-600">Matched {{ len .MatchedVersions }} of {{ len
+                                    .ReleaseVersions }} releases ({{ len .AppVersions }} published).</p>
+                                {{ if .BuildVersion }}
+                                <p class="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                                    <span class="font-medium text-slate-600">build.yaml:</span>
+                                    <span class="rounded-full px-2 py-0.5 text-xs font-medium text-slate-700">{{
+                                        .BuildVersion }}</span>
+                                    {{ if .BuildReleased }}
+                                    <span
+                                        class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Released</span>
+                                    {{ else }}
+                                    <span
+                                        class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Unreleased</span>
+                                    {{ end }}
+                                </p>
+                                {{ end }}
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-2">
+                                <label class="flex items-center">
+                                    <input type="checkbox" class="peer sr-only" {{ if $hasReleases }}checked{{ end }}
+                                        disabled>
+                                    <span
+                                        class="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition peer-checked:border-emerald-500 peer-checked:bg-emerald-500/10 peer-checked:text-emerald-700 peer-disabled:opacity-70">
+                                        <svg class="h-3 w-3 opacity-0 transition peer-checked:opacity-100"
+                                            viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                            <path fill-rule="evenodd"
+                                                d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.25 7.25a1 1 0 0 1-1.42 0L3.3 9.22a1 1 0 1 1 1.4-1.43l4 3.99 6.54-6.54a1 1 0 0 1 1.46.06Z"
+                                                clip-rule="evenodd" />
+                                        </svg>
+                                        <span>Releases</span>
+                                    </span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" class="peer sr-only" {{ if $hasApps }}checked{{ end }}
+                                        disabled>
+                                    <span
+                                        class="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition peer-checked:border-emerald-500 peer-checked:bg-emerald-500/10 peer-checked:text-emerald-700 peer-disabled:opacity-70">
+                                        <svg class="h-3 w-3 opacity-0 transition peer-checked:opacity-100"
+                                            viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                            <path fill-rule="evenodd"
+                                                d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.25 7.25a1 1 0 0 1-1.42 0L3.3 9.22a1 1 0 1 1 1.4-1.43l4 3.99 6.54-6.54a1 1 0 0 1 1.46.06Z"
+                                                clip-rule="evenodd" />
+                                        </svg>
+                                        <span>Apps</span>
+                                    </span>
+                                </label>
+                                <label class="flex items-center">
+                                    <input type="checkbox" class="peer sr-only" {{ if and (not $hasMissing) (not
+                                        $hasExtra) }}checked{{ end }} disabled>
+                                    <span
+                                        class="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 transition peer-checked:border-emerald-500 peer-checked:bg-emerald-500/10 peer-checked:text-emerald-700 peer-disabled:opacity-70">
+                                        <svg class="h-3 w-3 opacity-0 transition peer-checked:opacity-100"
+                                            viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                            <path fill-rule="evenodd"
+                                                d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.25 7.25a1 1 0 0 1-1.42 0L3.3 9.22a1 1 0 1 1 1.4-1.43l4 3.99 6.54-6.54a1 1 0 0 1 1.46.06Z"
+                                                clip-rule="evenodd" />
+                                        </svg>
+                                        <span>Parity</span>
+                                    </span>
+                                </label>
+                            </div>
+                        </div>
+
+                        {{ if .Warnings }}
+                        <div class="rounded-xl border border-yellow-200 bg-yellow-50 p-4 text-sm text-yellow-800">
+                            <p class="font-medium">Warnings</p>
+                            <ul class="mt-2 space-y-1">
+                                {{ range .Warnings }}
+                                <li>• {{ . }}</li>
+                                {{ end }}
+                            </ul>
+                        </div>
+                        {{ end }}
+
+                        <div class="grid gap-4 text-sm text-slate-700">
+                            {{ if $hasReleases }}
+                            <details class="group rounded-lg border border-slate-200">
+                                <summary
+                                    class="cursor-pointer rounded-lg bg-slate-50 px-4 py-2 font-medium text-slate-800 transition group-open:bg-slate-100">
+                                    Available releases</summary>
+                                <ul class="list-disc space-y-1 px-6 py-3">
+                                    {{ range .ReleaseVersions }}
+                                    <li>{{ . }}</li>
+                                    {{ end }}
+                                </ul>
+                            </details>
+                            {{ end }}
+
+                            {{ if $hasMissing }}
+                            <div class="rounded-lg border border-orange-200 bg-orange-50 px-4 py-3">
+                                <p class="font-medium text-orange-800">Pending in apps.json</p>
+                                <ul class="mt-2 list-disc space-y-1 pl-5 text-orange-900">
+                                    {{ range .MissingVersions }}
+                                    <li>{{ . }}</li>
+                                    {{ end }}
+                                </ul>
+                            </div>
+                            {{ end }}
+
+                            {{ if $hasExtra }}
+                            <div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+                                <p class="font-medium text-rose-800">Missing release definition</p>
+                                <ul class="mt-2 list-disc space-y-1 pl-5 text-rose-900">
+                                    {{ range .ExtraVersions }}
+                                    <li>{{ . }}</li>
+                                    {{ end }}
+                                </ul>
+                            </div>
+                            {{ end }}
+                        </div>
+
+                        {{ if $.TestRun }}
+                        {{ $status := .TestStatus }}
+                        {{ $entry := .TestRun }}
+                        {{ $testCount := 0 }}
+                        {{ if $entry }}
+                        {{ $testCount = len $entry.Tests }}
+                        {{ end }}
+                        <details
+                            class="group overflow-hidden rounded-xl border border-slate-200 bg-slate-50 text-xs text-slate-600">
+                            <summary
+                                class="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-sm font-medium text-slate-800 transition group-open:bg-slate-100">
+                                <span class="flex items-center gap-2">
+                                    <span class="font-semibold uppercase tracking-wide text-slate-600">Test run</span>
+                                    {{ if eq $status "passed" }}
+                                    <span
+                                        class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">Passed</span>
+                                    {{ else if eq $status "failed" }}
+                                    <span
+                                        class="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">Failed</span>
+                                    {{ else if eq $status "skipped" }}
+                                    <span
+                                        class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Skipped</span>
+                                    {{ else }}
+                                    <span
+                                        class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">Unknown</span>
+                                    {{ end }}
+                                </span>
+                                <span class="flex items-center gap-3 text-[11px] text-slate-500">
+                                    {{ if and $entry (gt $entry.Info.TestsTotal 0) }}
+                                    <span>{{ $entry.Info.TestsPassed }}/{{ $entry.Info.TestsTotal }} passed</span>
+                                    {{ end }}
+                                    {{ if gt $testCount 0 }}
+                                    <span>{{ $testCount }} test{{ if ne $testCount 1 }}s{{ end }}</span>
+                                    {{ end }}
+                                    <span class="font-normal tracking-wide">Toggle</span>
+                                </span>
+                            </summary>
+                            <div class="space-y-3 border-t border-slate-200 px-4 pb-4 pt-3">
+                                {{ if .TestDetails }}
+                                <p class="text-slate-500">{{ .TestDetails }}</p>
+                                {{ end }}
+
+                                {{ if $entry }}
+                                {{ if or $entry.Info.ImagePath $entry.Info.Runtime (gt $entry.Info.TestsTotal 0) }}
+                                <div class="grid gap-2 text-[11px] text-slate-500 sm:grid-cols-2">
+                                    {{ if $entry.Info.ImagePath }}
+                                    <p><span class="font-medium text-slate-600">Image:</span> <span
+                                            class="font-mono text-slate-700">{{ $entry.Info.ImagePath }}</span></p>
+                                    {{ end }}
+                                    {{ if $entry.Info.Runtime }}
+                                    <p><span class="font-medium text-slate-600">Runtime:</span> <span
+                                            class="font-semibold text-slate-700">{{ $entry.Info.Runtime }}</span></p>
+                                    {{ end }}
+                                    {{ if gt $entry.Info.TestsTotal 0 }}
+                                    <p><span class="font-medium text-slate-600">Tests:</span> {{ $entry.Info.TestsPassed
+                                        }} passed{{ if gt $entry.Info.TestsFailed 0 }}, {{ $entry.Info.TestsFailed }}
+                                        failed{{ end }}{{ if gt $entry.Info.TestsSkipped 0 }}, {{
+                                        $entry.Info.TestsSkipped }} skipped{{ end }}</p>
+                                    {{ end }}
+                                </div>
+                                {{ end }}
+
+                                {{ if $entry.Tests }}
+                                <ul class="space-y-3 text-slate-700">
+                                    {{ range $entry.Tests }}
+                                    <li class="rounded-lg border border-slate-200">
+                                        <details class="group">
+                                            <summary
+                                                class="flex cursor-pointer items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 text-xs font-medium text-slate-800 transition group-open:bg-slate-50">
+                                                <span>
+                                                    {{ if eq .Status "passed" }}✅{{ else if eq .Status "failed" }}❌{{
+                                                    else if eq .Status "skipped" }}⚠️{{ else }}ℹ️{{ end }}
+                                                    {{ .Name }}
+                                                </span>
+                                                <span class="text-[11px] text-slate-500">{{ if .Summary }}{{ .Summary
+                                                    }}{{ else }}{{ .Status }}{{ end }}</span>
+                                            </summary>
+                                            <div class="space-y-3 px-4 py-3 text-[11px] text-slate-700">
+                                                {{ if .ReturnCode }}<p class="font-medium text-slate-600">Return code:
+                                                    <span class="font-mono text-slate-800">{{ .ReturnCode }}</span></p>
+                                                {{ end }}
+                                                {{ if .Details }}
+                                                <div class="space-y-1">
+                                                    {{ range .Details }}<p>{{ . }}</p>{{ end }}
+                                                </div>
+                                                {{ end }}
+                                                {{ if .Stdout }}
+                                                <div class="space-y-1">
+                                                    <p class="font-medium text-slate-600">stdout</p>
+                                                    <pre
+                                                        class="whitespace-pre-wrap rounded bg-slate-900/90 px-3 py-2 font-mono text-[11px] text-slate-100">{{ .Stdout }}</pre>
+                                                </div>
+                                                {{ end }}
+                                                {{ if .Stderr }}
+                                                <div class="space-y-1">
+                                                    <p class="font-medium text-slate-600">stderr</p>
+                                                    <pre
+                                                        class="whitespace-pre-wrap rounded bg-rose-950/90 px-3 py-2 font-mono text-[11px] text-rose-100">{{ .Stderr }}</pre>
+                                                </div>
+                                                {{ end }}
+                                            </div>
+                                        </details>
+                                    </li>
+                                    {{ end }}
+                                </ul>
+                                {{ else }}
+                                <p class="text-xs text-slate-500">No test case logs were captured for this run.</p>
+                                {{ end }}
+                                {{ else }}
+                                <p class="text-xs text-slate-500">This container was not part of the latest collected
+                                    test logs.</p>
+                                {{ end }}
+                            </div>
+                        </details>
+                        {{ end }}
+                    </div>
+                </section>
+                {{ end }}
+            </div>
+        </section>
+        {{ end }}
+    </div>
+    {{ else }}
+    <p class="rounded-xl border border-slate-200 bg-white p-6 text-center text-slate-600 shadow-sm">No container data
+        available.</p>
+    {{ end }}
+</div>
+{{ end }}

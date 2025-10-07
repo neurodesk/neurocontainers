@@ -1,0 +1,62 @@
+name: tinyrange
+version: 0.4.0
+copyright: []
+architectures:
+  - x86_64
+structured_readme:
+  description: ""
+  example: |-
+    # Example usage
+
+    ```bash
+    # Run the containerized tool (assuming you are already inside the container)
+    tinyrange --help
+    ```
+  documentation: This container was created from scratch.
+  citation: Please cite appropriately when using this container.
+readme: |-
+  ----------------------------------
+  ## tinyrange/{{ context.version }} ##
+
+
+
+  Example:
+  ```
+  # Example usage
+
+  ```bash
+  # Run the containerized tool (assuming you are already inside the container)
+  tinyrange --help
+  ```
+  ```
+
+  More documentation can be found here: This container was created from scratch.
+
+  Citation:
+  ```
+  Please cite appropriately when using this container.
+  ```
+
+  To run container outside of this environment: ml tinyrange/{{ context.version }}
+
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: ghcr.io/tinyrange/tinyrange:v{{ context.version }}
+  pkg-manager: apt
+  add-tzdata: false
+  directives:
+    - deploy:
+        path: []
+        bins:
+          - tinyrange
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+    - test:
+        name: tinyrange test
+        script: tinyrange login -E whoami
+  add-default-template: false
+categories:
+  - programming
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAC6klEQVR4AYyUSU9TURTHz6tplIiACIiigbgxcQclkZUSWZOg1HmAgvM8LBwrMihq1KVxSLrQpHGIC/0QbkESIm668VNIaa/3d8t5ee+1RZv+3vmf/z33nnv73mts9MZTM3L9iUlde2yGr06boSuPHCcuPzTHL02ZYxcnzdELE+bI+XHH4XMPzKGzY+bgmfuO/afuGUievGsGR++YfSO3zd7ULTMwfNMRM8ZI9IMH//K1hgjRenLXgMFqFItFqTZWyQ/Wo2N00ULVRMAnRsEHfI1RTQ4xulAEqomAB2hQTYSgp1p9zctOQNcgTNBcdbFQkPziH1nKLzoKhSUtcT+nJtSX3YNisSC/cz8l+3LM8eHVuMDH1xPy6c2kfH47JV8y0/Lt/Qv5+u6Zjc/l14/vrqHumoUV1yDYkQHyRCLhdkNeCfFE8vm8ZDIZykNoPaZrQGfQAfTc3Jx0dXU50uk0tZJMJl3e2dkpsvx0e57nNsIcJbiOuwdutr2UBqywX3Y3MzMjkMvlrCMyPz/v8tnZWZdXu5TWKe0g9BQxwKS2ju1y4HRa7Jsp3bv6sXx6+galt39IauvX+x6CuZUInYBC0EK0/1uUkorXYD1ai9Bl94DfkQFQrROIJd8e337JlZJfeuuZB3iuQbAIzQCgo0TWdcPUgksiF9eAwZUIzbF/jtSGPJsY+1jhB+EU7h6oaetCX/yQ4Scs5ye+oB58w4rQU0THIBTbDUs2mxXP82RhYUGK1sC3cyUej0sqlfLfA3zQNdArnsDzPGloapWevqTs3DPoWFe/QdbU1MqORK909w5I9+4BaWnbJrHYKteIRWkO6LJ7QHcGlNq6Rmne3OFo2tQuNWvrJL66RhpbtkhTa7s0btwq6xqa7QljfgOdS3QNZPmDsSxDAR8wNUY1uUINkLsG7BowAQ2qiRD0VKuvuUb13T2gk8JAVOOB+sEY9FUTgbqyp4iB/yW422pzyk5AVy1WTYSgT66s5P8FAAD//zxgdb4AAAAGSURBVAMAYr7SV66M5DYAAAAASUVORK5CYII=
