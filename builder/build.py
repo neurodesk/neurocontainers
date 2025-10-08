@@ -49,6 +49,8 @@ ARCHITECTURES = {
     "x86_64": "x86_64",
     "arm64": "aarch64",
     "aarch64": "aarch64",
+    "AMD64": "x86_64",  # Windows x86_64
+    "ARM64": "aarch64",  # Windows ARM64
 }
 
 
