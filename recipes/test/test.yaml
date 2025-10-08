@@ -1,50 +1,88 @@
-name: bart
-version: 0.8.00   
+name: niimath
+version: 1.0.20250529
 
 copyright:
-  - license: BSD-3-Clause
-    url: https://github.com/mrirecon/bart/blob/master/LICENSE
+  - license: BSD-2-Clause
+    url: https://github.com/rordenlab/niimath/blob/master/LICENSE
 
 architectures:
   - x86_64
+  - aarch64
 
 auto_update:
   method: github_release
-  repo: mrirecon/bart  
+  repo: rordenlab/niimath
 
 build:
   kind: neurodocker
-  base-image: docker.io/nvidia/cuda:12.0.0-devel-ubuntu22.04
+  base-image: ubuntu:22.04
   pkg-manager: apt
-
   directives:
-    - install:
-        - make
-        - gcc
-        - libfftw3-dev
-        - liblapacke-dev
-        - libpng-dev
-        - libopenblas-dev
+    - install: build-essential git libz-dev file
+    - group:
+        - variables:
+            github_url: https://github.com/rordenlab/niimath.git
+            revision: 99a2e19526b0e4192b27cfd577729c72afec88c2
+        - run:
+            - git clone {{ local.github_url }} /tmp/niimath
+            - cd /tmp/niimath
+            - git reset --hard {{ local.revision }}
+            - cd ./src
+            - make static -j{{ parallel_jobs }}
+            - cp niimath /usr/bin
+            - rm -rf /tmp/niimath
+    - deploy:
+        bins:
+          - niimath
+    - test:
+        name: Test NiiMath
+        script: |
+          #!/usr/bin/env bash
+          file /usr/bin/niimath
+          niimath
 
-    - workdir: /opt/bart-{{ context.version }}/
+categories:
+  - data organisation
 
-    - run:
-        - curl -fsSL --retry 5 https://github.com/mrirecon/bart/archive/v{{ context.version }}.tar.gz | tar -xz -C /opt/bart-{{ context.version }}/ --strip-components 1
+structured_readme:
+  description: >-
+    It is said that `imitation is the sincerest form of flattery`. This project
+    emulates the popular
+    [fslmaths](https://fsl.fmrib.ox.ac.uk/fslcourse/lectures/practicals/intro3/index.html)
+    tool. fslmaths is advertised as a `general image calculator` and is not only
+    one of the foundational tools for FSL's brain imaging pipelines (such as
+    [FEAT](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT)), but has also been
+    widely adopted by many tools. This popularity suggests that it fulfills an
+    important niche. While scientists are often encouraged to discover novel
+    solutions, it sometimes seems that replication is undervalued. Here are some
+    specific reasons for creating this tool:
+  example: >-
+    niimath provides the same commands as
+    [fslmaths](https://mandymejia.com/fsl-maths-commands/), so you can use it
+    just as you would fslmaths. If you are brave, you can even rename it
+    fslmaths and use it as a drop in replacement. You can also modify your
+    environment variables to unleash advanced features:
+  documentation: https://github.com/rordenlab/niimath
+  citation: >-
+    Rorden C, Webster M, Drake C, Jenkinson M, Clayden JD, Li N, Hanayik T
+    (2024) niimath and fslmaths: replication as a method to enhance popular
+    neuroimaging tools. Aperture Neuro.4. doi:10.52294/001c.94384
 
-    - run:
-        - CUDA_BASE=/usr/local/cuda/ CUDA_LIB=lib64 CUDA=1 make -j 8
-
-    - environment:
-        PATH: /opt/bart-{{ context.version }}:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
-        TOOLBOX_PATH: /opt/bart-{{ context.version }}/
-
-deploy:
-  path:
-    - /opt/bart-{{ context.version }}/
-
-readme: |-
+readme: >-
   ----------------------------------
-  ## bart/{{ context.version }} ##
 
-  BART (Berkeley Advanced Reconstruction Toolbox) is an open-source toolbox for computational magnetic resonance imaging (MRI) reconstruction and related image processing tasks.  
-  It provides a large collection of fast, GPU-enabled command-line tools for iterative reconstruction, parallel imaging, compressed sensing, and quantitative MRI.
+  ## niimath/{{ context.version }} ##
+
+  It is said that `imitation is the sincerest form of flattery`. This project
+  emulates the popular
+  [fslmaths](https://fsl.fmrib.ox.ac.uk/fslcourse/lectures/practicals/intro3/index.html)
+  tool. fslmaths is advertised as a `general image calculator` and is not only
+  one of the foundational tools for FSL's brain imaging pipelines (such as
+  [FEAT](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT)), but has also been widely
+  adopted by many tools. This popularity suggests that it fulfills an important
+  niche. While scientists are often encouraged to discover novel solutions, it
+  sometimes seems that replication is undervalued. Here are some specific
+  reasons for creating this tool:
+
+  Example:
+
