@@ -3,15 +3,18 @@ import yaml
 import subprocess
 import requests
 import argparse
+import glob
+from pathlib import Path
 from copy import deepcopy
 
 # Try pulling the Docker image. Return True if successful, False otherwise.
 def is_image_valid(image):
     try:
         print(f" Checking Docker image: {image}")
-        result = subprocess.run(["docker", "pull",image], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+        result = subprocess.run(["docker", "manifest","inspect",image], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
         if result.returncode == 0:
             print(" Docker image is valid.")
+            subprocess.run(["docker", "image", "rm", image], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             return True
         else:
             print(" Docker image pull failed.")
@@ -138,20 +141,23 @@ def patch_yaml_to_use_github(data, github_url):
 
     return y
 
+   
 def auto_rebuild_with_github(yaml_path="./build.yaml", output_path="build_patched.yaml"):
     if not os.path.exists(yaml_path):
         print(f" File not found: {yaml_path}")
-        return
+        return False
 
     with open(yaml_path, "r") as f:
         data = yaml.safe_load(f)
 
     base_image = data["build"]["base-image"]
 
+    # If base image pulls successfully, no need to patch.
     if is_image_valid(base_image):
         print(" No need to patch. Base image works.")
-        return
+        return False
 
+    # Otherwise, try to guess upstream GitHub repository and generate a patched YAML.
     github_url = guess_github_url(base_image)
     if github_url:
         print(f" Guessed GitHub repo: {github_url}")
@@ -160,25 +166,59 @@ def auto_rebuild_with_github(yaml_path="./build.yaml", output_path="build_patche
         with open(output_path, "w") as out:
             yaml.dump(patched_data, out, sort_keys=False)
         print(f" Patched YAML written to {output_path}")
+        return True
     else:
         print(" Failed to guess GitHub repo. Please fix manually.")
+        return False
 
-#set the command "input"  and output
+# set the command "input" and "output"
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Patch build.yaml to rebuild from GitHub when base image is invalid."
     )
     parser.add_argument(
         "--input",
-        required=True,
-        help="Path to the input YAML file (e.g., recipes/bidsappaa/build.yaml)"
+        required=False,  # Optional: if omitted, auto-scan **/builder/**/build.yaml
+        help="File path or GLOB (e.g., 'recipes/foo/build.yaml' or '**/builder/**/build.yaml')."
     )
     parser.add_argument(
         "--output",
-        required=True,
-        help="path to output modified file "
+        required=False,  # Optional: if omitted, each output is <dir>/<parent>_patched.yaml
+        help="Single output path (only valid when exactly one input file is processed)."
     )
     args = parser.parse_args()
 
-    auto_rebuild_with_github(yaml_path=args.input,output_path=args.output)
-   
+    # 1) Expand inputs: use user pattern or default recursive scan
+    pattern = args.input if args.input else "**/builder/**/build.yaml"
+    files = glob.glob(pattern, recursive=True)
+
+    if not files:
+        print("No build.yaml found.")
+        raise SystemExit(1)
+
+    # 2) If a single --output is provided, enforce exactly one input file
+    if args.output and len(files) > 1:
+        raise SystemExit("--output can only be used when exactly one input file is processed.")
+
+# 3) Process each matched file
+for source in files:
+    source_path = Path(source)
+    if not source_path.is_file():
+        print(f"Skip (not a file): {source_path}")
+        continue
+
+    # If --output is not provided, name the output as '<parent>_patched.yaml' next to the source file
+    outpath = Path(args.output) if args.output else source_path.with_name(f"{source_path.parent.name}_patched.yaml")
+
+    # Call the core function and log based on its boolean result
+    try:
+        patched = auto_rebuild_with_github(yaml_path=str(source_path), output_path=str(outpath))
+        if patched:
+            # Only printed when a new patched YAML was actually produced
+            print(f"[image_fix] PATCHED: {source_path} -> {outpath}")
+        else:
+            # Base image OK or repo not guessed; nothing was written/changed
+            print(f"[image_fix] SKIP:    {source_path}")
+    except Exception as e:
+        # Do not abort the batch; report and continue with the next file
+        print(f"[image_fix] FAILED:  {source_path}: {e}")
