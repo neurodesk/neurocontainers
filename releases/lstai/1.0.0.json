@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "lstai 1.0.0": {
+      "version": "20251009",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "machine learning"
+  ]
+}
