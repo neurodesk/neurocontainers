@@ -135,17 +135,16 @@ jobs:
 
             echo "Processing recipe: $recipe"
 
-            if [ -f "recipes/$recipe/build.sh" ]; then
-              echo "Building container for $recipe..."
+            # Check if recipe has build.yaml
+            if [ -f "recipes/$recipe/build.yaml" ]; then
+              echo "Building container for $recipe using builder/build.py..."
 
-              cd "recipes/$recipe"
-
-              # Run build script
-              if bash build.sh; then
+              # Use the neurocontainers build system
+              if python builder/build.py generate "$recipe" --build; then
                 echo "Successfully built $recipe"
 
-                # Try to detect built image name
-                image_name=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -i "$recipe" | head -1)
+                # Try to detect built image name (neurocontainers format)
+                image_name=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "$recipe" | head -1)
 
                 if [ -n "$image_name" ]; then
                   echo "Built image: $image_name"
@@ -154,10 +153,8 @@ jobs:
               else
                 echo "Warning: Failed to build $recipe"
               fi
-
-              cd ../..
             else
-              echo "No build.sh found for $recipe, skipping"
+              echo "No build.yaml found for $recipe, skipping"
             fi
           done < ${{ env.TEMP_DIR }}/changed_recipes.txt
 
