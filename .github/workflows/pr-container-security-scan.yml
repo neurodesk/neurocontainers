@@ -93,8 +93,8 @@ jobs:
           echo "Detecting changed container recipes..."
 
           # Get changed files in this PR
-          git fetch origin ${{ github.base_ref }}
-          changed_files=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          git fetch origin ${{ github.base_ref }} --depth=1
+          changed_files=$(git diff --name-only origin/${{ github.base_ref }}..HEAD || git diff --name-only HEAD~1..HEAD)
 
           echo "Changed files:"
           echo "$changed_files"
