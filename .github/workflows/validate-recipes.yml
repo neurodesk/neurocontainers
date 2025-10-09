@@ -6,7 +6,7 @@ on:
       - 'recipes/**/*.yaml'
       - 'recipes/**/*.yml'
       - 'builder/validation.py'
-      - 'builder/validate_all.sh'
+      - 'workflows/validate_all.sh'
 
 permissions:
   contents: read
@@ -69,7 +69,7 @@ jobs:
         if: contains(github.event.pull_request.labels.*.name, 'validate-all')
         run: |
           echo "Running full validation on all recipes..."
-          ./builder/validate_all.sh
+          ./workflows/validate_all.sh
 
       - name: Comment on PR
         if: failure()

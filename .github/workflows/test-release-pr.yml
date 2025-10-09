@@ -125,41 +125,58 @@ jobs:
 
       - name: Run container tests
         id: test
+        env:
+          RECIPE: ${{ matrix.release.name }}
+          VERSION: ${{ matrix.release.version }}
+          RELEASE_FILE: ${{ matrix.release.file }}
+          TEST_CONFIG: ${{ steps.find-tests.outputs.test-config }}
         run: |
-          cd builder
+          echo "Testing container: ${RECIPE}:${VERSION}"
+          echo "Release file: ${RELEASE_FILE}"
+          echo "Test config: ${TEST_CONFIG}"
 
-          echo "Testing container: ${{ matrix.release.name }}:${{ matrix.release.version }}"
-          echo "Release file: ${{ matrix.release.file }}"
-          echo "Test config: ${{ steps.find-tests.outputs.test-config }}"
+          mkdir -p builder
 
-          # Use the new release-aware container tester with test configuration
-          if [ -n "${{ steps.find-tests.outputs.test-config }}" ]; then
-            python container_tester.py \
-              "${{ matrix.release.name }}:${{ matrix.release.version }}" \
-              --runtime apptainer \
-              --location auto \
-              --cleanup \
-              --release-file "../${{ matrix.release.file }}" \
-              --test-config "../${{ steps.find-tests.outputs.test-config }}" \
-              --output test-results-${{ matrix.release.name }}.json \
-              --verbose
-          else
-            echo "No test configuration found - skipping tests"
-            echo '{"container":"${{ matrix.release.name }}:${{ matrix.release.version }}","total_tests":0,"passed":0,"failed":0,"skipped":1,"test_results":[{"name":"No tests found","status":"skipped","stderr":"No test configuration available"}]}' > test-results-${{ matrix.release.name }}.json
-          fi
-        continue-on-error: true
+          python - <<'PY'
+          from pathlib import Path
+          import os
 
-      - name: Generate test report
-        if: always()
-        run: |
-          cd builder
+          from workflows.test_runner import ContainerTestRunner, TestRequest
 
-          # Generate markdown report from test results using dedicated script
-          python generate_test_report.py \
-            "test-results-${{ matrix.release.name }}.json" \
-            "${{ matrix.release.name }}" \
-            "${{ matrix.release.version }}" \
-            --output "test-report-${{ matrix.release.name }}.md"
+          recipe = os.environ["RECIPE"]
+          version = os.environ.get("VERSION") or None
+          release_file = os.environ.get("RELEASE_FILE") or None
+          test_config = os.environ.get("TEST_CONFIG") or None
+
+          runner = ContainerTestRunner()
+          request = TestRequest(
+              recipe=recipe,
+              version=version,
+              release_file=release_file,
+              test_config=test_config if test_config else None,
+              runtime="apptainer",
+              location="auto",
+              cleanup=True,
+              auto_cleanup=False,
+              verbose=True,
+              allow_missing_tests=True,
+              output_dir=Path("builder"),
+              results_path=Path(f"builder/test-results-{recipe}.json"),
+          )
+
+          outcome = runner.run(request)
+          print(f"Status: {outcome.status}")
+          if outcome.reason:
+              print(f"Reason: {outcome.reason}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"status={outcome.status}\n")
+              if outcome.reason:
+                  handle.write(f"reason={outcome.reason}\n")
+
+          import sys
+          sys.exit(0 if outcome.status != "failed" else 1)
+          PY
         continue-on-error: true
 
       - name: Upload test results

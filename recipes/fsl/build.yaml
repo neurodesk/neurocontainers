@@ -17,7 +17,7 @@ categories:
 gui_apps:
   - name: "fsleyesGUI"
     exec: "fsleyes"
-    
+
 options:
   workshop:
     description: "Include FSL course data"
@@ -53,6 +53,7 @@ build:
         LANG: en_US.UTF-8
         LANGUAGE: en_US:en
         LC_ALL: en_US.UTF-8
+        USER: fsluser
 
     - workdir: /opt/ICA-AROMA
 
@@ -61,7 +62,7 @@ build:
         - chmod +x /opt/ICA-AROMA/ICA_AROMA.py
 
     - environment:
-        PATH: "/opt/ICA-AROMA/:'$PATH'"
+        PATH: "/opt/ICA-AROMA/:$PATH"
 
     # course material links are from here: https://fsl.fmrib.ox.ac.uk/fslcourse/downloads/manifest.json
     - condition: context.options.workshop
@@ -88,7 +89,7 @@ build:
         - rm -rf /root/.cache
 
     - run:
-        - cp /opt/fsl-{{ context.original_version }}/bin/eddy_cuda10.2 /opt/fsl-{{ context.original_version }}/bin/eddy_cuda
+        - cp /opt/fsl-{{ context.original_version }}/bin/eddy_cuda11.0 /opt/fsl-{{ context.original_version }}/bin/eddy_cuda
 
     - copy:
         - eddy
@@ -105,6 +106,7 @@ build:
         FSL_COURSE_DATA: /opt/fsl_course_data
 
     - user: jovyan
+    - workdir: /home/jovyan
 
 deploy:
   path:

@@ -8,6 +8,7 @@ on:
   push:
     paths:
       - builder/*
+      - workflows/*
 
 jobs:
   test-builder:
@@ -26,4 +27,4 @@ jobs:
       - name: Run Tests
         run: |
           source venv/bin/activate
-          ./builder/test_all.sh
+          ./workflows/test_all.sh

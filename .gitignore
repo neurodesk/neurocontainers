@@ -35,3 +35,7 @@ output_dcm
 *.egg-info
 __pycache__/
 dicoms
+dashboard/dist/
+dashboard/local/
+dashboard/apps.json
+/public

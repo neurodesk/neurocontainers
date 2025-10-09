@@ -1,34 +1,34 @@
 name: mrtrix3
 version: 3.0.7
-
 copyright:
   - license: MPL-2.0
     url: https://github.com/MRtrix3/mrtrix3/blob/master/LICENCE.txt
-    
 architectures:
   - x86_64
-  
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - deploy:
+        path:
+          - /opt/mrtrix3-"{{ context.version }}"/bin/
+          - /opt/acpcdetect_V2.1/bin
     - template:
         name: fsl
         version: 6.0.7.16
-
     - template:
         name: mrtrix3
         build_processes: "1"
         method: source
         version: "{{ context.version }}"
-
     - template:
         name: ants
         version: 2.4.3
-
+    - template:
+        name: freesurfer
+        version: 7.4.1
     - workdir: /opt/mrtrix3-"{{ context.version }}"
-
     - install:
         - dbus-x11
         - less
@@ -44,38 +44,27 @@ build:
         - libtiff6
         - libfftw3-dev
         - liblapack3
-
     - run:
         - python3 configure
-
     - run:
         - python3 build
-
     - run:
         - ln -s /usr/bin/python3 /usr/bin/python
-
     - workdir: /opt/acpcdetect_V2.1
-
     - run:
         - wget https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/acpcdetect_V2.1_LinuxCentOS6.7.tar.gz
         - tar zxvf acpcdetect_V2.1_LinuxCentOS6.7.tar.gz
         - rm -rf acpcdetect_V2.1_LinuxCentOS6.7.tar.gz
-
     - environment:
         ARTHOME: /opt/acpcdetect_V2.1/
         PATH: $PATH:/opt/acpcdetect_V2.1/bin
-
-deploy:
-  path:
-    - /opt/mrtrix3-"{{ context.version }}"/bin/
-    - /opt/acpcdetect_V2.1/bin
-
 readme: |
   ----------------------------------
   ## mrtrix3/{{ context.version }} ##
   MRtrix3 provides a set of tools to perform various types of diffusion MRI analyses, from various forms of tractography through to next-generation group-level analyses. It is designed with consistency, performance, and stability in mind, and is freely available under an open-source license.
 
-
+  This container also includes dependencies needed for mrtrix: FSL, ANTs, FreeSurfer
+  
   Example:
   ```
   mrview
@@ -92,10 +81,9 @@ readme: |
   To run container outside of this environment: ml mrtrix3/{{ context.version }}
 
   ----------------------------------
-
 categories:
-  - "diffusion imaging"
-
+  - diffusion imaging
 gui_apps:
-  - name: "mrviewGUI"
-    exec: "mrview"
+  - name: mrviewGUI
+    exec: mrview
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEjUlEQVR4AYxUe0zbVRT++lhZMpiDygqyQscjw8EE3EQ0NEQMicwNB7IiGsjA6B9GDYaIc+tQZECFxSyy+EqGiYP4hyMajfKIAibEJZM/jFtwMMJ4qDwKK9DyKqXXey69tRTn1vT7ne9859zfueeem5+y/oVF9v7zDmYptLO65xZYbcG8QI1pjp09bmPV+bfZe8/Osqq8GYF3c63snWPTrPKZKQHz0QlGOH3kb3bq6b/Y24f/ZCezx9lbT40JKBlj8P+RRribLnPIEvzzyRcFKHgnuN1u3Cn2X7pvPnElVZGJkpMlkE7WH6QTSJfWn5NPUFIVSiJITpZAGoE4QXKyBF9NcqlLf0sHVNUXtED6kpMlSN3X+urExQxWnAvovFYF81fBOHM5BF/3vQr78hTkLpZWbWi/dhrV34bh7HfhONe+D7XfRwjU/bAHljY9vrxqwtVbn8Fqv4F1t8s7N1FA7qClpUUEAiOsmF74g3M3DzHM2AexqLrOfYbu7m6uwVucdknoH/sRpy5k4JvfX8TY7Ss87hJ5ooDbc1PUarUQq2vNGJruwcraAlacDtya6cWZ6jIRUygU3DIoFApkZWUJq9FoUFhYCKPRiLI3X+L5P2PV5eBF3BAz4Cu8f4fDIRKnlq5g1jGM+eVxDM90ITc3F3a73ZsniUFrxEMPFKH3p+sYGBhATk4OHKuTWFtfESk+t0j4sFr58UxPo+zkCQxMtGNgsgOmExlwOp0YHBzcSPI8qePxuV9w03YZL79mQmJiIlpbW6FRBfKdq8WRbumA1jY2NqKkpAS9N8+j54YF5eXlaG5uptAmtLW1weVyYX5+HhaLBSMjI6ipqUHYziRsU+3YKEADcjO3cOTqhoYGBAQEoKioCOnp6dDpdDCbzTIM5mHFxcXQ6/WIi4tDVVUVoqOjUVpays9+HfKdYsiefK9ZW1tDR0cHKisrUV9fj76+PszOznrjkkxMTEC1ZEDgymM4V/cJRkdHYTKZYFsahmt9WaSJAtQFvPsSOioqKhAbG4u0tLRNu9+I/vtMCD+O1KhXEK3NxNDQkOho0TnDCzhBt1PMgArIjypxWt7f3y92ZLPZ0NnZSZJYQIuEwx8bnEGl1GBHQKjoOj4+HmNzPZi0/wY3W4f3FlEHBQUFiImJgUYdiKDt4TAYDNBqtYJr1DuQmpqKzMxM/mqI+9/V1cVnByihgS4oGRfON0GlUmGZfxl+HfsIVkc/jwFQKTTYp8tGQeolmB65hPyDTch/uAmmQ83IP/gF8lIuIi/5c+SlNCE74QM8vvcNHD3wMY4lXcTuoP1QKtUI4wUO7/8QRxI+FXg08nW43bwDxs9GqdiGsPuSEH3/E9irzYA+OA2hfGFUSDoMIUaEBj6IiF2HOM9AvC4HyXuK+Zk/iahgI3YGRPLmFVArt/MiKYjclS6g53Z34AGIIcPzo2IeusmQTiBRWn9OvgTlEMgXBWhYBBIJxAmSkyX4apJLXfrSSl3cIqokQQF/ThpB6r7WV5ecLIHyvLeIBN/q5N8N95K/pQOqKl8sOVmCr06+xP/p/wAAAP//WOxlngAAAAZJREFUAwD+XJDHwTwAJwAAAABJRU5ErkJggg==

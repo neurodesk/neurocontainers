@@ -33,7 +33,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install Apptainer
         run: |
@@ -157,7 +157,7 @@ jobs:
         if: ${{ github.event.inputs['run-tests'] == 'true' }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install builder tooling (for tests)
         if: ${{ github.event.inputs['run-tests'] == 'true' }}
@@ -189,9 +189,33 @@ jobs:
         run: |
           set -euxo pipefail
           echo "Testing ${RECIPE}:${VERSION} using local SIF"
-          python builder/container_tester.py \
-            "${RECIPE}:${VERSION}" \
-            --runtime apptainer \
-            --location local \
-            --test-config "recipes/${RECIPE}/build.yaml" \
-            --verbose
+          mkdir -p builder
+          python - <<'PY'
+          from pathlib import Path
+          import os
+
+          from workflows.test_runner import ContainerTestRunner, TestRequest
+
+          recipe = os.environ["RECIPE"]
+          version = os.environ["VERSION"]
+
+          runner = ContainerTestRunner()
+          request = TestRequest(
+              recipe=recipe,
+              version=version,
+              runtime="apptainer",
+              location="local",
+              test_config=Path(f"recipes/{recipe}/build.yaml"),
+              cleanup=False,
+              auto_cleanup=False,
+              verbose=True,
+              allow_missing_release=True,
+              output_dir=Path("builder"),
+              results_path=Path(f"builder/test-results-{recipe}.json"),
+          )
+
+          outcome = runner.run(request)
+          print(f"Status: {outcome.status}")
+          if outcome.reason:
+              print(f"Reason: {outcome.reason}")
+          PY
