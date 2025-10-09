@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "tinyrange 0.4.0": {
+      "version": "20251009",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "programming"
+  ]
+}
