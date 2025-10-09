@@ -54,4 +54,6 @@ readme: |-
     ./builder/build.py generate afib1 --recreate --build --login --architecture x86_64
     ```
 
+    This container includes FSL-BET2 for brain extraction.
+
     ----------------------------------
