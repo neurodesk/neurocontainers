@@ -46,6 +46,8 @@ build:
   pkg-manager: apt
   add-tzdata: false
   directives:
+    - run:
+        - apk add --no-cache bash
     - deploy:
         path: []
         bins:
