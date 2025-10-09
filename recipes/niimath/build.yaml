@@ -6,6 +6,9 @@ copyright:
 architectures:
   - x86_64
   - aarch64
+auto_update:
+  method: github_release
+  repo: rordenlab/niimath
 build:
   kind: neurodocker
   base-image: ubuntu:22.04

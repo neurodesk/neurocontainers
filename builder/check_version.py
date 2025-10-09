@@ -109,7 +109,7 @@ def open_issue(title, body, labels=None):
     if not REPO:
         print("GITHUB_REPOSITORY not set; skip creating issue.")
         return
-    print("=== Would open issue ===")
+    print("=== opening issue ===")
     print("Title:", title)
     print("Body:\n", body)
     print("Labels:", labels)
@@ -120,6 +120,29 @@ def open_issue(title, body, labels=None):
         timeout=20
     )
     response.raise_for_status()
+def open_invalid_recipe_issue(path, name, reason, extra=None, labels=None):
+   
+    if labels is None:
+        labels = ["auto-update", "invalid-recipe"]
+    extra = extra or {}
+
+    fp = f"{path} :: {reason}"
+    if issue_exists(fp):
+        print(f"duplicate invalid-recipe issue already open for: {fp}")
+        return
+
+    title = f"[invalid] {name}: {reason}"
+    body = (
+        f"- Recipe: {path}\n"
+        f"- Name: {name}\n"
+        f"- Reason: {reason}\n"
+        + "".join(f"- {k}: {v}\n" for k, v in extra.items())
+        + f"\nFingerprint: {fp}"
+    )
+    try:
+        open_issue(title, body, labels=labels)
+    except Exception as e:
+        print(f"Failed to open invalid-recipe issue for {path}: {e}")
 
 
 if __name__ == "__main__":
@@ -134,24 +157,25 @@ if __name__ == "__main__":
             continue
         if not isinstance(data, dict):
             continue
-
+        name = data.get("name", os.path.basename(path))
         au = data.get("auto_update")
         if not isinstance(au, dict):
-            #print(f"{path}: auto_update missing or not a dict, skip.")
+            open_invalid_recipe_issue(path, name, "auto_update missing or not a dict")
             continue
 
         method = au.get("method")
         repo   = au.get("repo")
         if method != "github_release":
-            raise ValueError(f"FATAL: {path} has unsupported auto_update.method={method!r}")
+            open_invalid_recipe_issue(path, name, "unsupported auto_update.method", {"method": repr(method)})
+            continue
         if not repo:
-            print("auto_update.repo missing")
+            open_invalid_recipe_issue(path, name, "auto_update.repo missing")
             continue
 
-        name = data.get("name", os.path.basename(path))
         cur  = str(data.get("version", "")).strip()
         if not cur:
-            raise ValueError("version missing")
+            open_invalid_recipe_issue(path, name, "version missing")
+            continue
         print(f"Handling file: {path}")
         print(f"Check: name={name}, current_version={cur}, upstream_repo={repo}")
         up = latest_stable(repo)
