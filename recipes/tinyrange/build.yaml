@@ -48,6 +48,7 @@ build:
   directives:
     - run:
         - apk add --no-cache bash
+        - mv /tinyrange /usr/bin/tinyrange
     - deploy:
         path: []
         bins:
