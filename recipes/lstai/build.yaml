@@ -21,6 +21,9 @@ build:
         - git clone https://github.com/CompImg/LST-AI/ /opt/lstai
         - pip install -e /opt/lstai
     - run:
+        - wget https://github.com/CompImg/LST-AI/releases/download/v1.0.0/lst_data.zip
+        - unzip lst_data.zip
+    - run:
         - git clone https://github.com/MIC-DKFZ/HD-BET /opt/hdbet
         - cd /opt/hdbet
         - git checkout ae160681324d524db3578e4135bf781f8206e146
