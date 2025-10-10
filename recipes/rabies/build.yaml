@@ -59,12 +59,29 @@ readme: |
 build:
   kind: neurodocker
 
-  base-image: mambaorg/micromamba:jammy
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
     - variables:
         install_dir: /opt/rabies
+
+    - group:
+        - file:
+            name: micromamba.tar.bz2
+            url: https://micro.mamba.pm/api/micromamba/linux-64/latest
+
+        - run:
+            - tar -xjf {{ get_file("micromamba.tar.bz2") }} -C /usr/local/bin --strip-components=1 bin/micromamba
+
+        - run:
+            - mkdir -p "{{ local.install_dir }}"
+            # Add the mambauser user and give permissions to the install dir
+            - useradd -m -s /bin/bash mambauser
+            - chown -R mambauser:mambauser "{{ local.install_dir }}"
+
+        - environment:
+            XDG_DATA_HOME: "{{ local.install_dir }}/share"
 
     - group:
         - environment:
@@ -85,7 +102,12 @@ build:
             - mkdir -p /opt/afni
             - >-
               tar xzvf {{ get_file("linux_ubuntu_16_64.tgz") }} -C /opt/afni
-              linux_ubuntu_16_64/{libmri.so,libf2c.so,3dDespike,3dTshift,3dWarp,3dAutobox}
+              linux_ubuntu_16_64/libmri.so
+              linux_ubuntu_16_64/libf2c.so
+              linux_ubuntu_16_64/3dDespike
+              linux_ubuntu_16_64/3dTshift
+              linux_ubuntu_16_64/3dWarp
+              linux_ubuntu_16_64/3dAutobox
               --strip-components=1
 
         - environment:
@@ -119,11 +141,6 @@ build:
 
     # Clone first so we can apply the patch from the repo
     - group:
-        - run:
-            - mkdir -p "{{ local.install_dir }}"
-            # Add the mambauser user and give permissions to the install dir
-            - chown -R mambauser:mambauser "{{ local.install_dir }}"
-
         - workdir: "{{ local.install_dir }}"
 
         - install: git
@@ -166,7 +183,6 @@ build:
             FSL_SKIP_GLOBAL: "0"
             FSLOUTPUTTYPE: NIFTI_GZ
             MPLBACKEND: agg
-            XDG_DATA_HOME: "{{ local.install_dir }}/share"
 
         - run:
             - micromamba run -n base install_DSURQE.sh $XDG_DATA_HOME/rabies
@@ -175,7 +191,29 @@ build:
         bins:
           - rabies
 
+    - file:
+        name: shell.sh
+        contents: |
+          #!/bin/bash
+
+          micromamba shell hook -s posix > /tmp/micromamba.sh
+          source /tmp/micromamba.sh
+          micromamba activate base
+
+          # if there's no arguments run bash
+          if [ $# -eq 0 ]; then
+            exec bash
+          else
+            exec "$@"
+          fi
+
+    - run:
+        - cp {{ get_file("shell.sh") }} /usr/local/bin/_shell.sh
+        - chmod +x /usr/local/bin/_shell.sh
+
     - user: mambauser
+
+    - entrypoint: /usr/local/bin/_shell.sh
 
     - test:
         name: test_rabies
