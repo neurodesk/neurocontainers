@@ -191,14 +191,21 @@ build:
         bins:
           - rabies
 
+    # Create micromamba initialization script for /etc/profile.d/
+    - run:
+        - mkdir -p /etc/profile.d
+        - micromamba shell hook -s posix > /etc/profile.d/micromamba.sh
+        - echo "micromamba activate base" >> /etc/profile.d/micromamba.sh
+
     - file:
         name: shell.sh
         contents: |
           #!/bin/bash
 
-          micromamba shell hook -s posix > /tmp/micromamba.sh
-          source /tmp/micromamba.sh
-          micromamba activate base
+          # Source micromamba initialization if not already done
+          if [ -f /etc/profile.d/micromamba.sh ]; then
+            source /etc/profile.d/micromamba.sh
+          fi
 
           # if there's no arguments run bash
           if [ $# -eq 0 ]; then
