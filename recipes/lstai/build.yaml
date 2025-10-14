@@ -18,21 +18,24 @@ build:
         PATH: /opt/miniforge3/envs/lstai/bin:${PATH}
     - run:
         - /opt/miniforge3/bin/conda create -n lstai python=3.8
+    - run:
         - git clone https://github.com/CompImg/LST-AI/ /opt/lstai
         - pip install -e /opt/lstai
-    - run:
-        - wget https://github.com/CompImg/LST-AI/releases/download/v1.0.0/lst_data.zip
-        - unzip lst_data.zip
     - run:
         - git clone https://github.com/MIC-DKFZ/HD-BET /opt/hdbet
         - cd /opt/hdbet
         - git checkout ae160681324d524db3578e4135bf781f8206e146
-        - pip install -e /opt/lstai
+        - pip install SimpleITK --only-binary ":all:"
+        - pip install -e /opt/hdbet
     - run:
         - wget "https://github.com/CompImg/LST-AI/releases/download/v1.0.0/greedy"
         - chmod +x greedy
         - mkdir /opt/lstai/bin
         - mv greedy /opt/lstai/bin
+    - run:
+        - wget https://github.com/CompImg/LST-AI/releases/download/v1.0.0/lst_data.zip
+    - run:
+        - unzip lst_data.zip
     - environment:
         DEPLOY_ENV_PATH: /opt/lstai/bin:$PATH
     - deploy:
@@ -51,7 +54,10 @@ structured_readme:
     ml lstai/1.0.0
     lstai --help
   documentation: https://raw.githubusercontent.com/CompImg/LST-AI/refs/heads/main/README.md
-  citation: "Wiltgen T, McGinnis J, Schlaeger S, Kofler F, Voon C, Berthele A, Bischl D, Grundl L, Will N, Metz M, Schinz D, Sepp D, Prucker P, Schmitz-Koep B, Zimmer C, Menze B, Rueckert D, Hemmer B, Kirschke J, Mühlau M, Wiestler B. LST-AI: A Deep Learning Ensemble for Accurate MS Lesion Segmentation. NeuroImage: Clinical, Volume 42, 2024. https://doi.org/10.1016/j.nicl.2024.103611."
+  citation: |-
+    LST-AI: a Deep Learning Ensemble for Accurate MS Lesion Segmentation
+    Tun Wiltgen, Julian McGinnis, Sarah Schlaeger, Florian Kofler, CuiCi Voon, Achim Berthele, Daria Bischl, Lioba Grundl, Nikolaus Will, Marie Metz, David Schinz, Dominik Sepp, Philipp Prucker, Benita Schmitz-Koep, Claus Zimmer, Bjoern Menze, Daniel Rueckert, Bernhard Hemmer, Jan Kirschke, Mark Mühlau, Benedikt Wiestler
+    medRxiv 2023.11.23.23298966; doi: https://doi.org/10.1101/2023.11.23.23298966
 readme: |-
   ----------------------------------
   ## lstai/{{ context.version }} ##
@@ -68,7 +74,9 @@ readme: |-
 
   Citation:
   ```
-  Wiltgen T, McGinnis J, Schlaeger S, Kofler F, Voon C, Berthele A, Bischl D, Grundl L, Will N, Metz M, Schinz D, Sepp D, Prucker P, Schmitz-Koep B, Zimmer C, Menze B, Rueckert D, Hemmer B, Kirschke J, Mühlau M, Wiestler B. LST-AI: A Deep Learning Ensemble for Accurate MS Lesion Segmentation. NeuroImage: Clinical, Volume 42, 2024. https://doi.org/10.1016/j.nicl.2024.103611.
+  LST-AI: a Deep Learning Ensemble for Accurate MS Lesion Segmentation
+  Tun Wiltgen, Julian McGinnis, Sarah Schlaeger, Florian Kofler, CuiCi Voon, Achim Berthele, Daria Bischl, Lioba Grundl, Nikolaus Will, Marie Metz, David Schinz, Dominik Sepp, Philipp Prucker, Benita Schmitz-Koep, Claus Zimmer, Bjoern Menze, Daniel Rueckert, Bernhard Hemmer, Jan Kirschke, Mark Mühlau, Benedikt Wiestler
+  medRxiv 2023.11.23.23298966; doi: https://doi.org/10.1101/2023.11.23.23298966
   ```
 
   To run container outside of this environment: ml lstai/{{ context.version }}
