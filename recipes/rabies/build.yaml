@@ -196,6 +196,8 @@ build:
         - mkdir -p /etc/profile.d
         - micromamba shell hook -s posix > /etc/profile.d/micromamba.sh
         - echo "micromamba activate base" >> /etc/profile.d/micromamba.sh
+        - mkdir -p /.singularity.d/env
+        - echo "source /etc/profile.d/micromamba.sh" >> /.singularity.d/env/99-micromamba-startup.sh
 
     - file:
         name: shell.sh
