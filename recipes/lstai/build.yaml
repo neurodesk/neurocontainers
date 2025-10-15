@@ -8,14 +8,17 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - deploy:
+        path:
+          - /opt/miniforge3/envs/lstai/bin/
+          - /opt/lstai/bin
     - install: wget python3-pip git python3 unzip
     - workdir: /opt
     - run:
         - wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
         - bash Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge3
     - environment:
-        DEPLOY_ENV_PATH: /opt/miniforge3/envs/lstai/bin:${PATH}
-        PATH: /opt/miniforge3/envs/lstai/bin:${PATH}
+        PATH: /opt/miniforge3/envs/lstai/bin:/opt/lstai/bin:${PATH}
     - run:
         - /opt/miniforge3/bin/conda create -n lstai python=3.8
     - run:
@@ -35,12 +38,7 @@ build:
     - run:
         - wget https://github.com/CompImg/LST-AI/releases/download/v1.0.0/lst_data.zip
     - run:
-        - unzip lst_data.zip
-    - environment:
-        DEPLOY_ENV_PATH: /opt/lstai/bin:$PATH
-    - deploy:
-        path: []
-        bins: []
+        - unzip lst_data.zip -d /opt/lstai/LST-AI
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
@@ -49,20 +47,17 @@ categories:
   - machine learning
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAACsElEQVR4AexTTWgTQRh9s02a2tiEWmjpIZf2oNAq/mCxVKrQeLCIh55ESLCgVdGLPbS9tJrEi6AHT0qhKglYexBvFRESUawSBFGMBBrSijHBv7RJk5Btftb5Jm5MIMYc9CC67JvZ/b6Z92a+NyN1PLUqtWLr8xEldadTSd7Q1wwJf/j5RwUUBfgYU7D0WUEmV73GZSXKfUnhw4l5BPucAkv9LiSfvAc4IdHkYmlcureCztEUOs6l0D2ewqaRJCzXZLxczoOEaVwpygTUhN1uRzweh+2CTQ0hH5cRvrIA21wU7oU3nEwRyOUVDJ68juFpGf5wvjhe/agooCZLe3lxBfHHy/D5fDAajRgYGABjDA6HAxaLBeMXp3H7WRZytnQWUJsAX2X2UxL7+/YJcr/fD7fbLZimpqYQCATQ29uLF8E8EmlFxNWmNgG+UklfD88jD4icVk87UUm6urpAIPJ0Ro0W+poEFL4DSa+FtlUPs9kMq9UKk8kkPFC4s2952UwtDObuOhgbC8RqW5tAOov4XT/WI2tinsvlgsFgEB7Qbgzck5tzDzH/KodoQgwpNtUFeDkTD4JYnfUhE04IM0OhkOhVBvKCytbe3i7uxtc1PklN8r66AB+Q9LzD6q3XWF+MglYei8UwMTHBM4WXTlBPTw8ikQhaDQwtTayQ+N7+VECn02FycrJYZ1mWQfeDzKS5VHuC0+mE1+sV3hzgHpAI5VVI6kdpT0ePBBhjos6MMdA/xY2NkjgxjP3IkfGWvRqMDmrRoC1lQvk9YPwoGoY2o/n49opoO7UbM2faMDOiw2mzFod31mHskBb3xxpw1apDy0ZWzs7/JI7iK23QoOlgJ5qHt1VE67EdGNzViCN7NLh8tB6zZxtwfqge/VvqoNOg4iNVjP7G4H+BXxbz7y/RNwAAAP//C9arogAAAAZJREFUAwAwtjUFVcEnVAAAAABJRU5ErkJggg==
 structured_readme:
-  description: LST-AI - Deep Learning Ensemble for Accurate MS Lesion Segmentation
+  description: LST-AI
   example: |-
     ml lstai/1.0.0
     lstai --help
   documentation: https://raw.githubusercontent.com/CompImg/LST-AI/refs/heads/main/README.md
-  citation: |-
-    LST-AI: a Deep Learning Ensemble for Accurate MS Lesion Segmentation
-    Tun Wiltgen, Julian McGinnis, Sarah Schlaeger, Florian Kofler, CuiCi Voon, Achim Berthele, Daria Bischl, Lioba Grundl, Nikolaus Will, Marie Metz, David Schinz, Dominik Sepp, Philipp Prucker, Benita Schmitz-Koep, Claus Zimmer, Bjoern Menze, Daniel Rueckert, Bernhard Hemmer, Jan Kirschke, Mark Mühlau, Benedikt Wiestler
-    medRxiv 2023.11.23.23298966; doi: https://doi.org/10.1101/2023.11.23.23298966
+  citation: ""
 readme: |-
   ----------------------------------
   ## lstai/{{ context.version }} ##
 
-  LST-AI - Deep Learning Ensemble for Accurate MS Lesion Segmentation
+  LST-AI
 
   Example:
   ```
@@ -74,9 +69,7 @@ readme: |-
 
   Citation:
   ```
-  LST-AI: a Deep Learning Ensemble for Accurate MS Lesion Segmentation
-  Tun Wiltgen, Julian McGinnis, Sarah Schlaeger, Florian Kofler, CuiCi Voon, Achim Berthele, Daria Bischl, Lioba Grundl, Nikolaus Will, Marie Metz, David Schinz, Dominik Sepp, Philipp Prucker, Benita Schmitz-Koep, Claus Zimmer, Bjoern Menze, Daniel Rueckert, Bernhard Hemmer, Jan Kirschke, Mark Mühlau, Benedikt Wiestler
-  medRxiv 2023.11.23.23298966; doi: https://doi.org/10.1101/2023.11.23.23298966
+
   ```
 
   To run container outside of this environment: ml lstai/{{ context.version }}
