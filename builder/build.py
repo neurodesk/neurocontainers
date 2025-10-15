@@ -12,6 +12,7 @@ import hashlib
 import typing
 import json
 import datetime
+import re
 from pathlib import Path
 
 # add the parent directory to the path to import builder modules
@@ -1838,7 +1839,16 @@ def build_and_run_container(
         ]
 
         if mount:
-            host, container = mount.split(":", 1)
+            # Handle Windows paths with drive letters (e.g., C:\Users\...:container)
+            # Pattern: drive letter (X:) followed by path separator, then path, then : separator
+            windows_path_match = re.match(r'^([A-Za-z]:[/\\].+?):(.+)$', mount)
+            if windows_path_match:
+                host = windows_path_match.group(1)
+                container = windows_path_match.group(2)
+            else:
+                # Unix-style path or relative path - split on first colon
+                host, container = mount.split(":", 1)
+
             host = os.path.abspath(host)
             docker_run_cmd.extend(["-v", f"{host}:{container}"])
 
