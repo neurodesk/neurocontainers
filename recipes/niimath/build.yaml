@@ -1,5 +1,5 @@
 name: niimath
-version: 1.0.20250529
+version: 1.0.20250804
 copyright:
   - license: BSD-2-Clause
     url: https://github.com/rordenlab/niimath/blob/master/LICENSE
@@ -18,7 +18,7 @@ build:
     - group:
         - variables:
             github_url: https://github.com/rordenlab/niimath.git
-            revision: 99a2e19526b0e4192b27cfd577729c72afec88c2
+            revision: c4756e5186183b9c6005834562cec209f1184406
         - run:
             - git clone {{ local.github_url }} /tmp/niimath
             - cd /tmp/niimath
@@ -39,74 +39,29 @@ build:
 categories:
   - data organisation
 structured_readme:
-  description: >-
-    It is said that `imitation is the sincerest form of flattery`. This project
-    emulates the popular
-    [fslmaths](https://fsl.fmrib.ox.ac.uk/fslcourse/lectures/practicals/intro3/index.html)
-    tool. fslmaths is advertised as a `general image calculator` and is not only
-    one of the foundational tools for FSL's brain imaging pipelines (such as
-    [FEAT](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT)), but has also been
-    widely adopted by many tools. This popularity suggests that it fulfills an
-    important niche. While scientists are often encouraged to discover novel
-    solutions, it sometimes seems that replication is undervalued. Here are some
-    specific reasons for creating this tool:
-  example: >-
-    niimath provides the same commands as
-    [fslmaths](https://mandymejia.com/fsl-maths-commands/), so you can use it
-    just as you would fslmaths. If you are brave, you can even rename it
-    fslmaths and use it as a drop in replacement. You can also modify your
-    environment variables to unleash advanced features:
+  description: "It is said that `imitation is the sincerest form of flattery`. This project emulates the popular [fslmaths](https://fsl.fmrib.ox.ac.uk/fslcourse/lectures/practicals/intro3/index.html) tool. fslmaths is advertised as a `general image calculator` and is not only one of the foundational tools for FSL's brain imaging pipelines (such as [FEAT](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT)), but has also been widely adopted by many tools. This popularity suggests that it fulfills an important niche. While scientists are often encouraged to discover novel solutions, it sometimes seems that replication is undervalued. Here are some specific reasons for creating this tool:"
+  example: "niimath provides the same commands as [fslmaths](https://mandymejia.com/fsl-maths-commands/), so you can use it just as you would fslmaths. If you are brave, you can even rename it fslmaths and use it as a drop in replacement. You can also modify your environment variables to unleash advanced features:"
   documentation: https://github.com/rordenlab/niimath
-  citation: >-
-    Rorden C, Webster M, Drake C, Jenkinson M, Clayden JD, Li N, Hanayik T
-    (2024) niimath and fslmaths: replication as a method to enhance popular
-    neuroimaging tools. Aperture Neuro.4. doi:10.52294/001c.94384
-readme: >-
+  citation: "Rorden C, Webster M, Drake C, Jenkinson M, Clayden JD, Li N, Hanayik T (2024) niimath and fslmaths: replication as a method to enhance popular neuroimaging tools. Aperture Neuro.4. doi:10.52294/001c.94384"
+readme: |-
   ----------------------------------
+  ## niimath/{{ context.version }} ##
 
-  ## niimath/1.0.0 ##
-
-
-  It is said that `imitation is the sincerest form of flattery`. This project
-  emulates the popular
-  [fslmaths](https://fsl.fmrib.ox.ac.uk/fslcourse/lectures/practicals/intro3/index.html)
-  tool. fslmaths is advertised as a `general image calculator` and is not only
-  one of the foundational tools for FSL's brain imaging pipelines (such as
-  [FEAT](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT)), but has also been widely
-  adopted by many tools. This popularity suggests that it fulfills an important
-  niche. While scientists are often encouraged to discover novel solutions, it
-  sometimes seems that replication is undervalued. Here are some specific
-  reasons for creating this tool:
-
+  It is said that `imitation is the sincerest form of flattery`. This project emulates the popular [fslmaths](https://fsl.fmrib.ox.ac.uk/fslcourse/lectures/practicals/intro3/index.html) tool. fslmaths is advertised as a `general image calculator` and is not only one of the foundational tools for FSL's brain imaging pipelines (such as [FEAT](https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/FEAT)), but has also been widely adopted by many tools. This popularity suggests that it fulfills an important niche. While scientists are often encouraged to discover novel solutions, it sometimes seems that replication is undervalued. Here are some specific reasons for creating this tool:
 
   Example:
-
   ```
-
-  niimath provides the same commands as
-  [fslmaths](https://mandymejia.com/fsl-maths-commands/), so you can use it just
-  as you would fslmaths. If you are brave, you can even rename it fslmaths and
-  use it as a drop in replacement. You can also modify your environment
-  variables to unleash advanced features:
-
+  niimath provides the same commands as [fslmaths](https://mandymejia.com/fsl-maths-commands/), so you can use it just as you would fslmaths. If you are brave, you can even rename it fslmaths and use it as a drop in replacement. You can also modify your environment variables to unleash advanced features:
   ```
-
 
   More documentation can be found here: https://github.com/rordenlab/niimath
 
-
   Citation:
-
+  ```
+  Rorden C, Webster M, Drake C, Jenkinson M, Clayden JD, Li N, Hanayik T (2024) niimath and fslmaths: replication as a method to enhance popular neuroimaging tools. Aperture Neuro.4. doi:10.52294/001c.94384
   ```
 
-  Rorden C, Webster M, Drake C, Jenkinson M, Clayden JD, Li N, Hanayik T (2024)
-  niimath and fslmaths: replication as a method to enhance popular neuroimaging
-  tools. Aperture Neuro.4. doi:10.52294/001c.94384
-
-  ```
-
-
-  To run container outside of this environment: ml niimath/1.0.0
-
+  To run container outside of this environment: ml niimath/{{ context.version }}
 
   ----------------------------------
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADlUlEQVR4AXxUTUwVVxT+Zh7P2vaBCNgaTGzyaNI0XdjUJgTThKRtSkJJpQsSumbRrf0L/aHYlnRBWjaNSXeGlexYaRR/AviHP4nRGJWgG7eIC+GhBoY5nu/eObwZ5unLfPN99zvnnnPvnXkTjlzfJX9d2yV/Xm2RP660yOG5Zofhy03y+6UmGbq4U367sFN+PU80yi+zjfLzzA4ZnPb46VyDED+erZcfztTL96dL8t1USQ6detMhFEHuR4/YGqBHmG+aTJifZm0gEI3mAefHsWcfN22cnxvHVY86ZDetr8WoONEzdGf0k1GG6BM0jbdqjomQXfzqBKY3IsGjhxGePom1sfctZsw5pskEPYKaoM7tgF2JlSXBwxsRNtY58rDVkiP1158J1hRky2PMZ/vTSD0DGoKNCLg3s4Zjh1YwObyK/79Zdo2er8S4cPQ5/vlsGf9+vozxgQr++6qCIwdXcaR3FQ8uRYjWxe2YKzdoA+vHBh50Ojs7XfLNK/dx68Qalh/pQ9HA+Pg4KpWKKqCjo8PldHV1ubHduAuCY20g7uztzKwzg0S5XMan73+Lu2fWUHkcIwzdqTKU0bFWZA3CalBXs3WK5uiKVKSuhYUFjI2N4c7xbbh9Ug8+FXuZTNfRt4jHIlqYMF2dOjAw4FY6MTFRNWsprWor9+xrZXZQa97S0hJGR0fR09OD9vb2WinO0/oZ5oBe7hnw3LgCJhiGhoawuLiIyclJs3Is6thcMsE62kAjycWOlMbUhv7+frS2tqK7u9usLLND1nEjbZA+e+p85nuddbi5MIPp6Wk0Nze7iVsXwTFXXGXRtxNwz8Cbbl7NW9uBAvb3FdHX14co0n9ikhXzS5hoUq06+hZJ8gaJdqxidnYWQRBgfn4ehW3A3v0hdn/8BMViEaVSifUwNzfncqampjZrcBexflEJ6twOAnXeagvx9d/b0TuyHQdHXkPTOyHeaAx0F3XoGizi3U8K+KC7gC8G6/DlsOJwHVraAkAv7gLJjzp5BpJZwY7WAHs/CsFVkxve1hmBoF653BFiX28BbQdCUO/5MMSefQEadmuOXlw1C3sWaAN1k4uBRGaIPuFMXWVLOcDruqNNzwWqN/oEHW0gm2dvXXl+BMfGaQ3dDUGPYA5hmkzQ0xNnnyqsMx3TZILeVqR902SCubm3iJ1rw39bONHifEu9tphkniVjuR2wqy9CxYmeeU/7HBte5b8AAAD//xjo/GQAAAAGSURBVAMAQUM83BuAgK8AAAAASUVORK5CYII=
