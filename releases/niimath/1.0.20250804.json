@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "niimath 1.0.20250804": {
+      "version": "20251016",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}
