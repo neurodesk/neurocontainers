@@ -3,19 +3,21 @@ from packaging import version
 
 DEBUG = True  # change it to true if wanna see detailed process
 
+
 def dbg(*args):
     if DEBUG:
         print("[DEBUG]", *args)
 
+
 TOKEN = os.getenv("GITHUB_TOKEN")
-REPO  = os.getenv("GITHUB_REPOSITORY")
+REPO = os.getenv("GITHUB_REPOSITORY")
 session = requests.Session()
 session.headers.update({"Accept": "application/vnd.github+json"})
 if TOKEN:
     session.headers.update({"Authorization": f"Bearer {TOKEN}"})
-    print("GITHUB_TOKEN set status: YES" )
+    print("GITHUB_TOKEN set status: YES")
 else:
-    print("GITHUB_TOKEN set status: NO" )
+    print("GITHUB_TOKEN set status: NO")
 
 print(f"GITHUB_REPOSITORY={REPO}")
 
@@ -23,11 +25,20 @@ print(f"GITHUB_REPOSITORY={REPO}")
 def latest_stable(repo):
     dbg(f"Query releases for {repo}")
     try:
-        response = session.get(f"https://api.github.com/repos/{repo}/releases", timeout=20)
+        response = session.get(
+            f"https://api.github.com/repos/{repo}/releases", timeout=20
+        )
         dbg("GET releases status:", response.status_code)
         if response.status_code == 200:
             for rel in response.json():
-                dbg("  release:", {"tag": rel.get("tag_name"), "draft": rel.get("draft"), "pre": rel.get("prerelease")})
+                dbg(
+                    "  release:",
+                    {
+                        "tag": rel.get("tag_name"),
+                        "draft": rel.get("draft"),
+                        "pre": rel.get("prerelease"),
+                    },
+                )
                 if not rel.get("draft") and not rel.get("prerelease"):
                     tag = rel.get("tag_name") or rel.get("name")
                     dbg("  picked stable release tag:", tag)
@@ -60,14 +71,15 @@ def latest_stable(repo):
 
     return None
 
+
 # return true if have newer version,false if is up to date and none if need manual check
 def newer(current_version, upstream_version):
     def clean(ver_str: str) -> str:
         ver_str = (ver_str or "").strip()
         ver_str = ver_str.lstrip("vV")
         ver_str = ver_str.replace("_", ".")
-        ver_str = ver_str.split("+", 1)[0]      # +meta
-        ver_str = ver_str.split("-", 1)[0]      # -suffix
+        ver_str = ver_str.split("+", 1)[0]  # +meta
+        ver_str = ver_str.split("-", 1)[0]  # -suffix
         return ver_str
 
     clean_current, clean_upstream = clean(current_version), clean(upstream_version)
@@ -79,8 +91,11 @@ def newer(current_version, upstream_version):
         return None  # we can not compare strings
 
     result = ver_upstream > ver_current
-    dbg(f"Version compare: current={ver_current} upstream={ver_upstream} -> upstream_is_newer={result}")
+    dbg(
+        f"Version compare: current={ver_current} upstream={ver_upstream} -> upstream_is_newer={result}"
+    )
     return result
+
 
 def issue_exists(fp):
     if not REPO:
@@ -89,7 +104,9 @@ def issue_exists(fp):
     q = f'repo:{REPO} in:title "{fp}" state:open'
     dbg("Search issues query:", q)
     try:
-        response = session.get("https://api.github.com/search/issues", params={"q": q}, timeout=20)
+        response = session.get(
+            "https://api.github.com/search/issues", params={"q": q}, timeout=20
+        )
         dbg("Search issues status:", response.status_code)
         if response.status_code == 200:
             count = response.json().get("total_count", 0)
@@ -102,6 +119,7 @@ def issue_exists(fp):
         dbg("Search issues error:", e)
         dbg(traceback.format_exc())
         return False
+
 
 def open_issue(title, body, labels=None):
     if labels is None:
@@ -117,11 +135,12 @@ def open_issue(title, body, labels=None):
     response = session.post(
         f"https://api.github.com/repos/{REPO}/issues",
         json={"title": title, "body": body, "labels": labels},
-        timeout=20
+        timeout=20,
     )
     response.raise_for_status()
+
+
 def open_invalid_recipe_issue(path, name, reason, extra=None, labels=None):
-   
     if labels is None:
         labels = ["auto-update", "invalid-recipe"]
     extra = extra or {}
@@ -160,19 +179,21 @@ if __name__ == "__main__":
         name = data.get("name", os.path.basename(path))
         au = data.get("auto_update")
         if not isinstance(au, dict):
-            open_invalid_recipe_issue(path, name, "auto_update missing or not a dict")
+            print(path, name, "auto_update missing or not a dict")
             continue
 
         method = au.get("method")
-        repo   = au.get("repo")
+        repo = au.get("repo")
         if method != "github_release":
-            open_invalid_recipe_issue(path, name, "unsupported auto_update.method", {"method": repr(method)})
+            open_invalid_recipe_issue(
+                path, name, "unsupported auto_update.method", {"method": repr(method)}
+            )
             continue
         if not repo:
             open_invalid_recipe_issue(path, name, "auto_update.repo missing")
             continue
 
-        cur  = str(data.get("version", "")).strip()
+        cur = str(data.get("version", "")).strip()
         if not cur:
             open_invalid_recipe_issue(path, name, "version missing")
             continue
@@ -190,10 +211,12 @@ if __name__ == "__main__":
             fp = f"{path} -> {up} (manual-verify)"
             print("Fingerprint:", fp)
             if issue_exists(fp):
-                print("duplicate issue already open for this fingerprint (manual verify).")
+                print(
+                    "duplicate issue already open for this fingerprint (manual verify)."
+                )
             else:
                 title = f"[manual] Verify upstream version for {name}: current={cur}, upstream_tag={up}"
-                body  = (
+                body = (
                     f"- Recipe: {path}\n"
                     f"- Current version: {cur}\n"
                     f"- Upstream tag: {up}\n"
@@ -213,7 +236,7 @@ if __name__ == "__main__":
                 print("duplicate issue already open for this fingerprint.")
             else:
                 title = f"{name} {cur} may update to {up}"
-                body  = (
+                body = (
                     f"- Recipe: {path}\n"
                     f"- Current version: {cur}\n"
                     f"- Upstream version: {up}\n"
