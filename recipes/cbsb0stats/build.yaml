@@ -1,0 +1,595 @@
+name: cbsb0stats
+version: 1.0.0
+architectures:
+  - x86_64
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+  directives:
+    - file:
+        name: cbsb0stats.py
+        contents: |-
+          import ismrmrd
+          import os
+          import logging
+          import traceback
+          import numpy as np
+          import xml.dom.minidom
+          import base64
+          import mrdhelper
+          import constants
+          import nibabel as nib
+          import subprocess
+          import ast
+          import json
+
+
+          # WARNING: This is an early version and as of this version no testing
+          # has been performed in a working environment (in a MRI as a Openrecon package).
+
+          def explore(obj, depth=0, max_depth=3):
+              indent = "  " * depth
+              if depth > max_depth:
+                  return
+              for attr in dir(obj):
+                  if attr.startswith("_"):
+                      continue
+                  try:
+                      val = getattr(obj, attr)
+                  except Exception:
+                      continue
+                  logging.info(f"CBS_LOG: {indent}{attr}: {type(val).__name__}")
+                  if not isinstance(val, (int, float, str, bool, bytes, list, tuple, dict)):
+                      explore(val, depth + 1, max_depth)
+
+
+
+          # Folder for debug output files
+          debugFolder = "/tmp/share/debug"
+          ### ---- Here for new functions
+          #Returns a float if all elements in a lst are identical, else returns the lst
+          def collapseIfSoleyUnique(lst):
+              return float(lst[0]) if lst and len(set(lst)) == 1 else lst
+
+          # Finds Dicom Standard Dictionary parameters, only does TE right now,
+          # pretty sure this can be done with ismrmrd.Meta.deserialize(img.attribute_string)
+          # but not sure how.
+          def getAcquisitionData(meta, Parameter):
+              tag_keys = {"Echo Time": "00180081"}
+              logging.info(f"CBS_LOG: In getAcquisitonData Meta is classified as type: {type(meta)} \n")
+              if str(Parameter).lower() != "te" and str(Parameter).replace(" ","").lower() != "echotime":
+                  print("Error: Only Echo Time (TE) is currently support, returing None...")
+                  return None
+              if meta is None or not isinstance(meta, ismrmrd.meta.Meta):
+                  print("Error: Must include meta data of type: <class 'ismrmrd.meta.Meta'>")
+                  return None
+              if str(Parameter).lower() == "te" or str(Parameter).replace(" ","").lower() == "echotime":
+                  tag_key = tag_keys["Echo Time"] # Comes from Dicom Standard Dictionary
+
+              py_dict = ast.literal_eval(str(meta))["DicomJson"]
+              decoded64_utf8 = base64.b64decode("".join(py_dict.split())).decode("utf-8")
+              dicom_json = json.loads(decoded64_utf8)
+              if tag_key in dicom_json and "Value" in dicom_json[tag_key]:
+                  value = dicom_json[tag_key]["Value"]  # [0] if it's a list with one item
+                  value = value[0]
+                  return value
+              else:
+                  logging.info(f"CBS_LOG: {tag_key} not found or has no 'Value'")
+                  return None
+
+          # Does some essential reindexing and also calculates delTE
+          # does not deal with errors
+          def OrderDict_delTE(Dict):
+              Numbers = [float(k) for k in Dict.keys()]
+              TE1, TE2 = min(Numbers), max(Numbers)
+              NewDict = {
+                  "TE1": Dict[str(TE1)],
+                  "TE2": Dict[str(TE2)]
+              }
+              return NewDict, TE2, TE1
+
+          # Unpacks big dictionary
+          # doesn't deal with errors but you have bigger problems if your
+          # image data has no data, head or metadata
+          def UnpackInto(NewDict,ImageList):
+              NewDict["data"] = np.stack([img.data                              for img in ImageList])
+              NewDict["head"] = [img.getHead()                                  for img in ImageList]
+              NewDict["meta"] = [ismrmrd.Meta.deserialize(img.attribute_string) for img in ImageList]
+              return NewDict
+          ### -----
+
+
+          def process(connection, config, metadata):
+              logging.info("CBS_LOG: Config: %s", config)
+
+              # Metadata should be MRD formatted header, but may be a string
+              # if it failed conversion earlier
+              try:
+                  # logging info, from openreconexample.py
+                  logging.info("CBS_LOG: Incoming dataset contains %d encodings", len(metadata.encoding))
+                  logging.info("CBS_LOG: Incoming dataset contains %d encodings", len(metadata.encoding))
+                  logging.info("CBS_LOG: First encoding is of type '%s', with a matrix size of (%s x %s x %s) and a field of view of (%s x %s x %s)mm^3", 
+                      metadata.encoding[0].trajectory, 
+                      metadata.encoding[0].encodedSpace.matrixSize.x, 
+                      metadata.encoding[0].encodedSpace.matrixSize.y, 
+                      metadata.encoding[0].encodedSpace.matrixSize.z, 
+                      metadata.encoding[0].encodedSpace.fieldOfView_mm.x, 
+                      metadata.encoding[0].encodedSpace.fieldOfView_mm.y, 
+                      metadata.encoding[0].encodedSpace.fieldOfView_mm.z)
+
+
+
+
+              except:
+                  logging.info("CBS_LOG: Improperly formatted metadata: \n%s", metadata)
+
+              # Continuously parse incoming data parsed from MRD messages
+              currentSeries = 0
+              imgGroup = []
+
+              waveformGroup = []
+
+              TE_Dict = {} # data collecting array for B0mask process
+              isLast = False # bool to trigger B0mask process
+              try:
+                  for item in connection:
+                      # ----------------------------------------------------------
+                      # Raw k-space data messages
+                      # ----------------------------------------------------------
+                      if isinstance(item, ismrmrd.Acquisition):
+                          logging.error("CBS_ERROR: Unsupported data type %s", type(item).__name__)
+
+                      # ----------------------------------------------------------
+                      # Image data messages
+                      # ----------------------------------------------------------
+                      elif isinstance(item, ismrmrd.Image):
+                          logging.info(f"CBS_LOG: image type {item.image_type} recieved")
+                          # logging.info(f"CBS_LOG: image comment - {ismrmrd.Meta.deserialize(item.attribute_string)['ImageComments']}")
+                          if item.image_series_index != currentSeries:
+                              logging.info("CBS_LOG: Processing a group of images because series index changed to %d", item.image_series_index)
+                              #TE_Dict[str(currentSeries)] = None
+                              currentSeries = item.image_series_index
+                              image = process_image(imgGroup, connection, config, metadata, TE_Dict)
+                              connection.send_image(image)
+                              imgGroup = []
+
+
+                          # Collect magnitude and phase images for processing
+                          if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0) or (item.image_type is ismrmrd.IMTYPE_PHASE) or (item.image_type == 2):
+                              imgGroup.append(item)
+                          else:
+                              tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
+                              tmpMeta['Keep_image_geometry']    = 1
+                              item.attribute_string = tmpMeta.serialize()
+
+                              connection.send_image(item)
+                              continue
+
+                      # ----------------------------------------------------------
+                      # Waveform data messages
+                      # ----------------------------------------------------------
+                      elif isinstance(item, ismrmrd.Waveform):
+                          waveformGroup.append(item)
+
+                      elif item is None:
+                          break
+
+                      else:
+                          logging.error("CBS_ERROR: Unsupported data type %s", type(item).__name__)
+
+                  # Extract raw ECG waveform data. Basic sorting to make sure that data 
+                  # is time-ordered, but no additional checking for missing data.
+                  # ecgData has shape (5 x timepoints)
+                  if len(waveformGroup) > 0:
+                      waveformGroup.sort(key = lambda item: item.time_stamp)
+                      ecgData = [item.data for item in waveformGroup if item.waveform_id == 0]
+                      ecgData = np.concatenate(ecgData,1)
+
+
+                  if len(imgGroup) > 0:
+                      logging.info("CBS_LOG: Processing a group of images (untriggered)")
+                      image = process_image(imgGroup, connection, config, metadata,TE_Dict)
+                      connection.send_image(image)
+                      imgGroup = []
+                      isLast = True
+
+
+                  logging.info(f"CBS_LOG: isLast:{isLast}, len(TE_Dict):{len(TE_Dict)},type of TE_Dict['phase'] :{type(TE_Dict['phase'])}")
+                  if (isLast == True) and (len(TE_Dict) == 3) and (TE_Dict["phase"] is not None):
+                      logging.info("CBS_LOG: B0MapProcess - All checks passing creating B0 map")
+                      # Do B0MapProcess
+                      Phase = {}
+                      Phase = UnpackInto(Phase,TE_Dict["phase"])
+                      TE_Dict.pop("phase",None)
+                      TE_Dict, te2, te1 = OrderDict_delTE(TE_Dict)
+                      delTE = te2 - te1
+                      TE1,TE2 = {},{}
+                      #logging.info(f"CBS_LOG: {list(TE_Dict)}")
+                      TE1,TE2 = UnpackInto(TE1,TE_Dict["TE1"]),UnpackInto(TE2,TE_Dict["TE2"])
+                      ## Making FrequencyMap # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions
+                      Phasedata = Phase["data"].transpose((3, 4, 2, 1, 0)) #[:,:,0,0,:]
+                      Phasedata = Phasedata[:,:,0,0,:]
+                      xform = np.eye(4)
+                      new_img = nib.nifti1.Nifti1Image(Phasedata, xform)
+                      nib.save(new_img, 'temp_phase.nii')
+                      new_img = nib.load('temp_phase.nii')
+                      Phasedata = new_img.get_fdata()
+                      Phasedata = Phasedata[:, :, :, None, None]
+                      Phasedata = Phasedata.transpose((0, 1, 3, 4, 2))
+                      ### Math Operations Here
+                      #Freqdata has array [x, y, char, img, z]
+                      Freqdata = (Phasedata*2 - 4096) / (2*4096 * delTE * 1e-3)
+                          # Currently data*2 - 4096 is the conversion from the input.h5 values (which are not the true values)
+                          # The true values can be calculated dynamically with dicom metadata entries
+                          # Rescale Intercept (0028,1052) and Rescale Slope (0028,1053)
+                          # for a true value equation of: true_value = value*rescale_slope - rescale_intercept
+                      ###
+                      ## Making BrainMask
+                      TE1data = TE1["data"].transpose((3, 4, 2, 1, 0))[:,:,0,0,:]
+                      TE1data = (TE1data*2 - 4096)
+                      # same true value equation here, maybe a function is needed?
+                      xform = np.eye(4)
+                      new_img = nib.nifti1.Nifti1Image(TE1data, xform)
+                      nib.save(new_img, 'temp_te1.nii')
+                      if not os.path.exists('temp_te1.nii'):
+                          logging.error("CBS_ERROR: temp_te1.nii not found")
+                      logging.info("CBS_LOG: temp_te1.nii found proceeding...")
+                      subprocess.run(["bet2", "temp_te1.nii", "temp_joj", "-m", "-n"], check=True) # create brain mask
+                      subprocess.run(["fslmaths","-n.nii.gz","-dilM","-dilM","-ero","-ero","-ero","bmask_dil2_ero3"], check=True) # 2*dilate 3*erode the brain mask
+
+                      if not os.path.exists("bmask_dil2_ero3.nii.gz"):
+                          logging.error("CBS_ERROR: Brain Mask not found!")
+
+                      logging.info("CBS_LOG: Brain Mask success!, proceeding with math operations...")
+                      BrainMask_load = nib.load("bmask_dil2_ero3.nii.gz")
+                      #.get_fdata() gets array [x, y, z]
+                      BrainMask = BrainMask_load.get_fdata()
+                      BrainMask = BrainMask[:, :, :, None, None]
+                      BrainMask = BrainMask.transpose((0, 1, 3, 4, 2))
+                      #now array [x, y, char, img, z] same as freqdata
+                      logging.info(f"CBS_LOG: BrainMask shape: {BrainMask.shape}")
+                      logging.info(f"CBS_LOG: Freqdata shape before processing: {Freqdata.shape}")
+                      B0Mask = (BrainMask * Freqdata).astype(np.float64)
+                      logging.info(f"CBS_LOG: B0Map shape after processing: {B0Mask.shape}")
+
+                      # Leaving for future debugging
+                      #B0Mask_img = nib.Nifti1Image(B0Mask[:,:,0,0,:], affine=BrainMask_load.affine)
+                      #outputfile = "/buildhostdirectory/tmp/niftis/B0Mask.nii"
+                      #nib.save(B0Mask_img, outputfile)
+                      #logging.info(f"CBS_LOG: Saved B0Mask to B0Mask.nii")
+                      #if os.path.exists(outputfile):
+                      #    logging.info("CBS_LOG: B0Mask.nii exists!")
+                      #else:
+                      #    logging.error("CBS_LOG: B0Mask.nii NOT found!")
+
+                      B0MapOut = [None] * B0Mask.shape[-1]
+                      B0mapImageSeriesIndex = max(TE1["head"][0].image_series_index,TE2["head"][0].image_series_index,Phase["head"][0].image_series_index) + 1
+                      logging.info("CBS_LOG: B0mapImageSeriesIndex is: %d",B0mapImageSeriesIndex)
+
+                      B0MaxValue = np.max(B0Mask[B0Mask !=0])
+                      B0MinValue = np.min(B0Mask[B0Mask != 0])
+                      B0mean = np.mean(B0Mask)
+                      B0meanNoZero = np.mean(B0Mask[B0Mask != 0])
+                      B0SD = np.std(B0Mask)
+                      B0SDNoZero = np.std(B0Mask[B0Mask != 0])
+                      logging.info(f"CBS_LOG: Min(!0): {B0MinValue}, Max: {B0MaxValue}")
+                      logging.info(f"CBS_LOG: Mean: {B0mean:.5f}, STD: {B0SD:.5f}")
+                      logging.info(f"CBS_LOG:(No Zero) Mean: {B0meanNoZero:.5f}, STD: {B0SDNoZero:.5f}")
+                      for iImg in range(B0Mask.shape[-1]):
+                          B0MapOut[iImg] = ismrmrd.Image.from_array(B0Mask[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
+                          # Create a copy of the original fixed header and update the data_type
+
+                          oldHeader = TE1["head"][iImg]
+                          oldHeader.data_type = B0MapOut[iImg].data_type
+                          oldHeader.image_series_index = B0mapImageSeriesIndex
+                          # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
+                          if mrdhelper.get_meta_value(TE1["meta"][iImg], 'IceMiniHead') is not None:
+                              if mrdhelper.extract_minihead_bool_param(base64.b64decode(TE1["meta"][iImg]['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
+                                  currentSeries += 1
+
+                          B0MapOut[iImg].setHead(oldHeader)
+
+                          # Create a copy of the original ISMRMRD Meta attributes from TE1 and update where possible
+                          tmpMeta = TE1["meta"][iImg]
+                          tmpMeta['DataRole']                       = 'Image'
+                          tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'B0MAPPRROCESS']
+                          tmpMeta['WindowCenter']                   = str(np.round(((B0MaxValue - B0MinValue)/2)))
+                          tmpMeta['WindowWidth']                    = str((B0MaxValue))
+                          tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon'
+                          tmpMeta['Keep_image_geometry']            = 1
+                          tmpMeta['ImageComments']                  = f"Mean: {B0meanNoZero:.4f}, STD: {B0SD:.4f}" # Change the image comments to mean and SD
+                          if tmpMeta.get('ImageRowDir') is None:
+                              tmpMeta['ImageRowDir'] = ["{:.18f}".format(oldHeader.read_dir[0]), "{:.18f}".format(oldHeader.read_dir[1]), "{:.18f}".format(oldHeader.read_dir[2])]
+
+                          if tmpMeta.get('ImageColumnDir') is None:
+                              tmpMeta['ImageColumnDir'] = ["{:.18f}".format(oldHeader.phase_dir[0]), "{:.18f}".format(oldHeader.phase_dir[1]), "{:.18f}".format(oldHeader.phase_dir[2])]
+
+                          metaXml = tmpMeta.serialize()
+
+                          B0MapOut[iImg].attribute_string = metaXml
+                      TE_Dict = {}
+                      connection.send_image(B0MapOut)
+                      logging.info("CBS_LOG: B0map image sent through connection!")
+
+
+                  else:
+                      logging.info(f"CBS_LOG: TE_Dict has keys: {list(TE_Dict)}")
+
+
+              except Exception as e:
+                  logging.error(traceback.format_exc())
+                  connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
+
+              finally:
+                  connection.send_close()
+
+
+          def process_image(images, connection, config, metadata,TE_Dict):
+              if len(images) == 0:
+                  return []
+              if (images[0].image_type is ismrmrd.IMTYPE_MAGNITUDE) or (images[0].image_type == 1):
+                  # Note: The MRD Image class stores data as [cha z y x]
+                  # Extract image data into a 5D array of size [img cha z y x]
+                  data = np.stack([img.data                              for img in images])
+                  head = [img.getHead()                                  for img in images]
+                  meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in images]
+
+                  TE_Dict[str(collapseIfSoleyUnique([getAcquisitionData(m, "te") for m in meta]))] = images
+                  if "[" in list(TE_Dict)[0]:
+                      ImageSeriesIndexArray = collapseIfSoleyUnique([item.image_series_index for item in images])
+                      logging.error(f"CBS_ERROR: Multiple TE's detected for image group with series indexs: {ImageSeriesIndexArray} \n {list(TE_Dict[-1])}")
+                  # Diagnostic info
+                  matrix    = np.array(head[0].matrix_size  [:])
+                  fov       = np.array(head[0].field_of_view[:])
+                  voxelsize = fov/matrix
+                  read_dir  = np.array(images[0].read_dir )
+                  phase_dir = np.array(images[0].phase_dir)
+                  slice_dir = np.array(images[0].slice_dir)
+                  logging.info(f'CBS_LOG: MRD computed matrix [x y z] : {matrix   }')
+                  logging.info(f'CBS_LOG: MRD computed fov     [x y z] : {fov      }')
+                  logging.info(f'CBS_LOG: MRD computed voxel   [x y z] : {voxelsize}')
+                  logging.info(f'CBS_LOG: MRD read_dir         [x y z] : {read_dir }')
+                  logging.info(f'CBS_LOG: MRD phase_dir        [x y z] : {phase_dir}')
+                  logging.info(f'CBS_LOG: MRD slice_dir        [x y z] : {slice_dir}')
+                  #logging.debug(f"CBS_DEBUG: All Head Info for first slice: {head[0]}")
+                  #logging.debug(f"CBS_DEBUG: All Meta Info for first slice: {meta[0]}")
+                  logging.info("CBS_LOG: %d Echo Time's found: %s" ,len(TE_Dict),(list(TE_Dict)))
+                  logging.debug("CBS_DEBUG: Original image data before transposing is %s" % (data.shape,))
+
+                  # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions from an initial [z char img x y]
+                  data = data.transpose((3, 4, 2, 1, 0))
+
+                  logging.debug("CBS_DEBUG: Original image data after transposing is %s" % (data.shape,))
+                  currentSeries = 0
+
+                  # Re-slice image data back into 2D images
+                  imagesOut = [None] * data.shape[-1]
+                  # segmentationOut = [None] * data.shape[-1]
+                  for iImg in range(data.shape[-1]):
+                      # Create new MRD instance for the final image
+                      # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
+                      # from_array() should be called with 'transpose=False' to avoid warnings, and when called
+                      # with this option, can take input as: [cha z y x], [z y x], or [y x]
+                      imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
+
+                      # Create a copy of the original fixed header and update the data_type
+                      oldHeader = head[iImg]
+                      oldHeader.data_type = imagesOut[iImg].data_type
+
+                      # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
+                      if mrdhelper.get_meta_value(meta[iImg], 'IceMiniHead') is not None:
+                          if mrdhelper.extract_minihead_bool_param(base64.b64decode(meta[iImg]['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
+                              currentSeries += 1
+
+                      imagesOut[iImg].setHead(oldHeader)
+
+                      # Create a copy of the original ISMRMRD Meta attributes and update
+                      tmpMeta = meta[iImg]
+                      tmpMeta['DataRole']                       = 'Image'
+                      tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'PROSTATEFIDUCIALSEG']
+                      tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon'
+                      tmpMeta['Keep_image_geometry']            = 1
+
+                      # Add image orientation directions to MetaAttributes if not already present
+                      if tmpMeta.get('ImageRowDir') is None:
+                          tmpMeta['ImageRowDir'] = ["{:.18f}".format(oldHeader.read_dir[0]), "{:.18f}".format(oldHeader.read_dir[1]), "{:.18f}".format(oldHeader.read_dir[2])]
+
+                      if tmpMeta.get('ImageColumnDir') is None:
+                          tmpMeta['ImageColumnDir'] = ["{:.18f}".format(oldHeader.phase_dir[0]), "{:.18f}".format(oldHeader.phase_dir[1]), "{:.18f}".format(oldHeader.phase_dir[2])]
+
+                      metaXml = tmpMeta.serialize()
+                      #logging.debug("CBS_DEBUG: Image MetaAttributes: %s", xml.dom.minidom.parseString(metaXml).toprettyxml())
+                      logging.debug("CBS_DEBUG: Image data has %d elements", imagesOut[iImg].data.size)
+
+                      imagesOut[iImg].attribute_string = metaXml
+                  return imagesOut
+              elif (images[0].image_type is ismrmrd.IMTYPE_PHASE) or (images[0].image_type == 2):
+                  #logging.debug("CBS_DEBUG: PHASE DETECTED")
+                  # Note: The MRD Image class stores data as [cha z y x]
+                  # Extract image data into a 5D array of size [img cha z y x]
+                  data = np.stack([img.data                              for img in images])
+                  head = [img.getHead()                                  for img in images]
+                  meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in images]
+
+                  TE_Dict["phase"] = images
+
+                  # Diagnostic info
+                  matrix    = np.array(head[0].matrix_size  [:])
+                  fov       = np.array(head[0].field_of_view[:])
+                  voxelsize = fov/matrix
+                  read_dir  = np.array(images[0].read_dir )
+                  phase_dir = np.array(images[0].phase_dir)
+                  slice_dir = np.array(images[0].slice_dir)
+                  logging.info(f'CBS_LOG: MRD computed matrix [x y z] : {matrix   }')
+                  logging.info(f'CBS_LOG: MRD computed fov     [x y z] : {fov      }')
+                  logging.info(f'CBS_LOG: MRD computed voxel   [x y z] : {voxelsize}')
+                  logging.info(f'CBS_LOG: MRD read_dir         [x y z] : {read_dir }')
+                  logging.info(f'CBS_LOG: MRD phase_dir        [x y z] : {phase_dir}')
+                  logging.info(f'CBS_LOG: MRD slice_dir        [x y z] : {slice_dir}')
+                  logging.info(f"CBS_LOG: All Head Info for first slice: {head[0]}")
+                  logging.info(f"CBS_LOG: All Meta Info for first slice: {meta[0]}")
+                  logging.info("CBS_LOG: %d Echo Time's found: %s" ,len(TE_Dict),(list(TE_Dict)))
+                  logging.debug("CBS_DEBUG: Original image data before transposing is %s" % (data.shape,))
+
+                  # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions
+                  data = data.transpose((3, 4, 2, 1, 0))
+
+                  logging.debug("CBS_DEBUG: Original image data after transposing is %s" % (data.shape,))
+                  currentSeries = 0
+
+                  # Re-slice image data back into 2D images
+                  imagesOut = [None] * data.shape[-1]
+                  for iImg in range(data.shape[-1]):
+                      # Create new MRD instance for the final image
+                      # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
+                      # from_array() should be called with 'transpose=False' to avoid warnings, and when called
+                      # with this option, can take input as: [cha z y x], [z y x], or [y x]
+                      imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
+
+                      # Create a copy of the original fixed header and update the data_type
+                      oldHeader = head[iImg]
+                      oldHeader.data_type = imagesOut[iImg].data_type
+
+                      # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
+                      if mrdhelper.get_meta_value(meta[iImg], 'IceMiniHead') is not None:
+                          if mrdhelper.extract_minihead_bool_param(base64.b64decode(meta[iImg]['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
+                              currentSeries += 1
+
+                      imagesOut[iImg].setHead(oldHeader)
+
+                      # Create a copy of the original ISMRMRD Meta attributes and update
+                      tmpMeta = meta[iImg]
+                      tmpMeta['DataRole']                       = 'Image'
+                      tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'PROSTATEFIDUCIALSEG']
+                      tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon'
+                      tmpMeta['Keep_image_geometry']            = 1
+
+                      # Add image orientation directions to MetaAttributes if not already present
+                      if tmpMeta.get('ImageRowDir') is None:
+                          tmpMeta['ImageRowDir'] = ["{:.18f}".format(oldHeader.read_dir[0]), "{:.18f}".format(oldHeader.read_dir[1]), "{:.18f}".format(oldHeader.read_dir[2])]
+
+                      if tmpMeta.get('ImageColumnDir') is None:
+                          tmpMeta['ImageColumnDir'] = ["{:.18f}".format(oldHeader.phase_dir[0]), "{:.18f}".format(oldHeader.phase_dir[1]), "{:.18f}".format(oldHeader.phase_dir[2])]
+
+                      metaXml = tmpMeta.serialize()
+                      logging.debug("CBS_DEBUG: Image data has %d elements", imagesOut[iImg].data.size)
+
+                      imagesOut[iImg].attribute_string = metaXml
+                  return imagesOut            
+    - install: bzip2 ca-certificates git wget build-essential python3-pip python-is-python3
+    - workdir: /opt/code
+    - install:
+        - build-essential
+        - libxslt1.1
+        - libboost-program-options1.74.0
+        - libpugixml1v5
+        - vim
+        - dos2unix
+        - git
+        - cmake
+        - g++
+        - libhdf5-dev
+        - libxml2-dev
+        - libxslt1-dev
+        - libboost-all-dev
+        - libfftw3-dev
+        - libpugixml-dev
+    - run:
+        - git clone https://github.com/ismrmrd/ismrmrd.git
+        - cd ./ismrmrd
+        - cmake .
+        - make -j {{ parallel_jobs }}
+        - make install
+    - run:
+        - git clone --branch  v1.2.13 https://github.com/ismrmrd/siemens_to_ismrmrd.git
+        - cd siemens_to_ismrmrd
+        - mkdir build
+        - cd build
+        - cmake ..
+        - make -j {{ parallel_jobs }}
+        - make install
+    - run:
+        - pip3 install h5py ismrmrd==1.14.1 matplotlib pydicom==3.0.1 pynetdicom nibabel scipy scikit-image
+    - run:
+        - git clone https://github.com/ismrmrd/ismrmrd-python-tools.git
+        - cd ismrmrd-python-tools
+        - pip3 install --no-cache-dir .
+    - run:
+        - git clone https://github.com/kspaceKelvin/python-ismrmrd-server
+        - find /opt/code/python-ismrmrd-server -name "*.sh" -exec chmod +x {} \;
+        - find /opt/code/python-ismrmrd-server -name "*.sh" | xargs dos2unix
+        - sed -i 's/invertcontrast/default_replace_with_valid_name/g' /opt/code/python-ismrmrd-server/main.py
+    - template:
+        name: fsl
+        version: 6.0.7.18
+    - deploy:
+        path:
+          - /opt/code/FSL-BET2/bin
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - gcc-aarch64-linux-gnu cmake make build-essential
+    - workdir: /opt/code
+    - run:
+        - git clone https://github.com/Bostrix/FSL-BET2
+        - cd FSL-BET2
+        - mkdir build
+        - cd build
+        - cmake ..
+        - make
+    - environment:
+        PATH: /usr/bin:/opt/code/FSL-BET2/bin:$PATH
+    - copy:
+        - cbsb0stats.py
+        - /opt/code/python-ismrmrd-server/cbsb0stats.py
+readme: |-
+  ----------------------------------
+  ## cbsb0stats/{{ context.version }} ##
+  This open recon tool will compute a b0 map based on two magnitude images 
+  and one phasediff image from a gradien echo field mapping sequence.
+
+  # WARNING: This is an early version and as of this version no testing
+  # has been performed in a working environment (in a MRI as a Openrecon package).
+
+  you can setup the builder environment with:
+  ```bash
+  python3 -m venv env
+  source env/bin/activate
+  pip install -e .
+  ```
+
+  you can build this recipe with:
+  ```bash
+  source env/bin/activate
+  ./builder/build.py generate testing --recreate --build --login --architecture x86_64
+  ```
+
+  or shorter: open the build.yaml file in the local terminal and run:
+  ```
+  sf-login 
+  ```
+
+  ## Commands for testing
+        
+        # Convert input DICOMs to ISMRMRD format
+    python /opt/code/python-ismrmrd-server/dicom2mrd.py \
+      -o /buildhostdirectory/output.h5 \
+      /buildhostdirectory/dicoms
+
+    # Start OpenRecon server
+    python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/buildhostdirectory/tmp/saved_data/ -l=/buildhostdirectory/tmp/log_data/ &
+    sleep 5
+
+    
+    python3 /opt/code/python-ismrmrd-server/client.py \
+      -G dataset \
+      -o /buildhostdirectory/output.h5 \
+      /buildhostdirectory/input.h5 \
+      -c  cbsb0stats
+
+    # Check output h5 data in "H5Web" VS code plugin viewer
+  ----------------------------------
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADsUlEQVRIS7WVbUjTWxzHv2erucc2VwaVvfCSuOl6cDW7BVsQinjBAs0SSzMiwZDswWp3XXsA71WsXgWhpZCvBMkwiN5UEA1rg0atpVOiKGfTclulW2mudXfO2j/nJAj1wJ/B2f///fwevud3yOZzge/hBbro7/Rntvtk01k/U58L8R9CMVoMMF/iVJf8eWYsDvC7Gc0UOQs6LEQ2nh6NAUwV/zb5BcHPH0AEUvAFkhnL+Cvx8AcgWbWfOAAVD4VC8Lss8D5rh9z/ECqVCjabDcEV+ZD9kYPX13cxQ0xdiZkHIFqug3ilAWSBkEVOxVmJdP985FwUCn3DsOUSMsWP0dHRAbFYzOnY7XZs1m/F5zEfC4IQwv0XDAZhNpuxveI8lmz5F3xhIpct2XDqA+eiMZcVsFajr68PPT09yMvLg8fjQVlZGZqamtDd3Q29Xs8Azc3NqK+vh1QqRW1tLYqLi1FZWYkbL1ZBllYQC4i66NWNcnRePgyDwQC5XA4kasJlycY783+oq6uDTqdDbm4uAzQ0NMBkMrEsNBoNHA4HjEYjmu+MQrmx5idgvcnHSkQbar+QjIGBAUxMTCA1NRXqgz3gi5Tw2K5i+P5priQU4HQ6YbFYIJPJkJ2dDYlEgqSkJAi0JshUOyIA6iLt314GmAyM4PklNbxeL1wuF3T6v5BWYWMvjr68A9fNvTEAGoTf7wePx4NCoWBZ5efn4/EXA6SqIq7RJNPoiWQQnIDjYjJ6e3uRkpICkUiE9Oo3AG8BvE+vYYP4IUpLS1mtp5dIKBSyoOij1Wqxcr8DPH5CxEXrTo5wLnpz6yCunN2JoqIiZGRkwLesFMIkDQZvVcD55AGoW9RqdRyApma1WllZlUolVuw2gy9eGgGsPfGec9Hoq3sIPKiG2+2Gz+dDYWEh+vv70djYiPLycpSUlKC9vZ0BOjs70dLSAoFAgKqqKuTk5KCrqwsFBQVI3mcHiWZAAVEXhYJf4bpdhW1Zi9Da2so+jq62tjYGiR7G6eeAHkbabEGmEZK0H02mGaw5/i5mVIz7XmLo7kmMuy2snrSB9BDRpio3nYDvUWPcSY5uKLJqIEnfw0XPXLS6Zjh22NFx8TWAwKAFk/4hhMLN54sWQ7BYBX6CHOMjzrBDwp9G747w+7yFEpAEBfjSZMaKWpTNIs2xoZ+AKTMkZoTPYp9kHHVHALMQ+VUwJP3I28iFOcN1ORf7EcA8ibNzoD48GA+Yw4yIqtoV56K5LBdJOzQwry76H0tMj7XJU3hkAAAAAElFTkSuQmCC
+categories:
+  - functional imaging
