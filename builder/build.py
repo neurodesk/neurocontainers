@@ -1655,6 +1655,7 @@ def build_and_run_container(
     local_context=None,
     mount: str | None = None,
     use_buildkit: bool = False,
+    use_podman: bool = False,
     load_into_docker: bool = False,
 ):
     if use_buildkit:
@@ -1793,11 +1794,16 @@ def build_and_run_container(
                     pass
 
     # Default: use host Docker CLI
-    if not shutil.which("docker"):
-        raise ValueError("Docker not found in PATH.")
+    if use_podman:
+        if not shutil.which("podman"):
+            raise ValueError("Podman not found in PATH.")
+        print("[WARNING] Using Podman for building the container.")
+    else:
+        if not shutil.which("docker"):
+            raise ValueError("Docker not found in PATH.")
 
     docker_args = [
-        "docker",
+        "docker" if not use_podman else "podman",
         "build",
         "--platform",
         get_build_platform(architecture),
@@ -1828,7 +1834,7 @@ def build_and_run_container(
         abs_path = os.path.abspath(recipe_path)
 
         docker_run_cmd = [
-            "docker",
+            "docker" if not use_podman else "podman",
             "run",
             "--platform",
             get_build_platform(architecture),
@@ -1865,6 +1871,9 @@ def build_and_run_container(
 
     if build_sif:
         print("Building Singularity image...")
+
+        if use_podman:
+            raise ValueError("Singularity build is not supported with Podman.")
 
         sif_cli = shutil.which("singularity") or shutil.which("apptainer")
         if not sif_cli:
@@ -2193,6 +2202,7 @@ def generate_and_build(
     local_context=None,
     mount: str | None = None,
     use_buildkit: bool = False,
+    use_podman: bool = False,
     load_into_docker: bool = False,
 ):
     ctx = generate_dockerfile(
@@ -2235,6 +2245,7 @@ def generate_and_build(
         local_context=local_context,
         mount=mount,
         use_buildkit=use_buildkit,
+        use_podman=use_podman,
         load_into_docker=load_into_docker,
     )
 
@@ -2283,6 +2294,11 @@ def build_main(login=False):
         help="Use buildkitd/buildctl instead of Docker CLI",
     )
     root.add_argument(
+        "--use-podman",
+        action="store_true",
+        help="Use Podman instead of Docker",
+    )
+    root.add_argument(
         "--load-into-docker",
         action="store_true",
         help="After BuildKit build, docker load the resulting image tar if Docker is available",
@@ -2316,6 +2332,7 @@ def build_main(login=False):
         local_context=args.local,
         mount=args.mount,
         use_buildkit=args.use_buildkit,
+        use_podman=args.use_podman,
         load_into_docker=args.load_into_docker,
     )
 
@@ -2693,6 +2710,11 @@ def main(args):
         help="Use buildkitd/buildctl instead of Docker CLI",
     )
     build_parser.add_argument(
+        "--use-podman",
+        action="store_true",
+        help="Use Podman instead of Docker",
+    )
+    build_parser.add_argument(
         "--load-into-docker",
         action="store_true",
         help="After BuildKit build, docker load the resulting image tar if Docker is available",
@@ -2824,6 +2846,7 @@ def main(args):
                 generate_release=args.generate_release,
                 gpu=args.gpu,
                 use_buildkit=args.use_buildkit,
+                use_podman=args.use_podman,
                 load_into_docker=args.load_into_docker,
             )
     else:
