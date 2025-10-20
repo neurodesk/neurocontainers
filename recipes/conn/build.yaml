@@ -5,7 +5,7 @@ architectures:
   - x86_64
 auto_update:
   method: manual_review
-  information: "https://www.nitrc.org/frs/download.php/13733/conn22a_glnxa64.zip"
+  information: "https://www.nitrc.org/projects/conn"
 
 build:
   kind: neurodocker

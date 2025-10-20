@@ -9,7 +9,7 @@ architectures:
   - x86_64
 auto_update:
   method: manual_review
-  information: "http://www.gnu.org/licenses/old-licenses/gpl-2.0.html"
+  information: "https://www.humanconnectome.org/software/connectome-workbench"
 files:
   - name: license.txt
     filename: license.txt
