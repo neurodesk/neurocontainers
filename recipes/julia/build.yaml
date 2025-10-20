@@ -1,23 +1,50 @@
 name: julia
 version: 1.9.4
-
 copyright:
   - license: MIT
     url: https://github.com/JuliaLang/julia/blob/master/LICENSE.md
-
 architectures:
   - x86_64
-
 build:
   kind: neurodocker
-
   base-image: ubuntu:22.04
   pkg-manager: apt
-
   directives:
+    - file:
+        name: install_packages.jl
+        contents: |-
+          using Pkg
+          ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0
+          Pkg.add("ArgParse")
+          Pkg.add("FFTW")
+          Pkg.add("IJulia")
+    - file:
+        name: code
+        contents: |-
+          #!/usr/bin/env sh
+          /usr/bin/code --extensions-dir=/opt/vscode-extensions --no-sandbox
+    - file:
+        name: module.sh
+        contents: |-
+          # system-wide profile.modules                                          #
+          # Initialize modules for all sh-derivative shells                      #
+          #----------------------------------------------------------------------#
+          trap "" 1 2 3
+
+          case "$0" in
+              -bash|bash|*/bash) . /usr/share/lmod/6.6/init/bash ;;
+                 -ksh|ksh|*/ksh) . /usr/share/lmod/6.6/init/ksh ;;
+                 -zsh|zsh|*/zsh) . /usr/share/lmod/6.6/init/zsh ;;
+                    -sh|sh|*/sh) . /usr/share/lmod/6.6/init/sh ;;
+                              *) . /usr/share/lmod/6.6/init/sh ;;  # default for scripts
+          esac
+
+          trap - 1 2 3
+    - deploy:
+        bins:
+          - julia
     - environment:
         DEBIAN_FRONTEND: noninteractive
-
     - install:
         - xdg-utils
         - unzip
@@ -54,56 +81,44 @@ build:
         - libgpgme-dev
         - libseccomp-dev
         - pkg-config
-
     - run:
         - wget -O vscode.deb 'https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64'
         - apt install ./vscode.deb
         - rm -rf ./vscode.deb
-
     - workdir: /opt
-
     - run:
         - wget https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.4-linux-x86_64.tar.gz
         - tar zxvf julia-1.9.4-linux-x86_64.tar.gz
         - rm -rf julia-1.9.4-linux-x86_64.tar.gz
         - ln -s /opt/julia-1.9.4 /opt/julia-latest
-
     - run:
         - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension julialang.language-julia
         - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension KorbinianEckstein.niivue
         - rm -rf /opt/vscode-data/CachedExtensionVSIXs/
-
     - environment:
         PATH: $PATH:/opt/julia-1.9.4/bin
-
     - workdir: /opt
-
     - copy: install_packages.jl /opt
-
     - environment:
         JULIA_DEPOT_PATH: /opt/julia_depot
-
     - run:
         - julia install_packages.jl
-
     - environment:
         JULIA_DEPOT_PATH: ~/.julia:/opt/julia_depot
-
     - copy: code /usr/local/sbin/
-
     - run:
         - chmod a+x /usr/local/sbin/code
         - chmod a+rwx /opt/vscode-extensions/ -R
         - chmod a+rwx /opt/vscode-data -R
-
     - copy: module.sh /usr/share/
-
     - user: neuro
-
-deploy:
-  bins:
-    - julia
-
+    - boutique:
+        name: New Tool
+        description: Tool description
+        tool-version: 1.0.0
+        schema-version: "0.5"
+        command-line: tool [OPTIONS]
+        inputs: []
 readme: |-
   ----------------------------------
   ## julia/{{ context.version }} ##
@@ -120,43 +135,11 @@ readme: |-
   To run container outside of this environment: ml julia/{{ context.version }}
 
   ----------------------------------
-
-files:
-  - name: install_packages.jl
-    contents: |-
-      using Pkg
-      ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0
-      Pkg.add("ArgParse")
-      Pkg.add("FFTW")
-      Pkg.add("IJulia")
-
-  - name: code
-    contents: |-
-      #!/usr/bin/env sh
-      /usr/bin/code --extensions-dir=/opt/vscode-extensions --no-sandbox
-
-  - name: module.sh
-    contents: |-
-      # system-wide profile.modules                                          #
-      # Initialize modules for all sh-derivative shells                      #
-      #----------------------------------------------------------------------#
-      trap "" 1 2 3
-
-      case "$0" in
-          -bash|bash|*/bash) . /usr/share/lmod/6.6/init/bash ;;
-             -ksh|ksh|*/ksh) . /usr/share/lmod/6.6/init/ksh ;;
-             -zsh|zsh|*/zsh) . /usr/share/lmod/6.6/init/zsh ;;
-                -sh|sh|*/sh) . /usr/share/lmod/6.6/init/sh ;;
-                          *) . /usr/share/lmod/6.6/init/sh ;;  # default for scripts
-      esac
-
-      trap - 1 2 3
-
 categories:
-  - "programming"
-
+  - programming
 gui_apps:
-  - name: "vscodeGUI"
-    exec: "code"
-  - name: "REPLGUI"
-    exec: "julia"
+  - name: vscodeGUI
+    exec: code
+  - name: REPLGUI
+    exec: julia
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADxUlEQVR4AZyTS0xUZxTH/3MHBsvL4dGMk9LaEmuIDrShiYspaRNiAwHSaGnT2qevpu+Wtou+CK1olVEWLlz4WKgLE+IjmBCH6IaFGldgTERijOIkBEFxNCKKo8zn9z96zJ1RfE3u755z/t/5zvked5wVv683y3+LmGW/tpmlTevMV7+sFb78+X/zxU9rzOc/rjaf/dBqPv1+lbDku//MJ9/+az7+pkX46OtmQz5c+Y9pXPG3+WD5X2bxsj/NoqV/CI4xBuk/auRJuubQkvR8xtKAg9ORTCYx3dijdHc+fYddNFF9WkKdNh3qhLradJ8xcdiFSUR9WkKN0Cfq0xK3pr7qGj+0A3Z1wwkaq09LVHdbt05/2ju4czuBU8ePomPzKqFz5wbs3roae7atQdeujbh0IYbr1+I4crADndvbsH9HBL2HD2Dy5kTKnUkDXQE7Eo1pW1tbwe3CAM3NzTKZOtEPcGRkBH19fZQE1iAMpAELEIqEfjJpK7KqzfJ4PPYNOI6cKGwX29RYY3PsI4P2xbnG9dUlrX9/hh21jyTosiS2r+d43HVSviIdUGuXOG15u367C/sfub/Le4lWtQvU+bQpO0jcmsTE+FV7eVfETk5O3Jv3DG8W1XT6D+5gamoKF4fPI9qxCf3HunBo3xacPnEMHo9H8zE0NCR+gd8PPWtuwOfzYWxsDDaZoeyM5/+gAVy/UCiEwcFBhMNhUYPBoEzgBff09IhWU/Mexq9etozh5o1x+G3D3t5eZGZm2R4phwLZATsRx+vFucHzUqSpqQllZWVoaGhAPB6HN9OH4QsXkUgk0N7ejqnrwxg914doV6ct6kE0GkV2XgEcrxesRbgLaceAVXNy/XghtwDd3d1obGzEwMAAAoEAWlpaUBR4GYGSUtTW1iI/Px/9/f2IxWKoqqpCJBLByYGz8BfNss2kJMsJKV/RjOw8zJ5bgbq6OhQWFqK+vh45OTnYu78bpWWVmDN/Ac7ERpGVlYXy8nJUV1cjIyMDbRs24vWKsOyAi+XKCX2HbegQx+tFyWvzsHDxSpSG3sZQ/DbeCNejsqoOef5iW8CP0IKFCNcsAbJnYXQceOvdRah85334i4MsJccjjn1JTb7cWB25M4tQUjoPr859E8XB2fDNyJaJzHMcL2YWBuz4fLwypwIFL76EDHu5HHsUcsksSphAmw51Ql1tus9YYQ5hLA14XoQioU/UpyVuTX3VNVarutwBOykcSPepEdXd1q2rT0uYl/IVubsz4Uk8Tf5DO2BXLaw+LXHrjJXH6XcBAAD//9ClO/AAAAAGSURBVAMA9HKfV+vFBCIAAAAASUVORK5CYII=
