@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "cbsb0stats 1.0.0": {
+      "version": "20251022",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging"
+  ]
+}
