@@ -23,6 +23,7 @@ CATEGORIES = [
     "structural imaging",
     "image segmentation",
     "functional imaging",
+    "rodent imaging",
     "diffusion imaging",
     "spine",
     "connectomics",
@@ -58,6 +59,9 @@ INCLUDE_MACROS = [
     "openrecon/neurodocker.yaml",
     "macros/openrecon/neurodocker.yaml",  # Support both formats
 ]
+
+ALLOWED_AUTO_UPDATE_METHODS = ["github_release"]
+
 
 
 # ============================================================================
@@ -200,6 +204,23 @@ class Template:
         name = data.pop("name")
         return cls(name=name, additional_props=data)
 
+
+# ============================================================================
+# Auto Update 
+# ============================================================================
+
+
+@attrs.define
+class AutoUpdate:
+    method: str = attrs.field()  # only 'github_release'
+    repo: str = attrs.field(validator=validate_non_empty_string)
+
+    @method.validator
+    def _validate_method(self, attribute, value):
+        if value not in ALLOWED_AUTO_UPDATE_METHODS:
+            raise ValueError(
+                f"auto_update.method '{value}' not supported. Must be one of: {ALLOWED_AUTO_UPDATE_METHODS}"
+            )
 
 # ============================================================================
 # Directive Base Classes
@@ -349,6 +370,7 @@ class ContainerRecipe:
     version: str = attrs.field(validator=validate_non_empty_string)
     architectures: List[str] = attrs.field(validator=attrs.validators.min_len(1))
     build: NeuroDockerBuildRecipe = attrs.field()
+    auto_update: Optional[AutoUpdate] = attrs.field(default=None)
     icon: Optional[str] = attrs.field(default=None)
     copyright: Optional[List[Union[CustomCopyrightInfo, SPDXCopyrightInfo]]] = (
         attrs.field(default=None)
@@ -536,6 +558,12 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
             recipe_copy["structured_readme"] = StructuredReadme(
                 **recipe_copy["structured_readme"]
             )
+
+        # parse auto_update if present
+        if "auto_update" in recipe_copy and recipe_copy["auto_update"]:
+            recipe_copy["auto_update"] = AutoUpdate(**recipe_copy["auto_update"])
+        else:
+            recipe_copy["auto_update"] = None
 
         # Parse build recipe
         build_dict = recipe_copy["build"].copy()

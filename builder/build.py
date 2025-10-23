@@ -12,6 +12,11 @@ import hashlib
 import typing
 import json
 import datetime
+import re
+from pathlib import Path
+
+# add the parent directory to the path to import builder modules
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 GLOBAL_MOUNT_POINT_LIST = [
     "/afm01",
@@ -45,6 +50,8 @@ ARCHITECTURES = {
     "x86_64": "x86_64",
     "arm64": "aarch64",
     "aarch64": "aarch64",
+    "AMD64": "x86_64",  # Windows x86_64
+    "ARM64": "aarch64",  # Windows ARM64
 }
 
 
@@ -1648,6 +1655,7 @@ def build_and_run_container(
     local_context=None,
     mount: str | None = None,
     use_buildkit: bool = False,
+    use_podman: bool = False,
     load_into_docker: bool = False,
 ):
     if use_buildkit:
@@ -1786,11 +1794,16 @@ def build_and_run_container(
                     pass
 
     # Default: use host Docker CLI
-    if not shutil.which("docker"):
-        raise ValueError("Docker not found in PATH.")
+    if use_podman:
+        if not shutil.which("podman"):
+            raise ValueError("Podman not found in PATH.")
+        print("[WARNING] Using Podman for building the container.")
+    else:
+        if not shutil.which("docker"):
+            raise ValueError("Docker not found in PATH.")
 
     docker_args = [
-        "docker",
+        "docker" if not use_podman else "podman",
         "build",
         "--platform",
         get_build_platform(architecture),
@@ -1821,7 +1834,7 @@ def build_and_run_container(
         abs_path = os.path.abspath(recipe_path)
 
         docker_run_cmd = [
-            "docker",
+            "docker" if not use_podman else "podman",
             "run",
             "--platform",
             get_build_platform(architecture),
@@ -1832,7 +1845,16 @@ def build_and_run_container(
         ]
 
         if mount:
-            host, container = mount.split(":", 1)
+            # Handle Windows paths with drive letters (e.g., C:\Users\...:container)
+            # Pattern: drive letter (X:) followed by path separator, then path, then : separator
+            windows_path_match = re.match(r'^([A-Za-z]:[/\\].+?):(.+)$', mount)
+            if windows_path_match:
+                host = windows_path_match.group(1)
+                container = windows_path_match.group(2)
+            else:
+                # Unix-style path or relative path - split on first colon
+                host, container = mount.split(":", 1)
+
             host = os.path.abspath(host)
             docker_run_cmd.extend(["-v", f"{host}:{container}"])
 
@@ -1849,6 +1871,9 @@ def build_and_run_container(
 
     if build_sif:
         print("Building Singularity image...")
+
+        if use_podman:
+            raise ValueError("Singularity build is not supported with Podman.")
 
         sif_cli = shutil.which("singularity") or shutil.which("apptainer")
         if not sif_cli:
@@ -1897,9 +1922,21 @@ def run_docker_prep(prep, volume_name):
 
 
 def run_builtin_test(tag, test, gpu=False):
-    # built-in tests are found next to this file
-    builtin_test = os.path.join(os.path.dirname(__file__), test)
-    if not os.path.exists(builtin_test):
+    # Locate builtin tests in either the legacy builder directory or the
+    # relocated workflows directory.
+    search_dirs = [
+        os.path.dirname(__file__),
+        os.path.join(get_repo_path(), "workflows"),
+    ]
+
+    builtin_test = None
+    for directory in search_dirs:
+        candidate = os.path.join(directory, test)
+        if os.path.exists(candidate):
+            builtin_test = candidate
+            break
+
+    if builtin_test is None:
         raise ValueError(f"Builtin test {test} does not exist")
 
     test_content = open(builtin_test).read()
@@ -1927,7 +1964,7 @@ def run_builtin_test(tag, test, gpu=False):
 
 
 def run_docker_test(tag, test, gpu=False):
-    if test.get("builtin") == "test_deploy.sh":
+    if test.get("builtin") in {"test_deploy.sh"}:
         return run_builtin_test(tag, test.get("builtin"), gpu=gpu)
 
     script = test.get("script")
@@ -2046,18 +2083,17 @@ def get_all_tests(description_file: typing.Any, recipe_path: str) -> list[dict]:
 
     walk_directives(directives)
 
-    # Ensure we always include the default builtin deploy test unless already present
-    has_builtin = any(
-        (isinstance(t, dict) and t.get("builtin") == "test_deploy.sh") for t in tests
+    # Ensure builtin tests are always present unless explicitly disabled
+    def ensure_builtin(default_test, position=0):
+        if not any(
+            isinstance(t, dict) and t.get("builtin") == default_test["builtin"]
+            for t in tests
+        ):
+            tests.insert(position, dict(default_test))
+
+    ensure_builtin(
+        {"name": "Simple Deploy Bins/Path Test", "builtin": "test_deploy.sh"}
     )
-    if not has_builtin:
-        tests.insert(
-            0,
-            {
-                "name": "Simple Deploy Bins/Path Test",
-                "builtin": "test_deploy.sh",
-            },
-        )
 
     return tests
 
@@ -2166,6 +2202,7 @@ def generate_and_build(
     local_context=None,
     mount: str | None = None,
     use_buildkit: bool = False,
+    use_podman: bool = False,
     load_into_docker: bool = False,
 ):
     ctx = generate_dockerfile(
@@ -2208,6 +2245,7 @@ def generate_and_build(
         local_context=local_context,
         mount=mount,
         use_buildkit=use_buildkit,
+        use_podman=use_podman,
         load_into_docker=load_into_docker,
     )
 
@@ -2256,6 +2294,11 @@ def build_main(login=False):
         help="Use buildkitd/buildctl instead of Docker CLI",
     )
     root.add_argument(
+        "--use-podman",
+        action="store_true",
+        help="Use Podman instead of Docker",
+    )
+    root.add_argument(
         "--load-into-docker",
         action="store_true",
         help="After BuildKit build, docker load the resulting image tar if Docker is available",
@@ -2289,6 +2332,7 @@ def build_main(login=False):
         local_context=args.local,
         mount=args.mount,
         use_buildkit=args.use_buildkit,
+        use_podman=args.use_podman,
         load_into_docker=args.load_into_docker,
     )
 
@@ -2435,6 +2479,127 @@ def test_main():
     run_tests(recipe_path, gpu=args.gpu)
 
 
+def test_remote_main():
+    """Run release container tests for a single recipe using shared tooling."""
+
+    root = argparse.ArgumentParser(
+        description="Run release container tests for a single Neurocontainer",
+    )
+
+    root.add_argument("recipe", help="Name of the recipe to test")
+    root.add_argument(
+        "--version",
+        help="Container version to test; defaults to the latest release metadata",
+    )
+    root.add_argument(
+        "--release-file",
+        help="Path to a specific release JSON file (overrides automatic lookup)",
+    )
+    root.add_argument(
+        "--runtime",
+        choices=["docker", "apptainer", "singularity"],
+        help="Preferred container runtime (defaults to auto-detection)",
+    )
+    root.add_argument(
+        "--location",
+        choices=["auto", "cvmfs", "local", "release", "docker"],
+        default="auto",
+        help="Where to source the container from",
+    )
+    root.add_argument(
+        "--test-config",
+        help="Override the test configuration file (defaults to recipe test.yaml/build.yaml)",
+    )
+    root.add_argument(
+        "-o",
+        "--output",
+        help="Path to write JSON test results (defaults to builder/test-results-<recipe>.json)",
+    )
+    root.add_argument(
+        "--gpu", action="store_true", help="Enable GPU support when running tests"
+    )
+    root.add_argument(
+        "--cleanup",
+        action="store_true",
+        help="Remove downloaded container after testing",
+    )
+    root.add_argument(
+        "--auto-cleanup",
+        action="store_true",
+        help="Automatically remove downloaded container even if tests fail",
+    )
+    root.add_argument(
+        "--cleanup-all",
+        action="store_true",
+        help="Remove all cached containers and exit",
+    )
+    root.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable verbose output"
+    )
+
+    args = root.parse_args()
+
+    from workflows.test_runner import ContainerTestRunner, TestRequest
+
+    runner = ContainerTestRunner()
+
+    if args.cleanup_all:
+        count = runner.cleanup_all(verbose=args.verbose)
+        print(f"Cleaned up {count} cached container file(s)")
+        return
+
+    repo_path = Path(get_repo_path())
+    recipe_dir = repo_path / "recipes" / args.recipe
+    if not recipe_dir.is_dir():
+        print(f"Error: Recipe directory not found: {recipe_dir}", file=sys.stderr)
+        sys.exit(1)
+
+    output_path = Path(args.output).resolve() if args.output else None
+    output_dir = output_path.parent if output_path else None
+
+    request = TestRequest(
+        recipe=args.recipe,
+        version=args.version,
+        release_file=args.release_file,
+        test_config=args.test_config,
+        runtime=args.runtime,
+        location=args.location,
+        gpu=args.gpu,
+        cleanup=args.cleanup,
+        auto_cleanup=args.auto_cleanup,
+        verbose=args.verbose,
+        allow_missing_tests=False,
+        output_dir=output_dir,
+        results_path=output_path,
+    )
+
+    try:
+        outcome = runner.run(request)
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    results = outcome.results
+    print(f"\nTest results written to {outcome.results_path}")
+    if outcome.comment_path:
+        print(f"Comment markdown: {outcome.comment_path}")
+    if outcome.report_path:
+        print(f"Detailed report: {outcome.report_path}")
+
+    container_ref = results.get("container", f"{args.recipe}:{outcome.version}")
+    print(f"Container: {container_ref}")
+    print(f"  Total: {results.get('total_tests', results.get('total', 0))}")
+    print(f"  Passed: {results.get('passed', 0)}")
+    print(f"  Failed: {results.get('failed', 0)}")
+    print(f"  Skipped: {results.get('skipped', 0)}")
+
+    exit_status = 0 if outcome.status == "passed" else 1
+    sys.exit(exit_status)
+
+
 def init_main():
     root = argparse.ArgumentParser(
         description="NeuroContainer Builder - Initialize a new recipe",
@@ -2543,6 +2708,11 @@ def main(args):
         "--use-buildkit",
         action="store_true",
         help="Use buildkitd/buildctl instead of Docker CLI",
+    )
+    build_parser.add_argument(
+        "--use-podman",
+        action="store_true",
+        help="Use Podman instead of Docker",
     )
     build_parser.add_argument(
         "--load-into-docker",
@@ -2676,6 +2846,7 @@ def main(args):
                 generate_release=args.generate_release,
                 gpu=args.gpu,
                 use_buildkit=args.use_buildkit,
+                use_podman=args.use_podman,
                 load_into_docker=args.load_into_docker,
             )
     else:

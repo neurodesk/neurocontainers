@@ -1,0 +1,234 @@
+name: rabies
+version: 0.5.3
+
+copyright:
+  - name: ACADEMIC PUBLIC LICENSE (Non-Commercial Use)
+    url: https://github.com/CoBrALab/RABIES/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+readme: |
+  ## rabies/{{context.version}} ##
+
+  RABIES (Rodent Automated Bold Improvement of EPI Sequences) is an open source image processing pipeline for rodent fMRI. It conducts state-of-the-art preprocessing and confound correction, and supplies standard resting-state functional connectivity analyses.
+
+  **Key Features:**
+  - Robust registration workflow with automatically-adapting parameters
+  - Head motion correction and susceptibility distortion correction  
+  - Brain parcellation and resampling to native or common space
+  - Confound regression with multiple nuisance regressor options
+  - ICA-AROMA denoising and frame censoring
+  - Seed-based and whole-brain connectivity analyses
+  - Comprehensive data quality assessment tools
+
+  **Main Processing Stages:**
+  1. **Preprocessing**: Motion correction, distortion correction, registration, parcellation
+  2. **Confound Correction**: Detrending, regression, filtering, smoothing  
+  3. **Analysis**: Connectivity analysis, group-ICA, dual regression, data diagnosis
+
+  **Examples:**
+  ```bash
+  # Basic preprocessing workflow
+  rabies preprocess /path/to/bids/dataset /path/to/outputs participant
+
+  # Confound correction
+  rabies confound_correction /path/to/preprocess/outputs /path/to/outputs participant
+
+  # Analysis stage
+  rabies analysis /path/to/confound/outputs /path/to/outputs participant
+
+  # Get help
+  rabies --help
+  rabies preprocess --help
+  ```
+
+  **Requirements:**
+  - Input data must follow BIDS format
+  - Requires substantial computational resources for full pipeline
+  - Processing time ranges from hours to days depending on data size
+
+  **Documentation:** https://rabies.readthedocs.io/en/latest/
+
+  **Citation:** Desrosiers-Grégoire, et al. Nat Commun 15, 6708 (2024). https://doi.org/10.1038/s41467-024-50826-8
+
+  **License:** Academic and educational use only. Commercial use requires separate license from CoBrALab.
+
+  To run container outside of this environment: ml rabies/{{context.version}}
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - variables:
+        install_dir: /opt/rabies
+
+    - group:
+        - file:
+            name: micromamba.tar.bz2
+            url: https://micro.mamba.pm/api/micromamba/linux-64/latest
+
+        - run:
+            - tar -xjf {{ get_file("micromamba.tar.bz2") }} -C /usr/local/bin --strip-components=1 bin/micromamba
+
+        - run:
+            - mkdir -p "{{ local.install_dir }}"
+            # Add the mambauser user and give permissions to the install dir
+            - useradd -m -s /bin/bash mambauser
+            - chown -R mambauser:mambauser "{{ local.install_dir }}"
+
+        - environment:
+            XDG_DATA_HOME: "{{ local.install_dir }}/share"
+
+    - group:
+        - environment:
+            DEBIAN_FRONTEND: noninteractive
+
+        - install: >-
+            perl imagemagick parallel gdebi-core curl ca-certificates patch rsync unzip
+
+    # Install AFNI
+    - group:
+        - workdir: /opt/afni
+
+        - file:
+            name: linux_ubuntu_16_64.tgz
+            url: https://afni.nimh.nih.gov/pub/dist/tgz/linux_ubuntu_16_64.tgz
+
+        - run:
+            - mkdir -p /opt/afni
+            - >-
+              tar xzvf {{ get_file("linux_ubuntu_16_64.tgz") }} -C /opt/afni
+              linux_ubuntu_16_64/libmri.so
+              linux_ubuntu_16_64/libf2c.so
+              linux_ubuntu_16_64/3dDespike
+              linux_ubuntu_16_64/3dTshift
+              linux_ubuntu_16_64/3dWarp
+              linux_ubuntu_16_64/3dAutobox
+              --strip-components=1
+
+        - environment:
+            PATH: /opt/afni:$PATH
+
+    # Install MINC toolkit
+    - group:
+        - workdir: /tmp
+
+        - file:
+            name: minc-toolkit-1.9.18.deb
+            url: https://packages.bic.mni.mcgill.ca/minc-toolkit/min/minc-toolkit-1.9.18-20200813-Ubuntu_18.04-x86_64.deb
+
+        - run:
+            - gdebi -n {{ get_file("minc-toolkit-1.9.18.deb") }}
+            - >-
+              rm -f /opt/minc/1.9.18/bin/{ants*,ANTS*,ImageMath,AverageImages,ThresholdImage,
+              ExtractRegionFromImageByMask,ConvertImage,AverageAffine*,ResampleImage}
+
+        - environment:
+            MINC_TOOLKIT: /opt/minc/1.9.18
+            MINC_TOOLKIT_VERSION: 1.9.18-20200813
+            PATH: /opt/minc/1.9.18/bin:/opt/minc/1.9.18/pipeline:$PATH
+            PERL5LIB: /opt/minc/1.9.18/perl:/opt/minc/1.9.18/pipeline:$PERL5LIB
+            LD_LIBRARY_PATH: /opt/minc/1.9.18/lib:/opt/minc/1.9.18/lib/InsightToolkit:$LD_LIBRARY_PATH
+            MNI_DATAPATH: /opt/minc/share:/opt/minc/1.9.18/share
+            MINC_FORCE_V2: "1"
+            MINC_COMPRESS: "4"
+            VOLUME_CACHE_THRESHOLD: "-1"
+            MANPATH: /opt/minc/1.9.18/man:$MANPATH
+
+    # Clone first so we can apply the patch from the repo
+    - group:
+        - workdir: "{{ local.install_dir }}"
+
+        - install: git
+
+        - run:
+            - git clone --recursive --depth 1 --branch {{ context.version }} https://github.com/CoBrALab/RABIES.git RABIES
+            - "(cd / && patch -p0) < {{ local.install_dir }}/RABIES/patch/nu_estimate_np_and_em.diff"
+
+    # Install ANTs
+    - group:
+        - workdir: /opt
+
+        - file:
+            name: ants.zip
+            url: https://github.com/ANTsX/ANTs/releases/download/v2.5.0/ants-2.5.0-ubuntu-22.04-X64-gcc.zip
+
+        - run:
+            - unzip -d /opt {{ get_file("ants.zip") }}
+            - rm -rf /opt/ants-2.5.0/lib
+
+        - environment:
+            PATH: /opt/ants-2.5.0/bin:$PATH
+
+    # Install RABIES dependencies via micromamba
+    - group:
+        - workdir: "{{ local.install_dir }}/RABIES"
+        - run:
+            - micromamba install -y -n base -f rabies_environment.yml
+            - micromamba run -n base pip install -e .
+            - micromamba clean --all --yes
+
+    # Fix FSL installation to avoid issues with libraries
+    - group:
+        - environment:
+            FSLDIR: /opt/conda
+            FSLWISH: /opt/conda/bin/fslwish
+            FSLTCLSH: /opt/conda/bin/fsltclsh
+            FSLMULTIFILEQUIT: "TRUE"
+            FSL_LOAD_NIFTI_EXTENSIONS: "0"
+            FSL_SKIP_GLOBAL: "0"
+            FSLOUTPUTTYPE: NIFTI_GZ
+            MPLBACKEND: agg
+
+        - run:
+            - micromamba run -n base install_DSURQE.sh $XDG_DATA_HOME/rabies
+
+    - deploy:
+        bins:
+          - rabies
+
+    # Create micromamba initialization script for /etc/profile.d/
+    - run:
+        - mkdir -p /etc/profile.d
+        - micromamba shell hook -s posix > /etc/profile.d/micromamba.sh
+        - echo "micromamba activate base" >> /etc/profile.d/micromamba.sh
+        - mkdir -p /.singularity.d/env
+        - echo "source /etc/profile.d/micromamba.sh" >> /.singularity.d/env/99-micromamba-startup.sh
+
+    - file:
+        name: shell.sh
+        contents: |
+          #!/bin/bash
+
+          # Source micromamba initialization if not already done
+          if [ -f /etc/profile.d/micromamba.sh ]; then
+            source /etc/profile.d/micromamba.sh
+          fi
+
+          # if there's no arguments run bash
+          if [ $# -eq 0 ]; then
+            exec bash
+          else
+            exec "$@"
+          fi
+
+    - run:
+        - cp {{ get_file("shell.sh") }} /usr/local/bin/_shell.sh
+        - chmod +x /usr/local/bin/_shell.sh
+
+    - user: mambauser
+
+    - entrypoint: /usr/local/bin/_shell.sh
+
+    - test:
+        name: test_rabies
+        script: error_check_rabies.py --complete
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEu0lEQVR4AXxUa0ybZRR+WmxJx3VcZEMgkEwBGXYbFwG3AYrTTROdTDZIgB+QOC9T5rxHmMIP0MTLH2NUiAJjU9FNJf7SPzoDCS5jixcyBAFb1oEJk8valdLv9ZzztbU0wy99vu95z3vec39rfOWbYvXy10Xqpa/uVC+eKVQvnC4QPP9lvnruizx1rH+Hevbz7eroZ9sETZ9a1TOn7lBPn8xVR/q2qqdO5Aie7L1dPdGTrR7vzlKHP8lUj318m8ColELowzLG/8rp2MLcClyLq2Bdxo30xYHSFDQCK4VC07SAgcAe6XpXNdh/W8bshAt8XvZIHqpvZK8KFI4AYEWWMfxckmQVFhJYf5UczP7pwsyla/B69U2W0/aanzHYo5/zl8EOdGjQlAaO1C9fcXkxb7uOK2NOuJY88MtZn7mAItMzIOJc9KD/9TG89eh5vF01gncOXhC8e+gi3qv/Ff2vTeDS0D/wehTY+E99V+D4wwXHmAsDb9iwMLsiNWAHgRSUgt4DIrzBiba2tsLtdkPWPrnH7cX3Z37Gd+/bMXFuEfOX3Zj53YnOzk7RPXr4VcyMOqFR2YLPMRcHAY8+4iYHbW1tMBgMgrq6OqSmpuLDDz7C6A9XMT2yhKK83SgvL4fdbkdJSQkmzy3D7fSKBTbM4IU44HopmhbJkaUh6O3thc1mQ3p6Oq5eXsHkyDLKyspEa2BgAFarFfcUHsDfk9ehebVA9mxXeiCa9LrRFJAYtbW1ksHU1BTFoDBvd+tRT06iqakJc3Nz2HXXbkxfuAbvKlnxlZbP/jdFvPIhPDwczc3NgUh6enowPDyMxsZGmC1hKCstR0ZGBgYHB+XE0NAQiouLYfvFqTfb54DLZGQNWtMFYKYjuAddXV1YWlpCd3c3ouJN8NB4cnlSUlICQTQ0NEiG+/dVU7NdNLK6HXHAL0Uz7tWoQTxG+l7gzVFz/dvb21Fg3YXl+VVUVlZifHxcBsBg0AeBderr6zF9nu7Fgoec6L2QJgeshZAdD8ZjY7IZHR0diI6ORk1NTaAfXJZgdYfDgaysLORm7KRmr+gVoYDFgaL/EEpCGhh8iI0XPJKAvlMnpAdVVVXgcrDO2bM/Ys+RJBx8MxVJW8KlH4mJiag+VI2/LjrhcWvg26/3gEzrLoGWlhaJ9vjxFsAApORsQObOGFRUVIic68/ZnP72JGJTzAiPNCLNukHO8XBwSR2jbmq2B/wEpijMDGSXxqKQIi7Yn4DCAwmIIwM3mQ3IvTcGW4qikJxlweZMC5KzLUjPj4CJ9gwGhbTtFuRXxsL6QLQgszQCXBW+E3oGNEZhJgNuLYpG3kMJhHhs2xeHjbeYKTeFmE0mlDXejL3HNhM24b6mJOQ9HAuThVIEEBEXhuy7I5G7Nwpb749Ezp5IxKWZwBXQe0AOFIN6wbdPOK+DoAXx4P319DkD1hMH8D10B31s7YcVQQ5YKpwJIZhTqiTRfyz32xIHHAVDNsgQc4GPB8uZyx79dzFnyJrGUAupgEY60gPdrz5HfMC/Do56jdyvQHO+Vk4C2mMZgygCU8QCRR7lS5Gv+6Uo/XsaRe3n633XZMAeGX5lP+cvQ+TBxWYhQeQUFFF/0kyJK/wLAAD//zC2ZdYAAAAGSURBVAMAq57IzT1zg9sAAAAASUVORK5CYII=
+
+categories:
+  - rodent imaging

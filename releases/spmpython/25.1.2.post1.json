@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "spmpython 25.1.2.post1": {
+      "version": "20250905",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "image segmentation",
+    "image registration",
+    "structural imaging"
+  ]
+}
