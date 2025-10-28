@@ -50,9 +50,6 @@ build:
   pkg-manager: apt
   directives:
     - install: git
-    - run:
-        - git clone https://github.com/ezequieldlrosa/DeepIsles.git
-        - cd DeepIsles
     - group:
         - file:
             name: environment.yml
@@ -98,10 +95,20 @@ build:
         activate_env: true
         mamba: true
         cleanup: true
+    - run:
+        - git clone https://github.com/ezequieldlrosa/DeepIsles.git
+        - cd DeepIsles
+    - run:
+        - wget https://zenodo.org/records/14026715/files/stroke_ensemble_weights.7z?download=1
+        - mv 'stroke_ensemble_weights.7z?download=1' weights.7z
+        - 7za x weights.7z
     - deploy:
         path: []
         bins:
           - python
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
 categories:
   - structural imaging
   - image segmentation
