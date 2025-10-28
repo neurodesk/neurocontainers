@@ -52,7 +52,7 @@ build:
     - install: git
     - group:
         - file:
-            name: environment.yml
+            name: environment.sh
             contents: |-
               conda create --name deepisles python=3.8.0 pip=23.3.1
               conda activate deepisles
@@ -69,10 +69,10 @@ build:
             install_path: /opt/miniconda
             mamba: true
         - run:
-            - cp {{ get_file("environment.yml") }} /tmp/environment.yml
+            - cp {{ get_file("environment.sh") }} /tmp/environment.sh
             - conda config --set channel_priority flexible
-            - conda env create -f /tmp/environment.yml
-            - rm /tmp/environment.yml
+            - bash /tmp/environment.sh
+            - rm /tmp/environment.sh
         - environment:
             CONDA_DEFAULT_ENV: myenv
             PATH: /opt/miniconda/envs/myenv/bin:$PATH
