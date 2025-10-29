@@ -6,7 +6,7 @@ copyright:
 architectures:
   - x86_64
 structured_readme:
-  description: DeepISLES is an out-of-the-box software tool for processing MRI scans and segmenting ischemic stroke lesions, developed in collaboration with leading teams from the ISLES'22 MICCAI Challenge.
+  description: DeepISLES is an out-of-the-box software tool for processing MRI scans and segmenting ischemic stroke lesions, developed in collaboration with leading teams from the ISLES'22 MICCAI Challenge. Includes weights.
   example: python scripts/predict.py
   documentation: https://github.com/ezequieldlrosa/DeepIsles
   citation: |-
@@ -21,7 +21,7 @@ readme: |-
   ----------------------------------
   ## deepisles/{{ context.version }} ##
 
-  DeepISLES is an out-of-the-box software tool for processing MRI scans and segmenting ischemic stroke lesions, developed in collaboration with leading teams from the ISLES'22 MICCAI Challenge.
+  DeepISLES is an out-of-the-box software tool for processing MRI scans and segmenting ischemic stroke lesions, developed in collaboration with leading teams from the ISLES'22 MICCAI Challenge. Includes weights.
 
   Example:
   ```
