@@ -6,7 +6,7 @@ copyright:
 architectures:
   - x86_64
 structured_readme:
-  description: DeepISLES is an out-of-the-box software tool for processing MRI scans and segmenting ischemic stroke lesions, developed in collaboration with leading teams from the ISLES'22 MICCAI Challenge.
+  description: DeepISLES is an out-of-the-box software tool for processing MRI scans and segmenting ischemic stroke lesions, developed in collaboration with leading teams from the ISLES'22 MICCAI Challenge. Includes weights.
   example: python scripts/predict.py
   documentation: https://github.com/ezequieldlrosa/DeepIsles
   citation: |-
@@ -21,7 +21,7 @@ readme: |-
   ----------------------------------
   ## deepisles/{{ context.version }} ##
 
-  DeepISLES is an out-of-the-box software tool for processing MRI scans and segmenting ischemic stroke lesions, developed in collaboration with leading teams from the ISLES'22 MICCAI Challenge.
+  DeepISLES is an out-of-the-box software tool for processing MRI scans and segmenting ischemic stroke lesions, developed in collaboration with leading teams from the ISLES'22 MICCAI Challenge. Includes weights.
 
   Example:
   ```
@@ -50,12 +50,12 @@ build:
   pkg-manager: apt
   directives:
     - install: git
-    - run:
-        - git clone https://github.com/ezequieldlrosa/DeepIsles.git
-        - cd DeepIsles
     - group:
+        - run:
+            - git clone https://github.com/ezequieldlrosa/DeepIsles.git
+            - cd DeepIsles
         - file:
-            name: environment.yml
+            name: environment.sh
             contents: |-
               conda create --name deepisles python=3.8.0 pip=23.3.1
               conda activate deepisles
@@ -72,10 +72,10 @@ build:
             install_path: /opt/miniconda
             mamba: true
         - run:
-            - cp {{ get_file("environment.yml") }} /tmp/environment.yml
+            - cp {{ get_file("environment.sh") }} /tmp/environment.sh
             - conda config --set channel_priority flexible
-            - conda env create -f /tmp/environment.yml
-            - rm /tmp/environment.yml
+            - bash /tmp/environment.sh
+            - rm /tmp/environment.sh
         - environment:
             CONDA_DEFAULT_ENV: myenv
             PATH: /opt/miniconda/envs/myenv/bin:$PATH
@@ -98,10 +98,17 @@ build:
         activate_env: true
         mamba: true
         cleanup: true
+    - run:
+        - wget https://zenodo.org/records/14026715/files/stroke_ensemble_weights.7z?download=1
+        - mv 'stroke_ensemble_weights.7z?download=1' weights.7z
+        - 7za x weights.7z
     - deploy:
         path: []
         bins:
           - python
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
 categories:
   - structural imaging
   - image segmentation
