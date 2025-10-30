@@ -57,11 +57,11 @@ build:
         - file:
             name: environment.sh
             contents: |-
-              conda create --name deepisles python=3.8.0 pip=23.3.1
+              conda create --name deepisles python=3.8.0 pip=23.3.1 conda<25
               conda activate deepisles
-              conda install pytorch==1.11.0 torchvision==0.12.0 torchaudio==0.11.0 cudatoolkit=11.3 -c pytorch
+              conda install pytorch==2.3.1 torchvision==0.12.0 torchaudio==0.11.0 cudatoolkit=11.3 -c pytorch
               conda install -c conda-forge openslide-python
-              conda install python=3.8.0 # important, since pytorch triggers the installation of later python versions
+              conda install python=3.8  # This is important, since pytorch triggers the installation of later python versions
               pip install -e ./src/SEALS/
               pip install -e ./src/FACTORIZER/model/factorizer/
               pip install -e ./src/HD-BET
