@@ -7,7 +7,7 @@ requires-python = ">=3.10"
 dependencies = [
     "jinja2>=3.1.6",
     "pyyaml>=6.0.2",
-    "neurodocker>=1.0.1",
+    "neurodocker>=2.0.2",
     "attrs>=23.0.0",
 ]
 
