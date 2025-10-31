@@ -66,11 +66,34 @@ build:
 
         - workdir: /opt/DeepIsles
 
-        - template:
-            name: miniconda
-            version: py38_23.11.0-2
-            install_path: /opt/miniconda
-            mamba: true
+        - environment:
+            CONDA_DIR: /opt/miniconda
+            PATH: /opt/miniconda/bin:${PATH}
+
+        - install: bzip2 ca-certificates curl
+
+        - file:
+            name: miniconda.sh
+            url: https://repo.continuum.io/miniconda/Miniconda3-py38_23.11.0-2-Linux-x86_64.sh
+
+        - run:
+            # Install dependencies.
+            - export PATH="/opt/miniconda/bin:$PATH"
+            - bash "{{ get_file("miniconda.sh") }}" -b -p /opt/miniconda
+            # Prefer packages in conda-forge
+            - conda config --system --prepend channels conda-forge
+            # Packages in lower-priority channels not considered if a package with the same
+            # name exists in a higher priority channel. Can dramatically speed up installations.
+            # Conda recommends this as a default
+            # https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-channels.html
+            - conda config --set channel_priority strict
+            - conda config --system --set auto_update_conda false
+            - conda config --system --set show_channel_urls true
+            # Enable `conda activate`
+            - conda init bash
+            # Clean up
+            - sync && conda clean --all --yes && sync
+            - rm -rf ~/.cache/pip/*
 
         - run:
             - conda config --set channel_priority flexible
