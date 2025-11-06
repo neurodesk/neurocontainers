@@ -197,8 +197,14 @@ if __name__ == "__main__":
          print(f"Check: name={name}, current_version={cur}, upstream_repo={repo}")
          up = latest_stable(repo)
          if not up:
-            print("no upstream tag/release")
-            continue
+             print("no upstream tag/release")
+             open_invalid_recipe_issue(
+                 path,
+                 name,
+                 "failed to get upstream version",
+                 extra={"repo": repo},
+             )
+             continue
          else:
              print("Upstream tag got:", up)
              
