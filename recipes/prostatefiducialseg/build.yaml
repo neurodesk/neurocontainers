@@ -48,12 +48,13 @@ build:
               - mamba install -y --name base "python=3.10"
               - mamba clean --all --yes
 
-        - include: macros/openrecon/neurodocker.yaml
-
         # install large pip packages
         - run:
               - pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
               - pip install torchio
+
+        # install openrecon dependencies
+        - include: macros/openrecon/neurodocker.yaml
 
         # install small pip packages
         - run:
@@ -63,19 +64,21 @@ build:
         - workdir: /opt
         - run:
               - mkdir -p /opt/models
-              - osf -p f7hjv fetch T1-20250730-021818-0-best.pth /opt/models/model.pth
+              - osf -p f7hjv fetch T1-20251101-053414-6-best.pth /opt/models/model1.pth
+              - osf -p f7hjv fetch T1-20251101-055736-7-best.pth /opt/models/model2.pth
+              - osf -p f7hjv fetch T1-20251101-065123-8-best.pth /opt/models/model3.pth
 
         # clone prostate segmentation repository
         - workdir: /opt
         - run:
               - git clone https://github.com/astewartau/prostate-fiducial-seg.git
               - cd /opt/prostate-fiducial-seg
-              - git checkout 0aacf08
-              - chmod +x simple_predict.py
+              - git checkout 44a4d75
+              - chmod +x predict3.py
         - environment:
               PATH: /opt/prostate-fiducial-seg:$PATH
         - copy: prostatefiducialseg.py /opt/code/python-ismrmrd-server/prostatefiducialseg.py 
 
 deploy:
     bins:
-        - simple_predict.py
+        - predict3.py
