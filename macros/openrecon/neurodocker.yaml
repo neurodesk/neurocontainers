@@ -32,7 +32,7 @@ directives:
       - cd siemens_to_ismrmrd
       - mkdir build
       - cd build
-      - cmake ..
+      - cmake -DBUILD_DYNAMIC=ON ..
       - make -j {{ parallel_jobs }}
       - make install
 
@@ -45,8 +45,6 @@ directives:
       - pip3 install --no-cache-dir .
 
   - run:
-      - git clone https://github.com/kspaceKelvin/python-ismrmrd-server
+      - git clone --branch fix/ismrmrd-compatibility https://github.com/astewartau/python-ismrmrd-server
       - find /opt/code/python-ismrmrd-server -name "*.sh" -exec chmod +x {} \;
       - find /opt/code/python-ismrmrd-server -name "*.sh" | xargs dos2unix
-    # replace 'invertcontrast' in main.py with 'default_replace_with_valid_name' to avoid running 
-      - sed -i 's/invertcontrast/default_replace_with_valid_name/g' /opt/code/python-ismrmrd-server/main.py
