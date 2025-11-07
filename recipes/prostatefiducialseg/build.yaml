@@ -27,7 +27,7 @@ build:
         - install: bzip2 ca-certificates git wget build-essential
 
         # Miniconda installer
-        - workdir: /tmp
+        - workdir: /tmp 
         - run:
               - curl -fsSL -o miniconda.sh {{ context.conda_download_url }}
               - bash miniconda.sh -b -p /opt/miniconda-{{ context.conda_version }}
