@@ -62,7 +62,7 @@ readme: |-
   ----------------------------------
 build:
   kind: neurodocker
-  base-image: deepmi/fsqcdocker
+  base-image: deepmi/fsqcdocker:2.1.4
   pkg-manager: apt
   directives:
     - deploy:
