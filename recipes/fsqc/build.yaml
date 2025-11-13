@@ -77,9 +77,11 @@ build:
         name: miniconda
         version: latest
         conda_install: python=3.13
-        pip_install: git+https://github.com/Deep-MI/fsqc brainprint==0.4.0 lapy>=1.0.0,<2 matplotlib nibabel numpy pandas scipy scikit-image transforms3d pyopengl glfw pillow pyrr PyQt6 whippersnappy>=1.3.0 pip install git+https://github.com/deep-mi/fsqc.git
+        pip_install: brainprint==0.4.0 lapy>=1.0.0,<2 matplotlib nibabel numpy pandas scipy scikit-image transforms3d pyopengl glfw pillow pyrr PyQt6 whippersnappy>=1.3.0
     - deploy:
         bins: []
+    - run:
+        - pip install git+https://github.com/deep-mi/fsqc.git
     - test:
         name: verify_installation
         script: |-
