@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "fsqc 2.1.4": {
+      "version": "20251113",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "quality control"
+  ]
+}
