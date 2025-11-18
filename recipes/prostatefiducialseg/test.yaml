@@ -10,15 +10,14 @@ tests:
       #   --output /host/home/ashley/repos/prostate/test/output
 
       # === TEST PREDICTION WITH OPENRECON ===
-      OUT_NAME=QSM_VOLUNTEER_newmodel
-      IN_DIR=/buildhostdirectory/IN_DATA/QSM_VOLUNTEER_300425/DICOM/25042924/in
-
+      OUT_NAME=T1_PROSTATE_170925
+      IN_DIR=/buildhostdirectory/TEST_DATA/MORE/T1_openrecon_v5/T1_openrecon_v5/T1_PROSTATE_170925/DICOM/25091802/44480000/2/
       IN_H5=/buildhostdirectory/${OUT_NAME}-in.h5
       OUT_DIR=/buildhostdirectory/${OUT_NAME}-dcm
       OUT_H5=/buildhostdirectory/${OUT_NAME}-out.h5
 
       # Convert input DICOMs to ISMRMRD format
-      rm $IN_H5
+      rm -f $IN_H5
       python /opt/code/python-ismrmrd-server/dicom2mrd.py \
         -o $IN_H5 \
         $IN_DIR
