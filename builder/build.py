@@ -1763,6 +1763,57 @@ def ensure_container_tester_binary(container_cli: str) -> str:
     return binary_path
 
 
+def _collect_dependency_failures(
+    scope: str, dependency: dict[str, typing.Any], failures: list[str]
+) -> None:
+    # Recursively collect any dependency errors to make debugging easier.
+    error = dependency.get("Error")
+    name = dependency.get("FullPath") or dependency.get("ExecutableType") or "dependency"
+    label = f"{scope} -> {name}"
+    if error:
+        failures.append(f"{label}: {error}")
+    for child in dependency.get("Dependencies", []) or []:
+        if isinstance(child, dict):
+            _collect_dependency_failures(label, child, failures)
+
+
+def _collect_tester_failures(results: dict[str, typing.Any]) -> list[str]:
+    failures: list[str] = []
+    executables = results.get("Executables") or {}
+    if not isinstance(executables, dict):
+        return failures
+
+    for name, info in executables.items():
+        if not isinstance(info, dict):
+            continue
+        error = info.get("Error")
+        if error:
+            failures.append(f"{name}: {error}")
+        for dependency in info.get("Dependencies", []) or []:
+            if isinstance(dependency, dict):
+                _collect_dependency_failures(name, dependency, failures)
+    return failures
+
+
+def _parse_tester_output(raw_output: str) -> dict[str, typing.Any] | None:
+    text = raw_output.strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            snippet = text[start : end + 1]
+            try:
+                return json.loads(snippet)
+            except json.JSONDecodeError:
+                pass
+    print("Warning: Unable to parse container tester output as JSON; skipping failure inspection.")
+    return None
+
+
 def run_container_tester(tag: str, architecture: str, use_podman: bool = False) -> None:
     container_cli = "podman" if use_podman else "docker"
     tester_binary = ensure_container_tester_binary(container_cli)
@@ -1788,14 +1839,37 @@ def run_container_tester(tag: str, architecture: str, use_podman: bool = False) 
     )
 
     assert process.stdout is not None
+    captured_output: list[str] = []
     try:
         for line in process.stdout:
-            print(line, end="")
+            captured_output.append(line)
     finally:
         exit_code = process.wait()
 
+    raw_output = "".join(captured_output)
+
     if exit_code != 0:
+        if raw_output:
+            print(raw_output, end="")
         raise subprocess.CalledProcessError(exit_code, run_cmd)
+
+    parsed_output = _parse_tester_output(raw_output)
+    if parsed_output is not None:
+        print("Container tester results:")
+        print(json.dumps(parsed_output, indent=2, sort_keys=True))
+    else:
+        print(raw_output, end="")
+
+    if parsed_output is None:
+        return
+
+    failures = _collect_tester_failures(parsed_output)
+    if failures:
+        failure_text = "\n".join(f"- {failure}" for failure in failures)
+        raise RuntimeError(
+            "Container tester reported failures:\n"
+            f"{failure_text}"
+        )
 
 
 def build_and_run_container(
