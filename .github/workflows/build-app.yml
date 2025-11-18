@@ -254,16 +254,22 @@ jobs:
           DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE})
-          echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
-          
-          if [ "$DISABLE_AUTO_UPLOAD" = "true" ]; then
-            echo "Auto-upload is disabled. Skipping push to registry."
-          elif [ "$ROOTFS_NEW" = "$ROOTFS_CACHE" ]; then
-            echo "No changes found. Skipping push to registry. "
+          # Check if the image exists before trying to inspect it
+          if docker inspect ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} >/dev/null 2>&1; then
+            ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE})
+            echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
+            
+            if [ "$DISABLE_AUTO_UPLOAD" = "true" ]; then
+              echo "Auto-upload is disabled. Skipping push to registry."
+            elif [ "$ROOTFS_NEW" = "$ROOTFS_CACHE" ]; then
+              echo "No changes found. Skipping push to registry. "
+            else
+              echo "Pushing to registry. Changes found"
+              echo "IMGDIFFERS=true" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "Pushing to registry. Changes found"
-            echo "IMGDIFFERS=true" >> $GITHUB_OUTPUT
+            echo "Image ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} does not exist. Build may have failed."
+            echo "Skipping comparison and push to registry."
           fi
 
       # - name: Upload new image as build artifact
