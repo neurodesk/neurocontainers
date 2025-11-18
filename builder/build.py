@@ -13,6 +13,7 @@ import typing
 import json
 import datetime
 import re
+import tempfile
 from pathlib import Path
 
 # add the parent directory to the path to import builder modules
@@ -368,6 +369,8 @@ class LocalBuildContext(object):
                 return guest_filename
             else:
                 os.link(cache_filename, cached_file)
+        except FileNotFoundError:
+            return None
         except AttributeError:
             # Fallback if os.link is not available
             return guest_filename
@@ -386,6 +389,8 @@ class LocalBuildContext(object):
                 file_info["cached_path"],
                 filename,
             )
+            if cache_filename is None:
+                return None
             return cache_dir + "/" + cache_filename
         else:
             raise ValueError("File has no cached path or context path.")
@@ -446,6 +451,7 @@ class BuildContext(object):
         self.deploy_path = []
         self.local_context = {}
         self.check_only = check_only
+        self.skip_file_population = False
 
     def lint_fail(self, message):
         if self.lint_error:
@@ -495,7 +501,7 @@ class BuildContext(object):
             raise ValueError("Build directory not set.")
 
         cache_dir = os.path.join(self.build_directory, "cache", cache_id)
-        if not os.path.exists(cache_dir):
+        if not os.path.exists(cache_dir) and not self.skip_file_population:
             os.makedirs(cache_dir)
 
         return cache_dir
@@ -551,8 +557,10 @@ class BuildContext(object):
         except jinja2.exceptions.TemplateSyntaxError as e:
             raise ValueError(f"Template syntax error: {e} in {obj}")
 
-    def add_file(self, file, recipe_path, locals, check_only=False):
-        if self.build_directory is None:
+    def add_file(self, file, recipe_path, locals, check_only=False, dry_run=False):
+        dry_run = dry_run or self.skip_file_population
+
+        if self.build_directory is None and not dry_run:
             raise ValueError("Build directory not set.")
 
         name = self.execute_template_string(file["name"], locals=locals)
@@ -560,21 +568,34 @@ class BuildContext(object):
         if name == "":
             raise ValueError("File name cannot be empty.")
 
-        output_filename = os.path.join(self.build_directory, name)
+        output_filename = (
+            os.path.join(self.build_directory, name)
+            if self.build_directory is not None
+            else name
+        )
 
         if "url" in file:
             # Check if running in Pyodide environment
             import sys
+
+            url = self.execute_template(file["url"], locals=locals)
+
+            if dry_run:
+                self.files[name] = {
+                    "cached_path": get_cached_download_path(url),
+                    "url": url,
+                }
+                return
 
             if "pyodide" in sys.modules:
                 # In Pyodide, create a dummy file entry for check_only mode
                 print(f"Pyodide environment: skipping file download for {file['url']}")
                 self.files[name] = {
                     "cached_path": output_filename,
+                    "url": url,
                 }
             else:
                 # download and cache the file
-                url = self.execute_template(file["url"], locals=locals)
                 cached_file = download_with_cache(
                     url,
                     check_only=check_only,
@@ -588,26 +609,30 @@ class BuildContext(object):
 
                 self.files[name] = {
                     "cached_path": cached_file,
+                    "url": url,
                 }
         else:
             if "contents" in file:
                 contents = self.execute_template_string(file["contents"], locals=locals)
-                with open(output_filename, "w") as f:
-                    f.write(contents)
+                if not dry_run:
+                    with open(output_filename, "w") as f:
+                        f.write(contents)
             elif "filename" in file:
                 base = os.path.abspath(recipe_path)
                 filename = os.path.join(base, file["filename"])
-                with open(output_filename, "wb") as f:
-                    with open(filename, "rb") as f2:
-                        f.write(f2.read())
+                if not dry_run:
+                    with open(output_filename, "wb") as f:
+                        with open(filename, "rb") as f2:
+                            f.write(f2.read())
             else:
                 raise ValueError("File contents not found.")
 
-            if "executable" in file and file["executable"]:
+            if not dry_run and "executable" in file and file["executable"]:
                 os.chmod(output_filename, 0o755)
 
             self.files[name] = {
                 "cached_path": output_filename,
+                "url": None,
             }
 
     def file_exists(self, filename: str) -> bool:
@@ -816,9 +841,11 @@ class BuildContext(object):
                     recipe_file_path = os_module.path.join(self.recipe_path, arg)
                     build_file_path = os_module.path.join(self.build_directory, arg)
 
-                    if os_module.path.exists(
-                        recipe_file_path
-                    ) and not os_module.path.exists(build_file_path):
+                    if (
+                        not self.skip_file_population
+                        and os_module.path.exists(recipe_file_path)
+                        and not os_module.path.exists(build_file_path)
+                    ):
                         shutil.copy2(recipe_file_path, build_file_path)
 
                 builder.copy(*args)  # type: ignore
@@ -1098,6 +1125,13 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def get_cached_download_path(url: str) -> str:
+    cache_dir = get_cache_dir()
+    os.makedirs(cache_dir, exist_ok=True)
+    filename = sha256(url.encode("utf-8"))
+    return os.path.join(cache_dir, filename)
+
+
 def download_with_cache(
     url, check_only=False, insecure=False, retry=1, curl_options=""
 ):
@@ -1105,13 +1139,8 @@ def download_with_cache(
     if shutil.which("curl") is None:
         raise ValueError("curl not found in PATH.")
 
-    cache_dir = get_cache_dir()
-    os.makedirs(cache_dir, exist_ok=True)
-
-    filename = sha256(url.encode("utf-8"))
-
     # Make the output filename and check if it exists
-    output_filename = os.path.join(cache_dir, filename)
+    output_filename = get_cached_download_path(url)
     temp_filename = output_filename + ".tmp"
 
     if os.path.exists(output_filename):
@@ -1470,6 +1499,7 @@ def generate_from_description(
     check_only: bool = False,
     gpu: bool = False,
     local_context: str | None = None,
+    skip_file_population: bool = False,
 ) -> BuildContext | None:
     if max_parallel_jobs is None:
         max_parallel_jobs = os.cpu_count()
@@ -1572,6 +1602,27 @@ def generate_from_description(
 
     # Create build directory
     ctx.build_directory = os.path.join(output_directory, name)
+    ctx.dockerfile_name = "{}_{}.Dockerfile".format(
+        ctx.name, ctx.version.replace(":", "_")
+    )
+    ctx.skip_file_population = skip_file_population
+
+    if skip_file_population:
+        for file in description_file.get("files", []):
+            ctx.add_file(
+                file,
+                recipe_path,
+                check_only=check_only,
+                locals=locals,
+                dry_run=True,
+            )
+
+        if ctx.build_kind == "neurodocker":
+            ctx.build_neurodocker(ctx.build_info, locals=locals)
+        else:
+            raise ValueError("Build kind not supported.")
+
+        return ctx
 
     if os.path.exists(ctx.build_directory):
         if recreate_output_dir:
@@ -1602,10 +1653,6 @@ def generate_from_description(
     if os.path.exists(build_yaml_source):
         with open(build_yaml_source, "r") as src, open(build_yaml_dest, "w") as dst:
             dst.write(src.read())
-
-    ctx.dockerfile_name = "{}_{}.Dockerfile".format(
-        ctx.name, ctx.version.replace(":", "_")
-    )
 
     # Write Dockerfile
     dockerfile_generated = False
@@ -1847,7 +1894,7 @@ def build_and_run_container(
         if mount:
             # Handle Windows paths with drive letters (e.g., C:\Users\...:container)
             # Pattern: drive letter (X:) followed by path separator, then path, then : separator
-            windows_path_match = re.match(r'^([A-Za-z]:[/\\].+?):(.+)$', mount)
+            windows_path_match = re.match(r"^([A-Za-z]:[/\\].+?):(.+)$", mount)
             if windows_path_match:
                 host = windows_path_match.group(1)
                 container = windows_path_match.group(2)
@@ -2160,6 +2207,131 @@ def generate_dockerfile(
         gpu=gpu,
         local_context=local_context,
     )
+
+
+def cache_main():
+    root = argparse.ArgumentParser(
+        description="NeuroContainer Builder - Manage cached recipe files",
+    )
+    root.add_argument("recipe", help="Name of the recipe to inspect")
+    root.add_argument(
+        "filename",
+        help="Name of the recipe file entry to populate in the cache",
+        nargs="?",
+    )
+    root.add_argument(
+        "local_filename",
+        help="Path to the local file that should be copied into the cache",
+        nargs="?",
+    )
+    root.add_argument(
+        "--architecture",
+        help="Architecture to evaluate templates with (defaults to host or first recipe architecture)",
+    )
+
+    args = root.parse_args()
+
+    repo_path = get_repo_path()
+    recipe_path = get_recipe_directory(repo_path, args.recipe)
+    if not os.path.exists(recipe_path):
+        print(f"Recipe {args.recipe} not found at {recipe_path}")
+        sys.exit(1)
+
+    description_file = load_description_file(recipe_path)
+
+    available_architectures = description_file.get("architectures") or []
+    architecture = args.architecture
+    if architecture is None:
+        host_arch = platform.machine()
+        if host_arch in available_architectures:
+            architecture = host_arch
+        elif available_architectures:
+            architecture = available_architectures[0]
+        else:
+            architecture = host_arch
+
+    if architecture not in ARCHITECTURES:
+        print(f"Unsupported architecture {architecture}")
+        sys.exit(1)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ctx = generate_from_description(
+            repo_path,
+            recipe_path,
+            description_file,
+            tmpdir,
+            architecture=architecture,
+            ignore_architecture=True,
+            recreate_output_dir=True,
+            check_only=True,
+            skip_file_population=True,
+        )
+
+    if ctx is None:
+        print(f"Recipe {args.recipe} is marked as draft and cannot be processed.")
+        sys.exit(1)
+
+    def print_status():
+        print("Cache status:")
+        cached = [
+            (name, info) for name, info in sorted(ctx.files.items()) if info.get("url")
+        ]
+        if not cached:
+            print("No cached downloads defined in this recipe.")
+        else:
+            for name, info in cached:
+                cached_path = info["cached_path"]
+                if os.path.exists(cached_path):
+                    status = "present"
+                    if os.path.getsize(cached_path) == 0:
+                        status = "empty"
+                else:
+                    status = "missing"
+                print(f"- {name}: {status} ({cached_path})")
+
+    filename = args.filename
+    local_filename = args.local_filename
+
+    if (filename and not local_filename) or (local_filename and not filename):
+        print(
+            "Both a recipe filename and a local filename must be provided to populate the cache."
+        )
+        print_status()
+        sys.exit(1)
+
+    load_error: str | None = None
+    if filename:
+        file_entry = ctx.files.get(filename)
+        if file_entry is None:
+            available = ", ".join(sorted(ctx.files.keys())) or "none"
+            print(f"File {filename} not found in recipe. Available files: {available}")
+            print_status()
+            sys.exit(1)
+
+        if file_entry.get("url"):
+            source_path = os.path.abspath(local_filename or "")
+            if not os.path.exists(source_path):
+                load_error = f"Local file {source_path} not found."
+            elif not os.path.isfile(source_path):
+                load_error = f"Local path {source_path} is not a file."
+            else:
+                target_path = file_entry["cached_path"]
+                try:
+                    shutil.copy2(source_path, target_path)
+                    print(f"Loaded {source_path} into cache at {target_path}")
+                except OSError as exc:
+                    load_error = f"Failed to copy {source_path} to {target_path}: {exc}"
+        else:
+            load_error = (
+                f"File {filename} is not backed by a cached download; nothing to load."
+            )
+
+        if load_error:
+            print(load_error, file=sys.stderr)
+            print_status()
+            sys.exit(1)
+
+    print_status()
 
 
 def generate_main():
