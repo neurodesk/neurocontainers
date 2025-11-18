@@ -63,7 +63,6 @@ INCLUDE_MACROS = [
 ALLOWED_AUTO_UPDATE_METHODS = ["github_release"]
 
 
-
 # ============================================================================
 # Validation Functions
 # ============================================================================
@@ -93,6 +92,10 @@ def validate_non_empty_string(instance, attribute, value):
 
 def validate_url(instance, attribute, value):
     """Basic URL validation"""
+    if value.startswith("{{"):
+        # Allow templated URLs
+        return
+
     if value and not (value.startswith("http://") or value.startswith("https://")):
         raise ValueError(
             f"{attribute.name} must be a valid URL starting with http:// or https://"
@@ -206,7 +209,7 @@ class Template:
 
 
 # ============================================================================
-# Auto Update 
+# Auto Update
 # ============================================================================
 
 
@@ -221,6 +224,7 @@ class AutoUpdate:
             raise ValueError(
                 f"auto_update.method '{value}' not supported. Must be one of: {ALLOWED_AUTO_UPDATE_METHODS}"
             )
+
 
 # ============================================================================
 # Directive Base Classes
