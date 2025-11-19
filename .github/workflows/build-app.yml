@@ -216,7 +216,6 @@ jobs:
         run: |
           cd ./build/${APPLICATION}
           docker build . --file ${IMAGENAME}.Dockerfile --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --cache-from ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
-        continue-on-error: true
           
       - name: Debug storage
         run: |
@@ -268,8 +267,8 @@ jobs:
               echo "IMGDIFFERS=true" >> $GITHUB_OUTPUT
             fi
           else
-            echo "Image ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} does not exist. Build may have failed."
-            echo "Skipping comparison and push to registry."
+            echo "ERROR: Image ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} does not exist. Build failed."
+            exit 1
           fi
 
       # - name: Upload new image as build artifact
@@ -460,7 +459,11 @@ jobs:
           echo "[DEBUG] building singularity image from docker image:"
           time singularity build "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" docker://ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.IMAGETAG }}
           echo "[DEBUG] done building singularity image from docker image!"
-        continue-on-error: true
+          # Verify the image was created successfully
+          if [ ! -f "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" ]; then
+            echo "ERROR: Singularity image file was not created"
+            exit 1
+          fi
 
       - name: Debug storage
         run: |
