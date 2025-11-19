@@ -693,8 +693,9 @@ class BuildContext(object):
         if base == "" or pkg_manager == "":
             raise ValueError("Base image or package manager cannot be empty.")
 
+        add_default_template = build_directive.get("add-default-template", True)
         builder = NeuroDockerBuilder(
-            base, pkg_manager, build_directive.get("add-default-template", True)
+            base, pkg_manager, add_default_template
         )
 
         # Add the ll command as a convenience alias for ls -la
@@ -705,7 +706,9 @@ class BuildContext(object):
         builder.run_command("mkdir -p " + " ".join(GLOBAL_MOUNT_POINT_LIST))
 
         # Automatically install tzdata on Debian systems and set timezone to UTC
-        if pkg_manager == "apt" and build_directive.get("add-tzdata", True):
+        # By default, tzdata installation follows add-default-template setting
+        # but can be overridden explicitly with add-tzdata
+        if pkg_manager == "apt" and build_directive.get("add-tzdata", add_default_template):
             # Set non-interactive frontend to avoid prompts
             builder.set_environment("DEBIAN_FRONTEND", "noninteractive")
             # Set timezone to UTC
