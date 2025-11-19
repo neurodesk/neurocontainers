@@ -38,4 +38,5 @@ dicoms
 dashboard/dist/
 dashboard/local/
 dashboard/apps.json
-/publicactionlint
+/public
+actionlint
