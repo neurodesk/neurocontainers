@@ -55,6 +55,10 @@ ARCHITECTURES = {
     "ARM64": "aarch64",  # Windows ARM64
 }
 
+CONTAINER_TESTER_IMAGE = "neurocontainers/container-tester:latest"
+CONTAINER_TESTER_BINARY_NAME = "tester"
+CONTAINER_TESTER_MOUNT_PATH = "/tmp/neurocontainers-container-tester"
+
 
 def get_repo_path() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -1687,6 +1691,187 @@ def generate_from_description(
     return ctx
 
 
+def _get_tester_binary_cache_path() -> str:
+    tester_cache_dir = os.path.join(get_cache_dir(), "tester")
+    os.makedirs(tester_cache_dir, exist_ok=True)
+    return os.path.join(tester_cache_dir, CONTAINER_TESTER_BINARY_NAME)
+
+
+def ensure_container_tester_image(container_cli: str) -> str:
+    try:
+        subprocess.check_call(
+            [container_cli, "image", "inspect", CONTAINER_TESTER_IMAGE],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError:
+        tester_dir = os.path.join(get_repo_path(), "builder", "tester")
+        print(
+            f"Container tester image {CONTAINER_TESTER_IMAGE} not found; building it now..."
+        )
+        subprocess.check_call(
+            [container_cli, "build", "-t", CONTAINER_TESTER_IMAGE, "."],
+            cwd=tester_dir,
+        )
+    return CONTAINER_TESTER_IMAGE
+
+
+def ensure_container_tester_binary(container_cli: str) -> str:
+    binary_path = _get_tester_binary_cache_path()
+    if os.path.exists(binary_path):
+        return binary_path
+
+    ensure_container_tester_image(container_cli)
+
+    fd, tmp_path = tempfile.mkstemp(
+        dir=os.path.dirname(binary_path),
+        prefix="tester-",
+    )
+    os.close(fd)
+
+    try:
+        container_id = (
+            subprocess.check_output(
+                [container_cli, "create", CONTAINER_TESTER_IMAGE],
+                text=True,
+            )
+            .strip()
+        )
+    except subprocess.CalledProcessError as exc:
+        os.unlink(tmp_path)
+        raise RuntimeError(
+            f"unable to create container from tester image: {exc}"
+        ) from exc
+
+    try:
+        try:
+            subprocess.check_call(
+                [container_cli, "cp", f"{container_id}:/tester", tmp_path]
+            )
+        except subprocess.CalledProcessError as exc:
+            os.unlink(tmp_path)
+            raise RuntimeError(f"unable to extract tester binary: {exc}") from exc
+    finally:
+        subprocess.check_call(
+            [container_cli, "rm", container_id],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    os.chmod(tmp_path, 0o755)
+    os.replace(tmp_path, binary_path)
+    return binary_path
+
+
+def _collect_dependency_failures(
+    scope: str, dependency: dict[str, typing.Any], failures: list[str]
+) -> None:
+    # Recursively collect any dependency errors to make debugging easier.
+    error = dependency.get("Error")
+    name = dependency.get("FullPath") or dependency.get("ExecutableType") or "dependency"
+    label = f"{scope} -> {name}"
+    if error:
+        failures.append(f"{label}: {error}")
+    for child in dependency.get("Dependencies", []) or []:
+        if isinstance(child, dict):
+            _collect_dependency_failures(label, child, failures)
+
+
+def _collect_tester_failures(results: dict[str, typing.Any]) -> list[str]:
+    failures: list[str] = []
+    executables = results.get("Executables") or {}
+    if not isinstance(executables, dict):
+        return failures
+
+    for name, info in executables.items():
+        if not isinstance(info, dict):
+            continue
+        error = info.get("Error")
+        if error:
+            failures.append(f"{name}: {error}")
+        for dependency in info.get("Dependencies", []) or []:
+            if isinstance(dependency, dict):
+                _collect_dependency_failures(name, dependency, failures)
+    return failures
+
+
+def _parse_tester_output(raw_output: str) -> dict[str, typing.Any] | None:
+    text = raw_output.strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            snippet = text[start : end + 1]
+            try:
+                return json.loads(snippet)
+            except json.JSONDecodeError:
+                pass
+    print("Warning: Unable to parse container tester output as JSON; skipping failure inspection.")
+    return None
+
+
+def run_container_tester(tag: str, architecture: str, use_podman: bool = False) -> None:
+    container_cli = "podman" if use_podman else "docker"
+    tester_binary = ensure_container_tester_binary(container_cli)
+    tester_binary = os.path.abspath(tester_binary)
+
+    mount_suffix = ":ro,Z" if use_podman else ":ro"
+
+    run_cmd = [container_cli, "run", "--rm"]
+    if not use_podman:
+        run_cmd.extend(["--platform", get_build_platform(architecture)])
+
+    run_cmd.extend(
+        ["-v", f"{tester_binary}:{CONTAINER_TESTER_MOUNT_PATH}{mount_suffix}"]
+    )
+    run_cmd.extend(["--entrypoint", CONTAINER_TESTER_MOUNT_PATH, tag])
+
+    print(f"Running container tester for image {tag}...")
+    process = subprocess.Popen(
+        run_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    assert process.stdout is not None
+    captured_output: list[str] = []
+    try:
+        for line in process.stdout:
+            captured_output.append(line)
+    finally:
+        exit_code = process.wait()
+
+    raw_output = "".join(captured_output)
+
+    if exit_code != 0:
+        if raw_output:
+            print(raw_output, end="")
+        raise subprocess.CalledProcessError(exit_code, run_cmd)
+
+    parsed_output = _parse_tester_output(raw_output)
+    if parsed_output is not None:
+        print("Container tester results:")
+        print(json.dumps(parsed_output, indent=2, sort_keys=True))
+    else:
+        print(raw_output, end="")
+
+    if parsed_output is None:
+        return
+
+    failures = _collect_tester_failures(parsed_output)
+    if failures:
+        failure_text = "\n".join(f"- {failure}" for failure in failures)
+        raise RuntimeError(
+            "Container tester reported failures:\n"
+            f"{failure_text}"
+        )
+
+
 def build_and_run_container(
     dockerfile_name: str,
     name: str,
@@ -1798,6 +1983,15 @@ def build_and_run_container(
                 with open(image_tar, "rb") as f:
                     subprocess.check_call(["docker", "load"], stdin=f)
                 print("Docker image loaded successfully")
+                run_container_tester(tag, architecture, use_podman=False)
+            elif load_into_docker:
+                print(
+                    "Skipping container tester run: Docker CLI not available to load/run the image."
+                )
+            else:
+                print(
+                    "Skipping container tester run: image not loaded into Docker (--load-into-docker not set)."
+                )
 
             if login:
                 print(
@@ -1872,6 +2066,7 @@ def build_and_run_container(
         cwd=build_directory,
     )
     print("Docker image built successfully at", tag)
+    run_container_tester(tag, architecture, use_podman=use_podman)
 
     # Generate release file if in CI or auto-build mode
     if should_generate_release_file(generate_release):
