@@ -17,8 +17,6 @@ build:
     - run:
         - wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
         - bash Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge3
-    - environment:
-        PATH: /opt/miniforge3/envs/lstai/bin:/opt/lstai/bin:${PATH}
     - run:
         - /opt/miniforge3/bin/conda create -n lstai python=3.8
     - run:
@@ -39,6 +37,8 @@ build:
         - wget https://github.com/CompImg/LST-AI/releases/download/v1.0.0/lst_data.zip
     - run:
         - unzip lst_data.zip -d /opt/lstai/LST-AI
+    - environment:
+        PATH: /opt/miniforge3/envs/lstai/bin:/opt/lstai/bin:${PATH}
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
@@ -52,7 +52,15 @@ structured_readme:
     ml lstai/1.0.0
     lstai --help
   documentation: https://raw.githubusercontent.com/CompImg/LST-AI/refs/heads/main/README.md
-  citation: ""
+  citation: |-
+    @article{wiltgen2024lst,
+      title={LST-AI: A deep learning ensemble for accurate MS lesion segmentation},
+      author={Wiltgen, Tun and McGinnis, Julian and Schlaeger, Sarah and Kofler, Florian and Voon, CuiCi and Berthele, Achim and Bischl, Daria and Grundl, Lioba and Will, Nikolaus and Metz, Marie and others},
+      journal={NeuroImage: Clinical},
+      pages={103611},
+      year={2024},
+      publisher={Elsevier}
+    }
 readme: |-
   ----------------------------------
   ## lstai/{{ context.version }} ##
@@ -69,7 +77,14 @@ readme: |-
 
   Citation:
   ```
-
+  @article{wiltgen2024lst,
+    title={LST-AI: A deep learning ensemble for accurate MS lesion segmentation},
+    author={Wiltgen, Tun and McGinnis, Julian and Schlaeger, Sarah and Kofler, Florian and Voon, CuiCi and Berthele, Achim and Bischl, Daria and Grundl, Lioba and Will, Nikolaus and Metz, Marie and others},
+    journal={NeuroImage: Clinical},
+    pages={103611},
+    year={2024},
+    publisher={Elsevier}
+  }
   ```
 
   To run container outside of this environment: ml lstai/{{ context.version }}
