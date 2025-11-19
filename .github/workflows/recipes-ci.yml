@@ -1,4 +1,6 @@
 name: Recipes CI
+permissions:
+  contents: read
 
 on:
   workflow_dispatch:
