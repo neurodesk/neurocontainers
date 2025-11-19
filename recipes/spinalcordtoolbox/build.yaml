@@ -1,23 +1,20 @@
 name: spinalcordtoolbox
-version: "6.4"
-
+version: "7.1"
 copyright:
   - license: LGPL-3.0
     url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE
-
 architectures:
   - x86_64
-
 build:
   kind: neurodocker
-
   base-image: ubuntu:20.04
   pkg-manager: apt
-
   directives:
+    - deploy:
+        path:
+          - /opt/spinalcordtoolbox-7.1/bin/
     - environment:
         DEBIAN_FRONTEND: noninteractive
-
     - install:
         - gcc
         - ca-certificates
@@ -28,49 +25,31 @@ build:
         - bzip2
         - libglib2.0-0
         - rsync
-
     - run:
-        - curl -fsSL --retry 5 https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/6.4.tar.gz | tar -xz -C /opt/
-
-    - workdir: /opt/spinalcordtoolbox-6.4
-
+        - curl -fsSL --retry 5 https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/7.1.tar.gz | tar -xz -C /opt/
+    - workdir: /opt/spinalcordtoolbox-7.1
     - run:
-        - chmod a+rwx /opt/spinalcordtoolbox-6.4/ -R
-
+        - chmod a+rwx /opt/spinalcordtoolbox-7.1/ -R
     - user: spinalcordtoolbox
-
     - run:
         - yes | ./install_sct -i
-
     - environment:
-        PATH: /opt/spinalcordtoolbox-6.4/bin/:/bin/:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
-        SCT_DIR: /opt/spinalcordtoolbox-6.4/
-
+        PATH: /opt/spinalcordtoolbox-7.1/bin/:/bin/:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local
+        SCT_DIR: /opt/spinalcordtoolbox-7.1
     - run:
         - sct_deepseg -install-task seg_exvivo_gm-wm_t2
-
     - run:
         - sct_deepseg -install-task seg_tumor-edema-cavity_t1-t2
-
     - run:
         - sct_deepseg -install-task seg_tumor_t2
-
     - run:
         - sct_deepseg -install-task seg_mice_gm
-
     - run:
         - sct_deepseg -install-task seg_mice_sc
-
     - run:
         - sct_deepseg -install-task seg_sc_t2star
-
     - run:
-        - bash /opt/spinalcordtoolbox-6.4/batch_processing.sh
-
-deploy:
-  path:
-    - /opt/spinalcordtoolbox-6.4/bin/
-
+        - bash /opt/spinalcordtoolbox-7.1/batch_processing.sh
 readme: |-
   ----------------------------------
   ## spinalcordtoolbox/{{ context.version }} ##
@@ -98,6 +77,6 @@ readme: |-
   license: LGPLv3 (https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE)
 
   ----------------------------------
-
 categories:
-  - "spine"
+  - spine
+icon: data:image/png;base64,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
