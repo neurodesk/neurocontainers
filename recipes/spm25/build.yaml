@@ -60,6 +60,7 @@ build:
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
+  add-default-template: false
 categories:
   - functional imaging
   - structural imaging
