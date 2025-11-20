@@ -14,8 +14,7 @@ structured_readme:
     # Example usage
 
     ```bash
-    # Run the containerized tool (assuming you are already inside the container)
-     run_spm12.sh
+     run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b/
     ```
   documentation: https://github.com/spm
   citation: |
@@ -33,8 +32,7 @@ readme: |-
   # Example usage
 
   ```bash
-  # Run the containerized tool (assuming you are already inside the container)
-   run_spm12.sh
+   run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b/
   ```
   ```
 
@@ -53,6 +51,9 @@ build:
   base-image: ghcr.io/spm/spm-docker:docker-matlab-25.01.02
   pkg-manager: apt
   directives:
+    - entrypoint: bash
+    - environment:
+          PATH: ${PATH}:/opt/spm
     - deploy:
         path: []
         bins:
