@@ -44,14 +44,15 @@ deploy:
         - mm_segment
 
 readme: |-
-    ----------------------------------
-    ## musclemap/{{ context.version }} ##
+  ----------------------------------
+  ## musclemap/{{ context.version }} ##
 
-    An Open-Source, Community-Supported Consortium for Whole-Body Quantitative MRI of Muscle
+  An Open-Source Whole-Body Quantitative MRI tool of Muscle
 
-    you can build this recipe with:
-    ```bash
-    ./builder/build.py generate musclemap --recreate --build --login --architecture x86_64
-    ```
-
-    ----------------------------------
+  ----------------------------------
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAB/ElEQVR4AbSUS8tpURzGn+1e5BYGKIpiZqbMTQyUAV/WJ5CJZOSSJHIXueTueNab98z81+m8r/ayN2uv57ee9b+YADx1RzgcfkajUe33qUvA6653FYtFVCoVmEz6y/TffO1hv99jNBrh+aSJ1x8alzYgEAjgfr/DbDbD6/VqSH+9IgKsVitKpRLK5TLm8zlmsxny+TwKhcKXgvAtAoLBoDqSbreLzWaD3W6H4/GoQDpORADPnS4sFgt8Ph8SiYQ6osfjAcMwIH1EAMUZWIrTDWOQyWRgt9txOp0kfYgA7jQUCiGVSiGdTsPtdmO1WuFVE7jdbv8PYEput1uVQc1mE3zu9XoYDoegO4kgOqDA9XrFeDxWDpLJJKbTKc7n8884YNXmcjlEIhG1ezrIZrPq9+VyIf/jEB0wqNxxtVpFp9NBq9VCvV6HzWaD0+n8KM5JEcDqZd5z58wcj8ejgrxYLFTaUuTTEAEsrFqtBr/fr9oEz54F1mg0VF/6JM45EcAATyYTxGIxrNdrsPBeLVsFmQLSEAFvATqIx+NgFhmGXMHvddoAxoKpOhgMtNLznwHsoqxg3tlV3wLSXdvBcrkE48H+czgcJN3veW0Ai4riPCr2p28F4UEbYBiG6j0OhwMul0uQ/TutDWA9cBkBvxKDdrsNdlG2in6/T5bW+AMAAP//wtg5bQAAAAZJREFUAwAZcfw0V/0rGAAAAABJRU5ErkJggg==
+categories:
+  - body
+copyright:
+  - license: MIT
+    url: https://github.com/MuscleMap/MuscleMap?tab=MIT-1-ov-file#readme
