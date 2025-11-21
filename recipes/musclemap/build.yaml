@@ -1,0 +1,40 @@
+name: musclemap
+version: 1.1
+architectures:
+    - x86_64
+
+files:
+    - name: musclemap.py
+      filename: musclemap.py
+
+build:
+    kind: neurodocker
+    base-image: ubuntu:22.04
+    pkg-manager: apt
+
+    directives:
+        - environment:
+              DEBIAN_FRONTEND: noninteractive
+        - install: bzip2 ca-certificates git wget build-essential python3-pip python-is-python3
+
+        - include: macros/openrecon/neurodocker.yaml
+
+        #openrecon application
+        - copy: musclemap.py /opt/code/python-ismrmrd-server/musclemap.py
+
+deploy:
+    bins:
+        - mm_segment
+
+readme: |-
+    ----------------------------------
+    ## musclemap/{{ context.version }} ##
+
+    An Open-Source, Community-Supported Consortium for Whole-Body Quantitative MRI of Muscle
+
+    you can build this recipe with:
+    ```bash
+    ./builder/build.py generate musclemap --recreate --build --login --architecture x86_64
+    ```
+
+    ----------------------------------
