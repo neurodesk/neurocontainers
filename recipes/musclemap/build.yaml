@@ -19,6 +19,14 @@ build:
 
         - include: macros/openrecon/neurodocker.yaml
 
+        - template:
+            name: miniconda
+            version: py310_23.9.0
+            install_path: /opt/miniconda
+            conda_install:
+                - python=3.9.23
+
+
         #openrecon application
         - copy: musclemap.py /opt/code/python-ismrmrd-server/musclemap.py
 
