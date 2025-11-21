@@ -1,5 +1,5 @@
 name: musclemap
-version: 1.1
+version: 1.1.0
 architectures:
     - x86_64
 
@@ -9,7 +9,7 @@ files:
 
 build:
     kind: neurodocker
-    base-image: ubuntu:22.04
+    base-image: pytorch/pytorch:2.4.0-cuda11.8-cudnn9-runtime
     pkg-manager: apt
 
     directives:
@@ -19,17 +19,23 @@ build:
 
         - include: macros/openrecon/neurodocker.yaml
 
-        - template:
-            name: miniconda
-            version: py310_23.9.0
-            install_path: /opt/miniconda
-            conda_install:
-                - python=3.9.23
-
+        - workdir: /opt/
+        - run: 
+            - git clone https://github.com/MuscleMap/MuscleMap
+            - cd MuscleMap 
+            - pip install .
 
         #openrecon application
-        - copy: musclemap.py /opt/code/python-ismrmrd-server/musclemap.py
 
+        - run:
+            - cd /opt/code/python-ismrmrd-server
+            - git remote add stebo85 https://github.com/stebo85/python-ismrmrd-server.git
+            - git fetch stebo85
+            - git stash
+            - git checkout -b stebo85-enhanced-dicom-support stebo85/add_enhanced_dicom_support
+        
+        - copy: musclemap.py /opt/code/python-ismrmrd-server/musclemap.py
+            
 deploy:
     bins:
         - mm_segment
