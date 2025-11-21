@@ -270,7 +270,7 @@ def process_image(images, connection, config, metadata):
         logging.debug("Created folder " + debugFolder + " for debug output files")
 
     logging.debug(
-        "Processing data with %d images of type %s", len(images), ismrmrd.get_dtype_from_data_type(images[0].data_type)
+        "Processing data with %d images of type %s", len(images), images[0].data_dtype
     )
 
     # Note: The MRD Image class stores data as [cha z y x]
@@ -303,10 +303,10 @@ def process_image(images, connection, config, metadata):
 
     xform = np.eye(4)
     new_img = nib.nifti1.Nifti1Image(np.squeeze(data), xform)
-    nib.save(new_img, "/tmp/data/input.nii.gz")
+    nib.save(new_img, "/buildhostdirectory/input.nii.gz")
 
     # Run preprocess.py
-    preprocess_result = subprocess.run(["mm_segment", "-i", "/tmp/data/input.nii.gz"], check=True)
+    preprocess_result = subprocess.run(["mm_segment", "-i", "/buildhostdirectory/input.nii.gz"], check=True)
 
     # If preprocess.py ran successfully, run test_nifti.py
     # if preprocess_result.returncode == 0:

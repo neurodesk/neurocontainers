@@ -15,6 +15,6 @@ tests:
         -G dataset \
         -o /buildhostdirectory/output.h5 \
         /buildhostdirectory/thigh.h5 \
-        -c openreconexample
+        -c musclemap
 
       # Check output h5 data in "H5Web" VS code plugin viewer

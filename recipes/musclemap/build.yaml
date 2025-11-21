@@ -29,10 +29,13 @@ build:
 
         - run:
             - cd /opt/code/python-ismrmrd-server
-            - git remote add stebo85 https://github.com/stebo85/python-ismrmrd-server.git
-            - git fetch stebo85
+            # - git remote add stebo85 https://github.com/stebo85/python-ismrmrd-server.git
+            # - git fetch stebo85
             - git stash
-            - git checkout -b stebo85-enhanced-dicom-support stebo85/add_enhanced_dicom_support
+            - git remote set-url origin https://github.com/kspaceKelvin/python-ismrmrd-server.git
+            # - git checkout -b stebo85-enhanced-dicom-support stebo85/add_enhanced_dicom_support
+            - git fetch origin pull/13/head:pr-13
+            - git checkout pr-13
         
         - copy: musclemap.py /opt/code/python-ismrmrd-server/musclemap.py
             
