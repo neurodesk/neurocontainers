@@ -4,6 +4,7 @@ Tests for the validation module.
 """
 
 import os
+import shutil
 import tempfile
 import yaml
 from builder.validation import (
@@ -17,6 +18,7 @@ from builder.validation import (
     DeployInfo,
     FileInfo
 )
+from builder.build import load_description_file
 
 
 def test_valid_minimal_recipe():
@@ -220,9 +222,6 @@ def test_directive_validation():
 
 def test_two_digit_version_yaml_parsing():
     """Test that two-digit versions like '1.1' are handled correctly"""
-    import yaml
-    from builder.build import load_description_file
-    
     # Create a recipe with a two-digit version that YAML would parse as float
     recipe = {
         "name": "version-test",
@@ -236,16 +235,13 @@ def test_two_digit_version_yaml_parsing():
         }
     }
     
-    # Write to a temporary file
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-        yaml.dump(recipe, f)
-        temp_file = f.name
-    
     # Create a temporary directory for the recipe
     temp_dir = tempfile.mkdtemp()
     try:
+        # Write the build.yaml directly to the temp directory
         build_yaml = os.path.join(temp_dir, "build.yaml")
-        os.rename(temp_file, build_yaml)
+        with open(build_yaml, 'w') as f:
+            yaml.dump(recipe, f)
         
         # Load using the actual function
         loaded = load_description_file(temp_dir)
@@ -262,9 +258,7 @@ def test_two_digit_version_yaml_parsing():
         
     finally:
         # Clean up
-        if os.path.exists(build_yaml):
-            os.unlink(build_yaml)
-        os.rmdir(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 if __name__ == "__main__":
