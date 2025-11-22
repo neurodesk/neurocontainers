@@ -4,6 +4,7 @@ Tests for the validation module.
 """
 
 import os
+import shutil
 import tempfile
 import yaml
 from builder.validation import (
@@ -17,6 +18,7 @@ from builder.validation import (
     DeployInfo,
     FileInfo
 )
+from builder.build import load_description_file
 
 
 def test_valid_minimal_recipe():
@@ -218,6 +220,47 @@ def test_directive_validation():
     assert result.name == "directive-test"
 
 
+def test_two_digit_version_yaml_parsing():
+    """Test that two-digit versions like '1.1' are handled correctly"""
+    # Create a recipe with a two-digit version that YAML would parse as float
+    recipe = {
+        "name": "version-test",
+        "version": "1.1",  # This will be parsed as float by YAML
+        "architectures": ["x86_64"],
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": [{"install": ["curl"]}]
+        }
+    }
+    
+    # Create a temporary directory for the recipe
+    temp_dir = tempfile.mkdtemp()
+    try:
+        # Write the build.yaml directly to the temp directory
+        build_yaml = os.path.join(temp_dir, "build.yaml")
+        with open(build_yaml, 'w') as f:
+            yaml.dump(recipe, f)
+        
+        # Load using the actual function
+        loaded = load_description_file(temp_dir)
+        
+        # Version should be converted to string
+        assert isinstance(loaded["version"], str), f"Version should be string, got {type(loaded['version'])}"
+        assert loaded["version"] == "1.1", f"Version should be '1.1', got '{loaded['version']}'"
+        
+        # Name should also be string
+        assert isinstance(loaded["name"], str), f"Name should be string, got {type(loaded['name'])}"
+        
+        # Should be able to call string methods on version
+        assert loaded["version"].replace(":", "_") == "1.1"
+        
+    finally:
+        # Clean up
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 if __name__ == "__main__":
     # Run basic tests
     test_valid_minimal_recipe()
@@ -229,5 +272,6 @@ if __name__ == "__main__":
     test_validate_recipe_file()
     test_validate_nonexistent_file()
     test_directive_validation()
+    test_two_digit_version_yaml_parsing()
     
     print("✅ All validation tests passed!")

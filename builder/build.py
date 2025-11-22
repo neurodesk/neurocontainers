@@ -82,6 +82,13 @@ def load_description_file(recipe_dir: str) -> typing.Any:
     with open(description_file, "r") as f:
         recipe_dict = yaml.safe_load(f)
 
+    # Convert name and version to strings to handle YAML numeric parsing
+    # YAML safe_load interprets values like "1.1" as floats, but we need strings
+    if "name" in recipe_dict and recipe_dict["name"] is not None:
+        recipe_dict["name"] = str(recipe_dict["name"])
+    if "version" in recipe_dict and recipe_dict["version"] is not None:
+        recipe_dict["version"] = str(recipe_dict["version"])
+
     # Validate the recipe using attrs schema
     try:
         import builder.validation as validation
