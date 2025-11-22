@@ -26,6 +26,7 @@ CATEGORIES = [
     "rodent imaging",
     "diffusion imaging",
     "spine",
+    "body",
     "connectomics",
     "electrophysiology",
     "microscopy",
