@@ -25,17 +25,23 @@ build:
             - cd MuscleMap 
             - pip install .
 
-        #openrecon application
+        - run:
+            - pip install SimpleITK
 
+        #openrecon application
         - run:
             - cd /opt/code/python-ismrmrd-server
-            # - git remote add stebo85 https://github.com/stebo85/python-ismrmrd-server.git
-            # - git fetch stebo85
             - git stash
+            - git remote add stebo85 https://github.com/stebo85/python-ismrmrd-server.git
+            - git fetch stebo85
+            - git checkout -b stebo85-enhanced-dicom-support stebo85/add_enhanced_dicom_support
             - git remote set-url origin https://github.com/kspaceKelvin/python-ismrmrd-server.git
-            # - git checkout -b stebo85-enhanced-dicom-support stebo85/add_enhanced_dicom_support
             - git fetch origin pull/13/head:pr-13
             - git checkout pr-13
+            - git checkout stebo85-enhanced-dicom-support
+            - git config --global user.email "me@docker.com"
+            - git config --global user.name "My Name"
+            - git merge pr-13
         
         - copy: musclemap.py /opt/code/python-ismrmrd-server/musclemap.py
             
