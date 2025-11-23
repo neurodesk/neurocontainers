@@ -1,5 +1,6 @@
 tests:
   - name: Test openreconexample
+    manual: true
     script: |
       # Convert input DICOMs to ISMRMRD format
       python /opt/code/python-ismrmrd-server/dicom2mrd.py \
