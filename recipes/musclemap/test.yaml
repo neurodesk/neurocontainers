@@ -3,6 +3,7 @@ tests:
     manual: true
     script: |
       # build:
+      source .venv/bin/activate
       ./builder/build.py generate musclemap --recreate --build --login --architecture x86_64
 
       # Convert input DICOMs to ISMRMRD format
