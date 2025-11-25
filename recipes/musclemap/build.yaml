@@ -23,6 +23,7 @@ build:
         - run: 
             - git clone https://github.com/MuscleMap/MuscleMap
             - cd MuscleMap 
+            - git checkout origin/Improve_efficiency
             - pip install .
 
         - run:

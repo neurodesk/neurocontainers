@@ -2,6 +2,9 @@ tests:
   - name: Test openreconexample
     manual: true
     script: |
+      # build:
+      ./builder/build.py generate musclemap --recreate --build --login --architecture x86_64
+
       # Convert input DICOMs to ISMRMRD format
       python /opt/code/python-ismrmrd-server/dicom2mrd.py \
         -o /buildhostdirectory/thigh.h5 \
