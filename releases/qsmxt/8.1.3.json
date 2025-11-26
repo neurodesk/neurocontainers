@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "qsmxt 8.1.3": {
+      "version": "20251126",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "phase processing",
+    "quantitative imaging",
+    "structural imaging",
+    "workflows"
+  ]
+}
