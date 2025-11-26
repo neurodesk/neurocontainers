@@ -124,6 +124,35 @@ def process(connection, config, metadata):
     finally:
         connection.send_close()
 
+# from https://github.com/benoitberanger/openrecon-template/blob/main/app/i2i-save-original-images.py
+def compute_nifti_affine(image_header, voxel_size):
+
+    # Extract necessary fields
+    position      = image_header.position
+    read_dir      = image_header.read_dir
+    phase_dir     = image_header.phase_dir
+    slice_dir     = image_header.slice_dir
+
+    # Convert from LPS to RAS
+    position_ras  = [ -position[0],  -position[1],  position[2]]
+    read_dir_ras  = [ -read_dir[0],  -read_dir[1],  read_dir[2]]
+    phase_dir_ras = [-phase_dir[0], -phase_dir[1], phase_dir[2]]
+    slice_dir_ras = [-slice_dir[0], -slice_dir[1], slice_dir[2]]
+
+    # Construct rotation-scaling matrix
+    rotation_scaling_matrix = np.column_stack([
+        voxel_size[0] * np.array( read_dir_ras),
+        voxel_size[1] * np.array(phase_dir_ras),
+        voxel_size[2] * np.array(slice_dir_ras)
+    ])
+
+    # Construct affine matrix
+    affine = np.eye(4)
+    affine[:3, :3] = rotation_scaling_matrix
+    affine[:3,  3] = position_ras
+
+    return affine
+
 
 def process_image(imgGroup, connection, config, metadata):
     if len(imgGroup) == 0:
@@ -145,6 +174,17 @@ def process_image(imgGroup, connection, config, metadata):
     head = [img.getHead() for img in imgGroup]
     meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in imgGroup]
 
+    matrix = np.array(head[0].matrix_size[:])
+    fov = np.array(head[0].field_of_view[:])
+    voxelsize = fov/matrix
+
+    print("matrix:")
+    print(matrix)
+    print("fov:")
+    print(fov)
+    print("voxelsize:") 
+    print(voxelsize)
+
     crop_size = data.shape
 
     # Reformat data to [y x z cha img], i.e. [row col] for the first two dimensions
@@ -154,12 +194,17 @@ def process_image(imgGroup, connection, config, metadata):
     data = data.transpose((3, 4, 0, 1, 2))
 
     # convert data to nifti using nibabel
-    xform = np.eye(4)
-    new_img = nib.nifti1.Nifti1Image(np.squeeze(data), xform)
+    affine = compute_nifti_affine(head[0], voxelsize)
+
+    print("affine matrix:")
+    print(affine)
+
+
+    new_img = nib.nifti1.Nifti1Image(np.squeeze(data), affine)
     nib.save(new_img, "/buildhostdirectory/input.nii.gz")
 
     # Run mm_segment
-    preprocess_result = subprocess.run(["mm_segment", "-i", "/buildhostdirectory/input.nii.gz"], check=True)
+    preprocess_result = subprocess.run(["mm_segment", "-i", "/buildhostdirectory/input.nii.gz", "-v"], check=True)
 
     img = nib.load("input_dseg.nii.gz")
     data = img.get_fdata()

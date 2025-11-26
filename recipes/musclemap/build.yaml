@@ -19,13 +19,6 @@ build:
 
         - include: macros/openrecon/neurodocker.yaml
 
-        - workdir: /opt/
-        - run: 
-            - git clone https://github.com/MuscleMap/MuscleMap
-            - cd MuscleMap 
-            - git checkout origin/improve_efficiency_v2
-            - pip install .
-
         - run:
             - pip install SimpleITK
 
@@ -43,8 +36,19 @@ build:
             - git config --global user.email "me@docker.com"
             - git config --global user.name "My Name"
             - git merge pr-13
+
+        - workdir: /opt/
+        - run: 
+            - git clone https://github.com/MuscleMap/MuscleMap
+            - cd MuscleMap 
+            - git checkout origin/improve_efficiency_v2
+            - pip install .
         
+        - environment:
+              MKL_THREADING_LAYER: GNU
+
         - copy: musclemap.py /opt/code/python-ismrmrd-server/musclemap.py
+        - copy: nifti_to_ismrmrd_converter.py /opt/code/nifti_to_ismrmrd_converter.py
             
 deploy:
     bins:
