@@ -7,14 +7,15 @@ tests:
       ./builder/build.py generate musclemap --recreate --build --login --architecture x86_64
 
       # Convert input DICOMs to ISMRMRD format
+      rm /buildhostdirectory/input_fromDCM.h5
       python /opt/code/python-ismrmrd-server/dicom2mrd.py \
-        -o /buildhostdirectory/thigh.h5 \
+        -o /buildhostdirectory/input_fromDCM.h5 \
         /buildhostdirectory/dicom_data
 
-      # Convert NIFTI to ISMRMRD format (alternative way to provide input data)
-      python3 /opt/code/nifti_to_ismrmrd_converter.py \
+      # Convert NIFTI to ISMRMRD format
+      python3 /opt/code/python-ismrmrd-server/nifti2mrd.py \
         -i /buildhostdirectory/PatThigh_Se1_Res0.8_0.8_Spac0.8.nii \
-        -o /buildhostdirectory/input.h5
+        -o /buildhostdirectory/input_fromNIFTI.h5
 
       # Start OpenRecon server
       python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &

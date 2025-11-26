@@ -48,7 +48,8 @@ build:
               MKL_THREADING_LAYER: GNU
 
         - copy: musclemap.py /opt/code/python-ismrmrd-server/musclemap.py
-        - copy: nifti_to_ismrmrd_converter.py /opt/code/nifti_to_ismrmrd_converter.py
+        - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
+        - copy: dicom2mrd.py /opt/code/python-ismrmrd-server/dicom2mrd.py
             
 deploy:
     bins:

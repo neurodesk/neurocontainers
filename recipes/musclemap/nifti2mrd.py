@@ -227,25 +227,17 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
         ismrmrd_data = data.astype(np.float32)
     
     print(f"📊 ISMRMRD data type: {ismrmrd_data.dtype}")
-    print(f"📐 ISMRMRD data shape before ISMRMRD conversion: {ismrmrd_data.shape}")
+    print(f"📐 NIfTI data shape: {ismrmrd_data.shape}")
     
-    # Create ISMRMRD image
-    # IMPORTANT: ISMRMRD stores data in column-major (Fortran) order: [Z, Y, X]
-    # NumPy/NIfTI uses row-major (C) order: [X, Y, Z]
-    # We need to transpose to [Z, Y, X] before passing to ISMRMRD
-    # Original: [624, 512, 416] -> Transpose to: [416, 512, 624]
-    # ISMRMRD will then store it correctly as [624, 512, 416] in its internal format
-    ismrmrd_data_transposed = np.transpose(ismrmrd_data, (2, 1, 0))
-    print(f"📐 Transposed data shape for ISMRMRD: {ismrmrd_data_transposed.shape}")
-    
+    # Create ISMRMRD image - no transpose, keep data as-is
+    # Let ISMRMRD handle storage format internally
     try:
-        # Pass transpose=False because we've already transposed manually
-        ismrmrd_image = ismrmrd.Image.from_array(ismrmrd_data_transposed, transpose=False)
+        ismrmrd_image = ismrmrd.Image.from_array(ismrmrd_data, transpose=False)
     except TypeError:
         # Older versions don't support transpose parameter
-        ismrmrd_image = ismrmrd.Image.from_array(ismrmrd_data_transposed)
+        ismrmrd_image = ismrmrd.Image.from_array(ismrmrd_data)
     
-    print(f"📐 ISMRMRD image matrix dimensions: {ismrmrd_image.data.shape}")
+    print(f"📐 ISMRMRD image data shape: {ismrmrd_image.data.shape}")
     
     # Set basic image properties
     if hasattr(ismrmrd_image, 'image_type'):
@@ -266,27 +258,33 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
     
     # Update pixel spacing from actual affine-derived voxel sizes
     voxel_size = orientation_info['voxel_size']
-    print(f"🔧 Updating voxel spacing from affine matrix: {voxel_size}")
+    print(f"🔧 Voxel spacing from affine matrix: {voxel_size}")
     
-    # Use the actual voxel sizes from the affine matrix
-    # Update metadata to reflect the actual voxel spacing
+    print(f"📏 Original data shape: {ismrmrd_data.shape}")
+    print(f"📏 ISMRMRD image.data shape: {ismrmrd_image.data.shape}")
+    
+    # Check if ISMRMRD image has matrix_size attribute
+    if hasattr(ismrmrd_image, 'matrix_size'):
+        print(f"📏 ISMRMRD matrix_size attribute: {ismrmrd_image.matrix_size}")
+    
+    # CRITICAL: ISMRMRD stores data in reversed/transposed order (column-major Fortran order)
+    # Original data: [624, 512, 416] but ISMRMRD reads it as [416, 512, 624]
+    # So we need to reverse the FOV array to match: [Z_fov, Y_fov, X_fov]
+    field_of_view = [
+        ismrmrd_data.shape[2] * voxel_size[2],  # Z: 416 * 0.8 = 332.8 (stored as first dimension)
+        ismrmrd_data.shape[1] * voxel_size[1],  # Y: 512 * 0.8 = 409.6 (middle dimension)
+        ismrmrd_data.shape[0] * voxel_size[0]   # X: 624 * 0.8 = 499.2 (stored as last dimension)
+    ]
+    
     metadata['PixelSpacing'] = [voxel_size[0], voxel_size[1]]
     metadata['SliceThickness'] = voxel_size[2]
-    
-    # ISMRMRD field_of_view is [X, Y, Z] and should match actual voxel dimensions
-    # FOV = matrix_size * voxel_size for each dimension
-    # ismrmrd_data.shape is (X, Y, Z) = (624, 512, 416)
-    field_of_view = [
-        ismrmrd_data.shape[0] * voxel_size[0],   # FOV in X (readout dimension)
-        ismrmrd_data.shape[1] * voxel_size[1],   # FOV in Y (phase dimension)  
-        ismrmrd_data.shape[2] * voxel_size[2]    # FOV in Z (slice dimension)
-    ]
     metadata['field_of_view'] = field_of_view
     
-    print(f"📏 Image matrix: {ismrmrd_data.shape}")
     print(f"📏 Voxel spacing: [{voxel_size[0]}, {voxel_size[1]}, {voxel_size[2]}] mm")
-    print(f"📏 Calculated field of view: {field_of_view} mm")
-    print(f"📏 Verification - voxel size from FOV: [{field_of_view[0]/ismrmrd_data.shape[0]:.8f}, {field_of_view[1]/ismrmrd_data.shape[1]:.8f}, {field_of_view[2]/ismrmrd_data.shape[2]:.8f}]")
+    print(f"📏 Field of view (reversed for ISMRMRD): {field_of_view} mm")
+    print(f"📏 Target matrix: 624 x 512 x 416")
+    print(f"📏 ISMRMRD stores as: 416 x 512 x 624")
+    print(f"📏 Expected voxel: [{field_of_view[0]/416:.8f}, {field_of_view[1]/512:.8f}, {field_of_view[2]/624:.8f}] (should be 0.8 each)")
     
     # Set image metadata
     if hasattr(ismrmrd_image, 'meta'):
