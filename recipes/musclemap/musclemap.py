@@ -199,14 +199,16 @@ def process_image(imgGroup, connection, config, metadata):
     print("affine matrix:")
     print(affine)
 
-
+    print("overwriting affine with identity for testing")
+    affine = np.eye(4)
+    
     new_img = nib.nifti1.Nifti1Image(np.squeeze(data), affine)
-    nib.save(new_img, "/buildhostdirectory/input.nii.gz")
+    nib.save(new_img, "/buildhostdirectory/input_identity.nii.gz")
 
     # Run mm_segment
-    preprocess_result = subprocess.run(["mm_segment", "-i", "/buildhostdirectory/input.nii.gz", "-v"], check=True)
+    preprocess_result = subprocess.run(["mm_segment", "-i", "/buildhostdirectory/input_identity.nii.gz", "-v"], check=True)
 
-    img = nib.load("input_dseg.nii.gz")
+    img = nib.load("/buildhostdirectory/input_identity_dseg.nii.gz")
     data = img.get_fdata()
 
     # compare size of data to crop_size, if not identical do a center crop

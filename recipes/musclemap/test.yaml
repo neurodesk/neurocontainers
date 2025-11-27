@@ -13,6 +13,7 @@ tests:
         /buildhostdirectory/dicom_data
 
       # Convert NIFTI to ISMRMRD format
+      rm /buildhostdirectory/input_fromNIFTI.h5
       python3 /opt/code/python-ismrmrd-server/nifti2mrd.py \
         -i /buildhostdirectory/PatThigh_Se1_Res0.8_0.8_Spac0.8.nii \
         -o /buildhostdirectory/input_fromNIFTI.h5
@@ -25,7 +26,7 @@ tests:
       python3 /opt/code/python-ismrmrd-server/client.py \
         -G dataset \
         -o /buildhostdirectory/output.h5 \
-        /buildhostdirectory/input.h5 \
+        /buildhostdirectory/input_fromDCM.h5 \
         -c musclemap
 
       # Check output h5 data in "H5Web" VS code plugin viewer
