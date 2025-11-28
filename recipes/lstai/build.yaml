@@ -12,6 +12,9 @@ build:
         path:
           - /opt/miniforge3/envs/lstai/bin/
           - /opt/lstai/bin
+        bins:
+          - lst
+          - hd-bet
     - install: wget python3-pip git python3 unzip
     - workdir: /opt
     - run:
@@ -46,9 +49,45 @@ build:
         - wget https://github.com/CompImg/LST-AI/releases/download/v1.0.0/lst_data.zip
     - run:
         - unzip lst_data.zip -d /opt/lstai/LST_AI
+    - run:
+        - curl -fLO https://github.com/rordenlab/dcm2niix/releases/download/v1.0.20240202/dcm2niix_lnx.zip
+        - unzip dcm2niix_lnx.zip -d /opt/dcm2niix
+        - chmod a+x /opt/dcm2niix/dcm2niix
+        - rm dcm2niix_lnx.zip
+    - environment:
+        PATH: $PATH:/opt/dcm2niix
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
+    - test:
+        name: Test LST-AI
+        script: |
+          #!/bin/bash
+          set -e
+
+          # Download MS test dataset from OSF
+          wget -O /tmp/archive.zip "https://osf.io/download/qwm75/"
+          unzip /tmp/archive.zip -d /tmp/
+          rm /tmp/archive.zip
+
+          # Convert DICOM to NIfTI
+          # SE000005 = T1W, SE000006 = FLAIR
+          dcm2niix -z y -o /tmp/ /tmp/archive/ST000001/SE000005/
+          dcm2niix -z y -o /tmp/ /tmp/archive/ST000001/SE000006/
+
+          # Find the converted files
+          T1_FILE=$(ls /tmp/*T1W*.nii.gz | head -1)
+          FLAIR_FILE=$(ls /tmp/*FLAIR*.nii.gz | head -1)
+
+          echo "T1 file: $T1_FILE"
+          echo "FLAIR file: $FLAIR_FILE"
+
+          # Run LST-AI (using --mode fast for quicker testing)
+          lst --t1 "$T1_FILE" --flair "$FLAIR_FILE" --output /tmp/lstai_output --device cpu --mode fast
+
+          # Check output exists
+          ls -la /tmp/lstai_output/
+          echo "LST-AI test completed successfully"
 categories:
   - image segmentation
   - machine learning
@@ -57,28 +96,38 @@ readme: |-
   ----------------------------------
   ## lstai/{{ context.version }} ##
 
-
+  LST-AI: A deep learning ensemble for accurate MS lesion segmentation.
 
   Example:
   ```
-  ml lstai/1.0.0
-  lstai --help
+  ml lstai/{{ context.version }}
+  lst --help
   ```
 
-  More documentation can be found here: https://raw.githubusercontent.com/CompImg/LST-AI/refs/heads/main/README.md
+  More documentation can be found here: https://github.com/CompImg/LST-AI
 
   Citation:
   ```
+  Wiltgen T, McGinnis J, Schlaeger S, Kofler F, Voon C, Berthele A, Bischl D, Grundl L, Will N, Metz M, et al. (2024)
+  LST-AI: A deep learning ensemble for accurate MS lesion segmentation.
+  NeuroImage: Clinical. doi:10.1016/j.nicl.2024.103611
 
+  Isensee F, Schell M, Tursunova I, Brugnara G, Bonekamp D, Neuberger U, Wick A, Schlemmer HP, Heiland S, Wick W,
+  Bendszus M, Maier-Hein KH, Kickingereder P. (2019)
+  Automated brain extraction of multi-sequence MRI using artificial neural networks.
+  Hum Brain Mapp. 1-13. doi:10.1002/hbm.24750
   ```
 
   To run container outside of this environment: ml lstai/{{ context.version }}
 
   ----------------------------------
 structured_readme:
-  description: ""
+  description: "LST-AI: A deep learning ensemble for accurate MS lesion segmentation."
   example: |-
-    ml lstai/1.0.0
-    lstai --help
-  documentation: https://raw.githubusercontent.com/CompImg/LST-AI/refs/heads/main/README.md
-  citation: ""
+    ml lstai/{{ context.version }}
+    lst --help
+  documentation: https://github.com/CompImg/LST-AI
+  citation: |-
+    Wiltgen T, McGinnis J, Schlaeger S, Kofler F, Voon C, Berthele A, Bischl D, Grundl L, Will N, Metz M, et al. (2024) LST-AI: A deep learning ensemble for accurate MS lesion segmentation. NeuroImage: Clinical. doi:10.1016/j.nicl.2024.103611
+
+    Isensee F, Schell M, Tursunova I, Brugnara G, Bonekamp D, Neuberger U, Wick A, Schlemmer HP, Heiland S, Wick W, Bendszus M, Maier-Hein KH, Kickingereder P. (2019) Automated brain extraction of multi-sequence MRI using artificial neural networks. Hum Brain Mapp. 1-13. doi:10.1002/hbm.24750
