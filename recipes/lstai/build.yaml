@@ -25,10 +25,17 @@ build:
         - git clone https://github.com/CompImg/LST-AI/ /opt/lstai
         - pip install -e /opt/lstai
     - run:
+        - mkdir -p /opt/hd-bet_params
+        - wget -O /opt/hd-bet_params/0.model "https://zenodo.org/record/2540695/files/0.model?download=1"
+        - wget -O /opt/hd-bet_params/1.model "https://zenodo.org/record/2540695/files/1.model?download=1"
+        - wget -O /opt/hd-bet_params/2.model "https://zenodo.org/record/2540695/files/2.model?download=1"
+        - wget -O /opt/hd-bet_params/3.model "https://zenodo.org/record/2540695/files/3.model?download=1"
+        - wget -O /opt/hd-bet_params/4.model "https://zenodo.org/record/2540695/files/4.model?download=1"
+        - sed -i "s|os.path.join(os.path.expanduser('~'), 'hd-bet_params')|'/opt/hd-bet_params'|" /opt/hdbet/HD_BET/paths.py
+    - run:
         - git clone https://github.com/MIC-DKFZ/HD-BET /opt/hdbet
         - cd /opt/hdbet
         - git checkout ae160681324d524db3578e4135bf781f8206e146
-        - pip install SimpleITK --only-binary ":all:"
         - pip install -e /opt/hdbet
     - run:
         - wget "https://github.com/CompImg/LST-AI/releases/download/v1.0.0/greedy"
@@ -51,7 +58,7 @@ structured_readme:
   example: |-
     ml lstai/1.0.0
     lstai --help
-  documentation: https://raw.githubusercontent.com/CompImg/LST-AI/refs/heads/main/README.md
+  documentation: https://raw.githubusercontent.com/CompImg/LST-AI/refs/heads/main/README.mdc
   citation: ""
 readme: |-
   ----------------------------------
@@ -65,7 +72,7 @@ readme: |-
   lstai --help
   ```
 
-  More documentation can be found here: https://raw.githubusercontent.com/CompImg/LST-AI/refs/heads/main/README.md
+  More documentation can be found here: https://raw.githubusercontent.com/CompImg/LST-AI/refs/heads/main/README.mdc
 
   Citation:
   ```
