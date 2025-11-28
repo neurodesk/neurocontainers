@@ -25,6 +25,9 @@ build:
         - git clone https://github.com/CompImg/LST-AI/ /opt/lstai
         - pip install -e /opt/lstai
     - run:
+        - git clone https://github.com/MIC-DKFZ/HD-BET /opt/hdbet
+        - cd /opt/hdbet
+        - git checkout ae160681324d524db3578e4135bf781f8206e146
         - mkdir -p /opt/hd-bet_params
         - wget -O /opt/hd-bet_params/0.model "https://zenodo.org/record/2540695/files/0.model?download=1"
         - wget -O /opt/hd-bet_params/1.model "https://zenodo.org/record/2540695/files/1.model?download=1"
@@ -32,10 +35,6 @@ build:
         - wget -O /opt/hd-bet_params/3.model "https://zenodo.org/record/2540695/files/3.model?download=1"
         - wget -O /opt/hd-bet_params/4.model "https://zenodo.org/record/2540695/files/4.model?download=1"
         - sed -i "s|os.path.join(os.path.expanduser('~'), 'hd-bet_params')|'/opt/hd-bet_params'|" /opt/hdbet/HD_BET/paths.py
-    - run:
-        - git clone https://github.com/MIC-DKFZ/HD-BET /opt/hdbet
-        - cd /opt/hdbet
-        - git checkout ae160681324d524db3578e4135bf781f8206e146
         - pip install -e /opt/hdbet
     - run:
         - wget "https://github.com/CompImg/LST-AI/releases/download/v1.0.0/greedy"
@@ -53,13 +52,6 @@ categories:
   - image segmentation
   - machine learning
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAACsElEQVR4AexTTWgTQRh9s02a2tiEWmjpIZf2oNAq/mCxVKrQeLCIh55ESLCgVdGLPbS9tJrEi6AHT0qhKglYexBvFRESUawSBFGMBBrSijHBv7RJk5Btftb5Jm5MIMYc9CC67JvZ/b6Z92a+NyN1PLUqtWLr8xEldadTSd7Q1wwJf/j5RwUUBfgYU7D0WUEmV73GZSXKfUnhw4l5BPucAkv9LiSfvAc4IdHkYmlcureCztEUOs6l0D2ewqaRJCzXZLxczoOEaVwpygTUhN1uRzweh+2CTQ0hH5cRvrIA21wU7oU3nEwRyOUVDJ68juFpGf5wvjhe/agooCZLe3lxBfHHy/D5fDAajRgYGABjDA6HAxaLBeMXp3H7WRZytnQWUJsAX2X2UxL7+/YJcr/fD7fbLZimpqYQCATQ29uLF8E8EmlFxNWmNgG+UklfD88jD4icVk87UUm6urpAIPJ0Ro0W+poEFL4DSa+FtlUPs9kMq9UKk8kkPFC4s2952UwtDObuOhgbC8RqW5tAOov4XT/WI2tinsvlgsFgEB7Qbgzck5tzDzH/KodoQgwpNtUFeDkTD4JYnfUhE04IM0OhkOhVBvKCytbe3i7uxtc1PklN8r66AB+Q9LzD6q3XWF+MglYei8UwMTHBM4WXTlBPTw8ikQhaDQwtTayQ+N7+VECn02FycrJYZ1mWQfeDzKS5VHuC0+mE1+sV3hzgHpAI5VVI6kdpT0ePBBhjos6MMdA/xY2NkjgxjP3IkfGWvRqMDmrRoC1lQvk9YPwoGoY2o/n49opoO7UbM2faMDOiw2mzFod31mHskBb3xxpw1apDy0ZWzs7/JI7iK23QoOlgJ5qHt1VE67EdGNzViCN7NLh8tB6zZxtwfqge/VvqoNOg4iNVjP7G4H+BXxbz7y/RNwAAAP//C9arogAAAAZJREFUAwAwtjUFVcEnVAAAAABJRU5ErkJggg==
-structured_readme:
-  description: ""
-  example: |-
-    ml lstai/1.0.0
-    lstai --help
-  documentation: https://raw.githubusercontent.com/CompImg/LST-AI/refs/heads/main/README.mdc
-  citation: ""
 readme: |-
   ----------------------------------
   ## lstai/{{ context.version }} ##
@@ -82,3 +74,10 @@ readme: |-
   To run container outside of this environment: ml lstai/{{ context.version }}
 
   ----------------------------------
+structured_readme:
+  description: ""
+  example: |-
+    ml lstai/1.0.0
+    lstai --help
+  documentation: https://raw.githubusercontent.com/CompImg/LST-AI/refs/heads/main/README.mdc
+  citation: ""
