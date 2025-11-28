@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "irkernel 4.4.3": {
+      "version": "20251001",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "programming"
+  ]
+}
