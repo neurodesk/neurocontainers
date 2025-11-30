@@ -187,11 +187,17 @@ def process_image(imgGroup, connection, config, metadata):
 
     crop_size = data.shape
 
+    print("shape before transpose:")
+    print(data.shape)
+
     # Reformat data to [y x z cha img], i.e. [row col] for the first two dimensions
     # data = data.transpose((3, 4, 2, 1, 0))
 
     # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions
     data = data.transpose((3, 4, 0, 1, 2))
+
+    print("shape after initial transpose:")
+    print(data.shape)
 
     # convert data to nifti using nibabel
     affine = compute_nifti_affine(head[0], voxelsize)
@@ -199,30 +205,61 @@ def process_image(imgGroup, connection, config, metadata):
     print("affine matrix:")
     print(affine)
 
-    print("overwriting affine with identity for testing")
-    affine = np.eye(4)
-    
-    new_img = nib.nifti1.Nifti1Image(np.squeeze(data), affine)
-    nib.save(new_img, "/buildhostdirectory/input_identity.nii.gz")
+#     affine matrix: dcm -> hdf5 -> nifti:
+# [[-8.00799981e-01  3.92151765e-12 -0.00000000e+00  2.49850006e+02]
+#  [-3.92151743e-12 -8.00800025e-01  0.00000000e+00  2.05005005e+02]
+#  [ 0.00000000e+00  0.00000000e+00  7.99999971e-01 -1.42800000e+03]
+#  [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]    
+
+    # print("overwriting affine with identity for testing")
+    # affine = np.eye(4)
+
+    data = np.squeeze(data)
+    print("shape before saving nifti and running mm_segment:")
+    print(data.shape)
+    # should be: 624 x 512 x 416
+    # is: (512, 624, 416)
+
+    new_img = nib.nifti1.Nifti1Image(data, affine)
+    nib.save(new_img, "/buildhostdirectory/input_fromDCM.nii.gz")
 
     # Run mm_segment
-    preprocess_result = subprocess.run(["mm_segment", "-i", "/buildhostdirectory/input_identity.nii.gz", "-v"], check=True)
+    # preprocess_result = subprocess.run(["mm_segment", "-i", "/buildhostdirectory/input_fromDCM.nii.gz", "-v"], check=True)
 
-    img = nib.load("/buildhostdirectory/input_identity_dseg.nii.gz")
+    # copy_result = subprocess.run(["cp", "/opt/input_fromDCM_dseg.nii.gz", "/buildhostdirectory/input_fromDCM_dseg.nii.gz"], check=True) 
+    
+    img = nib.load("/buildhostdirectory/input_fromDCM_dseg.nii.gz")
     data = img.get_fdata()
-
-    # compare size of data to crop_size, if not identical do a center crop
-    if data.shape != crop_size:
-        crop = [0, 0, 0]
-        for i in range(3):
-            crop[i] = int((data.shape[i] - crop_size[i]) / 2)
-        data = data[crop[0] : crop[0] + crop_size[0], crop[1] : crop[1] + crop_size[1], crop[2] : crop[2] + crop_size[2]]
 
     # Reformat data
     print("shape after loading with nibabel")
     print(data.shape)
-    data = data[:, :, :, None, None]
+
+    if data.ndim == 2:
+        data = data[:, :, None]
+
+    data = data[..., None, None]
     data = data.transpose((0, 1, 4, 3, 2))
+
+    print("shape after applying transpose")
+    print(data.shape)
+
+    # compare size of data to crop_size, if not identical do a center crop
+    print("crop_size:")
+    print(crop_size)
+
+    print("data shape before crop:")
+    print(data.shape)
+    
+    # crop_size is [img, cha, z, y, x]
+    # data is [y, x, 1, 1, img]
+    if data.shape[0] != crop_size[3] or data.shape[1] != crop_size[4]:
+        crop_y = int((data.shape[0] - crop_size[3]) / 2)
+        crop_x = int((data.shape[1] - crop_size[4]) / 2)
+        data = data[crop_y : crop_y + crop_size[3], crop_x : crop_x + crop_size[4], ...]
+
+    print("data shape after crop:")
+    print(data.shape)
 
     if ("parameters" in config) and ("options" in config["parameters"]) and (config["parameters"]["options"] == "complex"):
         # Complex images are requested
@@ -245,6 +282,13 @@ def process_image(imgGroup, connection, config, metadata):
 
     # Re-slice back into 2D images
     imagesOut = [None] * data.shape[-1]
+
+    print("data.shape before creating output images:")
+    print(data.shape)
+
+    print("head length:")
+    print(len(head))
+
     for iImg in range(data.shape[-1]):
         # Create new MRD instance for the inverted image
         # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]

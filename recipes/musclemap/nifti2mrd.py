@@ -14,9 +14,6 @@ import nibabel as nib
 import json
 from pathlib import Path
 
-# Add OpenRecon server paths
-sys.path.append('./python-ismrmrd-server')
-
 try:
     import ismrmrd
     print("✅ Successfully imported ismrmrd module")
@@ -402,8 +399,8 @@ def main():
     parser.add_argument(
         "-i", "--input",
         dest="nifti_file",
-        help="Path to the NIfTI file to convert",
-        default="fetal-brain-measurement/Inputs/Fixed/Pat13249_Se8_Res0.46875_0.46875_Spac4.0.nii.gz"
+        help="Path to the NIfTI file to convert, e.g. Pat[PatientID]_Se[SeriesNumber]_Res[X]_[Y]_Spac[Z].nii.gz",
+        default="Pat[PatientID]_Se[SeriesNumber]_Res[X]_[Y]_Spac[Z].nii.gz"
     )
     parser.add_argument(
         "-o", "--output",
