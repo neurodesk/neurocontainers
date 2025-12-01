@@ -174,14 +174,14 @@ def process_image(imgGroup, connection, config, metadata):
     head = [img.getHead() for img in imgGroup]
     meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in imgGroup]
 
-    print("header length - should be as many as images:")
+    print("header length - should be as long as there are images:")
     print(len(head))
 
     matrix = np.array(head[0].matrix_size[:])
 
     #check that the matrix size is correct, it should be as many slices as in length(imgGroup)
     if matrix[2] != len(imgGroup):
-        logging.warning("THIS SHOULD ONLY HAPPEN IN SIMULATION: Matrix size z (%d) does not match number of images (%d), adjusting matrix size", matrix[2], len(imgGroup))
+        logging.warning("THIS SHOULD ONLY HAPPEN IN SIMULATION WHENE THE HDF5 CONVERSION DIDN'T QUITE WORK: Matrix size z (%d) does not match number of images (%d), adjusting matrix size", matrix[2], len(imgGroup))
         matrix[2] = len(imgGroup)    
 
     fov = np.array(head[0].field_of_view[:])
