@@ -365,126 +365,105 @@ def main(args):
             
             if not phase_imgs:
                 continue
-                
-            # Stack pixel data
-            # pixel_array is (Rows, Cols) -> stack -> (Slices, Rows, Cols)
-            vol_data = np.stack([img.pixel_array for img in phase_imgs])
             
-            # Create MRD Image
-            tmpMrdImg = ismrmrd.Image.from_array(vol_data, transpose=False)
-            tmpMeta   = ismrmrd.Meta()
-            
+            # Calculate total FOV for the volume
             refImg = phase_imgs[0]
+            num_slices = len(phase_imgs)
+            total_fov_z = float(refImg.SliceThickness * num_slices)
+            
+            # Create separate MRD Image for each slice
+            for iSlice, sliceImg in enumerate(phase_imgs):
+                # Create MRD Image from single slice
+                tmpMrdImg = ismrmrd.Image.from_array(sliceImg.pixel_array, transpose=False)
+                tmpMeta   = ismrmrd.Meta()
 
-            try:
-                # ImageType is a list/tuple. Index 2 is usually M/P/R/I
-                # Enhanced: FrameType
-                itype = refImg.ImageType
-                if len(itype) > 2:
-                    tmpMrdImg.image_type = imtype_map.get(itype[2], ismrmrd.IMTYPE_MAGNITUDE)
-                elif len(itype) > 0:
-                     # Try to guess from first char of first element?
-                     tmpMrdImg.image_type = imtype_map.get(itype[0][0], ismrmrd.IMTYPE_MAGNITUDE)
-                else:
+                try:
+                    # ImageType is a list/tuple. Index 2 is usually M/P/R/I
+                    # Enhanced: FrameType
+                    itype = sliceImg.ImageType
+                    if len(itype) > 2:
+                        tmpMrdImg.image_type = imtype_map.get(itype[2], ismrmrd.IMTYPE_MAGNITUDE)
+                    elif len(itype) > 0:
+                         # Try to guess from first char of first element?
+                         tmpMrdImg.image_type = imtype_map.get(itype[0][0], ismrmrd.IMTYPE_MAGNITUDE)
+                    else:
+                        tmpMrdImg.image_type = ismrmrd.IMTYPE_MAGNITUDE
+                except:
+                    print("Unsupported ImageType %s -- defaulting to IMTYPE_MAGNITUDE" % sliceImg.ImageType)
                     tmpMrdImg.image_type = ismrmrd.IMTYPE_MAGNITUDE
-            except:
-                print("Unsupported ImageType %s -- defaulting to IMTYPE_MAGNITUDE" % refImg.ImageType)
-                tmpMrdImg.image_type = ismrmrd.IMTYPE_MAGNITUDE
 
-            # FOV: Z is total thickness
-            fov_z = float(refImg.SliceThickness * len(phase_imgs))
-            tmpMrdImg.field_of_view            = (float(refImg.PixelSpacing[1]*refImg.Columns), float(refImg.PixelSpacing[0]*refImg.Rows), fov_z)
-            
-            tmpMrdImg.position                 = tuple(np.stack(refImg.ImagePositionPatient))
-            tmpMrdImg.read_dir                 = tuple(np.stack(refImg.ImageOrientationPatient[0:3]))
-            tmpMrdImg.phase_dir                = tuple(np.stack(refImg.ImageOrientationPatient[3:7]))
-            tmpMrdImg.slice_dir                = tuple(np.cross(np.stack(refImg.ImageOrientationPatient[0:3]), np.stack(refImg.ImageOrientationPatient[3:7])))
-            
-            # AcquisitionTime HHMMSS.FFFFFF
-            acq_time = refImg.AcquisitionTime
-            try:
-                # Handle potential empty or malformed time
-                if acq_time and len(acq_time) >= 6:
-                    h = int(acq_time[0:2])
-                    m = int(acq_time[2:4])
-                    s = int(acq_time[4:6])
-                    f = float(acq_time[6:]) if len(acq_time) > 6 else 0.0
-                    tmpMrdImg.acquisition_time_stamp = round((h*3600 + m*60 + s + f)*1000/2.5)
-                else:
+                # FOV: Set to total volume FOV (including all slices)
+                # This tells the reconstruction the full volume context
+                tmpMrdImg.field_of_view = (float(sliceImg.PixelSpacing[1]*sliceImg.Columns), 
+                                          float(sliceImg.PixelSpacing[0]*sliceImg.Rows), 
+                                          total_fov_z)
+                
+                # Note: matrix_size is read-only and derived from data shape (cols, rows, 1 for 2D slices)
+                # The slice index indicates position within the volume
+                
+                tmpMrdImg.position                 = tuple(np.stack(sliceImg.ImagePositionPatient))
+                tmpMrdImg.read_dir                 = tuple(np.stack(sliceImg.ImageOrientationPatient[0:3]))
+                tmpMrdImg.phase_dir                = tuple(np.stack(sliceImg.ImageOrientationPatient[3:7]))
+                tmpMrdImg.slice_dir                = tuple(np.cross(np.stack(sliceImg.ImageOrientationPatient[0:3]), np.stack(sliceImg.ImageOrientationPatient[3:7])))
+                
+                # AcquisitionTime HHMMSS.FFFFFF
+                acq_time = sliceImg.AcquisitionTime
+                try:
+                    # Handle potential empty or malformed time
+                    if acq_time and len(acq_time) >= 6:
+                        h = int(acq_time[0:2])
+                        m = int(acq_time[2:4])
+                        s = int(acq_time[4:6])
+                        f = float(acq_time[6:]) if len(acq_time) > 6 else 0.0
+                        tmpMrdImg.acquisition_time_stamp = round((h*3600 + m*60 + s + f)*1000/2.5)
+                    else:
+                        tmpMrdImg.acquisition_time_stamp = 0
+                except:
                     tmpMrdImg.acquisition_time_stamp = 0
-            except:
-                tmpMrdImg.acquisition_time_stamp = 0
 
-            try:
-                tmpMrdImg.physiology_time_stamp[0] = round(int(refImg.TriggerTime/2.5))
-            except:
-                pass
+                try:
+                    tmpMrdImg.physiology_time_stamp[0] = round(int(sliceImg.TriggerTime/2.5))
+                except:
+                    pass
 
-            try:
-                item = refImg.get_private_item(0x0019, 0x13, 'SIEMENS MR HEADER')
-                if item:
-                    ImaAbsTablePosition = item.value
-                    tmpMrdImg.patient_table_position = (ctypes.c_float(ImaAbsTablePosition[0]), ctypes.c_float(ImaAbsTablePosition[1]), ctypes.c_float(ImaAbsTablePosition[2]))
-            except:
-                pass
+                try:
+                    item = sliceImg.get_private_item(0x0019, 0x13, 'SIEMENS MR HEADER')
+                    if item:
+                        ImaAbsTablePosition = item.value
+                        tmpMrdImg.patient_table_position = (ctypes.c_float(ImaAbsTablePosition[0]), ctypes.c_float(ImaAbsTablePosition[1]), ctypes.c_float(ImaAbsTablePosition[2]))
+                except:
+                    pass
 
-            tmpMrdImg.image_series_index     = uSeriesNum.tolist().index(refImg.SeriesNumber)
-            tmpMrdImg.image_index            = refImg.InstanceNumber # Use first instance number
-            
-            # Slice index doesn't make sense for volume, set to 0 or center?
-            tmpMrdImg.slice = 0
-            tmpMrdImg.phase = iPhase
+                tmpMrdImg.image_series_index     = uSeriesNum.tolist().index(sliceImg.SeriesNumber)
+                tmpMrdImg.image_index            = sliceImg.InstanceNumber
+                
+                tmpMrdImg.slice = iSlice
+                tmpMrdImg.phase = iPhase
 
-            try:
-                seq_name = refImg.SequenceName
-                res  = re.search(r'(?<=_v).*$',     seq_name)
-                if res:
-                    venc = re.search(r'^\d+',           res.group(0))
-                    dir  = re.search(r'(?<=\d)[^\d]*$', res.group(0))
-                    if venc and dir:
-                        tmpMeta['FlowVelocity']   = float(venc.group(0))
-                        tmpMeta['FlowDirDisplay'] = venc_dir_map.get(dir.group(0), '')
-            except:
-                pass
+                try:
+                    seq_name = sliceImg.SequenceName
+                    res  = re.search(r'(?<=_v).*$',     seq_name)
+                    if res:
+                        venc = re.search(r'^\d+',           res.group(0))
+                        dir  = re.search(r'(?<=\d)[^\d]*$', res.group(0))
+                        if venc and dir:
+                            tmpMeta['FlowVelocity']   = float(venc.group(0))
+                            tmpMeta['FlowDirDisplay'] = venc_dir_map.get(dir.group(0), '')
+                except:
+                    pass
 
-            try:
-                tmpMeta['ImageComments'] = refImg.ImageComments
-            except:
-                pass
+                try:
+                    tmpMeta['ImageComments'] = sliceImg.ImageComments
+                except:
+                    pass
 
-            tmpMeta['SequenceDescription'] = refImg.SeriesDescription
+                tmpMeta['SequenceDescription'] = sliceImg.SeriesDescription
 
-            tmpMrdImg.attribute_string = tmpMeta.serialize()
-            
-            # Check shape consistency
-            if len(imgAll[iSer]) > 0:
-                prev_shape = imgAll[iSer][0].data.shape
-                curr_shape = tmpMrdImg.data.shape
-                if prev_shape != curr_shape:
-                    print(f"Warning: Image shape mismatch in series {uSeriesNum[iSer]}. {prev_shape} vs {curr_shape}. Skipping mismatch.")
-                    continue
-            
-            imgAll[iSer].append(tmpMrdImg)
+                tmpMrdImg.attribute_string = tmpMeta.serialize()
+                
+                imgAll[iSer].append(tmpMrdImg)
         
-        print("Series %d: Created %d 3D images (phases)" % (uSeriesNum[iSer], len(imgAll[iSer])))
-
-    # Update header with max Z
-    max_z = 1
-    for ser in imgAll:
-        for img in ser:
-            # img.data is (C, Z, Y, X)
-            if img.data.shape[1] > max_z:
-                max_z = img.data.shape[1]
-    
-    # Update FOV Z based on number of slices
-    # Initial FOV Z is SliceThickness, so multiply by number of slices
-    fov_z = mrdHead.encoding[0].encodedSpace.fieldOfView_mm.z * max_z
-
-    mrdHead.encoding[0].encodedSpace.matrixSize.z = max_z
-    mrdHead.encoding[0].reconSpace.matrixSize.z = max_z
-
-    mrdHead.encoding[0].encodedSpace.fieldOfView_mm.z = fov_z
-    mrdHead.encoding[0].reconSpace.fieldOfView_mm.z = fov_z
+        print("Series %d: Created %d 2D images (slices x phases)" % (uSeriesNum[iSer], len(imgAll[iSer])))
 
     # Create an MRD file
     print("Creating MRD file %s with group %s" % (args.outFile, args.outGroup))

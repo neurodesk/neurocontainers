@@ -174,7 +174,16 @@ def process_image(imgGroup, connection, config, metadata):
     head = [img.getHead() for img in imgGroup]
     meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in imgGroup]
 
+    print("header length - should be as many as images:")
+    print(len(head))
+
     matrix = np.array(head[0].matrix_size[:])
+
+    #check that the matrix size is correct, it should be as many slices as in length(imgGroup)
+    if matrix[2] != len(imgGroup):
+        logging.warning("THIS SHOULD ONLY HAPPEN IN SIMULATION: Matrix size z (%d) does not match number of images (%d), adjusting matrix size", matrix[2], len(imgGroup))
+        matrix[2] = len(imgGroup)    
+
     fov = np.array(head[0].field_of_view[:])
     voxelsize = fov/matrix
 
@@ -221,15 +230,52 @@ def process_image(imgGroup, connection, config, metadata):
     # is: (512, 624, 416)
 
     new_img = nib.nifti1.Nifti1Image(data, affine)
+    # check if /buildhostdirectory exists, if not create it:
+    if not os.path.exists("/buildhostdirectory"):
+        os.makedirs("/buildhostdirectory")
     nib.save(new_img, "/buildhostdirectory/input_fromDCM.nii.gz")
 
+    # Extract UI parameters from JSON config
+    bodyregion = mrdhelper.get_json_config_param(config, 'bodyregion', default='wholebody', type='str')
+    chunksize = mrdhelper.get_json_config_param(config, 'chunksize', default='auto', type='str')
+    spatialoverlap = mrdhelper.get_json_config_param(config, 'spatialoverlap', default=50, type='int')
+    
+    logging.info(f"mm_segment parameters: bodyregion={bodyregion}, chunksize={chunksize}, spatialoverlap={spatialoverlap}")
+    
+    # Build mm_segment command with parameters
+    mm_segment_cmd = [
+        "mm_segment",
+        "-i", "/buildhostdirectory/input_fromDCM.nii.gz",
+        "-r", bodyregion,
+        "-c", str(chunksize),
+        "-s", str(spatialoverlap),
+        "-v"
+    ]
+    
     # Run mm_segment
-    # preprocess_result = subprocess.run(["mm_segment", "-i", "/buildhostdirectory/input_fromDCM.nii.gz", "-v"], check=True)
+    logging.info(f"Running command: {' '.join(mm_segment_cmd)}")
+    preprocess_result = subprocess.run(mm_segment_cmd, check=True)
 
-    # copy_result = subprocess.run(["cp", "/opt/input_fromDCM_dseg.nii.gz", "/buildhostdirectory/input_fromDCM_dseg.nii.gz"], check=True) 
+    # This is just for debugging and can be removed later:
+    copy_result = subprocess.run(["cp", "/opt/input_fromDCM_dseg.nii.gz", "/buildhostdirectory/input_fromDCM_dseg.nii.gz"], check=True) 
     
     img = nib.load("/buildhostdirectory/input_fromDCM_dseg.nii.gz")
     data = img.get_fdata()
+
+    print("maximum value in segmented data:")
+    print(np.max(data))
+
+
+    # transform labels if selected using 3 * (label_in // 10) + (label_in % 10):
+    label_transform = mrdhelper.get_json_config_param(config, 'labeltransform', default=False, type='str')
+    if label_transform is not None:  
+        logging.info("Applying label transformation: 3 * (label_in // 10) + (label_in % 10)")
+        data = 3 * (data // 10) + (data % 10)
+        logging.info(f"Label transformation complete. New data range: [{data.min()}, {data.max()}]")
+
+
+    print("maximum value in segmented data after transform:")
+    print(np.max(data))
 
     # Reformat data
     print("shape after loading with nibabel")
@@ -278,6 +324,9 @@ def process_image(imgGroup, connection, config, metadata):
         data = np.around(data)
         data = data.astype(np.int16)
 
+    print("maximum value in segmented data after DICOM range adjustment:")
+    print(np.max(data))
+
     currentSeries = 0
 
     # Re-slice back into 2D images
@@ -286,11 +335,11 @@ def process_image(imgGroup, connection, config, metadata):
     print("data.shape before creating output images:")
     print(data.shape)
 
-    print("head length:")
+    print("header length - should be as many as images:")
     print(len(head))
 
     for iImg in range(data.shape[-1]):
-        # Create new MRD instance for the inverted image
+        # Create new MRD instance for the segmented image
         # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
         # from_array() should be called with 'transpose=False' to avoid warnings, and when called
         # with this option, can take input as: [cha z y x], [z y x], or [y x]
@@ -353,7 +402,7 @@ def process_image(imgGroup, connection, config, metadata):
 
 
      # Send a copy of original (unmodified) images back too if selected
-    opre_sendoriginal = mrdhelper.get_json_config_param(config, 'sendoriginal', default=False, type='bool')
+    opre_sendoriginal = mrdhelper.get_json_config_param(config, 'sendoriginal', default=True, type='bool')
     if opre_sendoriginal:
         stack = traceback.extract_stack()
         if stack[-2].name == 'process_raw':
