@@ -17,17 +17,17 @@ build:
           - hd-bet
     - install: wget python3-pip git python3 unzip
     - workdir: /opt
-    - run:
+    - run: # INSTALL MINIFORGE
         - wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
         - bash Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge3
+    - run: # CREATE LST-AI CONDA ENVIRONMENT AND CLONE LST-AI REPO
+        - /opt/miniforge3/bin/conda create -n lstai python=3.8
+        - git clone https://github.com/CompImg/LST-AI/ /opt/lstai
     - environment:
         PATH: /opt/miniforge3/envs/lstai/bin:/opt/lstai/bin:${PATH}
-    - run:
-        - /opt/miniforge3/bin/conda create -n lstai python=3.8
-    - run:
-        - git clone https://github.com/CompImg/LST-AI/ /opt/lstai
+    - run : # INSTALL LST-AI
         - pip install -e /opt/lstai
-    - run:
+    - run: # INSTALL HD-BET
         - git clone https://github.com/MIC-DKFZ/HD-BET /opt/hdbet
         - cd /opt/hdbet
         - git checkout ae160681324d524db3578e4135bf781f8206e146
@@ -40,22 +40,23 @@ build:
         - wget -O /opt/hd-bet_params/4.model "https://zenodo.org/record/2540695/files/4.model?download=1"
         - sed -i "s|os.path.join(os.path.expanduser('~'), 'hd-bet_params')|'/opt/hd-bet_params'|" /opt/hdbet/HD_BET/paths.py
         - pip install -e /opt/hdbet
-    - run:
+    - run: # DOWNLOAD LST-AI GREEDY BINARY AND DATA
         - wget "https://github.com/CompImg/LST-AI/releases/download/v1.0.0/greedy"
         - chmod +x greedy
         - mkdir -p /opt/lstai/bin
         - mv greedy /opt/lstai/bin
-    - run:
+    - run: # DOWNLOAD LST-AI MODEL DATA
         - wget https://github.com/CompImg/LST-AI/releases/download/v1.0.0/lst_data.zip
-    - run:
         - unzip lst_data.zip -d /opt/lstai/LST_AI
-    - run:
+    - run: # INSTALL DCM2NIIX
         - curl -fLO https://github.com/rordenlab/dcm2niix/releases/download/v1.0.20240202/dcm2niix_lnx.zip
         - unzip dcm2niix_lnx.zip -d /opt/dcm2niix
         - chmod a+x /opt/dcm2niix/dcm2niix
         - rm dcm2niix_lnx.zip
     - environment:
         PATH: $PATH:/opt/dcm2niix
+    - run: # INSTALL OSFCLIENT FOR TESTING
+        - pip install osfclient
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
@@ -65,29 +66,43 @@ build:
           #!/bin/bash
           set -e
 
-          # Download MS test dataset from OSF
-          wget -O /tmp/archive.zip "https://osf.io/download/qwm75/"
+          # Download MS test dataset from OSF using osfclient
+          cd /tmp
+          echo "[INFO] Downloading test dataset from OSF..."
+          osf -p x62zy fetch archive.zip /tmp/archive.zip
+          echo "[INFO] Unzipping dataset..."
           unzip /tmp/archive.zip -d /tmp/
-          rm /tmp/archive.zip
+          rm -rf /tmp/archive.zip
 
-          # Convert DICOM to NIfTI
+          # Convert DICOM to NIfTI (with -z y for gzip compression)
           # SE000005 = T1W, SE000006 = FLAIR
+          echo "[INFO] Converting DICOM to NIfTI..."
           dcm2niix -z y -o /tmp/ /tmp/archive/ST000001/SE000005/
           dcm2niix -z y -o /tmp/ /tmp/archive/ST000001/SE000006/
+          rm -rf /tmp/archive/
 
           # Find the converted files
           T1_FILE=$(ls /tmp/*T1W*.nii.gz | head -1)
           FLAIR_FILE=$(ls /tmp/*FLAIR*.nii.gz | head -1)
+          echo "[INFO] T1 file: $T1_FILE"
+          echo "[INFO] FLAIR file: $FLAIR_FILE"
 
-          echo "T1 file: $T1_FILE"
-          echo "FLAIR file: $FLAIR_FILE"
-
-          # Run LST-AI (using --mode fast for quicker testing)
-          lst --t1 "$T1_FILE" --flair "$FLAIR_FILE" --output /tmp/lstai_output --device cpu --mode fast
+          # Run LST-AI
+          echo "[INFO] Running LST-AI..."
+          lst --t1 "$T1_FILE" --flair "$FLAIR_FILE" --output /tmp/lstai_output --device cpu --fast-mode
+          echo "[INFO] LST-AI completed."
 
           # Check output exists
+          echo "[INFO] Checking output files..."
           ls -la /tmp/lstai_output/
-          echo "LST-AI test completed successfully"
+
+          # Print CSVs
+          echo "\nAnnotated Lesion Stats:"
+          cat /tmp/lstai_output/annotated_lesion_stats.csv
+          echo "\nLesion Stats:"
+          cat /tmp/lstai_output/lesion_stats.csv
+
+          echo "[INFO] Test complete"
 categories:
   - image segmentation
   - machine learning
