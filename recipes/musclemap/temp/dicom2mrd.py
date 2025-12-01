@@ -84,9 +84,12 @@ def CreateMrdHeader(dset, dsetsAll=None):
         else:
             # For standard DICOM, count unique slice locations across all files
             slice_locations = [get_slice_location(d) for d in dsetsAll]
-            # Filter out None values
-            slice_locations = [loc for loc in slice_locations if loc is not None]
-            if slice_locations:
+            
+            # If any slice locations are None, assume sequential numbering (fallback)
+            if None in slice_locations:
+                print("Warning: Some images missing slice location in header generation - assuming sequential slices")
+                num_slices = len(dsetsAll)
+            else:
                 num_slices = len(np.unique(slice_locations))
     
     # Set matrix size z-dimension to number of slices
@@ -127,32 +130,45 @@ def GetDicomFiles(directory):
 
 def get_slice_location(dset):
     """Extract slice location from various DICOM formats"""
-    # Check for standard SliceLocation
-    if hasattr(dset, 'SliceLocation'):
-        return dset.SliceLocation
-    
-    # Check for enhanced DICOM with PerFrameFunctionalGroupsSequence
+
+    def _extract_z(position):
+        try:
+            return float(position[2])
+        except (TypeError, ValueError, IndexError):
+            return None
+
+    # Enhanced DICOM: prefer ImagePositionPatient from functional groups
     if hasattr(dset, 'SOPClassUID') and dset.SOPClassUID.name == 'Enhanced MR Image Storage':
         try:
-            # If this is an expanded frame, use its specific frame index
-            frame_idx = getattr(dset, '_frame_index', 0)
-            # Get the source dataset if this was expanded
-            source_dset = getattr(dset, '_multiframe_source', dset)
-            
-            # Extract from PlanePositionSequence for the specific frame
-            if hasattr(source_dset, 'PerFrameFunctionalGroupsSequence'):
-                if frame_idx < len(source_dset.PerFrameFunctionalGroupsSequence):
-                    frame_seq = source_dset.PerFrameFunctionalGroupsSequence[frame_idx]
-                    if hasattr(frame_seq, 'PlanePositionSequence'):
-                        pos = frame_seq.PlanePositionSequence[0].ImagePositionPatient
-                        return float(pos[2])  # Z-coordinate
-        except:
+            if hasattr(dset, 'PerFrameFunctionalGroupsSequence') and len(dset.PerFrameFunctionalGroupsSequence) > 0:
+                frame_seq = dset.PerFrameFunctionalGroupsSequence[0]
+                if hasattr(frame_seq, 'PlanePositionSequence'):
+                    pos = frame_seq.PlanePositionSequence[0].ImagePositionPatient
+                    z = _extract_z(pos)
+                    if z is not None:
+                        return z
+            if hasattr(dset, 'SharedFunctionalGroupsSequence'):
+                if hasattr(dset.SharedFunctionalGroupsSequence[0], 'PlanePositionSequence'):
+                    pos = dset.SharedFunctionalGroupsSequence[0].PlanePositionSequence[0].ImagePositionPatient
+                    z = _extract_z(pos)
+                    if z is not None:
+                        return z
+        except Exception:
             pass
-    
-    # Last resort: use ImagePositionPatient
+
+    # Standard DICOM: prioritize ImagePositionPatient; SliceLocation can be quantized/constant
     if hasattr(dset, 'ImagePositionPatient'):
-        return float(dset.ImagePositionPatient[2])
-    
+        z = _extract_z(dset.ImagePositionPatient)
+        if z is not None:
+            return z
+
+    # Fall back to SliceLocation if no positional info is available
+    if hasattr(dset, 'SliceLocation'):
+        try:
+            return float(dset.SliceLocation)
+        except (TypeError, ValueError):
+            pass
+
     # If all else fails, return None
     return None
 
@@ -165,21 +181,15 @@ def get_pixel_spacing(dset):
     # Check for enhanced DICOM with PerFrameFunctionalGroupsSequence
     if hasattr(dset, 'SOPClassUID') and dset.SOPClassUID.name == 'Enhanced MR Image Storage':
         try:
-            # If this is an expanded frame, use its specific frame index
-            frame_idx = getattr(dset, '_frame_index', 0)
-            # Get the source dataset if this was expanded
-            source_dset = getattr(dset, '_multiframe_source', dset)
-            
-            # Extract from PixelMeasuresSequence for the specific frame
-            if hasattr(source_dset, 'PerFrameFunctionalGroupsSequence'):
-                if frame_idx < len(source_dset.PerFrameFunctionalGroupsSequence):
-                    frame_seq = source_dset.PerFrameFunctionalGroupsSequence[frame_idx]
-                    if hasattr(frame_seq, 'PixelMeasuresSequence'):
-                        return frame_seq.PixelMeasuresSequence[0].PixelSpacing
+            # Extract from PerFrameFunctionalGroupsSequence (should have only this frame's data)
+            if hasattr(dset, 'PerFrameFunctionalGroupsSequence') and len(dset.PerFrameFunctionalGroupsSequence) > 0:
+                frame_seq = dset.PerFrameFunctionalGroupsSequence[0]
+                if hasattr(frame_seq, 'PixelMeasuresSequence'):
+                    return frame_seq.PixelMeasuresSequence[0].PixelSpacing
             # Check SharedFunctionalGroupsSequence as an alternative
-            if hasattr(source_dset, 'SharedFunctionalGroupsSequence'):
-                if hasattr(source_dset.SharedFunctionalGroupsSequence[0], 'PixelMeasuresSequence'):
-                    return source_dset.SharedFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing
+            if hasattr(dset, 'SharedFunctionalGroupsSequence'):
+                if hasattr(dset.SharedFunctionalGroupsSequence[0], 'PixelMeasuresSequence'):
+                    return dset.SharedFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing
         except:
             pass
     
@@ -196,21 +206,15 @@ def get_slice_thickness(dset):
     # Check for enhanced DICOM with PerFrameFunctionalGroupsSequence
     if hasattr(dset, 'SOPClassUID') and dset.SOPClassUID.name == 'Enhanced MR Image Storage':
         try:
-            # If this is an expanded frame, use its specific frame index
-            frame_idx = getattr(dset, '_frame_index', 0)
-            # Get the source dataset if this was expanded
-            source_dset = getattr(dset, '_multiframe_source', dset)
-            
-            # Extract from PixelMeasuresSequence for the specific frame
-            if hasattr(source_dset, 'PerFrameFunctionalGroupsSequence'):
-                if frame_idx < len(source_dset.PerFrameFunctionalGroupsSequence):
-                    frame_seq = source_dset.PerFrameFunctionalGroupsSequence[frame_idx]
-                    if hasattr(frame_seq, 'PixelMeasuresSequence'):
-                        return float(frame_seq.PixelMeasuresSequence[0].SliceThickness)
+            # Extract from PerFrameFunctionalGroupsSequence (should have only this frame's data)
+            if hasattr(dset, 'PerFrameFunctionalGroupsSequence') and len(dset.PerFrameFunctionalGroupsSequence) > 0:
+                frame_seq = dset.PerFrameFunctionalGroupsSequence[0]
+                if hasattr(frame_seq, 'PixelMeasuresSequence'):
+                    return float(frame_seq.PixelMeasuresSequence[0].SliceThickness)
             # Check SharedFunctionalGroupsSequence as an alternative
-            if hasattr(source_dset, 'SharedFunctionalGroupsSequence'):
-                if hasattr(source_dset.SharedFunctionalGroupsSequence[0], 'PixelMeasuresSequence'):
-                    return float(source_dset.SharedFunctionalGroupsSequence[0].PixelMeasuresSequence[0].SliceThickness)
+            if hasattr(dset, 'SharedFunctionalGroupsSequence'):
+                if hasattr(dset.SharedFunctionalGroupsSequence[0], 'PixelMeasuresSequence'):
+                    return float(dset.SharedFunctionalGroupsSequence[0].PixelMeasuresSequence[0].SliceThickness)
         except:
             pass
     
@@ -227,21 +231,15 @@ def get_image_position(dset):
     # Check for enhanced DICOM with PerFrameFunctionalGroupsSequence
     if hasattr(dset, 'SOPClassUID') and dset.SOPClassUID.name == 'Enhanced MR Image Storage':
         try:
-            # If this is an expanded frame, use its specific frame index
-            frame_idx = getattr(dset, '_frame_index', 0)
-            # Get the source dataset if this was expanded
-            source_dset = getattr(dset, '_multiframe_source', dset)
-            
-            # Extract from PlanePositionSequence for the specific frame
-            if hasattr(source_dset, 'PerFrameFunctionalGroupsSequence'):
-                if frame_idx < len(source_dset.PerFrameFunctionalGroupsSequence):
-                    frame_seq = source_dset.PerFrameFunctionalGroupsSequence[frame_idx]
-                    if hasattr(frame_seq, 'PlanePositionSequence'):
-                        return np.stack(frame_seq.PlanePositionSequence[0].ImagePositionPatient)
+            # Extract from PerFrameFunctionalGroupsSequence (should have only this frame's data)
+            if hasattr(dset, 'PerFrameFunctionalGroupsSequence') and len(dset.PerFrameFunctionalGroupsSequence) > 0:
+                frame_seq = dset.PerFrameFunctionalGroupsSequence[0]
+                if hasattr(frame_seq, 'PlanePositionSequence'):
+                    return np.stack(frame_seq.PlanePositionSequence[0].ImagePositionPatient)
             # Check SharedFunctionalGroupsSequence as an alternative
-            if hasattr(source_dset, 'SharedFunctionalGroupsSequence'):
-                if hasattr(source_dset.SharedFunctionalGroupsSequence[0], 'PlanePositionSequence'):
-                    return np.stack(source_dset.SharedFunctionalGroupsSequence[0].PlanePositionSequence[0].ImagePositionPatient)
+            if hasattr(dset, 'SharedFunctionalGroupsSequence'):
+                if hasattr(dset.SharedFunctionalGroupsSequence[0], 'PlanePositionSequence'):
+                    return np.stack(dset.SharedFunctionalGroupsSequence[0].PlanePositionSequence[0].ImagePositionPatient)
         except:
             pass
     
@@ -258,21 +256,15 @@ def get_image_orientation(dset):
     # Check for enhanced DICOM with PerFrameFunctionalGroupsSequence
     if hasattr(dset, 'SOPClassUID') and dset.SOPClassUID.name == 'Enhanced MR Image Storage':
         try:
-            # If this is an expanded frame, use its specific frame index
-            frame_idx = getattr(dset, '_frame_index', 0)
-            # Get the source dataset if this was expanded
-            source_dset = getattr(dset, '_multiframe_source', dset)
-            
-            # Extract from PlaneOrientationSequence for the specific frame
-            if hasattr(source_dset, 'PerFrameFunctionalGroupsSequence'):
-                if frame_idx < len(source_dset.PerFrameFunctionalGroupsSequence):
-                    frame_seq = source_dset.PerFrameFunctionalGroupsSequence[frame_idx]
-                    if hasattr(frame_seq, 'PlaneOrientationSequence'):
-                        return np.stack(frame_seq.PlaneOrientationSequence[0].ImageOrientationPatient)
+            # Extract from PerFrameFunctionalGroupsSequence (should have only this frame's data)
+            if hasattr(dset, 'PerFrameFunctionalGroupsSequence') and len(dset.PerFrameFunctionalGroupsSequence) > 0:
+                frame_seq = dset.PerFrameFunctionalGroupsSequence[0]
+                if hasattr(frame_seq, 'PlaneOrientationSequence'):
+                    return np.stack(frame_seq.PlaneOrientationSequence[0].ImageOrientationPatient)
             # Check SharedFunctionalGroupsSequence as an alternative
-            if hasattr(source_dset, 'SharedFunctionalGroupsSequence'):
-                if hasattr(source_dset.SharedFunctionalGroupsSequence[0], 'PlaneOrientationSequence'):
-                    return np.stack(source_dset.SharedFunctionalGroupsSequence[0].PlaneOrientationSequence[0].ImageOrientationPatient)
+            if hasattr(dset, 'SharedFunctionalGroupsSequence'):
+                if hasattr(dset.SharedFunctionalGroupsSequence[0], 'PlaneOrientationSequence'):
+                    return np.stack(dset.SharedFunctionalGroupsSequence[0].PlaneOrientationSequence[0].ImageOrientationPatient)
         except:
             pass
     
@@ -342,11 +334,35 @@ def expand_enhanced_dicom(dset):
     
     # Pre-load the full pixel array once
     full_array = dset.pixel_array
+
+    # OPTIMIZATION: Remove PixelData to save memory and copy time
+    if 'PixelData' in dset:
+        del dset['PixelData']
+    if hasattr(dset, '_pixel_array'):
+        del dset._pixel_array
+
+    # OPTIMIZATION: Handle PerFrameFunctionalGroupsSequence efficiently
+    # Detach it from the source to avoid deep copying it N times
+    per_frame_seq = None
+    if hasattr(dset, 'PerFrameFunctionalGroupsSequence'):
+        per_frame_seq = dset.PerFrameFunctionalGroupsSequence
+        del dset.PerFrameFunctionalGroupsSequence
+
+    from pydicom.sequence import Sequence
+    
+    # Restore PerFrameFunctionalGroupsSequence to the source dset FIRST
+    # This is needed so we can extract data from it for each frame
+    if per_frame_seq:
+        dset.PerFrameFunctionalGroupsSequence = per_frame_seq
     
     expanded_dsets = []
     for frame_idx in range(num_frames):
         # Create a shallow copy of the dataset
         frame_dset = dset.copy()
+
+        # Keep only this frame's functional group
+        if per_frame_seq:
+            frame_dset.PerFrameFunctionalGroupsSequence = Sequence([per_frame_seq[frame_idx]])
         
         # Extract frame-specific pixel data
         if len(full_array.shape) >= 3:  # Multi-frame array
@@ -354,14 +370,16 @@ def expand_enhanced_dicom(dset):
         else:
             frame_pixel_data = full_array
         
-        # Store the original multi-frame dataset reference and frame index
-        # Use object.__setattr__ to bypass property setters
-        object.__setattr__(frame_dset, '_multiframe_source', dset)
+        # Store frame-specific information WITHOUT keeping reference to source dataset
+        # This prevents the entire multi-frame dataset from being kept in memory/storage
         object.__setattr__(frame_dset, '_frame_index', frame_idx)
         object.__setattr__(frame_dset, '_frame_pixel_array', frame_pixel_data)
         
         # Update InstanceNumber to be unique per frame
-        frame_dset.InstanceNumber = dset.InstanceNumber * 1000 + frame_idx
+        if hasattr(dset, 'InstanceNumber'):
+            frame_dset.InstanceNumber = dset.InstanceNumber * 1000 + frame_idx
+        else:
+            frame_dset.InstanceNumber = frame_idx
         
         expanded_dsets.append(frame_dset)
     
@@ -386,18 +404,27 @@ def main(args):
 
     print("Found %d unique series from %d files in folder %s" % (len(uSeriesNum), len(dsetsAll), args.folder))
 
-    print("Creating MRD XML header from file %s" % dsetsAll[0].filename)
-    # Filter datasets to only include the first series for accurate slice counting
-    firstSeriesDsets = [dset for dset in dsetsAll if dset.SeriesNumber == uSeriesNum[0]]
-    mrdHead = CreateMrdHeader(dsetsAll[0], firstSeriesDsets)
+    # Group datasets by series once so we can reuse the grouping below
+    series_dict = {ser: [dset for dset in dsetsAll if dset.SeriesNumber == ser] for ser in uSeriesNum}
+
+    # Use the largest series as the canonical one for header generation to avoid localizer bias
+    primary_series_num = max(series_dict, key=lambda ser: len(series_dict[ser]))
+    primary_series = series_dict[primary_series_num]
+
+    print("Creating MRD XML header from file %s" % primary_series[0].filename)
+    mrdHead = CreateMrdHeader(primary_series[0], primary_series)
     print(mrdHead.toXML())
 
-    imgAll = [None]*len(uSeriesNum)
+    # Create an MRD file
+    print("Creating MRD file %s with group %s" % (args.outFile, args.outGroup))
+    mrdDset = ismrmrd.Dataset(args.outFile, args.outGroup)
+    mrdDset._file.require_group(args.outGroup)
+
+    # Write MRD Header
+    mrdDset.write_xml_header(bytes(mrdHead.toXML(), 'utf-8'))
 
     for iSer in range(len(uSeriesNum)):
-        dsets = [dset for dset in dsetsAll if dset.SeriesNumber == uSeriesNum[iSer]]
-
-        imgAll[iSer] = [None]*len(dsets)
+        dsets = series_dict[uSeriesNum[iSer]]
 
         # Sort images by instance number, as they may be read out of order
         def get_instance_number(item):
@@ -446,8 +473,17 @@ def main(args):
                 # For non-expanded datasets, access pixel_array directly
                 # Note: This must happen before PixelData is deleted
                 pixel_data = tmpDset.pixel_array
+            
             tmpMrdImg = ismrmrd.Image.from_array(pixel_data, transpose=False)
             tmpMeta   = ismrmrd.Meta()
+            
+            # Immediately set the correct matrix size after creation
+            # This is critical because from_array() defaults z dimension to 1
+            head = tmpMrdImg.getHead()
+            head.matrix_size[0] = int(tmpDset.Columns)
+            head.matrix_size[1] = int(tmpDset.Rows) 
+            head.matrix_size[2] = int(len(uSliceLoc))
+            tmpMrdImg.setHead(head)
 
             try:
                 tmpMrdImg.image_type = imtype_map[tmpDset.ImageType[2]]
@@ -555,30 +591,10 @@ def main(args):
                 pass
 
             tmpMeta['SequenceDescription'] = tmpDset.SeriesDescription
-
-            # Remove pixel data from pydicom class (if it exists)
-            if 'PixelData' in tmpDset:
-                del tmpDset['PixelData']
-
-            # Store the complete base64, json-formatted DICOM header so that non-MRD fields can be
-            # recapitulated when generating DICOMs from MRD images
-            tmpMeta['DicomJson'] = base64.b64encode(tmpDset.to_json().encode('utf-8')).decode('utf-8')
+            tmpMeta['TotalSlices'] = len(uSliceLoc)
 
             tmpMrdImg.attribute_string = tmpMeta.serialize()
-            imgAll[iSer][iImg] = tmpMrdImg
-
-    # Create an MRD file
-    print("Creating MRD file %s with group %s" % (args.outFile, args.outGroup))
-    mrdDset = ismrmrd.Dataset(args.outFile, args.outGroup)
-    mrdDset._file.require_group(args.outGroup)
-
-    # Write MRD Header
-    mrdDset.write_xml_header(bytes(mrdHead.toXML(), 'utf-8'))
-
-    # Write all images
-    for iSer in range(len(imgAll)):
-        for iImg in range(len(imgAll[iSer])):
-            mrdDset.append_image("image_%d" % imgAll[iSer][iImg].image_series_index, imgAll[iSer][iImg])
+            mrdDset.append_image("image_%d" % tmpMrdImg.image_series_index, tmpMrdImg)
 
     mrdDset.close()
 
