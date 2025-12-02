@@ -231,9 +231,9 @@ def process_image(imgGroup, connection, config, metadata):
 
     new_img = nib.nifti1.Nifti1Image(data, affine)
     # check if /buildhostdirectory exists, if not create it:
-    if not os.path.exists("/buildhostdirectory"):
-        os.makedirs("/buildhostdirectory")
-    nib.save(new_img, "/buildhostdirectory/input_fromDCM.nii.gz")
+    # if not os.path.exists("/buildhostdirectory"):
+        # os.makedirs("/buildhostdirectory")
+    nib.save(new_img, "/opt/input_fromDCM.nii.gz")
 
     # Extract UI parameters from JSON config
     bodyregion = mrdhelper.get_json_config_param(config, 'bodyregion', default='wholebody', type='str')
@@ -245,10 +245,11 @@ def process_image(imgGroup, connection, config, metadata):
     # Build mm_segment command with parameters
     mm_segment_cmd = [
         "mm_segment",
-        "-i", "/buildhostdirectory/input_fromDCM.nii.gz",
+        "-i", "/opt/input_fromDCM.nii.gz",
         "-r", bodyregion,
         "-c", str(chunksize),
         "-s", str(spatialoverlap),
+        "--fast",
         "-v"
     ]
     
@@ -257,9 +258,9 @@ def process_image(imgGroup, connection, config, metadata):
     preprocess_result = subprocess.run(mm_segment_cmd, check=True)
 
     # This is just for debugging and can be removed later:
-    copy_result = subprocess.run(["cp", "/opt/input_fromDCM_dseg.nii.gz", "/buildhostdirectory/input_fromDCM_dseg.nii.gz"], check=True) 
+    # copy_result = subprocess.run(["cp", "/opt/input_fromDCM_dseg.nii.gz", "/buildhostdirectory/input_fromDCM_dseg.nii.gz"], check=True) 
     
-    img = nib.load("/buildhostdirectory/input_fromDCM_dseg.nii.gz")
+    img = nib.load("/opt/input_fromDCM_dseg.nii.gz")
     data = img.get_fdata()
 
     print("maximum value in segmented data:")

@@ -1,5 +1,5 @@
 name: musclemap
-version: 1.1.0
+version: 1.2.0
 architectures:
     - x86_64
 
@@ -41,6 +41,7 @@ build:
         - run: 
             - git clone https://github.com/MuscleMap/MuscleMap
             - cd MuscleMap 
+            - echo "test"
             - git checkout origin/improve_efficiency_v2
             - pip install .
         
