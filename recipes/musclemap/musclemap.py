@@ -239,8 +239,9 @@ def process_image(imgGroup, connection, config, metadata):
     bodyregion = mrdhelper.get_json_config_param(config, 'bodyregion', default='wholebody', type='str')
     chunksize = mrdhelper.get_json_config_param(config, 'chunksize', default='auto', type='str')
     spatialoverlap = mrdhelper.get_json_config_param(config, 'spatialoverlap', default=50, type='int')
+    fastmodel = mrdhelper.get_json_config_param(config, 'fastmodel', default=True, type='bool')
     
-    logging.info(f"mm_segment parameters: bodyregion={bodyregion}, chunksize={chunksize}, spatialoverlap={spatialoverlap}")
+    logging.info(f"mm_segment parameters: bodyregion={bodyregion}, chunksize={chunksize}, spatialoverlap={spatialoverlap}, fastmodel={fastmodel}")
     
     # Build mm_segment command with parameters
     mm_segment_cmd = [
@@ -248,10 +249,13 @@ def process_image(imgGroup, connection, config, metadata):
         "-i", "/opt/input_fromDCM.nii.gz",
         "-r", bodyregion,
         "-c", str(chunksize),
-        "-s", str(spatialoverlap),
-        "--fast",
-        "-v"
+        "-s", str(spatialoverlap)
     ]
+    
+    if fastmodel:
+        mm_segment_cmd.append("--fast")
+    
+    mm_segment_cmd.append("-v")
     
     # Run mm_segment
     logging.info(f"Running command: {' '.join(mm_segment_cmd)}")
