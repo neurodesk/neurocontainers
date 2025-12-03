@@ -179,12 +179,16 @@ def process_image(imgGroup, connection, config, metadata):
 
     matrix = np.array(head[0].matrix_size[:])
 
-    #check that the matrix size is correct, it should be as many slices as in length(imgGroup)
+    #adjust the matrix size to the full 3D volume, it should be as many slices as in length(imgGroup)
     if matrix[2] != len(imgGroup):
-        logging.warning("THIS SHOULD ONLY HAPPEN IN SIMULATION WHENE THE HDF5 CONVERSION DIDN'T QUITE WORK: Matrix size z (%d) does not match number of images (%d), adjusting matrix size", matrix[2], len(imgGroup))
         matrix[2] = len(imgGroup)    
 
     fov = np.array(head[0].field_of_view[:])
+
+    #we also need to adjust fov z to be slice thickness * number of slices
+    slice_thickness = fov[2]
+    fov[2] = slice_thickness * len(imgGroup)
+
     voxelsize = fov/matrix
 
     print("matrix:")

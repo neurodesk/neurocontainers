@@ -374,7 +374,8 @@ def main(args):
             # Create separate MRD Image for each slice
             for iSlice, sliceImg in enumerate(phase_imgs):
                 # Create MRD Image from single slice
-                tmpMrdImg = ismrmrd.Image.from_array(sliceImg.pixel_array, transpose=False)
+                # Transpose pixel_array from [rows, cols] to [cols, rows] to get [x, y]
+                tmpMrdImg = ismrmrd.Image.from_array(sliceImg.pixel_array.T, transpose=False)
                 tmpMeta   = ismrmrd.Meta()
 
                 try:
@@ -392,11 +393,14 @@ def main(args):
                     print("Unsupported ImageType %s -- defaulting to IMTYPE_MAGNITUDE" % sliceImg.ImageType)
                     tmpMrdImg.image_type = ismrmrd.IMTYPE_MAGNITUDE
 
-                # FOV: Set to total volume FOV (including all slices)
-                # This tells the reconstruction the full volume context
-                tmpMrdImg.field_of_view = (float(sliceImg.PixelSpacing[1]*sliceImg.Columns), 
-                                          float(sliceImg.PixelSpacing[0]*sliceImg.Rows), 
-                                          total_fov_z)
+                # FOV: Since we transposed pixel_array from [rows, cols] to [cols, rows]
+                # We need to swap the FOV calculations to match the transposed dimensions
+                # FOV X = PixelSpacing[0] * Rows (after transpose, this becomes X dimension)
+                # FOV Y = PixelSpacing[1] * Columns (after transpose, this becomes Y dimension)
+                # FOV Z = SliceThickness (single slice thickness, not total volume)
+                tmpMrdImg.field_of_view = (float(sliceImg.PixelSpacing[0]*sliceImg.Rows), 
+                                          float(sliceImg.PixelSpacing[1]*sliceImg.Columns), 
+                                          float(sliceImg.SliceThickness))
                 
                 # Note: matrix_size is read-only and derived from data shape (cols, rows, 1 for 2D slices)
                 # The slice index indicates position within the volume
