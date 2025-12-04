@@ -24,7 +24,8 @@ except ImportError as e:
     # Create mock ISMRMRD classes for testing
     class MockImage:
         def __init__(self, data):
-            self.data = data.astype(np.complex64)  # ISMRMRD typically uses complex data
+            # Keep data as-is, don't convert to complex
+            self.data = data
             self.meta = {}
             self.attribute_string = ""
             self.image_type = 1  # IMTYPE_MAGNITUDE
@@ -32,7 +33,7 @@ except ImportError as e:
             self.image_series_index = 1
         
         @classmethod
-        def from_array(cls, data):
+        def from_array(cls, data, transpose=True):
             return cls(data)
     
     class MockMeta:
@@ -338,50 +339,180 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
             print(f"🗑️  Removed existing file: {output_path}")
         
         try:
-            # Try to save as proper ISMRMRD HDF5 file
             # Check if we have the real ismrmrd module (not mock)
             if hasattr(ismrmrd, 'Dataset'):
-                # Use ismrmrd.Dataset directly
-                dset = ismrmrd.Dataset(output_path, '/dataset', create_if_needed=True)
-                # Write the image using ISMRMRD Dataset
-                dset.append_image("image_0", ismrmrd_image)
-                dset.close()
-                print(f"✅ Saved ISMRMRD HDF5 file to {output_path}")
-            else:
-                # Try importing from h5py directly
-                import h5py
+                print(f"📝 Creating proper ISMRMRD Dataset file...")
                 
                 # Ensure parent directory exists
                 os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
                 
-                # Create HDF5 file with ISMRMRD structure
-                print(f"📝 Creating HDF5 file with h5py...")
-                f = h5py.File(output_path, 'w')
+                # Create ISMRMRD Dataset (this creates proper structure)
+                mrdDset = ismrmrd.Dataset(output_path, 'dataset')
                 
-                # Create dataset group
-                grp = f.create_group('dataset')
+                # Create XML header with proper metadata
+                print(f"📋 Creating ISMRMRD XML header...")
+                mrdHead = ismrmrd.xsd.ismrmrdHeader()
                 
-                # Create image dataset
-                img_data = ismrmrd_image.data
-                grp.create_dataset('data', data=img_data, compression='gzip')
-                print(f"   Data shape: {img_data.shape}, dtype: {img_data.dtype}")
+                # Study Information
+                mrdHead.studyInformation = ismrmrd.xsd.studyInformationType()
+                mrdHead.studyInformation.studyDescription = metadata.get('StudyDescription', 'NIFTI_CONVERSION')
                 
-                # Add metadata as attributes
+                # Patient Information
+                mrdHead.subjectInformation = ismrmrd.xsd.subjectInformationType()
+                mrdHead.subjectInformation.patientName = metadata.get('PatientName', 'TEST^PATIENT')
+                mrdHead.subjectInformation.patientID = metadata.get('PatientID', 'TEST001')
+                
+                # Acquisition System Information
+                mrdHead.acquisitionSystemInformation = ismrmrd.xsd.acquisitionSystemInformationType()
+                mrdHead.acquisitionSystemInformation.systemVendor = 'NIfTI_Converter'
+                mrdHead.acquisitionSystemInformation.systemModel = 'Virtual'
+                mrdHead.acquisitionSystemInformation.institutionName = 'Test'
+                
+                # Encoding information
+                encoding = ismrmrd.xsd.encodingType()
+                encoding.trajectory = ismrmrd.xsd.trajectoryType.CARTESIAN
+                
+                # Get voxel size and FOV from metadata
+                voxel_size = orientation_info['voxel_size']
+                
+                # Encoded space (acquisition space)
+                encoding.encodedSpace = ismrmrd.xsd.encodingSpaceType()
+                encoding.encodedSpace.matrixSize = ismrmrd.xsd.matrixSizeType()
+                encoding.encodedSpace.matrixSize.x = int(ismrmrd_data.shape[0])
+                encoding.encodedSpace.matrixSize.y = int(ismrmrd_data.shape[1])
+                encoding.encodedSpace.matrixSize.z = int(ismrmrd_data.shape[2])
+                
+                encoding.encodedSpace.fieldOfView_mm = ismrmrd.xsd.fieldOfViewMm()
+                encoding.encodedSpace.fieldOfView_mm.x = float(ismrmrd_data.shape[0] * voxel_size[0])
+                encoding.encodedSpace.fieldOfView_mm.y = float(ismrmrd_data.shape[1] * voxel_size[1])
+                encoding.encodedSpace.fieldOfView_mm.z = float(ismrmrd_data.shape[2] * voxel_size[2])
+                
+                # Recon space (same as encoded for NIfTI conversion)
+                encoding.reconSpace = ismrmrd.xsd.encodingSpaceType()
+                encoding.reconSpace.matrixSize = ismrmrd.xsd.matrixSizeType()
+                encoding.reconSpace.matrixSize.x = int(ismrmrd_data.shape[0])
+                encoding.reconSpace.matrixSize.y = int(ismrmrd_data.shape[1])
+                encoding.reconSpace.matrixSize.z = int(ismrmrd_data.shape[2])
+                
+                encoding.reconSpace.fieldOfView_mm = ismrmrd.xsd.fieldOfViewMm()
+                encoding.reconSpace.fieldOfView_mm.x = float(ismrmrd_data.shape[0] * voxel_size[0])
+                encoding.reconSpace.fieldOfView_mm.y = float(ismrmrd_data.shape[1] * voxel_size[1])
+                encoding.reconSpace.fieldOfView_mm.z = float(ismrmrd_data.shape[2] * voxel_size[2])
+                
+                # Encoding limits
+                encoding.encodingLimits = ismrmrd.xsd.encodingLimitsType()
+                
+                mrdHead.encoding.append(encoding)
+                
+                # Sequence parameters
+                mrdHead.sequenceParameters = ismrmrd.xsd.sequenceParametersType()
+                mrdHead.sequenceParameters.TR = [1.0]
+                mrdHead.sequenceParameters.TE = [1.0]
+                
+                print(f"   Matrix size: {ismrmrd_data.shape[0]} x {ismrmrd_data.shape[1]} x {ismrmrd_data.shape[2]}")
+                print(f"   FOV: {encoding.encodedSpace.fieldOfView_mm.x:.2f} x {encoding.encodedSpace.fieldOfView_mm.y:.2f} x {encoding.encodedSpace.fieldOfView_mm.z:.2f} mm")
+                print(f"   Voxel size: {voxel_size[0]:.4f} x {voxel_size[1]:.4f} x {voxel_size[2]:.4f} mm")
+                
+                # Write XML header
+                mrdDset.write_xml_header(mrdHead.toXML('utf-8'))
+                print(f"✅ Written XML header")
+                
+                # Create image with proper metadata
+                tmpMeta = ismrmrd.Meta()
                 for key, value in metadata.items():
                     if isinstance(value, (list, tuple)):
-                        grp.attrs[key] = json.dumps(value)
+                        tmpMeta[key] = list(value)
                     else:
-                        grp.attrs[key] = str(value)
+                        tmpMeta[key] = str(value)
                 
-                grp.attrs['original_nifti_path'] = nifti_path
+                tmpMeta['DataRole'] = 'Image'
+                tmpMeta['ImageProcessingHistory'] = ['NIFTI_CONVERSION']
+                tmpMeta['Keep_image_geometry'] = 1
                 
-                # Explicitly close the file
-                f.close()
+                ismrmrd_image.attribute_string = tmpMeta.serialize()
                 
-                print(f"✅ Saved HDF5 file to {output_path}")
+                # Set image series index
+                ismrmrd_image.image_series_index = metadata.get('SeriesNumber', 1)
+                
+                # Write each slice as a separate image
+                print(f"💾 Writing {ismrmrd_data.shape[2]} slices as separate images...")
+                
+                for slice_idx in range(ismrmrd_data.shape[2]):
+                    # Extract 2D slice [X, Y]
+                    slice_data = ismrmrd_data[:, :, slice_idx].astype(np.float32)
+                    
+                    # Create ISMRMRD image for this slice
+                    try:
+                        slice_image = ismrmrd.Image.from_array(slice_data, transpose=False)
+                    except TypeError:
+                        slice_image = ismrmrd.Image.from_array(slice_data)
+                    
+                    # Set image properties
+                    slice_image.image_type = IMTYPE_MAGNITUDE if 'IMTYPE_MAGNITUDE' in globals() else 1
+                    slice_image.image_series_index = metadata.get('SeriesNumber', 1)
+                    slice_image.image_index = slice_idx
+                    
+                    # Calculate position for this slice
+                    # Position of slice = position of first slice + (slice_idx * slice_spacing * slice_direction)
+                    slice_position = (
+                        np.array(orientation_info['position']) + 
+                        slice_idx * voxel_size[2] * np.array(orientation_info['slice_dir'])
+                    )
+                    
+                    # Set position and orientation on the slice
+                    if hasattr(slice_image, 'position'):
+                        slice_image.position[:] = slice_position.tolist()
+                    
+                    if hasattr(slice_image, 'read_dir'):
+                        slice_image.read_dir[:] = orientation_info['read_dir']
+                    
+                    if hasattr(slice_image, 'phase_dir'):
+                        slice_image.phase_dir[:] = orientation_info['phase_dir']
+                    
+                    if hasattr(slice_image, 'slice_dir'):
+                        slice_image.slice_dir[:] = orientation_info['slice_dir']
+                    
+                    # Set field_of_view for 2D slice (only X and Y, Z is single slice)
+                    slice_fov = [
+                        ismrmrd_data.shape[2] * voxel_size[2],  # Still reversed for ISMRMRD storage
+                        ismrmrd_data.shape[1] * voxel_size[1],
+                        voxel_size[2]  # Single slice thickness
+                    ]
+                    
+                    if hasattr(slice_image, 'field_of_view'):
+                        slice_image.field_of_view[:] = slice_fov
+                    
+                    # Create metadata for this slice
+                    slice_meta = ismrmrd.Meta()
+                    for key, value in metadata.items():
+                        if isinstance(value, (list, tuple)):
+                            slice_meta[key] = list(value)
+                        else:
+                            slice_meta[key] = str(value)
+                    
+                    slice_meta['DataRole'] = 'Image'
+                    slice_meta['ImageProcessingHistory'] = ['NIFTI_CONVERSION']
+                    slice_meta['Keep_image_geometry'] = 1
+                    slice_meta['slice_number'] = slice_idx
+                    slice_meta['position'] = slice_position.tolist()
+                    
+                    slice_image.attribute_string = slice_meta.serialize()
+                    
+                    # Write slice to dataset
+                    mrdDset.append_image("image_%d" % slice_idx, slice_image)
+                    
+                    if (slice_idx + 1) % 50 == 0 or slice_idx == ismrmrd_data.shape[2] - 1:
+                        print(f"   Written {slice_idx + 1}/{ismrmrd_data.shape[2]} slices...")
+                
+                # Close dataset
+                mrdDset.close()
+                
+                print(f"✅ Saved {ismrmrd_data.shape[2]} slices to {output_path}")
+            else:
+                raise ImportError("ismrmrd.Dataset not available - cannot create proper ISMRMRD file")
             
         except (ImportError, AttributeError, Exception) as e:
-            print(f"❌ Could not save as HDF5: {e}")
+            print(f"❌ Could not save as ISMRMRD file: {e}")
             import traceback
             traceback.print_exc()
             raise
@@ -427,16 +558,19 @@ def main():
         
         print("\n📋 Conversion Summary:")
         print(f"   Input file: {nifti_file}")
-        print(f"   Output data shape: {ismrmrd_image.data.shape}")
+        print(f"   Original 3D volume shape: {ismrmrd_image.data.shape}")
+        print(f"   Number of 2D slices saved: {ismrmrd_image.data.shape[2]}")
+        print(f"   Each slice shape: [{ismrmrd_image.data.shape[0]}, {ismrmrd_image.data.shape[1]}]")
         print(f"   Patient ID: {metadata.get('PatientID', 'Unknown')}")
         print(f"   Series: {metadata.get('SeriesNumber', 'Unknown')}")
         print(f"   PixelSpacing: {metadata.get('PixelSpacing', 'Unknown')}")
         print(f"   SliceThickness: {metadata.get('SliceThickness', 'Unknown')}")
         print(f"\n🧭 Orientation Information:")
-        print(f"   Position: {metadata.get('position', 'Unknown')}")
+        print(f"   First slice position: {metadata.get('position', 'Unknown')}")
         print(f"   Read direction: {metadata.get('read_dir', 'Unknown')}")
         print(f"   Phase direction: {metadata.get('phase_dir', 'Unknown')}")
         print(f"   Slice direction: {metadata.get('slice_dir', 'Unknown')}")
+        print(f"   Slice spacing: {metadata.get('SliceThickness', 'Unknown')} mm")
         
         return ismrmrd_image, metadata
         
