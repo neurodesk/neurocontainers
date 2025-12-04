@@ -244,8 +244,12 @@ def process_image(imgGroup, connection, config, metadata):
     chunksize = mrdhelper.get_json_config_param(config, 'chunksize', default='auto', type='str')
     spatialoverlap = mrdhelper.get_json_config_param(config, 'spatialoverlap', default=50, type='int')
     fastmodel = mrdhelper.get_json_config_param(config, 'fastmodel', default=True, type='bool')
+    forcegpu = mrdhelper.get_json_config_param(config, 'forcegpu', default=False, type='bool')
     
-    logging.info(f"mm_segment parameters: bodyregion={bodyregion}, chunksize={chunksize}, spatialoverlap={spatialoverlap}, fastmodel={fastmodel}")
+    # Convert forcegpu boolean to Y/N string
+    gpu_flag = "Y" if forcegpu else "N"
+    
+    logging.info(f"mm_segment parameters: bodyregion={bodyregion}, chunksize={chunksize}, spatialoverlap={spatialoverlap}, fastmodel={fastmodel}, forcegpu={forcegpu}")
     
     # Build mm_segment command with parameters
     mm_segment_cmd = [
@@ -253,7 +257,8 @@ def process_image(imgGroup, connection, config, metadata):
         "-i", "/opt/input_fromDCM.nii.gz",
         "-r", bodyregion,
         "-c", str(chunksize),
-        "-s", str(spatialoverlap)
+        "-s", str(spatialoverlap),
+        "-g", gpu_flag
     ]
     
     if fastmodel:
