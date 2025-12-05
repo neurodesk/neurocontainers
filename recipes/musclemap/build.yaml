@@ -1,5 +1,5 @@
 name: musclemap
-version: 1.1.1
+version: 2.1.1
 architectures:
     - x86_64
 
@@ -9,7 +9,7 @@ files:
 
 build:
     kind: neurodocker
-    base-image: pytorch/pytorch:2.4.0-cuda11.8-cudnn9-runtime
+    base-image: pytorch/pytorch:2.3.0-cuda11.8-cudnn8-runtime
     # base-image: ubuntu:22.04
     pkg-manager: apt
 
@@ -48,6 +48,8 @@ build:
         
         - environment:
               MKL_THREADING_LAYER: GNU
+              NVIDIA_VISIBLE_DEVICES: all
+              NVIDIA_DRIVER_CAPABILITIES: compute,utility
 
         - copy: musclemap.py /opt/code/python-ismrmrd-server/musclemap.py
         - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
