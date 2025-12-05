@@ -103,7 +103,22 @@ def extract_orientation_from_affine(affine, shape):
     slice_dir = col2 / voxel_size_z if voxel_size_z > 0 else col2
     
     # Position is the translation (position of first voxel)
-    position = translation
+    position = translation.copy()
+
+    # Convert from RAS (NIfTI) to LPS (ISMRMRD/DICOM)
+    # Flip X and Y coordinates
+    print("🔄 Converting from RAS to LPS orientation (flipping X and Y)...")
+    position[0] = -position[0]
+    position[1] = -position[1]
+    
+    read_dir[0] = -read_dir[0]
+    read_dir[1] = -read_dir[1]
+    
+    phase_dir[0] = -phase_dir[0]
+    phase_dir[1] = -phase_dir[1]
+    
+    slice_dir[0] = -slice_dir[0]
+    slice_dir[1] = -slice_dir[1]
     
     print(f"   Position: [{position[0]:.4f}, {position[1]:.4f}, {position[2]:.4f}] mm")
     print(f"   Read direction:  [{read_dir[0]:.4f}, {read_dir[1]:.4f}, {read_dir[2]:.4f}]")
@@ -268,10 +283,11 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
     # CRITICAL: ISMRMRD stores data in reversed/transposed order (column-major Fortran order)
     # Original data: [624, 512, 416] but ISMRMRD reads it as [416, 512, 624]
     # So we need to reverse the FOV array to match: [Z_fov, Y_fov, X_fov]
+    # Correction: Based on testing, the order should be [Y_fov, Z_fov, X_fov]
     field_of_view = [
-        ismrmrd_data.shape[2] * voxel_size[2],  # Z: 416 * 0.8 = 332.8 (stored as first dimension)
-        ismrmrd_data.shape[1] * voxel_size[1],  # Y: 512 * 0.8 = 409.6 (middle dimension)
-        ismrmrd_data.shape[0] * voxel_size[0]   # X: 624 * 0.8 = 499.2 (stored as last dimension)
+        ismrmrd_data.shape[1] * voxel_size[1],  # Y
+        ismrmrd_data.shape[2] * voxel_size[2],  # Z
+        ismrmrd_data.shape[0] * voxel_size[0]   # X
     ]
     
     metadata['PixelSpacing'] = [voxel_size[0], voxel_size[1]]
@@ -280,9 +296,9 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
     
     print(f"📏 Voxel spacing: [{voxel_size[0]}, {voxel_size[1]}, {voxel_size[2]}] mm")
     print(f"📏 Field of view (reversed for ISMRMRD): {field_of_view} mm")
-    print(f"📏 Target matrix: 624 x 512 x 416")
-    print(f"📏 ISMRMRD stores as: 416 x 512 x 624")
-    print(f"📏 Expected voxel: [{field_of_view[0]/416:.8f}, {field_of_view[1]/512:.8f}, {field_of_view[2]/624:.8f}] (should be 0.8 each)")
+    print(f"📏 Target matrix: {ismrmrd_data.shape[0]} x {ismrmrd_data.shape[1]} x {ismrmrd_data.shape[2]}")
+    # print(f"📏 ISMRMRD stores as: 416 x 512 x 624")
+    print(f"📏 Expected voxel: [{field_of_view[0]/ismrmrd_data.shape[1]:.8f}, {field_of_view[1]/ismrmrd_data.shape[2]:.8f}, {field_of_view[2]/ismrmrd_data.shape[0]:.8f}]")
     
     # Set image metadata
     if hasattr(ismrmrd_image, 'meta'):
@@ -348,6 +364,7 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
                 
                 # Create ISMRMRD Dataset (this creates proper structure)
                 mrdDset = ismrmrd.Dataset(output_path, 'dataset')
+                mrdDset._file.require_group('dataset')
                 
                 # Create XML header with proper metadata
                 print(f"📋 Creating ISMRMRD XML header...")
@@ -473,9 +490,10 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
                         slice_image.slice_dir[:] = orientation_info['slice_dir']
                     
                     # Set field_of_view for 2D slice (only X and Y, Z is single slice)
+                    # Correction: Based on testing, the order should be [Y_fov, X_fov, Thickness]
                     slice_fov = [
-                        ismrmrd_data.shape[2] * voxel_size[2],  # Still reversed for ISMRMRD storage
                         ismrmrd_data.shape[1] * voxel_size[1],
+                        ismrmrd_data.shape[0] * voxel_size[0],
                         voxel_size[2]  # Single slice thickness
                     ]
                     
@@ -498,8 +516,15 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
                     
                     slice_image.attribute_string = slice_meta.serialize()
                     
+                    # Set slice and phase index
+                    slice_image.slice = slice_idx
+                    slice_image.phase = 0
+                    slice_image.acquisition_time_stamp = 0
+
                     # Write slice to dataset
-                    mrdDset.append_image("image_%d" % slice_idx, slice_image)
+                    # Use series index as key to group all slices in one series
+                    series_index = metadata.get('SeriesNumber', 1)
+                    mrdDset.append_image("image_%d" % series_index, slice_image)
                     
                     if (slice_idx + 1) % 50 == 0 or slice_idx == ismrmrd_data.shape[2] - 1:
                         print(f"   Written {slice_idx + 1}/{ismrmrd_data.shape[2]} slices...")
