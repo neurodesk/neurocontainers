@@ -1,1 +1,0 @@
-python ../../builder/build.py generate musclemap --recreate --build --login --architecture x86_64
