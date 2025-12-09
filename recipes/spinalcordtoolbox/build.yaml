@@ -1,5 +1,5 @@
 name: spinalcordtoolbox
-version: "7.1"
+version: "7.2"
 copyright:
   - license: LGPL-3.0
     url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE
@@ -7,12 +7,10 @@ architectures:
   - x86_64
 build:
   kind: neurodocker
-  base-image: ubuntu:20.04
+#   base-image: ubuntu:20.04
+  base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime
   pkg-manager: apt
   directives:
-    - deploy:
-        path:
-          - /opt/spinalcordtoolbox-7.1/bin/
     - environment:
         DEBIAN_FRONTEND: noninteractive
     - install:
@@ -26,30 +24,23 @@ build:
         - libglib2.0-0
         - rsync
     - run:
-        - curl -fsSL --retry 5 https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/7.1.tar.gz | tar -xz -C /opt/
-    - workdir: /opt/spinalcordtoolbox-7.1
+        - curl -fsSL --retry 5 https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/{{ context.version }}.tar.gz | tar -xz -C /opt/
+    - workdir: /opt/spinalcordtoolbox-{{ context.version }}
     - run:
-        - chmod a+rwx /opt/spinalcordtoolbox-7.1/ -R
+        - chmod a+rwx /opt/spinalcordtoolbox-{{ context.version }}/ -R
     - user: spinalcordtoolbox
     - run:
         - yes | ./install_sct -i
     - environment:
-        PATH: /opt/spinalcordtoolbox-7.1/bin/:/bin/:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local
-        SCT_DIR: /opt/spinalcordtoolbox-7.1
+        PATH: /opt/spinalcordtoolbox-{{ context.version }}/bin/:/bin/:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local
+        SCT_DIR: /opt/spinalcordtoolbox-{{ context.version }}
     - run:
-        - sct_deepseg -install-task seg_exvivo_gm-wm_t2
+        - sct_deepseg spinalcord -install
     - run:
-        - sct_deepseg -install-task seg_tumor-edema-cavity_t1-t2
-    - run:
-        - sct_deepseg -install-task seg_tumor_t2
-    - run:
-        - sct_deepseg -install-task seg_mice_gm
-    - run:
-        - sct_deepseg -install-task seg_mice_sc
-    - run:
-        - sct_deepseg -install-task seg_sc_t2star
-    - run:
-        - bash /opt/spinalcordtoolbox-7.1/batch_processing.sh
+        - sct_check_dependencies
+    - deploy:
+        path:
+          - /opt/spinalcordtoolbox-{{ context.version }}/bin/
 readme: |-
   ----------------------------------
   ## spinalcordtoolbox/{{ context.version }} ##

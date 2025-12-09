@@ -228,45 +228,30 @@ def process_image(imgGroup, connection, config, metadata):
     # affine = np.eye(4)
 
     data = np.squeeze(data)
-    print("shape before saving nifti and running mm_segment:")
+    print("shape before saving nifti:")
     print(data.shape)
-    # should be: 624 x 512 x 416
-    # is: (512, 624, 416)
 
     new_img = nib.nifti1.Nifti1Image(data, affine)
-    # check if /buildhostdirectory exists, if not create it:
-    # if not os.path.exists("/buildhostdirectory"):
-        # os.makedirs("/buildhostdirectory")
     nib.save(new_img, "/opt/input.nii.gz")
 
     # Extract UI parameters from JSON config
-    bodyregion = mrdhelper.get_json_config_param(config, 'bodyregion', default='wholebody', type='str')
-    chunksize = mrdhelper.get_json_config_param(config, 'chunksize', default='auto', type='str')
-    spatialoverlap = mrdhelper.get_json_config_param(config, 'spatialoverlap', default=50, type='int')
-    fastmodel = mrdhelper.get_json_config_param(config, 'fastmodel', default=True, type='bool')
+    analysis = mrdhelper.get_json_config_param(config, 'analysis', default='segmentation', type='str')
     
-    logging.info(f"mm_segment parameters: bodyregion={bodyregion}, chunksize={chunksize}, spatialoverlap={spatialoverlap}, fastmodel={fastmodel}")
+    logging.info(f"mm_segment parameters: analysis={analysis}")
     
     # Build mm_segment command with parameters
-    mm_segment_cmd = [
-        "mm_segment",
+    sct_command = [
+        "sct_deepseg",
+        "spinalcord,"
         "-i", "/opt/input.nii.gz",
-        "-r", bodyregion,
-        "-c", str(chunksize),
-        "-s", str(spatialoverlap),
-        "-g", "Y"
+        "-qc", "/opt/qc_singleSubj"
     ]
     
-    if fastmodel:
-        mm_segment_cmd.append("--fast")
-    
-    mm_segment_cmd.append("-v")
-    
-    # Run mm_segment
-    logging.info(f"Running command: {' '.join(mm_segment_cmd)}")
-    preprocess_result = subprocess.run(mm_segment_cmd, check=True)
+    # Run spinalcordtoolbox 
+    logging.info(f"Running command: {' '.join(sct_command)}")
+    preprocess_result = subprocess.run(sct_command, check=True)
 
-    img = nib.load("/opt/input_dseg.nii.gz")
+    img = nib.load("/opt/t2_seg.nii.gz")
     data = img.get_fdata()
 
     print("maximum value in segmented data:")
@@ -285,32 +270,6 @@ def process_image(imgGroup, connection, config, metadata):
     print("shape after applying transpose")
     print(data.shape)
 
-    # compare size of data to crop_size, if not identical do a center crop
-    print("crop_size:")
-    print(crop_size)
-
-    print("data shape before crop:")
-    print(data.shape)
-    
-    # crop_size is [img, cha, z, y, x]
-    # data is [y, x, 1, 1, img]
-    if data.shape[0] != crop_size[3] or data.shape[1] != crop_size[4]:
-        crop_y = int((data.shape[0] - crop_size[3]) / 2)
-        crop_x = int((data.shape[1] - crop_size[4]) / 2)
-        data = data[crop_y : crop_y + crop_size[3], crop_x : crop_x + crop_size[4], ...]
-
-    print("data shape after crop:")
-    print(data.shape)
-
-    label_transform = mrdhelper.get_json_config_param(config, 'labeltransform', default=False, type='str')
-    if label_transform is not None:  
-        logging.info("Applying label transformation: 3 * (label_in // 10) + (label_in % 10)")
-        data = 3 * (data // 10) + (data % 10)
-        logging.info(f"Label transformation complete. New data range: [{data.min()}, {data.max()}]")
-
-
-    print("maximum value in segmented data before sending out:")
-    print(np.max(data))
 
     currentSeries = 0
 
@@ -358,7 +317,7 @@ def process_image(imgGroup, connection, config, metadata):
         # Create a copy of the original ISMRMRD Meta attributes and update
         tmpMeta = meta[iImg]
         tmpMeta["DataRole"] = "Image"
-        tmpMeta["ImageProcessingHistory"] = ["PYTHON", "MUSCLEMAP"]
+        tmpMeta["ImageProcessingHistory"] = ["PYTHON", "SPINALCORDTOOLBOX"]
         tmpMeta["WindowCenter"] = str((maxVal + 1) / 2)
         tmpMeta["WindowWidth"] = str((maxVal + 1))
         tmpMeta["SequenceDescriptionAdditional"] = "OpenRecon"

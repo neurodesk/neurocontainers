@@ -1,10 +1,14 @@
 tests:
-  - name: Test openreconexample
+  - name: Test spinalcordtoolbox
+    manual: false
+    script: |
+      batch_processing.sh
+  - name: Test spinalcordtoolbox for OpenRecon
     manual: true
     script: |
       # build:
       source .venv/bin/activate
-      ./builder/build.py generate musclemap --recreate --build --login --architecture x86_64
+      ./builder/build.py generate spinalcordtoolbox --recreate --build --login --architecture x86_64
 
       # check that the CUDA version is valid for MARS: has to be CUDA 11.x
       python -c "import torch; print(torch.version.cuda)"
@@ -29,10 +33,10 @@ tests:
       python3 /opt/code/python-ismrmrd-server/client.py \
         -G dataset \
         -o /buildhostdirectory/output.h5 \
-        /buildhostdirectory/input_fromDCM.h5 \
-        -c musclemap
+        /buildhostdirectory/input_fromNIFTI.h5 \
+        -c spinalcordtoolbox
 
       # Check output h5 data in "H5Web" VS code plugin viewer
 
       # check for wasted space in the image:
-      docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock wagoodman/dive:latest musclemap:0.3.0
+      docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock wagoodman/dive:latest spinalcordtoolbox:latest
