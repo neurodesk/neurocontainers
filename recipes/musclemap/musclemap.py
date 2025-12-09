@@ -340,9 +340,6 @@ def process_image(imgGroup, connection, config, metadata):
         if (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXFLOAT) or (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXDOUBLE):
             oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
 
-        # Unused example, as images are grouped by series before being passed into this function now
-        # oldHeader.image_series_index = currentSeries
-
         # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
         if mrdhelper.get_meta_value(meta[iImg], "IceMiniHead") is not None:
             if (
