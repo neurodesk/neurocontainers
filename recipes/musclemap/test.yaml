@@ -6,6 +6,9 @@ tests:
       source .venv/bin/activate
       ./builder/build.py generate musclemap --recreate --build --login --architecture x86_64
 
+      # check that the CUDA version is valid for MARS: has to be CUDA 11.x
+      python -c "import torch; print(torch.version.cuda)"
+
       # Convert input DICOMs to ISMRMRD format
       rm /buildhostdirectory/input_fromDCM.h5
       python /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py \

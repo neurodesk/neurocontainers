@@ -324,7 +324,15 @@ def process_image(imgGroup, connection, config, metadata):
         maxVal = data.max()
     else:
         # Determine max value (12 or 16 bit)
-        BitsStored = 12
+
+        label_transform = mrdhelper.get_json_config_param(config, 'labeltransform', default=False, type='str')
+        if label_transform is not None:  
+            BitsStored = 12
+            print("Label transform applied, setting DICOM BitsStored to 12")
+        else:
+            BitsStored = 16
+            print("Label transform not applied, setting DICOM BitsStored to 16")
+
         # if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
         #     BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
         maxVal = 2**BitsStored - 1
