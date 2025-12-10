@@ -163,9 +163,6 @@ def process_image(imgGroup, connection, config, metadata):
         os.makedirs(debugFolder)
         logging.debug("Created folder " + debugFolder + " for debug output files")
 
-    # logging.debug(
-    #     "Processing data with %d images of type %s", len(images), ismrmrd.get_dtype_from_data_type(images[0].data_type)
-    # )
 
     # Note: The MRD Image class stores data as [cha z y x]
 
@@ -173,9 +170,6 @@ def process_image(imgGroup, connection, config, metadata):
     data = np.stack([img.data for img in imgGroup])
     head = [img.getHead() for img in imgGroup]
     meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in imgGroup]
-
-    print("header length - should be as long as there are images:")
-    print(len(head))
 
     matrix = np.array(head[0].matrix_size[:])
 
@@ -203,9 +197,6 @@ def process_image(imgGroup, connection, config, metadata):
     print("shape before transpose:")
     print(data.shape)
 
-    # Reformat data to [y x z cha img], i.e. [row col] for the first two dimensions
-    # data = data.transpose((3, 4, 2, 1, 0))
-
     # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions
     data = data.transpose((3, 4, 0, 1, 2))
 
@@ -214,29 +205,14 @@ def process_image(imgGroup, connection, config, metadata):
 
     # convert data to nifti using nibabel
     affine = compute_nifti_affine(head[0], voxelsize)
-
     print("affine matrix:")
     print(affine)
-
-#     affine matrix: dcm -> hdf5 -> nifti:
-# [[-8.00799981e-01  3.92151765e-12 -0.00000000e+00  2.49850006e+02]
-#  [-3.92151743e-12 -8.00800025e-01  0.00000000e+00  2.05005005e+02]
-#  [ 0.00000000e+00  0.00000000e+00  7.99999971e-01 -1.42800000e+03]
-#  [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]    
-
-    # print("overwriting affine with identity for testing")
-    # affine = np.eye(4)
 
     data = np.squeeze(data)
     print("shape before saving nifti and running mm_segment:")
     print(data.shape)
-    # should be: 624 x 512 x 416
-    # is: (512, 624, 416)
 
     new_img = nib.nifti1.Nifti1Image(data, affine)
-    # check if /buildhostdirectory exists, if not create it:
-    # if not os.path.exists("/buildhostdirectory"):
-        # os.makedirs("/buildhostdirectory")
     nib.save(new_img, "/opt/input.nii.gz")
 
     # Extract UI parameters from JSON config
@@ -264,7 +240,7 @@ def process_image(imgGroup, connection, config, metadata):
     
     # Run mm_segment
     logging.info(f"Running command: {' '.join(mm_segment_cmd)}")
-    preprocess_result = subprocess.run(mm_segment_cmd, check=True)
+    mm_segment_result = subprocess.run(mm_segment_cmd, check=True)
 
     img = nib.load("/opt/input_dseg.nii.gz")
     data = img.get_fdata()
@@ -378,7 +354,7 @@ def process_image(imgGroup, connection, config, metadata):
 
         metaXml = tmpMeta.serialize()
         # logging.debug("Image MetaAttributes: %s", xml.dom.minidom.parseString(metaXml).toprettyxml())
-        logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
+        # logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
 
         imagesOut[iImg].attribute_string = metaXml
 
