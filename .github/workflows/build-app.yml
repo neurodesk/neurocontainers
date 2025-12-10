@@ -481,7 +481,7 @@ jobs:
   upload-nectar:
     needs: [config, build-image, build-simg]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' }}
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     permissions:
       packages: write
 
