@@ -90,7 +90,6 @@ jobs:
 
       - name: Install builder dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Generate Dockerfile and Release file
@@ -169,7 +168,6 @@ jobs:
 
       - name: Install builder dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Generate Dockerfile and Release file
@@ -494,7 +492,10 @@ jobs:
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
           # Install rclone
-          sudo -v ; curl https://rclone.org/install.sh | sudo bash
+          if ! command -v rclone &>/dev/null; then
+            echo "[DEBUG] Installing rclone"
+            sudo -v ; curl https://rclone.org/install.sh | sudo bash
+          fi
           
       - name: Download simg artifact
         if: inputs.skip_simg_build != 'true'
@@ -569,7 +570,6 @@ jobs:
         token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
     - name: Install Builder Dependencies
       run: |
-        python -m pip install --upgrade pip
         pip install -r requirements.txt
     - name: Generate Dockerfile and Release File
       id: generate
