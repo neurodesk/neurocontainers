@@ -70,7 +70,7 @@ def process(connection, config, metadata):
                 # data, which returns images that are sent back to the client.
                 if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
                     logging.info("Processing a group of k-space data")
-                    image = process_raw(acqGroup, connection, config, metadata)
+                    # image = process_raw(acqGroup, connection, config, metadata)
                     connection.send_image(image)
                     acqGroup = []
 
@@ -286,7 +286,8 @@ def process_image(imgGroup, connection, config, metadata):
 
 
     print("maximum value in segmented data before sending out:")
-    print(np.max(data))
+    maxVal =  np.max(data)      
+    print(maxVal)
 
     currentSeries = 0
 
