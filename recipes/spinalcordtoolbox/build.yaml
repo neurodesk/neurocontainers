@@ -7,7 +7,6 @@ architectures:
   - x86_64
 build:
   kind: neurodocker
-#   base-image: ubuntu:20.04
   base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime
   pkg-manager: apt
   directives:
@@ -28,19 +27,23 @@ build:
     - workdir: /opt/spinalcordtoolbox-{{ context.version }}
     - run:
         - chmod a+rwx /opt/spinalcordtoolbox-{{ context.version }}/ -R
+    - include: macros/openrecon/neurodocker.yaml
     - user: spinalcordtoolbox
     - run:
         - yes | ./install_sct -i
     - environment:
-        PATH: /opt/spinalcordtoolbox-{{ context.version }}/bin/:/bin/:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local
+        PATH: /opt/spinalcordtoolbox-{{ context.version }}/bin/:$PATH
         SCT_DIR: /opt/spinalcordtoolbox-{{ context.version }}
     - run:
         - sct_deepseg spinalcord -install
     - run:
         - sct_check_dependencies
+    - copy: spinalcordtoolbox.py /opt/code/python-ismrmrd-server/spinalcordtoolbox.py
     - deploy:
-        path:
-          - /opt/spinalcordtoolbox-{{ context.version }}/bin/
+          bins:
+            - sct_deepseg
+          path:
+            - /opt/spinalcordtoolbox-{{ context.version }}/bin/
 readme: |-
   ----------------------------------
   ## spinalcordtoolbox/{{ context.version }} ##
