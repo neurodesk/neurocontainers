@@ -48,7 +48,7 @@ readme: |-
   ----------------------------------
 build:
   kind: neurodocker
-  base-image: ghcr.io/spm/spm-docker:docker-matlab-25.01.02
+  base-image: ghcr.io/spm/spm-docker:docker-matlab-{{ context.version }}
   pkg-manager: apt
   directives:
     - entrypoint: bash
