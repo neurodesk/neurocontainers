@@ -55,7 +55,6 @@ build:
     - environment:
           PATH: ${PATH}:/opt/spm
     - deploy:
-        path: []
         bins:
           - spm25
           - run_spm25.sh
