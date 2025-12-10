@@ -241,7 +241,7 @@ def process_image(imgGroup, connection, config, metadata):
     # Run mm_segment
     logging.info(f"Running command: {' '.join(mm_segment_cmd)}")
 
-    DEBUG=True
+    DEBUG=False
 
     if DEBUG:
         logging.info("DEBUG mode: Skipping actual mm_segment execution and creating dummy output.")
