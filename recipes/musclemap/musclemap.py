@@ -240,7 +240,14 @@ def process_image(imgGroup, connection, config, metadata):
     
     # Run mm_segment
     logging.info(f"Running command: {' '.join(mm_segment_cmd)}")
-    mm_segment_result = subprocess.run(mm_segment_cmd, check=True)
+
+    DEBUG=True
+
+    if DEBUG:
+        logging.info("DEBUG mode: Skipping actual mm_segment execution and creating dummy output.")
+        subprocess.run("cp /buildhostdirectory/input_dseg.nii.gz /opt/input_dseg.nii.gz", shell=True, check=True)
+    else:
+        mm_segment_result = subprocess.run(mm_segment_cmd, check=True)
 
     img = nib.load("/opt/input_dseg.nii.gz")
     data = img.get_fdata()
@@ -297,6 +304,17 @@ def process_image(imgGroup, connection, config, metadata):
     print("data.shape before creating output images:")
     print(data.shape)
 
+    print("checking data type of data:")
+    print(data.dtype)
+
+    # check if data type is int16_t and if not convert it
+    if data.dtype != np.int16:
+        logging.info(f"Converting segmented data from {data.dtype} to int16")
+        data = data.astype(np.int16)
+
+    print("checking data type of final data:")
+    print(data.dtype)
+
     print("header length - should be as many as images:")
     print(len(head))
 
@@ -312,6 +330,25 @@ def process_image(imgGroup, connection, config, metadata):
         # (we changed it to int16 from all other types)
         oldHeader = head[iImg]
         oldHeader.data_type = imagesOut[iImg].data_type
+
+        print(f"Image {iImg}: data_type = {imagesOut[iImg].data_type}")
+
+        # Supported ISMRMRD Data Types:
+        #     ISMRMRD_USHORT   = 1, /**< corresponds to uint16_t */
+        #     ISMRMRD_SHORT    = 2, /**< corresponds to int16_t */
+        #     ISMRMRD_FLOAT    = 5, /**< corresponds to float */
+        #     ISMRMRD_CXFLOAT  = 7, /**< corresponds to complex float */
+
+        # NOT SUPPORTED:
+        # ISMRMRD_UINT     = 3, /**< corresponds to uint32_t */
+        # ISMRMRD_INT      = 4, /**< corresponds to int32_t */
+        # ISMRMRD_DOUBLE   = 6, /**< corresponds to double */
+        # ISMRMRD_CXDOUBLE = 8  /**< corresponds to complex double */
+
+        # check if datatype is supported and if not show an error and stop:
+        if imagesOut[iImg].data_type not in [ismrmrd.DATATYPE_USHORT, ismrmrd.DATATYPE_SHORT, ismrmrd.DATATYPE_FLOAT, ismrmrd.DATATYPE_CXFLOAT]:
+            logging.error(f"Unsupported data type {imagesOut[iImg].data_type} in output image {iImg}. Supported types are: uint16, int16, float32, complex float32.")
+            raise ValueError(f"Unsupported data type {imagesOut[iImg].data_type} in output image {iImg}. Supported types are: uint16, int16, float32, complex float32.")
 
         # Set the image_type to match the data_type for complex data
         if (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXFLOAT) or (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXDOUBLE):
