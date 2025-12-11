@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "ezbids 1.1.0": {
+      "version": "20251211",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation",
+    "bids apps"
+  ]
+}
