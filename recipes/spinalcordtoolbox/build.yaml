@@ -65,7 +65,7 @@ build:
 readme: |-
   ----------------------------------
   ## spinalcordtoolbox/{{ context.version }} ##
-  CT tools process MRI data (NIfTI files) and can do fully automatic tasks such as:
+  SCT tools process MRI data (NIfTI files) and can do fully automatic tasks such as:
   - Segmentation of the spinal cord and gray matter
   - Segmentation of pathologies (eg. multiple sclerosis lesions)
   - Detection of anatomical highlights (eg. ponto-medullary junction, spinal cord centerline, vertebral levels)
