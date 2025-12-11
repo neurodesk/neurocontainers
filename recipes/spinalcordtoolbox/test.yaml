@@ -13,16 +13,10 @@ tests:
       # check that the CUDA version is valid for MARS: has to be CUDA 11.x
       python -c "import torch; print(torch.version.cuda)"
 
-      # Convert input DICOMs to ISMRMRD format
-      rm /buildhostdirectory/input_fromDCM.h5
-      python /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py \
-        -o /buildhostdirectory/input_fromDCM.h5 \
-        /buildhostdirectory/dicom_data
-
       # Convert NIFTI to ISMRMRD format
       rm /buildhostdirectory/input_fromNIFTI.h5
       python3 /opt/code/python-ismrmrd-server/nifti2mrd.py \
-        -i /buildhostdirectory/PatThigh_Se1_Res0.8_0.8_Spac0.8.nii \
+        -i /buildhostdirectory/t2_Se1_Res0.8_0.8_Spac0.8.nii.gz \
         -o /buildhostdirectory/input_fromNIFTI.h5
 
       # Start OpenRecon server

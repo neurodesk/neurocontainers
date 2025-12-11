@@ -22,12 +22,12 @@ build:
         - bzip2
         - libglib2.0-0
         - rsync
+    - include: macros/openrecon/neurodocker.yaml
     - run:
         - curl -fsSL --retry 5 https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/{{ context.version }}.tar.gz | tar -xz -C /opt/
     - workdir: /opt/spinalcordtoolbox-{{ context.version }}
     - run:
         - chmod a+rwx /opt/spinalcordtoolbox-{{ context.version }}/ -R
-    - include: macros/openrecon/neurodocker.yaml
     - user: spinalcordtoolbox
     - run:
         - yes | ./install_sct -i
@@ -39,6 +39,7 @@ build:
     - run:
         - sct_check_dependencies
     - copy: spinalcordtoolbox.py /opt/code/python-ismrmrd-server/spinalcordtoolbox.py
+    - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
     - deploy:
           bins:
             - sct_deepseg

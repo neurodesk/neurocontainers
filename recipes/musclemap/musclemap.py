@@ -14,7 +14,6 @@ import constants
 from time import perf_counter
 import nibabel as nib
 import subprocess
-import SimpleITK as sitk
 
 
 # Folder for debug output files

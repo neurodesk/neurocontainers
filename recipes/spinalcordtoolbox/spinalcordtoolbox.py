@@ -14,7 +14,6 @@ import constants
 from time import perf_counter
 import nibabel as nib
 import subprocess
-import SimpleITK as sitk
 
 
 # Folder for debug output files
@@ -251,7 +250,7 @@ def process_image(imgGroup, connection, config, metadata):
     logging.info(f"Running command: {' '.join(sct_command)}")
     preprocess_result = subprocess.run(sct_command, check=True)
 
-    img = nib.load("/opt/t2_seg.nii.gz")
+    img = nib.load("/opt/input_seg.nii.gz")
     data = img.get_fdata()
 
     print("maximum value in segmented data:")
@@ -271,6 +270,16 @@ def process_image(imgGroup, connection, config, metadata):
     print("shape after applying transpose")
     print(data.shape)
 
+    print("checking data type of data:")
+    print(data.dtype)
+
+    # check if data type is int16_t and if not convert it
+    if data.dtype != np.int16:
+        logging.info(f"Converting segmented data from {data.dtype} to int16")
+        data = data.astype(np.int16)
+
+    print("checking data type of final data:")
+    print(data.dtype)
 
     currentSeries = 0
 

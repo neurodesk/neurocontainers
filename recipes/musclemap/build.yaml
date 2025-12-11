@@ -22,9 +22,6 @@ build:
 
         - include: macros/openrecon/neurodocker.yaml
 
-        - run:
-            - pip install SimpleITK
-
         #openrecon application
         - run:
             - cd /opt/code/python-ismrmrd-server
