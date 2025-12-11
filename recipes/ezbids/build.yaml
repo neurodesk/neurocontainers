@@ -1,0 +1,255 @@
+name: ezbids
+version: 1.1.0
+
+categories:
+  - "data organisation"
+  - "bids apps"
+
+copyright:
+  - license: MIT
+    url: https://github.com/openneuropet/ezbids_docker/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: neurodebian:nd20.04-non-free
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        FSLDIR: /usr/local/fsl
+        FSLOUTPUTTYPE: NIFTI_GZ
+        NODE_MAJOR: "20"
+
+    # Install system dependencies
+    - install:
+        - parallel
+        - python3
+        - python3-pip
+        - tree
+        - curl
+        - unzip
+        - git
+        - jq
+        - python
+        - libgl-dev
+        - python-numpy
+        - bc
+        - build-essential
+        - pkg-config
+        - cmake
+        - pigz
+        - rename
+        - zstd
+        - libopenjp2-7
+        - libgdcm-tools
+        - wget
+        - libopenblas-dev
+        - ca-certificates
+        - gnupg
+        - supervisor
+
+    # Install Node.js 20
+    - run:
+        - mkdir -p /etc/apt/keyrings
+        - curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+        - echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
+        - apt-get update && apt-get install nodejs -y
+
+    # Install Python packages
+    - run:
+        - pip3 install numpy==1.23.0 nibabel==4.0.0 pandas matplotlib pyyaml==5.4.1 pydicom==2.3.1 natsort pydeface
+        - pip3 install quickshear mne mne-bids pypet2bids==1.4.1 conversiontelemetry
+
+    # Install MongoDB 4.4
+    - run:
+        - wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | apt-key add -
+        - echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-4.4.list
+        - apt-get update
+        - apt-get install -y mongodb-org=4.4.15 mongodb-org-server=4.4.15 mongodb-org-shell=4.4.15 mongodb-org-mongos=4.4.15 mongodb-org-tools=4.4.15
+
+    # Setup pet2bids config
+    - run:
+        - touch /.pet2bidsconfig && chown 1001:1001 /.pet2bidsconfig
+        - echo "DEFAULT_METADATA_JSON=/usr/local/lib/python3.8/dist-packages/pypet2bids/template_json.json" > /.pet2bidsconfig
+
+    # Install FSL binaries
+    - run:
+        - mkdir -p /usr/local/fsl
+        - git clone https://github.com/dlevitas/FSL_binaries /usr/local/fsl
+        - rm -rf /usr/local/fsl/README.md
+        - mkdir -p /usr/local/fsl/data/standard
+        - mv /usr/local/fsl/bin/MNI152_T1_2mm_brain.nii.gz /usr/local/fsl/data/standard
+
+    - environment:
+        PATH: /usr/local/fsl/bin:/ROBEX:$PATH
+
+    # Install dcm2niix
+    - run:
+        - cd /tmp && curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_lnx.zip
+        - unzip /tmp/dcm2niix_lnx.zip -d /tmp
+        - mv /tmp/dcm2niix /usr/local/bin
+        - rm -f /tmp/dcm2niix_lnx.zip
+
+    # Install ROBEX
+    - run:
+        - cd / && wget -q "https://www.nitrc.org/frs/download.php/5994/ROBEXv12.linux64.tar.gz//?i_agree=1&download_now=1" -O /ROBEXv12.linux64.tar.gz
+        - tar -xzf /ROBEXv12.linux64.tar.gz -C /
+        - rm -f /ROBEXv12.linux64.tar.gz
+
+    # Install Node.js global packages
+    - run:
+        - npm install -g npm@9.5.1 pm2 typescript tsc-watch bids-validator@1.14.8
+
+    # Clone ezBIDS application first
+    - run:
+        - mkdir -p /app
+        - git clone https://github.com/openneuropet/ezbids_docker /app/ezbids
+        - cd /app/ezbids && ./generate_keys.sh
+
+    # Clone bids-specification into ezbids directory (where ezBIDS expects it)
+    - run:
+        - cd /app/ezbids && git clone https://github.com/bids-standard/bids-specification
+        - cd /app/ezbids/bids-specification && git checkout 3537e9edbc81545614d3ee605c398361099b6977
+
+    # Clone bids-validator
+    - run:
+        - git clone https://github.com/bids-standard/bids-validator /app/bids-validator
+
+    # Install API dependencies
+    - run:
+        - cd /app/ezbids/api && cp /app/ezbids/package.json /app/ezbids/api/ && npm install && npx tsc
+
+    # Install handler dependencies
+    - run:
+        - cd /app/ezbids/handler && npm install && npx tsc
+
+    # Install UI dependencies
+    - run:
+        - cd /app/ezbids/ui && npm install
+        - chmod +x /app/ezbids/ui/entrypoint.sh
+
+    # Create supervisor configuration
+    - copy: supervisord.conf /etc/supervisor/conf.d/ezbids.conf
+
+    # Create necessary directories and set permissions
+    - run:
+        - mkdir -p /data/db /var/log /tmp/ezbids-workdir
+
+    - environment:
+        MONGO_CONNECTION_STRING: mongodb://localhost:27017/ezbids
+        BRAINLIFE_AUTHENTICATION: "false"
+        PRESORT: "false"
+        VITE_APIHOST: http://localhost:8082
+        VITE_BRAINLIFE_AUTHENTICATION: "false"
+
+    # Create startup script
+    - copy: start-ezbids.sh /usr/local/bin/start-ezbids.sh
+    - run:
+        - chmod +x /usr/local/bin/start-ezbids.sh
+
+    - entrypoint: /usr/local/bin/start-ezbids.sh
+
+deploy:
+  bins:
+    - dcm2niix
+    - bids-validator
+
+files:
+  - name: start-ezbids.sh
+    contents: |
+      #!/bin/bash
+      exec /usr/bin/supervisord -c /etc/supervisor/conf.d/ezbids.conf
+
+  - name: supervisord.conf
+    contents: |
+      [supervisord]
+      nodaemon=true
+      user=root
+
+      [program:mongodb]
+      command=mongod --bind_ip_all --port 27017
+      autostart=true
+      autorestart=true
+      stderr_logfile=/var/log/mongodb.err.log
+      stdout_logfile=/var/log/mongodb.out.log
+
+      [program:api]
+      command=/app/ezbids/api/dev.sh
+      directory=/app/ezbids/api
+      autostart=true
+      autorestart=true
+      environment=MONGO_CONNECTION_STRING="mongodb://localhost:27017/ezbids",BRAINLIFE_AUTHENTICATION="false"
+      stderr_logfile=/var/log/api.err.log
+      stdout_logfile=/var/log/api.out.log
+
+      [program:handler]
+      command=pm2 start handler.js --attach --watch --ignore-watch "ui **/node_modules **__pycache__**"
+      directory=/app/ezbids/handler
+      autostart=true
+      autorestart=true
+      environment=MONGO_CONNECTION_STRING="mongodb://localhost:27017/ezbids",PRESORT="false"
+      stderr_logfile=/var/log/handler.err.log
+      stdout_logfile=/var/log/handler.out.log
+
+      [program:ui]
+      command=/app/ezbids/ui/entrypoint.sh
+      directory=/app/ezbids/ui
+      autostart=true
+      autorestart=true
+      environment=VITE_APIHOST="http://localhost:8082",VITE_BRAINLIFE_AUTHENTICATION="false"
+      stderr_logfile=/var/log/ui.err.log
+      stdout_logfile=/var/log/ui.out.log
+
+readme: |
+  ----------------------------------
+  ## ezbids/{{ context.version }} ##
+
+  ezBIDS is a secure, web-based tool for converting neuroimaging data to the Brain Imaging Data Structure (BIDS) format.
+
+  This container includes the full ezBIDS web application with support for:
+  - MRI data conversion (DICOM to BIDS)
+  - PET imaging support (via pypet2bids)
+  - MEG data support (via MNE-BIDS)
+  - Automatic defacing options
+  - BIDS validation
+
+  ### Running the Container
+
+  ```bash
+  # Start ezBIDS (exposes web UI on port 3000, API on port 8082)
+  docker run -d -p 3000:3000 -p 8082:8082 -v /tmp/ezbids-workdir:/tmp/ezbids-workdir ezbids:{{ context.version }}
+
+  # Access the web interface at http://localhost:3000
+  ```
+
+  ### Ports
+  - 3000: Web UI
+  - 8082: REST API
+  - 27017: MongoDB (internal)
+
+  ### Tools Included
+  - dcm2niix: DICOM to NIfTI conversion
+  - pypet2bids: PET to BIDS conversion
+  - bids-validator: BIDS validation
+  - pydeface: Anatomical defacing
+  - ROBEX: Brain extraction
+  - MNE-BIDS: MEG/EEG to BIDS
+
+  More documentation: https://github.com/openneuropet/ezbids_docker
+
+  Original ezBIDS: https://brainlife.io/ezbids
+
+  ### Citation
+  ```
+  Levitas, Daniel, et al. "ezBIDS: Guided standardization of neuroimaging data
+  interoperable with major data archives and platforms." Nature Scientific Data
+  13, no. 130 (2024).
+  ```
+
+  License: MIT
+
+  ----------------------------------
