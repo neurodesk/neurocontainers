@@ -36,6 +36,23 @@ build:
         SCT_DIR: /opt/spinalcordtoolbox-{{ context.version }}
     - run:
         - sct_deepseg spinalcord -install
+        - sct_deepseg sc_epi -install
+        - sct_deepseg sc_lumbar_t2 -install
+        - sct_deepseg sc_mouse_t1 -install
+        - sct_deepseg graymatter -install
+        - sct_deepseg gm_sc_7t_t2star -install
+        - sct_deepseg gm_wm_exvivo_t2 -install
+        - sct_deepseg gm_mouse_t1 -install
+        - sct_deepseg gm_wm_mouse_t1 -install
+        - sct_deepseg lesion_ms -install
+        - sct_deepseg lesion_ms_axial_t2 -install
+        - sct_deepseg lesion_ms_mp2rage -install
+        - sct_deepseg lesion_sci_t2 -install
+        - sct_deepseg tumor_edema_cavity_t1_t2 -install  
+        - sct_deepseg tumor_t2 -install 
+        - sct_deepseg rootlets -install
+        - sct_deepseg sc_canal_t2 -install
+        - sct_deepseg spine -install
     - run:
         - sct_check_dependencies
     - copy: spinalcordtoolbox.py /opt/code/python-ismrmrd-server/spinalcordtoolbox.py

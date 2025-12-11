@@ -1,8 +1,8 @@
 tests:
   - name: Test spinalcordtoolbox
-    manual: false
+    manual: true
     script: |
-      batch_processing.sh
+      bash /opt/spinalcordtoolbox-7.2/batch_processing.sh
   - name: Test spinalcordtoolbox for OpenRecon
     manual: true
     script: |
@@ -18,6 +18,11 @@ tests:
       python3 /opt/code/python-ismrmrd-server/nifti2mrd.py \
         -i /buildhostdirectory/t2_Se1_Res0.8_0.8_Spac0.8.nii.gz \
         -o /buildhostdirectory/input_fromNIFTI.h5
+      
+      rm /buildhostdirectory/input_fromNIFTI_lesion.h5
+      python3 /opt/code/python-ismrmrd-server/nifti2mrd.py \
+        -i /buildhostdirectory/t2lesion_Se1_Res0.8_0.8_Spac0.8.nii.gz \
+        -o /buildhostdirectory/input_fromNIFTI_lesion.h5
 
       # Start OpenRecon server
       python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
@@ -27,7 +32,7 @@ tests:
       python3 /opt/code/python-ismrmrd-server/client.py \
         -G dataset \
         -o /buildhostdirectory/output.h5 \
-        /buildhostdirectory/input_fromNIFTI.h5 \
+        /buildhostdirectory/input_fromNIFTI_lesion.h5 \
         -c spinalcordtoolbox
 
       # Check output h5 data in "H5Web" VS code plugin viewer

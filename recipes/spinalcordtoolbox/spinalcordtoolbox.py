@@ -217,15 +217,6 @@ def process_image(imgGroup, connection, config, metadata):
     print("affine matrix:")
     print(affine)
 
-#     affine matrix: dcm -> hdf5 -> nifti:
-# [[-8.00799981e-01  3.92151765e-12 -0.00000000e+00  2.49850006e+02]
-#  [-3.92151743e-12 -8.00800025e-01  0.00000000e+00  2.05005005e+02]
-#  [ 0.00000000e+00  0.00000000e+00  7.99999971e-01 -1.42800000e+03]
-#  [ 0.00000000e+00  0.00000000e+00  0.00000000e+00  1.00000000e+00]]    
-
-    # print("overwriting affine with identity for testing")
-    # affine = np.eye(4)
-
     data = np.squeeze(data)
     print("shape before saving nifti:")
     print(data.shape)
@@ -234,23 +225,56 @@ def process_image(imgGroup, connection, config, metadata):
     nib.save(new_img, "/opt/input.nii.gz")
 
     # Extract UI parameters from JSON config
-    analysis = mrdhelper.get_json_config_param(config, 'analysis', default='segmentation', type='str')
+    analysis = mrdhelper.get_json_config_param(config, 'analysis', default='sct_deepseg_lesion_sci_t2', type='str')
     
     logging.info(f"parameters: analysis={analysis}")
     
-    # Build command with parameters
-    sct_command = [
-        "sct_deepseg",
-        "spinalcord",
-        "-i", "/opt/input.nii.gz",
-        "-qc", "/opt/qc_singleSubj"
-    ]
-    
-    # Run spinalcordtoolbox 
-    logging.info(f"Running command: {' '.join(sct_command)}")
-    preprocess_result = subprocess.run(sct_command, check=True)
+    if analysis == 'sct_deepseg_spinalcord':
+        sct_deepseg_command = [
+            "sct_deepseg",
+            "spinalcord",
+            "-i", "/opt/input.nii.gz",
+            "-qc", "/opt/qc_singleSubj"
+        ]
+        logging.info(f"Running command: {' '.join(sct_deepseg_command)}")
+        subprocess.run(sct_deepseg_command, check=True)
+        subprocess.run(["cp", "/opt/input_seg.nii.gz", "/opt/output.nii.gz"], check=True)
 
-    img = nib.load("/opt/input_seg.nii.gz")
+
+    if analysis == 'sct_label_vertebrae':
+        sct_deepseg_command = [
+            "sct_deepseg",
+            "spinalcord",
+            "-i", "/opt/input.nii.gz",
+            "-qc", "/opt/qc_singleSubj"
+        ]
+        logging.info(f"Running command: {' '.join(sct_deepseg_command)}")
+        subprocess.run(sct_deepseg_command, check=True)
+
+        sct_label_vertebrae_command = [
+            "sct_label_vertebrae",
+            "-i", "/opt/input.nii.gz",
+            "-s", "/opt/input_seg.nii.gz",
+            "-c", "t2",
+            "-qc", "/opt/qc_singleSubj"
+        ]
+        logging.info(f"Running command: {' '.join(sct_label_vertebrae_command)}")
+        subprocess.run(sct_label_vertebrae_command, check=True)
+        subprocess.run(["cp", "/opt/spinalcordtoolbox-7.2/input_seg_labeled.nii.gz", "/opt/output.nii.gz"], check=True)
+
+    if analysis == 'sct_deepseg_lesion_sci_t2':
+        sct_deepseg_lesion_sci_t2_command = [
+            "sct_deepseg",
+            "lesion_sci_t2",
+            "-i", "/opt/input.nii.gz",
+            "-qc", "/opt/qc_singleSubj"
+        ]
+        logging.info(f"Running command: {' '.join(sct_deepseg_lesion_sci_t2_command)}")
+        subprocess.run(sct_deepseg_lesion_sci_t2_command, check=True)
+        subprocess.run(["cp", "/opt/input_lesion_seg.nii.gz", "/opt/output.nii.gz"], check=True)
+
+
+    img = nib.load("/opt/output.nii.gz")
     data = img.get_fdata()
 
     print("maximum value in segmented data:")
