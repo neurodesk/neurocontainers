@@ -87,11 +87,29 @@ def process(connection, config, metadata):
                     connection.send_image(image)
                     imgGroup = []
 
-                # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
-                if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
+                # Only process magnitude Water images -- send phase images and non-Water images back without modification
+                tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
+                
+                # Debug: Print various metadata fields to identify where Water information is stored
+                logging.info("=== Image Metadata Debug ===")
+                logging.info(f"SequenceDescription: {tmpMeta.get('SequenceDescription', 'N/A')}")
+                logging.info(f"SeriesDescription: {tmpMeta.get('SeriesDescription', 'N/A')}")
+                logging.info(f"ImageComments: {tmpMeta.get('ImageComments', 'N/A')}")
+                logging.info(f"ImageType: {tmpMeta.get('ImageType', 'N/A')}")
+                logging.info(f"SequenceDescriptionAdditional: {tmpMeta.get('SequenceDescriptionAdditional', 'N/A')}")
+                logging.info(f"All metadata keys: {list(tmpMeta.keys())}")
+                logging.info("===========================")
+                
+                # Check metadata for Water/Fat information (content type)
+                imageTypeMetadata = tmpMeta.get("ImageType", "")
+                isWaterImage = "WATER" in imageTypeMetadata if imageTypeMetadata else False
+                
+                # Check ISMRMRD image type for magnitude vs phase/complex (data representation)
+                isMagnitude = (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0)
+                
+                if isMagnitude and isWaterImage:
                     imgGroup.append(item)
                 else:
-                    tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
                     tmpMeta["Keep_image_geometry"] = 1
                     item.attribute_string = tmpMeta.serialize()
 
