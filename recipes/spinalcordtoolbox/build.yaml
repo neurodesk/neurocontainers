@@ -55,6 +55,7 @@ build:
         - sct_deepseg spine -install
     - run:
         - sct_check_dependencies
+    - user: root
     - copy: spinalcordtoolbox.py /opt/code/python-ismrmrd-server/spinalcordtoolbox.py
     - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
     - deploy:
