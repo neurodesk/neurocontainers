@@ -100,14 +100,18 @@ def process(connection, config, metadata):
                 logging.info(f"All metadata keys: {list(tmpMeta.keys())}")
                 logging.info("===========================")
                 
-                # Check metadata for Water/Fat information (content type)
+                # Check metadata for Water/Fat and DIXON information
                 imageTypeMetadata = tmpMeta.get("ImageType", "")
+                isDixonScan = "DIXON" in imageTypeMetadata if imageTypeMetadata else False
                 isWaterImage = "WATER" in imageTypeMetadata if imageTypeMetadata else False
                 
                 # Check ISMRMRD image type for magnitude vs phase/complex (data representation)
                 isMagnitude = (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0)
                 
-                if isMagnitude and isWaterImage:
+                # Process magnitude images, but for DIXON scans only process WATER images
+                shouldProcess = isMagnitude and (not isDixonScan or isWaterImage)
+                
+                if shouldProcess:
                     imgGroup.append(item)
                 else:
                     tmpMeta["Keep_image_geometry"] = 1
