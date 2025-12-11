@@ -236,12 +236,12 @@ def process_image(imgGroup, connection, config, metadata):
     # Extract UI parameters from JSON config
     analysis = mrdhelper.get_json_config_param(config, 'analysis', default='segmentation', type='str')
     
-    logging.info(f"mm_segment parameters: analysis={analysis}")
+    logging.info(f"parameters: analysis={analysis}")
     
-    # Build mm_segment command with parameters
+    # Build command with parameters
     sct_command = [
         "sct_deepseg",
-        "spinalcord,"
+        "spinalcord",
         "-i", "/opt/input.nii.gz",
         "-qc", "/opt/qc_singleSubj"
     ]
