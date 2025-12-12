@@ -146,15 +146,18 @@ build:
         VITE_APIHOST: http://localhost:8082
         VITE_BRAINLIFE_AUTHENTICATION: "false"
 
-    # Create startup script
+    # Create startup scripts
     - copy: start-ezbids.sh /usr/local/bin/start-ezbids.sh
+    - copy: ezbids /usr/local/bin/ezbids
     - run:
         - chmod +x /usr/local/bin/start-ezbids.sh
+        - chmod +x /usr/local/bin/ezbids
 
     - entrypoint: /usr/local/bin/start-ezbids.sh
 
 deploy:
   bins:
+    - ezbids
     - dcm2niix
     - bids-validator
 
@@ -162,13 +165,168 @@ files:
   - name: start-ezbids.sh
     contents: |
       #!/bin/bash
-      exec /usr/bin/supervisord -c /etc/supervisor/conf.d/ezbids.conf
+      # Startup script for ezBIDS - works for both root and non-root users
+
+      # Set up environment
+      export MONGO_CONNECTION_STRING="${MONGO_CONNECTION_STRING:-mongodb://localhost:27017/ezbids}"
+      export BRAINLIFE_AUTHENTICATION="${BRAINLIFE_AUTHENTICATION:-false}"
+      export PRESORT="${PRESORT:-false}"
+      export VITE_APIHOST="${VITE_APIHOST:-http://localhost:8082}"
+      export VITE_BRAINLIFE_AUTHENTICATION="${VITE_BRAINLIFE_AUTHENTICATION:-false}"
+
+      # Determine MongoDB data directory based on permissions
+      if [ -w /data/db ]; then
+        MONGO_DBPATH="/data/db"
+      else
+        MONGO_DBPATH="${HOME}/.ezbids/mongodb"
+        mkdir -p "$MONGO_DBPATH"
+      fi
+
+      # Determine log directory
+      if [ -w /var/log ]; then
+        LOG_DIR="/var/log"
+      else
+        LOG_DIR="${HOME}/.ezbids/logs"
+        mkdir -p "$LOG_DIR"
+      fi
+
+      # Create workdir
+      mkdir -p /tmp/ezbids-workdir 2>/dev/null || true
+
+      echo "Starting ezBIDS services..."
+      echo "  MongoDB data: $MONGO_DBPATH"
+      echo "  Logs: $LOG_DIR"
+      echo ""
+
+      # Start MongoDB
+      echo "Starting MongoDB..."
+      mongod --dbpath "$MONGO_DBPATH" --bind_ip_all --port 27017 > "$LOG_DIR/mongodb.out.log" 2> "$LOG_DIR/mongodb.err.log" &
+      MONGO_PID=$!
+
+      # Wait for MongoDB to be ready
+      echo "Waiting for MongoDB to start..."
+      for i in {1..30}; do
+        if mongosh --eval "db.runCommand('ping').ok" --quiet 2>/dev/null; then
+          echo "MongoDB is ready."
+          break
+        fi
+        sleep 1
+      done
+
+      # Start API
+      echo "Starting API server on port 8082..."
+      cd /app/ezbids/api
+      ./dev.sh > "$LOG_DIR/api.out.log" 2> "$LOG_DIR/api.err.log" &
+      API_PID=$!
+      sleep 2
+
+      # Start Handler
+      echo "Starting handler..."
+      cd /app/ezbids/handler
+      node handler.js > "$LOG_DIR/handler.out.log" 2> "$LOG_DIR/handler.err.log" &
+      HANDLER_PID=$!
+      sleep 2
+
+      # Start UI
+      echo "Starting UI on port 3000..."
+      cd /app/ezbids/ui
+      ./entrypoint.sh > "$LOG_DIR/ui.out.log" 2> "$LOG_DIR/ui.err.log" &
+      UI_PID=$!
+
+      echo ""
+      echo "=============================================="
+      echo "ezBIDS is starting up!"
+      echo ""
+      echo "  Web UI:  http://localhost:3000"
+      echo "  API:     http://localhost:8082"
+      echo ""
+      echo "  Logs:    $LOG_DIR/"
+      echo "=============================================="
+      echo ""
+      echo "Press Ctrl+C to stop all services."
+      echo ""
+
+      # Handle shutdown
+      cleanup() {
+        echo ""
+        echo "Shutting down ezBIDS services..."
+        kill $UI_PID $HANDLER_PID $API_PID $MONGO_PID 2>/dev/null
+        wait
+        echo "All services stopped."
+        exit 0
+      }
+      trap cleanup SIGINT SIGTERM
+
+      # Keep running and wait for any child to exit
+      wait
+
+  - name: ezbids
+    contents: |
+      #!/bin/bash
+      # ezBIDS launcher script
+
+      show_help() {
+        echo "ezBIDS - Web-based DICOM to BIDS conversion tool"
+        echo ""
+        echo "Usage: ezbids [command]"
+        echo ""
+        echo "Commands:"
+        echo "  start       Start the ezBIDS web application (default)"
+        echo "  status      Check if ezBIDS services are running"
+        echo "  help        Show this help message"
+        echo ""
+        echo "After starting, access the web interface at:"
+        echo "  http://localhost:3000"
+        echo ""
+        echo "Ports used:"
+        echo "  3000  - Web UI"
+        echo "  8082  - REST API"
+        echo "  27017 - MongoDB (internal)"
+      }
+
+      check_status() {
+        echo "Checking ezBIDS services..."
+        echo ""
+
+        # Check MongoDB
+        if pgrep -x mongod > /dev/null; then
+          echo "  [✓] MongoDB is running"
+        else
+          echo "  [✗] MongoDB is not running"
+        fi
+
+        # Check ports
+        for port in 3000 8082 27017; do
+          if ss -tlnp 2>/dev/null | grep -q ":$port " || netstat -tlnp 2>/dev/null | grep -q ":$port "; then
+            echo "  [✓] Port $port is listening"
+          else
+            echo "  [✗] Port $port is not listening"
+          fi
+        done
+      }
+
+      case "${1:-start}" in
+        start)
+          exec /usr/local/bin/start-ezbids.sh
+          ;;
+        status)
+          check_status
+          ;;
+        help|--help|-h)
+          show_help
+          ;;
+        *)
+          echo "Unknown command: $1"
+          echo ""
+          show_help
+          exit 1
+          ;;
+      esac
 
   - name: supervisord.conf
     contents: |
       [supervisord]
       nodaemon=true
-      user=root
 
       [program:mongodb]
       command=mongod --bind_ip_all --port 27017
@@ -217,14 +375,32 @@ readme: |
   - Automatic defacing options
   - BIDS validation
 
-  ### Running the Container
+  ### Quick Start (Neurodesk)
+
+  After loading the module, simply run:
+  ```bash
+  ezbids
+  ```
+
+  This will start all services and display the URL to access the web interface.
+
+  ### Commands
 
   ```bash
-  # Start ezBIDS (exposes web UI on port 3000, API on port 8082)
-  docker run -d -p 3000:3000 -p 8082:8082 -v /tmp/ezbids-workdir:/tmp/ezbids-workdir ezbids:{{ context.version }}
-
-  # Access the web interface at http://localhost:3000
+  ezbids           # Start the ezBIDS web application
+  ezbids start     # Same as above
+  ezbids status    # Check if services are running
+  ezbids help      # Show help message
   ```
+
+  ### Accessing the Web Interface
+
+  Once started, access ezBIDS at:
+  - Web UI: http://localhost:3000
+  - API: http://localhost:8082
+
+  In Neurodesk Play, you may need to use the desktop environment
+  (VNC) to access the web interface via a browser.
 
   ### Ports
   - 3000: Web UI
