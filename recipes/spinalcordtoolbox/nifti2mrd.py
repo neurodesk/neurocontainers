@@ -180,7 +180,6 @@ def extract_metadata_from_filename(nifti_path):
                     metadata['SliceThickness'] = slice_thickness
             
             print(f"✅ Parsed metadata from filename:")
-            print(f"   Patient ID: {metadata['PatientID']}")
             print(f"   Series: {metadata['SeriesNumber']}")
             print(f"   Resolution: {metadata['PixelSpacing']}")
             print(f"   Slice thickness: {metadata['SliceThickness']}")
@@ -586,7 +585,6 @@ def main():
         print(f"   Original 3D volume shape: {ismrmrd_image.data.shape}")
         print(f"   Number of 2D slices saved: {ismrmrd_image.data.shape[2]}")
         print(f"   Each slice shape: [{ismrmrd_image.data.shape[0]}, {ismrmrd_image.data.shape[1]}]")
-        print(f"   Patient ID: {metadata.get('PatientID', 'Unknown')}")
         print(f"   Series: {metadata.get('SeriesNumber', 'Unknown')}")
         print(f"   PixelSpacing: {metadata.get('PixelSpacing', 'Unknown')}")
         print(f"   SliceThickness: {metadata.get('SliceThickness', 'Unknown')}")
