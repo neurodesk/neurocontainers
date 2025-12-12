@@ -1,5 +1,5 @@
 name: itksnap
-version: 4.2.2
+version: 4.4.0
 # make sure to update the download link below: https://www.itksnap.org/pmwiki/pmwiki.php?n=Downloads.SNAP4
 # they started including the build date: e.g. 20241202
 architectures:
@@ -21,7 +21,7 @@ build:
         - curl -fsSL -o /example_data.zip https://www.nitrc.org/frs/download.php/750/MRI-crop.zip
         - unzip /example_data.zip
         - rm /example_data.zip
-        - curl -fsSL --retry 5 https://sourceforge.net/projects/itk-snap/files/itk-snap/{{ context.version }}/itksnap-{{ context.version }}-20241202-Linux-x86_64.tar.gz | tar -xz --strip-components=1 -C /opt/itksnap-{{ context.version }}
+        - curl -fsSL --retry 5 https://sourceforge.net/projects/itk-snap/files/itk-snap/{{ context.version }}/itksnap-{{ context.version }}-20250909-Linux-x86_64.tar.gz | tar -xz --strip-components=1 -C /opt/itksnap-{{ context.version }}
     - environment:
         QT_QPA_PLATFORM: xcb
         PATH: $PATH:/opt/itksnap-{{ context.version }}/bin
@@ -64,16 +64,6 @@ readme: |-
 copyright:
   - license: LGPL-3.0-only
     url: https://github.com/pyushkevich/itksnap?tab=GPL-3.0-1-ov-file#readme
-
-
-# needed for centos, but libcurl error: libX11 libglvnd-glx libglvnd-opengl libxkbcommon libglvnd-egl fontconfig dbus-libs
-
- #  --env QT_QPA_PLATFORM="xcb" forces xcb under wayland - this was otherwise causing a library error
-
-# This is to fix qt library error in centos 7:
-# --run="find /opt/itksnap-4.0.2/ -name '*.so' | xargs strip --remove-section=.note.ABI-tag" \
-# https://github.com/microsoft/WSL/issues/3023
-
 
 
 # # Troubleshooting:
