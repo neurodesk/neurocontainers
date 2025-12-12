@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "connectomeworkbench 2.1.0": {
+      "version": "20251212",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "data organisation"
+  ]
+}
