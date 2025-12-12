@@ -1,5 +1,5 @@
 name: convert3d
-version: 1.0.0
+version: 1.1.0
 
 copyright:
   - license: GPL-2.0
@@ -17,11 +17,11 @@ build:
   directives:
     - template:
         name: convert3d
-        version: "{{ context.version }}"
+        version: nightly
 
 deploy:
-  path:
-    - /opt/convert3d-{{ context.version }}/bin/
+  bins:
+    - c3d 
 
 categories:
   - "data organisation"
