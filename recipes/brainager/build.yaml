@@ -1,0 +1,68 @@
+name: spm25
+version: 25.01.02
+copyright:
+  - license: GPL-2.0-or-later
+    url: https://github.com/spm/spm?tab=GPL-2.0-1-ov-file#readme
+architectures:
+  - x86_64
+structured_readme:
+  description: |-
+    Statistical Parametric Mapping refers to the construction and assessment of spatially extended statistical processes used to test hypotheses about functional imaging data. These ideas have been instantiated in a free and open source software that is called SPM.
+
+    The SPM software package has been designed for the analysis of brain imaging data sequences. The sequences can be a series of images from different cohorts, or time-series from the same subject. The current release is designed for the analysis of fMRI, PET, SPECT, EEG and MEG.
+  example: |-
+    # Example usage
+
+    ```bash
+     run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b/
+    ```
+  documentation: https://github.com/spm
+  citation: |
+    Tierney, Tim M., Nicholas A. Alexander, John Ashburner, et al. “SPM 25: Open Source Neuroimaging Analysis Software.” Journal of Open Source Software 10, no. 110 (2025): 8103. https://doi.org/10.21105/joss.08103.
+readme: |-
+  ----------------------------------
+  ## spm25/{{ context.version }} ##
+
+  Statistical Parametric Mapping refers to the construction and assessment of spatially extended statistical processes used to test hypotheses about functional imaging data. These ideas have been instantiated in a free and open source software that is called SPM.
+
+  The SPM software package has been designed for the analysis of brain imaging data sequences. The sequences can be a series of images from different cohorts, or time-series from the same subject. The current release is designed for the analysis of fMRI, PET, SPECT, EEG and MEG.
+
+  Example:
+  ```
+  # Example usage
+
+  ```bash
+   run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b/
+  ```
+  ```
+
+  More documentation can be found here: https://github.com/spm
+
+  Citation:
+  ```
+  Tierney, Tim M., Nicholas A. Alexander, John Ashburner, et al. “SPM 25: Open Source Neuroimaging Analysis Software.” Journal of Open Source Software 10, no. 110 (2025): 8103. https://doi.org/10.21105/joss.08103.
+  ```
+
+  To run container outside of this environment: ml spm25/{{ context.version }}
+
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: ghcr.io/spm/spm-docker:docker-matlab-{{ context.version }}
+  pkg-manager: apt
+  directives:
+    - entrypoint: bash
+    - environment:
+          PATH: ${PATH}:/opt/spm
+    - deploy:
+        bins:
+          - spm25
+          - run_spm25.sh
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+  add-default-template: false
+categories:
+  - functional imaging
+  - structural imaging
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAGKADAAQAAAABAAAAGAAAAADiNXWtAAABvklEQVRIDc1UrY7CQBDeHgeiAgUKA6KmCQ5DsLxAJQ/Ay/AINVUI3qGiIcERFJCQkKAIBlE0hL2ZSWaOpcsdpUdyIzoz38x+3/50V2mwOI7RvcUcZHUcR6FBSP4vPx9MhuS9Xk+xGOOFPa4ASNCJYd7tdiUvEnzaZgiEBONqOLb1PYPRFiFJv9/PbA/iq9Uqgz9DLD1AYhgUdLvdFmy5XOrr9aobjYYulUqCPxuYm38zCoUOh4NmAS4hHgQBp796EhgMBpmDxpFIdi/AjFi7XC6cPvTGCuBQdbPZlGYW8DzPOoHxeKx935d+WyD3AMgU7LXa7XZ0qHi4bJvNBidCeKfTYZj8er0m/NH9MQR4JJK5rsupeMTn8zkR7vd7A+cJhGEoOAVQ+NHSNLXWJ5OJns1mxtYBoT6dToThn4dGb5EpmS+7vYy3ca1WU8fjUVm3KJ+EvbtarVLhbQIs+/8F4Bx5slZfeAXn81lNp1MrOYH0L+X41Ot16U6ShGJ8Ae6t1WoRZDwV9022HP/vKIoyJX4yyuUy1UajEfncAsy83W45JF+pVIyck5cFhABuL9twOORQ/HdVoNeCxWJhHfgFBZVvFX5GyRgAAAAASUVORK5CYII=

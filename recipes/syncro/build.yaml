@@ -1,0 +1,64 @@
+name: syncro
+version: 0.1.1
+
+copyright:
+  - license: BSD-2-Clause
+    url: https://spdx.org/licenses/BSD-2-Clause.html
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - workdir: /opt
+
+    - install:
+        - locales
+        - software-properties-common
+
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        LANGUAGE: en_AU.UTF-8
+        LC_ALL: en_AU.UTF-8
+
+    - run:
+        - locale-gen en_AU.UTF-8
+
+    - install:
+        - wget
+        - git
+        - cmake
+        - python3-pip
+        - apt-transport-https
+        - ca-certificates
+        - gdebi-core
+        - curl
+
+    - workdir: /opt
+
+deploy:
+  bins:
+    - syncro
+
+readme: |-
+  ----------------------------------
+  ## syncro/{{ context.version }} ##
+  syncro is a spatial normalization toolkit based on SynthSR
+
+  Example:
+  ```
+  syncro
+  ```
+
+  More documentation can be found here: 
+
+  ----------------------------------
+
+
+categories:
+  - "structural-imaging"

@@ -225,7 +225,7 @@ def process_image(imgGroup, connection, config, metadata):
     nib.save(new_img, "/opt/input.nii.gz")
 
     # Extract UI parameters from JSON config
-    analysis = mrdhelper.get_json_config_param(config, 'analysis', default='sct_deepseg_lesion_sci_t2', type='str')
+    analysis = mrdhelper.get_json_config_param(config, 'analysis', default='sct_deepseg_spinalcord', type='str')
     
     logging.info(f"parameters: analysis={analysis}")
     
@@ -280,6 +280,13 @@ def process_image(imgGroup, connection, config, metadata):
     print("maximum value in segmented data:")
     maxVal = np.max(data)
     print(maxVal)
+
+    print("multiplying data by 1000 if max value was 1:")
+    if maxVal == 1:
+        data = data * 1000
+        print("new maximum value in segmented data after multiplying by 1000:")
+        maxVal = np.max(data)
+        print(maxVal)
 
     # Reformat data
     print("shape after loading with nibabel")
