@@ -2,4 +2,4 @@ tests:
   #test if all packages are installed correctly. This should not give an error:
   - name: Test syncro
     script: |
-      syncro -i xxxx
+      SYNcro.py /buildhostdirectory/6_anat_T1w.nii

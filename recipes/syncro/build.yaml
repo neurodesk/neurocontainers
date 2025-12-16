@@ -11,54 +11,55 @@ architectures:
 build:
   kind: neurodocker
 
-  base-image: ubuntu:24.04
+  base-image: freesurfer/synthstrip:1.8
   pkg-manager: apt
 
   directives:
     - workdir: /opt
 
     - install:
-        - locales
-        - software-properties-common
+        - git
+        - ca-certificates
+        - curl
 
     - environment:
         DEBIAN_FRONTEND: noninteractive
-        LANGUAGE: en_AU.UTF-8
-        LC_ALL: en_AU.UTF-8
+        PATH: /opt/:$PATH
 
+    - run: 
+        - pip install scipy antspyx
+        - curl https://git.fmrib.ox.ac.uk/fsl/data_standard/-/raw/f6db877e56047a1ad91fd9b28d38654376087029/MNI152_T1_1mm_brain.nii.gz -o MNI152_T1_1mm_brain.nii.gz
+        
     - run:
-        - locale-gen en_AU.UTF-8
+        - git clone https://github.com/neurolabusc/py_synthsr
+        - cd py_synthsr
+        - curl -L https://osf.io/download/jqdcm/ -o models.zip
+        - unzip -jo models.zip -d py_synthsr/models
+        - mv py_synthsr/models/* /freesurfer/models
+        - rm models.zip
+        - pip install .
 
-    - install:
-        - wget
-        - git
-        - cmake
-        - python3-pip
-        - apt-transport-https
-        - ca-certificates
-        - gdebi-core
-        - curl
+    - copy: SYNcro.py /opt/
 
-    - workdir: /opt
+    - run: 
+        - chmod +x /opt/SYNcro.py
 
 deploy:
   bins:
-    - syncro
+    - SYNcro.py
 
 readme: |-
   ----------------------------------
   ## syncro/{{ context.version }} ##
-  syncro is a spatial normalization toolkit based on SynthSR
+  syncro is a spatial normalization toolkit based on ANTS, SynthSR and SynthStrip. It supports normalising brains with lesions.
 
   Example:
   ```
-  syncro
+      SYNcro.py input.nii
   ```
-
-  More documentation can be found here: 
 
   ----------------------------------
 
 
 categories:
-  - "structural-imaging"
+  - "structural imaging"
