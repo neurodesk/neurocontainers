@@ -1,7 +1,7 @@
 {
   "apps": {
     "spinalcordtoolbox 7.2": {
-      "version": "20251211",
+      "version": "20251216",
       "exec": "",
       "apptainer_args": []
     }
