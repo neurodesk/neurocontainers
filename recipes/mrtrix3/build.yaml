@@ -1,5 +1,5 @@
 name: mrtrix3
-version: 3.0.7
+version: 3.0.8
 copyright:
   - license: MPL-2.0
     url: https://github.com/MRtrix3/mrtrix3/blob/master/LICENCE.txt
@@ -16,7 +16,7 @@ build:
           - /opt/acpcdetect_V2.1/bin
     - template:
         name: fsl
-        version: 6.0.7.16
+        version: 6.0.7.18
     - template:
         name: mrtrix3
         build_processes: "1"
@@ -64,7 +64,7 @@ readme: |
   MRtrix3 provides a set of tools to perform various types of diffusion MRI analyses, from various forms of tractography through to next-generation group-level analyses. It is designed with consistency, performance, and stability in mind, and is freely available under an open-source license.
 
   This container also includes dependencies needed for mrtrix: FSL, ANTs, FreeSurfer
-  
+
   Example:
   ```
   mrview
