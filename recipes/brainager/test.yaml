@@ -1,0 +1,7 @@
+tests:
+  #test if all packages are installed correctly. This should not give an error:
+  - name: Test brainager
+    manual: manual
+    script: |
+      python3 brainager_segment.py chris_t1.nii.gz 
+      python3 predict_age.py chris_t1.nii.gz

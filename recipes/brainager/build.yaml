@@ -1,68 +1,106 @@
-name: spm25
-version: 25.01.02
+name: brainager
+version: 1.0.0
+
 copyright:
-  - license: GPL-2.0-or-later
-    url: https://github.com/spm/spm?tab=GPL-2.0-1-ov-file#readme
+  - license: LGPL-3.0
+    url: https://github.com/james-cole/brainageR?tab=LGPL-3.0-1-ov-file#readme
 architectures:
   - x86_64
-structured_readme:
-  description: |-
-    Statistical Parametric Mapping refers to the construction and assessment of spatially extended statistical processes used to test hypotheses about functional imaging data. These ideas have been instantiated in a free and open source software that is called SPM.
 
-    The SPM software package has been designed for the analysis of brain imaging data sequences. The sequences can be a series of images from different cohorts, or time-series from the same subject. The current release is designed for the analysis of fMRI, PET, SPECT, EEG and MEG.
-  example: |-
-    # Example usage
+build:
+  kind: neurodocker
 
-    ```bash
-     run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b/
-    ```
-  documentation: https://github.com/spm
-  citation: |
-    Tierney, Tim M., Nicholas A. Alexander, John Ashburner, et al. “SPM 25: Open Source Neuroimaging Analysis Software.” Journal of Open Source Software 10, no. 110 (2025): 8103. https://doi.org/10.21105/joss.08103.
+  base-image: ubuntu:18.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - wget
+        - unzip
+        - ca-certificates
+        - openjdk-8-jre
+        - dbus-x11
+
+    - environment:
+        MATLAB_VERSION: 2017b
+        MCR_UPDATE: "9"
+        MCR_VERSION: v93
+        # LD_LIBRARY_PATH: /opt/mcr/v93/runtime/glnxa64:/opt/mcr/v93/bin/glnxa64:/opt/mcr/v93/sys/os/glnxa64:/opt/mcr/v93/sys/opengl/lib/glnxa64:/opt/mcr/v93/extern/bin/glnxa64
+        LD_LIBRARY_PATH: ""
+
+    - template:
+        name: matlabmcr
+        install_path: /opt/mcr
+        version: 2017b
+
+    - environment:
+        MCR_INHIBIT_CTF_LOCK: "1"
+        SPM_HTML_BROWSER: "0"
+        SPM_REVISION: r7219
+        SPM_VERSION: "12"
+
+    - run:
+        - wget --no-check-certificate --progress=bar:force -P /opt https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/spm12_r7219_Linux_R2017b.zip
+        - unzip -q /opt/spm12_r7219_Linux_R2017b.zip -d /opt
+        - rm -f /opt/spm12_r7219_Linux_R2017b.zip
+
+    - run:
+        - /opt/spm12/spm12 function exit
+        - chmod +x /opt/spm12/*
+
+    - environment:
+        DEPLOY_ENV_FORCE_SPMMCR: "1"
+        DEPLOY_ENV_SPMMCRCMD: run_spm12.sh /opt/mcr/v93/ script
+        PATH: $PATH:/opt/spm12:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        XAPPLRESDIR: /opt/mcr/v93/x11/app-defaults
+    
+    - workdir: /opt
+
+    - install:
+        - python3-pip
+
+    - run:
+        - curl https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/brainager_neurodesk.zip -o brainager_neurodesk.zip
+        - unzip brainager_neurodesk.zip -d /opt/brainageR 
+        - rm -f brainager_neurodesk.zip
+
+    - run:
+        - pip3 install osfclient
+        - osf -p azwmg clone
+        - mv azwmg/osfstorage/* /opt/brainageR
+
+    - environment:
+        LD_LIBRARY_PATH: /opt/mcr/v93/runtime/glnxa64:/opt/mcr/v93/bin/glnxa64:/opt/mcr/v93/sys/os/glnxa64:/opt/mcr/v93/sys/opengl/lib/glnxa64:/opt/mcr/v93/extern/bin/glnxa64
+
+    - install:
+        - r-base
+
+    - copy: dependencies.R /opt
+
+    - run:
+        - Rscript /opt/dependencies.R
+
+deploy:
+  bins:
+    - spm12
+    - brainager_segment.py
+    - predict_age.py
+
 readme: |-
   ----------------------------------
-  ## spm25/{{ context.version }} ##
-
-  Statistical Parametric Mapping refers to the construction and assessment of spatially extended statistical processes used to test hypotheses about functional imaging data. These ideas have been instantiated in a free and open source software that is called SPM.
-
-  The SPM software package has been designed for the analysis of brain imaging data sequences. The sequences can be a series of images from different cohorts, or time-series from the same subject. The current release is designed for the analysis of fMRI, PET, SPECT, EEG and MEG.
+  ## brainager/{{ context.version }} ##
+  Software for generating a brain-predicted age value from a raw T1-weighted MRI scan. This uses a Gaussian Processes regression, implemented in R, using the kernlab package.
+  
 
   Example:
   ```
-  # Example usage
-
-  ```bash
-   run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b/
-  ```
+  brainager.py ...
   ```
 
-  More documentation can be found here: https://github.com/spm
-
-  Citation:
-  ```
-  Tierney, Tim M., Nicholas A. Alexander, John Ashburner, et al. “SPM 25: Open Source Neuroimaging Analysis Software.” Journal of Open Source Software 10, no. 110 (2025): 8103. https://doi.org/10.21105/joss.08103.
-  ```
-
-  To run container outside of this environment: ml spm25/{{ context.version }}
+  To run container outside of this environment: ml brainager/{{ context.version }}
 
   ----------------------------------
-build:
-  kind: neurodocker
-  base-image: ghcr.io/spm/spm-docker:docker-matlab-{{ context.version }}
-  pkg-manager: apt
-  directives:
-    - entrypoint: bash
-    - environment:
-          PATH: ${PATH}:/opt/spm
-    - deploy:
-        bins:
-          - spm25
-          - run_spm25.sh
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
-  add-default-template: false
+
 categories:
-  - functional imaging
-  - structural imaging
-icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAGKADAAQAAAABAAAAGAAAAADiNXWtAAABvklEQVRIDc1UrY7CQBDeHgeiAgUKA6KmCQ5DsLxAJQ/Ay/AINVUI3qGiIcERFJCQkKAIBlE0hL2ZSWaOpcsdpUdyIzoz38x+3/50V2mwOI7RvcUcZHUcR6FBSP4vPx9MhuS9Xk+xGOOFPa4ASNCJYd7tdiUvEnzaZgiEBONqOLb1PYPRFiFJv9/PbA/iq9Uqgz9DLD1AYhgUdLvdFmy5XOrr9aobjYYulUqCPxuYm38zCoUOh4NmAS4hHgQBp796EhgMBpmDxpFIdi/AjFi7XC6cPvTGCuBQdbPZlGYW8DzPOoHxeKx935d+WyD3AMgU7LXa7XZ0qHi4bJvNBidCeKfTYZj8er0m/NH9MQR4JJK5rsupeMTn8zkR7vd7A+cJhGEoOAVQ+NHSNLXWJ5OJns1mxtYBoT6dToThn4dGb5EpmS+7vYy3ca1WU8fjUVm3KJ+EvbtarVLhbQIs+/8F4Bx5slZfeAXn81lNp1MrOYH0L+X41Ot16U6ShGJ8Ae6t1WoRZDwV9022HP/vKIoyJX4yyuUy1UajEfncAsy83W45JF+pVIyck5cFhABuL9twOORQ/HdVoNeCxWJhHfgFBZVvFX5GyRgAAAAASUVORK5CYII=
+  - "image segmentation"
+  - "structural imaging"
