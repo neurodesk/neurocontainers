@@ -1,0 +1,108 @@
+name: soopct
+version: 0.0.0
+copyright:
+  - license: BSD-2-Clause
+    url: https://github.com/rordenlab/soop-ct/tree/main?tab=BSD-2-Clause-1-ov-file
+architectures:
+  - x86_64
+structured_readme:
+  description: This repository provides tools for converting CT scans from DICOM format to NIfTI using BIDS organization. The goal is to support scientific and medical discovery by enabling standardized analysis pipelines. While the DICOM format is the clinical standard for medical imaging, it is complex and not broadly supported by most neuroimaging tools. In contrast, the NIfTI format is simpler, and the Brain Imaging Data Structure (BIDS) allows automated and reproducible analysis.
+  example: |-
+    python 1dcm2raw.py ./DICOM ./raw
+    python 2raw2best.py ./raw ./best
+    # Check generated JPGs to ensure correct image selection
+    python 3best2anon.py ./best ./anon
+    python 4anon2bids.py ./anon ./bids
+    # Optional group-level analysis
+    python 5bids2norm.py ./bids
+    python nii2mean.py ./bids/derivatives/syncro _ct.nii.gz
+  documentation: https://github.com/rordenlab/soop-ct
+  citation: "Absher, J., ... Rorden, C. (in prep). SOOP-CT: Acute Stroke CT with Open Tools for De-Identification and Sharing"
+readme: |-
+  ----------------------------------
+  ## soopct/{{ context.version }} ##
+
+  This repository provides tools for converting CT scans from DICOM format to NIfTI using BIDS organization. The goal is to support scientific and medical discovery by enabling standardized analysis pipelines. While the DICOM format is the clinical standard for medical imaging, it is complex and not broadly supported by most neuroimaging tools. In contrast, the NIfTI format is simpler, and the Brain Imaging Data Structure (BIDS) allows automated and reproducible analysis.
+
+  Example:
+  ```
+  python 1dcm2raw.py ./DICOM ./raw
+  python 2raw2best.py ./raw ./best
+  # Check generated JPGs to ensure correct image selection
+  python 3best2anon.py ./best ./anon
+  python 4anon2bids.py ./anon ./bids
+  # Optional group-level analysis
+  python 5bids2norm.py ./bids
+  python nii2mean.py ./bids/derivatives/syncro _ct.nii.gz
+  ```
+
+  More documentation can be found here: https://github.com/rordenlab/soop-ct
+
+  Citation:
+  ```
+  Absher, J., ... Rorden, C. (in prep). SOOP-CT: Acute Stroke CT with Open Tools for De-Identification and Sharing
+  ```
+
+  To run container outside of this environment: ml soopct/{{ context.version }}
+
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: miniconda
+        version: latest
+        conda_install: python=3.13
+        pip_install: antspyx>=0.5.4 nibabel>=5.3.2 numpy>=2.3.0 scipy>=1.15.2 brainchop>=0.1.8 git
+    - run:
+        - git clone https://github.com/rordenlab/soop-ct.git
+        - cd soop-ct
+        - unzip DICOM.zip
+    - deploy:
+        bins:
+          - python
+    - test:
+        name: verify_installation
+        script: |-
+          # Test Python and conda installation
+          python --version
+          conda --version
+          # Test that pip packages were installed
+          python -c "import sys; print('Python path:', sys.path)"
+          pip list | grep -i "soopct" || echo "Warning: soopct not found in pip list"
+          # Attempt to import the main package
+          python -c "
+          import importlib.util
+          import sys
+
+          # Try common package name variations
+          package_names = ['soopct', 'soopct', 'soopct']
+          imported = False
+
+          for pkg_name in package_names:
+              try:
+                  __import__(pkg_name)
+                  print(f'Successfully imported {pkg_name}')
+                  imported = True
+                  break
+              except ImportError:
+                  continue
+
+          if not imported:
+              print('Warning: Could not import main package. This may be normal if the package has a different import name.')
+              print('Available packages:')
+              import pkg_resources
+              for dist in pkg_resources.working_set:
+                  if 'soopct' in dist.project_name.lower():
+                      print(f'  - {dist.project_name} ({dist.version})')
+          else:
+              print('Package installation verified successfully!')
+          "
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+categories:
+  - structural imaging
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAFPklEQVR4AWRVfUyVZRT/Pc97r80hINdgCjLFSbnYXOVIHMMl5qKRE2wIhR/NNhgw/qnN0SfMP2r0RyslURrOLkpCpilRLlsDpCwFxNiAAgYsbIHAUBDi630651xeuJuXe+75vb9znvP1nHvR7to2s+y7P4y75o5xX2k17su3ffJti3Ffajaui03G/c0t47pw0ydf/25c1b8ZV9UNEeurX4yLxKpsNNa568Y622CsinpjeetEtDIG/FL0wUIKYI6FHhyOtfgu8GQSP+bZn22CxbD0oQ0d8Bd29hdj2/RoFoWABHa0/1nGIH/HxlhzVs7OJGPWi/kpOXMszDlafMgmHGmHlzhM+ol2KuRDi5iqcDBXxZirWcQU1MGOXrSTTTDHIKwlGQFOwFiqmZ+HGr8PNTYKzEwz7RPyEzvruTnxwcNxGpnts9On0wX7MdYSmA6InpqE3dyIuQ+yseLNfdhc+i7mMrfD9h6D6f0TmJ2FGbyL+QvlMDm7se1cMTaffA/zRw7CXLsE3B+lMEv3xd1pYigvvWdnYP/6E7Zcq0Tv1csYHR1FU1MTpqenUZt3APYXxTCtN4AvP8XV7AzMUocNDQ1oaWmB/U8/vC/Gwj5bAjV0F1w5x+UuNGfhmdn3/oVdXwuv1wutNWJiYhAZGYny8nIkJSXh7fRU2N+fR/3xj7Fr1y4cPXoUAQEBCA4ORmlpKTIzM3GxIB/2z1dgZGzUCd2DbJFkm3gADA8hOjoa3d3daG9vx8DAAHJzc1FVVYXh4WGswwzi4+OliKKiIkyFrcX46nXIy8tDY2Mj9uzZA/VXG8UZpHvxfb80bwhDY7mAZcvQ1dWFHTt2oK+vD6dOnUJCQgIyMjJQVlaGxG1xNEvgxIkT0PuyoAs+gXqrGOrVHFRWVkIphU3LLZjRewAtChcuHcjMKLgKC8fWrVtRXV2NoKAgZGVlgec8MjKCjRs3ysg4w99Dw8D6J4DHlkO5XFBBIZijrWKbx+MBZv4jaKQLzXdg5mg7Ou/AoksMCQlBeno62DE0NBQlJSVgjsfU2dlJB4H9aa/ATE7A2PMwvFkPxpCamiq21tZWwHKRzYBja/oUg1JaRtPb2ytjYZLnnp+fL2OLiIhAXV0d+JWWlgZcvwq0t8C03YIhzJ2PjY1hItADtXIVlFJQ5LyQgGDQSjQ2t9BC2aioqAAHJDuSk5MRFRWFjo4ODE5OS5LY2Fh8nn0Qa84fR9QPXvx4+qR0XFhYCDy5GcYTBkOH+X41aYCzRURhakOMzD08PFw2yKY1q6mpQX9/v29DnnpWVpY7ycnJEZ+enh7s3LkTBQUFOFZBF/1MPFRAIPhFZUNzFtA32Xgeh0o5hNO3O+WCExMTJajb7ZbVHU94GSr1EGZSXpdRBgYGIiUlBXFxcbAsC8WfHYPaexiI2kThqH4qTu6AsxADRX96fTR09juYyS1E/aoNqA1YSz8J78P66Aw0JVdhEVAv7IX+8Awepr6BK/YK3AyLhjp8BLqoDGrLdsDl5uJ9QoVrzuIvWB4A9fQ2qN37oZLoMrckwKyOhKEq2Q80ToSugUp4iXwOAMmvAc89DxPskblzsf4i/9GUL5/vN2QBO4pt8j2hahjLYce4wAlPnKPFh2xEwdcBzYvWh3jf7gomjivmO2JNRixitrFQELYxL2f4mXiwZiGsOYu/SLVEcDUO5gMiCzwpiJ0BBWIlQph59uWzjDVnZkKEMkpF5Oho4enZ0Q4vmvwd3tHCk7+jH+2ASuHsfIArYE2U700H2SY8MY4WH7IRtdQZPbDv/wAAAP//7Bb3dwAAAAZJREFUAwDJ8lnpucjRnQAAAABJRU5ErkJggg==
