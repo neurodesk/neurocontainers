@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "soopct 0.0.0": {
+      "version": "20251219",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging"
+  ]
+}
