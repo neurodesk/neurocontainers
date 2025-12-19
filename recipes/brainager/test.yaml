@@ -1,7 +1,7 @@
 tests:
   #test if all packages are installed correctly. This should not give an error:
   - name: Test brainager
-    manual: manual
+    manual: false
     script: |
-      python3 brainager_segment.py chris_t1.nii.gz 
-      python3 predict_age.py chris_t1.nii.gz
+      brainager_segment.py /opt/brainageR/chris_t1.nii.gz 
+      predict_age.py --subjname chris_t1 /opt/brainageR/chris_t1

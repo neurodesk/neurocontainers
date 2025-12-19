@@ -10,7 +10,7 @@ architectures:
 build:
   kind: neurodocker
 
-  base-image: ubuntu:18.04
+  base-image: ubuntu:20.04
   pkg-manager: apt
 
   directives:
@@ -20,6 +20,16 @@ build:
         - ca-certificates
         - openjdk-8-jre
         - dbus-x11
+        - python3-pip
+        - git
+        - r-base
+        - build-essential
+        - gfortran
+        - libblas-dev
+        - liblapack-dev
+        - libxml2-dev
+        - libcurl4-openssl-dev
+        - libssl-dev
 
     - environment:
         MATLAB_VERSION: 2017b
@@ -56,29 +66,33 @@ build:
     
     - workdir: /opt
 
-    - install:
-        - python3-pip
-
     - run:
+        - git clone https://github.com/james-cole/brainageR
+        - rm -rf /opt/brainageR/.git
+        - rm -rf /opt/brainageR/templates
         - curl https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/brainager_neurodesk.zip -o brainager_neurodesk.zip
-        - unzip brainager_neurodesk.zip -d /opt/brainageR 
+        - unzip brainager_neurodesk.zip -d /opt/brainageR_chris
+        - mv /opt/brainageR_chris/* /opt/brainageR/ 
         - rm -f brainager_neurodesk.zip
 
+    - workdir: /opt/brainageR
     - run:
         - pip3 install osfclient
-        - osf -p azwmg clone
-        - mv azwmg/osfstorage/* /opt/brainageR
-
-    - environment:
-        LD_LIBRARY_PATH: /opt/mcr/v93/runtime/glnxa64:/opt/mcr/v93/bin/glnxa64:/opt/mcr/v93/sys/os/glnxa64:/opt/mcr/v93/sys/opengl/lib/glnxa64:/opt/mcr/v93/extern/bin/glnxa64
-
-    - install:
-        - r-base
+        - osf -p azwmg fetch pca_center.rds
+        - osf -p azwmg fetch pca_rotation.rds
+        - osf -p azwmg fetch pca_scale.rds
 
     - copy: dependencies.R /opt
+    - copy: predict_age_patched.py /opt/brainageR/predict_age.py
 
     - run:
         - Rscript /opt/dependencies.R
+        - chmod a+x /opt/brainageR/brainager_segment.py
+        - chmod a+x /opt/brainageR/predict_age.py
+
+    - environment:
+        LD_LIBRARY_PATH: /opt/mcr/v93/runtime/glnxa64:/opt/mcr/v93/bin/glnxa64:/opt/mcr/v93/sys/os/glnxa64:/opt/mcr/v93/sys/opengl/lib/glnxa64:/opt/mcr/v93/extern/bin/glnxa64
+        PATH: $PATH:/opt/brainageR
 
 deploy:
   bins:
@@ -94,7 +108,10 @@ readme: |-
 
   Example:
   ```
-  brainager.py ...
+      mkdir brainager_test
+      cp /opt/brainageR/chris_t1.nii.gz ~/brainager_test
+      brainager_segment.py ~/brainager_test/chris_t1.nii.gz 
+      predict_age.py --subjname chris_t1 ~/brainager_test/chris_t1
   ```
 
   To run container outside of this environment: ml brainager/{{ context.version }}
