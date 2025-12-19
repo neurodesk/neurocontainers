@@ -51,11 +51,13 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - install: git unzip
     - template:
         name: miniconda
         version: latest
         conda_install: python=3.13
-        pip_install: antspyx>=0.5.4 nibabel>=5.3.2 numpy>=2.3.0 scipy>=1.15.2 brainchop>=0.1.8 git
+        pip_install: antspyx>=0.5.4 nibabel>=5.3.2 numpy>=2.3.0 scipy>=1.15.2 brainchop>=0.1.8
+        install_path: /opt/miniconda
     - run:
         - git clone https://github.com/rordenlab/soop-ct.git
         - cd soop-ct
