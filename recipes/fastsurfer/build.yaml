@@ -73,10 +73,6 @@ build:
   base-image: deepmi/fastsurfer:cpu-v2.4.2
   pkg-manager: apt
   directives:
-    - deploy:
-        path: []
-        bins:
-          - /fastsurfer/run_fastsurfer.sh
     - template:
         name: freesurfer
         version: 7.4.1
@@ -87,11 +83,25 @@ build:
           53024
            *CgH0liqb0e9g
            FSVt2Z862iDJk
-    - run:
-        - mkdir -p /opt/freesurfer
-        - cp license.txt /opt/freesurfer/license.txt
+    - deploy:
+        path:
+          - /opt/freesurfer-{{ context.version }}/bin/
+        bins: []
     - environment:
-        FS_LICENSE: /opt/freesurfer/license.txt
+        FREESURFER: /opt/freesurfer-{{ context.version }}
+    - run:
+        - ln -s /usr/local/freesurfer/{{ context.version }}/* /usr/local/freesurfer/
+        - ln -s /usr/local/freesurfer/{{ context.version }}/* /opt/freesurfer-{{ context.version }}
+    - workdir: /opt/freesurfer-{{ context.version }}/bin/
+    - copy:
+        - license.txt
+        - /opt/freesurfer-{{ context.version }}/license.txt
+    - environment:
+        FS_LICENSE: /opt/freesurfer-{{ context.version }}/license.txt
+    - deploy:
+        path: []
+        bins:
+          - /fastsurfer/run_fastsurfer.sh
 categories:
   - structural imaging
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEcklEQVR4AWRTXUieZRi+nufT3GTYIulnNraB2TaXlOaoUPCgDjwJKluxwINpaiDWcEvUg36wcIRpeO6B/bGWlv3RUdQyquXSNjAUZ1IZjmTRsrH593Rd9/c9n9+2j+967/u57v/7eV+f/dnZcMOnZ0L2Jz+H7I8nQvbIeBIf/RSyPzwdsobHQvbQjyHrg1NJnPghZL3/fcg6/p0h8d63IYtIvDsaEu98ExJvnwyJt74OicGvDN6FAP0cHwIFIE7gIXKS5pviaTI/8fKXzXQzbDx8YEAm5JyJsL7OY0iDiiWOMjNWOugfbdK9qqq6SOmS6fosLk4QF6X50GYcZeQtj8gM+NihgtI6u4i6upKubtI6k4bVFYR//4FsQtpOm+nKQd1bMSoQeEh3E/UUz6Otxuzk3IW/gLOngJVlM8VHnEJ+0r0lZoDJ5StY+/w4Vh4vx0rNfsPqgfthePIBrD71INY667D+xQmsPvcE1vpfwvqxVuDP36y4dc5cNmlKJgvE8iRVtbW1lfU2LjYGLC0tMREv/dcpjI2Nmc/T5SUIv58D1tYsS+ycRkj3CrbKqZ0FujknE1BVVYXKyso0KioqgOVl5M7PorS0lDkCWlpaEKbOIFxagu7CwEZBSLe3iDmtmrqXQWdhdHQUmZiYmACuXMbhgwfoFjA4OIiysjLkzE4Ci+dh8QpkcjpIg1cVTZEEuUCk/v39/chEYWEhkLcV9fX1GB8fR1dXF7z3ePaRaoS5KYTVVa6QCWIBSpsguRDYFMj41dXVoaGhIY2SkhJszwrYsWMH+vr6MDMzg8XFRTQ2NgJck/vvYrJAzKEC1jn3b/dAIo4mn9zcXOTk5KQxPDyMF9tekAkDAwO8jmXk5+ejqKgIWxfmEBb+gDZiuZhTuT2U1EL4yNR51N/X1MMfOQZ/6Ahwxy7U1NRgenoabW1thvb2djjncPSZQwizv8ClvgttRUgWUOIIcIfKLOTdBNxZDLe3FMjZjIqdBcjLy0NHRwd6e3sN3d3dWFhYQG1tra0pXPybPadecU5x3ZesvBpNMg29gtxxZ2enrWXoy5PwbW8g8eYQ3EOPYmRkBAUFBdh2YR6Yn4NjYsXaBLYzdq+kUe/p6bGx1/jxhMAP6/w8wuRpVFdX2324PfcCt2xD2LQZ2LUbTU1N5j8/T79zkwiXL8HugXntLeJMcDy4RALYfQ/80ddhe2/qgM+/HS53C/zBZvjDr8E9/yrcw48BW/IAn4C7q4Qc+eZX4JpfhtvDdTKXJlBeH3hIg5flCnbC3V1O7OfuyxBuvhXhtu3AvvsI8vvKAV42HLer2C03WlMoLgP2EoXFwKZcKLngrXMrB5sC1/wcz/KRs3RJUsk/C4gTRERpPrSJS06gSyHiJLa/eE5JBemO5HOVnYnEGxd1SYGxnFN1NmDd8qhuoq7khhRPAbNLYSIJA3Xx8lWsdK/KIgysqA4zYTwDo8y0WecZNvlcZaft+gnYiqrLWR1Ikkr+GSCb8WSiNB/aSG1MxoN8/wcAAP///SCt6wAAAAZJREFUAwAFW1DpgjhdhQAAAABJRU5ErkJggg==
