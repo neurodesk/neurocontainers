@@ -73,9 +73,6 @@ build:
   base-image: deepmi/fastsurfer:cpu-v2.4.2
   pkg-manager: apt
   directives:
-    - template:
-        name: freesurfer
-        version: 7.4.1
     - file:
         name: license.txt
         contents: |-
@@ -90,8 +87,8 @@ build:
     - environment:
         FREESURFER: /opt/freesurfer-{{ context.version }}
     - run:
-        - ln -s /usr/local/freesurfer/{{ context.version }}/* /usr/local/freesurfer/
-        - ln -s /usr/local/freesurfer/{{ context.version }}/* /opt/freesurfer-{{ context.version }}
+        - ln -s /opt/freesurfer/{{ context.version }}/* /opt/freesurfer/
+        - ln -s /opt/freesurfer/{{ context.version }}/* /opt/freesurfer-{{ context.version }}
     - workdir: /opt/freesurfer-{{ context.version }}/bin/
     - copy:
         - license.txt
