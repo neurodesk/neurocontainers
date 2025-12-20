@@ -1,0 +1,83 @@
+name: braid
+version: 1.0.0
+copyright:
+  - license: CC-BY-NC-4.0
+    url: https://github.com/MASILab/BRAID/blob/main/README.md
+architectures:
+  - x86_64
+readme: |
+  ----------------------------------
+  ## BRAID/{{ context.version }} ##
+  BRAID: Brain Age Identification from Diffusion MRI
+
+  BRAID estimates brain age from diffusion MRI. Unlike its counterparts, which typically use anatomical features (such as volume and shape of brain regions) to assist in the estimation, BRAID deliberately destroys anatomical information. Through non-rigid transformations, BRAID minimizes anatomical information to better focus on subtle microstructural changes that predate apparent anatomical changes in neurodegeneration.
+
+  Example usage:
+  ```
+  braid_one_sample_inference -d {path to dwi} -v {path to bval} -c {path to bvec} -t {path to t1 image} -tm {path to t1 brain segmentation or brain mask} -m ./data/template/MNI_152.nii.gz -w /opt/braid-v1.0 -i -o {path to the output directory}
+  ```
+
+  Model weights are included at /opt/braid-v1.0
+
+  More documentation: https://github.com/MASILab/BRAID/blob/main/README.md
+
+  Citations:
+  - Gao et al. "Brain age identification from diffusion MRI synergistically predicts neurodegenerative disease." Imaging Neuroscience (2025) https://doi.org/10.1162/imag_a_00552
+  - Gao et al. "Predicting age from white matter diffusivity with residual learning." Medical Imaging 2024: Image Processing. (2024) https://doi.org/10.1117/12.3006525
+
+  To run container outside of this environment: ml BRAID/{{ context.version }}
+
+  License: CC BY-NC 4.0 https://creativecommons.org/licenses/by-nc/4.0/
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+  directives:
+    - deploy:
+        path:
+          - /opt/fsl-6.0.4/bin
+          - /opt/mrtrix3-3.0.3/bin
+          - /opt/ants-2.3.1/bin
+          - /opt/convert3d-1.0.0/bin
+        bins:
+          - braid_one_sample_inference
+    - install:
+        - git
+        - git-lfs
+        - curl
+        - wget
+        - ca-certificates
+        - python3
+        - python3-pip
+        - python3-venv
+        - python3-dev
+        - build-essential
+    - template:
+        name: fsl
+        version: 6.0.4
+    - template:
+        name: mrtrix3
+        version: 3.0.3
+        method: source
+        build_processes: "1"
+    - template:
+        name: convert3d
+        version: 1.0.0
+    - template:
+        name: ants
+        version: 2.3.1
+        method: source
+        make_opts: "-j4"
+    - workdir: /opt
+    - run:
+        - git clone https://github.com/MASILab/BRAID.git
+        - cd BRAID
+        - pip3 install .
+    - run:
+        - git lfs install
+        - git clone https://huggingface.co/chenyugoal/braid-v1.0 /opt/braid-v1.0
+categories:
+  - diffusion imaging
+  - machine learning
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAACu0lEQVRIS+2VUUhTYRTH//cON6ZzbTibm47mjCYNeqjmfGibDBsR4mLEHhLDoAenBItg80HwwR5EqOihxyBousYWJAWF2cCHNBfkcKsWhZVtstxcIWM40i3vlV25qbi3Xnbfvnv+3/1953/O+S6hen25gBKfSpIH+8O7yK6VuGFLRpQBB5nFsig7G0PuwyprD3mIB65KBP7JOpDfszh2R40/uR2JgFcLqagZqsN6EASxi8cCpG7PYe3xpz0PxTsugcSqQfzm9J5xufgEetp8EFcpWPFdAO70KpLJJCNKp9OYnJyE3W7HuoTE+pc0IpEINBoNrUmlUpiamkJ/fz8EZBOunWMfYF+AUqlEPB5HfX09PB4PgsEgHA4H/VEKMDo6ivHxcSgUCjoeCoXQ29uLAct71FQ3MgfcF0BtjMVitNDpdKK9vR1ms5kBjIyMwO1202uXywWr1QqdToerpgmo5WdLB8jlcni9XgQCAQwNDe0CNDQ0wOfzYXFxEV1dXbjR8RZ1om37qIfOIPcxhcyrb1if/4nqVQLJlZ0aUKJwOAyTyYR09jfy2Q1WDag4ZZ/FYgE/34Q+88vSily0SCgUYnBwkAZotVoUCgUaQFk0NjaGlpYW+P1+dHZ2IvF1A47zMyBJTukWUUq1Wo1oNAqZTIZEIsEAHnn82NzMwXHdQddAr9fjYus96I5eORhQ7KJiBt3d3ZBKpcjn8wzg+ZMZKGtbEV2ZwNLSEmw2G969+QyXJQwOWbFTgyKOGrR/5yCTydAtSHXS7NwskN9uU8oiCtDT5sWtZ1oMDw/DYDDAaDSysih5kjkSPsQdzUg9mGfSrxGoMHAhgvsBK6LLL5j3oq1pHrBE6CwOvIuIqgpwjwjBPy0DZznHuosquWKcae7D8q8FRH48ZXXPqcZL9MCV/wcsW/ZalC36/xb9BbtdmsgGyO9+AAAAAElFTkSuQmCC
