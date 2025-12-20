@@ -108,7 +108,7 @@ readme: |-
 
   Example:
   ```
-      mkdir -p brainager_test
+      mkdir -p ~/brainager_test
       cp /opt/brainageR/chris_t1.nii.gz ~/brainager_test
       cd ~/brainager_test
       brainager_segment.py chris_t1.nii.gz 
