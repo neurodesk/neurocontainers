@@ -1,5 +1,5 @@
 name: brainager
-version: 1.0.0
+version: 2.1.0
 
 copyright:
   - license: LGPL-3.0
@@ -108,10 +108,11 @@ readme: |-
 
   Example:
   ```
-      mkdir brainager_test
+      mkdir -p brainager_test
       cp /opt/brainageR/chris_t1.nii.gz ~/brainager_test
-      brainager_segment.py ~/brainager_test/chris_t1.nii.gz 
-      predict_age.py --subjname chris_t1 ~/brainager_test/chris_t1
+      cd ~/brainager_test
+      brainager_segment.py chris_t1.nii.gz 
+      predict_age.py --subjname chris_t1 ./chris_t1
   ```
 
   To run container outside of this environment: ml brainager/{{ context.version }}

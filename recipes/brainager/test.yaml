@@ -3,5 +3,8 @@ tests:
   - name: Test brainager
     manual: false
     script: |
-      brainager_segment.py /opt/brainageR/chris_t1.nii.gz 
-      predict_age.py --subjname chris_t1 /opt/brainageR/chris_t1
+      mkdir -p brainager_test
+      cp /opt/brainageR/chris_t1.nii.gz ~/brainager_test
+      cd ~/brainager_test
+      brainager_segment.py chris_t1.nii.gz 
+      predict_age.py --subjname chris_t1 ./chris_t1
