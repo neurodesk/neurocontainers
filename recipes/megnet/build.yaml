@@ -1,12 +1,12 @@
 name: megnet
-version: 1.0.0
+version: 1.0.1
 architectures:
   - x86_64
 structured_readme:
-  description: MEGNET pipelines for MEG data analysis
+  description: MEGNET pipelines for MEG (MEGIN and KIT) data analysis
   example: python xxx.py config_file
-  documentation: https://github.com/SwinburneNeuroimaging/MEGNET
-  citation: ''
+  documentation: https://github.com/miao-cao/MEGNET_pipeline.git
+  citation: ""
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -18,11 +18,11 @@ build:
         install_path: /opt/miniconda
         conda_install: python jupyterlab mne mne-bids mne-connectivity hdf5storage ipympl nb_conda_kernels pydicom seaborn openpyxl pip
         pip_install: tabulate pyyaml easydict
-        conda_opts: '-C conda-forge'
+        conda_opts: "-C conda-forge"
+        installed: false
     - install: git
     - run:
-        - git clone https://github.com/SwinburneNeuroimaging/MEGNET.git
-        - python setup.py
+        - git clone https://github.com/miao-cao/MEGNET_pipeline.git
     - deploy:
         path: []
         bins:
@@ -32,25 +32,26 @@ categories:
   - electrophysiology
 readme: |-
   ----------------------------------
-  ## megnet/1.0.0 ##
+  ## megnet/{{ context.version }} ##
 
-  MEGNET pipelines for MEG data analysis
+  MEGNET pipelines for MEG (MEGIN and KIT) data analysis
 
   Example:
   ```
   python xxx.py config_file
   ```
 
-  More documentation can be found here: https://github.com/SwinburneNeuroimaging/MEGNET
+  More documentation can be found here: https://github.com/miao-cao/MEGNET_pipeline.git
 
   Citation:
   ```
 
   ```
 
-  To run container outside of this environment: ml megnet/1.0.0
+  To run container outside of this environment: ml megnet/{{ context.version }}
 
   ----------------------------------
 copyright:
   - license: MIT
     url: https://opensource.org/license/mit/
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAGKADAAQAAAABAAAAGAAAAADiNXWtAAAEX0lEQVRIDaVVTUxdRRg987i8pn0axcQGjYRXXWjSTTfCypCwY8MGCZGVcUdggS5MpJsuJLqgCcSFGzYuXAiBEJo2RklEYqQsiK1hofYFYhtLHrVA9cVa3rsznvPNvdhnG11438/MfHO+c7755pu57qnPLwSEAPDb+G4bybmy9X3wcDJzLrgQXOqddw7pZiUk5844L5QPDs4HQR08gne0sqVfRoJCJBeJD41r20jv3JOnmAWSBERkPr/eQ3r959gnm7M5sKF/Rs6oNDA3OkqAPIQwJAPWv/3B8LIzNBc8J7xAAfX1G8eRmR//AueMMxoQUvJwIaAf1xUKUrE0SJifBgVIGKPSAtjzBSJIlG78mEUmdQ+fRmH5GSExypclQGzeO7lSlesTGXnTrZtoVPdtSRoj5Z9SdOe3kG7dijALSitn9EYuIY0JjAZycY5aiUhy9sAc66lf2sSJt3oVAikkzPRc2dTCEfZ/R7hbC0HCmhVAXJZ3RcTB00/IyMqg3pOXzqtIcP+jy6h/eV0c9hTKz+LkxTeN/P57n8Lf2M1m/rtxZ06jeGGACw/cZLIrBIXS19cnXezukuzmXfjtKtJf9o18Z2fH5vr7+zExMWF985T3Q7/Ozk5GEG3KTALteva0trZar729HT09Pfjm6k9wJxJ0dXWhXC7bnDA5bmRkBPV6PfOOzeHhIdBWNFEKuUSnRWlrQnEwNDSEr98/DxQTDI2++89pG8/OzqLRaDwyV3jueW2P5SVhhrQFNsqRGxsbGBgYwNjYGNI0xeDgIGTr7u7OIdaOj4+zOlkq2VOpVLC8vIxC14sk18nmClSBPE2xWjLg/Pw8pqam0Nvbi1qtho6ODszMzDwiMDk52SSwvr5uAspJi2UlgCvISzGPA1hdXcXe3p6lSQIHBwdYWVn5G5D1SqXSY1OkrHATbK8TbQFPdJOz0rKwsIDh4WHbxKWlJRwdHTVh/nUQue0kc5MpRJGmTeBobm4OqhI9StnjntHRUdujh+cWFxdx+8o1JD0v0+yQqIbzJy85tWtra6hWqygWi5aevEw1l+Omp6dz1+NWxXC7whtBvMrVqfl3VKY4+vgLNL7aOgb+r05bCS0fDJoG7yKJBbS+3g33jO4QPQEtr72CB+Of2Kj44RtIr1bscjN87QFQKtqcsVhPpzeaXNspdkRMl5Ofvc0yjZc2Ebb7jrVt9+v3t1z448/gXn2JYFpY8jo19u6gt86ATqgRx8vuuG9pIV2SUcdKItJwWUTu7AuWRnnF6BSJxSNB7aHeExaU3gPqSVytXUG8Y/lGy2qU129OYi5GRIsu4lxAAKEYudLqdGWrR7PUjJzcetHQzpYnmf88axHAS552XfNKR/Qy72izVYjXvCVFN1uBiSgsfdTya6S8riMBoTTEtShiCWaRWd/WIIvMZLF7hulSmswQz6qRa6OyvWGX72Ti9c01FSEVFKmIbEp5znCKTfvAsa1BgVq0pmMhGFQhqSr+AlQXQoKZcMcBAAAAAElFTkSuQmCC
