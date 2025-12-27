@@ -1,5 +1,5 @@
 name: fmriprep
-version: 25.1.3
+version: 25.2.3
 copyright:
   - license: Apache-2.0
     url: https://github.com/nipreps/fmriprep/blob/master/LICENSE
@@ -34,3 +34,4 @@ readme: |-
 categories:
   - functional imaging
   - workflows
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAACj0lEQVRIS+2VUWhSYRTH/3Y3tWwzhNpsw1jEalBtFDopAl+EHjYiRhi9SExsogWGDppPsb0ke2mZxAJXIx+slwYJJj1YD1kxxlSIYuFM0KWVMdHt0lWX98ZuyZTdZW/1vdyHc7/z+87/f77z8Qb1y2vguPy+s+i+8gTfVqpveP9Ii4Pn7lcEeVsBuKc70Hv5GQpNhzYQsh9fYvHpNXTrn9cHaD8xiBbV9Q2ADzMm5FOR+gEQCHHs6gJ4PB4LKVEkXt+QYceertqAQmEF4dDNquKWShTSqVl8Tr9BobCKVsUlSBV6JmE2/gqpWRfS8w/Ab94Lae8Q2k9Z2DysByT5Fe7p/RztBlqOX8SBM7cRmTqN7OILdh8hFEM5slQb4HA4YDQaK0BWqxXj4+NYj2m1WrgfzjByzE30YGxsDDabDWazGbfuTG0OEIlEMBgMLISiKBSLRQagVqsRj8eZ7/bdXSC/vEM0GgX9j9Pp5AYQCoXQ6XQb5KIBBEGgr68PSqUSiUQCKpUKo6OjyOfz8Pl89QNoKkmSSKfTsNvtcLlcCAaDGBgY4A6gT5/L5dgKOjs7kclkGInoNTk5CbfbDYVCgVgsBjru8Xi4AyQSCYaHh1lAMplEqVRiASaTCaFQCH6/HzKZDBqNhkm+ZYkOHzGikd9U7v0VREITFQCLxcJI1N/fD6/X+2eA8xfeQrSzraz5zzuyLhFdgVgshlwuRyAQKB+g8PcBotajyH8KQyTtQX5pnjvg9978VUGmXEFHRdvKrVEsPB6CTDWC8F3V5je52iyiPeDzmxkP6DnVQADLuwisUkDbSTOK33NYK1JIzd1jAdsaBNVnEZchJBAA8X2NNR+cajm29OD8B2xqw78p0Q934M/Yyes09AAAAABJRU5ErkJggg==
