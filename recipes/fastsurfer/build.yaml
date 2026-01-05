@@ -14,12 +14,15 @@ structured_readme:
     the segmentation sub-pipeline (seg) employs advanced deep learning networks for fast, accurate segmentation and volumetric calculation of the whole brain and selected substructures.
 
     the surface sub-pipeline (recon-surf) reconstructs cortical surfaces, maps cortical labels and performs a traditional point-wise and ROI thickness analysis.
+
+    FastSurfer also has a dedicated pipeline to quantify longitudinal changes in T1-weighted MRI. FastSurfer’s longitudinal pipeline outperforms independent (cross-sectional) processing of individual MRIs across time in both FastSurfer and FreeSurfer, as well as even the longitudinal pipeline in FreeSurfer.
   example: |-
     # Example usage
 
     ```bash
     # Run the containerized tool (assuming you are already inside the container)
     ./run_fastsurfer.sh --help
+    ./long_fastsurfer.sh --help
     ```
   documentation: https://deep-mi.org/FastSurfer/
   citation: |-
@@ -30,6 +33,8 @@ structured_readme:
     Faber J*, Kuegler D*, Bahrami E*, et al. (*co-first). CerebNet: A fast and reliable deep-learning pipeline for detailed cerebellum sub-segmentation. NeuroImage 264 (2022), 119703. https://doi.org/10.1016/j.neuroimage.2022.119703⁠
 
     Estrada S, Kügler D, Bahrami E, et al. FastSurfer-HypVINN: Automated sub-segmentation of the hypothalamus and adjacent structures on high-resolutional brain MRI. Imaging Neuroscience (2023), 1:1-32. https://doi.org/10.1162/imag_a_00034⁠
+
+    Reuter M, Schmansky NJ, Rosas HD, Fischl B. Within-subject template estimation for unbiased longitudinal image analysis, NeuroImage 61:4 (2012). https://doi.org/10.1016/j.neuroimage.2012.02.084
 readme: |-
   ----------------------------------
   ## fastsurfer/{{ context.version }} ##
@@ -42,6 +47,8 @@ readme: |-
 
   the surface sub-pipeline (recon-surf) reconstructs cortical surfaces, maps cortical labels and performs a traditional point-wise and ROI thickness analysis.
 
+  FastSurfer also has a dedicated pipeline to quantify longitudinal changes in T1-weighted MRI. FastSurfer’s longitudinal pipeline outperforms independent (cross-sectional) processing of individual MRIs across time in both FastSurfer and FreeSurfer, as well as even the longitudinal pipeline in FreeSurfer.
+
   Example:
   ```
   # Example usage
@@ -49,6 +56,7 @@ readme: |-
   ```bash
   # Run the containerized tool (assuming you are already inside the container)
   ./run_fastsurfer.sh --help
+  ./long_fastsurfer.sh --help
   ```
   ```
 
@@ -63,6 +71,8 @@ readme: |-
   Faber J*, Kuegler D*, Bahrami E*, et al. (*co-first). CerebNet: A fast and reliable deep-learning pipeline for detailed cerebellum sub-segmentation. NeuroImage 264 (2022), 119703. https://doi.org/10.1016/j.neuroimage.2022.119703⁠
 
   Estrada S, Kügler D, Bahrami E, et al. FastSurfer-HypVINN: Automated sub-segmentation of the hypothalamus and adjacent structures on high-resolutional brain MRI. Imaging Neuroscience (2023), 1:1-32. https://doi.org/10.1162/imag_a_00034⁠
+
+  Reuter M, Schmansky NJ, Rosas HD, Fischl B. Within-subject template estimation for unbiased longitudinal image analysis, NeuroImage 61:4 (2012). https://doi.org/10.1016/j.neuroimage.2012.02.084
   ```
 
   To run container outside of this environment: ml fastsurfer/{{ context.version }}
@@ -99,6 +109,7 @@ build:
         path: []
         bins:
           - /fastsurfer/run_fastsurfer.sh
+          - /fastsurfer/long_fastsurfer.sh
 categories:
   - structural imaging
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEcklEQVR4AWRTXUieZRi+nufT3GTYIulnNraB2TaXlOaoUPCgDjwJKluxwINpaiDWcEvUg36wcIRpeO6B/bGWlv3RUdQyquXSNjAUZ1IZjmTRsrH593Rd9/c9n9+2j+967/u57v/7eV+f/dnZcMOnZ0L2Jz+H7I8nQvbIeBIf/RSyPzwdsobHQvbQjyHrg1NJnPghZL3/fcg6/p0h8d63IYtIvDsaEu98ExJvnwyJt74OicGvDN6FAP0cHwIFIE7gIXKS5pviaTI/8fKXzXQzbDx8YEAm5JyJsL7OY0iDiiWOMjNWOugfbdK9qqq6SOmS6fosLk4QF6X50GYcZeQtj8gM+NihgtI6u4i6upKubtI6k4bVFYR//4FsQtpOm+nKQd1bMSoQeEh3E/UUz6Otxuzk3IW/gLOngJVlM8VHnEJ+0r0lZoDJ5StY+/w4Vh4vx0rNfsPqgfthePIBrD71INY667D+xQmsPvcE1vpfwvqxVuDP36y4dc5cNmlKJgvE8iRVtbW1lfU2LjYGLC0tMREv/dcpjI2Nmc/T5SUIv58D1tYsS+ycRkj3CrbKqZ0FujknE1BVVYXKyso0KioqgOVl5M7PorS0lDkCWlpaEKbOIFxagu7CwEZBSLe3iDmtmrqXQWdhdHQUmZiYmACuXMbhgwfoFjA4OIiysjLkzE4Ci+dh8QpkcjpIg1cVTZEEuUCk/v39/chEYWEhkLcV9fX1GB8fR1dXF7z3ePaRaoS5KYTVVa6QCWIBSpsguRDYFMj41dXVoaGhIY2SkhJszwrYsWMH+vr6MDMzg8XFRTQ2NgJck/vvYrJAzKEC1jn3b/dAIo4mn9zcXOTk5KQxPDyMF9tekAkDAwO8jmXk5+ejqKgIWxfmEBb+gDZiuZhTuT2U1EL4yNR51N/X1MMfOQZ/6Ahwxy7U1NRgenoabW1thvb2djjncPSZQwizv8ClvgttRUgWUOIIcIfKLOTdBNxZDLe3FMjZjIqdBcjLy0NHRwd6e3sN3d3dWFhYQG1tra0pXPybPadecU5x3ZesvBpNMg29gtxxZ2enrWXoy5PwbW8g8eYQ3EOPYmRkBAUFBdh2YR6Yn4NjYsXaBLYzdq+kUe/p6bGx1/jxhMAP6/w8wuRpVFdX2324PfcCt2xD2LQZ2LUbTU1N5j8/T79zkwiXL8HugXntLeJMcDy4RALYfQ/80ddhe2/qgM+/HS53C/zBZvjDr8E9/yrcw48BW/IAn4C7q4Qc+eZX4JpfhtvDdTKXJlBeH3hIg5flCnbC3V1O7OfuyxBuvhXhtu3AvvsI8vvKAV42HLer2C03WlMoLgP2EoXFwKZcKLngrXMrB5sC1/wcz/KRs3RJUsk/C4gTRERpPrSJS06gSyHiJLa/eE5JBemO5HOVnYnEGxd1SYGxnFN1NmDd8qhuoq7khhRPAbNLYSIJA3Xx8lWsdK/KIgysqA4zYTwDo8y0WecZNvlcZaft+gnYiqrLWR1Ikkr+GSCb8WSiNB/aSG1MxoN8/wcAAP///SCt6wAAAAZJREFUAwAFW1DpgjhdhQAAAABJRU5ErkJggg==
