@@ -1,0 +1,18 @@
+{
+  "apps": {
+    "freesurfer 6.0.1": {
+      "version": "20260107",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "freeviewGUI-freesurfer 6.0.1": {
+      "version": "20260107",
+      "exec": "freeview",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "structural imaging"
+  ]
+}
