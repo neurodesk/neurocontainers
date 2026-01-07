@@ -549,7 +549,12 @@ jobs:
           fi
 
       - name: Upload to AWS S3
-        run: aws s3 cp /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg s3://neurocontainers/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+        run: |
+          aws s3 cp /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg s3://neurocontainers/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          if ! aws s3 ls s3://neurocontainers/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg; then
+            echo "::error::File verification failed. The file was not found in S3."
+            exit 1
+          fi
 
   create-pr:
     needs: [config, build-image, push-dockerhub, build-simg, upload-nectar, upload-s3]
