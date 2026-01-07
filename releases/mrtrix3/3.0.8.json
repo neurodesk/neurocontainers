@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "mrtrix3 3.0.8": {
+      "version": "20260107",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "mrviewGUI-mrtrix3 3.0.8": {
+      "version": "20260107",
+      "exec": "mrview",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ]
+}
