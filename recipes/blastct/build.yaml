@@ -64,12 +64,13 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - install: git
     - template:
         name: miniconda
         version: latest
         conda_install: python=3.13
-        pip_install: scipy numpy pandas SimpleITK==1.2.4 torch>=1.9
-    - install: git
+        pip_install: scipy numpy pandas SimpleITK==1.2.4 "torch>=1.9"
+        install_path: /opt/miniconda
     - run:
         - pip install git+https://github.com/biomedia-mira/blast-ct.git
     - deploy:
