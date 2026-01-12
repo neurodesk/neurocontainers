@@ -68,7 +68,8 @@ build:
         name: miniconda
         version: latest
         conda_install: python=3.13
-        pip_install: git+https://github.com/biomedia-mira/blast-ct scipy numpy pandas SimpleITK==1.2.4 torch>=1.9 git
+        pip_install: scipy numpy pandas SimpleITK==1.2.4 torch>=1.9
+    - install: git
     - run:
         - pip install git+https://github.com/biomedia-mira/blast-ct.git
     - deploy:
