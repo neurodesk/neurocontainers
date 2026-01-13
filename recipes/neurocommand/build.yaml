@@ -27,7 +27,7 @@ build:
     - environment:
         DEBIAN_FRONTEND: noninteractive
 
-    # Install system packages: CVMFS deps, lmod, datalad, apptainer deps
+    # Install system packages: CVMFS deps, lmod, apptainer deps
     - install:
         - ca-certificates
         - curl
@@ -47,7 +47,6 @@ build:
         - lua-posix
         - lua-term
         - lua5.2
-        - datalad
         - git
         - git-annex
         - tree
@@ -76,7 +75,7 @@ build:
         name: miniconda
         version: latest
         install_path: /opt/miniconda
-        conda_install: python=3.12
+        conda_install: python=3.12 datalad
         pip_install: pandas nilearn matplotlib nipype osfclient lmod
 
     # Configure CVMFS - create directory structure
