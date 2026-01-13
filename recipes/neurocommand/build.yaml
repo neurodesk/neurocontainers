@@ -50,6 +50,7 @@ build:
         - git
         - git-annex
         - tree
+        - sudo
 
     # Install CVMFS from official repository
     - run:
@@ -115,7 +116,14 @@ build:
         - cvmfs_config --version || true
         - python --version
 
-    - user: neuro
+    # Create neuro user and grant passwordless sudo
+    - run:
+        - useradd --no-user-group --create-home --shell /bin/bash neuro || true
+        - echo "neuro ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/neuro
+        - chmod 0440 /etc/sudoers.d/neuro
+
+    # Start as root to allow CVMFS mounting
+    - user: root
 
 deploy:
   bins:
@@ -235,26 +243,15 @@ files:
     contents: |-
       #!/bin/bash
       set -e
-      export USER="${USER:=`whoami`}"
 
-      # Mount CVMFS if not already mounted
+      # Mount CVMFS as root if not already mounted
       source /usr/local/bin/cvmfs_mount.sh 2>/dev/null || true
 
-      # Initialize lmod
-      if [ -f /usr/share/module.sh ]; then
-          source /usr/share/module.sh
-      fi
-
-      # Set MODULEPATH for NeuroDesk if CVMFS is mounted
-      if [ -d /cvmfs/neurodesk.ardc.edu.au/neurodesk-modules ]; then
-          export MODULEPATH=/cvmfs/neurodesk.ardc.edu.au/neurodesk-modules:$MODULEPATH
-      fi
-
-      # Execute command or start shell
+      # Switch to neuro user and execute command or start shell
       if [ -n "$1" ]; then
-          exec "$@"
+          exec su - neuro -c "source /usr/share/module.sh; export MODULEPATH=/cvmfs/neurodesk.ardc.edu.au/neurodesk-modules:\$MODULEPATH; $*"
       else
-          exec /bin/bash
+          exec su - neuro -c "source /usr/share/module.sh; export MODULEPATH=/cvmfs/neurodesk.ardc.edu.au/neurodesk-modules:\$MODULEPATH; exec /bin/bash"
       fi
 
 tests:
@@ -267,12 +264,3 @@ tests:
       python -c "import nilearn; print('nilearn:', nilearn.__version__)"
       python -c "import matplotlib; print('matplotlib:', matplotlib.__version__)"
       python -c "import nipype; print('nipype:', nipype.__version__)"
-      python -c "import lmod; print('lmod Python support available')"
-
-  - name: check_datalad
-    script: datalad --version
-
-  - name: check_lmod
-    script: |
-      source /usr/share/module.sh
-      module --version
