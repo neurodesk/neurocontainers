@@ -76,7 +76,7 @@ build:
         version: latest
         install_path: /opt/miniconda
         conda_install: python=3.12 datalad
-        pip_install: pandas nilearn matplotlib nipype osfclient lmod
+        pip_install: pandas nilearn matplotlib nipype osfclient
 
     # Configure CVMFS - create directory structure
     - run:
@@ -154,7 +154,7 @@ readme: |-
 
   **Included Tools:**
   - Apptainer/Singularity container runtime
-  - lmod module system (with Python support)
+  - lmod module system
   - DataLad for data management
   - Python with: pandas, nilearn, matplotlib, nipype, osfclient
 
