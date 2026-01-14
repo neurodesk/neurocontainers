@@ -647,7 +647,7 @@ jobs:
 
         Or, for testing directly with Apptainer/Singularity:
         \`\`\`bash
-        curl -X GET https://neurocontainers.neurodesk.org/${IMAGENAME}_${BUILDDATE}.simg -O
+        curl -X GET https://neurocontainers.s3.us-east-2.amazonaws.com/${IMAGENAME}_${BUILDDATE}.simg -O
         singularity shell --overlay /tmp/apptainer_overlay ${IMAGENAME}_${BUILDDATE}.simg
         \`\`\`
 
@@ -682,4 +682,5 @@ jobs:
         echo "The container has been successfully build. To test the container, run this:" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
         echo "bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE" >> $GITHUB_STEP_SUMMARY
+
 
