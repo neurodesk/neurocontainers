@@ -54,9 +54,7 @@ readme: |-
   # Example usage
 
   ```bash
-  # Run the containerized tool (assuming you are already inside the container)
-  ./run_fastsurfer.sh --help
-  ./long_fastsurfer.sh --help
+  run_fastsurfer.sh --sid <sid> --sd <sdir> --t1 <t1_input> --fs_license /opt/license.txt
   ```
   ```
 
@@ -95,6 +93,8 @@ build:
         - /opt/license.txt
     - environment:
         FS_LICENSE: /opt/license.txt
+    - install:
+        - wget
     - deploy:
         path: []
         bins:
