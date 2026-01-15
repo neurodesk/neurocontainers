@@ -80,7 +80,7 @@ readme: |-
   ----------------------------------
 build:
   kind: neurodocker
-  base-image: deepmi/fastsurfer:cpu-v2.4.2
+  base-image: deepmi/fastsurfer:cpu-v{{ context.version }}
   pkg-manager: apt
   directives:
     - file:
@@ -90,21 +90,11 @@ build:
           53024
            *CgH0liqb0e9g
            FSVt2Z862iDJk
-    - deploy:
-        path:
-          - /opt/freesurfer-{{ context.version }}/bin/
-        bins: []
-    - environment:
-        FREESURFER: /opt/freesurfer-{{ context.version }}
-    - run:
-        - ln -s /opt/freesurfer/{{ context.version }}/* /opt/freesurfer/
-        - ln -s /opt/freesurfer/{{ context.version }}/* /opt/freesurfer-{{ context.version }}
-    - workdir: /opt/freesurfer-{{ context.version }}/bin/
     - copy:
         - license.txt
-        - /opt/freesurfer-{{ context.version }}/license.txt
+        - /opt/license.txt
     - environment:
-        FS_LICENSE: /opt/freesurfer-{{ context.version }}/license.txt
+        FS_LICENSE: /opt/license.txt
     - deploy:
         path: []
         bins:
