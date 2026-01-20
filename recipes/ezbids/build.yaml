@@ -216,10 +216,10 @@ files:
         sleep 1
       done
 
-      # Start API
+      # Start API (run pre-compiled JS directly, not dev.sh which needs write access)
       echo "Starting API server on port 8082..."
       cd /app/ezbids/api
-      ./dev.sh > "$LOG_DIR/api.out.log" 2> "$LOG_DIR/api.err.log" &
+      node ezbids.js > "$LOG_DIR/api.out.log" 2> "$LOG_DIR/api.err.log" &
       API_PID=$!
       sleep 2
 
