@@ -154,7 +154,7 @@ build:
     - copy: ui-server.js /app/ezbids/ui/server.js
     - run:
         - chmod +x /usr/local/bin/start-ezbids.sh
-        - chmod +x /usr/local/bin/ezbids
+        - chmod +x /usr/local/bin/ezbids 
 
     - entrypoint: /usr/local/bin/start-ezbids.sh
 
@@ -176,7 +176,7 @@ files:
       export PRESORT="${PRESORT:-false}"
       export VITE_APIHOST="${VITE_APIHOST:-http://localhost:8082}"
       export VITE_BRAINLIFE_AUTHENTICATION="${VITE_BRAINLIFE_AUTHENTICATION:-false}"
-
+      
       # Determine MongoDB data directory based on permissions
       if [ -w /data/db ]; then
         MONGO_DBPATH="/data/db"
