@@ -127,10 +127,12 @@ build:
     - run:
         - cd /app/ezbids/handler && npm install && npx tsc
 
-    # Install UI dependencies
+    # Install UI dependencies and build for production
     - run:
         - cd /app/ezbids/ui && npm install
+        - cd /app/ezbids/ui && npm run build
         - chmod +x /app/ezbids/ui/entrypoint.sh
+        - npm install -g http-proxy express
 
     # Create supervisor configuration
     - copy: supervisord.conf /etc/supervisor/conf.d/ezbids.conf
@@ -143,12 +145,13 @@ build:
         MONGO_CONNECTION_STRING: mongodb://localhost:27017/ezbids
         BRAINLIFE_AUTHENTICATION: "false"
         PRESORT: "false"
-        VITE_APIHOST: http://localhost:8082
+        VITE_APIHOST: /api/ezbids
         VITE_BRAINLIFE_AUTHENTICATION: "false"
 
     # Create startup scripts
     - copy: start-ezbids.sh /usr/local/bin/start-ezbids.sh
     - copy: ezbids /usr/local/bin/ezbids
+    - copy: ui-server.js /app/ezbids/ui/server.js
     - run:
         - chmod +x /usr/local/bin/start-ezbids.sh
         - chmod +x /usr/local/bin/ezbids
@@ -227,10 +230,10 @@ files:
       HANDLER_PID=$!
       sleep 2
 
-      # Start UI
+      # Start UI (serve pre-built production files with API proxy)
       echo "Starting UI on port 3000..."
       cd /app/ezbids/ui
-      ./entrypoint.sh > "$LOG_DIR/ui.out.log" 2> "$LOG_DIR/ui.err.log" &
+      node server.js > "$LOG_DIR/ui.out.log" 2> "$LOG_DIR/ui.err.log" &
       UI_PID=$!
 
       echo ""
@@ -361,6 +364,99 @@ files:
       environment=VITE_APIHOST="http://localhost:8082",VITE_BRAINLIFE_AUTHENTICATION="false"
       stderr_logfile=/var/log/ui.err.log
       stdout_logfile=/var/log/ui.out.log
+
+  - name: ui-server.js
+    contents: |
+      // Simple server that serves static files and proxies API requests
+      const http = require('http');
+      const fs = require('fs');
+      const path = require('path');
+
+      const PORT = 3000;
+      const API_HOST = 'localhost';
+      const API_PORT = 8082;
+      const DIST_DIR = path.join(__dirname, 'dist');
+
+      const MIME_TYPES = {
+        '.html': 'text/html',
+        '.js': 'application/javascript',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon',
+        '.woff': 'font/woff',
+        '.woff2': 'font/woff2',
+        '.ttf': 'font/ttf',
+      };
+
+      const server = http.createServer((req, res) => {
+        const url = req.url;
+
+        // Proxy API requests to the backend
+        if (url.startsWith('/api/ezbids')) {
+          const apiPath = url.replace('/api/ezbids', '');
+          const options = {
+            hostname: API_HOST,
+            port: API_PORT,
+            path: apiPath || '/',
+            method: req.method,
+            headers: { ...req.headers, host: `${API_HOST}:${API_PORT}` },
+          };
+
+          const proxyReq = http.request(options, (proxyRes) => {
+            res.writeHead(proxyRes.statusCode, proxyRes.headers);
+            proxyRes.pipe(res);
+          });
+
+          proxyReq.on('error', (err) => {
+            console.error('Proxy error:', err.message);
+            res.writeHead(502);
+            res.end('Bad Gateway');
+          });
+
+          req.pipe(proxyReq);
+          return;
+        }
+
+        // Serve static files
+        let filePath = url.replace(/^\/ezbids/, '') || '/index.html';
+        if (filePath === '/' || filePath === '') filePath = '/index.html';
+
+        const fullPath = path.join(DIST_DIR, filePath);
+        const ext = path.extname(fullPath);
+
+        fs.readFile(fullPath, (err, data) => {
+          if (err) {
+            // For SPA routing, serve index.html for non-file requests
+            if (err.code === 'ENOENT' && !ext) {
+              fs.readFile(path.join(DIST_DIR, 'index.html'), (err2, data2) => {
+                if (err2) {
+                  res.writeHead(404);
+                  res.end('Not Found');
+                } else {
+                  res.writeHead(200, { 'Content-Type': 'text/html' });
+                  res.end(data2);
+                }
+              });
+            } else {
+              res.writeHead(404);
+              res.end('Not Found');
+            }
+          } else {
+            const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+            res.writeHead(200, { 'Content-Type': contentType });
+            res.end(data);
+          }
+        });
+      });
+
+      server.listen(PORT, '0.0.0.0', () => {
+        console.log(`ezBIDS UI server running at http://localhost:${PORT}/ezbids/`);
+        console.log(`API proxy: /api/ezbids/* -> http://${API_HOST}:${API_PORT}/*`);
+      });
 
 readme: |
   ----------------------------------
