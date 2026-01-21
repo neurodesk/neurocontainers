@@ -1,0 +1,102 @@
+name: Update webapps.json
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+    paths:
+      - "recipes/**/build.yaml"
+  workflow_dispatch:
+
+jobs:
+  update-webapps-json:
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout neurocontainers repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Generate webapps.json
+        run: |
+          python3 tools/generate_webapps_json.py --output webapps.json
+
+      - name: Create pull request in neurocommand
+        env:
+          GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+        run: |
+          gh auth setup-git
+
+          gh repo clone neurodesk/neurocommand neurocommand -- --depth=1
+
+          cd neurocommand
+
+          # Configure git
+          git config user.name "neurocontainers-bot"
+          git config user.email "neurocontainers-bot@neurodesk.github.io"
+
+          # Create a new branch for the update
+          BRANCH_NAME="update-webapps-json-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH_NAME"
+
+          # Copy the generated webapps.json
+          cp ../webapps.json neurodesk/webapps.json
+
+          # Stage the file first (handles both new files and updates)
+          git add neurodesk/webapps.json
+
+          # Check if there are any staged changes
+          if ! git diff --cached --quiet neurodesk/webapps.json; then
+            echo "Changes detected in webapps.json"
+            git commit -m "Update webapps.json from neurocontainers recipes
+
+            Auto-generated from webapp configurations in container recipes.
+
+            🤖 Generated with neurocontainers automation"
+
+            # Push the branch
+            git push origin "$BRANCH_NAME"
+
+            # Create pull request
+            gh pr create \
+              --title "Update webapps.json from neurocontainers recipes" \
+              --body "$(cat <<'EOF'
+          ## Summary
+
+          This PR updates webapps.json based on the latest webapp configurations from container recipes in the neurocontainers repository.
+
+          ## Changes
+
+          - Updated webapps.json with latest webapp configurations
+          - Generated automatically from deploy.webapp sections in recipe build.yaml files
+
+          ## Test Plan
+
+          - [ ] Verify webapps.json format is correct
+          - [ ] Check that all expected webapps are present
+          - [ ] Test webapp availability in neurodesktop after merge
+
+          🤖 Generated with neurocontainers automation
+          EOF
+          )" \
+              --head "$BRANCH_NAME" \
+              --base main
+
+            echo "Pull request created successfully"
+          else
+            echo "No changes detected in webapps.json"
+          fi
