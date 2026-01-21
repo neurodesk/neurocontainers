@@ -150,7 +150,7 @@ build:
 
     # Create startup scripts
     - copy: start-ezbids.sh /usr/local/bin/start-ezbids.sh
-    - copy: ezbids /usr/local/bin/ezbids
+    - copy: ezbids /usr/local/bin/ezbids 
     - copy: ui-server.js /app/ezbids/ui/server.js
     - run:
         - chmod +x /usr/local/bin/start-ezbids.sh
