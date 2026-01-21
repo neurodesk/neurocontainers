@@ -163,6 +163,17 @@ deploy:
     - ezbids
     - dcm2niix
     - bids-validator
+  webapp:
+    title: "ezBIDS"
+    startup_command: "ezbids start"
+    start_page: "/ezbids/"
+    startup_timeout: 300
+    description: "Web-based DICOM to BIDS conversion tool"
+    ports:
+      main: 3000
+    additional_proxies:
+      - name: "api/ezbids"
+        port: 8082
 
 files:
   - name: start-ezbids.sh
