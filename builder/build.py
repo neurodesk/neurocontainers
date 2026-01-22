@@ -2096,6 +2096,20 @@ def build_and_run_container(
             abs_path + ":/buildhostdirectory",
         ]
 
+        # Expose webapp ports if defined in recipe
+        recipe = load_description_file(recipe_path)
+        deploy = recipe.get("deploy") or {}
+        webapp = deploy.get("webapp") or {}
+        ports = webapp.get("ports") or {}
+        if ports.get("main"):
+            main_port = ports["main"]
+            docker_run_cmd.extend(["-p", f"{main_port}:{main_port}"])
+            print(f"Exposing webapp port {main_port}")
+        for proxy in webapp.get("additional_proxies") or []:
+            if proxy.get("port"):
+                docker_run_cmd.extend(["-p", f"{proxy['port']}:{proxy['port']}"])
+                print(f"Exposing additional proxy port {proxy['port']}")
+
         if mount:
             # Handle Windows paths with drive letters (e.g., C:\Users\...:container)
             # Pattern: drive letter (X:) followed by path separator, then path, then : separator
