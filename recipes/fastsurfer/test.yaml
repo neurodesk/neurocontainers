@@ -1,5 +1,5 @@
 tests:
   - name: Test fastsurfer
     script: |
-      [ -f /opt/mp2rage.nii  ] && echo "$FILE exist." || wget https://imaging.org.au/uploads/Human7T/mp2rageModel_L13_work03-plus-hippocampus-7T-sym-norm-mincanon_v0.8.nii -O /opt/mp2rage.nii 
-      run_fastsurfer.sh --sid test --sd ./fastsurfer_output --allow_root --t1 /opt/mp2rage.nii --fs_license /opt/license.txt
+      [ -f ~/mp2rage.nii  ] && echo "$FILE exist." || wget https://imaging.org.au/uploads/Human7T/mp2rageModel_L13_work03-plus-hippocampus-7T-sym-norm-mincanon_v0.8.nii -O ~/mp2rage.nii
+      run_fastsurfer.sh --sid test --sd ~/fastsurfer_output --allow_root --t1 ~/mp2rage.nii --fs_license /opt/license.txt
