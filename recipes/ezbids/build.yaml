@@ -23,6 +23,8 @@ build:
         FSLDIR: /usr/local/fsl
         FSLOUTPUTTYPE: NIFTI_GZ
         NODE_MAJOR: "20"
+        VITE_APIHOST: /ezbids/api
+        VITE_BRAINLIFE_AUTHENTICATION: "false"
 
     # Install system dependencies
     - install:
@@ -51,6 +53,7 @@ build:
         - ca-certificates
         - gnupg
         - supervisor
+        - detox
 
     # Install Node.js 20
     - run:
@@ -145,8 +148,6 @@ build:
         MONGO_CONNECTION_STRING: mongodb://localhost:27017/ezbids
         BRAINLIFE_AUTHENTICATION: "false"
         PRESORT: "false"
-        VITE_APIHOST: /api/ezbids
-        VITE_BRAINLIFE_AUTHENTICATION: "false"
 
     # Create startup scripts
     - copy: start-ezbids.sh /usr/local/bin/start-ezbids.sh
@@ -172,7 +173,7 @@ deploy:
     ports:
       main: 3000
     additional_proxies:
-      - name: "api/ezbids"
+      - name: "ezbids/api"
         port: 8082
 
 files:
@@ -407,8 +408,8 @@ files:
         const url = req.url;
 
         // Proxy API requests to the backend
-        if (url.startsWith('/api/ezbids')) {
-          const apiPath = url.replace('/api/ezbids', '');
+        if (url.startsWith('/ezbids/api')) {
+          const apiPath = url.replace('/ezbids/api', '');
           const options = {
             hostname: API_HOST,
             port: API_PORT,
@@ -466,7 +467,7 @@ files:
 
       server.listen(PORT, '0.0.0.0', () => {
         console.log(`ezBIDS UI server running at http://localhost:${PORT}/ezbids/`);
-        console.log(`API proxy: /api/ezbids/* -> http://${API_HOST}:${API_PORT}/*`);
+        console.log(`API proxy: /ezbids/api/* -> http://${API_HOST}:${API_PORT}/*`);
       });
 
 readme: |

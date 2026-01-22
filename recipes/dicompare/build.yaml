@@ -1,0 +1,85 @@
+name: dicompare
+version: 0.1.2
+
+categories:
+  - "quality control"
+  - "data organisation"
+
+copyright:
+  - license: MIT
+    url: https://github.com/astewartau/dicompare-web/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        NODE_MAJOR: "20"
+
+    # Install system dependencies
+    - install:
+        - curl
+        - git
+        - ca-certificates
+        - gnupg
+
+    # Install Node.js 20
+    - run:
+        - mkdir -p /etc/apt/keyrings
+        - curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+        - echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
+        - apt-get update && apt-get install nodejs -y
+
+    # Install serve for static file hosting
+    - run:
+        - npm install -g serve
+
+    # Clone and build dicompare-web with relative base path
+    - run:
+        - git clone --branch v{{ context.version }} --depth 1 https://github.com/astewartau/dicompare-web.git /opt/dicompare
+        - cd /opt/dicompare && npm install && npm run build -- --base=./
+
+    # Create startup script
+    - run:
+        - echo '#!/bin/bash' > /opt/dicompare/start.sh
+        - echo 'cd /opt/dicompare && exec serve -s dist -l 3001' >> /opt/dicompare/start.sh
+        - chmod +x /opt/dicompare/start.sh
+
+    # Copy launcher script to PATH
+    - copy: dicompare /usr/local/bin/dicompare
+    - run:
+        - chmod +x /usr/local/bin/dicompare
+
+    - entrypoint: /opt/dicompare/start.sh
+
+deploy:
+  bins:
+    - dicompare
+  webapp:
+    title: "dicompare"
+    startup_command: "dicompare start"
+    start_page: "/"
+    startup_timeout: 60
+    description: "MRI protocol validation tool - validate DICOMs against community protocols"
+    ports:
+      main: 3001
+
+files:
+  - name: dicompare
+    contents: |
+      #!/bin/bash
+      case "$1" in
+        start)
+          /opt/dicompare/start.sh
+          ;;
+        *)
+          echo "dicompare - MRI protocol validation tool"
+          echo "Usage: dicompare start"
+          ;;
+      esac
