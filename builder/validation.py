@@ -155,21 +155,16 @@ class GUIApp:
 
 @attrs.define
 class AdditionalProxy:
-    name: str = attrs.field(validator=validate_non_empty_string)
+    path: str = attrs.field(validator=validate_non_empty_string)
     port: int = attrs.field()
-
-
-@attrs.define
-class WebappPorts:
-    main: int = attrs.field()
 
 
 @attrs.define
 class WebappInfo:
     title: str = attrs.field(validator=validate_non_empty_string)
     startup_command: str = attrs.field(validator=validate_non_empty_string)
-    start_page: str = attrs.field(validator=validate_non_empty_string)
-    ports: WebappPorts = attrs.field()
+    port: int = attrs.field()
+    start_page: Optional[str] = attrs.field(default=None)  # Defaults to "/" if not specified
     module: Optional[str] = attrs.field(default=None)
     description: Optional[str] = attrs.field(default=None)
     startup_timeout: Optional[int] = attrs.field(default=None)
@@ -480,9 +475,6 @@ def parse_directive_from_dict(directive_dict: Dict[str, Any]) -> Any:
         # Parse nested webapp if present
         if "webapp" in deploy_dict and deploy_dict["webapp"]:
             webapp_dict = deploy_dict["webapp"].copy()
-            # Parse nested ports
-            if "ports" in webapp_dict and webapp_dict["ports"]:
-                webapp_dict["ports"] = WebappPorts(**webapp_dict["ports"])
             # Parse nested additional_proxies
             if "additional_proxies" in webapp_dict and webapp_dict["additional_proxies"]:
                 proxies = [AdditionalProxy(**p) for p in webapp_dict["additional_proxies"]]
@@ -652,9 +644,6 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
             # Parse nested webapp if present
             if "webapp" in deploy_dict and deploy_dict["webapp"]:
                 webapp_dict = deploy_dict["webapp"].copy()
-                # Parse nested ports
-                if "ports" in webapp_dict and webapp_dict["ports"]:
-                    webapp_dict["ports"] = WebappPorts(**webapp_dict["ports"])
                 # Parse nested additional_proxies
                 if "additional_proxies" in webapp_dict and webapp_dict["additional_proxies"]:
                     proxies = [AdditionalProxy(**p) for p in webapp_dict["additional_proxies"]]
