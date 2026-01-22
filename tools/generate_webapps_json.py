@@ -151,7 +151,7 @@ def generate_webapps_json(recipes_dir: str, output_file: str):
     print(f"\nGenerated webapps.json successfully!")
     print(f"  Webapps found: {len(webapps)}")
     for name, config in webapps.items():
-        print(f"    - {name}: {config.get('title', 'No title')} (port {config.get('ports', {}).get('main', '?')})")
+        print(f"    - {name}: {config.get('title', 'No title')} (port {config.get('port', '?')})")
 
 
 def main():
