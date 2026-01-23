@@ -76,7 +76,7 @@ build:
 
     # Setup pet2bids config
     - run:
-        - touch /.pet2bidsconfig && chown 1001:1001 /.pet2bidsconfig
+        - touch /.pet2bidsconfig && chown 1001:1001 /.pet2bidsconfig 
         - echo "DEFAULT_METADATA_JSON=/usr/local/lib/python3.8/dist-packages/pypet2bids/template_json.json" > /.pet2bidsconfig
 
     # Install FSL binaries
