@@ -52,7 +52,7 @@ build:
         - chmod +x /opt/dicompare/start.sh
 
     # Copy launcher script to PATH
-    - copy: dicompare /usr/local/bin/dicompare
+    - copy: dicompare /usr/local/bin/dicompare 
     - run:
         - chmod +x /usr/local/bin/dicompare
 
