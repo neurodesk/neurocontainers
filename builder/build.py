@@ -2144,9 +2144,8 @@ def build_and_run_container(
         recipe = load_description_file(recipe_path)
         deploy = recipe.get("deploy") or {}
         webapp = deploy.get("webapp") or {}
-        ports = webapp.get("ports") or {}
-        if ports.get("main"):
-            main_port = ports["main"]
+        if webapp.get("port"):
+            main_port = webapp["port"]
             docker_run_cmd.extend(["-p", f"{main_port}:{main_port}"])
             print(f"Exposing webapp port {main_port}")
         for proxy in webapp.get("additional_proxies") or []:
