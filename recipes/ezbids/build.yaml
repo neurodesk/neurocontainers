@@ -112,6 +112,7 @@ build:
         - mkdir -p /app
         - git clone https://github.com/openneuropet/ezbids_docker /app/ezbids
         - cd /app/ezbids && ./generate_keys.sh
+        - chmod 644 /app/ezbids/api/ezbids.key /app/ezbids/api/ezbids.pub
 
     # Clone bids-specification into ezbids directory (where ezBIDS expects it)
     - run:
