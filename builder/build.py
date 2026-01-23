@@ -73,6 +73,46 @@ def get_cache_dir() -> str:
     return cache_dir
 
 
+def get_recipe_commit_date(recipe_path: str) -> str:
+    """
+    Get the commit date of the recipe file in YYYYMMDD format.
+    
+    This ensures consistent build dates based on when the recipe was last modified,
+    rather than when the container was built. This fixes timezone issues where
+    builds crossing midnight would have inconsistent dates.
+    
+    Args:
+        recipe_path: Path to the recipe directory
+        
+    Returns:
+        Date string in YYYYMMDD format
+    """
+    # First check if BUILDDATE environment variable is set (from GitHub Actions)
+    builddate_env = os.environ.get("BUILDDATE")
+    if builddate_env:
+        return builddate_env
+    
+    try:
+        # Get the commit date of the build.yaml file
+        build_yaml_path = os.path.join(recipe_path, "build.yaml")
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%ad", "--date=format:%Y%m%d", "--", build_yaml_path],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=get_repo_path()
+        )
+        commit_date = result.stdout.strip()
+        if commit_date:
+            return commit_date
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # If git command fails or git is not available, fall back to current date
+        pass
+    
+    # Fallback to current date if git is not available or command fails
+    return datetime.datetime.now().strftime("%Y%m%d")
+
+
 def load_description_file(recipe_dir: str) -> typing.Any:
     # Load the description file
     description_file = os.path.join(recipe_dir, "build.yaml")
@@ -112,6 +152,7 @@ def generate_release_file(
     name: str,
     version: str,
     recipe: dict,
+    recipe_path: str = None,
 ) -> None:
     """
     Generate a release JSON file for the built container.
@@ -119,10 +160,8 @@ def generate_release_file(
     Args:
         name: Container name
         version: Container version
-        architecture: Target architecture
-        recipe_path: Path to the recipe directory
-        build_directory: Build output directory
-        build_info: Full build configuration from YAML
+        recipe: Recipe dictionary from build.yaml
+        recipe_path: Path to the recipe directory (optional, for getting commit date)
     """
     if recipe is None:
         build_info = {}
@@ -135,8 +174,13 @@ def generate_release_file(
     # Extract GUI applications from build.yaml
     gui_apps = recipe.get("gui_apps", [])
 
-    # Create CLI app entry (always present)
-    build_date = datetime.datetime.now().strftime("%Y%m%d")
+    # Get build date from git commit or environment variable
+    if recipe_path:
+        build_date = get_recipe_commit_date(recipe_path)
+    else:
+        # Fallback: check environment variable first, then current date
+        build_date = os.environ.get("BUILDDATE", datetime.datetime.now().strftime("%Y%m%d"))
+    
     cli_app_name = f"{name} {version}"
 
     # Create release data structure
@@ -2080,7 +2124,7 @@ def build_and_run_container(
 
     # Generate release file if in CI or auto-build mode
     if should_generate_release_file(generate_release):
-        generate_release_file(name, version, load_description_file(recipe_path))
+        generate_release_file(name, version, load_description_file(recipe_path), recipe_path)
 
     if login:
         abs_path = os.path.abspath(recipe_path)
@@ -3211,6 +3255,7 @@ def main(args):
                 ctx.name,
                 ctx.version,
                 recipe,
+                recipe_path,
             )
 
         if args.build:
