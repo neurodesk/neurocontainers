@@ -76,7 +76,13 @@ jobs:
         run: |
           APPLICATION=${{ inputs.application }}
           SHORT_SHA=$(git rev-parse --short $GITHUB_SHA)
-          BUILDDATE=`date +%Y%m%d`
+          # Get the commit date of the recipe's build.yaml file
+          # This ensures consistent build dates based on when the recipe was last modified
+          BUILDDATE=$(git log -1 --format=%ad --date=format:%Y%m%d -- recipes/${APPLICATION}/build.yaml)
+          # Fallback to current date if git log fails (e.g., new file not yet committed)
+          if [ -z "$BUILDDATE" ]; then
+            BUILDDATE=`date +%Y%m%d`
+          fi
           echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
           echo "APPLICATION=$APPLICATION" >> $GITHUB_OUTPUT
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
