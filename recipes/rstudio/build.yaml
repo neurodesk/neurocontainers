@@ -39,6 +39,7 @@ build:
         - mesa-utils
         - sudo
         - build-essential
+        - psmisc
         - python3-pip
         - python3-pyqt5
         - pyqt5-dev
@@ -88,10 +89,36 @@ build:
     - run:
         - rm -rf rstudio-2023.12.1-402-amd64.deb
 
+    # Install RStudio Server (web version)
+    - run:
+        - wget https://download2.rstudio.org/server/jammy/amd64/rstudio-server-2023.12.1-402-amd64.deb
+        - gdebi -q -n /opt/rstudio-server-2023.12.1-402-amd64.deb
+        - rm -rf rstudio-server-2023.12.1-402-amd64.deb
+
     - copy: dependencies.R /opt
 
     - run:
         - Rscript /opt/dependencies.R
+
+    # Add RStudio lib dir to linker search path (for libffmpeg.so)
+    - run:
+        - echo '/usr/lib/rstudio' > /etc/ld.so.conf.d/rstudio.conf
+        - ldconfig
+
+    # Create RStudio Server config for single-user containerized mode
+    # (placed after R dependencies so config tweaks don't invalidate R package cache)
+    - run:
+        - mkdir -p /etc/rstudio
+        - echo 'www-port=8787' > /etc/rstudio/rserver.conf
+        - echo 'www-address=0.0.0.0' >> /etc/rstudio/rserver.conf
+        - echo 'auth-none=1' >> /etc/rstudio/rserver.conf
+        - echo 'auth-minimum-user-id=0' >> /etc/rstudio/rserver.conf
+        - echo 'server-user=root' >> /etc/rstudio/rserver.conf
+
+    # Copy RStudio Server launcher script
+    - copy: rstudio-server-start /usr/local/bin/rstudio-server-start
+    - run:
+        - chmod +x /usr/local/bin/rstudio-server-start
 
     - environment:
         LD_LIBRARY_PATH: "/usr/local/cuda/lib64/stubs:/usr/local/cuda/lib64/:/usr/local/cuda/lib:"
@@ -100,23 +127,56 @@ build:
 deploy:
   bins:
     - rstudio
+    - rstudio-server-start
+  webapp:
+    title: "RStudio Server"
+    startup_command: "rstudio-server-start"
+    startup_timeout: 120
+    description: "RStudio IDE for R - web-based version"
+    port: 8787
 
 readme: |-
   ----------------------------------
   ## rstudio/{{ context.version }} ##
   RStudio is an integrated development environment (IDE) for R. It includes a console, syntax-highlighting editor that supports direct code execution, as well as tools for plotting, history, debugging and workspace management.
 
+  This container includes both RStudio Desktop (GUI) and RStudio Server (web-based).
+
   Example:
   ```
-  rstudio
-  Rscript
+  rstudio          # Launch desktop version
+  Rscript          # Run R scripts
   ```
+
+  RStudio Server is also available as a web application in Neurodesktop.
 
   More documentation can be found here: https://www.rstudio.com/
 
   ----------------------------------
 
 files:
+  - name: rstudio-server-start
+    contents: |
+      #!/bin/bash
+      # RStudio Server startup script for containerized single-user mode
+
+      # Create required directories
+      mkdir -p /var/run/rstudio-server
+      mkdir -p /var/lib/rstudio-server
+      mkdir -p /var/log/rstudio-server
+
+      # Get the current user info
+      USER_NAME="${USER:-root}"
+      USER_HOME="${HOME:-/root}"
+
+      # Ensure the user has a proper home directory
+      if [ ! -d "$USER_HOME" ]; then
+          mkdir -p "$USER_HOME"
+      fi
+
+      # Start RStudio Server in foreground mode
+      exec /usr/lib/rstudio-server/bin/rserver --server-daemonize=0
+
   - name: dependencies.R
     contents: |-
       # R Script to install the dependencies
