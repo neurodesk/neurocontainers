@@ -550,10 +550,12 @@ jobs:
 
       - name: Upload to AWS S3
         run: |
-          aws s3 cp /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg s3://neurocontainers/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
-          if ! aws s3 ls s3://neurocontainers/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg; then
+          aws s3 cp "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" "s3://neurocontainers/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg"
+          if ! aws s3api head-object --bucket neurocontainers --key "${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" > /dev/null 2>&1; then
             echo "::error::File verification failed. The file was not found in S3."
             exit 1
+          else
+            echo "[DEBUG] File upload verified. The file exists in S3."
           fi
 
   create-pr:
