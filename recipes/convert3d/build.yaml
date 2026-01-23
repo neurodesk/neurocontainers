@@ -8,6 +8,10 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: manual_review
+  information: "https://www.itksnap.org/pmwiki/pmwiki.php?n=Downloads.C3D"
+
 build:
   kind: neurodocker
 
