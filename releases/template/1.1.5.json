@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "template 1.1.5": {
+      "version": "20260123",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "other"
+  ]
+}
