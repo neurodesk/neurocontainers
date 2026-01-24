@@ -159,23 +159,22 @@ files:
     contents: |
       #!/bin/bash
       # RStudio Server startup script for containerized single-user mode
+      # Works in both root and non-root contexts (e.g., Singularity/Apptainer)
 
-      # Create required directories
-      mkdir -p /var/run/rstudio-server
-      mkdir -p /var/lib/rstudio-server
-      mkdir -p /var/log/rstudio-server
+      # Use /tmp for all runtime directories to avoid permission issues
+      # when running in containers without root access
+      DATA_DIR="/tmp/rstudio-server-data"
+      PID_FILE="/tmp/rstudio-server.pid"
 
-      # Get the current user info
-      USER_NAME="${USER:-root}"
-      USER_HOME="${HOME:-/root}"
+      mkdir -p "$DATA_DIR"
 
-      # Ensure the user has a proper home directory
-      if [ ! -d "$USER_HOME" ]; then
-          mkdir -p "$USER_HOME"
-      fi
-
-      # Start RStudio Server in foreground mode
-      exec /usr/lib/rstudio-server/bin/rserver --server-daemonize=0
+      # Start RStudio Server in foreground mode with temp directories
+      # Use current user since default 'rstudio-server' user doesn't exist in container
+      exec /usr/lib/rstudio-server/bin/rserver \
+          --server-daemonize=0 \
+          --server-user="$(whoami)" \
+          --server-data-dir="$DATA_DIR" \
+          --server-pid-file="$PID_FILE"
 
   - name: dependencies.R
     contents: |-
