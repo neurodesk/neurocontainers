@@ -1004,16 +1004,18 @@ class BuildContext(object):
         for directive in build_directive["directives"]:
             add_directive(directive, locals=locals)
 
-        if len(self.deploy_path) > 0:
-            path = self.execute_template(self.deploy_path, locals=locals)
-            if not isinstance(path, list):
-                raise ValueError("Deploy path must be a list.")
-            builder.set_environment("DEPLOY_PATH", ":".join(path))  # type: ignore
-        if len(self.deploy_bins) > 0:
-            bins = self.execute_template(self.deploy_bins, locals=locals)
-            if not isinstance(bins, list):
-                raise ValueError("Deploy bins must be a list.")
-            builder.set_environment("DEPLOY_BINS", ":".join(bins))  # type: ignore
+        # Always set DEPLOY_PATH and DEPLOY_BINS environment variables, even if empty
+        # This prevents the container tester from receiving undefined environment variables
+        # which would be treated as empty strings that split into [""] instead of []
+        path = self.execute_template(self.deploy_path, locals=locals) if len(self.deploy_path) > 0 else []
+        if not isinstance(path, list):
+            raise ValueError("Deploy path must be a list.")
+        builder.set_environment("DEPLOY_PATH", ":".join(path) if path else "")  # type: ignore
+        
+        bins = self.execute_template(self.deploy_bins, locals=locals) if len(self.deploy_bins) > 0 else []
+        if not isinstance(bins, list):
+            raise ValueError("Deploy bins must be a list.")
+        builder.set_environment("DEPLOY_BINS", ":".join(bins) if bins else "")  # type: ignore
 
         builder.copy("README.md", "/README.md")
         builder.copy("build.yaml", "/build.yaml")
