@@ -1660,10 +1660,6 @@ def generate_from_description(
             ctx.top_level_deploy_bins = ctx.execute_template(description_file["deploy"]["bins"], locals=locals)  # type: ignore
         if "path" in description_file["deploy"]:
             ctx.top_level_deploy_path = ctx.execute_template(description_file["deploy"]["path"], locals=locals)  # type: ignore
-    
-    # Store these for access during build process
-    ctx.top_level_deploy_bins = top_level_deploy_bins if isinstance(top_level_deploy_bins, list) else []
-    ctx.top_level_deploy_path = top_level_deploy_path if isinstance(top_level_deploy_path, list) else []
 
     ctx.tag = f"{name}:{version}"
 
