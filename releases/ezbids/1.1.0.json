@@ -1,7 +1,7 @@
 {
   "apps": {
     "ezbids 1.1.0": {
-      "version": "20260123",
+      "version": "20260127",
       "exec": "",
       "apptainer_args": []
     }

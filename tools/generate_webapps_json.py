@@ -42,12 +42,13 @@ def load_recipe(recipe_path: Path) -> Optional[Dict[str, Any]]:
         return None
 
 
-def extract_webapp_config(recipe: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def extract_webapp_config(recipe: Dict[str, Any], recipe_dir: Path) -> Optional[Dict[str, Any]]:
     """
     Extract webapp configuration from a recipe.
 
     Args:
         recipe: Parsed recipe YAML content
+        recipe_dir: Path to the recipe directory (for resolving icon paths)
 
     Returns:
         Webapp configuration dict or None if not present
@@ -72,6 +73,17 @@ def extract_webapp_config(recipe: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     # Add version from recipe (used for module loading: ml module/version)
     webapp_config["version"] = recipe_version
+
+    # Convert local icon path to GitHub raw URL
+    if "icon" in webapp_config:
+        icon_file = webapp_config["icon"]
+        icon_path = recipe_dir / icon_file
+        if icon_path.exists():
+            # Convert to raw GitHub URL for neurodesktop to fetch at build time
+            webapp_config["icon"] = f"https://raw.githubusercontent.com/NeuroDesk/neurocontainers/main/recipes/{recipe_dir.name}/{icon_file}"
+        else:
+            print(f"  Warning: Icon file not found: {icon_path}")
+            del webapp_config["icon"]
 
     return webapp_config
 
@@ -100,7 +112,7 @@ def collect_webapp_configs(recipes_dir: Path) -> Dict[str, Dict[str, Any]]:
         if not recipe:
             continue
 
-        webapp_config = extract_webapp_config(recipe)
+        webapp_config = extract_webapp_config(recipe, recipe_dir)
         if webapp_config:
             module = webapp_config.get("module")
             if module:
