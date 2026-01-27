@@ -1,5 +1,5 @@
 name: afni
-version: 25.2.03
+version: 26.0.07
 # https://hub.docker.com/r/afni/afni_make_build/tags
 # https://afni.nimh.nih.gov/about_afni
 
@@ -175,8 +175,10 @@ build:
     - copy: dependencies.R /opt
     - copy: test.tgz /opt/test.tgz
     - copy: license.txt /opt/freesurfer-7.4.1/license.txt
+    - copy: afni_wrapper.sh /usr/local/bin/afni
 
     - run:
+        - chmod +x /usr/local/bin/afni
         - Rscript /opt/dependencies.R
 
     - workdir: /opt
