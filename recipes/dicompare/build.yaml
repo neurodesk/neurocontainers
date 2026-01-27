@@ -63,8 +63,9 @@ deploy:
     - dicompare
   webapp:
     title: "dicompare"
+    icon: "icon.svg"
     startup_command: "dicompare start"
-    startup_timeout: 60
+    startup_timeout: 120
     description: "MRI protocol validation tool - validate DICOMs against community protocols"
     port: 3001
 
