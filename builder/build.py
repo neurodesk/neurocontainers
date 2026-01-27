@@ -504,6 +504,8 @@ class BuildContext(object):
         self.lint_error = False
         self.deploy_bins = []
         self.deploy_path = []
+        self.top_level_deploy_bins = []
+        self.top_level_deploy_path = []
         self.local_context = {}
         self.check_only = check_only
         self.skip_file_population = False
@@ -1650,14 +1652,14 @@ def generate_from_description(
 
     # Get hardcoded deploy info
     # Store the deploy info as attributes for use during build
-    top_level_deploy_bins = []
-    top_level_deploy_path = []
+    ctx.top_level_deploy_bins = []
+    ctx.top_level_deploy_path = []
     
     if "deploy" in description_file:
         if "bins" in description_file["deploy"]:
-            top_level_deploy_bins = ctx.execute_template(description_file["deploy"]["bins"], locals=locals)  # type: ignore
+            ctx.top_level_deploy_bins = ctx.execute_template(description_file["deploy"]["bins"], locals=locals)  # type: ignore
         if "path" in description_file["deploy"]:
-            top_level_deploy_path = ctx.execute_template(description_file["deploy"]["path"], locals=locals)  # type: ignore
+            ctx.top_level_deploy_path = ctx.execute_template(description_file["deploy"]["path"], locals=locals)  # type: ignore
     
     # Store these for access during build process
     ctx.top_level_deploy_bins = top_level_deploy_bins if isinstance(top_level_deploy_bins, list) else []
