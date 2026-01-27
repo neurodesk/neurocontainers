@@ -256,6 +256,10 @@ func (ct *containerTester) run() error {
 	}
 
 	for _, bin := range deployBinsList {
+		if bin == "" {
+			continue
+		}
+
 		res, err := ct.testExecutable(bin, true)
 		if err != nil {
 			res.Error = err.Error()
