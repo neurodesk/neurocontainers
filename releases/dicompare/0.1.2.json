@@ -1,7 +1,7 @@
 {
   "apps": {
     "dicompare 0.1.2": {
-      "version": "20260123",
+      "version": "20260127",
       "exec": "",
       "apptainer_args": []
     }
