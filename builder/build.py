@@ -1004,6 +1004,13 @@ class BuildContext(object):
         for directive in build_directive["directives"]:
             add_directive(directive, locals=locals)
 
+        # If no deploy paths/bins were found in directives, use the top-level deploy section values
+        if len(self.deploy_path) == 0 and hasattr(self, 'top_level_deploy_path'):
+            self.deploy_path = self.top_level_deploy_path
+        
+        if len(self.deploy_bins) == 0 and hasattr(self, 'top_level_deploy_bins'):
+            self.deploy_bins = self.top_level_deploy_bins
+        
         # Always set DEPLOY_PATH and DEPLOY_BINS environment variables, even if empty
         # This prevents the container tester from receiving undefined environment variables
         # which would be treated as empty strings that split into [""] instead of []
@@ -1642,11 +1649,19 @@ def generate_from_description(
         raise ValueError("Name, version, or readme cannot be empty.")
 
     # Get hardcoded deploy info
+    # Store the deploy info as attributes for use during build
+    top_level_deploy_bins = []
+    top_level_deploy_path = []
+    
     if "deploy" in description_file:
         if "bins" in description_file["deploy"]:
-            ctx.deploy_bins = ctx.execute_template(description_file["deploy"]["bins"], locals=locals)  # type: ignore
+            top_level_deploy_bins = ctx.execute_template(description_file["deploy"]["bins"], locals=locals)  # type: ignore
         if "path" in description_file["deploy"]:
-            ctx.deploy_path = ctx.execute_template(description_file["deploy"]["path"], locals=locals)  # type: ignore
+            top_level_deploy_path = ctx.execute_template(description_file["deploy"]["path"], locals=locals)  # type: ignore
+    
+    # Store these for access during build process
+    ctx.top_level_deploy_bins = top_level_deploy_bins if isinstance(top_level_deploy_bins, list) else []
+    ctx.top_level_deploy_path = top_level_deploy_path if isinstance(top_level_deploy_path, list) else []
 
     ctx.tag = f"{name}:{version}"
 
