@@ -130,7 +130,7 @@ deploy:
     - rstudio-server-start
   webapp:
     title: "RStudio Server"
-    icon: "icon.png"
+    icon: "icon.svg"
     startup_command: "rstudio-server-start"
     startup_timeout: 120
     description: "RStudio IDE for R - web-based version"
