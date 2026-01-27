@@ -167,7 +167,7 @@ deploy:
     - bids-validator
   webapp:
     title: "ezBIDS"
-    icon: "icon.png"
+    icon: "icon.svg"
     startup_command: "ezbids start"
     start_page: "/ezbids/"
     startup_timeout: 300
