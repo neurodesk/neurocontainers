@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "radtract 0.2.3": {
+      "version": "20260203",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ]
+}
