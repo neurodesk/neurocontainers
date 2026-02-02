@@ -1,0 +1,63 @@
+name: condaenvs
+version: 1.0.1
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - template:
+        name: miniconda
+        version: latest
+
+    - install:
+        - git
+
+    - workdir: /opt
+
+    - run:
+        - git clone https://github.com/NeuroDesk/condaenvs
+
+    - copy:
+        - install_all.sh
+        - /opt/condaenvs/install_all.sh
+
+    - workdir: /opt/condaenvs
+
+    - run:
+        - bash /opt/condaenvs/install_all.sh
+
+categories:
+  - data organisation
+
+readme: |
+  ----------------------------------
+  ## condaenvs/{{ context.version }} ##
+  This container provides ready-to-go conda environments for neuroimaging
+
+  Example:
+  \`\`\`
+  conda env list
+  conda activate 
+  \`\`\`
+
+  More documentation can be found here: https://github.com/NeuroDesk/condaenvs
+
+  To run applications outside of this container: ml condaenvs/{{ context.version }}
+
+  ----------------------------------
+
+files:
+  - name: install_all.sh
+    contents: |
+      for file in \`ls environments/*-pinned.yml\`; do
+          echo \$file
+          conda env create -f \$file
+      done

@@ -1,0 +1,40 @@
+name: bidsappspm
+version: 0.0.20
+# https://hub.docker.com/r/bids/spm/tags
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: bids/spm:v0.0.20
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PATH: $PATH:/opt/spm12
+
+    - entrypoint: bash
+
+deploy:
+  path:
+    - /opt/spm12
+
+categories:
+  - bids apps
+
+readme: |
+  ----------------------------------
+  ## bidsappspm/{{ context.version }} ##
+  BIDS App containing an instance of the SPM12 software.
+
+  Example:
+  ```
+  run.sh bids_dir output_dir level [--participant_label PARTICIPANT_LABEL [PARTICIPANT_LABEL ...]] [--config CFG_FILE]
+  ```
+
+  More documentation can be found here: https://github.com/bids-apps/SPM
+
+  To run container outside of this environment: ml bidsappspm/{{ context.version }}
+  ----------------------------------

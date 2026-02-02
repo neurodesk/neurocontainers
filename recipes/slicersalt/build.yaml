@@ -1,0 +1,79 @@
+name: slicersalt
+version: "3.0.0"
+
+# https://data.kitware.com/#collection/586fbb7b8d777f05f44a5c7b/folder/5898b7ef8d777f07219fcb14
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - libpulse-dev
+        - libnss3
+        - libglu1-mesa
+        - libsm6
+        - libxrender1
+        - libxt6
+        - libxcomposite1
+        - libfreetype6
+        - libasound2
+        - libfontconfig1
+        - libxkbcommon0
+        - libxcursor1
+        - libxi6
+        - libxrandr2
+        - libxtst6
+        - qt5-default
+        - libqt5svg5-dev
+        - wget
+        - libqt5opengl5-dev
+        - libqt5opengl5
+        - libqt5gui5
+        - libqt5core5a
+        - curl
+        - ca-certificates
+
+    - run:
+        - curl -fsSL --retry 5 https://data.kitware.com/api/v1/item/5f18b8fa9014a6d84e32ab6e/download | tar -xz -C /opt/
+
+    - run:
+        - ln -s /opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/SlicerSALT-4.11/libgfortran.so /opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/SlicerSALT-4.11/libgfortran.so.3
+
+    - environment:
+        LD_LIBRARY_PATH: /opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/SlicerSALT-4.11:/opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/Python/lib:/opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/QtPlugins:/opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/Teem-1.12.0
+        PATH: /usr/bin:/opt/SlicerSALT-{{ context.version }}-linux-amd64/bin:/opt/SlicerSALT-{{ context.version }}-linux-amd64
+
+deploy:
+  path:
+    - /opt/SlicerSALT-{{ context.version }}-linux-amd64/bin
+  bins:
+    - SlicerSALTApp-real:SlicerSALT
+
+readme: |
+  ----------------------------------
+  ## slicersalt/{{ context.version }} ##
+  This project will develop a comprehensive software that will allow biomedical scientists to precisely locate shape changes in their imaging studies. This software called Shape AnaLysis Toolbox (SALT), will enhance the intuitiveness and ease of use for such studies, as well as allow researchers to find shape changes with higher statistical power. Altogether this constitutes a crucial resource for the imaging field that will enable many and important new findings in biomedical imaging studies.
+
+  Example:
+  ```
+  SlicerSALT
+  ```
+
+  More documentation can be found here: http://salt.slicer.org/documentation/
+
+  To run container outside of this environment: ml slicersalt/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - "shape analysis"
+  - "structural imaging"

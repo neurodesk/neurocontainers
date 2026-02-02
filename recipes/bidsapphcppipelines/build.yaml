@@ -1,0 +1,64 @@
+name: bidsapphcppipelines
+version: 4.3.0
+# https://hub.docker.com/r/bids/hcppipelines/tags
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: bids/hcppipelines:v4.3.0-3
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PATH: $PATH:/
+
+    - install:
+        - qt4-dev-tools
+        - libxss1
+        - libxext6
+        - libxft2
+        - libjpeg62-dev
+
+    - entrypoint: bash
+
+deploy:
+  path:
+    - /usr/local/fsl/bin
+    - /opt/workbench/bin_linux64
+    - /usr/local/miniconda/bin
+    - /opt/freesurfer/bin
+    - /opt/freesurfer/fsfast/bin
+    - /opt/freesurfer/tktools
+    - /opt/freesurfer/mni/bin
+    - /
+
+categories:
+  - bids apps
+
+readme: |
+  ----------------------------------
+  ## bidsapphcppipelines/{{ context.version }} ##
+  This a BIDS App wrapper for HCP Pipelines v4.3.0. Like every BIDS App it consists of a container that includes all of the dependencies and run script that parses a BIDS dataset. BIDS Apps run on Windows, Linux, Mac as well as HPCs/clusters.
+
+  Example:
+  ```
+  run.py [-h]
+                [--participant_label PARTICIPANT_LABEL [PARTICIPANT_LABEL ...]]
+                [--session_label SESSION_LABEL [SESSION_LABEL ...]]
+                [--n_cpus N_CPUS]
+                [--stages {PreFreeSurfer,FreeSurfer,PostFreeSurfer,fMRIVolume,fMRISurface} [{PreFreeSurfer,FreeSurfer,PostFreeSurfer,fMRIVolume,fMRISurface} ...]]
+                [--coreg {MSMSulc,FS}] [--gdcoeffs GDCOEFFS] --license_key
+                LICENSE_KEY [-v] [--anat_unwarpdir {x,y,z,-x,-y,-z}]
+                [--skip_bids_validation]
+                bids_dir output_dir {participant}
+  ```
+
+  More documentation can be found here: https://github.com/bids-apps/HCPPipelines
+
+  To run container outside of this environment: ml bidsapphcppipelines/{{ context.version }}
+
+  Citation: Please cite Glasser et al. 2013 and Smith et al. 2013.
+  ----------------------------------
