@@ -1,0 +1,75 @@
+name: radtract
+version: 0.2.3
+
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/MIC-DKFZ/radtract/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - libglu1-mesa
+        - libgl1-mesa-glx
+        - libxrender1
+        - python3
+        - python3-pip
+        - python3-dev
+        - build-essential
+        - git
+
+    - run:
+        - pip install --upgrade pip setuptools wheel
+        - pip install --no-cache-dir numpy pykwalify pywavelets scipy six SimpleITK versioneer
+        - pip install --no-cache-dir git+https://github.com/AIM-Harvard/pyradiomics.git@v3.1.0
+        - pip install --no-cache-dir radtract==0.2.3
+
+deploy:
+  bins:
+    - radtract_estimate_num_parcels
+    - radtract_filter_endpoints
+    - radtract_parcellate
+    - radtract_features
+    - radtract_filter_length
+    - radtract_tdi
+    - radtract_filter_curvature
+    - radtract_filter_maskoverlap
+    - radtract_filter_density
+    - radtract_filter_visitationcount
+
+readme: |
+  ----------------------------------
+  ## radtract/{{ context.version }} ##
+
+  RadTract is a python implementation of radiomic tractometry or "Tractomics". It is designed for tract-specific microstructural analysis of the brain's white matter using diffusion MRI. It enhances traditional tractometry, which often misses valuable information due to its reliance on bare summary statistics and scalar values. RadTract incorporates radiomics, a method that analyzes a multitude of quantitative image features beyond visual perception, into tractometry. This integration allows for improved predictive modeling while maintaining the localization capability of tractometry.
+
+  Example:
+  ```
+  radtract_features
+  ```
+
+  More documentation can be found here: https://github.com/MIC-DKFZ/radtract
+
+  Citation:
+  ```
+  Neher, P., Hirjak, D. & Maier-Hein, K. Radiomic tractometry reveals tract-specific imaging biomarkers in white matter. Nat Commun 15, 303 (2024). https://doi.org/10.1038/s41467-023-44591-3
+  ```
+
+  To run container outside of this environment: ml radtract/{{ context.version }}
+
+  License: Apache-2.0
+
+  ----------------------------------
+
+categories:
+  - diffusion imaging
