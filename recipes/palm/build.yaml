@@ -8,6 +8,10 @@ copyright:
 architectures:
   - x86_64
 
+auto_update:
+  method: manual_review
+  information: "https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/PALM"
+
 build:
   kind: neurodocker
 
