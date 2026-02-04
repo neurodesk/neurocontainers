@@ -7,15 +7,15 @@ tests:
       # === TEST PREDICTION WITH OPENRECON ===
 
       # Convert input DICOMs to ISMRMRD format
-      python /opt/code/python-ismrmrd-server/dicom2mrd.py \
+      python /opt/code/python-ismrmrd-server/nifti2mrd.py \
         -o /buildhostdirectory/input.h5 \
-        /buildhostdirectory/dicoms
+        -i /buildhostdirectory/dicoms/dicom.nii
 
-      # # Start OpenRecon server
+      # Start OpenRecon server
       python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
       sleep 5
 
-      # # Run OpenRecon client
+      # Run OpenRecon client
       python3 /opt/code/python-ismrmrd-server/client.py \
         -G dataset \
         -o /buildhostdirectory/output.h5 \
