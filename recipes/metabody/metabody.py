@@ -181,10 +181,31 @@ def process_image(images, connection, config, metadata):
     n_repetitions = np.unique([img.repetition for img in images]).shape[0]
     # New data with the correct 4D dimensions
     new_data = np.zeros((data.shape[0], data.shape[1], n_slices, n_repetitions))
+    
+    # Determine order for stacking when returning images
+    slices = [img.slice for img in images]
+    repetitions = [img.repetition for img in images]
+    slice_diff = np.nansum(np.diff(slices)[:5])
+    rep_diff = np.nansum(np.diff(repetitions)[:5])
+    # If the sum of the first few differences in slice indices is 0,
+    # then we can assume that slices are stacked within repetitions
+    if slice_diff == 0 and rep_diff > 0:
+        logging.info("Detected repetition-major ordering of images (stack all slices of repetition 0, then all slices of repetition 1, etc)")
+        orderinfo = 'slices'
+    elif slice_diff > 0 and rep_diff == 0:
+        logging.info("Detected slice-major ordering of images (stack all repetitions of slice 0, then all repetitions of slice 1, etc)")
+        orderinfo = 'repetitions'
+    else:
+        # They might be interleaved or in some other unexpected order
+        show_idx = min(10, len(slices))
+        logging.warning("Could not determine ordering of slices and repetitions - unexpected pattern detected. Defaulting to repetition-major ordering.")
+        logging.warning('Slices: %s;  Repetitions: %s', slices[:show_idx], repetitions[:show_idx])
+        orderinfo = 'slices'
+
     for img in images:
         # Assuming that slices of repetitions are stacked (all slices
         # of rep 0, then all slices of rep 1, etc)
-        new_data[:, :, img.slice, img.repetition] = data[:, :, img.slice + img.repetition * n_slices]
+        new_data[:, :, img.slice, img.repetition] = img.data[0, 0, :, :]
     data = new_data
 
     logging.debug("Transformed to 4D: %s (slices: %d; repetitions: %d)" % (data.shape, n_slices, n_repetitions))
@@ -199,9 +220,9 @@ def process_image(images, connection, config, metadata):
     meta_voxelsize[2] = float(meta[0].get('SliceThickness', '0'))
     
     affine[:3, 3] = np.array(head[0].position)  # Translation
-    affine[:3, 0] = np.array(head[0].read_dir ) * meta_voxelsize[0]  # X direction
-    affine[:3, 1] = np.array(head[0].phase_dir) * meta_voxelsize[1]  # Y direction
-    affine[:3, 2] = np.array(head[0].slice_dir) * meta_voxelsize[2]  # Z direction
+    affine[:3, 0] = np.array(head[0].read_dir ) * voxelsize[0]  # X direction
+    affine[:3, 1] = np.array(head[0].phase_dir) * voxelsize[1]  # Y direction
+    affine[:3, 2] = np.array(head[0].slice_dir) * voxelsize[2]  # Z direction
 
     logging.debug("Voxel size from metadata: %s" % (meta_voxelsize,))
     logging.debug("Voxel size from FoV: %s" % (voxelsize,))
@@ -224,18 +245,19 @@ def process_image(images, connection, config, metadata):
     logging.info('Loading Output image')
     # data_img = nib.load('output_image.nii')
     # data = data_img.get_fdata()
-    data = stat_img.get_fdata()
+    stat_data = stat_img.get_fdata()
+    data = np.concatenate([stat_data, data], axis=-1)
     logging.info("Output image data shape before transposing: %s", data.shape)
 
     # The output is 4D image with the 4th dimension being different
-    # stats maps. Transpose it to [cha x y stat slice] for easier
-    # reslicing into 2D images. Follow the pattern the images came
-    # in - all slices of one rep/stat then all slices of the next
-    # rep/stat, etc.
+    # stats maps and repetitions. Transpose it to [cha x y rep slice]
+    # for easier reslicing into 2D images. Follow the pattern the
+    # images came in - all slices of one rep/stat then all slices of
+    # the next rep/stat, etc.
     data = data[:, :, :, :, None]
     data = data.transpose((4, 0, 1, 3, 2))
     n_slices = data.shape[-1]
-    n_stats  = data.shape[-2]
+    n_reps  = data.shape[-2]  # includes number of stats maps as well
     logging.info("Output image data shape: %s", data.shape)
 
     # Determine max value (12 or 16 bit)
@@ -252,43 +274,67 @@ def process_image(images, connection, config, metadata):
 
     currentSeries = 0
 
+    # Precompute indices based on orderinfo
+    if orderinfo == 'slices':
+        # Stack all slices of repetition 0, then all slices of repetition 1, etc
+        outer_range = range(n_reps)
+        inner_range = range(n_slices)
+        get_idx = lambda i, j: j + i * n_slices
+        get_data = lambda data, i, j: data[..., i, j]
+        get_rep = lambda i, j: i
+    else:
+        # Stack all repetitions of slice 0, then all repetitions of slice 1, etc
+        outer_range = range(n_slices)
+        inner_range = range(n_reps)
+        get_idx = lambda i, j: j + i * n_reps
+        get_data = lambda data, i, j: data[..., j, i]
+        get_rep = lambda i, j: j
+
     # Re-slice image data back into 2D images
-    imagesOut = [None] * (n_stats * n_slices)
-    for sImg in range(n_stats):
-        for iImg in range(n_slices):
+    imagesOut = [None] * (n_reps * n_slices)
+    for i in outer_range:
+        for j in inner_range:
+            img_idx = get_idx(i, j)
+            # Make sure that index that gets headers and meta stays in
+            # range. Use the first header/meta for stats images
+            head_meta_idx = 0 if ((n_reps * n_slices) - img_idx) > len(head) else len(head) - ((n_reps * n_slices) - img_idx)
             # Create new MRD instance for the final image
             # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
             # from_array() should be called with 'transpose=False' to avoid warnings, and when called
             # with this option, can take input as: [cha z y x], [z y x], or [y x]
             # imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
             # imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
-            img_idx = iImg + sImg * n_slices
-            imagesOut[img_idx] = ismrmrd.Image.from_array(data[..., sImg, iImg], transpose=False)
+            imagesOut[img_idx] = ismrmrd.Image.from_array(get_data(data, i, j), transpose=False)
             # outputOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
 
             # Create a copy of the original fixed header and update the data_type
             # (we changed it to int16 from all other types)
-            oldHeader = head[img_idx]
+            logging.debug("Head index for img %d is %d (out of %d headers)", img_idx, head_meta_idx, len(head))
+            oldHeader = head[head_meta_idx]
             oldHeader.data_type = imagesOut[img_idx].data_type
 
             # Unused example, as images are grouped by series before being passed into this function now
             # oldHeader.image_series_index = currentSeries+1
 
             # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
-            if mrdhelper.get_meta_value(meta[img_idx], 'IceMiniHead') is not None:
-                if mrdhelper.extract_minihead_bool_param(base64.b64decode(meta[img_idx]['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
+            if mrdhelper.get_meta_value(meta[head_meta_idx], 'IceMiniHead') is not None:
+                if mrdhelper.extract_minihead_bool_param(base64.b64decode(meta[head_meta_idx]['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
                     currentSeries += 1
+
+            rep_no = get_rep(i, j)
+            # Stat maps are first in the output
+            img_comment = stat_labels[rep_no] if rep_no <= len(stat_labels)-1 else 'fMRI'
 
             imagesOut[img_idx].setHead(oldHeader)
             # Create a copy of the original ISMRMRD Meta attributes and update
-            tmpMeta = meta[img_idx]
+            tmpMeta = meta[head_meta_idx]
             tmpMeta['DataRole']                       = 'Image'
             tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'METABODY']
             tmpMeta['WindowCenter']                   = str((maxVal+1)/2)
             tmpMeta['WindowWidth']                    = str((maxVal+1))
             tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon'
             tmpMeta['Keep_image_geometry']            = 1
-            tmpMeta['ImageComments']                  = stat_labels[sImg]
+            tmpMeta['ImageComments']                  = img_comment
 
             #     # Example for setting colormap
             #     if config['parameters']['options'] == 'colormap':
@@ -303,9 +349,9 @@ def process_image(images, connection, config, metadata):
 
             metaXml = tmpMeta.serialize()
             # logging.debug("Image MetaAttributes: %s", xml.dom.minidom.parseString(metaXml).toprettyxml())
-            logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
+            logging.debug("Image data has %d elements", imagesOut[img_idx].data.size)
 
-            imagesOut[iImg].attribute_string = metaXml
+            imagesOut[img_idx].attribute_string = metaXml
 
     return imagesOut
 

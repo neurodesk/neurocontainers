@@ -1,5 +1,5 @@
 name: metabody
-version: 1.0.0
+version: 1.0.1
 architectures:
     - x86_64
 
@@ -146,3 +146,6 @@ build:
             - chmod +x /opt/code/python-ismrmrd-server/nifti2mrd.py
             - chmod +x /opt/code/python-ismrmrd-server/mrd2dicom.py
             - chmod +x /opt/code/afni_processing.sh
+deploy:
+    bins:
+        - /opt/code/afni_processing.sh
