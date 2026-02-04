@@ -181,12 +181,15 @@ files:
 
       # Start RStudio Server in foreground mode with temp directories
       # Use current user since default 'rstudio-server' user doesn't exist in container
+      # Note: --auth-none=1 must be on command line (not just config file) to work
+      # reliably when running through Singularity with --cleanenv
       exec /usr/lib/rstudio-server/bin/rserver \
           --server-daemonize=0 \
           --server-user="$(whoami)" \
           --server-data-dir="$DATA_DIR" \
           --server-pid-file="$PID_FILE" \
-          --database-config-file="$DB_CONF"
+          --database-config-file="$DB_CONF" \
+          --auth-none=1
 
   - name: dependencies.R
     contents: |-
