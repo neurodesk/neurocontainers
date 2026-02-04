@@ -1,12 +1,12 @@
 {
   "apps": {
     "rstudio 2023.12.1": {
-      "version": "20260127",
+      "version": "20260204",
       "exec": "",
       "apptainer_args": []
     },
     "rstudioGUI-rstudio 2023.12.1": {
-      "version": "20260127",
+      "version": "20260204",
       "exec": "rstudio",
       "apptainer_args": []
     }
