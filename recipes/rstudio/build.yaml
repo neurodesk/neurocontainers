@@ -163,11 +163,21 @@ files:
       # Works in both root and non-root contexts (e.g., Singularity/Apptainer)
 
       # Use /tmp for all runtime directories to avoid permission issues
-      # when running in containers without root access
+      # when running in containers without root access, and to avoid
+      # EOVERFLOW errors on CVMFS (large inode numbers cause issues with
+      # RStudio's SQLite database when stored on CVMFS filesystem)
       DATA_DIR="/tmp/rstudio-server-data"
       PID_FILE="/tmp/rstudio-server.pid"
+      DB_CONF="/tmp/rstudio-db.conf"
 
       mkdir -p "$DATA_DIR"
+
+      # Create database config to store SQLite database in /tmp
+      # This avoids EOVERFLOW errors when running from CVMFS
+      cat > "$DB_CONF" << EOF
+      provider=sqlite
+      directory=$DATA_DIR
+      EOF
 
       # Start RStudio Server in foreground mode with temp directories
       # Use current user since default 'rstudio-server' user doesn't exist in container
@@ -175,7 +185,8 @@ files:
           --server-daemonize=0 \
           --server-user="$(whoami)" \
           --server-data-dir="$DATA_DIR" \
-          --server-pid-file="$PID_FILE"
+          --server-pid-file="$PID_FILE" \
+          --database-config-file="$DB_CONF"
 
   - name: dependencies.R
     contents: |-
