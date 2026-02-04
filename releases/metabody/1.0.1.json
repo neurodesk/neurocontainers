@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "metabody 1.0.1": {
+      "version": "20260203",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "other"
+  ]
+}
