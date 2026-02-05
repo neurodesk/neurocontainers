@@ -162,6 +162,11 @@ files:
       # RStudio Server startup script for containerized single-user mode
       # Works in both root and non-root contexts (e.g., Singularity/Apptainer)
 
+      # Ensure USER is set - transparent-singularity runs with --cleanenv which
+      # strips environment variables. RStudio's auth-none handler needs USER to
+      # determine which user to auto-authenticate as.
+      export USER=${USER:-$(whoami)}
+
       # Use /tmp for all runtime directories to avoid permission issues
       # when running in containers without root access, and to avoid
       # EOVERFLOW errors on CVMFS (large inode numbers cause issues with
