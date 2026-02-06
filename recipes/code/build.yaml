@@ -1,0 +1,174 @@
+name: code
+version: 240320
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: debian:bookworm
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - template:
+        name: miniconda
+        version: latest
+        conda_install: "python=3.11 nipype jupyter nb_conda_kernels h5py seaborn numpy"
+        pip_install: "osfclient"
+
+    - install:
+        - midori
+        - xdg-utils
+        - python3-pyqt5
+        - unzip
+        - git
+        - apt-transport-https
+        - ca-certificates
+        - coreutils
+        - curl
+        - gnome-keyring
+        - gnupg
+        - libnotify4
+        - wget
+        - libnss3
+        - libxkbfile1
+        - libsecret-1-0
+        - libgtk-3-0
+        - libxss1
+        - libgbm1
+        - libxshmfence1
+        - libasound2
+        - cryptsetup
+        - squashfs-tools
+        - lua-bit32
+        - lua-filesystem
+        - lua-json
+        - lua-lpeg
+        - lua-posix
+        - lua-term
+        - lua5.2
+        - lmod
+        - imagemagick
+        - less
+        - nano
+        - tree
+        - gcc
+        - graphviz
+        - libzstd1
+        - zlib1g-dev
+        - zip
+        - build-essential
+        - uuid-dev
+        - libgpgme-dev
+        - libseccomp-dev
+        - pkg-config
+
+    - run:
+        - wget -O vscode.deb "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64"
+        - apt install ./vscode.deb
+        - rm -rf ./vscode.deb
+
+    - workdir: /opt
+
+    - run:
+        - wget https://julialang-s3.julialang.org/bin/linux/x64/1.6/julia-1.6.3-linux-x86_64.tar.gz
+        - tar zxvf julia-1.6.3-linux-x86_64.tar.gz
+        - rm -rf julia-1.6.3-linux-x86_64.tar.gz
+        - ln -s /opt/julia-1.6.3 /opt/julia-latest
+
+    - run:
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.python
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension julialang.language-julia
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.vscode-pylance
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-keymap
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-renderers
+        - rm -rf /opt/vscode-data/CachedExtensionVSIXs/
+
+    - environment:
+        DONT_PROMPT_WSL_INSTALL: "1"
+        PATH: \$PATH:/opt/julia-1.6.3/bin
+        GOPATH: \$HOME/go
+
+    - run:
+        - wget https://dl.google.com/go/go1.17.2.linux-amd64.tar.gz
+        - tar -C /usr/local -xzvf go1.17.2.linux-amd64.tar.gz
+        - rm go1.17.2.linux-amd64.tar.gz
+
+    - environment:
+        PATH: \$PATH:/usr/local/go/bin:\$GOPATH/bin
+
+    - run:
+        - mkdir -p /root/go/src/github.com/sylabs
+        - cd /root/go/src/github.com/sylabs && wget https://github.com/sylabs/singularity/releases/download/v3.9.3/singularity-ce-3.9.3.tar.gz
+        - cd /root/go/src/github.com/sylabs && tar -xzvf singularity-ce-3.9.3.tar.gz
+        - cd /root/go/src/github.com/sylabs/singularity-ce-3.9.3 && ./mconfig --without-suid --prefix=/usr/local/singularity
+        - make -C /root/go/src/github.com/sylabs/singularity-ce-3.9.3/builddir
+        - make -C /root/go/src/github.com/sylabs/singularity-ce-3.9.3/builddir install
+        - rm -rf /root/go/src/github.com/sylabs/singularity-ce-3.9.3
+        - rm -rf /usr/local/go /root/go
+        - ln -s /usr/local/singularity/bin/singularity /bin/
+
+    - copy:
+        - code
+        - /usr/local/sbin/code
+
+    - run:
+        - chmod a+x /usr/local/sbin/code
+        - chmod a+rwx /opt/vscode-extensions/ -R
+        - chmod a+rwx /opt/vscode-data -R
+
+    - copy:
+        - module.sh
+        - /usr/share/module.sh
+
+    - user: neuro
+
+deploy:
+  bins:
+    - code
+
+categories:
+  - programming
+
+readme: |
+  ----------------------------------
+  ## code/{{ context.version }} ##
+  Python and Julia environment with VScode and singularity
+
+  Example:
+  \`\`\`
+  code 
+  \`\`\`
+
+  More documentation can be found here: 
+
+  To run applications outside of this container: ml code/{{ context.version }}
+
+  ----------------------------------
+
+files:
+  - name: code
+    contents: |
+      #\!/usr/bin/env sh
+      /usr/bin/code --extensions-dir=/opt/vscode-extensions --no-sandbox
+
+  - name: module.sh
+    contents: |
+      # system-wide profile.modules                                          #
+      # Initialize modules for all sh-derivative shells                      #
+      #----------------------------------------------------------------------#
+      trap "" 1 2 3
+
+      case "\$0" in
+          -bash|bash|*/bash) . /usr/share/lmod/6.6/init/bash ;;
+             -ksh|ksh|*/ksh) . /usr/share/lmod/6.6/init/ksh ;;
+             -zsh|zsh|*/zsh) . /usr/share/lmod/6.6/init/zsh ;;
+                -sh|sh|*/sh) . /usr/share/lmod/6.6/init/sh ;;
+                          *) . /usr/share/lmod/6.6/init/sh ;;  # default for scripts
+      esac
+
+      trap - 1 2 3

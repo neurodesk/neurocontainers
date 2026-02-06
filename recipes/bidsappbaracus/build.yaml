@@ -1,0 +1,51 @@
+name: bidsappbaracus
+version: 1.1.4
+# https://hub.docker.com/r/bids/baracus/tags
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: bids/baracus:v1.1.4
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - entrypoint: bash
+
+deploy:
+  path:
+    - /usr/local/anaconda/bin
+    - /code
+    - /opt/freesurfer/bin
+
+categories:
+  - bids apps
+
+readme: |
+  ----------------------------------
+  ## bidsappbaracus/{{ context.version }} ##
+  This BIDS App predicts brain age, based on data from Freesurfer 5.3. It combines data from cortical thickness, cortical surface area, and subcortical information (see Liem et al., 2017).
+
+  Example:
+  ```
+  run_brain_age_bids.py [-h]
+                               [--participant_label PARTICIPANT_LABEL [PARTICIPANT_LABEL ...]]
+                               [--freesurfer_dir FREESURFER_DIR]
+                               [--models {Liem2016__OCI_norm,Liem2016__full_2samp_training} [{Liem2016__OCI_norm,Liem2016__full_2samp_training} ...]]
+                               --license_key LICENSE_KEY [--n_cpus N_CPUS] [-v]
+                               bids_dir out_dir {participant,group}
+  ```
+
+  More documentation can be found here: https://github.com/bids-apps/baracus
+
+  To run container outside of this environment: ml bidsappbaracus/{{ context.version }}
+
+  Citation:
+  ```
+  Liem et al. (2017). Predicting brain-age from multimodal imaging data captures cognitive impairment. Neuroimage, 148:179-188, doi: 10.1016/j.neuroimage.2016.11.005.
+  ```
+  ----------------------------------

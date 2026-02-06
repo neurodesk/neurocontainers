@@ -1,0 +1,63 @@
+name: trackvis
+version: 0.6.1
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: centos:7
+  pkg-manager: yum
+
+  directives:
+    - install:
+        - curl
+        - ca-certificates
+        - libXt
+        - libjpeg-turbo
+        - libpng12
+        - libXrender
+        - fontconfig
+        - libXext
+        - mesa-libGLU
+
+    - workdir: /opt/trackvis-{{ context.version }}
+
+    - run:
+        - curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/TrackVis_v{{ context.version }}_x86_64.tar.gz | tar -xz -C /opt/trackvis-{{ context.version }}/
+
+    - environment:
+        PATH: $PATH:/opt/trackvis-{{ context.version }}
+
+deploy:
+  path:
+    - /opt/trackvis-{{ context.version }}
+
+categories:
+  - diffusion imaging
+
+gui_apps:
+  - name: trackvisGUI
+    exec: trackvis
+
+readme: |
+  ----------------------------------
+  ## trackvis/{{ context.version }} ##
+  Fibre tracking toolkit. Preprocessing should be performed using Diffusion Toolkit.
+
+  Example:
+  ```
+  trackvis
+  ```
+
+  Important: To be able to use this tool, you need to request a free license: http://www.trackvis.org/download/
+
+  More documentation can be found here: http://trackvis.org/docs/?subsect=instructions#getting_started
+
+  To run container outside of this environment: ml trackvis/{{ context.version }}
+
+  Citation:
+  ```
+  You may use acknowledgement like "Ruopeng Wang, Van J. Wedeen, TrackVis.org, Martinos Center for Biomedical Imaging, Massachusetts General Hospital" or cite the related ISMRM abstract Proc. Intl. Soc. Mag. Reason. Med. 15 (2007) 3720
+  ```
+  ----------------------------------

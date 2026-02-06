@@ -1,0 +1,105 @@
+name: delphi
+version: 0.0.2
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: docker.io/tensorflow/tensorflow:1.15.0-gpu-py3
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - run:
+        - pip install -U "ray[debug]==0.8.0"
+        - pip install "ray[tune]==0.8.0" requests scipy
+        - pip install pandas
+        - pip install argparse
+        - pip install nibabel
+        - pip install matplotlib
+
+    - run:
+        - apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu1804/x86_64/3bf863cc.pub
+
+    - install:
+        - wget
+        - git
+        - tar
+        - curl
+        - ca-certificates
+        - libssl-dev
+        - clang
+        - llvm
+        - dpkg
+
+    - run:
+        - curl -fsSL --retry 5 https://github.com/Kitware/CMake/releases/download/v3.22.2/cmake-3.22.2-linux-x86_64.tar.gz | tar -xz --strip-components=1 -C /usr/local/
+
+    - run:
+        - mkdir -m777 /usr/local/rustup /usr/local/cargo
+
+    - environment:
+        RUSTUP_HOME: /usr/local/rustup
+        CARGO_HOME: /usr/local/cargo
+        PATH: \$PATH:/usr/local/cargo/bin
+
+    - run:
+        - curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs -o rustup-init.sh
+
+    - run:
+        - bash ./rustup-init.sh -y
+
+    - run:
+        - rustup install nightly
+
+    - run:
+        - rustup default nightly
+
+    - run:
+        - git clone https://github.com/yexincheng/delphi.git /opt/encryption
+
+    - workdir: /opt/encryption
+
+    - run:
+        - git pull
+
+    - workdir: /opt/encryption/rust
+
+    - run:
+        - cargo +nightly build --release
+
+    - workdir: /opt/encryption
+
+deploy:
+  path:
+    - /opt/encryption
+
+categories:
+  - machine learning
+
+readme: |
+  ----------------------------------
+  ## delphi/{{ context.version }} ##
+  Delphi is a Python, C++, and Rust library for Secure Deep Neural Network Inference
+
+   update: 
+      1. update new public key for NVIDIA CUDA Linux (released on 27/04/2022) 
+      2. change CARGO_HOME and RUSTUP_HOME to /usr/local; Cargos bin directory: /usr/local/cargo/bin
+
+  Example:
+  \`\`\`
+  \`\`\`
+
+  More documentation can be found here: https://github.com/mc2-project/delphi
+
+  To run applications outside of this container: ml delphi/{{ context.version }}
+
+  Citation:
+  \`\`\`
+  Delphi: A Cryptographic Inference Service for Neural Networks. https://eprint.iacr.org/2020/050.pdf
+  \`\`\`
+
+  ----------------------------------

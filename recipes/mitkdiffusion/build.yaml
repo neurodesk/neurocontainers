@@ -1,0 +1,63 @@
+name: mitkdiffusion
+version: 1.2.0
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - libgomp1
+        - libasound2
+        - libnss3
+        - libqt5gui5
+        - libxi6
+        - wget
+        - ca-certificates
+        - libxtst6
+        - libxcomposite1
+        - libxdamage1
+        - libxcursor1
+
+    - workdir: /opt
+
+    - run:
+        - wget https://www.mitk.org/download/diffusion/nightly/MITK-Diffusion_ubuntu-20.04_2023.07.20_a754b053_32d7d08a_NoPython.tar.gz
+        - tar xfz MITK-Diffusion_ubuntu-20.04_2023.07.20_a754b053_32d7d08a_NoPython.tar.gz
+        - rm -rf MITK-Diffusion_ubuntu-20.04_2023.07.20_a754b053_32d7d08a_NoPython.tar.gz
+
+    - environment:
+        PATH: $PATH:/opt/MITK-Diffusion-2018.09.99-linux-x86_64
+
+deploy:
+  path:
+    - /opt/MITK-Diffusion-2018.09.99-linux-x86_64
+
+categories:
+  - diffusion imaging
+
+gui_apps:
+  - name: mitkdiffusionGUI
+    exec: MitkDiffusion
+
+readme: |
+  ----------------------------------
+  ## mitkdiffusion/{{ context.version }} ##
+  MITK Diffusion is a collection of tools for diffusion-weighted MRI processing.
+
+  Example:
+  ```
+  MitkDiffusion
+  ```
+
+  More documentation can be found here: https://www.mitk.org/wiki/DiffusionImaging
+
+  To run container outside of this environment: ml mitkdiffusion/{{ context.version }}
+  ----------------------------------

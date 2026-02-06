@@ -1,0 +1,69 @@
+name: micapipe
+version: v0.2.3
+# https://hub.docker.com/r/micalab/micapipe/tags
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: micalab/micapipe:v0.2.3
+  pkg-manager: apt
+
+  directives:
+    - workdir: /opt
+
+    - install:
+        - wget
+        - git
+        - curl
+        - ca-certificates
+        - unzip
+
+    - copy:
+        - license.txt
+        - /opt/licence.txt
+
+    - environment:
+        PATH: $PATH:/opt/micapipe/:/opt/miniconda-22.11.1/envs/micapipe/bin/
+
+deploy:
+  path:
+    - /opt/micapipe
+
+files:
+  - name: license.txt
+    contents: |
+      s.bollmann@uq.edu.au
+      53024
+       *CgH0liqb0e9g
+       FSVt2Z862iDJk
+
+categories:
+  - structural imaging
+  - diffusion imaging
+  - functional imaging
+
+readme: |
+  ----------------------------------
+  ## micapipe/{{ context.version }} ##
+  Micapipe is a processing pipeline providing a robust framework to analyze multimodal MRI data. This pipeline integrates processing streams for T1-weighted, microstructure-sensitive, diffusion-weighted, and resting-state functional imaging.
+
+  Example:
+  ```
+  micapipe \
+          -bids /bids/ -out /out/ -fs_licence '/opt/licence.txt' \
+          -sub 'sub-TS-APPA' -proc_structural
+  ```
+
+  Note: license.txt is in /opt/licence.txt
+
+  More documentation can be found here: https://micapipe.readthedocs.io/en/latest/
+
+  To run container outside of this environment: ml micapipe/{{ context.version }}
+
+  Citation:
+  ```
+  Cruces et al. (2022). Micapipe: a pipeline for multimodal neuroimaging and connectome analysis. NeuroImage, 2022, 119612. doi: https://doi.org/10.1016/j.neuroimage.2022.119612
+  ```
+  ----------------------------------

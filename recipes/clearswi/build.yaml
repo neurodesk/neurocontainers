@@ -1,0 +1,81 @@
+name: clearswi
+version: 1.0.0
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - git
+        - wget
+        - ca-certificates
+        - vim
+
+    - workdir: /opt
+
+    - run:
+        - wget https://julialang-s3.julialang.org/bin/linux/x64/1.6/julia-1.6.3-linux-x86_64.tar.gz
+        - tar zxvf julia-1.6.3-linux-x86_64.tar.gz
+        - rm -rf julia-1.6.3-linux-x86_64.tar.gz
+
+    - environment:
+        PATH: $PATH:/opt/julia-1.6.3/bin
+
+    - copy:
+        - install_packages.jl
+        - /opt/install_packages.jl
+
+    - environment:
+        JULIA_DEPOT_PATH: /opt/julia_depot
+
+    - run:
+        - julia /opt/install_packages.jl
+        - chmod a+rwx /opt/julia_depot/packages/CLEARSWI -R
+
+deploy:
+  bins:
+    - julia
+
+files:
+  - name: install_packages.jl
+    contents: |
+      using Pkg
+      Pkg.add(PackageSpec(url="https://github.com/korbinian90/CLEARSWI.jl"))
+
+categories:
+  - structural imaging
+
+readme: |
+  ----------------------------------
+  ## clearswi/{{ context.version }} ##
+  Published as CLEAR-SWI. It provides magnetic resonance images with improved vein and iron contrast by weighting a combined magnitude image with a preprocessed phase image.
+
+  Example (run in julia):
+  ```
+  using CLEARSWI
+
+  TEs = [4,8,12]
+  nifti_folder = CLEARSWI.dir("test","testData","small")
+  magfile = joinpath(nifti_folder, "Mag.nii")
+  phasefile = joinpath(nifti_folder, "Phase.nii")
+
+  mag = readmag(magfile);
+  phase = readphase(phasefile);
+  data = Data(mag, phase, mag.header, TEs);
+
+  swi = calculateSWI(data);
+  mip = createMIP(swi);
+
+  savenii(swi, "<outputpath>/swi.nii"; header=mag.header)
+  savenii(mip, "<outputpath>/mip.nii"; header=mag.header)
+  ```
+
+  More documentation can be found here: https://github.com/korbinian90/CLEARSWI.jl
+
+  To run container outside of this environment: ml clearswi/{{ context.version }}
+  ----------------------------------

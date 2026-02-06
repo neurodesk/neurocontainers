@@ -1,0 +1,48 @@
+name: terastitcher
+version: 1.11.10
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: fedora:35
+  pkg-manager: dnf
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - curl
+        - ca-certificates
+
+    - workdir: /opt/terastitcher-{{ context.version }}
+
+    - run:
+        - curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/TeraStitcher-portable-1.11.10-Linux.tar.gz | tar -xz -C /opt/terastitcher-{{ context.version }} --strip-components 1
+
+    - environment:
+        PATH: $PATH:/opt/terastitcher-{{ context.version }}
+
+deploy:
+  path:
+    - /opt/terastitcher-{{ context.version }}
+
+categories:
+  - microscopy
+
+readme: |
+  ----------------------------------
+  ## terastitcher/{{ context.version }} ##
+  TeraStitcher is a free tool that enables the stitching of Teravoxel-sized tiled microscopy images even on workstations with relatively limited resources of memory (<8 GB) and processing power.
+
+  Example:
+  ```
+  terastitcher --help
+  ```
+
+  More documentation can be found here: http://abria.github.io/TeraStitcher/
+
+  To run container outside of this environment: ml terastitcher/{{ context.version }}
+  ----------------------------------
