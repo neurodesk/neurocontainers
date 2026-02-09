@@ -88,12 +88,38 @@ def extract_webapp_config(recipe: Dict[str, Any], recipe_dir: Path) -> Optional[
     return webapp_config
 
 
-def collect_webapp_configs(recipes_dir: Path) -> Dict[str, Dict[str, Any]]:
+def has_release_file(releases_dir: Path, recipe_name: str) -> bool:
     """
-    Collect all webapp configurations from recipes.
+    Check if a recipe has at least one release file.
+
+    A release file indicates the container has been built, uploaded to storage,
+    and is available (or will be available) on CVMFS.
+
+    Args:
+        releases_dir: Path to the releases directory
+        recipe_name: Name of the recipe to check
+
+    Returns:
+        True if at least one release file exists for this recipe
+    """
+    release_dir = releases_dir / recipe_name
+    if not release_dir.exists():
+        return False
+
+    # Check for any .json files in the release directory
+    return any(release_dir.glob("*.json"))
+
+
+def collect_webapp_configs(recipes_dir: Path, releases_dir: Path) -> Dict[str, Dict[str, Any]]:
+    """
+    Collect webapp configurations from recipes that have been released.
+
+    Only includes webapps from recipes that have a corresponding release file,
+    ensuring that webapps.json only contains apps actually available on CVMFS.
 
     Args:
         recipes_dir: Path to the recipes directory
+        releases_dir: Path to the releases directory
 
     Returns:
         Dict mapping webapp name -> webapp configuration
@@ -115,30 +141,44 @@ def collect_webapp_configs(recipes_dir: Path) -> Dict[str, Dict[str, Any]]:
         webapp_config = extract_webapp_config(recipe, recipe_dir)
         if webapp_config:
             module = webapp_config.get("module")
-            if module:
-                print(f"  Found webapp: {module} (from {recipe_dir.name})")
-                webapps[module] = webapp_config
-            else:
+            recipe_name = recipe.get("name")
+
+            if not module:
                 print(f"  Warning: Webapp in {recipe_dir.name} missing 'module' field")
+                continue
+
+            # Only include webapps that have been released
+            if not has_release_file(releases_dir, recipe_name):
+                print(f"  Skipping webapp: {module} (no release file for {recipe_name})")
+                continue
+
+            print(f"  Found webapp: {module} (from {recipe_dir.name})")
+            webapps[module] = webapp_config
 
     return webapps
 
 
-def generate_webapps_json(recipes_dir: str, output_file: str):
+def generate_webapps_json(recipes_dir: str, releases_dir: str, output_file: str):
     """
-    Generate webapps.json from all recipe build.yaml files.
+    Generate webapps.json from recipe build.yaml files that have been released.
+
+    Only includes webapps from recipes that have a corresponding release file,
+    ensuring webapps.json only contains apps available on CVMFS.
 
     Args:
         recipes_dir: Directory containing recipe subdirectories
+        releases_dir: Directory containing release files
         output_file: Path to write the generated webapps.json
     """
     recipes_path = Path(recipes_dir)
+    releases_path = Path(releases_dir)
     output_path = Path(output_file)
 
     print(f"Scanning recipes in: {recipes_path}")
+    print(f"Checking releases in: {releases_path}")
 
-    # Collect all webapp configurations
-    webapps = collect_webapp_configs(recipes_path)
+    # Collect webapp configurations (only from released recipes)
+    webapps = collect_webapp_configs(recipes_path, releases_path)
 
     if not webapps:
         print("No webapp configurations found!")
@@ -176,6 +216,11 @@ def main():
         help="Directory containing recipe subdirectories (default: recipes)"
     )
     parser.add_argument(
+        "--releases-dir",
+        default="releases",
+        help="Directory containing release files (default: releases)"
+    )
+    parser.add_argument(
         "--output",
         default="webapps.json",
         help="Output path for generated webapps.json (default: webapps.json)"
@@ -190,11 +235,15 @@ def main():
     if not recipes_dir.is_absolute():
         recipes_dir = script_dir / recipes_dir
 
+    releases_dir = Path(args.releases_dir)
+    if not releases_dir.is_absolute():
+        releases_dir = script_dir / releases_dir
+
     output_file = Path(args.output)
     if not output_file.is_absolute():
         output_file = Path.cwd() / output_file
 
-    generate_webapps_json(str(recipes_dir), str(output_file))
+    generate_webapps_json(str(recipes_dir), str(releases_dir), str(output_file))
 
     return 0
 

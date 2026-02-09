@@ -103,6 +103,15 @@ def validate_url(instance, attribute, value):
         )
 
 
+def validate_webapp_icon(instance, attribute, value):
+    """Validate webapp icon is an SVG file"""
+    if value and not value.endswith(".svg"):
+        raise ValueError(
+            f"Webapp icon must be an SVG file (got '{value}'). "
+            "JupyterLab requires SVG format for launcher icons."
+        )
+
+
 # ============================================================================
 # Copyright Info
 # ============================================================================
@@ -169,7 +178,9 @@ class WebappInfo:
     description: Optional[str] = attrs.field(default=None)
     startup_timeout: Optional[int] = attrs.field(default=None)
     category: Optional[str] = attrs.field(default=None)
-    icon: Optional[str] = attrs.field(default=None)
+    icon: Optional[str] = attrs.field(
+        default=None, validator=attrs.validators.optional(validate_webapp_icon)
+    )
     additional_proxies: Optional[List[AdditionalProxy]] = attrs.field(default=None)
 
 
