@@ -9,7 +9,10 @@ on:
     types: [closed]
     branches: [main]
     paths:
-      - "recipes/**/build.yaml"
+      # Trigger when release files are merged, not when recipes are merged.
+      # This ensures webapps.json only includes apps that are actually released
+      # and available on CVMFS, preventing broken webapp entries.
+      - "releases/**/*.json"
   workflow_dispatch:
 
 jobs:
