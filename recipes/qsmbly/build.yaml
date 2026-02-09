@@ -94,7 +94,7 @@ deploy:
     - qsmbly
   webapp:
     title: "QSMbly"
-    icon: "icon.ico"
+    icon: "icon.svg"
     startup_command: "qsmbly start"
     startup_timeout: 120
     description: "Browser-based Quantitative Susceptibility Mapping using WebAssembly"
