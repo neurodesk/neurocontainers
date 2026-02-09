@@ -175,7 +175,7 @@ files:
       PID_FILE="/tmp/rstudio-server.pid"
       DB_CONF="/tmp/rstudio-db.conf"
 
-      mkdir -p "$DATA_DIR"
+      mkdir -p "$DATA_DIR" 
 
       # Create database config to store SQLite database in /tmp
       # This avoids EOVERFLOW errors when running from CVMFS
