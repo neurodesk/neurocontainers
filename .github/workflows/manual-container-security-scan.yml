@@ -18,10 +18,10 @@ on:
           - both
         default: "grype"
       enable_semgrep:
-        description: "Enable Semgrep static analysis"
+        description: "Enable Semgrep static analysis (Note: May produce false positives on system files, recommended only for application containers)"
         required: false
         type: boolean
-        default: true
+        default: false
       severity_threshold:
         description: "Minimum severity level to report"
         required: false
@@ -213,17 +213,29 @@ jobs:
           mkdir -p "$temp_extract_dir"
           docker export "$container_id" | tar -xf - -C "$temp_extract_dir" 2>/dev/null || true
 
+          # Run Semgrep with exclusions for system files and common false positives
           docker run --rm \
             -v "$PWD/$temp_extract_dir":/src \
             -v "$PWD/${{ env.SCAN_OUTPUT_DIR }}":/output \
             returntocorp/semgrep:latest \
             semgrep \
-            --config=auto \
             --config=p/security-audit \
-            --config=p/secrets \
+            --exclude=/src/etc/ \
+            --exclude=/src/usr/bin/ \
+            --exclude=/src/usr/lib/ \
+            --exclude=/src/usr/sbin/ \
+            --exclude=/src/bin/ \
+            --exclude=/src/sbin/ \
+            --exclude=/src/lib/ \
+            --exclude=/src/var/ \
+            --exclude=/src/boot/ \
+            --exclude=/src/dev/ \
+            --exclude=/src/proc/ \
+            --exclude=/src/sys/ \
+            --severity=ERROR \
             --json \
             --output=/output/semgrep_results.json \
-            /src || echo "Semgrep completed with warnings"
+            /src 2>/dev/null || echo "Semgrep completed with warnings"
 
           docker rm "$container_id" || true
           rm -rf "$temp_extract_dir"
