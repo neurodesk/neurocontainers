@@ -389,12 +389,16 @@ jobs:
           if FILTER_MODE != 'all':
               filter_info = f"\n**Filter Applied:** `{FILTER_MODE}` (showing {grype_total + trivy_total}/{grype_original + trivy_original} vulnerabilities)"
           
+          container_image = "${{ inputs.container_image }}"
+          scanner_tool = "${{ inputs.scanner_tool }}"
+          severity_threshold = "${{ inputs.severity_threshold }}"
+          
           print(f"""# Security Scan Findings
 
-**Container:** `${{ inputs.container_image }}`  
+**Container:** `{container_image}`  
 **Scan Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}  
-**Scanner:** ${{ inputs.scanner_tool }}  
-**Severity Threshold:** ${{ inputs.severity_threshold }}{filter_info}
+**Scanner:** {scanner_tool}  
+**Severity Threshold:** {severity_threshold}{filter_info}
 
 ## Summary
 
