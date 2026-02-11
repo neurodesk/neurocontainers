@@ -189,6 +189,7 @@ files:
       # Note: --auth-none=1 must be on command line (not just config file) to work
       # reliably when running through Singularity with --cleanenv
       exec /usr/lib/rstudio-server/bin/rserver \
+          --www-port="${NEURODESK_WEBAPP_PORT:-8787}" \
           --server-daemonize=0 \
           --server-user="$(whoami)" \
           --server-data-dir="$DATA_DIR" \
