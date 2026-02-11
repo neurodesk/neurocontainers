@@ -246,14 +246,28 @@ jobs:
         id: summary
         if: steps.grype.outputs.found == 'true' || steps.trivy.outputs.found == 'true' || steps.semgrep.outputs.found == 'true'
         run: |
+          # Set variables that will be used in Python script
+          FILTER_MODE="${{ inputs.vulnerability_filter }}"
+          CONTAINER_IMAGE="${{ inputs.container_image }}"
+          SCANNER_TOOL="${{ inputs.scanner_tool }}"
+          SEVERITY_THRESHOLD="${{ inputs.severity_threshold }}"
+          GITHUB_RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          SCAN_DIR="${{ env.SCAN_OUTPUT_DIR }}"
+          
           # Create Python script to generate clean summary with filtering
           cat > generate_summary.py << 'PYTHON_EOF'
           import json
           import sys
+          import os
           from datetime import datetime
           from collections import defaultdict
           
-          FILTER_MODE = '${{ inputs.vulnerability_filter }}'
+          FILTER_MODE = os.environ.get('FILTER_MODE', 'all')
+          CONTAINER_IMAGE = os.environ.get('CONTAINER_IMAGE', 'unknown')
+          SCANNER_TOOL = os.environ.get('SCANNER_TOOL', 'unknown')
+          SEVERITY_THRESHOLD = os.environ.get('SEVERITY_THRESHOLD', 'medium')
+          GITHUB_RUN_URL = os.environ.get('GITHUB_RUN_URL', '')
+          SCAN_DIR = os.environ.get('SCAN_DIR', 'scan_results')
           
           def count_by_severity(data, tool):
               counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
@@ -350,19 +364,19 @@ jobs:
           semgrep_data = {}
           
           try:
-              with open('${{ env.SCAN_OUTPUT_DIR }}/grype_results.json') as f:
+              with open(f'{SCAN_DIR}/grype_results.json') as f:
                   grype_data = json.load(f)
           except:
               pass
           
           try:
-              with open('${{ env.SCAN_OUTPUT_DIR }}/trivy_results.json') as f:
+              with open(f'{SCAN_DIR}/trivy_results.json') as f:
                   trivy_data = json.load(f)
           except:
               pass
           
           try:
-              with open('${{ env.SCAN_OUTPUT_DIR }}/semgrep_results.json') as f:
+              with open(f'{SCAN_DIR}/semgrep_results.json') as f:
                   semgrep_data = json.load(f)
           except:
               pass
@@ -389,16 +403,12 @@ jobs:
           if FILTER_MODE != 'all':
               filter_info = f"\n**Filter Applied:** `{FILTER_MODE}` (showing {grype_total + trivy_total}/{grype_original + trivy_original} vulnerabilities)"
           
-          container_image = "${{ inputs.container_image }}"
-          scanner_tool = "${{ inputs.scanner_tool }}"
-          severity_threshold = "${{ inputs.severity_threshold }}"
-          
           print(f"""# Security Scan Findings
 
-**Container:** `{container_image}`  
+**Container:** `{CONTAINER_IMAGE}`  
 **Scan Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}  
-**Scanner:** {scanner_tool}  
-**Severity Threshold:** {severity_threshold}{filter_info}
+**Scanner:** {SCANNER_TOOL}  
+**Severity Threshold:** {SEVERITY_THRESHOLD}{filter_info}
 
 ## Summary
 
@@ -456,7 +466,7 @@ jobs:
                   print(f"[{severity}] {vuln_id} - {pkg_name}@{pkg_version} (Fix: {fixed_str})")
           else:
               try:
-                  with open('${{ env.SCAN_OUTPUT_DIR }}/grype_report.txt') as f:
+                  with open(f'{SCAN_DIR}/grype_report.txt') as f:
                       print(f.read())
               except:
                   print("No Grype results")
@@ -485,7 +495,7 @@ jobs:
                   print(f"[{severity}] {vuln_id} - {pkg_name}@{pkg_version} (Fix: {fixed_version})")
           else:
               try:
-                  with open('${{ env.SCAN_OUTPUT_DIR }}/trivy_report.txt') as f:
+                  with open(f'{SCAN_DIR}/trivy_report.txt') as f:
                       print(f.read())
               except:
                   print("No Trivy results")
@@ -521,12 +531,18 @@ jobs:
 
 ---
 
-**Workflow Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+**Workflow Run:** {GITHUB_RUN_URL}
 """)
           PYTHON_EOF
           
-          # Run the script
-          python3 generate_summary.py > "${{ env.SCAN_OUTPUT_DIR }}/findings_summary.md"
+          # Run the script with environment variables
+          FILTER_MODE="$FILTER_MODE" \
+          CONTAINER_IMAGE="$CONTAINER_IMAGE" \
+          SCANNER_TOOL="$SCANNER_TOOL" \
+          SEVERITY_THRESHOLD="$SEVERITY_THRESHOLD" \
+          GITHUB_RUN_URL="$GITHUB_RUN_URL" \
+          SCAN_DIR="$SCAN_DIR" \
+          python3 generate_summary.py > "${SCAN_DIR}/findings_summary.md"
           
           echo "summary_created=true" >> $GITHUB_OUTPUT
 
