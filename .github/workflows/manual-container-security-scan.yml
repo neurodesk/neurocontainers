@@ -1,0 +1,634 @@
+name: Manual Container Security Scan
+
+on:
+  workflow_dispatch:
+    inputs:
+      container_image:
+        description: "Container image to scan (e.g., ghcr.io/neurodesk/julia:1.9.4)"
+        required: true
+        type: string
+        default: "ghcr.io/neurodesk/julia:latest"
+      scanner_tool:
+        description: "Vulnerability scanner to use"
+        required: true
+        type: choice
+        options:
+          - grype
+          - trivy
+          - both
+        default: "grype"
+      enable_semgrep:
+        description: "Enable Semgrep static analysis (Note: May produce false positives on system files, recommended only for application containers)"
+        required: false
+        type: boolean
+        default: false
+      severity_threshold:
+        description: "Minimum severity level to report"
+        required: false
+        type: choice
+        options:
+          - low
+          - medium
+          - high
+          - critical
+        default: "medium"
+      vulnerability_filter:
+        description: "Filter vulnerabilities reported in GitHub issue"
+        required: false
+        type: choice
+        options:
+          - all
+          - fixable-only
+          - exclude-dev-dependencies
+          - group-by-package
+        default: "all"
+
+env:
+  SCAN_OUTPUT_DIR: scan_results
+  TEMP_DIR: temp_scan
+
+jobs:
+  container-security-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+      actions: read
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl wget git
+          docker --version
+
+      - name: Install vulnerability scanners
+        run: |
+          # Install Grype
+          if [[ "${{ inputs.scanner_tool }}" == "grype" || "${{ inputs.scanner_tool }}" == "both" ]]; then
+            echo "Installing Grype..."
+            curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin
+            grype version
+          fi
+
+          # Install Trivy
+          if [[ "${{ inputs.scanner_tool }}" == "trivy" || "${{ inputs.scanner_tool }}" == "both" ]]; then
+            echo "Installing Trivy..."
+            wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+            echo "deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | sudo tee -a /etc/apt/sources.list.d/trivy.list
+            sudo apt-get update
+            sudo apt-get install -y trivy
+            trivy --version
+          fi
+
+          # Pull Semgrep Docker image if needed
+          if [[ "${{ inputs.enable_semgrep }}" == "true" ]]; then
+            echo "Pulling Semgrep Docker image..."
+            docker pull returntocorp/semgrep:latest
+          fi
+
+      - name: Create output directories
+        run: |
+          mkdir -p ${{ env.SCAN_OUTPUT_DIR }}
+          mkdir -p ${{ env.TEMP_DIR }}
+
+      - name: Login to GitHub Container Registry
+        if: contains(inputs.container_image, 'ghcr.io')
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull container image
+        run: |
+          echo "Pulling container image: ${{ inputs.container_image }}"
+          
+          if ! docker pull "${{ inputs.container_image }}"; then
+            echo "Failed to pull image: ${{ inputs.container_image }}"
+            exit 1
+          fi
+
+          echo "Successfully pulled image"
+
+      - name: Run Grype vulnerability scan
+        id: grype
+        if: inputs.scanner_tool == 'grype' || inputs.scanner_tool == 'both'
+        continue-on-error: true
+        run: |
+          echo "Running Grype vulnerability scan..."
+
+          grype "${{ inputs.container_image }}" \
+            --output json \
+            --file "${{ env.SCAN_OUTPUT_DIR }}/grype_results.json"
+
+          grype "${{ inputs.container_image }}" \
+            --output table \
+            --file "${{ env.SCAN_OUTPUT_DIR }}/grype_report.txt"
+
+          # Filter by severity threshold
+          if [[ "${{ inputs.severity_threshold }}" != "low" ]]; then
+            case "${{ inputs.severity_threshold }}" in
+              "medium") severity_filter='["Medium","High","Critical"]' ;;
+              "high") severity_filter='["High","Critical"]' ;;
+              "critical") severity_filter='["Critical"]' ;;
+              *) severity_filter='["Low","Medium","High","Critical"]' ;;
+            esac
+            
+            jq --argjson severities "$severity_filter" \
+              '.matches = (.matches | map(select(.vulnerability.severity as $sev | $severities | index($sev))))' \
+              "${{ env.SCAN_OUTPUT_DIR }}/grype_results.json" > "${{ env.SCAN_OUTPUT_DIR }}/grype_filtered.json"
+            
+            mv "${{ env.SCAN_OUTPUT_DIR }}/grype_filtered.json" "${{ env.SCAN_OUTPUT_DIR }}/grype_results.json"
+          fi
+
+          # Count vulnerabilities
+          VULN_COUNT=$(jq '.matches | length' "${{ env.SCAN_OUTPUT_DIR }}/grype_results.json")
+          echo "count=${VULN_COUNT}" >> $GITHUB_OUTPUT
+          
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "found=true" >> $GITHUB_OUTPUT
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Trivy vulnerability scan
+        id: trivy
+        if: inputs.scanner_tool == 'trivy' || inputs.scanner_tool == 'both'
+        continue-on-error: true
+        run: |
+          echo "Running Trivy vulnerability scan..."
+
+          case "${{ inputs.severity_threshold }}" in
+            "low") TRIVY_SEVERITY="LOW,MEDIUM,HIGH,CRITICAL" ;;
+            "medium") TRIVY_SEVERITY="MEDIUM,HIGH,CRITICAL" ;;
+            "high") TRIVY_SEVERITY="HIGH,CRITICAL" ;;
+            "critical") TRIVY_SEVERITY="CRITICAL" ;;
+            *) TRIVY_SEVERITY="MEDIUM,HIGH,CRITICAL" ;;
+          esac
+
+          trivy image \
+            --format json \
+            --output "${{ env.SCAN_OUTPUT_DIR }}/trivy_results.json" \
+            --severity "$TRIVY_SEVERITY" \
+            "${{ inputs.container_image }}"
+
+          trivy image \
+            --format table \
+            --output "${{ env.SCAN_OUTPUT_DIR }}/trivy_report.txt" \
+            --severity "$TRIVY_SEVERITY" \
+            "${{ inputs.container_image }}"
+
+          # Count vulnerabilities
+          VULN_COUNT=$(jq '[.Results[]?.Vulnerabilities[]?] | length' "${{ env.SCAN_OUTPUT_DIR }}/trivy_results.json")
+          echo "count=${VULN_COUNT}" >> $GITHUB_OUTPUT
+          
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "found=true" >> $GITHUB_OUTPUT
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run Semgrep static analysis
+        id: semgrep
+        if: inputs.enable_semgrep == true
+        continue-on-error: true
+        run: |
+          echo "Running Semgrep static analysis..."
+
+          container_id=$(docker create "${{ inputs.container_image }}")
+          temp_extract_dir="${{ env.TEMP_DIR }}/container_fs"
+          mkdir -p "$temp_extract_dir"
+          docker export "$container_id" | tar -xf - -C "$temp_extract_dir" 2>/dev/null || true
+
+          # Run Semgrep with exclusions for system files and common false positives
+          docker run --rm \
+            -v "$PWD/$temp_extract_dir":/src \
+            -v "$PWD/${{ env.SCAN_OUTPUT_DIR }}":/output \
+            returntocorp/semgrep:latest \
+            semgrep \
+            --config=p/security-audit \
+            --exclude=/src/etc/ \
+            --exclude=/src/usr/bin/ \
+            --exclude=/src/usr/lib/ \
+            --exclude=/src/usr/sbin/ \
+            --exclude=/src/bin/ \
+            --exclude=/src/sbin/ \
+            --exclude=/src/lib/ \
+            --exclude=/src/var/ \
+            --exclude=/src/boot/ \
+            --exclude=/src/dev/ \
+            --exclude=/src/proc/ \
+            --exclude=/src/sys/ \
+            --severity=ERROR \
+            --json \
+            --output=/output/semgrep_results.json \
+            /src 2>/dev/null || echo "Semgrep completed with warnings"
+
+          docker rm "$container_id" || true
+          rm -rf "$temp_extract_dir"
+
+          # Count findings
+          if [ -f "${{ env.SCAN_OUTPUT_DIR }}/semgrep_results.json" ]; then
+            FINDING_COUNT=$(jq '.results | length' "${{ env.SCAN_OUTPUT_DIR }}/semgrep_results.json")
+            echo "count=${FINDING_COUNT}" >> $GITHUB_OUTPUT
+            
+            if [ "$FINDING_COUNT" -gt 0 ]; then
+              echo "found=true" >> $GITHUB_OUTPUT
+            else
+              echo "found=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "count=0" >> $GITHUB_OUTPUT
+            echo "found=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate findings summary
+        id: summary
+        if: steps.grype.outputs.found == 'true' || steps.trivy.outputs.found == 'true' || steps.semgrep.outputs.found == 'true'
+        run: |
+          # Set variables that will be used in Python script
+          FILTER_MODE="${{ inputs.vulnerability_filter }}"
+          CONTAINER_IMAGE="${{ inputs.container_image }}"
+          SCANNER_TOOL="${{ inputs.scanner_tool }}"
+          SEVERITY_THRESHOLD="${{ inputs.severity_threshold }}"
+          GITHUB_RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          SCAN_DIR="${{ env.SCAN_OUTPUT_DIR }}"
+          
+          # Create Python script to generate clean summary with filtering
+          cat > generate_summary.py << 'PYTHON_EOF'
+          import json
+          import sys
+          import os
+          from datetime import datetime
+          from collections import defaultdict
+          
+          FILTER_MODE = os.environ.get('FILTER_MODE', 'all')
+          CONTAINER_IMAGE = os.environ.get('CONTAINER_IMAGE', 'unknown')
+          SCANNER_TOOL = os.environ.get('SCANNER_TOOL', 'unknown')
+          SEVERITY_THRESHOLD = os.environ.get('SEVERITY_THRESHOLD', 'medium')
+          GITHUB_RUN_URL = os.environ.get('GITHUB_RUN_URL', '')
+          SCAN_DIR = os.environ.get('SCAN_DIR', 'scan_results')
+          
+          def count_by_severity(data, tool):
+              counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
+              
+              if tool == 'grype':
+                  for match in data.get('matches', []):
+                      sev = match.get('vulnerability', {}).get('severity', '').upper()
+                      if sev in counts:
+                          counts[sev] += 1
+              elif tool == 'trivy':
+                  for result in data.get('Results', []):
+                      for vuln in result.get('Vulnerabilities', []):
+                          sev = vuln.get('Severity', '').upper()
+                          if sev in counts:
+                              counts[sev] += 1
+              
+              return counts
+          
+          def is_fixable(match, tool):
+              """Check if vulnerability has a fix available"""
+              if tool == 'grype':
+                  fix_versions = match.get('vulnerability', {}).get('fix', {}).get('versions', [])
+                  return len(fix_versions) > 0
+              elif tool == 'trivy':
+                  fixed_version = match.get('FixedVersion', '')
+                  return fixed_version != '' and fixed_version != 'None'
+              return True
+          
+          def is_dev_dependency(match, tool):
+              """Check if package is a development dependency"""
+              dev_keywords = ['dev-', '-dev', 'test', 'mock', 'debug', 'example']
+              
+              if tool == 'grype':
+                  pkg_name = match.get('artifact', {}).get('name', '').lower()
+              elif tool == 'trivy':
+                  pkg_name = match.get('PkgName', '').lower()
+              else:
+                  return False
+              
+              return any(keyword in pkg_name for keyword in dev_keywords)
+          
+          def filter_vulnerabilities(data, tool):
+              """Filter vulnerabilities based on selected filter mode"""
+              if tool == 'grype':
+                  matches = data.get('matches', [])
+              elif tool == 'trivy':
+                  matches = []
+                  for result in data.get('Results', []):
+                      for vuln in result.get('Vulnerabilities', []):
+                          matches.append(vuln)
+              else:
+                  return data
+              
+              if FILTER_MODE == 'all':
+                  return matches
+              
+              filtered = []
+              for match in matches:
+                  # Apply filters
+                  if FILTER_MODE == 'fixable-only':
+                      if not is_fixable(match, tool):
+                          continue
+                  elif FILTER_MODE == 'exclude-dev-dependencies':
+                      if is_dev_dependency(match, tool):
+                          continue
+                  
+                  filtered.append(match)
+              
+              return filtered
+          
+          def group_by_package(matches, tool):
+              """Group vulnerabilities by package"""
+              grouped = defaultdict(list)
+              
+              for match in matches:
+                  if tool == 'grype':
+                      pkg_name = match.get('artifact', {}).get('name', 'Unknown')
+                      pkg_version = match.get('artifact', {}).get('version', 'Unknown')
+                  elif tool == 'trivy':
+                      pkg_name = match.get('PkgName', 'Unknown')
+                      pkg_version = match.get('InstalledVersion', 'Unknown')
+                  else:
+                      pkg_name = 'Unknown'
+                      pkg_version = 'Unknown'
+                  
+                  key = f"{pkg_name}@{pkg_version}"
+                  grouped[key].append(match)
+              
+              return grouped
+          
+          # Load results
+          grype_data = {}
+          trivy_data = {}
+          semgrep_data = {}
+          
+          try:
+              with open(f'{SCAN_DIR}/grype_results.json') as f:
+                  grype_data = json.load(f)
+          except:
+              pass
+          
+          try:
+              with open(f'{SCAN_DIR}/trivy_results.json') as f:
+                  trivy_data = json.load(f)
+          except:
+              pass
+          
+          try:
+              with open(f'{SCAN_DIR}/semgrep_results.json') as f:
+                  semgrep_data = json.load(f)
+          except:
+              pass
+          
+          # Apply filters
+          grype_filtered = filter_vulnerabilities(grype_data, 'grype')
+          trivy_filtered = filter_vulnerabilities(trivy_data, 'trivy')
+          
+          # Count filtered results
+          grype_total = len(grype_filtered)
+          trivy_total = len(trivy_filtered)
+          semgrep_total = len(semgrep_data.get('results', []))
+          
+          # Original counts
+          grype_original = len(grype_data.get('matches', []))
+          trivy_original = sum(len(r.get('Vulnerabilities', [])) for r in trivy_data.get('Results', []))
+          
+          # Severity counts from filtered results
+          grype_counts = count_by_severity({'matches': [{'vulnerability': {'severity': m.get('vulnerability', {}).get('severity')}} for m in grype_filtered]}, 'grype')
+          trivy_counts = count_by_severity({'Results': [{'Vulnerabilities': trivy_filtered}]}, 'trivy')
+          
+          # Generate report header
+          filter_info = ""
+          if FILTER_MODE != 'all':
+              filter_info = f"\n**Filter Applied:** {FILTER_MODE} (showing {grype_total + trivy_total}/{grype_original + trivy_original} vulnerabilities)"
+          
+          print(f"""# Security Scan Findings
+          
+          **Container:** {CONTAINER_IMAGE}  
+          **Scan Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}  
+          **Scanner:** {SCANNER_TOOL}  
+          **Severity Threshold:** {SEVERITY_THRESHOLD}{filter_info}
+          
+          ## Summary
+          
+          | Tool | Total | Critical | High | Medium | Low |
+          |------|-------|----------|------|--------|-----|
+          | Grype | {grype_total} | {grype_counts['CRITICAL']} | {grype_counts['HIGH']} | {grype_counts['MEDIUM']} | {grype_counts['LOW']} |
+          | Trivy | {trivy_total} | {trivy_counts['CRITICAL']} | {trivy_counts['HIGH']} | {trivy_counts['MEDIUM']} | {trivy_counts['LOW']} |
+          | Semgrep | {semgrep_total} | - | - | - | - |
+          
+          ---
+          """)
+                    
+          
+          # Handle group-by-package mode
+          if FILTER_MODE == 'group-by-package':
+              print("## Vulnerabilities by Package\n")
+              
+              # Group Grype results
+              if grype_filtered:
+                  print("### Grype - Affected Packages\n")
+                  grype_grouped = group_by_package(grype_filtered, 'grype')
+                  for pkg, vulns in sorted(grype_grouped.items(), key=lambda x: len(x[1]), reverse=True):
+                      severities = [v.get('vulnerability', {}).get('severity', 'Unknown') for v in vulns]
+                      severity_str = ', '.join(sorted(set(severities), key=['Critical', 'High', 'Medium', 'Low'].index))
+                      print(f"- **{pkg}**: {len(vulns)} vulnerabilities ({severity_str})")
+                  print()
+              
+              # Group Trivy results
+              if trivy_filtered:
+                  print("### Trivy - Affected Packages\n")
+                  trivy_grouped = group_by_package(trivy_filtered, 'trivy')
+                  for pkg, vulns in sorted(trivy_grouped.items(), key=lambda x: len(x[1]), reverse=True):
+                      severities = [v.get('Severity', 'Unknown') for v in vulns]
+                      severity_str = ', '.join(sorted(set(severities), key=['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].index))
+                      print(f"- **{pkg}**: {len(vulns)} vulnerabilities ({severity_str})")
+                  print()
+              
+              print("---\n")
+          
+          print("""## Grype Results
+          
+          <details>
+          <summary>View """ + str(grype_total) + """ vulnerabilities</summary>
+          
+          ```""")
+          
+          # Show filtered Grype results
+          if grype_filtered and FILTER_MODE != 'all':
+              for match in grype_filtered[:100]:
+                  vuln_id = match.get('vulnerability', {}).get('id', 'Unknown')
+                  severity = match.get('vulnerability', {}).get('severity', 'Unknown')
+                  pkg_name = match.get('artifact', {}).get('name', 'Unknown')
+                  pkg_version = match.get('artifact', {}).get('version', 'Unknown')
+                  fixed_in = match.get('vulnerability', {}).get('fix', {}).get('versions', [])
+                  fixed_str = fixed_in[0] if fixed_in else 'No fix available'
+                  print(f"[{severity}] {vuln_id} - {pkg_name}@{pkg_version} (Fix: {fixed_str})")
+          else:
+              try:
+                  with open(f'{SCAN_DIR}/grype_report.txt') as f:
+                      print(f.read())
+              except:
+                  print("No Grype results")
+          
+          print("""```
+          
+          </details>
+          
+          ---
+          
+          ## Trivy Results
+          
+          <details>
+          <summary>View """ + str(trivy_total) + """ vulnerabilities</summary>
+          
+          ```""")
+          
+          # Show filtered Trivy results
+          if trivy_filtered and FILTER_MODE != 'all':
+              for vuln in trivy_filtered[:100]:
+                  vuln_id = vuln.get('VulnerabilityID', 'Unknown')
+                  severity = vuln.get('Severity', 'Unknown')
+                  pkg_name = vuln.get('PkgName', 'Unknown')
+                  pkg_version = vuln.get('InstalledVersion', 'Unknown')
+                  fixed_version = vuln.get('FixedVersion', 'No fix available')
+                  print(f"[{severity}] {vuln_id} - {pkg_name}@{pkg_version} (Fix: {fixed_version})")
+          else:
+              try:
+                  with open(f'{SCAN_DIR}/trivy_report.txt') as f:
+                      print(f.read())
+              except:
+                  print("No Trivy results")
+          
+          print("""```
+          
+          </details>
+          
+          ---
+          
+          ## Semgrep Results
+          
+          <details>
+          <summary>View """ + str(semgrep_total) + """ findings</summary>
+          
+          ```""")
+          
+          if semgrep_total > 0:
+              for result in semgrep_data.get('results', [])[:20]:
+                  rule = result.get('check_id', 'Unknown')
+                  severity = result.get('extra', {}).get('severity', 'INFO')
+                  message = result.get('extra', {}).get('message', '')
+                  path = result.get('path', '')
+                  line = result.get('start', {}).get('line', '')
+                  print(f"- [{severity}] {rule} at {path}:{line}")
+                  print(f"  {message[:100]}")
+          else:
+              print("No Semgrep findings")
+          
+          print("""```
+          
+          </details>
+          
+          ---
+          
+          **Workflow Run:** {GITHUB_RUN_URL}
+          """)
+          PYTHON_EOF
+          
+          # Run the script with environment variables
+          FILTER_MODE="$FILTER_MODE" \
+          CONTAINER_IMAGE="$CONTAINER_IMAGE" \
+          SCANNER_TOOL="$SCANNER_TOOL" \
+          SEVERITY_THRESHOLD="$SEVERITY_THRESHOLD" \
+          GITHUB_RUN_URL="$GITHUB_RUN_URL" \
+          SCAN_DIR="$SCAN_DIR" \
+          python3 generate_summary.py > "${SCAN_DIR}/findings_summary.md"
+          
+          echo "summary_created=true" >> $GITHUB_OUTPUT
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: |
+            ${{ env.SCAN_OUTPUT_DIR }}/
+          retention-days: 30
+
+      - name: Create GitHub Issue
+        if: steps.summary.outputs.summary_created == 'true'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('${{ env.SCAN_OUTPUT_DIR }}/findings_summary.md', 'utf8');
+            
+            // Extract container name for title
+            const containerName = '${{ inputs.container_image }}'.split('/').pop();
+            
+            try {
+              const issue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `Security Scan: ${containerName}`,
+                body: summary,
+                labels: ['security', 'vulnerability-scan', 'automated']
+              });
+              
+              console.log(`Created issue #${issue.data.number}`);
+              console.log(`Issue URL: ${issue.data.html_url}`);
+              
+              core.summary.addRaw(`### Security Scan Complete
+              
+              Created issue [#${issue.data.number}](${issue.data.html_url}) with security findings
+              
+              **Results:**
+              - Grype: ${{ steps.grype.outputs.count || 0 }} vulnerabilities
+              - Trivy: ${{ steps.trivy.outputs.count || 0 }} vulnerabilities  
+              - Semgrep: ${{ steps.semgrep.outputs.count || 0 }} findings
+              `);
+              await core.summary.write();
+            } catch (error) {
+              console.log('Could not create issue - Issues may be disabled in this repository');
+              console.log('Error:', error.message);
+              
+              core.summary.addRaw(`### Security Scan Complete
+              
+              Issue creation skipped (Issues may be disabled)
+              
+              **Results:**
+              - Grype: ${{ steps.grype.outputs.count || 0 }} vulnerabilities
+              - Trivy: ${{ steps.trivy.outputs.count || 0 }} vulnerabilities  
+              - Semgrep: ${{ steps.semgrep.outputs.count || 0 }} findings
+              
+              **Note:** Check the artifacts for full scan results.
+              `);
+              await core.summary.write();
+            }
+
+      - name: No vulnerabilities found
+        if: steps.grype.outputs.found != 'true' && steps.trivy.outputs.found != 'true' && steps.semgrep.outputs.found != 'true'
+        run: |
+          echo "No security vulnerabilities detected in ${{ inputs.container_image }}"
+          echo "::notice::No security vulnerabilities found"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf ${{ env.TEMP_DIR }}
+          docker system prune -f || true
