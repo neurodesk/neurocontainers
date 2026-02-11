@@ -1,7 +1,8 @@
 name: fsl
-# check for latest version: http://fsl.fmrib.ox.ac.uk/fsldownloads
+# check for latest version: https://fsl.fmrib.ox.ac.uk/fsl/docs/development/history/index.html
+
 # check if latest version is in neurodocker https://github.com/ReproNim/neurodocker/blob/master/neurodocker/templates/fsl.yaml
-version: 6.0.7.18
+version: 6.0.7.19
 
 copyright:
   - name: fsl license
@@ -63,6 +64,8 @@ build:
 
     - environment:
         PATH: "/opt/ICA-AROMA/:$PATH"
+        DEPLOY_ENV_FSLDIR: "BASEPATH/opt/{{ context.original_version }}"
+        # This will add: setenv FSLDIR "/cvmfs/neurodesk.ardc.edu.au/containers/fsl_*/fsl_*simg/opt/fsl-*" to the module load commmand
 
     # course material links are from here: https://fsl.fmrib.ox.ac.uk/fslcourse/downloads/manifest.json
     - condition: context.options.workshop
