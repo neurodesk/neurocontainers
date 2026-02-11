@@ -254,13 +254,13 @@ dependencies = [
 requires-dist = [
     { name = "attrs", specifier = ">=23.0.0" },
     { name = "jinja2", specifier = ">=3.1.6" },
-    { name = "neurodocker", specifier = ">=1.0.1" },
+    { name = "neurodocker", specifier = ">=2.0.2" },
     { name = "pyyaml", specifier = ">=6.0.2" },
 ]
 
 [[package]]
 name = "neurodocker"
-version = "2.0.0"
+version = "2.0.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -271,9 +271,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4e/41/3a99e2dfaead51ca19baa019a31ea6aeb132cb5b4456112e6ac2e959e3f7/neurodocker-2.0.0.tar.gz", hash = "sha256:de3b9c2f8004f1e7a522586e68e78e2f9b5cf07092e684ebffad00b430f05043", size = 79399, upload-time = "2025-03-03T01:21:23.007Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/0f/ffc49888528a08d808b956136d8dcc3679ba2dbc130cbee29aae2df2c246/neurodocker-2.0.2.tar.gz", hash = "sha256:6fc5a4e4e6302baff8ca1dd42665e3898e337bec4913d7cd7ff9b6fd23a95965", size = 80020, upload-time = "2025-08-05T06:57:12.162Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c5/5f/db94062a9b8df6283170963fc379a92980f568cd3dfd48e6e55f90ff01e5/neurodocker-2.0.0-py3-none-any.whl", hash = "sha256:5c242046277c67605b67eb5eb4e1d581d60d74c6ea5b085b61f3a5ec7cfc9c03", size = 76169, upload-time = "2025-03-03T01:21:21.291Z" },
+    { url = "https://files.pythonhosted.org/packages/01/22/124732cf82992b501973f5fe7ee99f595de0c8e050115a366a615578b6dd/neurodocker-2.0.2-py3-none-any.whl", hash = "sha256:30e35820e79b20b0f4140b209196f3151cd6f2b56794468dabec00af726dc3ea", size = 76382, upload-time = "2025-08-05T06:57:10.624Z" },
 ]
 
 [[package]]

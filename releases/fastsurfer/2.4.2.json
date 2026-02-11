@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "fastsurfer 2.4.2": {
+      "version": "20260115",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging"
+  ]
+}

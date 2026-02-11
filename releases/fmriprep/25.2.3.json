@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "fmriprep 25.2.3": {
+      "version": "20260107",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "workflows"
+  ]
+}

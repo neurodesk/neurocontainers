@@ -1,0 +1,61 @@
+name: nibabies
+version: 24.0.0
+copyright:
+  - license: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+architectures:
+  - x86_64
+structured_readme:
+  description: ""
+  example: |-
+    # Example usage
+
+    ```bash
+    # Run the containerized tool (assuming you are already inside the container)
+    nibabies --help
+    ```
+  documentation: https://nibabies.readthedocs.io/en/latest/
+  citation: Please cite appropriately when using this container.
+readme: |-
+  ----------------------------------
+  ## nibabies/{{ context.version }} ##
+
+
+
+  Example:
+  ```
+  # Example usage
+
+  ```bash
+  # Run the containerized tool (assuming you are already inside the container)
+  nibabies --help
+  ```
+  ```
+
+  More documentation can be found here: https://nibabies.readthedocs.io/en/latest/
+
+  Citation:
+  ```
+  Please cite appropriately when using this container.
+  ```
+
+  To run container outside of this environment: ml nibabies/{{ context.version }}
+
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: nipreps/nibabies:24.0.0
+  pkg-manager: apt
+  directives:
+    - deploy:
+        path: []
+        bins:
+          - nibabies
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+categories:
+  - workflows
+  - functional imaging
+  - structural imaging
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAACnElEQVR4AdSUTWgTQRTH/zPJhqbph3XbYjct2lLtp4oXQxDtRQ2UqqjE9qIHAz14q/Qi9CwULIJHQayiRIQGFSlGDyEgjfVkimgMBS2o0JgqNUkhTTLr7JCYtIlm6wfisG/evNn/e783u+xS0/RLVa/Jj1+pI6NfVdfwsm6j+MvjHwJU9Y+crfQJVAb1wwIQW/5tSGkAL6suLYIFZ4F0mkfFF2OrSKUS3OLcEshkksUivlMMyGTAnj5B+oIL6YvnkTrrAJt7DiRiWLlxBZcv1eDa1VpM3bXh5nWFm5WbgoV3D8FYcTPFAE7Vrr6+Pqj8PczPzoA9moIaXdS2MTk5iXg8LtZ2u11oHA6HiEtNPwTkxG1tbTjX2wrm4x0ufQKl+ZTCdU6/3ufV6+9k43A4jImJCZin7yDJT5Ld1u3KAlwul+ja7XbrLlooLAuIRqMYHx/HwMAAbDZbYa6udVmAVmVsbAyRSAQej0cLN2S6AFrFoaEhKIqC/v5+LQQxEeHLTboA9TudeDb3Hj6fD7Isi5pJJlzZqSSghVasSZS7jsC6fwROp5N/2PmPibECyuaSpbBmdysz41S8Bab5Wvj9fhBCEAqFQKVK1G13wLjtKCRJQlVVlWggEAgIjdfrxUcQmLslNDcbxL3cRLVFtZHCnqhH5xsFb8MmWLbsQs+ZB+g+fU/4ysYuSJZGNB8YRcfgLdT3nkDT3mF0Dt7mmvtCY1H2IBijmDEZEK0xfAfRHalqdPDC6dc1+Jzgv2hCYZbbsan9IO/6sPAVda0g1ADNy13HYN03wiEnIfcc55pDQqPlcBFWVlUOoHhRbQCsRtDaYAPIFxP0Dg1kadrNT9Tw05RoTEWIEIhHhA0OQo0gBklX1i8BdFXOiv5/wDcAAAD//9P7B30AAAAGSURBVAMAdZD74TfVaagAAAAASUVORK5CYII=

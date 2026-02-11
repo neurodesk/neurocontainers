@@ -1,5 +1,5 @@
 name: qsmxt
-version: 8.1.3
+version: 8.2.2
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/QSMxT/QSMxT/blob/main/LICENSE
@@ -14,13 +14,7 @@ build:
     - group:
         - environment:
             DEBIAN_FRONTEND: noninteractive
-        - install: >-
-            bzip2 ca-certificates unzip cmake dbus-x11 libgtk2.0-0 git graphviz
-            wget zip libgl1 libglib2.0 libglu1-mesa libsm6 libxrender1 libxt6
-            libxcomposite1 libfreetype6 libfontconfig1 libxkbcommon0 libxcursor1
-            libxi6 libxrandr2 libxtst6 libqt5svg5-dev libqt5opengl5-dev
-            libqt5opengl5 libqt5gui5 libqt5core5a libsuitesparse-dev
-            libsqlite3-dev libopenjp2-7 build-essential
+        - install: bzip2 ca-certificates unzip cmake dbus-x11 libgtk2.0-0 git graphviz wget zip libgl1 libglib2.0 libglu1-mesa libsm6 libxrender1 libxt6 libxcomposite1 libfreetype6 libfontconfig1 libxkbcommon0 libxcursor1 libxi6 libxrandr2 libxtst6 libqt5svg5-dev libqt5opengl5-dev libqt5opengl5 libqt5gui5 libqt5core5a libsuitesparse-dev libsqlite3-dev libopenjp2-7 build-essential
         - environment:
             PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     - group:
@@ -40,7 +34,7 @@ build:
             ants_version: 2.4.3
         - template:
             name: ants
-            version: '{{ local.ants_version }}'
+            version: "{{ local.ants_version }}"
             method: source
         - deploy:
             path:
@@ -48,13 +42,9 @@ build:
     - group:
         - workdir: /opt/dcm2niix
         - run:
-            - >-
-              git clone --branch v1.0.20240202 --depth 1
-              https://github.com/rordenlab/dcm2niix.git .
+            - git clone --branch v1.0.20240202 --depth 1 https://github.com/rordenlab/dcm2niix.git .
             - mkdir build && cd build
-            - >-
-              cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON
-              -DUSE_OPENJPEG=ON ..
+            - cmake -DZLIB_IMPLEMENTATION=Cloudflare -DUSE_JPEGLS=ON -DUSE_OPENJPEG=ON ..
             - make
             - make install
     - group:
@@ -62,13 +52,9 @@ build:
             conda_version: 4.12.0
             conda_download_url:
               try:
-                - value: >-
-                    https://repo.anaconda.com/miniconda/Miniconda3-py37_{{
-                    local.conda_version }}-Linux-x86_64.sh
+                - value: https://repo.anaconda.com/miniconda/Miniconda3-py37_{{ local.conda_version }}-Linux-x86_64.sh
                   condition: arch=="x86_64"
-                - value: >-
-                    https://repo.anaconda.com/miniconda/Miniconda3-py37_{{
-                    local.conda_version }}-Linux-aarch64.sh
+                - value: https://repo.anaconda.com/miniconda/Miniconda3-py37_{{ local.conda_version }}-Linux-aarch64.sh
                   condition: arch=="aarch64"
         - workdir: /opt
         - environment:
@@ -79,9 +65,7 @@ build:
             - echo "Downloading Miniconda installer ..."
             - conda_installer="/tmp/miniconda.sh"
             - curl -fsSL -o "$conda_installer" {{ local.conda_download_url }}
-            - >-
-              bash "$conda_installer" -b -p /opt/miniconda-{{
-              local.conda_version }}
+            - bash "$conda_installer" -b -p /opt/miniconda-{{ local.conda_version }}
             - rm -f "$conda_installer"
             - conda config --system --prepend channels conda-forge
             - conda config --set channel_priority strict
@@ -103,9 +87,7 @@ build:
     - group:
         - workdir: /opt
         - run:
-            - >-
-              curl -fsSL -o hdf5-1.14.5.tar.gz
-              https://support.hdfgroup.org/releases/hdf5/v1_14/v1_14_5/downloads/hdf5-1.14.5.tar.gz
+            - curl -fsSL -o hdf5-1.14.5.tar.gz https://support.hdfgroup.org/releases/hdf5/v1_14/v1_14_5/downloads/hdf5-1.14.5.tar.gz
             - tar -xzf hdf5-1.14.5.tar.gz
             - cd hdf5-1.14.5
             - ./configure --prefix=/usr
@@ -126,25 +108,15 @@ build:
               - nextqsm
     - group:
         - run:
-            - >-
-              git clone --depth 1 --branch v1.1.1-2
-              https://github.com/astewartau/FastSurfer.git /opt/FastSurfer
+            - git clone --depth 1 --branch v1.1.1-2 https://github.com/astewartau/FastSurfer.git /opt/FastSurfer
             - sed -i 's/cu113/cpu/g' /opt/FastSurfer/requirements.txt
             - pip install -r /opt/FastSurfer/requirements.txt
           condition: arch=="x86_64"
         - run:
-            - >-
-              git clone --depth 1 --branch v2.1.0
-              https://github.com/Deep-MI/FastSurfer.git /opt/FastSurfer
-            - >-
-              sed -i 's/simpleitk==2.1.1/simpleitk==2.2.0/g'
-              /opt/FastSurfer/requirements_cpu.txt
-            - >-
-              sed -i 's/torch==1.12.0+cpu/torch==1.12.1/g'
-              /opt/FastSurfer/requirements_cpu.txt
-            - >-
-              sed -i 's/torchvision==0.13.0+cpu/torchvision==0.13.1/g'
-              /opt/FastSurfer/requirements_cpu.txt
+            - git clone --depth 1 --branch v2.1.0 https://github.com/Deep-MI/FastSurfer.git /opt/FastSurfer
+            - sed -i 's/simpleitk==2.1.1/simpleitk==2.2.0/g' /opt/FastSurfer/requirements_cpu.txt
+            - sed -i 's/torch==1.12.0+cpu/torch==1.12.1/g' /opt/FastSurfer/requirements_cpu.txt
+            - sed -i 's/torchvision==0.13.0+cpu/torchvision==0.13.1/g' /opt/FastSurfer/requirements_cpu.txt
             - pip install -r /opt/FastSurfer/requirements_cpu.txt
           condition: arch=="aarch64"
         - environment:
@@ -152,53 +124,35 @@ build:
             PATH: $PATH:/opt/FastSurfer
         - deploy:
             path:
-              - /opt/FastSurfer 
+              - /opt/FastSurfer
         - test:
             name: Test FastSurfer
             manual: true
-            script: >
+            script: |
               cd /opt/FastSurfer/
-
-              wget
-              https://files.au-1.osf.io/v1/resources/bt4ez/providers/osfstorage/5e9bf3ab430166067ea05564?action=download&direct&version=1
-
+              wget https://files.au-1.osf.io/v1/resources/bt4ez/providers/osfstorage/5e9bf3ab430166067ea05564?action=download&direct&version=1
               mv 5e9bf3ab430166067ea05564\?action\=download test.nii.gz
-
-              ./run_fastsurfer.sh --t1 /opt/FastSurfer/test.nii.gz --sid test
-              --seg_only
+              ./run_fastsurfer.sh --t1 /opt/FastSurfer/test.nii.gz --sid test --seg_only
     - environment:
         PATH: $PATH:/opt/miniconda-latest/bin
     - group:
         - workdir: /opt/bru2
         - run:
-            - >-
-              wget
-              https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip
+            - wget https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip
             - unzip Bru2_Linux.zip
             - rm Bru2_Linux.zip
           condition: arch=="x86_64"
         - run:
-            - >-
-              curl -fsSL -o fpc-laz_3.2.3-240813_arm64.deb
-              https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20arm64%20DEB/Lazarus%204.0RC2/fpc-laz_3.2.3-240813_arm64.deb/download
-            - >-
-              curl -fsSL -o fpc-src_3.2.3-240813_arm64.deb
-              https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20arm64%20DEB/Lazarus%204.0RC2/fpc-src_3.2.3-240813_arm64.deb/download
-            - >-
-              curl -fsSL -o lazarus-project_4.0.0-0_arm64.deb
-              https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20arm64%20DEB/Lazarus%204.0RC2/lazarus-project_4.0.0-0_arm64.deb/download
+            - curl -fsSL -o fpc-laz_3.2.3-240813_arm64.deb https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20arm64%20DEB/Lazarus%204.0RC2/fpc-laz_3.2.3-240813_arm64.deb/download
+            - curl -fsSL -o fpc-src_3.2.3-240813_arm64.deb https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20arm64%20DEB/Lazarus%204.0RC2/fpc-src_3.2.3-240813_arm64.deb/download
+            - curl -fsSL -o lazarus-project_4.0.0-0_arm64.deb https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20arm64%20DEB/Lazarus%204.0RC2/lazarus-project_4.0.0-0_arm64.deb/download
             - apt-get update
-            - >-
-              apt-get install -y ./fpc-laz_3.2.3-240813_arm64.deb
-              ./fpc-src_3.2.3-240813_arm64.deb
-              ./lazarus-project_4.0.0-0_arm64.deb
+            - apt-get install -y ./fpc-laz_3.2.3-240813_arm64.deb ./fpc-src_3.2.3-240813_arm64.deb ./lazarus-project_4.0.0-0_arm64.deb
             - rm *.deb
             - rm -rf /var/lib/apt/lists/*
           condition: arch=="aarch64"
         - run:
-            - >-
-              git clone --depth 1 --branch v1.0.20180303
-              https://github.com/neurolabusc/Bru2Nii.git
+            - git clone --depth 1 --branch v1.0.20180303 https://github.com/neurolabusc/Bru2Nii.git
             - cd Bru2Nii
             - lazbuild -B Bru2.lpr
             - lazbuild -B Bru2Nii.lpr
@@ -215,16 +169,12 @@ build:
     - group:
         - workdir: /opt
         - run:
-            - >-
-              wget
-              https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.3-linux-x86_64.tar.gz
+            - wget https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.3-linux-x86_64.tar.gz
             - tar zxvf julia-1.9.3-linux-x86_64.tar.gz
             - rm -rf julia-1.9.3-linux-x86_64.tar.gz
           condition: arch=="x86_64"
         - run:
-            - >-
-              wget
-              https://julialang-s3.julialang.org/bin/linux/aarch64/1.9/julia-1.9.3-linux-aarch64.tar.gz
+            - wget https://julialang-s3.julialang.org/bin/linux/aarch64/1.9/julia-1.9.3-linux-aarch64.tar.gz
             - tar zxvf julia-1.9.3-linux-aarch64.tar.gz
             - rm -rf julia-1.9.3-linux-aarch64.tar.gz
           condition: arch=="aarch64"
@@ -234,25 +184,15 @@ build:
         - workdir: /opt
         - file:
             name: install.packages.jl
-            contents: >
+            contents: |
               using Pkg
-
               ENV["JULIA_PKG_PRECOMPILE_AUTO"]=0
-
               Pkg.add(Pkg.PackageSpec(name="ArgParse", version=v"1.1.5"))
-
               Pkg.add(Pkg.PackageSpec(name="FFTW", version=v"1.8.0"))
-
-              Pkg.add(Pkg.PackageSpec(name="MriResearchTools",
-              version=v"2.2.0"))
-
-              Pkg.add(Pkg.PackageSpec(name="QuantitativeSusceptibilityMappingTGV",
-              version=v"0.2.1"))
-
+              Pkg.add(Pkg.PackageSpec(name="MriResearchTools", version=v"2.2.0"))
+              Pkg.add(Pkg.PackageSpec(name="QuantitativeSusceptibilityMappingTGV", version=v"0.2.1"))
               Pkg.add(Pkg.PackageSpec(name="ROMEO", version=v"1.1.1"))
-
-              Pkg.add(Pkg.PackageSpec(name="CLEARSWI", version=v"1.0.0"))
-
+              Pkg.add(Pkg.PackageSpec(name="CLEARSWI", version=v"1.3.2"))
               Pkg.add(Pkg.PackageSpec(name="QSM", version=v"0.5.4"))
         - environment:
             JULIA_DEPOT_PATH: /opt/julia_depot
@@ -262,20 +202,14 @@ build:
             JULIA_DEPOT_PATH: ~/.julia:/opt/julia_depot
     - group:
         - run:
-            - >-
-              git clone --depth 1 --branch v0.51
-              https://github.com/astewartau/QSMxT-UI-2 QSMxT-UI
+            - git clone --depth 1 --branch v0.51 https://github.com/astewartau/QSMxT-UI-2 QSMxT-UI
         - run:
-            - >-
-              wget
-              https://nodejs.org/dist/v14.17.0/node-v14.17.0-linux-x64.tar.xz
+            - wget https://nodejs.org/dist/v14.17.0/node-v14.17.0-linux-x64.tar.xz
             - tar xf node-v14.17.0-linux-x64.tar.xz
             - rm node-v14.17.0-linux-x64.tar.xz
           condition: arch=="x86_64"
         - run:
-            - >-
-              wget
-              https://nodejs.org/dist/v14.17.0/node-v14.17.0-linux-arm64.tar.xz
+            - wget https://nodejs.org/dist/v14.17.0/node-v14.17.0-linux-arm64.tar.xz
             - tar xf node-v14.17.0-linux-arm64.tar.xz
             - rm node-v14.17.0-linux-arm64.tar.xz
           condition: arch=="aarch64"
@@ -302,238 +236,169 @@ build:
           - dcm2niix
           - Bru2
           - Bru2Nii
-          - tgv_qsm
           - julia
-          - pytest
-          - predict_all.py
           - qsmxt
-          - qsmxt-gui
-          - dicom-sort
           - dicom-convert
           - nifti-convert
     - boutique:
         name: qsmxt
-        description: >-
-          QSMxT is an end-to-end software toolbox for QSM that automatically
-          reconstructs and processes large datasets in parallel using sensible
-          defaults.
+        description: QSMxT is an end-to-end software toolbox for QSM that automatically reconstructs and processes large datasets in parallel using sensible defaults.
         tool-version: v8.0.7
-        schema-version: '0.5'
-        command-line: >-
-          qsmxt [BIDS_DIR] [OUTPUT_DIR] [DO_QSM] [DO_SEGMENTATION] [DO_ANALYSIS]
-          [DO_TEMPLATE] [DO_T2STARMAP] [DO_R2STARMAP] [DO_SWI] [LABELS_FILE]
-          [SUBJECTS] [SESSIONS] [RUNS] [RECS] [INVS] [ACQS] [NUM_ECHOES]
-          [PIPELINE_FILE] [PREMADE] [OBLIQUITY_THRESHOLD] [COMBINE_PHASE]
-          [QSM_ALGORITHM] [QSM_REFERENCE] [TGV_ITERATIONS] [TGV_ALPHAS]
-          [TGV_EROSIONS] [UNWRAPPING_ALGORITHM] [BF_ALGORITHM] [TWO_PASS]
-          [INHOMOGENEITY_CORRECTION] [MASKING_ALGORITHM] [MASK_EROSIONS]
-          [USE_EXISTING_QSMS] [EXISTING_QSM_PIPELINE]
-          [USE_EXISTING_SEGMENTATIONS] [EXISTING_SEGMENTATION_PIPELINE]
-          [USE_EXISTING_MASKS] [EXISTING_MASKS_PIPELINE] [MASKING_INPUT]
-          [THRESHOLD_VALUE] [THRESHOLD_ALGORITHM] [FILLING_ALGORITHM]
-          [THRESHOLD_ALGORITHM_FACTOR] [ADD_BET] [BET_FRACTIONAL_INTENSITY]
-          [EXPORT_DICOMS] [PBS] [SLURM] [N_PROCS] [DEBUG] [LIST_PREMADES] [DRY]
-          [VERSION] --auto_yes
+        schema-version: "0.5"
+        command-line: qsmxt [BIDS_DIR] [OUTPUT_DIR] [DO_QSM] [DO_SEGMENTATION] [DO_ANALYSIS] [DO_TEMPLATE] [DO_T2STARMAP] [DO_R2STARMAP] [DO_SWI] [LABELS_FILE] [SUBJECTS] [SESSIONS] [RUNS] [RECS] [INVS] [ACQS] [NUM_ECHOES] [PIPELINE_FILE] [PREMADE] [OBLIQUITY_THRESHOLD] [COMBINE_PHASE] [QSM_ALGORITHM] [QSM_REFERENCE] [TGV_ITERATIONS] [TGV_ALPHAS] [TGV_EROSIONS] [UNWRAPPING_ALGORITHM] [BF_ALGORITHM] [TWO_PASS] [INHOMOGENEITY_CORRECTION] [MASKING_ALGORITHM] [MASK_EROSIONS] [USE_EXISTING_QSMS] [EXISTING_QSM_PIPELINE] [USE_EXISTING_SEGMENTATIONS] [EXISTING_SEGMENTATION_PIPELINE] [USE_EXISTING_MASKS] [EXISTING_MASKS_PIPELINE] [MASKING_INPUT] [THRESHOLD_VALUE] [THRESHOLD_ALGORITHM] [FILLING_ALGORITHM] [THRESHOLD_ALGORITHM_FACTOR] [ADD_BET] [BET_FRACTIONAL_INTENSITY] [EXPORT_DICOMS] [PBS] [SLURM] [N_PROCS] [DEBUG] [LIST_PREMADES] [DRY] [VERSION] --auto_yes
         inputs:
           - name: bids_dir
             id: bids_dir
-            description: >-
-              Input BIDS directory. Can be generated using dicom-convert or
-              nifti-convert.
+            description: Input BIDS directory. Can be generated using dicom-convert or nifti-convert.
             type: String
             optional: false
-            value-key: '[BIDS_DIR]'
+            value-key: "[BIDS_DIR]"
           - name: output_dir
             id: output_dir
-            description: >-
-              Input output directory. By default, the output will be integrated
-              into the BIDS directory as a BIDS derivative.
+            description: Input output directory. By default, the output will be integrated into the BIDS directory as a BIDS derivative.
             type: String
             optional: true
-            value-key: '[OUTPUT_DIR]'
+            value-key: "[OUTPUT_DIR]"
           - name: do_qsm
             id: do_qsm
             description: Whether or not to run the QSM pipeline.
             type: String
             optional: true
-            command-line-flag: '--do_qsm'
-            value-key: '[DO_QSM]'
+            command-line-flag: "--do_qsm"
+            value-key: "[DO_QSM]"
           - name: do_segmentation
             id: do_segmentation
             description: Whether or not to run the segmentation pipeline.
             type: String
             optional: true
-            command-line-flag: '--do_segmentation'
-            value-key: '[DO_SEGMENTATION]'
+            command-line-flag: "--do_segmentation"
+            value-key: "[DO_SEGMENTATION]"
           - name: do_analysis
             id: do_analysis
             description: Whether or not to run the template-building pipeline.
             type: String
             optional: true
-            command-line-flag: '--do_analysis'
-            value-key: '[DO_ANALYSIS]'
+            command-line-flag: "--do_analysis"
+            value-key: "[DO_ANALYSIS]"
           - name: do_template
             id: do_template
             description: Whether or not to run the template-building pipeline.
             type: String
             optional: true
-            command-line-flag: '--do_template'
-            value-key: '[DO_TEMPLATE]'
+            command-line-flag: "--do_template"
+            value-key: "[DO_TEMPLATE]"
           - name: do_t2starmap
             id: do_t2starmap
             description: Enables generation of T2* map.
             type: String
             optional: true
-            command-line-flag: '--do_t2starmap'
-            value-key: '[DO_T2STARMAP]'
+            command-line-flag: "--do_t2starmap"
+            value-key: "[DO_T2STARMAP]"
           - name: do_r2starmap
             id: do_r2starmap
             description: Enables generation of R2* map.
             type: String
             optional: true
-            command-line-flag: '--do_r2starmap'
-            value-key: '[DO_R2STARMAP]'
+            command-line-flag: "--do_r2starmap"
+            value-key: "[DO_R2STARMAP]"
           - name: do_swi
             id: do_swi
             description: Enables generation SWI via CLEAR-SWI.
             type: String
             optional: true
-            command-line-flag: '--do_swi'
-            value-key: '[DO_SWI]'
+            command-line-flag: "--do_swi"
+            value-key: "[DO_SWI]"
           - name: labels_file
             id: labels_file
-            description: >-
-              Optional labels CSV file to include named fields in analysis
-              outputs. The CSV should contain segmentation numbers in the first
-              column and ROI names in the second. The aseg_labels.csv file
-              contains labels for the aseg atlas used in the segmentation
-              pipeline.
+            description: Optional labels CSV file to include named fields in analysis outputs. The CSV should contain segmentation numbers in the first column and ROI names in the second. The aseg_labels.csv file contains labels for the aseg atlas used in the segmentation pipeline.
             type: String
             optional: true
-            command-line-flag: '--labels_file'
-            value-key: '[LABELS_FILE]'
+            command-line-flag: "--labels_file"
+            value-key: "[LABELS_FILE]"
           - name: subjects
             id: subjects
-            description: >-
-              List of subject folders to process; by default all subjects are
-              processed.
+            description: List of subject folders to process; by default all subjects are processed.
             type: String
             optional: true
-            command-line-flag: '--subjects'
-            value-key: '[SUBJECTS]'
+            command-line-flag: "--subjects"
+            value-key: "[SUBJECTS]"
           - name: sessions
             id: sessions
-            description: >-
-              List of session folders to process; by default all sessions are
-              processed.
+            description: List of session folders to process; by default all sessions are processed.
             type: String
             optional: true
-            command-line-flag: '--sessions'
-            value-key: '[SESSIONS]'
+            command-line-flag: "--sessions"
+            value-key: "[SESSIONS]"
           - name: runs
             id: runs
-            description: >-
-              List of BIDS runs to process (e.g. 'run-1'); by default all runs
-              are processed.
+            description: List of BIDS runs to process (e.g. 'run-1'); by default all runs are processed.
             type: String
             optional: true
-            command-line-flag: '--runs'
-            value-key: '[RUNS]'
+            command-line-flag: "--runs"
+            value-key: "[RUNS]"
           - name: recs
             id: recs
-            description: >-
-              List of BIDS reconstructions to process (e.g. 'rec-1'); by default
-              all reconstructions are processed.
+            description: List of BIDS reconstructions to process (e.g. 'rec-1'); by default all reconstructions are processed.
             type: String
             optional: true
-            command-line-flag: '--recs'
-            value-key: '[RECS]'
+            command-line-flag: "--recs"
+            value-key: "[RECS]"
           - name: invs
             id: invs
-            description: >-
-              List of BIDS inversions to process (e.g. 'inv-1'); by default all
-              inversions are processed.
+            description: List of BIDS inversions to process (e.g. 'inv-1'); by default all inversions are processed.
             type: String
             optional: true
-            command-line-flag: '--invs'
-            value-key: '[INVS]'
+            command-line-flag: "--invs"
+            value-key: "[INVS]"
           - name: acqs
             id: acqs
-            description: >-
-              List of BIDS acqs to process (e.g. 'acq-qsm'); by default all runs
-              are processed.
+            description: List of BIDS acqs to process (e.g. 'acq-qsm'); by default all runs are processed.
             type: String
             optional: true
-            command-line-flag: '--acqs'
-            value-key: '[ACQS]'
+            command-line-flag: "--acqs"
+            value-key: "[ACQS]"
           - name: num_echoes
             id: num_echoes
-            description: >-
-              The number of echoes to process; by default all echoes are
-              processed.
+            description: The number of echoes to process; by default all echoes are processed.
             type: Number
             optional: true
-            command-line-flag: '--num_echoes'
-            value-key: '[NUM_ECHOES]'
+            command-line-flag: "--num_echoes"
+            value-key: "[NUM_ECHOES]"
           - name: pipeline_file
             id: pipeline_file
-            description: >-
-              Specify a JSON file to use from which custom premade pipelines
-              will be made available. See
-              /home/ashley/repos/qsmxt/qsmxt/qsm_pipelines.json for the default
-              pipelines.
+            description: Specify a JSON file to use from which custom premade pipelines will be made available. See /home/ashley/repos/qsmxt/qsmxt/qsm_pipelines.json for the default pipelines.
             type: String
             optional: true
-            command-line-flag: '--pipeline_file'
-            value-key: '[PIPELINE_FILE]'
+            command-line-flag: "--pipeline_file"
+            value-key: "[PIPELINE_FILE]"
           - name: premade
             id: premade
-            description: >-
-              Specify a premade pipeline to use as the default. By default, this
-              is 'default'. The name of the pipeline must be present in either
-              /home/ashley/repos/qsmxt/qsmxt/qsm_pipelines.json or in
-              --pipeline_file.
+            description: Specify a premade pipeline to use as the default. By default, this is 'default'. The name of the pipeline must be present in either /home/ashley/repos/qsmxt/qsmxt/qsm_pipelines.json or in --pipeline_file.
             type: String
             optional: true
-            command-line-flag: '--premade'
-            value-key: '[PREMADE]'
+            command-line-flag: "--premade"
+            value-key: "[PREMADE]"
           - name: obliquity_threshold
             id: obliquity_threshold
-            description: >-
-              The 'obliquity' as measured by nilearn from which oblique-acquired
-              acqisitions should be axially resampled. Use -1 to disable
-              resampling completely.
+            description: The 'obliquity' as measured by nilearn from which oblique-acquired acqisitions should be axially resampled. Use -1 to disable resampling completely.
             type: Number
             optional: true
-            command-line-flag: '--obliquity_threshold'
-            value-key: '[OBLIQUITY_THRESHOLD]'
+            command-line-flag: "--obliquity_threshold"
+            value-key: "[OBLIQUITY_THRESHOLD]"
           - name: combine_phase
             id: combine_phase
-            description: >-
-              Combines multi-echo phase images by generating a field map using
-              ROMEO.
+            description: Combines multi-echo phase images by generating a field map using ROMEO.
             type: String
             optional: true
-            command-line-flag: '--combine_phase'
-            value-key: '[COMBINE_PHASE]'
+            command-line-flag: "--combine_phase"
+            value-key: "[COMBINE_PHASE]"
           - name: qsm_algorithm
             id: qsm_algorithm
-            description: >-
-              QSM algorithm. The tgv algorithm is based on
-              doi:10.1016/j.neuroimage.2015.02.041 from Langkammer et al., and
-              includes unwrapping and background field removal steps as part of
-              a combined optimisation. The NeXtQSM option requires NeXtQSM
-              installed (available by default in the QSMxT container) and uses a
-              deep learning model implemented in Tensorflow based on
-              doi:10.48550/arXiv.2107.07752 from Cognolato et al., and combines
-              the QSM inversion with a background field removal step. The RTS
-              algorithm is based on doi:10.1016/j.neuroimage.2017.11.018 from
-              Kames C. et al., and solves only the dipole-inversion step,
-              requiring separate unwrapping and background field removal steps. 
+            description: "QSM algorithm. The tgv algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 from Langkammer et al., and includes unwrapping and background field removal steps as part of a combined optimisation. The NeXtQSM option requires NeXtQSM installed (available by default in the QSMxT container) and uses a deep learning model implemented in Tensorflow based on doi:10.48550/arXiv.2107.07752 from Cognolato et al., and combines the QSM inversion with a background field removal step. The RTS algorithm is based on doi:10.1016/j.neuroimage.2017.11.018 from Kames C. et al., and solves only the dipole-inversion step, requiring separate unwrapping and background field removal steps. "
             type: String
             optional: true
-            command-line-flag: '--qsm_algorithm'
-            value-key: '[QSM_ALGORITHM]'
+            command-line-flag: "--qsm_algorithm"
+            value-key: "[QSM_ALGORITHM]"
             value-choices:
               - tgv
               - tv
@@ -541,255 +406,164 @@ build:
               - rts
           - name: qsm_reference
             id: qsm_reference
-            description: >-
-              Referencing method for QSM. Options are: 'mean', or a segmentation
-              ID (integer). Default is no referencing.
+            description: "Referencing method for QSM. Options are: 'mean', or a segmentation ID (integer). Default is no referencing."
             type: String
             list: true
             optional: true
-            command-line-flag: '--qsm_reference'
-            value-key: '[QSM_REFERENCE]'
+            command-line-flag: "--qsm_reference"
+            value-key: "[QSM_REFERENCE]"
           - name: tgv_iterations
             id: tgv_iterations
             description: Number of iterations used by tgv.
             type: Number
             optional: true
-            command-line-flag: '--tgv_iterations'
-            value-key: '[TGV_ITERATIONS]'
+            command-line-flag: "--tgv_iterations"
+            value-key: "[TGV_ITERATIONS]"
           - name: tgv_alphas
             id: tgv_alphas
             description: Regularisation alphas used by tgv.
             type: Number
             list: true
             optional: true
-            command-line-flag: '--tgv_alphas'
-            value-key: '[TGV_ALPHAS]'
+            command-line-flag: "--tgv_alphas"
+            value-key: "[TGV_ALPHAS]"
           - name: tgv_erosions
             id: tgv_erosions
             description: Number of erosions applied by tgv.
             type: Number
             optional: true
-            command-line-flag: '--tgv_erosions'
-            value-key: '[TGV_EROSIONS]'
+            command-line-flag: "--tgv_erosions"
+            value-key: "[TGV_EROSIONS]"
           - name: unwrapping_algorithm
             id: unwrapping_algorithm
-            description: >-
-              Phase unwrapping algorithm. ROMEO is based on
-              doi:10.1002/mrm.28563 from Eckstein et al. Laplacian is based on
-              doi:10.1364/OL.28.001194 and doi:10.1002/nbm.3064 from Schofield
-              MA. et al. and Zhou D. et al., respectively. ROMEO is the default
-              when --qsm_algorithm is set to rts or nextqsm, and no unwrapping
-              is applied by default when --qsm_algorithm is set to tgv.
+            description: Phase unwrapping algorithm. ROMEO is based on doi:10.1002/mrm.28563 from Eckstein et al. Laplacian is based on doi:10.1364/OL.28.001194 and doi:10.1002/nbm.3064 from Schofield MA. et al. and Zhou D. et al., respectively. ROMEO is the default when --qsm_algorithm is set to rts or nextqsm, and no unwrapping is applied by default when --qsm_algorithm is set to tgv.
             type: String
             optional: true
-            command-line-flag: '--unwrapping_algorithm'
-            value-key: '[UNWRAPPING_ALGORITHM]'
+            command-line-flag: "--unwrapping_algorithm"
+            value-key: "[UNWRAPPING_ALGORITHM]"
             value-choices:
               - romeo
               - romeo-combined
               - laplacian
           - name: bf_algorithm
             id: bf_algorithm
-            description: >-
-              Background field correction algorithm. V-SHARP is based on
-              doi:10.1002/mrm.23000 PDF is based on doi:10.1002/nbm.1670.
+            description: Background field correction algorithm. V-SHARP is based on doi:10.1002/mrm.23000 PDF is based on doi:10.1002/nbm.1670.
             type: String
             optional: true
-            command-line-flag: '--bf_algorithm'
-            value-key: '[BF_ALGORITHM]'
+            command-line-flag: "--bf_algorithm"
+            value-key: "[BF_ALGORITHM]"
             value-choices:
               - vsharp
               - pdf
           - name: two_pass
             id: two_pass
-            description: >-
-              Setting this to 'on' will perform a QSM reconstruction in a
-              two-stage fashion to reduce artefacts; combines the results from
-              two QSM images reconstructed using masks that separate more
-              reliable and less reliable phase regions. Note that this option
-              requires threshold-based masking, doubles reconstruction time, and
-              in some cases can deteriorate QSM contrast in some regions,
-              depending on other parameters such as the threshold. Applications
-              where two-pass QSM may improve results include body imaging,
-              lesion imaging, and imaging of other strong susceptibility
-              sources. This method is based on doi:10.1002/mrm.29048 from
-              Stewart et al. By default, two-pass is enabled for the RTS
-              algorithm only.
+            description: Setting this to 'on' will perform a QSM reconstruction in a two-stage fashion to reduce artefacts; combines the results from two QSM images reconstructed using masks that separate more reliable and less reliable phase regions. Note that this option requires threshold-based masking, doubles reconstruction time, and in some cases can deteriorate QSM contrast in some regions, depending on other parameters such as the threshold. Applications where two-pass QSM may improve results include body imaging, lesion imaging, and imaging of other strong susceptibility sources. This method is based on doi:10.1002/mrm.29048 from Stewart et al. By default, two-pass is enabled for the RTS algorithm only.
             type: String
             optional: true
-            command-line-flag: '--two_pass'
-            value-key: '[TWO_PASS]'
+            command-line-flag: "--two_pass"
+            value-key: "[TWO_PASS]"
           - name: inhomogeneity_correction
             id: inhomogeneity_correction
-            description: >-
-              Applies an inhomogeneity correction to the magnitude prior to
-              masking based on
-              https://index.mirasmart.com/ISMRM2019/PDFfiles/2716.html from
-              Eckstein et al. This option is only relevant when the
-              --masking_input is the magnitude.
+            description: Applies an inhomogeneity correction to the magnitude prior to masking based on https://index.mirasmart.com/ISMRM2019/PDFfiles/2716.html from Eckstein et al. This option is only relevant when the --masking_input is the magnitude.
             type: String
             optional: true
-            command-line-flag: '--inhomogeneity_correction'
-            value-key: '[INHOMOGENEITY_CORRECTION]'
+            command-line-flag: "--inhomogeneity_correction"
+            value-key: "[INHOMOGENEITY_CORRECTION]"
           - name: masking_algorithm
             id: masking_algorithm
-            description: >-
-              Masking algorithm. Threshold-based masking uses a simple binary
-              threshold applied to the --masking_input, followed by a
-              hole-filling strategy determined by the --filling_algorithm. BET
-              masking generates a mask using the Brain Extraction Tool (BET)
-              based on doi:10.1002/hbm.10062 from Smith SM. The default
-              algorithm is 'threshold'.
+            description: Masking algorithm. Threshold-based masking uses a simple binary threshold applied to the --masking_input, followed by a hole-filling strategy determined by the --filling_algorithm. BET masking generates a mask using the Brain Extraction Tool (BET) based on doi:10.1002/hbm.10062 from Smith SM. The default algorithm is 'threshold'.
             type: String
             optional: true
-            command-line-flag: '--masking_algorithm'
-            value-key: '[MASKING_ALGORITHM]'
+            command-line-flag: "--masking_algorithm"
+            value-key: "[MASKING_ALGORITHM]"
             value-choices:
               - threshold
               - bet
           - name: mask_erosions
             id: mask_erosions
-            description: >-
-              Number of erosions applied to masks prior to QSM processing steps.
-              Note that some algorithms may erode the mask further (e.g. V-SHARP
-              and TGV-QSM).
+            description: Number of erosions applied to masks prior to QSM processing steps. Note that some algorithms may erode the mask further (e.g. V-SHARP and TGV-QSM).
             type: Number
             list: true
             optional: true
-            command-line-flag: '--mask_erosions'
-            value-key: '[MASK_EROSIONS]'
+            command-line-flag: "--mask_erosions"
+            value-key: "[MASK_EROSIONS]"
           - name: use_existing_qsms
             id: use_existing_qsms
-            description: >-
-              Instead of generating new QSMs for each subject, this option will
-              prioritize using existing QSM images from the BIDS folder in the
-              --existing_qsm_pipeline derivatives directory. When existing QSMs
-              cannot be found, the QSM will be generated using the selected
-              settings. Valid paths fit
-              BIDS_DIR/derivatives/EXISTING_QSM_PIPELINE/sub-<SUBJECT_ID>/[ses-<SESSION_ID>]/anat/sub-<SUBJECT_ID>[_ses-<SESSION_ID>]*_Chimap.nii
+            description: Instead of generating new QSMs for each subject, this option will prioritize using existing QSM images from the BIDS folder in the --existing_qsm_pipeline derivatives directory. When existing QSMs cannot be found, the QSM will be generated using the selected settings. Valid paths fit BIDS_DIR/derivatives/EXISTING_QSM_PIPELINE/sub-<SUBJECT_ID>/[ses-<SESSION_ID>]/anat/sub-<SUBJECT_ID>[_ses-<SESSION_ID>]*_Chimap.nii
             type: String
             optional: true
-            command-line-flag: '--use_existing_qsms'
-            value-key: '[USE_EXISTING_QSMS]'
+            command-line-flag: "--use_existing_qsms"
+            value-key: "[USE_EXISTING_QSMS]"
           - name: existing_qsm_pipeline
             id: existing_qsm_pipeline
-            description: >-
-              A pattern matching the name of the software pipeline used to
-              derive pre-existing QSM images.
+            description: A pattern matching the name of the software pipeline used to derive pre-existing QSM images.
             type: String
             optional: true
-            command-line-flag: '--existing_qsm_pipeline'
-            value-key: '[EXISTING_QSM_PIPELINE]'
+            command-line-flag: "--existing_qsm_pipeline"
+            value-key: "[EXISTING_QSM_PIPELINE]"
           - name: use_existing_segmentations
             id: use_existing_segmentations
-            description: >-
-              Instead of generating new segmentations for each subject, this
-              option will prioritize using existing segmentations images from
-              the BIDS folder in the --existing_segmentation_pipeline
-              derivatives directory. When existing segmentations cannot be
-              found, the segmentations will be generated using FastSurfer. Valid
-              paths fit
-              BIDS_DIR/derivatives/existing_segmentation_pipeline/sub-<SUBJECT_ID>/[ses-<SESSION_ID>]/anat/sub-<SUBJECT_ID>[_ses-<SESSION_ID>]*_dseg.nii
+            description: Instead of generating new segmentations for each subject, this option will prioritize using existing segmentations images from the BIDS folder in the --existing_segmentation_pipeline derivatives directory. When existing segmentations cannot be found, the segmentations will be generated using FastSurfer. Valid paths fit BIDS_DIR/derivatives/existing_segmentation_pipeline/sub-<SUBJECT_ID>/[ses-<SESSION_ID>]/anat/sub-<SUBJECT_ID>[_ses-<SESSION_ID>]*_dseg.nii
             type: String
             optional: true
-            command-line-flag: '--use_existing_segmentations'
-            value-key: '[USE_EXISTING_SEGMENTATIONS]'
+            command-line-flag: "--use_existing_segmentations"
+            value-key: "[USE_EXISTING_SEGMENTATIONS]"
           - name: existing_segmentation_pipeline
             id: existing_segmentation_pipeline
-            description: >-
-              A pattern matching the name of the software pipeline used to
-              derive pre-existing segmentations in the QSM space.
+            description: A pattern matching the name of the software pipeline used to derive pre-existing segmentations in the QSM space.
             type: String
             optional: true
-            command-line-flag: '--existing_segmentation_pipeline'
-            value-key: '[EXISTING_SEGMENTATION_PIPELINE]'
+            command-line-flag: "--existing_segmentation_pipeline"
+            value-key: "[EXISTING_SEGMENTATION_PIPELINE]"
           - name: use_existing_masks
             id: use_existing_masks
-            description: >-
-              Instead of generating new masks for each subject, this option will
-              prioritize using existing masks from the BIDS folder in the
-              --existing_masks_pipeline derivatives directory. A single mask may
-              be present (and will be applied to all echoes), or a mask for each
-              echo can be used. When existing masks cannot be found, the
-              --masking_algorithm will be used as a fallback. See
-              https://bids-specification.readthedocs.io/en/stable/05-derivatives/03-imaging.html#masks.
-              Valid paths fit
-              BIDS_DIR/derivatives/EXISTING_MASK_PIPELINE/sub-<SUBJECT_ID>/[ses-<SESSION_ID>]/anat/sub-<SUBJECT_ID>[_ses-<SESSION_ID>]*_mask.nii
+            description: Instead of generating new masks for each subject, this option will prioritize using existing masks from the BIDS folder in the --existing_masks_pipeline derivatives directory. A single mask may be present (and will be applied to all echoes), or a mask for each echo can be used. When existing masks cannot be found, the --masking_algorithm will be used as a fallback. See https://bids-specification.readthedocs.io/en/stable/05-derivatives/03-imaging.html#masks. Valid paths fit BIDS_DIR/derivatives/EXISTING_MASK_PIPELINE/sub-<SUBJECT_ID>/[ses-<SESSION_ID>]/anat/sub-<SUBJECT_ID>[_ses-<SESSION_ID>]*_mask.nii
             type: String
             optional: true
-            command-line-flag: '--use_existing_masks'
-            value-key: '[USE_EXISTING_MASKS]'
+            command-line-flag: "--use_existing_masks"
+            value-key: "[USE_EXISTING_MASKS]"
           - name: existing_masks_pipeline
             id: existing_masks_pipeline
-            description: >-
-              A pattern matching the name of the software pipeline used to
-              derive input masks to be used when --use_existing_masks is
-              enabled. Defaults to '*' to match any.
+            description: A pattern matching the name of the software pipeline used to derive input masks to be used when --use_existing_masks is enabled. Defaults to '*' to match any.
             type: String
             optional: true
-            command-line-flag: '--existing_masks_pipeline'
-            value-key: '[EXISTING_MASKS_PIPELINE]'
+            command-line-flag: "--existing_masks_pipeline"
+            value-key: "[EXISTING_MASKS_PIPELINE]"
           - name: masking_input
             id: masking_input
-            description: >-
-              Input to the masking algorithm. Phase-based masking may reduce
-              artefacts near the ROI boundary (see doi:10.1002/mrm.29368 from
-              Hagberg et al.). Phase-based masking creates a quality map based
-              on the second-order spatial phase gradients using ROMEO
-              (doi:10.1002/mrm.28563 from Eckstein et al.). The default masking
-              input is the phase, but is forcibly set to the magnitude if
-              BET-masking is used.
+            description: Input to the masking algorithm. Phase-based masking may reduce artefacts near the ROI boundary (see doi:10.1002/mrm.29368 from Hagberg et al.). Phase-based masking creates a quality map based on the second-order spatial phase gradients using ROMEO (doi:10.1002/mrm.28563 from Eckstein et al.). The default masking input is the phase, but is forcibly set to the magnitude if BET-masking is used.
             type: String
             optional: true
-            command-line-flag: '--masking_input'
-            value-key: '[MASKING_INPUT]'
+            command-line-flag: "--masking_input"
+            value-key: "[MASKING_INPUT]"
             value-choices:
               - phase
               - magnitude
           - name: threshold_value
             id: threshold_value
-            description: >-
-              Masking threshold for when --masking_algorithm is set to
-              threshold. Values between 0 and 1represent a percentage of the
-              multi-echo input range. Values greater than 1 represent an
-              absolute threshold value. Lower values will result in larger
-              masks. If no threshold is provided, the --threshold_algorithm is
-              used to select one automatically.
+            description: Masking threshold for when --masking_algorithm is set to threshold. Values between 0 and 1represent a percentage of the multi-echo input range. Values greater than 1 represent an absolute threshold value. Lower values will result in larger masks. If no threshold is provided, the --threshold_algorithm is used to select one automatically.
             type: Number
             list: true
             optional: true
-            command-line-flag: '--threshold_value'
-            value-key: '[THRESHOLD_VALUE]'
+            command-line-flag: "--threshold_value"
+            value-key: "[THRESHOLD_VALUE]"
           - name: threshold_algorithm
             id: threshold_algorithm
-            description: >-
-              Algorithm used to select a threshold for threshold-based masking
-              if --threshold_value is left unspecified. The gaussian method is
-              based on doi:10.1016/j.compbiomed.2012.01.004 from Balan AGR. et
-              al. The otsu method is based on doi:10.1109/TSMC.1979.4310076 from
-              Otsu et al.
+            description: Algorithm used to select a threshold for threshold-based masking if --threshold_value is left unspecified. The gaussian method is based on doi:10.1016/j.compbiomed.2012.01.004 from Balan AGR. et al. The otsu method is based on doi:10.1109/TSMC.1979.4310076 from Otsu et al.
             type: String
             optional: true
-            command-line-flag: '--threshold_algorithm'
-            value-key: '[THRESHOLD_ALGORITHM]'
+            command-line-flag: "--threshold_algorithm"
+            value-key: "[THRESHOLD_ALGORITHM]"
             value-choices:
               - otsu
               - gaussian
           - name: filling_algorithm
             id: filling_algorithm
-            description: >-
-              Algorithm used to fill holes for threshold-based masking. By
-              default, a gaussian smoothing operation is applied first prior to
-              a morphological hole-filling operation. Note that gaussian
-              smoothing may fill some unwanted regions (e.g. connecting the
-              skull and brain tissue), whereas morphological hole-filling alone
-              may fail to fill desired regions if they are not fully
-              enclosed.The BET option is applicable to two-pass QSM only, and
-              will use ONLY a BET mask as the filled version of the mask.
+            description: Algorithm used to fill holes for threshold-based masking. By default, a gaussian smoothing operation is applied first prior to a morphological hole-filling operation. Note that gaussian smoothing may fill some unwanted regions (e.g. connecting the skull and brain tissue), whereas morphological hole-filling alone may fail to fill desired regions if they are not fully enclosed.The BET option is applicable to two-pass QSM only, and will use ONLY a BET mask as the filled version of the mask.
             type: String
             optional: true
-            command-line-flag: '--filling_algorithm'
-            value-key: '[FILLING_ALGORITHM]'
+            command-line-flag: "--filling_algorithm"
+            value-key: "[FILLING_ALGORITHM]"
             value-choices:
               - morphological
               - gaussian
@@ -797,96 +571,83 @@ build:
               - bet
           - name: threshold_algorithm_factor
             id: threshold_algorithm_factor
-            description: >-
-              Factor to multiply the algorithmically-determined threshold by.
-              Larger factors will create smaller masks.
+            description: Factor to multiply the algorithmically-determined threshold by. Larger factors will create smaller masks.
             type: Number
             list: true
             optional: true
-            command-line-flag: '--threshold_algorithm_factor'
-            value-key: '[THRESHOLD_ALGORITHM_FACTOR]'
+            command-line-flag: "--threshold_algorithm_factor"
+            value-key: "[THRESHOLD_ALGORITHM_FACTOR]"
           - name: add_bet
             id: add_bet
-            description: >-
-              Combines the chosen masking method with BET. This option is only
-              relevant when the --masking_algorithm is set to threshold.
+            description: Combines the chosen masking method with BET. This option is only relevant when the --masking_algorithm is set to threshold.
             type: String
             optional: true
-            command-line-flag: '--add_bet'
-            value-key: '[ADD_BET]'
+            command-line-flag: "--add_bet"
+            value-key: "[ADD_BET]"
           - name: bet_fractional_intensity
             id: bet_fractional_intensity
             description: Fractional intensity for BET masking operations.
             type: Number
             optional: true
-            command-line-flag: '--bet_fractional_intensity'
-            value-key: '[BET_FRACTIONAL_INTENSITY]'
+            command-line-flag: "--bet_fractional_intensity"
+            value-key: "[BET_FRACTIONAL_INTENSITY]"
           - name: export_dicoms
             id: export_dicoms
             description: Exports outputs to DICOM format in addition to NIfTI.
             type: Flag
             optional: true
-            command-line-flag: '--export_dicoms'
-            value-key: '[EXPORT_DICOMS]'
+            command-line-flag: "--export_dicoms"
+            value-key: "[EXPORT_DICOMS]"
           - name: pbs
             id: pbs
-            description: >-
-              Run the pipeline via PBS and use the argument as the account
-              string.
+            description: Run the pipeline via PBS and use the argument as the account string.
             type: String
             optional: true
-            command-line-flag: '--pbs'
-            value-key: '[PBS]'
+            command-line-flag: "--pbs"
+            value-key: "[PBS]"
           - name: slurm
             id: slurm
-            description: >-
-              Run the pipeline via SLURM and use the arguments as the account
-              string and partition.
+            description: Run the pipeline via SLURM and use the arguments as the account string and partition.
             type: String
             list: true
             optional: true
-            command-line-flag: '--slurm'
-            value-key: '[SLURM]'
+            command-line-flag: "--slurm"
+            value-key: "[SLURM]"
           - name: n_procs
             id: n_procs
-            description: >-
-              Number of processes to run concurrently for MultiProc. By default,
-              the number of available CPUs is used.
+            description: Number of processes to run concurrently for MultiProc. By default, the number of available CPUs is used.
             type: Number
             optional: true
-            command-line-flag: '--n_procs'
-            value-key: '[N_PROCS]'
+            command-line-flag: "--n_procs"
+            value-key: "[N_PROCS]"
           - name: debug
             id: debug
             description: Enables some nipype settings for debugging.
             type: Flag
             optional: true
-            command-line-flag: '--debug'
-            value-key: '[DEBUG]'
+            command-line-flag: "--debug"
+            value-key: "[DEBUG]"
           - name: list_premades
             id: list_premades
             description: List the possible premade pipelines only.
             type: Flag
             optional: true
-            command-line-flag: '--list_premades'
-            value-key: '[LIST_PREMADES]'
+            command-line-flag: "--list_premades"
+            value-key: "[LIST_PREMADES]"
           - name: dry
             id: dry
-            description: >-
-              Creates the nipype pipeline using the chosen settings, but does
-              not execute it. Useful for debugging purposes, or for creating a
-              references file.
+            description: Creates the nipype pipeline using the chosen settings, but does not execute it. Useful for debugging purposes, or for creating a references file.
             type: Flag
             optional: true
-            command-line-flag: '--dry'
-            value-key: '[DRY]'
+            command-line-flag: "--dry"
+            value-key: "[DRY]"
           - name: version
             id: version
             description: Displays the QSMxT version
             type: Flag
             optional: true
-            command-line-flag: '--version'
-            value-key: '[VERSION]'
+            command-line-flag: "--version"
+            value-key: "[VERSION]"
         tags: {}
         suggested-resources:
           cpu-cores: 1
@@ -900,64 +661,36 @@ categories:
   - structural imaging
   - workflows
 structured_readme:
-  description: >-
-    QSMxT is an end-to-end software toolbox for QSM that automatically
-    reconstructs and processes large datasets in parallel using sensible
-    defaults.
+  description: QSMxT is an end-to-end software toolbox for QSM that automatically reconstructs and processes large datasets in parallel using sensible defaults.
   example: |-
-    ml qsmxt/8.0.7
+    ml qsmxt/{{ context.version }}
     dicom-convert <INPUT_DICOM_DIR> <OUTPUT_BIDS_DIR>
     qsmxt <INPUT_BIDS_DIR> [<OPTIONAL_OUTPUT_DIR>]
     qsmxt --help
   documentation: https://qsmxt.github.io
-  citation: >-
-    Stewart AW, Robinson SD, O’Brien K, Jin J, Widhalm G, Hangel G, Walls A,
-    Goodwin J, Eckstein K, Tourell M, Morgan C, Narayanan A, Barth M, Bollmann
-    S. “QSMxT: Robust masking and artifact reduction for quantitative
-    susceptibility mapping”. Magnetic resonance in medicine 87.3 (2022):
-    1289-1300. https://doi.org/10.1002/mrm.29048
-readme: >-
+  citation: "Stewart AW, Robinson SD, O’Brien K, Jin J, Widhalm G, Hangel G, Walls A, Goodwin J, Eckstein K, Tourell M, Morgan C, Narayanan A, Barth M, Bollmann S. “QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping”. Magnetic resonance in medicine 87.3 (2022): 1289-1300. https://doi.org/10.1002/mrm.29048"
+readme: |-
   ----------------------------------
+  ## qsmxt/{{ context.version }} ##
 
-  ## qsmxt/8.0.7 ##
-
-
-  QSMxT is an end-to-end software toolbox for QSM that automatically
-  reconstructs and processes large datasets in parallel using sensible defaults.
-
+  QSMxT is an end-to-end software toolbox for QSM that automatically reconstructs and processes large datasets in parallel using sensible defaults.
 
   Example:
-
   ```
-
-  ml qsmxt/8.0.7
-
+  ml qsmxt/{{ context.version }}
   dicom-convert <INPUT_DICOM_DIR> <OUTPUT_BIDS_DIR>
-
   qsmxt <INPUT_BIDS_DIR> [<OPTIONAL_OUTPUT_DIR>]
-
   qsmxt --help
-
   ```
-
 
   More documentation can be found here: https://qsmxt.github.io
 
-
   Citation:
-
+  ```
+  Stewart AW, Robinson SD, O’Brien K, Jin J, Widhalm G, Hangel G, Walls A, Goodwin J, Eckstein K, Tourell M, Morgan C, Narayanan A, Barth M, Bollmann S. “QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping”. Magnetic resonance in medicine 87.3 (2022): 1289-1300. https://doi.org/10.1002/mrm.29048
   ```
 
-  Stewart AW, Robinson SD, O’Brien K, Jin J, Widhalm G, Hangel G, Walls A,
-  Goodwin J, Eckstein K, Tourell M, Morgan C, Narayanan A, Barth M, Bollmann S.
-  “QSMxT: Robust masking and artifact reduction for quantitative susceptibility
-  mapping”. Magnetic resonance in medicine 87.3 (2022): 1289-1300.
-  https://doi.org/10.1002/mrm.29048
-
-  ```
-
-
-  To run container outside of this environment: ml qsmxt/8.0.7
-
+  To run container outside of this environment: ml qsmxt/{{ context.version }}
 
   ----------------------------------
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADzUlEQVRIS+2WbUxbZRTHf+Wl0BVBNssKwWyZQBiic2wRjMwo4mLIRBxxuCiMl4QXI8QSWMAgJpIOp58GsiUkBBgZYEwMRLYhGEfc1mbyokF5iwYmiqvAgHYgg9J7vb06oHZMol93Pz7neZ7fOf/zf06uIiPTLLLJz8MDXlhUsmTe5AFpm+I+4N/E2lCipaVZTDeMzM2NoFJp0PjtR6sNdejBhGWEwamvEcQVwjTP8LDPo048J4AoChgNxxkerEWUDq7/tP6R6J9rwnpLwSljMkPTVxziD3pqeXZnCofDilC6quSYE+Dq5bcZHqolMzOT3NxcgoKCmJ2dpaWlhaKiIlTiNnyU2zFZB6mqqiIhIQGr1Up/fz+pqamYTcucPvQTCoXCGXBzup+Wzw6g0+koKCiQIQaDQZJGS1lZGQEBAURHRyMIAnV1dajVanJycuTLoqKi6OjoIHZHFsl7Tq5W5lBB97X3GBz4mMnJSVJSUujsNPBI8BEmf/8G89z3jI2NkZ2dTVtbmxTrpLGxkdraWjRbdsiQyYXrnIi9yi7fiLsDOr84io/3L/T19eEhvao9e48Tsa8Yi2WMT5ufoKamhpmZGQoLC8nKypIlS0tLo6urC7W7L1tVAXx4sHtVHqceXPj8ECEhLjQ3N+Pv78/TB04RujsVm22Juho/ysvL8fPzIyMjQ84wKSmJ0tJSFhcXKSkpob29Hd1TjUQGvrJWwZu5a6Pi4vk38FJfp7e3F09PTyL2F/Jk5DuSPKOca9grV2CXr7i4mOdDjnHpxwbJogJxcXE0NDSQmJjIrwPzfPTy5TVA4JdDq7PIcraKhXNn5EuSk5NpN1zDK/41lga+RejvlnuQnp4uN9Mt0B/Px8NY+OoK4m2pQqnpo6OjvH9Cz46LTWsA5YUfVgHC6AgrbyXKLsrPz5elMBqNslx6vR6NRkNMTIzsInu2PT09mEwmQkNDaW1tlR3VMTyA75kP7g6wr66c1iO0NckWzcvLIzg4GKVSKbvFDp13c2Fleob6+npZGm9vb8bHx6moqKCyshJ1dgqqhBc3BohSdrbqkwjnPwHbXy+5urqa8PBwYmNjsQVsZ3niBuLibcex4OaK6tWXUB874rCuWC/R+oh4y4w40Iet5SxuQ9/Jvre7JT4+HjFkF1teP4xgtiBM3cTloa24P7YbV80251m0EeDOTnHeglV3FCZ+djisjNrHA+/qULi63HOgbliBQzW/jSNcasNdeq1ertP88bd0dohb0M7/D7hzg1rKVus+zNTyP/S/B2JTFdwHbPq35b/04E9NtswA67fKiwAAAABJRU5ErkJggg==

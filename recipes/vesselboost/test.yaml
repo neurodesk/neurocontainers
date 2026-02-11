@@ -1,5 +1,6 @@
 tests:
   - name: Test vesselboost
+    manual: true
     script: |
       ## Test vesselboost on it's own:
       python test_time_adaptation.py --ds_path "/root/Desktop/eval_data/" --out_path "/root/Desktop/eval_out/" --pretrained "./saved_models/Init_ep1000_lr1e3_tver" --ep 2000 --prep_mode 4
@@ -12,7 +13,14 @@ tests:
       mkdir tof_output
       angiboost.py --ds_path tof_input --out_path tof_output --lb_path init_label --pretrained /opt/VesselBoost/saved_models/manual_0429 --outmo tof_output/outmo --ep 100 --lr 0.05 --prep_mode 4
 
+
       # Test openrecon side:
+      source .venv/bin/activate
+      ./builder/build.py generate vesselboost --recreate --build --login --architecture x86_64
+
+      # check that the CUDA version is valid for MARS: has to be CUDA 11.x
+      python -c "import torch; print(torch.version.cuda)"
+
 
       python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
       #remove previous output

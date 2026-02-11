@@ -1,0 +1,115 @@
+name: qsmbly
+version: 0.3.0
+
+categories:
+  - "structural imaging"
+
+copyright:
+  - license: MIT
+    url: https://github.com/astewartau/qsm-wasm/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        NODE_MAJOR: "20"
+
+    # Install system dependencies
+    - install:
+        - curl
+        - git
+        - ca-certificates
+        - gnupg
+        - build-essential
+        - pkg-config
+        - libssl-dev
+
+    # Install Node.js 20
+    - run:
+        - mkdir -p /etc/apt/keyrings
+        - curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+        - echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
+        - apt-get update && apt-get install nodejs -y
+
+    # Install serve for static file hosting
+    - run:
+        - npm install -g serve
+
+    # Install Rust toolchain with WASM target
+    - run:
+        - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        - . /root/.cargo/env && rustup target add wasm32-unknown-unknown
+
+    # Install wasm-pack
+    - run:
+        - . /root/.cargo/env && curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    # Clone source and build WASM
+    - run:
+        - git clone --branch v{{ context.version }} --depth 1 https://github.com/astewartau/qsm-wasm.git /opt/qsmbly-src
+        - . /root/.cargo/env && cd /opt/qsmbly-src/rust-wasm && wasm-pack build --target web --release
+
+    # Assemble deployment directory
+    - run:
+        - mkdir -p /opt/qsmbly/dist/wasm
+        - cp /opt/qsmbly-src/index.html /opt/qsmbly/dist/
+        - cp /opt/qsmbly-src/favicon.ico /opt/qsmbly/dist/ 2>/dev/null || true
+        - cp -r /opt/qsmbly-src/js /opt/qsmbly/dist/
+        - cp -r /opt/qsmbly-src/css /opt/qsmbly/dist/
+        - cp -r /opt/qsmbly-src/niivue /opt/qsmbly/dist/
+        - cp -r /opt/qsmbly-src/nifti-js /opt/qsmbly/dist/
+        - cp /opt/qsmbly-src/rust-wasm/pkg/qsm_wasm.js /opt/qsmbly/dist/wasm/
+        - cp /opt/qsmbly-src/rust-wasm/pkg/qsm_wasm_bg.wasm /opt/qsmbly/dist/wasm/
+        - cp /opt/qsmbly-src/rust-wasm/pkg/qsm_wasm.d.ts /opt/qsmbly/dist/wasm/
+        - cp /opt/qsmbly-src/rust-wasm/pkg/qsm_wasm_bg.wasm.d.ts /opt/qsmbly/dist/wasm/
+        - cp /opt/qsmbly-src/wasm/romeo_wasm* /opt/qsmbly/dist/wasm/ 2>/dev/null || true
+        - cp /opt/qsmbly-src/wasm/package.json /opt/qsmbly/dist/wasm/ 2>/dev/null || true
+
+    # Clean up Rust toolchain and source to reduce image size
+    - run:
+        - rm -rf /opt/qsmbly-src /root/.cargo /root/.rustup
+
+    # Create startup script
+    - run:
+        - echo '#!/bin/bash' > /opt/qsmbly/start.sh
+        - echo 'cd /opt/qsmbly && exec serve -s dist -l ${NEURODESK_WEBAPP_PORT:-3001} --no-clipboard' >> /opt/qsmbly/start.sh
+        - chmod +x /opt/qsmbly/start.sh
+
+    # Copy launcher script to PATH
+    - copy: qsmbly /usr/local/bin/qsmbly
+    - run:
+        - chmod +x /usr/local/bin/qsmbly
+
+    - entrypoint: /opt/qsmbly/start.sh
+
+deploy:
+  bins:
+    - qsmbly
+  webapp:
+    title: "QSMbly"
+    icon: "icon.svg"
+    startup_command: "qsmbly start"
+    startup_timeout: 120
+    description: "Browser-based Quantitative Susceptibility Mapping using WebAssembly"
+    port: 3001
+
+files:
+  - name: qsmbly
+    contents: |
+      #!/bin/bash
+      case "$1" in
+        start)
+          /opt/qsmbly/start.sh
+          ;;
+        *)
+          echo "QSMbly - Browser-based Quantitative Susceptibility Mapping"
+          echo "Usage: qsmbly start"
+          ;;
+      esac

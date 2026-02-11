@@ -76,7 +76,13 @@ jobs:
         run: |
           APPLICATION=${{ inputs.application }}
           SHORT_SHA=$(git rev-parse --short $GITHUB_SHA)
-          BUILDDATE=`date +%Y%m%d`
+          # Get the commit date of the recipe's build.yaml file
+          # This ensures consistent build dates based on when the recipe was last modified
+          BUILDDATE=$(git log -1 --format=%ad --date=format:%Y%m%d -- recipes/${APPLICATION}/build.yaml)
+          # Fallback to current date if git log fails (e.g., new file not yet committed)
+          if [ -z "$BUILDDATE" ]; then
+            BUILDDATE=`date +%Y%m%d`
+          fi
           echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
           echo "APPLICATION=$APPLICATION" >> $GITHUB_OUTPUT
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
@@ -216,7 +222,6 @@ jobs:
         run: |
           cd ./build/${APPLICATION}
           docker build . --file ${IMAGENAME}.Dockerfile --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --cache-from ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
-        continue-on-error: true
           
       - name: Debug storage
         run: |
@@ -254,16 +259,22 @@ jobs:
           DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE})
-          echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
-          
-          if [ "$DISABLE_AUTO_UPLOAD" = "true" ]; then
-            echo "Auto-upload is disabled. Skipping push to registry."
-          elif [ "$ROOTFS_NEW" = "$ROOTFS_CACHE" ]; then
-            echo "No changes found. Skipping push to registry. "
+          # Check if the image exists before trying to inspect it
+          if docker inspect ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} >/dev/null 2>&1; then
+            ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE})
+            echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
+            
+            if [ "$DISABLE_AUTO_UPLOAD" = "true" ]; then
+              echo "Auto-upload is disabled. Skipping push to registry."
+            elif [ "$ROOTFS_NEW" = "$ROOTFS_CACHE" ]; then
+              echo "No changes found. Skipping push to registry. "
+            else
+              echo "Pushing to registry. Changes found"
+              echo "IMGDIFFERS=true" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "Pushing to registry. Changes found"
-            echo "IMGDIFFERS=true" >> $GITHUB_OUTPUT
+            echo "ERROR: Image ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} does not exist. Build failed."
+            exit 1
           fi
 
       # - name: Upload new image as build artifact
@@ -454,7 +465,11 @@ jobs:
           echo "[DEBUG] building singularity image from docker image:"
           time singularity build "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" docker://ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.IMAGETAG }}
           echo "[DEBUG] done building singularity image from docker image!"
-        continue-on-error: true
+          # Verify the image was created successfully
+          if [ ! -f "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" ]; then
+            echo "ERROR: Singularity image file was not created"
+            exit 1
+          fi
 
       - name: Debug storage
         run: |
@@ -472,7 +487,7 @@ jobs:
   upload-nectar:
     needs: [config, build-image, build-simg]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' }}
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     permissions:
       packages: write
 
@@ -483,7 +498,10 @@ jobs:
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
           # Install rclone
-          sudo -v ; curl https://rclone.org/install.sh | sudo bash
+          if ! command -v rclone &>/dev/null; then
+            echo "[DEBUG] Installing rclone"
+            sudo -v ; curl https://rclone.org/install.sh | sudo bash
+          fi
           
       - name: Download simg artifact
         if: inputs.skip_simg_build != 'true'
@@ -537,7 +555,14 @@ jobs:
           fi
 
       - name: Upload to AWS S3
-        run: aws s3 cp /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg s3://neurocontainers/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+        run: |
+          aws s3 cp "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" "s3://neurocontainers/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg"
+          if ! aws s3api head-object --bucket neurocontainers --key "${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" > /dev/null 2>&1; then
+            echo "::error::File verification failed. The file was not found in S3."
+            exit 1
+          else
+            echo "[DEBUG] File upload verified. The file exists in S3."
+          fi
 
   create-pr:
     needs: [config, build-image, push-dockerhub, build-simg, upload-nectar, upload-s3]
@@ -630,7 +655,7 @@ jobs:
 
         Or, for testing directly with Apptainer/Singularity:
         \`\`\`bash
-        curl -X GET https://neurocontainers.neurodesk.org/${IMAGENAME}_${BUILDDATE}.simg -O
+        curl -X GET https://neurocontainers.s3.us-east-2.amazonaws.com/${IMAGENAME}_${BUILDDATE}.simg -O
         singularity shell --overlay /tmp/apptainer_overlay ${IMAGENAME}_${BUILDDATE}.simg
         \`\`\`
 
@@ -665,4 +690,5 @@ jobs:
         echo "The container has been successfully build. To test the container, run this:" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
         echo "bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE" >> $GITHUB_STEP_SUMMARY
+
 

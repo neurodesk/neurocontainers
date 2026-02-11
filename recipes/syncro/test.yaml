@@ -1,0 +1,6 @@
+tests:
+  #test if all packages are installed correctly. This should not give an error:
+  - name: Test syncro
+    manual: true
+    script: |
+      SYNcro.py /buildhostdirectory/6_anat_T1w.nii

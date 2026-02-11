@@ -16,7 +16,7 @@ Run `sf-init <name> <version>` to create a new recipe.
 
 Run `sf-generate <name>` to generate a `Dockerfile`. If your in the same directory as a recipe the name is optional and automatically detected.
 
-Run `sf-build <name>` to generate and build the `Dockerfile`. This should be used instead of `docker build` since the context is generated in a separate `build` directory.
+Run `sf-build <name>` to generate and build the `Dockerfile`. This should be used instead of `docker build` since the context is generated in a separate `build` directory. After a successful build the builder automatically runs the Golang container tester inside the new image, building the tester helper image on-demand if it is missing locally.
 
 Run `sf-make <recipe_dir>` to build a Singularity/Apptainer SIF using BuildKit without a Docker daemon. This generates a docker-archive and then builds a SIF (saved under `./sifs/`).
 

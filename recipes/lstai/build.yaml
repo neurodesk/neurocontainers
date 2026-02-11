@@ -12,66 +12,137 @@ build:
         path:
           - /opt/miniforge3/envs/lstai/bin/
           - /opt/lstai/bin
+        bins:
+          - lst
+          - hd-bet
     - install: wget python3-pip git python3 unzip
     - workdir: /opt
-    - run:
+    - run: # INSTALL MINIFORGE
         - wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
         - bash Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge3
+    - run: # CREATE LST-AI CONDA ENVIRONMENT AND CLONE LST-AI REPO
+        - /opt/miniforge3/bin/conda create -n lstai python=3.8
+        - git clone https://github.com/CompImg/LST-AI/ /opt/lstai
     - environment:
         PATH: /opt/miniforge3/envs/lstai/bin:/opt/lstai/bin:${PATH}
-    - run:
-        - /opt/miniforge3/bin/conda create -n lstai python=3.8
-    - run:
-        - git clone https://github.com/CompImg/LST-AI/ /opt/lstai
+    - run : # INSTALL LST-AI
         - pip install -e /opt/lstai
-    - run:
+    - run: # INSTALL HD-BET
         - git clone https://github.com/MIC-DKFZ/HD-BET /opt/hdbet
         - cd /opt/hdbet
         - git checkout ae160681324d524db3578e4135bf781f8206e146
         - pip install SimpleITK --only-binary ":all:"
+        - mkdir -p /opt/hd-bet_params
+        - wget -O /opt/hd-bet_params/0.model "https://zenodo.org/record/2540695/files/0.model?download=1"
+        - wget -O /opt/hd-bet_params/1.model "https://zenodo.org/record/2540695/files/1.model?download=1"
+        - wget -O /opt/hd-bet_params/2.model "https://zenodo.org/record/2540695/files/2.model?download=1"
+        - wget -O /opt/hd-bet_params/3.model "https://zenodo.org/record/2540695/files/3.model?download=1"
+        - wget -O /opt/hd-bet_params/4.model "https://zenodo.org/record/2540695/files/4.model?download=1"
+        - sed -i "s|os.path.join(os.path.expanduser('~'), 'hd-bet_params')|'/opt/hd-bet_params'|" /opt/hdbet/HD_BET/paths.py
         - pip install -e /opt/hdbet
-    - run:
+    - run: # DOWNLOAD LST-AI GREEDY BINARY AND DATA
         - wget "https://github.com/CompImg/LST-AI/releases/download/v1.0.0/greedy"
         - chmod +x greedy
-        - mkdir /opt/lstai/bin
+        - mkdir -p /opt/lstai/bin
         - mv greedy /opt/lstai/bin
-    - run:
+    - run: # DOWNLOAD LST-AI MODEL DATA
         - wget https://github.com/CompImg/LST-AI/releases/download/v1.0.0/lst_data.zip
-    - run:
-        - unzip lst_data.zip -d /opt/lstai/LST-AI
+        - unzip lst_data.zip -d /opt/lstai/LST_AI
+    - run: # INSTALL DCM2NIIX
+        - curl -fLO https://github.com/rordenlab/dcm2niix/releases/download/v1.0.20240202/dcm2niix_lnx.zip
+        - unzip dcm2niix_lnx.zip -d /opt/dcm2niix
+        - chmod a+x /opt/dcm2niix/dcm2niix
+        - rm dcm2niix_lnx.zip
+    - environment:
+        PATH: $PATH:/opt/dcm2niix
+    - run: # INSTALL OSFCLIENT FOR TESTING
+        - pip install osfclient
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
+    - test:
+        name: Test LST-AI
+        script: |
+          #!/bin/bash
+          set -e
+
+          # Download MS test dataset from OSF using osfclient
+          cd /tmp
+          echo "[INFO] Downloading test dataset from OSF..."
+          osf -p x62zy fetch archive.zip /tmp/archive.zip
+          echo "[INFO] Unzipping dataset..."
+          unzip /tmp/archive.zip -d /tmp/
+          rm -rf /tmp/archive.zip
+
+          # Convert DICOM to NIfTI (with -z y for gzip compression)
+          # SE000005 = T1W, SE000006 = FLAIR
+          echo "[INFO] Converting DICOM to NIfTI..."
+          dcm2niix -z y -o /tmp/ /tmp/archive/ST000001/SE000005/
+          dcm2niix -z y -o /tmp/ /tmp/archive/ST000001/SE000006/
+          rm -rf /tmp/archive/
+
+          # Find the converted files
+          T1_FILE=$(ls /tmp/*T1W*.nii.gz | head -1)
+          FLAIR_FILE=$(ls /tmp/*FLAIR*.nii.gz | head -1)
+          echo "[INFO] T1 file: $T1_FILE"
+          echo "[INFO] FLAIR file: $FLAIR_FILE"
+
+          # Run LST-AI
+          echo "[INFO] Running LST-AI..."
+          lst --t1 "$T1_FILE" --flair "$FLAIR_FILE" --output /tmp/lstai_output --device cpu --fast-mode
+          echo "[INFO] LST-AI completed."
+
+          # Check output exists
+          echo "[INFO] Checking output files..."
+          ls -la /tmp/lstai_output/
+
+          # Print CSVs
+          echo "\nAnnotated Lesion Stats:"
+          cat /tmp/lstai_output/annotated_lesion_stats.csv
+          echo "\nLesion Stats:"
+          cat /tmp/lstai_output/lesion_stats.csv
+
+          echo "[INFO] Test complete"
 categories:
   - image segmentation
   - machine learning
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAACsElEQVR4AexTTWgTQRh9s02a2tiEWmjpIZf2oNAq/mCxVKrQeLCIh55ESLCgVdGLPbS9tJrEi6AHT0qhKglYexBvFRESUawSBFGMBBrSijHBv7RJk5Btftb5Jm5MIMYc9CC67JvZ/b6Z92a+NyN1PLUqtWLr8xEldadTSd7Q1wwJf/j5RwUUBfgYU7D0WUEmV73GZSXKfUnhw4l5BPucAkv9LiSfvAc4IdHkYmlcureCztEUOs6l0D2ewqaRJCzXZLxczoOEaVwpygTUhN1uRzweh+2CTQ0hH5cRvrIA21wU7oU3nEwRyOUVDJ68juFpGf5wvjhe/agooCZLe3lxBfHHy/D5fDAajRgYGABjDA6HAxaLBeMXp3H7WRZytnQWUJsAX2X2UxL7+/YJcr/fD7fbLZimpqYQCATQ29uLF8E8EmlFxNWmNgG+UklfD88jD4icVk87UUm6urpAIPJ0Ro0W+poEFL4DSa+FtlUPs9kMq9UKk8kkPFC4s2952UwtDObuOhgbC8RqW5tAOov4XT/WI2tinsvlgsFgEB7Qbgzck5tzDzH/KodoQgwpNtUFeDkTD4JYnfUhE04IM0OhkOhVBvKCytbe3i7uxtc1PklN8r66AB+Q9LzD6q3XWF+MglYei8UwMTHBM4WXTlBPTw8ikQhaDQwtTayQ+N7+VECn02FycrJYZ1mWQfeDzKS5VHuC0+mE1+sV3hzgHpAI5VVI6kdpT0ePBBhjos6MMdA/xY2NkjgxjP3IkfGWvRqMDmrRoC1lQvk9YPwoGoY2o/n49opoO7UbM2faMDOiw2mzFod31mHskBb3xxpw1apDy0ZWzs7/JI7iK23QoOlgJ5qHt1VE67EdGNzViCN7NLh8tB6zZxtwfqge/VvqoNOg4iNVjP7G4H+BXxbz7y/RNwAAAP//C9arogAAAAZJREFUAwAwtjUFVcEnVAAAAABJRU5ErkJggg==
-structured_readme:
-  description: LST-AI
-  example: |-
-    ml lstai/1.0.0
-    lstai --help
-  documentation: https://raw.githubusercontent.com/CompImg/LST-AI/refs/heads/main/README.md
-  citation: ""
 readme: |-
   ----------------------------------
   ## lstai/{{ context.version }} ##
 
-  LST-AI
+  LST-AI: A deep learning ensemble for accurate MS lesion segmentation.
 
   Example:
   ```
-  ml lstai/1.0.0
-  lstai --help
+  ml lstai/{{ context.version }}
+  lst --help
   ```
 
-  More documentation can be found here: https://raw.githubusercontent.com/CompImg/LST-AI/refs/heads/main/README.md
+  More documentation can be found here: https://github.com/CompImg/LST-AI
 
   Citation:
   ```
+  Wiltgen T, McGinnis J, Schlaeger S, Kofler F, Voon C, Berthele A, Bischl D, Grundl L, Will N, Metz M, et al. (2024)
+  LST-AI: A deep learning ensemble for accurate MS lesion segmentation.
+  NeuroImage: Clinical. doi:10.1016/j.nicl.2024.103611
 
+  Isensee F, Schell M, Tursunova I, Brugnara G, Bonekamp D, Neuberger U, Wick A, Schlemmer HP, Heiland S, Wick W,
+  Bendszus M, Maier-Hein KH, Kickingereder P. (2019)
+  Automated brain extraction of multi-sequence MRI using artificial neural networks.
+  Hum Brain Mapp. 1-13. doi:10.1002/hbm.24750
   ```
 
   To run container outside of this environment: ml lstai/{{ context.version }}
 
   ----------------------------------
+structured_readme:
+  description: "LST-AI: A deep learning ensemble for accurate MS lesion segmentation."
+  example: |-
+    ml lstai/{{ context.version }}
+    lst --help
+  documentation: https://github.com/CompImg/LST-AI
+  citation: |-
+    Wiltgen T, McGinnis J, Schlaeger S, Kofler F, Voon C, Berthele A, Bischl D, Grundl L, Will N, Metz M, et al. (2024) LST-AI: A deep learning ensemble for accurate MS lesion segmentation. NeuroImage: Clinical. doi:10.1016/j.nicl.2024.103611
+
+    Isensee F, Schell M, Tursunova I, Brugnara G, Bonekamp D, Neuberger U, Wick A, Schlemmer HP, Heiland S, Wick W, Bendszus M, Maier-Hein KH, Kickingereder P. (2019) Automated brain extraction of multi-sequence MRI using artificial neural networks. Hum Brain Mapp. 1-13. doi:10.1002/hbm.24750

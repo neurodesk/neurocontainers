@@ -1,0 +1,541 @@
+name: ezbids
+version: 1.1.0
+
+categories:
+  - "data organisation"
+  - "bids apps"
+
+copyright:
+  - license: MIT
+    url: https://github.com/openneuropet/ezbids_docker/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: neurodebian:nd20.04-non-free
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        FSLDIR: /usr/local/fsl
+        FSLOUTPUTTYPE: NIFTI_GZ
+        NODE_MAJOR: "20"
+        VITE_APIHOST: /ezbids/api
+        VITE_BRAINLIFE_AUTHENTICATION: "false"
+
+    # Install system dependencies
+    - install:
+        - parallel
+        - python3
+        - python3-pip
+        - tree
+        - curl
+        - unzip
+        - git
+        - jq
+        - python
+        - libgl-dev
+        - python-numpy
+        - bc
+        - build-essential
+        - pkg-config
+        - cmake
+        - pigz
+        - rename
+        - zstd
+        - libopenjp2-7
+        - libgdcm-tools
+        - wget
+        - libopenblas-dev
+        - ca-certificates
+        - gnupg
+        - supervisor
+        - detox
+
+    # Install Node.js 20
+    - run:
+        - mkdir -p /etc/apt/keyrings
+        - curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+        - echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list
+        - apt-get update && apt-get install nodejs -y
+
+    # Install Python packages
+    - run:
+        - pip3 install numpy==1.23.0 nibabel==4.0.0 pandas matplotlib pyyaml==5.4.1 pydicom==2.3.1 natsort pydeface
+        - pip3 install quickshear mne mne-bids pypet2bids==1.4.1 conversiontelemetry
+
+    # Install MongoDB 4.4
+    - run:
+        - wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | apt-key add -
+        - echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/4.4 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-4.4.list
+        - apt-get update
+        - apt-get install -y mongodb-org=4.4.15 mongodb-org-server=4.4.15 mongodb-org-shell=4.4.15 mongodb-org-mongos=4.4.15 mongodb-org-tools=4.4.15
+
+    # Setup pet2bids config
+    - run:
+        - touch /.pet2bidsconfig && chown 1001:1001 /.pet2bidsconfig 
+        - echo "DEFAULT_METADATA_JSON=/usr/local/lib/python3.8/dist-packages/pypet2bids/template_json.json" > /.pet2bidsconfig
+
+    # Install FSL binaries
+    - run:
+        - mkdir -p /usr/local/fsl
+        - git clone https://github.com/dlevitas/FSL_binaries /usr/local/fsl
+        - rm -rf /usr/local/fsl/README.md
+        - mkdir -p /usr/local/fsl/data/standard
+        - mv /usr/local/fsl/bin/MNI152_T1_2mm_brain.nii.gz /usr/local/fsl/data/standard
+
+    - environment:
+        PATH: /usr/local/fsl/bin:/ROBEX:$PATH
+
+    # Install dcm2niix
+    - run:
+        - cd /tmp && curl -fLO https://github.com/rordenlab/dcm2niix/releases/latest/download/dcm2niix_lnx.zip
+        - unzip /tmp/dcm2niix_lnx.zip -d /tmp
+        - mv /tmp/dcm2niix /usr/local/bin
+        - rm -f /tmp/dcm2niix_lnx.zip
+
+    # Install ROBEX
+    - run:
+        - cd / && wget -q "https://www.nitrc.org/frs/download.php/5994/ROBEXv12.linux64.tar.gz//?i_agree=1&download_now=1" -O /ROBEXv12.linux64.tar.gz
+        - tar -xzf /ROBEXv12.linux64.tar.gz -C /
+        - rm -f /ROBEXv12.linux64.tar.gz
+
+    # Install Node.js global packages
+    - run:
+        - npm install -g npm@9.5.1 pm2 typescript tsc-watch bids-validator@1.14.8
+
+    # Clone ezBIDS application first
+    - run:
+        - mkdir -p /app
+        - git clone https://github.com/openneuropet/ezbids_docker /app/ezbids
+        - cd /app/ezbids && ./generate_keys.sh
+        - chmod 644 /app/ezbids/api/ezbids.key /app/ezbids/api/ezbids.pub
+
+    # Clone bids-specification into ezbids directory (where ezBIDS expects it)
+    - run:
+        - cd /app/ezbids && git clone https://github.com/bids-standard/bids-specification
+        - cd /app/ezbids/bids-specification && git checkout 3537e9edbc81545614d3ee605c398361099b6977
+
+    # Clone bids-validator
+    - run:
+        - git clone https://github.com/bids-standard/bids-validator /app/bids-validator
+
+    # Install API dependencies
+    - run:
+        - cd /app/ezbids/api && cp /app/ezbids/package.json /app/ezbids/api/ && npm install && npx tsc
+
+    # Install handler dependencies
+    - run:
+        - cd /app/ezbids/handler && npm install && npx tsc
+
+    # Install UI dependencies and build for production
+    - run:
+        - cd /app/ezbids/ui && npm install
+        - cd /app/ezbids/ui && npm run build
+        - chmod +x /app/ezbids/ui/entrypoint.sh
+        - npm install -g http-proxy express
+
+    # Create supervisor configuration
+    - copy: supervisord.conf /etc/supervisor/conf.d/ezbids.conf
+
+    # Create necessary directories and set permissions
+    - run:
+        - mkdir -p /data/db /var/log /tmp/ezbids-workdir
+
+    - environment:
+        MONGO_CONNECTION_STRING: mongodb://localhost:27017/ezbids
+        BRAINLIFE_AUTHENTICATION: "false"
+        PRESORT: "false"
+
+    # Create startup scripts
+    - copy: start-ezbids.sh /usr/local/bin/start-ezbids.sh
+    - copy: ezbids /usr/local/bin/ezbids 
+    - copy: ui-server.js /app/ezbids/ui/server.js
+    - run:
+        - chmod +x /usr/local/bin/start-ezbids.sh
+        - chmod +x /usr/local/bin/ezbids 
+
+    - entrypoint: /usr/local/bin/start-ezbids.sh
+
+deploy:
+  bins:
+    - ezbids
+    - dcm2niix
+    - bids-validator
+  webapp:
+    title: "ezBIDS"
+    icon: "icon.svg"
+    startup_command: "ezbids start"
+    start_page: "/ezbids/"
+    startup_timeout: 300
+    description: "Web-based DICOM to BIDS conversion tool"
+    port: 3000
+    additional_proxies:
+      - path: "ezbids/api"
+        port: 8082
+
+files:
+  - name: start-ezbids.sh
+    contents: |
+      #!/bin/bash
+      # Startup script for ezBIDS - works for both root and non-root users
+
+      # Set up environment
+      export MONGO_CONNECTION_STRING="${MONGO_CONNECTION_STRING:-mongodb://localhost:27017/ezbids}"
+      export BRAINLIFE_AUTHENTICATION="${BRAINLIFE_AUTHENTICATION:-false}"
+      export PRESORT="${PRESORT:-false}"
+      export VITE_APIHOST="${VITE_APIHOST:-http://localhost:8082}"
+      export VITE_BRAINLIFE_AUTHENTICATION="${VITE_BRAINLIFE_AUTHENTICATION:-false}"
+      
+      # Determine MongoDB data directory based on permissions
+      if [ -w /data/db ]; then
+        MONGO_DBPATH="/data/db"
+      else
+        MONGO_DBPATH="${HOME}/.ezbids/mongodb"
+        mkdir -p "$MONGO_DBPATH"
+      fi
+
+      # Determine log directory
+      if [ -w /var/log ]; then
+        LOG_DIR="/var/log"
+      else
+        LOG_DIR="${HOME}/.ezbids/logs"
+        mkdir -p "$LOG_DIR"
+      fi
+
+      # Create workdir
+      mkdir -p /tmp/ezbids-workdir 2>/dev/null || true
+
+      echo "Starting ezBIDS services..."
+      echo "  MongoDB data: $MONGO_DBPATH"
+      echo "  Logs: $LOG_DIR"
+      echo ""
+
+      # Start MongoDB
+      echo "Starting MongoDB..."
+      mongod --dbpath "$MONGO_DBPATH" --bind_ip_all --port 27017 > "$LOG_DIR/mongodb.out.log" 2> "$LOG_DIR/mongodb.err.log" &
+      MONGO_PID=$!
+
+      # Wait for MongoDB to be ready
+      echo "Waiting for MongoDB to start..."
+      for i in {1..30}; do
+        if mongosh --eval "db.runCommand('ping').ok" --quiet 2>/dev/null; then
+          echo "MongoDB is ready."
+          break
+        fi
+        sleep 1
+      done
+
+      # Start API (run pre-compiled JS directly, not dev.sh which needs write access)
+      echo "Starting API server on port 8082..."
+      cd /app/ezbids/api
+      node ezbids.js > "$LOG_DIR/api.out.log" 2> "$LOG_DIR/api.err.log" &
+      API_PID=$!
+      sleep 2
+
+      # Start Handler
+      echo "Starting handler..."
+      cd /app/ezbids/handler
+      node handler.js > "$LOG_DIR/handler.out.log" 2> "$LOG_DIR/handler.err.log" &
+      HANDLER_PID=$!
+      sleep 2
+
+      # Start UI (serve pre-built production files with API proxy)
+      EZBIDS_UI_PORT="${NEURODESK_WEBAPP_PORT:-3000}"
+      echo "Starting UI on port ${EZBIDS_UI_PORT}..."
+      cd /app/ezbids/ui
+      NEURODESK_WEBAPP_PORT="$EZBIDS_UI_PORT" node server.js > "$LOG_DIR/ui.out.log" 2> "$LOG_DIR/ui.err.log" &
+      UI_PID=$!
+
+      echo ""
+      echo "=============================================="
+      echo "ezBIDS is starting up!"
+      echo ""
+      echo "  Web UI:  http://localhost:${EZBIDS_UI_PORT}"
+      echo "  API:     http://localhost:8082"
+      echo ""
+      echo "  Logs:    $LOG_DIR/"
+      echo "=============================================="
+      echo ""
+      echo "Press Ctrl+C to stop all services."
+      echo ""
+
+      # Handle shutdown
+      cleanup() {
+        echo ""
+        echo "Shutting down ezBIDS services..."
+        kill $UI_PID $HANDLER_PID $API_PID $MONGO_PID 2>/dev/null
+        wait
+        echo "All services stopped."
+        exit 0
+      }
+      trap cleanup SIGINT SIGTERM
+
+      # Keep running and wait for any child to exit
+      wait
+
+  - name: ezbids
+    contents: |
+      #!/bin/bash
+      # ezBIDS launcher script
+
+      show_help() {
+        echo "ezBIDS - Web-based DICOM to BIDS conversion tool"
+        echo ""
+        echo "Usage: ezbids [command]"
+        echo ""
+        echo "Commands:"
+        echo "  start       Start the ezBIDS web application (default)"
+        echo "  status      Check if ezBIDS services are running"
+        echo "  help        Show this help message"
+        echo ""
+        echo "After starting, access the web interface at:"
+        echo "  http://localhost:3000"
+        echo ""
+        echo "Ports used:"
+        echo "  3000  - Web UI"
+        echo "  8082  - REST API"
+        echo "  27017 - MongoDB (internal)"
+      }
+
+      check_status() {
+        echo "Checking ezBIDS services..."
+        echo ""
+
+        # Check MongoDB
+        if pgrep -x mongod > /dev/null; then
+          echo "  [✓] MongoDB is running"
+        else
+          echo "  [✗] MongoDB is not running"
+        fi
+
+        # Check ports
+        for port in 3000 8082 27017; do
+          if ss -tlnp 2>/dev/null | grep -q ":$port " || netstat -tlnp 2>/dev/null | grep -q ":$port "; then
+            echo "  [✓] Port $port is listening"
+          else
+            echo "  [✗] Port $port is not listening"
+          fi
+        done
+      }
+
+      case "${1:-start}" in
+        start)
+          exec /usr/local/bin/start-ezbids.sh
+          ;;
+        status)
+          check_status
+          ;;
+        help|--help|-h)
+          show_help
+          ;;
+        *)
+          echo "Unknown command: $1"
+          echo ""
+          show_help
+          exit 1
+          ;;
+      esac
+
+  - name: supervisord.conf
+    contents: |
+      [supervisord]
+      nodaemon=true
+
+      [program:mongodb]
+      command=mongod --bind_ip_all --port 27017
+      autostart=true
+      autorestart=true
+      stderr_logfile=/var/log/mongodb.err.log
+      stdout_logfile=/var/log/mongodb.out.log
+
+      [program:api]
+      command=/app/ezbids/api/dev.sh
+      directory=/app/ezbids/api
+      autostart=true
+      autorestart=true
+      environment=MONGO_CONNECTION_STRING="mongodb://localhost:27017/ezbids",BRAINLIFE_AUTHENTICATION="false"
+      stderr_logfile=/var/log/api.err.log
+      stdout_logfile=/var/log/api.out.log
+
+      [program:handler]
+      command=pm2 start handler.js --attach --watch --ignore-watch "ui **/node_modules **__pycache__**"
+      directory=/app/ezbids/handler
+      autostart=true
+      autorestart=true
+      environment=MONGO_CONNECTION_STRING="mongodb://localhost:27017/ezbids",PRESORT="false"
+      stderr_logfile=/var/log/handler.err.log
+      stdout_logfile=/var/log/handler.out.log
+
+      [program:ui]
+      command=/app/ezbids/ui/entrypoint.sh
+      directory=/app/ezbids/ui
+      autostart=true
+      autorestart=true
+      environment=VITE_APIHOST="http://localhost:8082",VITE_BRAINLIFE_AUTHENTICATION="false"
+      stderr_logfile=/var/log/ui.err.log
+      stdout_logfile=/var/log/ui.out.log
+
+  - name: ui-server.js
+    contents: |
+      // Simple server that serves static files and proxies API requests
+      const http = require('http');
+      const fs = require('fs');
+      const path = require('path');
+
+      const PORT = parseInt(process.env.NEURODESK_WEBAPP_PORT || '3000');
+      const API_HOST = 'localhost';
+      const API_PORT = 8082;
+      const DIST_DIR = path.join(__dirname, 'dist');
+
+      const MIME_TYPES = {
+        '.html': 'text/html',
+        '.js': 'application/javascript',
+        '.css': 'text/css',
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.gif': 'image/gif',
+        '.svg': 'image/svg+xml',
+        '.ico': 'image/x-icon',
+        '.woff': 'font/woff',
+        '.woff2': 'font/woff2',
+        '.ttf': 'font/ttf',
+      };
+
+      const server = http.createServer((req, res) => {
+        const url = req.url;
+
+        // Proxy API requests to the backend
+        if (url.startsWith('/ezbids/api')) {
+          const apiPath = url.replace('/ezbids/api', '');
+          const options = {
+            hostname: API_HOST,
+            port: API_PORT,
+            path: apiPath || '/',
+            method: req.method,
+            headers: { ...req.headers, host: `${API_HOST}:${API_PORT}` },
+          };
+
+          const proxyReq = http.request(options, (proxyRes) => {
+            res.writeHead(proxyRes.statusCode, proxyRes.headers);
+            proxyRes.pipe(res);
+          });
+
+          proxyReq.on('error', (err) => {
+            console.error('Proxy error:', err.message);
+            res.writeHead(502);
+            res.end('Bad Gateway');
+          });
+
+          req.pipe(proxyReq);
+          return;
+        }
+
+        // Serve static files
+        let filePath = url.replace(/^\/ezbids/, '') || '/index.html';
+        if (filePath === '/' || filePath === '') filePath = '/index.html';
+
+        const fullPath = path.join(DIST_DIR, filePath);
+        const ext = path.extname(fullPath);
+
+        fs.readFile(fullPath, (err, data) => {
+          if (err) {
+            // For SPA routing, serve index.html for non-file requests
+            if (err.code === 'ENOENT' && !ext) {
+              fs.readFile(path.join(DIST_DIR, 'index.html'), (err2, data2) => {
+                if (err2) {
+                  res.writeHead(404);
+                  res.end('Not Found');
+                } else {
+                  res.writeHead(200, { 'Content-Type': 'text/html' });
+                  res.end(data2);
+                }
+              });
+            } else {
+              res.writeHead(404);
+              res.end('Not Found');
+            }
+          } else {
+            const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+            res.writeHead(200, { 'Content-Type': contentType });
+            res.end(data);
+          }
+        });
+      });
+
+      server.listen(PORT, '0.0.0.0', () => {
+        console.log(`ezBIDS UI server running at http://localhost:${PORT}/ezbids/`);
+        console.log(`API proxy: /ezbids/api/* -> http://${API_HOST}:${API_PORT}/*`);
+      });
+
+readme: |
+  ----------------------------------
+  ## ezbids/{{ context.version }} ##
+
+  ezBIDS is a secure, web-based tool for converting neuroimaging data to the Brain Imaging Data Structure (BIDS) format.
+
+  This container includes the full ezBIDS web application with support for:
+  - MRI data conversion (DICOM to BIDS)
+  - PET imaging support (via pypet2bids)
+  - MEG data support (via MNE-BIDS)
+  - Automatic defacing options
+  - BIDS validation
+
+  ### Quick Start (Neurodesk)
+
+  After loading the module, simply run:
+  ```bash
+  ezbids
+  ```
+
+  This will start all services and display the URL to access the web interface.
+
+  ### Commands
+
+  ```bash
+  ezbids           # Start the ezBIDS web application
+  ezbids start     # Same as above
+  ezbids status    # Check if services are running
+  ezbids help      # Show help message
+  ```
+
+  ### Accessing the Web Interface
+
+  Once started, access ezBIDS at:
+  - Web UI: http://localhost:3000
+  - API: http://localhost:8082
+
+  In Neurodesk Play, you may need to use the desktop environment
+  (VNC) to access the web interface via a browser.
+
+  ### Ports
+  - 3000: Web UI
+  - 8082: REST API
+  - 27017: MongoDB (internal)
+
+  ### Tools Included
+  - dcm2niix: DICOM to NIfTI conversion
+  - pypet2bids: PET to BIDS conversion
+  - bids-validator: BIDS validation
+  - pydeface: Anatomical defacing
+  - ROBEX: Brain extraction
+  - MNE-BIDS: MEG/EEG to BIDS
+
+  More documentation: https://github.com/openneuropet/ezbids_docker
+
+  Original ezBIDS: https://brainlife.io/ezbids
+
+  ### Citation
+  ```
+  Levitas, Daniel, et al. "ezBIDS: Guided standardization of neuroimaging data
+  interoperable with major data archives and platforms." Nature Scientific Data
+  13, no. 130 (2024).
+  ```
+
+  License: MIT
+
+  ----------------------------------

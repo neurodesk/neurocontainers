@@ -1,5 +1,5 @@
 name: afni
-version: 25.2.03
+version: 26.0.07
 # https://hub.docker.com/r/afni/afni_make_build/tags
 # https://afni.nimh.nih.gov/about_afni
 
@@ -110,7 +110,7 @@ build:
         - mv /root/abin /usr/local/abin
 
     - environment:
-        PATH: /usr/local/abin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+        PATH: /usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:/usr/local/abin:~/.local/bin
         R_LIBS: /usr/local/share/R-4.3
 
     - run:
@@ -170,13 +170,14 @@ build:
 
     - environment:
         SUBJECTS_DIR: "~/freesurfer-subjects-dir"
-        DEPLOY_PATH: /usr/local/abin/
 
     - copy: dependencies.R /opt
     - copy: test.tgz /opt/test.tgz
     - copy: license.txt /opt/freesurfer-7.4.1/license.txt
+    - copy: afni_wrapper.sh /usr/local/sbin/afni
 
     - run:
+        - chmod +x /usr/local/sbin/afni
         - Rscript /opt/dependencies.R
 
     - workdir: /opt

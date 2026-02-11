@@ -1,0 +1,95 @@
+name: connectomemapper3
+version: 3.2.0
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/connectomicslab/connectomemapper3/blob/master/LICENSE
+architectures:
+  - x86_64
+readme: |
+  # Connectome Mapper 3
+
+  Connectome Mapper 3 is an open-source Python3 image processing pipeline software, with a Graphical User Interface, that implements full anatomical, diffusion, resting-state MRI, and EEG processing pipelines.
+
+  ## Citation
+  If you use Connectome Mapper 3, please cite:
+  https://joss.theoj.org/papers/10.21105/joss.04248
+
+  ## Usage
+
+  ```bash
+  connectomemapper3_docker --help
+  ```
+
+  ## License
+  BSD-3-Clause
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - deploy:
+        bins:
+          - connectomemapper3
+          - connectomemapper3_docker
+          - connectomemapper3_singularity
+          - cmpbidsappmanager
+          - dwidenoise
+          - recon-all
+          - bet
+          - 3dSkullStrip
+          - antsRegistration
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - bc
+        - curl
+        - git
+        - liblzma-dev
+        - libstdc++6
+        - unzip
+        - wget
+        - xvfb
+        - default-jre
+        - graphviz
+        - libglu1-mesa
+        - libqt5x11extras5
+        - locales
+        - libssl-dev
+        - libxt-dev
+        - libxext-dev
+        - libncurses5
+        - dc
+    - template:
+        name: freesurfer
+        version: 7.1.1
+    - template:
+        name: matlabmcr
+        version: 2014b
+    - template:
+        name: fsl
+        version: 5.0.10
+    - template:
+        name: afni
+        version: latest
+        method: binaries
+    - template:
+        name: ants
+        version: 2.4.3
+        method: binaries
+    - template:
+        name: miniconda
+        version: latest
+        env_name: cmp3
+        conda_install: python=3.9 pip=22.2 graphviz=2.50.0 dipy=1.3.0 fsleyes=1.3.3 indexed_gzip mrtrix3=3.0.3 git-annex qt=5.15.4 pyqt=5.15.4 pyqt5-sip=12.9.0
+        pip_install: numpy==1.23.5 matplotlib==3.5.2 configparser==5.2.0 nibabel==3.2.2 nipype==1.8.0 traits==6.3.2 traitsui==7.2.0 duecredit==0.9.1 obspy==1.2.2 mne==0.24.1 mne_connectivity==0.3 datalad[full]==0.17.2 datalad-container==1.1.6 datalad-neuroimaging==0.3.1 pybids==0.14.0 statsmodels==0.13.1 networkx==2.6.3 pydicom==2.2.2 pycartool==0.1.1 pyface==7.4.4 connectomemapper==3.2.0
+        conda_opts: "--channel conda-forge --channel mrtrix3"
+    - environment:
+        FS_LICENSE: /opt/freesurfer/license.txt
+        PATH: /opt/miniconda-latest/envs/cmp3/bin:$PATH
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEI0lEQVRIS+WUa0zVZRzHP/9zgwOcPwfkIh5BneOgAt4CFPASSoTL0rxVi3JZm7qiF7HWirR64dTWcpZbqKWVtbWac0vMG3kBA+SmHUCm3DkciANykYsHzv/SZPPCPPPS5qs+2/PmefZ8P3ue3/N7BJ4wwhPO/z8KOi+X/643KD7mGfGpj3K9D61BT2OjufP8hZ7GkhJM00RGxAD0og/d0nVCLTEkJL/4wIwHLtr2HVQNbV381dGLwdSA3uxHZJgvVQNg8TFS91seQxlvMH/RQpIiYj1meZyszc8PHswrcvaH3aSls4VjV5eyMb2GwkaRpPgh3PYuAqIXUFVehNZiQYsGXdRc1sYsuS/vvomS736qGa6unWZJDKSopY4g62RCJkzCbbex44epbN48hLv4LGbrDLbu05Oa0IQYFkTDSCiT50XwzqJVYzLvE1zZ9a163bue6cnx2L7cTYOi0orIgtQ4um6K9Lh6CRH1tDd1sHh1GueOn6elPx7/KVVMCZ/JgMnExsRld3LHCFrOFB4e6a5dteGAxOtLZCKlYkKaHZgz11FwqJSO8eEEiwZ0fX0MeatYn5qF7XQxwpy5NOefo08YR+Qz83k35W7hxwjOZn2lGuP+oXXEQoC2Hq2kwVsM5b2cQLJmn6Ct149c+xxeXaGhtsPF+lSR/IpWBiZOQh3sxnHkOP5r1pH9yibPJyjeu0ftdDWRvCKZa/Y6ND1uDD4BDFwso6nxBsGrNnDqnAP/PjuD5mGauqxMsLSREuomdyAE9coFJkf5kf3Rfs+C0zu3qUqowNRZwZw61Uv6nDDar+bhM3EKx2wWwkO7cLpnkzK9jNZGL0o7xiPs+YCShdsRIweJnGrB28/IJy+leRaUHz2sKu0VeE2MQGrvoebAz4SvSURrNKA1GAh79i0qbH+jae7lUHY27+f+St6mrVS9/QVBvnpkt8QLMb5SetxM/e0uH1MDp9Pp119b2W8yK/QX5uKalchwew1RS5fh4ztP+0dhs1xf0cAE3zLqHEYuBc9GkWXcsoQkKUiKzPGsdFkQBJ1HwS26b9QvN+gMRzucrZT+8iPLMzPRaY0cyevCufczerqHkTI2Ue02I8nyaKhbkpFkBUmWuLDlIX1wLwMuh8vP2+JdWG1Xv8l+DVezged2bENCx9qkSIbcECh8Pbpl8W4r+9cvwirmsDLLUaqC9cT3OeaHfna3KLh0TRV0OmozM6h5ejWiNY7nE2Jjp5t2VoKCoCpwZ8is3KIUFrz8YVLCwY8PPpLgNhermk8Oy3La9l2fIxtNYPJHUFU0nQ5Gwq0Y7Nfojl1IYGUBvl5elwVB0/ZYgnsJyflTdY4LRqPIKBrt6JLX0E2MkkTvm8men+njcujkGTUqOpq0k3WjWyPsldg+vdvFt/jPJ3hUnrjgX0+4qaWdyw3zAAAAAElFTkSuQmCC
+categories:
+  - functional imaging
+  - structural imaging
+  - diffusion imaging
+  - workflows
+  - bids apps

@@ -26,6 +26,7 @@ CATEGORIES = [
     "rodent imaging",
     "diffusion imaging",
     "spine",
+    "body",
     "connectomics",
     "electrophysiology",
     "microscopy",
@@ -63,7 +64,6 @@ INCLUDE_MACROS = [
 ALLOWED_AUTO_UPDATE_METHODS = ["github_release"]
 
 
-
 # ============================================================================
 # Validation Functions
 # ============================================================================
@@ -93,9 +93,22 @@ def validate_non_empty_string(instance, attribute, value):
 
 def validate_url(instance, attribute, value):
     """Basic URL validation"""
+    if value.startswith("{{"):
+        # Allow templated URLs
+        return
+
     if value and not (value.startswith("http://") or value.startswith("https://")):
         raise ValueError(
             f"{attribute.name} must be a valid URL starting with http:// or https://"
+        )
+
+
+def validate_webapp_icon(instance, attribute, value):
+    """Validate webapp icon is an SVG file"""
+    if value and not value.endswith(".svg"):
+        raise ValueError(
+            f"Webapp icon must be an SVG file (got '{value}'). "
+            "JupyterLab requires SVG format for launcher icons."
         )
 
 
@@ -144,10 +157,38 @@ class GUIApp:
     exec: str = attrs.field(validator=validate_non_empty_string)
 
 
+# ============================================================================
+# Webapp Info
+# ============================================================================
+
+
+@attrs.define
+class AdditionalProxy:
+    path: str = attrs.field(validator=validate_non_empty_string)
+    port: int = attrs.field()
+
+
+@attrs.define
+class WebappInfo:
+    title: str = attrs.field(validator=validate_non_empty_string)
+    startup_command: str = attrs.field(validator=validate_non_empty_string)
+    port: int = attrs.field()
+    start_page: Optional[str] = attrs.field(default=None)  # Defaults to "/" if not specified
+    module: Optional[str] = attrs.field(default=None)
+    description: Optional[str] = attrs.field(default=None)
+    startup_timeout: Optional[int] = attrs.field(default=None)
+    category: Optional[str] = attrs.field(default=None)
+    icon: Optional[str] = attrs.field(
+        default=None, validator=attrs.validators.optional(validate_webapp_icon)
+    )
+    additional_proxies: Optional[List[AdditionalProxy]] = attrs.field(default=None)
+
+
 @attrs.define
 class DeployInfo:
     path: Optional[List[str]] = attrs.field(default=None)
     bins: Optional[List[str]] = attrs.field(default=None)
+    webapp: Optional[WebappInfo] = attrs.field(default=None)
 
 
 # ============================================================================
@@ -206,7 +247,7 @@ class Template:
 
 
 # ============================================================================
-# Auto Update 
+# Auto Update
 # ============================================================================
 
 
@@ -221,6 +262,7 @@ class AutoUpdate:
             raise ValueError(
                 f"auto_update.method '{value}' not supported. Must be one of: {ALLOWED_AUTO_UPDATE_METHODS}"
             )
+
 
 # ============================================================================
 # Directive Base Classes
@@ -440,7 +482,16 @@ def parse_directive_from_dict(directive_dict: Dict[str, Any]) -> Any:
         template = Template.from_dict(directive_dict["template"].copy())
         return TemplateDirective(condition=condition, template=template)
     elif "deploy" in directive_dict:
-        deploy_info = DeployInfo(**directive_dict["deploy"])
+        deploy_dict = directive_dict["deploy"].copy()
+        # Parse nested webapp if present
+        if "webapp" in deploy_dict and deploy_dict["webapp"]:
+            webapp_dict = deploy_dict["webapp"].copy()
+            # Parse nested additional_proxies
+            if "additional_proxies" in webapp_dict and webapp_dict["additional_proxies"]:
+                proxies = [AdditionalProxy(**p) for p in webapp_dict["additional_proxies"]]
+                webapp_dict["additional_proxies"] = proxies
+            deploy_dict["webapp"] = WebappInfo(**webapp_dict)
+        deploy_info = DeployInfo(**deploy_dict)
         return DeployDirective(condition=condition, deploy=deploy_info)
     elif "user" in directive_dict:
         return UserDirective(condition=condition, user=directive_dict["user"])
@@ -600,7 +651,16 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
 
         # Parse deploy if present
         if "deploy" in recipe_copy and recipe_copy["deploy"]:
-            recipe_copy["deploy"] = DeployInfo(**recipe_copy["deploy"])
+            deploy_dict = recipe_copy["deploy"].copy()
+            # Parse nested webapp if present
+            if "webapp" in deploy_dict and deploy_dict["webapp"]:
+                webapp_dict = deploy_dict["webapp"].copy()
+                # Parse nested additional_proxies
+                if "additional_proxies" in webapp_dict and webapp_dict["additional_proxies"]:
+                    proxies = [AdditionalProxy(**p) for p in webapp_dict["additional_proxies"]]
+                    webapp_dict["additional_proxies"] = proxies
+                deploy_dict["webapp"] = WebappInfo(**webapp_dict)
+            recipe_copy["deploy"] = DeployInfo(**deploy_dict)
 
         # Parse tests if present
         if "tests" in recipe_copy and recipe_copy["tests"]:

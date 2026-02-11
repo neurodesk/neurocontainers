@@ -1,0 +1,131 @@
+name: fsqc
+version: 2.1.4
+copyright:
+  - license: MIT
+    url: https://github.com/Deep-MI/fsqc?tab=MIT-1-ov-file
+architectures:
+  - x86_64
+structured_readme:
+  description: |-
+    This package provides quality assurance / quality control scripts for FastSurfer- or FreeSurfer-processed structural MRI data. It will check outputs of these two software packages by means of quantitative and visual summaries. Prior processing of data using either FastSurfer or FreeSurfer is required, i.e. the software cannot be used on raw images.
+
+    It is a revision, extension, and translation to the Python language of the Freesurfer QA Tools. It has been augmented by additional functions from the MRIQC toolbox, and with code derived from the LaPy and BrainPrint toolboxes.
+  example: |-
+    # Example usage
+
+    ```bash
+    # Run Python interactively (assuming you are already inside the container)
+    python
+
+    # Test that the package is available
+    python -c "import fsqc; print('fsqc is available!')"
+
+    ```
+  documentation: https://deep-mi.org/fsqc/dev/index.html
+  citation: |-
+    Esteban O, Birman D, Schaer M, Koyejo OO, Poldrack RA, Gorgolewski KJ; 2017; MRIQC: Advancing the Automatic Prediction of Image Quality in MRI from Unseen Sites; PLOS ONE 12(9):e0184661; doi:10.1371/journal.pone.0184661.
+
+    Wachinger C, Golland P, Kremen W, Fischl B, Reuter M; 2015; BrainPrint: a Discriminative Characterization of Brain Morphology; Neuroimage: 109, 232-248; doi:10.1016/j.neuroimage.2015.01.032.
+
+    Reuter M, Wolter FE, Shenton M, Niethammer M; 2009; Laplace-Beltrami Eigenvalues and Topological Features of Eigenfunctions for Statistical Shape Analysis; Computer-Aided Design: 41, 739-755; doi:10.1016/j.cad.2009.02.007.
+
+    Potvin O, Mouiha A, Dieumegarde L, Duchesne S, & Alzheimer’s Disease Neuroimaging Initiative; 2016; Normative data for subcortical regional volumes over the lifetime of the adult human brain; Neuroimage: 137, 9-20; doi.org/10.1016/j.neuroimage.2016.05.016
+readme: |-
+  ----------------------------------
+  ## fsqc/{{ context.version }} ##
+
+  This package provides quality assurance / quality control scripts for FastSurfer- or FreeSurfer-processed structural MRI data. It will check outputs of these two software packages by means of quantitative and visual summaries. Prior processing of data using either FastSurfer or FreeSurfer is required, i.e. the software cannot be used on raw images.
+
+  It is a revision, extension, and translation to the Python language of the Freesurfer QA Tools. It has been augmented by additional functions from the MRIQC toolbox, and with code derived from the LaPy and BrainPrint toolboxes.
+
+  Example:
+  ```
+  # Example usage
+
+  ```bash
+  # Run Python interactively (assuming you are already inside the container)
+  python
+
+  # Test that the package is available
+  python -c "import fsqc; print('fsqc is available!')"
+
+  ```
+  ```
+
+  More documentation can be found here: https://deep-mi.org/fsqc/dev/index.html
+
+  Citation:
+  ```
+  Esteban O, Birman D, Schaer M, Koyejo OO, Poldrack RA, Gorgolewski KJ; 2017; MRIQC: Advancing the Automatic Prediction of Image Quality in MRI from Unseen Sites; PLOS ONE 12(9):e0184661; doi:10.1371/journal.pone.0184661.
+
+  Wachinger C, Golland P, Kremen W, Fischl B, Reuter M; 2015; BrainPrint: a Discriminative Characterization of Brain Morphology; Neuroimage: 109, 232-248; doi:10.1016/j.neuroimage.2015.01.032.
+
+  Reuter M, Wolter FE, Shenton M, Niethammer M; 2009; Laplace-Beltrami Eigenvalues and Topological Features of Eigenfunctions for Statistical Shape Analysis; Computer-Aided Design: 41, 739-755; doi:10.1016/j.cad.2009.02.007.
+
+  Potvin O, Mouiha A, Dieumegarde L, Duchesne S, & Alzheimer’s Disease Neuroimaging Initiative; 2016; Normative data for subcortical regional volumes over the lifetime of the adult human brain; Neuroimage: 137, 9-20; doi.org/10.1016/j.neuroimage.2016.05.016
+  ```
+
+  To run container outside of this environment: ml fsqc/{{ context.version }}
+
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: miniconda
+        version: latest
+        conda_install: python=3.13
+        pip_install: brainprint==0.4.0 lapy==1.3.0 matplotlib nibabel numpy pandas scipy scikit-image transforms3d pyopengl glfw pillow pyrr PyQt6 whippersnappy>=1.3.0
+    - deploy:
+        bins: []
+    - install: git
+    - run:
+        - pip install git+https://github.com/deep-mi/fsqc.git
+    - test:
+        name: verify_installation
+        script: |-
+          # Test Python and conda installation
+          python --version
+          conda --version
+          # Test that pip packages were installed
+          python -c "import sys; print('Python path:', sys.path)"
+          pip list | grep -i "fsqc" || echo "Warning: fsqc not found in pip list"
+          # Attempt to import the main package
+          python -c "
+          import importlib.util
+          import sys
+
+          # Try common package name variations
+          package_names = ['fsqc', 'fsqc', 'fsqc']
+          imported = False
+
+          for pkg_name in package_names:
+              try:
+                  __import__(pkg_name)
+                  print(f'Successfully imported {pkg_name}')
+                  imported = True
+                  break
+              except ImportError:
+                  continue
+
+          if not imported:
+              print('Warning: Could not import main package. This may be normal if the package has a different import name.')
+              print('Available packages:')
+              import pkg_resources
+              for dist in pkg_resources.working_set:
+                  if 'fsqc' in dist.project_name.lower():
+                      print(f'  - {dist.project_name} ({dist.version})')
+          else:
+              print('Package installation verified successfully!')
+          "
+    - deploy:
+        path: []
+        bins: []
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+categories:
+  - quality control
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEUElEQVR4AYxUb0idVRj/nfd6val1oQZZNlbTWakzLCEZmwWykAoMRm5aCz/UNAiSG0SIQYmwj07wi7c+VFuU5i1r0idFTUT8kx8Cqezv1pytSFILM//cp+d3znuv9841dnh/5zzvc37n+Xve1/vtfEiufBaSXz8NyWJ/SC5/4rDwcaZcioXkl75MufhRplzodfi5Jyg/fRiUHz9w+P79oBDfncuQ+bMZ8u17GfLNuxny9TsOnogBQCA5RACx+qTKCpLUO774HLlKb8n+pA5EjRE0SiRkroJ4nLpUSAp/t5zKp+zRkWgkolEkZK7QrET1uMagXm6Q79GLKJtIyPG4aOTiRypWpi6Vkypzj6COoExQ9jNgCVxdrw5YbBZuz8lQh8DausEfK8Dqmr772fCs4+zw/R7ARvvD5TiOvb6Ju49v4J4TDvn1GyAKntnEgWc30NEXx5nYNspObSJy7kEcfS0bz53exvkJwZ9/OTuMXNQpV3XgvEFrDhutRrW6ah2SkIrW1lYMfRlH1ckerK+vY2pqCisrK/h8bBGjlx5DbCyOf/41epaAHeogvcZWq9Ps7CwqKyvT0N3djaM1L6K2thYtLS3IyspCXV0dPM9DLBbDF18JFpdEHTiwp7YHas8+Ni0rAUtLSxgfH08DdeXl5ZbR399vs+jt7UVDQwOmp6fx+7Jg5W+xPRK/Gv4tYu0coLWjhZKSEnR1dSXR3NyMfbkGPT093Mb8/DyGh4dB/cTEBKqqqrTxwOa2OlAbidKmZWBP+lNeXh4aGxuTaGpqQmYGMDQ0hJqaGszNzdnydXZ2Ynl5GdFoFLm3GuTcZNhNtcI+GKT3IBE+gMHBQYRCoSSKi4v1Wgpyc3MxNjYGlioYDFpnCwsLNpDsPUWWs80s9FtiFurAqDmCJXKrKuxz+KDBmZcCiL4SwOnnA9h3u8Hk5CRmZmbsPqeBgQHU19dTxH1FZVhaBdS2feekDsTvur6Kyroknvw7DQ4VGVSWKh4wuHevwejoKAoLCxGJRBAIBBAOh9He3m6PjIyM4JYs2BKpKSRvkWjHRRuD64xwNvDw/caWgvXv6OjA1taW/Q4qKirQ1taGveEr2H+H0WuL5PBvkUauHvj/YBsYVXV1NUWbHfWeERw5CLxau43S0lLk5+fbb4BrTk4OzkbfxKnHDe7aIxq5g+0BXaltNWRwW9jDy8c8sObRSABPVhhkBtkXArhZ03/6EYPYGx5OVFzEnrU+nDx8AW9FPLytKCsAjCGXgLXp94AvgnC22DKw5ke07qX71UGGKJEgB2AmBdqb448CLzwBPHXI4KED0LOwg1E7kC9QB8ZuAO7e4hpDUnpE2VFujK8OJK1m9M6aE052kaTK3COoIygTTk7ney6andlF6LJyMg8QTrfDdJLjuD0nk0s4nX+LqIBmAr/eouv1ZO7hf/hIO7srA/i9EP+7EK0/7HA1F19vVf4kypFdesf/DwAA//+LumMuAAAABklEQVQDAIrKRb9+bjv6AAAAAElFTkSuQmCC

@@ -60,13 +60,6 @@ def process(connection, config, metadata):
                     not item.is_flag_set(ismrmrd.ACQ_IS_NAVIGATION_DATA)):
                     acqGroup.append(item)
 
-                # When this criteria is met, run process_raw() on the accumulated
-                # data, which returns images that are sent back to the client.
-                if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
-                    logging.info("Processing a group of k-space data")
-                    image = process_raw(acqGroup, connection, config, metadata)
-                    connection.send_image(image)
-                    acqGroup = []
 
             # ----------------------------------------------------------
             # Image data messages
@@ -112,16 +105,6 @@ def process(connection, config, metadata):
             waveformGroup.sort(key = lambda item: item.time_stamp)
             ecgData = [item.data for item in waveformGroup if item.waveform_id == 0]
             ecgData = np.concatenate(ecgData,1)
-
-        # Process any remaining groups of raw or image data.  This can 
-        # happen if the trigger condition for these groups are not met.
-        # This is also a fallback for handling image data, as the last
-        # image in a series is typically not separately flagged.
-        if len(acqGroup) > 0:
-            logging.info("Processing a group of k-space data (untriggered)")
-            image = process_raw(acqGroup, connection, config, metadata)
-            connection.send_image(image)
-            acqGroup = []
 
         if len(imgGroup) > 0:
             logging.info("Processing a group of images (untriggered)")
@@ -229,6 +212,24 @@ def process_image(images, connection, config, metadata):
         # (we changed it to int16 from all other types)
         oldHeader = head[iImg]
         oldHeader.data_type = imagesOut[iImg].data_type
+
+        # Supported ISMRMRD Data Types:
+        #     ISMRMRD_USHORT   = 1, /**< corresponds to uint16_t */
+        #     ISMRMRD_SHORT    = 2, /**< corresponds to int16_t */
+        #     ISMRMRD_FLOAT    = 5, /**< corresponds to float */
+        #     ISMRMRD_CXFLOAT  = 7, /**< corresponds to complex float */
+
+        # NOT SUPPORTED:
+        # ISMRMRD_UINT     = 3, /**< corresponds to uint32_t */
+        # ISMRMRD_INT      = 4, /**< corresponds to int32_t */
+        # ISMRMRD_DOUBLE   = 6, /**< corresponds to double */
+        # ISMRMRD_CXDOUBLE = 8  /**< corresponds to complex double */
+
+        # check if datatype is supported and if not show an error and stop:
+        if imagesOut[iImg].data_type not in [ismrmrd.DATATYPE_USHORT, ismrmrd.DATATYPE_SHORT, ismrmrd.DATATYPE_FLOAT, ismrmrd.DATATYPE_CXFLOAT]:
+            logging.error(f"Unsupported data type {imagesOut[iImg].data_type} in output image {iImg}. Supported types are: uint16, int16, float32, complex float32.")
+            raise ValueError(f"Unsupported data type {imagesOut[iImg].data_type} in output image {iImg}. Supported types are: uint16, int16, float32, complex float32.")
+
 
         # Unused example, as images are grouped by series before being passed into this function now
         # oldHeader.image_series_index = currentSeries+1

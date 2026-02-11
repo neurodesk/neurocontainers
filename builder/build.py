@@ -13,6 +13,7 @@ import typing
 import json
 import datetime
 import re
+import tempfile
 from pathlib import Path
 
 # add the parent directory to the path to import builder modules
@@ -54,6 +55,10 @@ ARCHITECTURES = {
     "ARM64": "aarch64",  # Windows ARM64
 }
 
+CONTAINER_TESTER_IMAGE = "neurocontainers/container-tester:latest"
+CONTAINER_TESTER_BINARY_NAME = "tester"
+CONTAINER_TESTER_MOUNT_PATH = "/tmp/neurocontainers-container-tester"
+
 
 def get_repo_path() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -68,6 +73,46 @@ def get_cache_dir() -> str:
     return cache_dir
 
 
+def get_recipe_commit_date(recipe_path: str) -> str:
+    """
+    Get the commit date of the recipe file in YYYYMMDD format.
+    
+    This ensures consistent build dates based on when the recipe was last modified,
+    rather than when the container was built. This fixes timezone issues where
+    builds crossing midnight would have inconsistent dates.
+    
+    Args:
+        recipe_path: Path to the recipe directory
+        
+    Returns:
+        Date string in YYYYMMDD format
+    """
+    # First check if BUILDDATE environment variable is set (from GitHub Actions)
+    builddate_env = os.environ.get("BUILDDATE")
+    if builddate_env:
+        return builddate_env
+    
+    try:
+        # Get the commit date of the build.yaml file
+        build_yaml_path = os.path.join(recipe_path, "build.yaml")
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%ad", "--date=format:%Y%m%d", "--", build_yaml_path],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=get_repo_path()
+        )
+        commit_date = result.stdout.strip()
+        if commit_date:
+            return commit_date
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # If git command fails or git is not available, fall back to current date
+        pass
+    
+    # Fallback to current date if git is not available or command fails
+    return datetime.datetime.now().strftime("%Y%m%d")
+
+
 def load_description_file(recipe_dir: str) -> typing.Any:
     # Load the description file
     description_file = os.path.join(recipe_dir, "build.yaml")
@@ -76,6 +121,13 @@ def load_description_file(recipe_dir: str) -> typing.Any:
 
     with open(description_file, "r") as f:
         recipe_dict = yaml.safe_load(f)
+
+    # Convert name and version to strings to handle YAML numeric parsing
+    # YAML safe_load interprets values like "1.1" as floats, but we need strings
+    if "name" in recipe_dict and recipe_dict["name"] is not None:
+        recipe_dict["name"] = str(recipe_dict["name"])
+    if "version" in recipe_dict and recipe_dict["version"] is not None:
+        recipe_dict["version"] = str(recipe_dict["version"])
 
     # Validate the recipe using attrs schema
     try:
@@ -100,6 +152,7 @@ def generate_release_file(
     name: str,
     version: str,
     recipe: dict,
+    recipe_path: str = None,
 ) -> None:
     """
     Generate a release JSON file for the built container.
@@ -107,10 +160,8 @@ def generate_release_file(
     Args:
         name: Container name
         version: Container version
-        architecture: Target architecture
-        recipe_path: Path to the recipe directory
-        build_directory: Build output directory
-        build_info: Full build configuration from YAML
+        recipe: Recipe dictionary from build.yaml
+        recipe_path: Path to the recipe directory (optional, for getting commit date)
     """
     if recipe is None:
         build_info = {}
@@ -123,8 +174,13 @@ def generate_release_file(
     # Extract GUI applications from build.yaml
     gui_apps = recipe.get("gui_apps", [])
 
-    # Create CLI app entry (always present)
-    build_date = datetime.datetime.now().strftime("%Y%m%d")
+    # Get build date from git commit or environment variable
+    if recipe_path:
+        build_date = get_recipe_commit_date(recipe_path)
+    else:
+        # Fallback: check environment variable first, then current date
+        build_date = os.environ.get("BUILDDATE", datetime.datetime.now().strftime("%Y%m%d"))
+    
     cli_app_name = f"{name} {version}"
 
     # Create release data structure
@@ -368,6 +424,8 @@ class LocalBuildContext(object):
                 return guest_filename
             else:
                 os.link(cache_filename, cached_file)
+        except FileNotFoundError:
+            return None
         except AttributeError:
             # Fallback if os.link is not available
             return guest_filename
@@ -386,6 +444,8 @@ class LocalBuildContext(object):
                 file_info["cached_path"],
                 filename,
             )
+            if cache_filename is None:
+                return None
             return cache_dir + "/" + cache_filename
         else:
             raise ValueError("File has no cached path or context path.")
@@ -444,8 +504,11 @@ class BuildContext(object):
         self.lint_error = False
         self.deploy_bins = []
         self.deploy_path = []
+        self.top_level_deploy_bins = []
+        self.top_level_deploy_path = []
         self.local_context = {}
         self.check_only = check_only
+        self.skip_file_population = False
 
     def lint_fail(self, message):
         if self.lint_error:
@@ -495,7 +558,7 @@ class BuildContext(object):
             raise ValueError("Build directory not set.")
 
         cache_dir = os.path.join(self.build_directory, "cache", cache_id)
-        if not os.path.exists(cache_dir):
+        if not os.path.exists(cache_dir) and not self.skip_file_population:
             os.makedirs(cache_dir)
 
         return cache_dir
@@ -551,8 +614,10 @@ class BuildContext(object):
         except jinja2.exceptions.TemplateSyntaxError as e:
             raise ValueError(f"Template syntax error: {e} in {obj}")
 
-    def add_file(self, file, recipe_path, locals, check_only=False):
-        if self.build_directory is None:
+    def add_file(self, file, recipe_path, locals, check_only=False, dry_run=False):
+        dry_run = dry_run or self.skip_file_population
+
+        if self.build_directory is None and not dry_run:
             raise ValueError("Build directory not set.")
 
         name = self.execute_template_string(file["name"], locals=locals)
@@ -560,21 +625,34 @@ class BuildContext(object):
         if name == "":
             raise ValueError("File name cannot be empty.")
 
-        output_filename = os.path.join(self.build_directory, name)
+        output_filename = (
+            os.path.join(self.build_directory, name)
+            if self.build_directory is not None
+            else name
+        )
 
         if "url" in file:
             # Check if running in Pyodide environment
             import sys
+
+            url = self.execute_template(file["url"], locals=locals)
+
+            if dry_run:
+                self.files[name] = {
+                    "cached_path": get_cached_download_path(url),
+                    "url": url,
+                }
+                return
 
             if "pyodide" in sys.modules:
                 # In Pyodide, create a dummy file entry for check_only mode
                 print(f"Pyodide environment: skipping file download for {file['url']}")
                 self.files[name] = {
                     "cached_path": output_filename,
+                    "url": url,
                 }
             else:
                 # download and cache the file
-                url = self.execute_template(file["url"], locals=locals)
                 cached_file = download_with_cache(
                     url,
                     check_only=check_only,
@@ -588,26 +666,30 @@ class BuildContext(object):
 
                 self.files[name] = {
                     "cached_path": cached_file,
+                    "url": url,
                 }
         else:
             if "contents" in file:
                 contents = self.execute_template_string(file["contents"], locals=locals)
-                with open(output_filename, "w") as f:
-                    f.write(contents)
+                if not dry_run:
+                    with open(output_filename, "w") as f:
+                        f.write(contents)
             elif "filename" in file:
                 base = os.path.abspath(recipe_path)
                 filename = os.path.join(base, file["filename"])
-                with open(output_filename, "wb") as f:
-                    with open(filename, "rb") as f2:
-                        f.write(f2.read())
+                if not dry_run:
+                    with open(output_filename, "wb") as f:
+                        with open(filename, "rb") as f2:
+                            f.write(f2.read())
             else:
                 raise ValueError("File contents not found.")
 
-            if "executable" in file and file["executable"]:
+            if not dry_run and "executable" in file and file["executable"]:
                 os.chmod(output_filename, 0o755)
 
             self.files[name] = {
                 "cached_path": output_filename,
+                "url": None,
             }
 
     def file_exists(self, filename: str) -> bool:
@@ -668,8 +750,9 @@ class BuildContext(object):
         if base == "" or pkg_manager == "":
             raise ValueError("Base image or package manager cannot be empty.")
 
+        add_default_template = build_directive.get("add-default-template", True)
         builder = NeuroDockerBuilder(
-            base, pkg_manager, build_directive.get("add-default-template", True)
+            base, pkg_manager, add_default_template
         )
 
         # Add the ll command as a convenience alias for ls -la
@@ -680,7 +763,9 @@ class BuildContext(object):
         builder.run_command("mkdir -p " + " ".join(GLOBAL_MOUNT_POINT_LIST))
 
         # Automatically install tzdata on Debian systems and set timezone to UTC
-        if pkg_manager == "apt" and build_directive.get("add-tzdata", True):
+        # By default, tzdata installation follows add-default-template setting
+        # but can be overridden explicitly with add-tzdata
+        if pkg_manager == "apt" and build_directive.get("add-tzdata", add_default_template):
             # Set non-interactive frontend to avoid prompts
             builder.set_environment("DEBIAN_FRONTEND", "noninteractive")
             # Set timezone to UTC
@@ -816,9 +901,11 @@ class BuildContext(object):
                     recipe_file_path = os_module.path.join(self.recipe_path, arg)
                     build_file_path = os_module.path.join(self.build_directory, arg)
 
-                    if os_module.path.exists(
-                        recipe_file_path
-                    ) and not os_module.path.exists(build_file_path):
+                    if (
+                        not self.skip_file_population
+                        and os_module.path.exists(recipe_file_path)
+                        and not os_module.path.exists(build_file_path)
+                    ):
                         shutil.copy2(recipe_file_path, build_file_path)
 
                 builder.copy(*args)  # type: ignore
@@ -919,16 +1006,25 @@ class BuildContext(object):
         for directive in build_directive["directives"]:
             add_directive(directive, locals=locals)
 
-        if len(self.deploy_path) > 0:
-            path = self.execute_template(self.deploy_path, locals=locals)
-            if not isinstance(path, list):
-                raise ValueError("Deploy path must be a list.")
-            builder.set_environment("DEPLOY_PATH", ":".join(path))  # type: ignore
-        if len(self.deploy_bins) > 0:
-            bins = self.execute_template(self.deploy_bins, locals=locals)
-            if not isinstance(bins, list):
-                raise ValueError("Deploy bins must be a list.")
-            builder.set_environment("DEPLOY_BINS", ":".join(bins))  # type: ignore
+        # If no deploy paths/bins were found in directives, use the top-level deploy section values
+        if len(self.deploy_path) == 0 and hasattr(self, 'top_level_deploy_path'):
+            self.deploy_path = self.top_level_deploy_path
+        
+        if len(self.deploy_bins) == 0 and hasattr(self, 'top_level_deploy_bins'):
+            self.deploy_bins = self.top_level_deploy_bins
+        
+        # Always set DEPLOY_PATH and DEPLOY_BINS environment variables, even if empty
+        # This prevents the container tester from receiving undefined environment variables
+        # which would be treated as empty strings that split into [""] instead of []
+        path = self.execute_template(self.deploy_path, locals=locals) if len(self.deploy_path) > 0 else []
+        if not isinstance(path, list):
+            raise ValueError("Deploy path must be a list.")
+        builder.set_environment("DEPLOY_PATH", ":".join(path) if path else "")  # type: ignore
+        
+        bins = self.execute_template(self.deploy_bins, locals=locals) if len(self.deploy_bins) > 0 else []
+        if not isinstance(bins, list):
+            raise ValueError("Deploy bins must be a list.")
+        builder.set_environment("DEPLOY_BINS", ":".join(bins) if bins else "")  # type: ignore
 
         builder.copy("README.md", "/README.md")
         builder.copy("build.yaml", "/build.yaml")
@@ -1098,6 +1194,13 @@ def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def get_cached_download_path(url: str) -> str:
+    cache_dir = get_cache_dir()
+    os.makedirs(cache_dir, exist_ok=True)
+    filename = sha256(url.encode("utf-8"))
+    return os.path.join(cache_dir, filename)
+
+
 def download_with_cache(
     url, check_only=False, insecure=False, retry=1, curl_options=""
 ):
@@ -1105,13 +1208,8 @@ def download_with_cache(
     if shutil.which("curl") is None:
         raise ValueError("curl not found in PATH.")
 
-    cache_dir = get_cache_dir()
-    os.makedirs(cache_dir, exist_ok=True)
-
-    filename = sha256(url.encode("utf-8"))
-
     # Make the output filename and check if it exists
-    output_filename = os.path.join(cache_dir, filename)
+    output_filename = get_cached_download_path(url)
     temp_filename = output_filename + ".tmp"
 
     if os.path.exists(output_filename):
@@ -1470,6 +1568,7 @@ def generate_from_description(
     check_only: bool = False,
     gpu: bool = False,
     local_context: str | None = None,
+    skip_file_population: bool = False,
 ) -> BuildContext | None:
     if max_parallel_jobs is None:
         max_parallel_jobs = os.cpu_count()
@@ -1552,11 +1651,15 @@ def generate_from_description(
         raise ValueError("Name, version, or readme cannot be empty.")
 
     # Get hardcoded deploy info
+    # Store the deploy info as attributes for use during build
+    ctx.top_level_deploy_bins = []
+    ctx.top_level_deploy_path = []
+    
     if "deploy" in description_file:
         if "bins" in description_file["deploy"]:
-            ctx.deploy_bins = ctx.execute_template(description_file["deploy"]["bins"], locals=locals)  # type: ignore
+            ctx.top_level_deploy_bins = ctx.execute_template(description_file["deploy"]["bins"], locals=locals)  # type: ignore
         if "path" in description_file["deploy"]:
-            ctx.deploy_path = ctx.execute_template(description_file["deploy"]["path"], locals=locals)  # type: ignore
+            ctx.top_level_deploy_path = ctx.execute_template(description_file["deploy"]["path"], locals=locals)  # type: ignore
 
     ctx.tag = f"{name}:{version}"
 
@@ -1572,6 +1675,27 @@ def generate_from_description(
 
     # Create build directory
     ctx.build_directory = os.path.join(output_directory, name)
+    ctx.dockerfile_name = "{}_{}.Dockerfile".format(
+        ctx.name, ctx.version.replace(":", "_")
+    )
+    ctx.skip_file_population = skip_file_population
+
+    if skip_file_population:
+        for file in description_file.get("files", []):
+            ctx.add_file(
+                file,
+                recipe_path,
+                check_only=check_only,
+                locals=locals,
+                dry_run=True,
+            )
+
+        if ctx.build_kind == "neurodocker":
+            ctx.build_neurodocker(ctx.build_info, locals=locals)
+        else:
+            raise ValueError("Build kind not supported.")
+
+        return ctx
 
     if os.path.exists(ctx.build_directory):
         if recreate_output_dir:
@@ -1602,10 +1726,6 @@ def generate_from_description(
     if os.path.exists(build_yaml_source):
         with open(build_yaml_source, "r") as src, open(build_yaml_dest, "w") as dst:
             dst.write(src.read())
-
-    ctx.dockerfile_name = "{}_{}.Dockerfile".format(
-        ctx.name, ctx.version.replace(":", "_")
-    )
 
     # Write Dockerfile
     dockerfile_generated = False
@@ -1638,6 +1758,187 @@ def generate_from_description(
         return ctx
 
     return ctx
+
+
+def _get_tester_binary_cache_path() -> str:
+    tester_cache_dir = os.path.join(get_cache_dir(), "tester")
+    os.makedirs(tester_cache_dir, exist_ok=True)
+    return os.path.join(tester_cache_dir, CONTAINER_TESTER_BINARY_NAME)
+
+
+def ensure_container_tester_image(container_cli: str) -> str:
+    try:
+        subprocess.check_call(
+            [container_cli, "image", "inspect", CONTAINER_TESTER_IMAGE],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError:
+        tester_dir = os.path.join(get_repo_path(), "builder", "tester")
+        print(
+            f"Container tester image {CONTAINER_TESTER_IMAGE} not found; building it now..."
+        )
+        subprocess.check_call(
+            [container_cli, "build", "-t", CONTAINER_TESTER_IMAGE, "."],
+            cwd=tester_dir,
+        )
+    return CONTAINER_TESTER_IMAGE
+
+
+def ensure_container_tester_binary(container_cli: str) -> str:
+    binary_path = _get_tester_binary_cache_path()
+    if os.path.exists(binary_path):
+        return binary_path
+
+    ensure_container_tester_image(container_cli)
+
+    fd, tmp_path = tempfile.mkstemp(
+        dir=os.path.dirname(binary_path),
+        prefix="tester-",
+    )
+    os.close(fd)
+
+    try:
+        container_id = (
+            subprocess.check_output(
+                [container_cli, "create", CONTAINER_TESTER_IMAGE],
+                text=True,
+            )
+            .strip()
+        )
+    except subprocess.CalledProcessError as exc:
+        os.unlink(tmp_path)
+        raise RuntimeError(
+            f"unable to create container from tester image: {exc}"
+        ) from exc
+
+    try:
+        try:
+            subprocess.check_call(
+                [container_cli, "cp", f"{container_id}:/tester", tmp_path]
+            )
+        except subprocess.CalledProcessError as exc:
+            os.unlink(tmp_path)
+            raise RuntimeError(f"unable to extract tester binary: {exc}") from exc
+    finally:
+        subprocess.check_call(
+            [container_cli, "rm", container_id],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    os.chmod(tmp_path, 0o755)
+    os.replace(tmp_path, binary_path)
+    return binary_path
+
+
+def _collect_dependency_failures(
+    scope: str, dependency: dict[str, typing.Any], failures: list[str]
+) -> None:
+    # Recursively collect any dependency errors to make debugging easier.
+    error = dependency.get("Error")
+    name = dependency.get("FullPath") or dependency.get("ExecutableType") or "dependency"
+    label = f"{scope} -> {name}"
+    if error:
+        failures.append(f"{label}: {error}")
+    for child in dependency.get("Dependencies", []) or []:
+        if isinstance(child, dict):
+            _collect_dependency_failures(label, child, failures)
+
+
+def _collect_tester_failures(results: dict[str, typing.Any]) -> list[str]:
+    failures: list[str] = []
+    executables = results.get("Executables") or {}
+    if not isinstance(executables, dict):
+        return failures
+
+    for name, info in executables.items():
+        if not isinstance(info, dict):
+            continue
+        error = info.get("Error")
+        if error:
+            failures.append(f"{name}: {error}")
+        for dependency in info.get("Dependencies", []) or []:
+            if isinstance(dependency, dict):
+                _collect_dependency_failures(name, dependency, failures)
+    return failures
+
+
+def _parse_tester_output(raw_output: str) -> dict[str, typing.Any] | None:
+    text = raw_output.strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            snippet = text[start : end + 1]
+            try:
+                return json.loads(snippet)
+            except json.JSONDecodeError:
+                pass
+    print("Warning: Unable to parse container tester output as JSON; skipping failure inspection.")
+    return None
+
+
+def run_container_tester(tag: str, architecture: str, use_podman: bool = False) -> None:
+    container_cli = "podman" if use_podman else "docker"
+    tester_binary = ensure_container_tester_binary(container_cli)
+    tester_binary = os.path.abspath(tester_binary)
+
+    mount_suffix = ":ro,Z" if use_podman else ":ro"
+
+    run_cmd = [container_cli, "run", "--rm"]
+    if not use_podman:
+        run_cmd.extend(["--platform", get_build_platform(architecture)])
+
+    run_cmd.extend(
+        ["-v", f"{tester_binary}:{CONTAINER_TESTER_MOUNT_PATH}{mount_suffix}"]
+    )
+    run_cmd.extend(["--entrypoint", CONTAINER_TESTER_MOUNT_PATH, tag])
+
+    print(f"Running container tester for image {tag}...")
+    process = subprocess.Popen(
+        run_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    assert process.stdout is not None
+    captured_output: list[str] = []
+    try:
+        for line in process.stdout:
+            captured_output.append(line)
+    finally:
+        exit_code = process.wait()
+
+    raw_output = "".join(captured_output)
+
+    if exit_code != 0:
+        if raw_output:
+            print(raw_output, end="")
+        raise subprocess.CalledProcessError(exit_code, run_cmd)
+
+    parsed_output = _parse_tester_output(raw_output)
+    if parsed_output is not None:
+        print("Container tester results:")
+        print(json.dumps(parsed_output, indent=2, sort_keys=True))
+    else:
+        print(raw_output, end="")
+
+    if parsed_output is None:
+        return
+
+    failures = _collect_tester_failures(parsed_output)
+    if failures:
+        failure_text = "\n".join(f"- {failure}" for failure in failures)
+        raise RuntimeError(
+            "Container tester reported failures:\n"
+            f"{failure_text}"
+        )
 
 
 def build_and_run_container(
@@ -1751,6 +2052,15 @@ def build_and_run_container(
                 with open(image_tar, "rb") as f:
                     subprocess.check_call(["docker", "load"], stdin=f)
                 print("Docker image loaded successfully")
+                run_container_tester(tag, architecture, use_podman=False)
+            elif load_into_docker:
+                print(
+                    "Skipping container tester run: Docker CLI not available to load/run the image."
+                )
+            else:
+                print(
+                    "Skipping container tester run: image not loaded into Docker (--load-into-docker not set)."
+                )
 
             if login:
                 print(
@@ -1825,10 +2135,11 @@ def build_and_run_container(
         cwd=build_directory,
     )
     print("Docker image built successfully at", tag)
+    run_container_tester(tag, architecture, use_podman=use_podman)
 
     # Generate release file if in CI or auto-build mode
     if should_generate_release_file(generate_release):
-        generate_release_file(name, version, load_description_file(recipe_path))
+        generate_release_file(name, version, load_description_file(recipe_path), recipe_path)
 
     if login:
         abs_path = os.path.abspath(recipe_path)
@@ -1844,10 +2155,23 @@ def build_and_run_container(
             abs_path + ":/buildhostdirectory",
         ]
 
+        # Expose webapp ports if defined in recipe
+        recipe = load_description_file(recipe_path)
+        deploy = recipe.get("deploy") or {}
+        webapp = deploy.get("webapp") or {}
+        if webapp.get("port"):
+            main_port = webapp["port"]
+            docker_run_cmd.extend(["-p", f"{main_port}:{main_port}"])
+            print(f"Exposing webapp port {main_port}")
+        for proxy in webapp.get("additional_proxies") or []:
+            if proxy.get("port"):
+                docker_run_cmd.extend(["-p", f"{proxy['port']}:{proxy['port']}"])
+                print(f"Exposing additional proxy port {proxy['port']}")
+
         if mount:
             # Handle Windows paths with drive letters (e.g., C:\Users\...:container)
             # Pattern: drive letter (X:) followed by path separator, then path, then : separator
-            windows_path_match = re.match(r'^([A-Za-z]:[/\\].+?):(.+)$', mount)
+            windows_path_match = re.match(r"^([A-Za-z]:[/\\].+?):(.+)$", mount)
             if windows_path_match:
                 host = windows_path_match.group(1)
                 container = windows_path_match.group(2)
@@ -2160,6 +2484,131 @@ def generate_dockerfile(
         gpu=gpu,
         local_context=local_context,
     )
+
+
+def cache_main():
+    root = argparse.ArgumentParser(
+        description="NeuroContainer Builder - Manage cached recipe files",
+    )
+    root.add_argument("recipe", help="Name of the recipe to inspect")
+    root.add_argument(
+        "filename",
+        help="Name of the recipe file entry to populate in the cache",
+        nargs="?",
+    )
+    root.add_argument(
+        "local_filename",
+        help="Path to the local file that should be copied into the cache",
+        nargs="?",
+    )
+    root.add_argument(
+        "--architecture",
+        help="Architecture to evaluate templates with (defaults to host or first recipe architecture)",
+    )
+
+    args = root.parse_args()
+
+    repo_path = get_repo_path()
+    recipe_path = get_recipe_directory(repo_path, args.recipe)
+    if not os.path.exists(recipe_path):
+        print(f"Recipe {args.recipe} not found at {recipe_path}")
+        sys.exit(1)
+
+    description_file = load_description_file(recipe_path)
+
+    available_architectures = description_file.get("architectures") or []
+    architecture = args.architecture
+    if architecture is None:
+        host_arch = platform.machine()
+        if host_arch in available_architectures:
+            architecture = host_arch
+        elif available_architectures:
+            architecture = available_architectures[0]
+        else:
+            architecture = host_arch
+
+    if architecture not in ARCHITECTURES:
+        print(f"Unsupported architecture {architecture}")
+        sys.exit(1)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ctx = generate_from_description(
+            repo_path,
+            recipe_path,
+            description_file,
+            tmpdir,
+            architecture=architecture,
+            ignore_architecture=True,
+            recreate_output_dir=True,
+            check_only=True,
+            skip_file_population=True,
+        )
+
+    if ctx is None:
+        print(f"Recipe {args.recipe} is marked as draft and cannot be processed.")
+        sys.exit(1)
+
+    def print_status():
+        print("Cache status:")
+        cached = [
+            (name, info) for name, info in sorted(ctx.files.items()) if info.get("url")
+        ]
+        if not cached:
+            print("No cached downloads defined in this recipe.")
+        else:
+            for name, info in cached:
+                cached_path = info["cached_path"]
+                if os.path.exists(cached_path):
+                    status = "present"
+                    if os.path.getsize(cached_path) == 0:
+                        status = "empty"
+                else:
+                    status = "missing"
+                print(f"- {name}: {status} ({cached_path})")
+
+    filename = args.filename
+    local_filename = args.local_filename
+
+    if (filename and not local_filename) or (local_filename and not filename):
+        print(
+            "Both a recipe filename and a local filename must be provided to populate the cache."
+        )
+        print_status()
+        sys.exit(1)
+
+    load_error: str | None = None
+    if filename:
+        file_entry = ctx.files.get(filename)
+        if file_entry is None:
+            available = ", ".join(sorted(ctx.files.keys())) or "none"
+            print(f"File {filename} not found in recipe. Available files: {available}")
+            print_status()
+            sys.exit(1)
+
+        if file_entry.get("url"):
+            source_path = os.path.abspath(local_filename or "")
+            if not os.path.exists(source_path):
+                load_error = f"Local file {source_path} not found."
+            elif not os.path.isfile(source_path):
+                load_error = f"Local path {source_path} is not a file."
+            else:
+                target_path = file_entry["cached_path"]
+                try:
+                    shutil.copy2(source_path, target_path)
+                    print(f"Loaded {source_path} into cache at {target_path}")
+                except OSError as exc:
+                    load_error = f"Failed to copy {source_path} to {target_path}: {exc}"
+        else:
+            load_error = (
+                f"File {filename} is not backed by a cached download; nothing to load."
+            )
+
+        if load_error:
+            print(load_error, file=sys.stderr)
+            print_status()
+            sys.exit(1)
+
+    print_status()
 
 
 def generate_main():
@@ -2820,6 +3269,7 @@ def main(args):
                 ctx.name,
                 ctx.version,
                 recipe,
+                recipe_path,
             )
 
         if args.build:

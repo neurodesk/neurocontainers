@@ -2,54 +2,75 @@ name: fastsurfer
 version: 2.4.2
 copyright:
   - license: Apache-2.0
-    url: https://github.com/Deep-MI/FastSurfer/tree/dev?tab=Apache-2.0-1-ov-file#readme
+    url: https://github.com/Deep-MI/FastSurfer/blob/dev/LICENSE
 architectures:
   - x86_64
 structured_readme:
-  description: FastSurfer - a fast and accurate deep-learning based neuroimaging pipeline. FastSurfer provides a fully compatible FreeSurfer alternative for volumetric analysis (within minutes) and surface-based thickness analysis (within only around 1h run time).
+  description: |-
+    FastSurfer provides a fully compatible FreeSurfer alternative for volumetric analysis (within minutes) and surface-based thickness analysis (within only around 1h run time). FastSurfer is transitioning to sub-millimeter resolution support throughout the pipeline.
+
+    The FastSurfer pipeline consists of two main parts for segmentation and surface reconstruction.
+
+    the segmentation sub-pipeline (seg) employs advanced deep learning networks for fast, accurate segmentation and volumetric calculation of the whole brain and selected substructures.
+
+    the surface sub-pipeline (recon-surf) reconstructs cortical surfaces, maps cortical labels and performs a traditional point-wise and ROI thickness analysis.
+
+    FastSurfer also has a dedicated pipeline to quantify longitudinal changes in T1-weighted MRI. FastSurfer’s longitudinal pipeline outperforms independent (cross-sectional) processing of individual MRIs across time in both FastSurfer and FreeSurfer, as well as even the longitudinal pipeline in FreeSurfer.
   example: |-
     # Example usage
 
     ```bash
-    ./run_fastsurfer.sh --t1 $datadir/subjectX/t1-weighted-nii.gz \
-                        --sid subjectX --sd $fastsurferdir \
-                        --threads 4 --3T```
-  documentation: https://github.com/Deep-MI/FastSurfer/tree/dev
+    # Run the containerized tool (assuming you are already inside the container)
+    ./run_fastsurfer.sh --help
+    ./long_fastsurfer.sh --help
+    ```
+  documentation: https://deep-mi.org/FastSurfer/
   citation: |-
-    Henschel L, Conjeti S, Estrada S, Diers K, Fischl B, Reuter M, FastSurfer - A fast and accurate deep learning based neuroimaging pipeline, NeuroImage 219 (2020), 117012. https://doi.org/10.1016/j.neuroimage.2020.117012
+    Henschel L, Conjeti S, Estrada S, Diers K, Fischl B, Reuter M. FastSurfer - A fast and accurate deep learning based neuroimaging pipeline. NeuroImage 219 (2020), 117012. https://doi.org/10.1016/j.neuroimage.2020.117012⁠
 
-    Henschel L*, Kuegler D*, Reuter M. (*co-first). FastSurferVINN: Building Resolution-Independence into Deep Learning Segmentation Methods - A Solution for HighRes Brain MRI. NeuroImage 251 (2022), 118933. http://dx.doi.org/10.1016/j.neuroimage.2022.118933
+    Henschel L, Kügler D, Reuter M. FastSurferVINN: Building resolution-independence into deep learning segmentation methods - A solution for HighRes brain MRI. NeuroImage 251 (2022), 118933. https://doi.org/10.1016/j.neuroimage.2022.118933⁠
 
-    Faber J*, Kuegler D*, Bahrami E*, et al. (*co-first). CerebNet: A fast and reliable deep-learning pipeline for detailed cerebellum sub-segmentation. NeuroImage 264 (2022), 119703. https://doi.org/10.1016/j.neuroimage.2022.119703
+    Faber J*, Kuegler D*, Bahrami E*, et al. (*co-first). CerebNet: A fast and reliable deep-learning pipeline for detailed cerebellum sub-segmentation. NeuroImage 264 (2022), 119703. https://doi.org/10.1016/j.neuroimage.2022.119703⁠
 
-    Estrada S, Kuegler D, Bahrami E, Xu P, Mousa D, Breteler MMB, Aziz NA, Reuter M. FastSurfer-HypVINN: Automated sub-segmentation of the hypothalamus and adjacent structures on high-resolutional brain MRI. Imaging Neuroscience 2023; 1 1–32. https://doi.org/10.1162/imag_a_00034
+    Estrada S, Kügler D, Bahrami E, et al. FastSurfer-HypVINN: Automated sub-segmentation of the hypothalamus and adjacent structures on high-resolutional brain MRI. Imaging Neuroscience (2023), 1:1-32. https://doi.org/10.1162/imag_a_00034⁠
+
+    Reuter M, Schmansky NJ, Rosas HD, Fischl B. Within-subject template estimation for unbiased longitudinal image analysis, NeuroImage 61:4 (2012). https://doi.org/10.1016/j.neuroimage.2012.02.084
 readme: |-
   ----------------------------------
   ## fastsurfer/{{ context.version }} ##
 
-  FastSurfer - a fast and accurate deep-learning based neuroimaging pipeline. FastSurfer provides a fully compatible FreeSurfer alternative for volumetric analysis (within minutes) and surface-based thickness analysis (within only around 1h run time).
+  FastSurfer provides a fully compatible FreeSurfer alternative for volumetric analysis (within minutes) and surface-based thickness analysis (within only around 1h run time). FastSurfer is transitioning to sub-millimeter resolution support throughout the pipeline.
+
+  The FastSurfer pipeline consists of two main parts for segmentation and surface reconstruction.
+
+  the segmentation sub-pipeline (seg) employs advanced deep learning networks for fast, accurate segmentation and volumetric calculation of the whole brain and selected substructures.
+
+  the surface sub-pipeline (recon-surf) reconstructs cortical surfaces, maps cortical labels and performs a traditional point-wise and ROI thickness analysis.
+
+  FastSurfer also has a dedicated pipeline to quantify longitudinal changes in T1-weighted MRI. FastSurfer’s longitudinal pipeline outperforms independent (cross-sectional) processing of individual MRIs across time in both FastSurfer and FreeSurfer, as well as even the longitudinal pipeline in FreeSurfer.
 
   Example:
   ```
   # Example usage
 
   ```bash
-  ./run_fastsurfer.sh --t1 $datadir/subjectX/t1-weighted-nii.gz \
-                      --sid subjectX --sd $fastsurferdir \
-                      --threads 4 --3T```
+  run_fastsurfer.sh --sid <sid> --sd <sdir> --t1 <t1_input> --fs_license /opt/license.txt
+  ```
   ```
 
-  More documentation can be found here: https://github.com/Deep-MI/FastSurfer/tree/dev
+  More documentation can be found here: https://deep-mi.org/FastSurfer/
 
   Citation:
   ```
-  Henschel L, Conjeti S, Estrada S, Diers K, Fischl B, Reuter M, FastSurfer - A fast and accurate deep learning based neuroimaging pipeline, NeuroImage 219 (2020), 117012. https://doi.org/10.1016/j.neuroimage.2020.117012
+  Henschel L, Conjeti S, Estrada S, Diers K, Fischl B, Reuter M. FastSurfer - A fast and accurate deep learning based neuroimaging pipeline. NeuroImage 219 (2020), 117012. https://doi.org/10.1016/j.neuroimage.2020.117012⁠
 
-  Henschel L*, Kuegler D*, Reuter M. (*co-first). FastSurferVINN: Building Resolution-Independence into Deep Learning Segmentation Methods - A Solution for HighRes Brain MRI. NeuroImage 251 (2022), 118933. http://dx.doi.org/10.1016/j.neuroimage.2022.118933
+  Henschel L, Kügler D, Reuter M. FastSurferVINN: Building resolution-independence into deep learning segmentation methods - A solution for HighRes brain MRI. NeuroImage 251 (2022), 118933. https://doi.org/10.1016/j.neuroimage.2022.118933⁠
 
-  Faber J*, Kuegler D*, Bahrami E*, et al. (*co-first). CerebNet: A fast and reliable deep-learning pipeline for detailed cerebellum sub-segmentation. NeuroImage 264 (2022), 119703. https://doi.org/10.1016/j.neuroimage.2022.119703
+  Faber J*, Kuegler D*, Bahrami E*, et al. (*co-first). CerebNet: A fast and reliable deep-learning pipeline for detailed cerebellum sub-segmentation. NeuroImage 264 (2022), 119703. https://doi.org/10.1016/j.neuroimage.2022.119703⁠
 
-  Estrada S, Kuegler D, Bahrami E, Xu P, Mousa D, Breteler MMB, Aziz NA, Reuter M. FastSurfer-HypVINN: Automated sub-segmentation of the hypothalamus and adjacent structures on high-resolutional brain MRI. Imaging Neuroscience 2023; 1 1–32. https://doi.org/10.1162/imag_a_00034
+  Estrada S, Kügler D, Bahrami E, et al. FastSurfer-HypVINN: Automated sub-segmentation of the hypothalamus and adjacent structures on high-resolutional brain MRI. Imaging Neuroscience (2023), 1:1-32. https://doi.org/10.1162/imag_a_00034⁠
+
+  Reuter M, Schmansky NJ, Rosas HD, Fischl B. Within-subject template estimation for unbiased longitudinal image analysis, NeuroImage 61:4 (2012). https://doi.org/10.1016/j.neuroimage.2012.02.084
   ```
 
   To run container outside of this environment: ml fastsurfer/{{ context.version }}
@@ -57,16 +78,28 @@ readme: |-
   ----------------------------------
 build:
   kind: neurodocker
-  base-image: deepmi/fastsurfer:cpu-v2.4.2
+  base-image: deepmi/fastsurfer:cpu-v{{ context.version }}
   pkg-manager: apt
   directives:
+    - file:
+        name: license.txt
+        contents: |-
+          s.bollmann@uq.edu.au
+          53024
+           *CgH0liqb0e9g
+           FSVt2Z862iDJk
+    - copy:
+        - license.txt
+        - /opt/license.txt
+    - environment:
+        FS_LICENSE: /opt/license.txt
+    - install:
+        - wget
     - deploy:
         path: []
         bins:
-          - run_fastsurfer.sh
-    - test:
-        name: Simple Deploy Bins/Path Test
-        builtin: test_deploy.sh
+          - /fastsurfer/run_fastsurfer.sh
+          - /fastsurfer/long_fastsurfer.sh
 categories:
-  - image segmentation
-icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEJElEQVR4AeyTe0zVZRzGP7/fuXC4izcQUkzAW+ZCV5uk5rys5ZouuW2tWli41WA1tsLG5qicczFyzpyuzTZaf5jgcLGMFqMSHZKDKOamNWIiF7lzOMCBczjn9BzSmgOLf/qjrd/e73ve93t5nuf9vu8x+Ze//wn+scFzaZHBxjeXsKV6A6nf7iT+57042j+BM+lwvCKB/QVieSDO7IHMTAu5H6dR8sthSoZbyTjWycqdjURt+wbbugsQlQMpFQuYSn+fz0vLoaUKTmwDh8juGzMJztQV8Pq5AbZnXGFJShEOx8P4RgxivDAkG/gNJq4JxEk2X7KJMVJg7VrI+wD2KHDf+Ivgw7IErnXXsOmJo0R5ookJBe8wBOzQEQ7tIeAfhLEuAbh4hHpeoZZI7eYJJSEWVm7heOdLnJXrz6GQ1pea1vJC1g/ERu8gxGfD6ocondaIBlcAblmgdRJ+7YPAGCaDbKcWeZgyYMFiYcyD8QTi4pJ4rqmAHfJMjz8IlsedJswWjzkFpsA8Au9W3GnAddmY1t2KTQbTR3iWC2zlKkOAW/yTOph9AMad0O/EvmYVZ5OTCVEYk8qqbSyOS8OnYr+Ae6wwoBP0yvpHQcV4lRpEQmRqyjqaUZRFQKwsWu6phRAuM6TD7mXhV+/wtEIiqLvaisdnYVxZowJ3iWhU5V6fJIWBW2lOyZxQXOmIoJxsPCJTVzSrezboi1GqHaJ1KabKbJEcUKUqcnIfx00AtwCDKkck16U2IbIg+ITS3AKfEglD8naym8uEYmNcoQGZTYCEQ5hIXBFyiCjmUZILDxBtMuGbx4Rp4JFyCSdC4EH1LSK6KUen2tTfReLURYo4QkPEGxyKb+DJRA9rdIRE9WhpEkTOB7v2Aa3968EWxaq8Qnaa1F6sprPrJIOS6BJ78FkIF23Dmm4P5HaUUuHaQwMv8lZ4FSmxPdjjpXY1WARkpApsOdMEkXbVJ8iiwG9luOAgX5sU5neRtjSPG9dzuNNTQXdXAd6+17hRnPLdUFJ9Ce+y22hkYZgXQy2IWAbhyeBIBHMTWDYLbINsHVg3am+AIaLxUX4sL2fU5N63P7WM5+MzefWhY+THny6tPxqeQOAZmwoci8BcAxErwalLnAgFq3ru06Pzhwhcit0OhtqGOVJzmdSTn7J+cRK7gtBmcJrNJG6fzYYlVMV+OwQEagowUhZihUnduVXVQ27Of9bM1qdOEbsinaKst2nOP0iLMH0yvaLgPIulQfEdg7LhEDr8eiWGVyQCteh+attIr77FYzf7yfzoEFk5p6hrbEQZM4GkYabzriew3sPL83tZ9p6TFe0ezt8e54srvWTvqqFyXyU/rT5BRTHT/7m7JTN//o7gXnbgcA9ty5vISPyevZsvcU4BnUXzHMZcCOYA8+CU/z7B7wAAAP//aKSElwAAAAZJREFUAwAG7VZAqA7MAwAAAABJRU5ErkJggg==
+  - structural imaging
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEcklEQVR4AWRTXUieZRi+nufT3GTYIulnNraB2TaXlOaoUPCgDjwJKluxwINpaiDWcEvUg36wcIRpeO6B/bGWlv3RUdQyquXSNjAUZ1IZjmTRsrH593Rd9/c9n9+2j+967/u57v/7eV+f/dnZcMOnZ0L2Jz+H7I8nQvbIeBIf/RSyPzwdsobHQvbQjyHrg1NJnPghZL3/fcg6/p0h8d63IYtIvDsaEu98ExJvnwyJt74OicGvDN6FAP0cHwIFIE7gIXKS5pviaTI/8fKXzXQzbDx8YEAm5JyJsL7OY0iDiiWOMjNWOugfbdK9qqq6SOmS6fosLk4QF6X50GYcZeQtj8gM+NihgtI6u4i6upKubtI6k4bVFYR//4FsQtpOm+nKQd1bMSoQeEh3E/UUz6Otxuzk3IW/gLOngJVlM8VHnEJ+0r0lZoDJ5StY+/w4Vh4vx0rNfsPqgfthePIBrD71INY667D+xQmsPvcE1vpfwvqxVuDP36y4dc5cNmlKJgvE8iRVtbW1lfU2LjYGLC0tMREv/dcpjI2Nmc/T5SUIv58D1tYsS+ycRkj3CrbKqZ0FujknE1BVVYXKyso0KioqgOVl5M7PorS0lDkCWlpaEKbOIFxagu7CwEZBSLe3iDmtmrqXQWdhdHQUmZiYmACuXMbhgwfoFjA4OIiysjLkzE4Ci+dh8QpkcjpIg1cVTZEEuUCk/v39/chEYWEhkLcV9fX1GB8fR1dXF7z3ePaRaoS5KYTVVa6QCWIBSpsguRDYFMj41dXVoaGhIY2SkhJszwrYsWMH+vr6MDMzg8XFRTQ2NgJck/vvYrJAzKEC1jn3b/dAIo4mn9zcXOTk5KQxPDyMF9tekAkDAwO8jmXk5+ejqKgIWxfmEBb+gDZiuZhTuT2U1EL4yNR51N/X1MMfOQZ/6Ahwxy7U1NRgenoabW1thvb2djjncPSZQwizv8ClvgttRUgWUOIIcIfKLOTdBNxZDLe3FMjZjIqdBcjLy0NHRwd6e3sN3d3dWFhYQG1tra0pXPybPadecU5x3ZesvBpNMg29gtxxZ2enrWXoy5PwbW8g8eYQ3EOPYmRkBAUFBdh2YR6Yn4NjYsXaBLYzdq+kUe/p6bGx1/jxhMAP6/w8wuRpVFdX2324PfcCt2xD2LQZ2LUbTU1N5j8/T79zkwiXL8HugXntLeJMcDy4RALYfQ/80ddhe2/qgM+/HS53C/zBZvjDr8E9/yrcw48BW/IAn4C7q4Qc+eZX4JpfhtvDdTKXJlBeH3hIg5flCnbC3V1O7OfuyxBuvhXhtu3AvvsI8vvKAV42HLer2C03WlMoLgP2EoXFwKZcKLngrXMrB5sC1/wcz/KRs3RJUsk/C4gTRERpPrSJS06gSyHiJLa/eE5JBemO5HOVnYnEGxd1SYGxnFN1NmDd8qhuoq7khhRPAbNLYSIJA3Xx8lWsdK/KIgysqA4zYTwDo8y0WecZNvlcZaft+gnYiqrLWR1Ikkr+GSCb8WSiNB/aSG1MxoN8/wcAAP///SCt6wAAAAZJREFUAwAFW1DpgjhdhQAAAABJRU5ErkJggg==

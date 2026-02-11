@@ -1,0 +1,65 @@
+name: syncro
+version: 0.1.1
+
+copyright:
+  - license: BSD-2-Clause
+    url: https://spdx.org/licenses/BSD-2-Clause.html
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: freesurfer/synthstrip:1.8
+  pkg-manager: apt
+
+  directives:
+    - workdir: /opt
+
+    - install:
+        - git
+        - ca-certificates
+        - curl
+
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PATH: /opt/:$PATH
+
+    - run: 
+        - pip install scipy antspyx
+        - curl https://git.fmrib.ox.ac.uk/fsl/data_standard/-/raw/f6db877e56047a1ad91fd9b28d38654376087029/MNI152_T1_1mm_brain.nii.gz -o MNI152_T1_1mm_brain.nii.gz
+        
+    - run:
+        - git clone https://github.com/neurolabusc/py_synthsr
+        - cd py_synthsr
+        - curl -L https://osf.io/download/jqdcm/ -o models.zip
+        - unzip -jo models.zip -d py_synthsr/models
+        - mv py_synthsr/models/* /freesurfer/models
+        - rm models.zip
+        - pip install .
+
+    - copy: SYNcro.py /opt/
+
+    - run: 
+        - chmod +x /opt/SYNcro.py
+
+deploy:
+  bins:
+    - SYNcro.py
+
+readme: |-
+  ----------------------------------
+  ## syncro/{{ context.version }} ##
+  syncro is a spatial normalization toolkit based on ANTS, SynthSR and SynthStrip. It supports normalising brains with lesions.
+
+  Example:
+  ```
+      SYNcro.py input.nii
+  ```
+
+  ----------------------------------
+
+
+categories:
+  - "structural imaging"

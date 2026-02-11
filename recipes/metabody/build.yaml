@@ -1,5 +1,5 @@
 name: metabody
-version: 1.0.0
+version: 1.0.1
 architectures:
     - x86_64
 
@@ -131,6 +131,7 @@ build:
         - include: macros/openrecon/neurodocker.yaml
 
         - copy: metabody.py /opt/code/python-ismrmrd-server/metabody.py
+        - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
         - copy: afni_processing.sh /opt/code/afni_processing.sh
         - run:
               - mkdir -p /opt/code/stim_times
@@ -141,3 +142,10 @@ build:
         - run:
               - pip install SimpleITK nibabel pandas scikit-learn dcm2niix
 
+        - run:
+            - chmod +x /opt/code/python-ismrmrd-server/nifti2mrd.py
+            - chmod +x /opt/code/python-ismrmrd-server/mrd2dicom.py
+            - chmod +x /opt/code/afni_processing.sh
+deploy:
+    bins:
+        - /opt/code/afni_processing.sh

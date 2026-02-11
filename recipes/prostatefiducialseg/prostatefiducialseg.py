@@ -280,15 +280,21 @@ def do_segmentation(data):
         raise
 
     # ——— Run prediction script ———
-    logging.info("Starting prediction with external script")
-    
+    logging.info("Starting ensemble prediction with predict3.py")
+
     try:
-        # Run prediction
-        cmd = ["simple_predict.py", "--input", "t1_from_h5.nii", "--model", "/opt/models/model.pth", "--output", "output"]
+        # Run ensemble prediction with multiple models
+        cmd = [
+            "predict3.py",
+            "-i", "t1_from_h5.nii",
+            "-m", "/opt/models/*.pth",
+            "-o", "output",
+            "--n-markers", "3"
+        ]
         logging.info("Running command: %s", " ".join(cmd))
-        
+
         result = subprocess.run(cmd, capture_output=True, text=True)
-        
+
         if result.returncode == 0:
             logging.info("Prediction script completed successfully")
             if result.stdout:
@@ -299,7 +305,7 @@ def do_segmentation(data):
                 logging.error("Prediction stderr: %s", result.stderr.strip())
             if result.stdout:
                 logging.error("Prediction stdout: %s", result.stdout.strip())
-                
+
     except Exception as e:
         logging.error("Error running prediction script: %s", str(e))
         raise
@@ -307,28 +313,37 @@ def do_segmentation(data):
     # ——— Load prediction results ———
     logging.info("Loading prediction results")
     try:
-        segmentation_seeds_nii = 'output/pred_seeds.nii.gz'
-        segmentation_prostate_nii = 'output/pred_prostate.nii.gz'
+        segmentation_seeds_nii = 'output/consensus_top3_seeds.nii.gz'
+        segmentation_prostate_nii = 'output/consensus_argmax_segmentation.nii.gz'
         t1_file = 't1_from_h5.nii'
-        
+
         # Check if output files exist
         if not os.path.exists(segmentation_seeds_nii):
             logging.error("Segmentation output file not found: %s", segmentation_seeds_nii)
             raise FileNotFoundError(f"Missing segmentation file: {segmentation_seeds_nii}")
         if not os.path.exists(segmentation_prostate_nii):
-            logging.error("Segmentation output file not found: %s", segmentation_prostate_nii)
-            raise FileNotFoundError(f"Missing segmentation file: {segmentation_prostate_nii}")
-            
+            logging.warning("Prostate segmentation file not found: %s (using argmax segmentation instead)", segmentation_prostate_nii)
+            # Use argmax segmentation - extract class 2 as prostate
+            segmentation_prostate_nii = None
+
         if not os.path.exists(t1_file):
             logging.error("T1 input file not found: %s", t1_file)
             raise FileNotFoundError(f"Missing T1 file: {t1_file}")
-        
+
         logging.info('Loading seeds segmentation image from: %s', segmentation_seeds_nii)
         segmentation_seeds = nib.load(segmentation_seeds_nii).get_fdata()
         logging.info("Seeds segmentation loaded: shape=%s, dtype=%s", segmentation_seeds.shape, segmentation_seeds.dtype)
-        logging.info('Loading prostate segmentation image from: %s', segmentation_prostate_nii)
-        segmentation_prostate = nib.load(segmentation_prostate_nii).get_fdata()
-        logging.info("Prostate segmentation loaded: shape=%s, dtype=%s", segmentation_prostate.shape, segmentation_prostate.dtype)
+
+        if segmentation_prostate_nii:
+            logging.info('Loading prostate segmentation image from: %s', segmentation_prostate_nii)
+            segmentation_prostate = nib.load(segmentation_prostate_nii).get_fdata()
+            logging.info("Prostate segmentation loaded: shape=%s, dtype=%s", segmentation_prostate.shape, segmentation_prostate.dtype)
+            # Extract class 2 (prostate) from argmax segmentation
+            segmentation_prostate = (segmentation_prostate == 2).astype(np.uint8)
+            logging.info("Extracted prostate class from argmax segmentation")
+        else:
+            logging.warning("No prostate segmentation available, creating empty mask")
+            segmentation_prostate = np.zeros_like(segmentation_seeds, dtype=np.uint8)
         
         logging.info('Loading T1 image from: %s', t1_file)
         data = nib.load(t1_file).get_fdata()
@@ -340,36 +355,36 @@ def do_segmentation(data):
 
     # ——— Post-processing of segmentation ———
     logging.info("Starting post-processing of segmentation")
-    
+
     try:
-        # Create prostate mask from segmentation
-        logging.debug("Creating prostate mask from segmentation")
-        prostate_mask = (segmentation_prostate > 0)
-        prostate_voxel_count = np.sum(prostate_mask)
-        logging.info("Prostate mask contains %d voxels", prostate_voxel_count)
-        if prostate_voxel_count == 0:
-            logging.warning("No prostate voxels found in segmentation")
-        
-        # Create prostate boundary mask
-        logging.debug("Finding boundaries of prostate mask")
-        prostate_mask = binary_fill_holes(prostate_mask)
-        prostate_mask = find_boundaries(prostate_mask, mode='outer')
-        prostate_boundary_count = np.sum(prostate_mask)
+        # # Create prostate mask from segmentation
+        # logging.debug("Creating prostate mask from segmentation")
+        # prostate_mask = (segmentation_prostate > 0)
+        # prostate_voxel_count = np.sum(prostate_mask)
+        # logging.info("Prostate mask contains %d voxels", prostate_voxel_count)
+        # if prostate_voxel_count == 0:
+        #     logging.warning("No prostate voxels found in segmentation")
+        #
+        # # Create prostate boundary mask
+        # logging.debug("Finding boundaries of prostate mask")
+        # prostate_mask = binary_fill_holes(prostate_mask)
+        # prostate_mask = find_boundaries(prostate_mask, mode='outer')
+        # prostate_boundary_count = np.sum(prostate_mask)
 
-        logging.info("Prostate boundary mask contains %d voxels", prostate_boundary_count)
-        if prostate_boundary_count == 0:
-            logging.warning("No prostate boundary voxels found in segmentation")
+        # logging.info("Prostate boundary mask contains %d voxels", prostate_boundary_count)
+        # if prostate_boundary_count == 0:
+        #     logging.warning("No prostate boundary voxels found in segmentation")
 
-        # Apply prostate boundary overlay to original data
-        logging.debug("Applying prostate boundary overlay to original data")
-        data_max = data.max()
-        modified_voxels = 0
-        for z in range(prostate_mask.shape[2]):
-            rows, cols = np.where(prostate_mask[:, :, z])
-            if len(rows) > 0:
-                data[rows, cols, z] = data_max
-                modified_voxels += len(rows)
-        logging.info("Modified %d voxels with prostate boundary overlay (max value: %.2f)", modified_voxels, data_max)
+        # # Apply prostate boundary overlay to original data
+        # logging.debug("Applying prostate boundary overlay to original data")
+        # data_max = data.max()
+        # modified_voxels = 0
+        # for z in range(prostate_mask.shape[2]):
+        #     rows, cols = np.where(prostate_mask[:, :, z])
+        #     if len(rows) > 0:
+        #         data[rows, cols, z] = data_max
+        #         modified_voxels += len(rows)
+        # logging.info("Modified %d voxels with prostate boundary overlay (max value: %.2f)", modified_voxels, data_max)
         
         # Create seed mask
         logging.debug("Creating seed mask from segmentation")
@@ -440,8 +455,8 @@ def process_image(images, connection, config, metadata):
 
     # Log image types and sizes
     for i, img in enumerate(images):
-        logging.debug("Image %d: type=%s, shape=%s, series=%d", 
-                     i, ismrmrd.get_dtype_from_data_type(img.data_type), 
+        logging.debug("Image %d: type=%s, shape=%s, series=%d",
+                     i, img.data.dtype,
                      img.data.shape, img.image_series_index)
 
     # Note: The MRD Image class stores data as [cha z y x]

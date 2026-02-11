@@ -1,0 +1,77 @@
+name: apptainer
+version: 1.4.4
+
+architectures:
+  - x86_64
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://spdx.org/licenses/BSD-3-Clause.html
+
+categories:
+  - programming
+
+variables:
+  apptainer_deb_url:
+    try:
+      - value: "https://github.com/apptainer/apptainer/releases/download/v{{ context.version }}/apptainer_{{ context.version }}_amd64.deb"
+        condition: arch == "x86_64"
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - ca-certificates
+        - curl
+        - fuse3
+        - libglib2.0-0
+        - libseccomp2
+        - squashfs-tools
+        - uidmap
+
+    - file:
+        name: apptainer.deb
+        url: "{{ context.apptainer_deb_url }}"
+
+    - run:
+        - apt-get update
+        - apt-get install -y {{ get_file("apptainer.deb") }}
+        - rm -rf /var/lib/apt/lists/*
+
+    - run:
+        - apptainer --version
+
+    - test:
+        name: check apptainer version
+        script: |
+          apptainer --version
+
+    - deploy:
+        bins:
+          - apptainer
+          - singularity
+
+readme: |-
+  ----------------------------------
+  ## apptainer/{{ context.version }} ##
+
+  Apptainer provides an open-source container runtime designed for high-performance and scientific computing workflows. Use it to build, run, and convert Apptainer (formerly Singularity) images on systems where Docker is not available.
+
+  Examples:
+  ```
+  apptainer --version
+  apptainer pull docker://alpine:latest
+  apptainer exec alpine_latest.sif cat /etc/os-release
+  ```
+
+  For full documentation visit: https://apptainer.org/docs/user/main/
+
+  To run container outside of this environment: ml apptainer/{{ context.version }}
+
+  ----------------------------------

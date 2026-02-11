@@ -1,0 +1,18 @@
+# Test ezBIDS container
+# Note: Full service testing requires docker run with port mapping
+
+tests:
+  - name: Test dcm2niix
+    script: |
+      dcm2niix -h
+
+  - name: Test bids-validator
+    script: |
+      bids-validator --version
+
+  - name: Test Python packages
+    script: |
+      python3 -c "import nibabel; print('nibabel:', nibabel.__version__)"
+      python3 -c "import pydicom; print('pydicom:', pydicom.__version__)"
+      python3 -c "import pypet2bids; print('pypet2bids available')"
+      python3 -c "import mne_bids; print('mne_bids available')"
