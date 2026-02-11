@@ -79,7 +79,7 @@ build:
     # Create startup script
     - run:
         - echo '#!/bin/bash' > /opt/qsmbly/start.sh
-        - echo 'cd /opt/qsmbly && exec serve -s dist -l 3001 --no-clipboard' >> /opt/qsmbly/start.sh
+        - echo 'cd /opt/qsmbly && exec serve -s dist -l 3002 --no-clipboard' >> /opt/qsmbly/start.sh
         - chmod +x /opt/qsmbly/start.sh
 
     # Copy launcher script to PATH
@@ -98,7 +98,7 @@ deploy:
     startup_command: "qsmbly start"
     startup_timeout: 120
     description: "Browser-based Quantitative Susceptibility Mapping using WebAssembly"
-    port: 3001
+    port: 3002
 
 files:
   - name: qsmbly
