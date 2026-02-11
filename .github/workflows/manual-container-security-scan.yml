@@ -217,6 +217,7 @@ jobs:
             -v "$PWD/$temp_extract_dir":/src \
             -v "$PWD/${{ env.SCAN_OUTPUT_DIR }}":/output \
             returntocorp/semgrep:latest \
+            semgrep \
             --config=auto \
             --config=p/security-audit \
             --config=p/secrets \
@@ -558,6 +559,7 @@ jobs:
 
       - name: Create GitHub Issue
         if: steps.summary.outputs.summary_created == 'true'
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
@@ -567,27 +569,45 @@ jobs:
             // Extract container name for title
             const containerName = '${{ inputs.container_image }}'.split('/').pop();
             
-            const issue = await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `Security Scan: ${containerName}`,
-              body: summary,
-              labels: ['security', 'vulnerability-scan', 'automated']
-            });
-            
-            console.log(`Created issue #${issue.data.number}`);
-            console.log(`Issue URL: ${issue.data.html_url}`);
-            
-            core.summary.addRaw(`### Security Scan Complete
-            
-            Created issue [#${issue.data.number}](${issue.data.html_url}) with security findings
-            
-            **Results:**
-            - Grype: ${{ steps.grype.outputs.count || 0 }} vulnerabilities
-            - Trivy: ${{ steps.trivy.outputs.count || 0 }} vulnerabilities  
-            - Semgrep: ${{ steps.semgrep.outputs.count || 0 }} findings
-            `);
-            await core.summary.write();
+            try {
+              const issue = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `Security Scan: ${containerName}`,
+                body: summary,
+                labels: ['security', 'vulnerability-scan', 'automated']
+              });
+              
+              console.log(`Created issue #${issue.data.number}`);
+              console.log(`Issue URL: ${issue.data.html_url}`);
+              
+              core.summary.addRaw(`### Security Scan Complete
+              
+              Created issue [#${issue.data.number}](${issue.data.html_url}) with security findings
+              
+              **Results:**
+              - Grype: ${{ steps.grype.outputs.count || 0 }} vulnerabilities
+              - Trivy: ${{ steps.trivy.outputs.count || 0 }} vulnerabilities  
+              - Semgrep: ${{ steps.semgrep.outputs.count || 0 }} findings
+              `);
+              await core.summary.write();
+            } catch (error) {
+              console.log('Could not create issue - Issues may be disabled in this repository');
+              console.log('Error:', error.message);
+              
+              core.summary.addRaw(`### Security Scan Complete
+              
+              Issue creation skipped (Issues may be disabled)
+              
+              **Results:**
+              - Grype: ${{ steps.grype.outputs.count || 0 }} vulnerabilities
+              - Trivy: ${{ steps.trivy.outputs.count || 0 }} vulnerabilities  
+              - Semgrep: ${{ steps.semgrep.outputs.count || 0 }} findings
+              
+              **Note:** Check the artifacts for full scan results.
+              `);
+              await core.summary.write();
+            }
 
       - name: No vulnerabilities found
         if: steps.grype.outputs.found != 'true' && steps.trivy.outputs.found != 'true' && steps.semgrep.outputs.found != 'true'
