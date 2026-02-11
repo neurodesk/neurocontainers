@@ -244,16 +244,17 @@ files:
       sleep 2
 
       # Start UI (serve pre-built production files with API proxy)
-      echo "Starting UI on port 3000..."
+      EZBIDS_UI_PORT="${NEURODESK_WEBAPP_PORT:-3000}"
+      echo "Starting UI on port ${EZBIDS_UI_PORT}..."
       cd /app/ezbids/ui
-      node server.js > "$LOG_DIR/ui.out.log" 2> "$LOG_DIR/ui.err.log" &
+      NEURODESK_WEBAPP_PORT="$EZBIDS_UI_PORT" node server.js > "$LOG_DIR/ui.out.log" 2> "$LOG_DIR/ui.err.log" &
       UI_PID=$!
 
       echo ""
       echo "=============================================="
       echo "ezBIDS is starting up!"
       echo ""
-      echo "  Web UI:  http://localhost:3000"
+      echo "  Web UI:  http://localhost:${EZBIDS_UI_PORT}"
       echo "  API:     http://localhost:8082"
       echo ""
       echo "  Logs:    $LOG_DIR/"
@@ -385,7 +386,7 @@ files:
       const fs = require('fs');
       const path = require('path');
 
-      const PORT = 3000;
+      const PORT = parseInt(process.env.NEURODESK_WEBAPP_PORT || '3000');
       const API_HOST = 'localhost';
       const API_PORT = 8082;
       const DIST_DIR = path.join(__dirname, 'dist');

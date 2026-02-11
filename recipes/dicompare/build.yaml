@@ -48,7 +48,7 @@ build:
     # Create startup script
     - run:
         - echo '#!/bin/bash' > /opt/dicompare/start.sh
-        - echo 'cd /opt/dicompare && exec serve -s dist -l 3001' >> /opt/dicompare/start.sh
+        - echo 'cd /opt/dicompare && exec serve -s dist -l ${NEURODESK_WEBAPP_PORT:-3001}' >> /opt/dicompare/start.sh
         - chmod +x /opt/dicompare/start.sh
 
     # Copy launcher script to PATH
