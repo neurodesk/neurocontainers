@@ -165,6 +165,3 @@ readme: |
   License: solely for non-commercial use https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/Licence
 
   ----------------------------------
-
-#CUDA SETUP
-#FSL 6.0.6.4 only brings eddy_cuda10.2 -> so Ubuntu 20.04 could work because it brings nvidia-cuda-toolkit_10.1.243-3_amd64.deb or 22.04 with nvidia-cuda-toolkit_11.5.1-1ubuntu1_amd64.deb -> needed to patch eddy executable to make this work
