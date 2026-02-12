@@ -50,7 +50,7 @@ on:
 
 jobs:
   config:
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     outputs:
       APPLICATION: ${{ steps.envars.outputs.APPLICATION }}
       BUILDDATE: ${{ steps.envars.outputs.BUILDDATE }}
