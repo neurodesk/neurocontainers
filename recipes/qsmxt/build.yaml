@@ -72,12 +72,12 @@ build:
             - conda config --system --set auto_update_conda false
             - conda config --system --set show_channel_urls true
             - conda init bash
-            - conda install -y  --name base "python=3.8"
+            - conda install -y  --name base "python=3.10"
             - sync && conda clean --all --yes && sync
             - rm -rf ~/.cache/pip/*
         - run:
-            - rm -rf /usr/bin/python3.8
-            - ln -s /opt/miniconda-latest/bin/python /usr/bin/python3.8
+            - rm -rf /usr/bin/python3.10
+            - ln -s /opt/miniconda-latest/bin/python /usr/bin/python3.10
         - run:
             - pip install setuptools==69.5.1
         - deploy:
@@ -108,23 +108,26 @@ build:
               - nextqsm
     - group:
         - run:
-            - git clone --depth 1 --branch v1.1.1-2 https://github.com/astewartau/FastSurfer.git /opt/FastSurfer
-            - sed -i 's/cu113/cpu/g' /opt/FastSurfer/requirements.txt
-            - pip install -r /opt/FastSurfer/requirements.txt
+            - git clone --depth 1 --branch v2.4.2 https://github.com/Deep-MI/FastSurfer.git /opt/FastSurfer
+            - pip install -r /opt/FastSurfer/requirements.cpu.txt
+        - run:
+            - apt-get update
+            - apt-get install -y --no-install-recommends gawk libgomp1 libquadmath0 tcsh bc
+            - rm -rf /var/lib/apt/lists/*
+            - /opt/FastSurfer/tools/build/install_fs_pruned.sh /opt --url https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/7.4.1/freesurfer-linux-ubuntu22_amd64-7.4.1.tar.gz
+            - /opt/FastSurfer/tools/build/link_fs.sh /opt/freesurfer
           condition: arch=="x86_64"
         - run:
-            - git clone --depth 1 --branch v2.1.0 https://github.com/Deep-MI/FastSurfer.git /opt/FastSurfer
-            - sed -i 's/simpleitk==2.1.1/simpleitk==2.2.0/g' /opt/FastSurfer/requirements_cpu.txt
-            - sed -i 's/torch==1.12.0+cpu/torch==1.12.1/g' /opt/FastSurfer/requirements_cpu.txt
-            - sed -i 's/torchvision==0.13.0+cpu/torchvision==0.13.1/g' /opt/FastSurfer/requirements_cpu.txt
-            - pip install -r /opt/FastSurfer/requirements_cpu.txt
-          condition: arch=="aarch64"
+            - cd /opt/FastSurfer && python3 FastSurferCNN/download_checkpoints.py --all
         - environment:
             FASTSURFER_HOME: /opt/FastSurfer
-            PATH: $PATH:/opt/FastSurfer
+            FREESURFER_HOME: /opt/freesurfer
+            SUBJECTS_DIR: /tmp
+            PATH: $PATH:/opt/FastSurfer:/opt/freesurfer/bin
         - deploy:
             path:
               - /opt/FastSurfer
+              - /opt/freesurfer/bin
         - test:
             name: Test FastSurfer
             manual: true
@@ -132,7 +135,7 @@ build:
               cd /opt/FastSurfer/
               wget https://files.au-1.osf.io/v1/resources/bt4ez/providers/osfstorage/5e9bf3ab430166067ea05564?action=download&direct&version=1
               mv 5e9bf3ab430166067ea05564\?action\=download test.nii.gz
-              ./run_fastsurfer.sh --t1 /opt/FastSurfer/test.nii.gz --sid test --seg_only
+              ./run_fastsurfer.sh --t1 /opt/FastSurfer/test.nii.gz --sid test --sd /tmp --seg_only
     - environment:
         PATH: $PATH:/opt/miniconda-latest/bin
     - group:
