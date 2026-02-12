@@ -89,6 +89,7 @@ build:
 
     - run:
         - fslpython -m pip install Cython
+        - fslpython -m pip install --no-build-isolation maskslic
         - fslpython -m pip install oxasl oxasl_ve oxasl_mp
         - rm -rf /root/.cache
 
