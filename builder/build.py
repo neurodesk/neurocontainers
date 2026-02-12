@@ -58,6 +58,61 @@ ARCHITECTURES = {
 CONTAINER_TESTER_IMAGE = "neurocontainers/container-tester:latest"
 CONTAINER_TESTER_BINARY_NAME = "tester"
 CONTAINER_TESTER_MOUNT_PATH = "/tmp/neurocontainers-container-tester"
+NEURODOCKER_PIP_PACKAGE = "neurodocker"
+
+
+def _env_truthy(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def ensure_neurodocker_renderer():
+    """
+    Ensure NeuroDocker is importable and update to the latest PyPI version by default.
+
+    Set NEURODOCKER_AUTO_UPGRADE=0 to skip automatic upgrades.
+    """
+    neurodocker_package = os.environ.get(
+        "NEURODOCKER_PIP_PACKAGE", NEURODOCKER_PIP_PACKAGE
+    )
+    auto_upgrade = _env_truthy("NEURODOCKER_AUTO_UPGRADE", default=True)
+
+    install_error: Exception | None = None
+    if auto_upgrade:
+        try:
+            subprocess.check_call(
+                [
+                    sys.executable,
+                    "-m",
+                    "pip",
+                    "install",
+                    "--no-cache-dir",
+                    "--upgrade",
+                    neurodocker_package,
+                ]
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            install_error = e
+            print(
+                f"Warning: failed to upgrade neurodocker package {neurodocker_package}: {e}"
+            )
+
+    try:
+        from neurodocker.reproenv.renderers import DockerRenderer
+    except ImportError as e:
+        if install_error is not None:
+            raise ImportError(
+                "neurodocker is not installed and automatic upgrade failed. "
+                f"Install it manually with: {sys.executable} -m pip install --no-cache-dir --upgrade {neurodocker_package}"
+            ) from e
+        raise ImportError(
+            "neurodocker is not installed. "
+            f"Install it with: {sys.executable} -m pip install --no-cache-dir --upgrade {neurodocker_package}"
+        ) from e
+
+    return DockerRenderer
 
 
 def get_repo_path() -> str:
@@ -338,13 +393,7 @@ class NeuroDockerBuilder:
         Generate the NeuroDocker Dockerfile.
         :return: The generated Dockerfile as a string.
         """
-
-        try:
-            from neurodocker.reproenv.renderers import DockerRenderer
-        except ImportError:
-            raise ImportError(
-                "neurodocker is not installed. Please install it with: pip install neurodocker"
-            )
+        DockerRenderer = ensure_neurodocker_renderer()
 
         if (
             len(
@@ -1037,7 +1086,7 @@ class BuildContext(object):
                 # we can't generate the actual Dockerfile but we can still validate the recipe
                 raise ImportError(
                     "neurodocker is not installed. This is required for Dockerfile generation. "
-                    "Please install it with: pip install neurodocker"
+                    f"Install it with: {sys.executable} -m pip install --no-cache-dir --upgrade {NEURODOCKER_PIP_PACKAGE}"
                 ) from e
             else:
                 raise
