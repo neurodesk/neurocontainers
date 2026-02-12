@@ -99,7 +99,7 @@ build:
           condition: arch=="aarch64"
         - run:
             - pip install dunamai
-            - pip install git+https://github.com/astewartau/nii2dcm.git@v0.1.6b
+            - pip install git+https://github.com/astewartau/nii2dcm.git@v0.1.6c
             - pip install nextqsm
             - nextqsm --download_weights
         - deploy:
