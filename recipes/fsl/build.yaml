@@ -131,7 +131,7 @@ readme: |
 
   Example:
   ```
-  fslmaths
+  fsl
   ```
 
   {% if context.options.workshop %}
