@@ -135,6 +135,7 @@ readme: |
   fslmaths
   bet
   flirt
+  fnirt
   ```
 
   {% if context.options.workshop %}
