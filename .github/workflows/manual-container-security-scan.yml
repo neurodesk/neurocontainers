@@ -350,13 +350,15 @@ jobs:
           
           ## Full Results
           
-          Download complete scan results from workflow artifacts:
-          - Grype JSON report
-          - Trivy JSON report
-          - Semgrep JSON report (if enabled)
-          - Raw text reports
+          Complete scan results are available as artifacts in the workflow run:
           
-          **Workflow Run:** {GITHUB_RUN_URL}
+          1. [View Workflow Run]({GITHUB_RUN_URL})
+          2. Scroll to "Artifacts" section
+          3. Download available reports:
+             - Grype JSON report
+             - Trivy JSON report
+             - Semgrep JSON report (if enabled)
+             - Raw text reports
           """)
           PYTHON_EOF
           
