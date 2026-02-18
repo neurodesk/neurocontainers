@@ -330,7 +330,41 @@ jobs:
           grype_counts = count_by_severity(grype_data, 'grype')
           trivy_counts = count_by_severity(trivy_data, 'trivy')
           
-          # Generate minimal summary report
+          # Collect all Critical and High vulnerabilities
+          high_priority = []
+          
+          # Add Grype Critical/High
+          for match in grype_data.get('matches', []):
+              sev = match.get('vulnerability', {}).get('severity', '').upper()
+              if sev in ['CRITICAL', 'HIGH']:
+                  high_priority.append({
+                      'scanner': 'Grype',
+                      'severity': sev,
+                      'cve': match.get('vulnerability', {}).get('id', 'N/A'),
+                      'package': match.get('artifact', {}).get('name', 'N/A'),
+                      'version': match.get('artifact', {}).get('version', 'N/A'),
+                      'fixed': match.get('vulnerability', {}).get('fix', {}).get('versions', ['N/A'])[0]
+                  })
+          
+          # Add Trivy Critical/High
+          for result in trivy_data.get('Results', []):
+              for vuln in result.get('Vulnerabilities', []):
+                  sev = vuln.get('Severity', '').upper()
+                  if sev in ['CRITICAL', 'HIGH']:
+                      high_priority.append({
+                          'scanner': 'Trivy',
+                          'severity': sev,
+                          'cve': vuln.get('VulnerabilityID', 'N/A'),
+                          'package': vuln.get('PkgName', 'N/A'),
+                          'version': vuln.get('InstalledVersion', 'N/A'),
+                          'fixed': vuln.get('FixedVersion', 'N/A')
+                      })
+          
+          # Sort by severity (Critical first, then High)
+          severity_order = {'CRITICAL': 0, 'HIGH': 1}
+          high_priority.sort(key=lambda x: severity_order.get(x['severity'], 99))
+          
+          # Generate summary report
           print(f"""# Security Scan: {CONTAINER_IMAGE}
           
           **Scan Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}  
@@ -347,18 +381,32 @@ jobs:
           | Semgrep | {semgrep_total} | - | - | - | - |
           
           **Total Findings:** {grype_total + trivy_total + semgrep_total}
+          """)
           
+          # Show top 50 Critical/High vulnerabilities
+          if high_priority:
+              print("\n## Critical and High Severity Vulnerabilities\n")
+              print("| Severity | CVE | Package | Version | Fixed In | Scanner |")
+              print("|----------|-----|---------|---------|----------|---------|")
+              
+              shown_count = 0
+              for vuln in high_priority[:50]:
+                  print(f"| {vuln['severity']} | {vuln['cve']} | {vuln['package']} | {vuln['version']} | {vuln['fixed']} | {vuln['scanner']} |")
+                  shown_count += 1
+              
+              if len(high_priority) > 50:
+                  print(f"\n*Showing top 50 of {len(high_priority)} Critical/High vulnerabilities. Download artifacts for complete results.*\n")
+          
+          print(f"""
           ## Full Results
           
-          Complete scan results are available as artifacts in the workflow run:
+          Complete scan results are available as workflow artifacts:
           
-          1. [View Workflow Run]({GITHUB_RUN_URL})
-          2. Scroll to "Artifacts" section
-          3. Download available reports:
-             - Grype JSON report
-             - Trivy JSON report
-             - Semgrep JSON report (if enabled)
-             - Raw text reports
+          1. Click the link below to view the workflow run
+          2. Scroll to the "Artifacts" section at the bottom
+          3. Download **scan-results** artifact containing all reports
+          
+          [View Workflow Run and Download Artifacts]({GITHUB_RUN_URL})
           """)
           PYTHON_EOF
           
