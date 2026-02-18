@@ -365,48 +365,45 @@ jobs:
           high_priority.sort(key=lambda x: severity_order.get(x['severity'], 99))
           
           # Generate summary report
-          print(f"""# Security Scan: {CONTAINER_IMAGE}
+          print(f"""# Security Scan Findings
           
+          **Container:** {CONTAINER_IMAGE}  
           **Scan Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}  
           **Scanner:** {SCANNER_TOOL}  
           **Severity Threshold:** {SEVERITY_THRESHOLD}  
           **Filter:** {FILTER_MODE}
           
-          ## Vulnerability Summary
+          ## Summary
           
-          | Scanner | Total | Critical | High | Medium | Low |
-          |---------|-------|----------|------|--------|-----|
+          | Tool | Total | Critical | High | Medium | Low |
+          |------|-------|----------|------|--------|-----|
           | Grype   | {grype_total} | {grype_counts['CRITICAL']} | {grype_counts['HIGH']} | {grype_counts['MEDIUM']} | {grype_counts['LOW']} |
           | Trivy   | {trivy_total} | {trivy_counts['CRITICAL']} | {trivy_counts['HIGH']} | {trivy_counts['MEDIUM']} | {trivy_counts['LOW']} |
           | Semgrep | {semgrep_total} | - | - | - | - |
-          
-          **Total Findings:** {grype_total + trivy_total + semgrep_total}
           """)
           
           # Show top 50 Critical/High vulnerabilities
           if high_priority:
-              print("\n## Critical and High Severity Vulnerabilities\n")
+              print(f"\n## Critical and High Severity Vulnerabilities\n")
+              print(f"<details>")
+              print(f"<summary>View {len(high_priority)} Critical/High vulnerabilities</summary>\n")
               print("| Severity | CVE | Package | Version | Fixed In | Scanner |")
               print("|----------|-----|---------|---------|----------|---------|")
               
-              shown_count = 0
               for vuln in high_priority[:50]:
                   print(f"| {vuln['severity']} | {vuln['cve']} | {vuln['package']} | {vuln['version']} | {vuln['fixed']} | {vuln['scanner']} |")
-                  shown_count += 1
               
               if len(high_priority) > 50:
-                  print(f"\n*Showing top 50 of {len(high_priority)} Critical/High vulnerabilities. Download artifacts for complete results.*\n")
+                  print(f"\n*Showing top 50 of {len(high_priority)} vulnerabilities. Download artifacts for complete results.*")
+              
+              print("\n</details>\n")
           
           print(f"""
-          ## Full Results
+          ---
           
-          Complete scan results are available as workflow artifacts:
+          **Workflow Run:** {GITHUB_RUN_URL}
           
-          1. Click the link below to view the workflow run
-          2. Scroll to the "Artifacts" section at the bottom
-          3. Download **scan-results** artifact containing all reports
-          
-          [View Workflow Run and Download Artifacts]({GITHUB_RUN_URL})
+          Download complete scan results from the workflow artifacts section.
           """)
           PYTHON_EOF
           
