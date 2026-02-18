@@ -269,285 +269,96 @@ jobs:
           
           # Create Python script to generate clean summary with filtering
           cat > generate_summary.py << 'PYTHON_EOF'
-          import json
-          import sys
-          import os
-          from datetime import datetime
-          from collections import defaultdict
-          
-          FILTER_MODE = os.environ.get('FILTER_MODE', 'all')
-          CONTAINER_IMAGE = os.environ.get('CONTAINER_IMAGE', 'unknown')
-          SCANNER_TOOL = os.environ.get('SCANNER_TOOL', 'unknown')
-          SEVERITY_THRESHOLD = os.environ.get('SEVERITY_THRESHOLD', 'medium')
-          GITHUB_RUN_URL = os.environ.get('GITHUB_RUN_URL', '')
-          SCAN_DIR = os.environ.get('SCAN_DIR', 'scan_results')
-          
-          def count_by_severity(data, tool):
-              counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
-              
-              if tool == 'grype':
-                  for match in data.get('matches', []):
-                      sev = match.get('vulnerability', {}).get('severity', '').upper()
-                      if sev in counts:
-                          counts[sev] += 1
-              elif tool == 'trivy':
-                  for result in data.get('Results', []):
-                      for vuln in result.get('Vulnerabilities', []):
-                          sev = vuln.get('Severity', '').upper()
-                          if sev in counts:
-                              counts[sev] += 1
-              
-              return counts
-          
-          def is_fixable(match, tool):
-              """Check if vulnerability has a fix available"""
-              if tool == 'grype':
-                  fix_versions = match.get('vulnerability', {}).get('fix', {}).get('versions', [])
-                  return len(fix_versions) > 0
-              elif tool == 'trivy':
-                  fixed_version = match.get('FixedVersion', '')
-                  return fixed_version != '' and fixed_version != 'None'
-              return True
-          
-          def is_dev_dependency(match, tool):
-              """Check if package is a development dependency"""
-              dev_keywords = ['dev-', '-dev', 'test', 'mock', 'debug', 'example']
-              
-              if tool == 'grype':
-                  pkg_name = match.get('artifact', {}).get('name', '').lower()
-              elif tool == 'trivy':
-                  pkg_name = match.get('PkgName', '').lower()
-              else:
-                  return False
-              
-              return any(keyword in pkg_name for keyword in dev_keywords)
-          
-          def filter_vulnerabilities(data, tool):
-              """Filter vulnerabilities based on selected filter mode"""
-              if tool == 'grype':
-                  matches = data.get('matches', [])
-              elif tool == 'trivy':
-                  matches = []
-                  for result in data.get('Results', []):
-                      for vuln in result.get('Vulnerabilities', []):
-                          matches.append(vuln)
-              else:
-                  return data
-              
-              if FILTER_MODE == 'all':
-                  return matches
-              
-              filtered = []
-              for match in matches:
-                  # Apply filters
-                  if FILTER_MODE == 'fixable-only':
-                      if not is_fixable(match, tool):
-                          continue
-                  elif FILTER_MODE == 'exclude-dev-dependencies':
-                      if is_dev_dependency(match, tool):
-                          continue
-                  
-                  filtered.append(match)
-              
-              return filtered
-          
-          def group_by_package(matches, tool):
-              """Group vulnerabilities by package"""
-              grouped = defaultdict(list)
-              
-              for match in matches:
-                  if tool == 'grype':
-                      pkg_name = match.get('artifact', {}).get('name', 'Unknown')
-                      pkg_version = match.get('artifact', {}).get('version', 'Unknown')
-                  elif tool == 'trivy':
-                      pkg_name = match.get('PkgName', 'Unknown')
-                      pkg_version = match.get('InstalledVersion', 'Unknown')
-                  else:
-                      pkg_name = 'Unknown'
-                      pkg_version = 'Unknown'
-                  
-                  key = f"{pkg_name}@{pkg_version}"
-                  grouped[key].append(match)
-              
-              return grouped
-          
-          # Load results
-          grype_data = {}
-          trivy_data = {}
-          semgrep_data = {}
-          
-          try:
-              with open(f'{SCAN_DIR}/grype_results.json') as f:
-                  grype_data = json.load(f)
-          except:
-              pass
-          
-          try:
-              with open(f'{SCAN_DIR}/trivy_results.json') as f:
-                  trivy_data = json.load(f)
-          except:
-              pass
-          
-          try:
-              with open(f'{SCAN_DIR}/semgrep_results.json') as f:
-                  semgrep_data = json.load(f)
-          except:
-              pass
-          
-          # Apply filters
-          grype_filtered = filter_vulnerabilities(grype_data, 'grype')
-          trivy_filtered = filter_vulnerabilities(trivy_data, 'trivy')
-          
-          # Count filtered results
-          grype_total = len(grype_filtered)
-          trivy_total = len(trivy_filtered)
-          semgrep_total = len(semgrep_data.get('results', []))
-          
-          # Original counts
-          grype_original = len(grype_data.get('matches', []))
-          trivy_original = sum(len(r.get('Vulnerabilities', [])) for r in trivy_data.get('Results', []))
-          
-          # Severity counts from filtered results
-          grype_counts = count_by_severity({'matches': [{'vulnerability': {'severity': m.get('vulnerability', {}).get('severity')}} for m in grype_filtered]}, 'grype')
-          trivy_counts = count_by_severity({'Results': [{'Vulnerabilities': trivy_filtered}]}, 'trivy')
-          
-          # Generate report header
-          filter_info = ""
-          if FILTER_MODE != 'all':
-              filter_info = f"\n**Filter Applied:** {FILTER_MODE} (showing {grype_total + trivy_total}/{grype_original + trivy_original} vulnerabilities)"
-          
-          print(f"""# Security Scan Findings
-          
-          **Container:** {CONTAINER_IMAGE}  
-          **Scan Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}  
-          **Scanner:** {SCANNER_TOOL}  
-          **Severity Threshold:** {SEVERITY_THRESHOLD}{filter_info}
-          
-          ## Summary
-          
-          | Tool | Total | Critical | High | Medium | Low |
-          |------|-------|----------|------|--------|-----|
-          | Grype | {grype_total} | {grype_counts['CRITICAL']} | {grype_counts['HIGH']} | {grype_counts['MEDIUM']} | {grype_counts['LOW']} |
-          | Trivy | {trivy_total} | {trivy_counts['CRITICAL']} | {trivy_counts['HIGH']} | {trivy_counts['MEDIUM']} | {trivy_counts['LOW']} |
-          | Semgrep | {semgrep_total} | - | - | - | - |
-          
-          ---
-          """)
-                    
-          
-          # Handle group-by-package mode
-          if FILTER_MODE == 'group-by-package':
-              print("## Vulnerabilities by Package\n")
-              
-              # Group Grype results
-              if grype_filtered:
-                  print("### Grype - Affected Packages\n")
-                  grype_grouped = group_by_package(grype_filtered, 'grype')
-                  for pkg, vulns in sorted(grype_grouped.items(), key=lambda x: len(x[1]), reverse=True):
-                      severities = [v.get('vulnerability', {}).get('severity', 'Unknown') for v in vulns]
-                      severity_str = ', '.join(sorted(set(severities), key=['Critical', 'High', 'Medium', 'Low'].index))
-                      print(f"- **{pkg}**: {len(vulns)} vulnerabilities ({severity_str})")
-                  print()
-              
-              # Group Trivy results
-              if trivy_filtered:
-                  print("### Trivy - Affected Packages\n")
-                  trivy_grouped = group_by_package(trivy_filtered, 'trivy')
-                  for pkg, vulns in sorted(trivy_grouped.items(), key=lambda x: len(x[1]), reverse=True):
-                      severities = [v.get('Severity', 'Unknown') for v in vulns]
-                      severity_str = ', '.join(sorted(set(severities), key=['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'].index))
-                      print(f"- **{pkg}**: {len(vulns)} vulnerabilities ({severity_str})")
-                  print()
-              
-              print("---\n")
-          
-          print("""## Grype Results
-          
-          <details>
-          <summary>View """ + str(grype_total) + """ vulnerabilities</summary>
-          
-          ```""")
-          
-          # Show filtered Grype results
-          if grype_filtered and FILTER_MODE != 'all':
-              for match in grype_filtered[:100]:
-                  vuln_id = match.get('vulnerability', {}).get('id', 'Unknown')
-                  severity = match.get('vulnerability', {}).get('severity', 'Unknown')
-                  pkg_name = match.get('artifact', {}).get('name', 'Unknown')
-                  pkg_version = match.get('artifact', {}).get('version', 'Unknown')
-                  fixed_in = match.get('vulnerability', {}).get('fix', {}).get('versions', [])
-                  fixed_str = fixed_in[0] if fixed_in else 'No fix available'
-                  print(f"[{severity}] {vuln_id} - {pkg_name}@{pkg_version} (Fix: {fixed_str})")
-          else:
-              try:
-                  with open(f'{SCAN_DIR}/grype_report.txt') as f:
-                      print(f.read())
-              except:
-                  print("No Grype results")
-          
-          print("""```
-          
-          </details>
-          
-          ---
-          
-          ## Trivy Results
-          
-          <details>
-          <summary>View """ + str(trivy_total) + """ vulnerabilities</summary>
-          
-          ```""")
-          
-          # Show filtered Trivy results
-          if trivy_filtered and FILTER_MODE != 'all':
-              for vuln in trivy_filtered[:100]:
-                  vuln_id = vuln.get('VulnerabilityID', 'Unknown')
-                  severity = vuln.get('Severity', 'Unknown')
-                  pkg_name = vuln.get('PkgName', 'Unknown')
-                  pkg_version = vuln.get('InstalledVersion', 'Unknown')
-                  fixed_version = vuln.get('FixedVersion', 'No fix available')
-                  print(f"[{severity}] {vuln_id} - {pkg_name}@{pkg_version} (Fix: {fixed_version})")
-          else:
-              try:
-                  with open(f'{SCAN_DIR}/trivy_report.txt') as f:
-                      print(f.read())
-              except:
-                  print("No Trivy results")
-          
-          print("""```
-          
-          </details>
-          
-          ---
-          
-          ## Semgrep Results
-          
-          <details>
-          <summary>View """ + str(semgrep_total) + """ findings</summary>
-          
-          ```""")
-          
-          if semgrep_total > 0:
-              for result in semgrep_data.get('results', [])[:20]:
-                  rule = result.get('check_id', 'Unknown')
-                  severity = result.get('extra', {}).get('severity', 'INFO')
-                  message = result.get('extra', {}).get('message', '')
-                  path = result.get('path', '')
-                  line = result.get('start', {}).get('line', '')
-                  print(f"- [{severity}] {rule} at {path}:{line}")
-                  print(f"  {message[:100]}")
-          else:
-              print("No Semgrep findings")
-          
-          print("""```
-          
-          </details>
-          
-          ---
-          
-          **Workflow Run:** {GITHUB_RUN_URL}
-          """)
-          PYTHON_EOF
+import json
+import sys
+import os
+from datetime import datetime
+
+FILTER_MODE = os.environ.get('FILTER_MODE', 'all')
+CONTAINER_IMAGE = os.environ.get('CONTAINER_IMAGE', 'unknown')
+SCANNER_TOOL = os.environ.get('SCANNER_TOOL', 'unknown')
+SEVERITY_THRESHOLD = os.environ.get('SEVERITY_THRESHOLD', 'medium')
+GITHUB_RUN_URL = os.environ.get('GITHUB_RUN_URL', '')
+SCAN_DIR = os.environ.get('SCAN_DIR', 'scan_results')
+
+def count_by_severity(data, tool):
+    counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
+    
+    if tool == 'grype':
+        for match in data.get('matches', []):
+            sev = match.get('vulnerability', {}).get('severity', '').upper()
+            if sev in counts:
+                counts[sev] += 1
+    elif tool == 'trivy':
+        for result in data.get('Results', []):
+            for vuln in result.get('Vulnerabilities', []):
+                sev = vuln.get('Severity', '').upper()
+                if sev in counts:
+                    counts[sev] += 1
+    
+    return counts
+
+# Load results
+grype_data = {}
+trivy_data = {}
+semgrep_data = {}
+
+try:
+    with open(f'{SCAN_DIR}/grype_results.json') as f:
+        grype_data = json.load(f)
+except:
+    pass
+
+try:
+    with open(f'{SCAN_DIR}/trivy_results.json') as f:
+        trivy_data = json.load(f)
+except:
+    pass
+
+try:
+    with open(f'{SCAN_DIR}/semgrep_results.json') as f:
+        semgrep_data = json.load(f)
+except:
+    pass
+
+# Count results
+grype_total = len(grype_data.get('matches', []))
+trivy_total = sum(len(r.get('Vulnerabilities', [])) for r in trivy_data.get('Results', []))
+semgrep_total = len(semgrep_data.get('results', []))
+
+# Severity counts
+grype_counts = count_by_severity(grype_data, 'grype')
+trivy_counts = count_by_severity(trivy_data, 'trivy')
+
+# Generate minimal summary report
+print(f"""# Security Scan: {CONTAINER_IMAGE}
+
+**Scan Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}  
+**Scanner:** {SCANNER_TOOL}  
+**Severity Threshold:** {SEVERITY_THRESHOLD}  
+**Filter:** {FILTER_MODE}
+
+## Vulnerability Summary
+
+| Scanner | Total | Critical | High | Medium | Low |
+|---------|-------|----------|------|--------|-----|
+| Grype   | {grype_total} | {grype_counts['CRITICAL']} | {grype_counts['HIGH']} | {grype_counts['MEDIUM']} | {grype_counts['LOW']} |
+| Trivy   | {trivy_total} | {trivy_counts['CRITICAL']} | {trivy_counts['HIGH']} | {trivy_counts['MEDIUM']} | {trivy_counts['LOW']} |
+| Semgrep | {semgrep_total} | - | - | - | - |
+
+**Total Findings:** {grype_total + trivy_total + semgrep_total}
+
+## Full Results
+
+Download complete scan results from workflow artifacts:
+- Grype JSON report
+- Trivy JSON report
+- Semgrep JSON report (if enabled)
+- Raw text reports
+
+**Workflow Run:** {GITHUB_RUN_URL}
+""")
+PYTHON_EOF
           
           # Run the script with environment variables
           FILTER_MODE="$FILTER_MODE" \
