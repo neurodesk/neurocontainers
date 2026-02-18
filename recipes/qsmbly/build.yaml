@@ -1,5 +1,5 @@
 name: qsmbly
-version: 0.4.0
+version: v0.8.4
 
 categories:
   - "structural imaging"
@@ -73,6 +73,7 @@ build:
         - cp /opt/qsmbly-src/wasm/package.json /opt/qsmbly/dist/wasm/ 2>/dev/null || true
 
     # Clean up Rust toolchain and source to reduce image size
+    # This cleanup step currently doesn't do much because it needs to be in the same run command as the install
     - run:
         - rm -rf /opt/qsmbly-src /root/.cargo /root/.rustup
 
