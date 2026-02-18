@@ -11,3 +11,12 @@ tests:
       ICA_AROMA.py
 
       oxasl --version
+
+      #test if DEPLOY_ENV_FSLDIR is set correctly
+      if [ -z "$DEPLOY_ENV_FSLDIR" ]; then
+          echo "Variable is NOT set."
+          exit 1
+      else
+          echo "Variable is set to: $DEPLOY_ENV_FSLDIR"
+      fi
+

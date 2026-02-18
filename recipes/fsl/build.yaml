@@ -1,7 +1,6 @@
 name: fsl
 # check for latest version: https://fsl.fmrib.ox.ac.uk/fsl/docs/development/history/index.html
-
-# check if latest version is in neurodocker https://github.com/ReproNim/neurodocker/blob/master/neurodocker/templates/fsl.yaml
+# check or add latest version is in neurodocker https://github.com/ReproNim/neurodocker/blob/master/neurodocker/templates/fsl.yaml
 version: 6.0.7.19
 
 copyright:
@@ -65,7 +64,8 @@ build:
     - environment:
         PATH: "/opt/ICA-AROMA/:$PATH"
         DEPLOY_ENV_FSLDIR: "BASEPATH/opt/{{ context.original_version }}"
-        # This will add: setenv FSLDIR "/cvmfs/neurodesk.ardc.edu.au/containers/fsl_*/fsl_*simg/opt/fsl-*" to the module load commmand
+        # This will add: setenv FSLDIR "/cvmfs/neurodesk.ardc.edu.au/containers/fsl_*/fsl_*simg/opt/fsl-*" to the module load commmand or 
+        # in LUA: setenv("FSLDIR", "/cvmfs/neurodesk.ardc.edu.au/containers/fsl_6.0.7.18_20250928/fsl_6.0.7.18_20250928.simg/opt/fsl-6.0.7.18")
 
     # course material links are from here: https://fsl.fmrib.ox.ac.uk/fslcourse/downloads/manifest.json
     - condition: context.options.workshop
@@ -88,6 +88,7 @@ build:
 
     - run:
         - fslpython -m pip install Cython
+        - fslpython -m pip install --no-build-isolation maskslic
         - fslpython -m pip install oxasl oxasl_ve oxasl_mp
         - rm -rf /root/.cache
 
@@ -128,9 +129,13 @@ readme: |
   2. S.M. Smith, M. Jenkinson, M.W. Woolrich, C.F. Beckmann, T.E.J. Behrens, H. Johansen-Berg, P.R. Bannister, M. De Luca, I. Drobnjak, D.E. Flitney, R. Niazy, J. Saunders, J. Vickers, Y. Zhang, N. De Stefano, J.M. Brady, and P.M. Matthews. Advances in functional and structural MR image analysis and implementation as FSL. NeuroImage, 23(S1):208-19, 2004
   3. M. Jenkinson, C.F. Beckmann, T.E. Behrens, M.W. Woolrich, S.M. Smith. FSL. NeuroImage, 62:782-90, 2012
 
-  Example:
+  Examples:
   ```
+  fsl
   fslmaths
+  bet
+  flirt
+  fnirt
   ```
 
   {% if context.options.workshop %}
@@ -164,6 +169,3 @@ readme: |
   License: solely for non-commercial use https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/Licence
 
   ----------------------------------
-
-#CUDA SETUP
-#FSL 6.0.6.4 only brings eddy_cuda10.2 -> so Ubuntu 20.04 could work because it brings nvidia-cuda-toolkit_10.1.243-3_amd64.deb or 22.04 with nvidia-cuda-toolkit_11.5.1-1ubuntu1_amd64.deb -> needed to patch eddy executable to make this work
