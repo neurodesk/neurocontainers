@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "qsmbly 0.8.4": {
+      "version": "20260218",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging"
+  ]
+}
