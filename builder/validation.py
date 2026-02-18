@@ -61,7 +61,7 @@ INCLUDE_MACROS = [
     "macros/openrecon/neurodocker.yaml",  # Support both formats
 ]
 
-ALLOWED_AUTO_UPDATE_METHODS = ["github_release"]
+ALLOWED_AUTO_UPDATE_METHODS = ["github_release", "manual_review"]
 
 
 # ============================================================================
@@ -252,16 +252,16 @@ class Template:
 
 
 @attrs.define
-class AutoUpdate:
-    method: str = attrs.field()  # only 'github_release'
+class GithubReleaseAutoUpdate:
+    method: Literal["github_release"] = attrs.field()
     repo: str = attrs.field(validator=validate_non_empty_string)
 
-    @method.validator
-    def _validate_method(self, attribute, value):
-        if value not in ALLOWED_AUTO_UPDATE_METHODS:
-            raise ValueError(
-                f"auto_update.method '{value}' not supported. Must be one of: {ALLOWED_AUTO_UPDATE_METHODS}"
-            )
+
+@attrs.define
+class ManualReviewAutoUpdate:
+    method: Literal["manual_review"] = attrs.field()
+    information: str = attrs.field(validator=validate_non_empty_string)
+
 
 
 # ============================================================================
@@ -412,7 +412,9 @@ class ContainerRecipe:
     version: str = attrs.field(validator=validate_non_empty_string)
     architectures: List[str] = attrs.field(validator=attrs.validators.min_len(1))
     build: NeuroDockerBuildRecipe = attrs.field()
-    auto_update: Optional[AutoUpdate] = attrs.field(default=None)
+    auto_update: Optional[
+        Union[GithubReleaseAutoUpdate, ManualReviewAutoUpdate]
+    ] = attrs.field(default=None)
     icon: Optional[str] = attrs.field(default=None)
     copyright: Optional[List[Union[CustomCopyrightInfo, SPDXCopyrightInfo]]] = (
         attrs.field(default=None)
@@ -579,6 +581,21 @@ def parse_test_from_dict(test_dict: Dict[str, Any]) -> Union[BuiltinTest, Script
         raise ValueError("Test must have either 'builtin' or 'script' field")
 
 
+def parse_auto_update_from_dict(
+    auto_update_dict: Dict[str, Any]
+) -> Union[GithubReleaseAutoUpdate, ManualReviewAutoUpdate]:
+    """Parse auto_update dict into the appropriate class based on method."""
+    method = auto_update_dict.get("method")
+    if method == "github_release":
+        return GithubReleaseAutoUpdate(**auto_update_dict)
+    elif method == "manual_review":
+        return ManualReviewAutoUpdate(**auto_update_dict)
+    else:
+        raise ValueError(
+            f"auto_update.method '{method}' not supported. Must be one of: {ALLOWED_AUTO_UPDATE_METHODS}"
+        )
+
+
 def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
     """
     Validate a recipe dictionary and return a ContainerRecipe instance.
@@ -612,7 +629,9 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
 
         # parse auto_update if present
         if "auto_update" in recipe_copy and recipe_copy["auto_update"]:
-            recipe_copy["auto_update"] = AutoUpdate(**recipe_copy["auto_update"])
+            recipe_copy["auto_update"] = parse_auto_update_from_dict(
+                recipe_copy["auto_update"]
+            )
         else:
             recipe_copy["auto_update"] = None
 

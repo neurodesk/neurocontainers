@@ -8,7 +8,7 @@ architectures:
   - aarch64
 auto_update:
   method: github_release
-  repo: rordenlab/niimath
+  repo: rordenlab/removed_repo
 build:
   kind: neurodocker
   base-image: ubuntu:22.04

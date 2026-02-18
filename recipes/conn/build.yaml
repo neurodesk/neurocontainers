@@ -3,6 +3,9 @@ version: 22a
 
 architectures:
   - x86_64
+auto_update:
+  method: manual_review
+  information: "https://www.nitrc.org/projects/conn"
 
 build:
   kind: neurodocker

@@ -13,6 +13,11 @@ copyright:
  
 architectures:
     - x86_64
+auto_update:
+  method: manual_review
+  information: "url: http://www.gnu.org/licenses/old-licenses/gpl-2.0.html"
+ 
+
 
 build:
     kind: neurodocker

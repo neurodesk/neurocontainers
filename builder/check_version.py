@@ -165,6 +165,7 @@ def open_invalid_recipe_issue(path, name, reason, extra=None, labels=None):
 
 
 if __name__ == "__main__":
+    manual_review_summary = []
     files = glob.glob("recipes/**/*.y*ml", recursive=True)
     print("Files matched:", files)
     for path in files:
@@ -180,40 +181,40 @@ if __name__ == "__main__":
         au = data.get("auto_update")
         if not isinstance(au, dict):
             print(path, name, "auto_update missing or not a dict")
-            continue
-
+            continue    
         method = au.get("method")
-        repo = au.get("repo")
-        if method != "github_release":
-            open_invalid_recipe_issue(
-                path, name, "unsupported auto_update.method", {"method": repr(method)}
-            )
-            continue
-        if not repo:
-            open_invalid_recipe_issue(path, name, "auto_update.repo missing")
-            continue
-
-        cur = str(data.get("version", "")).strip()
-        if not cur:
+        ## method of github_release
+        if method == "github_release":
+         repo = au.get("repo")
+         cur = str(data.get("version", "")).strip()
+         if not repo:
+                open_invalid_recipe_issue(path, name, "auto_update.repo missing")
+                continue
+         if not cur:
             open_invalid_recipe_issue(path, name, "version missing")
             continue
-        print(f"Handling file: {path}")
-        print(f"Check: name={name}, current_version={cur}, upstream_repo={repo}")
-        up = latest_stable(repo)
-        print("Upstream tag got:", up)
-        if not up:
-            print("no upstream tag/release")
-            continue
-        cmp = newer(cur, up)
-
-        if cmp is None:
-            # manula check if meet strings
+         print(f"Handling file: {path}")
+         print(f"Check: name={name}, current_version={cur}, upstream_repo={repo}")
+         up = latest_stable(repo)
+         if not up:
+             print("no upstream tag/release")
+             open_invalid_recipe_issue(
+                 path,
+                 name,
+                 "failed to get upstream version",
+                 extra={"repo": repo},
+             )
+             continue
+         else:
+             print("Upstream tag got:", up)
+             
+         cmp = newer(cur, up)
+         if cmp is None:
+            # manual check if version strings cannot be compared
             fp = f"{path} -> {up} (manual-verify)"
             print("Fingerprint:", fp)
             if issue_exists(fp):
-                print(
-                    "duplicate issue already open for this fingerprint (manual verify)."
-                )
+                print("duplicate issue already open for this fingerprint (manual verify).")
             else:
                 title = f"[manual] Verify upstream version for {name}: current={cur}, upstream_tag={up}"
                 body = (
@@ -225,16 +226,16 @@ if __name__ == "__main__":
                 )
                 open_issue(title, body, labels=["auto-update", "manual-review"])
 
-        elif not cmp:
+         elif cmp is False:
             print("current version is Up-to-date.")
 
-        # detect newer version update
-        else:
-            fp = f"{path} -> {up}"
-            print("Fingerprint:", fp)
-            if issue_exists(fp):
-                print("duplicate issue already open for this fingerprint.")
-            else:
+         # detect newer version update
+         else:
+             fp = f"{path} -> {up}"
+             print("Fingerprint:", fp)
+             if issue_exists(fp):
+                 print("duplicate issue already open for this fingerprint.")
+             else:
                 title = f"{name} {cur} may update to {up}"
                 body = (
                     f"- Recipe: {path}\n"
@@ -243,3 +244,62 @@ if __name__ == "__main__":
                     f"- Repo: {repo}\n"
                 )
                 open_issue(title, body, labels=["auto-update"])
+
+        elif method == "manual_review":
+           information = au.get("information")
+           cur = str(data.get("version", "")).strip()
+           manual_review_summary.append(
+                    {
+                        "Name": name,
+                        "Current Version": cur,
+                        "Information": information,
+                    })
+           if not information:
+                open_invalid_recipe_issue(path, name, "auto_update.information missing for manual_review")
+                continue
+
+    # After the loop, if there's a manual review summary, raise an issue
+    if manual_review_summary:
+        # Calculate column widths for a pretty table
+        col_widths = {
+            "Name": len("Name"),
+            "Current Version": len("Current Version"),
+            "Information": len("Information"),
+        }
+        for item in manual_review_summary:
+            col_widths["Name"] = max(col_widths["Name"], len(item.get("Name", "")))
+            col_widths["Current Version"] = max(col_widths["Current Version"], len(item.get("Current Version", "")))
+            col_widths["Information"] = max(col_widths["Information"], len(str(item.get("Information", ""))) + 2) # +2 for backticks
+
+        summary_title = "[auto-update] Manual Review Summary"
+        summary_body_lines = [
+            "The following recipes require manual review:",
+            "",
+            f"| {'Name'.ljust(col_widths['Name'])} | {'Current Version'.ljust(col_widths['Current Version'])} | {'Information'.ljust(col_widths['Information'])} |",
+            f"|{'-' * (col_widths['Name'] + 2)}|{'-' * (col_widths['Current Version'] + 2)}|{'-' * (col_widths['Information'] + 2)}|",
+        ]
+        for item in manual_review_summary:
+            name = item.get("Name", "N/A")
+            version = item.get("Current Version", "N/A")
+            # Wrap info in backticks for better rendering and to avoid breaking the table
+            info = f"`{item.get('Information', '')}`"
+
+            summary_body_lines.append(
+                f"| {name.ljust(col_widths['Name'])} | {version.ljust(col_widths['Current Version'])} | {info.ljust(col_widths['Information'])} |"
+            )
+        summary_body_lines.append("")
+        summary_body_lines.append("Please review these items and update the recipes as needed.")
+        summary_body = "\n".join(summary_body_lines)
+
+        # Check if a similar summary issue already exists to avoid duplicates
+        fp_summary = "[auto-update] Manual Review Summary"
+        if not issue_exists(fp_summary):
+            open_issue(summary_title, summary_body, labels=["auto-update", "manual-review-summary"])
+        else:
+            print("Duplicate manual review summary issue already open.")
+           
+    
+            
+
+
+        
