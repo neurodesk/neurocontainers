@@ -269,96 +269,96 @@ jobs:
           
           # Create Python script to generate clean summary with filtering
           cat > generate_summary.py << 'PYTHON_EOF'
-import json
-import sys
-import os
-from datetime import datetime
-
-FILTER_MODE = os.environ.get('FILTER_MODE', 'all')
-CONTAINER_IMAGE = os.environ.get('CONTAINER_IMAGE', 'unknown')
-SCANNER_TOOL = os.environ.get('SCANNER_TOOL', 'unknown')
-SEVERITY_THRESHOLD = os.environ.get('SEVERITY_THRESHOLD', 'medium')
-GITHUB_RUN_URL = os.environ.get('GITHUB_RUN_URL', '')
-SCAN_DIR = os.environ.get('SCAN_DIR', 'scan_results')
-
-def count_by_severity(data, tool):
-    counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
-    
-    if tool == 'grype':
-        for match in data.get('matches', []):
-            sev = match.get('vulnerability', {}).get('severity', '').upper()
-            if sev in counts:
-                counts[sev] += 1
-    elif tool == 'trivy':
-        for result in data.get('Results', []):
-            for vuln in result.get('Vulnerabilities', []):
-                sev = vuln.get('Severity', '').upper()
-                if sev in counts:
-                    counts[sev] += 1
-    
-    return counts
-
-# Load results
-grype_data = {}
-trivy_data = {}
-semgrep_data = {}
-
-try:
-    with open(f'{SCAN_DIR}/grype_results.json') as f:
-        grype_data = json.load(f)
-except:
-    pass
-
-try:
-    with open(f'{SCAN_DIR}/trivy_results.json') as f:
-        trivy_data = json.load(f)
-except:
-    pass
-
-try:
-    with open(f'{SCAN_DIR}/semgrep_results.json') as f:
-        semgrep_data = json.load(f)
-except:
-    pass
-
-# Count results
-grype_total = len(grype_data.get('matches', []))
-trivy_total = sum(len(r.get('Vulnerabilities', [])) for r in trivy_data.get('Results', []))
-semgrep_total = len(semgrep_data.get('results', []))
-
-# Severity counts
-grype_counts = count_by_severity(grype_data, 'grype')
-trivy_counts = count_by_severity(trivy_data, 'trivy')
-
-# Generate minimal summary report
-print(f"""# Security Scan: {CONTAINER_IMAGE}
-
-**Scan Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}  
-**Scanner:** {SCANNER_TOOL}  
-**Severity Threshold:** {SEVERITY_THRESHOLD}  
-**Filter:** {FILTER_MODE}
-
-## Vulnerability Summary
-
-| Scanner | Total | Critical | High | Medium | Low |
-|---------|-------|----------|------|--------|-----|
-| Grype   | {grype_total} | {grype_counts['CRITICAL']} | {grype_counts['HIGH']} | {grype_counts['MEDIUM']} | {grype_counts['LOW']} |
-| Trivy   | {trivy_total} | {trivy_counts['CRITICAL']} | {trivy_counts['HIGH']} | {trivy_counts['MEDIUM']} | {trivy_counts['LOW']} |
-| Semgrep | {semgrep_total} | - | - | - | - |
-
-**Total Findings:** {grype_total + trivy_total + semgrep_total}
-
-## Full Results
-
-Download complete scan results from workflow artifacts:
-- Grype JSON report
-- Trivy JSON report
-- Semgrep JSON report (if enabled)
-- Raw text reports
-
-**Workflow Run:** {GITHUB_RUN_URL}
-""")
-PYTHON_EOF
+          import json
+          import sys
+          import os
+          from datetime import datetime
+          
+          FILTER_MODE = os.environ.get('FILTER_MODE', 'all')
+          CONTAINER_IMAGE = os.environ.get('CONTAINER_IMAGE', 'unknown')
+          SCANNER_TOOL = os.environ.get('SCANNER_TOOL', 'unknown')
+          SEVERITY_THRESHOLD = os.environ.get('SEVERITY_THRESHOLD', 'medium')
+          GITHUB_RUN_URL = os.environ.get('GITHUB_RUN_URL', '')
+          SCAN_DIR = os.environ.get('SCAN_DIR', 'scan_results')
+          
+          def count_by_severity(data, tool):
+              counts = {'CRITICAL': 0, 'HIGH': 0, 'MEDIUM': 0, 'LOW': 0}
+              
+              if tool == 'grype':
+                  for match in data.get('matches', []):
+                      sev = match.get('vulnerability', {}).get('severity', '').upper()
+                      if sev in counts:
+                          counts[sev] += 1
+              elif tool == 'trivy':
+                  for result in data.get('Results', []):
+                      for vuln in result.get('Vulnerabilities', []):
+                          sev = vuln.get('Severity', '').upper()
+                          if sev in counts:
+                              counts[sev] += 1
+              
+              return counts
+          
+          # Load results
+          grype_data = {}
+          trivy_data = {}
+          semgrep_data = {}
+          
+          try:
+              with open(f'{SCAN_DIR}/grype_results.json') as f:
+                  grype_data = json.load(f)
+          except:
+              pass
+          
+          try:
+              with open(f'{SCAN_DIR}/trivy_results.json') as f:
+                  trivy_data = json.load(f)
+          except:
+              pass
+          
+          try:
+              with open(f'{SCAN_DIR}/semgrep_results.json') as f:
+                  semgrep_data = json.load(f)
+          except:
+              pass
+          
+          # Count results
+          grype_total = len(grype_data.get('matches', []))
+          trivy_total = sum(len(r.get('Vulnerabilities', [])) for r in trivy_data.get('Results', []))
+          semgrep_total = len(semgrep_data.get('results', []))
+          
+          # Severity counts
+          grype_counts = count_by_severity(grype_data, 'grype')
+          trivy_counts = count_by_severity(trivy_data, 'trivy')
+          
+          # Generate minimal summary report
+          print(f"""# Security Scan: {CONTAINER_IMAGE}
+          
+          **Scan Date:** {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}  
+          **Scanner:** {SCANNER_TOOL}  
+          **Severity Threshold:** {SEVERITY_THRESHOLD}  
+          **Filter:** {FILTER_MODE}
+          
+          ## Vulnerability Summary
+          
+          | Scanner | Total | Critical | High | Medium | Low |
+          |---------|-------|----------|------|--------|-----|
+          | Grype   | {grype_total} | {grype_counts['CRITICAL']} | {grype_counts['HIGH']} | {grype_counts['MEDIUM']} | {grype_counts['LOW']} |
+          | Trivy   | {trivy_total} | {trivy_counts['CRITICAL']} | {trivy_counts['HIGH']} | {trivy_counts['MEDIUM']} | {trivy_counts['LOW']} |
+          | Semgrep | {semgrep_total} | - | - | - | - |
+          
+          **Total Findings:** {grype_total + trivy_total + semgrep_total}
+          
+          ## Full Results
+          
+          Download complete scan results from workflow artifacts:
+          - Grype JSON report
+          - Trivy JSON report
+          - Semgrep JSON report (if enabled)
+          - Raw text reports
+          
+          **Workflow Run:** {GITHUB_RUN_URL}
+          """)
+          PYTHON_EOF
           
           # Run the script with environment variables
           FILTER_MODE="$FILTER_MODE" \
