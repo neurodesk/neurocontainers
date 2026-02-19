@@ -55,9 +55,10 @@ jobs:
           CONTAINER: ${{ github.event.inputs.container }}
           VERSION: ${{ github.event.inputs.version }}
           CONTAINERS_DIR: ${{ github.event.inputs.containers_dir }}
+          PYTHONUNBUFFERED: "1"
         run: |
           mkdir -p "$CONTAINERS_DIR"
-          uv run python - <<'PY'
+          uv run python -u - <<'PY'
           import json
           import os
           import subprocess

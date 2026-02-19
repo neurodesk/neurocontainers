@@ -56,6 +56,16 @@ from rich import box
 console = Console()
 
 
+def _format_process_output(result: subprocess.CompletedProcess[str]) -> str:
+    """Return combined subprocess output without truncation."""
+    parts: list[str] = []
+    if result.stdout:
+        parts.append(f"stdout:\n{result.stdout.rstrip()}")
+    if result.stderr:
+        parts.append(f"stderr:\n{result.stderr.rstrip()}")
+    return "\n\n".join(parts).strip()
+
+
 @dataclass
 class TestResult:
     """Result of a single test execution."""
@@ -173,8 +183,9 @@ def prepare_required_files(
                 timeout=300,
             )
             if result.returncode != 0:
+                output = _format_process_output(result)
                 raise RuntimeError(
-                    f"Failed to clone {dataset}: {result.stderr[:500]}"
+                    f"Failed to clone {dataset}: {output or 'no output captured'}"
                 )
 
         # Ensure each required file is fetched in the cache
@@ -192,8 +203,9 @@ def prepare_required_files(
                     cwd=dataset_cache,
                 )
                 if result.returncode != 0:
+                    output = _format_process_output(result)
                     raise RuntimeError(
-                        f"Failed to fetch {file_path}: {result.stderr[:500]}"
+                        f"Failed to fetch {file_path}: {output or 'no output captured'}"
                     )
 
             # Create copy in per-suite directory.
