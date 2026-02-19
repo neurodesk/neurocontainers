@@ -1,8 +1,9 @@
 {
   "apps": {
     "bidsapppymvpa 2.0.2": {
-      "version": "20230629",
-      "exec": ""
+      "version": "20260219",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
