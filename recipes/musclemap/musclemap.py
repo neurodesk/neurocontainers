@@ -274,10 +274,11 @@ def process_image(imgGroup, connection, config, metadata):
     print(data.shape)
 
     # NIfTI is written as [x, y, z] for scanner-compatible geometry metadata.
+    # A row-order flip on Y is required to match scanner NIfTI voxel ordering.
     if data.ndim == 2:
-        data_nifti = np.asarray(data.T[:, :, None], dtype=np.int16)
+        data_nifti = np.asarray(data.T[:, ::-1, None], dtype=np.int16)
     else:
-        data_nifti = np.asarray(data.transpose((1, 0, 2)), dtype=np.int16)
+        data_nifti = np.asarray(data.transpose((1, 0, 2))[:, ::-1, :], dtype=np.int16)
     new_img = nib.nifti1.Nifti1Image(data_nifti, affine)
 
     # Set scanner-like header fields explicitly (nib defaults are not suitable here).
@@ -365,8 +366,9 @@ def process_image(imgGroup, connection, config, metadata):
     if data.ndim == 2:
         data = data[:, :, None]
 
-    # Bring [x, y, z] NIfTI back to pipeline convention [y, x, z].
+    # Undo the scanner-style Y flip, then bring [x, y, z] back to [y, x, z].
     if data.ndim >= 3:
+        data = data[:, ::-1, :]
         data = data.transpose((1, 0, 2))
 
     data = data[..., None, None]
