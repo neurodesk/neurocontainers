@@ -45,6 +45,11 @@ jobs:
         run: |
           uv pip install --system datalad
 
+      - name: Configure git for DataLad
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Pull container and run fulltest
         env:
           CONTAINER: ${{ github.event.inputs.container }}
