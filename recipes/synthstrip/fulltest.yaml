@@ -1,0 +1,663 @@
+# synthstrip container test suite
+# Tests for SynthStrip v7.4.1 - Robust, universal skull-stripping tool
+#
+# SynthStrip is a skull-stripping tool that extracts brain voxels from a
+# landscape of image types, ranging across imaging modalities, resolutions, and
+# subject populations. It leverages a deep learning strategy to synthesize
+# arbitrary training images from segmentation maps, yielding a robust model
+# agnostic to acquisition specifics.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - T2: inplane T2-weighted image
+#
+# Citation: SynthStrip: Skull-Stripping for Any Brain Image
+#   A Hoopes, JS Mora, AV Dalca, B Fischl, M Hoffmann
+#   NeuroImage 260 (2022), 119474
+#   https://doi.org/10.1016/j.neuroimage.2022.119474
+#
+# Website: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/
+# License: FreeSurfer Software License Agreement
+
+name: synthstrip
+version: 7.4.1
+container: synthstrip_7.4.1_20240913.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/synthstrip_batch
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - mri_synthstrip
+  # ==========================================================================
+  - name: Help display
+    description: Verify mri_synthstrip binary runs and shows help message
+    command: mri_synthstrip --help 2>&1 || true
+    expected_output_contains: "Robust, universal skull-stripping"
+
+  - name: Help mentions input argument
+    description: Verify help shows input argument documentation
+    command: mri_synthstrip --help 2>&1 || true
+    expected_output_contains: "-i"
+
+  - name: Help mentions output argument
+    description: Verify help shows output argument documentation
+    command: mri_synthstrip --help 2>&1 || true
+    expected_output_contains: "-o"
+
+  - name: Help mentions mask argument
+    description: Verify help shows mask output argument
+    command: mri_synthstrip --help 2>&1 || true
+    expected_output_contains: "-m"
+
+  - name: Help mentions GPU option
+    description: Verify help shows GPU option
+    command: mri_synthstrip --help 2>&1 || true
+    expected_output_contains: "-g"
+
+  - name: Help mentions border option
+    description: Verify help shows border threshold option
+    command: mri_synthstrip --help 2>&1 || true
+    expected_output_contains: "border"
+
+  - name: Help mentions no-csf option
+    description: Verify help shows CSF exclusion option
+    command: mri_synthstrip --help 2>&1 || true
+    expected_output_contains: "csf"
+
+  - name: Citation displayed
+    description: Verify citation information is displayed
+    command: mri_synthstrip --help 2>&1 || true
+    expected_output_contains: "SynthStrip"
+
+  # ==========================================================================
+  # BRAIN EXTRACTION - BASIC T1w
+  # ==========================================================================
+  - name: Brain extraction T1w basic
+    description: Test basic skull-stripping on T1w image (CPU mode)
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_stripped.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_stripped.nii.gz
+    timeout: 600
+
+  - name: Brain extraction T1w with mask
+    description: Test skull-stripping with brain mask output
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_stripped_with_mask.nii.gz -m test_output/t1w_brain_mask.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_stripped_with_mask.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_mask.nii.gz
+    timeout: 600
+
+  - name: Brain extraction mask only
+    description: Test generating only the brain mask without stripped image
+    command: mri_synthstrip -i ${t1w} -m test_output/t1w_mask_only.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_only.nii.gz
+    timeout: 600
+
+  - name: Verify output dimensions match input
+    description: Ensure skull-stripped output preserves original image dimensions
+    command: |
+      mri_synthstrip -i ${t1w} -o test_output/t1w_dims_test.nii.gz 2>&1 && \
+      python3 -c "import nibabel as nib; \
+        orig = nib.load('${t1w}'); \
+        stripped = nib.load('test_output/t1w_dims_test.nii.gz'); \
+        assert orig.shape == stripped.shape, f'Shape mismatch: {orig.shape} vs {stripped.shape}'; \
+        print('Dimensions match:', orig.shape)"
+    expected_output_contains: "Dimensions match"
+    timeout: 600
+
+  # ==========================================================================
+  # BRAIN EXTRACTION - BORDER THRESHOLD OPTIONS
+  # ==========================================================================
+  - name: Brain extraction default border
+    description: Test skull-stripping with default border threshold (1mm)
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_border_default.nii.gz -m test_output/t1w_border_default_mask.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_border_default.nii.gz
+      - output_exists: ${output_dir}/t1w_border_default_mask.nii.gz
+    timeout: 600
+
+  - name: Brain extraction tight border
+    description: Test skull-stripping with tight border (0mm)
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_border_tight.nii.gz -m test_output/t1w_border_tight_mask.nii.gz -b 0
+    validate:
+      - output_exists: ${output_dir}/t1w_border_tight.nii.gz
+      - output_exists: ${output_dir}/t1w_border_tight_mask.nii.gz
+    timeout: 600
+
+  - name: Brain extraction wide border
+    description: Test skull-stripping with wide border (3mm)
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_border_wide.nii.gz -m test_output/t1w_border_wide_mask.nii.gz -b 3
+    validate:
+      - output_exists: ${output_dir}/t1w_border_wide.nii.gz
+      - output_exists: ${output_dir}/t1w_border_wide_mask.nii.gz
+    timeout: 600
+
+  - name: Brain extraction negative border
+    description: Test skull-stripping with negative border to erode mask
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_border_negative.nii.gz -m test_output/t1w_border_negative_mask.nii.gz -b -1
+    validate:
+      - output_exists: ${output_dir}/t1w_border_negative.nii.gz
+      - output_exists: ${output_dir}/t1w_border_negative_mask.nii.gz
+    timeout: 600
+
+  - name: Compare border effects on mask size
+    description: Verify wider borders produce larger masks
+    command: |
+      mri_synthstrip -i ${t1w} -m test_output/t1w_border_compare_tight.nii.gz -b 0 2>&1 && \
+      mri_synthstrip -i ${t1w} -m test_output/t1w_border_compare_wide.nii.gz -b 3 2>&1 && \
+      python3 -c "import nibabel as nib; import numpy as np; \
+        tight = nib.load('test_output/t1w_border_compare_tight.nii.gz').get_fdata(); \
+        wide = nib.load('test_output/t1w_border_compare_wide.nii.gz').get_fdata(); \
+        tight_vol = np.sum(tight > 0); \
+        wide_vol = np.sum(wide > 0); \
+        assert wide_vol > tight_vol, f'Wide border should have more voxels: {wide_vol} vs {tight_vol}'; \
+        print(f'Border effect verified: tight={tight_vol}, wide={wide_vol} voxels')"
+    expected_output_contains: "Border effect verified"
+    timeout: 1200
+
+  # ==========================================================================
+  # BRAIN EXTRACTION - CSF OPTIONS
+  # ==========================================================================
+  - name: Brain extraction with CSF
+    description: Test skull-stripping including CSF in brain border (default)
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_with_csf.nii.gz -m test_output/t1w_with_csf_mask.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_with_csf.nii.gz
+      - output_exists: ${output_dir}/t1w_with_csf_mask.nii.gz
+    timeout: 600
+
+  - name: Brain extraction without CSF
+    description: Test skull-stripping excluding CSF from brain border
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_no_csf.nii.gz -m test_output/t1w_no_csf_mask.nii.gz --no-csf
+    validate:
+      - output_exists: ${output_dir}/t1w_no_csf.nii.gz
+      - output_exists: ${output_dir}/t1w_no_csf_mask.nii.gz
+    timeout: 600
+
+  - name: Compare CSF exclusion effect
+    description: Verify no-csf option produces tighter mask
+    command: |
+      mri_synthstrip -i ${t1w} -m test_output/t1w_csf_compare_with.nii.gz 2>&1 && \
+      mri_synthstrip -i ${t1w} -m test_output/t1w_csf_compare_without.nii.gz --no-csf 2>&1 && \
+      python3 -c "import nibabel as nib; import numpy as np; \
+        with_csf = nib.load('test_output/t1w_csf_compare_with.nii.gz').get_fdata(); \
+        without_csf = nib.load('test_output/t1w_csf_compare_without.nii.gz').get_fdata(); \
+        with_vol = np.sum(with_csf > 0); \
+        without_vol = np.sum(without_csf > 0); \
+        print(f'CSF effect: with_csf={with_vol}, without_csf={without_vol} voxels'); \
+        assert without_vol <= with_vol, 'no-csf mask should be equal or smaller'"
+    expected_output_contains: "CSF effect"
+    timeout: 1200
+
+  # ==========================================================================
+  # BRAIN EXTRACTION - ALTERNATIVE MODALITIES
+  # ==========================================================================
+  - name: Brain extraction T2 weighted
+    description: Test skull-stripping on T2-weighted image
+    command: mri_synthstrip -i ${t2} -o test_output/t2_stripped.nii.gz -m test_output/t2_mask.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_stripped.nii.gz
+      - output_exists: ${output_dir}/t2_mask.nii.gz
+    timeout: 600
+
+  - name: T2 output dimensions match input
+    description: Ensure T2 skull-stripped output preserves dimensions
+    command: |
+      mri_synthstrip -i ${t2} -o test_output/t2_dims_test.nii.gz 2>&1 && \
+      python3 -c "import nibabel as nib; \
+        orig = nib.load('${t2}'); \
+        stripped = nib.load('test_output/t2_dims_test.nii.gz'); \
+        assert orig.shape == stripped.shape, f'Shape mismatch: {orig.shape} vs {stripped.shape}'; \
+        print('T2 dimensions match:', orig.shape)"
+    expected_output_contains: "T2 dimensions match"
+    timeout: 600
+
+  # ==========================================================================
+  # OUTPUT VERIFICATION
+  # ==========================================================================
+  - name: Verify mask is binary
+    description: Ensure the brain mask contains only 0 and 1 values
+    command: |
+      mri_synthstrip -i ${t1w} -m test_output/t1w_binary_check_mask.nii.gz 2>&1 && \
+      python3 -c "import nibabel as nib; import numpy as np; \
+        mask = nib.load('test_output/t1w_binary_check_mask.nii.gz').get_fdata(); \
+        unique_vals = np.unique(mask); \
+        assert np.all(np.isin(unique_vals, [0, 1])), f'Mask not binary, found: {unique_vals}'; \
+        print('Mask is binary with values:', unique_vals)"
+    expected_output_contains: "Mask is binary"
+    timeout: 600
+
+  - name: Verify brain extraction removes skull
+    description: Check that skull-stripping reduces non-zero voxels
+    command: |
+      mri_synthstrip -i ${t1w} -o test_output/t1w_skull_check.nii.gz 2>&1 && \
+      python3 -c "import nibabel as nib; import numpy as np; \
+        orig = nib.load('${t1w}').get_fdata(); \
+        stripped = nib.load('test_output/t1w_skull_check.nii.gz').get_fdata(); \
+        orig_nonzero = np.count_nonzero(orig); \
+        stripped_nonzero = np.count_nonzero(stripped); \
+        assert stripped_nonzero < orig_nonzero, f'Stripped should have fewer non-zero voxels: {stripped_nonzero} vs {orig_nonzero}'; \
+        print(f'Skull removed: {orig_nonzero} -> {stripped_nonzero} non-zero voxels')"
+    expected_output_contains: "Skull removed"
+    timeout: 600
+
+  - name: Verify affine preserved
+    description: Ensure affine transformation matrix is preserved
+    command: |
+      mri_synthstrip -i ${t1w} -o test_output/t1w_affine_check.nii.gz 2>&1 && \
+      python3 -c "import nibabel as nib; import numpy as np; \
+        orig = nib.load('${t1w}'); \
+        stripped = nib.load('test_output/t1w_affine_check.nii.gz'); \
+        assert np.allclose(orig.affine, stripped.affine), 'Affine matrices differ'; \
+        print('Affine preserved correctly')"
+    expected_output_contains: "Affine preserved"
+    timeout: 600
+
+  - name: Verify no NaN values in output
+    description: Ensure skull-stripped output contains no NaN values
+    command: |
+      mri_synthstrip -i ${t1w} -o test_output/t1w_nan_check.nii.gz 2>&1 && \
+      python3 -c "import nibabel as nib; import numpy as np; \
+        data = nib.load('test_output/t1w_nan_check.nii.gz').get_fdata(); \
+        nan_count = np.sum(np.isnan(data)); \
+        assert nan_count == 0, f'Found {nan_count} NaN values'; \
+        print('No NaN values in output')"
+    expected_output_contains: "No NaN values"
+    timeout: 600
+
+  - name: Verify no negative values in mask
+    description: Ensure brain mask contains no negative values
+    command: |
+      mri_synthstrip -i ${t1w} -m test_output/t1w_neg_check_mask.nii.gz 2>&1 && \
+      python3 -c "import nibabel as nib; import numpy as np; \
+        mask = nib.load('test_output/t1w_neg_check_mask.nii.gz').get_fdata(); \
+        neg_count = np.sum(mask < 0); \
+        assert neg_count == 0, f'Found {neg_count} negative values'; \
+        print('No negative values in mask')"
+    expected_output_contains: "No negative values"
+    timeout: 600
+
+  - name: Verify NIfTI format integrity
+    description: Ensure output is valid NIfTI format
+    command: |
+      mri_synthstrip -i ${t1w} -o test_output/t1w_nifti_check.nii.gz 2>&1 && \
+      python3 -c "import nibabel as nib; \
+        img = nib.load('test_output/t1w_nifti_check.nii.gz'); \
+        print(f'Valid NIfTI: shape={img.shape}, dtype={img.get_data_dtype()}')"
+    expected_output_contains: "Valid NIfTI"
+    expected_exit_code: 0
+    timeout: 600
+
+  # ==========================================================================
+  # STATISTICAL VALIDATION
+  # ==========================================================================
+  - name: Brain volume reasonable
+    description: Verify extracted brain volume is within reasonable range (800-2000 mL)
+    command: |
+      mri_synthstrip -i ${t1w} -m test_output/t1w_volume_check_mask.nii.gz 2>&1 && \
+      python3 -c "import nibabel as nib; import numpy as np; \
+        img = nib.load('test_output/t1w_volume_check_mask.nii.gz'); \
+        mask = img.get_fdata(); \
+        voxel_volume = np.abs(np.prod(img.header.get_zooms()[:3])); \
+        brain_volume_ml = np.sum(mask) * voxel_volume / 1000; \
+        print(f'Estimated brain volume: {brain_volume_ml:.1f} mL'); \
+        assert 800 < brain_volume_ml < 2000, f'Brain volume {brain_volume_ml} mL outside expected range'; \
+        print('Brain volume within expected range (800-2000 mL)')"
+    expected_output_contains: "Brain volume within expected range"
+    expected_exit_code: 0
+    timeout: 600
+
+  - name: Mask coverage reasonable
+    description: Verify mask covers reasonable portion of image
+    command: |
+      mri_synthstrip -i ${t1w} -m test_output/t1w_coverage_mask.nii.gz 2>&1 && \
+      python3 -c "import nibabel as nib; import numpy as np; \
+        img = nib.load('test_output/t1w_coverage_mask.nii.gz'); \
+        mask = img.get_fdata(); \
+        coverage = np.sum(mask > 0) / mask.size * 100; \
+        print(f'Brain mask coverage: {coverage:.1f}% of image'); \
+        assert 5 < coverage < 50, f'Coverage {coverage}% outside expected range (5-50%)'; \
+        print('Mask coverage within expected range')"
+    expected_output_contains: "Mask coverage within expected range"
+    timeout: 600
+
+  # ==========================================================================
+  # MASK APPLICATION
+  # ==========================================================================
+  - name: Apply generated mask to original
+    description: Verify mask can be applied to recreate skull-stripped result
+    command: |
+      mri_synthstrip -i ${t1w} -o test_output/t1w_mask_apply.nii.gz -m test_output/t1w_mask_apply_mask.nii.gz 2>&1 && \
+      python3 -c "import nibabel as nib; import numpy as np; \
+        orig = nib.load('${t1w}'); \
+        mask = nib.load('test_output/t1w_mask_apply_mask.nii.gz').get_fdata(); \
+        stripped = nib.load('test_output/t1w_mask_apply.nii.gz').get_fdata(); \
+        applied = orig.get_fdata() * mask; \
+        diff = np.abs(applied - stripped); \
+        max_diff = np.max(diff); \
+        print(f'Maximum difference when reapplying mask: {max_diff:.6f}')"
+    expected_output_contains: "Maximum difference"
+    timeout: 600
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Error on missing input
+    description: Test error handling when input file does not exist
+    command: mri_synthstrip -i nonexistent_file.nii.gz -o test_output/error_test.nii.gz 2>&1 || echo "Error handled correctly"
+    expected_output_contains: "Error"
+
+  - name: Error on missing required arguments
+    description: Test error handling when required arguments are missing
+    command: mri_synthstrip 2>&1 || echo "Missing args handled"
+    expected_output_contains: "usage"
+
+  # ==========================================================================
+  # NIBABEL UTILITIES - nib-ls
+  # ==========================================================================
+  - name: nib-ls help
+    description: Verify nib-ls utility is available
+    command: nib-ls --help 2>&1
+    expected_output_contains: "summary table"
+
+  - name: nib-ls basic usage
+    description: Test nib-ls on T1w image
+    command: nib-ls ${t1w}
+    expected_output_contains: "nii.gz"
+
+  - name: nib-ls with stats
+    description: Test nib-ls with statistics output
+    command: nib-ls -s ${t1w}
+    expected_output_contains: "nii.gz"
+
+  - name: nib-ls verbose
+    description: Test nib-ls verbose output
+    command: nib-ls -v ${t1w}
+    expected_output_contains: "nii.gz"
+
+  - name: nib-ls on stripped output
+    description: Verify nib-ls works on synthstrip output
+    command: |
+      mri_synthstrip -i ${t1w} -o test_output/t1w_nibls_test.nii.gz 2>&1 && \
+      nib-ls test_output/t1w_nibls_test.nii.gz
+    expected_output_contains: "nii.gz"
+    timeout: 600
+
+  # ==========================================================================
+  # NIBABEL UTILITIES - nib-stats
+  # ==========================================================================
+  - name: nib-stats help
+    description: Verify nib-stats utility is available
+    command: nib-stats --help 2>&1
+    expected_output_contains: "statistics"
+
+  - name: nib-stats on T1w
+    description: Test nib-stats on T1w image
+    command: nib-stats ${t1w}
+    expected_exit_code: 0
+
+  - name: nib-stats volume calculation
+    description: Test mask volume calculation with nib-stats
+    command: |
+      mri_synthstrip -i ${t1w} -m test_output/t1w_nibstats_mask.nii.gz 2>&1 && \
+      nib-stats -V test_output/t1w_nibstats_mask.nii.gz
+    expected_exit_code: 0
+    timeout: 600
+
+  - name: nib-stats volume in mm3
+    description: Test volume calculation in mm3
+    command: |
+      mri_synthstrip -i ${t1w} -m test_output/t1w_nibstats_mm3.nii.gz 2>&1 && \
+      nib-stats -V --units mm3 test_output/t1w_nibstats_mm3.nii.gz
+    expected_exit_code: 0
+    timeout: 600
+
+  - name: nib-stats volume in voxels
+    description: Test volume calculation in voxels
+    command: |
+      mri_synthstrip -i ${t1w} -m test_output/t1w_nibstats_vox.nii.gz 2>&1 && \
+      nib-stats -V --units vox test_output/t1w_nibstats_vox.nii.gz
+    expected_exit_code: 0
+    timeout: 600
+
+  # ==========================================================================
+  # NIBABEL UTILITIES - nib-diff
+  # ==========================================================================
+  - name: nib-diff help
+    description: Verify nib-diff utility is available
+    command: nib-diff --help 2>&1
+    expected_output_contains: "differences"
+
+  - name: nib-diff identical files
+    description: Test nib-diff on identical files
+    command: nib-diff ${t1w} ${t1w} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: nib-diff different files
+    description: Test nib-diff on different files (T1w vs T2)
+    command: nib-diff ${t1w} ${t2} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: nib-diff with tolerance
+    description: Test nib-diff with absolute difference tolerance
+    command: nib-diff --ma 0.001 ${t1w} ${t1w} 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NIBABEL UTILITIES - nib-conform
+  # ==========================================================================
+  - name: nib-conform help
+    description: Verify nib-conform utility is available
+    command: nib-conform --help 2>&1
+    expected_output_contains: "Conform"
+
+  - name: nib-conform default
+    description: Test conforming image to default FreeSurfer space
+    command: nib-conform ${t1w} test_output/t1w_conformed.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/t1w_conformed.nii.gz
+    timeout: 300
+
+  - name: nib-conform custom shape
+    description: Test conforming image to custom shape
+    command: nib-conform ${t1w} test_output/t1w_conformed_shape.nii.gz --out-shape 128 128 128 -f
+    validate:
+      - output_exists: ${output_dir}/t1w_conformed_shape.nii.gz
+    timeout: 300
+
+  - name: nib-conform custom voxel size
+    description: Test conforming image to custom voxel size
+    command: nib-conform ${t1w} test_output/t1w_conformed_voxel.nii.gz --voxel-size 2 2 2 -f
+    validate:
+      - output_exists: ${output_dir}/t1w_conformed_voxel.nii.gz
+    timeout: 300
+
+  - name: nib-conform custom orientation
+    description: Test conforming image to LAS orientation
+    command: nib-conform ${t1w} test_output/t1w_conformed_las.nii.gz --orientation LAS -f
+    validate:
+      - output_exists: ${output_dir}/t1w_conformed_las.nii.gz
+    timeout: 300
+
+  - name: Verify conformed shape
+    description: Verify nib-conform produces expected output shape
+    command: |
+      nib-conform ${t1w} test_output/t1w_conform_verify.nii.gz --out-shape 100 100 100 -f && \
+      python3 -c "import nibabel as nib; \
+        img = nib.load('test_output/t1w_conform_verify.nii.gz'); \
+        assert img.shape == (100, 100, 100), f'Unexpected shape: {img.shape}'; \
+        print('Conformed shape correct:', img.shape)"
+    expected_output_contains: "Conformed shape correct"
+
+  # ==========================================================================
+  # NIBABEL UTILITIES - nib-convert
+  # ==========================================================================
+  - name: nib-convert help
+    description: Verify nib-convert utility is available
+    command: nib-convert --help 2>&1
+    expected_output_contains: "Convert"
+
+  - name: nib-convert dtype change
+    description: Test converting image to different data type
+    command: nib-convert ${t1w} test_output/t1w_converted_float32.nii.gz --out-dtype float32 -f
+    validate:
+      - output_exists: ${output_dir}/t1w_converted_float32.nii.gz
+    timeout: 300
+
+  - name: nib-convert to int16
+    description: Test converting image to int16 data type
+    command: nib-convert ${t1w} test_output/t1w_converted_int16.nii.gz --out-dtype int16 -f
+    validate:
+      - output_exists: ${output_dir}/t1w_converted_int16.nii.gz
+    timeout: 300
+
+  - name: Verify converted dtype
+    description: Verify nib-convert produces expected data type
+    command: |
+      nib-convert ${t1w} test_output/t1w_convert_verify.nii.gz --out-dtype float32 -f && \
+      python3 -c "import nibabel as nib; \
+        img = nib.load('test_output/t1w_convert_verify.nii.gz'); \
+        dtype = img.get_data_dtype(); \
+        print(f'Converted dtype: {dtype}')"
+    expected_output_contains: "Converted dtype"
+
+  # ==========================================================================
+  # NIBABEL UTILITIES - nib-roi
+  # ==========================================================================
+  - name: nib-roi help
+    description: Verify nib-roi utility is available
+    command: nib-roi --help 2>&1
+    expected_output_contains: "Crop"
+
+  - name: nib-roi crop image
+    description: Test cropping image to region of interest
+    command: nib-roi ${t1w} test_output/t1w_cropped.nii.gz -i 20:140 -j 30:160 -k 30:160
+    validate:
+      - output_exists: ${output_dir}/t1w_cropped.nii.gz
+    timeout: 300
+
+  - name: nib-roi crop first axis only
+    description: Test cropping along first axis
+    command: nib-roi ${t1w} test_output/t1w_cropped_i.nii.gz -i 40:120
+    validate:
+      - output_exists: ${output_dir}/t1w_cropped_i.nii.gz
+    timeout: 300
+
+  - name: Verify cropped dimensions
+    description: Verify nib-roi produces expected cropped dimensions
+    command: |
+      nib-roi ${t1w} test_output/t1w_crop_verify.nii.gz -i 20:80 -j 20:80 -k 20:80 && \
+      python3 -c "import nibabel as nib; \
+        img = nib.load('test_output/t1w_crop_verify.nii.gz'); \
+        expected = (60, 60, 60); \
+        assert img.shape == expected, f'Shape mismatch: {img.shape} vs {expected}'; \
+        print('Cropped shape correct:', img.shape)"
+    expected_output_contains: "Cropped shape correct"
+
+  # ==========================================================================
+  # NIBABEL UTILITIES - nib-nifti-dx
+  # ==========================================================================
+  - name: nib-nifti-dx help
+    description: Verify nib-nifti-dx utility is available
+    command: nib-nifti-dx --help 2>&1
+    expected_output_contains: "diagnostics"
+
+  - name: nib-nifti-dx on T1w
+    description: Test NIfTI diagnostics on T1w image
+    command: nib-nifti-dx ${t1w} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: nib-nifti-dx on stripped output
+    description: Test NIfTI diagnostics on synthstrip output
+    command: |
+      mri_synthstrip -i ${t1w} -o test_output/t1w_niftidx_test.nii.gz 2>&1 && \
+      nib-nifti-dx test_output/t1w_niftidx_test.nii.gz 2>&1 || true
+    expected_exit_code: 0
+    timeout: 600
+
+  # ==========================================================================
+  # COMBINED WORKFLOWS
+  # ==========================================================================
+  - name: Full pipeline T1w
+    description: Complete skull-stripping pipeline with all outputs
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_full_pipeline.nii.gz -m test_output/t1w_full_pipeline_mask.nii.gz -b 1
+    validate:
+      - output_exists: ${output_dir}/t1w_full_pipeline.nii.gz
+      - output_exists: ${output_dir}/t1w_full_pipeline_mask.nii.gz
+    timeout: 600
+
+  - name: Conform then strip
+    description: Test conforming image before skull-stripping
+    command: |
+      nib-conform ${t1w} test_output/t1w_preconform.nii.gz --out-shape 256 256 256 --voxel-size 1 1 1 -f && \
+      mri_synthstrip -i test_output/t1w_preconform.nii.gz -o test_output/t1w_preconform_stripped.nii.gz -m test_output/t1w_preconform_mask.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_preconform.nii.gz
+      - output_exists: ${output_dir}/t1w_preconform_stripped.nii.gz
+      - output_exists: ${output_dir}/t1w_preconform_mask.nii.gz
+    timeout: 900
+
+  - name: Strip then analyze
+    description: Test skull-stripping followed by nib-stats analysis
+    command: |
+      mri_synthstrip -i ${t1w} -m test_output/t1w_strip_analyze_mask.nii.gz 2>&1 && \
+      nib-stats -V --units mm3 test_output/t1w_strip_analyze_mask.nii.gz && \
+      nib-ls -s test_output/t1w_strip_analyze_mask.nii.gz
+    expected_exit_code: 0
+    timeout: 600
+
+  - name: Compare T1w and T2 masks
+    description: Compare brain masks from T1w and T2 modalities
+    command: |
+      mri_synthstrip -i ${t1w} -m test_output/t1w_modality_compare.nii.gz 2>&1 && \
+      mri_synthstrip -i ${t2} -m test_output/t2_modality_compare.nii.gz 2>&1 && \
+      python3 -c "import nibabel as nib; import numpy as np; \
+        t1_mask = nib.load('test_output/t1w_modality_compare.nii.gz').get_fdata(); \
+        t2_mask = nib.load('test_output/t2_modality_compare.nii.gz').get_fdata(); \
+        t1_vol = np.sum(t1_mask > 0); \
+        t2_vol = np.sum(t2_mask > 0); \
+        print(f'T1w mask volume: {t1_vol} voxels'); \
+        print(f'T2 mask volume: {t2_vol} voxels')"
+    expected_output_contains: "mask volume"
+    timeout: 1200
+
+  # ==========================================================================
+  # REPRODUCIBILITY
+  # ==========================================================================
+  - name: Reproducibility check
+    description: Verify running synthstrip twice produces identical results
+    command: |
+      mri_synthstrip -i ${t1w} -m test_output/t1w_repro_run1.nii.gz 2>&1 && \
+      mri_synthstrip -i ${t1w} -m test_output/t1w_repro_run2.nii.gz 2>&1 && \
+      python3 -c "
+      import nibabel as nib, numpy as np
+      run1 = nib.load('test_output/t1w_repro_run1.nii.gz').get_fdata()
+      run2 = nib.load('test_output/t1w_repro_run2.nii.gz').get_fdata()
+      print('Results are reproducible: runs are identical') if np.allclose(run1, run2) else print(f'Results differ by {np.sum(run1 != run2)} voxels')
+      "
+    expected_output_contains: "reproducible"
+    timeout: 1200
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

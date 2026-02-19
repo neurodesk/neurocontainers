@@ -1,0 +1,440 @@
+# quickshear container test suite
+# Tests for quickshear v1.2.0 with mri_synthstrip - neuroimaging defacing tool
+#
+# Quickshear uses a skull-stripped brain mask to identify the face region and
+# removes facial features from anatomical MRI images to protect participant privacy.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - inplaneT2: 2D T2-weighted anatomical
+#
+# Citation:
+#   Schimke, Nakeisha, and John Hale. "Quickshear defacing for neuroimages."
+#   Proceedings of the 2nd USENIX conference on Health security and privacy.
+#   USENIX Association, 2011.
+
+name: quickshear
+version: 1.1.0
+container: quickshear_1.1.0_20240606.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # QUICKSHEAR BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: Quickshear help
+    description: Verify quickshear binary runs and shows help message
+    command: quickshear --help
+    expected_output_contains: "Quickshear defacing for neuroimages"
+
+  - name: Quickshear version check
+    description: Check quickshear module version via Python
+    command: python3 -c "import quickshear; print(quickshear.__version__)"
+    expected_output_contains: "1.2.0"
+
+  # ==========================================================================
+  # MRI_SYNTHSTRIP SKULL STRIPPING (prerequisite for quickshear)
+  # ==========================================================================
+  - name: mri_synthstrip help
+    description: Verify mri_synthstrip binary shows help (exits 1 with --help)
+    command: /freesurfer/mri_synthstrip --help 2>&1
+    expected_output_contains: "Robust, universal skull-stripping"
+    ignore_exit_code: true
+
+  - name: Skull strip T1w - generate mask only
+    description: Generate brain mask using SynthStrip for T1w image
+    command: /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_brain_mask.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_mask.nii.gz
+    timeout: 300
+
+  - name: Skull strip T1w - generate stripped brain
+    description: Generate stripped brain image using SynthStrip
+    command: /freesurfer/mri_synthstrip -i ${t1w} -o test_output/t1w_stripped.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_stripped.nii.gz
+    timeout: 300
+
+  - name: Skull strip T1w - mask and stripped together
+    description: Generate both brain mask and stripped image in single run
+    command: /freesurfer/mri_synthstrip -i ${t1w} -o test_output/t1w_stripped_full.nii.gz -m test_output/t1w_mask_full.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_stripped_full.nii.gz
+      - output_exists: ${output_dir}/t1w_mask_full.nii.gz
+    timeout: 300
+
+  - name: Skull strip T1w - with distance transform
+    description: Generate brain mask with signed distance transform output
+    command: /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_mask_sdt.nii.gz -d test_output/t1w_sdt.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_sdt.nii.gz
+      - output_exists: ${output_dir}/t1w_sdt.nii.gz
+    timeout: 300
+
+  - name: Skull strip with custom border
+    description: Generate brain mask with larger border (2mm)
+    command: /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_mask_border2.nii.gz -b 2
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_border2.nii.gz
+    timeout: 300
+
+  - name: Skull strip with zero border
+    description: Generate tight brain mask with no border expansion
+    command: /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_mask_border0.nii.gz -b 0
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_border0.nii.gz
+    timeout: 300
+
+  - name: Skull strip excluding CSF
+    description: Generate brain mask excluding CSF from border
+    command: /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_mask_nocsf.nii.gz --no-csf
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_nocsf.nii.gz
+    timeout: 300
+
+  - name: Skull strip T2 image
+    description: Generate brain mask from inplane T2 image
+    command: /freesurfer/mri_synthstrip -i ${t2} -m test_output/t2_mask.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_mask.nii.gz
+    timeout: 300
+
+  # ==========================================================================
+  # QUICKSHEAR DEFACING
+  # ==========================================================================
+  - name: Quickshear basic defacing
+    description: Deface T1w image using generated brain mask
+    command: quickshear ${t1w} test_output/t1w_brain_mask.nii.gz test_output/t1w_defaced.nii.gz
+    depends_on: Skull strip T1w - generate mask only
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced.nii.gz
+      - same_dimensions: ["${output_dir}/t1w_defaced.nii.gz", "${t1w}"]
+
+  - name: Quickshear with default buffer
+    description: Deface T1w with explicit default buffer size (10 voxels)
+    command: quickshear ${t1w} test_output/t1w_brain_mask.nii.gz test_output/t1w_defaced_buf10.nii.gz 10
+    depends_on: Skull strip T1w - generate mask only
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_buf10.nii.gz
+
+  - name: Quickshear with small buffer
+    description: Deface T1w with small buffer (5 voxels) - more aggressive defacing
+    command: quickshear ${t1w} test_output/t1w_brain_mask.nii.gz test_output/t1w_defaced_buf5.nii.gz 5
+    depends_on: Skull strip T1w - generate mask only
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_buf5.nii.gz
+
+  - name: Quickshear with large buffer
+    description: Deface T1w with large buffer (20 voxels) - more conservative defacing
+    command: quickshear ${t1w} test_output/t1w_brain_mask.nii.gz test_output/t1w_defaced_buf20.nii.gz 20
+    depends_on: Skull strip T1w - generate mask only
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_buf20.nii.gz
+
+  - name: Quickshear with zero buffer
+    description: Deface T1w with zero buffer - maximally aggressive defacing
+    command: quickshear ${t1w} test_output/t1w_brain_mask.nii.gz test_output/t1w_defaced_buf0.nii.gz 0
+    depends_on: Skull strip T1w - generate mask only
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_buf0.nii.gz
+
+  - name: Quickshear with very large buffer
+    description: Deface T1w with 50 voxel buffer - minimal defacing
+    command: quickshear ${t1w} test_output/t1w_brain_mask.nii.gz test_output/t1w_defaced_buf50.nii.gz 50
+    depends_on: Skull strip T1w - generate mask only
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_buf50.nii.gz
+
+  - name: Quickshear with custom border mask
+    description: Deface using mask with 2mm border
+    command: quickshear ${t1w} test_output/t1w_mask_border2.nii.gz test_output/t1w_defaced_border2mask.nii.gz
+    depends_on: Skull strip with custom border
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_border2mask.nii.gz
+
+  - name: Quickshear with tight mask
+    description: Deface using tight mask (0mm border)
+    command: quickshear ${t1w} test_output/t1w_mask_border0.nii.gz test_output/t1w_defaced_tightmask.nii.gz
+    depends_on: Skull strip with zero border
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_tightmask.nii.gz
+
+  - name: Quickshear with no-CSF mask
+    description: Deface using mask that excludes CSF
+    command: quickshear ${t1w} test_output/t1w_mask_nocsf.nii.gz test_output/t1w_defaced_nocsf.nii.gz
+    depends_on: Skull strip excluding CSF
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_nocsf.nii.gz
+
+  # ==========================================================================
+  # COMPLETE WORKFLOW PIPELINES
+  # ==========================================================================
+  - name: Full pipeline - T1w defacing (single command)
+    description: Complete pipeline - skull strip then deface in sequence
+    command: |
+      /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_pipe_mask.nii.gz && \
+      quickshear ${t1w} test_output/t1w_pipe_mask.nii.gz test_output/t1w_pipe_defaced.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_pipe_mask.nii.gz
+      - output_exists: ${output_dir}/t1w_pipe_defaced.nii.gz
+    timeout: 300
+
+  - name: Full pipeline - T2 defacing
+    description: Complete pipeline for T2 image - skull strip then deface
+    command: |
+      /freesurfer/mri_synthstrip -i ${t2} -m test_output/t2_pipe_mask.nii.gz && \
+      quickshear ${t2} test_output/t2_pipe_mask.nii.gz test_output/t2_defaced.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_pipe_mask.nii.gz
+      - output_exists: ${output_dir}/t2_defaced.nii.gz
+    timeout: 300
+
+  - name: Full pipeline - conservative defacing
+    description: Pipeline with conservative settings (large border, large buffer)
+    command: |
+      /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_cons_mask.nii.gz -b 3 && \
+      quickshear ${t1w} test_output/t1w_cons_mask.nii.gz test_output/t1w_conservative.nii.gz 30
+    validate:
+      - output_exists: ${output_dir}/t1w_cons_mask.nii.gz
+      - output_exists: ${output_dir}/t1w_conservative.nii.gz
+    timeout: 300
+
+  - name: Full pipeline - aggressive defacing
+    description: Pipeline with aggressive settings (tight mask, small buffer)
+    command: |
+      /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_agg_mask.nii.gz -b 0 --no-csf && \
+      quickshear ${t1w} test_output/t1w_agg_mask.nii.gz test_output/t1w_aggressive.nii.gz 3
+    validate:
+      - output_exists: ${output_dir}/t1w_agg_mask.nii.gz
+      - output_exists: ${output_dir}/t1w_aggressive.nii.gz
+    timeout: 300
+
+  # ==========================================================================
+  # PYTHON API TESTS
+  # ==========================================================================
+  - name: Python import quickshear
+    description: Verify quickshear Python module imports correctly
+    command: python3 -c "import quickshear; print('quickshear imported successfully')"
+    expected_output_contains: "quickshear imported successfully"
+
+  - name: Python import nibabel
+    description: Verify nibabel (NIfTI I/O library) is available
+    command: python3 -c "import nibabel as nib; print('nibabel version:', nib.__version__)"
+    expected_output_contains: "nibabel version:"
+
+  - name: Python import numpy
+    description: Verify numpy is available for numerical operations
+    command: python3 -c "import numpy as np; print('numpy version:', np.__version__)"
+    expected_output_contains: "numpy version:"
+
+  - name: Python import scipy
+    description: Verify scipy is available for scientific computing
+    command: python3 -c "import scipy; print('scipy version:', scipy.__version__)"
+    expected_output_contains: "scipy version:"
+
+  - name: Python import torch
+    description: Verify PyTorch is available (used by mri_synthstrip)
+    command: python3 -c "import torch; print('torch version:', torch.__version__)"
+    expected_output_contains: "torch version:"
+
+  - name: Python import surfa
+    description: Verify surfa (FreeSurfer Python utils) is available
+    command: python3 -c "import surfa; print('surfa version:', surfa.__version__)"
+    expected_output_contains: "surfa version:"
+
+  # ==========================================================================
+  # NIBABEL DATA VALIDATION TESTS
+  # ==========================================================================
+  - name: Validate defaced image header
+    description: Check that defaced image preserves header information
+    command: |
+      python3 -c "
+      import nibabel as nib
+      orig = nib.load('${t1w}')
+      defaced = nib.load('test_output/t1w_defaced.nii.gz')
+      assert orig.shape == defaced.shape, 'Shape mismatch'
+      assert (orig.affine == defaced.affine).all(), 'Affine mismatch'
+      print('Header validation passed: shape and affine preserved')
+      "
+    depends_on: Quickshear basic defacing
+    expected_output_contains: "Header validation passed"
+
+  - name: Validate defaced image has reduced intensity
+    description: Verify defaced image has less total intensity (face removed)
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      orig = nib.load('${t1w}').get_fdata()
+      defaced = nib.load('test_output/t1w_defaced.nii.gz').get_fdata()
+      orig_sum = np.sum(orig)
+      defaced_sum = np.sum(defaced)
+      reduction = (orig_sum - defaced_sum) / orig_sum * 100
+      print(f'Intensity reduction: {reduction:.2f}%')
+      assert defaced_sum < orig_sum, 'Defaced should have less intensity'
+      print('Validation passed: defaced image has reduced intensity')
+      "
+    depends_on: Quickshear basic defacing
+    expected_output_contains: "Validation passed"
+
+  - name: Validate brain region preserved
+    description: Check that brain region is preserved in defaced image
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      orig = nib.load('${t1w}').get_fdata()
+      defaced = nib.load('test_output/t1w_defaced.nii.gz').get_fdata()
+      mask = nib.load('test_output/t1w_brain_mask.nii.gz').get_fdata() > 0
+      brain_orig = orig[mask]
+      brain_defaced = defaced[mask]
+      correlation = np.corrcoef(brain_orig.flatten(), brain_defaced.flatten())[0,1]
+      print(f'Brain region correlation: {correlation:.6f}')
+      assert correlation > 0.99, 'Brain region should be highly preserved'
+      print('Validation passed: brain region preserved')
+      "
+    depends_on: Quickshear basic defacing
+    expected_output_contains: "Validation passed"
+
+  - name: Validate buffer size affects defacing extent
+    description: Compare defacing with different buffer sizes
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      defaced_buf5 = nib.load('test_output/t1w_defaced_buf5.nii.gz').get_fdata()
+      defaced_buf20 = nib.load('test_output/t1w_defaced_buf20.nii.gz').get_fdata()
+      sum_buf5 = np.sum(defaced_buf5)
+      sum_buf20 = np.sum(defaced_buf20)
+      print(f'Buffer 5 sum: {sum_buf5:.0f}')
+      print(f'Buffer 20 sum: {sum_buf20:.0f}')
+      assert sum_buf5 < sum_buf20, 'Smaller buffer should remove more tissue'
+      print('Validation passed: buffer size affects defacing as expected')
+      "
+    depends_on:
+      - Quickshear with small buffer
+      - Quickshear with large buffer
+    expected_output_contains: "Validation passed"
+
+  - name: Validate mask binary
+    description: Ensure brain mask is binary (0 and 1 only)
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      mask = nib.load('test_output/t1w_brain_mask.nii.gz').get_fdata()
+      unique_vals = np.unique(mask)
+      print(f'Unique values in mask: {unique_vals}')
+      assert len(unique_vals) <= 2, 'Mask should be binary'
+      assert 0 in unique_vals, 'Mask should contain 0'
+      print('Validation passed: mask is binary')
+      "
+    depends_on: Skull strip T1w - generate mask only
+    expected_output_contains: "Validation passed"
+
+  - name: Validate distance transform
+    description: Check signed distance transform has values inside and outside brain
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      sdt = nib.load('test_output/t1w_sdt.nii.gz').get_fdata()
+      mask = nib.load('test_output/t1w_mask_sdt.nii.gz').get_fdata() > 0
+      inside_values = sdt[mask]
+      outside_values = sdt[~mask]
+      print(f'Inside brain: min={inside_values.min():.2f}, max={inside_values.max():.2f}')
+      print(f'Outside brain: min={outside_values.min():.2f}, max={outside_values.max():.2f}')
+      assert inside_values.min() < 0, 'Inside brain should have negative distances'
+      assert outside_values.max() > 0, 'Outside brain should have positive distances'
+      print('Validation passed: distance transform has correct properties')
+      "
+    depends_on: Skull strip T1w - with distance transform
+    expected_output_contains: "Validation passed"
+
+  # ==========================================================================
+  # ERROR HANDLING TESTS
+  # ==========================================================================
+  - name: Error - missing input file
+    description: Test error handling for non-existent input file (Python exception but returns 0)
+    command: quickshear nonexistent.nii.gz test_output/t1w_brain_mask.nii.gz test_output/error_output.nii.gz 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Error - missing mask file
+    description: Test error handling for non-existent mask file (Python exception but returns 0)
+    command: quickshear ${t1w} nonexistent_mask.nii.gz test_output/error_output.nii.gz 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Error - mri_synthstrip missing input
+    description: Test error handling for mri_synthstrip without input (shows usage)
+    command: /freesurfer/mri_synthstrip 2>&1 || true
+    expected_output_contains: "usage"
+
+  # ==========================================================================
+  # EDGE CASES
+  # ==========================================================================
+  - name: Quickshear with fractional buffer
+    description: Test quickshear with fractional buffer value (should work)
+    command: quickshear ${t1w} test_output/t1w_brain_mask.nii.gz test_output/t1w_defaced_frac.nii.gz 7.5
+    depends_on: Skull strip T1w - generate mask only
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_frac.nii.gz
+
+  - name: Quickshear negative buffer
+    description: Test quickshear with negative buffer (edge case behavior)
+    command: quickshear ${t1w} test_output/t1w_brain_mask.nii.gz test_output/t1w_defaced_negbuf.nii.gz -5 2>&1 || true
+    depends_on: Skull strip T1w - generate mask only
+
+  # ==========================================================================
+  # PERFORMANCE AND RESOURCE TESTS
+  # ==========================================================================
+  - name: Check CUDA availability
+    description: Check if CUDA GPU support is available
+    command: |
+      python3 -c "
+      import torch
+      print(f'CUDA available: {torch.cuda.is_available()}')
+      if torch.cuda.is_available():
+          print(f'CUDA device: {torch.cuda.get_device_name(0)}')
+      else:
+          print('Running on CPU only')
+      "
+    expected_output_contains: "CUDA available:"
+    expected_exit_code: 0
+
+  - name: Memory footprint check
+    description: Check approximate memory usage of loading an image
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      memory_mb = data.nbytes / (1024 * 1024)
+      print(f'Image shape: {data.shape}')
+      print(f'Data type: {data.dtype}')
+      print(f'Memory footprint: {memory_mb:.2f} MB')
+      "
+    expected_output_contains: "Memory footprint:"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

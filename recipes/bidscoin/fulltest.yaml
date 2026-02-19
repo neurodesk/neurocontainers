@@ -1,0 +1,611 @@
+# bidscoin container test suite
+# Tests for BIDScoin v4.6.2 - DICOM to BIDS conversion toolkit
+#
+# BIDScoin provides tools for converting raw neuroimaging data (DICOM, etc.)
+# to the Brain Imaging Data Structure (BIDS) format. The container includes:
+#   - BIDScoin CLI tools (bidscoin, bidsmapper, bidscoiner, etc.)
+#   - dcm2niix: DICOM to NIfTI converter
+#   - spec2nii: MRS spectroscopy to NIfTI-MRS converter
+#   - bids-validator: BIDS dataset validation
+#
+# Test data: ds000001 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - This is an existing BIDS dataset used to test validation and utilities
+#   - T1w: 3D structural MRI
+#   - BOLD: 4D functional MRI
+#
+# Note: Full DICOM conversion tests require DICOM source data which is not
+# included in this test dataset. Tests focus on utility functions and validation.
+
+name: bidscoin
+version: 4.6.2
+container: bidscoin_4.6.2_20250621.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - dataset_description.json
+      - participants.tsv
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_events.tsv
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  events: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_events.tsv
+  bids_dataset: ds000001
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/bids_test
+    mkdir -p ${output_dir}/dicom_test
+
+tests:
+  # ==========================================================================
+  # BIDSCOIN CORE FUNCTIONALITY
+  # ==========================================================================
+  - name: BIDScoin version check
+    description: Verify BIDScoin binary runs and reports version
+    command: bidscoin --version 2>&1
+    expected_output_contains: "BIDScoin-version"
+
+  - name: BIDScoin version details
+    description: Check BIDS and BIDScoin version information
+    command: bidscoin --version 2>&1
+    expected_output_contains: "4.6.2"
+
+  - name: BIDScoin list executables
+    description: List all BIDScoin commands and utilities
+    command: bidscoin -l 2>&1
+    expected_output_contains: "bidscoiner"
+
+  - name: BIDScoin list plugins
+    description: List installed plugins and template bidsmaps
+    command: bidscoin -p 2>&1
+    expected_output_contains: "dcm2niix2bids"
+
+  - name: BIDScoin help
+    description: Display BIDScoin main help
+    command: bidscoin --help 2>&1
+    expected_output_contains: "bidsmapper"
+
+  # ==========================================================================
+  # DCM2NIIX - DICOM TO NIFTI CONVERTER
+  # ==========================================================================
+  - name: dcm2niix version check
+    description: Verify dcm2niix binary runs and reports version
+    command: dcm2niix -v n 2>&1 | head -1
+    expected_output_contains: "dcm2niiX version"
+
+  - name: dcm2niix help
+    description: Display dcm2niix help information
+    command: dcm2niix -h 2>&1
+    expected_output_contains: "BIDS sidecar"
+
+  - name: dcm2niix compression options
+    description: Verify dcm2niix compression options available
+    command: dcm2niix -h 2>&1
+    expected_output_contains: "gz compress"
+
+  - name: dcm2niix BIDS options
+    description: Check BIDS-specific options in dcm2niix
+    command: dcm2niix -h 2>&1
+    expected_output_contains: "anonymize BIDS"
+
+  - name: dcm2niix filename options
+    description: Verify filename formatting options
+    command: dcm2niix -h 2>&1
+    expected_output_contains: "%p"
+
+  # ==========================================================================
+  # SPEC2NII - MRS SPECTROSCOPY CONVERTER
+  # ==========================================================================
+  - name: spec2nii version check
+    description: Verify spec2nii binary runs and reports version
+    command: spec2nii --version 2>&1
+    expected_output_contains: "0."
+
+  - name: spec2nii help
+    description: Display spec2nii main help
+    command: spec2nii --help 2>&1
+    expected_output_contains: "NIfTI format"
+
+  - name: spec2nii subcommands
+    description: List spec2nii conversion subcommands
+    command: spec2nii --help 2>&1
+    expected_output_contains: "twix"
+
+  - name: spec2nii Siemens support
+    description: Verify Siemens format support
+    command: spec2nii --help 2>&1
+    expected_output_contains: "dicom"
+
+  - name: spec2nii Philips support
+    description: Verify Philips format support
+    command: spec2nii --help 2>&1
+    expected_output_contains: "philips"
+
+  - name: spec2nii GE support
+    description: Verify GE format support
+    command: spec2nii --help 2>&1
+    expected_output_contains: "ge"
+
+  - name: spec2nii auto subcommand help
+    description: Display auto identification help
+    command: spec2nii auto --help 2>&1
+    expected_output_contains: "file to convert"
+
+  - name: spec2nii dump subcommand help
+    description: Display header dump help
+    command: spec2nii dump --help 2>&1
+    expected_output_contains: "NIfTI-MRS"
+
+  # ==========================================================================
+  # BIDS-VALIDATOR
+  # ==========================================================================
+  - name: bids-validator version check
+    description: Verify bids-validator binary runs and reports version
+    command: bids-validator --version 2>&1
+    expected_output_contains: "1."
+
+  - name: bids-validator help
+    description: Display bids-validator help
+    command: bids-validator --help 2>&1
+    expected_output_contains: "dataset_directory"
+
+  - name: bids-validator on test dataset
+    description: Validate the test BIDS dataset (ds000001)
+    command: bids-validator ${bids_dataset} 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Files"
+
+  - name: bids-validator with JSON output
+    description: Test JSON output format
+    command: bids-validator ${bids_dataset} --json 2>&1 | head -5
+    expected_output_contains: "{"
+
+  - name: bids-validator ignore warnings
+    description: Test ignoring non-critical warnings
+    command: bids-validator ${bids_dataset} --ignoreWarnings 2>&1
+    ignore_exit_code: true
+
+  - name: bids-validator verbose mode
+    description: Test verbose validation output
+    command: bids-validator ${bids_dataset} --verbose 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Files"
+
+  # ==========================================================================
+  # BIDSMAPPER - BIDSMAP GENERATION
+  # ==========================================================================
+  - name: bidsmapper help
+    description: Display bidsmapper help
+    command: bidsmapper --help 2>&1
+    expected_output_contains: "sourcefolder"
+
+  - name: bidsmapper template options
+    description: Verify template bidsmap options
+    command: bidsmapper --help 2>&1
+    expected_output_contains: "template"
+
+  - name: bidsmapper plugin options
+    description: Verify plugin options available
+    command: bidsmapper --help 2>&1
+    expected_output_contains: "plugins"
+
+  - name: bidsmapper automated mode
+    description: Verify automated mode option available
+    command: bidsmapper --help 2>&1
+    expected_output_contains: "automated"
+
+  - name: bidsmapper subject prefix
+    description: Verify subject prefix option
+    command: bidsmapper --help 2>&1
+    expected_output_contains: "subprefix"
+
+  # ==========================================================================
+  # BIDSCOINER - BIDS CONVERSION
+  # ==========================================================================
+  - name: bidscoiner help
+    description: Display bidscoiner help
+    command: bidscoiner --help 2>&1
+    expected_output_contains: "sourcefolder"
+
+  - name: bidscoiner participant selection
+    description: Verify participant selection option
+    command: bidscoiner --help 2>&1
+    expected_output_contains: "participant"
+
+  - name: bidscoiner force option
+    description: Verify force conversion option
+    command: bidscoiner --help 2>&1
+    expected_output_contains: "force"
+
+  - name: bidscoiner cluster support
+    description: Verify HPC cluster support
+    command: bidscoiner --help 2>&1
+    expected_output_contains: "cluster"
+
+  # ==========================================================================
+  # BIDSPARTICIPANTS - PARTICIPANTS.TSV MANAGEMENT
+  # ==========================================================================
+  - name: bidsparticipants help
+    description: Display bidsparticipants help
+    command: bidsparticipants --help 2>&1
+    expected_output_contains: "participants.tsv"
+
+  - name: bidsparticipants dryrun option
+    description: Verify dryrun option available
+    command: bidsparticipants --help 2>&1
+    expected_output_contains: "dryrun"
+
+  # ==========================================================================
+  # DICOMSORT - DICOM ORGANIZATION
+  # ==========================================================================
+  - name: dicomsort help
+    description: Display dicomsort help
+    command: dicomsort --help 2>&1
+    expected_output_contains: "DICOM files"
+
+  - name: dicomsort folder scheme
+    description: Verify folder naming scheme option
+    command: dicomsort --help 2>&1
+    expected_output_contains: "folderscheme"
+
+  - name: dicomsort file naming
+    description: Verify file naming scheme option
+    command: dicomsort --help 2>&1
+    expected_output_contains: "namescheme"
+
+  - name: dicomsort dryrun mode
+    description: Verify dryrun mode available
+    command: dicomsort --help 2>&1
+    expected_output_contains: "dryrun"
+
+  - name: dicomsort pattern matching
+    description: Verify pattern matching option
+    command: dicomsort --help 2>&1
+    expected_output_contains: "pattern"
+
+  # ==========================================================================
+  # RAWMAPPER - DICOM ATTRIBUTE MAPPING
+  # ==========================================================================
+  - name: rawmapper help
+    description: Display rawmapper help
+    command: rawmapper --help 2>&1
+    expected_output_contains: "DICOM attribute"
+
+  - name: rawmapper field selection
+    description: Verify field selection option
+    command: rawmapper --help 2>&1
+    expected_output_contains: "fieldname"
+
+  - name: rawmapper rename option
+    description: Verify rename directories option
+    command: rawmapper --help 2>&1
+    expected_output_contains: "rename"
+
+  - name: rawmapper wildcard support
+    description: Verify wildcard pattern support
+    command: rawmapper --help 2>&1
+    expected_output_contains: "wildcard"
+
+  # ==========================================================================
+  # DEFACE - ANATOMICAL DEFACING
+  # ==========================================================================
+  - name: deface help
+    description: Display deface help
+    command: deface --help 2>&1
+    expected_output_contains: "pydeface"
+
+  - name: deface pattern selection
+    description: Verify image pattern selection
+    command: deface --help 2>&1
+    expected_output_contains: "pattern"
+
+  - name: deface output options
+    description: Verify output destination options
+    command: deface --help 2>&1
+    expected_output_contains: "output"
+
+  - name: deface cluster support
+    description: Verify HPC cluster support for defacing
+    command: deface --help 2>&1
+    expected_output_contains: "cluster"
+
+  - name: deface force option
+    description: Verify force reprocessing option
+    command: deface --help 2>&1
+    expected_output_contains: "force"
+
+  # ==========================================================================
+  # MEDEFACE - MULTI-ECHO DEFACING
+  # ==========================================================================
+  - name: medeface help
+    description: Display medeface help
+    command: medeface --help 2>&1
+    expected_output_contains: "multi-echo"
+
+  - name: medeface mask pattern
+    description: Verify mask pattern option
+    command: medeface --help 2>&1
+    expected_output_contains: "maskpattern"
+
+  - name: medeface participant selection
+    description: Verify participant selection option
+    command: medeface --help 2>&1
+    expected_output_contains: "participant"
+
+  # ==========================================================================
+  # SKULLSTRIP - BRAIN EXTRACTION
+  # ==========================================================================
+  - name: skullstrip help
+    description: Display skullstrip help
+    command: skullstrip --help 2>&1
+    expected_output_contains: "synthstrip"
+
+  - name: skullstrip pattern selection
+    description: Verify image pattern selection
+    command: skullstrip --help 2>&1
+    expected_output_contains: "pattern"
+
+  - name: skullstrip output options
+    description: Verify output destination options
+    command: skullstrip --help 2>&1
+    expected_output_contains: "output"
+
+  - name: skullstrip args passing
+    description: Verify additional arguments option
+    command: skullstrip --help 2>&1
+    expected_output_contains: "args"
+
+  # ==========================================================================
+  # ECHOCOMBINE - MULTI-ECHO COMBINATION
+  # ==========================================================================
+  - name: echocombine help
+    description: Display echocombine help
+    command: echocombine --help 2>&1
+    expected_output_contains: "multi-echo"
+
+  - name: echocombine algorithm options
+    description: Verify combination algorithm options
+    command: echocombine --help 2>&1
+    expected_output_contains: "PAID"
+
+  - name: echocombine weights option
+    description: Verify custom weights option
+    command: echocombine --help 2>&1
+    expected_output_contains: "weights"
+
+  - name: echocombine TE algorithm
+    description: Verify TE-weighted combination
+    command: echocombine --help 2>&1
+    expected_output_contains: "TE"
+
+  # ==========================================================================
+  # SLICEREPORT - QC REPORT GENERATION
+  # ==========================================================================
+  - name: slicereport help
+    description: Display slicereport help
+    command: slicereport --help 2>&1
+    expected_output_contains: "slicer"
+
+  - name: slicereport operations
+    description: Verify fslmaths operations support
+    command: slicereport --help 2>&1
+    expected_output_contains: "operations"
+
+  - name: slicereport outline options
+    description: Verify outline image options
+    command: slicereport --help 2>&1
+    expected_output_contains: "outline"
+
+  - name: slicereport QC scores
+    description: Verify QC scoring support
+    command: slicereport --help 2>&1
+    expected_output_contains: "qcscores"
+
+  # ==========================================================================
+  # PHYSIO2TSV - PHYSIOLOGICAL DATA CONVERSION
+  # ==========================================================================
+  - name: physio2tsv help
+    description: Display physio2tsv help
+    command: physio2tsv --help 2>&1
+    expected_output_contains: "physiological"
+
+  - name: physio2tsv SIEMENS support
+    description: Verify SIEMENS physiological log support
+    command: physio2tsv --help 2>&1
+    expected_output_contains: "SIEMENS"
+
+  - name: physio2tsv file formats
+    description: Verify supported file formats
+    command: physio2tsv --help 2>&1
+    expected_output_contains: "DICOM"
+
+  # ==========================================================================
+  # PLOTPHYSIO - PHYSIOLOGICAL DATA PLOTTING
+  # ==========================================================================
+  - name: plotphysio help
+    description: Display plotphysio help
+    command: plotphysio --help 2>&1
+    expected_output_contains: "physiological"
+
+  - name: plotphysio samples option
+    description: Verify sample selection option
+    command: plotphysio --help 2>&1
+    expected_output_contains: "showsamples"
+
+  # ==========================================================================
+  # FIXMETA - METADATA CORRECTION
+  # ==========================================================================
+  - name: fixmeta help
+    description: Display fixmeta help
+    command: fixmeta --help 2>&1
+    expected_output_contains: "metadata"
+
+  - name: fixmeta pattern selection
+    description: Verify pattern selection for sidecars
+    command: fixmeta --help 2>&1
+    expected_output_contains: "pattern"
+
+  - name: fixmeta IntendedFor support
+    description: Verify IntendedFor metadata support
+    command: fixmeta --help 2>&1
+    expected_output_contains: "IntendedFor"
+
+  - name: fixmeta B0FieldIdentifier support
+    description: Verify B0 field mapping support
+    command: fixmeta --help 2>&1
+    expected_output_contains: "B0FieldIdentifier"
+
+  # ==========================================================================
+  # BIDSCOIN TEST SUITE
+  # ==========================================================================
+  - name: bidscoin test basic
+    description: Run BIDScoin built-in test suite
+    command: bidscoin -t 2>&1 | head -20
+    expected_output_contains: "Testing"
+
+  # ==========================================================================
+  # INTEGRATION TESTS - BIDS VALIDATION
+  # ==========================================================================
+  - name: Validate ds000001 complete
+    description: Run full BIDS validation on test dataset
+    command: bids-validator ${bids_dataset} --ignoreWarnings 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Summary"
+
+  - name: Validate ds000001 strict MRI
+    description: Validate with MRI-specific checks
+    command: bids-validator ${bids_dataset} --ignoreNiftiHeaders 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Files"
+
+  - name: Check dataset description
+    description: Verify dataset_description.json exists and is valid
+    command: cat ${bids_dataset}/dataset_description.json 2>&1
+    expected_output_contains: "BIDSVersion"
+
+  - name: Check participants.tsv
+    description: Verify participants.tsv structure
+    command: head -5 ${bids_dataset}/participants.tsv 2>&1
+    expected_output_contains: "participant_id"
+
+  # ==========================================================================
+  # PYTHON MODULE AVAILABILITY
+  # ==========================================================================
+  - name: Python bidscoin module
+    description: Verify bidscoin Python module can be imported
+    command: python -c "import bidscoin; print(bidscoin.__version__)" 2>&1
+    expected_output_contains: "4.6.2"
+
+  - name: Python nibabel module
+    description: Verify nibabel is available for NIfTI handling
+    command: python -c "import nibabel; print(nibabel.__version__)" 2>&1
+    expected_output_contains: "."
+
+  - name: Python pydicom module
+    description: Verify pydicom is available for DICOM handling
+    command: python -c "import pydicom; print(pydicom.__version__)" 2>&1
+    expected_output_contains: "."
+
+  - name: Python pandas module
+    description: Verify pandas is available for tabular data
+    command: python -c "import pandas; print(pandas.__version__)" 2>&1
+    expected_output_contains: "."
+
+  # ==========================================================================
+  # NIFTI FILE OPERATIONS (using nibabel via Python)
+  # ==========================================================================
+  - name: Read NIfTI header T1w
+    description: Read T1w image header using nibabel
+    command: python -c "import nibabel as nib; img = nib.load(\"${t1w}\"); print(img.header[\"dim\"])" 2>&1
+    expected_output_contains: "["
+
+  - name: Read NIfTI header BOLD
+    description: Read BOLD image header using nibabel
+    command: python -c "import nibabel as nib; img = nib.load(\"${bold}\"); print(img.header[\"dim\"])" 2>&1
+    expected_output_contains: "["
+
+  - name: Check T1w dimensions
+    description: Verify T1w image is 3D
+    command: python -c "import nibabel as nib; img = nib.load(\"${t1w}\"); print(\"3D\" if len(img.shape) == 3 else \"NOT_3D\")" 2>&1
+    expected_output_contains: "3D"
+
+  - name: Check BOLD dimensions
+    description: Verify BOLD image is 4D
+    command: python -c "import nibabel as nib; img = nib.load(\"${bold}\"); print(\"4D\" if len(img.shape) == 4 else \"NOT_4D\")" 2>&1
+    expected_output_contains: "4D"
+
+  - name: Get T1w voxel sizes
+    description: Extract voxel dimensions from T1w header
+    command: python -c "import nibabel as nib; img = nib.load(\"${t1w}\"); print(img.header.get_zooms())" 2>&1
+    expected_output_contains: "("
+
+  - name: Get BOLD TR
+    description: Extract TR from BOLD image header
+    command: python -c "import nibabel as nib; img = nib.load(\"${bold}\"); zooms = img.header.get_zooms(); print(\"TR=%.1fs\" % zooms[3] if len(zooms) > 3 else \"NO_TR\")" 2>&1
+    expected_output_contains: "TR"
+
+  # ==========================================================================
+  # TSV/EVENT FILE OPERATIONS
+  # ==========================================================================
+  - name: Read events TSV
+    description: Read events file using pandas
+    command: python -c "import pandas as pd; df = pd.read_csv(\"${events}\", sep=\"\t\"); print(df.columns.tolist())" 2>&1
+    expected_output_contains: "onset"
+
+  - name: Check events columns
+    description: Verify required BIDS events columns
+    command: python -c "import pandas as pd; df = pd.read_csv(\"${events}\", sep=\"\t\"); print(\"OK\" if \"onset\" in df.columns and \"duration\" in df.columns else \"MISSING\")" 2>&1
+    expected_output_contains: "OK"
+
+  - name: Count events
+    description: Count number of events in events file
+    command: python -c "import pandas as pd; df = pd.read_csv(\"${events}\", sep=\"\t\"); print(\"Events:\", len(df))" 2>&1
+    expected_output_contains: "Events:"
+
+  # ==========================================================================
+  # DICOM OPERATIONS (module checks)
+  # ==========================================================================
+  - name: pydicom DICOM reading capability
+    description: Verify pydicom can handle DICOM data structures
+    command: python -c "from pydicom.dataset import Dataset; ds = Dataset(); ds.PatientName = 'Test'; print(ds.PatientName)" 2>&1
+    expected_output_contains: "Test"
+
+  - name: pydicom UID generation
+    description: Verify DICOM UID generation works
+    command: python -c "from pydicom.uid import generate_uid; uid = generate_uid(); print('UID_OK' if len(uid) > 10 else 'UID_FAIL')" 2>&1
+    expected_output_contains: "UID_OK"
+
+  # ==========================================================================
+  # ADDITIONAL TOOL CHECKS
+  # ==========================================================================
+  - name: Check Python version
+    description: Verify Python version in container
+    command: python --version 2>&1
+    expected_output_contains: "Python 3"
+
+  - name: Check pip packages
+    description: List key installed pip packages
+    command: pip list 2>&1 | grep -i bidscoin
+    expected_output_contains: "bidscoin"
+
+  - name: Check bidsschematools
+    description: Verify BIDS schema tools available
+    command: python -c "import bidsschematools; print('OK')" 2>&1
+    expected_output_contains: "OK"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

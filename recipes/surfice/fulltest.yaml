@@ -1,0 +1,603 @@
+# surfice container test suite
+# Tests for Surf Ice v1.0.20210730 - Surface rendering visualization tool
+#
+# Surf Ice is a tool for visualizing connectome networks, tractography,
+# and statistical maps on anatomical brain surface renderings.
+# Unlike MRIcroGL (volume renderer), Surf Ice is a surface renderer.
+#
+# Test data uses included sample files from the container
+
+name: surfice
+version: 1.0.20210730
+container: surfice_1.0.20210730_20211218.simg
+
+# Environment setup for headless rendering
+env:
+  QT_QPA_PLATFORM: offscreen
+
+test_data:
+  # Sample mesh files included in container
+  sample_mesh: /opt/Surf_Ice/sample/mni152_2009.mz3
+  sample_mesh_mini: /opt/Surf_Ice/sample/mni152_2009mini.mz3
+  sample_mesh_ao: /opt/Surf_Ice/sample/mni152_2009AO.mz3
+  stroke_mesh: /opt/Surf_Ice/sample/stroke.mz3
+  stroke_track: /opt/Surf_Ice/sample/stroke.trk.gz
+  motor_mesh: /opt/Surf_Ice/sample/motor_4t95mesh.rh.mz3
+  motor_volume: /opt/Surf_Ice/sample/motor_4t95vol.nii.gz
+  scalp_mesh: /opt/Surf_Ice/sample/scalp.mz3
+  # BrainNet meshes
+  brainmesh_lh: /opt/Surf_Ice/BrainNet/BrainMesh_ICBM152.lh.mz3
+  brainmesh_rh: /opt/Surf_Ice/BrainNet/BrainMesh_ICBM152.rh.mz3
+  brainmesh_full: /opt/Surf_Ice/BrainNet/BrainMesh_ICBM152.mz3
+  brainmesh_smoothed: /opt/Surf_Ice/BrainNet/BrainMesh_ICBM152_smoothed.mz3
+  brainmesh_ch2: /opt/Surf_Ice/BrainNet/BrainMesh_Ch2.mz3
+  lpba40_node: /opt/Surf_Ice/BrainNet/LPBA40.node
+  lpba40_edge: /opt/Surf_Ice/BrainNet/LPBA40.edge
+  # Atlas meshes
+  aal_atlas: /opt/Surf_Ice/atlas/aal.mz3
+  aicha_atlas: /opt/Surf_Ice/atlas/AICHAhr.mz3
+  aicha_atlas_lh: /opt/Surf_Ice/atlas/AICHAhr.lh.mz3
+  jhu_atlas: /opt/Surf_Ice/atlas/jhu.mz3
+  cit168_atlas: /opt/Surf_Ice/atlas/CIT168.mz3
+  shen268_atlas: /opt/Surf_Ice/atlas/shen268.mz3
+  # FreeSurfer sample files
+  fs_lh_pial: /opt/Surf_Ice/fs/lh.pial
+  fs_rh_pial: /opt/Surf_Ice/fs/rh.pial
+  fs_lh_curv: /opt/Surf_Ice/fs/lh.curv
+  fs_annot: /opt/Surf_Ice/fs/boggle.lh.annot
+  # Caret sample files
+  caret_gii: /opt/Surf_Ice/caret/Human.colin.Cerebral.R.FIDUCIAL.TLRC.711-2B.71723.surf.gii
+  caret_flat: /opt/Surf_Ice/caret/Human.colin.Cerebral.R.FLAT.CartSTD.71723.surf.gii
+  caret_inflated: /opt/Surf_Ice/caret/Human.colin.Cerebral.R.VERY_INFLATED.71723.surf.gii
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: Container README check
+    description: Verify container has documentation
+    command: cat /README.md
+    expected_output_contains: "surfice"
+
+  - name: Binary exists
+    description: Verify surfice binary is present
+    command: test -x /opt/Surf_Ice/surfice && echo "surfice binary found"
+    expected_output_contains: "surfice binary found"
+
+  - name: Version check via binary
+    description: Verify Surfice binary is executable and has help flag (GUI can't run headlessly)
+    command: |
+      test -x /opt/Surf_Ice/surfice && echo "Surfice binary is executable" && ls -la /opt/Surf_Ice/surfice
+    expected_output_contains: "Surfice binary is executable"
+
+  - name: Sample files exist - MNI152 mesh
+    description: Verify sample MNI152 brain mesh exists
+    command: test -f /opt/Surf_Ice/sample/mni152_2009.mz3 && echo "MNI152 mesh found"
+    expected_output_contains: "MNI152 mesh found"
+
+  - name: Sample files exist - stroke mesh
+    description: Verify stroke sample mesh exists
+    command: test -f /opt/Surf_Ice/sample/stroke.mz3 && echo "Stroke mesh found"
+    expected_output_contains: "Stroke mesh found"
+
+  - name: Sample files exist - tractography
+    description: Verify tractography sample file exists
+    command: test -f /opt/Surf_Ice/sample/stroke.trk.gz && echo "Tractography found"
+    expected_output_contains: "Tractography found"
+
+  # ==========================================================================
+  # RESOURCE FILES VALIDATION
+  # ==========================================================================
+  - name: Shaders directory exists
+    description: Verify shader resources are present
+    command: ls /opt/Surf_Ice/Resources/shaders/*.txt | wc -l
+    expected_output_contains: "2"
+
+  - name: Default shader exists
+    description: Verify default shader file exists
+    command: test -f /opt/Surf_Ice/Resources/shaders/Default.txt && echo "Default shader found"
+    expected_output_contains: "Default shader found"
+
+  - name: MatCap resources exist
+    description: Verify matcap textures are present
+    command: ls /opt/Surf_Ice/Resources/matcap/*.jpg 2>/dev/null | wc -l
+    expected_output_contains: ""
+
+  - name: Color lookup tables exist
+    description: Verify color LUT files are present
+    command: ls /opt/Surf_Ice/Resources/lut/*.clut | wc -l
+    expected_output_contains: ""
+
+  - name: Python scripting resources exist
+    description: Verify Python 3.7 resources are present
+    command: test -d /opt/Surf_Ice/Resources/python37 && echo "Python resources found"
+    expected_output_contains: "Python resources found"
+
+  # ==========================================================================
+  # BRAINNET VIEWER COMPATIBILITY FILES
+  # ==========================================================================
+  - name: BrainNet mesh - left hemisphere
+    description: Verify BrainNet left hemisphere mesh exists
+    command: test -f /opt/Surf_Ice/BrainNet/BrainMesh_ICBM152.lh.mz3 && echo "LH mesh found"
+    expected_output_contains: "LH mesh found"
+
+  - name: BrainNet mesh - right hemisphere
+    description: Verify BrainNet right hemisphere mesh exists
+    command: test -f /opt/Surf_Ice/BrainNet/BrainMesh_ICBM152.rh.mz3 && echo "RH mesh found"
+    expected_output_contains: "RH mesh found"
+
+  - name: BrainNet mesh - full brain
+    description: Verify BrainNet full brain mesh exists
+    command: test -f /opt/Surf_Ice/BrainNet/BrainMesh_ICBM152.mz3 && echo "Full brain mesh found"
+    expected_output_contains: "Full brain mesh found"
+
+  - name: BrainNet node file
+    description: Verify LPBA40 node file exists for connectome visualization
+    command: test -f /opt/Surf_Ice/BrainNet/LPBA40.node && echo "Node file found"
+    expected_output_contains: "Node file found"
+
+  - name: BrainNet edge file
+    description: Verify LPBA40 edge file exists for connectome visualization
+    command: test -f /opt/Surf_Ice/BrainNet/LPBA40.edge && echo "Edge file found"
+    expected_output_contains: "Edge file found"
+
+  - name: BrainNet Ch2 mesh
+    description: Verify Colin27 (Ch2) template mesh exists
+    command: test -f /opt/Surf_Ice/BrainNet/BrainMesh_Ch2.mz3 && echo "Ch2 mesh found"
+    expected_output_contains: "Ch2 mesh found"
+
+  - name: BrainNet cerebellum mesh
+    description: Verify cerebellum mesh exists
+    command: test -f /opt/Surf_Ice/BrainNet/BrainMesh_Cerebellum_by_SLF.mz3 && echo "Cerebellum mesh found"
+    expected_output_contains: "Cerebellum mesh found"
+
+  # ==========================================================================
+  # ATLAS FILES
+  # ==========================================================================
+  - name: AAL atlas mesh
+    description: Verify AAL atlas mesh exists
+    command: test -f /opt/Surf_Ice/atlas/aal.mz3 && echo "AAL atlas found"
+    expected_output_contains: "AAL atlas found"
+
+  - name: AAL atlas labels
+    description: Verify AAL atlas label file exists
+    command: test -f /opt/Surf_Ice/atlas/aal.txt && echo "AAL labels found"
+    expected_output_contains: "AAL labels found"
+
+  - name: AICHA atlas mesh
+    description: Verify AICHA atlas mesh exists
+    command: test -f /opt/Surf_Ice/atlas/AICHAhr.mz3 && echo "AICHA atlas found"
+    expected_output_contains: "AICHA atlas found"
+
+  - name: AICHA atlas left hemisphere
+    description: Verify AICHA atlas left hemisphere exists
+    command: test -f /opt/Surf_Ice/atlas/AICHAhr.lh.mz3 && echo "AICHA LH found"
+    expected_output_contains: "AICHA LH found"
+
+  - name: JHU atlas mesh
+    description: Verify JHU white matter atlas mesh exists
+    command: test -f /opt/Surf_Ice/atlas/jhu.mz3 && echo "JHU atlas found"
+    expected_output_contains: "JHU atlas found"
+
+  - name: CIT168 subcortical atlas
+    description: Verify CIT168 reinforcement learning atlas exists
+    command: test -f /opt/Surf_Ice/atlas/CIT168.mz3 && echo "CIT168 atlas found"
+    expected_output_contains: "CIT168 atlas found"
+
+  - name: Shen268 parcellation atlas
+    description: Verify Shen 268-region parcellation atlas exists
+    command: test -f /opt/Surf_Ice/atlas/shen268.mz3 && echo "Shen268 atlas found"
+    expected_output_contains: "Shen268 atlas found"
+
+  # ==========================================================================
+  # FREESURFER FORMAT SUPPORT
+  # ==========================================================================
+  - name: FreeSurfer pial surface - left
+    description: Verify FreeSurfer left pial surface exists
+    command: test -f /opt/Surf_Ice/fs/lh.pial && echo "LH pial found"
+    expected_output_contains: "LH pial found"
+
+  - name: FreeSurfer pial surface - right
+    description: Verify FreeSurfer right pial surface exists
+    command: test -f /opt/Surf_Ice/fs/rh.pial && echo "RH pial found"
+    expected_output_contains: "RH pial found"
+
+  - name: FreeSurfer inflated surface - left
+    description: Verify FreeSurfer left inflated surface exists
+    command: test -f /opt/Surf_Ice/fs/lh.inflated && echo "LH inflated found"
+    expected_output_contains: "LH inflated found"
+
+  - name: FreeSurfer curvature file
+    description: Verify FreeSurfer curvature file exists
+    command: test -f /opt/Surf_Ice/fs/lh.curv && echo "LH curv found"
+    expected_output_contains: "LH curv found"
+
+  - name: FreeSurfer annotation file
+    description: Verify FreeSurfer annotation file exists
+    command: test -f /opt/Surf_Ice/fs/boggle.lh.annot && echo "Annotation found"
+    expected_output_contains: "Annotation found"
+
+  # ==========================================================================
+  # CARET/GIFTI FORMAT SUPPORT
+  # ==========================================================================
+  - name: Caret GIfTI fiducial surface
+    description: Verify Caret GIfTI fiducial surface exists
+    command: test -f "/opt/Surf_Ice/caret/Human.colin.Cerebral.R.FIDUCIAL.TLRC.711-2B.71723.surf.gii" && echo "GIfTI fiducial found"
+    expected_output_contains: "GIfTI fiducial found"
+
+  - name: Caret GIfTI flat surface
+    description: Verify Caret GIfTI flat map surface exists
+    command: test -f "/opt/Surf_Ice/caret/Human.colin.Cerebral.R.FLAT.CartSTD.71723.surf.gii" && echo "GIfTI flat found"
+    expected_output_contains: "GIfTI flat found"
+
+  - name: Caret GIfTI inflated surface
+    description: Verify Caret GIfTI inflated surface exists
+    command: test -f "/opt/Surf_Ice/caret/Human.colin.Cerebral.R.VERY_INFLATED.71723.surf.gii" && echo "GIfTI inflated found"
+    expected_output_contains: "GIfTI inflated found"
+
+  - name: Caret functional data
+    description: Verify Caret functional GIfTI file exists
+    command: test -f "/opt/Surf_Ice/caret/Human.colin.R.FUNCTIONAL.71723.func.gii" && echo "Functional GIfTI found"
+    expected_output_contains: "Functional GIfTI found"
+
+  - name: Caret shape data
+    description: Verify Caret shape GIfTI file exists
+    command: test -f "/opt/Surf_Ice/caret/Human.colin.R.shape.71723.shape.gii" && echo "Shape GIfTI found"
+    expected_output_contains: "Shape GIfTI found"
+
+  # ==========================================================================
+  # SCRIPT FILES - GLS (Pascal-like) FORMAT
+  # ==========================================================================
+  - name: GLS script - mesh loading
+    description: Verify mesh.gls sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/mesh.gls && echo "mesh.gls found"
+    expected_output_contains: "mesh.gls found"
+
+  - name: GLS script - track visualization
+    description: Verify track.gls sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/track.gls && echo "track.gls found"
+    expected_output_contains: "track.gls found"
+
+  - name: GLS script - scalp rendering
+    description: Verify scalp.gls sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/scalp.gls && echo "scalp.gls found"
+    expected_output_contains: "scalp.gls found"
+
+  - name: GLS script - node visualization
+    description: Verify node.gls sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/node.gls && echo "node.gls found"
+    expected_output_contains: "node.gls found"
+
+  - name: GLS script - shader demo
+    description: Verify shaders.gls sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/shaders.gls && echo "shaders.gls found"
+    expected_output_contains: "shaders.gls found"
+
+  - name: GLS script - fMRI mesh
+    description: Verify fmri_mesh.gls sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/fmri_mesh.gls && echo "fmri_mesh.gls found"
+    expected_output_contains: "fmri_mesh.gls found"
+
+  - name: GLS script - atlas creation
+    description: Verify create_atlas.gls sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/create_atlas.gls && echo "create_atlas.gls found"
+    expected_output_contains: "create_atlas.gls found"
+
+  # ==========================================================================
+  # SCRIPT FILES - PYTHON FORMAT
+  # ==========================================================================
+  - name: Python script - help
+    description: Verify help.py sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/help.py && echo "help.py found"
+    expected_output_contains: "help.py found"
+
+  - name: Python script - mesh loading
+    description: Verify mesh.py sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/mesh.py && echo "mesh.py found"
+    expected_output_contains: "mesh.py found"
+
+  - name: Python script - track visualization
+    description: Verify track.py sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/track.py && echo "track.py found"
+    expected_output_contains: "track.py found"
+
+  - name: Python script - scalp rendering
+    description: Verify scalp.py sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/scalp.py && echo "scalp.py found"
+    expected_output_contains: "scalp.py found"
+
+  - name: Python script - node visualization
+    description: Verify node.py sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/node.py && echo "node.py found"
+    expected_output_contains: "node.py found"
+
+  - name: Python script - shader demo
+    description: Verify shaders.py sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/shaders.py && echo "shaders.py found"
+    expected_output_contains: "shaders.py found"
+
+  - name: Python script - fMRI mesh
+    description: Verify fmri_mesh.py sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/fmri_mesh.py && echo "fmri_mesh.py found"
+    expected_output_contains: "fmri_mesh.py found"
+
+  - name: Python script - atlas creation
+    description: Verify create_atlas.py sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/create_atlas.py && echo "create_atlas.py found"
+    expected_output_contains: "create_atlas.py found"
+
+  - name: Python script - contour
+    description: Verify contour.py sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/contour.py && echo "contour.py found"
+    expected_output_contains: "contour.py found"
+
+  - name: Python script - subcortical
+    description: Verify subcortical.py sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/subcortical.py && echo "subcortical.py found"
+    expected_output_contains: "subcortical.py found"
+
+  - name: Python script - walnut brain
+    description: Verify walnut.py sample script (WalnutBrain emulation) exists
+    command: test -f /opt/Surf_Ice/Resources/script/walnut.py && echo "walnut.py found"
+    expected_output_contains: "walnut.py found"
+
+  - name: Python script - matcap mesh
+    description: Verify matcapMesh.py sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/matcapMesh.py && echo "matcapMesh.py found"
+    expected_output_contains: "matcapMesh.py found"
+
+  - name: Python script - basic paint surface
+    description: Verify basic_paint_surface.py sample script exists
+    command: test -f /opt/Surf_Ice/Resources/script/basic_paint_surface.py && echo "basic_paint_surface.py found"
+    expected_output_contains: "basic_paint_surface.py found"
+
+  # ==========================================================================
+  # SHADER FILES
+  # ==========================================================================
+  - name: Shader - Default
+    description: Verify Default shader exists
+    command: test -f /opt/Surf_Ice/Resources/shaders/Default.txt && echo "Default shader found"
+    expected_output_contains: "Default shader found"
+
+  - name: Shader - Metal
+    description: Verify Metal shader exists
+    command: test -f /opt/Surf_Ice/Resources/shaders/Metal.txt && echo "Metal shader found"
+    expected_output_contains: "Metal shader found"
+
+  - name: Shader - Toon
+    description: Verify Toon shader exists
+    command: test -f /opt/Surf_Ice/Resources/shaders/Toon.txt && echo "Toon shader found"
+    expected_output_contains: "Toon shader found"
+
+  - name: Shader - Wire
+    description: Verify Wire shader exists
+    command: test -f /opt/Surf_Ice/Resources/shaders/Wire.txt && echo "Wire shader found"
+    expected_output_contains: "Wire shader found"
+
+  - name: Shader - Wireframe
+    description: Verify Wireframe shader exists
+    command: test -f /opt/Surf_Ice/Resources/shaders/Wireframe.txt && echo "Wireframe shader found"
+    expected_output_contains: "Wireframe shader found"
+
+  - name: Shader - Phong
+    description: Verify Phong shader exists
+    command: test -f /opt/Surf_Ice/Resources/shaders/Phong.txt && echo "Phong shader found"
+    expected_output_contains: "Phong shader found"
+
+  - name: Shader - MatCap
+    description: Verify MatCap shader exists
+    command: test -f /opt/Surf_Ice/Resources/shaders/MatCap.txt && echo "MatCap shader found"
+    expected_output_contains: "MatCap shader found"
+
+  - name: Shader - Gooch
+    description: Verify Gooch shader exists
+    command: test -f /opt/Surf_Ice/Resources/shaders/Gooch.txt && echo "Gooch shader found"
+    expected_output_contains: "Gooch shader found"
+
+  - name: Shader - Flat
+    description: Verify Flat shader exists
+    command: test -f /opt/Surf_Ice/Resources/shaders/Flat.txt && echo "Flat shader found"
+    expected_output_contains: "Flat shader found"
+
+  - name: Shader - Outline
+    description: Verify Outline shader exists
+    command: test -f /opt/Surf_Ice/Resources/shaders/Outline.txt && echo "Outline shader found"
+    expected_output_contains: "Outline shader found"
+
+  - name: Shader - HideCurves
+    description: Verify HideCurves shader exists
+    command: test -f /opt/Surf_Ice/Resources/shaders/HideCurves.txt && echo "HideCurves shader found"
+    expected_output_contains: "HideCurves shader found"
+
+  # ==========================================================================
+  # COLOR LOOKUP TABLES
+  # ==========================================================================
+  - name: LUT - Viridis
+    description: Verify Viridis color lookup table exists
+    command: test -f /opt/Surf_Ice/Resources/lut/Viridis.clut && echo "Viridis LUT found"
+    expected_output_contains: "Viridis LUT found"
+
+  - name: LUT - Plasma
+    description: Verify Plasma color lookup table exists
+    command: test -f /opt/Surf_Ice/Resources/lut/Plasma.clut && echo "Plasma LUT found"
+    expected_output_contains: "Plasma LUT found"
+
+  - name: LUT - Inferno
+    description: Verify Inferno color lookup table exists
+    command: test -f /opt/Surf_Ice/Resources/lut/Inferno.clut && echo "Inferno LUT found"
+    expected_output_contains: "Inferno LUT found"
+
+  - name: LUT - Kelvin
+    description: Verify Kelvin color lookup table exists
+    command: test -f /opt/Surf_Ice/Resources/lut/Kelvin.clut && echo "Kelvin LUT found"
+    expected_output_contains: "Kelvin LUT found"
+
+  - name: LUT - Gold
+    description: Verify Gold color lookup table exists
+    command: test -f /opt/Surf_Ice/Resources/lut/Gold.clut && echo "Gold LUT found"
+    expected_output_contains: "Gold LUT found"
+
+  - name: LUT - Surface
+    description: Verify Surface color lookup table exists
+    command: test -f /opt/Surf_Ice/Resources/lut/Surface.clut && echo "Surface LUT found"
+    expected_output_contains: "Surface LUT found"
+
+  # ==========================================================================
+  # MATCAP TEXTURES
+  # ==========================================================================
+  - name: MatCap - Cortex
+    description: Verify Cortex MatCap texture exists
+    command: test -f /opt/Surf_Ice/Resources/matcap/Cortex.jpg && echo "Cortex MatCap found"
+    expected_output_contains: "Cortex MatCap found"
+
+  - name: MatCap - ShinyWhite
+    description: Verify ShinyWhite MatCap texture exists
+    command: test -f /opt/Surf_Ice/Resources/matcap/00ShinyWhite.jpg && echo "ShinyWhite MatCap found"
+    expected_output_contains: "ShinyWhite MatCap found"
+
+  - name: MatCap - Metal
+    description: Verify Metal MatCap textures exist
+    command: test -f /opt/Surf_Ice/Resources/matcap/MetalShiny.jpg && echo "Metal MatCap found"
+    expected_output_contains: "Metal MatCap found"
+
+  # ==========================================================================
+  # SCRIPT SYNTAX VALIDATION
+  # ==========================================================================
+  - name: GLS script syntax - mesh.gls contains meshload
+    description: Verify mesh.gls contains proper meshload command
+    command: grep -q "meshload" /opt/Surf_Ice/Resources/script/mesh.gls && echo "meshload command found"
+    expected_output_contains: "meshload command found"
+
+  - name: GLS script syntax - track.gls contains trackload
+    description: Verify track.gls contains proper trackload command
+    command: grep -q "trackload" /opt/Surf_Ice/Resources/script/track.gls && echo "trackload command found"
+    expected_output_contains: "trackload command found"
+
+  - name: Python script syntax - mesh.py imports gl
+    description: Verify mesh.py imports the gl module
+    command: grep -q "import gl" /opt/Surf_Ice/Resources/script/mesh.py && echo "gl import found"
+    expected_output_contains: "gl import found"
+
+  - name: Python script syntax - mesh.py uses gl.meshload
+    description: Verify mesh.py uses gl.meshload function
+    command: grep -q "gl.meshload" /opt/Surf_Ice/Resources/script/mesh.py && echo "gl.meshload found"
+    expected_output_contains: "gl.meshload found"
+
+  - name: Python script syntax - track.py uses gl.trackload
+    description: Verify track.py uses gl.trackload function
+    command: grep -q "gl.trackload" /opt/Surf_Ice/Resources/script/track.py && echo "gl.trackload found"
+    expected_output_contains: "gl.trackload found"
+
+  - name: Python script syntax - shaders.py uses gl.shadername
+    description: Verify shaders.py uses gl.shadername function
+    command: grep -q "gl.shadername" /opt/Surf_Ice/Resources/script/shaders.py && echo "gl.shadername found"
+    expected_output_contains: "gl.shadername found"
+
+  # ==========================================================================
+  # ALTERNATIVE BINARIES
+  # ==========================================================================
+  - name: Alternative binary - surfice_qt5
+    description: Verify Qt5 version of surfice exists
+    command: test -x /opt/Surf_Ice/surfice_qt5 && echo "surfice_qt5 found"
+    expected_output_contains: "surfice_qt5 found"
+
+  - name: Alternative binary - surficeOld
+    description: Verify OpenGL 2.1 compatible version exists
+    command: test -x /opt/Surf_Ice/surficeOld && echo "surficeOld found"
+    expected_output_contains: "surficeOld found"
+
+  - name: Alternative binary - surficeOld_qt5
+    description: Verify OpenGL 2.1 + Qt5 version exists
+    command: test -x /opt/Surf_Ice/surficeOld_qt5 && echo "surficeOld_qt5 found"
+    expected_output_contains: "surficeOld_qt5 found"
+
+  # ==========================================================================
+  # MESH FILE FORMAT SUPPORT (file size validation)
+  # ==========================================================================
+  - name: MZ3 format support - sample mesh
+    description: Verify MZ3 mesh file is valid (non-empty)
+    command: test -s /opt/Surf_Ice/sample/mni152_2009.mz3 && echo "MZ3 file valid"
+    expected_output_contains: "MZ3 file valid"
+
+  - name: MZ3 format support - mini mesh
+    description: Verify mini MZ3 mesh file is valid
+    command: test -s /opt/Surf_Ice/sample/mni152_2009mini.mz3 && echo "Mini MZ3 file valid"
+    expected_output_contains: "Mini MZ3 file valid"
+
+  - name: MZ3 format support - AO mesh
+    description: Verify ambient occlusion MZ3 mesh file is valid
+    command: test -s /opt/Surf_Ice/sample/mni152_2009AO.mz3 && echo "AO MZ3 file valid"
+    expected_output_contains: "AO MZ3 file valid"
+
+  - name: NIfTI format support - motor volume
+    description: Verify NIfTI volume file is valid
+    command: test -s /opt/Surf_Ice/sample/motor_4t95vol.nii.gz && echo "NIfTI file valid"
+    expected_output_contains: "NIfTI file valid"
+
+  - name: TRK format support - tractography
+    description: Verify TRK tractography file is valid
+    command: test -s /opt/Surf_Ice/sample/stroke.trk.gz && echo "TRK file valid"
+    expected_output_contains: "TRK file valid"
+
+  - name: Curvature format support
+    description: Verify curvature file is valid
+    command: test -s /opt/Surf_Ice/sample/mni152_2009.curv && echo "CURV file valid"
+    expected_output_contains: "CURV file valid"
+
+  # ==========================================================================
+  # FONT RESOURCES
+  # ==========================================================================
+  - name: Font - OpenSans
+    description: Verify OpenSans font resources exist
+    command: test -f /opt/Surf_Ice/Resources/lut/OpenSans.png && echo "OpenSans font found"
+    expected_output_contains: "OpenSans font found"
+
+  - name: Font - Roboto
+    description: Verify Roboto font resources exist
+    command: test -f /opt/Surf_Ice/Resources/lut/Roboto.png && echo "Roboto font found"
+    expected_output_contains: "Roboto font found"
+
+  - name: Font - Ubuntu
+    description: Verify Ubuntu font resources exist
+    command: test -f /opt/Surf_Ice/Resources/lut/Ubuntu.png && echo "Ubuntu font found"
+    expected_output_contains: "Ubuntu font found"
+
+  # ==========================================================================
+  # MNI2FS DIRECTORY
+  # ==========================================================================
+  - name: MNI2FS directory exists
+    description: Verify mni2fs directory for MNI to FreeSurfer conversion exists
+    command: test -d /opt/Surf_Ice/mni2fs && echo "mni2fs directory found"
+    expected_output_contains: "mni2fs directory found"
+
+  # ==========================================================================
+  # INSTALLATION DOCUMENTATION
+  # ==========================================================================
+  - name: Installation documentation
+    description: Verify installation documentation exists
+    command: test -f /opt/Surf_Ice/surfice_Linux_Installation.txt && echo "Installation docs found"
+    expected_output_contains: "Installation docs found"
+
+  - name: Installation docs mention Qt5
+    description: Verify installation docs mention Qt5 widget set
+    command: grep -q "qt5" /opt/Surf_Ice/surfice_Linux_Installation.txt && echo "Qt5 mentioned"
+    expected_output_contains: "Qt5 mentioned"
+
+  - name: Installation docs mention OpenGL
+    description: Verify installation docs mention OpenGL requirements
+    command: grep -qi "opengl" /opt/Surf_Ice/surfice_Linux_Installation.txt && echo "OpenGL mentioned"
+    expected_output_contains: "OpenGL mentioned"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

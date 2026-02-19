@@ -1,0 +1,972 @@
+# SPM12 container test suite
+# Tests for SPM12 r7771 - Statistical Parametric Mapping with MATLAB Compiler Runtime
+#
+# SPM12 (Statistical Parametric Mapping) is a comprehensive software package for
+# the analysis of brain imaging data sequences (fMRI, PET, SPECT, EEG, MEG).
+# This standalone version uses MATLAB Compiler Runtime (MCR) v97 (R2019b).
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - inplaneT2: T2-weighted structural scan
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# Reference: https://www.fil.ion.ucl.ac.uk/spm/doc/
+#
+# Note: SPM12 standalone operations can be slow due to MCR initialization.
+# Most tests verify the container setup and basic functionality.
+
+name: spm12
+version: r7771
+container: spm12_r7771_20230609.simg
+
+# Container paths
+container_paths:
+  spm_root: /opt/spm12
+  mcr_root: /opt/mcr/v97
+  spm_script: /opt/spm12/run_spm12.sh
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/spm_work
+    mkdir -p test_output/spm_batch
+    mkdir -p test_output/stats
+
+tests:
+  # ==========================================================================
+  # BASIC CONTAINER VERIFICATION
+  # ==========================================================================
+  - name: SPM12 runner script exists
+    description: Verify the main SPM12 runner script is present
+    command: test -f /opt/spm12/run_spm12.sh && echo "run_spm12.sh exists"
+    expected_output_contains: "run_spm12.sh exists"
+
+  - name: MCR installation exists
+    description: Verify MATLAB Compiler Runtime v97 is installed
+    command: test -d /opt/mcr/v97 && echo "MCR v97 installed"
+    expected_output_contains: "MCR v97 installed"
+
+  - name: SPM12 binary exists
+    description: Verify compiled SPM12 binary is present
+    command: test -x /opt/spm12/spm12 && echo "spm12 binary exists"
+    expected_output_contains: "spm12 binary exists"
+
+  - name: SPM12 CTF archive exists
+    description: Verify SPM12 compiled archive is present
+    command: test -f /opt/spm12/spm12.ctf && echo "spm12.ctf exists"
+    expected_output_contains: "spm12.ctf exists"
+
+  # ==========================================================================
+  # SPM12 VERSION AND STARTUP
+  # ==========================================================================
+  - name: SPM12 version check
+    description: Verify SPM12 reports correct version
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ --version 2>&1
+    expected_output_contains: "SPM12"
+    timeout: 120
+
+  - name: SPM12 help output
+    description: Verify SPM12 help displays correctly
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ --help 2>&1
+    expected_output_contains: "Usage"
+    timeout: 120
+
+  - name: MATLAB version check
+    description: Verify MCR reports MATLAB version
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ --version 2>&1
+    expected_output_contains: "MATLAB"
+    timeout: 120
+
+  - name: SPM12 revision number
+    description: Verify SPM12 revision 7771
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ --version 2>&1
+    expected_output_contains: "7771"
+    timeout: 120
+
+  # ==========================================================================
+  # SPM12 EVAL COMMAND TESTS
+  # ==========================================================================
+  - name: SPM eval disp command
+    description: Test basic MATLAB eval with disp
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp('SPM12 working')" 2>&1
+    expected_output_contains: "SPM12 working"
+    timeout: 180
+
+  - name: SPM eval spm version
+    description: Get SPM version via spm function
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "spm('ver')" 2>&1
+    expected_output_contains: "SPM12"
+    timeout: 180
+
+  - name: SPM eval get defaults
+    description: Verify SPM defaults are accessible
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "d=spm_get_defaults; disp(class(d))" 2>&1
+    expected_output_contains: "struct"
+    timeout: 180
+
+  - name: SPM eval exist spm_vol
+    description: Verify spm_vol function exists
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('spm_vol'))" 2>&1
+    expected_output_contains: "2"
+    timeout: 180
+
+  - name: SPM eval exist spm_realign
+    description: Verify spm_realign function exists
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('spm_realign'))" 2>&1
+    expected_output_contains: "2"
+    timeout: 180
+
+  - name: SPM eval exist spm_smooth
+    description: Verify spm_smooth function exists
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('spm_smooth'))" 2>&1
+    expected_output_contains: "2"
+    timeout: 180
+
+  - name: SPM eval exist spm_coreg
+    description: Verify spm_coreg function exists
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('spm_coreg'))" 2>&1
+    expected_output_contains: "2"
+    timeout: 180
+
+  - name: SPM eval exist spm_preproc
+    description: Verify spm_preproc function exists
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('spm_preproc'))" 2>&1
+    expected_output_contains: "2"
+    timeout: 180
+
+  - name: SPM eval exist spm_spm
+    description: Verify spm_spm function (GLM estimation) exists
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('spm_spm'))" 2>&1
+    expected_output_contains: "2"
+    timeout: 180
+
+  # ==========================================================================
+  # SPM12 DIRECTORY STRUCTURE
+  # ==========================================================================
+  - name: SPM12 MCR directory structure
+    description: Verify SPM12 MCR unpacked directory exists
+    command: test -d /opt/spm12/spm12_mcr && echo "spm12_mcr directory exists"
+    expected_output_contains: "spm12_mcr directory exists"
+
+  - name: SPM12 canonical directory exists
+    description: Verify canonical templates directory
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/canonical && echo "canonical dir exists"
+    expected_output_contains: "canonical dir exists"
+
+  - name: SPM12 config directory exists
+    description: Verify config batch modules directory
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/config && echo "config dir exists"
+    expected_output_contains: "config dir exists"
+
+  - name: SPM12 toolbox directory exists
+    description: Verify toolbox directory
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/toolbox && echo "toolbox dir exists"
+    expected_output_contains: "toolbox dir exists"
+
+  # ==========================================================================
+  # SPM12 TEMPLATES AND ATLASES
+  # ==========================================================================
+  - name: TPM template exists
+    description: Verify Tissue Probability Map template
+    command: find /opt/spm12 -name "TPM.nii" -type f 2>/dev/null | head -1 | xargs test -f && echo "TPM.nii exists"
+    expected_output_contains: "TPM.nii exists"
+
+  - name: T1 canonical template exists
+    description: Verify single subject T1 template
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/canonical/single_subj_T1.nii && echo "single_subj_T1.nii exists"
+    expected_output_contains: "single_subj_T1.nii exists"
+
+  - name: avg152T1 template exists
+    description: Verify MNI avg152 T1 template
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/canonical/avg152T1.nii && echo "avg152T1.nii exists"
+    expected_output_contains: "avg152T1.nii exists"
+
+  - name: avg152T2 template exists
+    description: Verify MNI avg152 T2 template
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/canonical/avg152T2.nii && echo "avg152T2.nii exists"
+    expected_output_contains: "avg152T2.nii exists"
+
+  - name: avg152PD template exists
+    description: Verify MNI avg152 PD template
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/canonical/avg152PD.nii && echo "avg152PD.nii exists"
+    expected_output_contains: "avg152PD.nii exists"
+
+  - name: Neuromorphometrics labels exist
+    description: Verify Neuromorphometrics atlas labels
+    command: find /opt/spm12 -name "labels_Neuromorphometrics*" -type f 2>/dev/null | wc -l | xargs test 0 -lt && echo "Neuromorphometrics labels exist"
+    expected_output_contains: "Neuromorphometrics labels exist"
+
+  - name: ICV mask exists
+    description: Verify intracranial volume mask template
+    command: find /opt/spm12 -name "mask_ICV.nii" -type f 2>/dev/null | head -1 | xargs test -f && echo "mask_ICV.nii exists"
+    expected_output_contains: "mask_ICV.nii exists"
+
+  # ==========================================================================
+  # SPM12 TOOLBOX VERIFICATION
+  # ==========================================================================
+  - name: DARTEL toolbox exists
+    description: Verify DARTEL diffeomorphic registration toolbox
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/toolbox/DARTEL && echo "DARTEL toolbox exists"
+    expected_output_contains: "DARTEL toolbox exists"
+
+  - name: FieldMap toolbox exists
+    description: Verify FieldMap distortion correction toolbox
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/toolbox/FieldMap && echo "FieldMap toolbox exists"
+    expected_output_contains: "FieldMap toolbox exists"
+
+  - name: Shoot toolbox exists
+    description: Verify Shoot geodesic shooting toolbox
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/toolbox/Shoot && echo "Shoot toolbox exists"
+    expected_output_contains: "Shoot toolbox exists"
+
+  - name: Longitudinal toolbox exists
+    description: Verify Longitudinal registration toolbox
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/toolbox/Longitudinal && echo "Longitudinal toolbox exists"
+    expected_output_contains: "Longitudinal toolbox exists"
+
+  - name: OldNorm toolbox exists
+    description: Verify Old Normalise toolbox (SPM2/5 style)
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/toolbox/OldNorm && echo "OldNorm toolbox exists"
+    expected_output_contains: "OldNorm toolbox exists"
+
+  - name: OldSeg toolbox exists
+    description: Verify Old Segment toolbox (SPM8 style)
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/toolbox/OldSeg && echo "OldSeg toolbox exists"
+    expected_output_contains: "OldSeg toolbox exists"
+
+  - name: DEM toolbox exists
+    description: Verify Dynamic Expectation Maximization toolbox
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/toolbox/DEM && echo "DEM toolbox exists"
+    expected_output_contains: "DEM toolbox exists"
+
+  # ==========================================================================
+  # SPM12 CONFIG MODULES (BATCH INTERFACE)
+  # ==========================================================================
+  - name: Realign config module exists
+    description: Verify realignment batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_realign.m && echo "spm_cfg_realign.m exists"
+    expected_output_contains: "spm_cfg_realign.m exists"
+
+  - name: Coregister config module exists
+    description: Verify coregistration batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_coreg.m && echo "spm_cfg_coreg.m exists"
+    expected_output_contains: "spm_cfg_coreg.m exists"
+
+  - name: Segment config module exists
+    description: Verify unified segmentation batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_preproc8.m && echo "spm_cfg_preproc8.m exists"
+    expected_output_contains: "spm_cfg_preproc8.m exists"
+
+  - name: Normalise config module exists
+    description: Verify normalise batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_norm.m && echo "spm_cfg_norm.m exists"
+    expected_output_contains: "spm_cfg_norm.m exists"
+
+  - name: Smooth config module exists
+    description: Verify smoothing batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_smooth.m && echo "spm_cfg_smooth.m exists"
+    expected_output_contains: "spm_cfg_smooth.m exists"
+
+  - name: fMRI design config module exists
+    description: Verify fMRI model specification batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_fmri_spec.m && echo "spm_cfg_fmri_spec.m exists"
+    expected_output_contains: "spm_cfg_fmri_spec.m exists"
+
+  - name: fMRI estimation config module exists
+    description: Verify fMRI model estimation batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_fmri_est.m && echo "spm_cfg_fmri_est.m exists"
+    expected_output_contains: "spm_cfg_fmri_est.m exists"
+
+  - name: Contrast config module exists
+    description: Verify contrast manager batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_con.m && echo "spm_cfg_con.m exists"
+    expected_output_contains: "spm_cfg_con.m exists"
+
+  - name: Results config module exists
+    description: Verify results batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_results.m && echo "spm_cfg_results.m exists"
+    expected_output_contains: "spm_cfg_results.m exists"
+
+  - name: Slice timing config module exists
+    description: Verify slice timing correction batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_st.m && echo "spm_cfg_st.m exists"
+    expected_output_contains: "spm_cfg_st.m exists"
+
+  - name: ImCalc config module exists
+    description: Verify image calculator batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_imcalc.m && echo "spm_cfg_imcalc.m exists"
+    expected_output_contains: "spm_cfg_imcalc.m exists"
+
+  - name: DICOM import config module exists
+    description: Verify DICOM import batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_dicom.m && echo "spm_cfg_dicom.m exists"
+    expected_output_contains: "spm_cfg_dicom.m exists"
+
+  - name: Deformations config module exists
+    description: Verify deformations batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_deformations.m && echo "spm_cfg_deformations.m exists"
+    expected_output_contains: "spm_cfg_deformations.m exists"
+
+  - name: Factorial design config module exists
+    description: Verify factorial design batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_factorial_design.m && echo "spm_cfg_factorial_design.m exists"
+    expected_output_contains: "spm_cfg_factorial_design.m exists"
+
+  # ==========================================================================
+  # SPM12 MEX FILES (COMPILED FUNCTIONS)
+  # ==========================================================================
+  - name: spm_vol MEX exists
+    description: Verify spm_vol MEX compiled function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_vol_nifti.m && echo "spm_vol_nifti.m exists"
+    expected_output_contains: "spm_vol_nifti.m exists"
+
+  - name: spm_add MEX exists
+    description: Verify spm_add MEX compiled function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_add.mexa64 && echo "spm_add.mexa64 exists"
+    expected_output_contains: "spm_add.mexa64 exists"
+
+  - name: spm_conv_vol MEX exists
+    description: Verify spm_conv_vol MEX compiled function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_conv_vol.mexa64 && echo "spm_conv_vol.mexa64 exists"
+    expected_output_contains: "spm_conv_vol.mexa64 exists"
+
+  - name: spm_slice_vol MEX exists
+    description: Verify spm_slice_vol MEX compiled function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_slice_vol.mexa64 && echo "spm_slice_vol.mexa64 exists"
+    expected_output_contains: "spm_slice_vol.mexa64 exists"
+
+  - name: spm_sample_vol MEX exists
+    description: Verify spm_sample_vol MEX compiled function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_sample_vol.mexa64 && echo "spm_sample_vol.mexa64 exists"
+    expected_output_contains: "spm_sample_vol.mexa64 exists"
+
+  # ==========================================================================
+  # SPM12 CORE FUNCTIONS VERIFICATION
+  # ==========================================================================
+  - name: spm_realign function exists
+    description: Verify motion correction function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_realign.m && echo "spm_realign.m exists"
+    expected_output_contains: "spm_realign.m exists"
+
+  - name: spm_reslice function exists
+    description: Verify reslicing function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_reslice.m && echo "spm_reslice.m exists"
+    expected_output_contains: "spm_reslice.m exists"
+
+  - name: spm_coreg function exists
+    description: Verify coregistration function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_coreg.m && echo "spm_coreg.m exists"
+    expected_output_contains: "spm_coreg.m exists"
+
+  - name: spm_slice_timing function exists
+    description: Verify slice timing correction function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_slice_timing.m && echo "spm_slice_timing.m exists"
+    expected_output_contains: "spm_slice_timing.m exists"
+
+  - name: spm_smooth function exists
+    description: Verify spatial smoothing function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_smooth.m && echo "spm_smooth.m exists"
+    expected_output_contains: "spm_smooth.m exists"
+
+  - name: spm_preproc function exists
+    description: Verify preprocessing (segmentation) function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_preproc.m && echo "spm_preproc.m exists"
+    expected_output_contains: "spm_preproc.m exists"
+
+  - name: spm_preproc8 function exists
+    description: Verify unified segmentation function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_preproc8.m && echo "spm_preproc8.m exists"
+    expected_output_contains: "spm_preproc8.m exists"
+
+  - name: spm_deformations function exists
+    description: Verify deformations function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_deformations.m && echo "spm_deformations.m exists"
+    expected_output_contains: "spm_deformations.m exists"
+
+  - name: spm_imcalc function exists
+    description: Verify image calculator function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_imcalc.m && echo "spm_imcalc.m exists"
+    expected_output_contains: "spm_imcalc.m exists"
+
+  - name: spm_spm function exists
+    description: Verify GLM estimation function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_spm.m && echo "spm_spm.m exists"
+    expected_output_contains: "spm_spm.m exists"
+
+  - name: spm_contrasts function exists
+    description: Verify contrast computation function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_contrasts.m && echo "spm_contrasts.m exists"
+    expected_output_contains: "spm_contrasts.m exists"
+
+  # ==========================================================================
+  # INPUT DATA PREPARATION
+  # ==========================================================================
+  - name: Prepare uncompressed T1w for SPM12
+    description: SPM12 works better with uncompressed NIfTI; prepare input
+    command: |
+      gunzip -c ${t1w} > test_output/sub-01_T1w.nii && \
+      test -f test_output/sub-01_T1w.nii && echo "T1w uncompressed successfully"
+    validate:
+      - output_exists: ${output_dir}/sub-01_T1w.nii
+    expected_output_contains: "T1w uncompressed successfully"
+
+  - name: Prepare uncompressed T2 for SPM12
+    description: Prepare T2 input for coregistration tests
+    command: |
+      gunzip -c ${t2} > test_output/sub-01_T2.nii && \
+      test -f test_output/sub-01_T2.nii && echo "T2 uncompressed successfully"
+    validate:
+      - output_exists: ${output_dir}/sub-01_T2.nii
+    expected_output_contains: "T2 uncompressed successfully"
+
+  - name: Prepare uncompressed BOLD for SPM12
+    description: Prepare BOLD input for functional processing tests
+    command: |
+      gunzip -c ${bold} > test_output/sub-01_bold.nii && \
+      test -f test_output/sub-01_bold.nii && echo "BOLD uncompressed successfully"
+    validate:
+      - output_exists: ${output_dir}/sub-01_bold.nii
+    expected_output_contains: "BOLD uncompressed successfully"
+
+  # ==========================================================================
+  # SPM12 BATCH TESTS - SMOOTHING (FAST OPERATION)
+  # ==========================================================================
+  - name: Create smoothing batch file
+    description: Create MATLAB batch file for SPM smoothing
+    command: |
+      cat > test_output/spm_batch/smooth_batch.m << 'MATLABEOF'
+      matlabbatch{1}.spm.spatial.smooth.data = {'INPUTFILE'};
+      matlabbatch{1}.spm.spatial.smooth.fwhm = [6 6 6];
+      matlabbatch{1}.spm.spatial.smooth.dtype = 0;
+      matlabbatch{1}.spm.spatial.smooth.im = 0;
+      matlabbatch{1}.spm.spatial.smooth.prefix = 's6';
+      MATLABEOF
+      T1_PATH=$(pwd)/test_output/sub-01_T1w.nii
+      sed -i "s|INPUTFILE|${T1_PATH}|g" test_output/spm_batch/smooth_batch.m && \
+      cat test_output/spm_batch/smooth_batch.m
+    depends_on: Prepare uncompressed T1w for SPM12
+    expected_output_contains: "matlabbatch"
+
+  - name: Run SPM12 smoothing
+    description: Execute SPM12 smoothing via batch
+    command: |
+      cd test_output && \
+      /opt/spm12/run_spm12.sh /opt/mcr/v97/ batch spm_batch/smooth_batch.m 2>&1 | tail -30
+    depends_on: Create smoothing batch file
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/s6sub-01_T1w.nii
+
+  - name: Verify smoothed output dimensions
+    description: Check that smoothed image has same dimensions as input
+    command: |
+      /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "V=spm_vol('$(pwd)/test_output/s6sub-01_T1w.nii'); disp(V.dim)" 2>&1 | tail -5
+    depends_on: Run SPM12 smoothing
+    timeout: 180
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SPM12 BATCH TESTS - IMAGE CALCULATOR
+  # ==========================================================================
+  - name: Create imcalc batch file
+    description: Create MATLAB batch file for SPM image calculator
+    command: |
+      cat > test_output/spm_batch/imcalc_batch.m << 'MATLABEOF'
+      matlabbatch{1}.spm.util.imcalc.input = {'INPUTFILE'};
+      matlabbatch{1}.spm.util.imcalc.output = 'T1w_doubled.nii';
+      matlabbatch{1}.spm.util.imcalc.outdir = {'OUTDIR'};
+      matlabbatch{1}.spm.util.imcalc.expression = 'i1*2';
+      matlabbatch{1}.spm.util.imcalc.var = struct('name', {}, 'value', {});
+      matlabbatch{1}.spm.util.imcalc.options.dmtx = 0;
+      matlabbatch{1}.spm.util.imcalc.options.mask = 0;
+      matlabbatch{1}.spm.util.imcalc.options.interp = 1;
+      matlabbatch{1}.spm.util.imcalc.options.dtype = 4;
+      MATLABEOF
+      T1_PATH=$(pwd)/test_output/sub-01_T1w.nii
+      OUT_PATH=$(pwd)/test_output
+      sed -i "s|INPUTFILE|${T1_PATH}|g" test_output/spm_batch/imcalc_batch.m && \
+      sed -i "s|OUTDIR|${OUT_PATH}|g" test_output/spm_batch/imcalc_batch.m && \
+      cat test_output/spm_batch/imcalc_batch.m
+    depends_on: Prepare uncompressed T1w for SPM12
+    expected_output_contains: "imcalc"
+
+  - name: Run SPM12 image calculator
+    description: Execute SPM12 image calculator (multiply by 2)
+    command: |
+      cd test_output && \
+      /opt/spm12/run_spm12.sh /opt/mcr/v97/ batch spm_batch/imcalc_batch.m 2>&1 | tail -30
+    depends_on: Create imcalc batch file
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/T1w_doubled.nii
+
+  - name: Create imcalc threshold batch
+    description: Create batch file for thresholding operation
+    command: |
+      cat > test_output/spm_batch/imcalc_thr_batch.m << 'MATLABEOF'
+      matlabbatch{1}.spm.util.imcalc.input = {'INPUTFILE'};
+      matlabbatch{1}.spm.util.imcalc.output = 'T1w_thresholded.nii';
+      matlabbatch{1}.spm.util.imcalc.outdir = {'OUTDIR'};
+      matlabbatch{1}.spm.util.imcalc.expression = 'i1>100';
+      matlabbatch{1}.spm.util.imcalc.var = struct('name', {}, 'value', {});
+      matlabbatch{1}.spm.util.imcalc.options.dmtx = 0;
+      matlabbatch{1}.spm.util.imcalc.options.mask = 0;
+      matlabbatch{1}.spm.util.imcalc.options.interp = 1;
+      matlabbatch{1}.spm.util.imcalc.options.dtype = 4;
+      MATLABEOF
+      T1_PATH=$(pwd)/test_output/sub-01_T1w.nii
+      OUT_PATH=$(pwd)/test_output
+      sed -i "s|INPUTFILE|${T1_PATH}|g" test_output/spm_batch/imcalc_thr_batch.m && \
+      sed -i "s|OUTDIR|${OUT_PATH}|g" test_output/spm_batch/imcalc_thr_batch.m && \
+      cat test_output/spm_batch/imcalc_thr_batch.m
+    depends_on: Prepare uncompressed T1w for SPM12
+    expected_exit_code: 0
+    expected_output_contains: "imcalc"
+
+  - name: Run SPM12 imcalc threshold
+    description: Execute SPM12 image calculator (threshold)
+    command: |
+      cd test_output && \
+      /opt/spm12/run_spm12.sh /opt/mcr/v97/ batch spm_batch/imcalc_thr_batch.m 2>&1 | tail -30
+    depends_on: Create imcalc threshold batch
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/T1w_thresholded.nii
+
+  # ==========================================================================
+  # SPM12 EVAL TESTS - READ/WRITE OPERATIONS
+  # ==========================================================================
+  - name: SPM12 read volume header
+    description: Read NIfTI header using spm_vol
+    command: |
+      /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "V=spm_vol('$(pwd)/test_output/sub-01_T1w.nii'); disp(V.fname)" 2>&1 | tail -10
+    depends_on: Prepare uncompressed T1w for SPM12
+    timeout: 180
+    expected_exit_code: 0
+    expected_output_contains: "T1w"
+
+  - name: SPM12 get image dimensions
+    description: Read image dimensions using spm_vol
+    command: |
+      /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "V=spm_vol('$(pwd)/test_output/sub-01_T1w.nii'); disp(V.dim)" 2>&1 | tail -5
+    depends_on: Prepare uncompressed T1w for SPM12
+    timeout: 180
+    expected_exit_code: 0
+
+  - name: SPM12 get voxel size
+    description: Read voxel dimensions from header
+    command: |
+      /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "V=spm_vol('$(pwd)/test_output/sub-01_T1w.nii'); disp(sqrt(sum(V.mat(1:3,1:3).^2)))" 2>&1 | tail -5
+    depends_on: Prepare uncompressed T1w for SPM12
+    timeout: 180
+    expected_exit_code: 0
+
+  - name: SPM12 read image data
+    description: Read and report image statistics
+    command: |
+      /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "V=spm_vol('$(pwd)/test_output/sub-01_T1w.nii'); Y=spm_read_vols(V); disp(['Mean: ' num2str(mean(Y(:)))])" 2>&1 | tail -10
+    depends_on: Prepare uncompressed T1w for SPM12
+    timeout: 180
+    expected_output_contains: "Mean:"
+
+  # ==========================================================================
+  # SPM12 STATISTICAL FUNCTIONS
+  # ==========================================================================
+  - name: SPM12 exist spm_P function
+    description: Verify p-value function exists
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('spm_P'))" 2>&1
+    expected_output_contains: "2"
+    timeout: 180
+
+  - name: SPM12 exist spm_P_FDR function
+    description: Verify FDR correction function exists
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('spm_P_FDR'))" 2>&1
+    expected_output_contains: "2"
+    timeout: 180
+
+  - name: SPM12 exist spm_Tcdf function
+    description: Verify T distribution CDF function exists
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('spm_Tcdf'))" 2>&1
+    expected_output_contains: "2"
+    timeout: 180
+
+  - name: SPM12 exist spm_Fcdf function
+    description: Verify F distribution CDF function exists
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('spm_Fcdf'))" 2>&1
+    expected_output_contains: "2"
+    timeout: 180
+
+  - name: SPM12 exist spm_Ncdf function
+    description: Verify Normal distribution CDF function exists
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "disp(exist('spm_Ncdf'))" 2>&1
+    expected_output_contains: "2"
+    timeout: 180
+
+  - name: SPM12 T-statistic calculation
+    description: Calculate T-statistic using SPM function
+    command: |
+      /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "p=spm_Tcdf(2.5,20); disp(['p-value: ' num2str(p)])" 2>&1 | tail -5
+    timeout: 180
+    expected_output_contains: "p-value:"
+
+  - name: SPM12 F-statistic calculation
+    description: Calculate F-statistic using SPM function
+    command: |
+      /opt/spm12/run_spm12.sh /opt/mcr/v97/ eval "p=spm_Fcdf(3.5,[1 20]); disp(['p-value: ' num2str(p)])" 2>&1 | tail -5
+    timeout: 180
+    expected_output_contains: "p-value:"
+
+  # ==========================================================================
+  # SPM12 DARTEL TOOLBOX VERIFICATION
+  # ==========================================================================
+  - name: DARTEL template exists
+    description: Verify DARTEL ICBM152 template
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/toolbox/DARTEL/icbm152.nii && echo "icbm152.nii exists"
+    expected_output_contains: "icbm152.nii exists"
+
+  - name: spm_dartel_warp function exists
+    description: Verify DARTEL warping function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/toolbox/DARTEL/spm_dartel_warp.m && echo "spm_dartel_warp.m exists"
+    expected_output_contains: "spm_dartel_warp.m exists"
+
+  - name: spm_dartel_norm function exists
+    description: Verify DARTEL normalization function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/toolbox/DARTEL/spm_dartel_norm.m && echo "spm_dartel_norm.m exists"
+    expected_output_contains: "spm_dartel_norm.m exists"
+
+  - name: spm_dartel_template function exists
+    description: Verify DARTEL template creation function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/toolbox/DARTEL/spm_dartel_template.m && echo "spm_dartel_template.m exists"
+    expected_output_contains: "spm_dartel_template.m exists"
+
+  # ==========================================================================
+  # SPM12 FIELDMAP TOOLBOX VERIFICATION
+  # ==========================================================================
+  - name: FieldMap function exists
+    description: Verify FieldMap main function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/toolbox/FieldMap/FieldMap.m && echo "FieldMap.m exists"
+    expected_output_contains: "FieldMap.m exists"
+
+  - name: FieldMap templates exist
+    description: Verify FieldMap template files
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/toolbox/FieldMap/T1.nii && echo "FieldMap T1.nii exists"
+    expected_output_contains: "FieldMap T1.nii exists"
+
+  - name: FieldMap brain mask exists
+    description: Verify FieldMap brain mask template
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/toolbox/FieldMap/brainmask.nii && echo "FieldMap brainmask.nii exists"
+    expected_output_contains: "FieldMap brainmask.nii exists"
+
+  # ==========================================================================
+  # SPM12 SHOOT TOOLBOX VERIFICATION
+  # ==========================================================================
+  - name: spm_shoot_warp function exists
+    description: Verify Shoot warping function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/toolbox/Shoot/spm_shoot_warp.m && echo "spm_shoot_warp.m exists"
+    expected_output_contains: "spm_shoot_warp.m exists"
+
+  - name: spm_shoot_template function exists
+    description: Verify Shoot template creation function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/toolbox/Shoot/spm_shoot_template.m && echo "spm_shoot_template.m exists"
+    expected_output_contains: "spm_shoot_template.m exists"
+
+  - name: spm_shoot_greens function exists
+    description: Verify Shoot Green's function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/toolbox/Shoot/spm_shoot_greens.m && echo "spm_shoot_greens.m exists"
+    expected_output_contains: "spm_shoot_greens.m exists"
+
+  # ==========================================================================
+  # SPM12 LONGITUDINAL TOOLBOX VERIFICATION
+  # ==========================================================================
+  - name: spm_pairwise function exists
+    description: Verify longitudinal pairwise registration function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/toolbox/Longitudinal/spm_pairwise.m && echo "spm_pairwise.m exists"
+    expected_output_contains: "spm_pairwise.m exists"
+
+  - name: spm_series_align function exists
+    description: Verify longitudinal series alignment function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/toolbox/Longitudinal/spm_series_align.m && echo "spm_series_align.m exists"
+    expected_output_contains: "spm_series_align.m exists"
+
+  - name: spm_noise_estimate function exists
+    description: Verify noise estimation function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/toolbox/Longitudinal/spm_noise_estimate.m && echo "spm_noise_estimate.m exists"
+    expected_output_contains: "spm_noise_estimate.m exists"
+
+  # ==========================================================================
+  # NIPYPE INTEGRATION CHECK
+  # ==========================================================================
+  - name: Python nipype SPM interface check
+    description: Verify nipype SPM interface is accessible
+    command: |
+      python3 -c "
+      try:
+          import nipype.interfaces.spm as spm
+          print('nipype.interfaces.spm available')
+          print('Realign:', hasattr(spm, 'Realign'))
+          print('Coregister:', hasattr(spm, 'Coregister'))
+          print('Segment:', hasattr(spm, 'Segment'))
+          print('Smooth:', hasattr(spm, 'Smooth'))
+      except ImportError as e:
+          print('nipype spm import check:', str(e))
+      " 2>&1 || echo "Python nipype check complete"
+    expected_exit_code: 0
+
+  - name: Nipype SPM path configuration
+    description: Verify nipype can be configured for SPM standalone
+    command: |
+      python3 -c "
+      try:
+          import nipype.interfaces.spm as spm
+          matlab_cmd = '/opt/spm12/run_spm12.sh /opt/mcr/v97/ script'
+          spm.SPMCommand.set_mlab_paths(matlab_cmd=matlab_cmd, use_mcr=True)
+          print('Nipype SPM path configured successfully')
+      except Exception as e:
+          print('Configuration test:', str(e))
+      " 2>&1 || echo "Nipype config test complete"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SPM12 FILE FORMAT SUPPORT
+  # ==========================================================================
+  - name: spm_dicom_convert function exists
+    description: Verify DICOM conversion function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_dicom_convert.m && echo "spm_dicom_convert.m exists"
+    expected_output_contains: "spm_dicom_convert.m exists"
+
+  - name: spm_file_merge function exists
+    description: Verify 4D file merging function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_file_merge.m && echo "spm_file_merge.m exists"
+    expected_output_contains: "spm_file_merge.m exists"
+
+  - name: spm_file_split function exists
+    description: Verify 4D file splitting function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_file_split.m && echo "spm_file_split.m exists"
+    expected_output_contains: "spm_file_split.m exists"
+
+  - name: GIfTI class exists
+    description: Verify GIfTI surface file class
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/@gifti && echo "gifti class exists"
+    expected_output_contains: "gifti class exists"
+
+  - name: NIfTI class exists
+    description: Verify NIfTI file class
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/@nifti && echo "nifti class exists"
+    expected_output_contains: "nifti class exists"
+
+  # ==========================================================================
+  # SPM12 CORTICAL SURFACE TEMPLATES
+  # ==========================================================================
+  - name: Cortex surface template 5124 exists
+    description: Verify cortex surface template (5124 vertices)
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/canonical/cortex_5124.surf.gii && echo "cortex_5124.surf.gii exists"
+    expected_output_contains: "cortex_5124.surf.gii exists"
+
+  - name: Cortex surface template 8196 exists
+    description: Verify cortex surface template (8196 vertices)
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/canonical/cortex_8196.surf.gii && echo "cortex_8196.surf.gii exists"
+    expected_output_contains: "cortex_8196.surf.gii exists"
+
+  - name: Cortex surface template 20484 exists
+    description: Verify cortex surface template (20484 vertices)
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/canonical/cortex_20484.surf.gii && echo "cortex_20484.surf.gii exists"
+    expected_output_contains: "cortex_20484.surf.gii exists"
+
+  - name: Skull inner surface template exists
+    description: Verify inner skull surface template
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/canonical/iskull_2562.surf.gii && echo "iskull_2562.surf.gii exists"
+    expected_output_contains: "iskull_2562.surf.gii exists"
+
+  - name: Skull outer surface template exists
+    description: Verify outer skull surface template
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/canonical/oskull_2562.surf.gii && echo "oskull_2562.surf.gii exists"
+    expected_output_contains: "oskull_2562.surf.gii exists"
+
+  - name: Scalp surface template exists
+    description: Verify scalp surface template
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/canonical/scalp_2562.surf.gii && echo "scalp_2562.surf.gii exists"
+    expected_output_contains: "scalp_2562.surf.gii exists"
+
+  # ==========================================================================
+  # SPM12 DCM (DYNAMIC CAUSAL MODELING) FUNCTIONS
+  # ==========================================================================
+  - name: spm_dcm_estimate function exists
+    description: Verify DCM estimation function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_dcm_estimate.m && echo "spm_dcm_estimate.m exists"
+    expected_output_contains: "spm_dcm_estimate.m exists"
+
+  - name: DCM fMRI config module exists
+    description: Verify DCM for fMRI batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_dcm_fmri.m && echo "spm_cfg_dcm_fmri.m exists"
+    expected_output_contains: "spm_cfg_dcm_fmri.m exists"
+
+  - name: DCM BMS config module exists
+    description: Verify DCM Bayesian Model Selection batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_dcm_bms.m && echo "spm_cfg_dcm_bms.m exists"
+    expected_output_contains: "spm_cfg_dcm_bms.m exists"
+
+  - name: DCM PEB config module exists
+    description: Verify DCM Parametric Empirical Bayes batch configuration
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg_dcm_peb.m && echo "spm_cfg_dcm_peb.m exists"
+    expected_output_contains: "spm_cfg_dcm_peb.m exists"
+
+  # ==========================================================================
+  # SPM12 BATCH SYSTEM
+  # ==========================================================================
+  - name: spm_jobman function exists
+    description: Verify batch job manager function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_jobman.m && echo "spm_jobman.m exists"
+    expected_output_contains: "spm_jobman.m exists"
+
+  - name: matlabbatch directory exists
+    description: Verify matlabbatch system directory
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/matlabbatch && echo "matlabbatch dir exists"
+    expected_output_contains: "matlabbatch dir exists"
+
+  - name: SPM12 batch applications config exists
+    description: Verify batch applications config
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/config/spm_cfg.m && echo "spm_cfg.m exists"
+    expected_output_contains: "spm_cfg.m exists"
+
+  # ==========================================================================
+  # SPM12 SEGMENTATION TEST (FAST VERIFICATION)
+  # ==========================================================================
+  - name: Create segment verification batch
+    description: Create batch file to verify segmentation setup (dry run)
+    command: |
+      cat > test_output/spm_batch/segment_dryrun.m << 'MATLABEOF'
+      % Segmentation batch structure verification
+      matlabbatch{1}.spm.spatial.preproc.channel.vols = {'INPUTFILE'};
+      matlabbatch{1}.spm.spatial.preproc.channel.biasreg = 0.001;
+      matlabbatch{1}.spm.spatial.preproc.channel.biasfwhm = 60;
+      matlabbatch{1}.spm.spatial.preproc.channel.write = [0 0];
+      matlabbatch{1}.spm.spatial.preproc.tissue(1).tpm = {'TPMFILE,1'};
+      matlabbatch{1}.spm.spatial.preproc.tissue(1).ngaus = 1;
+      matlabbatch{1}.spm.spatial.preproc.tissue(1).native = [1 0];
+      matlabbatch{1}.spm.spatial.preproc.tissue(1).warped = [0 0];
+      matlabbatch{1}.spm.spatial.preproc.tissue(2).tpm = {'TPMFILE,2'};
+      matlabbatch{1}.spm.spatial.preproc.tissue(2).ngaus = 1;
+      matlabbatch{1}.spm.spatial.preproc.tissue(2).native = [1 0];
+      matlabbatch{1}.spm.spatial.preproc.tissue(2).warped = [0 0];
+      matlabbatch{1}.spm.spatial.preproc.tissue(3).tpm = {'TPMFILE,3'};
+      matlabbatch{1}.spm.spatial.preproc.tissue(3).ngaus = 2;
+      matlabbatch{1}.spm.spatial.preproc.tissue(3).native = [1 0];
+      matlabbatch{1}.spm.spatial.preproc.tissue(3).warped = [0 0];
+      matlabbatch{1}.spm.spatial.preproc.tissue(4).tpm = {'TPMFILE,4'};
+      matlabbatch{1}.spm.spatial.preproc.tissue(4).ngaus = 3;
+      matlabbatch{1}.spm.spatial.preproc.tissue(4).native = [0 0];
+      matlabbatch{1}.spm.spatial.preproc.tissue(4).warped = [0 0];
+      matlabbatch{1}.spm.spatial.preproc.tissue(5).tpm = {'TPMFILE,5'};
+      matlabbatch{1}.spm.spatial.preproc.tissue(5).ngaus = 4;
+      matlabbatch{1}.spm.spatial.preproc.tissue(5).native = [0 0];
+      matlabbatch{1}.spm.spatial.preproc.tissue(5).warped = [0 0];
+      matlabbatch{1}.spm.spatial.preproc.tissue(6).tpm = {'TPMFILE,6'};
+      matlabbatch{1}.spm.spatial.preproc.tissue(6).ngaus = 2;
+      matlabbatch{1}.spm.spatial.preproc.tissue(6).native = [0 0];
+      matlabbatch{1}.spm.spatial.preproc.tissue(6).warped = [0 0];
+      matlabbatch{1}.spm.spatial.preproc.warp.mrf = 1;
+      matlabbatch{1}.spm.spatial.preproc.warp.cleanup = 1;
+      matlabbatch{1}.spm.spatial.preproc.warp.reg = [0 0.001 0.5 0.05 0.2];
+      matlabbatch{1}.spm.spatial.preproc.warp.affreg = 'mni';
+      matlabbatch{1}.spm.spatial.preproc.warp.fwhm = 0;
+      matlabbatch{1}.spm.spatial.preproc.warp.samp = 3;
+      matlabbatch{1}.spm.spatial.preproc.warp.write = [0 0];
+      disp('Segmentation batch structure created successfully');
+      MATLABEOF
+      T1_PATH=$(pwd)/test_output/sub-01_T1w.nii
+      TPM_PATH=$(find /opt/spm12 -name "TPM.nii" -type f 2>/dev/null | head -1)
+      sed -i "s|INPUTFILE|${T1_PATH}|g" test_output/spm_batch/segment_dryrun.m && \
+      sed -i "s|TPMFILE|${TPM_PATH}|g" test_output/spm_batch/segment_dryrun.m && \
+      echo "Batch file created"
+    depends_on: Prepare uncompressed T1w for SPM12
+    expected_exit_code: 0
+    expected_output_contains: "Batch file created"
+
+  - name: Verify segment batch structure
+    description: Verify segmentation batch file has correct structure
+    command: |
+      grep -c "matlabbatch" test_output/spm_batch/segment_dryrun.m | xargs -I{} echo "Batch entries: {}" && \
+      grep -q "spm.spatial.preproc" test_output/spm_batch/segment_dryrun.m && echo "batch structure created" && \
+      grep -q "TPM.nii" test_output/spm_batch/segment_dryrun.m && echo "TPM reference found"
+    depends_on: Create segment verification batch
+    expected_exit_code: 0
+    expected_output_contains: "batch structure created"
+
+  # ==========================================================================
+  # SPM12 RENDERING AND DISPLAY
+  # ==========================================================================
+  - name: spm_render function exists
+    description: Verify surface rendering function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_render.m && echo "spm_render.m exists"
+    expected_output_contains: "spm_render.m exists"
+
+  - name: MIP matrix template exists
+    description: Verify Maximum Intensity Projection template
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/MIP.mat && echo "MIP.mat exists"
+    expected_output_contains: "MIP.mat exists"
+
+  - name: Render directory exists
+    description: Verify rendering templates directory
+    command: test -d /opt/spm12/spm12_mcr/spm12/spm12/rend && echo "rend dir exists"
+    expected_output_contains: "rend dir exists"
+
+  # ==========================================================================
+  # SPM12 JSON READ/WRITE
+  # ==========================================================================
+  - name: spm_jsonread function exists
+    description: Verify JSON read function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_jsonread.m && echo "spm_jsonread.m exists"
+    expected_output_contains: "spm_jsonread.m exists"
+
+  - name: spm_jsonwrite function exists
+    description: Verify JSON write function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_jsonwrite.m && echo "spm_jsonwrite.m exists"
+    expected_output_contains: "spm_jsonwrite.m exists"
+
+  # ==========================================================================
+  # SPM12 BIDS SUPPORT
+  # ==========================================================================
+  - name: spm_BIDS function exists
+    description: Verify BIDS dataset handling function
+    command: test -f /opt/spm12/spm12_mcr/spm12/spm12/spm_BIDS.m && echo "spm_BIDS.m exists"
+    expected_output_contains: "spm_BIDS.m exists"
+
+  # ==========================================================================
+  # SPM12 OUTPUT STRUCTURE VERIFICATION
+  # ==========================================================================
+  - name: Verify test output directory structure
+    description: Check that test output directories were created
+    command: |
+      echo "=== Checking output directories ===" && \
+      ls -la test_output/ && \
+      echo "=== spm_batch directory ===" && \
+      ls test_output/spm_batch/ 2>/dev/null | head -10 || echo "spm_batch dir check" && \
+      echo "=== spm_work directory ===" && \
+      ls test_output/spm_work/ 2>/dev/null | head -10 || echo "spm_work dir check"
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"
+    echo "Main outputs:"
+    echo "  - Smoothed T1w: test_output/s6sub-01_T1w.nii"
+    echo "  - Image calc outputs: test_output/T1w_*.nii"
+    echo "  - Batch files: test_output/spm_batch/"

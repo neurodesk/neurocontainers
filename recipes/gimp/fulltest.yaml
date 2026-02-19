@@ -1,0 +1,332 @@
+# GIMP container test suite
+# Tests for GIMP v2.10.18 - GNU Image Manipulation Program
+#
+# GIMP is a cross-platform image editor providing sophisticated tools
+# for graphic design, photo manipulation, illustration, and image processing.
+# This test suite focuses on CLI/batch processing capabilities.
+
+name: gimp
+version: 2.10.18
+container: gimp_2.10.18_*.simg
+default_timeout: 60 # currently always timing out so using short timeouts to reduce overall test execution time
+
+test_data:
+  output_dir: test_output
+  test_image: test_output/test_image.png
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    # Create a simple test image using GIMP's batch mode
+    gimp -i -b '(let* ((image (car (gimp-image-new 256 256 RGB))) (layer (car (gimp-layer-new image 256 256 RGB-IMAGE "layer" 100 LAYER-MODE-NORMAL)))) (gimp-image-insert-layer image layer 0 0) (gimp-context-set-foreground (list 255 128 64)) (gimp-drawable-fill layer FILL-FOREGROUND) (file-png-save RUN-NONINTERACTIVE image layer "test_output/test_image.png" "test_image.png" 0 9 1 1 1 1 1) (gimp-image-delete image))' -b '(gimp-quit 0)'
+
+tests:
+  # ==========================================================================
+  # VERSION AND HELP INFORMATION
+  # ==========================================================================
+  - name: GIMP version check
+    description: Verify GIMP binary runs and reports version
+    command: gimp --version
+    expected_output_contains: "GNU Image Manipulation Program version 2.10"
+
+  - name: GIMP-console version check
+    description: Verify gimp-console binary runs and reports version
+    command: gimp-console --version
+    expected_output_contains: "GNU Image Manipulation Program version 2.10"
+
+  - name: GIMP help output
+    description: Verify help options are available
+    command: gimp --help 2>&1
+    expected_output_contains: "--batch"
+
+  - name: GIMP all help options
+    description: Verify comprehensive help output with GEGL and GTK options
+    command: gimp --help-all 2>&1
+    expected_output_contains: "GEGL Options"
+
+  - name: GIMP license info
+    description: Display license information
+    command: gimp --license 2>&1
+    expected_output_contains: "GNU General Public License"
+
+  - name: Dump default gimprc
+    description: Output default GIMP configuration
+    command: gimp --dump-gimprc 2>&1 | head -20
+    expected_output_contains: "temp-path"
+
+  # ==========================================================================
+  # BATCH MODE BASIC OPERATIONS
+  # ==========================================================================
+  - name: Batch mode quit
+    description: Test batch mode with simple quit command
+    command: gimp -i -b '(gimp-quit 0)' 2>&1
+    expected_exit_code: 0
+
+  - name: Batch mode with console messages
+    description: Test batch mode with console output enabled
+    command: gimp -i -c -b '(gimp-quit 0)' 2>&1
+    expected_exit_code: 0
+
+  - name: Batch mode minimal startup
+    description: Test batch mode with minimal resource loading (no data, no fonts)
+    command: gimp -i -d -f -b '(gimp-quit 0)' 2>&1
+    expected_exit_code: 0
+
+  - name: Gimp-console batch quit
+    description: Test gimp-console batch mode
+    command: gimp-console -i -b '(gimp-quit 0)' 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # IMAGE CREATION AND EXPORT
+  # ==========================================================================
+  - name: Create new RGB image
+    description: Create a new 512x512 RGB image via batch
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-image-new 512 512 RGB)))) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    expected_exit_code: 0
+
+  - name: Create new grayscale image
+    description: Create a new 256x256 grayscale image via batch
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-image-new 256 256 GRAY)))) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    expected_exit_code: 0
+
+  - name: Create and save PNG image
+    description: Create an image with a layer and export to PNG
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-image-new 100 100 RGB))) (layer (car (gimp-layer-new image 100 100 RGB-IMAGE "bg" 100 LAYER-MODE-NORMAL)))) (gimp-image-insert-layer image layer 0 0) (gimp-context-set-foreground (list 255 0 0)) (gimp-drawable-fill layer FILL-FOREGROUND) (file-png-save RUN-NONINTERACTIVE image layer "test_output/red_square.png" "red_square.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    validate:
+      - output_exists: ${output_dir}/red_square.png
+
+  - name: Create and save JPEG image
+    description: Create an image and export to JPEG format
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-image-new 200 200 RGB))) (layer (car (gimp-layer-new image 200 200 RGB-IMAGE "bg" 100 LAYER-MODE-NORMAL)))) (gimp-image-insert-layer image layer 0 0) (gimp-context-set-foreground (list 0 255 0)) (gimp-drawable-fill layer FILL-FOREGROUND) (file-jpeg-save RUN-NONINTERACTIVE image layer "test_output/green_square.jpg" "green_square.jpg" 0.9 0 1 1 "" 0 1 0 0) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    validate:
+      - output_exists: ${output_dir}/green_square.jpg
+
+  - name: Create and save BMP image
+    description: Create an image and export to BMP format
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-image-new 150 150 RGB))) (layer (car (gimp-layer-new image 150 150 RGB-IMAGE "bg" 100 LAYER-MODE-NORMAL)))) (gimp-image-insert-layer image layer 0 0) (gimp-context-set-foreground (list 0 0 255)) (gimp-drawable-fill layer FILL-FOREGROUND) (gimp-image-flatten image) (file-bmp-save RUN-NONINTERACTIVE image (car (gimp-image-get-active-drawable image)) "test_output/blue_square.bmp" "blue_square.bmp") (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    validate:
+      - output_exists: ${output_dir}/blue_square.bmp
+
+  - name: Create and save TIFF image
+    description: Create an image and export to TIFF format
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-image-new 100 100 RGB))) (layer (car (gimp-layer-new image 100 100 RGB-IMAGE "bg" 100 LAYER-MODE-NORMAL)))) (gimp-image-insert-layer image layer 0 0) (gimp-context-set-foreground (list 255 255 0)) (gimp-drawable-fill layer FILL-FOREGROUND) (file-tiff-save RUN-NONINTERACTIVE image layer "test_output/yellow_square.tiff" "yellow_square.tiff" 0) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    validate:
+      - output_exists: ${output_dir}/yellow_square.tiff
+
+  # ==========================================================================
+  # IMAGE LOADING AND PROCESSING
+  # ==========================================================================
+  - name: Load PNG image
+    description: Load a PNG file via batch mode
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png")))) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    expected_exit_code: 0
+
+  - name: Get image dimensions
+    description: Load an image and query its dimensions
+    command: |
+      gimp -i -c -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (width (car (gimp-image-width image))) (height (car (gimp-image-height image)))) (gimp-message (string-append "Width: " (number->string width) " Height: " (number->string height))) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    expected_output_contains: "Width: 256"
+
+  # ==========================================================================
+  # IMAGE TRANSFORMATIONS
+  # ==========================================================================
+  - name: Scale image
+    description: Scale an image to different dimensions
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-get-active-layer image)))) (gimp-image-scale image 128 128) (file-png-save RUN-NONINTERACTIVE image layer "test_output/scaled_image.png" "scaled_image.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/scaled_image.png
+
+  - name: Rotate image 90 degrees
+    description: Rotate an image 90 degrees clockwise
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-get-active-layer image)))) (gimp-image-rotate image ROTATE-90) (file-png-save RUN-NONINTERACTIVE image layer "test_output/rotated_90.png" "rotated_90.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/rotated_90.png
+
+  - name: Flip image horizontally
+    description: Flip an image horizontally
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-get-active-layer image)))) (gimp-image-flip image ORIENTATION-HORIZONTAL) (file-png-save RUN-NONINTERACTIVE image layer "test_output/flipped_h.png" "flipped_h.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/flipped_h.png
+
+  - name: Flip image vertically
+    description: Flip an image vertically
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-get-active-layer image)))) (gimp-image-flip image ORIENTATION-VERTICAL) (file-png-save RUN-NONINTERACTIVE image layer "test_output/flipped_v.png" "flipped_v.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/flipped_v.png
+
+  # ==========================================================================
+  # COLOR OPERATIONS
+  # ==========================================================================
+  - name: Convert to grayscale
+    description: Convert an RGB image to grayscale
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-get-active-layer image)))) (gimp-image-convert-grayscale image) (file-png-save RUN-NONINTERACTIVE image layer "test_output/grayscale.png" "grayscale.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/grayscale.png
+
+  - name: Invert colors
+    description: Invert the colors of an image
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-get-active-layer image)))) (gimp-drawable-invert layer FALSE) (file-png-save RUN-NONINTERACTIVE image layer "test_output/inverted.png" "inverted.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/inverted.png
+
+  - name: Desaturate image
+    description: Desaturate an image using lightness mode
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-get-active-layer image)))) (gimp-drawable-desaturate layer DESATURATE-LIGHTNESS) (file-png-save RUN-NONINTERACTIVE image layer "test_output/desaturated.png" "desaturated.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/desaturated.png
+
+  - name: Adjust brightness-contrast
+    description: Adjust brightness and contrast of an image
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-get-active-layer image)))) (gimp-drawable-brightness-contrast layer 0.2 0.1) (file-png-save RUN-NONINTERACTIVE image layer "test_output/brightness_contrast.png" "brightness_contrast.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/brightness_contrast.png
+
+  # ==========================================================================
+  # FILTERS AND EFFECTS
+  # ==========================================================================
+  - name: Apply Gaussian blur
+    description: Apply Gaussian blur filter to an image
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-get-active-layer image)))) (plug-in-gauss RUN-NONINTERACTIVE image layer 5.0 5.0 0) (file-png-save RUN-NONINTERACTIVE image layer "test_output/blur_gaussian.png" "blur_gaussian.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/blur_gaussian.png
+
+  - name: Sharpen image
+    description: Apply sharpen filter to an image
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-get-active-layer image)))) (plug-in-sharpen RUN-NONINTERACTIVE image layer 50) (file-png-save RUN-NONINTERACTIVE image layer "test_output/sharpened.png" "sharpened.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/sharpened.png
+
+  # ==========================================================================
+  # LAYER OPERATIONS
+  # ==========================================================================
+  - name: Flatten image
+    description: Flatten all layers in an image
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-flatten image)))) (file-png-save RUN-NONINTERACTIVE image layer "test_output/flattened.png" "flattened.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/flattened.png
+
+  # ==========================================================================
+  # CROP AND RESIZE OPERATIONS
+  # ==========================================================================
+  - name: Crop image
+    description: Crop an image to specific dimensions
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-get-active-layer image)))) (gimp-image-crop image 100 100 50 50) (file-png-save RUN-NONINTERACTIVE image layer "test_output/cropped.png" "cropped.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/cropped.png
+
+  - name: Resize canvas
+    description: Resize canvas with offset
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-get-active-layer image)))) (gimp-image-resize image 300 300 20 20) (gimp-layer-resize-to-image-size layer) (file-png-save RUN-NONINTERACTIVE image layer "test_output/canvas_resized.png" "canvas_resized.png" 0 9 1 1 1 1 1) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/canvas_resized.png
+
+  # ==========================================================================
+  # FORMAT CONVERSION TESTS
+  # ==========================================================================
+  - name: Convert PNG to JPEG
+    description: Load PNG and save as JPEG
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-flatten image)))) (file-jpeg-save RUN-NONINTERACTIVE image layer "test_output/converted.jpg" "converted.jpg" 0.85 0 1 1 "" 0 1 0 0) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/converted.jpg
+
+  - name: Convert PNG to GIF
+    description: Load PNG and save as GIF
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-flatten image)))) (gimp-image-convert-indexed image CONVERT-DITHER-NONE CONVERT-PALETTE-GENERATE 256 FALSE FALSE "") (file-gif-save RUN-NONINTERACTIVE image layer "test_output/converted.gif" "converted.gif" 0 0 0 0) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/converted.gif
+
+  - name: Convert PNG to WebP
+    description: Load PNG and save as WebP
+    command: |
+      gimp -i -b '(let* ((image (car (gimp-file-load RUN-NONINTERACTIVE "test_output/test_image.png" "test_image.png"))) (layer (car (gimp-image-flatten image)))) (file-webp-save RUN-NONINTERACTIVE image layer "test_output/converted.webp" "converted.webp" 0 0 90 100 1 0 0 0 0 1 0 0 0) (gimp-image-delete image) (gimp-quit 0))' 2>&1
+    depends_on: setup
+    validate:
+      - output_exists: ${output_dir}/converted.webp
+
+  # ==========================================================================
+  # BATCH INTERPRETER AND ADVANCED OPTIONS
+  # ==========================================================================
+  - name: Script-Fu batch interpreter
+    description: Test using script-fu as batch interpreter
+    command: |
+      gimp -i --batch-interpreter=plug-in-script-fu-eval -b '(gimp-quit 0)' 2>&1
+    expected_exit_code: 0
+
+  - name: Multiple batch commands
+    description: Test running multiple batch commands
+    command: |
+      gimp -i -b '(gimp-message "First command")' -b '(gimp-quit 0)' 2>&1
+    expected_exit_code: 0
+
+  - name: Verbose mode
+    description: Test verbose output mode
+    command: |
+      gimp -i --verbose -b '(gimp-quit 0)' 2>&1 | head -30
+    expected_output_contains: "GIMP"
+
+  - name: GEGL cache size option
+    description: Test GEGL cache size configuration
+    command: |
+      gimp -i --gegl-cache-size=512 -b '(gimp-quit 0)' 2>&1
+    expected_exit_code: 0
+
+  - name: GEGL threads option
+    description: Test GEGL threads configuration
+    command: |
+      gimp -i --gegl-threads=2 -b '(gimp-quit 0)' 2>&1
+    expected_exit_code: 0
+
+  - name: PDB compat mode on
+    description: Test PDB compatibility mode on
+    command: |
+      gimp -i --pdb-compat-mode=on -b '(gimp-quit 0)' 2>&1
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

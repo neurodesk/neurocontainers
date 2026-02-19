@@ -1,0 +1,633 @@
+# fsqc container test suite
+# Tests for fsqc v2.1.4 - FreeSurfer/FastSurfer Quality Control tool
+#
+# IMPORTANT: fsqc requires FreeSurfer/FastSurfer-processed structural MRI data.
+# It cannot be run on raw MRI images. The following tests verify:
+#   - Package installation and imports
+#   - CLI commands and help messages
+#   - Utility functions
+#   - Module availability
+#
+# For full QC analysis, FreeSurfer-processed subjects_dir with recon-all output
+# is required (norm.mgz, aseg.mgz, aparc+aseg.mgz, surfaces, stats, etc.)
+
+name: fsqc
+version: 2.1.4
+container: fsqc_2.1.4_20251126.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # VERSION AND SYSTEM INFORMATION
+  # ==========================================================================
+  - name: Get fsqc version
+    description: Verify fsqc package version
+    command: python -c "import fsqc; print(fsqc.get_version())"
+    expected_output_contains: "2.1.4"
+
+  - name: Get fsqc system info
+    description: Display system and dependency information via Python
+    command: python -c "import fsqc; fsqc.sys_info()"
+    expected_output_contains: "fsqc"
+
+  - name: Run fsqc-sys_info CLI
+    description: Display system info via CLI command
+    command: fsqc-sys_info
+    expected_output_contains: "fsqc"
+
+  - name: Verify Python version
+    description: Check Python version is 3.8+
+    command: python -c "import sys; print(str(sys.version_info.major) + '.' + str(sys.version_info.minor))"
+    expected_output_contains: "3."
+
+  # ==========================================================================
+  # CLI HELP COMMANDS
+  # ==========================================================================
+  - name: run_fsqc basic help
+    description: Display run_fsqc usage information
+    command: run_fsqc --help
+    expected_output_contains: "--subjects_dir"
+
+  - name: run_fsqc extended help
+    description: Display run_fsqc extensive help message
+    command: run_fsqc --more-help 2>&1 | head -50
+    expected_output_contains: "quality assurance"
+
+  - name: run_fsqc required arguments
+    description: Verify required arguments are documented
+    command: run_fsqc --help
+    expected_output_contains: "--output_dir"
+
+  - name: run_fsqc screenshots option
+    description: Verify screenshots option is available
+    command: run_fsqc --help
+    expected_output_contains: "--screenshots"
+
+  - name: run_fsqc surfaces option
+    description: Verify surfaces option is available
+    command: run_fsqc --help
+    expected_output_contains: "--surfaces"
+
+  - name: run_fsqc skullstrip option
+    description: Verify skullstrip option is available
+    command: run_fsqc --help
+    expected_output_contains: "--skullstrip"
+
+  - name: run_fsqc fornix option
+    description: Verify fornix option is available
+    command: run_fsqc --help
+    expected_output_contains: "--fornix"
+
+  - name: run_fsqc hippocampus option
+    description: Verify hippocampus option is available
+    command: run_fsqc --help
+    expected_output_contains: "--hippocampus"
+
+  - name: run_fsqc hypothalamus option
+    description: Verify hypothalamus option is available
+    command: run_fsqc --help
+    expected_output_contains: "--hypothalamus"
+
+  - name: run_fsqc shape option
+    description: Verify shape analysis option is available
+    command: run_fsqc --help
+    expected_output_contains: "--shape"
+
+  - name: run_fsqc outlier option
+    description: Verify outlier detection option is available
+    command: run_fsqc --help
+    expected_output_contains: "--outlier"
+
+  - name: run_fsqc fastsurfer option
+    description: Verify FastSurfer support option is available
+    command: run_fsqc --help
+    expected_output_contains: "--fastsurfer"
+
+  # ==========================================================================
+  # BRAINPRINT CLI TESTS
+  # ==========================================================================
+  - name: brainprint help
+    description: Display brainprint usage information
+    command: brainprint --help
+    expected_output_contains: "--sdir"
+
+  - name: brainprint extended help
+    description: Display brainprint extensive help
+    command: brainprint --more-help 2>&1 | head -30
+    expected_output_contains: "brainprint"
+
+  - name: brainprint num option
+    description: Verify eigenvalue number option
+    command: brainprint --help
+    expected_output_contains: "--num"
+
+  - name: brainprint evec option
+    description: Verify eigenvector computation option
+    command: brainprint --help
+    expected_output_contains: "--evec"
+
+  - name: brainprint normalization option
+    description: Verify normalization option
+    command: brainprint --help
+    expected_output_contains: "--norm"
+
+  - name: brainprint asymmetry option
+    description: Verify asymmetry calculation option
+    command: brainprint --help
+    expected_output_contains: "--asymmetry"
+
+  - name: brainprint-sys_info
+    description: Display brainprint system info
+    command: brainprint-sys_info
+    expected_output_contains: "brainprint"
+
+  - name: lapy-sys_info
+    description: Display lapy system info
+    command: lapy-sys_info
+    expected_output_contains: "lapy"
+
+  # ==========================================================================
+  # PYTHON PACKAGE IMPORTS
+  # ==========================================================================
+  - name: Import fsqc package
+    description: Verify fsqc package can be imported
+    command: python -c "import fsqc; print('fsqc imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import fsqcMain module
+    description: Verify fsqcMain module can be imported
+    command: python -c "from fsqc import fsqcMain; print('fsqcMain imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import checkSNR module
+    description: Verify checkSNR module can be imported
+    command: python -c "from fsqc import checkSNR; print('checkSNR imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import checkTopology module
+    description: Verify checkTopology module can be imported
+    command: python -c "from fsqc import checkTopology; print('checkTopology imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import checkCCSize module
+    description: Verify checkCCSize module can be imported
+    command: python -c "from fsqc import checkCCSize; print('checkCCSize imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import checkRotation module
+    description: Verify checkRotation module can be imported
+    command: python -c "from fsqc import checkRotation; print('checkRotation imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import checkContrast module
+    description: Verify checkContrast module can be imported
+    command: python -c "from fsqc import checkContrast; print('checkContrast imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import createScreenshots module
+    description: Verify createScreenshots module can be imported
+    command: python -c "from fsqc import createScreenshots; print('createScreenshots imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import createSurfacePlots module
+    description: Verify createSurfacePlots module can be imported
+    command: python -c "from fsqc import createSurfacePlots; print('createSurfacePlots imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import evaluateFornixSegmentation module
+    description: Verify evaluateFornixSegmentation module can be imported
+    command: python -c "from fsqc import evaluateFornixSegmentation; print('evaluateFornixSegmentation imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import evaluateHippocampalSegmentation module
+    description: Verify evaluateHippocampalSegmentation module can be imported
+    command: python -c "from fsqc import evaluateHippocampalSegmentation; print('evaluateHippocampalSegmentation imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import evaluateHypothalamicSegmentation module
+    description: Verify evaluateHypothalamicSegmentation module can be imported
+    command: python -c "from fsqc import evaluateHypothalamicSegmentation; print('evaluateHypothalamicSegmentation imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import outlierDetection module
+    description: Verify outlierDetection module can be imported
+    command: python -c "from fsqc import outlierDetection; print('outlierDetection imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import fsqcUtils module
+    description: Verify fsqcUtils module can be imported
+    command: python -c "from fsqc import fsqcUtils; print('fsqcUtils imported successfully')"
+    expected_output_contains: "successfully"
+
+  # ==========================================================================
+  # DEPENDENCY IMPORTS
+  # ==========================================================================
+  - name: Import brainprint package
+    description: Verify brainprint package can be imported
+    command: python -c "import brainprint; print('brainprint imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import lapy package
+    description: Verify lapy package can be imported
+    command: python -c "import lapy; print('lapy imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import nibabel package
+    description: Verify nibabel package can be imported
+    command: python -c "import nibabel; print('nibabel ' + nibabel.__version__ + ' imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import numpy package
+    description: Verify numpy package can be imported
+    command: python -c "import numpy; print('numpy ' + numpy.__version__ + ' imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import scipy package
+    description: Verify scipy package can be imported
+    command: python -c "import scipy; print('scipy ' + scipy.__version__ + ' imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import pandas package
+    description: Verify pandas package can be imported
+    command: python -c "import pandas; print('pandas ' + pandas.__version__ + ' imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import matplotlib package
+    description: Verify matplotlib package can be imported
+    command: python -c "import matplotlib; print('matplotlib ' + matplotlib.__version__ + ' imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import skimage package
+    description: Verify scikit-image package can be imported
+    command: python -c "import skimage; print('skimage ' + skimage.__version__ + ' imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import transforms3d package
+    description: Verify transforms3d package can be imported
+    command: python -c "import transforms3d; print('transforms3d imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import PIL package
+    description: Verify Pillow package can be imported
+    command: python -c "import PIL; print('PIL ' + PIL.__version__ + ' imported successfully')"
+    expected_output_contains: "successfully"
+
+  # ==========================================================================
+  # FUNCTION AVAILABILITY TESTS
+  # ==========================================================================
+  - name: Verify run_fsqc function exists
+    description: Check that run_fsqc function is callable
+    command: python -c "from fsqc import run_fsqc; print(callable(run_fsqc))"
+    expected_output_contains: "True"
+
+  - name: Verify get_help function exists
+    description: Check that get_help function is callable
+    command: python -c "from fsqc import get_help; print(callable(get_help))"
+    expected_output_contains: "True"
+
+  - name: Verify get_version function exists
+    description: Check that get_version function is callable
+    command: python -c "from fsqc import get_version; print(callable(get_version))"
+    expected_output_contains: "True"
+
+  - name: Verify sys_info function exists
+    description: Check that sys_info function is callable
+    command: python -c "from fsqc import sys_info; print(callable(sys_info))"
+    expected_output_contains: "True"
+
+  - name: Verify checkSNR function exists
+    description: Check that checkSNR.checkSNR function is callable
+    command: python -c "from fsqc.checkSNR import checkSNR; print(callable(checkSNR))"
+    expected_output_contains: "True"
+
+  - name: Verify checkTopology function exists
+    description: Check that checkTopology.checkTopology function is callable
+    command: python -c "from fsqc.checkTopology import checkTopology; print(callable(checkTopology))"
+    expected_output_contains: "True"
+
+  - name: Verify checkCCSize function exists
+    description: Check that checkCCSize.checkCCSize function is callable
+    command: python -c "from fsqc.checkCCSize import checkCCSize; print(callable(checkCCSize))"
+    expected_output_contains: "True"
+
+  - name: Verify checkRotation function exists
+    description: Check that checkRotation.checkRotation function is callable
+    command: python -c "from fsqc.checkRotation import checkRotation; print(callable(checkRotation))"
+    expected_output_contains: "True"
+
+  - name: Verify checkContrast function exists
+    description: Check that checkContrast.checkContrast function is callable
+    command: python -c "from fsqc.checkContrast import checkContrast; print(callable(checkContrast))"
+    expected_output_contains: "True"
+
+  - name: Verify createScreenshots function exists
+    description: Check that createScreenshots.createScreenshots function is callable
+    command: python -c "from fsqc.createScreenshots import createScreenshots; print(callable(createScreenshots))"
+    expected_output_contains: "True"
+
+  - name: Verify createSurfacePlots function exists
+    description: Check that createSurfacePlots.createSurfacePlots function is callable
+    command: python -c "from fsqc.createSurfacePlots import createSurfacePlots; print(callable(createSurfacePlots))"
+    expected_output_contains: "True"
+
+  - name: Verify outlierDetection function exists
+    description: Check that outlierDetection.outlierDetection function is callable
+    command: python -c "from fsqc.outlierDetection import outlierDetection; print(callable(outlierDetection))"
+    expected_output_contains: "True"
+
+  - name: Verify outlierTable function exists
+    description: Check that outlierDetection.outlierTable function is callable
+    command: python -c "from fsqc.outlierDetection import outlierTable; print(callable(outlierTable))"
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # UTILITY FUNCTION TESTS
+  # ==========================================================================
+  - name: Get FreeSurfer color LUT
+    description: Verify returnFreeSurferColorLUT returns array
+    command: "python -c \"from fsqc.fsqcUtils import returnFreeSurferColorLUT; lut = returnFreeSurferColorLUT(); print('LUT shape:', lut.shape)\""
+    expected_output_contains: "LUT shape"
+
+  - name: Get outlier table
+    description: Verify outlierTable returns dictionary
+    command: "python -c \"from fsqc.outlierDetection import outlierTable; table = outlierTable(); print('Outlier table has', len(table), 'entries')\""
+    expected_output_contains: "entries"
+
+  - name: Verify outlier table structure
+    description: Check outlier table has expected keys
+    command: "python -c \"from fsqc.outlierDetection import outlierTable; table = outlierTable(); print('upper' in list(table.values())[0] and 'lower' in list(table.values())[0])\""
+    expected_output_contains: "True"
+
+  - name: Check importMGH function
+    description: Verify importMGH function exists and is callable
+    command: python -c "from fsqc.fsqcUtils import importMGH; print(callable(importMGH))"
+    expected_output_contains: "True"
+
+  - name: Check readLTA function
+    description: Verify readLTA function exists and is callable
+    command: python -c "from fsqc.fsqcUtils import readLTA; print(callable(readLTA))"
+    expected_output_contains: "True"
+
+  - name: Check binarizeImage function
+    description: Verify binarizeImage function exists and is callable
+    command: python -c "from fsqc.fsqcUtils import binarizeImage; print(callable(binarizeImage))"
+    expected_output_contains: "True"
+
+  - name: Check applyTransform function
+    description: Verify applyTransform function exists and is callable
+    command: python -c "from fsqc.fsqcUtils import applyTransform; print(callable(applyTransform))"
+    expected_output_contains: "True"
+
+  - name: Check levelsetsTria function
+    description: Verify levelsetsTria function exists and is callable
+    command: python -c "from fsqc.fsqcUtils import levelsetsTria; print(callable(levelsetsTria))"
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # HELP MESSAGE CONTENT TESTS
+  # ==========================================================================
+  - name: Verify get_help output
+    description: Check that get_help returns comprehensive documentation
+    command: python -c "import fsqc; help_text = fsqc.get_help(print_help=False, return_help=True); print(len(help_text) > 1000)"
+    expected_output_contains: "True"
+
+  - name: Check help contains usage section
+    description: Verify help message contains usage information
+    command: "python -c \"import fsqc; help_text = fsqc.get_help(print_help=False, return_help=True); print('Usage:' in help_text)\""
+    expected_output_contains: "True"
+
+  - name: Check help contains description
+    description: Verify help message contains description
+    command: "python -c \"import fsqc; help_text = fsqc.get_help(print_help=False, return_help=True); print('Description:' in help_text)\""
+    expected_output_contains: "True"
+
+  - name: Check help mentions FreeSurfer
+    description: Verify help message mentions FreeSurfer
+    command: "python -c \"import fsqc; help_text = fsqc.get_help(print_help=False, return_help=True); print('FreeSurfer' in help_text or 'Freesurfer' in help_text)\""
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # LAPY PACKAGE TESTS
+  # ==========================================================================
+  - name: Import lapy TriaMesh
+    description: Verify lapy TriaMesh class can be imported
+    command: python -c "from lapy import TriaMesh; print('TriaMesh imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import lapy TetMesh
+    description: Verify lapy TetMesh class can be imported
+    command: python -c "from lapy import TetMesh; print('TetMesh imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import lapy Solver
+    description: Verify lapy Solver class can be imported
+    command: python -c "from lapy import Solver; print('Solver imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import lapy heat module
+    description: Verify lapy heat module can be imported
+    command: python -c "from lapy import heat; print('heat module imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Import lapy io module
+    description: Verify lapy io module can be imported
+    command: python -c "from lapy import io; print('io module imported successfully')"
+    expected_output_contains: "successfully"
+
+  # ==========================================================================
+  # BRAINPRINT PACKAGE TESTS
+  # ==========================================================================
+  - name: Import brainprint core
+    description: Verify brainprint core can be imported
+    command: python -c "import brainprint; print('brainprint imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Verify brainprint run function
+    description: Check that brainprint module has callable attributes
+    command: python -c "import brainprint; attrs = [a for a in dir(brainprint) if not a.startswith('_')]; print('brainprint attributes:', attrs)"
+    expected_output_contains: "brainprint attributes:"
+
+  # ==========================================================================
+  # ARGUMENT PARSING TESTS
+  # ==========================================================================
+  - name: Missing required argument error
+    description: Verify error when subjects_dir is missing
+    command: run_fsqc --output_dir /tmp/test 2>&1 || true
+    expected_output_contains: "required"
+
+  - name: Missing output_dir argument error
+    description: Verify error when output_dir is missing
+    command: run_fsqc --subjects_dir /tmp/test 2>&1 || true
+    expected_output_contains: "required"
+
+  # ==========================================================================
+  # NIBABEL FUNCTIONALITY TESTS
+  # ==========================================================================
+  - name: Nibabel load function available
+    description: Verify nibabel.load function is available
+    command: python -c "import nibabel as nib; print(callable(nib.load))"
+    expected_output_contains: "True"
+
+  - name: Nibabel freesurfer module available
+    description: Verify nibabel.freesurfer module is available
+    command: python -c "import nibabel.freesurfer; print('nibabel.freesurfer available')"
+    expected_output_contains: "available"
+
+  - name: Nibabel MGHImage class available
+    description: Verify nibabel MGHImage class is available
+    command: python -c "from nibabel.freesurfer import MGHImage; print('MGHImage class available')"
+    expected_output_contains: "available"
+
+  # ==========================================================================
+  # MATPLOTLIB BACKEND TESTS
+  # ==========================================================================
+  - name: Matplotlib Agg backend
+    description: Verify matplotlib uses Agg backend (non-interactive)
+    command: python -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt; print('Agg backend set successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Matplotlib figure creation
+    description: Verify matplotlib can create figures
+    command: python -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt; fig = plt.figure(); print('Figure created:', fig)"
+    expected_output_contains: "Figure"
+
+  # ==========================================================================
+  # SCIPY FUNCTIONALITY TESTS
+  # ==========================================================================
+  - name: Scipy ndimage available
+    description: Verify scipy.ndimage module is available
+    command: python -c "from scipy import ndimage; print('scipy.ndimage available')"
+    expected_output_contains: "available"
+
+  - name: Scipy sparse available
+    description: Verify scipy.sparse module is available
+    command: python -c "from scipy import sparse; print('scipy.sparse available')"
+    expected_output_contains: "available"
+
+  - name: Scipy linalg available
+    description: Verify scipy.linalg module is available
+    command: python -c "from scipy import linalg; print('scipy.linalg available')"
+    expected_output_contains: "available"
+
+  # ==========================================================================
+  # SKIMAGE FUNCTIONALITY TESTS
+  # ==========================================================================
+  - name: Skimage morphology available
+    description: Verify skimage.morphology module is available
+    command: python -c "from skimage import morphology; print('skimage.morphology available')"
+    expected_output_contains: "available"
+
+  - name: Skimage measure available
+    description: Verify skimage.measure module is available
+    command: python -c "from skimage import measure; print('skimage.measure available')"
+    expected_output_contains: "available"
+
+  - name: Skimage segmentation available
+    description: Verify skimage.segmentation module is available
+    command: python -c "from skimage import segmentation; print('skimage.segmentation available')"
+    expected_output_contains: "available"
+
+  # ==========================================================================
+  # TRANSFORMS3D FUNCTIONALITY TESTS
+  # ==========================================================================
+  - name: Transforms3d euler module available
+    description: Verify transforms3d.euler module is available
+    command: python -c "from transforms3d import euler; print('transforms3d.euler available')"
+    expected_output_contains: "available"
+
+  - name: Transforms3d affines module available
+    description: Verify transforms3d.affines module is available
+    command: python -c "from transforms3d import affines; print('transforms3d.affines available')"
+    expected_output_contains: "available"
+
+  # ==========================================================================
+  # PANDAS FUNCTIONALITY TESTS
+  # ==========================================================================
+  - name: Pandas DataFrame creation
+    description: Verify pandas DataFrame can be created
+    command: "python -c \"import pandas as pd; df = pd.DataFrame({'a': [1, 2, 3]}); print('DataFrame created with', len(df), 'rows')\""
+    expected_output_contains: "3 rows"
+
+  - name: Pandas CSV writing capability
+    description: Verify pandas can write CSV files
+    command: "python -c \"import pandas as pd; df = pd.DataFrame({'a': [1]}); print(callable(df.to_csv))\""
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # NUMPY FUNCTIONALITY TESTS
+  # ==========================================================================
+  - name: Numpy array creation
+    description: Verify numpy arrays can be created
+    command: python -c "import numpy as np; arr = np.zeros((10, 10, 10)); print('Array shape:', arr.shape)"
+    expected_output_contains: "(10, 10, 10)"
+
+  - name: Numpy erosion simulation
+    description: Verify numpy morphological operations work
+    command: python -c "import numpy as np; from scipy import ndimage; arr = np.ones((5,5,5)); eroded = ndimage.binary_erosion(arr); print('Erosion works:', eroded.shape)"
+    expected_output_contains: "(5, 5, 5)"
+
+  # ==========================================================================
+  # OPENGL AND VISUALIZATION TESTS
+  # ==========================================================================
+  - name: PyOpenGL available
+    description: Verify PyOpenGL package is available
+    command: python -c "import OpenGL; print('PyOpenGL available')"
+    expected_output_contains: "available"
+
+  - name: GLFW available
+    description: Verify GLFW package is available
+    command: python -c "import glfw; print('GLFW available')"
+    expected_output_contains: "available"
+
+  - name: Pyrr available
+    description: Verify pyrr package is available
+    command: python -c "import pyrr; print('pyrr available')"
+    expected_output_contains: "available"
+
+  # ==========================================================================
+  # ADDITIONAL UTILITY TESTS
+  # ==========================================================================
+  - name: Read aseg stats function available
+    description: Verify readAsegStats function is callable
+    command: python -c "from fsqc.outlierDetection import readAsegStats; print(callable(readAsegStats))"
+    expected_output_contains: "True"
+
+  - name: Read aparc stats function available
+    description: Verify readAparcStats function is callable
+    command: python -c "from fsqc.outlierDetection import readAparcStats; print(callable(readAparcStats))"
+    expected_output_contains: "True"
+
+  - name: Read hippocampus stats function available
+    description: Verify readHippocampusStats function is callable
+    command: python -c "from fsqc.outlierDetection import readHippocampusStats; print(callable(readHippocampusStats))"
+    expected_output_contains: "True"
+
+  - name: Evaluate fornix function available
+    description: Verify evaluateFornixSegmentation function is callable
+    command: python -c "from fsqc.evaluateFornixSegmentation import evaluateFornixSegmentation; print(callable(evaluateFornixSegmentation))"
+    expected_output_contains: "True"
+
+  - name: Evaluate hippocampal function available
+    description: Verify evaluateHippocampalSegmentation function is callable
+    command: python -c "from fsqc.evaluateHippocampalSegmentation import evaluateHippocampalSegmentation; print(callable(evaluateHippocampalSegmentation))"
+    expected_output_contains: "True"
+
+  - name: Evaluate hypothalamic function available
+    description: Verify evaluateHypothalamicSegmentation function is callable
+    command: python -c "from fsqc.evaluateHypothalamicSegmentation import evaluateHypothalamicSegmentation; print(callable(evaluateHypothalamicSegmentation))"
+    expected_output_contains: "True"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

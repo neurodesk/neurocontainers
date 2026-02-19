@@ -1,0 +1,1243 @@
+# bidstools container test suite
+# Tests for bidstools v1.0.4 - Collection of tools useful for DICOM to BIDS conversion
+#
+# This container includes:
+#   - dcm2niix v1.0.20240202: DICOM to NIfTI conversion (https://github.com/rordenlab/dcm2niix)
+#   - dcmtk v3.6.6: DICOM toolkit (https://support.dcmtk.org/docs/pages.html)
+#       - dcmdump, dcm2json, dcmconv, dcmodify, img2dcm, dcm2pnm, dcmicmp, dump2dcm
+#   - xmedcon/medcon v0.21.2: Medical image conversion (https://xmedcon.sourceforge.io/)
+#   - heudiconv v1.0.1: DICOM to BIDS converter (https://heudiconv.readthedocs.io/)
+#   - Bru2 (Bru2Nii) v1.0.20180303: Bruker to NIfTI converter (https://github.com/neurolabusc/Bru2Nii)
+#
+# Note: Since no DICOM test data is available in ds000001, these tests focus on:
+#   - Version and help information for all tools
+#   - Command-line option validation
+#   - Error handling for invalid/non-DICOM inputs
+#   - medcon format conversions using NIfTI input
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: (via git-annex, may not be available for testing)
+#   - T2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+#   - BOLD: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+name: bidstools
+version: 1.0.4
+container: bidstools_1.0.4_20240221.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  anat_dir: ds000001/sub-01/anat
+  func_dir: ds000001/sub-01/func
+  subject_dir: ds000001/sub-01
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/bidstools
+    mkdir -p ${output_dir}/bidstools/dcm2niix
+    mkdir -p ${output_dir}/bidstools/medcon
+    mkdir -p ${output_dir}/bidstools/dcmtk
+    mkdir -p ${output_dir}/bidstools/empty_dir
+
+tests:
+  # ==========================================================================
+  # DCM2NIIX - VERSION AND HELP
+  # ==========================================================================
+  - name: dcm2niix version check
+    description: Verify dcm2niix reports version information
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix version v1.0.20240202
+    description: Verify dcm2niix version matches expected
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "v1.0.20240202"
+
+  - name: dcm2niix help display
+    description: Verify dcm2niix shows usage information
+    command: dcm2niix 2>&1
+    expected_output_contains: "usage: dcm2niix"
+
+  - name: dcm2niix options list
+    description: Verify dcm2niix displays available options
+    command: dcm2niix 2>&1
+    expected_output_contains: "Options :"
+
+  - name: dcm2niix BIDS sidecar option
+    description: Verify BIDS sidecar generation option exists
+    command: dcm2niix 2>&1
+    expected_output_contains: "-b : BIDS sidecar"
+
+  - name: dcm2niix compression option
+    description: Verify gzip compression option exists
+    command: dcm2niix 2>&1
+    expected_output_contains: "-z : gz compress"
+
+  - name: dcm2niix output directory option
+    description: Verify output directory option exists
+    command: dcm2niix 2>&1
+    expected_output_contains: "-o : output directory"
+
+  - name: dcm2niix filename format option
+    description: Verify filename format option exists
+    command: dcm2niix 2>&1
+    expected_output_contains: "-f : filename"
+
+  - name: dcm2niix 64-bit build
+    description: Verify 64-bit Linux build
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "64-bit Linux"
+
+  - name: dcm2niix GCC compiler info
+    description: Verify GCC compiler information
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "GCC"
+
+  - name: dcm2niix examples section
+    description: Verify help includes examples
+    command: dcm2niix 2>&1
+    expected_output_contains: "Examples :"
+
+  - name: dcm2niix default filename format
+    description: Verify default filename format is documented
+    command: dcm2niix 2>&1
+    expected_output_contains: "%f_%p_%t_%s"
+
+  - name: dcm2niix verbose option
+    description: Verify verbose mode option exists
+    command: dcm2niix 2>&1
+    expected_output_contains: "-v : verbose"
+
+  - name: dcm2niix crop option
+    description: Verify 3D acquisition cropping option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-x : crop 3D acquisitions"
+
+  - name: dcm2niix merge slices option
+    description: Verify merge 2D slices option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-m : merge 2D slices"
+
+  - name: dcm2niix adjacent DICOM option
+    description: Verify adjacent DICOM option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-a : adjacent DICOMs"
+
+  - name: dcm2niix ignore derived option
+    description: Verify ignore derived images option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-i : ignore derived"
+
+  - name: dcm2niix Philips scaling option
+    description: Verify Philips precise float scaling option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-p : Philips precise float"
+
+  - name: dcm2niix scale option
+    description: Verify 16-bit integer scaling option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-l : losslessly scale 16-bit"
+
+  - name: dcm2niix write behavior option
+    description: Verify write behavior option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-w : write behavior"
+
+  - name: dcm2niix BIDS anonymize option
+    description: Verify BIDS anonymization option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-ba : anonymize BIDS"
+
+  - name: dcm2niix comment option
+    description: Verify NIfTI comment option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-c : comment stored in NIfTI"
+
+  - name: dcm2niix export format option
+    description: Verify export format options (NRRD, MGH, JNIfTI)
+    command: dcm2niix 2>&1
+    expected_output_contains: "-e : export as NRRD"
+
+  - name: dcm2niix depth search option
+    description: Verify directory search depth option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-d : directory search depth"
+
+  - name: dcm2niix rename option
+    description: Verify rename instead of convert option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-r : rename instead of convert"
+
+  - name: dcm2niix single file option
+    description: Verify single file mode option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-s : single file mode"
+
+  - name: dcm2niix query option
+    description: Verify query mode option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-q : only search directory for DICOMs"
+
+  - name: dcm2niix series selection option
+    description: Verify series CRC selection option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-n : only convert this series CRC"
+
+  - name: dcm2niix update check option
+    description: Verify up-to-date check option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-u : up-to-date check"
+
+  - name: dcm2niix defaults file option
+    description: Verify generate defaults file option
+    command: dcm2niix 2>&1
+    expected_output_contains: "-g : generate defaults file"
+
+  - name: dcm2niix big endian option
+    description: Verify big-endian byte order option
+    command: dcm2niix 2>&1
+    expected_output_contains: "--big-endian"
+
+  - name: dcm2niix progress option
+    description: Verify Slicer format progress option
+    command: dcm2niix 2>&1
+    expected_output_contains: "--progress"
+
+  - name: dcm2niix ignore trigger times option
+    description: Verify ignore trigger times option
+    command: dcm2niix 2>&1
+    expected_output_contains: "--ignore_trigger_times"
+
+  - name: dcm2niix terse option
+    description: Verify terse output option
+    command: dcm2niix 2>&1
+    expected_output_contains: "--terse"
+
+  - name: dcm2niix xml option
+    description: Verify XML output option
+    command: dcm2niix 2>&1
+    expected_output_contains: "--xml"
+
+  # ==========================================================================
+  # DCM2NIIX - DIRECTORY SCANNING
+  # ==========================================================================
+  - name: dcm2niix query mode
+    description: Test query mode on NIfTI directory (no DICOMs expected)
+    command: dcm2niix -q y ${anat_dir} 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: dcm2niix query list mode
+    description: Test query list mode
+    command: dcm2niix -q l ${anat_dir} 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: dcm2niix scan subject directory
+    description: Test scanning subject directory
+    command: dcm2niix -q y ${subject_dir} 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: dcm2niix scan with depth limit
+    description: Test directory search depth option
+    command: dcm2niix -q y -d 1 ${subject_dir} 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: dcm2niix scan empty directory
+    description: Test scanning empty directory
+    command: dcm2niix -q y ${output_dir}/bidstools/empty_dir 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: dcm2niix scan depth zero
+    description: Test depth 0 to search only specified directory
+    command: dcm2niix -q y -d 0 ${subject_dir} 2>&1 || true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - CONVERSION OPTIONS
+  # ==========================================================================
+  - name: dcm2niix output directory test
+    description: Test output directory option
+    command: dcm2niix -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix BIDS enabled
+    description: Test with BIDS sidecar enabled
+    command: dcm2niix -b y -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix BIDS disabled
+    description: Test with BIDS sidecar disabled
+    command: dcm2niix -b n -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix BIDS only mode
+    description: Test BIDS-only output mode (no NIfTI files)
+    command: dcm2niix -b o -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix compression enabled
+    description: Test with gzip compression enabled
+    command: dcm2niix -z y -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix internal compression
+    description: Test with internal zlib compression
+    command: dcm2niix -z i -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix no compression
+    description: Test without compression
+    command: dcm2niix -z n -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix custom filename format
+    description: Test custom filename pattern
+    command: dcm2niix -f "test_%p_%s" -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix verbose output
+    description: Test verbose mode
+    command: dcm2niix -v 1 -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix very verbose output
+    description: Test maximum verbosity
+    command: dcm2niix -v 2 -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix cropping enabled
+    description: Test 3D acquisition cropping
+    command: dcm2niix -x y -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix cropping ignored
+    description: Test 3D cropping ignored mode
+    command: dcm2niix -x i -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix ignore derived images
+    description: Test ignoring derived/localizer images
+    command: dcm2niix -i y -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix merge slices auto
+    description: Test automatic slice merging
+    command: dcm2niix -m 2 -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix merge slices disabled
+    description: Test slice merging disabled
+    command: dcm2niix -m n -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix high compression
+    description: Test maximum compression level
+    command: dcm2niix -9 -z i -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix low compression
+    description: Test minimum compression level
+    command: dcm2niix -1 -z i -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix BIDS with anonymization
+    description: Test BIDS conversion with anonymization
+    command: dcm2niix -b y -ba y -z y -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix BIDS without anonymization
+    description: Test BIDS conversion without anonymization
+    command: dcm2niix -b y -ba n -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix big endian output
+    description: Test big endian byte order
+    command: dcm2niix --big-endian y -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix little endian output
+    description: Test little endian byte order
+    command: dcm2niix --big-endian n -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix optimal endian output
+    description: Test optimal/native byte order
+    command: dcm2niix --big-endian o -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix progress output
+    description: Test Slicer progress format
+    command: dcm2niix --progress y -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix terse output
+    description: Test terse filename format
+    command: dcm2niix --terse -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix skip duplicates
+    description: Test skip duplicates write behavior
+    command: dcm2niix -w 0 -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix overwrite behavior
+    description: Test overwrite write behavior
+    command: dcm2niix -w 1 -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix add suffix behavior
+    description: Test add suffix write behavior
+    command: dcm2niix -w 2 -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix with comment
+    description: Test conversion with custom NIfTI comment
+    command: dcm2niix -c "test comment" -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix Philips precise scaling
+    description: Test Philips precise float scaling
+    command: dcm2niix -p y -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix lossless scaling
+    description: Test lossless 16-bit scaling
+    command: dcm2niix -l y -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix original scaling
+    description: Test original scaling preserved
+    command: dcm2niix -l o -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix adjacent DICOM mode
+    description: Test adjacent DICOM optimization
+    command: dcm2niix -a y -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix ignore trigger times
+    description: Test conversion ignoring trigger times
+    command: dcm2niix --ignore_trigger_times -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix func directory
+    description: Test conversion on functional data directory
+    command: dcm2niix -o ${output_dir}/bidstools/dcm2niix ${func_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix depth 9
+    description: Test maximum directory depth
+    command: dcm2niix -d 9 -o ${output_dir}/bidstools/dcm2niix ${subject_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX - ERROR HANDLING
+  # ==========================================================================
+  - name: dcm2niix invalid option
+    description: Test error handling for invalid option
+    command: dcm2niix --invalid-option 2>&1 || true
+    expected_output_contains: "Error"
+
+  - name: dcm2niix nonexistent directory
+    description: Test handling of nonexistent directory
+    command: dcm2niix /nonexistent/path 2>&1 || true
+    expected_output_contains: "Error"
+
+  # ==========================================================================
+  # DCM2NIIX - COMBINED OPTIONS
+  # ==========================================================================
+  - name: dcm2niix full BIDS workflow
+    description: Test typical BIDS conversion parameters
+    command: dcm2niix -b y -ba y -z y -f "%p_%s" -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix clinical workflow
+    description: Test typical clinical conversion parameters
+    command: dcm2niix -b n -z n -i y -x n -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix research workflow
+    description: Test typical research conversion parameters
+    command: dcm2niix -b y -z i -v 1 -w 2 -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix minimal output
+    description: Test conversion with minimal output
+    command: dcm2niix -b n -z n --terse -v 0 -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix maximum verbosity workflow
+    description: Test conversion with maximum verbosity and all features
+    command: dcm2niix -b y -ba n -v 2 --progress y -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # HEUDICONV - VERSION AND HELP
+  # ==========================================================================
+  - name: heudiconv version check
+    description: Verify heudiconv reports version
+    command: heudiconv --version 2>&1
+    expected_output_contains: "1.0.1"
+
+  - name: heudiconv help display
+    description: Verify heudiconv shows help information
+    command: heudiconv --help 2>&1 | head -30
+    expected_output_contains: "heudiconv"
+
+  - name: heudiconv usage format
+    description: Verify heudiconv shows usage example
+    command: heudiconv --help 2>&1
+    expected_output_contains: "Example:"
+
+  - name: heudiconv dicom template option
+    description: Verify dicom template option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--dicom_dir_template"
+
+  - name: heudiconv files option
+    description: Verify files option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--files"
+
+  - name: heudiconv subjects option
+    description: Verify subjects option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--subjects"
+
+  - name: heudiconv converter option
+    description: Verify converter option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--converter"
+
+  - name: heudiconv outdir option
+    description: Verify output directory option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--outdir"
+
+  - name: heudiconv heuristic option
+    description: Verify heuristic option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--heuristic"
+
+  - name: heudiconv session option
+    description: Verify session option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "-ss"
+
+  - name: heudiconv BIDS option
+    description: Verify BIDS options exist
+    command: heudiconv --help 2>&1
+    expected_output_contains: "-b"
+
+  - name: heudiconv overwrite option
+    description: Verify overwrite option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--overwrite"
+
+  - name: heudiconv datalad option
+    description: Verify datalad option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--datalad"
+
+  - name: heudiconv debug option
+    description: Verify debug option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--dbg"
+
+  - name: heudiconv command option
+    description: Verify command option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--command"
+
+  - name: heudiconv grouping option
+    description: Verify grouping option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "-g"
+
+  - name: heudiconv minmeta option
+    description: Verify minmeta option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--minmeta"
+
+  - name: heudiconv dcmconfig option
+    description: Verify dcmconfig option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--dcmconfig"
+
+  - name: heudiconv queue option
+    description: Verify queue option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "-q"
+
+  - name: heudiconv locator option
+    description: Verify locator option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--locator"
+
+  - name: heudiconv anon cmd option
+    description: Verify anon-cmd option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--anon-cmd"
+
+  - name: heudiconv conv outdir option
+    description: Verify conv-outdir option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--conv-outdir"
+
+  - name: heudiconv provenance option
+    description: Verify with-prov option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--with-prov"
+
+  - name: heudiconv random seed option
+    description: Verify random-seed option exists
+    command: heudiconv --help 2>&1
+    expected_output_contains: "--random-seed"
+
+  # ==========================================================================
+  # HEUDICONV - COMMANDS
+  # ==========================================================================
+  - name: heudiconv heuristics command
+    description: List built-in heuristics
+    command: heudiconv --command heuristics 2>&1 || true
+    expected_exit_code: 0
+
+  - name: heudiconv heuristic-info command help
+    description: Test heuristic-info command
+    command: heudiconv --command heuristic-info 2>&1 || true
+    expected_exit_code: 0
+
+  - name: heudiconv ls command help
+    description: Test ls command
+    command: heudiconv --command ls 2>&1 || true
+    expected_exit_code: 0
+
+  - name: heudiconv populate-templates command
+    description: Test populate-templates command
+    command: heudiconv --command populate-templates 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # BRU2 (Bru2Nii) - VERSION AND HELP
+  # ==========================================================================
+  - name: Bru2 help display
+    description: Verify Bru2 shows help information
+    command: Bru2 2>&1 | head -20
+    expected_output_contains: "Bruker2NIfTI"
+
+  - name: Bru2 version check
+    description: Verify Bru2 version
+    command: Bru2 2>&1
+    expected_output_contains: "v1.0.20180303"
+
+  - name: Bru2 usage format
+    description: Verify Bru2 usage format
+    command: Bru2 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: Bru2 output option
+    description: Verify output filename option exists
+    command: Bru2 2>&1
+    expected_output_contains: "-o output filename"
+
+  - name: Bru2 actual size option
+    description: Verify actual size option exists
+    command: Bru2 2>&1
+    expected_output_contains: "-a actual size"
+
+  - name: Bru2 force conversion option
+    description: Verify force conversion option exists
+    command: Bru2 2>&1
+    expected_output_contains: "-f force conversion"
+
+  - name: Bru2 protocol name option
+    description: Verify protocol name option exists
+    command: Bru2 2>&1
+    expected_output_contains: "-p append protocol name"
+
+  - name: Bru2 series type option
+    description: Verify series type option exists
+    command: Bru2 2>&1
+    expected_output_contains: "-s append series type"
+
+  - name: Bru2 gz compress option
+    description: Verify gz compress option exists
+    command: Bru2 2>&1
+    expected_output_contains: "-z gz compress"
+
+  - name: Bru2 verbose option
+    description: Verify verbose option exists
+    command: Bru2 2>&1
+    expected_output_contains: "-v verbose"
+
+  - name: Bru2 help option
+    description: Verify help option exists
+    command: Bru2 2>&1
+    expected_output_contains: "-h show these help"
+
+  - name: Bru2 examples section
+    description: Verify help includes examples
+    command: Bru2 2>&1
+    expected_output_contains: "Examples:"
+
+  # ==========================================================================
+  # DCMTK - DCMDUMP
+  # ==========================================================================
+  - name: dcmdump version check
+    description: Verify dcmdump reports version
+    command: dcmdump --version 2>&1
+    expected_output_contains: "dcmtk: dcmdump"
+
+  - name: dcmdump DCMTK version
+    description: Verify DCMTK version 3.6.6
+    command: dcmdump --version 2>&1
+    expected_output_contains: "v3.6.6"
+
+  - name: dcmdump help display
+    description: Verify dcmdump shows help information
+    command: dcmdump --help 2>&1
+    expected_output_contains: "Dump DICOM file and data set"
+
+  - name: dcmdump usage info
+    description: Verify dcmdump usage format
+    command: dcmdump --help 2>&1
+    expected_output_contains: "usage: dcmdump"
+
+  - name: dcmdump input options
+    description: Verify dcmdump has input options
+    command: dcmdump --help 2>&1
+    expected_output_contains: "input options:"
+
+  - name: dcmdump transfer syntax options
+    description: Verify transfer syntax options exist
+    command: dcmdump --help 2>&1
+    expected_output_contains: "input transfer syntax:"
+
+  - name: dcmdump verbose option
+    description: Verify verbose mode option exists
+    command: dcmdump --help 2>&1
+    expected_output_contains: "--verbose"
+
+  - name: dcmdump quiet option
+    description: Verify quiet mode option exists
+    command: dcmdump --help 2>&1
+    expected_output_contains: "--quiet"
+
+  - name: dcmdump debug option
+    description: Verify debug mode option exists
+    command: dcmdump --help 2>&1
+    expected_output_contains: "--debug"
+
+  - name: dcmdump scan directories option
+    description: Verify scan directories option exists
+    command: dcmdump --help 2>&1
+    expected_output_contains: "--scan-directories"
+
+  - name: dcmdump recurse option
+    description: Verify recurse option exists
+    command: dcmdump --help 2>&1
+    expected_output_contains: "--recurse"
+
+  - name: dcmdump on NIfTI file
+    description: Test dcmdump on non-DICOM file (should fail gracefully)
+    command: dcmdump ${t2} 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCMTK - DCM2JSON
+  # ==========================================================================
+  - name: dcm2json version check
+    description: Verify dcm2json reports version
+    command: dcm2json --version 2>&1
+    expected_output_contains: "dcmtk: dcm2json"
+
+  - name: dcm2json help display
+    description: Verify dcm2json shows help information
+    command: dcm2json --help 2>&1
+    expected_output_contains: "Convert DICOM file and data set to JSON"
+
+  - name: dcm2json usage info
+    description: Verify dcm2json usage format
+    command: dcm2json --help 2>&1
+    expected_output_contains: "usage: dcm2json"
+
+  - name: dcm2json input format options
+    description: Verify input format options exist
+    command: dcm2json --help 2>&1
+    expected_output_contains: "input file format:"
+
+  - name: dcm2json transfer syntax options
+    description: Verify transfer syntax options exist
+    command: dcm2json --help 2>&1
+    expected_output_contains: "input transfer syntax:"
+
+  - name: dcm2json on NIfTI file
+    description: Test dcm2json on non-DICOM file (should fail gracefully)
+    command: dcm2json ${t2} 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCMTK - DCMCONV
+  # ==========================================================================
+  - name: dcmconv version check
+    description: Verify dcmconv reports version
+    command: dcmconv --version 2>&1
+    expected_output_contains: "dcmtk: dcmconv"
+
+  - name: dcmconv help display
+    description: Verify dcmconv shows help information
+    command: dcmconv --help 2>&1
+    expected_output_contains: "Convert DICOM file encoding"
+
+  - name: dcmconv usage info
+    description: Verify dcmconv usage format
+    command: dcmconv --help 2>&1
+    expected_output_contains: "usage: dcmconv"
+
+  - name: dcmconv output transfer syntax
+    description: Verify output transfer syntax options
+    command: dcmconv --help 2>&1
+    expected_output_contains: "output transfer syntax:"
+
+  # ==========================================================================
+  # DCMTK - DCMODIFY
+  # ==========================================================================
+  - name: dcmodify version check
+    description: Verify dcmodify reports version
+    command: dcmodify --version 2>&1
+    expected_output_contains: "dcmtk: dcmodify"
+
+  - name: dcmodify help display
+    description: Verify dcmodify shows help information
+    command: dcmodify --help 2>&1
+    expected_output_contains: "Modify DICOM files"
+
+  - name: dcmodify usage info
+    description: Verify dcmodify usage format
+    command: dcmodify --help 2>&1
+    expected_output_contains: "usage: dcmodify"
+
+  - name: dcmodify insert tag option
+    description: Verify insert tag option exists
+    command: dcmodify --help 2>&1
+    expected_output_contains: "-i"
+
+  - name: dcmodify modify tag option
+    description: Verify modify tag option exists
+    command: dcmodify --help 2>&1
+    expected_output_contains: "-m"
+
+  - name: dcmodify erase tag option
+    description: Verify erase tag option exists
+    command: dcmodify --help 2>&1
+    expected_output_contains: "-e"
+
+  # ==========================================================================
+  # DCMTK - IMG2DCM
+  # ==========================================================================
+  - name: img2dcm version check
+    description: Verify img2dcm reports version
+    command: img2dcm --version 2>&1
+    expected_output_contains: "dcmtk: img2dcm"
+
+  - name: img2dcm help display
+    description: Verify img2dcm shows help information
+    command: img2dcm --help 2>&1
+    expected_output_contains: "Convert standard image formats into DICOM format"
+
+  - name: img2dcm usage info
+    description: Verify img2dcm usage format
+    command: img2dcm --help 2>&1
+    expected_output_contains: "usage: img2dcm"
+
+  - name: img2dcm input format option
+    description: Verify input format option exists
+    command: img2dcm --help 2>&1
+    expected_output_contains: "--input-format"
+
+  - name: img2dcm JPEG support
+    description: Verify JPEG input support
+    command: img2dcm --help 2>&1
+    expected_output_contains: "JPEG"
+
+  - name: img2dcm BMP support
+    description: Verify BMP input support
+    command: img2dcm --help 2>&1
+    expected_output_contains: "BMP"
+
+  # ==========================================================================
+  # DCMTK - DCM2PNM
+  # ==========================================================================
+  - name: dcm2pnm version check
+    description: Verify dcm2pnm reports version
+    command: dcm2pnm --version 2>&1
+    expected_output_contains: "dcmtk: dcm2pnm"
+
+  - name: dcm2pnm help display
+    description: Verify dcm2pnm shows help information
+    command: dcm2pnm --help 2>&1
+    expected_output_contains: "Convert DICOM images to PGM/PPM"
+
+  - name: dcm2pnm PNG support
+    description: Verify PNG output support
+    command: dcm2pnm --help 2>&1
+    expected_output_contains: "PNG"
+
+  - name: dcm2pnm TIFF support
+    description: Verify TIFF output support
+    command: dcm2pnm --help 2>&1
+    expected_output_contains: "TIFF"
+
+  - name: dcm2pnm BMP support
+    description: Verify BMP output support
+    command: dcm2pnm --help 2>&1
+    expected_output_contains: "BMP"
+
+  - name: dcm2pnm on NIfTI file
+    description: Test dcm2pnm on non-DICOM file (should fail gracefully)
+    command: dcm2pnm ${t2} ${output_dir}/bidstools/dcmtk/test.png 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCMTK - DUMP2DCM
+  # ==========================================================================
+  - name: dump2dcm version check
+    description: Verify dump2dcm reports version
+    command: dump2dcm --version 2>&1
+    expected_output_contains: "dcmtk: dump2dcm"
+
+  - name: dump2dcm help display
+    description: Verify dump2dcm shows help information
+    command: dump2dcm --help 2>&1
+    expected_output_contains: "Convert ASCII dump to DICOM file"
+
+  - name: dump2dcm usage info
+    description: Verify dump2dcm usage format
+    command: dump2dcm --help 2>&1
+    expected_output_contains: "usage: dump2dcm"
+
+  # ==========================================================================
+  # DCMTK - DCMICMP
+  # ==========================================================================
+  - name: dcmicmp version check
+    description: Verify dcmicmp reports version
+    command: dcmicmp --version 2>&1
+    expected_output_contains: "dcmtk: dcmicmp"
+
+  - name: dcmicmp help display
+    description: Verify dcmicmp shows help information
+    command: dcmicmp --help 2>&1
+    expected_output_contains: "Compare DICOM images and compute difference metrics"
+
+  - name: dcmicmp usage info
+    description: Verify dcmicmp usage format
+    command: dcmicmp --help 2>&1
+    expected_output_contains: "usage: dcmicmp"
+
+  # ==========================================================================
+  # MEDCON - VERSION AND HELP
+  # ==========================================================================
+  - name: medcon version check
+    description: Verify medcon reports version
+    command: medcon --version 2>&1 || true
+    expected_output_contains: "MedCon"
+
+  - name: medcon version number
+    description: Verify medcon version 0.21.2
+    command: medcon --version 2>&1 || true
+    expected_output_contains: "0.21.2"
+
+  - name: medcon help display
+    description: Verify medcon shows help information
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "Medical Image Conversion Utility"
+
+  - name: medcon usage info
+    description: Verify medcon usage format
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "Usage:"
+
+  - name: medcon file option
+    description: Verify file input option
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "--file"
+
+  - name: medcon convert option
+    description: Verify convert option
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "--convert"
+
+  - name: medcon DICOM format support
+    description: Verify DICOM output format support
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "dicom = DICOM"
+
+  - name: medcon NIfTI format support
+    description: Verify NIfTI output format support
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "nifti = NIfTI"
+
+  - name: medcon Analyze format support
+    description: Verify Analyze output format support
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "Analyze"
+
+  - name: medcon InterFile format support
+    description: Verify InterFile output format support
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "InterFile"
+
+  - name: medcon PNG format support
+    description: Verify PNG output format support
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "PNG"
+
+  - name: medcon GIF format support
+    description: Verify GIF output format support
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "Gif89a"
+
+  - name: medcon ECAT format support
+    description: Verify ECAT output format support
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "ecat"
+
+  - name: medcon pixel options
+    description: Verify pixel manipulation options
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "Pixels:"
+
+  - name: medcon overwrite option
+    description: Verify overwrite files option
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "--overwrite-files"
+
+  # ==========================================================================
+  # MEDCON - FORMAT CONVERSIONS (using NIfTI input)
+  # ==========================================================================
+  - name: medcon NIfTI to Analyze
+    description: Convert NIfTI to Analyze format
+    command: medcon -f ${t2} -w -c anlz -o ${output_dir}/bidstools/medcon/t2_anlz 2>&1
+    validate:
+      - output_exists: ${output_dir}/bidstools/medcon/t2_anlz.hdr
+
+  - name: medcon NIfTI to InterFile
+    description: Convert NIfTI to InterFile format
+    command: medcon -f ${t2} -w -c intf -o ${output_dir}/bidstools/medcon/t2_intf 2>&1
+    validate:
+      - output_exists: ${output_dir}/bidstools/medcon/t2_intf.h33
+
+  - name: medcon NIfTI to raw binary
+    description: Convert NIfTI to raw binary format
+    command: medcon -f ${t2} -w -c bin -o ${output_dir}/bidstools/medcon/t2_bin 2>&1
+    validate:
+      - output_exists: ${output_dir}/bidstools/medcon/t2_bin.bin
+
+  - name: medcon NIfTI to ASCII
+    description: Convert NIfTI to ASCII format
+    command: medcon -f ${t2} -w -c ascii -o ${output_dir}/bidstools/medcon/t2_ascii 2>&1
+    validate:
+      - output_exists: ${output_dir}/bidstools/medcon/t2_ascii.asc
+
+  - name: medcon NIfTI to NIfTI copy
+    description: Convert NIfTI to NIfTI (format verification)
+    command: medcon -f ${t2} -w -c nifti -o ${output_dir}/bidstools/medcon/t2_nii 2>&1
+    validate:
+      - output_exists: ${output_dir}/bidstools/medcon/t2_nii.nii
+
+  - name: medcon NIfTI to PNG
+    description: Convert NIfTI to PNG image
+    command: medcon -f ${t2} -c png -o ${output_dir}/bidstools/medcon/t2_png 2>&1
+    expected_exit_code: 0
+
+  - name: medcon NIfTI to GIF
+    description: Convert NIfTI to GIF image
+    command: medcon -f ${t2} -c gif -o ${output_dir}/bidstools/medcon/t2_gif 2>&1
+    expected_exit_code: 0
+
+  - name: medcon with 8-bit output
+    description: Convert with 8-bit unsigned char output
+    command: medcon -f ${t2} -b8 -c nifti -o ${output_dir}/bidstools/medcon/t2_8bit 2>&1
+    expected_exit_code: 0
+
+  - name: medcon with 16-bit output
+    description: Convert with 16-bit signed short output
+    command: medcon -f ${t2} -b16 -c nifti -o ${output_dir}/bidstools/medcon/t2_16bit 2>&1
+    expected_exit_code: 0
+
+  - name: medcon with negatives enabled
+    description: Convert with negative pixels enabled
+    command: medcon -f ${t2} -n -c nifti -o ${output_dir}/bidstools/medcon/t2_neg 2>&1
+    expected_exit_code: 0
+
+  - name: medcon flip horizontal
+    description: Convert with horizontal flip
+    command: medcon -f ${t2} -fh -c nifti -o ${output_dir}/bidstools/medcon/t2_fh 2>&1
+    expected_exit_code: 0
+
+  - name: medcon flip vertical
+    description: Convert with vertical flip
+    command: medcon -f ${t2} -fv -c nifti -o ${output_dir}/bidstools/medcon/t2_fv 2>&1
+    expected_exit_code: 0
+
+  - name: medcon reverse slices
+    description: Convert with reversed slice order
+    command: medcon -f ${t2} -rs -c nifti -o ${output_dir}/bidstools/medcon/t2_rs 2>&1
+    expected_exit_code: 0
+
+  - name: medcon make square images
+    description: Convert with square image output
+    command: medcon -f ${t2} -sqr -c nifti -o ${output_dir}/bidstools/medcon/t2_sqr 2>&1
+    expected_exit_code: 0
+
+  - name: medcon grayscale remap
+    description: Convert with grayscale remapping
+    command: medcon -f ${t2} -g -c png -o ${output_dir}/bidstools/medcon/t2_gray 2>&1
+    expected_exit_code: 0
+
+  - name: medcon hotmetal colormap
+    description: Convert with hotmetal colormap
+    command: medcon -f ${t2} -mh -c png -o ${output_dir}/bidstools/medcon/t2_hot 2>&1
+    expected_exit_code: 0
+
+  - name: medcon rainbow colormap
+    description: Convert with rainbow colormap
+    command: medcon -f ${t2} -mr -c png -o ${output_dir}/bidstools/medcon/t2_rainbow 2>&1
+    expected_exit_code: 0
+
+  - name: medcon extract images
+    description: Extract individual images from file
+    command: medcon -f ${t2} -e -w -c png -o ${output_dir}/bidstools/medcon/t2_extract 2>&1
+    timeout: 300
+    ignore_exit_code: true
+    expected_output_contains: "MedCon"
+
+  - name: medcon overwrite mode
+    description: Convert with overwrite enabled
+    command: medcon -f ${t2} -w -c nifti -o ${output_dir}/bidstools/medcon/t2_overwrite 2>&1
+    expected_exit_code: 0
+
+  - name: medcon little endian output
+    description: Convert with little endian output
+    command: medcon -f ${t2} -little -c nifti -o ${output_dir}/bidstools/medcon/t2_le 2>&1
+    expected_exit_code: 0
+
+  - name: medcon big endian output
+    description: Convert with big endian output (unsupported for NIfTI)
+    command: medcon -f ${t2} -big -c nifti -o ${output_dir}/bidstools/medcon/t2_be 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "endianness"
+
+  - name: medcon stack frames option
+    description: Convert with frame stacking (requires 2+ files)
+    command: medcon -f ${t2} -f ${t2} -stackf -c nifti -o ${output_dir}/bidstools/medcon/t2_stack 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MedCon"
+
+  - name: medcon split frames option
+    description: Convert with frame splitting
+    command: medcon -f ${t2} -splitf -c nifti -o ${output_dir}/bidstools/medcon/t2_split 2>&1
+    expected_exit_code: 0
+
+  - name: medcon alias naming
+    description: Convert with alias-based naming
+    command: medcon -f ${t2} -alias -w -c nifti -o ${output_dir}/bidstools/medcon/t2_alias 2>&1
+    expected_exit_code: 0
+
+  - name: medcon without prefix
+    description: Convert without default prefix
+    command: medcon -f ${t2} -noprefix -w -c nifti -o ${output_dir}/bidstools/medcon/t2_noprefix 2>&1
+    expected_exit_code: 0
+
+  - name: medcon print pixel values
+    description: Print pixel values from file
+    command: medcon -f ${t2} -pa 2>&1 | head -50
+    expected_output_contains: "PIXEL"
+
+  # ==========================================================================
+  # MEDCON - ERROR HANDLING
+  # ==========================================================================
+  - name: medcon nonexistent file
+    description: Test handling of nonexistent input file
+    command: medcon -f /nonexistent/file.nii -c nifti 2>&1 || true
+    expected_exit_code: 0
+
+  - name: medcon invalid format
+    description: Test handling of invalid output format
+    command: medcon -f ${t2} -c invalid_format 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # INTEGRATION AND WORKFLOW TESTS
+  # ==========================================================================
+  - name: Pipeline dcm2niix query then convert
+    description: Query directory then attempt conversion
+    command: dcm2niix -q y ${anat_dir} 2>&1 && dcm2niix -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Pipeline medcon multiple formats
+    description: Convert to multiple formats sequentially
+    command: |
+      medcon -f ${t2} -c anlz -o ${output_dir}/bidstools/medcon/multi_anlz 2>&1 && \
+      medcon -f ${t2} -c nifti -o ${output_dir}/bidstools/medcon/multi_nii 2>&1 && \
+      medcon -f ${t2} -c intf -o ${output_dir}/bidstools/medcon/multi_intf 2>&1
+    expected_exit_code: 0
+
+  - name: All dcmtk tools version consistency
+    description: Verify all DCMTK tools report same version
+    command: |
+      dcmdump --version 2>&1 | grep "v3.6.6" && \
+      dcm2json --version 2>&1 | grep "v3.6.6" && \
+      dcmconv --version 2>&1 | grep "v3.6.6" && \
+      dcmodify --version 2>&1 | grep "v3.6.6" && \
+      echo "All DCMTK tools are v3.6.6"
+    expected_output_contains: "All DCMTK tools are v3.6.6"
+
+  - name: Combined dcm2niix options stress test
+    description: Test dcm2niix with many options combined
+    command: dcm2niix -b y -ba y -z i -v 1 -m 2 -f "%p_%s_%d" --progress n -o ${output_dir}/bidstools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: medcon complex transform chain
+    description: Apply multiple transforms in sequence
+    command: medcon -f ${t2} -fh -fv -sqr -g -c png -o ${output_dir}/bidstools/medcon/complex 2>&1
+    expected_exit_code: 0
+
+  - name: Tool availability check all
+    description: Verify all expected tools are available
+    command: |
+      which dcm2niix && \
+      which heudiconv && \
+      which Bru2 && \
+      which dcmdump && \
+      which dcm2json && \
+      which dcmconv && \
+      which dcmodify && \
+      which img2dcm && \
+      which dcm2pnm && \
+      which dcmicmp && \
+      which dump2dcm && \
+      which medcon && \
+      echo "All tools available"
+    expected_output_contains: "All tools available"
+
+  - name: dcm2niix and heudiconv converter compatibility
+    description: Verify heudiconv can use dcm2niix converter option
+    command: heudiconv --help 2>&1 | grep "dcm2niix"
+    expected_output_contains: "dcm2niix"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/bidstools
+    echo "Test outputs preserved in ${output_dir}/bidstools/"

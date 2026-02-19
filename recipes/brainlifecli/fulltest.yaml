@@ -1,0 +1,633 @@
+# brainlifecli container test suite
+# Tests for brainlife CLI v1.7.0 - Command-line interface for brainlife.io
+#
+# Brainlife CLI is used to interact with the brainlife.io platform for:
+#   - Managing neuroimaging data and projects
+#   - Running apps on brainlife.io infrastructure
+#   - Uploading/downloading BIDS datasets
+#   - Querying datatypes, apps, and publications
+#
+# Note: Most brainlifecli commands require authentication and network access.
+# These tests focus on verifying CLI functionality, help output, and option parsing.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T2: 256x256x35, inplaneT2 structural
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: brainlifecli
+version: 1.7.0
+container: brainlifecli_1.7.0_20241003.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  bids_dir: ds000001
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION
+  # ==========================================================================
+  - name: Version check
+    description: Verify brainlife CLI binary runs and reports version
+    command: bl --version
+    expected_output_contains: "1.7.0"
+
+  - name: Version command
+    description: Test bl version command
+    command: bl version
+    expected_output_contains: "1.7.0"
+
+  - name: Main help
+    description: Verify main help displays all available commands
+    command: bl --help
+    expected_output_contains:
+      - "login"
+      - "project"
+      - "data"
+      - "app"
+      - "bids"
+      - "datatype"
+
+  # ==========================================================================
+  # LOGIN AND AUTHENTICATION HELP
+  # ==========================================================================
+  - name: Login help
+    description: Verify login command help and options
+    command: bl login --help
+    expected_output_contains:
+      - "--username"
+      - "--password"
+      - "--ttl"
+
+  - name: Refresh help
+    description: Verify refresh command help
+    command: bl refresh --help
+    expected_output_contains:
+      - "--ttl"
+      - "time to live"
+
+  # ==========================================================================
+  # PROFILE COMMANDS
+  # ==========================================================================
+  - name: Profile help
+    description: Verify profile command structure
+    command: bl profile --help
+    expected_output_contains:
+      - "query"
+
+  - name: Profile query help
+    description: Verify profile query options
+    command: bl profile query --help
+    expected_output_contains:
+      - "--id"
+      - "--query"
+      - "--json"
+
+  # ==========================================================================
+  # RESOURCE COMMANDS
+  # ==========================================================================
+  - name: Resource help
+    description: Verify resource command structure
+    command: bl resource --help
+    expected_output_contains:
+      - "query"
+
+  - name: Resource query help
+    description: Verify resource query options
+    command: bl resource query --help
+    expected_output_contains:
+      - "--id"
+      - "--query"
+      - "--status"
+      - "--service"
+      - "--skip"
+      - "--limit"
+      - "--json"
+
+  # ==========================================================================
+  # DATATYPE COMMANDS
+  # ==========================================================================
+  - name: Datatype help
+    description: Verify datatype command structure
+    command: bl datatype --help
+    expected_output_contains:
+      - "query"
+
+  - name: Datatype query help
+    description: Verify datatype query options
+    command: bl datatype query --help
+    expected_output_contains:
+      - "--id"
+      - "--query"
+      - "--skip"
+      - "--limit"
+      - "--json"
+
+  # ==========================================================================
+  # PROJECT COMMANDS
+  # ==========================================================================
+  - name: Project help
+    description: Verify project command structure
+    command: bl project --help
+    expected_output_contains:
+      - "query"
+      - "update"
+
+  - name: Project query help
+    description: Verify project query options
+    command: bl project query --help
+    expected_output_contains:
+      - "--id"
+      - "--query"
+      - "--admin"
+      - "--member"
+      - "--guest"
+      - "--skip"
+      - "--limit"
+      - "--json"
+
+  - name: Project update help
+    description: Verify project update options
+    command: bl project update --help
+    expected_output_contains:
+      - "--id"
+      - "--desc"
+      - "--readme"
+      - "--participants"
+      - "--json"
+
+  # ==========================================================================
+  # PUBLICATION COMMANDS
+  # ==========================================================================
+  - name: Publication help
+    description: Verify publication command structure
+    command: bl pub --help
+    expected_output_contains:
+      - "query"
+
+  - name: Publication query help
+    description: Verify publication query options
+    command: bl pub query --help
+    expected_output_contains:
+      - "--id"
+      - "--query"
+      - "--author"
+      - "--doi"
+      - "--skip"
+      - "--limit"
+      - "--json"
+
+  # ==========================================================================
+  # DATA/DATASET COMMANDS
+  # ==========================================================================
+  - name: Data help
+    description: Verify data command structure
+    command: bl data --help
+    expected_output_contains:
+      - "query"
+      - "download"
+      - "upload"
+      - "update"
+      - "delete"
+
+  - name: Dataset alias help
+    description: Verify dataset alias works
+    command: bl dataset --help
+    expected_output_contains:
+      - "query"
+      - "download"
+      - "upload"
+
+  - name: Data query help
+    description: Verify data query options
+    command: bl data query --help
+    expected_output_contains:
+      - "--id"
+      - "--query"
+      - "--datatype"
+      - "--datatype_tag"
+      - "--tag"
+      - "--project"
+      - "--pub"
+      - "--subject"
+      - "--session"
+      - "--run"
+      - "--taskid"
+      - "--skip"
+      - "--limit"
+      - "--json"
+
+  - name: Data download help
+    description: Verify data download options
+    command: bl data download --help
+    expected_output_contains:
+      - "--id"
+      - "--directory"
+      - "--json"
+
+  - name: Data upload help
+    description: Verify data upload options
+    command: bl data upload --help
+    expected_output_contains:
+      - "--project"
+      - "--datatype"
+      - "--datatype_tag"
+      - "--desc"
+      - "--subject"
+      - "--session"
+      - "--run"
+      - "--tag"
+      - "--meta"
+      - "--json"
+
+  - name: Data update help
+    description: Verify data update options
+    command: bl data update --help
+    expected_output_contains:
+      - "--id"
+      - "--desc"
+      - "--subject"
+      - "--session"
+      - "--run"
+      - "--add_tag"
+      - "--remove_tag"
+      - "--add_dtag"
+      - "--remove_dtag"
+      - "--meta"
+
+  - name: Data delete help
+    description: Verify data delete options
+    command: bl data delete --help
+    expected_output_contains:
+      - "--id"
+      - "--json"
+
+  # ==========================================================================
+  # BIDS COMMANDS
+  # ==========================================================================
+  - name: BIDS help
+    description: Verify BIDS command structure
+    command: bl bids --help
+    expected_output_contains:
+      - "download"
+      - "upload"
+
+  - name: BIDS upload help
+    description: Verify BIDS upload options
+    command: bl bids upload --help
+    expected_output_contains:
+      - "--directory"
+      - "--project"
+      - "--tag"
+      - "bids"
+
+  - name: BIDS download help
+    description: Verify BIDS download options
+    command: bl bids download --help
+    expected_output_contains:
+      - "--output"
+      - "--id"
+      - "--datatype"
+      - "--datatype_tag"
+      - "--tag"
+      - "--project"
+      - "--pub"
+      - "--subject"
+      - "--skip"
+      - "--limit"
+
+  # ==========================================================================
+  # APP COMMANDS
+  # ==========================================================================
+  - name: App help
+    description: Verify app command structure
+    command: bl app --help
+    expected_output_contains:
+      - "query"
+      - "run"
+      - "wait"
+
+  - name: App query help
+    description: Verify app query options
+    command: bl app query --help
+    expected_output_contains:
+      - "--id"
+      - "--doi"
+      - "--query"
+      - "--input-datatype"
+      - "--output-datatype"
+      - "--skip"
+      - "--limit"
+      - "--json"
+
+  - name: App run help
+    description: Verify app run options
+    command: bl app run --help
+    expected_output_contains:
+      - "--id"
+      - "--input"
+      - "--project"
+      - "--preferred-resource"
+      - "--branch"
+      - "--config"
+      - "--tag"
+      - "--json"
+
+  - name: App wait help
+    description: Verify app wait options
+    command: bl app wait --help
+    expected_output_contains:
+      - "--id"
+      - "task_id"
+
+  # ==========================================================================
+  # COMMAND ERROR HANDLING
+  # ==========================================================================
+  - name: Invalid command error
+    description: Verify CLI handles invalid commands gracefully
+    command: bl invalidcommand 2>&1 || true
+    expected_output_contains: "unknown command"
+
+  - name: Missing authentication
+    description: Verify CLI reports missing authentication token
+    command: bl data download 2>&1 || true
+    expected_output_contains: "access token"
+
+  # ==========================================================================
+  # JSON OUTPUT FORMAT TESTS
+  # ==========================================================================
+  - name: Help displays json option for data query
+    description: Verify JSON output option is documented
+    command: bl data query --help
+    expected_output_contains: "--json"
+
+  - name: Help displays json option for app query
+    description: Verify JSON output option for app query
+    command: bl app query --help
+    expected_output_contains: "--json"
+
+  - name: Help displays json option for project query
+    description: Verify JSON output option for project query
+    command: bl project query --help
+    expected_output_contains: "--json"
+
+  # ==========================================================================
+  # PAGINATION OPTIONS
+  # ==========================================================================
+  - name: Skip and limit in data query
+    description: Verify pagination options are available
+    command: bl data query --help
+    expected_output_contains:
+      - "--skip"
+      - "--limit"
+
+  - name: Skip and limit in app query
+    description: Verify pagination options in app query
+    command: bl app query --help
+    expected_output_contains:
+      - "--skip"
+      - "--limit"
+
+  # ==========================================================================
+  # METADATA OPTIONS
+  # ==========================================================================
+  - name: Subject metadata in data upload
+    description: Verify subject metadata option
+    command: bl data upload --help
+    expected_output_contains: "--subject"
+
+  - name: Session metadata in data upload
+    description: Verify session metadata option
+    command: bl data upload --help
+    expected_output_contains: "--session"
+
+  - name: Run metadata in data upload
+    description: Verify run metadata option
+    command: bl data upload --help
+    expected_output_contains: "--run"
+
+  # ==========================================================================
+  # FILTER OPTIONS
+  # ==========================================================================
+  - name: Datatype filter in data query
+    description: Verify datatype filter option
+    command: bl data query --help
+    expected_output_contains: "--datatype"
+
+  - name: Datatype tag filter in data query
+    description: Verify datatype tag filter option
+    command: bl data query --help
+    expected_output_contains: "--datatype_tag"
+
+  - name: Input datatype filter in app query
+    description: Verify input datatype filter for apps
+    command: bl app query --help
+    expected_output_contains: "--input-datatype"
+
+  - name: Output datatype filter in app query
+    description: Verify output datatype filter for apps
+    command: bl app query --help
+    expected_output_contains: "--output-datatype"
+
+  # ==========================================================================
+  # DOI SUPPORT
+  # ==========================================================================
+  - name: DOI filter in app query
+    description: Verify DOI filter option for apps
+    command: bl app query --help
+    expected_output_contains: "--doi"
+
+  - name: DOI filter in publication query
+    description: Verify DOI filter option for publications
+    command: bl pub query --help
+    expected_output_contains: "--doi"
+
+  # ==========================================================================
+  # AUTHENTICATION TOKEN OPTIONS
+  # ==========================================================================
+  - name: TTL option in login
+    description: Verify TTL (time to live) option in login
+    command: bl login --help
+    expected_output_contains:
+      - "--ttl"
+      - "7"
+
+  - name: TTL option in refresh
+    description: Verify TTL option in refresh
+    command: bl refresh --help
+    expected_output_contains:
+      - "--ttl"
+      - "1"
+
+  - name: LDAP login option
+    description: Verify LDAP authentication option
+    command: bl login --help
+    expected_output_contains: "ldap"
+
+  # ==========================================================================
+  # RESOURCE STATUS FILTERING
+  # ==========================================================================
+  - name: Status filter in resource query
+    description: Verify status filter for resources
+    command: bl resource query --help
+    expected_output_contains: "--status"
+
+  - name: Service filter in resource query
+    description: Verify service filter for resources
+    command: bl resource query --help
+    expected_output_contains: "--service"
+
+  # ==========================================================================
+  # PROJECT ACCESS FILTERING
+  # ==========================================================================
+  - name: Admin filter in project query
+    description: Verify admin filter for projects
+    command: bl project query --help
+    expected_output_contains: "--admin"
+
+  - name: Member filter in project query
+    description: Verify member filter for projects
+    command: bl project query --help
+    expected_output_contains: "--member"
+
+  - name: Guest filter in project query
+    description: Verify guest filter for projects
+    command: bl project query --help
+    expected_output_contains: "--guest"
+
+  # ==========================================================================
+  # PROJECT METADATA MANAGEMENT
+  # ==========================================================================
+  - name: Participants file in project update
+    description: Verify participants.tsv support
+    command: bl project update --help
+    expected_output_contains: "--participants"
+
+  - name: Participants columns in project update
+    description: Verify participants.json support
+    command: bl project update --help
+    expected_output_contains: "--participant_columns"
+
+  - name: Readme file in project update
+    description: Verify README.md support
+    command: bl project update --help
+    expected_output_contains: "--readme"
+
+  # ==========================================================================
+  # APP EXECUTION OPTIONS
+  # ==========================================================================
+  - name: Input specification in app run
+    description: Verify input data specification for app run
+    command: bl app run --help
+    expected_output_contains: "--input"
+
+  - name: Config specification in app run
+    description: Verify config specification for app run
+    command: bl app run --help
+    expected_output_contains: "--config"
+
+  - name: Preferred resource in app run
+    description: Verify preferred resource option for app run
+    command: bl app run --help
+    expected_output_contains: "--preferred-resource"
+
+  - name: Branch specification in app run
+    description: Verify github branch option for app run
+    command: bl app run --help
+    expected_output_contains:
+      - "--branch"
+      - "master"
+
+  # ==========================================================================
+  # TAGGING SUPPORT
+  # ==========================================================================
+  - name: Tag option in data upload
+    description: Verify tag option for data upload
+    command: bl data upload --help
+    expected_output_contains: "--tag"
+
+  - name: Add tag in data update
+    description: Verify add_tag option for data update
+    command: bl data update --help
+    expected_output_contains: "--add_tag"
+
+  - name: Remove tag in data update
+    description: Verify remove_tag option for data update
+    command: bl data update --help
+    expected_output_contains: "--remove_tag"
+
+  - name: Datatype tag management in data update
+    description: Verify datatype tag modification options
+    command: bl data update --help
+    expected_output_contains:
+      - "--add_dtag"
+      - "--remove_dtag"
+
+  - name: Tag option in app run
+    description: Verify tag option for app run output
+    command: bl app run --help
+    expected_output_contains: "--tag"
+
+  - name: Tag option in bids upload
+    description: Verify tag option for BIDS upload
+    command: bl bids upload --help
+    expected_output_contains: "--tag"
+
+  # ==========================================================================
+  # SIDECAR METADATA
+  # ==========================================================================
+  - name: Meta option in data upload
+    description: Verify sidecar metadata option for upload
+    command: bl data upload --help
+    expected_output_contains: "--meta"
+
+  - name: Meta option in data update
+    description: Verify sidecar metadata option for update
+    command: bl data update --help
+    expected_output_contains: "--meta"
+
+  # ==========================================================================
+  # PUBLICATION FILTERING
+  # ==========================================================================
+  - name: Author filter in publication query
+    description: Verify author filter for publications
+    command: bl pub query --help
+    expected_output_contains: "--author"
+
+  - name: Publication filter in data query
+    description: Verify publication filter for data
+    command: bl data query --help
+    expected_output_contains: "--pub"
+
+  - name: Publication filter in bids download
+    description: Verify publication filter for BIDS download
+    command: bl bids download --help
+    expected_output_contains: "--pub"
+
+  # ==========================================================================
+  # TASK/PROVENANCE FILTERING
+  # ==========================================================================
+  - name: Task ID filter in data query
+    description: Verify task ID filter for provenance
+    command: bl data query --help
+    expected_output_contains: "--taskid"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

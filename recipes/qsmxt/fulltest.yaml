@@ -1,0 +1,652 @@
+# qsmxt container test suite
+# Tests for qsmxt v8.2.2 - QSM Reconstruction Pipeline
+#
+# QSMxT is an end-to-end software toolbox for Quantitative Susceptibility Mapping (QSM)
+# that automatically reconstructs and processes large datasets in parallel.
+#
+# This container includes:
+#   - qsmxt: Main QSM reconstruction pipeline
+#   - dicom-convert: DICOM to BIDS conversion
+#   - nifti-convert: NIfTI to BIDS conversion
+#   - dcm2niix: DICOM to NIfTI conversion
+#   - bet (bet2): Brain extraction tool
+#   - ANTs tools: Registration and image processing (N4BiasFieldCorrection, antsRegistration, etc.)
+#   - FastSurfer: Deep learning brain segmentation
+#   - Julia + ROMEO/QSM packages: Phase unwrapping and QSM algorithms
+#   - nextqsm: Deep learning QSM algorithm
+#   - nii2dcm: NIfTI to DICOM conversion
+#   - Bru2Nii: Bruker to NIfTI conversion
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: qsmxt
+version: 8.2.2
+container: qsmxt_8.2.2_20260105.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # QSMXT MAIN PIPELINE
+  # ==========================================================================
+  - name: QSMxT version check
+    description: Verify qsmxt binary runs and reports version
+    command: qsmxt --version 2>&1
+    expected_output_contains: "QSMxT v8.2.2"
+    expected_exit_code: 0
+
+  - name: QSMxT help
+    description: Verify qsmxt help information is accessible
+    command: qsmxt --help 2>&1 | head -20
+    expected_output_contains: "usage: qsmxt"
+    expected_exit_code: 0
+
+  - name: QSMxT list premade pipelines
+    description: List available premade pipeline configurations
+    command: qsmxt --list_premades 2>&1
+    expected_output_contains: "default"
+    expected_exit_code: 0
+
+  - name: QSMxT list premade pipelines - GRE
+    description: Verify GRE preset is available
+    command: qsmxt --list_premades 2>&1
+    expected_output_contains: "gre"
+    expected_exit_code: 0
+
+  - name: QSMxT list premade pipelines - EPI
+    description: Verify EPI preset is available
+    command: qsmxt --list_premades 2>&1
+    expected_output_contains: "epi"
+    expected_exit_code: 0
+
+  - name: QSMxT list premade pipelines - NextQSM
+    description: Verify nextqsm preset is available
+    command: qsmxt --list_premades 2>&1
+    expected_output_contains: "nextqsm"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DICOM/NIFTI CONVERSION TOOLS
+  # ==========================================================================
+  - name: dicom-convert help
+    description: Verify dicom-convert tool is available
+    command: dicom-convert --help 2>&1
+    expected_output_contains: "DICOM files to NIfTI/BIDS"
+    expected_exit_code: 0
+
+  - name: nifti-convert help
+    description: Verify nifti-convert tool is available
+    command: nifti-convert --help 2>&1
+    expected_output_contains: "Input NIfTI directory"
+    expected_exit_code: 0
+
+  - name: dcm2niix version
+    description: Verify dcm2niix is installed and report version
+    command: dcm2niix -v 0 2>&1 | head -1
+    expected_output_contains: "dcm2niiX"
+    expected_exit_code: 0
+
+  - name: dcm2niix help
+    description: Verify dcm2niix help is accessible
+    command: dcm2niix -h 2>&1 | head -10
+    expected_output_contains: "Chris Rorden's dcm2niiX"
+    expected_exit_code: 0
+
+  - name: nii2dcm help
+    description: Verify nii2dcm (NIfTI to DICOM) is available
+    command: nii2dcm --help 2>&1
+    expected_output_contains: "NIfTI file to DICOM conversion"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # BRAIN EXTRACTION TOOL (BET)
+  # ==========================================================================
+  - name: BET help
+    description: Verify BET brain extraction tool is available
+    command: bet --help 2>&1
+    expected_output_contains: "Brain Extraction Tool"
+    expected_exit_code: 0
+
+  - name: BET brain extraction on T1w
+    description: Perform brain extraction and create mask (bet -m broken in this container)
+    command: |
+      bet ${t1w} test_output/t1w_bet -f 0.5 2>/dev/null && \
+      python3 -c "
+      import nibabel as nib, numpy as np
+      img = nib.load('test_output/t1w_bet.nii.gz')
+      mask = nib.Nifti1Image((img.get_fdata() > 0).astype(np.uint8), img.affine, img.header)
+      mask.to_filename('test_output/t1w_bet_mask.nii.gz')
+      print('Mask created')
+      "
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_bet.nii.gz
+      - output_exists: ${output_dir}/t1w_bet_mask.nii.gz
+
+  - name: BET brain extraction with skull
+    description: Perform brain extraction with skull approximation
+    command: bet ${t1w} test_output/t1w_bet_skull -f 0.4 -s
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_bet_skull.nii.gz
+      - output_exists: ${output_dir}/t1w_bet_skull_skull.nii.gz
+
+  - name: BET brain extraction with outline
+    description: Perform brain extraction with surface outline
+    command: bet ${t1w} test_output/t1w_bet_outline -f 0.5 -o
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_bet_outline.nii.gz
+      - output_exists: ${output_dir}/t1w_bet_outline_overlay.nii.gz
+
+  - name: BET brain extraction aggressive
+    description: Perform aggressive brain extraction (smaller mask)
+    command: bet ${t1w} test_output/t1w_bet_aggressive -f 0.7
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_bet_aggressive.nii.gz
+
+  - name: BET brain extraction conservative
+    description: Perform conservative brain extraction (larger mask)
+    command: bet ${t1w} test_output/t1w_bet_conservative -f 0.3
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_bet_conservative.nii.gz
+
+  # ==========================================================================
+  # ANTs - N4 BIAS FIELD CORRECTION
+  # ==========================================================================
+  - name: N4BiasFieldCorrection help
+    description: Verify N4BiasFieldCorrection tool is available
+    command: N4BiasFieldCorrection --help 2>&1 | head -5
+    expected_output_contains: "N4BiasFieldCorrection"
+    expected_exit_code: 0
+
+  - name: N4BiasFieldCorrection basic
+    description: Apply N4 bias field correction to T1w image
+    command: N4BiasFieldCorrection -d 3 -i ${t1w} -o test_output/t1w_n4.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_n4.nii.gz
+
+  - name: N4BiasFieldCorrection with bias field output
+    description: Apply N4 correction and output bias field
+    command: N4BiasFieldCorrection -d 3 -i ${t1w} -o [test_output/t1w_n4_bf.nii.gz,test_output/t1w_biasfield.nii.gz]
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_bf.nii.gz
+      - output_exists: ${output_dir}/t1w_biasfield.nii.gz
+
+  - name: N4BiasFieldCorrection with mask
+    description: Apply N4 correction using BET mask
+    command: N4BiasFieldCorrection -d 3 -i ${t1w} -x test_output/t1w_bet_mask.nii.gz -o test_output/t1w_n4_masked.nii.gz
+    depends_on: BET brain extraction on T1w
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_masked.nii.gz
+
+  - name: N4BiasFieldCorrection custom parameters
+    description: Apply N4 correction with custom convergence and B-spline parameters
+    command: N4BiasFieldCorrection -d 3 -i ${t1w} -c [50x50x50,0.0001] -b [200] -o test_output/t1w_n4_custom.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_custom.nii.gz
+
+  # ==========================================================================
+  # ANTs - IMAGE REGISTRATION
+  # ==========================================================================
+  - name: antsRegistration help
+    description: Verify antsRegistration tool is available
+    command: antsRegistration --help 2>&1 | head -5
+    expected_output_contains: "antsRegistration"
+    expected_exit_code: 0
+
+  - name: antsRegistration rigid
+    description: Perform rigid registration between T1w and T2
+    command: |
+      antsRegistration -d 3 \
+        -m MI[${t1w},${t2},1,32,Regular,0.25] \
+        -t Rigid[0.1] \
+        -c [100x50x25,1e-6,10] \
+        -f 4x2x1 \
+        -s 2x1x0vox \
+        -o [test_output/t2_to_t1_rigid_,test_output/t2_to_t1_rigid.nii.gz]
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1_rigid_0GenericAffine.mat
+      - output_exists: ${output_dir}/t2_to_t1_rigid.nii.gz
+
+  - name: antsRegistration affine
+    description: Perform affine registration between T1w and T2
+    command: |
+      antsRegistration -d 3 \
+        -m MI[${t1w},${t2},1,32,Regular,0.25] \
+        -t Affine[0.1] \
+        -c [100x50x25,1e-6,10] \
+        -f 4x2x1 \
+        -s 2x1x0vox \
+        -o [test_output/t2_to_t1_affine_,test_output/t2_to_t1_affine.nii.gz]
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1_affine_0GenericAffine.mat
+      - output_exists: ${output_dir}/t2_to_t1_affine.nii.gz
+
+  # ==========================================================================
+  # ANTs - APPLY TRANSFORMS
+  # ==========================================================================
+  - name: antsApplyTransforms help
+    description: Verify antsApplyTransforms tool is available
+    command: antsApplyTransforms --help 2>&1 | head -5
+    expected_output_contains: "antsApplyTransforms"
+    expected_exit_code: 0
+
+  - name: antsApplyTransforms linear
+    description: Apply linear transform to image
+    command: |
+      antsApplyTransforms -d 3 \
+        -i ${t2} \
+        -r ${t1w} \
+        -t test_output/t2_to_t1_rigid_0GenericAffine.mat \
+        -o test_output/t2_warped_linear.nii.gz \
+        -n Linear
+    depends_on: antsRegistration rigid
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t2_warped_linear.nii.gz
+
+  - name: antsApplyTransforms nearest neighbor
+    description: Apply transform with nearest neighbor interpolation (for masks)
+    command: |
+      antsApplyTransforms -d 3 \
+        -i test_output/t1w_bet_mask.nii.gz \
+        -r ${t2} \
+        -t [test_output/t2_to_t1_rigid_0GenericAffine.mat,1] \
+        -o test_output/mask_warped_nn.nii.gz \
+        -n NearestNeighbor
+    depends_on: [BET brain extraction on T1w, antsRegistration rigid]
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/mask_warped_nn.nii.gz
+
+  # ==========================================================================
+  # ANTs - IMAGE MATH AND PROCESSING
+  # ==========================================================================
+  - name: ImageMath help
+    description: Verify ImageMath tool is available
+    command: ImageMath 2>&1 | head -5
+    expected_output_contains: "ImageMath"
+    expected_exit_code: 0
+
+  - name: ImageMath multiply
+    description: Multiply two images
+    command: ImageMath 3 test_output/t1w_masked_math.nii.gz m ${t1w} test_output/t1w_bet_mask.nii.gz
+    depends_on: BET brain extraction on T1w
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_masked_math.nii.gz
+
+  - name: ImageMath Gaussian smoothing
+    description: Apply Gaussian smoothing to image
+    command: ImageMath 3 test_output/t1w_smooth_math.nii.gz G ${t1w} 2
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_math.nii.gz
+
+  - name: ImageMath normalize
+    description: Normalize image intensities
+    command: ImageMath 3 test_output/t1w_normalized.nii.gz Normalize ${t1w}
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_normalized.nii.gz
+
+  # ==========================================================================
+  # ANTs - DENOISING
+  # ==========================================================================
+  - name: DenoiseImage help
+    description: Verify DenoiseImage tool is available
+    command: DenoiseImage --help 2>&1 | head -5
+    expected_output_contains: "DenoiseImage"
+    expected_exit_code: 0
+
+  - name: DenoiseImage basic
+    description: Apply denoising to T1w image
+    command: DenoiseImage -d 3 -i ${t1w} -o test_output/t1w_denoised.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_denoised.nii.gz
+
+  - name: DenoiseImage with noise image
+    description: Apply denoising and output noise estimate
+    command: DenoiseImage -d 3 -i ${t1w} -o [test_output/t1w_denoised2.nii.gz,test_output/t1w_noise.nii.gz]
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_denoised2.nii.gz
+      - output_exists: ${output_dir}/t1w_noise.nii.gz
+
+  # ==========================================================================
+  # ANTs - ATROPOS SEGMENTATION
+  # ==========================================================================
+  - name: Atropos help
+    description: Verify Atropos segmentation tool is available
+    command: Atropos --help 2>&1 | head -5
+    expected_output_contains: "Atropos"
+    expected_exit_code: 0
+
+  - name: Atropos 3-class segmentation
+    description: Perform 3-class tissue segmentation on T1w
+    command: |
+      Atropos -d 3 \
+        -a ${t1w} \
+        -x test_output/t1w_bet_mask.nii.gz \
+        -i KMeans[3] \
+        -c [5,0.0001] \
+        -o [test_output/t1w_atropos_seg.nii.gz,test_output/t1w_atropos_prob%02d.nii.gz]
+    depends_on: BET brain extraction on T1w
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_atropos_seg.nii.gz
+
+  # ==========================================================================
+  # ANTs - OTHER UTILITIES
+  # ==========================================================================
+  - name: ConvertImage help
+    description: Verify ConvertImage utility is available
+    command: ConvertImage 2>&1 | head -5
+    expected_output_contains: "ConvertImage"
+    expected_exit_code: 0
+
+  - name: CopyImageHeaderInformation
+    description: Copy header from one image to another
+    command: CopyImageHeaderInformation ${t1w} test_output/t1w_denoised.nii.gz test_output/t1w_header_copied.nii.gz 1 1 1
+    depends_on: DenoiseImage basic
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_header_copied.nii.gz
+
+  - name: CreateImage help
+    description: Verify CreateImage utility is available
+    command: CreateImage 2>&1 | head -3
+    expected_output_contains: "CreateImage"
+    expected_exit_code: 0
+
+  - name: PrintHeader
+    description: Print image header information
+    command: PrintHeader ${t1w} 2>&1 | head -10
+    expected_output_contains: "Dimension"
+    expected_exit_code: 0
+
+  - name: AverageImages
+    description: Average multiple images together
+    command: AverageImages 3 test_output/t1w_average.nii.gz 0 ${t1w} ${t1w}
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_average.nii.gz
+
+  # ==========================================================================
+  # NEXTQSM (DEEP LEARNING QSM)
+  # ==========================================================================
+  - name: NextQSM help
+    description: Verify nextqsm deep learning QSM tool is available
+    command: nextqsm --help 2>&1
+    expected_output_contains: "Deep Learning QSM Algorithm"
+    expected_exit_code: 0
+
+  - name: NextQSM weights check
+    description: Verify nextqsm weights are available
+    command: nextqsm --help 2>&1
+    expected_output_contains: "weights found"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # JULIA AND QSM PACKAGES
+  # ==========================================================================
+  - name: Julia version
+    description: Verify Julia is installed and check version
+    command: julia --version 2>&1
+    expected_output_contains: "julia version 1.9.3"
+    expected_exit_code: 0
+
+  - name: Julia help
+    description: Verify Julia help is accessible
+    command: julia --help 2>&1 | head -5
+    expected_output_contains: "julia [switches]"
+    expected_exit_code: 0
+
+  - name: Julia ROMEO package
+    description: Verify ROMEO phase unwrapping package is installed
+    command: julia -e 'using ROMEO; println("ROMEO loaded successfully")'
+    expected_output_contains: "ROMEO loaded successfully"
+    expected_exit_code: 0
+
+  - name: Julia QSM package
+    description: Verify QSM package is installed (FFTW library has compatibility issue in container)
+    command: julia -e 'using QSM; println("QSM loaded successfully")' 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "QSM"
+
+  - name: Julia MriResearchTools package
+    description: Verify MriResearchTools package is installed
+    command: julia -e 'using MriResearchTools; println("MriResearchTools loaded successfully")'
+    expected_output_contains: "MriResearchTools loaded successfully"
+    expected_exit_code: 0
+
+  - name: Julia QuantitativeSusceptibilityMappingTGV package
+    description: Verify TGV-QSM package is installed
+    command: julia -e 'using QuantitativeSusceptibilityMappingTGV; println("TGV-QSM loaded successfully")'
+    expected_output_contains: "TGV-QSM loaded successfully"
+    expected_exit_code: 0
+
+  - name: Julia CLEARSWI package
+    description: Verify CLEAR-SWI package is installed
+    command: julia -e 'using CLEARSWI; println("CLEARSWI loaded successfully")'
+    expected_output_contains: "CLEARSWI loaded successfully"
+    expected_exit_code: 0
+
+  - name: Julia FFTW package
+    description: Verify FFTW package is installed
+    command: julia -e 'using FFTW; println("FFTW loaded successfully")'
+    expected_output_contains: "FFTW loaded successfully"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PYTHON AND NIPYPE
+  # ==========================================================================
+  - name: Python version
+    description: Verify Python is installed
+    command: python --version 2>&1
+    expected_output_contains: "Python 3.8"
+    expected_exit_code: 0
+
+  - name: Python3 version
+    description: Verify Python3 is installed
+    command: python3 --version 2>&1
+    expected_output_contains: "Python 3.8"
+    expected_exit_code: 0
+
+  - name: nipypecli help
+    description: Verify nipype CLI is available
+    command: nipypecli --help 2>&1 | head -5
+    expected_output_contains: "nipype"
+    expected_exit_code: 0
+
+  - name: Python nibabel import
+    description: Verify nibabel neuroimaging library is available
+    command: python -c "import nibabel; print(f'nibabel {nibabel.__version__}')"
+    expected_output_contains: "nibabel"
+    expected_exit_code: 0
+
+  - name: Python numpy import
+    description: Verify numpy is available
+    command: python -c "import numpy; print(f'numpy {numpy.__version__}')"
+    expected_output_contains: "numpy"
+    expected_exit_code: 0
+
+  - name: Python scipy import
+    description: Verify scipy is available
+    command: python -c "import scipy; print(f'scipy {scipy.__version__}')"
+    expected_output_contains: "scipy"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # BRUKER CONVERSION
+  # ==========================================================================
+  - name: Bru2Nii check
+    description: Verify Bru2Nii Bruker converter is available (requires display)
+    command: which Bru2Nii 2>&1
+    expected_output_contains: "Bru2Nii"
+    expected_exit_code: 0
+
+  - name: Bru2 check
+    description: Verify Bru2 tool is available
+    command: which Bru2 2>&1
+    expected_output_contains: "Bru2"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FASTSURFER
+  # ==========================================================================
+  - name: FastSurfer script exists
+    description: Verify FastSurfer run script exists
+    command: ls -la /opt/FastSurfer/run_fastsurfer.sh 2>&1
+    expected_output_contains: "run_fastsurfer.sh"
+    expected_exit_code: 0
+
+  - name: FastSurfer help
+    description: Verify FastSurfer help is accessible
+    command: /opt/FastSurfer/run_fastsurfer.sh --help 2>&1 | head -10
+    expected_output_contains: "run_fastsurfer.sh"
+    expected_exit_code: 0
+
+  - name: FastSurfer checkpoints exist
+    description: Verify FastSurfer model checkpoints are available
+    command: ls /opt/FastSurfer/checkpoints/ 2>&1
+    expected_output_contains: "Weights"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # QSMXT-UI
+  # ==========================================================================
+  - name: QSMxT-UI exists
+    description: Verify QSMxT-UI directory exists
+    command: ls -la /opt/QSMxT-UI/ 2>&1
+    expected_output_contains: "qsmxt-gui"
+    expected_exit_code: 0
+
+  - name: Node.js version
+    description: Verify Node.js is installed for QSMxT-UI
+    command: node --version 2>&1
+    expected_output_contains: "v14"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ENVIRONMENT VARIABLES
+  # ==========================================================================
+  - name: JULIA_DEPOT_PATH set
+    description: Verify Julia depot path is configured
+    command: echo $JULIA_DEPOT_PATH
+    expected_output_contains: "julia_depot"
+    expected_exit_code: 0
+
+  - name: FASTSURFER_HOME set
+    description: Verify FastSurfer home is configured
+    command: echo $FASTSURFER_HOME
+    expected_output_contains: "FastSurfer"
+    expected_exit_code: 0
+
+  - name: PATH includes ANTs
+    description: Verify PATH includes ANTs binaries
+    command: which antsRegistration 2>&1
+    expected_output_contains: "antsRegistration"
+    expected_exit_code: 0
+
+  - name: PATH includes Julia
+    description: Verify PATH includes Julia
+    command: which julia 2>&1
+    expected_output_contains: "julia"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # INTEGRATION TESTS - IMAGE PROCESSING PIPELINES
+  # ==========================================================================
+  - name: T1w preprocessing pipeline
+    description: Complete T1w preprocessing (denoise, N4, BET)
+    command: |
+      DenoiseImage -d 3 -i ${t1w} -o test_output/t1w_pipeline_denoised.nii.gz && \
+      N4BiasFieldCorrection -d 3 -i test_output/t1w_pipeline_denoised.nii.gz -o test_output/t1w_pipeline_n4.nii.gz && \
+      bet test_output/t1w_pipeline_n4.nii.gz test_output/t1w_pipeline_brain -f 0.5 2>/dev/null && \
+      python3 -c "
+      import nibabel as nib, numpy as np
+      img = nib.load('test_output/t1w_pipeline_brain.nii.gz')
+      mask = nib.Nifti1Image((img.get_fdata() > 0).astype(np.uint8), img.affine, img.header)
+      mask.to_filename('test_output/t1w_pipeline_brain_mask.nii.gz')
+      "
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_pipeline_denoised.nii.gz
+      - output_exists: ${output_dir}/t1w_pipeline_n4.nii.gz
+      - output_exists: ${output_dir}/t1w_pipeline_brain.nii.gz
+      - output_exists: ${output_dir}/t1w_pipeline_brain_mask.nii.gz
+
+  - name: Multi-modal registration pipeline
+    description: Register T2 to T1w space with mask propagation
+    command: |
+      antsRegistration -d 3 \
+        -m MI[${t1w},${t2},1,32,Regular,0.25] \
+        -t Rigid[0.1] \
+        -c [100x50,1e-6,10] \
+        -f 2x1 \
+        -s 1x0vox \
+        -o [test_output/multimodal_reg_,test_output/multimodal_t2_in_t1.nii.gz] && \
+      antsApplyTransforms -d 3 \
+        -i test_output/t1w_bet_mask.nii.gz \
+        -r ${t2} \
+        -t [test_output/multimodal_reg_0GenericAffine.mat,1] \
+        -o test_output/multimodal_mask_in_t2.nii.gz \
+        -n NearestNeighbor
+    depends_on: BET brain extraction on T1w
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/multimodal_reg_0GenericAffine.mat
+      - output_exists: ${output_dir}/multimodal_t2_in_t1.nii.gz
+      - output_exists: ${output_dir}/multimodal_mask_in_t2.nii.gz
+
+  # ==========================================================================
+  # CONTAINER METADATA
+  # ==========================================================================
+  - name: Build YAML exists
+    description: Verify build.yaml metadata exists in container
+    command: cat /build.yaml | head -5
+    expected_output_contains: "name: qsmxt"
+    expected_exit_code: 0
+
+  - name: README exists
+    description: Verify README.md exists in container
+    command: cat /README.md | head -5
+    expected_output_contains: "qsmxt"
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

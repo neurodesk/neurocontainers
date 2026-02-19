@@ -1,0 +1,873 @@
+# code container test suite
+# Tests for code v230315 - Python and Julia environment with VSCode
+#
+# This container provides a development environment with:
+#   - Visual Studio Code 1.76.1 with neuroimaging extensions
+#   - Python 3.8.16 (miniconda) with scientific packages
+#   - Julia 1.6.3
+#   - Jupyter notebook 6.5.3
+#   - Key packages: nibabel, nipype, numpy, scipy, matplotlib, pandas, h5py
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - inplaneT2: 128x128x33, 1.56x1.56x4mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: code
+version: "230315"
+container: code_230315_20230315.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  # ==========================================================================
+  # VSCODE FUNCTIONALITY
+  # ==========================================================================
+  - name: VSCode version check
+    description: Verify VSCode binary runs and reports version
+    command: /usr/bin/code --version 2>&1 | head -1
+    expected_output_contains: "1.76.1"
+
+  - name: VSCode help
+    description: Verify VSCode help command works
+    command: /usr/bin/code --help 2>&1 | head -5
+    expected_output_contains: "Visual Studio Code"
+
+  - name: VSCode list extensions
+    description: List installed VSCode extensions
+    command: /usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1
+    expected_output_contains: "ms-python.python"
+
+  - name: VSCode Python extension
+    description: Verify Python extension is installed
+    command: /usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1
+    expected_output_contains: "ms-python.vscode-pylance"
+
+  - name: VSCode Julia extension
+    description: Verify Julia extension is installed
+    command: /usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1
+    expected_output_contains: "julialang.language-julia"
+
+  - name: VSCode Jupyter extension
+    description: Verify Jupyter extension is installed
+    command: /usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1
+    expected_output_contains: "ms-toolsai.jupyter"
+
+  # ==========================================================================
+  # PYTHON BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: Python version
+    description: Verify Python version
+    command: python --version 2>&1
+    expected_output_contains: "Python 3.8"
+
+  - name: Python3 symlink
+    description: Verify python3 command works
+    command: python3 --version 2>&1
+    expected_output_contains: "Python 3.8"
+
+  - name: Python help
+    description: Verify Python help works
+    command: python --help 2>&1 | head -3
+    expected_output_contains: "usage: python"
+
+  - name: Python execution
+    description: Test basic Python execution
+    command: python -c "print(2 + 2)"
+    expected_output_contains: "4"
+
+  - name: Python sys.path
+    description: Verify Python path includes miniconda
+    command: python -c "import sys; print(sys.path)"
+    expected_output_contains: "miniconda"
+
+  # ==========================================================================
+  # PYTHON PACKAGE MANAGEMENT
+  # ==========================================================================
+  - name: Pip version
+    description: Verify pip is available
+    command: pip --version 2>&1
+    expected_output_contains: "pip 23"
+
+  - name: Pip list packages
+    description: Verify pip can list packages
+    command: pip list 2>&1 | head -5
+    expected_output_contains: "Package"
+
+  - name: Conda version
+    description: Verify conda is available
+    command: conda --version 2>&1
+    expected_output_contains: "conda 23"
+
+  - name: Conda list environments
+    description: Verify conda can list environments
+    command: conda env list 2>&1
+    expected_output_contains: "base"
+
+  # ==========================================================================
+  # CORE SCIENTIFIC PYTHON PACKAGES
+  # ==========================================================================
+  - name: NumPy import and version
+    description: Verify NumPy is installed
+    command: python -c "import numpy; print('numpy:', numpy.__version__)"
+    expected_output_contains: "numpy: 1.24"
+    expected_exit_code: 0
+
+  - name: NumPy array operations
+    description: Test basic NumPy array creation
+    command: python -c "import numpy as np; a = np.array([1,2,3]); print('sum:', a.sum())"
+    expected_output_contains: "sum: 6"
+    expected_exit_code: 0
+
+  - name: SciPy import and version
+    description: Verify SciPy is installed
+    command: python -c "import scipy; print('scipy:', scipy.__version__)"
+    expected_output_contains: "scipy: 1.10"
+    expected_exit_code: 0
+
+  - name: Matplotlib import and version
+    description: Verify Matplotlib is installed
+    command: python -c "import matplotlib; print('matplotlib:', matplotlib.__version__)"
+    expected_output_contains: "matplotlib: 3.7"
+    expected_exit_code: 0
+
+  - name: Pandas import and version
+    description: Verify Pandas is installed
+    command: python -c "import pandas; print('pandas:', pandas.__version__)"
+    expected_output_contains: "pandas: 1.5"
+    expected_exit_code: 0
+
+  - name: H5py import and version
+    description: Verify h5py is installed for HDF5 support
+    command: python -c "import h5py; print('h5py:', h5py.__version__)"
+    expected_output_contains: "h5py: 3.8"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NEUROIMAGING PYTHON PACKAGES
+  # ==========================================================================
+  - name: NiBabel import and version
+    description: Verify NiBabel neuroimaging library is installed
+    command: python -c "import nibabel; print('nibabel:', nibabel.__version__)"
+    expected_output_contains: "nibabel: 5.0"
+    expected_exit_code: 0
+
+  - name: NiPype import and version
+    description: Verify NiPype workflow library is installed
+    command: python -c "import nipype; print('nipype:', nipype.__version__)"
+    expected_output_contains: "nipype: 1.8"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NEUROIMAGING DATA LOADING
+  # ==========================================================================
+  - name: Load inplaneT2 image
+    description: Load T2 structural image with nibabel
+    command: python -c "import nibabel as nib; img = nib.load('${t2}'); print('Shape:', img.shape)"
+    expected_output_contains: "Shape: (128, 128, 33)"
+    expected_exit_code: 0
+
+  - name: Get T2 header info
+    description: Extract header information from T2 image
+    command: python -c "import nibabel as nib; img = nib.load('${t2}'); print('Voxel size:', img.header.get_zooms())"
+    expected_output_contains: "1.5625"
+    expected_exit_code: 0
+
+  - name: Get T2 data type
+    description: Get data type from T2 image header
+    command: python -c "import nibabel as nib; img = nib.load('${t2}'); print('Dtype:', img.header.get_data_dtype())"
+    expected_output_contains: "int16"
+    expected_exit_code: 0
+
+  - name: Get T2 affine
+    description: Get affine transformation matrix
+    command: python -c "import nibabel as nib; img = nib.load('${t2}'); print('Affine shape:', img.affine.shape)"
+    expected_output_contains: "(4, 4)"
+    expected_exit_code: 0
+
+  - name: Load BOLD 4D image
+    description: Load functional BOLD image with nibabel
+    command: python -c "import nibabel as nib; img = nib.load('${bold}'); print('Shape:', img.shape)"
+    expected_output_contains: "Shape: (64, 64, 33, 300)"
+    expected_exit_code: 0
+
+  - name: Get BOLD TR
+    description: Extract TR from BOLD header
+    command: python -c "import nibabel as nib; img = nib.load('${bold}'); print('TR:', img.header.get_zooms()[3])"
+    expected_output_contains: "2.0"
+    expected_exit_code: 0
+
+  - name: BOLD memory map
+    description: Test memory-efficient data proxy
+    command: python -c "import nibabel as nib; img = nib.load('${bold}'); print('Has dataobj:', hasattr(img, 'dataobj'))"
+    expected_output_contains: "True"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NEUROIMAGING DATA MANIPULATION
+  # ==========================================================================
+  - name: Compute T2 statistics
+    description: Calculate basic statistics on T2 image
+    command: python -c "import nibabel as nib; import numpy as np; data = nib.load('${t2}').get_fdata(); print('Mean:', np.mean(data).round(2))"
+    expected_exit_code: 0
+
+  - name: Compute BOLD temporal mean
+    description: Calculate mean across time for BOLD data
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${bold}')
+      data = img.get_fdata()
+      tmean = np.mean(data, axis=3)
+      print('Temporal mean shape:', tmean.shape)
+      "
+    expected_output_contains: "Temporal mean shape: (64, 64, 33)"
+
+  - name: Save NIfTI with nibabel
+    description: Create and save a new NIfTI image
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${t2}')
+      data = img.get_fdata()
+      # Create binary mask
+      mask = (data > np.percentile(data, 50)).astype(np.float32)
+      mask_img = nib.Nifti1Image(mask, img.affine, img.header)
+      nib.save(mask_img, '${output_dir}/t2_mask_nibabel.nii.gz')
+      print('Saved mask')
+      "
+    expected_output_contains: "Saved mask"
+    validate:
+      - output_exists: ${output_dir}/t2_mask_nibabel.nii.gz
+
+  - name: Verify saved NIfTI
+    description: Load and verify the saved mask image
+    command: python -c "import nibabel as nib; img = nib.load('${output_dir}/t2_mask_nibabel.nii.gz'); print('Shape:', img.shape)"
+    depends_on: Save NIfTI with nibabel
+    expected_output_contains: "Shape: (128, 128, 33)"
+
+  # ==========================================================================
+  # SCIPY SIGNAL PROCESSING
+  # ==========================================================================
+  - name: SciPy signal import
+    description: Verify scipy.signal module
+    command: python -c "from scipy import signal; print('signal module loaded')"
+    expected_output_contains: "signal module loaded"
+
+  - name: SciPy ndimage import
+    description: Verify scipy.ndimage module for image processing
+    command: python -c "from scipy import ndimage; print('ndimage module loaded')"
+    expected_output_contains: "ndimage module loaded"
+
+  - name: Gaussian smoothing with scipy
+    description: Apply Gaussian smoothing to T2 image
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import ndimage
+      img = nib.load('${t2}')
+      data = img.get_fdata()
+      smoothed = ndimage.gaussian_filter(data, sigma=2)
+      smooth_img = nib.Nifti1Image(smoothed.astype(np.float32), img.affine)
+      nib.save(smooth_img, '${output_dir}/t2_smoothed_scipy.nii.gz')
+      print('Smoothed shape:', smoothed.shape)
+      "
+    expected_output_contains: "Smoothed shape: (128, 128, 33)"
+    validate:
+      - output_exists: ${output_dir}/t2_smoothed_scipy.nii.gz
+
+  - name: Binary erosion with scipy
+    description: Apply binary erosion to mask
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import ndimage
+      img = nib.load('${output_dir}/t2_mask_nibabel.nii.gz')
+      mask = img.get_fdata() > 0
+      eroded = ndimage.binary_erosion(mask, iterations=2)
+      eroded_img = nib.Nifti1Image(eroded.astype(np.float32), img.affine)
+      nib.save(eroded_img, '${output_dir}/t2_mask_eroded.nii.gz')
+      print('Eroded mask sum:', eroded.sum())
+      "
+    depends_on: Save NIfTI with nibabel
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t2_mask_eroded.nii.gz
+
+  # ==========================================================================
+  # MATPLOTLIB PLOTTING (headless)
+  # ==========================================================================
+  - name: Matplotlib backend setup
+    description: Set up matplotlib for headless operation
+    command: python -c "import matplotlib; matplotlib.use('Agg'); print('Backend:', matplotlib.get_backend())"
+    expected_output_contains: "agg"
+
+  - name: Create T2 slice plot
+    description: Generate a PNG plot of T2 middle slice
+    command: |
+      python -c "
+      import matplotlib
+      matplotlib.use('Agg')
+      import matplotlib.pyplot as plt
+      import nibabel as nib
+      img = nib.load('${t2}')
+      data = img.get_fdata()
+      plt.figure(figsize=(8, 8))
+      plt.imshow(data[:, :, data.shape[2]//2].T, cmap='gray', origin='lower')
+      plt.title('T2 Middle Slice')
+      plt.colorbar()
+      plt.savefig('${output_dir}/t2_slice.png', dpi=100)
+      plt.close()
+      print('Saved plot')
+      "
+    expected_output_contains: "Saved plot"
+    validate:
+      - output_exists: ${output_dir}/t2_slice.png
+
+  - name: Create BOLD timeseries plot
+    description: Generate a PNG plot of BOLD timeseries
+    command: |
+      python -c "
+      import matplotlib
+      matplotlib.use('Agg')
+      import matplotlib.pyplot as plt
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${bold}')
+      data = img.get_fdata()
+      # Extract timeseries from center voxel
+      x, y, z = data.shape[0]//2, data.shape[1]//2, data.shape[2]//2
+      ts = data[x, y, z, :]
+      plt.figure(figsize=(12, 4))
+      plt.plot(ts)
+      plt.xlabel('Time (volumes)')
+      plt.ylabel('Signal')
+      plt.title('BOLD Timeseries (center voxel)')
+      plt.savefig('${output_dir}/bold_timeseries.png', dpi=100)
+      plt.close()
+      print('Saved plot')
+      "
+    expected_output_contains: "Saved plot"
+    validate:
+      - output_exists: ${output_dir}/bold_timeseries.png
+
+  # ==========================================================================
+  # PANDAS DATA HANDLING
+  # ==========================================================================
+  - name: Pandas DataFrame creation
+    description: Create DataFrame from image stats
+    command: |
+      python -c "
+      import pandas as pd
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${t2}')
+      data = img.get_fdata()
+      stats = {
+          'metric': ['mean', 'std', 'min', 'max'],
+          'value': [np.mean(data), np.std(data), np.min(data), np.max(data)]
+      }
+      df = pd.DataFrame(stats)
+      print(df.to_string(index=False))
+      "
+    expected_output_contains: "mean"
+
+  - name: Save statistics to CSV
+    description: Save image statistics to CSV file
+    command: |
+      python -c "
+      import pandas as pd
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${t2}')
+      data = img.get_fdata()
+      stats = {
+          'metric': ['mean', 'std', 'min', 'max', 'median'],
+          'value': [np.mean(data), np.std(data), np.min(data), np.max(data), np.median(data)]
+      }
+      df = pd.DataFrame(stats)
+      df.to_csv('${output_dir}/t2_stats.csv', index=False)
+      print('Saved CSV')
+      "
+    expected_output_contains: "Saved CSV"
+    validate:
+      - output_exists: ${output_dir}/t2_stats.csv
+
+  # ==========================================================================
+  # JULIA FUNCTIONALITY
+  # ==========================================================================
+  - name: Julia version
+    description: Verify Julia version
+    command: /opt/julia-1.6.3/bin/julia --version 2>&1
+    expected_output_contains: "julia version 1.6.3"
+
+  - name: Julia help
+    description: Verify Julia help works
+    command: /opt/julia-1.6.3/bin/julia --help 2>&1 | head -5
+    expected_output_contains: "julia"
+
+  - name: Julia basic execution
+    description: Test basic Julia execution
+    command: /opt/julia-1.6.3/bin/julia -e 'println(2 + 2)'
+    expected_output_contains: "4"
+
+  - name: Julia array operations
+    description: Test Julia array creation and sum
+    command: "/opt/julia-1.6.3/bin/julia -e 'a = [1, 2, 3, 4, 5]; println(\"Sum: \", sum(a))'"
+    expected_output_contains: "Sum: 15"
+
+  - name: Julia matrix operations
+    description: Test Julia matrix multiplication
+    command: "/opt/julia-1.6.3/bin/julia -e 'using LinearAlgebra; A = [1 2; 3 4]; println(\"Det: \", det(A))'"
+    expected_output_contains: "Det: -2.0"
+
+  - name: Julia file I/O
+    description: Test Julia can write and read files
+    command: |
+      /opt/julia-1.6.3/bin/julia -e '
+      open("${output_dir}/julia_test.txt", "w") do f
+          write(f, "Hello from Julia!")
+      end
+      content = read("${output_dir}/julia_test.txt", String)
+      println(content)
+      '
+    expected_output_contains: "Hello from Julia"
+    validate:
+      - output_exists: ${output_dir}/julia_test.txt
+
+  # ==========================================================================
+  # JUPYTER FUNCTIONALITY
+  # ==========================================================================
+  - name: Jupyter version
+    description: Verify Jupyter is installed
+    command: jupyter --version 2>&1
+    expected_output_contains: "jupyter_core"
+
+  - name: Jupyter notebook version
+    description: Verify Jupyter notebook version
+    command: jupyter notebook --version 2>&1
+    expected_output_contains: "6.5"
+
+  - name: Jupyter kernels list
+    description: List available Jupyter kernels
+    command: jupyter kernelspec list 2>&1
+    expected_output_contains: "python3"
+
+  - name: Jupyter nbconvert available
+    description: Verify nbconvert is available
+    command: jupyter nbconvert --version 2>&1
+    expected_output_contains: "7."
+
+  - name: IPython version
+    description: Verify IPython is available
+    command: ipython --version 2>&1
+    expected_output_contains: "8."
+
+  # ==========================================================================
+  # IPYTHON/JUPYTER WIDGETS
+  # ==========================================================================
+  - name: IPywidgets import
+    description: Verify ipywidgets is installed
+    command: python -c "import ipywidgets; print('ipywidgets:', ipywidgets.__version__)"
+    expected_output_contains: "ipywidgets: 8."
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ADDITIONAL SCIENTIFIC PACKAGES
+  # ==========================================================================
+  - name: Statsmodels import
+    description: Verify statsmodels is installed
+    command: python -c "import statsmodels; print('statsmodels:', statsmodels.__version__)"
+    expected_output_contains: "statsmodels: 0.13"
+    expected_exit_code: 0
+
+  - name: Seaborn import
+    description: Verify seaborn is installed
+    command: python -c "import seaborn; print('seaborn:', seaborn.__version__)"
+    expected_output_contains: "seaborn: 0.12"
+    expected_exit_code: 0
+
+  - name: NetworkX import
+    description: Verify networkx is installed
+    command: python -c "import networkx; print('networkx:', networkx.__version__)"
+    expected_output_contains: "networkx: 3."
+    expected_exit_code: 0
+
+  - name: Pillow import
+    description: Verify PIL/Pillow is installed
+    command: python -c "from PIL import Image; print('PIL loaded')"
+    expected_output_contains: "PIL loaded"
+    expected_exit_code: 0
+
+  - name: Lxml import
+    description: Verify lxml is installed
+    command: python -c "import lxml; print('lxml:', lxml.__version__)"
+    expected_output_contains: "lxml:"
+    expected_exit_code: 0
+
+  - name: PyYAML import
+    description: Verify PyYAML is installed
+    command: python -c "import yaml; print('yaml loaded')"
+    expected_output_contains: "yaml loaded"
+    expected_exit_code: 0
+
+  - name: Traits import
+    description: Verify traits is installed (needed by nipype)
+    command: python -c "import traits; print('traits:', traits.__version__)"
+    expected_output_contains: "traits: 6."
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NIPYPE WORKFLOW TESTS
+  # ==========================================================================
+  - name: NiPype interfaces available
+    description: Verify nipype interfaces module
+    command: python -c "from nipype import interfaces; print('interfaces loaded')"
+    expected_output_contains: "interfaces loaded"
+    expected_exit_code: 0
+
+  - name: NiPype workflow import
+    description: Verify nipype workflow module
+    command: python -c "from nipype.pipeline import engine as pe; print('workflow engine loaded')"
+    expected_output_contains: "workflow engine loaded"
+    expected_exit_code: 0
+
+  - name: NiPype utility interfaces
+    description: Test nipype utility interfaces
+    command: |
+      python -c "
+      from nipype.interfaces import utility as niu
+      ident = niu.IdentityInterface(fields=['input1'])
+      print('IdentityInterface created')
+      "
+    expected_output_contains: "IdentityInterface created"
+
+  # ==========================================================================
+  # COMPLEX NEUROIMAGING ANALYSIS
+  # ==========================================================================
+  - name: Compute BOLD tSNR
+    description: Calculate temporal signal-to-noise ratio
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${bold}')
+      data = img.get_fdata()
+      mean_img = np.mean(data, axis=3)
+      std_img = np.std(data, axis=3)
+      # Avoid division by zero
+      std_img[std_img == 0] = np.nan
+      tsnr = mean_img / std_img
+      tsnr[np.isnan(tsnr)] = 0
+      tsnr_img = nib.Nifti1Image(tsnr.astype(np.float32), img.affine)
+      nib.save(tsnr_img, '${output_dir}/bold_tsnr.nii.gz')
+      print('tSNR range:', np.nanmin(tsnr), '-', np.nanmax(tsnr))
+      "
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/bold_tsnr.nii.gz
+
+  - name: Extract ROI timeseries
+    description: Extract mean timeseries from central ROI
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      import pandas as pd
+      img = nib.load('${bold}')
+      data = img.get_fdata()
+      # Define central ROI (5x5x5 cube)
+      cx, cy, cz = data.shape[0]//2, data.shape[1]//2, data.shape[2]//2
+      roi_data = data[cx-2:cx+3, cy-2:cy+3, cz-2:cz+3, :]
+      mean_ts = np.mean(roi_data, axis=(0, 1, 2))
+      # Save as CSV
+      df = pd.DataFrame({'volume': range(len(mean_ts)), 'signal': mean_ts})
+      df.to_csv('${output_dir}/roi_timeseries.csv', index=False)
+      print('Timeseries length:', len(mean_ts))
+      "
+    expected_output_contains: "Timeseries length: 300"
+    validate:
+      - output_exists: ${output_dir}/roi_timeseries.csv
+
+  - name: Motion proxy from BOLD
+    description: Calculate DVARS-like metric
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      import pandas as pd
+      img = nib.load('${bold}')
+      data = img.get_fdata()
+      # Calculate framewise difference
+      diff = np.diff(data, axis=3)
+      dvars = np.sqrt(np.mean(diff**2, axis=(0, 1, 2)))
+      df = pd.DataFrame({'volume': range(1, len(dvars)+1), 'dvars': dvars})
+      df.to_csv('${output_dir}/dvars.csv', index=False)
+      print('DVARS mean:', np.mean(dvars).round(2))
+      "
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/dvars.csv
+
+  # ==========================================================================
+  # HDF5 OPERATIONS
+  # ==========================================================================
+  - name: Create HDF5 file
+    description: Save data to HDF5 format
+    command: |
+      python -c "
+      import h5py
+      import numpy as np
+      import nibabel as nib
+      img = nib.load('${t2}')
+      data = img.get_fdata()
+      with h5py.File('${output_dir}/t2_data.h5', 'w') as f:
+          f.create_dataset('data', data=data, compression='gzip')
+          f.attrs['shape'] = data.shape
+          f.attrs['source'] = 'sub-01_inplaneT2.nii.gz'
+      print('HDF5 file created')
+      "
+    expected_output_contains: "HDF5 file created"
+    validate:
+      - output_exists: ${output_dir}/t2_data.h5
+
+  - name: Read HDF5 file
+    description: Verify HDF5 file contents
+    command: |
+      python -c "
+      import h5py
+      with h5py.File('${output_dir}/t2_data.h5', 'r') as f:
+          print('Dataset shape:', f['data'].shape)
+          print('Source:', f.attrs['source'])
+      "
+    depends_on: Create HDF5 file
+    expected_output_contains: "Dataset shape: (128, 128, 33)"
+
+  # ==========================================================================
+  # NUMPY ADVANCED OPERATIONS
+  # ==========================================================================
+  - name: NumPy FFT operations
+    description: Test NumPy FFT module
+    command: python -c "import numpy as np; a = np.random.randn(64); fft = np.fft.fft(a); print('FFT shape:', fft.shape)"
+    expected_output_contains: "FFT shape: (64,)"
+
+  - name: NumPy linear algebra
+    description: Test NumPy linalg module
+    command: python -c "import numpy as np; A = np.random.randn(3, 3); U, S, V = np.linalg.svd(A); print('SVD singular values:', len(S))"
+    expected_output_contains: "SVD singular values: 3"
+
+  - name: NumPy random state
+    description: Test reproducible random generation
+    command: python -c "import numpy as np; np.random.seed(42); print('First random:', round(np.random.rand(), 4))"
+    expected_output_contains: "0.3745"
+
+  # ==========================================================================
+  # SCIPY ADVANCED OPERATIONS
+  # ==========================================================================
+  - name: SciPy optimize
+    description: Test scipy optimization
+    command: |
+      python -c "
+      from scipy import optimize
+      import numpy as np
+      def f(x):
+          return (x - 2)**2
+      result = optimize.minimize_scalar(f)
+      print('Minimum at x =', round(result.x, 2))
+      "
+    expected_output_contains: "Minimum at x = 2.0"
+
+  - name: SciPy interpolation
+    description: Test scipy interpolation
+    command: |
+      python -c "
+      from scipy import interpolate
+      import numpy as np
+      x = np.array([0, 1, 2, 3])
+      y = np.array([0, 1, 4, 9])
+      f = interpolate.interp1d(x, y, kind='quadratic')
+      print('Interpolated at 1.5:', f(1.5).round(2))
+      "
+    expected_exit_code: 0
+
+  - name: SciPy stats
+    description: Test scipy statistics
+    command: |
+      python -c "
+      from scipy import stats
+      import numpy as np
+      data = np.random.randn(1000)
+      statistic, pvalue = stats.normaltest(data)
+      print('Normal test p-value:', pvalue.round(4))
+      "
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PYQT5 (GUI framework)
+  # ==========================================================================
+  - name: PyQt5 import
+    description: Verify PyQt5 is installed
+    command: python -c "from PyQt5 import QtCore; print('PyQt5 version:', QtCore.QT_VERSION_STR)"
+    expected_output_contains: "PyQt5 version:"
+    expected_exit_code: 0
+
+  - name: QtConsole available
+    description: Verify qtconsole is installed
+    command: python -c "import qtconsole; print('qtconsole:', qtconsole.__version__)"
+    expected_output_contains: "qtconsole: 5."
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # OSF CLIENT (data sharing)
+  # ==========================================================================
+  - name: OSF client import
+    description: Verify osfclient is installed
+    command: python -c "import osfclient; print('osfclient loaded')"
+    expected_output_contains: "osfclient loaded"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # BEAUTIFULSOUP (web scraping)
+  # ==========================================================================
+  - name: BeautifulSoup import
+    description: Verify BeautifulSoup is installed
+    command: python -c "from bs4 import BeautifulSoup; print('BeautifulSoup loaded')"
+    expected_output_contains: "BeautifulSoup loaded"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # REQUESTS (HTTP library)
+  # ==========================================================================
+  - name: Requests import
+    description: Verify requests library is installed
+    command: python -c "import requests; print('requests:', requests.__version__)"
+    expected_output_contains: "requests: 2."
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MULTI-SLICE VISUALIZATION
+  # ==========================================================================
+  - name: Create mosaic plot
+    description: Generate mosaic view of T2 slices
+    command: |
+      python -c "
+      import matplotlib
+      matplotlib.use('Agg')
+      import matplotlib.pyplot as plt
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${t2}')
+      data = img.get_fdata()
+      fig, axes = plt.subplots(3, 4, figsize=(12, 9))
+      slices = np.linspace(5, data.shape[2]-5, 12).astype(int)
+      for idx, ax in enumerate(axes.flat):
+          ax.imshow(data[:, :, slices[idx]].T, cmap='gray', origin='lower')
+          ax.set_title(f'Slice {slices[idx]}')
+          ax.axis('off')
+      plt.tight_layout()
+      plt.savefig('${output_dir}/t2_mosaic.png', dpi=100)
+      plt.close()
+      print('Mosaic saved')
+      "
+    expected_output_contains: "Mosaic saved"
+    validate:
+      - output_exists: ${output_dir}/t2_mosaic.png
+
+  # ==========================================================================
+  # COMPREHENSIVE WORKFLOW TEST
+  # ==========================================================================
+  - name: Complete analysis pipeline
+    description: Run a complete neuroimaging analysis pipeline
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      import pandas as pd
+      from scipy import ndimage
+      import matplotlib
+      matplotlib.use('Agg')
+      import matplotlib.pyplot as plt
+
+      # Load data
+      bold = nib.load('${bold}')
+      bold_data = bold.get_fdata()
+
+      # 1. Calculate temporal mean
+      tmean = np.mean(bold_data, axis=3)
+
+      # 2. Create brain mask (simple threshold)
+      threshold = np.percentile(tmean, 30)
+      mask = tmean > threshold
+
+      # 3. Calculate tSNR within mask
+      tstd = np.std(bold_data, axis=3)
+      tstd[tstd == 0] = np.nan
+      tsnr = tmean / tstd
+      tsnr[~mask] = 0
+
+      # 4. Extract global signal
+      masked_data = bold_data * mask[..., np.newaxis]
+      global_signal = np.mean(masked_data, axis=(0, 1, 2))
+
+      # 5. Save results
+      nib.save(nib.Nifti1Image(tmean.astype(np.float32), bold.affine),
+               '${output_dir}/pipeline_tmean.nii.gz')
+      nib.save(nib.Nifti1Image(mask.astype(np.float32), bold.affine),
+               '${output_dir}/pipeline_mask.nii.gz')
+      nib.save(nib.Nifti1Image(tsnr.astype(np.float32), bold.affine),
+               '${output_dir}/pipeline_tsnr.nii.gz')
+
+      # 6. Save timeseries
+      pd.DataFrame({'volume': range(len(global_signal)), 'signal': global_signal}).to_csv(
+          '${output_dir}/pipeline_global_signal.csv', index=False)
+
+      # 7. Create summary plot
+      fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+      axes[0, 0].imshow(tmean[:, :, tmean.shape[2]//2].T, cmap='gray', origin='lower')
+      axes[0, 0].set_title('Temporal Mean')
+      axes[0, 1].imshow(mask[:, :, mask.shape[2]//2].T, cmap='gray', origin='lower')
+      axes[0, 1].set_title('Brain Mask')
+      axes[1, 0].imshow(tsnr[:, :, tsnr.shape[2]//2].T, cmap='hot', origin='lower')
+      axes[1, 0].set_title('tSNR')
+      axes[1, 1].plot(global_signal)
+      axes[1, 1].set_title('Global Signal')
+      axes[1, 1].set_xlabel('Volume')
+      plt.tight_layout()
+      plt.savefig('${output_dir}/pipeline_summary.png', dpi=100)
+      plt.close()
+
+      print('Pipeline complete')
+      print('Files created: tmean, mask, tsnr, global_signal, summary plot')
+      "
+    expected_output_contains: "Pipeline complete"
+    validate:
+      - output_exists: ${output_dir}/pipeline_tmean.nii.gz
+      - output_exists: ${output_dir}/pipeline_mask.nii.gz
+      - output_exists: ${output_dir}/pipeline_tsnr.nii.gz
+      - output_exists: ${output_dir}/pipeline_global_signal.csv
+      - output_exists: ${output_dir}/pipeline_summary.png
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

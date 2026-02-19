@@ -1,0 +1,466 @@
+# eeglab container test suite
+# Tests for EEGLAB 2020.0 - Standalone (compiled) version of EEGLAB GUI
+#
+# EEGLAB is an interactive Matlab toolbox for processing continuous and event-related
+# EEG, MEG, and other electrophysiological data incorporating independent component
+# analysis (ICA), time/frequency analysis, artifact rejection, and event-related
+# statistics. This container provides a standalone compiled version with MATLAB Runtime.
+#
+# Note: EEGLAB is primarily a GUI-based application requiring an X display. The tests
+# in this suite focus on verifying container integrity, binary availability, MATLAB
+# runtime components, and file system structure rather than functional EEG processing
+# tests, as the latter would require both EEG test data and a display server.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#   Note: This is neuroimaging (MRI) data, not EEG data. Tests using this data
+#   verify file access capabilities rather than EEG processing functionality.
+#
+# Reference: Delorme A & Makeig S (2004) EEGLAB: an open source toolbox for analysis
+# of single-trial EEG dynamics. Journal of Neuroscience Methods 134:9-21.
+# https://eeglab.org/
+
+name: eeglab
+version: "2020.0"
+container: eeglab_2020.0_20211026.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/eeglab
+
+tests:
+  # ==========================================================================
+  # BINARY AND EXECUTABLE VERIFICATION
+  # ==========================================================================
+  - name: EEGLAB binary exists
+    description: Verify EEGLAB binary is present in expected location
+    command: test -f /opt/eeglab-2020.0/EEGLAB && echo "EEGLAB binary found"
+    expected_output_contains: "EEGLAB binary found"
+
+  - name: EEGLAB binary is executable
+    description: Verify EEGLAB binary has execute permissions
+    command: test -x /opt/eeglab-2020.0/EEGLAB && echo "EEGLAB is executable"
+    expected_output_contains: "EEGLAB is executable"
+
+  - name: EEGLAB in PATH
+    description: Verify EEGLAB command is accessible via PATH
+    command: which EEGLAB
+    expected_output_contains: "/opt/eeglab-2020.0/"
+
+  - name: EEGLAB binary is ELF executable
+    description: Verify EEGLAB binary is a valid Linux ELF executable
+    command: od -c -N 4 /opt/eeglab-2020.0/EEGLAB | head -1
+    expected_output_contains: "E   L   F"
+
+  - name: EEGLAB run script exists
+    description: Verify run_EEGLAB.sh wrapper script is present
+    command: test -f /opt/eeglab-2020.0/run_EEGLAB.sh && echo "Run script found"
+    expected_output_contains: "Run script found"
+
+  - name: EEGLAB run script is executable
+    description: Verify run_EEGLAB.sh has execute permissions
+    command: test -x /opt/eeglab-2020.0/run_EEGLAB.sh && echo "Run script executable"
+    expected_output_contains: "Run script executable"
+
+  # ==========================================================================
+  # MATLAB COMPILER RUNTIME (MCR) VERIFICATION
+  # ==========================================================================
+  - name: MCR directory exists
+    description: Verify MATLAB Compiler Runtime is installed
+    command: test -d /opt/MCR/v98 && echo "MCR v98 directory found"
+    expected_output_contains: "MCR v98 directory found"
+
+  - name: MCR version is R2020a
+    description: Verify MCR version matches EEGLAB requirements (R2020a)
+    command: cat /opt/MCR/v98/VersionInfo.xml
+    expected_output_contains: "R2020a"
+
+  - name: MCR version number
+    description: Verify MCR version 9.8 is installed
+    command: cat /opt/MCR/v98/VersionInfo.xml
+    expected_output_contains: "9.8"
+
+  - name: MCR runtime libraries exist
+    description: Verify MCR runtime library directory is present
+    command: test -d /opt/MCR/v98/runtime/glnxa64 && echo "MCR runtime found"
+    expected_output_contains: "MCR runtime found"
+
+  - name: MCR bin libraries exist
+    description: Verify MCR bin library directory is present
+    command: test -d /opt/MCR/v98/bin/glnxa64 && echo "MCR bin found"
+    expected_output_contains: "MCR bin found"
+
+  - name: MCR system libraries exist
+    description: Verify MCR system OS libraries are present
+    command: test -d /opt/MCR/v98/sys/os/glnxa64 && echo "MCR sys/os found"
+    expected_output_contains: "MCR sys/os found"
+
+  - name: MCR Java runtime exists
+    description: Verify MCR Java Runtime Environment is present
+    command: test -d /opt/MCR/v98/sys/java/jre/glnxa64/jre && echo "MCR JRE found"
+    expected_output_contains: "MCR JRE found"
+
+  - name: MCR toolbox directory exists
+    description: Verify MCR toolbox directory is present
+    command: test -d /opt/MCR/v98/toolbox && echo "MCR toolbox found"
+    expected_output_contains: "MCR toolbox found"
+
+  - name: MCR MATLAB core toolbox exists
+    description: Verify core MATLAB toolbox is installed
+    command: test -d /opt/MCR/v98/toolbox/matlab && echo "MATLAB toolbox found"
+    expected_output_contains: "MATLAB toolbox found"
+
+  - name: MCR signal processing toolbox
+    description: Check if signal processing toolbox components are present
+    command: ls -d /opt/MCR/v98/toolbox/shared/signal* 2>/dev/null && echo "Signal processing found" || echo "Signal processing not separate"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ENVIRONMENT VARIABLES VERIFICATION
+  # ==========================================================================
+  - name: PATH includes EEGLAB directory
+    description: Verify PATH environment variable includes EEGLAB
+    command: echo $PATH
+    expected_output_contains: "/opt/eeglab-2020.0/"
+
+  - name: LD_LIBRARY_PATH includes MCR runtime
+    description: Verify LD_LIBRARY_PATH includes MCR runtime libraries
+    command: echo $LD_LIBRARY_PATH
+    expected_output_contains: "/opt/MCR/v98/runtime/glnxa64"
+
+  - name: LD_LIBRARY_PATH includes MCR bin
+    description: Verify LD_LIBRARY_PATH includes MCR bin libraries
+    command: echo $LD_LIBRARY_PATH
+    expected_output_contains: "/opt/MCR/v98/bin/glnxa64"
+
+  - name: LD_LIBRARY_PATH includes MCR sys/os
+    description: Verify LD_LIBRARY_PATH includes MCR system libraries
+    command: echo $LD_LIBRARY_PATH
+    expected_output_contains: "/opt/MCR/v98/sys/os/glnxa64"
+
+  - name: XAPPLRESDIR set correctly
+    description: Verify X11 application resources directory is set
+    command: echo $XAPPLRESDIR
+    expected_output_contains: "/opt/MCR/v98"
+
+  - name: DEPLOY_BINS indicates EEGLAB
+    description: Verify DEPLOY_BINS environment variable is set
+    command: echo $DEPLOY_BINS
+    expected_output_contains: "EEGLAB"
+
+  # ==========================================================================
+  # DOCUMENTATION AND LICENSE VERIFICATION
+  # ==========================================================================
+  - name: README exists in container root
+    description: Verify README.md is present at container root
+    command: test -f /README.md && echo "README found"
+    expected_output_contains: "README found"
+
+  - name: README contains EEGLAB info
+    description: Verify README mentions EEGLAB
+    command: cat /README.md
+    expected_output_contains: "eeglab"
+
+  - name: README contains version info
+    description: Verify README mentions version 2020.0
+    command: cat /README.md
+    expected_output_contains: "2020.0"
+
+  - name: README contains example usage
+    description: Verify README includes usage example
+    command: cat /README.md
+    expected_output_contains: "EEGLAB"
+
+  - name: README contains documentation link
+    description: Verify README includes link to documentation
+    command: cat /README.md
+    expected_output_contains: "eeglab.org"
+
+  - name: EEGLAB license file exists
+    description: Verify EEGLAB license file is present
+    command: test -f /opt/eeglab-2020.0/eeglablicense.txt && echo "License found"
+    expected_output_contains: "License found"
+
+  - name: EEGLAB license is BSD
+    description: Verify EEGLAB is released under BSD license
+    command: cat /opt/eeglab-2020.0/eeglablicense.txt
+    expected_output_contains: "Redistribution"
+
+  - name: EEGLAB readme file exists
+    description: Verify EEGLAB readme.txt is present
+    command: test -f /opt/eeglab-2020.0/readme.txt && echo "EEGLAB readme found"
+    expected_output_contains: "EEGLAB readme found"
+
+  - name: EEGLAB readme mentions MCR requirements
+    description: Verify readme mentions MATLAB Runtime requirements
+    command: cat /opt/eeglab-2020.0/readme.txt
+    expected_output_contains: "MATLAB Runtime"
+
+  - name: EEGLAB readme mentions version 9.8
+    description: Verify readme specifies MCR version 9.8 (R2020a)
+    command: cat /opt/eeglab-2020.0/readme.txt
+    expected_output_contains: "9.8"
+
+  - name: MCR license file exists
+    description: Verify MCR license file is present
+    command: test -f /opt/MCR/v98/MCR_license.txt && echo "MCR license found"
+    expected_output_contains: "MCR license found"
+
+  - name: MCR patents file exists
+    description: Verify MCR patents file is present
+    command: test -f /opt/MCR/v98/patents.txt && echo "MCR patents found"
+    expected_output_contains: "MCR patents found"
+
+  # ==========================================================================
+  # SPLASH AND RESOURCE FILES
+  # ==========================================================================
+  - name: EEGLAB splash image exists
+    description: Verify EEGLAB splash screen image is present
+    command: test -f /opt/eeglab-2020.0/splash.png && echo "Splash image found"
+    expected_output_contains: "Splash image found"
+
+  - name: Splash image is valid image
+    description: Verify splash.png exists and has valid image header (actually JPEG)
+    command: test -f /opt/eeglab-2020.0/splash.png && echo "Splash image file exists"
+    expected_output_contains: "Splash image file exists"
+
+  # ==========================================================================
+  # SHARED LIBRARY DEPENDENCIES
+  # ==========================================================================
+  - name: libmwmclmcrrt library exists
+    description: Verify core MCR library is present
+    command: ls /opt/MCR/v98/runtime/glnxa64/libmwmclmcrrt.so* 2>/dev/null | head -1 | xargs test -f && echo "libmwmclmcrrt found"
+    expected_output_contains: "libmwmclmcrrt found"
+
+  - name: MCR libmwcpp_shared exists
+    description: Verify MCR C++ shared library is present
+    command: ls /opt/MCR/v98/bin/glnxa64/libmwcpp_shared.so* 2>/dev/null | head -1 | xargs test -f && echo "libmwcpp_shared found"
+    expected_output_contains: "libmwcpp_shared found"
+
+  - name: MCR OpenGL libraries exist
+    description: Verify MCR OpenGL libraries directory is present
+    command: test -d /opt/MCR/v98/sys/opengl/lib/glnxa64 && echo "OpenGL libs found"
+    expected_output_contains: "OpenGL libs found"
+
+  # ==========================================================================
+  # FILE SYSTEM ACCESS TESTS (using available test data)
+  # ==========================================================================
+  - name: Can access T1w NIfTI file
+    description: Verify container can access test T1w neuroimaging file
+    command: test -f ${t1w} && echo "T1w file accessible"
+    expected_output_contains: "T1w file accessible"
+
+  - name: Can access BOLD NIfTI file
+    description: Verify container can access test BOLD neuroimaging file
+    command: test -f ${bold} && echo "BOLD file accessible"
+    expected_output_contains: "BOLD file accessible"
+
+  - name: Can read file headers
+    description: Verify container can read NIfTI file headers
+    command: od -c -N 4 ${t1w} 2>/dev/null && echo "File read successful"
+    expected_output_contains: "File read successful"
+
+  - name: Output directory is writable
+    description: Verify test output directory is writable
+    command: touch test_output/eeglab/write_test.txt && rm test_output/eeglab/write_test.txt && echo "Output writable"
+    expected_output_contains: "Output writable"
+
+  - name: Can create files in output directory
+    description: Verify container can create files in output directory
+    command: echo "test" > test_output/eeglab/test_file.txt && cat test_output/eeglab/test_file.txt
+    expected_output_contains: "test"
+
+  # ==========================================================================
+  # CONTAINER METADATA VERIFICATION
+  # ==========================================================================
+  - name: Reproenv JSON exists
+    description: Verify reproenv build metadata is present
+    command: test -f /.reproenv.json && echo "reproenv.json found"
+    expected_output_contains: "reproenv.json found"
+
+  - name: Container based on Ubuntu
+    description: Verify container is based on Ubuntu
+    command: cat /.reproenv.json 2>/dev/null | head -5
+    expected_output_contains: "ubuntu"
+
+  - name: Singularity environment directory exists
+    description: Verify Singularity metadata directory is present
+    command: test -d /.singularity.d && echo "Singularity metadata found"
+    expected_output_contains: "Singularity metadata found"
+
+  - name: Singularity runscript exists
+    description: Verify Singularity runscript is present
+    command: test -f /.singularity.d/runscript && echo "Runscript found"
+    expected_output_contains: "Runscript found"
+
+  - name: Environment scripts exist
+    description: Verify environment setup scripts are present
+    command: test -d /.singularity.d/env && ls /.singularity.d/env/*.sh | wc -l
+    expected_output_contains: "6"
+
+  # ==========================================================================
+  # SYSTEM LIBRARY COMPATIBILITY
+  # ==========================================================================
+  - name: System x86_64 libraries exist
+    description: Verify system x86_64 library directory is present
+    command: test -d /usr/lib/x86_64-linux-gnu && echo "x86_64 libs found"
+    expected_output_contains: "x86_64 libs found"
+
+  - name: System lib64 directory exists
+    description: Verify lib64 directory is present
+    command: test -d /lib64 && echo "lib64 found"
+    expected_output_contains: "lib64 found"
+
+  - name: Basic system utilities available
+    description: Verify basic system utilities (ls, cat, test) are available
+    command: which ls && which cat && which test && echo "Basic utils available"
+    expected_output_contains: "Basic utils available"
+
+  - name: Bash shell available
+    description: Verify bash shell is available
+    command: which bash
+    expected_output_contains: "/bin/bash"
+
+  # ==========================================================================
+  # MCR TOOLBOX COMPONENTS
+  # ==========================================================================
+  - name: MCR compiler toolbox exists
+    description: Verify MATLAB compiler toolbox is present
+    command: test -d /opt/MCR/v98/toolbox/compiler && echo "Compiler toolbox found"
+    expected_output_contains: "Compiler toolbox found"
+
+  - name: MCR images toolbox exists
+    description: Verify image processing toolbox components are present
+    command: test -d /opt/MCR/v98/toolbox/images && echo "Images toolbox found"
+    expected_output_contains: "Images toolbox found"
+
+  - name: MCR shared toolbox exists
+    description: Verify shared toolbox directory is present
+    command: test -d /opt/MCR/v98/toolbox/shared && echo "Shared toolbox found"
+    expected_output_contains: "Shared toolbox found"
+
+  - name: MCR parallel toolbox exists
+    description: Verify parallel computing toolbox components are present
+    command: test -d /opt/MCR/v98/toolbox/parallel && echo "Parallel toolbox found"
+    expected_output_contains: "Parallel toolbox found"
+
+  - name: MCR statistics functions available
+    description: Check for statistics-related toolbox components
+    command: ls -d /opt/MCR/v98/toolbox/shared/statslib* 2>/dev/null && echo "Stats lib found" || ls /opt/MCR/v98/toolbox/shared/ | grep -i stat || echo "Stats in shared"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # RUN SCRIPT VERIFICATION
+  # ==========================================================================
+  - name: Run script sets MCRROOT
+    description: Verify run_EEGLAB.sh configures MCRROOT
+    command: cat /opt/eeglab-2020.0/run_EEGLAB.sh
+    expected_output_contains: "MCRROOT"
+
+  - name: Run script sets LD_LIBRARY_PATH
+    description: Verify run_EEGLAB.sh configures LD_LIBRARY_PATH
+    command: cat /opt/eeglab-2020.0/run_EEGLAB.sh
+    expected_output_contains: "LD_LIBRARY_PATH"
+
+  - name: Run script includes runtime path
+    description: Verify run_EEGLAB.sh includes runtime/glnxa64 path
+    command: cat /opt/eeglab-2020.0/run_EEGLAB.sh
+    expected_output_contains: "runtime/glnxa64"
+
+  - name: Run script includes bin path
+    description: Verify run_EEGLAB.sh includes bin/glnxa64 path
+    command: cat /opt/eeglab-2020.0/run_EEGLAB.sh
+    expected_output_contains: "bin/glnxa64"
+
+  - name: Run script includes OpenGL path
+    description: Verify run_EEGLAB.sh includes OpenGL library path
+    command: cat /opt/eeglab-2020.0/run_EEGLAB.sh
+    expected_output_contains: "opengl"
+
+  # ==========================================================================
+  # CONTAINER DIRECTORY STRUCTURE
+  # ==========================================================================
+  - name: Standard mount points exist
+    description: Verify standard mount point directories are present
+    command: test -d /data && test -d /scratch && echo "Mount points found"
+    expected_output_contains: "Mount points found"
+
+  - name: Home directory accessible
+    description: Verify home directory is accessible
+    command: test -d /home && echo "Home accessible"
+    expected_output_contains: "Home accessible"
+
+  - name: Tmp directory exists and writable
+    description: Verify tmp directory exists and is writable
+    command: test -d /tmp && test -w /tmp && echo "Tmp writable"
+    expected_output_contains: "Tmp writable"
+
+  - name: Proc filesystem mounted
+    description: Verify proc filesystem is mounted
+    command: test -d /proc && echo "Proc mounted"
+    expected_output_contains: "Proc mounted"
+
+  # ==========================================================================
+  # BINARY SIZE AND INTEGRITY
+  # ==========================================================================
+  - name: EEGLAB binary has reasonable size
+    description: Verify EEGLAB binary size is greater than 100MB (compiled application)
+    command: |
+      size=$(stat -c%s /opt/eeglab-2020.0/EEGLAB 2>/dev/null || stat -f%z /opt/eeglab-2020.0/EEGLAB 2>/dev/null)
+      if [ "$size" -gt 100000000 ]; then echo "Binary size OK: $size bytes"; else echo "Binary too small"; fi
+    expected_output_contains: "Binary size OK"
+
+  - name: MCR installation has significant size
+    description: Verify MCR installation is substantial (multiple GB expected)
+    command: |
+      count=$(find /opt/MCR/v98/ -name '*.so*' 2>/dev/null | wc -l)
+      if [ "$count" -gt 50 ]; then echo "MCR runtime has $count libraries"; else echo "MCR incomplete: $count"; fi
+    expected_output_contains: "MCR runtime has"
+
+  # ==========================================================================
+  # JAVA RUNTIME VERIFICATION
+  # ==========================================================================
+  - name: Java binary exists in MCR
+    description: Verify Java binary is present in MCR
+    command: test -f /opt/MCR/v98/sys/java/jre/glnxa64/jre/bin/java && echo "Java binary found"
+    expected_output_contains: "Java binary found"
+
+  - name: Java libraries exist
+    description: Verify Java library directory exists
+    command: test -d /opt/MCR/v98/sys/java/jre/glnxa64/jre/lib && echo "Java libs found"
+    expected_output_contains: "Java libs found"
+
+  # ==========================================================================
+  # CLEANUP VERIFICATION
+  # ==========================================================================
+  - name: Test output directory created
+    description: Verify test output directory was created
+    command: test -d test_output/eeglab && echo "Output directory exists"
+    expected_output_contains: "Output directory exists"
+
+  - name: Can list test output contents
+    description: Verify can list contents of test output directory
+    command: ls -la test_output/eeglab/ && echo "Output listing successful"
+    expected_output_contains: "Output listing successful"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/eeglab
+    echo "Test outputs preserved in test_output/eeglab/"

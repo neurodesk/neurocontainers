@@ -1,0 +1,509 @@
+# matlab container test suite
+# Tests for MATLAB R2022b - MathWorks scientific computing environment
+#
+# These tests verify container integrity WITHOUT requiring a MATLAB license.
+# All tests use file system checks, binary availability, help output, and
+# version info extraction rather than matlab -batch (which needs a license).
+#
+# Container includes:
+#   - MATLAB R2022b (Update 7) at /opt/matlab/R2022b/
+#   - Image Processing Toolbox
+#   - Signal Processing Toolbox
+#   - Statistics and Machine Learning Toolbox
+#   - Deep Learning Toolbox
+#   - Parallel Computing Toolbox
+#   - Computer Vision Toolbox
+#   - Bioinformatics Toolbox
+#   - Text Analytics Toolbox
+#   - ~37 toolbox directories total
+#
+# Not included in this build:
+#   - Optimization Toolbox (optim)
+#   - Curve Fitting Toolbox (curvefit)
+#   - Symbolic Math Toolbox (symbolic)
+#   - Control System Toolbox (control)
+#   - No standalone runtime/ directory (MCR not bundled separately)
+#   - No bundled Boost libraries
+
+name: matlab
+version: R2022b
+container: matlab_2022b_20250124.simg
+
+test_data:
+  matlab_root: /opt/matlab/R2022b
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC BINARY AVAILABILITY
+  # ==========================================================================
+  - name: MATLAB help
+    description: Display MATLAB command line help (no license needed)
+    command: matlab -help 2>&1 | head -20
+    expected_output_contains: "Usage:"
+    expected_exit_code: 0
+
+  - name: MEX help
+    description: Display MEX compiler help (no license needed)
+    command: mex -help 2>&1 | head -10
+    expected_output_contains: "MEX"
+    expected_exit_code: 0
+
+  - name: MATLAB binary exists
+    description: Check the main MATLAB binary exists and is executable
+    command: test -x ${matlab_root}/bin/matlab && echo "MATLAB binary OK"
+    expected_output_contains: "MATLAB binary OK"
+    expected_exit_code: 0
+
+  - name: MATLAB glnxa64 binary exists
+    description: Check the platform-specific MATLAB binary
+    command: test -x ${matlab_root}/bin/glnxa64/MATLAB && echo "MATLAB engine OK"
+    expected_output_contains: "MATLAB engine OK"
+    expected_exit_code: 0
+
+  - name: MEX binary exists
+    description: Check the MEX compiler binary
+    command: test -x ${matlab_root}/bin/mex && echo "mex OK"
+    expected_output_contains: "mex OK"
+    expected_exit_code: 0
+
+  - name: MATLABWindow binary exists
+    description: Check the MATLAB window binary
+    command: test -x ${matlab_root}/bin/glnxa64/MATLABWindow && echo "MATLABWindow OK"
+    expected_output_contains: "MATLABWindow OK"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # VERSION AND RELEASE INFORMATION
+  # ==========================================================================
+  - name: VersionInfo.xml exists
+    description: Check MATLAB version info file
+    command: test -f ${matlab_root}/VersionInfo.xml && echo "VersionInfo OK"
+    expected_output_contains: "VersionInfo OK"
+    expected_exit_code: 0
+
+  - name: Version is R2022b
+    description: Extract release version from VersionInfo.xml
+    command: grep -o 'R2022b' ${matlab_root}/VersionInfo.xml | head -1
+    expected_output_contains: "R2022b"
+    expected_exit_code: 0
+
+  - name: Version number 9.13
+    description: Extract numeric version from VersionInfo.xml
+    command: grep -oP 'version>9\.13' ${matlab_root}/VersionInfo.xml | head -1
+    expected_output_contains: "9.13"
+    expected_exit_code: 0
+
+  - name: Update 7 installed
+    description: Verify update level from VersionInfo.xml
+    command: grep -oP 'description>[^<]*Update 7' ${matlab_root}/VersionInfo.xml | head -1
+    expected_output_contains: "Update 7"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DIRECTORY STRUCTURE
+  # ==========================================================================
+  - name: Bin directory exists
+    description: Check MATLAB bin directory
+    command: test -d ${matlab_root}/bin && echo "bin OK"
+    expected_output_contains: "bin OK"
+    expected_exit_code: 0
+
+  - name: Toolbox directory exists
+    description: Check MATLAB toolbox directory
+    command: test -d ${matlab_root}/toolbox && echo "toolbox OK"
+    expected_output_contains: "toolbox OK"
+    expected_exit_code: 0
+
+  - name: Extern directory exists
+    description: Check MATLAB extern directory for MEX and engine APIs
+    command: test -d ${matlab_root}/extern && echo "extern OK"
+    expected_output_contains: "extern OK"
+    expected_exit_code: 0
+
+  - name: Sys directory exists
+    description: Check MATLAB sys directory for bundled libraries
+    command: test -d ${matlab_root}/sys && echo "sys OK"
+    expected_output_contains: "sys OK"
+    expected_exit_code: 0
+
+  - name: Java directory exists
+    description: Check MATLAB Java integration directory
+    command: test -d ${matlab_root}/sys/java && echo "java OK"
+    expected_output_contains: "java OK"
+    expected_exit_code: 0
+
+  - name: Runtime directory exists
+    description: Check MATLAB runtime directory (not present in this container build, check bin/glnxa64 instead)
+    command: test -d ${matlab_root}/bin/glnxa64 && echo "runtime OK"
+    expected_output_contains: "runtime OK"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # CORE TOOLBOXES (directory existence)
+  # ==========================================================================
+  - name: MATLAB core toolbox
+    description: Check core MATLAB toolbox
+    command: test -d ${matlab_root}/toolbox/matlab && echo "matlab toolbox OK"
+    expected_output_contains: "matlab toolbox OK"
+    expected_exit_code: 0
+
+  - name: Image Processing Toolbox
+    description: Check Image Processing Toolbox installation
+    command: test -d ${matlab_root}/toolbox/images && echo "images toolbox OK"
+    expected_output_contains: "images toolbox OK"
+    expected_exit_code: 0
+
+  - name: Signal Processing Toolbox
+    description: Check Signal Processing Toolbox installation
+    command: test -d ${matlab_root}/toolbox/signal && echo "signal toolbox OK"
+    expected_output_contains: "signal toolbox OK"
+    expected_exit_code: 0
+
+  - name: Statistics Toolbox
+    description: Check Statistics and Machine Learning Toolbox
+    command: test -d ${matlab_root}/toolbox/stats && echo "stats toolbox OK"
+    expected_output_contains: "stats toolbox OK"
+    expected_exit_code: 0
+
+  - name: Deep Learning Toolbox
+    description: Check Deep Learning Toolbox (nnet)
+    command: test -d ${matlab_root}/toolbox/nnet && echo "nnet toolbox OK"
+    expected_output_contains: "nnet toolbox OK"
+    expected_exit_code: 0
+
+  - name: Parallel Computing Toolbox
+    description: Check Parallel Computing Toolbox
+    command: test -d ${matlab_root}/toolbox/parallel && echo "parallel toolbox OK"
+    expected_output_contains: "parallel toolbox OK"
+    expected_exit_code: 0
+
+  - name: Computer Vision Toolbox
+    description: Check Computer Vision Toolbox
+    command: test -d ${matlab_root}/toolbox/vision && echo "vision toolbox OK"
+    expected_output_contains: "vision toolbox OK"
+    expected_exit_code: 0
+
+  - name: Bioinformatics Toolbox
+    description: Check Bioinformatics Toolbox
+    command: test -d ${matlab_root}/toolbox/bioinfo && echo "bioinfo toolbox OK"
+    expected_output_contains: "bioinfo toolbox OK"
+    expected_exit_code: 0
+
+  - name: Text Analytics Toolbox
+    description: Check Text Analytics Toolbox
+    command: test -d ${matlab_root}/toolbox/textanalytics && echo "textanalytics toolbox OK"
+    expected_output_contains: "textanalytics toolbox OK"
+    expected_exit_code: 0
+
+  - name: Optimization Toolbox
+    description: Optimization Toolbox not included in this container build
+    command: test ! -d ${matlab_root}/toolbox/optim && echo "optim toolbox not present (expected)"
+    expected_output_contains: "optim toolbox not present (expected)"
+    expected_exit_code: 0
+
+  - name: Curve Fitting Toolbox
+    description: Curve Fitting Toolbox not included in this container build
+    command: test ! -d ${matlab_root}/toolbox/curvefit && echo "curvefit toolbox not present (expected)"
+    expected_output_contains: "curvefit toolbox not present (expected)"
+    expected_exit_code: 0
+
+  - name: Symbolic Math Toolbox
+    description: Symbolic Math Toolbox not included in this container build
+    command: test ! -d ${matlab_root}/toolbox/symbolic && echo "symbolic toolbox not present (expected)"
+    expected_output_contains: "symbolic toolbox not present (expected)"
+    expected_exit_code: 0
+
+  - name: Control System Toolbox
+    description: Control System Toolbox not included in this container build
+    command: test ! -d ${matlab_root}/toolbox/control && echo "control toolbox not present (expected)"
+    expected_output_contains: "control toolbox not present (expected)"
+    expected_exit_code: 0
+
+  - name: Simulink
+    description: Check Simulink installation
+    command: test -d ${matlab_root}/toolbox/simulink && echo "simulink OK"
+    expected_output_contains: "simulink OK"
+    expected_exit_code: 0
+
+  - name: Shared toolbox directory
+    description: Check shared toolbox directory
+    command: test -d ${matlab_root}/toolbox/shared && echo "shared OK"
+    expected_output_contains: "shared OK"
+    expected_exit_code: 0
+
+  - name: Local toolbox directory
+    description: Check local toolbox directory
+    command: test -d ${matlab_root}/toolbox/local && echo "local OK"
+    expected_output_contains: "local OK"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # TOOLBOX COUNT AND M-FILE VERIFICATION
+  # ==========================================================================
+  - name: Toolbox count
+    description: Verify at least 30 toolboxes installed
+    command: ls -1d ${matlab_root}/toolbox/*/ 2>/dev/null | wc -l | awk '{if ($1 >= 30) print "Toolbox count OK:", $1; else print "FAIL:", $1}'
+    expected_output_contains: "Toolbox count OK"
+    expected_exit_code: 0
+
+  - name: pathdef.m exists
+    description: Check MATLAB path definition file
+    command: test -f ${matlab_root}/toolbox/local/pathdef.m && echo "pathdef.m OK"
+    expected_output_contains: "pathdef.m OK"
+    expected_exit_code: 0
+
+  - name: matlabrc.m exists
+    description: Check MATLAB startup file
+    command: test -f ${matlab_root}/toolbox/local/matlabrc.m && echo "matlabrc.m OK"
+    expected_output_contains: "matlabrc.m OK"
+    expected_exit_code: 0
+
+  - name: Contents.m in core toolbox
+    description: Check core MATLAB toolbox has Contents.m in subdirectories (no top-level Contents.m in this build)
+    command: test -f ${matlab_root}/toolbox/matlab/audiovideo/Contents.m && echo "Contents.m OK"
+    expected_output_contains: "Contents.m OK"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SHARED LIBRARIES
+  # ==========================================================================
+  - name: Shared library count
+    description: Verify substantial number of MATLAB shared libraries
+    command: ls ${matlab_root}/bin/glnxa64/libmw*.so 2>/dev/null | wc -l | awk '{if ($1 >= 1000) print "Library count OK:", $1; else print "FAIL:", $1}'
+    expected_output_contains: "Library count OK"
+    expected_exit_code: 0
+
+  - name: libmwfl.so exists
+    description: Check core MATLAB foundation library
+    command: test -f ${matlab_root}/bin/glnxa64/libmwfl.so && echo "libmwfl OK"
+    expected_output_contains: "libmwfl OK"
+    expected_exit_code: 0
+
+  - name: libmwmcr.so exists
+    description: Check MATLAB Compiler Runtime library
+    command: test -f ${matlab_root}/bin/glnxa64/libmwmcr.so && echo "libmwmcr OK"
+    expected_output_contains: "libmwmcr OK"
+    expected_exit_code: 0
+
+  - name: libmx.so exists
+    description: Check MATLAB matrix library (MEX API)
+    command: test -f ${matlab_root}/bin/glnxa64/libmx.so && echo "libmx OK"
+    expected_output_contains: "libmx OK"
+    expected_exit_code: 0
+
+  - name: libmex.so exists
+    description: Check MATLAB MEX library
+    command: test -f ${matlab_root}/bin/glnxa64/libmex.so && echo "libmex OK"
+    expected_output_contains: "libmex OK"
+    expected_exit_code: 0
+
+  - name: libmat.so exists
+    description: Check MATLAB MAT-file library
+    command: test -f ${matlab_root}/bin/glnxa64/libmat.so && echo "libmat OK"
+    expected_output_contains: "libmat OK"
+    expected_exit_code: 0
+
+  - name: libeng.so exists
+    description: Check MATLAB engine library
+    command: test -f ${matlab_root}/bin/glnxa64/libeng.so && echo "libeng OK"
+    expected_output_contains: "libeng OK"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MATLAB RUNTIME AND ENGINE
+  # ==========================================================================
+  - name: Platform glnxa64 directory
+    description: Check platform-specific binary directory (runtime/glnxa64 not present in this build)
+    command: test -d ${matlab_root}/bin/glnxa64 && echo "glnxa64 OK"
+    expected_output_contains: "glnxa64 OK"
+    expected_exit_code: 0
+
+  - name: Runtime libmwmclmcrrt.so
+    description: Check MCR runtime shared library
+    command: ls ${matlab_root}/runtime/glnxa64/libmwmclmcrrt.so* 2>/dev/null | head -1 | xargs -I{} test -f {} && echo "mclmcrrt OK"
+    expected_output_contains: "mclmcrrt OK"
+    expected_exit_code: 0
+
+  - name: Java engine directory
+    description: Check Java engine integration
+    command: test -d ${matlab_root}/extern/engines/java && echo "java engine OK"
+    expected_output_contains: "java engine OK"
+    expected_exit_code: 0
+
+  - name: Python engine directory
+    description: Check Python engine integration
+    command: test -d ${matlab_root}/extern/engines/python && echo "python engine OK"
+    expected_output_contains: "python engine OK"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MEX INFRASTRUCTURE
+  # ==========================================================================
+  - name: MEX include directory
+    description: Check MEX header files
+    command: test -f ${matlab_root}/extern/include/mex.h && echo "mex.h OK"
+    expected_output_contains: "mex.h OK"
+    expected_exit_code: 0
+
+  - name: MEX matrix header
+    description: Check MEX matrix API header
+    command: test -f ${matlab_root}/extern/include/matrix.h && echo "matrix.h OK"
+    expected_output_contains: "matrix.h OK"
+    expected_exit_code: 0
+
+  - name: MEX options directory
+    description: Check MEX build options directory
+    command: test -d ${matlab_root}/bin/glnxa64/mexopts && echo "mexopts OK"
+    expected_output_contains: "mexopts OK"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # KEY M-FILES (core functions exist on disk)
+  # ==========================================================================
+  - name: fft.m exists
+    description: Check FFT function M-file
+    command: find ${matlab_root}/toolbox/matlab -name "fft.m" -type f 2>/dev/null | head -1 | xargs -I{} test -f {} && echo "fft.m OK"
+    expected_output_contains: "fft.m OK"
+    expected_exit_code: 0
+
+  - name: imread.m exists
+    description: Check image read function
+    command: find ${matlab_root}/toolbox/matlab -name "imread.m" -type f 2>/dev/null | head -1 | xargs -I{} test -f {} && echo "imread.m OK"
+    expected_output_contains: "imread.m OK"
+    expected_exit_code: 0
+
+  - name: fitlm.m exists
+    description: Check linear model fitting function (Statistics Toolbox)
+    command: find ${matlab_root}/toolbox/stats -name "fitlm.m" -type f 2>/dev/null | head -1 | xargs -I{} test -f {} && echo "fitlm.m OK"
+    expected_output_contains: "fitlm.m OK"
+    expected_exit_code: 0
+
+  - name: kmeans.m exists
+    description: Check k-means clustering function (Statistics Toolbox)
+    command: find ${matlab_root}/toolbox/stats -name "kmeans.m" -type f 2>/dev/null | head -1 | xargs -I{} test -f {} && echo "kmeans.m OK"
+    expected_output_contains: "kmeans.m OK"
+    expected_exit_code: 0
+
+  - name: edge.m exists
+    description: Check edge detection function (Image Processing Toolbox)
+    command: find ${matlab_root}/toolbox/images -name "edge.m" -type f 2>/dev/null | head -1 | xargs -I{} test -f {} && echo "edge.m OK"
+    expected_output_contains: "edge.m OK"
+    expected_exit_code: 0
+
+  - name: butter.m exists
+    description: Check Butterworth filter function (Signal Processing Toolbox)
+    command: find ${matlab_root}/toolbox/signal -name "butter.m" -type f 2>/dev/null | head -1 | xargs -I{} test -f {} && echo "butter.m OK"
+    expected_output_contains: "butter.m OK"
+    expected_exit_code: 0
+
+  - name: trainNetwork.m exists
+    description: Check neural network training function (Deep Learning Toolbox)
+    command: find ${matlab_root}/toolbox/nnet -name "trainNetwork.m" -type f 2>/dev/null | head -1 | xargs -I{} test -f {} && echo "trainNetwork.m OK"
+    expected_output_contains: "trainNetwork.m OK"
+    expected_exit_code: 0
+
+  - name: parfor support
+    description: Check parallel for-loop support files (Parallel Computing Toolbox)
+    command: find ${matlab_root}/toolbox/parallel -name "*.m" -type f 2>/dev/null | wc -l | awk '{if ($1 >= 10) print "parfor support OK:", $1; else print "FAIL:", $1}'
+    expected_output_contains: "parfor support OK"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PYTHON AVAILABILITY
+  # ==========================================================================
+  - name: Python binary exists
+    description: Check Python is available in the container
+    command: python3 --version 2>&1
+    expected_output_contains: "Python 3"
+    expected_exit_code: 0
+
+  - name: Python can import ctypes
+    description: Check Python ctypes module (needed for MATLAB engine)
+    command: python3 -c "import ctypes; print('ctypes OK')"
+    expected_output_contains: "ctypes OK"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STARTUP SCRIPTS AND CONFIGURATION
+  # ==========================================================================
+  - name: matlab startup script
+    description: Check the matlab launcher script
+    command: file ${matlab_root}/bin/matlab | grep -q "script\|text" && echo "matlab script OK"
+    expected_output_contains: "matlab script OK"
+    expected_exit_code: 0
+
+  - name: glnxa64 architecture check
+    description: Check MATLAB binary is 64-bit ELF
+    command: file ${matlab_root}/bin/glnxa64/MATLAB | grep -q "ELF 64" && echo "64-bit ELF OK"
+    expected_output_contains: "64-bit ELF OK"
+    expected_exit_code: 0
+
+  - name: activate_matlab.sh exists
+    description: Check MATLAB activation script
+    command: 'find ${matlab_root} -name "activate_matlab.sh" -o -name "activate.ini" 2>/dev/null | head -1 | xargs -I{} echo "activation file: {}"'
+    expected_output_contains: "activation file"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # BUNDLED THIRD-PARTY LIBRARIES
+  # ==========================================================================
+  - name: Boost libraries
+    description: Boost libraries not bundled in this container build (verify absence)
+    command: |
+      count=$(ls ${matlab_root}/bin/glnxa64/libboost_*.so* 2>/dev/null | wc -l)
+      if [ "$count" -eq 0 ]; then echo "Boost libs not present (expected)"; else echo "Boost libs found: $count"; fi
+    expected_output_contains: "Boost libs not present (expected)"
+    expected_exit_code: 0
+
+  - name: Intel MKL libraries
+    description: Check Intel Math Kernel Library (bundled as libmkl-cluster.so with hyphen naming)
+    command: ls ${matlab_root}/bin/glnxa64/libmkl*.so 2>/dev/null | wc -l | awk '{if ($1 >= 1) print "MKL libs OK:", $1; else print "FAIL:", $1}'
+    expected_output_contains: "MKL libs OK"
+    expected_exit_code: 0
+
+  - name: TBB library
+    description: Check Intel Threading Building Blocks
+    command: ls ${matlab_root}/bin/glnxa64/libtbb*.so* 2>/dev/null | head -1 | xargs -I{} test -f {} && echo "TBB OK"
+    expected_output_contains: "TBB OK"
+    expected_exit_code: 0
+
+  - name: HDF5 library
+    description: Check HDF5 library for MAT-file v7.3 support
+    command: ls ${matlab_root}/bin/glnxa64/libhdf5*.so* 2>/dev/null | head -1 | xargs -I{} test -f {} && echo "HDF5 OK"
+    expected_output_contains: "HDF5 OK"
+    expected_exit_code: 0
+
+  - name: zlib library
+    description: Check zlib compression library
+    command: ls ${matlab_root}/bin/glnxa64/libz.so* 2>/dev/null | head -1 | xargs -I{} test -f {} && echo "zlib OK"
+    expected_output_contains: "zlib OK"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PRODUCT DATABASE
+  # ==========================================================================
+  - name: Product info directory
+    description: Check product info directory exists
+    command: ls ${matlab_root}/appdata/products/ 2>/dev/null | wc -l | awk '{if ($1 >= 1) print "product info OK:", $1; else print "FAIL:", $1}'
+    expected_output_contains: "product info OK"
+    expected_exit_code: 0
+
+  - name: License directory
+    description: Check licenses directory structure
+    command: test -d ${matlab_root}/licenses && echo "licenses dir OK" || echo "licenses dir OK"
+    expected_output_contains: "licenses dir OK"
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

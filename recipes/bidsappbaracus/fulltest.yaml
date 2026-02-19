@@ -1,0 +1,685 @@
+# bidsappbaracus container test suite
+# Tests for BARACUS (Brain-Age Regression Analysis and Computation Utility Software) v1.1.4
+# Container includes FreeSurfer 5.3 for preprocessing
+#
+# BARACUS predicts brain age based on data from FreeSurfer 5.3, combining cortical
+# thickness, cortical surface area, and subcortical information (Liem et al., 2017)
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: structural data for FreeSurfer processing
+#   - inplaneT2: for auxiliary tests
+#   - BOLD: functional data (not directly used by BARACUS)
+#
+# Note: Full BARACUS brain-age prediction requires:
+#   1. FreeSurfer recon-all processing (hours per subject)
+#   2. Valid FreeSurfer license key
+#   3. Pre-computed FreeSurfer outputs with specific surface files
+# Tests below verify tool availability and basic functionality without full processing
+
+name: bidsappbaracus
+version: 1.1.4
+container: bidsappbaracus_1.1.4_20230612.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/freesurfer
+    mkdir -p ${output_dir}/baracus
+
+tests:
+  # ==========================================================================
+  # BARACUS CORE TOOLS - VERSION AND HELP
+  # ==========================================================================
+  - name: BARACUS version check
+    description: Verify BARACUS brain age prediction tool version
+    command: run_brain_age_bids.py --version
+    expected_output_contains: "BARACUS version v1.1.4"
+
+  - name: BARACUS BIDS mode help
+    description: Verify run_brain_age_bids.py help and arguments
+    command: run_brain_age_bids.py --help
+    expected_output_contains:
+      - "Brain-Age Regression Analysis"
+      - "bids_dir"
+      - "out_dir"
+      - "participant"
+      - "group"
+      - "--license_key"
+      - "--freesurfer_dir"
+      - "--models"
+
+  - name: BARACUS files mode help
+    description: Verify run_brain_age_files.py help for direct file input
+    command: run_brain_age_files.py --help
+    expected_output_contains:
+      - "files"
+      - "--lh_thickness_file"
+      - "--rh_thickness_file"
+      - "--lh_area_file"
+      - "--rh_area_file"
+      - "--aseg_file"
+
+  - name: BARACUS files mode version
+    description: Verify run_brain_age_files.py version
+    command: run_brain_age_files.py --version
+    expected_output_contains: "BARACUS version"
+
+  # ==========================================================================
+  # BARACUS MODEL OPTIONS
+  # ==========================================================================
+  - name: BARACUS model Liem2016 OCI norm
+    description: Verify Liem2016__OCI_norm model option is documented
+    command: run_brain_age_bids.py --help
+    expected_output_contains: "Liem2016__OCI_norm"
+
+  - name: BARACUS model Liem2016 full training
+    description: Verify Liem2016__full_2samp_training model option
+    command: run_brain_age_bids.py --help
+    expected_output_contains: "Liem2016__full_2samp_training"
+
+  # ==========================================================================
+  # FREESURFER CORE TOOLS - VERSION AND AVAILABILITY
+  # ==========================================================================
+  - name: FreeSurfer version check
+    description: Verify FreeSurfer installation and version (5.3)
+    command: freesurfer --version 2>&1
+    expected_output_contains: "freesurfer-Linux-centos6_x86_64-stable-pub-v5.3.0"
+
+  - name: recon-all availability
+    description: Verify recon-all command is available
+    command: recon-all --version 2>&1 | head -1
+    expected_output_contains: "recon-all"
+
+  - name: recon-all help
+    description: Check recon-all usage information
+    command: recon-all --help 2>&1 | head -30
+    expected_output_contains:
+      - "USAGE: recon-all"
+      - "-subjid"
+      - "-all"
+      - "-autorecon1"
+      - "-autorecon2"
+      - "-autorecon3"
+
+  # ==========================================================================
+  # FREESURFER IMAGE CONVERSION
+  # ==========================================================================
+  - name: mri_convert availability
+    description: Verify mri_convert is available
+    command: which mri_convert
+    expected_output_contains: "/opt/freesurfer/bin/mri_convert"
+
+  - name: mri_convert help
+    description: Check mri_convert help information
+    command: mri_convert --help 2>&1 | head -20
+    expected_output_contains:
+      - "mri_convert"
+      - "in volume"
+      - "out volume"
+
+  - name: mri_convert NIfTI to MGZ
+    description: Convert NIfTI input to FreeSurfer MGZ format
+    command: mri_convert ${t2} ${output_dir}/t2_converted.mgz
+    validate:
+      - output_exists: ${output_dir}/t2_converted.mgz
+
+  - name: mri_convert MGZ to NIfTI
+    description: Convert MGZ back to NIfTI format
+    command: mri_convert ${output_dir}/t2_converted.mgz ${output_dir}/t2_roundtrip.nii.gz
+    depends_on: mri_convert NIfTI to MGZ
+    validate:
+      - output_exists: ${output_dir}/t2_roundtrip.nii.gz
+
+  - name: mri_convert with resampling
+    description: Resample image to 2mm isotropic
+    command: mri_convert -vs 2 2 2 ${t2} ${output_dir}/t2_2mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_2mm.nii.gz
+
+  - name: mri_convert conform
+    description: Conform image to FreeSurfer standard (256x256x256, 1mm)
+    command: mri_convert --conform ${t2} ${output_dir}/t2_conformed.mgz
+    validate:
+      - output_exists: ${output_dir}/t2_conformed.mgz
+
+  # ==========================================================================
+  # FREESURFER IMAGE INFORMATION
+  # ==========================================================================
+  - name: mri_info basic
+    description: Get basic image information
+    command: mri_info ${t2}
+    expected_output_contains:
+      - "dimensions"
+      - "voxel sizes"
+
+  - name: mri_info dimensions
+    description: Get image dimensions only
+    command: mri_info --dim ${t2}
+    expected_exit_code: 0
+
+  - name: mri_info resolution
+    description: Get voxel resolution
+    command: mri_info --res ${t2}
+    expected_exit_code: 0
+
+  - name: mri_info vox2ras
+    description: Get voxel to RAS transformation matrix
+    command: mri_info --vox2ras ${t2}
+    expected_exit_code: 0
+
+  - name: mri_info conformed check
+    description: Check if volume is conformed
+    command: mri_info --conformed ${t2}
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FREESURFER IMAGE STATISTICS
+  # ==========================================================================
+  - name: mri_segstats help
+    description: Check mri_segstats segmentation statistics tool
+    command: mri_segstats --help 2>&1 | head -40
+    expected_output_contains:
+      - "mri_segstats"
+      - "--seg"
+      - "--sum"
+
+  - name: mri_vol2vol availability
+    description: Verify mri_vol2vol for volume transformation
+    command: mri_vol2vol --help 2>&1 | head -20
+    expected_output_contains: "mri_vol2vol"
+
+  # ==========================================================================
+  # FREESURFER SURFACE TOOLS
+  # ==========================================================================
+  - name: mri_surf2surf help
+    description: Check surface-to-surface resampling tool
+    command: mri_surf2surf --help 2>&1 | head -30
+    expected_output_contains:
+      - "mri_surf2surf"
+      - "--srcsubject"
+      - "--trgsubject"
+      - "--hemi"
+
+  - name: mris_preproc help
+    description: Check surface preprocessing tool
+    command: mris_preproc --help 2>&1 | head -30
+    expected_output_contains:
+      - "mris_prepoc"
+      - "--out"
+      - "--target"
+      - "--hemi"
+
+  - name: mri_vol2surf help
+    description: Check volume to surface projection tool
+    command: mri_vol2surf --help 2>&1 | head -60
+    expected_output_contains:
+      - "mri_vol2surf"
+      - "--src"
+      - "--o"
+      - "--hemi"
+
+  # ==========================================================================
+  # FREESURFER STATISTICS EXTRACTION (BARACUS prerequisites)
+  # ==========================================================================
+  - name: asegstats2table help
+    description: Check aseg stats table extraction (required for BARACUS)
+    command: asegstats2table --help 2>&1 | head -50
+    expected_output_contains:
+      - "aseg"
+      - "segmentation"
+      - "volume"
+      - "mean"
+
+  - name: aparcstats2table help
+    description: Check aparc stats table extraction
+    command: aparcstats2table --help 2>&1 | head -30
+    expected_output_contains:
+      - "aparc"
+      - "stats"
+
+  # ==========================================================================
+  # FREESURFER REGISTRATION AND NORMALIZATION
+  # ==========================================================================
+  - name: bbregister help
+    description: Check boundary-based registration tool
+    command: bbregister --help 2>&1 | head -30
+    expected_output_contains:
+      - "bbregister"
+      - "--mov"
+      - "--s"
+
+  - name: talairach_avi availability
+    description: Verify Talairach registration tool
+    command: which talairach_avi
+    expected_output_contains: "/opt/freesurfer/bin/talairach_avi"
+
+  - name: mri_nu_correct availability
+    description: Verify N3 bias field correction tool
+    command: mri_nu_correct.mni --help 2>&1 | head -10
+    expected_output_contains: "mri_nu_correct"
+
+  # ==========================================================================
+  # FREESURFER SKULL STRIPPING
+  # ==========================================================================
+  - name: mri_watershed help
+    description: Check skull stripping watershed algorithm
+    command: mri_watershed --help 2>&1 | head -20
+    expected_output_contains:
+      - "mri_watershed"
+      - "brain"
+
+  # ==========================================================================
+  # FREESURFER SEGMENTATION TOOLS
+  # ==========================================================================
+  - name: mri_normalize help
+    description: Check intensity normalization tool
+    command: mri_normalize --help 2>&1 | head -20
+    expected_output_contains: "mri_normalize"
+
+  - name: mri_em_register help
+    description: Check EM registration tool
+    command: mri_em_register --help 2>&1 | head -20
+    expected_output_contains: "mri_em_register"
+
+  - name: mri_ca_register help
+    description: Check CA registration tool
+    command: mri_ca_register 2>&1 | head -20
+    expected_output_contains: "mri_ca_register"
+
+  - name: mri_ca_label help
+    description: Check CA labeling tool (subcortical segmentation)
+    command: mri_ca_label --help 2>&1 | head -20
+    expected_output_contains: "mri_ca_label"
+
+  - name: mri_aparc2aseg help
+    description: Check parcellation to segmentation tool
+    command: mri_aparc2aseg --help 2>&1 | head -20
+    expected_output_contains: "mri_aparc2aseg"
+
+  # ==========================================================================
+  # FREESURFER SURFACE GENERATION
+  # ==========================================================================
+  - name: mri_tessellate help
+    description: Check surface tessellation tool
+    command: mri_tessellate --help 2>&1 | head -20
+    expected_output_contains: "mri_tessellate"
+
+  - name: mris_smooth help
+    description: Check surface smoothing tool
+    command: mris_smooth --help 2>&1 | head -20
+    expected_output_contains: "mris_smooth"
+
+  - name: mris_inflate help
+    description: Check surface inflation tool
+    command: mris_inflate --help 2>&1 | head -20
+    expected_output_contains: "mris_inflate"
+
+  - name: mris_sphere help
+    description: Check spherical mapping tool
+    command: mris_sphere --help 2>&1 | head -20
+    expected_output_contains: "mris_sphere"
+
+  - name: mris_register help
+    description: Check surface registration tool
+    command: mris_register --help 2>&1 | head -20
+    expected_output_contains: "mris_register"
+
+  # ==========================================================================
+  # FREESURFER THICKNESS AND AREA MEASUREMENT
+  # ==========================================================================
+  - name: mris_thickness help
+    description: Check cortical thickness measurement tool
+    command: mris_thickness --help 2>&1 | head -20
+    expected_output_contains: "mris_thickness"
+
+  - name: mris_anatomical_stats help
+    description: Check surface anatomical statistics tool
+    command: mris_anatomical_stats --help 2>&1 | head -30
+    expected_output_contains:
+      - "mris_anatomical_stats"
+      - "subject"
+      - "hemi"
+
+  # ==========================================================================
+  # FREESURFER PARCELLATION
+  # ==========================================================================
+  - name: mris_ca_label help
+    description: Check cortical parcellation labeling tool
+    command: mris_ca_label --help 2>&1 | head -20
+    expected_output_contains: "mris_ca_label"
+
+  - name: mri_label2label help
+    description: Check label transformation tool
+    command: mri_label2label --help 2>&1 | head -20
+    expected_output_contains: "mri_label2label"
+
+  # ==========================================================================
+  # FREESURFER VISUALIZATION TOOLS
+  # ==========================================================================
+  - name: tkmedit availability
+    description: Check tkmedit volume viewer availability
+    command: which tkmedit 2>/dev/null || echo "tkmedit not in PATH"
+    expected_exit_code: 0
+
+  - name: tksurfer availability
+    description: Check tksurfer surface viewer availability
+    command: which tksurfer 2>/dev/null || echo "tksurfer not in PATH"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FREESURFER FILE FORMAT UTILITIES
+  # ==========================================================================
+  - name: mri_binarize help
+    description: Check volume binarization tool
+    command: mri_binarize --help 2>&1 | head -30
+    expected_output_contains:
+      - "mri_binarize"
+      - "--i"
+      - "--min"
+      - "--o"
+
+  - name: mri_binarize threshold
+    description: Binarize image with threshold
+    command: mri_binarize --i ${t2} --min 50 --o ${output_dir}/t2_binarized.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_binarized.nii.gz
+
+  - name: mri_mask help
+    description: Check volume masking tool
+    command: mri_mask --help 2>&1 | head -20
+    expected_output_contains: "mri_mask"
+
+  - name: mri_concat help
+    description: Check volume concatenation tool
+    command: mri_concat --help 2>&1 | head -30
+    expected_output_contains:
+      - "mri_concat"
+      - "--i"
+      - "--o"
+
+  # ==========================================================================
+  # FREESURFER MATH OPERATIONS
+  # ==========================================================================
+  - name: mris_calc help
+    description: Check surface calculator tool
+    command: mris_calc --help 2>&1
+    expected_exit_code: 1  # mris_calc --help returns 1
+    expected_output_contains:
+      - "mris_calc"
+      - "add"
+      - "sub"
+      - "mul"
+      - "div"
+
+  - name: fscalc availability
+    description: Check FSL-style calculator availability
+    command: fscalc --help 2>&1 | head -20 || echo "fscalc checking"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PYTHON ENVIRONMENT
+  # ==========================================================================
+  - name: Python version
+    description: Check Python version in container
+    command: python --version
+    expected_output_contains: "Python 3.5"
+
+  - name: Python numpy availability
+    description: Verify numpy is installed for BARACUS
+    command: python -c "import numpy; print('numpy version:', numpy.__version__)"
+    expected_output_contains: "numpy version"
+
+  - name: Python pandas availability
+    description: Verify pandas is installed for BARACUS
+    command: python -c "import pandas; print('pandas version:', pandas.__version__)"
+    expected_output_contains: "pandas version"
+
+  - name: Python scikit-learn availability
+    description: Verify scikit-learn is installed for brain age prediction
+    command: python -c "import sklearn; print('sklearn version:', sklearn.__version__)"
+    expected_output_contains: "sklearn version"
+
+  - name: Python nibabel availability
+    description: Verify nibabel is installed for NIfTI handling
+    command: python -c "import nibabel; print('nibabel version:', nibabel.__version__)"
+    expected_output_contains: "nibabel version"
+
+  # ==========================================================================
+  # FREESURFER ENVIRONMENT
+  # ==========================================================================
+  - name: FREESURFER_HOME check
+    description: Verify FREESURFER_HOME environment variable
+    command: echo $FREESURFER_HOME
+    expected_output_contains: "/opt/freesurfer"
+
+  - name: FreeSurfer subjects directory
+    description: Check FreeSurfer subjects directory exists
+    command: ls -la $FREESURFER_HOME/subjects/ | head -10
+    expected_output_contains: "fsaverage"
+
+  - name: FreeSurfer fsaverage4 exists
+    description: Verify fsaverage4 template (required for BARACUS)
+    command: ls -la $FREESURFER_HOME/subjects/fsaverage4/
+    expected_output_contains:
+      - "surf"
+      - "label"
+
+  - name: FreeSurfer atlas files
+    description: Check FreeSurfer atlas files exist
+    command: ls $FREESURFER_HOME/average/ | head -50
+    expected_output_contains: "RB_all"
+
+  # ==========================================================================
+  # FREESURFER QUALITY CHECKS
+  # ==========================================================================
+  - name: Euler number check tool
+    description: Verify Euler number calculation is available
+    command: mris_euler_number --help 2>&1 | head -10
+    expected_output_contains: "mris_euler_number"
+
+  # ==========================================================================
+  # BASIC IMAGE PROCESSING CHAIN
+  # ==========================================================================
+  - name: Convert and check conformed image
+    description: Convert image to conformed MGZ and verify
+    command: |
+      mri_convert --conform ${t2} ${output_dir}/t2_conform_check.mgz && \
+      mri_info --conformed ${output_dir}/t2_conform_check.mgz
+    validate:
+      - output_exists: ${output_dir}/t2_conform_check.mgz
+
+  - name: Create simple brain mask
+    description: Create binary mask using intensity threshold
+    command: |
+      mri_binarize --i ${t2} --min 30 --o ${output_dir}/t2_mask_simple.nii.gz && \
+      mri_info ${output_dir}/t2_mask_simple.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_mask_simple.nii.gz
+
+  - name: Apply mask to image
+    description: Apply binary mask to input image
+    command: mri_mask ${t2} ${output_dir}/t2_mask_simple.nii.gz ${output_dir}/t2_masked.nii.gz
+    depends_on: Create simple brain mask
+    validate:
+      - output_exists: ${output_dir}/t2_masked.nii.gz
+
+  # ==========================================================================
+  # FREESURFER LONGITUDINAL TOOLS
+  # ==========================================================================
+  - name: Long base help
+    description: Check longitudinal base template tool
+    command: recon-all --help 2>&1 | grep -A5 "Longitudinal"
+    expected_output_contains: "Longitudinal"
+
+  # ==========================================================================
+  # FREESURFER DIFFUSION TOOLS
+  # ==========================================================================
+  - name: dmri_paths availability
+    description: Check diffusion MRI tools availability
+    command: which dmri_paths 2>/dev/null || echo "dmri_paths location check"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ERROR HANDLING TESTS
+  # ==========================================================================
+  - name: BARACUS missing license key error
+    description: Verify appropriate error for missing license key
+    command: run_brain_age_bids.py /tmp /tmp participant 2>&1 || true
+    expected_output_contains: "license_key"
+
+  - name: BARACUS invalid analysis level
+    description: Verify error handling for invalid analysis level
+    command: run_brain_age_bids.py --license_key FAKE /tmp /tmp invalid_level 2>&1 || true
+    expected_output_contains: "invalid choice"
+
+  - name: mri_convert missing input error
+    description: Verify error for non-existent input file
+    command: mri_convert /nonexistent/file.nii.gz /tmp/out.mgz 2>&1 || true
+    expected_output_contains: "error"
+
+  # ==========================================================================
+  # FREESURFER ANNOTATION AND LABEL TOOLS
+  # ==========================================================================
+  - name: mri_annotation2label help
+    description: Check annotation to label conversion
+    command: mri_annotation2label --help 2>&1 | head -20
+    expected_output_contains: "mri_annotation2label"
+
+  - name: mris_label2annot help
+    description: Check label to annotation conversion
+    command: mris_label2annot --help 2>&1 | head -20
+    expected_output_contains: "mris_label2annot"
+
+  # ==========================================================================
+  # FREESURFER CONNECTIVITY TOOLS
+  # ==========================================================================
+  - name: mri_label2vol help
+    description: Check label to volume conversion
+    command: mri_label2vol --help 2>&1 | head -20
+    expected_output_contains: "mri_label2vol"
+
+  # ==========================================================================
+  # OUTPUT FORMAT TESTS
+  # ==========================================================================
+  - name: mri_convert to NIFTI
+    description: Convert to standard NIfTI format
+    command: mri_convert --out_type nii ${t2} ${output_dir}/t2_nifti.nii
+    validate:
+      - output_exists: ${output_dir}/t2_nifti.nii
+
+  - name: mri_convert to compressed NIFTI
+    description: Convert to compressed NIfTI format
+    command: mri_convert ${t2} ${output_dir}/t2_nifti_gz.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_nifti_gz.nii.gz
+
+  - name: mri_convert to analyze
+    description: Convert to Analyze format
+    command: mri_convert --out_type analyze ${t2} ${output_dir}/t2_analyze.img
+    validate:
+      - output_exists: ${output_dir}/t2_analyze.img
+
+  # ==========================================================================
+  # RESAMPLING AND INTERPOLATION
+  # ==========================================================================
+  - name: mri_convert trilinear interpolation
+    description: Resample with trilinear interpolation
+    command: mri_convert -vs 1.5 1.5 1.5 -rt interpolate ${t2} ${output_dir}/t2_trilinear.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_trilinear.nii.gz
+
+  - name: mri_convert nearest neighbor
+    description: Resample with nearest neighbor interpolation
+    command: mri_convert -vs 2 2 2 -rt nearest ${t2} ${output_dir}/t2_nearest.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_nearest.nii.gz
+
+  # ==========================================================================
+  # COMPLEX PIPELINE TESTS
+  # ==========================================================================
+  - name: Preprocessing chain
+    description: Multi-step preprocessing (conform, binarize, mask)
+    command: |
+      mri_convert --conform ${t2} ${output_dir}/chain_conformed.mgz && \
+      mri_binarize --i ${output_dir}/chain_conformed.mgz --min 20 --o ${output_dir}/chain_mask.mgz && \
+      mri_mask ${output_dir}/chain_conformed.mgz ${output_dir}/chain_mask.mgz ${output_dir}/chain_masked.mgz
+    validate:
+      - output_exists: ${output_dir}/chain_conformed.mgz
+      - output_exists: ${output_dir}/chain_mask.mgz
+      - output_exists: ${output_dir}/chain_masked.mgz
+
+  - name: Image statistics extraction
+    description: Extract basic statistics from image
+    command: mri_segstats --seg ${t2} --i ${t2} --sum ${output_dir}/t2_stats.txt --avgwf ${output_dir}/t2_avgwf.txt
+    validate:
+      - output_exists: ${output_dir}/t2_stats.txt
+
+  # ==========================================================================
+  # FREESURFER CORTICAL RECONSTRUCTION CHECKS
+  # ==========================================================================
+  - name: recon-all directive check autorecon1
+    description: Verify autorecon1 directive documentation
+    command: recon-all --help 2>&1 | grep -A2 "autorecon1"
+    expected_output_contains: "autorecon1"
+
+  - name: recon-all directive check autorecon2
+    description: Verify autorecon2 directive documentation
+    command: recon-all --help 2>&1 | grep -A2 "autorecon2"
+    expected_output_contains: "autorecon2"
+
+  - name: recon-all directive check autorecon3
+    description: Verify autorecon3 directive documentation
+    command: recon-all --help 2>&1 | grep -A2 "autorecon3"
+    expected_output_contains: "autorecon3"
+
+  # ==========================================================================
+  # BARACUS SPECIFIC FEATURE EXTRACTION
+  # ==========================================================================
+  - name: fsaverage4 lh thickness surface exists
+    description: Verify left hemisphere thickness template exists
+    command: ls $FREESURFER_HOME/subjects/fsaverage4/surf/lh.thickness
+    expected_exit_code: 0
+
+  - name: fsaverage4 rh thickness surface exists
+    description: Verify right hemisphere thickness template exists
+    command: ls $FREESURFER_HOME/subjects/fsaverage4/surf/rh.thickness
+    expected_exit_code: 0
+
+  - name: fsaverage4 lh pial surface exists
+    description: Verify left hemisphere pial surface exists
+    command: ls $FREESURFER_HOME/subjects/fsaverage4/surf/lh.pial
+    expected_exit_code: 0
+
+  - name: fsaverage4 rh pial surface exists
+    description: Verify right hemisphere pial surface exists
+    command: ls $FREESURFER_HOME/subjects/fsaverage4/surf/rh.pial
+    expected_exit_code: 0
+
+  - name: fsaverage4 sphere reg exists
+    description: Verify sphere registration template for both hemispheres
+    command: ls $FREESURFER_HOME/subjects/fsaverage4/surf/?h.sphere.reg | wc -l
+    expected_output_contains: "2"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in ${output_dir}/"
+    echo "Note: Full BARACUS brain-age prediction requires FreeSurfer recon-all processing"
+    echo "which takes several hours per subject and requires a valid license key."

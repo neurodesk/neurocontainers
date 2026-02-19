@@ -1,0 +1,736 @@
+# QuPath container test suite
+# Tests for QuPath v0.6.0 - Open-source bioimage analysis software for digital pathology
+#
+# QuPath is designed for whole slide image analysis and digital pathology.
+# It supports formats like SVS, TIFF, OME-TIFF, OME-Zarr, and other bioimage formats.
+#
+# Note: QuPath is a pathology/bioimage analysis tool, not a neuroimaging tool.
+# The tests here focus on CLI functionality that can be tested without pathology images.
+#
+# Test data: ds000001/sub-01 contains neuroimaging data (NIfTI), which is not
+# QuPath's primary format, but OME-TIFF conversion and basic tests can still run.
+
+name: qupath
+version: 0.6.0
+container: qupath_0.6.0_20250805.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/qupath_scripts
+    mkdir -p test_output/qupath_projects
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION CHECKS
+  # ==========================================================================
+  - name: Version check
+    description: Verify QuPath binary runs and reports version
+    command: QuPath --version 2>&1
+    expected_output_contains: "QuPath v0.6.0"
+
+  - name: Version detailed info
+    description: Check detailed version information including build time
+    command: QuPath --version 2>&1
+    expected_output_contains: "Version: 0.6.0"
+
+  - name: Main help
+    description: Display main QuPath help message
+    command: QuPath --help 2>&1
+    expected_output_contains: "Usage: QuPath"
+
+  - name: Help command overview
+    description: Verify help shows available commands
+    command: QuPath --help 2>&1
+    expected_output_contains: "Commands:"
+
+  - name: Help shows script command
+    description: Verify script command is listed in help
+    command: QuPath --help 2>&1
+    expected_output_contains: "script"
+
+  - name: Help shows convert-ome command
+    description: Verify convert-ome command is listed in help
+    command: QuPath --help 2>&1
+    expected_output_contains: "convert-ome"
+
+  # ==========================================================================
+  # SCRIPT SUBCOMMAND HELP
+  # ==========================================================================
+  - name: Script subcommand help
+    description: Display help for the script subcommand
+    command: QuPath script --help 2>&1
+    expected_output_contains: "Runs script for a given image or project"
+
+  - name: Script help shows groovy option
+    description: Verify script help shows .groovy file option
+    command: QuPath script --help 2>&1
+    expected_output_contains: ".groovy"
+
+  - name: Script help shows cmd option
+    description: Verify script help shows inline command option
+    command: QuPath script --help 2>&1
+    expected_output_contains: "--cmd"
+
+  - name: Script help shows args option
+    description: Verify script help shows arguments option
+    command: QuPath script --help 2>&1
+    expected_output_contains: "--args"
+
+  - name: Script help shows image option
+    description: Verify script help shows image option
+    command: QuPath script --help 2>&1
+    expected_output_contains: "--image"
+
+  - name: Script help shows project option
+    description: Verify script help shows project option
+    command: QuPath script --help 2>&1
+    expected_output_contains: "--project"
+
+  - name: Script help shows save option
+    description: Verify script help shows save option
+    command: QuPath script --help 2>&1
+    expected_output_contains: "--save"
+
+  - name: Script help shows server option
+    description: Verify script help shows server arguments option
+    command: QuPath script --help 2>&1
+    expected_output_contains: "--server"
+
+  # ==========================================================================
+  # CONVERT-OME SUBCOMMAND HELP
+  # ==========================================================================
+  - name: Convert-OME subcommand help
+    description: Display help for the convert-ome subcommand
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "Converts an input image to OME-TIFF or OME-Zarr"
+
+  - name: Convert-OME help shows input/output
+    description: Verify convert-ome help shows input/output arguments
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "input"
+
+  - name: Convert-OME help shows OME-TIFF option
+    description: Verify convert-ome help mentions OME-TIFF format
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: ".ome.tiff"
+
+  - name: Convert-OME help shows OME-Zarr option
+    description: Verify convert-ome help mentions OME-Zarr format
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: ".ome.zarr"
+
+  - name: Convert-OME help shows crop option
+    description: Verify convert-ome help shows crop/bounding box option
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "--crop"
+
+  - name: Convert-OME help shows downsample option
+    description: Verify convert-ome help shows downsample option
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "--downsample"
+
+  - name: Convert-OME help shows z-slices option
+    description: Verify convert-ome help shows z-slices option
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "--zslices"
+
+  - name: Convert-OME help shows timepoints option
+    description: Verify convert-ome help shows timepoints option
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "--timepoints"
+
+  - name: Convert-OME help shows tile-size option
+    description: Verify convert-ome help shows tile-size option
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "--tile-size"
+
+  - name: Convert-OME help shows tile-width option
+    description: Verify convert-ome help shows tile-width option
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "--tile-width"
+
+  - name: Convert-OME help shows tile-height option
+    description: Verify convert-ome help shows tile-height option
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "--tile-height"
+
+  - name: Convert-OME help shows compression option
+    description: Verify convert-ome help shows compression option
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "--compression"
+
+  - name: Convert-OME help shows compression types
+    description: Verify convert-ome help lists compression types
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "LZW"
+
+  - name: Convert-OME help shows JPEG compression
+    description: Verify convert-ome help shows JPEG compression option
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "JPEG"
+
+  - name: Convert-OME help shows big-tiff option
+    description: Verify convert-ome help shows big-tiff option
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "--big-tiff"
+
+  - name: Convert-OME help shows overwrite option
+    description: Verify convert-ome help shows overwrite option
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "--overwrite"
+
+  - name: Convert-OME help shows parallelize option
+    description: Verify convert-ome help shows parallelize option
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "--parallelize"
+
+  - name: Convert-OME help shows series option
+    description: Verify convert-ome help shows series option for Bio-Formats
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "--series"
+
+  - name: Convert-OME help shows pyramid-scale option
+    description: Verify convert-ome help shows pyramid-scale option
+    command: QuPath convert-ome --help 2>&1
+    expected_output_contains: "--pyramid-scale"
+
+  # ==========================================================================
+  # HELP SUBCOMMAND
+  # ==========================================================================
+  - name: Help subcommand
+    description: Test the help subcommand
+    command: QuPath help 2>&1
+    expected_output_contains: "QuPath"
+
+  - name: Help for script via help subcommand
+    description: Get help for script command via help subcommand
+    command: QuPath help script 2>&1
+    expected_output_contains: "script"
+
+  - name: Help for convert-ome via help subcommand
+    description: Get help for convert-ome command via help subcommand
+    command: QuPath help convert-ome 2>&1
+    expected_output_contains: "convert-ome"
+
+  # ==========================================================================
+  # COMMAND-LINE OPTIONS
+  # ==========================================================================
+  - name: Log level option in help
+    description: Verify log level option is documented
+    command: QuPath --help 2>&1
+    expected_output_contains: "--log"
+
+  - name: Quiet mode option in help
+    description: Verify quiet mode option is documented
+    command: QuPath --help 2>&1
+    expected_output_contains: "--quiet"
+
+  - name: Reset preferences option in help
+    description: Verify reset option is documented
+    command: QuPath --help 2>&1
+    expected_output_contains: "--reset"
+
+  - name: TMA viewer option in help
+    description: Verify TMA viewer option is documented
+    command: QuPath --help 2>&1
+    expected_output_contains: "--tma"
+
+  - name: Image option in help
+    description: Verify image option is documented
+    command: QuPath --help 2>&1
+    expected_output_contains: "--image"
+
+  - name: Project option in help
+    description: Verify project option is documented
+    command: QuPath --help 2>&1
+    expected_output_contains: "--project"
+
+  - name: System properties option in help
+    description: Verify system properties option is documented
+    command: QuPath --help 2>&1
+    expected_output_contains: "-D"
+
+  # ==========================================================================
+  # GROOVY SCRIPT EXECUTION (inline commands)
+  # ==========================================================================
+  - name: Script inline print statement
+    description: Execute simple Groovy print statement
+    command: QuPath script --cmd "println 'QuPath CLI test'" 2>&1
+    expected_output_contains: "QuPath CLI test"
+
+  - name: Script inline arithmetic
+    description: Execute Groovy arithmetic expression
+    command: QuPath script --cmd "println(2 + 2)" 2>&1
+    expected_output_contains: "4"
+
+  - name: Script inline string manipulation
+    description: Execute Groovy string manipulation
+    command: QuPath script --cmd "println 'Hello'.toUpperCase()" 2>&1
+    expected_output_contains: "HELLO"
+
+  - name: Script inline list creation
+    description: Execute Groovy list operations
+    command: QuPath script --cmd "println([1,2,3,4,5].sum())" 2>&1
+    expected_output_contains: "15"
+
+  - name: Script inline map creation
+    description: Execute Groovy map operations
+    command: QuPath script --cmd "def m = [a:1, b:2]; println(m.values().sum())" 2>&1
+    expected_output_contains: "3"
+
+  - name: Script inline version access
+    description: Access QuPath version via script
+    command: QuPath script --cmd "println qupath.lib.gui.QuPathGUI.getVersion()" 2>&1
+    expected_output_contains: "0.6.0"
+
+  - name: Script inline multiline
+    description: Execute multiline Groovy script
+    command: QuPath script --cmd "def x = 10; def y = 20; println(x * y)" 2>&1
+    expected_output_contains: "200"
+
+  - name: Script inline loop
+    description: Execute Groovy loop
+    command: QuPath script --cmd "def sum = 0; (1..5).each { sum += it }; println(sum)" 2>&1
+    expected_output_contains: "15"
+
+  - name: Script inline closure
+    description: Execute Groovy closure
+    command: QuPath script --cmd "def square = { it * it }; println(square(7))" 2>&1
+    expected_output_contains: "49"
+
+  - name: Script inline class access
+    description: Access Java/Groovy classes
+    command: QuPath script --cmd "println java.lang.System.getProperty('java.version')" 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # GROOVY SCRIPT FILES
+  # ==========================================================================
+  - name: Create and run simple script file
+    description: Create a Groovy script file and run it
+    command: |
+      echo 'println "Script file executed successfully"' > test_output/qupath_scripts/simple.groovy && \
+      QuPath script test_output/qupath_scripts/simple.groovy 2>&1
+    expected_output_contains: "Script file executed successfully"
+    validate:
+      - output_exists: ${output_dir}/qupath_scripts/simple.groovy
+
+  - name: Create and run computation script
+    description: Create a Groovy script with computation
+    command: |
+      echo 'def factorial(n) { n <= 1 ? 1 : n * factorial(n-1) }; println("5! = " + factorial(5))' > test_output/qupath_scripts/factorial.groovy && \
+      QuPath script test_output/qupath_scripts/factorial.groovy 2>&1
+    expected_output_contains: "5! = 120"
+
+  - name: Script with arguments
+    description: Create and run script that uses arguments
+    command: |
+      echo 'println "Arguments: " + args.join(", ")' > test_output/qupath_scripts/args_test.groovy && \
+      QuPath script test_output/qupath_scripts/args_test.groovy --args arg1 --args arg2 --args arg3 2>&1
+    expected_output_contains: "arg1"
+
+  - name: Script with quoted argument list
+    description: Test script with comma-separated argument list
+    command: |
+      echo 'println "Count: " + args.size()' > test_output/qupath_scripts/args_count.groovy && \
+      QuPath script test_output/qupath_scripts/args_count.groovy --args "[a,b,c,d,e]" 2>&1
+    expected_output_contains: "Count: 5"
+
+  - name: Script file existence check
+    description: Verify script file was created
+    command: ls -la test_output/qupath_scripts/simple.groovy
+    depends_on: Create and run simple script file
+    validate:
+      - output_exists: ${output_dir}/qupath_scripts/simple.groovy
+
+  # ==========================================================================
+  # QUPATH CLASSES AND API ACCESS (via script)
+  # ==========================================================================
+  - name: Access GeneralTools class
+    description: Test access to QuPath GeneralTools
+    command: QuPath script --cmd "import qupath.lib.common.GeneralTools; println('GeneralTools loaded')" 2>&1
+    expected_output_contains: "GeneralTools loaded"
+
+  - name: Access ColorTools class
+    description: Test access to QuPath ColorTools
+    command: QuPath script --cmd "import qupath.lib.common.ColorTools; println('ColorTools loaded')" 2>&1
+    expected_output_contains: "ColorTools loaded"
+
+  - name: Access PathObjects class
+    description: Test access to QuPath PathObjects (core class for annotations)
+    command: QuPath script --cmd "import qupath.lib.objects.PathObjects; println('PathObjects class available')" 2>&1
+    expected_output_contains: "PathObjects class available"
+
+  - name: Access ROI classes
+    description: Test access to QuPath ROI classes
+    command: QuPath script --cmd "import qupath.lib.roi.ROIs; println('ROI classes available')" 2>&1
+    expected_output_contains: "ROI classes available"
+
+  - name: Access ImageData class
+    description: Test access to ImageData class
+    command: QuPath script --cmd "import qupath.lib.images.ImageData; println('ImageData class loaded')" 2>&1
+    expected_output_contains: "ImageData class loaded"
+
+  - name: Access PathClassFactory
+    description: Test access to classification classes
+    command: QuPath script --cmd "import qupath.lib.objects.classes.PathClass; println('PathClass available')" 2>&1
+    expected_output_contains: "PathClass available"
+
+  - name: Access GeoJSON export
+    description: Test access to GeoJSON classes
+    command: QuPath script --cmd "import qupath.lib.io.GsonTools; println('GsonTools available for JSON/GeoJSON')" 2>&1
+    expected_output_contains: "GsonTools available"
+
+  - name: Access measurement classes
+    description: Test access to measurement classes
+    command: QuPath script --cmd "import qupath.lib.measurements.MeasurementList; println('MeasurementList available')" 2>&1
+    expected_output_contains: "MeasurementList available"
+
+  # ==========================================================================
+  # QUPATH GEOMETRY OPERATIONS (via script)
+  # ==========================================================================
+  - name: Create rectangle ROI
+    description: Create a rectangle ROI via script
+    command: |
+      QuPath script --cmd "import qupath.lib.roi.ROIs; def roi = ROIs.createRectangleROI(0, 0, 100, 100, null); println('Rectangle area: ' + roi.getArea())" 2>&1
+    expected_output_contains: "Rectangle area: 10000"
+
+  - name: Create ellipse ROI
+    description: Create an ellipse ROI via script
+    command: |
+      QuPath script --cmd "import qupath.lib.roi.ROIs; def roi = ROIs.createEllipseROI(0, 0, 100, 100, null); println('Ellipse created with area: ' + Math.round(roi.getArea()))" 2>&1
+    expected_output_contains: "Ellipse created"
+
+  - name: Create point ROI
+    description: Create a point ROI via script
+    command: |
+      QuPath script --cmd "import qupath.lib.roi.ROIs; def roi = ROIs.createPointsROI(50, 50, null); println('Point at: ' + roi.getCentroidX() + ', ' + roi.getCentroidY())" 2>&1
+    expected_output_contains: "Point at: 50"
+
+  - name: Create line ROI
+    description: Create a line ROI via script
+    command: |
+      QuPath script --cmd "import qupath.lib.roi.ROIs; def roi = ROIs.createLineROI(0, 0, 100, 100, null); println('Line length: ' + Math.round(roi.getLength()))" 2>&1
+    expected_output_contains: "Line length:"
+
+  - name: ROI bounding box
+    description: Test ROI bounding box calculation
+    command: |
+      QuPath script --cmd "import qupath.lib.roi.ROIs; def roi = ROIs.createRectangleROI(10, 20, 30, 40, null); println('Bounds: ' + roi.getBoundsX() + ',' + roi.getBoundsY() + ',' + roi.getBoundsWidth() + ',' + roi.getBoundsHeight())" 2>&1
+    expected_output_contains: "Bounds: 10"
+
+  # ==========================================================================
+  # COLOR OPERATIONS (via script)
+  # ==========================================================================
+  - name: Create RGB color
+    description: Test ColorTools RGB color creation
+    command: |
+      QuPath script --cmd "import qupath.lib.common.ColorTools; def c = ColorTools.packRGB(255, 128, 0); println('Color packed: ' + c)" 2>&1
+    expected_output_contains: "Color packed:"
+
+  - name: Extract color components
+    description: Test color component extraction
+    command: QuPath script --cmd "import qupath.lib.common.ColorTools; def c = ColorTools.packRGB(100, 150, 200); println('R=' + ColorTools.red(c) + ' G=' + ColorTools.green(c) + ' B=' + ColorTools.blue(c))" 2>&1
+    expected_output_contains: "R=100 G=150 B=200"
+
+  - name: Create color with alpha
+    description: Test ARGB color creation
+    command: |
+      QuPath script --cmd "import qupath.lib.common.ColorTools; def c = ColorTools.packARGB(128, 255, 0, 0); println('ARGB color: ' + c)" 2>&1
+    expected_output_contains: "ARGB color:"
+
+  # ==========================================================================
+  # PATH CLASS OPERATIONS (via script)
+  # ==========================================================================
+  - name: Create path class
+    description: Create a PathClass for classification
+    command: |
+      QuPath script --cmd "import qupath.lib.objects.classes.PathClass; def pc = PathClass.fromString('Tumor'); println('PathClass: ' + pc.getName())" 2>&1
+    expected_output_contains: "PathClass: Tumor"
+
+  - name: Create derived path class
+    description: Create a derived PathClass
+    command: |
+      QuPath script --cmd "import qupath.lib.objects.classes.PathClass; def parent = PathClass.fromString('Tumor'); def child = PathClass.fromString('Tumor: Positive'); println('Derived: ' + child.getName())" 2>&1
+    expected_output_contains: "Positive"
+
+  # ==========================================================================
+  # GENERAL TOOLS OPERATIONS (via script)
+  # ==========================================================================
+  - name: Format file size
+    description: Test GeneralTools file size formatting
+    command: QuPath script --cmd "import qupath.lib.common.GeneralTools; println(GeneralTools.readableFileSize(1024*1024))" 2>&1
+    expected_output_contains: "MB"
+
+  - name: Parse double safely
+    description: Test GeneralTools number parsing
+    command: QuPath script --cmd "import qupath.lib.common.GeneralTools; println(GeneralTools.parseDouble('3.14159'))" 2>&1
+    expected_output_contains: "3.14"
+
+  - name: Strip file extension
+    description: Test file extension stripping
+    command: QuPath script --cmd "import qupath.lib.common.GeneralTools; println(GeneralTools.stripExtension('image.ome.tiff'))" 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Invalid command error
+    description: Test error message for invalid command
+    command: QuPath invalidcommand 2>&1
+    expected_exit_code: 2
+
+  - name: Missing input file for convert-ome
+    description: Test error when input file is missing
+    command: QuPath convert-ome nonexistent.tiff output.ome.tiff 2>&1
+    ignore_exit_code: true
+
+  - name: Script syntax error handling
+    description: Test handling of Groovy syntax errors
+    command: QuPath script --cmd "invalid groovy syntax {{{" 2>&1
+    ignore_exit_code: true
+
+  - name: Script missing file error
+    description: Test error when script file is missing
+    command: QuPath script nonexistent_script.groovy 2>&1
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # LOGGING LEVELS
+  # ==========================================================================
+  - name: Log level TRACE
+    description: Test TRACE log level option
+    command: QuPath --help --log=TRACE 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: Log level DEBUG
+    description: Test DEBUG log level option
+    command: QuPath --help --log=DEBUG 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: Log level INFO
+    description: Test INFO log level option
+    command: QuPath --help --log=INFO 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: Log level WARN
+    description: Test WARN log level option
+    command: QuPath --help --log=WARN 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: Log level ERROR
+    description: Test ERROR log level option
+    command: QuPath --help --log=ERROR 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: Log level OFF
+    description: Test OFF log level option
+    command: QuPath script --cmd "println 'test'" --log=OFF 2>&1
+    expected_output_contains: "test"
+
+  # ==========================================================================
+  # FILE I/O OPERATIONS (via script)
+  # ==========================================================================
+  - name: Write text file via script
+    description: Test writing a file via Groovy script
+    command: |
+      QuPath script --cmd "new File('test_output/qupath_test_output.txt').text = 'QuPath test output'" 2>&1 && \
+      cat test_output/qupath_test_output.txt
+    expected_output_contains: "QuPath test output"
+    validate:
+      - output_exists: ${output_dir}/qupath_test_output.txt
+
+  - name: Write JSON via script
+    description: Test writing JSON data via script
+    command: |
+      QuPath script --cmd "import groovy.json.JsonOutput; def data = [name: 'test', value: 42]; new File('test_output/qupath_data.json').text = JsonOutput.prettyPrint(JsonOutput.toJson(data))" 2>&1 && \
+      cat test_output/qupath_data.json
+    expected_output_contains: '"name"'
+    validate:
+      - output_exists: ${output_dir}/qupath_data.json
+
+  - name: Read file via script
+    description: Test reading a file via Groovy script
+    command: QuPath script --cmd "println new File('test_output/qupath_test_output.txt').text" 2>&1
+    depends_on: Write text file via script
+    expected_output_contains: "QuPath test output"
+
+  - name: List directory contents via script
+    description: Test listing directory via Groovy
+    command: QuPath script --cmd "new File('test_output').listFiles().each { println it.name }" 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SYSTEM INFORMATION (via script)
+  # ==========================================================================
+  - name: Get Java version via script
+    description: Retrieve Java version through QuPath script
+    command: |
+      QuPath script --cmd "println 'Java: ' + System.getProperty('java.version')" 2>&1
+    expected_output_contains: "Java:"
+
+  - name: Get OS info via script
+    description: Retrieve OS information through QuPath script
+    command: |
+      QuPath script --cmd "println 'OS: ' + System.getProperty('os.name') + ' ' + System.getProperty('os.version')" 2>&1
+    expected_output_contains: "OS:"
+
+  - name: Get available processors via script
+    description: Check available processors
+    command: |
+      QuPath script --cmd "println 'CPUs: ' + Runtime.getRuntime().availableProcessors()" 2>&1
+    expected_output_contains: "CPUs:"
+
+  - name: Get max memory via script
+    description: Check max memory available
+    command: |
+      QuPath script --cmd "println 'Max memory: ' + (Runtime.getRuntime().maxMemory() / 1024 / 1024) + ' MB'" 2>&1
+    expected_output_contains: "Max memory:"
+
+  - name: Get working directory via script
+    description: Check current working directory
+    command: |
+      QuPath script --cmd "println 'CWD: ' + System.getProperty('user.dir')" 2>&1
+    expected_output_contains: "CWD:"
+
+  # ==========================================================================
+  # ADVANCED GROOVY FEATURES (via script)
+  # ==========================================================================
+  - name: Groovy collect operation
+    description: Test Groovy collect method
+    command: QuPath script --cmd "println([1,2,3,4,5].collect { it * 2 })" 2>&1
+    expected_output_contains: "[2, 4, 6, 8, 10]"
+
+  - name: Groovy findAll operation
+    description: Test Groovy findAll method
+    command: QuPath script --cmd "println([1,2,3,4,5,6].findAll { it % 2 == 0 })" 2>&1
+    expected_output_contains: "[2, 4, 6]"
+
+  - name: Groovy inject/reduce operation
+    description: Test Groovy inject method
+    command: QuPath script --cmd "println([1,2,3,4,5].inject(0) { acc, val -> acc + val })" 2>&1
+    expected_output_contains: "15"
+
+  - name: Groovy groupBy operation
+    description: Test Groovy groupBy method
+    command: QuPath script --cmd "def result = ['apple','banana','cherry','apricot'].groupBy { it[0] }; println(result.keySet())" 2>&1
+    expected_output_contains: "a"
+
+  - name: Groovy sort operation
+    description: Test Groovy sort method
+    command: QuPath script --cmd "println([5,2,8,1,9].sort())" 2>&1
+    expected_output_contains: "[1, 2, 5, 8, 9]"
+
+  - name: Groovy unique operation
+    description: Test Groovy unique method
+    command: QuPath script --cmd "println([1,2,2,3,3,3,4].unique())" 2>&1
+    expected_output_contains: "[1, 2, 3, 4]"
+
+  - name: Groovy spread operator
+    description: Test Groovy spread operator
+    command: QuPath script --cmd "println(['hello','world']*.toUpperCase())" 2>&1
+    expected_output_contains: "[HELLO, WORLD]"
+
+  - name: Groovy range operations
+    description: Test Groovy range operations
+    command: QuPath script --cmd "println((1..10).step(2))" 2>&1
+    expected_output_contains: "[1, 3, 5, 7, 9]"
+
+  # ==========================================================================
+  # DATE/TIME OPERATIONS (via script)
+  # ==========================================================================
+  - name: Get current date via script
+    description: Test date operations in Groovy
+    command: |
+      QuPath script --cmd "import java.time.LocalDate; println('Date: ' + LocalDate.now())" 2>&1
+    expected_output_contains: "Date:"
+
+  - name: Get current time via script
+    description: Test time operations in Groovy
+    command: |
+      QuPath script --cmd "import java.time.LocalTime; println('Time: ' + LocalTime.now().getHour() + ':' + LocalTime.now().getMinute())" 2>&1
+    expected_output_contains: "Time:"
+
+  - name: Format date via script
+    description: Test date formatting in Groovy
+    command: QuPath script --cmd "import java.time.LocalDateTime; import java.time.format.DateTimeFormatter; def fmt = DateTimeFormatter.ofPattern('yyyy-MM-dd'); println(LocalDateTime.now().format(fmt))" 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MATHEMATICAL OPERATIONS (via script)
+  # ==========================================================================
+  - name: Math operations via script
+    description: Test mathematical functions
+    command: QuPath script --cmd "println('sqrt(2) = ' + Math.sqrt(2))" 2>&1
+    expected_output_contains: "sqrt(2) = 1.414"
+
+  - name: Trigonometric operations via script
+    description: Test trigonometric functions
+    command: QuPath script --cmd "println('sin(pi/2) = ' + Math.sin(Math.PI/2))" 2>&1
+    expected_output_contains: "sin(pi/2) = 1"
+
+  - name: Random number generation via script
+    description: Test random number generation
+    command: |
+      QuPath script --cmd "def r = new Random(42); println('Random: ' + r.nextDouble())" 2>&1
+    expected_output_contains: "Random:"
+
+  - name: Statistical calculation via script
+    description: Calculate mean and standard deviation
+    command: |
+      QuPath script --cmd "def data = [1,2,3,4,5]; def mean = data.sum() / data.size(); println('Mean: ' + mean)" 2>&1
+    expected_output_contains: "Mean: 3"
+
+  # ==========================================================================
+  # QUPATH-SPECIFIC UTILITIES (via script)
+  # ==========================================================================
+  - name: Check Bio-Formats availability
+    description: Verify Bio-Formats library is accessible
+    command: QuPath script --cmd "import loci.formats.ImageReader; println('Bio-Formats available')" 2>&1
+    expected_output_contains: "Bio-Formats available"
+
+  - name: Check OpenCV availability
+    description: Verify OpenCV library is accessible
+    command: QuPath script --cmd "import org.bytedeco.opencv.opencv_core.Mat; println('OpenCV available')" 2>&1
+    expected_output_contains: "OpenCV available"
+
+  - name: Check ImageJ availability
+    description: Verify ImageJ classes are accessible
+    command: QuPath script --cmd "import ij.process.ImageProcessor; println('ImageJ available')" 2>&1
+    expected_output_contains: "ImageJ available"
+
+  - name: Check JTS geometry library
+    description: Verify JTS geometry library is accessible
+    command: QuPath script --cmd "import org.locationtech.jts.geom.Geometry; println('JTS Geometry available')" 2>&1
+    expected_output_contains: "JTS Geometry available"
+
+  # ==========================================================================
+  # COPYRIGHT AND LICENSE INFO
+  # ==========================================================================
+  - name: Copyright information
+    description: Verify copyright information is displayed
+    command: QuPath --help 2>&1
+    expected_output_contains: "Copyright"
+
+  - name: Queen's University Belfast copyright
+    description: Verify Queen's University Belfast copyright
+    command: QuPath --help 2>&1
+    expected_output_contains: "Queen's University Belfast"
+
+  - name: University of Edinburgh copyright
+    description: Verify University of Edinburgh copyright
+    command: QuPath --help 2>&1
+    expected_output_contains: "University of Edinburgh"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

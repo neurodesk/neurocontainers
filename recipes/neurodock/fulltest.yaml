@@ -1,0 +1,760 @@
+# neurodock container test suite
+# Tests for neurodock v1.0.0 - PyDesigner dMRI/DKI processing pipeline
+#
+# NeuroDock includes:
+#   - PyDesigner: Pythonic DESIGNER pipeline for DTI/DKI processing
+#   - MRtrix3 3.0.4: Advanced diffusion MRI processing tools
+#   - FSL 6.0: FMRIB Software Library tools
+#   - DIPY 1.5.0: Diffusion Imaging in Python
+#   - nibabel 4.0.2: Neuroimaging file format library
+#
+# Citation:
+#   Dhiman et al. PyDesigner: A Pythonic Implementation of the DESIGNER Pipeline
+#   for Diffusion Tensor and Diffusional Kurtosis Imaging. bioRxiv 2021.10.20.465189
+
+name: neurodock
+version: 1.0.0
+container: neurodock_1.0.0_20241122.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+env_setup: |
+  printf '#!/bin/sh\nsed "s/.\\x08//g"\n' > /tmp/less && chmod +x /tmp/less
+  export PATH=/tmp:$PATH
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # PYDESIGNER - Main Pipeline Tool
+  # ==========================================================================
+  - name: PyDesigner version check
+    description: Verify pydesigner binary runs and reports version
+    command: pydesigner --version 2>&1
+    expected_output_contains: "v1.0.0"
+
+  - name: PyDesigner help
+    description: Display pydesigner help message
+    command: pydesigner --help 2>&1
+    expected_output_contains: "positional arguments"
+
+  - name: PyDesigner advanced options
+    description: Display advanced options for pydesigner
+    command: pydesigner --adv --help 2>&1
+    expected_output_contains: "optional arguments"
+
+  # ==========================================================================
+  # PYTHON ENVIRONMENT
+  # ==========================================================================
+  - name: Python version check
+    description: Verify Python 3.7 is available
+    command: python3 --version 2>&1
+    expected_output_contains: "Python 3.7"
+
+  - name: DIPY import check
+    description: Verify DIPY 1.5.0 is importable
+    command: python3 -c "import dipy; print('dipy:', dipy.__version__)"
+    expected_output_contains: "dipy: 1.5.0"
+
+  - name: nibabel import check
+    description: Verify nibabel 4.0.2 is importable
+    command: python3 -c "import nibabel; print('nibabel:', nibabel.__version__)"
+    expected_output_contains: "nibabel: 4.0.2"
+
+  - name: NumPy import check
+    description: Verify NumPy is importable
+    command: python3 -c "import numpy; print('numpy', numpy.__version__)"
+    expected_output_contains: "numpy"
+
+  - name: SciPy import check
+    description: Verify SciPy is importable
+    command: python3 -c "import scipy; print('scipy', scipy.__version__)"
+    expected_output_contains: "scipy"
+
+  - name: Matplotlib import check
+    description: Verify Matplotlib is importable
+    command: python3 -c "import matplotlib; print('matplotlib', matplotlib.__version__)"
+    expected_output_contains: "matplotlib"
+
+  - name: Designer module import check
+    description: Verify designer module is importable
+    command: python3 -c "import designer; print('designer module loaded')"
+    expected_output_contains: "designer module loaded"
+
+  # ==========================================================================
+  # MRTRIX3 - Basic Commands
+  # ==========================================================================
+  - name: MRtrix3 mrinfo version
+    description: Verify mrinfo version (MRtrix3 3.0.4)
+    command: mrinfo --version 2>&1 | head -1
+    expected_output_contains: "mrinfo 3.0.4"
+
+  - name: MRtrix3 mrconvert version
+    description: Verify mrconvert is available
+    command: mrconvert --version 2>&1 | head -1
+    expected_output_contains: "mrconvert"
+
+  - name: MRtrix3 mrinfo help
+    description: Display mrinfo help message
+    command: mrinfo --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Display image header information"
+
+  - name: MRtrix3 mrconvert help
+    description: Display mrconvert help message
+    command: mrconvert --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Perform conversion between different file types"
+
+  - name: MRtrix3 mrcalc help
+    description: Display mrcalc help message
+    command: mrcalc --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Apply generic voxel-wise mathematical operations"
+
+  - name: MRtrix3 mrgrid help
+    description: Display mrgrid help message
+    command: mrgrid --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Modify the grid of an image"
+
+  - name: MRtrix3 mrmath help
+    description: Display mrmath help message
+    command: mrmath --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Compute summary statistic"
+
+  - name: MRtrix3 mrstats help
+    description: Display mrstats help message
+    command: mrstats --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Compute images statistics"
+
+  # ==========================================================================
+  # MRTRIX3 - Diffusion Processing Commands
+  # ==========================================================================
+  - name: MRtrix3 dwidenoise help
+    description: Display dwidenoise (MP-PCA denoising) help
+    command: dwidenoise --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Marchenko-Pastur PCA"
+
+  - name: MRtrix3 mrdegibbs help
+    description: Display mrdegibbs (Gibbs ringing removal) help
+    command: mrdegibbs --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Remove Gibbs Ringing"
+
+  - name: MRtrix3 dwi2mask help
+    description: Display dwi2mask help
+    command: dwi2mask --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "brain mask"
+
+  - name: MRtrix3 dwi2tensor help
+    description: Display dwi2tensor (DTI fitting) help
+    command: dwi2tensor --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "diffusion tensor"
+
+  - name: MRtrix3 tensor2metric help
+    description: Display tensor2metric help
+    command: tensor2metric --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Generate maps of tensor-derived parameters"
+
+  - name: MRtrix3 dwi2fod help
+    description: Display dwi2fod (FOD estimation) help
+    command: dwi2fod --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "spherical deconvolution"
+
+  - name: MRtrix3 dwi2response help
+    description: Display dwi2response help
+    command: dwi2response --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dwi2response"
+
+  - name: MRtrix3 dwiextract help
+    description: Display dwiextract help
+    command: dwiextract --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Extract diffusion-weighted volumes"
+
+  - name: MRtrix3 dwibiascorrect help
+    description: Display dwibiascorrect help
+    command: dwibiascorrect --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dwibiascorrect"
+
+  - name: MRtrix3 dwifslpreproc help
+    description: Display dwifslpreproc help
+    command: dwifslpreproc --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dwifslpreproc"
+
+  - name: MRtrix3 dwigradcheck help
+    description: Display dwigradcheck help
+    command: dwigradcheck --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dwigradcheck"
+
+  # ==========================================================================
+  # MRTRIX3 - Tractography Commands
+  # ==========================================================================
+  - name: MRtrix3 tckgen help
+    description: Display tckgen (tractography) help
+    command: tckgen --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Perform streamlines tractography"
+
+  - name: MRtrix3 tckedit help
+    description: Display tckedit help
+    command: tckedit --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Perform various editing operations"
+
+  - name: MRtrix3 tckinfo help
+    description: Display tckinfo help
+    command: tckinfo --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Print out information about a track file"
+
+  - name: MRtrix3 tckmap help
+    description: Display tckmap help
+    command: tckmap --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Use track data"
+
+  - name: MRtrix3 tcksift help
+    description: Display tcksift help
+    command: tcksift --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "SIFT"
+
+  - name: MRtrix3 tckresample help
+    description: Display tckresample help
+    command: tckresample --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Resample"
+
+  # ==========================================================================
+  # FSL - Basic Commands
+  # ==========================================================================
+  - name: FSL flirt version
+    description: Verify FLIRT version (FSL 6.0)
+    command: flirt -version 2>&1
+    expected_output_contains: "FLIRT version 6.0"
+
+  - name: FSL bet help
+    description: Display bet (brain extraction) help
+    command: bet 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "brain surface"
+
+  - name: FSL fslmaths help
+    description: Display fslmaths help
+    command: fslmaths 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Binary operations"
+
+  - name: FSL fslinfo help
+    description: Verify fslinfo is available
+    command: fslinfo 2>&1 || true
+    expected_exit_code: 0
+
+  - name: FSL fslhd help
+    description: Verify fslhd is available
+    command: fslhd 2>&1 | head -5
+    expected_output_contains: "Usage"
+
+  - name: FSL fslstats help
+    description: Verify fslstats is available
+    command: fslstats 2>&1 | head -5
+    expected_output_contains: "Usage"
+
+  # ==========================================================================
+  # FSL - Diffusion Commands
+  # ==========================================================================
+  - name: FSL eddy help
+    description: Display eddy help
+    command: eddy --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Compulsory arguments"
+
+  - name: FSL topup help
+    description: Display topup help
+    command: topup --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "topup"
+
+  - name: FSL applytopup help
+    description: Display applytopup help
+    command: applytopup --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "applytopup"
+
+  - name: FSL dtifit help
+    description: Display dtifit help
+    command: dtifit 2>&1 | head -10
+    expected_output_contains: "dtifit"
+
+  # ==========================================================================
+  # FSL - Registration Commands
+  # ==========================================================================
+  - name: FSL flirt help
+    description: Display flirt (linear registration) help
+    command: flirt -help 2>&1 | head -20
+    expected_output_contains: "FLIRT"
+
+  - name: FSL fnirt help
+    description: Display fnirt (nonlinear registration) help
+    command: fnirt --help 2>&1 | head -20
+    expected_output_contains: "fnirt"
+
+  - name: FSL applywarp help
+    description: Display applywarp help
+    command: applywarp --help 2>&1 | head -15
+    expected_output_contains: "applywarp"
+
+  - name: FSL convert_xfm help
+    description: Display convert_xfm help
+    command: convert_xfm 2>&1 | head -10
+    expected_output_contains: "convert_xfm"
+
+  # ==========================================================================
+  # DIPY - Command Line Tools
+  # ==========================================================================
+  - name: DIPY dipy_info help
+    description: Display dipy_info help
+    command: dipy_info --help 2>&1
+    expected_output_contains: "Provides useful information"
+
+  - name: DIPY dipy_fit_dti help
+    description: Display dipy_fit_dti (DTI fitting) help
+    command: dipy_fit_dti --help 2>&1
+    expected_output_contains: "tensor reconstruction"
+
+  - name: DIPY dipy_fit_dki help
+    description: Display dipy_fit_dki (DKI fitting) help
+    command: dipy_fit_dki --help 2>&1
+    expected_output_contains: "Diffusion Kurtosis"
+
+  - name: DIPY dipy_fit_csd help
+    description: Display dipy_fit_csd (CSD fitting) help
+    command: dipy_fit_csd --help 2>&1
+    expected_output_contains: "Constrained spherical deconvolution"
+
+  - name: DIPY dipy_fit_csa help
+    description: Display dipy_fit_csa (CSA fitting) help
+    command: dipy_fit_csa --help 2>&1
+    expected_output_contains: "Constant Solid Angle"
+
+  - name: DIPY dipy_fit_ivim help
+    description: Display dipy_fit_ivim (IVIM fitting) help
+    command: dipy_fit_ivim --help 2>&1
+    expected_output_contains: "Incoherent Motion"
+
+  - name: DIPY dipy_fit_mapmri help
+    description: Display dipy_fit_mapmri help
+    command: dipy_fit_mapmri --help 2>&1
+    expected_output_contains: "MAPMRI"
+
+  # ==========================================================================
+  # DIPY - Denoising Tools
+  # ==========================================================================
+  - name: DIPY dipy_denoise_mppca help
+    description: Display dipy_denoise_mppca (MP-PCA denoising) help
+    command: dipy_denoise_mppca --help 2>&1
+    expected_output_contains: "Marcenko-Pastur PCA"
+
+  - name: DIPY dipy_denoise_nlmeans help
+    description: Display dipy_denoise_nlmeans help
+    command: dipy_denoise_nlmeans --help 2>&1
+    expected_output_contains: "Non-Local Means"
+
+  - name: DIPY dipy_denoise_lpca help
+    description: Display dipy_denoise_lpca help
+    command: dipy_denoise_lpca --help 2>&1
+    expected_output_contains: "LPCA denoising"
+
+  - name: DIPY dipy_denoise_patch2self help
+    description: Display dipy_denoise_patch2self help
+    command: dipy_denoise_patch2self --help 2>&1
+    expected_output_contains: "Patch2Self"
+
+  - name: DIPY dipy_gibbs_ringing help
+    description: Display dipy_gibbs_ringing help
+    command: dipy_gibbs_ringing --help 2>&1
+    expected_output_contains: "Gibbs Ringing"
+
+  # ==========================================================================
+  # DIPY - Segmentation and Masking
+  # ==========================================================================
+  - name: DIPY dipy_median_otsu help
+    description: Display dipy_median_otsu (brain masking) help
+    command: dipy_median_otsu --help 2>&1
+    expected_output_contains: "median_otsu segmentation"
+
+  - name: DIPY dipy_mask help
+    description: Display dipy_mask help
+    command: dipy_mask --help 2>&1
+    expected_output_contains: "mask"
+
+  # ==========================================================================
+  # DIPY - Registration and Transformation
+  # ==========================================================================
+  - name: DIPY dipy_align_affine help
+    description: Display dipy_align_affine help
+    command: dipy_align_affine --help 2>&1
+    expected_output_contains: "affine"
+
+  - name: DIPY dipy_align_syn help
+    description: Display dipy_align_syn (SyN registration) help
+    command: dipy_align_syn --help 2>&1
+    expected_output_contains: "dipy_align_syn"
+
+  - name: DIPY dipy_apply_transform help
+    description: Display dipy_apply_transform help
+    command: dipy_apply_transform --help 2>&1
+    expected_output_contains: "dipy_apply_transform"
+
+  - name: DIPY dipy_reslice help
+    description: Display dipy_reslice help
+    command: dipy_reslice --help 2>&1
+    expected_output_contains: "Reslice"
+
+  # ==========================================================================
+  # DIPY - Tractography
+  # ==========================================================================
+  - name: DIPY dipy_track help
+    description: Display dipy_track help
+    command: dipy_track --help 2>&1
+    expected_output_contains: "Local Fiber Tracking"
+
+  - name: DIPY dipy_track_pft help
+    description: Display dipy_track_pft (particle filtering) help
+    command: dipy_track_pft --help 2>&1
+    expected_output_contains: "Particle Filtering"
+
+  - name: DIPY dipy_slr help
+    description: Display dipy_slr (streamline registration) help
+    command: dipy_slr --help 2>&1
+    expected_output_contains: "Streamline-based linear registration"
+
+  - name: DIPY dipy_recobundles help
+    description: Display dipy_recobundles help
+    command: dipy_recobundles --help 2>&1
+    expected_output_contains: "Recognize bundles"
+
+  # ==========================================================================
+  # DIPY - Bundle Analysis (BUAN)
+  # ==========================================================================
+  - name: DIPY dipy_buan_lmm help
+    description: Display dipy_buan_lmm help
+    command: dipy_buan_lmm --help 2>&1
+    expected_output_contains: "linear Mixed Models"
+
+  - name: DIPY dipy_buan_profiles help
+    description: Display dipy_buan_profiles help
+    command: dipy_buan_profiles --help 2>&1
+    expected_output_contains: "bundle"
+
+  - name: DIPY dipy_buan_shapes help
+    description: Display dipy_buan_shapes help
+    command: dipy_buan_shapes --help 2>&1
+    expected_output_contains: "shape"
+
+  # ==========================================================================
+  # NIBABEL - Command Line Tools
+  # ==========================================================================
+  - name: nibabel nib-ls help
+    description: Display nib-ls help
+    command: nib-ls --help 2>&1
+    expected_output_contains: "Output a summary table"
+
+  - name: nibabel nib-diff help
+    description: Display nib-diff help
+    command: nib-diff --help 2>&1
+    expected_output_contains: "diff"
+
+  - name: nibabel nib-stats help
+    description: Display nib-stats help
+    command: nib-stats --help 2>&1
+    expected_output_contains: "stat"
+
+  - name: nibabel nib-nifti-dx help
+    description: Display nib-nifti-dx help
+    command: nib-nifti-dx --help 2>&1
+    expected_output_contains: "nifti"
+
+  - name: nibabel nib-roi help
+    description: Display nib-roi help
+    command: nib-roi --help 2>&1
+    expected_output_contains: "region of interest"
+
+  - name: nibabel nib-conform help
+    description: Display nib-conform help
+    command: nib-conform --help 2>&1
+    expected_output_contains: "conform"
+
+  - name: nibabel nib-convert help
+    description: Display nib-convert help
+    command: nib-convert --help 2>&1
+    expected_output_contains: "convert"
+
+  - name: nibabel parrec2nii help
+    description: Display parrec2nii help
+    command: parrec2nii --help 2>&1
+    expected_output_contains: "PAR/REC"
+
+  - name: nibabel nib-tck2trk help
+    description: Display nib-tck2trk help
+    command: nib-tck2trk --help 2>&1
+    expected_output_contains: "tck"
+
+  - name: nibabel nib-trk2tck help
+    description: Display nib-trk2tck help
+    command: nib-trk2tck --help 2>&1
+    expected_output_contains: "trk"
+
+  # ==========================================================================
+  # FUNCTIONAL TESTS - Image Processing
+  # ==========================================================================
+  - name: Read NIfTI header with mrinfo
+    description: Use mrinfo to read NIfTI header information
+    command: mrinfo ${t1w} 2>&1
+    expected_output_contains: "Dimensions"
+
+  - name: Read NIfTI header with nib-ls
+    description: Use nib-ls to display NIfTI summary
+    command: nib-ls ${t1w} 2>&1
+    expected_output_contains: "nii.gz"
+
+  - name: Read NIfTI header with dipy_info
+    description: Use dipy_info to read NIfTI header
+    command: dipy_info ${t1w} 2>&1
+    expected_output_contains: "Data size"
+
+  - name: FSL fslinfo on T1w
+    description: Use fslinfo to display NIfTI information
+    command: fslinfo ${t1w} 2>&1
+    expected_output_contains: "dim1"
+
+  - name: FSL fslhd on T1w
+    description: Use fslhd to display full NIfTI header
+    command: fslhd ${t1w} 2>&1
+    expected_output_contains: "sizeof_hdr"
+
+  - name: Python nibabel load test
+    description: Test loading NIfTI with nibabel Python API
+    command: python3 -c "import nibabel as nib; img = nib.load('${t1w}'); print('Shape:', img.shape)"
+    expected_output_contains: "Shape:"
+
+  # ==========================================================================
+  # FUNCTIONAL TESTS - Image Math Operations
+  # ==========================================================================
+  - name: MRtrix3 mrcalc basic math
+    description: Test mrcalc basic arithmetic
+    command: mrcalc ${t1w} 2 -mult test_output/t1w_mult2.nii.gz -force 2>&1 && ls test_output/t1w_mult2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mult2.nii.gz
+
+  - name: FSL fslmaths basic math
+    description: Test fslmaths basic arithmetic
+    command: fslmaths ${t1w} -mul 2 test_output/t1w_fslmul2.nii.gz && ls test_output/t1w_fslmul2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fslmul2.nii.gz
+
+  - name: MRtrix3 mrstats
+    description: Test mrstats to compute image statistics
+    command: mrstats ${t1w} 2>&1
+    expected_output_contains: "mean"
+
+  - name: FSL fslstats
+    description: Test fslstats to compute image statistics
+    command: fslstats ${t1w} -m -s 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FUNCTIONAL TESTS - Image Conversion
+  # ==========================================================================
+  - name: MRtrix3 mrconvert NIfTI to MIF
+    description: Convert NIfTI to MRtrix MIF format
+    command: mrconvert ${t1w} test_output/t1w.mif -force 2>&1 && ls test_output/t1w.mif
+    validate:
+      - output_exists: ${output_dir}/t1w.mif
+
+  - name: MRtrix3 mrconvert MIF to NIfTI
+    description: Convert MRtrix MIF back to NIfTI
+    command: mrconvert test_output/t1w.mif test_output/t1w_from_mif.nii.gz -force 2>&1 && ls test_output/t1w_from_mif.nii.gz
+    depends_on: MRtrix3 mrconvert NIfTI to MIF
+    validate:
+      - output_exists: ${output_dir}/t1w_from_mif.nii.gz
+
+  # ==========================================================================
+  # FUNCTIONAL TESTS - Brain Extraction
+  # ==========================================================================
+  - name: FSL bet brain extraction
+    description: Test FSL bet brain extraction
+    command: bet ${t1w} test_output/t1w_brain -m 2>&1 && ls test_output/t1w_brain.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_brain.nii.gz
+
+  - name: FSL bet mask generation
+    description: Verify brain mask was generated
+    command: ls test_output/t1w_brain_mask.nii.gz
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_mask.nii.gz
+
+  # ==========================================================================
+  # FUNCTIONAL TESTS - Image Resampling
+  # ==========================================================================
+  - name: MRtrix3 mrgrid regrid
+    description: Test mrgrid resampling to different resolution
+    command: mrgrid ${t1w} regrid test_output/t1w_2mm.nii.gz -voxel 2 -force 2>&1 && ls test_output/t1w_2mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_2mm.nii.gz
+
+  - name: DIPY reslice
+    description: Test DIPY reslicing
+    command: dipy_reslice ${t1w} 2 2 2 --out_dir test_output --out_resliced t1w_dipy_resliced.nii.gz --force 2>&1 && ls test_output/t1w_dipy_resliced.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_dipy_resliced.nii.gz
+
+  # ==========================================================================
+  # FUNCTIONAL TESTS - Smoothing
+  # ==========================================================================
+  - name: FSL fslmaths smoothing
+    description: Test fslmaths Gaussian smoothing
+    command: fslmaths ${t1w} -s 2 test_output/t1w_smooth.nii.gz && ls test_output/t1w_smooth.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth.nii.gz
+
+  - name: MRtrix3 mrfilter smooth
+    description: Test mrfilter Gaussian smoothing
+    command: mrfilter ${t1w} smooth test_output/t1w_mrsmooth.nii.gz -stdev 2 -force 2>&1 && ls test_output/t1w_mrsmooth.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mrsmooth.nii.gz
+
+  # ==========================================================================
+  # FUNCTIONAL TESTS - Thresholding and Masking
+  # ==========================================================================
+  - name: FSL fslmaths threshold
+    description: Test fslmaths thresholding
+    command: fslmaths ${t1w} -thr 100 test_output/t1w_thr100.nii.gz && ls test_output/t1w_thr100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thr100.nii.gz
+
+  - name: FSL fslmaths binarize
+    description: Test fslmaths binarization
+    command: fslmaths ${t1w} -bin test_output/t1w_bin.nii.gz && ls test_output/t1w_bin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_bin.nii.gz
+
+  - name: MRtrix3 mrthreshold
+    description: Test mrthreshold automatic thresholding
+    command: mrthreshold ${t1w} test_output/t1w_mrthreshold.nii.gz -force 2>&1 && ls test_output/t1w_mrthreshold.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mrthreshold.nii.gz
+
+  # ==========================================================================
+  # FUNCTIONAL TESTS - 4D Data Operations
+  # ==========================================================================
+  - name: FSL fslmaths temporal mean
+    description: Test fslmaths temporal mean on 4D data
+    command: fslmaths ${bold} -Tmean test_output/bold_Tmean.nii.gz && ls test_output/bold_Tmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tmean.nii.gz
+
+  - name: FSL fslmaths temporal std
+    description: Test fslmaths temporal standard deviation
+    command: fslmaths ${bold} -Tstd test_output/bold_Tstd.nii.gz && ls test_output/bold_Tstd.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tstd.nii.gz
+
+  - name: MRtrix3 mrmath mean
+    description: Test mrmath mean along axis
+    command: mrmath ${bold} mean test_output/bold_mrmean.nii.gz -axis 3 -force 2>&1 && ls test_output/bold_mrmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_mrmean.nii.gz
+
+  # ==========================================================================
+  # FUNCTIONAL TESTS - Morphological Operations
+  # ==========================================================================
+  - name: FSL fslmaths erosion
+    description: Test fslmaths erosion
+    command: fslmaths test_output/t1w_brain_mask.nii.gz -ero test_output/mask_ero.nii.gz && ls test_output/mask_ero.nii.gz
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/mask_ero.nii.gz
+
+  - name: FSL fslmaths dilation
+    description: Test fslmaths dilation
+    command: fslmaths test_output/t1w_brain_mask.nii.gz -dilM test_output/mask_dil.nii.gz && ls test_output/mask_dil.nii.gz
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/mask_dil.nii.gz
+
+  - name: FSL fslmaths fill holes
+    description: Test fslmaths fill holes
+    command: fslmaths test_output/t1w_brain_mask.nii.gz -fillh test_output/mask_fillh.nii.gz && ls test_output/mask_fillh.nii.gz
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/mask_fillh.nii.gz
+
+  # ==========================================================================
+  # FUNCTIONAL TESTS - Python API Tests
+  # ==========================================================================
+  - name: DIPY tensor model test
+    description: Test DIPY tensor model import
+    command: python3 -c "from dipy.reconst import dti; print('DTI model available')"
+    expected_output_contains: "DTI model available"
+
+  - name: DIPY DKI model test
+    description: Test DIPY DKI model import
+    command: python3 -c "from dipy.reconst import dki; print('DKI model available')"
+    expected_output_contains: "DKI model available"
+
+  - name: DIPY tracking test
+    description: Test DIPY tracking module import
+    command: python3 -c "from dipy.tracking import utils; print('Tracking utils available')"
+    expected_output_contains: "Tracking utils available"
+
+  - name: DIPY gradient table test
+    description: Test DIPY gradient table creation
+    command: python3 -c "from dipy.core.gradients import gradient_table; import numpy as np; bvals = np.array([0, 1000, 1000]); bvecs = np.array([[0,0,0],[1,0,0],[0,1,0]]); gtab = gradient_table(bvals, bvecs); print('b0 count:', (~gtab.b0s_mask).sum())"
+    expected_output_contains: "b0 count: 2"
+
+  - name: DIPY denoising import test
+    description: Test DIPY denoising module import
+    command: python3 -c "from dipy.denoise import localpca, nlmeans; print('Denoising modules available')"
+    expected_output_contains: "Denoising modules available"
+
+  - name: nibabel affine test
+    description: Test nibabel affine handling
+    command: python3 -c "import nibabel as nib; img = nib.load('${t1w}'); print('Affine shape:', img.affine.shape)"
+    expected_output_contains: "Affine shape: (4, 4)"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

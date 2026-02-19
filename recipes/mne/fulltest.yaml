@@ -1,0 +1,1237 @@
+# MNE-Python container test suite
+# Tests for mne v1.1.1 - MEG/EEG analysis toolkit
+#
+# MNE-Python is a comprehensive software package for analyzing
+# neurophysiological data including MEG, EEG, sEEG, ECoG, and fNIRS.
+# This test suite validates core functionality through Python scripts.
+
+name: mne
+version: 1.1.1
+container: mne_1.1.1_20220912.simg
+
+# Note: MNE requires conda environment activation
+# Commands are wrapped with conda activation
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+# Helper function for running Python in the MNE conda environment
+# All commands use: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c '...'"
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION
+  # ==========================================================================
+  - name: MNE version check
+    description: Verify MNE-Python version
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne; print('MNE version:', mne.__version__)\""
+    expected_output_contains: "1.1.1"
+
+  - name: System info
+    description: Display MNE system information
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne; mne.sys_info()\""
+    expected_output_contains: "Platform"
+
+  # ==========================================================================
+  # CORE MODULE IMPORTS
+  # ==========================================================================
+  - name: Import mne core
+    description: Test core mne module import
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne; print('mne imported successfully')\""
+    expected_output_contains: "imported successfully"
+
+  - name: Import mne.io
+    description: Test mne.io module import for file I/O
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne.io; print('mne.io imported successfully')\""
+    expected_output_contains: "imported successfully"
+
+  - name: Import mne.preprocessing
+    description: Test mne.preprocessing module import
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne.preprocessing; print('mne.preprocessing imported successfully')\""
+    expected_output_contains: "imported successfully"
+
+  - name: Import mne.time_frequency
+    description: Test mne.time_frequency module import
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne.time_frequency; print('mne.time_frequency imported successfully')\""
+    expected_output_contains: "imported successfully"
+
+  - name: Import mne.stats
+    description: Test mne.stats module import
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne.stats; print('mne.stats imported successfully')\""
+    expected_output_contains: "imported successfully"
+
+  - name: Import mne.decoding
+    description: Test mne.decoding module import for machine learning
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne.decoding; print('mne.decoding imported successfully')\""
+    expected_output_contains: "imported successfully"
+
+  - name: Import mne.simulation
+    description: Test mne.simulation module import
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne.simulation; print('mne.simulation imported successfully')\""
+    expected_output_contains: "imported successfully"
+
+  - name: Import mne.minimum_norm
+    description: Test mne.minimum_norm module import for source localization
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne.minimum_norm; print('mne.minimum_norm imported successfully')\""
+    expected_output_contains: "imported successfully"
+
+  - name: Import mne.beamformer
+    description: Test mne.beamformer module import
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne.beamformer; print('mne.beamformer imported successfully')\""
+    expected_output_contains: "imported successfully"
+
+  - name: Import mne.forward
+    description: Test mne.forward module import
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne.forward; print('mne.forward imported successfully')\""
+    expected_output_contains: "imported successfully"
+
+  - name: Import mne.filter
+    description: Test mne.filter module import
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne.filter; print('mne.filter imported successfully')\""
+    expected_output_contains: "imported successfully"
+
+  - name: Import mne.channels
+    description: Test mne.channels module import
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import mne.channels; print('mne.channels imported successfully')\""
+    expected_output_contains: "imported successfully"
+
+  # ==========================================================================
+  # DEPENDENCY IMPORTS
+  # ==========================================================================
+  - name: Import numpy
+    description: Test numpy availability (core dependency)
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import numpy as np; print('numpy version:', np.__version__)\""
+    expected_output_contains: "numpy version"
+
+  - name: Import scipy
+    description: Test scipy availability (core dependency)
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import scipy; print('scipy version:', scipy.__version__)\""
+    expected_output_contains: "scipy version"
+
+  - name: Import sklearn
+    description: Test scikit-learn availability (for decoding)
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import sklearn; print('sklearn version:', sklearn.__version__)\""
+    expected_output_contains: "sklearn version"
+
+  - name: Import matplotlib
+    description: Test matplotlib availability (for visualization)
+    command: bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"import matplotlib; print('matplotlib version:', matplotlib.__version__)\""
+    expected_output_contains: "matplotlib version"
+
+  # ==========================================================================
+  # INFO AND CHANNEL SETUP
+  # ==========================================================================
+  - name: Create Info object
+    description: Test creating measurement info structure
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import mne
+      info = mne.create_info(ch_names=['Fz', 'Cz', 'Pz'], sfreq=1000, ch_types='eeg')
+      print('Info created with', len(info['ch_names']), 'channels')
+      print('Sampling frequency:', info['sfreq'], 'Hz')
+      \""
+    expected_output_contains: "3 channels"
+
+  - name: Create Info with multiple channel types
+    description: Test creating info with MEG and EEG channels
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import mne
+      ch_names = ['MEG001', 'MEG002', 'EEG001', 'EEG002', 'EOG001', 'ECG001']
+      ch_types = ['mag', 'grad', 'eeg', 'eeg', 'eog', 'ecg']
+      info = mne.create_info(ch_names=ch_names, sfreq=1000, ch_types=ch_types)
+      print('Info created with channel types:', set(ch_types))
+      \""
+    expected_output_contains: "mag"
+
+  - name: Standard montage loading
+    description: Test loading standard EEG montage
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import mne
+      montage = mne.channels.make_standard_montage('standard_1020')
+      print('Montage:', montage)
+      print('Number of positions:', len(montage.ch_names))
+      \""
+    expected_output_contains: "DigMontage"
+
+  - name: List available montages
+    description: Test listing available standard montages
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import mne
+      montages = mne.channels.get_builtin_montages()
+      print('Available montages:', len(montages))
+      print('First 5:', montages[:5])
+      \""
+    expected_output_contains: "Available montages"
+
+  # ==========================================================================
+  # RAW DATA STRUCTURES
+  # ==========================================================================
+  - name: Create RawArray
+    description: Test creating Raw object from numpy array
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_channels, n_times = 32, 10000
+      data = np.random.randn(n_channels, n_times) * 1e-6  # microvolts to volts
+      ch_names = ['EEG%03d' % i for i in range(n_channels)]
+      info = mne.create_info(ch_names=ch_names, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      print('Raw object created:', raw)
+      print('Duration:', raw.times[-1], 'seconds')
+      \""
+    expected_output_contains: "RawArray"
+
+  - name: Raw data slicing
+    description: Test slicing raw data by time
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      data = np.random.randn(10, 5000) * 1e-6
+      info = mne.create_info(ch_names=10, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      raw_cropped = raw.copy().crop(tmin=1.0, tmax=3.0)
+      print('Original duration:', raw.times[-1], 's')
+      print('Cropped duration:', raw_cropped.times[-1], 's')
+      \""
+    expected_output_contains: "Cropped duration: 2.0"
+
+  - name: Raw channel selection
+    description: Test picking channels from raw data
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      ch_names = ['Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2']
+      data = np.random.randn(10, 5000) * 1e-6
+      info = mne.create_info(ch_names=ch_names, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      raw_picked = raw.copy().pick_channels(['Fp1', 'Fp2', 'F3', 'F4'])
+      print('Original channels:', len(raw.ch_names))
+      print('Picked channels:', len(raw_picked.ch_names))
+      \""
+    expected_output_contains: "Picked channels: 4"
+
+  - name: Rename channels
+    description: Test renaming channels in raw data
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      data = np.random.randn(3, 1000) * 1e-6
+      info = mne.create_info(ch_names=['ch1', 'ch2', 'ch3'], sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      raw.rename_channels({'ch1': 'Fz', 'ch2': 'Cz', 'ch3': 'Pz'})
+      print('Renamed channels:', raw.ch_names)
+      \""
+    expected_output_contains: "Fz"
+
+  # ==========================================================================
+  # FILTERING
+  # ==========================================================================
+  - name: Bandpass filter
+    description: Test bandpass filtering raw data
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      data = np.random.randn(10, 10000) * 1e-6
+      info = mne.create_info(ch_names=10, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      raw_filt = raw.copy().filter(l_freq=1, h_freq=40)
+      print('Bandpass filtered: 1-40 Hz')
+      print('Filtered raw:', raw_filt)
+      \""
+    expected_output_contains: "Bandpass filtered"
+
+  - name: Lowpass filter
+    description: Test lowpass filtering
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      data = np.random.randn(10, 10000) * 1e-6
+      info = mne.create_info(ch_names=10, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      raw_filt = raw.copy().filter(l_freq=None, h_freq=30)
+      print('Lowpass filtered: <30 Hz')
+      \""
+    expected_output_contains: "Lowpass filtered"
+
+  - name: Highpass filter
+    description: Test highpass filtering
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      data = np.random.randn(10, 10000) * 1e-6
+      info = mne.create_info(ch_names=10, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      raw_filt = raw.copy().filter(l_freq=0.5, h_freq=None)
+      print('Highpass filtered: >0.5 Hz')
+      \""
+    expected_output_contains: "Highpass filtered"
+
+  - name: Notch filter
+    description: Test notch filtering for line noise
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      data = np.random.randn(10, 10000) * 1e-6
+      info = mne.create_info(ch_names=10, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      raw_notch = raw.copy().notch_filter(freqs=[50, 60])
+      print('Notch filtered at 50 and 60 Hz')
+      \""
+    expected_output_contains: "Notch filtered"
+
+  - name: Resampling
+    description: Test downsampling raw data
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      data = np.random.randn(10, 10000) * 1e-6
+      info = mne.create_info(ch_names=10, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      raw_resampled = raw.copy().resample(sfreq=250)
+      print('Original sfreq:', raw.info['sfreq'], 'Hz')
+      print('Resampled sfreq:', raw_resampled.info['sfreq'], 'Hz')
+      \""
+    expected_output_contains: "Resampled sfreq: 250"
+
+  - name: Create filter design
+    description: Test creating custom filter design
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import mne
+      fir_coefs = mne.filter.create_filter(
+          data=None, sfreq=1000, l_freq=1, h_freq=40,
+          fir_design='firwin', verbose=False)
+      print('FIR filter created with', len(fir_coefs), 'coefficients')
+      \""
+    expected_output_contains: "FIR filter created"
+
+  # ==========================================================================
+  # EVENTS AND EPOCHS
+  # ==========================================================================
+  - name: Create events array
+    description: Test creating events array manually
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      # Events: [sample, previous_event_id, event_id]
+      events = np.array([
+          [100, 0, 1],
+          [200, 0, 2],
+          [300, 0, 1],
+          [400, 0, 2]
+      ])
+      print('Events shape:', events.shape)
+      print('Event IDs:', np.unique(events[:, 2]))
+      \""
+    expected_output_contains: "Events shape: (4, 3)"
+
+  - name: Make fixed length events
+    description: Test creating fixed-length pseudo-events
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      data = np.random.randn(10, 30000) * 1e-6
+      info = mne.create_info(ch_names=10, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      events = mne.make_fixed_length_events(raw, duration=2.0)
+      print('Fixed length events:', len(events))
+      \""
+    expected_output_contains: "Fixed length events:"
+
+  - name: Create Epochs from Raw
+    description: Test creating epochs from raw data and events
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      data = np.random.randn(10, 10000) * 1e-6
+      info = mne.create_info(ch_names=10, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      events = np.array([[1000, 0, 1], [3000, 0, 2], [5000, 0, 1], [7000, 0, 2]])
+      epochs = mne.Epochs(raw, events, event_id={'cond1': 1, 'cond2': 2},
+                          tmin=-0.2, tmax=0.5, baseline=(None, 0), preload=True)
+      print('Epochs created:', epochs)
+      print('Number of epochs:', len(epochs))
+      \""
+    expected_output_contains: "Number of epochs:"
+
+  - name: Create EpochsArray
+    description: Test creating epochs from numpy array
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 20, 10, 700  # 700 samples = 0.7s at 1000Hz
+      data = np.random.randn(n_epochs, n_channels, n_times) * 1e-6
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      epochs = mne.EpochsArray(data, info, tmin=-0.2)
+      print('EpochsArray created:', epochs)
+      \""
+    expected_output_contains: "EpochsArray"
+
+  - name: Epochs indexing
+    description: Test selecting epochs by condition
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      data = np.random.randn(10, 10000) * 1e-6
+      info = mne.create_info(ch_names=10, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      events = np.array([[1000, 0, 1], [2000, 0, 2], [3000, 0, 1], [4000, 0, 2],
+                         [5000, 0, 1], [6000, 0, 2], [7000, 0, 1], [8000, 0, 2]])
+      epochs = mne.Epochs(raw, events, event_id={'target': 1, 'standard': 2},
+                          tmin=-0.1, tmax=0.3, baseline=None, preload=True)
+      epochs_target = epochs['target']
+      print('All epochs:', len(epochs))
+      print('Target epochs:', len(epochs_target))
+      \""
+    expected_output_contains: "Target epochs: 4"
+
+  - name: Epochs baseline correction
+    description: Test applying baseline correction
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 10, 5, 500
+      data = np.random.randn(n_epochs, n_channels, n_times) * 1e-6 + 1e-6  # add offset
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      epochs = mne.EpochsArray(data, info, tmin=-0.2)
+      epochs.apply_baseline(baseline=(None, 0))
+      print('Baseline correction applied from tmin to 0')
+      \""
+    expected_output_contains: "Baseline correction applied"
+
+  - name: Drop bad epochs
+    description: Test dropping epochs by rejection criteria
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 20, 10, 500
+      data = np.random.randn(n_epochs, n_channels, n_times) * 1e-6
+      # Make some epochs bad
+      data[5] *= 10
+      data[15] *= 10
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      epochs = mne.EpochsArray(data, info, tmin=-0.2)
+      epochs.drop_bad(reject=dict(eeg=50e-6))  # reject >50uV
+      print('Original epochs:', n_epochs)
+      print('Epochs after rejection:', len(epochs))
+      \""
+    expected_output_contains: "Epochs after rejection:"
+
+  # ==========================================================================
+  # EVOKED RESPONSES
+  # ==========================================================================
+  - name: Create Evoked from Epochs
+    description: Test averaging epochs to create evoked response
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 30, 10, 500
+      data = np.random.randn(n_epochs, n_channels, n_times) * 1e-6
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      epochs = mne.EpochsArray(data, info, tmin=-0.2)
+      evoked = epochs.average()
+      print('Evoked created:', evoked)
+      print('Nave:', evoked.nave)
+      \""
+    expected_output_contains: "Nave: 30"
+
+  - name: Create EvokedArray
+    description: Test creating evoked directly from array
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_channels, n_times = 10, 500
+      data = np.random.randn(n_channels, n_times) * 1e-6
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      evoked = mne.EvokedArray(data, info, tmin=-0.2, nave=30)
+      print('EvokedArray created:', evoked)
+      \""
+    expected_output_contains: "EvokedArray"
+
+  - name: Combine evoked responses
+    description: Test combining multiple evoked responses
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_channels, n_times = 10, 500
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      evoked1 = mne.EvokedArray(np.random.randn(n_channels, n_times) * 1e-6, info, tmin=-0.2, nave=20)
+      evoked2 = mne.EvokedArray(np.random.randn(n_channels, n_times) * 1e-6, info, tmin=-0.2, nave=20)
+      evoked_combined = mne.combine_evoked([evoked1, evoked2], weights='nave')
+      print('Combined evoked nave:', evoked_combined.nave)
+      \""
+    expected_output_contains: "Combined evoked nave: 40"
+
+  - name: Grand average
+    description: Test computing grand average across subjects
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_channels, n_times = 10, 500
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      evokeds = [mne.EvokedArray(np.random.randn(n_channels, n_times) * 1e-6, info, tmin=-0.2, nave=30) for _ in range(5)]
+      grand_avg = mne.grand_average(evokeds)
+      print('Grand average computed from', len(evokeds), 'subjects')
+      \""
+    expected_output_contains: "Grand average computed from 5 subjects"
+
+  # ==========================================================================
+  # PREPROCESSING - ICA
+  # ==========================================================================
+  - name: ICA initialization
+    description: Test initializing ICA object
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      from mne.preprocessing import ICA
+      ica = ICA(n_components=15, method='fastica', random_state=42)
+      print('ICA initialized:', ica)
+      \""
+    expected_output_contains: "ICA"
+
+  - name: ICA fit and apply
+    description: Test fitting ICA on raw data
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      from mne.preprocessing import ICA
+      np.random.seed(42)
+      data = np.random.randn(20, 50000) * 1e-6
+      info = mne.create_info(ch_names=20, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      raw.filter(1, 40)
+      ica = ICA(n_components=10, method='fastica', random_state=42)
+      ica.fit(raw)
+      print('ICA fitted with', ica.n_components_, 'components')
+      \""
+    expected_output_contains: "ICA fitted with 10 components"
+
+  - name: ICA methods available
+    description: Test available ICA methods
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      from mne.preprocessing import ICA
+      for method in ['fastica', 'infomax', 'picard']:
+          try:
+              ica = ICA(n_components=5, method=method, random_state=42)
+              print(f'{method}: available')
+          except Exception as e:
+              print(f'{method}: not available')
+      \""
+    expected_output_contains: "fastica: available"
+
+  # ==========================================================================
+  # PREPROCESSING - ARTIFACT DETECTION
+  # ==========================================================================
+  - name: Xdawn initialization
+    description: Test Xdawn spatial filter for artifact detection
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      from mne.preprocessing import Xdawn
+      xdawn = Xdawn(n_components=2)
+      print('Xdawn initialized:', xdawn)
+      \""
+    expected_output_contains: "Xdawn"
+
+  - name: Current source density
+    description: Test computing surface Laplacian (CSD)
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      from mne.preprocessing import compute_current_source_density
+      np.random.seed(42)
+      montage = mne.channels.make_standard_montage('biosemi64')
+      ch_names = montage.ch_names
+      n_channels = len(ch_names)
+      n_times = 5000
+      data = np.random.randn(n_channels, n_times) * 1e-6
+      info = mne.create_info(ch_names=ch_names, sfreq=1000, ch_types='eeg')
+      info.set_montage(montage)
+      raw = mne.io.RawArray(data, info)
+      raw_csd = compute_current_source_density(raw)
+      print('CSD computed:', raw_csd)
+      \""
+    expected_output_contains: "CSD computed"
+
+  # ==========================================================================
+  # TIME-FREQUENCY ANALYSIS
+  # ==========================================================================
+  - name: Morlet wavelets
+    description: Test creating Morlet wavelets
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import mne.time_frequency as tfr
+      import numpy as np
+      freqs = np.arange(5, 30, 1)
+      wavelets = tfr.morlet(sfreq=1000, freqs=freqs, n_cycles=freqs/2)
+      print('Created', len(wavelets), 'Morlet wavelets')
+      print('Frequencies:', freqs[0], 'to', freqs[-1], 'Hz')
+      \""
+    expected_output_contains: "Created 25 Morlet wavelets"
+
+  - name: Time-frequency representation
+    description: Test computing TFR with Morlet wavelets
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      from mne.time_frequency import tfr_morlet
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 10, 5, 2000
+      data = np.random.randn(n_epochs, n_channels, n_times) * 1e-6
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      epochs = mne.EpochsArray(data, info, tmin=-0.5)
+      freqs = np.arange(5, 30, 2)
+      power = tfr_morlet(epochs, freqs=freqs, n_cycles=freqs/2, return_itc=False, average=True)
+      print('TFR computed:', power)
+      print('Shape:', power.data.shape)
+      \""
+    expected_output_contains: "TFR computed"
+
+  - name: Multitaper PSD
+    description: Test computing multitaper power spectral density
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      from mne.time_frequency import psd_multitaper
+      np.random.seed(42)
+      data = np.random.randn(10, 10000) * 1e-6
+      info = mne.create_info(ch_names=10, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      psds, freqs = psd_multitaper(raw, fmin=1, fmax=50)
+      print('PSD computed with multitaper')
+      print('Frequencies:', freqs[0], 'to', freqs[-1], 'Hz')
+      \""
+    expected_output_contains: "PSD computed with multitaper"
+
+  - name: Welch PSD
+    description: Test computing Welch power spectral density
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      from mne.time_frequency import psd_welch
+      np.random.seed(42)
+      data = np.random.randn(10, 10000) * 1e-6
+      info = mne.create_info(ch_names=10, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      psds, freqs = psd_welch(raw, fmin=1, fmax=50)
+      print('PSD computed with Welch method')
+      \""
+    expected_output_contains: "PSD computed with Welch"
+
+  - name: Cross-spectral density
+    description: Test computing cross-spectral density matrix
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      from mne.time_frequency import csd_morlet
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 10, 5, 500
+      data = np.random.randn(n_epochs, n_channels, n_times) * 1e-6
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      epochs = mne.EpochsArray(data, info, tmin=-0.2)
+      freqs = np.arange(8, 13, 1)  # alpha band
+      csd = csd_morlet(epochs, frequencies=freqs, n_cycles=freqs/2)
+      print('CSD computed:', csd)
+      \""
+    expected_output_contains: "CrossSpectralDensity"
+
+  # ==========================================================================
+  # COVARIANCE
+  # ==========================================================================
+  - name: Compute covariance from epochs
+    description: Test computing noise covariance from epochs
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 30, 10, 500
+      data = np.random.randn(n_epochs, n_channels, n_times) * 1e-6
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      epochs = mne.EpochsArray(data, info, tmin=-0.2)
+      cov = mne.compute_covariance(epochs, method='empirical')
+      print('Covariance computed:', cov)
+      \""
+    expected_output_contains: "Covariance"
+
+  - name: Covariance regularization methods
+    description: Test different covariance regularization methods
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 50, 10, 500
+      data = np.random.randn(n_epochs, n_channels, n_times) * 1e-6
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      epochs = mne.EpochsArray(data, info, tmin=-0.2)
+      for method in ['empirical', 'shrunk', 'diagonal_fixed']:
+          cov = mne.compute_covariance(epochs, method=method)
+          print(f'{method}: computed')
+      \""
+    expected_output_contains: "shrunk: computed"
+
+  - name: Ad-hoc covariance
+    description: Test creating ad-hoc diagonal covariance
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import mne
+      info = mne.create_info(ch_names=['EEG001', 'EEG002', 'EEG003'], sfreq=1000, ch_types='eeg')
+      cov = mne.make_ad_hoc_cov(info)
+      print('Ad-hoc covariance created:', cov)
+      \""
+    expected_output_contains: "Covariance"
+
+  # ==========================================================================
+  # SOURCE SPACE AND FORWARD MODELING
+  # ==========================================================================
+  - name: Source estimate class
+    description: Test SourceEstimate data structure
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_vertices = [500, 500]  # left and right hemisphere
+      n_times = 100
+      data = np.random.randn(sum(n_vertices), n_times) * 1e-9
+      vertices = [np.arange(n_vertices[0]), np.arange(n_vertices[1])]
+      stc = mne.SourceEstimate(data, vertices, tmin=0, tstep=0.001)
+      print('SourceEstimate created')
+      print('Shape:', stc.data.shape)
+      print('Times:', stc.times[0], 'to', stc.times[-1], 's')
+      \""
+    expected_output_contains: "SourceEstimate created"
+
+  - name: Volume source estimate
+    description: Test VolSourceEstimate data structure
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_vertices = 1000
+      n_times = 100
+      data = np.random.randn(n_vertices, n_times) * 1e-9
+      vertices = np.arange(n_vertices)
+      stc = mne.VolSourceEstimate(data, [vertices], tmin=0, tstep=0.001)
+      print('VolSourceEstimate created')
+      print('Shape:', stc.data.shape)
+      \""
+    expected_output_contains: "VolSourceEstimate created"
+
+  - name: Sphere model
+    description: Test creating simple sphere head model
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import mne
+      sphere = mne.make_sphere_model(r0=(0., 0., 0.), head_radius=0.09)
+      print('Sphere model created:', sphere)
+      \""
+    expected_output_contains: "ConductorModel"
+
+  # ==========================================================================
+  # MINIMUM NORM ESTIMATION
+  # ==========================================================================
+  - name: Inverse methods available
+    description: Test available inverse methods
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      from mne.minimum_norm import INVERSE_METHODS
+      print('Available inverse methods:', list(INVERSE_METHODS))
+      \""
+    expected_output_contains: "MNE"
+
+  # ==========================================================================
+  # DECODING AND MACHINE LEARNING
+  # ==========================================================================
+  - name: CSP initialization
+    description: Test Common Spatial Patterns initialization
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      from mne.decoding import CSP
+      csp = CSP(n_components=4, reg=None, log=True)
+      print('CSP initialized:', csp)
+      \""
+    expected_output_contains: "CSP"
+
+  - name: CSP fit and transform
+    description: Test CSP on simulated data
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      from mne.decoding import CSP
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 100, 20, 500
+      X = np.random.randn(n_epochs, n_channels, n_times)
+      y = np.concatenate([np.zeros(50), np.ones(50)])
+      csp = CSP(n_components=4)
+      X_csp = csp.fit_transform(X, y)
+      print('CSP transformed shape:', X_csp.shape)
+      \""
+    expected_output_contains: "CSP transformed shape: (100, 4)"
+
+  - name: Vectorizer
+    description: Test Vectorizer for sklearn pipeline
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      from mne.decoding import Vectorizer
+      np.random.seed(42)
+      X = np.random.randn(50, 10, 100)  # epochs x channels x times
+      vectorizer = Vectorizer()
+      X_vec = vectorizer.fit_transform(X)
+      print('Vectorized shape:', X_vec.shape)
+      \""
+    expected_output_contains: "Vectorized shape: (50, 1000)"
+
+  - name: Scaler
+    description: Test MNE Scaler for data normalization
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      from mne.decoding import Scaler
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 50, 10, 100
+      data = np.random.randn(n_epochs, n_channels, n_times) * 1e-6
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      scaler = Scaler(info)
+      X_scaled = scaler.fit_transform(data)
+      print('Scaled data shape:', X_scaled.shape)
+      print('Mean close to 0:', np.abs(X_scaled.mean()) < 0.1)
+      \""
+    expected_output_contains: "Scaled data shape:"
+
+  - name: SlidingEstimator
+    description: Test time-resolved decoding with SlidingEstimator
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      from sklearn.linear_model import LogisticRegression
+      from mne.decoding import SlidingEstimator, cross_val_multiscore
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 100, 20, 50
+      X = np.random.randn(n_epochs, n_channels, n_times)
+      y = np.concatenate([np.zeros(50), np.ones(50)])
+      clf = LogisticRegression(solver='lbfgs')
+      slider = SlidingEstimator(clf, scoring='accuracy')
+      scores = cross_val_multiscore(slider, X, y, cv=3)
+      print('Sliding estimator scores shape:', scores.shape)
+      \""
+    expected_output_contains: "Sliding estimator scores shape:"
+
+  - name: GeneralizingEstimator
+    description: Test temporal generalization with GeneralizingEstimator
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      from sklearn.linear_model import LogisticRegression
+      from mne.decoding import GeneralizingEstimator
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 100, 10, 20
+      X = np.random.randn(n_epochs, n_channels, n_times)
+      y = np.concatenate([np.zeros(50), np.ones(50)])
+      clf = LogisticRegression(solver='lbfgs', max_iter=500)
+      gen = GeneralizingEstimator(clf, scoring='accuracy')
+      gen.fit(X, y)
+      scores = gen.score(X, y)
+      print('Generalization matrix shape:', scores.shape)
+      \""
+    expected_output_contains: "Generalization matrix shape:"
+
+  - name: LinearModel
+    description: Test LinearModel for interpretable weights
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      from sklearn.linear_model import LogisticRegression
+      from mne.decoding import LinearModel, get_coef
+      np.random.seed(42)
+      n_samples, n_features = 100, 20
+      X = np.random.randn(n_samples, n_features)
+      y = np.concatenate([np.zeros(50), np.ones(50)])
+      clf = LinearModel(LogisticRegression(solver='lbfgs'))
+      clf.fit(X, y)
+      coef = get_coef(clf, 'patterns_')
+      print('Pattern coefficients shape:', coef.shape)
+      \""
+    expected_output_contains: "Pattern coefficients shape: (20,)"
+
+  # ==========================================================================
+  # STATISTICS
+  # ==========================================================================
+  - name: Permutation t-test
+    description: Test permutation-based t-test
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      from mne.stats import permutation_t_test
+      np.random.seed(42)
+      X = np.random.randn(20, 100) + 0.5  # 20 subjects, 100 time points
+      T_obs, p_values, H0 = permutation_t_test(X, n_permutations=1000)
+      print('T-statistic shape:', T_obs.shape)
+      print('Significant points:', np.sum(p_values < 0.05))
+      \""
+    expected_output_contains: "T-statistic shape:"
+
+  - name: Cluster permutation test
+    description: Test spatio-temporal cluster permutation test
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      from mne.stats import permutation_cluster_1samp_test
+      np.random.seed(42)
+      X = np.random.randn(15, 50) + 0.3
+      T_obs, clusters, p_values, H0 = permutation_cluster_1samp_test(X, n_permutations=100, tail=0)
+      print('Number of clusters found:', len(clusters))
+      \""
+    expected_output_contains: "Number of clusters found:"
+
+  - name: FDR correction
+    description: Test false discovery rate correction
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      from mne.stats import fdr_correction
+      np.random.seed(42)
+      p_values = np.random.rand(100)
+      p_values[:10] = 0.001  # some significant
+      reject, p_corrected = fdr_correction(p_values, alpha=0.05)
+      print('Original significant:', np.sum(p_values < 0.05))
+      print('After FDR correction:', np.sum(reject))
+      \""
+    expected_output_contains: "After FDR correction:"
+
+  - name: Bonferroni correction
+    description: Test Bonferroni multiple comparison correction
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      from mne.stats import bonferroni_correction
+      np.random.seed(42)
+      p_values = np.random.rand(50)
+      p_values[:5] = 0.0001
+      reject, p_corrected = bonferroni_correction(p_values, alpha=0.05)
+      print('After Bonferroni correction:', np.sum(reject))
+      \""
+    expected_output_contains: "After Bonferroni correction:"
+
+  - name: F-test (one-way)
+    description: Test one-way F-test for ANOVA
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      from mne.stats import f_oneway
+      np.random.seed(42)
+      X1 = np.random.randn(20, 50)
+      X2 = np.random.randn(20, 50) + 0.5
+      X3 = np.random.randn(20, 50) + 1.0
+      F_obs = f_oneway(X1, X2, X3)
+      print('F-statistic shape:', F_obs.shape)
+      \""
+    expected_output_contains: "F-statistic shape:"
+
+  # ==========================================================================
+  # SIMULATION
+  # ==========================================================================
+  - name: Simulate sparse STC
+    description: Test simulating sparse source time course
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_vertices = [500, 500]
+      n_times = 100
+      data = np.zeros((sum(n_vertices), n_times))
+      vertices = [np.arange(n_vertices[0]), np.arange(n_vertices[1])]
+      for idx in [42, 700]:
+          data[idx] = np.sin(2 * np.pi * 10 * np.arange(n_times) / 1000.)
+      stc = mne.SourceEstimate(data, vertices, tmin=0, tstep=0.001)
+      print('Simulated sparse STC:', stc)
+      print('Active vertices:', np.sum(np.any(stc.data != 0, axis=1)))
+      \""
+    expected_output_contains: "SourceEstimate"
+
+  - name: Simulate evoked response
+    description: Test simulating evoked data
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_channels, n_times = 10, 500
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      # Simulate simple evoked with additive noise
+      data = np.zeros((n_channels, n_times))
+      times = np.arange(n_times) / 1000.
+      for ch in range(n_channels):
+          data[ch] = np.sin(2 * np.pi * 10 * times) * np.exp(-times * 5) * 1e-6
+      data += np.random.randn(n_channels, n_times) * 0.1e-6
+      evoked = mne.EvokedArray(data, info, tmin=-0.1)
+      print('Simulated evoked:', evoked)
+      \""
+    expected_output_contains: "Simulated evoked"
+
+  # ==========================================================================
+  # I/O CAPABILITIES
+  # ==========================================================================
+  - name: Check available readers
+    description: Test that file readers are available
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import mne.io
+      readers = [
+          'read_raw_fif', 'read_raw_edf', 'read_raw_bdf',
+          'read_raw_eeglab', 'read_raw_brainvision', 'read_raw_cnt',
+          'read_raw_egi', 'read_raw_kit', 'read_raw_ctf'
+      ]
+      for reader in readers:
+          if hasattr(mne.io, reader):
+              print(f'{reader}: available')
+          else:
+              print(f'{reader}: not found')
+      \""
+    expected_output_contains: "read_raw_fif: available"
+
+  - name: Save and load epochs
+    description: Test saving and loading epochs to FIF
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      import os
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 10, 5, 500
+      data = np.random.randn(n_epochs, n_channels, n_times) * 1e-6
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      epochs = mne.EpochsArray(data, info, tmin=-0.2)
+      fname = 'test_output/test_epochs-epo.fif'
+      epochs.save(fname, overwrite=True)
+      epochs_loaded = mne.read_epochs(fname, preload=True)
+      print('Saved and loaded epochs:', epochs_loaded)
+      os.remove(fname)
+      \""
+    expected_output_contains: "Saved and loaded epochs"
+
+  - name: Save and load evoked
+    description: Test saving and loading evoked to FIF
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      import os
+      np.random.seed(42)
+      n_channels, n_times = 10, 500
+      data = np.random.randn(n_channels, n_times) * 1e-6
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      evoked = mne.EvokedArray(data, info, tmin=-0.2, nave=30, comment='test')
+      fname = 'test_output/test_evoked-ave.fif'
+      mne.write_evokeds(fname, evoked, overwrite=True)
+      evoked_loaded = mne.read_evokeds(fname)[0]
+      print('Saved and loaded evoked:', evoked_loaded)
+      os.remove(fname)
+      \""
+    expected_output_contains: "Saved and loaded evoked"
+
+  # ==========================================================================
+  # PROJECTIONS AND REFERENCE
+  # ==========================================================================
+  - name: Create SSP projectors
+    description: Test creating signal-space projectors
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      n_epochs, n_channels, n_times = 50, 10, 500
+      data = np.random.randn(n_epochs, n_channels, n_times) * 1e-6
+      info = mne.create_info(ch_names=n_channels, sfreq=1000, ch_types='eeg')
+      epochs = mne.EpochsArray(data, info, tmin=-0.2)
+      projs = mne.compute_proj_epochs(epochs, n_eeg=2)
+      print('Created', len(projs), 'SSP projectors')
+      \""
+    expected_output_contains: "Created 2 SSP projectors"
+
+  - name: Set EEG reference
+    description: Test setting EEG reference (average)
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      data = np.random.randn(10, 5000) * 1e-6
+      info = mne.create_info(ch_names=10, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      raw_reref = raw.copy().set_eeg_reference('average', projection=True)
+      print('EEG reference set to average')
+      print('Projectors:', len(raw_reref.info['projs']))
+      \""
+    expected_output_contains: "EEG reference set to average"
+
+  - name: Add reference channel
+    description: Test adding reference channel back
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      ch_names = ['Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4']
+      data = np.random.randn(6, 5000) * 1e-6
+      info = mne.create_info(ch_names=ch_names, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      raw_with_ref = mne.add_reference_channels(raw, ref_channels='Cz')
+      print('Channels before:', len(ch_names))
+      print('Channels after adding ref:', len(raw_with_ref.ch_names))
+      \""
+    expected_output_contains: "Channels after adding ref: 7"
+
+  # ==========================================================================
+  # ANNOTATIONS
+  # ==========================================================================
+  - name: Create annotations
+    description: Test creating annotations for bad segments
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      annot = mne.Annotations(onset=[0.5, 2.0, 5.0],
+                              duration=[0.2, 0.5, 1.0],
+                              description=['bad_artifact', 'bad_blink', 'bad_movement'])
+      print('Annotations created:', annot)
+      print('Number of annotations:', len(annot))
+      \""
+    expected_output_contains: "Number of annotations: 3"
+
+  - name: Set annotations on raw
+    description: Test setting annotations on raw data
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      data = np.random.randn(10, 10000) * 1e-6
+      info = mne.create_info(ch_names=10, sfreq=1000, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      annot = mne.Annotations(onset=[1.0, 3.0], duration=[0.5, 0.5], description='BAD_artifact')
+      raw.set_annotations(annot)
+      print('Annotations set on raw:', len(raw.annotations))
+      \""
+    expected_output_contains: "Annotations set on raw: 2"
+
+  # ==========================================================================
+  # PICKS AND CHANNEL TYPES
+  # ==========================================================================
+  - name: Pick types
+    description: Test picking channels by type
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      import mne
+      np.random.seed(42)
+      ch_names = ['MEG001', 'MEG002', 'EEG001', 'EEG002', 'EOG001', 'ECG001']
+      ch_types = ['mag', 'grad', 'eeg', 'eeg', 'eog', 'ecg']
+      data = np.random.randn(6, 5000) * 1e-6
+      info = mne.create_info(ch_names=ch_names, sfreq=1000, ch_types=ch_types)
+      raw = mne.io.RawArray(data, info)
+      picks_eeg = mne.pick_types(raw.info, meg=False, eeg=True)
+      picks_meg = mne.pick_types(raw.info, meg=True, eeg=False)
+      print('EEG picks:', picks_eeg)
+      print('MEG picks:', picks_meg)
+      \""
+    expected_output_contains: "EEG picks:"
+
+  - name: Channel type info
+    description: Test getting channel type information
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import mne
+      ch_names = ['MEG001', 'MEG002', 'EEG001', 'EEG002', 'STIM001']
+      ch_types = ['mag', 'grad', 'eeg', 'eeg', 'stim']
+      info = mne.create_info(ch_names=ch_names, sfreq=1000, ch_types=ch_types)
+      for name in ch_names:
+          ch_type = mne.channel_type(info, info['ch_names'].index(name))
+          print(f'{name}: {ch_type}')
+      \""
+    expected_output_contains: "MEG001: mag"
+
+  # ==========================================================================
+  # CONNECTIVITY (if available)
+  # ==========================================================================
+  - name: Combine adjacency
+    description: Test creating adjacency matrix for clustering
+    command: |
+      bash -c "source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate mne-1.1.1 && python -c \"
+      import numpy as np
+      from mne.stats import combine_adjacency
+      from scipy import sparse
+      n_times = 50
+      n_channels = 10
+      temporal_adj = sparse.eye(n_times, format='csr')
+      temporal_adj.setdiag(1, k=1)
+      temporal_adj.setdiag(1, k=-1)
+      spatial_adj = sparse.eye(n_channels, format='csr')
+      adjacency = combine_adjacency(temporal_adj, spatial_adj)
+      print('Combined adjacency shape:', adjacency.shape)
+      \""
+    expected_output_contains: "Combined adjacency shape:"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

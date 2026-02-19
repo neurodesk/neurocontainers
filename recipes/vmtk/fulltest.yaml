@@ -1,0 +1,854 @@
+# VMTK (Vascular Modeling Toolkit) container test suite
+# Tests for vmtk v1.5.0 - Vascular Modeling Toolkit
+#
+# VMTK is a collection of libraries and tools for 3D reconstruction,
+# geometric analysis, mesh generation and surface data analysis for
+# image-based modeling of blood vessels.
+#
+# Note: Many VMTK tools require interactive input or display capabilities.
+# These tests focus on non-interactive functionality and help/version commands.
+
+name: vmtk
+version: 1.5.0
+container: vmtk_1.5.0_20241004.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND HELP
+  # ==========================================================================
+  - name: VMTK main help
+    description: Verify vmtk main command displays usage
+    command: vmtk 2>&1 | head -5
+    expected_output_contains: "vmtk"
+
+  - name: VMTK file execution mode
+    description: Check vmtk file execution help
+    command: vmtk --help 2>&1 || true
+    expected_output_contains: "vmtk"
+
+  # ==========================================================================
+  # IMAGE READER/WRITER HELP
+  # ==========================================================================
+  - name: vmtkimagereader help
+    description: Display vmtkimagereader options
+    command: vmtkimagereader --help 2>&1
+    expected_output_contains: "read an image"
+
+  - name: vmtkimagewriter help
+    description: Display vmtkimagewriter options
+    command: vmtkimagewriter --help 2>&1
+    expected_output_contains: "write an image"
+
+  # ==========================================================================
+  # SURFACE READER/WRITER HELP
+  # ==========================================================================
+  - name: vmtksurfacereader help
+    description: Display vmtksurfacereader options
+    command: vmtksurfacereader --help 2>&1
+    expected_output_contains: "read a surface"
+
+  - name: vmtksurfacewriter help
+    description: Display vmtksurfacewriter options
+    command: vmtksurfacewriter --help 2>&1
+    expected_output_contains: "write surface"
+
+  # ==========================================================================
+  # MESH READER/WRITER HELP
+  # ==========================================================================
+  - name: vmtkmeshreader help
+    description: Display vmtkmeshreader options
+    command: vmtkmeshreader --help 2>&1
+    expected_output_contains: "read a mesh"
+
+  - name: vmtkmeshwriter help
+    description: Display vmtkmeshwriter options
+    command: vmtkmeshwriter --help 2>&1
+    expected_output_contains: "write a mesh"
+
+  # ==========================================================================
+  # CENTERLINE TOOLS HELP
+  # ==========================================================================
+  - name: vmtkcenterlines help
+    description: Display vmtkcenterlines options for vessel centerline computation
+    command: vmtkcenterlines --help 2>&1
+    expected_output_contains: "compute centerlines"
+
+  - name: vmtkcenterlineattributes help
+    description: Display vmtkcenterlineattributes options
+    command: vmtkcenterlineattributes --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtkcenterlinegeometry help
+    description: Display vmtkcenterlinegeometry options for curvature/torsion
+    command: vmtkcenterlinegeometry --help 2>&1
+    expected_output_contains: "curvature and torsion"
+
+  - name: vmtkcenterlineresampling help
+    description: Display vmtkcenterlineresampling options
+    command: vmtkcenterlineresampling --help 2>&1
+    expected_output_contains: "resample"
+
+  - name: vmtkcenterlinesmoothing help
+    description: Display vmtkcenterlinesmoothing options
+    command: vmtkcenterlinesmoothing --help 2>&1
+    expected_output_contains: "smooth centerlines"
+
+  - name: vmtkcenterlinemerge help
+    description: Display vmtkcenterlinemerge options
+    command: vmtkcenterlinemerge --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtkcenterlinesections help
+    description: Display vmtkcenterlinesections options
+    command: vmtkcenterlinesections --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  # ==========================================================================
+  # BRANCH ANALYSIS TOOLS HELP
+  # ==========================================================================
+  - name: vmtkbranchextractor help
+    description: Display vmtkbranchextractor options for splitting centerlines
+    command: vmtkbranchextractor --help 2>&1
+    expected_output_contains: "split and group centerlines"
+
+  - name: vmtkbranchgeometry help
+    description: Display vmtkbranchgeometry options
+    command: vmtkbranchgeometry --help 2>&1
+    expected_output_contains: "geometric parameters"
+
+  - name: vmtkbranchclipper help
+    description: Display vmtkbranchclipper options
+    command: vmtkbranchclipper --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtkbranchmetrics help
+    description: Display vmtkbranchmetrics options
+    command: vmtkbranchmetrics --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtkbranchsections help
+    description: Display vmtkbranchsections options
+    command: vmtkbranchsections --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  # ==========================================================================
+  # BIFURCATION ANALYSIS TOOLS HELP
+  # ==========================================================================
+  - name: vmtkbifurcationreferencesystems help
+    description: Display vmtkbifurcationreferencesystems options
+    command: vmtkbifurcationreferencesystems --help 2>&1
+    expected_output_contains: "reference systems"
+
+  - name: vmtkbifurcationvectors help
+    description: Display vmtkbifurcationvectors options
+    command: vmtkbifurcationvectors --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtkbifurcationsections help
+    description: Display vmtkbifurcationsections options
+    command: vmtkbifurcationsections --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtkbifurcationprofiles help
+    description: Display vmtkbifurcationprofiles options
+    command: vmtkbifurcationprofiles --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  # ==========================================================================
+  # IMAGE PROCESSING TOOLS HELP
+  # ==========================================================================
+  - name: vmtkimagebinarize help
+    description: Display vmtkimagebinarize options
+    command: vmtkimagebinarize --help 2>&1
+    expected_output_contains: "binarize"
+
+  - name: vmtkimagecast help
+    description: Display vmtkimagecast options for type casting
+    command: vmtkimagecast --help 2>&1
+    expected_output_contains: "cast an image"
+
+  - name: vmtkimagesmoothing help
+    description: Display vmtkimagesmoothing options
+    command: vmtkimagesmoothing --help 2>&1
+    expected_output_contains: "smooth an image"
+
+  - name: vmtkimagemorphology help
+    description: Display vmtkimagemorphology options
+    command: vmtkimagemorphology --help 2>&1
+    expected_output_contains: "morphology"
+
+  - name: vmtkimagenormalize help
+    description: Display vmtkimagenormalize options
+    command: vmtkimagenormalize --help 2>&1
+    expected_output_contains: "Image"
+
+  - name: vmtkimageshiftscale help
+    description: Display vmtkimageshiftscale options
+    command: vmtkimageshiftscale --help 2>&1
+    expected_output_contains: "shift and scale"
+
+  - name: vmtkimagefeatures help
+    description: Display vmtkimagefeatures options for segmentation features
+    command: vmtkimagefeatures --help 2>&1
+    expected_output_contains: "feature image"
+
+  - name: vmtkimagevesselenhancement help
+    description: Display vmtkimagevesselenhancement options (Frangi filter)
+    command: vmtkimagevesselenhancement --help 2>&1
+    expected_output_contains: "vessel"
+
+  - name: vmtkimageotsuthresholds help
+    description: Display vmtkimageotsuthresholds options
+    command: vmtkimageotsuthresholds --help 2>&1
+    expected_output_contains: "Image"
+
+  - name: vmtkimagecompare help
+    description: Display vmtkimagecompare options
+    command: vmtkimagecompare --help 2>&1
+    expected_output_contains: "Image"
+
+  - name: vmtkimagecompose help
+    description: Display vmtkimagecompose options
+    command: vmtkimagecompose --help 2>&1
+    expected_output_contains: "Image"
+
+  - name: vmtkimagereslice help
+    description: Display vmtkimagereslice options
+    command: vmtkimagereslice --help 2>&1
+    expected_output_contains: "Image"
+
+  # ==========================================================================
+  # SURFACE PROCESSING TOOLS HELP
+  # ==========================================================================
+  - name: vmtkmarchingcubes help
+    description: Display vmtkmarchingcubes options for isosurface extraction
+    command: vmtkmarchingcubes --help 2>&1
+    expected_output_contains: "isosurface"
+
+  - name: vmtksurfacesmoothing help
+    description: Display vmtksurfacesmoothing options (Taubin algorithm)
+    command: vmtksurfacesmoothing --help 2>&1
+    expected_output_contains: "smooth a surface"
+
+  - name: vmtksurfacedecimation help
+    description: Display vmtksurfacedecimation options
+    command: vmtksurfacedecimation --help 2>&1
+    expected_output_contains: "reduce the number of triangles"
+
+  - name: vmtksurfacesubdivision help
+    description: Display vmtksurfacesubdivision options
+    command: vmtksurfacesubdivision --help 2>&1
+    expected_output_contains: "subdivide"
+
+  - name: vmtksurfaceremeshing help
+    description: Display vmtksurfaceremeshing options
+    command: vmtksurfaceremeshing --help 2>&1
+    expected_output_contains: "remesh"
+
+  - name: vmtksurfacetriangle help
+    description: Display vmtksurfacetriangle options
+    command: vmtksurfacetriangle --help 2>&1
+    expected_output_contains: "triangles"
+
+  - name: vmtksurfacenormals help
+    description: Display vmtksurfacenormals options
+    command: vmtksurfacenormals --help 2>&1
+    expected_output_contains: "compute normals"
+
+  - name: vmtksurfacecurvature help
+    description: Display vmtksurfacecurvature options
+    command: vmtksurfacecurvature --help 2>&1
+    expected_output_contains: "curvature"
+
+  - name: vmtksurfaceconnectivity help
+    description: Display vmtksurfaceconnectivity options
+    command: vmtksurfaceconnectivity --help 2>&1
+    expected_output_contains: "connected region"
+
+  - name: vmtksurfacecapper help
+    description: Display vmtksurfacecapper options for capping vessel ends
+    command: vmtksurfacecapper --help 2>&1
+    expected_output_contains: "add caps"
+
+  - name: vmtksurfaceappend help
+    description: Display vmtksurfaceappend options
+    command: vmtksurfaceappend --help 2>&1
+    expected_output_contains: "append two surfaces"
+
+  - name: vmtksurfacebooleanoperation help
+    description: Display vmtksurfacebooleanoperation options
+    command: vmtksurfacebooleanoperation --help 2>&1
+    expected_output_contains: "boolean operation"
+
+  - name: vmtksurfacetransform help
+    description: Display vmtksurfacetransform options
+    command: vmtksurfacetransform --help 2>&1
+    expected_output_contains: "transform"
+
+  - name: vmtksurfacescaling help
+    description: Display vmtksurfacescaling options
+    command: vmtksurfacescaling --help 2>&1
+    expected_output_contains: "scale"
+
+  - name: vmtksurfacedistance help
+    description: Display vmtksurfacedistance options
+    command: vmtksurfacedistance --help 2>&1
+    expected_output_contains: "distance"
+
+  - name: vmtksurfacemassproperties help
+    description: Display vmtksurfacemassproperties options for volume computation
+    command: vmtksurfacemassproperties --help 2>&1
+    expected_output_contains: "volume"
+
+  - name: vmtksurfacetobinaryimage help
+    description: Display vmtksurfacetobinaryimage options
+    command: vmtksurfacetobinaryimage --help 2>&1
+    expected_output_contains: "binary image"
+
+  - name: vmtksurfacemodeller help
+    description: Display vmtksurfacemodeller options for signed distance
+    command: vmtksurfacemodeller --help 2>&1
+    expected_output_contains: "signed distance"
+
+  - name: vmtksurfaceclipper help
+    description: Display vmtksurfaceclipper options
+    command: vmtksurfaceclipper --help 2>&1
+    expected_output_contains: "clip"
+
+  - name: vmtksurfacecompare help
+    description: Display vmtksurfacecompare options
+    command: vmtksurfacecompare --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfacearrayoperation help
+    description: Display vmtksurfacearrayoperation options
+    command: vmtksurfacearrayoperation --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfacearraysmoothing help
+    description: Display vmtksurfacearraysmoothing options
+    command: vmtksurfacearraysmoothing --help 2>&1
+    expected_output_contains: "Surface"
+
+  # ==========================================================================
+  # MESH GENERATION AND PROCESSING HELP
+  # ==========================================================================
+  - name: vmtkmeshgenerator help
+    description: Display vmtkmeshgenerator options for CFD mesh generation
+    command: vmtkmeshgenerator --help 2>&1
+    expected_output_contains: "generate a mesh"
+
+  - name: vmtksurfacetomesh help
+    description: Display vmtksurfacetomesh options
+    command: vmtksurfacetomesh --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtkmeshtosurface help
+    description: Display vmtkmeshtosurface options
+    command: vmtkmeshtosurface --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshvolume help
+    description: Display vmtkmeshvolume options
+    command: vmtkmeshvolume --help 2>&1
+    expected_output_contains: "volume"
+
+  - name: vmtkmeshconnectivity help
+    description: Display vmtkmeshconnectivity options
+    command: vmtkmeshconnectivity --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshclipper help
+    description: Display vmtkmeshclipper options
+    command: vmtkmeshclipper --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshtetrahedralize help
+    description: Display vmtkmeshtetrahedralize options
+    command: vmtkmeshtetrahedralize --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshscaling help
+    description: Display vmtkmeshscaling options
+    command: vmtkmeshscaling --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshmerge help
+    description: Display vmtkmeshmerge options
+    command: vmtkmeshmerge --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkboundarylayer help
+    description: Display vmtkboundarylayer options
+    command: vmtkboundarylayer --help 2>&1
+    expected_output_contains: "boundary layer"
+
+  - name: vmtktetgen help
+    description: Display vmtktetgen options for tetrahedral mesh generation
+    command: vmtktetgen --help 2>&1
+    expected_output_contains: "Surface"
+
+  # ==========================================================================
+  # FLOW AND CFD TOOLS HELP
+  # ==========================================================================
+  - name: vmtkflowextensions help
+    description: Display vmtkflowextensions options for CFD extensions
+    command: vmtkflowextensions --help 2>&1
+    expected_output_contains: "flow extensions"
+
+  - name: vmtkmeshwallshearrate help
+    description: Display vmtkmeshwallshearrate options
+    command: vmtkmeshwallshearrate --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshvorticityhelicity help
+    description: Display vmtkmeshvorticityhelicity options
+    command: vmtkmeshvorticityhelicity --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshlambda2 help
+    description: Display vmtkmeshlambda2 options for vortex detection
+    command: vmtkmeshlambda2 --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkparticletracer help
+    description: Display vmtkparticletracer options
+    command: vmtkparticletracer --help 2>&1
+    expected_output_contains: "Mesh"
+
+  # ==========================================================================
+  # NETWORK EXTRACTION TOOLS HELP
+  # ==========================================================================
+  - name: vmtknetworkextraction help
+    description: Display vmtknetworkextraction options for vessel network
+    command: vmtknetworkextraction --help 2>&1
+    expected_output_contains: "network"
+
+  - name: vmtknetworkwriter help
+    description: Display vmtknetworkwriter options
+    command: vmtknetworkwriter --help 2>&1
+    expected_output_contains: "Network"
+
+  # ==========================================================================
+  # DISTANCE AND GEOMETRY TOOLS HELP
+  # ==========================================================================
+  - name: vmtkdistancetocenterlines help
+    description: Display vmtkdistancetocenterlines options
+    command: vmtkdistancetocenterlines --help 2>&1
+    expected_output_contains: "distance"
+
+  - name: vmtkdistancetospheres help
+    description: Display vmtkdistancetospheres options
+    command: vmtkdistancetospheres --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtkdijkstradistancetopoints help
+    description: Display vmtkdijkstradistancetopoints options
+    command: vmtkdijkstradistancetopoints --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtklocalgeometry help
+    description: Display vmtklocalgeometry options
+    command: vmtklocalgeometry --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtkdelaunayvoronoi help
+    description: Display vmtkdelaunayvoronoi options
+    command: vmtkdelaunayvoronoi --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtkpolyballmodeller help
+    description: Display vmtkpolyballmodeller options
+    command: vmtkpolyballmodeller --help 2>&1
+    expected_output_contains: "polyball"
+
+  # ==========================================================================
+  # REGISTRATION AND TRANSFORMATION TOOLS HELP
+  # ==========================================================================
+  - name: vmtkicpregistration help
+    description: Display vmtkicpregistration options for ICP registration
+    command: vmtkicpregistration --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtkpointtransform help
+    description: Display vmtkpointtransform options
+    command: vmtkpointtransform --help 2>&1
+    expected_output_contains: "transform"
+
+  - name: vmtksurfacereferencesystemtransform help
+    description: Display vmtksurfacereferencesystemtransform options
+    command: vmtksurfacereferencesystemtransform --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtkmeshtransform help
+    description: Display vmtkmeshtransform options
+    command: vmtkmeshtransform --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtksurfacetransformtoras help
+    description: Display vmtksurfacetransformtoras options
+    command: vmtksurfacetransformtoras --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtkmeshtransformtoras help
+    description: Display vmtkmeshtransformtoras options
+    command: vmtkmeshtransformtoras --help 2>&1
+    expected_output_contains: "Mesh"
+
+  # ==========================================================================
+  # NUMPY INTERFACE TOOLS HELP
+  # ==========================================================================
+  - name: vmtknumpyreader help
+    description: Display vmtknumpyreader options
+    command: vmtknumpyreader --help 2>&1
+    expected_output_contains: "numpy"
+
+  - name: vmtknumpywriter help
+    description: Display vmtknumpywriter options
+    command: vmtknumpywriter --help 2>&1
+    expected_output_contains: "numpy"
+
+  - name: vmtkimagetonumpy help
+    description: Display vmtkimagetonumpy options
+    command: vmtkimagetonumpy --help 2>&1
+    expected_output_contains: "numpy"
+
+  - name: vmtknumpytoimage help
+    description: Display vmtknumpytoimage options
+    command: vmtknumpytoimage --help 2>&1
+    expected_output_contains: "numpy"
+
+  - name: vmtksurfacetonumpy help
+    description: Display vmtksurfacetonumpy options
+    command: vmtksurfacetonumpy --help 2>&1
+    expected_output_contains: "numpy"
+
+  - name: vmtknumpytosurface help
+    description: Display vmtknumpytosurface options
+    command: vmtknumpytosurface --help 2>&1
+    expected_output_contains: "numpy"
+
+  - name: vmtkmeshtonumpy help
+    description: Display vmtkmeshtonumpy options
+    command: vmtkmeshtonumpy --help 2>&1
+    expected_output_contains: "numpy"
+
+  - name: vmtknumpytomesh help
+    description: Display vmtknumpytomesh options
+    command: vmtknumpytomesh --help 2>&1
+    expected_output_contains: "numpy"
+
+  - name: vmtkcenterlinestonumpy help
+    description: Display vmtkcenterlinestonumpy options
+    command: vmtkcenterlinestonumpy --help 2>&1
+    expected_output_contains: "numpy"
+
+  - name: vmtknumpytocenterlines help
+    description: Display vmtknumpytocenterlines options
+    command: vmtknumpytocenterlines --help 2>&1
+    expected_output_contains: "numpy"
+
+  # ==========================================================================
+  # ADVANCED ANALYSIS TOOLS HELP
+  # ==========================================================================
+  - name: vmtkendpointextractor help
+    description: Display vmtkendpointextractor options
+    command: vmtkendpointextractor --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtkendpointsections help
+    description: Display vmtkendpointsections options
+    command: vmtkendpointsections --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtklineresampling help
+    description: Display vmtklineresampling options
+    command: vmtklineresampling --help 2>&1
+    expected_output_contains: "resample"
+
+  - name: vmtkthreshold help
+    description: Display vmtkthreshold options
+    command: vmtkthreshold --help 2>&1
+    expected_output_contains: "threshold"
+
+  - name: vmtkentityrenumber help
+    description: Display vmtkentityrenumber options
+    command: vmtkentityrenumber --help 2>&1
+    expected_output_contains: "renumber"
+
+  - name: vmtkrbfinterpolation help
+    description: Display vmtkrbfinterpolation options
+    command: vmtkrbfinterpolation --help 2>&1
+    expected_output_contains: "interpolation"
+
+  - name: vmtkactivetubes help
+    description: Display vmtkactivetubes options
+    command: vmtkactivetubes --help 2>&1
+    expected_output_contains: "centerlines"
+
+  - name: vmtkpotentialfit help
+    description: Display vmtkpotentialfit options
+    command: vmtkpotentialfit --help 2>&1
+    expected_output_contains: "Surface"
+
+  # ==========================================================================
+  # PYPE SCRIPTING TOOLS HELP
+  # ==========================================================================
+  - name: vmtkpythonscript help
+    description: Display vmtkpythonscript options
+    command: vmtkpythonscript --help 2>&1
+    expected_output_contains: "python"
+
+  # ==========================================================================
+  # ADDITIONAL MESH TOOLS HELP
+  # ==========================================================================
+  - name: vmtkmeshaddexternallayer help
+    description: Display vmtkmeshaddexternallayer options
+    command: vmtkmeshaddexternallayer --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmesharrayoperation help
+    description: Display vmtkmesharrayoperation options
+    command: vmtkmesharrayoperation --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshcutter help
+    description: Display vmtkmeshcutter options
+    command: vmtkmeshcutter --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshextractpointdata help
+    description: Display vmtkmeshextractpointdata options
+    command: vmtkmeshextractpointdata --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshlinearize help
+    description: Display vmtkmeshlinearize options
+    command: vmtkmeshlinearize --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtklineartoquadratic help
+    description: Display vmtklineartoquadratic options
+    command: vmtklineartoquadratic --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshprojection help
+    description: Display vmtkmeshprojection options
+    command: vmtkmeshprojection --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshcompare help
+    description: Display vmtkmeshcompare options
+    command: vmtkmeshcompare --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshbranchclipper help
+    description: Display vmtkmeshbranchclipper options
+    command: vmtkmeshbranchclipper --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshclipcenterlines help
+    description: Display vmtkmeshclipcenterlines options
+    command: vmtkmeshclipcenterlines --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshdatareader help
+    description: Display vmtkmeshdatareader options
+    command: vmtkmeshdatareader --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshpolyballevaluation help
+    description: Display vmtkmeshpolyballevaluation options
+    command: vmtkmeshpolyballevaluation --help 2>&1
+    expected_output_contains: "Mesh"
+
+  - name: vmtkmeshvectorfromcomponents help
+    description: Display vmtkmeshvectorfromcomponents options
+    command: vmtkmeshvectorfromcomponents --help 2>&1
+    expected_output_contains: "Mesh"
+
+  # ==========================================================================
+  # ADDITIONAL SURFACE TOOLS HELP
+  # ==========================================================================
+  - name: vmtksurfaceendclipper help
+    description: Display vmtksurfaceendclipper options
+    command: vmtksurfaceendclipper --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfaceloopextraction help
+    description: Display vmtksurfaceloopextraction options
+    command: vmtksurfaceloopextraction --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfacekiteremoval help
+    description: Display vmtksurfacekiteremoval options
+    command: vmtksurfacekiteremoval --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfaceprojection help
+    description: Display vmtksurfaceprojection options
+    command: vmtksurfaceprojection --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfacecelldatatopointdata help
+    description: Display vmtksurfacecelldatatopointdata options
+    command: vmtksurfacecelldatatopointdata --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfacepointdatatocelldata help
+    description: Display vmtksurfacepointdatatocelldata options
+    command: vmtksurfacepointdatatocelldata --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfacepolyballevaluation help
+    description: Display vmtksurfacepolyballevaluation options
+    command: vmtksurfacepolyballevaluation --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfacecenterlineprojection help
+    description: Display vmtksurfacecenterlineprojection options
+    command: vmtksurfacecenterlineprojection --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfaceresolution help
+    description: Display vmtksurfaceresolution options
+    command: vmtksurfaceresolution --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtkgeodesicsurfaceresolution help
+    description: Display vmtkgeodesicsurfaceresolution options
+    command: vmtkgeodesicsurfaceresolution --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfaceconnectivityselector help
+    description: Display vmtksurfaceconnectivityselector options
+    command: vmtksurfaceconnectivityselector --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfacecliploop help
+    description: Display vmtksurfacecliploop options
+    command: vmtksurfacecliploop --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfaceextractannularwalls help
+    description: Display vmtksurfaceextractannularwalls options
+    command: vmtksurfaceextractannularwalls --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtksurfaceextractinnercylinder help
+    description: Display vmtksurfaceextractinnercylinder options
+    command: vmtksurfaceextractinnercylinder --help 2>&1
+    expected_output_contains: "Surface"
+
+  # ==========================================================================
+  # ADDITIONAL IMAGE TOOLS HELP
+  # ==========================================================================
+  - name: vmtkimagefeaturecorrection help
+    description: Display vmtkimagefeaturecorrection options
+    command: vmtkimagefeaturecorrection --help 2>&1
+    expected_output_contains: "Image"
+
+  - name: vmtkimageobjectenhancement help
+    description: Display vmtkimageobjectenhancement options
+    command: vmtkimageobjectenhancement --help 2>&1
+    expected_output_contains: "Image"
+
+  - name: vmtkimagecurvedmpr help
+    description: Display vmtkimagecurvedmpr options
+    command: vmtkimagecurvedmpr --help 2>&1
+    expected_output_contains: "Image"
+
+  - name: vmtkcenterlineimage help
+    description: Display vmtkcenterlineimage options
+    command: vmtkcenterlineimage --help 2>&1
+    expected_output_contains: "centerline"
+
+  - name: vmtkcenterlinemodeller help
+    description: Display vmtkcenterlinemodeller options
+    command: vmtkcenterlinemodeller --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  # ==========================================================================
+  # LEVEL SET SEGMENTATION HELP
+  # ==========================================================================
+  - name: vmtklevelsetsegmentation help
+    description: Display vmtklevelsetsegmentation options
+    command: vmtklevelsetsegmentation --help 2>&1
+    expected_output_contains: "level"
+
+  # ==========================================================================
+  # RENDERER TOOLS HELP
+  # ==========================================================================
+  - name: vmtkrenderer help
+    description: Display vmtkrenderer options
+    command: vmtkrenderer --help 2>&1
+    expected_output_contains: "renderer"
+
+  - name: vmtkrendertoimage help
+    description: Display vmtkrendertoimage options
+    command: vmtkrendertoimage --help 2>&1
+    expected_output_contains: "renderer"
+
+  # ==========================================================================
+  # SUPPLEMENTARY BOUNDARY AND REFERENCE TOOLS HELP
+  # ==========================================================================
+  - name: vmtkboundaryreferencesystems help
+    description: Display vmtkboundaryreferencesystems options
+    command: vmtkboundaryreferencesystems --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtkcenterlineoffsetattributes help
+    description: Display vmtkcenterlineoffsetattributes options
+    command: vmtkcenterlineoffsetattributes --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtkcenterlinesnetwork help
+    description: Display vmtkcenterlinesnetwork options
+    command: vmtkcenterlinesnetwork --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtkcenterlinelabeler help
+    description: Display vmtkcenterlinelabeler options
+    command: vmtkcenterlinelabeler --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtkcenterlineinterpolation help
+    description: Display vmtkcenterlineinterpolation options
+    command: vmtkcenterlineinterpolation --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtkcenterlinemeshsections help
+    description: Display vmtkcenterlinemeshsections options
+    command: vmtkcenterlinemeshsections --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtkbranchmapping help
+    description: Display vmtkbranchmapping options
+    command: vmtkbranchmapping --help 2>&1
+    expected_output_contains: "Centerlines"
+
+  - name: vmtkbranchpatching help
+    description: Display vmtkbranchpatching options
+    command: vmtkbranchpatching --help 2>&1
+    expected_output_contains: "Surface"
+
+  - name: vmtkpointsplitextractor help
+    description: Display vmtkpointsplitextractor options
+    command: vmtkpointsplitextractor --help 2>&1
+    expected_output_contains: "Centerlines"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

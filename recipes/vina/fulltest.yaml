@@ -1,0 +1,836 @@
+# AutoDock Vina container test suite
+# Tests for AutoDock Vina v1.2.3 - Molecular docking and virtual screening
+#
+# This container includes:
+#   - vina: AutoDock Vina molecular docking engine
+#   - vina_split: Split multi-model PDBQT files
+#   - prepare_receptor: Prepare receptor PDBQT files
+#   - prepare_ligand: Prepare ligand PDBQT files
+#   - autogrid4: AutoGrid for affinity map calculation
+#   - obabel: Open Babel chemical format converter
+#   - adfr: AutoDock-FR for flexible receptor docking
+#   - agfr: Prepare receptor maps for ADFR
+#   - autosite: Binding site identification
+#   - adcp: AutoDock CrankPep for peptide docking
+#   - reduce: Add hydrogens to PDB files
+#   - msms: Molecular surface calculation
+
+name: vina
+version: 1.2.3
+container: vina_1.2.3_20230221.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # VINA - CORE DOCKING ENGINE
+  # ==========================================================================
+  - name: Vina version check
+    description: Verify vina binary reports correct version
+    command: vina --version
+    expected_output_contains: "AutoDock Vina v1.2.3"
+
+  - name: Vina help display
+    description: Display basic vina help information
+    command: vina --help
+    expected_output_contains: "Input:"
+
+  - name: Vina help receptor option
+    description: Verify receptor option is documented
+    command: vina --help
+    expected_output_contains: "--receptor"
+
+  - name: Vina help ligand option
+    description: Verify ligand option is documented
+    command: vina --help
+    expected_output_contains: "--ligand"
+
+  - name: Vina help scoring option
+    description: Verify scoring function option is documented
+    command: vina --help
+    expected_output_contains: "--scoring"
+
+  - name: Vina help search space options
+    description: Verify search space center options are documented
+    command: vina --help
+    expected_output_contains: "--center_x"
+
+  - name: Vina help size options
+    description: Verify search space size options are documented
+    command: vina --help
+    expected_output_contains: "--size_x"
+
+  - name: Vina help exhaustiveness option
+    description: Verify exhaustiveness option is documented
+    command: vina --help
+    expected_output_contains: "--exhaustiveness"
+
+  - name: Vina help num_modes option
+    description: Verify num_modes option is documented
+    command: vina --help
+    expected_output_contains: "--num_modes"
+
+  - name: Vina help cpu option
+    description: Verify CPU option is documented
+    command: vina --help
+    expected_output_contains: "--cpu"
+
+  - name: Vina help seed option
+    description: Verify random seed option is documented
+    command: vina --help
+    expected_output_contains: "--seed"
+
+  - name: Vina help config option
+    description: Verify config file option is documented
+    command: vina --help
+    expected_output_contains: "--config"
+
+  - name: Vina help output option
+    description: Verify output option is documented
+    command: vina --help
+    expected_output_contains: "--out"
+
+  - name: Vina help maps option
+    description: Verify maps option is documented
+    command: vina --help
+    expected_output_contains: "--maps"
+
+  - name: Vina help autobox option
+    description: Verify autobox option is documented
+    command: vina --help
+    expected_output_contains: "--autobox"
+
+  - name: Vina advanced help display
+    description: Display advanced vina options
+    command: vina --help_advanced
+    expected_output_contains: "Advanced options"
+
+  - name: Vina advanced score_only option
+    description: Verify score_only option in advanced help
+    command: vina --help_advanced
+    expected_output_contains: "--score_only"
+
+  - name: Vina advanced local_only option
+    description: Verify local_only option in advanced help
+    command: vina --help_advanced
+    expected_output_contains: "--local_only"
+
+  - name: Vina advanced randomize_only option
+    description: Verify randomize_only option in advanced help
+    command: vina --help_advanced
+    expected_output_contains: "--randomize_only"
+
+  - name: Vina advanced weight_gauss1 option
+    description: Verify Vina scoring weight options
+    command: vina --help_advanced
+    expected_output_contains: "--weight_gauss1"
+
+  - name: Vina advanced weight_hydrophobic option
+    description: Verify hydrophobic weight option
+    command: vina --help_advanced
+    expected_output_contains: "--weight_hydrophobic"
+
+  - name: Vina advanced weight_hydrogen option
+    description: Verify hydrogen bond weight option
+    command: vina --help_advanced
+    expected_output_contains: "--weight_hydrogen"
+
+  - name: Vina advanced vinardo weights
+    description: Verify Vinardo scoring function weights
+    command: vina --help_advanced
+    expected_output_contains: "--weight_vinardo_gauss1"
+
+  - name: Vina advanced ad4 weights
+    description: Verify AD4 scoring function weights
+    command: vina --help_advanced
+    expected_output_contains: "--weight_ad4_vdw"
+
+  - name: Vina advanced no_refine option
+    description: Verify no_refine option in advanced help
+    command: vina --help_advanced
+    expected_output_contains: "--no_refine"
+
+  - name: Vina advanced force_even_voxels option
+    description: Verify force_even_voxels option
+    command: vina --help_advanced
+    expected_output_contains: "--force_even_voxels"
+
+  - name: Vina advanced macrocycle glue weight
+    description: Verify macrocycle glue weight option
+    command: vina --help_advanced
+    expected_output_contains: "--weight_glue"
+
+  - name: Vina scoring function vina
+    description: Verify vina scoring function is default
+    command: vina --help
+    expected_output_contains: "vina or vinardo"
+
+  - name: Vina help energy_range option
+    description: Verify energy_range option is documented
+    command: vina --help
+    expected_output_contains: "--energy_range"
+
+  - name: Vina help min_rmsd option
+    description: Verify min_rmsd option is documented
+    command: vina --help
+    expected_output_contains: "--min_rmsd"
+
+  - name: Vina help spacing option
+    description: Verify grid spacing option is documented
+    command: vina --help
+    expected_output_contains: "--spacing"
+
+  - name: Vina help verbosity option
+    description: Verify verbosity option is documented
+    command: vina --help
+    expected_output_contains: "--verbosity"
+
+  - name: Vina help batch option
+    description: Verify batch ligand option is documented
+    command: vina --help
+    expected_output_contains: "--batch"
+
+  - name: Vina help flex option
+    description: Verify flexible side chains option is documented
+    command: vina --help
+    expected_output_contains: "--flex"
+
+  - name: Vina help dir option
+    description: Verify output directory option is documented
+    command: vina --help
+    expected_output_contains: "--dir"
+
+  - name: Vina help write_maps option
+    description: Verify write_maps option is documented
+    command: vina --help
+    expected_output_contains: "--write_maps"
+
+  - name: Vina help max_evals option
+    description: Verify max_evals option is documented
+    command: vina --help
+    expected_output_contains: "--max_evals"
+
+  # ==========================================================================
+  # VINA_SPLIT - PDBQT SPLITTING UTILITY
+  # ==========================================================================
+  - name: Vina_split help display
+    description: Display vina_split help information
+    command: vina_split --help
+    expected_output_contains: "AutoDock Vina PDBQT Split"
+
+  - name: Vina_split version check
+    description: Verify vina_split version
+    command: vina_split --version
+    expected_output_contains: "v1.2.3"
+
+  - name: Vina_split input option
+    description: Verify input option is documented
+    command: vina_split --help
+    expected_output_contains: "--input"
+
+  - name: Vina_split ligand option
+    description: Verify ligand prefix option is documented
+    command: vina_split --help
+    expected_output_contains: "--ligand"
+
+  - name: Vina_split flex option
+    description: Verify flex prefix option is documented
+    command: vina_split --help
+    expected_output_contains: "--flex"
+
+  # ==========================================================================
+  # PREPARE_RECEPTOR - RECEPTOR PREPARATION
+  # ==========================================================================
+  - name: Prepare_receptor help display
+    description: Display prepare_receptor usage information
+    command: prepare_receptor -h 2>&1 || true
+    expected_output_contains: "prepare_receptor"
+
+  - name: Prepare_receptor receptor option
+    description: Verify receptor input option
+    command: prepare_receptor -h 2>&1 || true
+    expected_output_contains: "-r"
+
+  - name: Prepare_receptor output option
+    description: Verify output option is documented
+    command: prepare_receptor -h 2>&1 || true
+    expected_output_contains: "-o"
+
+  - name: Prepare_receptor verbose option
+    description: Verify verbose option is documented
+    command: prepare_receptor -h 2>&1 || true
+    expected_output_contains: "-v"
+
+  - name: Prepare_receptor repair option
+    description: Verify repair types option
+    command: prepare_receptor -h 2>&1 || true
+    expected_output_contains: "-A"
+
+  - name: Prepare_receptor charges option
+    description: Verify charge preservation option
+    command: prepare_receptor -h 2>&1 || true
+    expected_output_contains: "-C"
+
+  - name: Prepare_receptor cleanup option
+    description: Verify cleanup types option
+    command: prepare_receptor -h 2>&1 || true
+    expected_output_contains: "-U"
+
+  - name: Prepare_receptor supported formats
+    description: Verify supported file types
+    command: prepare_receptor -h 2>&1 || true
+    expected_output_contains: "pdb,mol2,pdbq"
+
+  - name: Prepare_receptor preserve charges option
+    description: Verify preserve charges on atom types
+    command: prepare_receptor -h 2>&1 || true
+    expected_output_contains: "-p"
+
+  - name: Prepare_receptor delete nonstd option
+    description: Verify delete nonstandard residues option
+    command: prepare_receptor -h 2>&1 || true
+    expected_output_contains: "-e"
+
+  - name: Prepare_receptor dictionary option
+    description: Verify dictionary file option
+    command: prepare_receptor -h 2>&1 || true
+    expected_output_contains: "-d"
+
+  - name: Prepare_receptor unique names option
+    description: Verify unique atom names option
+    command: prepare_receptor -h 2>&1 || true
+    expected_output_contains: "-w"
+
+  # ==========================================================================
+  # PREPARE_LIGAND - LIGAND PREPARATION
+  # ==========================================================================
+  - name: Prepare_ligand help display
+    description: Display prepare_ligand usage information
+    command: prepare_ligand -h 2>&1 || true
+    expected_output_contains: "prepare_ligand"
+
+  - name: Prepare_ligand input option
+    description: Verify ligand input option
+    command: prepare_ligand -h 2>&1 || true
+    expected_output_contains: "-l"
+
+  - name: Prepare_ligand output option
+    description: Verify output option is documented
+    command: prepare_ligand -h 2>&1 || true
+    expected_output_contains: "-o"
+
+  - name: Prepare_ligand verbose option
+    description: Verify verbose option is documented
+    command: prepare_ligand -h 2>&1 || true
+    expected_output_contains: "-v"
+
+  - name: Prepare_ligand repair option
+    description: Verify repair types option
+    command: prepare_ligand -h 2>&1 || true
+    expected_output_contains: "-A"
+
+  - name: Prepare_ligand charges option
+    description: Verify charge options
+    command: prepare_ligand -h 2>&1 || true
+    expected_output_contains: "-C"
+
+  - name: Prepare_ligand cleanup option
+    description: Verify cleanup types option
+    command: prepare_ligand -h 2>&1 || true
+    expected_output_contains: "-U"
+
+  - name: Prepare_ligand bonds option
+    description: Verify rotatable bonds option
+    command: prepare_ligand -h 2>&1 || true
+    expected_output_contains: "-B"
+
+  - name: Prepare_ligand root option
+    description: Verify root atom index option
+    command: prepare_ligand -h 2>&1 || true
+    expected_output_contains: "-R"
+
+  - name: Prepare_ligand fragment option
+    description: Verify largest fragment option
+    command: prepare_ligand -h 2>&1 || true
+    expected_output_contains: "-F"
+
+  - name: Prepare_ligand inactivate option
+    description: Verify bond inactivation option
+    command: prepare_ligand -h 2>&1 || true
+    expected_output_contains: "-I"
+
+  - name: Prepare_ligand torsions option
+    description: Verify inactivate all torsions option
+    command: prepare_ligand -h 2>&1 || true
+    expected_output_contains: "-Z"
+
+  # ==========================================================================
+  # AUTOGRID4 - AFFINITY MAP CALCULATION
+  # ==========================================================================
+  - name: Autogrid4 help display
+    description: Display autogrid4 usage information
+    command: autogrid4 -h 2>&1
+    expected_output_contains: "AutoGrid"
+
+  - name: Autogrid4 version check
+    description: Verify autogrid4 version
+    command: autogrid4 --version 2>&1
+    expected_output_contains: "AutoGrid 4.2"
+
+  - name: Autogrid4 parameter file option
+    description: Verify parameter file option
+    command: autogrid4 -h 2>&1
+    expected_output_contains: "-p"
+
+  - name: Autogrid4 log file option
+    description: Verify log file option
+    command: autogrid4 -h 2>&1
+    expected_output_contains: "-l"
+
+  - name: Autogrid4 debug option
+    description: Verify debug option
+    command: autogrid4 -h 2>&1
+    expected_output_contains: "-d"
+
+  - name: Autogrid4 copyright info
+    description: Verify copyright information
+    command: autogrid4 --version 2>&1
+    expected_output_contains: "Scripps Research Institute"
+
+  - name: Autogrid4 precision info
+    description: Verify double-precision build
+    command: autogrid4 --version 2>&1
+    expected_output_contains: "Double-precision"
+
+  - name: Autogrid4 OpenMP info
+    description: Verify OpenMP support
+    command: autogrid4 --version 2>&1
+    expected_output_contains: "_OPENMP"
+
+  # ==========================================================================
+  # OBABEL - OPEN BABEL FORMAT CONVERTER
+  # ==========================================================================
+  - name: Obabel help display
+    description: Display obabel help information
+    command: obabel -H 2>&1
+    expected_output_contains: "Open Babel"
+
+  - name: Obabel version check
+    description: Verify obabel is available
+    command: obabel -V 2>&1
+    expected_output_contains: "Open Babel"
+
+  - name: Obabel input format option
+    description: Verify input format option
+    command: obabel -H 2>&1
+    expected_output_contains: "-i"
+
+  - name: Obabel output format option
+    description: Verify output format option
+    command: obabel -H 2>&1
+    expected_output_contains: "-o"
+
+  - name: Obabel conversion options
+    description: Verify conversion options are documented
+    command: obabel -H 2>&1
+    expected_output_contains: "Conversion options"
+
+  - name: Obabel start molecule option
+    description: Verify start import option
+    command: obabel -H 2>&1
+    expected_output_contains: "-f"
+
+  - name: Obabel end molecule option
+    description: Verify end import option
+    command: obabel -H 2>&1
+    expected_output_contains: "-l"
+
+  - name: Obabel compress option
+    description: Verify compression option
+    command: obabel -H 2>&1
+    expected_output_contains: "-z"
+
+  - name: Obabel multiple files option
+    description: Verify multiple output files option
+    command: obabel -H 2>&1
+    expected_output_contains: "-m"
+
+  - name: Obabel list formats
+    description: List available format categories
+    command: obabel -L formats 2>&1 | head -20
+    expected_output_contains: "Format"
+
+  # ==========================================================================
+  # ADFR - AUTODOCK-FR DOCKING
+  # ==========================================================================
+  - name: ADFR help display
+    description: Display ADFR help information
+    command: adfr -h 2>&1
+    expected_output_contains: "adfr"
+
+  - name: ADFR version option
+    description: Verify version option is available
+    command: adfr -h 2>&1
+    expected_output_contains: "-v"
+
+  - name: ADFR ligand option
+    description: Verify ligand input option
+    command: adfr -h 2>&1
+    expected_output_contains: "--ligand"
+
+  - name: ADFR target option
+    description: Verify target file option
+    command: adfr -h 2>&1
+    expected_output_contains: "--target"
+
+  - name: ADFR job name option
+    description: Verify job name option
+    command: adfr -h 2>&1
+    expected_output_contains: "--jobName"
+
+  - name: ADFR max cores option
+    description: Verify max cores option
+    command: adfr -h 2>&1
+    expected_output_contains: "--maxCores"
+
+  - name: ADFR nb runs option
+    description: Verify number of runs option
+    command: adfr -h 2>&1
+    expected_output_contains: "--nbRuns"
+
+  - name: ADFR pop size option
+    description: Verify population size option
+    command: adfr -h 2>&1
+    expected_output_contains: "--popSize"
+
+  - name: ADFR max evals option
+    description: Verify max evaluations option
+    command: adfr -h 2>&1
+    expected_output_contains: "--maxEvals"
+
+  - name: ADFR seed option
+    description: Verify random seed option
+    command: adfr -h 2>&1
+    expected_output_contains: "--seed"
+
+  - name: ADFR covalent ligand option
+    description: Verify covalent docking option
+    command: adfr -h 2>&1
+    expected_output_contains: "--covalentLigand"
+
+  - name: ADFR neighbor search option
+    description: Verify neighbor search cutoff option
+    command: adfr -h 2>&1
+    expected_output_contains: "--neighborSearchCutoff"
+
+  # ==========================================================================
+  # AGFR - RECEPTOR MAP PREPARATION FOR ADFR
+  # ==========================================================================
+  - name: AGFR help display
+    description: Display AGFR help information
+    command: agfr -h 2>&1
+    expected_output_contains: "agfr"
+
+  - name: AGFR version option
+    description: Verify version option is available
+    command: agfr -h 2>&1
+    expected_output_contains: "-v"
+
+  - name: AGFR receptor option
+    description: Verify receptor input option
+    command: agfr -h 2>&1
+    expected_output_contains: "--receptor"
+
+  - name: AGFR config option
+    description: Verify config file option
+    command: agfr -h 2>&1
+    expected_output_contains: "--config"
+
+  - name: AGFR box mode option
+    description: Verify box mode option
+    command: agfr -h 2>&1
+    expected_output_contains: "--boxMode"
+
+  - name: AGFR pocket mode option
+    description: Verify pocket mode option
+    command: agfr -h 2>&1
+    expected_output_contains: "--pocketMode"
+
+  - name: AGFR padding option
+    description: Verify padding option
+    command: agfr -h 2>&1
+    expected_output_contains: "--padding"
+
+  - name: AGFR flex residues option
+    description: Verify flexible residues option
+    command: agfr -h 2>&1
+    expected_output_contains: "--flexRes"
+
+  - name: AGFR spacing option
+    description: Verify grid spacing option
+    command: agfr -h 2>&1
+    expected_output_contains: "--spacing"
+
+  - name: AGFR output file option
+    description: Verify output file option
+    command: agfr -h 2>&1
+    expected_output_contains: "-o"
+
+  - name: AGFR covalent bond option
+    description: Verify covalent bond option
+    command: agfr -h 2>&1
+    expected_output_contains: "--covalentBond"
+
+  # ==========================================================================
+  # AUTOSITE - BINDING SITE IDENTIFICATION
+  # ==========================================================================
+  - name: AutoSite help display
+    description: Display AutoSite help information
+    command: autosite -h 2>&1
+    expected_output_contains: "AutoSite"
+
+  - name: AutoSite version option
+    description: Verify version option is available
+    command: autosite -h 2>&1
+    expected_output_contains: "-v"
+
+  - name: AutoSite receptor option
+    description: Verify receptor input option
+    command: autosite -h 2>&1
+    expected_output_contains: "--receptor"
+
+  - name: AutoSite maps option
+    description: Verify maps input option
+    command: autosite -h 2>&1
+    expected_output_contains: "--maps"
+
+  - name: AutoSite output option
+    description: Verify output directory option
+    command: autosite -h 2>&1
+    expected_output_contains: "--outdir"
+
+  - name: AutoSite top n option
+    description: Verify top N outputs option
+    command: autosite -h 2>&1
+    expected_output_contains: "--topn"
+
+  - name: AutoSite ligand size option
+    description: Verify ligand size option
+    command: autosite -h 2>&1
+    expected_output_contains: "--ligandSize"
+
+  - name: AutoSite peptide option
+    description: Verify peptide scoring option
+    command: autosite -h 2>&1
+    expected_output_contains: "-p"
+
+  - name: AutoSite spacing option
+    description: Verify grid spacing option
+    command: autosite -h 2>&1
+    expected_output_contains: "--spacing"
+
+  # ==========================================================================
+  # ADCP - AUTODOCK CRANKPEP
+  # ==========================================================================
+  - name: ADCP help display
+    description: Display ADCP help information
+    command: adcp -h 2>&1
+    expected_output_contains: "AutoDock CrankPep"
+
+  - name: ADCP version option
+    description: Verify version option is available
+    command: adcp -h 2>&1
+    expected_output_contains: "-v"
+
+  - name: ADCP sequence option
+    description: Verify sequence input option
+    command: adcp -h 2>&1
+    expected_output_contains: "--sequence"
+
+  - name: ADCP target option
+    description: Verify target file option
+    command: adcp -h 2>&1
+    expected_output_contains: "--target"
+
+  - name: ADCP num steps option
+    description: Verify number of steps option
+    command: adcp -h 2>&1
+    expected_output_contains: "--numSteps"
+
+  - name: ADCP nb runs option
+    description: Verify number of runs option
+    command: adcp -h 2>&1
+    expected_output_contains: "--nbRuns"
+
+  - name: ADCP job name option
+    description: Verify job name option
+    command: adcp -h 2>&1
+    expected_output_contains: "--jobName"
+
+  - name: ADCP cyclic option
+    description: Verify cyclic peptide option
+    command: adcp -h 2>&1
+    expected_output_contains: "--cyclic"
+
+  - name: ADCP cystein option
+    description: Verify disulfide bridge option
+    command: adcp -h 2>&1
+    expected_output_contains: "--cystein"
+
+  - name: ADCP seed option
+    description: Verify random seed option
+    command: adcp -h 2>&1
+    expected_output_contains: "--seed"
+
+  - name: ADCP partition option
+    description: Verify helix/coil partition option
+    command: adcp -h 2>&1
+    expected_output_contains: "--partition"
+
+  # ==========================================================================
+  # REDUCE - HYDROGEN ADDITION
+  # ==========================================================================
+  - name: Reduce help display
+    description: Display reduce help information
+    command: reduce -h 2>&1
+    expected_output_contains: "reduce"
+    ignore_exit_code: true
+
+  - name: Reduce version info
+    description: Verify reduce version information
+    command: reduce -h 2>&1
+    expected_output_contains: "version"
+    ignore_exit_code: true
+
+  - name: Reduce FLIP option
+    description: Verify FLIP option for NQH flips
+    command: reduce -h 2>&1
+    expected_output_contains: "-FLIP"
+    ignore_exit_code: true
+
+  - name: Reduce NOFLIP option
+    description: Verify NOFLIP option
+    command: reduce -h 2>&1
+    expected_output_contains: "-NOFLIP"
+    ignore_exit_code: true
+
+  - name: Reduce Trim option
+    description: Verify Trim option for hydrogen removal
+    command: reduce -h 2>&1
+    expected_output_contains: "-Trim"
+    ignore_exit_code: true
+
+  - name: Reduce nuclear option
+    description: Verify nuclear distances option
+    command: reduce -h 2>&1
+    expected_output_contains: "-NUClear"
+    ignore_exit_code: true
+
+  - name: Reduce HIS option
+    description: Verify HIS protonation option
+    command: reduce -h 2>&1
+    expected_output_contains: "-HIS"
+    ignore_exit_code: true
+
+  - name: Reduce BUILD option
+    description: Verify BUILD mode option
+    command: reduce -h 2>&1
+    expected_output_contains: "-BUILD"
+    ignore_exit_code: true
+
+  - name: Reduce density option
+    description: Verify dot density option
+    command: reduce -h 2>&1
+    expected_output_contains: "-DENSity"
+    ignore_exit_code: true
+
+  - name: Reduce model option
+    description: Verify model selection option
+    command: reduce -h 2>&1
+    expected_output_contains: "-Model"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # MSMS - MOLECULAR SURFACE CALCULATION
+  # ==========================================================================
+  - name: MSMS help display
+    description: Display MSMS help information
+    command: msms -h 2>&1
+    expected_output_contains: "msms"
+
+  - name: MSMS probe radius option
+    description: Verify probe radius option
+    command: msms -h 2>&1
+    expected_output_contains: "-probe_radius"
+
+  - name: MSMS density option
+    description: Verify surface point density option
+    command: msms -h 2>&1
+    expected_output_contains: "-density"
+
+  - name: MSMS high density option
+    description: Verify high density option
+    command: msms -h 2>&1
+    expected_output_contains: "-hdensity"
+
+  - name: MSMS surface type option
+    description: Verify surface type option
+    command: msms -h 2>&1
+    expected_output_contains: "-surface"
+
+  - name: MSMS input file option
+    description: Verify input file option
+    command: msms -h 2>&1
+    expected_output_contains: "-if"
+
+  - name: MSMS output file option
+    description: Verify output file option
+    command: msms -h 2>&1
+    expected_output_contains: "-of"
+
+  - name: MSMS area file option
+    description: Verify area file option
+    command: msms -h 2>&1
+    expected_output_contains: "-af"
+
+  - name: MSMS no header option
+    description: Verify no header option
+    command: msms -h 2>&1
+    expected_output_contains: "-no_header"
+
+  - name: MSMS all components option
+    description: Verify all components option
+    command: msms -h 2>&1
+    expected_output_contains: "-all_components"
+
+  # ==========================================================================
+  # CONTAINER README
+  # ==========================================================================
+  - name: Container README exists
+    description: Verify container README documentation
+    command: cat /README.md 2>&1
+    expected_output_contains: "AutoDock Vina"
+
+  - name: Container README example commands
+    description: Verify example commands in README
+    command: cat /README.md 2>&1
+    expected_output_contains: "prepare_receptor"
+
+  - name: Container README documentation link
+    description: Verify documentation link in README
+    command: cat /README.md 2>&1
+    expected_output_contains: "autodock-vina.readthedocs.io"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

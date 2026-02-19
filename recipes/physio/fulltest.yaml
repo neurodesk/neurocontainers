@@ -1,0 +1,591 @@
+# physio container test suite
+# Tests for SPM12 + PhysIO toolbox standalone with MATLAB Compiler Runtime (R2020b/v99)
+#
+# PhysIO implements physiological noise modeling in fMRI:
+# - Kasper et al., 2017. The PhysIO Toolbox for Modeling Physiological Noise in fMRI Data.
+#   Journal of Neuroscience Methods 276, 56-72.
+# - Part of TAPAS Software Package for Translational Neuromodeling
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: physio
+version: r2021a_20220220
+container: physio_r2021a_20220220.simg
+
+# Environment variables
+env:
+  MCR_ROOT: /opt/mcr/v99
+  SPM_CMD: /opt/spm12/run_spm12.sh /opt/mcr/v99
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION CHECKS
+  # ==========================================================================
+  - name: SPM12 help command
+    description: Verify SPM12 standalone runs and displays help
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 help 2>&1
+    expected_output_contains: "Usage: spm12"
+
+  - name: SPM12 verbose help
+    description: List all available SPM12 batch nodes
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 help --verbose 2>&1 | head -20
+    expected_output_contains: "spm.temporal.st"
+
+  - name: PhysIO toolbox presence
+    description: Verify PhysIO toolbox is available in SPM tools
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 help --verbose 2>&1 | grep physio
+    expected_output_contains: "spm.tools.physio"
+
+  - name: PhysIO help command
+    description: Verify PhysIO help displays available options
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.tools.physio help 2>&1
+    expected_output_contains: "save_dir"
+
+  - name: MCR directory exists
+    description: Verify MATLAB Compiler Runtime is installed
+    command: ls -la /opt/mcr/v99 2>&1
+    expected_output_contains: "runtime"
+
+  - name: SPM12 directory exists
+    description: Verify SPM12 standalone is installed
+    command: ls -la /opt/spm12 2>&1
+    expected_output_contains: "run_spm12.sh"
+
+  # ==========================================================================
+  # PHYSIO TOOLBOX FUNCTION FILES
+  # ==========================================================================
+  - name: PhysIO main function exists
+    description: Verify main PhysIO regressor creation function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/tapas_physio_main_create_regressors.m
+    expected_output_contains: "tapas_physio_main_create_regressors.m"
+
+  - name: PhysIO initialization function exists
+    description: Verify PhysIO initialization function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/tapas_physio_init.m
+    expected_output_contains: "tapas_physio_init.m"
+
+  - name: PhysIO new structure function exists
+    description: Verify PhysIO structure creation function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/tapas_physio_new.m
+    expected_output_contains: "tapas_physio_new.m"
+
+  - name: PhysIO version function exists
+    description: Verify PhysIO version function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/tapas_physio_version.m
+    expected_output_contains: "tapas_physio_version.m"
+
+  - name: PhysIO batch configuration exists
+    description: Verify PhysIO matlabbatch configuration
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/tapas_physio_cfg_matlabbatch.m
+    expected_output_contains: "tapas_physio_cfg_matlabbatch.m"
+
+  # ==========================================================================
+  # PHYSIO READIN MODULES (VENDOR SUPPORT)
+  # ==========================================================================
+  - name: PhysIO BIDS reader exists
+    description: Verify BIDS format physiological data reader
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/readin/tapas_physio_read_physlogfiles_bids.m
+    expected_output_contains: "tapas_physio_read_physlogfiles_bids.m"
+
+  - name: PhysIO Siemens reader exists
+    description: Verify Siemens physiological log reader
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/readin/tapas_physio_read_physlogfiles_siemens.m
+    expected_output_contains: "tapas_physio_read_physlogfiles_siemens.m"
+
+  - name: PhysIO Siemens TICS reader exists
+    description: Verify Siemens TICS format reader
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/readin/tapas_physio_read_physlogfiles_siemens_tics.m
+    expected_output_contains: "tapas_physio_read_physlogfiles_siemens_tics.m"
+
+  - name: PhysIO Siemens HCP reader exists
+    description: Verify Siemens HCP format reader
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/readin/tapas_physio_read_physlogfiles_siemens_hcp.m
+    expected_output_contains: "tapas_physio_read_physlogfiles_siemens_hcp.m"
+
+  - name: PhysIO Philips reader exists
+    description: Verify Philips physiological log reader
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/readin/tapas_physio_read_physlogfiles_philips.m
+    expected_output_contains: "tapas_physio_read_physlogfiles_philips.m"
+
+  - name: PhysIO GE reader exists
+    description: Verify GE physiological log reader
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/readin/tapas_physio_read_physlogfiles_GE.m
+    expected_output_contains: "tapas_physio_read_physlogfiles_GE.m"
+
+  - name: PhysIO Biopac MAT reader exists
+    description: Verify Biopac .mat file reader
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/readin/tapas_physio_read_physlogfiles_biopac_mat.m
+    expected_output_contains: "tapas_physio_read_physlogfiles_biopac_mat.m"
+
+  - name: PhysIO Biopac TXT reader exists
+    description: Verify Biopac text file reader
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/readin/tapas_physio_read_physlogfiles_biopac_txt.m
+    expected_output_contains: "tapas_physio_read_physlogfiles_biopac_txt.m"
+
+  - name: PhysIO BrainProducts reader exists
+    description: Verify BrainProducts physiological log reader
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/readin/tapas_physio_read_physlogfiles_brainproducts.m
+    expected_output_contains: "tapas_physio_read_physlogfiles_brainproducts.m"
+
+  - name: PhysIO custom reader exists
+    description: Verify custom format reader
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/readin/tapas_physio_read_physlogfiles_custom.m
+    expected_output_contains: "tapas_physio_read_physlogfiles_custom.m"
+
+  - name: PhysIO columnar text reader exists
+    description: Verify columnar text file reader
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/readin/tapas_physio_read_columnar_textfiles.m
+    expected_output_contains: "tapas_physio_read_columnar_textfiles.m"
+
+  # ==========================================================================
+  # PHYSIO PREPROCESSING MODULES
+  # ==========================================================================
+  - name: PhysIO cardiac filtering exists
+    description: Verify cardiac signal filtering function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/preproc/tapas_physio_filter_cardiac.m
+    expected_output_contains: "tapas_physio_filter_cardiac.m"
+
+  - name: PhysIO respiratory filtering exists
+    description: Verify respiratory signal filtering function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/preproc/tapas_physio_filter_respiratory.m
+    expected_output_contains: "tapas_physio_filter_respiratory.m"
+
+  - name: PhysIO ECG R-peak detection exists
+    description: Verify ECG R-peak detection function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/preproc/tapas_physio_find_ecg_r_peaks.m
+    expected_output_contains: "tapas_physio_find_ecg_r_peaks.m"
+
+  - name: PhysIO cardiac pulse detection exists
+    description: Verify cardiac pulse detection function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/preproc/tapas_physio_get_cardiac_pulses.m
+    expected_output_contains: "tapas_physio_get_cardiac_pulses.m"
+
+  - name: PhysIO cardiac phase extraction exists
+    description: Verify cardiac phase extraction function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/preproc/tapas_physio_get_cardiac_phase.m
+    expected_output_contains: "tapas_physio_get_cardiac_phase.m"
+
+  - name: PhysIO respiratory phase extraction exists
+    description: Verify respiratory phase extraction function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/preproc/tapas_physio_get_respiratory_phase.m
+    expected_output_contains: "tapas_physio_get_respiratory_phase.m"
+
+  - name: PhysIO cardiac template extraction exists
+    description: Verify cardiac pulse template function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/preproc/tapas_physio_get_cardiac_pulse_template.m
+    expected_output_contains: "tapas_physio_get_cardiac_pulse_template.m"
+
+  - name: PhysIO cardiac outlier detection exists
+    description: Verify cardiac outlier detection function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/preproc/tapas_physio_cardiac_detect_outliers.m
+    expected_output_contains: "tapas_physio_cardiac_detect_outliers.m"
+
+  - name: PhysIO manual pulse correction exists
+    description: Verify manual cardiac pulse correction function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/preproc/tapas_physio_correct_cardiac_pulses_manually.m
+    expected_output_contains: "tapas_physio_correct_cardiac_pulses_manually.m"
+
+  - name: PhysIO constant detection exists
+    description: Verify constant value detection in physiological data
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/preproc/tapas_physio_detect_constants.m
+    expected_output_contains: "tapas_physio_detect_constants.m"
+
+  # ==========================================================================
+  # PHYSIO MODEL MODULES (REGRESSOR CREATION)
+  # ==========================================================================
+  - name: PhysIO RETROICOR regressor creation exists
+    description: Verify RETROICOR model regressor creation
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/model/tapas_physio_create_retroicor_regressors.m
+    expected_output_contains: "tapas_physio_create_retroicor_regressors.m"
+
+  - name: PhysIO HRV regressor creation exists
+    description: Verify heart rate variability regressor creation
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/model/tapas_physio_create_hrv_regressors.m
+    expected_output_contains: "tapas_physio_create_hrv_regressors.m"
+
+  - name: PhysIO RVT regressor creation exists
+    description: Verify respiratory volume per time regressor creation
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/model/tapas_physio_create_rvt_regressors.m
+    expected_output_contains: "tapas_physio_create_rvt_regressors.m"
+
+  - name: PhysIO noise ROI regressor creation exists
+    description: Verify noise ROI (aCompCor-style) regressor creation
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/model/tapas_physio_create_noise_rois_regressors.m
+    expected_output_contains: "tapas_physio_create_noise_rois_regressors.m"
+
+  - name: PhysIO movement regressor creation exists
+    description: Verify movement regressor creation
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/model/tapas_physio_create_movement_regressors.m
+    expected_output_contains: "tapas_physio_create_movement_regressors.m"
+
+  - name: PhysIO Fourier expansion exists
+    description: Verify Fourier basis set expansion function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/model/tapas_physio_get_fourier_expansion.m
+    expected_output_contains: "tapas_physio_get_fourier_expansion.m"
+
+  - name: PhysIO cardiac response function exists
+    description: Verify cardiac response function (CRF)
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/model/tapas_physio_crf.m
+    expected_output_contains: "tapas_physio_crf.m"
+
+  - name: PhysIO respiratory response function exists
+    description: Verify respiratory response function (RRF)
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/model/tapas_physio_rrf.m
+    expected_output_contains: "tapas_physio_rrf.m"
+
+  - name: PhysIO heart rate calculation exists
+    description: Verify heart rate calculation function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/model/tapas_physio_hr.m
+    expected_output_contains: "tapas_physio_hr.m"
+
+  - name: PhysIO RVT Hilbert calculation exists
+    description: Verify RVT calculation using Hilbert transform
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/model/tapas_physio_rvt_hilbert.m
+    expected_output_contains: "tapas_physio_rvt_hilbert.m"
+
+  - name: PhysIO RVT peaks calculation exists
+    description: Verify RVT calculation using peak detection
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/model/tapas_physio_rvt_peaks.m
+    expected_output_contains: "tapas_physio_rvt_peaks.m"
+
+  - name: PhysIO orthogonalization exists
+    description: Verify regressor orthogonalization function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/model/tapas_physio_orthogonalise_physiological_regressors.m
+    expected_output_contains: "tapas_physio_orthogonalise_physiological_regressors.m"
+
+  # ==========================================================================
+  # PHYSIO SYNCHRONIZATION MODULES
+  # ==========================================================================
+  - name: PhysIO scan timing creation exists
+    description: Verify scan timing creation function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/sync/tapas_physio_create_scan_timing.m
+    expected_output_contains: "tapas_physio_create_scan_timing.m"
+
+  - name: PhysIO nominal scan timing exists
+    description: Verify nominal scan timing creation
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/sync/tapas_physio_create_scan_timing_nominal.m
+    expected_output_contains: "tapas_physio_create_scan_timing_nominal.m"
+
+  - name: PhysIO gradient-based timing (Philips) exists
+    description: Verify Philips gradient-based scan timing
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/sync/tapas_physio_create_scan_timing_from_gradients_philips.m
+    expected_output_contains: "tapas_physio_create_scan_timing_from_gradients_philips.m"
+
+  - name: PhysIO TICS-based timing (Siemens) exists
+    description: Verify Siemens TICS-based scan timing
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/sync/tapas_physio_create_scan_timing_from_tics_siemens.m
+    expected_output_contains: "tapas_physio_create_scan_timing_from_tics_siemens.m"
+
+  - name: PhysIO acquisition code timing exists
+    description: Verify acquisition code-based scan timing
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/sync/tapas_physio_create_scan_timing_from_acq_codes.m
+    expected_output_contains: "tapas_physio_create_scan_timing_from_acq_codes.m"
+
+  # ==========================================================================
+  # PHYSIO ASSESSMENT MODULES
+  # ==========================================================================
+  - name: PhysIO efficacy check exists
+    description: Verify physiological noise model efficacy assessment
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/assess/tapas_physio_check_efficacy.m
+    expected_output_contains: "tapas_physio_check_efficacy.m"
+
+  - name: PhysIO tSNR computation exists
+    description: Verify temporal SNR computation function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/assess/tapas_physio_compute_tsnr_spm.m
+    expected_output_contains: "tapas_physio_compute_tsnr_spm.m"
+
+  - name: PhysIO tSNR gains computation exists
+    description: Verify tSNR gains computation function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/assess/tapas_physio_compute_tsnr_gains.m
+    expected_output_contains: "tapas_physio_compute_tsnr_gains.m"
+
+  - name: PhysIO review function exists
+    description: Verify PhysIO results review function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/assess/tapas_physio_review.m
+    expected_output_contains: "tapas_physio_review.m"
+
+  - name: PhysIO cardiac phase sorting exists
+    description: Verify cardiac phase image sorting function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/assess/tapas_physio_sort_images_by_cardiac_phase.m
+    expected_output_contains: "tapas_physio_sort_images_by_cardiac_phase.m"
+
+  - name: PhysIO respiratory phase sorting exists
+    description: Verify respiratory phase image sorting function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/assess/tapas_physio_sort_images_by_respiratory_phase.m
+    expected_output_contains: "tapas_physio_sort_images_by_respiratory_phase.m"
+
+  # ==========================================================================
+  # PHYSIO PLOTTING MODULES
+  # ==========================================================================
+  - name: PhysIO raw data plotting exists
+    description: Verify raw physiological data plotting function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/plot/tapas_physio_plot_raw_physdata.m
+    expected_output_contains: "tapas_physio_plot_raw_physdata.m"
+
+  - name: PhysIO RETROICOR plotting exists
+    description: Verify RETROICOR regressor plotting function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/plot/tapas_physio_plot_retroicor_regressors.m
+    expected_output_contains: "tapas_physio_plot_retroicor_regressors.m"
+
+  - name: PhysIO RVT plotting exists
+    description: Verify RVT plotting function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/plot/tapas_physio_plot_rvt.m
+    expected_output_contains: "tapas_physio_plot_rvt.m"
+
+  - name: PhysIO figure output exists
+    description: Verify figure printing function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/plot/tapas_physio_print_figs_to_file.m
+    expected_output_contains: "tapas_physio_print_figs_to_file.m"
+
+  # ==========================================================================
+  # PHYSIO UTILITY MODULES
+  # ==========================================================================
+  - name: PhysIO peak finding exists
+    description: Verify peak finding utility function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/utils/tapas_physio_findpeaks.m
+    expected_output_contains: "tapas_physio_findpeaks.m"
+
+  - name: PhysIO template correlation peak finding exists
+    description: Verify template correlation peak finding
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/utils/tapas_physio_findpeaks_template_correlation.m
+    expected_output_contains: "tapas_physio_findpeaks_template_correlation.m"
+
+  - name: PhysIO PCA utility exists
+    description: Verify PCA utility function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/utils/tapas_physio_pca.m
+    expected_output_contains: "tapas_physio_pca.m"
+
+  - name: PhysIO Gaussian window exists
+    description: Verify Gaussian window function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/utils/tapas_physio_gausswin.m
+    expected_output_contains: "tapas_physio_gausswin.m"
+
+  - name: PhysIO convolution utility exists
+    description: Verify convolution utility function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/utils/tapas_physio_conv.m
+    expected_output_contains: "tapas_physio_conv.m"
+
+  - name: PhysIO logging utility exists
+    description: Verify logging utility function
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/PhysIO/utils/tapas_physio_log.m
+    expected_output_contains: "tapas_physio_log.m"
+
+  # ==========================================================================
+  # SPM12 CORE FUNCTIONS HELP
+  # ==========================================================================
+  - name: SPM smooth help
+    description: Verify SPM smooth function parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.spatial.smooth help 2>&1
+    expected_output_contains: "--fwhm"
+
+  - name: SPM realign help
+    description: Verify SPM realign function parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.spatial.realign.estimate help 2>&1
+    expected_output_contains: "--data"
+
+  - name: SPM coregister help
+    description: Verify SPM coregistration function parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.spatial.coreg.estimate help 2>&1
+    expected_output_contains: "--ref"
+
+  - name: SPM segment help
+    description: Verify SPM segmentation function parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.spatial.preproc help 2>&1
+    expected_output_contains: "--channel"
+
+  - name: SPM normalize help
+    description: Verify SPM normalization function parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.spatial.normalise.write help 2>&1
+    expected_output_contains: "--subj"
+
+  - name: SPM slice timing help
+    description: Verify SPM slice timing correction parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.temporal.st help 2>&1
+    expected_output_contains: "--scans"
+
+  - name: SPM fMRI specification help
+    description: Verify SPM fMRI design specification parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.stats.fmri_spec help 2>&1
+    expected_output_contains: "--dir"
+
+  - name: SPM estimation help
+    description: Verify SPM model estimation parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.stats.fmri_est help 2>&1
+    expected_output_contains: "--spmmat"
+
+  - name: SPM contrast help
+    description: Verify SPM contrast specification parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.stats.con help 2>&1
+    expected_output_contains: "--spmmat"
+
+  - name: SPM results help
+    description: Verify SPM results module is recognized (help errors due to SPM results cfg bug)
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.stats.results help 2>&1
+    expected_output_contains: "spm.stats.results"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # SPM12 TOOLS HELP
+  # ==========================================================================
+  - name: SPM DARTEL help
+    description: Verify DARTEL warp function parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.tools.dartel.warp help 2>&1
+    expected_output_contains: "--images"
+
+  - name: SPM FieldMap help
+    description: Verify FieldMap VDM calculation parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.tools.fieldmap.calculatevdm help 2>&1
+    expected_output_contains: "--subj"
+
+  - name: SPM Longitudinal help
+    description: Verify longitudinal registration parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.tools.longit.pairwise help 2>&1
+    expected_output_contains: "--vols"
+
+  - name: SPM Shoot help
+    description: Verify Shoot geodesic registration parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.tools.shoot.warp help 2>&1
+    expected_output_contains: "--images"
+
+  # ==========================================================================
+  # SPM12 UTILITY FUNCTIONS HELP
+  # ==========================================================================
+  - name: SPM image calculator help
+    description: Verify SPM image calculator parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.util.imcalc help 2>&1
+    expected_output_contains: "--input"
+
+  - name: SPM DICOM import help
+    description: Verify DICOM import parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.util.import.dicom help 2>&1
+    expected_output_contains: "--data"
+
+  - name: SPM deface help
+    description: Verify deface utility parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.util.deface help 2>&1
+    expected_output_contains: "--images"
+
+  - name: SPM 4D concatenation help
+    description: Verify 4D volume concatenation parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.util.cat help 2>&1
+    expected_output_contains: "--vols"
+
+  - name: SPM 4D split help
+    description: Verify 4D volume split parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.util.split help 2>&1
+    expected_output_contains: "--vol"
+
+  - name: SPM VOI extraction help
+    description: Verify VOI time-series extraction parameters
+    command: /opt/spm12/run_spm12.sh /opt/mcr/v99 spm.util.voi help 2>&1
+    expected_output_contains: "--spmmat"
+
+  # ==========================================================================
+  # OTHER SPM12 TOOLBOXES
+  # ==========================================================================
+  - name: SPM12 DARTEL toolbox exists
+    description: Verify DARTEL toolbox is present
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/DARTEL 2>&1
+    expected_exit_code: 0
+
+  - name: SPM12 FieldMap toolbox exists
+    description: Verify FieldMap toolbox is present
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/FieldMap 2>&1
+    expected_exit_code: 0
+
+  - name: SPM12 Longitudinal toolbox exists
+    description: Verify Longitudinal toolbox is present
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/Longitudinal 2>&1
+    expected_exit_code: 0
+
+  - name: SPM12 DEM toolbox exists
+    description: Verify Dynamic Expectation Maximization toolbox is present
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/DEM 2>&1
+    expected_exit_code: 0
+
+  - name: SPM12 Neural_Models toolbox exists
+    description: Verify Neural Models toolbox is present
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/Neural_Models 2>&1
+    expected_exit_code: 0
+
+  - name: SPM12 Shoot toolbox exists
+    description: Verify Shoot toolbox is present
+    command: ls /opt/spm12/spm12_mcr/spm12/toolbox/Shoot 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SPM12 CORE FILES
+  # ==========================================================================
+  - name: SPM12 main function exists
+    description: Verify SPM main function file
+    command: ls /opt/spm12/spm12_mcr/spm12/spm.m 2>&1
+    expected_output_contains: "spm.m"
+
+  - name: SPM12 BIDS function exists
+    description: Verify SPM BIDS handling function
+    command: ls /opt/spm12/spm12_mcr/spm12/spm_BIDS.m 2>&1
+    expected_output_contains: "spm_BIDS.m"
+
+  - name: SPM12 NIfTI class exists
+    description: Verify SPM NIfTI class directory
+    command: ls /opt/spm12/spm12_mcr/spm12/@nifti 2>&1
+    expected_exit_code: 0
+
+  - name: SPM12 GIfTI class exists
+    description: Verify SPM GIfTI class directory
+    command: ls /opt/spm12/spm12_mcr/spm12/@gifti 2>&1
+    expected_exit_code: 0
+
+  - name: SPM12 matlabbatch exists
+    description: Verify matlabbatch directory
+    command: ls /opt/spm12/spm12_mcr/spm12/matlabbatch 2>&1
+    expected_exit_code: 0
+
+  - name: SPM12 canonical templates exist
+    description: Verify SPM canonical template directory
+    command: ls /opt/spm12/spm12_mcr/spm12/canonical 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MATLAB COMPILER RUNTIME VERIFICATION
+  # ==========================================================================
+  - name: MCR runtime libraries exist
+    description: Verify MCR runtime library directory
+    command: ls /opt/mcr/v99/runtime/glnxa64 2>&1
+    expected_exit_code: 0
+
+  - name: MCR bin directory exists
+    description: Verify MCR bin directory
+    command: ls /opt/mcr/v99/bin/glnxa64 2>&1
+    expected_exit_code: 0
+
+  - name: MCR toolbox exists
+    description: Verify MCR toolbox directory
+    command: ls /opt/mcr/v99/toolbox 2>&1
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

@@ -1,0 +1,878 @@
+# mitkdiffusion container test suite
+# Tests for MITK Diffusion v1.2.0 - diffusion-weighted MR image analysis
+#
+# MITK Diffusion provides tools for:
+#   - Diffusion tensor and Q-ball reconstruction
+#   - Streamline and global tractography
+#   - Fiber processing, clustering, and analysis
+#   - Diffusion indices (FA, MD, etc.)
+#   - IVIM and Kurtosis fitting
+#   - Diffusion simulation (Fiberfox)
+#
+# Note: MITK tools require diffusion-weighted imaging (DWI) data and fiber tractograms.
+# Tests are designed to verify tool availability and basic argument parsing.
+
+name: mitkdiffusion
+version: 1.2.0
+container: mitkdiffusion_1.2.0_20230720.simg
+
+# MITK binaries are located in /opt/MITK-Diffusion-2018.09.99-linux-x86_64/
+# Shell wrappers set up LD_LIBRARY_PATH for proper execution
+mitk_path: /opt/MITK-Diffusion-2018.09.99-linux-x86_64
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # VERSION AND HELP CHECKS
+  # ==========================================================================
+  - name: MitkDiffusionIndices version
+    description: Verify MitkDiffusionIndices reports version information
+    command: ${mitk_path}/MitkDiffusionIndices.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkDiffusionIndices help
+    description: Verify MitkDiffusionIndices shows help with available indices
+    command: ${mitk_path}/MitkDiffusionIndices.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Diffusion Indices"
+
+  - name: MitkTensorReconstruction version
+    description: Verify MitkTensorReconstruction reports version
+    command: ${mitk_path}/MitkTensorReconstruction.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkTensorReconstruction help
+    description: Verify MitkTensorReconstruction shows help
+    command: ${mitk_path}/MitkTensorReconstruction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Tensor Reconstruction"
+
+  - name: MitkQballReconstruction version
+    description: Verify MitkQballReconstruction reports version
+    command: ${mitk_path}/MitkQballReconstruction.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkQballReconstruction help
+    description: Verify MitkQballReconstruction shows help with spherical harmonics options
+    command: ${mitk_path}/MitkQballReconstruction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Qball Reconstruction"
+
+  - name: MitkStreamlineTractography version
+    description: Verify MitkStreamlineTractography reports version
+    command: ${mitk_path}/MitkStreamlineTractography.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkStreamlineTractography help
+    description: Verify MitkStreamlineTractography shows help with tracking options
+    command: ${mitk_path}/MitkStreamlineTractography.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Streamline Tractography"
+
+  - name: MitkGlobalTractography version
+    description: Verify MitkGlobalTractography (Gibbs tracking) reports version
+    command: ${mitk_path}/MitkGlobalTractography.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkGlobalTractography help
+    description: Verify MitkGlobalTractography shows help
+    command: ${mitk_path}/MitkGlobalTractography.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Gibbs Tracking"
+
+  # ==========================================================================
+  # FIBER PROCESSING TOOLS - HELP VERIFICATION
+  # ==========================================================================
+  - name: MitkFiberProcessing version
+    description: Verify MitkFiberProcessing reports version
+    command: ${mitk_path}/MitkFiberProcessing.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkFiberProcessing help
+    description: Verify MitkFiberProcessing shows help with resampling options
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Fiber Processing"
+
+  - name: MitkFiberClustering version
+    description: Verify MitkFiberClustering reports version
+    command: ${mitk_path}/MitkFiberClustering.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkFiberClustering help
+    description: Verify MitkFiberClustering shows help with clustering options
+    command: ${mitk_path}/MitkFiberClustering.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Fiber Clustering"
+
+  - name: MitkFiberColoring version
+    description: Verify MitkFiberColoring reports version
+    command: ${mitk_path}/MitkFiberColoring.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkFiberColoring help
+    description: Verify MitkFiberColoring shows help with lookup table options
+    command: ${mitk_path}/MitkFiberColoring.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Fiber Coloring"
+
+  - name: MitkFiberJoin version
+    description: Verify MitkFiberJoin reports version
+    command: ${mitk_path}/MitkFiberJoin.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkFiberJoin help
+    description: Verify MitkFiberJoin shows help for merging tractograms
+    command: ${mitk_path}/MitkFiberJoin.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Fiber Join"
+
+  - name: MitkFiberExtraction version
+    description: Verify MitkFiberExtraction reports version
+    command: ${mitk_path}/MitkFiberExtraction.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkFiberExtraction help
+    description: Verify MitkFiberExtraction shows help with ROI options
+    command: ${mitk_path}/MitkFiberExtraction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Fiber Extraction"
+
+  - name: MitkFiberExtractionRoi version
+    description: Verify MitkFiberExtractionRoi reports version
+    command: ${mitk_path}/MitkFiberExtractionRoi.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkFiberExtractionRoi help
+    description: Verify MitkFiberExtractionRoi shows help with label-based extraction
+    command: ${mitk_path}/MitkFiberExtractionRoi.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Fiber Extraction With ROI Image"
+
+  - name: MitkFiberDirectionExtraction version
+    description: Verify MitkFiberDirectionExtraction reports version
+    command: ${mitk_path}/MitkFiberDirectionExtraction.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkFiberDirectionExtraction help
+    description: Verify MitkFiberDirectionExtraction shows help
+    command: ${mitk_path}/MitkFiberDirectionExtraction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Fiber Direction Extraction"
+
+  - name: MitkPrintFiberStatistics version
+    description: Verify MitkPrintFiberStatistics reports version
+    command: ${mitk_path}/MitkPrintFiberStatistics.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkPrintFiberStatistics help
+    description: Verify MitkPrintFiberStatistics shows help
+    command: ${mitk_path}/MitkPrintFiberStatistics.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Fiber Statistics"
+
+  # ==========================================================================
+  # TRACT DENSITY AND QUANTIFICATION TOOLS
+  # ==========================================================================
+  - name: MitkTractDensity version
+    description: Verify MitkTractDensity reports version
+    command: ${mitk_path}/MitkTractDensity.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkTractDensity help
+    description: Verify MitkTractDensity shows help with density options
+    command: ${mitk_path}/MitkTractDensity.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Tract Density"
+
+  - name: MitkTractDensityFilter version
+    description: Verify MitkTractDensityFilter reports version
+    command: ${mitk_path}/MitkTractDensityFilter.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkTractDensityFilter help
+    description: Verify MitkTractDensityFilter shows help for outlier filtering
+    command: ${mitk_path}/MitkTractDensityFilter.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Filter Outliers by Tract Density"
+
+  - name: MitkFitFibersToImage version
+    description: Verify MitkFitFibersToImage reports version
+    command: ${mitk_path}/MitkFitFibersToImage.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkFitFibersToImage help
+    description: Verify MitkFitFibersToImage shows help with fitting options
+    command: ${mitk_path}/MitkFitFibersToImage.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Fit Fibers To Image"
+
+  # ==========================================================================
+  # DIFFUSION MODEL FITTING TOOLS
+  # ==========================================================================
+  - name: MitkDiffusionIvimFit version
+    description: Verify MitkDiffusionIvimFit reports version
+    command: ${mitk_path}/MitkDiffusionIvimFit.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkDiffusionIvimFit help
+    description: Verify MitkDiffusionIvimFit shows help with IVIM fitting options
+    command: ${mitk_path}/MitkDiffusionIvimFit.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Diffusion IVIM Fit"
+
+  - name: MitkDiffusionKurtosisFit version
+    description: Verify MitkDiffusionKurtosisFit reports version
+    command: ${mitk_path}/MitkDiffusionKurtosisFit.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkDiffusionKurtosisFit help
+    description: Verify MitkDiffusionKurtosisFit shows help with kurtosis options
+    command: ${mitk_path}/MitkDiffusionKurtosisFit.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Diffusion Kurtosis Fit"
+
+  - name: MitkMultishellMethods version
+    description: Verify MitkMultishellMethods reports version
+    command: ${mitk_path}/MitkMultishellMethods.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkMultishellMethods help
+    description: Verify MitkMultishellMethods shows help for multi-shell processing
+    command: ${mitk_path}/MitkMultishellMethods.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Multishell Methods"
+
+  # ==========================================================================
+  # SIMULATION TOOLS
+  # ==========================================================================
+  - name: MitkFiberfox version
+    description: Verify MitkFiberfox diffusion simulation reports version
+    command: ${mitk_path}/MitkFiberfox.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkFiberfox help
+    description: Verify MitkFiberfox shows help for diffusion simulation
+    command: ${mitk_path}/MitkFiberfox.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Fiberfox"
+
+  - name: MitkRandomFiberPhantom version
+    description: Verify MitkRandomFiberPhantom reports version
+    command: ${mitk_path}/MitkRandomFiberPhantom.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkRandomFiberPhantom help
+    description: Verify MitkRandomFiberPhantom shows help for phantom generation
+    command: ${mitk_path}/MitkRandomFiberPhantom.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Random Fiber Phantom"
+
+  # ==========================================================================
+  # ADDITIONAL TOOLS
+  # ==========================================================================
+  - name: MitkDistanceToSegmentation version
+    description: Verify MitkDistanceToSegmentation reports version
+    command: ${mitk_path}/MitkDistanceToSegmentation.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkDistanceToSegmentation help
+    description: Verify MitkDistanceToSegmentation shows help
+    command: ${mitk_path}/MitkDistanceToSegmentation.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "distance"
+
+  - name: MitkSift2WeightCopy version
+    description: Verify MitkSift2WeightCopy reports version
+    command: ${mitk_path}/MitkSift2WeightCopy.sh --version 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "MITK Diffusion"
+
+  - name: MitkSift2WeightCopy help
+    description: Verify MitkSift2WeightCopy shows help for weight import
+    command: ${mitk_path}/MitkSift2WeightCopy.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "SIFT2"
+
+  # ==========================================================================
+  # DIFFUSION INDICES - ARGUMENT VERIFICATION
+  # ==========================================================================
+  - name: DiffusionIndices FA index available
+    description: Verify FA (fractional anisotropy) index is available
+    command: ${mitk_path}/MitkDiffusionIndices.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "fa"
+
+  - name: DiffusionIndices MD index available
+    description: Verify MD (mean diffusivity) index is available
+    command: ${mitk_path}/MitkDiffusionIndices.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "md"
+
+  - name: DiffusionIndices AD index available
+    description: Verify AD (axial diffusivity) index is available
+    command: ${mitk_path}/MitkDiffusionIndices.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "ad"
+
+  - name: DiffusionIndices RD index available
+    description: Verify RD (radial diffusivity) index is available
+    command: ${mitk_path}/MitkDiffusionIndices.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "rd"
+
+  - name: DiffusionIndices GFA index available
+    description: Verify GFA (generalized fractional anisotropy) index is available
+    command: ${mitk_path}/MitkDiffusionIndices.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "gfa"
+
+  # ==========================================================================
+  # TRACTOGRAPHY OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: StreamlineTractography tracker types
+    description: Verify tracker type options are available
+    command: ${mitk_path}/MitkStreamlineTractography.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Peaks"
+
+  - name: StreamlineTractography tensor tracking option
+    description: Verify tensor tracking is available
+    command: ${mitk_path}/MitkStreamlineTractography.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Tensor"
+
+  - name: StreamlineTractography ODF tracking option
+    description: Verify ODF tracking is available
+    command: ${mitk_path}/MitkStreamlineTractography.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "ODF"
+
+  - name: StreamlineTractography seed parameters
+    description: Verify seeding parameters are available
+    command: ${mitk_path}/MitkStreamlineTractography.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "seeds"
+
+  - name: StreamlineTractography cutoff parameter
+    description: Verify FA/GFA cutoff parameter is available
+    command: ${mitk_path}/MitkStreamlineTractography.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "cutoff"
+
+  - name: StreamlineTractography step size parameter
+    description: Verify step size parameter is available
+    command: ${mitk_path}/MitkStreamlineTractography.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "step_size"
+
+  - name: StreamlineTractography min tract length
+    description: Verify minimum tract length parameter is available
+    command: ${mitk_path}/MitkStreamlineTractography.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "min_tract_length"
+
+  - name: StreamlineTractography max tract length
+    description: Verify maximum tract length parameter is available
+    command: ${mitk_path}/MitkStreamlineTractography.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "max_tract_length"
+
+  - name: StreamlineTractography angular threshold
+    description: Verify angular threshold parameter is available
+    command: ${mitk_path}/MitkStreamlineTractography.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "angular_threshold"
+
+  - name: StreamlineTractography probabilistic option
+    description: Verify probabilistic tractography option is available
+    command: ${mitk_path}/MitkStreamlineTractography.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "probabilistic"
+
+  # ==========================================================================
+  # FIBER PROCESSING OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: FiberProcessing spline resampling
+    description: Verify spline resampling option is available
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "spline_resampling"
+
+  - name: FiberProcessing linear resampling
+    description: Verify linear resampling option is available
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "linear_resampling"
+
+  - name: FiberProcessing compression
+    description: Verify compression option is available
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "compress"
+
+  - name: FiberProcessing min length filtering
+    description: Verify minimum length filter is available
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "min_length"
+
+  - name: FiberProcessing max length filtering
+    description: Verify maximum length filter is available
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "max_length"
+
+  - name: FiberProcessing max angle filtering
+    description: Verify maximum angle filter is available
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "max_angle"
+
+  - name: FiberProcessing rotation transformation
+    description: Verify rotation transformation options are available
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "rotate_x"
+
+  - name: FiberProcessing scale transformation
+    description: Verify scale transformation options are available
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "scale_x"
+
+  - name: FiberProcessing translate transformation
+    description: Verify translation transformation options are available
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "translate_x"
+
+  - name: FiberProcessing mirror transformation
+    description: Verify mirror transformation option is available
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "mirror"
+
+  - name: FiberProcessing subsample option
+    description: Verify subsampling option is available
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "subsample"
+
+  # ==========================================================================
+  # FIBER CLUSTERING OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: FiberClustering cluster size option
+    description: Verify cluster size option is available
+    command: ${mitk_path}/MitkFiberClustering.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "cluster_size"
+
+  - name: FiberClustering fiber points option
+    description: Verify fiber points option is available
+    command: ${mitk_path}/MitkFiberClustering.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "fiber_points"
+
+  - name: FiberClustering metrics option
+    description: Verify clustering metrics option is available
+    command: ${mitk_path}/MitkFiberClustering.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "metrics"
+
+  - name: FiberClustering centroids output
+    description: Verify centroids output option is available
+    command: ${mitk_path}/MitkFiberClustering.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "output_centroids"
+
+  # ==========================================================================
+  # FIBER EXTRACTION ROI OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: FiberExtractionRoi both ends option
+    description: Verify both endpoints option is available
+    command: ${mitk_path}/MitkFiberExtractionRoi.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "both_ends"
+
+  - name: FiberExtractionRoi overlap fraction option
+    description: Verify overlap fraction option is available
+    command: ${mitk_path}/MitkFiberExtractionRoi.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "overlap_fraction"
+
+  - name: FiberExtractionRoi labels option
+    description: Verify labels option is available
+    command: ${mitk_path}/MitkFiberExtractionRoi.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "labels"
+
+  - name: FiberExtractionRoi split labels option
+    description: Verify split labels option is available
+    command: ${mitk_path}/MitkFiberExtractionRoi.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "split_labels"
+
+  # ==========================================================================
+  # TRACT DENSITY OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: TractDensity binary option
+    description: Verify binary envelope option is available
+    command: ${mitk_path}/MitkTractDensity.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "binary"
+
+  - name: TractDensity normalize option
+    description: Verify normalize option is available
+    command: ${mitk_path}/MitkTractDensity.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "normalize"
+
+  - name: TractDensity endpoints option
+    description: Verify endpoints image option is available
+    command: ${mitk_path}/MitkTractDensity.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "endpoints"
+
+  - name: TractDensity reference image option
+    description: Verify reference image option is available
+    command: ${mitk_path}/MitkTractDensity.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "reference_image"
+
+  - name: TractDensity upsampling option
+    description: Verify upsampling option is available
+    command: ${mitk_path}/MitkTractDensity.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "upsampling"
+
+  # ==========================================================================
+  # TENSOR RECONSTRUCTION OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: TensorReconstruction b0 threshold option
+    description: Verify b0 threshold option is available
+    command: ${mitk_path}/MitkTensorReconstruction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "b0_threshold"
+
+  - name: TensorReconstruction eigenvalue correction
+    description: Verify negative eigenvalue correction option is available
+    command: ${mitk_path}/MitkTensorReconstruction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "correct_negative_eigenv"
+
+  # ==========================================================================
+  # QBALL RECONSTRUCTION OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: QballReconstruction spherical harmonics order
+    description: Verify spherical harmonics order option is available
+    command: ${mitk_path}/MitkQballReconstruction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "sh_order"
+
+  - name: QballReconstruction lambda regularization
+    description: Verify lambda regularization option is available
+    command: ${mitk_path}/MitkQballReconstruction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "lambda"
+
+  - name: QballReconstruction round bvalues option
+    description: Verify round bvalues option is available
+    command: ${mitk_path}/MitkQballReconstruction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "round_bvalues"
+
+  # ==========================================================================
+  # IVIM FIT OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: IvimFit b threshold option
+    description: Verify b threshold option is available
+    command: ${mitk_path}/MitkDiffusionIvimFit.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "b_threshold"
+
+  - name: IvimFit fit type option
+    description: Verify fit type option is available
+    command: ${mitk_path}/MitkDiffusionIvimFit.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "fit_type"
+
+  - name: IvimFit output type option
+    description: Verify output type option is available
+    command: ${mitk_path}/MitkDiffusionIvimFit.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "output_type"
+
+  # ==========================================================================
+  # KURTOSIS FIT OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: KurtosisFit mask option
+    description: Verify mask option is available
+    command: ${mitk_path}/MitkDiffusionKurtosisFit.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "mask"
+
+  - name: KurtosisFit omit bzero option
+    description: Verify omit b0 option is available
+    command: ${mitk_path}/MitkDiffusionKurtosisFit.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "omitbzero"
+
+  - name: KurtosisFit kurtosis bounds
+    description: Verify kurtosis bounds options are available
+    command: ${mitk_path}/MitkDiffusionKurtosisFit.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "lowerkbound"
+
+  # ==========================================================================
+  # FIT FIBERS TO IMAGE OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: FitFibersToImage max iterations option
+    description: Verify max iterations option is available
+    command: ${mitk_path}/MitkFitFibersToImage.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "max_iter"
+
+  - name: FitFibersToImage regularization option
+    description: Verify regularization type option is available
+    command: ${mitk_path}/MitkFitFibersToImage.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "regu"
+
+  - name: FitFibersToImage filter zero option
+    description: Verify filter zero weights option is available
+    command: ${mitk_path}/MitkFitFibersToImage.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "filter_zero"
+
+  # ==========================================================================
+  # FIBERFOX SIMULATION OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: Fiberfox parameters file option
+    description: Verify parameters file option is available
+    command: ${mitk_path}/MitkFiberfox.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "parameters"
+
+  - name: Fiberfox template option
+    description: Verify template image option is available
+    command: ${mitk_path}/MitkFiberfox.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "template"
+
+  - name: Fiberfox verbose option
+    description: Verify verbose output option is available
+    command: ${mitk_path}/MitkFiberfox.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "verbose"
+
+  - name: Fiberfox fix seed option
+    description: Verify fix seed option is available
+    command: ${mitk_path}/MitkFiberfox.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "fix_seed"
+
+  # ==========================================================================
+  # RANDOM FIBER PHANTOM OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: RandomFiberPhantom num bundles option
+    description: Verify number of bundles option is available
+    command: ${mitk_path}/MitkRandomFiberPhantom.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "num_bundles"
+
+  - name: RandomFiberPhantom density options
+    description: Verify fiber density options are available
+    command: ${mitk_path}/MitkRandomFiberPhantom.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "min_density"
+
+  - name: RandomFiberPhantom size options
+    description: Verify phantom size options are available
+    command: ${mitk_path}/MitkRandomFiberPhantom.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "size_x"
+
+  - name: RandomFiberPhantom curvature options
+    description: Verify fiber curvature options are available
+    command: ${mitk_path}/MitkRandomFiberPhantom.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "min_curve"
+
+  - name: RandomFiberPhantom radius options
+    description: Verify fiber radius options are available
+    command: ${mitk_path}/MitkRandomFiberPhantom.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "min_radius"
+
+  # ==========================================================================
+  # FIBER DIRECTION EXTRACTION OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: FiberDirectionExtraction angular threshold
+    description: Verify angular threshold option is available
+    command: ${mitk_path}/MitkFiberDirectionExtraction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "athresh"
+
+  - name: FiberDirectionExtraction peak threshold
+    description: Verify peak threshold option is available
+    command: ${mitk_path}/MitkFiberDirectionExtraction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "peakthresh"
+
+  - name: FiberDirectionExtraction num directions
+    description: Verify number of directions option is available
+    command: ${mitk_path}/MitkFiberDirectionExtraction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "numdirs"
+
+  - name: FiberDirectionExtraction normalization option
+    description: Verify normalization option is available
+    command: ${mitk_path}/MitkFiberDirectionExtraction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "normalization"
+
+  # ==========================================================================
+  # FIBER COLORING OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: FiberColoring scalar map option
+    description: Verify scalar map option is available
+    command: ${mitk_path}/MitkFiberColoring.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "scalar_map"
+
+  - name: FiberColoring lookup table option
+    description: Verify lookup table option is available
+    command: ${mitk_path}/MitkFiberColoring.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "lookup"
+
+  - name: FiberColoring interpolate option
+    description: Verify interpolation option is available
+    command: ${mitk_path}/MitkFiberColoring.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "interpolate"
+
+  - name: FiberColoring normalize option
+    description: Verify normalize option is available
+    command: ${mitk_path}/MitkFiberColoring.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "normalize"
+
+  # ==========================================================================
+  # MULTISHELL METHODS OPTIONS VERIFICATION
+  # ==========================================================================
+  - name: MultishellMethods ADC average option
+    description: Verify ADC average option is available
+    command: ${mitk_path}/MitkMultishellMethods.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "adc"
+
+  - name: MultishellMethods kurtosis fit option
+    description: Verify kurtosis fit option is available
+    command: ${mitk_path}/MitkMultishellMethods.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "akc"
+
+  - name: MultishellMethods biexp fit option
+    description: Verify bi-exponential fit option is available
+    command: ${mitk_path}/MitkMultishellMethods.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "biexp"
+
+  - name: MultishellMethods target bvalue option
+    description: Verify target bvalue option is available
+    command: ${mitk_path}/MitkMultishellMethods.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "targetbvalue"
+
+  # ==========================================================================
+  # XML OUTPUT VERIFICATION
+  # ==========================================================================
+  - name: DiffusionIndices XML output
+    description: Verify XML description can be generated for CTK plugin
+    command: ${mitk_path}/MitkDiffusionIndices.sh --xml 2>&1 | head -20
+    ignore_exit_code: true
+    expected_output_contains: "<executable>"
+
+  - name: TensorReconstruction XML output
+    description: Verify XML description can be generated for CTK plugin
+    command: ${mitk_path}/MitkTensorReconstruction.sh --xml 2>&1 | head -20
+    ignore_exit_code: true
+    expected_output_contains: "<executable>"
+
+  - name: StreamlineTractography XML output
+    description: Verify XML description can be generated for CTK plugin
+    command: ${mitk_path}/MitkStreamlineTractography.sh --xml 2>&1 | head -20
+    ignore_exit_code: true
+    expected_output_contains: "<executable>"
+
+  # ==========================================================================
+  # FILE FORMAT SUPPORT VERIFICATION
+  # ==========================================================================
+  - name: FiberProcessing fib format support
+    description: Verify .fib format is supported
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: ".fib"
+
+  - name: FiberProcessing trk format support
+    description: Verify .trk (TrackVis) format is supported
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: ".trk"
+
+  - name: FiberProcessing tck format support
+    description: Verify .tck (MRtrix) format is supported
+    command: ${mitk_path}/MitkFiberProcessing.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: ".tck"
+
+  - name: QballReconstruction dwi format support
+    description: Verify .dwi format is supported for input
+    command: ${mitk_path}/MitkQballReconstruction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: ".dwi"
+
+  - name: QballReconstruction nii format support
+    description: Verify .nii format is supported for input
+    command: ${mitk_path}/MitkQballReconstruction.sh --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains: ".nii"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

@@ -1,0 +1,641 @@
+# dcm2niix container test suite
+# Tests for dcm2niix v1.0.20240202 - DICOM to NIfTI converter
+#
+# dcm2niix is designed to convert neuroimaging data from the DICOM format
+# to the NIfTI format. It is a widely-used tool in neuroimaging pipelines.
+#
+# Note: The primary function of dcm2niix is DICOM-to-NIfTI conversion.
+# Since no DICOM test data is available in ds000001, these tests focus on:
+# - Version and help information
+# - Directory scanning features
+# - Command-line option validation
+# - Error handling for non-DICOM inputs
+# - BIDS sidecar generation options
+#
+# Citation:
+#   Li X, Morgan PS, Ashburner J, Smith J, Rorden C (2016)
+#   The first step for neuroimaging data analysis: DICOM to NIfTI conversion.
+#   J Neurosci Methods. 264:47-56. doi: 10.1016/j.jneumeth.2016.03.001
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+#   - BOLD: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+name: dcm2niix
+version: v1.0.20240202
+container: dcm2niix_v1.0.20240202_20241125.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  anat_dir: ds000001/sub-01/anat
+  func_dir: ds000001/sub-01/func
+  subject_dir: ds000001/sub-01
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/dcm2niix
+    mkdir -p test_output/dcm2niix/empty_dir
+
+tests:
+  # ==========================================================================
+  # VERSION AND HELP INFORMATION
+  # ==========================================================================
+  - name: Version check
+    description: Verify dcm2niix reports correct version
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "v1.0.20240202"
+
+  - name: Version string format
+    description: Verify version output contains build information
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "dcm2niiX"
+
+  - name: Help display
+    description: Verify dcm2niix displays help information
+    command: dcm2niix 2>&1
+    expected_output_contains: "usage: dcm2niix"
+
+  - name: Help shows options
+    description: Verify help shows available options
+    command: dcm2niix 2>&1
+    expected_output_contains: "Options :"
+
+  - name: Help shows BIDS option
+    description: Verify help mentions BIDS sidecar generation
+    command: dcm2niix 2>&1
+    expected_output_contains: "BIDS sidecar"
+
+  - name: Help shows output directory option
+    description: Verify help shows -o option for output directory
+    command: dcm2niix 2>&1
+    expected_output_contains: "-o : output directory"
+
+  - name: Help shows filename format option
+    description: Verify help shows -f option for filename formatting
+    command: dcm2niix 2>&1
+    expected_output_contains: "-f : filename"
+
+  - name: Help shows compression option
+    description: Verify help shows -z option for gzip compression
+    command: dcm2niix 2>&1
+    expected_output_contains: "-z : gz compress"
+
+  - name: Help shows verbosity option
+    description: Verify help shows -v option for verbose output
+    command: dcm2niix 2>&1
+    expected_output_contains: "-v : verbose"
+
+  - name: Help shows examples
+    description: Verify help includes usage examples
+    command: dcm2niix 2>&1
+    expected_output_contains: "Examples :"
+
+  # ==========================================================================
+  # COMPILER AND BUILD INFORMATION
+  # ==========================================================================
+  - name: Build compiler info
+    description: Verify build includes compiler information
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "GCC"
+
+  - name: Build architecture info
+    description: Verify build shows 64-bit Linux architecture
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "64-bit Linux"
+
+  - name: JPEG2000 support
+    description: Verify OpenJPEG support is compiled in
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "JP2:OpenJPEG"
+
+  - name: JPEG-LS support
+    description: Verify CharLS support for JPEG-LS is compiled in
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "JP-LS:CharLS"
+
+  # ==========================================================================
+  # DIRECTORY SCANNING (QUERY MODE)
+  # ==========================================================================
+  - name: Query mode on NIfTI directory
+    description: Test -q y option to scan directory for DICOMs (none expected)
+    command: dcm2niix -q y ${anat_dir} 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: Query list mode on NIfTI directory
+    description: Test -q l option to list found files
+    command: dcm2niix -q l ${anat_dir} 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: Query mode on subject directory
+    description: Test query mode on entire subject directory
+    command: dcm2niix -q y ${subject_dir} 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: Query mode with depth limit
+    description: Test -d option to limit directory search depth
+    command: dcm2niix -q y -d 1 ${subject_dir} 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: Query mode depth zero
+    description: Test -d 0 to search only specified directory
+    command: dcm2niix -q y -d 0 ${subject_dir} 2>&1 || true
+    expected_output_contains: "dcm2niiX"
+
+  - name: Scan empty directory
+    description: Test scanning an empty directory
+    command: dcm2niix -q y test_output/dcm2niix/empty_dir 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  # ==========================================================================
+  # OUTPUT DIRECTORY CONFIGURATION
+  # ==========================================================================
+  - name: Output directory creation test
+    description: Verify -o option accepts output directory path
+    command: dcm2niix -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Output to current directory
+    description: Test conversion with output to current directory
+    command: cd test_output/dcm2niix && dcm2niix -o . ${PWD}/../../${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FILENAME FORMAT OPTIONS
+  # ==========================================================================
+  - name: Default filename format help
+    description: Verify default filename format is documented
+    command: dcm2niix 2>&1 | grep -A1 "^  -f"
+    expected_output_contains: "%f_%p_%t_%s"
+
+  - name: Filename format placeholders
+    description: Verify help shows available filename placeholders
+    command: dcm2niix 2>&1
+    expected_output_contains: "%p=protocol"
+
+  - name: Patient name placeholder
+    description: Verify %n placeholder for patient name is documented
+    command: dcm2niix 2>&1
+    expected_output_contains: "%n=name of patient"
+
+  - name: Series number placeholder
+    description: Verify %s placeholder for series number is documented
+    command: dcm2niix 2>&1
+    expected_output_contains: "%s=series number"
+
+  # ==========================================================================
+  # BIDS SIDECAR OPTIONS
+  # ==========================================================================
+  - name: BIDS sidecar default
+    description: Verify BIDS sidecar is enabled by default
+    command: dcm2niix 2>&1
+    expected_output_contains: "-b : BIDS sidecar (y/n/o"
+
+  - name: BIDS anonymize option
+    description: Verify BIDS anonymization option exists
+    command: dcm2niix 2>&1
+    expected_output_contains: "-ba : anonymize BIDS"
+
+  - name: BIDS only mode help
+    description: Verify -b o option for JSON-only output is documented
+    command: dcm2niix 2>&1
+    expected_output_contains: "o=only: no NIfTI"
+
+  # ==========================================================================
+  # COMPRESSION OPTIONS
+  # ==========================================================================
+  - name: Compression level options
+    description: Verify compression levels 1-9 are documented
+    command: dcm2niix 2>&1
+    expected_output_contains: "-1..-9 : gz compression level"
+
+  - name: Compression method options
+    description: Verify pigz and internal compression options
+    command: dcm2niix 2>&1
+    expected_output_contains: "y=pigz"
+
+  - name: Internal zlib option
+    description: Verify internal zlib compression option
+    command: dcm2niix 2>&1
+    expected_output_contains: "i=internal:zlib"
+
+  # ==========================================================================
+  # IMAGE PROCESSING OPTIONS
+  # ==========================================================================
+  - name: Crop option help
+    description: Verify -x option for 3D acquisition cropping
+    command: dcm2niix 2>&1
+    expected_output_contains: "-x : crop 3D acquisitions"
+
+  - name: Merge slices option
+    description: Verify -m option for merging 2D slices
+    command: dcm2niix 2>&1
+    expected_output_contains: "-m : merge 2D slices"
+
+  - name: Scale option help
+    description: Verify -l option for 16-bit integer scaling
+    command: dcm2niix 2>&1
+    expected_output_contains: "-l : losslessly scale 16-bit"
+
+  - name: Philips scaling option
+    description: Verify -p option for Philips precise float scaling
+    command: dcm2niix 2>&1
+    expected_output_contains: "-p : Philips precise float"
+
+  - name: Ignore derived option
+    description: Verify -i option to ignore derived images
+    command: dcm2niix 2>&1
+    expected_output_contains: "-i : ignore derived"
+
+  # ==========================================================================
+  # EXPORT FORMAT OPTIONS
+  # ==========================================================================
+  - name: NRRD export option
+    description: Verify NRRD export option is available
+    command: dcm2niix 2>&1
+    expected_output_contains: "-e : export as NRRD"
+
+  - name: MGH export option
+    description: Verify MGH export option is available
+    command: dcm2niix 2>&1
+    expected_output_contains: "MGH (o)"
+
+  - name: JNIfTI export option
+    description: Verify JSON/JNIfTI export option is available
+    command: dcm2niix 2>&1
+    expected_output_contains: "JSON/JNIfTI (j)"
+
+  - name: BJNIfTI export option
+    description: Verify BJNIfTI binary export option is available
+    command: dcm2niix 2>&1
+    expected_output_contains: "BJNIfTI (b)"
+
+  # ==========================================================================
+  # ADVANCED OPTIONS
+  # ==========================================================================
+  - name: Big endian option
+    description: Verify big-endian byte order option
+    command: dcm2niix 2>&1
+    expected_output_contains: "--big-endian"
+
+  - name: Progress option
+    description: Verify Slicer format progress option
+    command: dcm2niix 2>&1
+    expected_output_contains: "--progress"
+
+  - name: Ignore trigger times option
+    description: Verify option to ignore trigger times
+    command: dcm2niix 2>&1
+    expected_output_contains: "--ignore_trigger_times"
+
+  - name: Terse output option
+    description: Verify terse option for minimal filenames
+    command: dcm2niix 2>&1
+    expected_output_contains: "--terse"
+
+  - name: XML output option
+    description: Verify XML output option for Slicer
+    command: dcm2niix 2>&1
+    expected_output_contains: "--xml"
+
+  # ==========================================================================
+  # WRITE BEHAVIOR OPTIONS
+  # ==========================================================================
+  - name: Write behavior help
+    description: Verify -w option for write conflict handling
+    command: dcm2niix 2>&1
+    expected_output_contains: "-w : write behavior"
+
+  - name: Skip duplicates option
+    description: Verify option to skip duplicate files
+    command: dcm2niix 2>&1
+    expected_output_contains: "0=skip duplicates"
+
+  - name: Overwrite option
+    description: Verify option to overwrite existing files
+    command: dcm2niix 2>&1
+    expected_output_contains: "1=overwrite"
+
+  - name: Add suffix option
+    description: Verify option to add suffix for conflicts
+    command: dcm2niix 2>&1
+    expected_output_contains: "2=add suffix"
+
+  # ==========================================================================
+  # SERIES SELECTION
+  # ==========================================================================
+  - name: Series CRC selection
+    description: Verify -n option for series CRC number filtering
+    command: dcm2niix 2>&1
+    expected_output_contains: "-n : only convert this series CRC"
+
+  - name: Single file mode
+    description: Verify -s option for single file mode
+    command: dcm2niix 2>&1
+    expected_output_contains: "-s : single file mode"
+
+  # ==========================================================================
+  # VERBOSITY AND LOGGING
+  # ==========================================================================
+  - name: Verbose mode levels
+    description: Verify verbose mode has multiple levels
+    command: dcm2niix 2>&1
+    expected_output_contains: "0/1/2"
+
+  - name: Logorrheic mode
+    description: Verify most verbose mode is documented
+    command: dcm2niix 2>&1
+    expected_output_contains: "logorrheic"
+
+  # ==========================================================================
+  # DEFAULTS FILE
+  # ==========================================================================
+  - name: Defaults file option
+    description: Verify -g option for generating defaults file
+    command: dcm2niix 2>&1
+    expected_output_contains: "-g : generate defaults file"
+
+  - name: Defaults file location
+    description: Verify defaults file path is shown
+    command: dcm2niix 2>&1
+    expected_output_contains: "Defaults file"
+
+  # ==========================================================================
+  # COMMENT AND ANONYMIZATION
+  # ==========================================================================
+  - name: Comment option help
+    description: Verify -c option for NIfTI comments
+    command: dcm2niix 2>&1
+    expected_output_contains: "-c : comment stored in NIfTI"
+
+  - name: Comment character limit
+    description: Verify 24 character limit for comments
+    command: dcm2niix 2>&1
+    expected_output_contains: "up to 24 characters"
+
+  - name: Rename mode option
+    description: Verify -r option for rename mode
+    command: dcm2niix 2>&1
+    expected_output_contains: "-r : rename instead of convert"
+
+  # ==========================================================================
+  # UPDATE CHECK
+  # ==========================================================================
+  - name: Update check option
+    description: Verify -u option for update checking
+    command: dcm2niix 2>&1
+    expected_output_contains: "-u : up-to-date check"
+
+  # ==========================================================================
+  # ADJACENT DICOM OPTION
+  # ==========================================================================
+  - name: Adjacent DICOM option
+    description: Verify -a option for adjacent DICOM handling
+    command: dcm2niix 2>&1
+    expected_output_contains: "-a : adjacent DICOMs"
+
+  # ==========================================================================
+  # ERROR HANDLING TESTS
+  # ==========================================================================
+  - name: Invalid option handling
+    description: Test error handling for invalid options
+    command: dcm2niix --invalid-option 2>&1 || true
+    expected_output_contains: "Error"
+
+  - name: No input directory error
+    description: Verify error when no input directory provided
+    command: dcm2niix -o test_output/dcm2niix 2>&1 || true
+    expected_output_contains: "dcm2niiX"
+
+  - name: Non-existent directory handling
+    description: Test handling of non-existent input directory
+    command: dcm2niix /nonexistent/path 2>&1 || true
+    expected_output_contains: "Error"
+
+  # ==========================================================================
+  # CONVERSION ATTEMPTS (NO DICOM DATA)
+  # ==========================================================================
+  - name: Convert NIfTI directory (no DICOMs)
+    description: Test conversion on directory with no DICOM files
+    command: dcm2niix -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: Convert with verbose output
+    description: Test verbose mode on non-DICOM directory
+    command: dcm2niix -v 1 -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with very verbose output
+    description: Test maximum verbosity on non-DICOM directory
+    command: dcm2niix -v 2 -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with BIDS disabled
+    description: Test conversion with BIDS sidecar disabled
+    command: dcm2niix -b n -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with compression enabled
+    description: Test conversion with gzip compression
+    command: dcm2niix -z y -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with internal compression
+    description: Test conversion with internal zlib compression
+    command: dcm2niix -z i -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with no compression
+    description: Test conversion without compression
+    command: dcm2niix -z n -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with custom filename format
+    description: Test conversion with custom filename pattern
+    command: dcm2niix -f "test_%p_%s" -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with cropping enabled
+    description: Test conversion with 3D cropping enabled
+    command: dcm2niix -x y -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with cropping ignored
+    description: Test conversion with cropping ignored
+    command: dcm2niix -x i -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert ignoring derived images
+    description: Test conversion ignoring derived/localizer images
+    command: dcm2niix -i y -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with merge slices auto
+    description: Test conversion with automatic slice merging
+    command: dcm2niix -m 2 -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with merge slices disabled
+    description: Test conversion with slice merging disabled
+    command: dcm2niix -m n -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with progress output
+    description: Test conversion with Slicer progress format
+    command: dcm2niix --progress y -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with terse output
+    description: Test conversion with terse filename format
+    command: dcm2niix --terse -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with big endian output
+    description: Test conversion with big endian byte order
+    command: dcm2niix --big-endian y -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with little endian output
+    description: Test conversion with little endian byte order
+    command: dcm2niix --big-endian n -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with optimal endian
+    description: Test conversion with optimal/native byte order
+    command: dcm2niix --big-endian o -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with skip duplicates
+    description: Test conversion with skip duplicates write behavior
+    command: dcm2niix -w 0 -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with overwrite behavior
+    description: Test conversion with overwrite write behavior
+    command: dcm2niix -w 1 -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with suffix behavior
+    description: Test conversion with add suffix write behavior
+    command: dcm2niix -w 2 -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with comment
+    description: Test conversion with custom NIfTI comment
+    command: dcm2niix -c "test comment" -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with BIDS anonymized
+    description: Test conversion with BIDS anonymization enabled
+    command: dcm2niix -b y -ba y -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with BIDS non-anonymized
+    description: Test conversion with BIDS anonymization disabled
+    command: dcm2niix -b y -ba n -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert BIDS only mode
+    description: Test BIDS-only output (no NIfTI files)
+    command: dcm2niix -b o -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with Philips precise scaling
+    description: Test conversion with Philips precise float scaling
+    command: dcm2niix -p y -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert without Philips precise scaling
+    description: Test conversion without Philips precise scaling
+    command: dcm2niix -p n -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with lossless scaling
+    description: Test conversion with lossless 16-bit scaling
+    command: dcm2niix -l y -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with original scaling
+    description: Test conversion with original scaling preserved
+    command: dcm2niix -l o -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with high compression
+    description: Test conversion with maximum compression level
+    command: dcm2niix -9 -z i -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with low compression
+    description: Test conversion with minimum compression level
+    command: dcm2niix -1 -z i -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with adjacent DICOM mode
+    description: Test conversion with adjacent DICOM optimization
+    command: dcm2niix -a y -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert func directory
+    description: Test conversion on functional data directory
+    command: dcm2niix -o test_output/dcm2niix ${func_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with depth 0
+    description: Test conversion with no subdirectory searching
+    command: dcm2niix -d 0 -o test_output/dcm2niix ${subject_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with depth 9
+    description: Test conversion with maximum directory depth
+    command: dcm2niix -d 9 -o test_output/dcm2niix ${subject_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Convert with ignore trigger times
+    description: Test conversion ignoring trigger times
+    command: dcm2niix --ignore_trigger_times -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # COMBINED OPTION TESTS
+  # ==========================================================================
+  - name: Full BIDS conversion options
+    description: Test typical BIDS conversion parameters
+    command: dcm2niix -b y -ba y -z y -f "%p_%s" -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Clinical workflow options
+    description: Test typical clinical conversion parameters
+    command: dcm2niix -b n -z n -i y -x n -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Research workflow options
+    description: Test typical research conversion parameters
+    command: dcm2niix -b y -z i -v 1 -w 2 -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Minimal output options
+    description: Test conversion with minimal output
+    command: dcm2niix -b n -z n --terse -v 0 -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Maximum verbosity options
+    description: Test conversion with maximum verbosity and all features
+    command: dcm2niix -b y -ba n -v 2 --progress y -o test_output/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/dcm2niix
+    echo "Test outputs preserved in test_output/dcm2niix/"

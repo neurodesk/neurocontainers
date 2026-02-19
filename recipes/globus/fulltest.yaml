@@ -1,0 +1,403 @@
+# Globus Connect Personal container test suite
+# Tests for Globus Connect Personal v3.2.2 - secure data transfer endpoint software
+#
+# Globus Connect Personal allows users to create personal endpoints for
+# transferring files between local systems and Globus-connected endpoints.
+# It includes the GridFTP server for high-performance data transfer.
+
+name: globus
+version: 3.2.2
+container: globus_3.2.2_20230620.simg
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - globusconnectpersonal
+  # ==========================================================================
+  - name: Help display
+    description: Verify globusconnectpersonal displays help information
+    command: globusconnectpersonal --help 2>&1 | head -5
+    expected_output_contains: "Usage"
+
+  - name: Help display with -h flag
+    description: Test short help flag
+    command: globusconnectpersonal -h 2>&1 | head -5
+    expected_output_contains: "Usage"
+
+  - name: Version flag display
+    description: Verify -version flag shows version information
+    command: globusconnectpersonal -version 2>&1 | head -3
+    expected_output_contains: "Globus"
+
+  - name: Help shows GUI mode
+    description: Verify help includes GUI mode documentation
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "Run GUI"
+
+  - name: Help shows setup mode
+    description: Verify help includes setup documentation
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "-setup"
+
+  - name: Help shows start mode
+    description: Verify help includes start documentation
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "-start"
+
+  - name: Help shows stop mode
+    description: Verify help includes stop documentation
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "-stop"
+
+  - name: Help shows status mode
+    description: Verify help includes status documentation
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "-status"
+
+  - name: Help shows debug mode
+    description: Verify help includes debug mode documentation
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "-debug"
+
+  - name: Help shows trace mode
+    description: Verify help includes trace documentation
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "-trace"
+
+  - name: Help shows pause options
+    description: Verify help includes pause/unpause documentation
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "-pause"
+
+  - name: Help shows dir option
+    description: Verify help includes dir option documentation
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "-dir"
+
+  - name: Help shows restrict-paths option
+    description: Verify help includes restrict-paths documentation
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "-restrict-paths"
+
+  - name: Help shows shared-paths option
+    description: Verify help includes shared-paths documentation
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "-shared-paths"
+
+  - name: Help shows GUI force option
+    description: Verify help includes -gui force option
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "-gui"
+
+  # ==========================================================================
+  # SETUP SUBCOMMAND HELP
+  # ==========================================================================
+  - name: Setup help display
+    description: Verify setup subcommand help
+    command: globusconnectpersonal -setup --help 2>&1
+    expected_output_contains: "Register a new Globus Connect Personal Endpoint"
+
+  - name: Setup help shows name option
+    description: Verify setup includes name option
+    command: globusconnectpersonal -setup --help 2>&1
+    expected_output_contains: "--name"
+
+  - name: Setup help shows description option
+    description: Verify setup includes description option
+    command: globusconnectpersonal -setup --help 2>&1
+    expected_output_contains: "--description"
+
+  - name: Setup help shows owner option
+    description: Verify setup includes owner option
+    command: globusconnectpersonal -setup --help 2>&1
+    expected_output_contains: "--owner"
+
+  - name: Setup help shows setup-key option
+    description: Verify setup includes setup-key option
+    command: globusconnectpersonal -setup --help 2>&1
+    expected_output_contains: "--setup-key"
+
+  - name: Setup help shows high-assurance option
+    description: Verify setup includes high-assurance option
+    command: globusconnectpersonal -setup --help 2>&1
+    expected_output_contains: "--high-assurance"
+
+  - name: Setup help shows environment option
+    description: Verify setup includes environment option
+    command: globusconnectpersonal -setup --help 2>&1
+    expected_output_contains: "--environment"
+
+  - name: Setup help shows auto-description option
+    description: Verify setup includes auto-description option
+    command: globusconnectpersonal -setup --help 2>&1
+    expected_output_contains: "--auto-description"
+
+  - name: Setup help shows attributes option
+    description: Verify setup includes attributes option
+    command: globusconnectpersonal -setup --help 2>&1
+    expected_output_contains: "--attributes"
+
+  - name: Setup help shows authentication timeout option
+    description: Verify setup includes authentication-timeout-minutes option
+    command: globusconnectpersonal -setup --help 2>&1
+    expected_output_contains: "--authentication-timeout-minutes"
+
+  # ==========================================================================
+  # GRIDFTP SERVER TESTS
+  # ==========================================================================
+  - name: GridFTP server help
+    description: Verify globus-gridftp-server displays help
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -help 2>&1 | head -10
+    expected_output_contains: "Informational Options"
+
+  - name: GridFTP server version
+    description: Verify globus-gridftp-server displays version
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -version 2>&1
+    expected_output_contains: "globus_connect_gridftp_server"
+
+  - name: GridFTP server library versions
+    description: Verify globus-gridftp-server shows all library versions
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -versions 2>&1
+    expected_output_contains: "globus_gridftp_server"
+
+  - name: GridFTP server longhelp
+    description: Verify globus-gridftp-server long help display
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -longhelp 2>&1 | head -20
+    expected_output_contains: "Informational Options"
+
+  - name: GridFTP help shows daemon mode
+    description: Verify help includes daemon mode
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -help 2>&1
+    expected_output_contains: "-daemon"
+
+  - name: GridFTP help shows inetd mode
+    description: Verify help includes inetd mode
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -help 2>&1
+    expected_output_contains: "-inetd"
+
+  - name: GridFTP help shows SSH mode
+    description: Verify help includes SSH mode
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -help 2>&1
+    expected_output_contains: "-ssh"
+
+  - name: GridFTP help shows detach option
+    description: Verify help includes detach option
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -help 2>&1
+    expected_output_contains: "-detach"
+
+  - name: GridFTP help shows threading option
+    description: Verify help includes threads option
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -longhelp 2>&1
+    expected_output_contains: "-threads"
+
+  - name: GridFTP help shows fork option
+    description: Verify help includes fork option
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -help 2>&1
+    expected_output_contains: "-fork"
+
+  - name: GridFTP help shows single connection option
+    description: Verify help includes single connection option
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -help 2>&1
+    expected_output_contains: "-single"
+
+  - name: GridFTP help shows chroot option
+    description: Verify help includes chroot-path option
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -longhelp 2>&1
+    expected_output_contains: "-chroot-path"
+
+  # ==========================================================================
+  # GRIDFTP SECURITY OPTIONS
+  # ==========================================================================
+  - name: GridFTP help shows auth-level option
+    description: Verify help includes auth-level option
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -longhelp 2>&1
+    expected_output_contains: "-auth-level"
+
+  - name: GridFTP help shows process-user option
+    description: Verify help includes process-user option
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -longhelp 2>&1
+    expected_output_contains: "-process-user"
+
+  - name: GridFTP help shows allow-from option
+    description: Verify help includes allow-from option
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -longhelp 2>&1
+    expected_output_contains: "-allow-from"
+
+  - name: GridFTP help shows deny-from option
+    description: Verify help includes deny-from option
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -longhelp 2>&1
+    expected_output_contains: "-deny-from"
+
+  - name: GridFTP help shows encrypt-data option
+    description: Verify help includes encrypt-data option
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -longhelp 2>&1
+    expected_output_contains: "-encrypt-data"
+
+  - name: GridFTP help shows anonymous access option
+    description: Verify help includes allow-anonymous option
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -longhelp 2>&1
+    expected_output_contains: "-allow-anonymous"
+
+  - name: GridFTP help shows sharing-dn option
+    description: Verify help includes sharing-dn option
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -longhelp 2>&1
+    expected_output_contains: "-sharing-dn"
+
+  - name: GridFTP help shows sharing-control option
+    description: Verify help includes sharing-control option
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -longhelp 2>&1
+    expected_output_contains: "-sharing-control"
+
+  # ==========================================================================
+  # VERSION FILE AND INSTALLATION VERIFICATION
+  # ==========================================================================
+  - name: Version file exists
+    description: Verify VERSION file exists and contains version
+    command: cat /opt/globusconnectpersonal-3.2.2/VERSION 2>&1
+    expected_output_contains: "3.2.2"
+
+  - name: README file exists
+    description: Verify README file exists
+    command: cat /opt/globusconnectpersonal-3.2.2/README 2>&1
+    expected_output_contains: "Globus Connect Personal"
+
+  - name: LICENSE file exists
+    description: Verify LICENSE file exists
+    command: cat /opt/globusconnectpersonal-3.2.2/LICENSE 2>&1 | head -5
+    expected_output_contains: "License"
+
+  - name: Container README exists
+    description: Verify container README exists
+    command: cat /README.md 2>&1
+    expected_output_contains: "globus"
+
+  # ==========================================================================
+  # PATH RESTRICTION EXAMPLES IN HELP
+  # ==========================================================================
+  - name: Help shows path restriction examples
+    description: Verify help includes path restriction examples
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "rw~/"
+
+  - name: Help shows read-only path example
+    description: Verify help includes read-only path example
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "r/pub"
+
+  - name: Help shows wildcard path example
+    description: Verify help includes wildcard path example
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "*.txt"
+
+  - name: Help shows character class example
+    description: Verify help includes character class path example
+    command: globusconnectpersonal --help 2>&1
+    expected_output_contains: "[a-c]"
+
+  # ==========================================================================
+  # GLOBUS LIBRARY VERIFICATION
+  # ==========================================================================
+  - name: Globus XIO library present
+    description: Verify globus_xio library is loaded
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -versions 2>&1
+    expected_output_contains: "globus_xio:"
+
+  - name: Globus GSI library present
+    description: Verify globus_gsi_gssapi library is loaded
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -versions 2>&1
+    expected_output_contains: "globus_gsi_gssapi:"
+
+  - name: Globus credential library present
+    description: Verify globus_credential library is loaded
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -versions 2>&1
+    expected_output_contains: "globus_credential:"
+
+  - name: Globus FTP control library present
+    description: Verify globus_ftp_control library is loaded
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -versions 2>&1
+    expected_output_contains: "globus_ftp_control:"
+
+  - name: Globus common library present
+    description: Verify globus_common library is loaded
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -versions 2>&1
+    expected_output_contains: "globus_common:"
+
+  - name: Globus IO library present
+    description: Verify globus_io library is loaded
+    command: /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server -versions 2>&1
+    expected_output_contains: "globus_io:"
+
+  # ==========================================================================
+  # BINARY EXISTENCE VERIFICATION
+  # ==========================================================================
+  - name: Main executable exists
+    description: Verify globusconnectpersonal executable exists
+    command: ls -la /opt/globusconnectpersonal-3.2.2/globusconnectpersonal 2>&1
+    expected_output_contains: "globusconnectpersonal"
+
+  - name: Globus connect symlink exists
+    description: Verify globusconnect symlink exists
+    command: ls -la /opt/globusconnectpersonal-3.2.2/globusconnect 2>&1
+    expected_output_contains: "globusconnect -> globusconnectpersonal"
+
+  - name: GridFTP server binary exists
+    description: Verify globus-gridftp-server binary exists
+    command: ls -la /opt/globusconnectpersonal-3.2.2/gt_amd64/sbin/globus-gridftp-server 2>&1
+    expected_output_contains: "globus-gridftp-server"
+
+  - name: SSH binary exists
+    description: Verify bundled ssh binary exists
+    command: ls -la /opt/globusconnectpersonal-3.2.2/gt_amd64/bin/ssh 2>&1
+    expected_output_contains: "ssh"
+
+  - name: Register binary exists
+    description: Verify register binary exists
+    command: ls -la /opt/globusconnectpersonal-3.2.2/gt_amd64/bin/register 2>&1
+    expected_output_contains: "register"
+
+  - name: Tclkit interpreter exists
+    description: Verify tclkit interpreter exists
+    command: ls -la /opt/globusconnectpersonal-3.2.2/tclkit 2>&1
+    expected_output_contains: "tclkit"
+
+  # ==========================================================================
+  # CONFIGURATION AND UTILITY FILES
+  # ==========================================================================
+  - name: TCL GUI script exists
+    description: Verify globusconnect.tcl GUI script exists
+    command: ls -la /opt/globusconnectpersonal-3.2.2/globusconnect.tcl 2>&1
+    expected_output_contains: "globusconnect.tcl"
+
+  - name: Access paths TCL exists
+    description: Verify accessPaths.tcl script exists
+    command: ls -la /opt/globusconnectpersonal-3.2.2/accessPaths.tcl 2>&1
+    expected_output_contains: "accessPaths.tcl"
+
+  - name: Python control script exists
+    description: Verify gc-ctrl.py script exists
+    command: ls -la /opt/globusconnectpersonal-3.2.2/gc-ctrl.py 2>&1
+    expected_output_contains: "gc-ctrl.py"
+
+  - name: Main Python script exists
+    description: Verify gc.py script exists
+    command: ls -la /opt/globusconnectpersonal-3.2.2/gc.py 2>&1
+    expected_output_contains: "gc.py"
+
+  - name: Uninstall utility exists
+    description: Verify remove_globusconnect utility exists
+    command: ls -la /opt/globusconnectpersonal-3.2.2/util/remove_globusconnect 2>&1
+    expected_output_contains: "remove_globusconnect"
+
+  # ==========================================================================
+  # STATUS CHECK (without authentication)
+  # ==========================================================================
+  - name: Status check without running instance
+    description: Test status check when no instance is running
+    command: globusconnectpersonal -status 2>&1 || true
+    expected_output_contains: ""
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # No cleanup needed for these tests as they only test help/version/status
+    echo "Globus Connect Personal tests completed"

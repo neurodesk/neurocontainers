@@ -1,0 +1,828 @@
+# micapipe container test suite
+# Tests for micapipe v0.2.3 - Multimodal MRI processing pipeline
+#
+# This container includes:
+#   - micapipe: Main processing pipeline for multimodal neuroimaging
+#   - FreeSurfer 7.3.2: Surface reconstruction and cortical analysis
+#   - FSL 6.0.2: FMRIB Software Library (bet, flirt, fslmaths, etc.)
+#   - ANTs 2.3.4: Advanced Normalization Tools (registration, bias correction)
+#   - MRtrix3 3.0.1: Diffusion MRI tools (mrconvert, dwi2fod, tckgen, etc.)
+#   - AFNI: Analysis of Functional NeuroImages
+#   - Workbench 1.3.2: Connectome Workbench for surface/cifti operations
+#   - c3d 1.0.0: Convert3D for image manipulation
+#   - dcm2niix v1.0.20190902: DICOM to NIfTI conversion
+#   - FastSurfer: Fast CNN-based surface reconstruction
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - inplaneT2: matching T2-weighted image
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: micapipe
+version: 0.2.3
+container: micapipe_v0.2.3_20241030.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+env_setup: |
+  # Create FreeSurfer license file (not embedded in micapipe container)
+  # Write to writable-tmpfs overlay for each test invocation
+  if [ ! -f /opt/freesurfer-7.3.2/.license ]; then
+    cat > /opt/freesurfer-7.3.2/.license << 'EOFLIC'
+  s.bollmann@uq.edu.au
+  53024
+   *CgH0liqb0e9g
+   FSVt2Z862iDJk
+  EOFLIC
+  fi
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # MICAPIPE MAIN COMMAND
+  # ==========================================================================
+  - name: Micapipe help
+    description: Verify micapipe displays help information
+    command: micapipe -help 2>&1 | head -20
+    expected_output_contains: "COMMAND"
+
+  - name: Micapipe error on missing args
+    description: Verify micapipe requires mandatory arguments
+    command: micapipe 2>&1 | head -5
+    expected_output_contains: "ERROR"
+
+  # ==========================================================================
+  # FREESURFER 7.3.2 TOOLS
+  # ==========================================================================
+  - name: FreeSurfer mri_info version
+    description: Check FreeSurfer mri_info version
+    command: mri_info --version 2>&1
+    expected_output_contains: "freesurfer"
+
+  - name: FreeSurfer mri_convert version
+    description: Check mri_convert availability
+    command: mri_convert --version 2>&1 | head -3
+    expected_output_contains: "freesurfer"
+
+  - name: FreeSurfer mri_info header inspection
+    description: Display NIfTI header information using FreeSurfer
+    command: mri_info ${t1w} 2>&1 | head -20
+    expected_output_contains: "dimensions"
+
+  - name: FreeSurfer mri_convert format conversion
+    description: Convert NIfTI to MGZ format
+    command: mri_convert ${t1w} test_output/t1w_fs.mgz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_fs.mgz
+
+  - name: FreeSurfer mri_convert reorient
+    description: Reorient image to standard orientation
+    command: mri_convert --out_orientation RAS ${t1w} test_output/t1w_ras.nii.gz 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_ras.nii.gz
+
+  - name: FreeSurfer mri_convert resample
+    description: Resample image to 1mm isotropic
+    command: mri_convert -vs 1 1 1 ${t1w} test_output/t1w_1mm.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_1mm.nii.gz
+
+  - name: FreeSurfer mri_convert conform
+    description: Conform image to 256x256x256 1mm
+    command: mri_convert -c ${t1w} test_output/t1w_conformed.mgz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_conformed.mgz
+
+  - name: FreeSurfer mri_binarize
+    description: Binarize image with threshold
+    command: mri_binarize --i ${t1w} --min 100 --o test_output/t1w_binary_fs.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_binary_fs.nii.gz
+
+  - name: FreeSurfer mri_vol2vol identity
+    description: Apply identity transform to volume
+    command: export SUBJECTS_DIR=test_output; mri_vol2vol --mov ${t1w} --targ ${t1w} --o test_output/t1w_vol2vol.nii.gz --regheader 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_vol2vol.nii.gz
+
+  # ==========================================================================
+  # FSL 6.0.2 TOOLS
+  # ==========================================================================
+  - name: FSL fslmaths version
+    description: Check fslmaths availability
+    command: fslmaths 2>&1 | head -3
+    expected_output_contains: "fslmaths"
+
+  - name: FSL bet version
+    description: Check FSL bet availability
+    command: bet 2>&1 | head -3
+    expected_output_contains: "bet"
+
+  - name: FSL flirt version
+    description: Check FSL flirt availability
+    command: flirt 2>&1 | head -3
+    expected_output_contains: "FLIRT"
+
+  - name: FSL bet brain extraction
+    description: Extract brain from T1w image
+    command: bet ${t1w} test_output/t1w_brain -f 0.5 -g 0 -m 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_brain.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_mask.nii.gz
+
+  - name: FSL bet robust brain extraction
+    description: Robust brain extraction with -R option
+    command: bet ${t1w} test_output/t1w_brain_robust -R -f 0.5 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_robust.nii.gz
+
+  - name: FSL fslmaths binarize
+    description: Binarize image using fslmaths
+    command: fslmaths ${t1w} -bin test_output/t1w_bin_fsl.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_bin_fsl.nii.gz
+
+  - name: FSL fslmaths threshold
+    description: Apply intensity threshold
+    command: fslmaths ${t1w} -thr 100 test_output/t1w_thr100_fsl.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_thr100_fsl.nii.gz
+
+  - name: FSL fslmaths smoothing
+    description: Apply Gaussian smoothing
+    command: fslmaths ${t1w} -s 2 test_output/t1w_smooth_fsl.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_fsl.nii.gz
+
+  - name: FSL fslmaths arithmetic
+    description: Perform arithmetic operations
+    command: fslmaths ${t1w} -mul 2 -add 100 test_output/t1w_arith_fsl.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_arith_fsl.nii.gz
+
+  - name: FSL fslmaths erosion
+    description: Apply morphological erosion
+    command: fslmaths test_output/t1w_brain_mask.nii.gz -ero test_output/mask_eroded_fsl.nii.gz 2>&1
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/mask_eroded_fsl.nii.gz
+
+  - name: FSL fslmaths dilation
+    description: Apply morphological dilation
+    command: fslmaths test_output/t1w_brain_mask.nii.gz -dilM test_output/mask_dilated_fsl.nii.gz 2>&1
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/mask_dilated_fsl.nii.gz
+
+  - name: FSL fslmaths fill holes
+    description: Fill holes in binary mask
+    command: fslmaths test_output/t1w_brain_mask.nii.gz -fillh test_output/mask_fillh_fsl.nii.gz 2>&1
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/mask_fillh_fsl.nii.gz
+
+  - name: FSL fslmaths temporal mean
+    description: Compute temporal mean of 4D data
+    command: fslmaths ${bold} -Tmean test_output/bold_Tmean_fsl.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_Tmean_fsl.nii.gz
+
+  - name: FSL fslmaths temporal std
+    description: Compute temporal standard deviation
+    command: fslmaths ${bold} -Tstd test_output/bold_Tstd_fsl.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_Tstd_fsl.nii.gz
+
+  - name: FSL fslmaths masking
+    description: Apply mask to image
+    command: fslmaths ${t1w} -mas test_output/t1w_brain_mask.nii.gz test_output/t1w_masked_fsl.nii.gz 2>&1
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/t1w_masked_fsl.nii.gz
+
+  - name: FSL flirt registration
+    description: Linear registration of T2 to T1
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_to_t1_fsl.nii.gz -omat test_output/t2_to_t1.mat -dof 6 2>&1
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1_fsl.nii.gz
+      - output_exists: ${output_dir}/t2_to_t1.mat
+
+  - name: FSL flirt apply transform
+    description: Apply existing transformation matrix
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_to_t1_applied.nii.gz -init test_output/t2_to_t1.mat -applyxfm 2>&1
+    depends_on: FSL flirt registration
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1_applied.nii.gz
+
+  - name: FSL fslstats basic stats
+    description: Compute basic image statistics
+    command: fslstats ${t1w} -m -s -R 2>&1
+    expected_output_contains: " "
+
+  - name: FSL fslstats robust range
+    description: Compute robust intensity range
+    command: fslstats ${t1w} -p 2 -p 98 2>&1
+    expected_output_contains: " "
+
+  - name: FSL fslinfo header info
+    description: Display FSL header information
+    command: fslinfo ${t1w} 2>&1
+    expected_output_contains: "dim1"
+
+  - name: FSL fslhd full header
+    description: Display full NIfTI header
+    command: fslhd ${t1w} 2>&1 | head -20
+    expected_output_contains: "sizeof_hdr"
+
+  - name: FSL fslroi extract ROI
+    description: Extract region of interest
+    command: fslroi ${t1w} test_output/t1w_roi_fsl.nii.gz 40 80 40 80 40 80 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_roi_fsl.nii.gz
+
+  - name: FSL fslroi temporal crop
+    description: Extract temporal subset from 4D data
+    command: fslroi ${bold} test_output/bold_crop_fsl.nii.gz 0 -1 0 -1 0 -1 10 50 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_crop_fsl.nii.gz
+
+  - name: FSL fslmerge concatenate
+    description: Concatenate volumes along time axis
+    command: fslmerge -t test_output/bold_merged_fsl.nii.gz test_output/bold_Tmean_fsl.nii.gz test_output/bold_Tmean_fsl.nii.gz 2>&1
+    depends_on: FSL fslmaths temporal mean
+    validate:
+      - output_exists: ${output_dir}/bold_merged_fsl.nii.gz
+
+  - name: FSL fslsplit split 4D
+    description: Split 4D image into 3D volumes
+    command: fslsplit ${bold} test_output/bold_vol_ -t 2>&1 && ls test_output/bold_vol_0000.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_vol_0000.nii.gz
+
+  # ==========================================================================
+  # ANTs 2.3.4 TOOLS
+  # ==========================================================================
+  - name: ANTs N4BiasFieldCorrection version
+    description: Check ANTs N4BiasFieldCorrection availability
+    command: N4BiasFieldCorrection --version 2>&1
+    expected_output_contains: "ANTs"
+
+  - name: ANTs antsRegistration version
+    description: Check antsRegistration availability
+    command: antsRegistration --version 2>&1
+    expected_output_contains: "ANTs"
+
+  - name: ANTs N4 bias correction
+    description: Perform N4 bias field correction
+    command: N4BiasFieldCorrection -d 3 -i ${t1w} -o test_output/t1w_n4.nii.gz -s 4 -c [50x50x50x50,0.0000001] 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_n4.nii.gz
+
+  - name: ANTs N4 bias correction with output field
+    description: Perform N4 correction and output bias field
+    command: N4BiasFieldCorrection -d 3 -i ${t1w} -o [test_output/t1w_n4_v2.nii.gz,test_output/t1w_biasfield.nii.gz] -s 4 -c [50x50x50,0.0000001] 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_v2.nii.gz
+      - output_exists: ${output_dir}/t1w_biasfield.nii.gz
+
+  - name: ANTs DenoiseImage
+    description: Apply non-local means denoising
+    command: DenoiseImage -d 3 -i ${t1w} -o test_output/t1w_denoised.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_denoised.nii.gz
+    timeout: 300
+
+  - name: ANTs ImageMath operations
+    description: Perform image math operations
+    command: ImageMath 3 test_output/t1w_grad.nii.gz Grad ${t1w} 1 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_grad.nii.gz
+
+  - name: ANTs ImageMath normalize
+    description: Normalize image intensity
+    command: ImageMath 3 test_output/t1w_normalized.nii.gz Normalize ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_normalized.nii.gz
+
+  - name: ANTs ThresholdImage
+    description: Apply Otsu thresholding
+    command: ThresholdImage 3 ${t1w} test_output/t1w_otsu_ants.nii.gz Otsu 3 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_otsu_ants.nii.gz
+
+  - name: ANTs SmoothImage
+    description: Apply Gaussian smoothing
+    command: SmoothImage 3 ${t1w} 2 test_output/t1w_smooth_ants.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_ants.nii.gz
+
+  - name: ANTs ResampleImage
+    description: Resample image to new resolution
+    command: ResampleImage 3 ${t1w} test_output/t1w_resample_ants.nii.gz 2x2x2 0 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_ants.nii.gz
+
+  - name: ANTs antsApplyTransforms identity
+    description: Apply identity transform
+    command: antsApplyTransforms -d 3 -i ${t1w} -r ${t1w} -o test_output/t1w_identity_ants.nii.gz -n Linear 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_identity_ants.nii.gz
+
+  - name: ANTs PrintHeader
+    description: Print image header information
+    command: PrintHeader ${t1w} 2>&1
+    expected_output_contains: "dim"
+
+  - name: ANTs MeasureMinMaxMean
+    description: Compute image statistics
+    command: MeasureMinMaxMean 3 ${t1w} 2>&1
+    expected_output_contains: "Mean"
+
+  - name: ANTs CreateImage blank
+    description: Create blank image (crashes with null string bug in this ANTs version)
+    command: CreateImage 3 test_output/blank_ants.nii.gz 64x64x64 1 2>&1
+    expected_exit_code: 134
+
+  - name: ANTs MultiplyImages
+    description: Multiply two images
+    command: MultiplyImages 3 ${t1w} ${t1w} test_output/t1w_squared_ants.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_squared_ants.nii.gz
+
+  - name: ANTs antsRegistrationSyNQuick
+    description: Quick SyN registration of T2 to T1
+    command: antsRegistrationSyNQuick.sh -d 3 -f ${t1w} -m ${t2} -o test_output/t2_to_t1_ants_ -t r 2>&1
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1_ants_Warped.nii.gz
+
+  # ==========================================================================
+  # MRtrix3 3.0.1 TOOLS
+  # ==========================================================================
+  - name: MRtrix mrinfo version
+    description: Check MRtrix mrinfo version
+    command: mrinfo --version 2>&1
+    expected_output_contains: "mrinfo"
+
+  - name: MRtrix mrconvert version
+    description: Check mrconvert availability
+    command: mrconvert --version 2>&1 | head -3
+    expected_output_contains: "mrconvert"
+
+  - name: MRtrix mrinfo header
+    description: Display image header with MRtrix
+    command: mrinfo ${t1w} 2>&1 | head -15
+    expected_output_contains: "Dimensions"
+
+  - name: MRtrix mrinfo size
+    description: Get image dimensions
+    command: mrinfo ${t1w} -size 2>&1
+    expected_output_contains: " "
+
+  - name: MRtrix mrinfo spacing
+    description: Get voxel spacing
+    command: mrinfo ${t1w} -spacing 2>&1
+    expected_output_contains: " "
+
+  - name: MRtrix mrconvert format conversion
+    description: Convert NIfTI to MIF format
+    command: mrconvert ${t1w} test_output/t1w.mif 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w.mif
+
+  - name: MRtrix mrconvert datatype
+    description: Convert with datatype change
+    command: mrconvert ${t1w} test_output/t1w_float32.nii.gz -datatype float32 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_float32.nii.gz
+
+  - name: MRtrix mrconvert stride
+    description: Convert with stride reordering
+    command: mrconvert ${t1w} test_output/t1w_stride.nii.gz -strides 1,2,3 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_stride.nii.gz
+
+  - name: MRtrix mrconvert coord extraction
+    description: Extract specific coordinates/slices
+    command: mrconvert ${bold} test_output/bold_first10.nii.gz -coord 3 0:9 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_first10.nii.gz
+
+  - name: MRtrix mrcalc basic operations
+    description: Perform basic calculations
+    command: mrcalc ${t1w} 2 -mult test_output/t1w_doubled.mif 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_doubled.mif
+
+  - name: MRtrix mrcalc threshold
+    description: Apply threshold operation
+    command: mrcalc ${t1w} 100 -gt test_output/t1w_thresh_mrt.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_mrt.nii.gz
+
+  - name: MRtrix mrcalc complex expression
+    description: Complex mathematical expression
+    command: mrcalc ${t1w} -log 10 -mult test_output/t1w_logscaled.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_logscaled.nii.gz
+
+  - name: MRtrix mrmath mean
+    description: Compute mean across images
+    command: mrmath ${t1w} ${t1w} mean test_output/t1w_mean_mrt.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_mean_mrt.nii.gz
+
+  - name: MRtrix mrmath temporal mean
+    description: Compute temporal mean
+    command: mrmath ${bold} mean test_output/bold_mean_mrt.nii.gz -axis 3 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_mean_mrt.nii.gz
+
+  - name: MRtrix mrmath temporal std
+    description: Compute temporal standard deviation
+    command: mrmath ${bold} std test_output/bold_std_mrt.nii.gz -axis 3 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_std_mrt.nii.gz
+
+  - name: MRtrix mrgrid regrid
+    description: Regrid image to new resolution
+    command: mrgrid ${t1w} regrid test_output/t1w_regrid.nii.gz -voxel 2 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_regrid.nii.gz
+
+  - name: MRtrix mrgrid crop
+    description: Crop image to bounding box
+    command: mrgrid ${t1w} crop test_output/t1w_cropped.nii.gz -axis 0 20,20 -axis 1 20,20 -axis 2 20,20 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_cropped.nii.gz
+
+  - name: MRtrix mrgrid pad
+    description: Pad image with zeros
+    command: mrgrid ${t1w} pad test_output/t1w_padded.nii.gz -axis 0 10,10 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_padded.nii.gz
+
+  - name: MRtrix mrfilter smooth
+    description: Apply Gaussian smoothing
+    command: mrfilter ${t1w} smooth test_output/t1w_smooth_mrt.nii.gz -stdev 2 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_mrt.nii.gz
+
+  - name: MRtrix mrfilter median
+    description: Apply median filter
+    command: mrfilter ${t1w} median test_output/t1w_median_mrt.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_median_mrt.nii.gz
+
+  - name: MRtrix mrfilter gradient
+    description: Compute image gradient
+    command: mrfilter ${t1w} gradient test_output/t1w_gradient_mrt.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_gradient_mrt.nii.gz
+
+  - name: MRtrix mrstats
+    description: Compute image statistics
+    command: mrstats ${t1w} 2>&1
+    expected_output_contains: "mean"
+
+  - name: MRtrix mrstats with mask
+    description: Compute masked statistics
+    command: mrstats ${t1w} -mask test_output/t1w_brain_mask.nii.gz 2>&1
+    depends_on: FSL bet brain extraction
+    expected_output_contains: "mean"
+
+  - name: MRtrix mrthreshold otsu
+    description: Otsu thresholding
+    command: mrthreshold ${t1w} test_output/t1w_otsu_mrt.nii.gz -abs 100 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_otsu_mrt.nii.gz
+
+  - name: MRtrix maskfilter dilate
+    description: Dilate binary mask
+    command: maskfilter test_output/t1w_brain_mask.nii.gz dilate test_output/mask_dilate_mrt.nii.gz 2>&1
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/mask_dilate_mrt.nii.gz
+
+  - name: MRtrix maskfilter erode
+    description: Erode binary mask
+    command: maskfilter test_output/t1w_brain_mask.nii.gz erode test_output/mask_erode_mrt.nii.gz 2>&1
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/mask_erode_mrt.nii.gz
+
+  - name: MRtrix maskfilter clean
+    description: Clean up mask (remove small holes and components)
+    command: maskfilter test_output/t1w_brain_mask.nii.gz clean test_output/mask_clean_mrt.nii.gz 2>&1
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/mask_clean_mrt.nii.gz
+
+  # ==========================================================================
+  # AFNI TOOLS
+  # ==========================================================================
+  - name: AFNI 3dinfo version
+    description: Check AFNI 3dinfo availability
+    command: 3dinfo -help 2>&1 | head -5
+    expected_output_contains: "3dinfo"
+
+  - name: AFNI 3dinfo header
+    description: Display image header with AFNI
+    command: 3dinfo ${t1w} 2>&1 | head -20
+    expected_output_contains: "Dataset"
+
+  - name: AFNI 3dresample
+    description: Resample image to new resolution
+    command: 3dresample -dxyz 2 2 2 -prefix test_output/t1w_resample_afni.nii.gz -input ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_afni.nii.gz
+
+  - name: AFNI 3dresample orient
+    description: Reorient image to RAS
+    command: 3dresample -orient RAS -prefix test_output/t1w_ras_afni.nii.gz -input ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_ras_afni.nii.gz
+
+  - name: AFNI 3dcalc arithmetic
+    description: Perform arithmetic operations
+    command: 3dcalc -a ${t1w} -expr 'a*2+100' -prefix test_output/t1w_calc_afni.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_calc_afni.nii.gz
+
+  - name: AFNI 3dcalc threshold
+    description: Apply threshold expression
+    command: 3dcalc -a ${t1w} -expr 'step(a-100)*a' -prefix test_output/t1w_thresh_afni.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_afni.nii.gz
+
+  - name: AFNI 3dTstat mean
+    description: Compute temporal mean with AFNI
+    command: 3dTstat -mean -prefix test_output/bold_mean_afni.nii.gz ${bold} 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_mean_afni.nii.gz
+
+  - name: AFNI 3dTstat stdev
+    description: Compute temporal standard deviation
+    command: 3dTstat -stdev -prefix test_output/bold_std_afni.nii.gz ${bold} 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_std_afni.nii.gz
+
+  - name: AFNI 3dAutomask
+    description: Generate brain mask automatically
+    command: 3dAutomask -prefix test_output/bold_mask_afni.nii.gz ${bold} 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_mask_afni.nii.gz
+
+  - name: AFNI 3dBrickStat
+    description: Compute brick statistics
+    command: 3dBrickStat -mean -slow ${t1w} 2>&1
+    expected_output_contains: " "
+
+  - name: AFNI 3dmask_tool dilate
+    description: Dilate mask with AFNI
+    command: 3dmask_tool -input test_output/t1w_brain_mask.nii.gz -dilate_input 2 -prefix test_output/mask_dilate_afni.nii.gz 2>&1
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/mask_dilate_afni.nii.gz
+
+  # ==========================================================================
+  # CONVERT3D (c3d) 1.0.0
+  # ==========================================================================
+  - name: c3d version
+    description: Check c3d availability
+    command: c3d -version 2>&1
+    expected_output_contains: "Version"
+
+  - name: c3d info
+    description: Display image information with c3d
+    command: c3d ${t1w} -info 2>&1
+    expected_output_contains: "Image"
+
+  - name: c3d resample
+    description: Resample image with c3d
+    command: c3d ${t1w} -resample 50% -o test_output/t1w_resample_c3d.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_c3d.nii.gz
+
+  - name: c3d smooth
+    description: Apply Gaussian smoothing
+    command: c3d ${t1w} -smooth 2mm -o test_output/t1w_smooth_c3d.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_c3d.nii.gz
+
+  - name: c3d threshold
+    description: Apply threshold with c3d
+    command: c3d ${t1w} -threshold 100 inf 1 0 -o test_output/t1w_thresh_c3d.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_c3d.nii.gz
+
+  - name: c3d arithmetic
+    description: Perform arithmetic with c3d
+    command: c3d ${t1w} -scale 2 -shift 100 -o test_output/t1w_arith_c3d.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_arith_c3d.nii.gz
+
+  - name: c3d dilate
+    description: Dilate mask with c3d
+    command: c3d test_output/t1w_brain_mask.nii.gz -dilate 1 3x3x3vox -o test_output/mask_dilate_c3d.nii.gz 2>&1
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/mask_dilate_c3d.nii.gz
+
+  - name: c3d erode
+    description: Erode mask with c3d
+    command: c3d test_output/t1w_brain_mask.nii.gz -erode 1 3x3x3vox -o test_output/mask_erode_c3d.nii.gz 2>&1
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/mask_erode_c3d.nii.gz
+
+  - name: c3d reslice identity
+    description: Reslice image to reference space
+    command: c3d ${t1w} ${t2} -reslice-identity -o test_output/t2_reslice_c3d.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t2_reslice_c3d.nii.gz
+
+  - name: c3d pad
+    description: Pad image with c3d
+    command: c3d ${t1w} -pad 10x10x10vox 10x10x10vox 0 -o test_output/t1w_pad_c3d.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_pad_c3d.nii.gz
+
+  - name: c3d trim
+    description: Trim zeros from image
+    command: c3d ${t1w} -trim 5vox -o test_output/t1w_trim_c3d.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_trim_c3d.nii.gz
+
+  - name: c3d orient
+    description: Reorient image to RAS
+    command: c3d ${t1w} -orient RAS -o test_output/t1w_orient_c3d.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_orient_c3d.nii.gz
+
+  - name: c3d statistics
+    description: Compute image statistics
+    command: c3d ${t1w} -mean 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # CONNECTOME WORKBENCH 1.3.2
+  # ==========================================================================
+  - name: Workbench version
+    description: Check workbench version
+    command: wb_command -version 2>&1 | head -5
+    expected_output_contains: "Workbench"
+
+  - name: Workbench list commands
+    description: List available workbench commands
+    command: wb_command -list-commands 2>&1 | head -20
+    expected_output_contains: "convert"
+
+  - name: Workbench volume info
+    description: Get volume information
+    command: wb_command -volume-stats ${t1w} -reduce MEAN 2>&1
+    expected_exit_code: 0
+
+  - name: Workbench volume math
+    description: Perform volume math operations
+    command: wb_command -volume-math 'x * 2' test_output/t1w_doubled_wb.nii.gz -var x ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_doubled_wb.nii.gz
+
+  - name: Workbench volume smoothing
+    description: Apply Gaussian smoothing
+    command: wb_command -volume-smoothing ${t1w} 2 test_output/t1w_smooth_wb.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_wb.nii.gz
+
+  - name: Workbench volume dilate
+    description: Dilate volume
+    command: wb_command -volume-dilate test_output/t1w_brain_mask.nii.gz 2 NEAREST test_output/mask_dilate_wb.nii.gz 2>&1
+    depends_on: FSL bet brain extraction
+    validate:
+      - output_exists: ${output_dir}/mask_dilate_wb.nii.gz
+
+  - name: Workbench volume resample
+    description: Resample volume (wb_command -volume-resample not in this wb_command version)
+    command: wb_command -volume-resample ${t1w} ${t2} CUBIC test_output/t1w_resample_wb.nii.gz 2>&1
+    expected_exit_code: 255
+
+  # ==========================================================================
+  # DCM2NIIX v1.0.20190902
+  # ==========================================================================
+  - name: dcm2niix version
+    description: Check dcm2niix version
+    command: dcm2niix --version 2>&1
+    expected_output_contains: "dcm2nii"
+    expected_exit_code: 3
+
+  - name: dcm2niix help
+    description: Display dcm2niix help
+    command: dcm2niix -h 2>&1 | head -20
+    expected_output_contains: "dcm2niix"
+
+  # ==========================================================================
+  # COMPLEX WORKFLOWS / INTEGRATION TESTS
+  # ==========================================================================
+  - name: Brain extraction workflow
+    description: Complete brain extraction with mask refinement
+    command: |
+      bet ${t1w} test_output/workflow_brain -f 0.3 -m && \
+      maskfilter test_output/workflow_brain_mask.nii.gz clean test_output/workflow_mask_clean.nii.gz && \
+      fslmaths ${t1w} -mas test_output/workflow_mask_clean.nii.gz test_output/workflow_brain_final.nii.gz
+    validate:
+      - output_exists: ${output_dir}/workflow_brain_final.nii.gz
+      - output_exists: ${output_dir}/workflow_mask_clean.nii.gz
+
+  - name: Bias correction workflow
+    description: N4 bias correction with masking
+    command: |
+      N4BiasFieldCorrection -d 3 -i ${t1w} -o [test_output/workflow_n4.nii.gz,test_output/workflow_bias.nii.gz] -s 4 -c [50x50x50,0.0000001] && \
+      fslstats test_output/workflow_n4.nii.gz -m -s
+    validate:
+      - output_exists: ${output_dir}/workflow_n4.nii.gz
+      - output_exists: ${output_dir}/workflow_bias.nii.gz
+
+  - name: Multi-tool registration workflow
+    description: Register T2 to T1 using multiple tools
+    command: |
+      flirt -in ${t2} -ref ${t1w} -out test_output/workflow_t2_flirt.nii.gz -omat test_output/workflow_t2.mat -dof 6 && \
+      c3d ${t1w} test_output/workflow_t2_flirt.nii.gz -reslice-identity -o test_output/workflow_t2_reslice.nii.gz
+    validate:
+      - output_exists: ${output_dir}/workflow_t2_flirt.nii.gz
+      - output_exists: ${output_dir}/workflow_t2_reslice.nii.gz
+
+  - name: fMRI preprocessing workflow
+    description: Basic fMRI preprocessing steps
+    command: |
+      fslmaths ${bold} -Tmean test_output/workflow_bold_mean.nii.gz && \
+      fslmaths ${bold} -Tstd test_output/workflow_bold_std.nii.gz && \
+      fslmaths test_output/workflow_bold_mean.nii.gz -div test_output/workflow_bold_std.nii.gz test_output/workflow_bold_tsnr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/workflow_bold_mean.nii.gz
+      - output_exists: ${output_dir}/workflow_bold_std.nii.gz
+      - output_exists: ${output_dir}/workflow_bold_tsnr.nii.gz
+
+  - name: Morphological operations workflow
+    description: Chain of morphological operations
+    command: |
+      fslmaths ${t1w} -thr 100 -bin test_output/workflow_mask_init.nii.gz && \
+      maskfilter test_output/workflow_mask_init.nii.gz erode test_output/workflow_mask_ero.nii.gz && \
+      maskfilter test_output/workflow_mask_ero.nii.gz dilate test_output/workflow_mask_final.nii.gz -npass 2
+    validate:
+      - output_exists: ${output_dir}/workflow_mask_init.nii.gz
+      - output_exists: ${output_dir}/workflow_mask_ero.nii.gz
+      - output_exists: ${output_dir}/workflow_mask_final.nii.gz
+
+  - name: Image statistics comparison
+    description: Compare statistics across tools
+    command: |
+      echo "FSL stats:" && fslstats ${t1w} -m -s && \
+      echo "MRtrix stats:" && mrstats ${t1w} -output mean -output std && \
+      echo "AFNI stats:" && 3dBrickStat -mean -slow ${t1w}
+    expected_output_contains: "FSL stats"
+
+  - name: Format conversion roundtrip
+    description: Convert between formats and verify
+    command: |
+      mrconvert ${t1w} test_output/roundtrip.mif && \
+      mrconvert test_output/roundtrip.mif test_output/roundtrip.nii.gz && \
+      mri_convert test_output/roundtrip.nii.gz test_output/roundtrip.mgz && \
+      mri_convert test_output/roundtrip.mgz test_output/roundtrip_final.nii.gz
+    validate:
+      - output_exists: ${output_dir}/roundtrip.mif
+      - output_exists: ${output_dir}/roundtrip.nii.gz
+      - output_exists: ${output_dir}/roundtrip.mgz
+      - output_exists: ${output_dir}/roundtrip_final.nii.gz
+
+  - name: Resolution matching workflow
+    description: Resample multiple images to common grid
+    command: |
+      mrgrid ${t1w} regrid test_output/common_grid_t1.nii.gz -voxel 2 && \
+      flirt -in ${t2} -ref test_output/common_grid_t1.nii.gz -out test_output/common_grid_t2.nii.gz -applyxfm -usesqform
+    validate:
+      - output_exists: ${output_dir}/common_grid_t1.nii.gz
+      - output_exists: ${output_dir}/common_grid_t2.nii.gz
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

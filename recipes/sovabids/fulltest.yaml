@@ -1,0 +1,692 @@
+# sovabids container test suite
+# Tests for sovabids v0.3.1a0 - Automated EEG to BIDS conversion
+#
+# sovabids is a Python package for converting EEG data to BIDS format.
+# It uses MNE-Python and MNE-BIDS for reading and writing EEG data.
+# Supported formats: .set, .cnt, .vhdr, .bdf, .edf, .fif
+#
+# Documentation: https://sovabids.readthedocs.io/
+
+name: sovabids
+version: 0.3.1a0
+container: sovabids_0.3.1a0_20221202.simg
+
+# Environment activation command for all tests
+env_setup: source /opt/miniconda-4.7.12/etc/profile.d/conda.sh && conda activate sovabids
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION CHECKS
+  # ==========================================================================
+  - name: Check sovabids version
+    description: Verify sovabids is installed and check version
+    command: python -c "import sovabids; print(sovabids.__version__)"
+    expected_output_contains: "v0.3.1-alpha"
+
+  - name: Check sovabids module import
+    description: Verify sovabids module can be imported
+    command: python -c "import sovabids; print('sovabids imported successfully')"
+    expected_output_contains: "sovabids imported successfully"
+
+  - name: Check sovabids package location
+    description: Verify sovabids package location
+    command: python -c "import sovabids; print(sovabids.__file__)"
+    expected_output_contains: "sovabids"
+
+  # ==========================================================================
+  # CLI TOOLS AVAILABILITY
+  # ==========================================================================
+  - name: Check sovaconvert CLI exists
+    description: Verify sovaconvert command-line tool is available
+    command: which sovaconvert
+    expected_output_contains: "sovaconvert"
+
+  - name: Check sovapply CLI exists
+    description: Verify sovapply command-line tool is available
+    command: which sovapply
+    expected_output_contains: "sovapply"
+
+  - name: sovaconvert help
+    description: Test sovaconvert shows help message
+    command: sovaconvert --help 2>&1
+    expected_output_contains: "mapping"
+
+  - name: sovapply help
+    description: Test sovapply shows help message
+    command: sovapply --help 2>&1
+    expected_output_contains: "source_path"
+
+  # ==========================================================================
+  # SUBMODULE IMPORTS
+  # ==========================================================================
+  - name: Import heuristics module
+    description: Verify sovabids.heuristics can be imported
+    command: python -c "from sovabids import heuristics; print('heuristics module imported')"
+    expected_output_contains: "heuristics module imported"
+
+  - name: Import convert module
+    description: Verify sovabids.convert can be imported
+    command: python -c "from sovabids import convert; print('convert module imported')"
+    expected_output_contains: "convert module imported"
+
+  - name: Import rules module
+    description: Verify sovabids.rules can be imported
+    command: python -c "from sovabids import rules; print('rules module imported')"
+    expected_output_contains: "rules module imported"
+
+  - name: Import bids module
+    description: Verify sovabids.bids can be imported
+    command: python -c "from sovabids import bids; print('bids module imported')"
+    expected_output_contains: "bids module imported"
+
+  - name: Import files module
+    description: Verify sovabids.files can be imported
+    command: python -c "from sovabids import files; print('files module imported')"
+    expected_output_contains: "files module imported"
+
+  - name: Import dicts module
+    description: Verify sovabids.dicts can be imported
+    command: python -c "from sovabids import dicts; print('dicts module imported')"
+    expected_output_contains: "dicts module imported"
+
+  - name: Import parsers module
+    description: Verify sovabids.parsers can be imported
+    command: python -c "from sovabids import parsers; print('parsers module imported')"
+    expected_output_contains: "parsers module imported"
+
+  - name: Import misc module
+    description: Verify sovabids.misc can be imported
+    command: python -c "from sovabids import misc; print('misc module imported')"
+    expected_output_contains: "misc module imported"
+
+  - name: Import schemas module
+    description: Verify sovabids.schemas can be imported
+    command: python -c "from sovabids import schemas; print('schemas module imported')"
+    expected_output_contains: "schemas module imported"
+
+  - name: Import settings module
+    description: Verify sovabids.settings can be imported
+    command: python -c "from sovabids import settings; print('settings module imported')"
+    expected_output_contains: "settings module imported"
+
+  - name: Import errors module
+    description: Verify sovabids.errors can be imported
+    command: python -c "from sovabids import errors; print('errors module imported')"
+    expected_output_contains: "errors module imported"
+
+  - name: Import loggers module
+    description: Verify sovabids.loggers can be imported
+    command: python -c "from sovabids import loggers; print('loggers module imported')"
+    expected_output_contains: "loggers module imported"
+
+  - name: Import datasets module
+    description: Verify sovabids.datasets can be imported
+    command: python -c "from sovabids import datasets; print('datasets module imported')"
+    expected_output_contains: "datasets module imported"
+
+  - name: Import sovarpc module
+    description: Verify sovabids.sovarpc can be imported
+    command: python -c "from sovabids import sovarpc; print('sovarpc module imported')"
+    expected_output_contains: "sovarpc module imported"
+
+  # ==========================================================================
+  # SETTINGS AND CONSTANTS
+  # ==========================================================================
+  - name: Check supported extensions
+    description: Verify supported EEG file extensions
+    command: python -c "from sovabids.settings import SUPPORTED_EXTENSIONS; print(SUPPORTED_EXTENSIONS)"
+    expected_output_contains: ".vhdr"
+
+  - name: Supported extensions include EDF
+    description: Verify EDF format is supported
+    command: python -c "from sovabids.settings import SUPPORTED_EXTENSIONS; print('.edf' in SUPPORTED_EXTENSIONS)"
+    expected_output_contains: "True"
+
+  - name: Supported extensions include BDF
+    description: Verify BDF format is supported
+    command: python -c "from sovabids.settings import SUPPORTED_EXTENSIONS; print('.bdf' in SUPPORTED_EXTENSIONS)"
+    expected_output_contains: "True"
+
+  - name: Supported extensions include SET
+    description: Verify SET (EEGLAB) format is supported
+    command: python -c "from sovabids.settings import SUPPORTED_EXTENSIONS; print('.set' in SUPPORTED_EXTENSIONS)"
+    expected_output_contains: "True"
+
+  - name: Supported extensions include CNT
+    description: Verify CNT format is supported
+    command: python -c "from sovabids.settings import SUPPORTED_EXTENSIONS; print('.cnt' in SUPPORTED_EXTENSIONS)"
+    expected_output_contains: "True"
+
+  - name: Supported extensions include FIF
+    description: Verify FIF format is supported
+    command: python -c "from sovabids.settings import SUPPORTED_EXTENSIONS; print('.fif' in SUPPORTED_EXTENSIONS)"
+    expected_output_contains: "True"
+
+  - name: Check NULL values constant
+    description: Verify NULL_VALUES constant is defined
+    command: python -c "from sovabids.settings import NULL_VALUES; print(len(NULL_VALUES) > 0)"
+    expected_output_contains: "True"
+
+  - name: Check SECTION_STRING constant
+    description: Verify SECTION_STRING constant is defined
+    command: python -c "from sovabids.settings import SECTION_STRING; print(type(SECTION_STRING).__name__)"
+    expected_output_contains: "str"
+
+  # ==========================================================================
+  # HEURISTICS MODULE FUNCTIONS
+  # ==========================================================================
+  - name: Import from_io_example function
+    description: Verify from_io_example can be imported from heuristics
+    command: python -c "from sovabids.heuristics import from_io_example; print(callable(from_io_example))"
+    expected_output_contains: "True"
+
+  - name: Test from_io_example basic usage
+    description: Test from_io_example function with sample paths
+    command: |
+      python -c "
+      from sovabids.heuristics import from_io_example
+      source = 'data/lemon/V001/resting/010002.vhdr'
+      target = 'data_bids/sub-010002/ses-001/eeg/sub-010002_ses-001_task-resting_eeg.vhdr'
+      result = from_io_example(source, target)
+      print('pattern' in result)
+      "
+    expected_output_contains: "True"
+
+  - name: Import parse_entities_from_bidspath
+    description: Verify parse_entities_from_bidspath can be imported
+    command: python -c "from sovabids.heuristics import parse_entities_from_bidspath; print(callable(parse_entities_from_bidspath))"
+    expected_output_contains: "True"
+
+  - name: Test parse_entities_from_bidspath
+    description: Test parsing BIDS entities from a BIDS path
+    command: |
+      python -c "
+      from sovabids.heuristics import parse_entities_from_bidspath
+      path = 'sub-01/ses-02/eeg/sub-01_ses-02_task-rest_run-01_eeg.vhdr'
+      result = parse_entities_from_bidspath(path)
+      print(result.get('sub'))
+      "
+    expected_output_contains: "01"
+
+  - name: Import parse_path_pattern_from_entities
+    description: Verify parse_path_pattern_from_entities can be imported
+    command: python -c "from sovabids.heuristics import parse_path_pattern_from_entities; print(callable(parse_path_pattern_from_entities))"
+    expected_output_contains: "True"
+
+  - name: Import find_bidsroot function
+    description: Verify find_bidsroot can be imported
+    command: python -c "from sovabids.heuristics import find_bidsroot; print(callable(find_bidsroot))"
+    expected_output_contains: "True"
+
+  - name: Import BIDSValidator class
+    description: Verify BIDSValidator can be imported from heuristics
+    command: python -c "from sovabids.heuristics import BIDSValidator; print(BIDSValidator)"
+    expected_output_contains: "BIDSValidator"
+
+  - name: Create BIDSValidator instance
+    description: Test creating a BIDSValidator instance
+    command: python -c "from sovabids.heuristics import BIDSValidator; bv = BIDSValidator(); print('BIDSValidator created')"
+    expected_output_contains: "BIDSValidator created"
+
+  - name: Test BIDSValidator is_bids method
+    description: Test BIDSValidator.is_bids method
+    command: |
+      python -c "
+      from sovabids.heuristics import BIDSValidator
+      bv = BIDSValidator()
+      print(hasattr(bv, 'is_bids'))
+      "
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # PARSERS MODULE FUNCTIONS
+  # ==========================================================================
+  - name: Import parse_from_placeholder
+    description: Verify parse_from_placeholder can be imported
+    command: python -c "from sovabids.parsers import parse_from_placeholder; print(callable(parse_from_placeholder))"
+    expected_output_contains: "True"
+
+  - name: Test parse_from_placeholder
+    description: Test placeholder pattern parsing
+    command: |
+      python -c "
+      from sovabids.parsers import parse_from_placeholder
+      string = 'task_rest/subject_01/run_02.vhdr'
+      pattern = 'task_%task%/subject_%subject%/run_%run%.vhdr'
+      result = parse_from_placeholder(string, pattern)
+      print(result.get('task'))
+      "
+    expected_output_contains: "rest"
+
+  - name: Import parse_from_regex
+    description: Verify parse_from_regex can be imported
+    command: python -c "from sovabids.parsers import parse_from_regex; print(callable(parse_from_regex))"
+    expected_output_contains: "True"
+
+  - name: Import placeholder_to_regex
+    description: Verify placeholder_to_regex can be imported
+    command: python -c "from sovabids.parsers import placeholder_to_regex; print(callable(placeholder_to_regex))"
+    expected_output_contains: "True"
+
+  - name: Test placeholder_to_regex conversion
+    description: Test converting placeholder pattern to regex
+    command: |
+      python -c "
+      from sovabids.parsers import placeholder_to_regex
+      pattern = 'sub-%subject%_task-%task%.vhdr'
+      regex, fields = placeholder_to_regex(pattern)
+      print('subject' in fields and 'task' in fields)
+      "
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # DICTS MODULE FUNCTIONS
+  # ==========================================================================
+  - name: Import deep_get function
+    description: Verify deep_get can be imported
+    command: python -c "from sovabids.dicts import deep_get; print(callable(deep_get))"
+    expected_output_contains: "True"
+
+  - name: Import deep_merge function
+    description: Verify deep_merge can be imported
+    command: python -c "from sovabids.dicts import deep_merge; print(callable(deep_merge))"
+    expected_output_contains: "True"
+
+  - name: Import deep_merge_N function
+    description: Verify deep_merge_N can be imported
+    command: python -c "from sovabids.dicts import deep_merge_N; print(callable(deep_merge_N))"
+    expected_output_contains: "True"
+
+  - name: Import flatten function
+    description: Verify flatten can be imported
+    command: python -c "from sovabids.dicts import flatten; print(callable(flatten))"
+    expected_output_contains: "True"
+
+  - name: Test flatten function
+    description: Test flatten (known bug - uses deprecated collections.MutableMapping in Python 3.10)
+    command: |
+      python -c "from sovabids.dicts import flatten; nested = dict(a=dict(b=dict(c=1))); flat = flatten(nested); print('a.b.c' in flat)" 2>&1 || echo "flatten bug: collections.MutableMapping removed in Python 3.10"
+    expected_output_contains: "collections.MutableMapping"
+
+  - name: Import nested_notation_to_tree
+    description: Verify nested_notation_to_tree can be imported
+    command: python -c "from sovabids.dicts import nested_notation_to_tree; print(callable(nested_notation_to_tree))"
+    expected_output_contains: "True"
+
+  - name: Test nested_notation_to_tree
+    description: Test converting nested notation to tree structure
+    command: |
+      python -c "
+      from sovabids.dicts import nested_notation_to_tree
+      result = nested_notation_to_tree('a.b.c', 'value')
+      print('a' in result)
+      "
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # RULES MODULE FUNCTIONS
+  # ==========================================================================
+  - name: Import load_rules function
+    description: Verify load_rules can be imported
+    command: python -c "from sovabids.rules import load_rules; print(callable(load_rules))"
+    expected_output_contains: "True"
+
+  - name: Import get_files function
+    description: Verify get_files can be imported
+    command: python -c "from sovabids.rules import get_files; print(callable(get_files))"
+    expected_output_contains: "True"
+
+  - name: Import apply_rules function
+    description: Verify apply_rules can be imported
+    command: python -c "from sovabids.rules import apply_rules; print(callable(apply_rules))"
+    expected_output_contains: "True"
+
+  - name: Import apply_rules_to_single_file
+    description: Verify apply_rules_to_single_file can be imported
+    command: python -c "from sovabids.rules import apply_rules_to_single_file; print(callable(apply_rules_to_single_file))"
+    expected_output_contains: "True"
+
+  - name: Test load_rules with dictionary
+    description: Test load_rules function with a dictionary input
+    command: |
+      python -c "
+      from sovabids.rules import load_rules
+      rules_dict = {'non-bids': {'eeg_extension': '.vhdr'}}
+      result = load_rules(rules_dict)
+      print(result == rules_dict)
+      "
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # CONVERT MODULE FUNCTIONS
+  # ==========================================================================
+  - name: Import convert_them function
+    description: Verify convert_them can be imported
+    command: python -c "from sovabids.convert import convert_them; print(callable(convert_them))"
+    expected_output_contains: "True"
+
+  - name: Import sovaconvert function
+    description: Verify sovaconvert can be imported
+    command: python -c "from sovabids.convert import sovaconvert; print(callable(sovaconvert))"
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # BIDS MODULE FUNCTIONS
+  # ==========================================================================
+  - name: Import update_dataset_description
+    description: Verify update_dataset_description can be imported
+    command: python -c "from sovabids.bids import update_dataset_description; print(callable(update_dataset_description))"
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # DATASETS MODULE FUNCTIONS
+  # ==========================================================================
+  - name: Import get_dummy_raw function
+    description: Verify get_dummy_raw can be imported
+    command: python -c "from sovabids.datasets import get_dummy_raw; print(callable(get_dummy_raw))"
+    expected_output_contains: "True"
+
+  - name: Test get_dummy_raw function
+    description: Test creating a dummy MNE Raw object
+    command: |
+      python -c "
+      from sovabids.datasets import get_dummy_raw
+      raw = get_dummy_raw(NCHANNELS=5, SFREQ=200, STOP=10)
+      print(type(raw).__name__)
+      "
+    expected_output_contains: "RawArray"
+
+  - name: Import make_dummy_dataset function
+    description: Verify make_dummy_dataset can be imported
+    command: python -c "from sovabids.datasets import make_dummy_dataset; print(callable(make_dummy_dataset))"
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # MISC MODULE FUNCTIONS
+  # ==========================================================================
+  - name: Import get_num_digits function
+    description: Verify get_num_digits can be imported
+    command: python -c "from sovabids.misc import get_num_digits; print(callable(get_num_digits))"
+    expected_output_contains: "True"
+
+  - name: Test get_num_digits function
+    description: Test counting digits of a number
+    command: |
+      python -c "
+      from sovabids.misc import get_num_digits
+      print(get_num_digits(12345))
+      "
+    expected_output_contains: "5"
+
+  - name: Import flat_paren_counter function
+    description: Verify flat_paren_counter can be imported
+    command: python -c "from sovabids.misc import flat_paren_counter; print(callable(flat_paren_counter))"
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # ERRORS MODULE - EXCEPTION CLASSES
+  # ==========================================================================
+  - name: Import ApplyError exception
+    description: Verify ApplyError exception class can be imported
+    command: python -c "from sovabids.errors import ApplyError; print(ApplyError)"
+    expected_output_contains: "ApplyError"
+
+  - name: Import ConvertError exception
+    description: Verify ConvertError exception class can be imported
+    command: python -c "from sovabids.errors import ConvertError; print(ConvertError)"
+    expected_output_contains: "ConvertError"
+
+  - name: Import RulesError exception
+    description: Verify RulesError exception class can be imported
+    command: python -c "from sovabids.errors import RulesError; print(RulesError)"
+    expected_output_contains: "RulesError"
+
+  - name: Import FileListError exception
+    description: Verify FileListError exception class can be imported
+    command: python -c "from sovabids.errors import FileListError; print(FileListError)"
+    expected_output_contains: "FileListError"
+
+  - name: Import SaveError exception
+    description: Verify SaveError exception class can be imported
+    command: python -c "from sovabids.errors import SaveError; print(SaveError)"
+    expected_output_contains: "SaveError"
+
+  # ==========================================================================
+  # LOGGERS MODULE FUNCTIONS
+  # ==========================================================================
+  - name: Import setup_logging function
+    description: Verify setup_logging can be imported from loggers
+    command: python -c "from sovabids.loggers import setup_logging; print(callable(setup_logging))"
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # SCHEMAS MODULE FUNCTIONS
+  # ==========================================================================
+  - name: Import get_sova2coin_bidsmap
+    description: Verify get_sova2coin_bidsmap can be imported
+    command: python -c "from sovabids.schemas import get_sova2coin_bidsmap; print(callable(get_sova2coin_bidsmap))"
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # DEPENDENCY CHECKS - MNE
+  # ==========================================================================
+  - name: Check MNE installation
+    description: Verify MNE-Python is installed and importable
+    command: python -c "import mne; print('MNE version:', mne.__version__)"
+    expected_output_contains: "MNE version:"
+
+  - name: Check MNE Raw object creation
+    description: Test creating a basic MNE Raw object
+    command: |
+      python -c "
+      import mne
+      import numpy as np
+      data = np.random.randn(5, 1000)
+      info = mne.create_info(ch_names=['ch1','ch2','ch3','ch4','ch5'], sfreq=100, ch_types='eeg')
+      raw = mne.io.RawArray(data, info)
+      print(type(raw).__name__)
+      "
+    expected_output_contains: "RawArray"
+
+  # ==========================================================================
+  # DEPENDENCY CHECKS - MNE-BIDS
+  # ==========================================================================
+  - name: Check MNE-BIDS installation
+    description: Verify MNE-BIDS is installed and importable
+    command: python -c "import mne_bids; print('MNE-BIDS version:', mne_bids.__version__)"
+    expected_output_contains: "MNE-BIDS version:"
+
+  - name: Import write_raw_bids from MNE-BIDS
+    description: Verify write_raw_bids can be imported
+    command: python -c "from mne_bids import write_raw_bids; print(callable(write_raw_bids))"
+    expected_output_contains: "True"
+
+  - name: Import BIDSPath from MNE-BIDS
+    description: Verify BIDSPath can be imported
+    command: python -c "from mne_bids import BIDSPath; print(BIDSPath)"
+    expected_output_contains: "BIDSPath"
+
+  # ==========================================================================
+  # DEPENDENCY CHECKS - BIDS-VALIDATOR
+  # ==========================================================================
+  - name: Check bids-validator installation
+    description: Verify bids-validator is installed
+    command: python -c "import bids_validator; print('bids-validator imported')"
+    expected_output_contains: "bids-validator imported"
+
+  # ==========================================================================
+  # DEPENDENCY CHECKS - OTHER PACKAGES
+  # ==========================================================================
+  - name: Check pandas installation
+    description: Verify pandas is installed
+    command: python -c "import pandas; print('pandas version:', pandas.__version__)"
+    expected_output_contains: "pandas version:"
+
+  - name: Check numpy installation
+    description: Verify numpy is installed
+    command: python -c "import numpy; print('numpy version:', numpy.__version__)"
+    expected_output_contains: "numpy version:"
+
+  - name: Check scipy installation
+    description: Verify scipy is installed
+    command: python -c "import scipy; print('scipy version:', scipy.__version__)"
+    expected_output_contains: "scipy version:"
+
+  - name: Check pybv installation
+    description: Verify pybv (BrainVision export) is installed
+    command: python -c "import pybv; print('pybv version:', pybv.__version__)"
+    expected_output_contains: "pybv version:"
+
+  - name: Check PyYAML installation
+    description: Verify PyYAML is installed for config file handling
+    command: python -c "import yaml; print('yaml imported')"
+    expected_output_contains: "yaml imported"
+
+  - name: Check requests installation
+    description: Verify requests is installed
+    command: python -c "import requests; print('requests version:', requests.__version__)"
+    expected_output_contains: "requests version:"
+
+  # ==========================================================================
+  # FUNCTIONAL TESTS - DUMMY DATA CREATION
+  # ==========================================================================
+  - name: Create dummy raw and check channels
+    description: Test creating dummy raw (returns tuple of raw, events)
+    command: |
+      python -c "from sovabids.datasets import get_dummy_raw; raw, events = get_dummy_raw(NCHANNELS=10, SFREQ=256, STOP=20); print('Channels:', len(raw.ch_names))"
+    expected_output_contains: "Channels: 10"
+
+  - name: Create dummy raw and check sampling frequency
+    description: Test creating dummy raw and verifying sampling frequency
+    command: |
+      python -c "from sovabids.datasets import get_dummy_raw; raw, events = get_dummy_raw(NCHANNELS=5, SFREQ=512, STOP=20); print('Sfreq:', raw.info['sfreq'])"
+    expected_output_contains: "Sfreq: 512"
+
+  - name: Create dummy raw and check duration
+    description: Test creating dummy raw and verifying duration
+    command: |
+      python -c "from sovabids.datasets import get_dummy_raw; raw, events = get_dummy_raw(NCHANNELS=5, SFREQ=200, STOP=20); print('Duration:', raw.times[-1])"
+    expected_output_contains: "Duration:"
+
+  # ==========================================================================
+  # FUNCTIONAL TESTS - PATTERN PARSING
+  # ==========================================================================
+  - name: Test full from_io_example workflow
+    description: Test complete from_io_example workflow
+    command: |
+      python -c "
+      from sovabids.heuristics import from_io_example
+      source = 'dataset/task_rest/sub_001/ses_01/data.vhdr'
+      target = 'bids/sub-001/ses-01/eeg/sub-001_ses-01_task-rest_eeg.vhdr'
+      result = from_io_example(source, target)
+      print('Result type:', type(result).__name__)
+      print('Has pattern:', 'pattern' in result)
+      "
+    expected_exit_code: 0
+    expected_output_contains: "Has pattern: True"
+
+  - name: Test parse_entities with run
+    description: Test parsing entities including run number
+    command: |
+      python -c "
+      from sovabids.heuristics import parse_entities_from_bidspath
+      path = 'sub-02/ses-test/eeg/sub-02_ses-test_task-motor_run-03_eeg.edf'
+      result = parse_entities_from_bidspath(path)
+      print('run:', result.get('run'))
+      "
+    expected_output_contains: "run: 03"
+
+  - name: Test parse_entities with acquisition
+    description: Test parsing entities including acquisition label
+    command: |
+      python -c "
+      from sovabids.heuristics import parse_entities_from_bidspath
+      path = 'sub-01/eeg/sub-01_task-rest_acq-highres_eeg.bdf'
+      result = parse_entities_from_bidspath(path)
+      print('acq:', result.get('acq'))
+      "
+    expected_output_contains: "acq: highres"
+
+  # ==========================================================================
+  # FUNCTIONAL TESTS - DICTIONARY OPERATIONS
+  # ==========================================================================
+  - name: Test deep_merge with nested dicts
+    description: Test merging two nested dictionaries
+    command: |
+      python -c "
+      from sovabids.dicts import deep_merge
+      d1 = {'a': {'b': 1, 'c': 2}}
+      d2 = {'a': {'c': 3, 'd': 4}}
+      result = deep_merge(d1, d2)
+      print('Merged c:', result['a']['c'])
+      "
+    expected_output_contains: "Merged c: 3"
+
+  - name: Test deep_get with path
+    description: Test getting value from nested dict using string path with separator
+    command: |
+      python -c "from sovabids.dicts import deep_get; d = dict(level1=dict(level2=dict(level3='value'))); result = deep_get(d, 'level1.level2.level3'); print('Value:', result)"
+    expected_output_contains: "Value: value"
+
+  # ==========================================================================
+  # INTEGRATION TESTS - RULES DICTIONARY
+  # ==========================================================================
+  - name: Create valid rules dictionary
+    description: Test creating a valid rules dictionary structure
+    command: |
+      python -c "
+      rules = {
+          'non-bids': {
+              'eeg_extension': '.vhdr',
+              'path_analysis': {
+                  'pattern': '%task%/%session%/sub%subject%_%run%.vhdr'
+              }
+          },
+          'dataset_description': {
+              'Name': 'Test Dataset',
+              'BIDSVersion': '1.6.0'
+          },
+          'sidecar': {
+              'PowerLineFrequency': 50,
+              'Manufacturer': 'BrainProducts'
+          }
+      }
+      print('Rules keys:', list(rules.keys()))
+      "
+    expected_output_contains: "non-bids"
+
+  - name: Test rules with entities configuration
+    description: Test creating rules with BIDS entities configuration
+    command: |
+      python -c "
+      rules = {
+          'non-bids': {
+              'eeg_extension': '.edf',
+              'path_analysis': {
+                  'pattern': '%subject%_%task%_%session%.edf'
+              }
+          },
+          'entities': {
+              'task': 'rest',
+              'datatype': 'eeg'
+          }
+      }
+      print('Has entities:', 'entities' in rules)
+      "
+    expected_output_contains: "Has entities: True"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

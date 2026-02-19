@@ -1,0 +1,902 @@
+# deepretinotopy container test suite
+# Tests for deepretinotopy v1.0.18 - Deep learning-based retinotopic mapping
+#
+# Container includes:
+#   - deepRetinotopy toolbox (geometric deep learning for visual cortex mapping)
+#   - FreeSurfer 7.3.2 (structural MRI processing)
+#   - Connectome Workbench v1.5.0 (surface-based neuroimaging analysis)
+#   - PyTorch 2.5.1+cu124 (GPU-enabled deep learning)
+#   - PyTorch Geometric 2.6.1 (graph neural networks)
+#   - Python 3.12.8
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: structural MRI for FreeSurfer processing
+#   - inplaneT2: T2-weighted anatomical
+#   - BOLD: functional MRI timeseries
+
+name: deepretinotopy
+version: 1.0.18
+container: deepretinotopy_1.0.18_20250909.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/freesurfer_subjects
+    mkdir -p test_output/surfaces
+
+# =============================================================================
+# TEST SUITE
+# =============================================================================
+
+tests:
+  # ===========================================================================
+  # DEEPRETINOTOPY MAIN TOOLBOX TESTS
+  # ===========================================================================
+  - name: deepRetinotopy help
+    description: Verify deepRetinotopy command displays help information
+    command: deepRetinotopy --help 2>&1 | head -20
+    expected_output_contains: "DeepRetinotopy"
+
+  - name: deepRetinotopy executable location
+    description: Verify deepRetinotopy is properly installed
+    command: which deepRetinotopy
+    expected_output_contains: "deepRetinotopy"
+
+  - name: signMaps usage
+    description: Verify signMaps command displays usage information
+    command: signMaps 2>&1 | head -10 || true
+    expected_output_contains: "sign"
+
+  # ===========================================================================
+  # PYTHON ENVIRONMENT TESTS
+  # ===========================================================================
+  - name: Python version check
+    description: Verify Python 3.12 is available
+    command: python --version
+    expected_output_contains: "Python 3.12"
+
+  - name: PyTorch availability
+    description: Verify PyTorch is installed and working
+    command: python -c "import torch; print('PyTorch version:', torch.__version__)"
+    expected_output_contains: "PyTorch version: 2.5.1"
+
+  - name: PyTorch CUDA detection
+    description: Check PyTorch CUDA availability (may be False without GPU)
+    command: python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+    expected_exit_code: 0
+
+  - name: PyTorch Geometric availability
+    description: Verify PyTorch Geometric is installed
+    command: python -c "import torch_geometric; print('PyG version:', torch_geometric.__version__)" 2>&1 | tail -1
+    expected_output_contains: "PyG version: 2.6.1"
+
+  - name: NumPy availability
+    description: Verify NumPy is installed
+    command: python -c "import numpy; print('NumPy version:', numpy.__version__)"
+    expected_exit_code: 0
+
+  - name: Nibabel availability
+    description: Verify nibabel (NIfTI I/O) is installed
+    command: python -c "import nibabel; print('nibabel version:', nibabel.__version__)"
+    expected_exit_code: 0
+
+  - name: SciPy availability
+    description: Verify SciPy is installed
+    command: python -c "import scipy; print('SciPy version:', scipy.__version__)"
+    expected_exit_code: 0
+
+  # ===========================================================================
+  # DEEPRETINOTOPY MODEL TESTS
+  # ===========================================================================
+  - name: Polar angle models exist
+    description: Verify polar angle prediction models are installed
+    command: ls -la /opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_polarAngle_*.pt
+    expected_output_contains: "deepRetinotopy_polarAngle_LH_model.pt"
+
+  - name: Eccentricity models exist
+    description: Verify eccentricity prediction models are installed
+    command: ls -la /opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_eccentricity_*.pt
+    expected_output_contains: "deepRetinotopy_eccentricity_LH_model.pt"
+
+  - name: pRF size models exist
+    description: Verify pRF size prediction models are installed
+    command: ls -la /opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_pRFsize_*.pt
+    expected_output_contains: "deepRetinotopy_pRFsize_LH_model.pt"
+
+  - name: Model file count
+    description: Verify all 6 model files are present (LH/RH for 3 maps)
+    command: ls /opt/deepRetinotopy_TheToolbox/models/*.pt | wc -l
+    expected_output_contains: "6"
+
+  - name: Load PyTorch model
+    description: Test loading a deepRetinotopy model file
+    command: python -c "import torch; m=torch.load('/opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_polarAngle_LH_model.pt', map_location='cpu', weights_only=False); print('Model loaded successfully')"
+    expected_output_contains: "Model loaded successfully"
+
+  # ===========================================================================
+  # DEEPRETINOTOPY UTILITY SCRIPTS
+  # ===========================================================================
+  - name: Inference script exists
+    description: Verify main inference script is present
+    command: ls -la /opt/deepRetinotopy_TheToolbox/main/2_inference.py
+    expected_output_contains: "2_inference.py"
+
+  - name: Native to fsaverage script exists
+    description: Verify surface transformation script is present
+    command: ls -la /opt/deepRetinotopy_TheToolbox/main/1_native2fsaverage.sh
+    expected_output_contains: "1_native2fsaverage.sh"
+
+  - name: fsaverage to native script exists
+    description: Verify reverse transformation script is present
+    command: ls -la /opt/deepRetinotopy_TheToolbox/main/3_fsaverage2native.sh
+    expected_output_contains: "3_fsaverage2native.sh"
+
+  - name: Sign maps script exists
+    description: Verify visual field sign calculation script is present
+    command: ls -la /opt/deepRetinotopy_TheToolbox/main/4_signmaps.py
+    expected_output_contains: "4_signmaps.py"
+
+  # ===========================================================================
+  # CONNECTOME WORKBENCH TESTS
+  # ===========================================================================
+  - name: wb_command version
+    description: Verify Connectome Workbench is installed
+    command: wb_command -version 2>&1 | head -5
+    expected_output_contains: "Connectome Workbench"
+
+  - name: wb_command list commands
+    description: Verify wb_command has available subcommands
+    command: wb_command -list-commands 2>&1 | head -5
+    expected_output_contains: "SPECIFICATION FILE"
+
+  - name: wb_command help
+    description: Test wb_command general help
+    command: wb_command -help 2>&1
+    expected_output_contains: "Information options"
+
+  - name: wb_view executable
+    description: Verify wb_view is available (GUI visualization)
+    command: which wb_view
+    expected_output_contains: "wb_view"
+
+  - name: wb_shortcuts executable
+    description: Verify wb_shortcuts is available
+    command: which wb_shortcuts
+    expected_output_contains: "wb_shortcuts"
+
+  # ===========================================================================
+  # CONNECTOME WORKBENCH SURFACE OPERATIONS
+  # ===========================================================================
+  - name: wb_command surface-information help
+    description: Test surface information subcommand
+    command: wb_command -surface-information 2>&1 | head -10
+    expected_output_contains: "DISPLAY INFORMATION"
+
+  - name: wb_command surface-curvature help
+    description: Test surface curvature calculation help
+    command: wb_command -surface-curvature 2>&1 | head -10
+    expected_output_contains: "CALCULATE CURVATURE"
+
+  - name: wb_command surface-smoothing help
+    description: Test surface smoothing help
+    command: wb_command -surface-smoothing 2>&1 | head -10
+    expected_output_contains: "SURFACE SMOOTHING"
+
+  - name: wb_command surface-resample help
+    description: Test surface resampling help
+    command: wb_command -surface-resample 2>&1 | head -10
+    expected_output_contains: "RESAMPLE A SURFACE"
+
+  - name: wb_command metric-resample help
+    description: Test metric resampling help
+    command: wb_command -metric-resample 2>&1 | head -10
+    expected_output_contains: "RESAMPLE A METRIC FILE"
+
+  - name: wb_command surface-create-sphere help
+    description: Test sphere creation help
+    command: wb_command -surface-create-sphere 2>&1 | head -10
+    expected_output_contains: "GENERATE A SPHERE"
+
+  # ===========================================================================
+  # CONNECTOME WORKBENCH CIFTI OPERATIONS
+  # ===========================================================================
+  - name: wb_command cifti-help
+    description: Test CIFTI file format help
+    command: wb_command -cifti-help 2>&1 | head -20
+    expected_output_contains: "CIFTI"
+
+  - name: wb_command cifti-convert help
+    description: Test CIFTI conversion help
+    command: wb_command -cifti-convert 2>&1 | head -10
+    expected_output_contains: "DUMP CIFTI MATRIX"
+
+  - name: wb_command cifti-math help
+    description: Test CIFTI math operations help
+    command: wb_command -cifti-math 2>&1 | head -10
+    expected_output_contains: "EVALUATE EXPRESSION"
+
+  - name: wb_command cifti-smoothing help
+    description: Test CIFTI smoothing help
+    command: wb_command -cifti-smoothing 2>&1 | head -10
+    expected_output_contains: "SMOOTH A CIFTI FILE"
+
+  - name: wb_command cifti-correlation help
+    description: Test CIFTI correlation help
+    command: wb_command -cifti-correlation 2>&1 | head -10
+    expected_output_contains: "GENERATE CORRELATION"
+
+  # ===========================================================================
+  # CONNECTOME WORKBENCH VOLUME OPERATIONS
+  # ===========================================================================
+  - name: wb_command volume-math help
+    description: Test volume math operations help
+    command: wb_command -volume-math 2>&1 | head -10
+    expected_output_contains: "EVALUATE EXPRESSION"
+
+  - name: wb_command volume-smoothing help
+    description: Test volume smoothing help
+    command: wb_command -volume-smoothing 2>&1 | head -10
+    expected_output_contains: "SMOOTH A VOLUME FILE"
+
+  - name: wb_command volume-to-surface-mapping help
+    description: Test volume to surface mapping help
+    command: wb_command -volume-to-surface-mapping 2>&1 | head -10
+    expected_output_contains: "MAP VOLUME TO SURFACE"
+
+  - name: wb_command volume-resample help
+    description: Test volume resampling help
+    command: wb_command -volume-resample 2>&1 | head -10
+    expected_output_contains: "TRANSFORM AND RESAMPLE"
+
+  # ===========================================================================
+  # CONNECTOME WORKBENCH METRIC OPERATIONS
+  # ===========================================================================
+  - name: wb_command metric-math help
+    description: Test metric math operations help
+    command: wb_command -metric-math 2>&1 | head -10
+    expected_output_contains: "EVALUATE EXPRESSION"
+
+  - name: wb_command metric-smoothing help
+    description: Test metric smoothing help
+    command: wb_command -metric-smoothing 2>&1 | head -10
+    expected_output_contains: "SMOOTH A METRIC FILE"
+
+  - name: wb_command metric-gradient help
+    description: Test metric gradient help
+    command: wb_command -metric-gradient 2>&1 | head -10
+    expected_output_contains: "SURFACE GRADIENT"
+
+  - name: wb_command metric-stats help
+    description: Test metric statistics help
+    command: wb_command -metric-stats 2>&1 | head -10
+    expected_output_contains: "SPATIAL STATISTICS"
+
+  # ===========================================================================
+  # FREESURFER VERSION AND ENVIRONMENT
+  # ===========================================================================
+  - name: FreeSurfer version
+    description: Verify FreeSurfer 7.3.2 is installed
+    command: recon-all --version 2>&1
+    expected_output_contains: "7.3.2"
+
+  - name: FreeSurfer help
+    description: Test FreeSurfer general help
+    command: freesurfer 2>&1 | head -10
+    expected_output_contains: "FreeSurfer"
+
+  - name: FreeSurfer SUBJECTS_DIR
+    description: Verify SUBJECTS_DIR environment is accessible
+    command: echo $FREESURFER_HOME || ls /opt/freesurfer-7.3.2
+    expected_exit_code: 0
+
+  # ===========================================================================
+  # FREESURFER MRI TOOLS
+  # ===========================================================================
+  - name: mri_info available
+    description: Verify mri_info is available
+    command: mri_info --help 2>&1 | head -10
+    expected_output_contains: "mri_info"
+
+  - name: mri_convert available
+    description: Verify mri_convert is available
+    command: mri_convert --help 2>&1 | head -10
+    expected_output_contains: "mri_convert"
+
+  - name: mri_binarize available
+    description: Verify mri_binarize is available
+    command: mri_binarize --help 2>&1 | head -10
+    expected_output_contains: "mri_binarize"
+
+  - name: mri_vol2vol available
+    description: Verify mri_vol2vol is available
+    command: mri_vol2vol --help 2>&1 | head -10
+    expected_output_contains: "mri_vol2vol"
+
+  - name: mri_vol2surf available
+    description: Verify mri_vol2surf is available
+    command: mri_vol2surf --help 2>&1 | head -10
+    expected_output_contains: "mri_vol2surf"
+
+  - name: mri_surf2surf available
+    description: Verify mri_surf2surf is available
+    command: mri_surf2surf --help 2>&1 | head -10
+    expected_output_contains: "mri_surf2surf"
+
+  - name: mri_robust_register available
+    description: Verify mri_robust_register is available
+    command: mri_robust_register --help 2>&1 | head -10
+    expected_output_contains: "mri_robust_register"
+
+  - name: mri_synthstrip available
+    description: Verify SynthStrip brain extraction is available
+    command: mri_synthstrip --help 2>&1 | head -10
+    expected_output_contains: "SynthStrip"
+
+  - name: mri_synthseg available
+    description: Verify SynthSeg segmentation is available
+    command: mri_synthseg --help 2>&1 | head -10
+    expected_output_contains: "SynthSeg"
+
+  # ===========================================================================
+  # FREESURFER SURFACE TOOLS
+  # ===========================================================================
+  - name: mris_convert available
+    description: Verify mris_convert is available
+    command: mris_convert --help 2>&1 | head -10
+    expected_output_contains: "mris_convert"
+
+  - name: mris_curvature available
+    description: Verify mris_curvature is available
+    command: mris_curvature --help 2>&1 | head -10
+    expected_output_contains: "mris_curvature"
+
+  - name: mris_info available
+    description: Verify mris_info is available
+    command: mris_info --help 2>&1 | head -10
+    expected_output_contains: "mris_info"
+
+  - name: mris_register available
+    description: Verify mris_register is available
+    command: mris_register --help 2>&1 | head -10
+    expected_output_contains: "mris_register"
+
+  - name: mris_inflate available
+    description: Verify mris_inflate is available
+    command: mris_inflate --help 2>&1 | head -10
+    expected_output_contains: "mris_inflate"
+
+  - name: mris_sphere available
+    description: Verify mris_sphere is available
+    command: mris_sphere --help 2>&1 | head -10
+    expected_output_contains: "mris_sphere"
+
+  - name: mris_smooth available
+    description: Verify mris_smooth is available
+    command: mris_smooth --help 2>&1 | head -10
+    expected_output_contains: "mris_smooth"
+
+  - name: mris_anatomical_stats available
+    description: Verify mris_anatomical_stats is available
+    command: mris_anatomical_stats --help 2>&1 | head -10
+    expected_output_contains: "mris_anatomical_stats"
+
+  # ===========================================================================
+  # FREESURFER RECONSTRUCTION TOOLS
+  # ===========================================================================
+  - name: recon-all available
+    description: Verify recon-all is available
+    command: recon-all --help 2>&1 | head -10
+    expected_output_contains: "recon-all"
+
+  - name: recon-all stages
+    description: Test recon-all stage listing
+    command: recon-all --help 2>&1 | grep -E "^\s+-" | head -20
+    expected_output_contains: "all"
+
+  # ===========================================================================
+  # MRI PROCESSING WITH TEST DATA
+  # ===========================================================================
+  - name: mri_info on T1w
+    description: Display NIfTI header information for T1w
+    command: mri_info ${t1w} 2>&1 | head -30
+    expected_output_contains: "voxel sizes"
+
+  - name: mri_info dimensions T1w
+    description: Get T1w image dimensions
+    command: mri_info --dim ${t1w}
+    expected_exit_code: 0
+
+  - name: mri_info voxel size T1w
+    description: Get T1w voxel dimensions
+    command: mri_info --res ${t1w}
+    expected_exit_code: 0
+
+  - name: mri_info on T2
+    description: Display NIfTI header information for T2
+    command: mri_info ${t2} 2>&1 | head -30
+    expected_output_contains: "voxel sizes"
+
+  - name: mri_info on BOLD
+    description: Display NIfTI header information for BOLD
+    command: mri_info ${bold} 2>&1 | head -30
+    expected_output_contains: "voxel sizes"
+
+  - name: mri_convert format test
+    description: Convert T1w to MGZ format
+    command: mri_convert ${t1w} test_output/t1w.mgz
+    validate:
+      - output_exists: ${output_dir}/t1w.mgz
+
+  - name: mri_convert back to NIfTI
+    description: Convert MGZ back to NIfTI
+    command: mri_convert test_output/t1w.mgz test_output/t1w_from_mgz.nii.gz
+    depends_on: mri_convert format test
+    validate:
+      - output_exists: ${output_dir}/t1w_from_mgz.nii.gz
+
+  - name: mri_binarize threshold
+    description: Create binary mask from T1w with threshold
+    command: mri_binarize --i ${t1w} --min 100 --o test_output/t1w_mask.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mask.nii.gz
+
+  - name: mri_convert resample
+    description: Resample T1w to 2mm isotropic
+    command: mri_convert -vs 2 2 2 ${t1w} test_output/t1w_2mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_2mm.nii.gz
+
+  - name: mri_convert orientation
+    description: Reorient T1w to RAS orientation
+    command: mri_convert --out_orientation RAS ${t1w} test_output/t1w_ras.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_ras.nii.gz
+
+  # ===========================================================================
+  # WORKBENCH VOLUME OPERATIONS WITH TEST DATA
+  # ===========================================================================
+  - name: wb_command nifti-information
+    description: Display NIfTI information using workbench
+    command: wb_command -nifti-information ${t1w} -print-header 2>&1
+    expected_output_contains: "sizeof_hdr"
+
+  - name: wb_command volume-create
+    description: Create a blank volume file
+    command: wb_command -volume-create 64 64 32 test_output/blank_volume.nii.gz -sform 1 0 0 0 0 1 0 0 0 0 1 0
+    validate:
+      - output_exists: ${output_dir}/blank_volume.nii.gz
+
+  - name: wb_command volume-math add constant
+    description: Add constant to volume using wb_command
+    command: wb_command -volume-math "x + 100" test_output/t1w_plus100.nii.gz -var x ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_plus100.nii.gz
+
+  - name: wb_command volume-math multiply
+    description: Multiply volume by constant
+    command: wb_command -volume-math "x * 2" test_output/t1w_times2.nii.gz -var x ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_times2.nii.gz
+
+  - name: wb_command volume-math threshold
+    description: Threshold volume using expression
+    command: wb_command -volume-math "x > 100" test_output/t1w_thr100_wb.nii.gz -var x ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_thr100_wb.nii.gz
+
+  - name: wb_command volume-smoothing
+    description: Smooth T1w volume with 2mm FWHM
+    command: wb_command -volume-smoothing ${t1w} 2 test_output/t1w_smooth_wb.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_wb.nii.gz
+
+  - name: wb_command volume-reduce mean
+    description: Calculate temporal mean of BOLD using wb_command
+    command: wb_command -volume-reduce ${bold} MEAN test_output/bold_mean_wb.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_mean_wb.nii.gz
+
+  - name: wb_command volume-reduce stdev
+    description: Calculate temporal standard deviation of BOLD
+    command: wb_command -volume-reduce ${bold} STDEV test_output/bold_std_wb.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_std_wb.nii.gz
+
+  - name: wb_command volume-reduce max
+    description: Calculate temporal maximum of BOLD
+    command: wb_command -volume-reduce ${bold} MAX test_output/bold_max_wb.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_max_wb.nii.gz
+
+  - name: wb_command volume-reduce min
+    description: Calculate temporal minimum of BOLD
+    command: wb_command -volume-reduce ${bold} MIN test_output/bold_min_wb.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_min_wb.nii.gz
+
+  - name: wb_command volume-gradient
+    description: Calculate volume gradient magnitude
+    command: wb_command -volume-gradient ${t1w} test_output/t1w_gradient_wb.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_gradient_wb.nii.gz
+
+  - name: wb_command volume-dilate
+    description: Dilate volume
+    command: |
+      wb_command -volume-math "x > 100" test_output/t1w_bin_for_dilate.nii.gz -var x ${t1w} && \
+      wb_command -volume-dilate test_output/t1w_bin_for_dilate.nii.gz 2 NEAREST test_output/t1w_dilated_wb.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_dilated_wb.nii.gz
+
+  - name: wb_command volume-erode
+    description: Erode volume
+    command: wb_command -volume-erode test_output/t1w_bin_for_dilate.nii.gz 2 test_output/t1w_eroded_wb.nii.gz
+    depends_on: wb_command volume-dilate
+    validate:
+      - output_exists: ${output_dir}/t1w_eroded_wb.nii.gz
+
+  - name: wb_command volume-merge
+    description: Merge two volumes
+    command: wb_command -volume-merge test_output/t1w_merged.nii.gz -volume ${t1w} -volume ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_merged.nii.gz
+
+  # ===========================================================================
+  # PYTHON DATA PROCESSING TESTS
+  # ===========================================================================
+  - name: Nibabel read T1w
+    description: Read T1w using nibabel
+    command: python -c "import nibabel as nib; img=nib.load('${t1w}'); print('Shape:', img.shape); print('Affine shape:', img.affine.shape)"
+    expected_output_contains: "Shape:"
+
+  - name: Nibabel read BOLD
+    description: Read BOLD using nibabel
+    command: python -c "import nibabel as nib; img=nib.load(\"${bold}\"); print('Shape:', img.shape); print('TR:', img.header.get_zooms()[-1] if len(img.shape)==4 else 'N/A')"
+    expected_output_contains: "Shape:"
+
+  - name: NumPy image statistics
+    description: Calculate image statistics using NumPy
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      print('Mean:', np.mean(data))
+      print('Std:', np.std(data))
+      print('Min:', np.min(data))
+      print('Max:', np.max(data))
+      "
+    expected_output_contains: "Mean:"
+
+  - name: SciPy image filtering
+    description: Apply Gaussian filter using SciPy
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy.ndimage import gaussian_filter
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      smoothed = gaussian_filter(data, sigma=2)
+      out = nib.Nifti1Image(smoothed, img.affine, img.header)
+      nib.save(out, 'test_output/t1w_scipy_smooth.nii.gz')
+      print('Saved smoothed image')
+      "
+    expected_output_contains: "Saved smoothed image"
+    validate:
+      - output_exists: ${output_dir}/t1w_scipy_smooth.nii.gz
+
+  - name: PyTorch tensor operations
+    description: Convert image to PyTorch tensor
+    command: |
+      python -c "
+      import nibabel as nib
+      import torch
+      import numpy as np
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      tensor = torch.from_numpy(data.astype(np.float32))
+      print('Tensor shape:', tensor.shape)
+      print('Tensor dtype:', tensor.dtype)
+      print('Tensor device:', tensor.device)
+      "
+    expected_output_contains: "Tensor shape:"
+
+  # ===========================================================================
+  # DEEPRETINOTOPY SPECIFIC PYTHON TESTS
+  # ===========================================================================
+  - name: Import deepRetinotopy dataset module
+    description: Test importing dataset utilities
+    command: |
+      cd /opt/deepRetinotopy_TheToolbox && python -c "
+      from utils.dataset import SurfaceDataset
+      print('SurfaceDataset class imported successfully')
+      " 2>&1 | tail -2
+    expected_output_contains: "SurfaceDataset"
+
+  - name: Import deepRetinotopy read_data module
+    description: Test importing data reading utilities
+    command: |
+      cd /opt/deepRetinotopy_TheToolbox && python -c "
+      from utils.read_data import read_gifti
+      print('read_gifti function imported successfully')
+      " 2>&1 | tail -2
+    expected_output_contains: "read_gifti"
+
+  - name: Import deepRetinotopy labels module
+    description: Test importing label utilities
+    command: |
+      cd /opt/deepRetinotopy_TheToolbox && python -c "
+      from utils.labels import ROI_WangParcelsPlusFovea
+      print('ROI labels imported successfully')
+      " 2>&1 | tail -2
+    expected_output_contains: "ROI labels"
+
+  - name: Import deepRetinotopy fieldSign module
+    description: Test importing field sign calculation
+    command: |
+      cd /opt/deepRetinotopy_TheToolbox && python -c "
+      from utils.fieldSign import FieldSign
+      print('FieldSign class imported successfully')
+      " 2>&1 | tail -2
+    expected_output_contains: "FieldSign"
+
+  - name: Check model architecture
+    description: Verify model architecture is loadable
+    command: |
+      cd /opt/deepRetinotopy_TheToolbox && python -c "
+      import torch
+      from utils.model import Model
+      # Just verify the Model class exists and has expected methods
+      print('Model class has forward method:', hasattr(Model, 'forward') or hasattr(Model, '__call__'))
+      " 2>&1 | tail -2
+    expected_exit_code: 0
+
+  # ===========================================================================
+  # FREESURFER LABEL AND ANNOTATION TOOLS
+  # ===========================================================================
+  - name: mri_annotation2label available
+    description: Verify annotation to label conversion is available
+    command: mri_annotation2label --help 2>&1 | head -10
+    expected_output_contains: "mri_annotation2label"
+
+  - name: mri_label2vol available
+    description: Verify label to volume conversion is available
+    command: mri_label2vol --help 2>&1 | head -10
+    expected_output_contains: "mri_label2vol"
+
+  - name: mris_label2annot available
+    description: Verify label to annotation is available
+    command: mris_label2annot --help 2>&1 | head -10
+    expected_output_contains: "mris_label2annot"
+
+  # ===========================================================================
+  # FREESURFER SEGMENTATION TOOLS
+  # ===========================================================================
+  - name: mri_watershed available
+    description: Verify brain extraction tool is available
+    command: mri_watershed --help 2>&1 | head -10
+    expected_output_contains: "mri_watershed"
+
+  - name: mri_segment available
+    description: Verify tissue segmentation is available
+    command: mri_segment --help 2>&1 | head -10
+    expected_output_contains: "mri_segment"
+
+  - name: mri_ca_label available
+    description: Verify atlas-based labeling is available
+    command: mri_ca_label --help 2>&1 | head -10
+    expected_output_contains: "mri_ca_label"
+
+  - name: mri_aparc2aseg available
+    description: Verify parcellation to segmentation is available
+    command: mri_aparc2aseg --help 2>&1 | head -10
+    expected_output_contains: "mri_aparc2aseg"
+
+  - name: mri_segstats available
+    description: Verify segmentation statistics is available
+    command: mri_segstats --help 2>&1 | head -10
+    expected_output_contains: "mri_segstats"
+
+  # ===========================================================================
+  # FREESURFER REGISTRATION TOOLS
+  # ===========================================================================
+  - name: mri_coreg available
+    description: Verify coregistration tool is available
+    command: mri_coreg --help 2>&1 | head -10
+    expected_output_contains: "mri_coreg"
+
+  - name: bbregister available
+    description: Verify boundary-based registration is available
+    command: bbregister --help 2>&1 | head -10
+    expected_output_contains: "bbregister"
+
+  - name: mri_em_register available
+    description: Verify EM registration is available
+    command: mri_em_register --help 2>&1 | head -10
+    expected_output_contains: "mri_em_register"
+
+  - name: mri_ca_register available
+    description: Verify CA registration is available
+    command: mri_ca_register 2>&1 | head -10
+    expected_output_contains: "mri_ca_register"
+
+  # ===========================================================================
+  # FREESURFER STATISTICAL TOOLS
+  # ===========================================================================
+  - name: mri_glmfit available
+    description: Verify GLM fitting is available
+    command: mri_glmfit --help 2>&1 | head -10
+    expected_output_contains: "mri_glmfit"
+
+  - name: mri_surfcluster available
+    description: Verify surface cluster analysis is available
+    command: mri_surfcluster --help 2>&1 | head -10
+    expected_output_contains: "mri_surfcluster"
+
+  - name: mri_volcluster available
+    description: Verify volume cluster analysis is available
+    command: mri_volcluster --help 2>&1 | head -10
+    expected_output_contains: "mri_volcluster"
+
+  - name: mri_fwhm available
+    description: Verify FWHM estimation is available
+    command: mri_fwhm --help 2>&1 | head -10
+    expected_output_contains: "mri_fwhm"
+
+  # ===========================================================================
+  # FREESURFER TRANSFORMATION TOOLS
+  # ===========================================================================
+  - name: mri_concatenate_lta available
+    description: Verify LTA concatenation is available
+    command: mri_concatenate_lta --help 2>&1 | head -10
+    expected_output_contains: "mri_concatenate_lta"
+
+  - name: mri_warp_convert available
+    description: Verify warp conversion is available
+    command: mri_warp_convert --help 2>&1 | head -10
+    expected_output_contains: "mri_warp_convert"
+
+  - name: talairach_avi available
+    description: Verify Talairach registration is available
+    command: which talairach_avi
+    expected_exit_code: 0
+
+  # ===========================================================================
+  # WORKBENCH ADVANCED OPERATIONS
+  # ===========================================================================
+  - name: wb_command spec file operations
+    description: Test spec file help
+    command: wb_command -add-to-spec-file 2>&1 | head -10
+    expected_output_contains: "ADD A FILE TO A SPECIFICATION FILE"
+
+  - name: wb_command scene file operations
+    description: Test scene file help
+    command: wb_command -show-scene 2>&1 | head -10
+    expected_output_contains: "OFFSCREEN RENDERING"
+
+  - name: wb_command border operations
+    description: Test border file help
+    command: wb_command -border-resample 2>&1 | head -10
+    expected_output_contains: "RESAMPLE A BORDER FILE"
+
+  - name: wb_command label operations
+    description: Test label operations help
+    command: wb_command -cifti-label-to-roi 2>&1 | head -10
+    expected_output_contains: "MAKE A CIFTI LABEL INTO AN ROI"
+
+  - name: wb_command parcellation
+    description: Test parcellation help
+    command: wb_command -cifti-parcellate 2>&1 | head -10
+    expected_output_contains: "PARCELLATE A CIFTI FILE"
+
+  # ===========================================================================
+  # INTEGRATION TESTS
+  # ===========================================================================
+  - name: FreeSurfer and Workbench path check
+    description: Verify both tools are in PATH
+    command: |
+      which recon-all && which wb_command && echo "Both tools available"
+    expected_output_contains: "Both tools available"
+
+  - name: Python packages integration
+    description: Verify all required Python packages work together
+    command: |
+      python -c "
+      import torch
+      import torch_geometric
+      import numpy as np
+      import nibabel as nib
+      import scipy
+      print('All packages imported successfully')
+      print('PyTorch:', torch.__version__)
+      print('NumPy:', np.__version__)
+      print('nibabel:', nib.__version__)
+      " 2>&1 | tail -5
+    expected_output_contains: "All packages imported"
+
+  - name: Create test surface sphere
+    description: Create a test sphere surface using wb_command
+    command: wb_command -surface-create-sphere 1000 test_output/test_sphere.surf.gii
+    validate:
+      - output_exists: ${output_dir}/test_sphere.surf.gii
+
+  - name: Surface information check
+    description: Verify created sphere surface
+    command: wb_command -surface-information test_output/test_sphere.surf.gii 2>&1
+    depends_on: Create test surface sphere
+    expected_output_contains: "Vertices"
+
+  - name: Surface curvature calculation
+    description: Calculate curvature on test sphere
+    command: wb_command -surface-curvature test_output/test_sphere.surf.gii -mean test_output/sphere_curvature.func.gii
+    depends_on: Create test surface sphere
+    validate:
+      - output_exists: ${output_dir}/sphere_curvature.func.gii
+
+  - name: Metric smoothing on sphere
+    description: Smooth curvature metric on sphere surface
+    command: wb_command -metric-smoothing test_output/test_sphere.surf.gii test_output/sphere_curvature.func.gii 5 test_output/sphere_curvature_smooth.func.gii
+    depends_on: Surface curvature calculation
+    validate:
+      - output_exists: ${output_dir}/sphere_curvature_smooth.func.gii
+
+  - name: Metric statistics
+    description: Calculate statistics on metric file
+    command: wb_command -metric-stats test_output/sphere_curvature.func.gii -reduce MEAN 2>&1
+    depends_on: Surface curvature calculation
+    expected_exit_code: 0
+
+  # ===========================================================================
+  # DEEPRETINOTOPY LABELS AND TEMPLATES
+  # ===========================================================================
+  - name: Labels directory exists
+    description: Verify retinotopy labels are available
+    command: ls -la /opt/deepRetinotopy_TheToolbox/labels/
+    expected_output_contains: "total"
+
+  - name: Utils templates exist
+    description: Verify template utilities are available
+    command: ls -la /opt/deepRetinotopy_TheToolbox/utils/templates/
+    expected_exit_code: 0
+
+  # ===========================================================================
+  # ERROR HANDLING TESTS
+  # ===========================================================================
+  - name: mri_info handles missing file
+    description: Verify graceful error handling for missing files
+    command: mri_info /nonexistent/file.nii.gz 2>&1 || true
+    expected_output_contains: "error"
+
+  - name: wb_command handles invalid arguments
+    description: Verify workbench shows usage when insufficient args
+    command: wb_command -volume-math 2>&1 || true
+    expected_output_contains: "volume-math"
+
+  - name: deepRetinotopy missing arguments
+    description: Verify deepRetinotopy shows help with missing args
+    command: deepRetinotopy 2>&1 | head -5
+    expected_output_contains: "DeepRetinotopy"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

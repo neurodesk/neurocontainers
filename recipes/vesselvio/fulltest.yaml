@@ -1,0 +1,645 @@
+# VesselVio container test suite
+# Tests for VesselVio v1.1.2 - vessel visualization and analysis tool
+#
+# VesselVio is an open-source application designed to allow researchers to
+# analyze and visualize segmented vasculature datasets. Compatible with
+# annotated datasets and pre-constructed graphs from other programs.
+#
+# Reference: https://doi.org/10.1016/j.crmeth.2022.100189
+# Documentation: https://jacobbumgarner.github.io/VesselVio/
+
+name: vesselvio
+version: 1.1.2
+container: vesselvio_1.1.2_20230428.simg
+
+test_data:
+  sample_vertices: /opt/vesselvio-1.1.2/sample_data/demo_csv/vertices.csv
+  sample_edges: /opt/vesselvio-1.1.2/sample_data/demo_csv/edges.csv
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # PYTHON ENVIRONMENT VERIFICATION
+  # ==========================================================================
+  - name: Python version check
+    description: Verify Python 3.8 is available
+    command: python --version
+    expected_output_contains: "Python 3.8"
+
+  - name: Python executable path
+    description: Verify Python path is in miniconda
+    command: which python
+    expected_output_contains: "/opt/miniconda-latest/bin/python"
+
+  # ==========================================================================
+  # CORE SCIENTIFIC PYTHON PACKAGES
+  # ==========================================================================
+  - name: NumPy import and version
+    description: Test NumPy scientific computing library
+    command: python -c "import numpy; print('numpy version:', numpy.__version__); print('numpy path:', numpy.__file__)"
+    expected_output_contains: "numpy version:"
+
+  - name: NumPy array operations
+    description: Test NumPy array creation and basic operations
+    command: python -c "import numpy as np; a = np.array([[1,2],[3,4]]); print('Array shape:', a.shape); print('Array sum:', a.sum()); print('Array mean:', a.mean())"
+    expected_output_contains: "Array shape: (2, 2)"
+
+  - name: SciPy import and version
+    description: Test SciPy scientific computing library
+    command: python -c "import scipy; print('scipy version:', scipy.__version__)"
+    expected_output_contains: "scipy version:"
+
+  - name: SciPy ndimage functions
+    description: Test SciPy ndimage for image processing
+    command: python -c "from scipy.ndimage import label, distance_transform_edt, binary_dilation, binary_erosion; print('scipy.ndimage functions imported successfully')"
+    expected_output_contains: "scipy.ndimage functions imported successfully"
+
+  - name: SciPy interpolate functions
+    description: Test SciPy interpolation for spline fitting
+    command: python -c "from scipy import interpolate; from scipy.interpolate import splev, splrep; print('scipy.interpolate functions imported successfully')"
+    expected_output_contains: "scipy.interpolate functions imported successfully"
+
+  - name: Pandas import and version
+    description: Test Pandas data analysis library
+    command: python -c "import pandas; print('pandas version:', pandas.__version__)"
+    expected_output_contains: "pandas version:"
+
+  - name: Pandas DataFrame operations
+    description: Test Pandas DataFrame creation and operations
+    command: 'python -c "import pandas as pd; df = pd.DataFrame({''A'': [1,2,3], ''B'': [4,5,6]}); print(''DataFrame shape:'', df.shape); print(''Columns:'', list(df.columns))"'
+    expected_output_contains: "DataFrame shape: (3, 2)"
+
+  # ==========================================================================
+  # IMAGE PROCESSING PACKAGES
+  # ==========================================================================
+  - name: scikit-image import and version
+    description: Test scikit-image image processing library
+    command: python -c "import skimage; print('scikit-image version:', skimage.__version__)"
+    expected_output_contains: "scikit-image version:"
+
+  - name: scikit-image morphology functions
+    description: Test skimage morphology for skeletonization
+    command: python -c "from skimage.morphology import skeletonize_3d, skeletonize, binary_dilation, binary_erosion; print('skimage.morphology functions imported successfully')"
+    expected_output_contains: "skimage.morphology functions imported successfully"
+
+  - name: scikit-image io functions
+    description: Test skimage io for image loading
+    command: python -c "from skimage.io import imread, imsave; print('skimage.io functions imported successfully')"
+    expected_output_contains: "skimage.io functions imported successfully"
+
+  - name: OpenCV import and version
+    description: Test OpenCV computer vision library
+    command: python -c "import cv2; print('opencv version:', cv2.__version__)"
+    expected_output_contains: "opencv version:"
+
+  - name: Pillow import and version
+    description: Test Pillow image processing library
+    command: python -c "import PIL; from PIL import Image; print('Pillow version:', PIL.__version__)"
+    expected_output_contains: "Pillow version:"
+
+  - name: imageio import and version
+    description: Test imageio for image I/O operations
+    command: python -c "import imageio; print('imageio version:', imageio.__version__)"
+    expected_output_contains: "imageio version:"
+
+  - name: tifffile import and version
+    description: Test tifffile for TIFF image handling
+    command: python -c "import tifffile; print('tifffile version:', tifffile.__version__)"
+    expected_output_contains: "tifffile version:"
+
+  # ==========================================================================
+  # NEUROIMAGING PACKAGES
+  # ==========================================================================
+  - name: NiBabel import and version
+    description: Test NiBabel neuroimaging library
+    command: python -c "import nibabel; print('nibabel version:', nibabel.__version__)"
+    expected_output_contains: "nibabel version:"
+
+  - name: NiBabel NIfTI support
+    description: Test NiBabel NIfTI file format support
+    command: python -c "import nibabel as nib; from nibabel import Nifti1Image, Nifti2Image; print('NiBabel NIfTI support available')"
+    expected_output_contains: "NiBabel NIfTI support available"
+
+  - name: NiBabel file formats
+    description: Test NiBabel various file format support
+    command: python -c "import nibabel as nib; formats = ['Nifti1Image', 'Nifti2Image', 'MGHImage', 'GiftiImage']; avail = [f for f in formats if hasattr(nib, f)]; print('Available formats:', avail)"
+    expected_output_contains: "Nifti1Image"
+
+  # ==========================================================================
+  # GRAPH AND NETWORK PACKAGES
+  # ==========================================================================
+  - name: igraph import and version
+    description: Test igraph graph analysis library
+    command: python -c "import igraph; print('igraph version:', igraph.__version__)"
+    expected_output_contains: "igraph version:"
+
+  - name: igraph graph creation
+    description: Test igraph graph construction
+    command: python -c "import igraph as ig; g = ig.Graph(edges=[(0,1),(1,2),(2,0)]); print('Graph vertices:', g.vcount()); print('Graph edges:', g.ecount())"
+    expected_output_contains: "Graph vertices: 3"
+
+  - name: igraph graph algorithms
+    description: Test igraph graph analysis algorithms
+    command: python -c "import igraph as ig; g = ig.Graph.Famous('Petersen'); print('Diameter:', g.diameter()); print('Is connected:', g.is_connected())"
+    expected_output_contains: "Is connected: True"
+
+  - name: NetworkX import and version
+    description: Test NetworkX graph library
+    command: python -c "import networkx; print('networkx version:', networkx.__version__)"
+    expected_output_contains: "networkx version:"
+
+  - name: NetworkX graph operations
+    description: Test NetworkX graph creation and analysis
+    command: python -c "import networkx as nx; G = nx.Graph(); G.add_edges_from([(1,2),(2,3),(3,1)]); print(\"Nodes:\", G.number_of_nodes()); print(\"Edges:\", G.number_of_edges())"
+    expected_output_contains: "Nodes: 3"
+
+  # ==========================================================================
+  # 3D VISUALIZATION PACKAGES
+  # ==========================================================================
+  - name: VTK import and version
+    description: Test VTK visualization toolkit
+    command: python -c "import vtk; print('vtk version:', vtk.vtkVersion.GetVTKVersion())"
+    expected_output_contains: "vtk version:"
+
+  - name: VTK basic objects
+    description: Test VTK object creation
+    command: python -c "import vtk; sphere = vtk.vtkSphereSource(); sphere.SetRadius(1.0); print('VTK sphere source created successfully')"
+    expected_output_contains: "VTK sphere source created successfully"
+
+  - name: PyVista import and version
+    description: Test PyVista 3D visualization library
+    command: python -c "import pyvista; print('pyvista version:', pyvista.__version__)"
+    expected_output_contains: "pyvista version:"
+
+  - name: PyVista mesh creation
+    description: Test PyVista mesh generation
+    command: python -c "import pyvista as pv; sphere = pv.Sphere(); print('Sphere points:', sphere.n_points); print('Sphere cells:', sphere.n_cells)"
+    expected_output_contains: "Sphere points:"
+
+  - name: PyVistaQt import
+    description: Test PyVistaQt for Qt integration
+    command: python -c "import pyvistaqt; print('pyvistaqt version:', pyvistaqt.__version__)"
+    expected_output_contains: "pyvistaqt version:"
+
+  - name: meshio import and version
+    description: Test meshio mesh I/O library
+    command: python -c "import meshio; print('meshio version:', meshio.__version__)"
+    expected_output_contains: "meshio version:"
+
+  # ==========================================================================
+  # SPLINE AND GEOMETRY PACKAGES
+  # ==========================================================================
+  - name: geomdl NURBS import
+    description: Test geomdl NURBS library for spline operations
+    command: python -c "from geomdl import NURBS, knotvector; print('geomdl NURBS imported successfully')"
+    expected_output_contains: "geomdl NURBS imported successfully"
+
+  - name: geomdl knotvector generation
+    description: Test geomdl knot vector generation for B-splines
+    command: python -c "from geomdl import knotvector; kv = knotvector.generate(3, 5); print('Knot vector:', kv)"
+    expected_output_contains: "Knot vector:"
+
+  - name: transforms3d import
+    description: Test transforms3d for 3D transformations
+    command: python -c "from transforms3d import euler, quaternions, affines; print('transforms3d imported successfully')"
+    expected_output_contains: "transforms3d imported successfully"
+
+  # ==========================================================================
+  # MARCHING CUBES AND MESH GENERATION
+  # ==========================================================================
+  - name: PyMCubes import
+    description: Test PyMCubes marching cubes implementation
+    command: python -c "import mcubes; print('PyMCubes (mcubes) imported successfully')"
+    expected_output_contains: "PyMCubes (mcubes) imported successfully"
+    expected_exit_code: 0
+
+  - name: PyMCubes mesh generation
+    description: Test PyMCubes isosurface extraction
+    command: python -c "import mcubes; import numpy as np; vol = np.zeros((10,10,10)); vol[3:7,3:7,3:7] = 1; verts, faces = mcubes.marching_cubes(vol, 0.5); print('Vertices shape:', verts.shape); print('Faces shape:', faces.shape)"
+    expected_output_contains: "Vertices shape:"
+
+  # ==========================================================================
+  # JIT COMPILATION PACKAGES
+  # ==========================================================================
+  - name: Numba import and version
+    description: Test Numba JIT compiler
+    command: python -c "import numba; print('numba version:', numba.__version__)"
+    expected_output_contains: "numba version:"
+
+  - name: Numba JIT compilation
+    description: Test Numba JIT function compilation
+    command: |
+      python -c "
+      from numba import njit
+      @njit
+      def add(a, b):
+          return a + b
+      print('JIT result:', add(5, 3))
+      "
+    expected_output_contains: "JIT result: 8"
+
+  - name: Numba parallel imports
+    description: Test Numba parallel execution imports
+    command: python -c "from numba import njit, prange; print('Numba parallel imports successful')"
+    expected_output_contains: "Numba parallel imports successful"
+
+  # ==========================================================================
+  # DATA VISUALIZATION PACKAGES
+  # ==========================================================================
+  - name: Matplotlib import and version
+    description: Test Matplotlib plotting library
+    command: python -c "import matplotlib; print('matplotlib version:', matplotlib.__version__)"
+    expected_output_contains: "matplotlib version:"
+
+  - name: Matplotlib pyplot
+    description: Test Matplotlib pyplot interface
+    command: python -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt; print('Matplotlib pyplot imported successfully')"
+    expected_output_contains: "Matplotlib pyplot imported successfully"
+
+  # ==========================================================================
+  # EXCEL AND SPREADSHEET PACKAGES
+  # ==========================================================================
+  - name: openpyxl import and version
+    description: Test openpyxl Excel file handling
+    command: python -c "import openpyxl; print('openpyxl version:', openpyxl.__version__)"
+    expected_output_contains: "openpyxl version:"
+
+  - name: PyExcelerate import
+    description: Test PyExcelerate for fast Excel writing
+    command: python -c "import pyexcelerate; print('PyExcelerate imported successfully')"
+    expected_output_contains: "PyExcelerate imported successfully"
+
+  # ==========================================================================
+  # WAVELET AND SIGNAL PROCESSING
+  # ==========================================================================
+  - name: PyWavelets import and version
+    description: Test PyWavelets for wavelet transforms
+    command: python -c "import pywt; print('PyWavelets version:', pywt.__version__)"
+    expected_output_contains: "PyWavelets version:"
+
+  # ==========================================================================
+  # QT GUI PACKAGES
+  # ==========================================================================
+  - name: PyQt5 import
+    description: Test PyQt5 GUI framework
+    command: python -c "from PyQt5 import QtCore, QtWidgets; print('PyQt5 version:', QtCore.QT_VERSION_STR)"
+    expected_output_contains: "PyQt5 version:"
+
+  - name: QtPy import
+    description: Test QtPy Qt abstraction layer
+    command: python -c "import qtpy; print('QtPy imported successfully')"
+    expected_output_contains: "QtPy imported successfully"
+
+  # ==========================================================================
+  # VESSELVIO LIBRARY IMPORTS
+  # ==========================================================================
+  - name: VesselVio image_processing module
+    description: Test VesselVio image processing module import
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import image_processing as ImProc; print('image_processing imported successfully')"
+    expected_output_contains: "image_processing imported successfully"
+
+  - name: VesselVio volume_processing module
+    description: Test VesselVio volume processing module import
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import volume_processing as VolProc; print('volume_processing imported successfully')"
+    expected_output_contains: "volume_processing imported successfully"
+
+  - name: VesselVio graph_processing module
+    description: Test VesselVio graph processing module import
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import graph_processing as GProc; print('graph_processing imported successfully')"
+    expected_output_contains: "graph_processing imported successfully"
+
+  - name: VesselVio feature_extraction module
+    description: Test VesselVio feature extraction module import
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import feature_extraction as FeatExt; print('feature_extraction imported successfully')"
+    expected_output_contains: "feature_extraction imported successfully"
+
+  - name: VesselVio graph_io module
+    description: Test VesselVio graph I/O module import
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import graph_io as GIO; print('graph_io imported successfully')"
+    expected_output_contains: "graph_io imported successfully"
+
+  - name: VesselVio helpers module
+    description: Test VesselVio helpers utility module import
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import helpers; print('helpers imported successfully')"
+    expected_output_contains: "helpers imported successfully"
+
+  - name: VesselVio input_classes module
+    description: Test VesselVio input classes module import
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import input_classes as IC; print('input_classes imported successfully')"
+    expected_output_contains: "input_classes imported successfully"
+
+  - name: VesselVio results_export module
+    description: Test VesselVio results export module import
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import results_export as ResExp; print('results_export imported successfully')"
+    expected_output_contains: "results_export imported successfully"
+
+  - name: VesselVio volume_visualization module
+    description: Test VesselVio volume visualization module import
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import volume_visualization as VolVis; print('volume_visualization imported successfully')"
+    expected_output_contains: "volume_visualization imported successfully"
+
+  - name: VesselVio lee94 skeletonization module
+    description: Test VesselVio Lee94 skeletonization algorithm module
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import lee94; print('lee94 imported successfully')"
+    expected_output_contains: "lee94 imported successfully"
+
+  - name: VesselVio pk12 module
+    description: Test VesselVio PK12 algorithm module
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import pk12; print('pk12 imported successfully')"
+    expected_output_contains: "pk12 imported successfully"
+
+  - name: VesselVio radii_corrections module
+    description: Test VesselVio radii corrections module
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import radii_corrections as RadCor; print('radii_corrections imported successfully')"
+    expected_output_contains: "radii_corrections imported successfully"
+
+  # ==========================================================================
+  # VESSELVIO ANNOTATION MODULES
+  # ==========================================================================
+  - name: VesselVio annotation labeling module
+    description: Test VesselVio annotation labeling module
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library.annotation import labeling; print('annotation labeling imported successfully')"
+    expected_output_contains: "annotation labeling imported successfully"
+
+  - name: VesselVio annotation segmentation module
+    description: Test VesselVio annotation segmentation module
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library.annotation import segmentation; print('annotation segmentation imported successfully')"
+    expected_output_contains: "annotation segmentation imported successfully"
+
+  - name: VesselVio annotation tree_processing module
+    description: Test VesselVio annotation tree processing module
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library.annotation import tree_processing; print('annotation tree_processing imported successfully')"
+    expected_output_contains: "annotation tree_processing imported successfully"
+
+  # ==========================================================================
+  # SAMPLE DATA VERIFICATION
+  # ==========================================================================
+  - name: Sample vertices CSV exists
+    description: Verify sample vertices CSV file exists
+    command: ls -la /opt/vesselvio-1.1.2/sample_data/demo_csv/vertices.csv
+    expected_output_contains: "vertices.csv"
+
+  - name: Sample edges CSV exists
+    description: Verify sample edges CSV file exists
+    command: ls -la /opt/vesselvio-1.1.2/sample_data/demo_csv/edges.csv
+    expected_output_contains: "edges.csv"
+
+  - name: Load sample vertices with Pandas
+    description: Test loading sample vertices CSV data
+    command: python -c "import pandas as pd; df = pd.read_csv('/opt/vesselvio-1.1.2/sample_data/demo_csv/vertices.csv', delimiter=';'); print('Vertices shape:', df.shape); print('Columns:', list(df.columns))"
+    expected_output_contains: "Vertices shape:"
+
+  - name: Load sample edges with Pandas
+    description: Test loading sample edges CSV data
+    command: python -c "import pandas as pd; df = pd.read_csv('/opt/vesselvio-1.1.2/sample_data/demo_csv/edges.csv', delimiter=';'); print('Edges shape:', df.shape)"
+    expected_output_contains: "Edges shape:"
+
+  # ==========================================================================
+  # SCIENTIFIC COMPUTING OPERATIONS
+  # ==========================================================================
+  - name: Distance transform computation
+    description: Test scipy distance transform for vessel analysis
+    command: python -c "import numpy as np; from scipy.ndimage import distance_transform_edt; vol = np.zeros((20,20,20)); vol[5:15,5:15,5:15] = 1; dt = distance_transform_edt(vol); print('Distance transform max:', dt.max())"
+    expected_output_contains: "Distance transform max:"
+    expected_exit_code: 0
+
+  - name: Binary morphology operations
+    description: Test scipy binary morphology for vessel processing
+    command: python -c "import numpy as np; from scipy.ndimage import binary_dilation, binary_erosion; vol = np.zeros((10,10,10)); vol[4:6,4:6,4:6] = 1; dilated = binary_dilation(vol); eroded = binary_erosion(dilated); print('Dilated sum:', dilated.sum()); print('Eroded sum:', eroded.sum())"
+    expected_output_contains: "Dilated sum:"
+
+  - name: Connected component labeling
+    description: Test scipy connected component analysis
+    command: python -c "import numpy as np; from scipy.ndimage import label; vol = np.zeros((10,10,10)); vol[2:4,2:4,2:4] = 1; vol[6:8,6:8,6:8] = 1; labeled, num = label(vol); print('Number of components:', num)"
+    expected_output_contains: "Number of components: 2"
+
+  - name: 3D skeletonization
+    description: Test scikit-image 3D skeletonization
+    command: python -c "import numpy as np; from skimage.morphology import skeletonize_3d; vol = np.zeros((20,20,20), dtype=np.uint8); vol[5:15,5:15,5:15] = 1; skel = skeletonize_3d(vol); print('Skeleton points:', skel.sum())"
+    expected_output_contains: "Skeleton points:"
+
+  - name: 2D skeletonization
+    description: Test scikit-image 2D skeletonization
+    command: python -c "import numpy as np; from skimage.morphology import skeletonize; img = np.zeros((50,50), dtype=np.uint8); img[10:40,20:30] = 1; skel = skeletonize(img); print('2D skeleton points:', skel.sum())"
+    expected_output_contains: "2D skeleton points:"
+
+  # ==========================================================================
+  # GRAPH ANALYSIS OPERATIONS
+  # ==========================================================================
+  - name: igraph vessel network analysis
+    description: Test igraph for vessel network topology analysis
+    command: python -c "import igraph as ig; g = ig.Graph(edges=[(0,1),(1,2),(1,3),(3,4),(3,5)]); print('Vertices:', g.vcount()); print('Edges:', g.ecount()); print('Degree sequence:', g.degree())"
+    expected_output_contains: "Degree sequence:"
+
+  - name: igraph shortest paths
+    description: Test igraph shortest path computation
+    command: python -c "import igraph as ig; g = ig.Graph(edges=[(0,1),(1,2),(2,3),(0,3)]); sp = g.shortest_paths(0, 3)[0][0]; print('Shortest path length:', sp)"
+    expected_output_contains: "Shortest path length:"
+
+  - name: igraph graph attributes
+    description: Test igraph vertex and edge attributes
+    command: "python -c \"import igraph as ig; g = ig.Graph(edges=[(0,1),(1,2)]); g.vs['radius'] = [1.0, 1.5, 2.0]; g.es['length'] = [10.0, 15.0]; print('Vertex radii:', g.vs['radius']); print('Edge lengths:', g.es['length'])\""
+    expected_output_contains: "Vertex radii:"
+
+  # ==========================================================================
+  # 3D MESH AND VISUALIZATION OPERATIONS
+  # ==========================================================================
+  - name: VTK polydata creation
+    description: Test VTK polydata for vessel visualization
+    command: python -c "import vtk; points = vtk.vtkPoints(); points.InsertNextPoint(0,0,0); points.InsertNextPoint(1,1,1); pd = vtk.vtkPolyData(); pd.SetPoints(points); print('PolyData points:', pd.GetNumberOfPoints())"
+    expected_output_contains: "PolyData points: 2"
+
+  - name: PyVista tube generation
+    description: Test PyVista tube creation for vessel rendering
+    command: python -c "import pyvista as pv; import numpy as np; pts = np.array([[0,0,0],[1,0,0],[2,0,0]]); spline = pv.Spline(pts, 100); tube = spline.tube(radius=0.1); print('Tube points:', tube.n_points)"
+    expected_output_contains: "Tube points:"
+
+  - name: PyVista sphere glyph
+    description: Test PyVista sphere glyphs for branch point visualization
+    command: python -c "import pyvista as pv; import numpy as np; pts = np.array([[0,0,0],[1,1,1],[2,2,2]]); cloud = pv.PolyData(pts); spheres = cloud.glyph(geom=pv.Sphere(radius=0.1)); print('Glyph points:', spheres.n_points)"
+    expected_output_contains: "Glyph points:"
+
+  # ==========================================================================
+  # SPLINE INTERPOLATION OPERATIONS
+  # ==========================================================================
+  - name: SciPy B-spline interpolation
+    description: Test B-spline interpolation for centerline smoothing
+    command: python -c "import numpy as np; from scipy import interpolate; x = np.array([0,1,2,3,4]); y = np.array([0,1,0,1,0]); tck = interpolate.splrep(x, y, k=3); xnew = np.linspace(0,4,10); ynew = interpolate.splev(xnew, tck); print('Interpolated points:', len(ynew))"
+    expected_output_contains: "Interpolated points: 10"
+
+  - name: geomdl NURBS curve
+    description: Test geomdl NURBS curve for vessel centerlines
+    command: python -c "from geomdl import NURBS, knotvector; crv = NURBS.Curve(); crv.degree = 2; crv.ctrlpts = [[0,0,0],[1,1,0],[2,0,0]]; crv.knotvector = knotvector.generate(crv.degree, len(crv.ctrlpts)); crv.evaluate(); print('Curve evaluated points:', len(crv.evalpts))"
+    expected_output_contains: "Curve evaluated points:"
+
+  # ==========================================================================
+  # FILE I/O OPERATIONS
+  # ==========================================================================
+  - name: NiBabel NIfTI creation
+    description: Test creating NIfTI files for vessel data
+    command: python -c "import nibabel as nib; import numpy as np; data = np.random.randint(0, 2, (10,10,10), dtype=np.uint8); img = nib.Nifti1Image(data, np.eye(4)); nib.save(img, '${output_dir}/test_vessel.nii.gz'); print('NIfTI file created successfully')"
+    validate:
+      - output_exists: ${output_dir}/test_vessel.nii.gz
+
+  - name: NiBabel NIfTI reading
+    description: Test reading NIfTI files
+    command: python -c "import nibabel as nib; img = nib.load('${output_dir}/test_vessel.nii.gz'); data = img.get_fdata(); print('NIfTI data shape:', data.shape)"
+    depends_on: NiBabel NIfTI creation
+    expected_output_contains: "NIfTI data shape: (10, 10, 10)"
+
+  - name: TIFF file creation
+    description: Test creating TIFF files for vessel images
+    command: python -c "import tifffile; import numpy as np; data = np.random.randint(0, 255, (50,50,50), dtype=np.uint8); tifffile.imwrite('${output_dir}/test_vessel.tif', data); print('TIFF file created successfully')"
+    validate:
+      - output_exists: ${output_dir}/test_vessel.tif
+
+  - name: TIFF file reading
+    description: Test reading TIFF files
+    command: python -c "import tifffile; data = tifffile.imread('${output_dir}/test_vessel.tif'); print('TIFF data shape:', data.shape)"
+    depends_on: TIFF file creation
+    expected_output_contains: "TIFF data shape: (50, 50, 50)"
+
+  - name: CSV export with Pandas
+    description: Test exporting vessel metrics to CSV
+    command: "python -c \"import pandas as pd; df = pd.DataFrame({'segment_id': [1,2,3], 'length': [10.5, 15.2, 8.7], 'radius': [1.2, 1.5, 0.9]}); df.to_csv('${output_dir}/vessel_metrics.csv', index=False); print('CSV exported successfully')\""
+    validate:
+      - output_exists: ${output_dir}/vessel_metrics.csv
+
+  - name: Excel export with openpyxl
+    description: Test exporting vessel data to Excel
+    command: "python -c \"import pandas as pd; df = pd.DataFrame({'vessel': [1,2], 'volume': [100, 200]}); df.to_excel('${output_dir}/vessel_data.xlsx', index=False); print('Excel file created successfully')\""
+    validate:
+      - output_exists: ${output_dir}/vessel_data.xlsx
+
+  # ==========================================================================
+  # SYNTHETIC VESSEL DATA GENERATION
+  # ==========================================================================
+  - name: Generate synthetic vessel volume
+    description: Create synthetic binary vessel volume for testing
+    command: |
+      python -c "
+      import numpy as np
+      import nibabel as nib
+      # Create a simple tube-like structure
+      vol = np.zeros((64,64,64), dtype=np.uint8)
+      for z in range(10, 54):
+          for y in range(28, 36):
+              for x in range(28, 36):
+                  if (y-32)**2 + (x-32)**2 <= 16:
+                      vol[z,y,x] = 1
+      # Add a branch
+      for z in range(30, 40):
+          for y in range(32, 50):
+              for x in range(30, 34):
+                  vol[z,y,x] = 1
+      img = nib.Nifti1Image(vol, np.eye(4))
+      nib.save(img, '${output_dir}/synthetic_vessel.nii.gz')
+      print('Synthetic vessel volume created')
+      print('Volume sum:', vol.sum())
+      "
+    validate:
+      - output_exists: ${output_dir}/synthetic_vessel.nii.gz
+
+  - name: Skeletonize synthetic vessel
+    description: Test skeletonization on synthetic vessel data
+    command: |
+      python -c "
+      import nibabel as nib
+      from skimage.morphology import skeletonize_3d
+      img = nib.load('${output_dir}/synthetic_vessel.nii.gz')
+      vol = img.get_fdata().astype('uint8')
+      skel = skeletonize_3d(vol)
+      print('Original volume sum:', vol.sum())
+      print('Skeleton sum:', skel.sum())
+      "
+    depends_on: Generate synthetic vessel volume
+    expected_output_contains: "Skeleton sum:"
+
+  - name: Distance transform on synthetic vessel
+    description: Test distance transform for radius estimation
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy.ndimage import distance_transform_edt
+      img = nib.load('${output_dir}/synthetic_vessel.nii.gz')
+      vol = img.get_fdata().astype('uint8')
+      dt = distance_transform_edt(vol)
+      print('Max radius (distance):', dt.max())
+      print('Mean radius in vessel:', dt[vol > 0].mean())
+      "
+    depends_on: Generate synthetic vessel volume
+    expected_output_contains: "Max radius"
+
+  # ==========================================================================
+  # INTEGRATED PIPELINE TESTS
+  # ==========================================================================
+  - name: VesselVio resolution preparation
+    description: Test VesselVio resolution format preparation
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import image_processing as ImProc; res = ImProc.prep_resolution(1.0); print('Resolution:', res); res2 = ImProc.prep_resolution([1.0, 1.0, 1.0]); print('Resolution array:', res2)"
+    expected_output_contains: "Resolution:"
+
+  - name: VesselVio binary check
+    description: Test VesselVio binary volume validation
+    command: |
+      python -c "
+      import sys
+      sys.path.insert(0, '/opt/vesselvio-1.1.2')
+      import numpy as np
+      from library import image_processing as ImProc
+      binary_vol = np.array([[[0,1],[1,0]],[[1,0],[0,1]]], dtype=np.uint8)
+      result = ImProc.binary_check(binary_vol)
+      print('Binary check result:', result)
+      "
+    expected_output_contains: "Binary check result: True"
+
+  - name: VesselVio filename extraction
+    description: Test VesselVio filename extraction utility
+    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import image_processing as ImProc; name = ImProc.get_filename('/path/to/vessel_data.nii.gz'); print('Extracted filename:', name)"
+    expected_output_contains: "Extracted filename:"
+
+  # ==========================================================================
+  # VESSELVIO INSTALLATION VERIFICATION
+  # ==========================================================================
+  - name: VesselVio installation directory
+    description: Verify VesselVio installation directory structure
+    command: ls -la /opt/vesselvio-1.1.2/
+    expected_output_contains: "VVTerminal.py"
+
+  - name: VesselVio library directory
+    description: Verify VesselVio library modules
+    command: ls -la /opt/vesselvio-1.1.2/library/
+    expected_output_contains: "feature_extraction.py"
+
+  - name: VesselVio annotation directory
+    description: Verify VesselVio annotation modules
+    command: ls -la /opt/vesselvio-1.1.2/library/annotation/
+    expected_output_contains: "labeling.py"
+
+  - name: VesselVio executable script
+    description: Verify VesselVio executable script exists
+    command: which vesselvio
+    expected_output_contains: "/opt/vesselvio-1.1.2/vesselvio"
+
+  - name: VesselVio README exists
+    description: Verify VesselVio documentation
+    command: head -5 /opt/vesselvio-1.1.2/README.md
+    expected_output_contains: "VesselVio"
+
+  - name: Container README
+    description: Verify container README documentation
+    command: cat /README.md
+    expected_output_contains: "vesselvio"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

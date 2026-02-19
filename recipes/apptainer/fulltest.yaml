@@ -1,0 +1,807 @@
+# apptainer container test suite
+# Tests for apptainer v1.4.4 - HPC/EPC container runtime
+#
+# Apptainer (formerly Singularity) is a container platform designed for
+# High Performance Computing (HPC) and Enterprise Performance Computing (EPC).
+# It enables mobility of compute via application and environment portability.
+#
+# Note: Most apptainer tests are self-contained and do not use neuroimaging
+# test data. The container itself contains test images for validation.
+
+name: apptainer
+version: 1.4.4
+container: apptainer_1.4.4_20251030.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  # Test data paths (for reference, though apptainer tests are mostly self-contained)
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/sandbox
+    mkdir -p test_output/cache
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION CHECKS
+  # ==========================================================================
+  - name: Apptainer version check
+    description: Verify apptainer binary runs and reports correct version
+    command: apptainer --version
+    expected_output_contains: "apptainer version 1.4.4"
+
+  - name: Singularity alias version check
+    description: Verify singularity alias works (backward compatibility)
+    command: singularity --version
+    expected_output_contains: "apptainer version 1.4.4"
+
+  - name: Apptainer help
+    description: Verify apptainer help displays available commands
+    command: apptainer --help
+    expected_output_contains: "Available Commands"
+
+  - name: Apptainer help contains key commands
+    description: Verify help shows essential commands
+    command: apptainer --help
+    expected_output_contains: "build"
+
+  # ==========================================================================
+  # SUBCOMMAND HELP VERIFICATION
+  # ==========================================================================
+  - name: Build help
+    description: Verify apptainer build subcommand help is available
+    command: apptainer build --help
+    expected_output_contains: "Build an Apptainer image"
+
+  - name: Exec help
+    description: Verify apptainer exec subcommand help is available
+    command: apptainer exec --help
+    expected_output_contains: "Run a command within a container"
+
+  - name: Run help
+    description: Verify apptainer run subcommand help is available
+    command: apptainer run --help
+    expected_output_contains: "Run the user-defined default command"
+
+  - name: Shell help
+    description: Verify apptainer shell subcommand help is available
+    command: apptainer shell --help
+    expected_output_contains: "Run a shell within a container"
+
+  - name: Pull help
+    description: Verify apptainer pull subcommand help is available
+    command: apptainer pull --help
+    expected_output_contains: "Pull an image from a URI"
+
+  - name: Inspect help
+    description: Verify apptainer inspect subcommand help is available
+    command: apptainer inspect --help
+    expected_output_contains: "Show metadata for an image"
+
+  - name: Instance help
+    description: Verify apptainer instance subcommand help is available
+    command: apptainer instance --help
+    expected_output_contains: "Manage containers running as services"
+
+  - name: Cache help
+    description: Verify apptainer cache subcommand help is available
+    command: apptainer cache --help
+    expected_output_contains: "Manage the local cache"
+
+  - name: SIF help
+    description: Verify apptainer sif subcommand help is available
+    command: apptainer sif --help
+    expected_output_contains: "Manipulate Singularity Image Format"
+
+  - name: Overlay help
+    description: Verify apptainer overlay subcommand help is available
+    command: apptainer overlay --help
+    expected_output_contains: "Manage an EXT3 writable overlay image"
+
+  - name: Key help
+    description: Verify apptainer key subcommand help is available
+    command: apptainer key --help
+    expected_output_contains: "Manage OpenPGP keys"
+
+  - name: Remote help
+    description: Verify apptainer remote subcommand help is available
+    command: apptainer remote --help
+    expected_output_contains: "Manage apptainer remote endpoints"
+
+  - name: Registry help
+    description: Verify apptainer registry subcommand help is available
+    command: apptainer registry --help
+    expected_output_contains: "Manage authentication to OCI/Docker registries"
+
+  - name: OCI help
+    description: Verify apptainer oci subcommand help is available
+    command: apptainer oci --help
+    expected_output_contains: "Manage OCI containers"
+
+  - name: Plugin help
+    description: Verify apptainer plugin subcommand help is available
+    command: apptainer plugin --help
+    expected_output_contains: "Manage Apptainer plugins"
+
+  - name: Capability help
+    description: Verify apptainer capability subcommand help is available
+    command: apptainer capability --help
+    expected_output_contains: "Manage Linux capabilities"
+
+  - name: Config help
+    description: Verify apptainer config subcommand help is available
+    command: apptainer config --help
+    expected_output_contains: "Manage various apptainer configuration"
+
+  - name: Sign help
+    description: Verify apptainer sign subcommand help is available
+    command: apptainer sign --help
+    expected_output_contains: "Add digital signature"
+
+  - name: Verify help
+    description: Verify apptainer verify subcommand help is available
+    command: apptainer verify --help
+    expected_output_contains: "Verify digital signature"
+
+  - name: Search help
+    description: Verify apptainer search subcommand help is available
+    command: apptainer search --help
+    expected_output_contains: "Search a Container Library"
+
+  - name: Delete help
+    description: Verify apptainer delete subcommand help is available
+    command: apptainer delete --help
+    expected_output_contains: "Deletes requested image"
+
+  - name: Push help
+    description: Verify apptainer push subcommand help is available
+    command: apptainer push --help
+    expected_output_contains: "Upload image to the provided URI"
+
+  # ==========================================================================
+  # NESTED SUBCOMMAND HELP
+  # ==========================================================================
+  - name: Instance start help
+    description: Verify apptainer instance start subcommand help
+    command: apptainer instance start --help
+    expected_output_contains: "Start a named instance"
+
+  - name: Instance stop help
+    description: Verify apptainer instance stop subcommand help
+    command: apptainer instance stop --help
+    expected_output_contains: "Stop a named instance"
+
+  - name: Instance list help
+    description: Verify apptainer instance list subcommand help
+    command: apptainer instance list --help
+    expected_output_contains: "List all running"
+
+  - name: Instance stats help
+    description: Verify apptainer instance stats subcommand help
+    command: apptainer instance stats --help
+    expected_output_contains: "Get stats for a named instance"
+
+  - name: Cache list help
+    description: Verify apptainer cache list subcommand help
+    command: apptainer cache list --help
+    expected_output_contains: "List your local Apptainer cache"
+
+  - name: Cache clean help
+    description: Verify apptainer cache clean subcommand help
+    command: apptainer cache clean --help
+    expected_output_contains: "Clean your local Apptainer cache"
+
+  - name: SIF list help
+    description: Verify apptainer sif list subcommand help
+    command: apptainer sif list --help
+    expected_output_contains: "List data objects"
+
+  - name: SIF header help
+    description: Verify apptainer sif header subcommand help
+    command: apptainer sif header --help
+    expected_output_contains: "Display global header"
+
+  - name: SIF info help
+    description: Verify apptainer sif info subcommand help
+    command: apptainer sif info --help
+    expected_output_contains: "Display data object info"
+
+  - name: SIF dump help
+    description: Verify apptainer sif dump subcommand help
+    command: apptainer sif dump --help
+    expected_output_contains: "Dump data object"
+
+  - name: SIF add help
+    description: Verify apptainer sif add subcommand help
+    command: apptainer sif add --help
+    expected_output_contains: "Add data object"
+
+  - name: SIF del help
+    description: Verify apptainer sif del subcommand help
+    command: apptainer sif del --help
+    expected_output_contains: "Delete data object"
+
+  - name: SIF new help
+    description: Verify apptainer sif new subcommand help
+    command: apptainer sif new --help
+    expected_output_contains: "Create SIF image"
+
+  - name: SIF setprim help
+    description: Verify apptainer sif setprim subcommand help
+    command: apptainer sif setprim --help
+    expected_output_contains: "Set primary system partition"
+
+  - name: Overlay create help
+    description: Verify apptainer overlay create subcommand help
+    command: apptainer overlay create --help
+    expected_output_contains: "Create EXT3 writable overlay image"
+
+  - name: Key list help
+    description: Verify apptainer key list subcommand help
+    command: apptainer key list --help
+    expected_output_contains: "List keys"
+
+  - name: Key newpair help
+    description: Verify apptainer key newpair subcommand help
+    command: apptainer key newpair --help
+    expected_output_contains: "Create a new key pair"
+
+  - name: Key search help
+    description: Verify apptainer key search subcommand help
+    command: apptainer key search --help
+    expected_output_contains: "Search for keys"
+
+  - name: Key pull help
+    description: Verify apptainer key pull subcommand help
+    command: apptainer key pull --help
+    expected_output_contains: "Download a public key"
+
+  - name: Key push help
+    description: Verify apptainer key push subcommand help
+    command: apptainer key push --help
+    expected_output_contains: "Upload a public key"
+
+  - name: Key remove help
+    description: Verify apptainer key remove subcommand help
+    command: apptainer key remove --help
+    expected_output_contains: "Remove a local public key"
+
+  - name: Key export help
+    description: Verify apptainer key export subcommand help
+    command: apptainer key export --help
+    expected_output_contains: "Export a public or private key"
+
+  - name: Key import help
+    description: Verify apptainer key import subcommand help
+    command: apptainer key import --help
+    expected_output_contains: "Import a local key"
+
+  - name: Remote list help
+    description: Verify apptainer remote list subcommand help
+    command: apptainer remote list --help
+    expected_output_contains: "List all apptainer"
+
+  - name: Remote add help
+    description: Verify apptainer remote add subcommand help
+    command: apptainer remote add --help
+    expected_output_contains: "Add a new apptainer remote"
+
+  - name: Remote remove help
+    description: Verify apptainer remote remove subcommand help
+    command: apptainer remote remove --help
+    expected_output_contains: "Remove an existing"
+
+  - name: Remote use help
+    description: Verify apptainer remote use subcommand help
+    command: apptainer remote use --help
+    expected_output_contains: "remote endpoint"
+
+  - name: Remote status help
+    description: Verify apptainer remote status subcommand help
+    command: apptainer remote status --help
+    expected_output_contains: "Check the status"
+
+  - name: Remote login help
+    description: Verify apptainer remote login subcommand help
+    command: apptainer remote login --help
+    expected_output_contains: "Login to"
+
+  - name: Remote logout help
+    description: Verify apptainer remote logout subcommand help
+    command: apptainer remote logout --help
+    expected_output_contains: "Log out from"
+
+  # ==========================================================================
+  # GLOBAL OPTIONS
+  # ==========================================================================
+  - name: Debug flag
+    description: Verify apptainer debug flag works
+    command: apptainer --debug --version 2>&1
+    expected_output_contains: "1.4.4"
+
+  - name: Quiet flag
+    description: Verify apptainer quiet flag works
+    command: apptainer --quiet --version 2>&1
+    expected_output_contains: "1.4.4"
+
+  - name: Silent flag
+    description: Verify apptainer silent flag works
+    command: apptainer --silent --version 2>&1
+    expected_output_contains: "1.4.4"
+
+  - name: Verbose flag
+    description: Verify apptainer verbose flag works
+    command: apptainer --verbose --version 2>&1
+    expected_output_contains: "1.4.4"
+
+  - name: Nocolor flag
+    description: Verify apptainer nocolor flag works
+    command: apptainer --nocolor --version 2>&1
+    expected_output_contains: "1.4.4"
+
+  # ==========================================================================
+  # CACHE MANAGEMENT
+  # ==========================================================================
+  - name: Cache list
+    description: List local apptainer cache contents
+    command: apptainer cache list 2>&1
+    expected_exit_code: 0
+
+  - name: Cache list verbose
+    description: List local apptainer cache with verbose output
+    command: apptainer cache list -v 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # REMOTE ENDPOINTS
+  # ==========================================================================
+  - name: Remote list
+    description: List configured remote endpoints
+    command: apptainer remote list 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # KEY MANAGEMENT (READ-ONLY OPERATIONS)
+  # ==========================================================================
+  - name: Key list
+    description: List local OpenPGP keys
+    command: apptainer key list 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # COMPLETION SCRIPTS
+  # ==========================================================================
+  - name: Bash completion
+    description: Generate bash completion script
+    command: apptainer completion bash 2>&1
+    expected_output_contains: "bash completion"
+
+  - name: Zsh completion
+    description: Generate zsh completion script
+    command: apptainer completion zsh 2>&1
+    expected_output_contains: "zsh completion"
+
+  - name: Fish completion
+    description: Generate fish completion script
+    command: apptainer completion fish 2>&1
+    expected_output_contains: "fish completion"
+
+  # ==========================================================================
+  # INSTANCE MANAGEMENT (LIST ONLY - NO RUNNING INSTANCES)
+  # ==========================================================================
+  - name: Instance list empty
+    description: List running instances (should be empty or show none)
+    command: apptainer instance list 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PLUGIN MANAGEMENT
+  # ==========================================================================
+  - name: Plugin list
+    description: List installed plugins
+    command: apptainer plugin list 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # KEYSERVER MANAGEMENT
+  # ==========================================================================
+  - name: Keyserver list
+    description: List configured keyservers
+    command: apptainer keyserver list 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SINGULARITY COMPATIBILITY TESTS
+  # ==========================================================================
+  - name: Singularity help
+    description: Verify singularity alias displays help
+    command: singularity --help
+    expected_output_contains: "Available Commands"
+
+  - name: Singularity exec help
+    description: Verify singularity exec help works
+    command: singularity exec --help
+    expected_output_contains: "Run a command within a container"
+
+  - name: Singularity run help
+    description: Verify singularity run help works
+    command: singularity run --help
+    expected_output_contains: "Run the user-defined default command"
+
+  - name: Singularity shell help
+    description: Verify singularity shell help works
+    command: singularity shell --help
+    expected_output_contains: "Run a shell within a container"
+
+  - name: Singularity pull help
+    description: Verify singularity pull help works
+    command: singularity pull --help
+    expected_output_contains: "Pull an image from a URI"
+
+  - name: Singularity build help
+    description: Verify singularity build help works
+    command: singularity build --help
+    expected_output_contains: "Build an Apptainer image"
+
+  - name: Singularity inspect help
+    description: Verify singularity inspect help works
+    command: singularity inspect --help
+    expected_output_contains: "Show metadata for an image"
+
+  - name: Singularity instance help
+    description: Verify singularity instance help works
+    command: singularity instance --help
+    expected_output_contains: "Manage containers running as services"
+
+  - name: Singularity cache help
+    description: Verify singularity cache help works
+    command: singularity cache --help
+    expected_output_contains: "Manage the local cache"
+
+  - name: Singularity sif help
+    description: Verify singularity sif help works
+    command: singularity sif --help
+    expected_output_contains: "Manipulate Singularity Image Format"
+
+  # ==========================================================================
+  # SUPPORTED URI FORMATS DOCUMENTATION
+  # ==========================================================================
+  - name: Pull supports library URI
+    description: Verify pull help documents library:// URI format
+    command: apptainer pull --help
+    expected_output_contains: "library://"
+
+  - name: Pull supports docker URI
+    description: Verify pull help documents docker:// URI format
+    command: apptainer pull --help
+    expected_output_contains: "docker://"
+
+  - name: Pull supports shub URI
+    description: Verify pull help documents shub:// URI format
+    command: apptainer pull --help
+    expected_output_contains: "shub://"
+
+  - name: Pull supports oras URI
+    description: Verify pull help documents oras:// URI format
+    command: apptainer pull --help
+    expected_output_contains: "oras://"
+
+  - name: Pull supports http URI
+    description: Verify pull help documents http/https URI format
+    command: apptainer pull --help
+    expected_output_contains: "http"
+
+  # ==========================================================================
+  # BUILD OPTIONS DOCUMENTATION
+  # ==========================================================================
+  - name: Build sandbox option
+    description: Verify build supports sandbox format
+    command: apptainer build --help
+    expected_output_contains: "--sandbox"
+
+  - name: Build fakeroot option
+    description: Verify build supports fakeroot mode
+    command: apptainer build --help
+    expected_output_contains: "--fakeroot"
+
+  - name: Build force option
+    description: Verify build supports force overwrite
+    command: apptainer build --help
+    expected_output_contains: "--force"
+
+  - name: Build encrypt option
+    description: Verify build supports encryption
+    command: apptainer build --help
+    expected_output_contains: "--encrypt"
+
+  - name: Build nvidia option
+    description: Verify build supports NVIDIA GPU injection
+    command: apptainer build --help
+    expected_output_contains: "--nv"
+
+  - name: Build rocm option
+    description: Verify build supports ROCm GPU injection
+    command: apptainer build --help
+    expected_output_contains: "--rocm"
+
+  # ==========================================================================
+  # EXEC OPTIONS DOCUMENTATION
+  # ==========================================================================
+  - name: Exec bind option
+    description: Verify exec supports bind mounts
+    command: apptainer exec --help
+    expected_output_contains: "--bind"
+
+  - name: Exec cleanenv option
+    description: Verify exec supports clean environment
+    command: apptainer exec --help
+    expected_output_contains: "--cleanenv"
+
+  - name: Exec contain option
+    description: Verify exec supports containment
+    command: apptainer exec --help
+    expected_output_contains: "--contain"
+
+  - name: Exec containall option
+    description: Verify exec supports full containment
+    command: apptainer exec --help
+    expected_output_contains: "--containall"
+
+  - name: Exec fakeroot option
+    description: Verify exec supports fakeroot mode
+    command: apptainer exec --help
+    expected_output_contains: "--fakeroot"
+
+  - name: Exec home option
+    description: Verify exec supports home directory specification
+    command: apptainer exec --help
+    expected_output_contains: "--home"
+
+  - name: Exec nvidia option
+    description: Verify exec supports NVIDIA GPU
+    command: apptainer exec --help
+    expected_output_contains: "--nv"
+
+  - name: Exec rocm option
+    description: Verify exec supports ROCm GPU
+    command: apptainer exec --help
+    expected_output_contains: "--rocm"
+
+  - name: Exec network option
+    description: Verify exec supports network namespace
+    command: apptainer exec --help
+    expected_output_contains: "--net"
+
+  - name: Exec overlay option
+    description: Verify exec supports overlay filesystem
+    command: apptainer exec --help
+    expected_output_contains: "--overlay"
+
+  - name: Exec userns option
+    description: Verify exec supports user namespace
+    command: apptainer exec --help
+    expected_output_contains: "--userns"
+
+  - name: Exec writable option
+    description: Verify exec supports writable mode
+    command: apptainer exec --help
+    expected_output_contains: "--writable"
+
+  - name: Exec writable-tmpfs option
+    description: Verify exec supports writable tmpfs overlay
+    command: apptainer exec --help
+    expected_output_contains: "--writable-tmpfs"
+
+  - name: Exec cwd option
+    description: Verify exec supports working directory specification
+    command: apptainer exec --help
+    expected_output_contains: "--cwd"
+
+  - name: Exec env option
+    description: Verify exec supports environment variables
+    command: apptainer exec --help
+    expected_output_contains: "--env"
+
+  - name: Exec compat option
+    description: Verify exec supports OCI/Docker compatibility mode
+    command: apptainer exec --help
+    expected_output_contains: "--compat"
+
+  # ==========================================================================
+  # CGROUP OPTIONS DOCUMENTATION
+  # ==========================================================================
+  - name: Exec cpu-shares option
+    description: Verify exec supports CPU shares cgroup limit
+    command: apptainer exec --help
+    expected_output_contains: "--cpu-shares"
+
+  - name: Exec cpus option
+    description: Verify exec supports CPUs limit
+    command: apptainer exec --help
+    expected_output_contains: "--cpus"
+
+  - name: Exec memory option
+    description: Verify exec supports memory limit
+    command: apptainer exec --help
+    expected_output_contains: "--memory"
+
+  - name: Exec pids-limit option
+    description: Verify exec supports PID limit
+    command: apptainer exec --help
+    expected_output_contains: "--pids-limit"
+
+  # ==========================================================================
+  # SECURITY OPTIONS DOCUMENTATION
+  # ==========================================================================
+  - name: Exec add-caps option
+    description: Verify exec supports adding capabilities
+    command: apptainer exec --help
+    expected_output_contains: "--add-caps"
+
+  - name: Exec drop-caps option
+    description: Verify exec supports dropping capabilities
+    command: apptainer exec --help
+    expected_output_contains: "--drop-caps"
+
+  - name: Exec security option
+    description: Verify exec supports security features
+    command: apptainer exec --help
+    expected_output_contains: "--security"
+
+  - name: Exec no-privs option
+    description: Verify exec supports dropping privileges
+    command: apptainer exec --help
+    expected_output_contains: "--no-privs"
+
+  - name: Exec keep-privs option
+    description: Verify exec supports keeping privileges
+    command: apptainer exec --help
+    expected_output_contains: "--keep-privs"
+
+  # ==========================================================================
+  # INSPECT OPTIONS
+  # ==========================================================================
+  - name: Inspect deffile option
+    description: Verify inspect supports definition file display
+    command: apptainer inspect --help
+    expected_output_contains: "--deffile"
+
+  - name: Inspect environment option
+    description: Verify inspect supports environment display
+    command: apptainer inspect --help
+    expected_output_contains: "--environment"
+
+  - name: Inspect labels option
+    description: Verify inspect supports labels display
+    command: apptainer inspect --help
+    expected_output_contains: "--labels"
+
+  - name: Inspect runscript option
+    description: Verify inspect supports runscript display
+    command: apptainer inspect --help
+    expected_output_contains: "--runscript"
+
+  - name: Inspect json option
+    description: Verify inspect supports JSON output
+    command: apptainer inspect --help
+    expected_output_contains: "--json"
+
+  - name: Inspect all option
+    description: Verify inspect supports showing all metadata
+    command: apptainer inspect --help
+    expected_output_contains: "--all"
+
+  - name: Inspect list-apps option
+    description: Verify inspect supports listing apps
+    command: apptainer inspect --help
+    expected_output_contains: "--list-apps"
+
+  # ==========================================================================
+  # DEFINITION FILE SECTIONS DOCUMENTATION
+  # ==========================================================================
+  - name: Build help shows Bootstrap section
+    description: Verify build help documents Bootstrap in def files
+    command: apptainer build --help
+    expected_output_contains: "Bootstrap"
+
+  - name: Build help shows post section
+    description: Verify build help documents %post section
+    command: apptainer build --help
+    expected_output_contains: "%post"
+
+  - name: Build help shows setup section
+    description: Verify build help documents %setup section
+    command: apptainer build --help
+    expected_output_contains: "%setup"
+
+  - name: Build help shows files section
+    description: Verify build help documents %files section
+    command: apptainer build --help
+    expected_output_contains: "%files"
+
+  - name: Build help shows environment section
+    description: Verify build help documents %environment section
+    command: apptainer build --help
+    expected_output_contains: "%environment"
+
+  - name: Build help shows runscript section
+    description: Verify build help documents %runscript section
+    command: apptainer build --help
+    expected_output_contains: "%runscript"
+
+  - name: Build help shows test section
+    description: Verify build help documents %test section
+    command: apptainer build --help
+    expected_output_contains: "%test"
+
+  - name: Build help shows labels section
+    description: Verify build help documents %labels section
+    command: apptainer build --help
+    expected_output_contains: "%labels"
+
+  - name: Build help shows help section
+    description: Verify build help documents %help section
+    command: apptainer build --help
+    expected_output_contains: "%help"
+
+  # ==========================================================================
+  # CONTAINER FORMAT SUPPORT
+  # ==========================================================================
+  - name: Exec supports SIF format
+    description: Verify exec documents SIF format support
+    command: apptainer exec --help
+    expected_output_contains: "*.sif"
+
+  - name: Exec supports SquashFS format
+    description: Verify exec documents SquashFS format support
+    command: apptainer exec --help
+    expected_output_contains: "*.sqsh"
+
+  - name: Exec supports sandbox format
+    description: Verify exec documents sandbox (directory) format support
+    command: apptainer exec --help
+    expected_output_contains: "directory/"
+
+  - name: Exec supports instance format
+    description: Verify exec documents instance:// format support
+    command: apptainer exec --help
+    expected_output_contains: "instance://"
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Invalid command error
+    description: Verify apptainer handles invalid commands gracefully
+    command: apptainer invalidcommand 2>&1 || true
+    expected_output_contains: "unknown command"
+
+  - name: Missing image error
+    description: Verify apptainer handles missing images gracefully
+    command: apptainer exec nonexistent.sif echo test 2>&1 || true
+    expected_output_contains: "no such file"
+
+  # ==========================================================================
+  # ENVIRONMENT VARIABLES DOCUMENTATION
+  # ==========================================================================
+  - name: APPTAINER_TMPDIR documented
+    description: Verify build documents APPTAINER_TMPDIR environment variable
+    command: apptainer build --help
+    expected_output_contains: "APPTAINER_TMPDIR"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

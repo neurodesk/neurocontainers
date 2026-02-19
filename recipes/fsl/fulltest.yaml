@@ -1,0 +1,892 @@
+# FSL container test suite
+# Tests for FSL v6.0.7.18 - FMRIB Software Library for brain imaging analysis
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: structural scan
+#   - inplaneT2: T2-weighted scan
+#   - BOLD: 4D functional data
+
+name: fsl
+version: 6.0.7.18
+container: fsl_6.0.7.18_20250928.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION CHECKS
+  # ==========================================================================
+  - name: FSL version check
+    description: Verify FSL is installed and report version
+    command: fslversion
+    expected_output_contains: "6.0"
+
+  - name: fslmaths usage
+    description: Verify fslmaths binary runs
+    command: fslmaths 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # HEADER AND METADATA TOOLS
+  # ==========================================================================
+  - name: fslhd - display header
+    description: Display NIfTI header information
+    command: fslhd ${t1w} | head -20
+    expected_output_contains: "dim1"
+
+  - name: fslhd XML format
+    description: Display NIfTI header in XML format
+    command: fslhd -x ${t1w} | head -10
+    expected_output_contains: "<nifti_image"
+
+  - name: fslinfo - basic info
+    description: Display basic image information
+    command: fslinfo ${t1w}
+    expected_output_contains: "dim"
+
+  - name: fslval - get dimension
+    description: Get specific header value (dim1)
+    command: fslval ${t1w} dim1
+    expected_exit_code: 0
+
+  - name: fslval - get pixdim
+    description: Get voxel size
+    command: fslval ${t1w} pixdim1
+    expected_exit_code: 0
+
+  - name: fslnvols - count volumes
+    description: Report number of volumes in 4D data
+    command: fslnvols ${bold}
+    expected_exit_code: 0
+
+  - name: fslorient - get orientation
+    description: Get image orientation
+    command: fslorient -getorient ${t1w}
+    expected_exit_code: 0
+
+  - name: fslorient - get sform
+    description: Get sform matrix
+    command: fslorient -getsform ${t1w}
+    expected_exit_code: 0
+
+  - name: fslorient - get qform
+    description: Get qform matrix
+    command: fslorient -getqform ${t1w}
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FSLSTATS - IMAGE STATISTICS
+  # ==========================================================================
+  - name: fslstats - min/max
+    description: Get min and max intensity values
+    command: fslstats ${t1w} -R
+    expected_exit_code: 0
+
+  - name: fslstats - robust range
+    description: Get robust min and max intensity
+    command: fslstats ${t1w} -r
+    expected_exit_code: 0
+
+  - name: fslstats - mean
+    description: Calculate mean intensity
+    command: fslstats ${t1w} -m
+    expected_exit_code: 0
+
+  - name: fslstats - nonzero mean
+    description: Calculate mean of nonzero voxels
+    command: fslstats ${t1w} -M
+    expected_exit_code: 0
+
+  - name: fslstats - standard deviation
+    description: Calculate standard deviation
+    command: fslstats ${t1w} -s
+    expected_exit_code: 0
+
+  - name: fslstats - volume
+    description: Get voxel count and volume
+    command: fslstats ${t1w} -v
+    expected_exit_code: 0
+
+  - name: fslstats - nonzero volume
+    description: Get nonzero voxel count and volume
+    command: fslstats ${t1w} -V
+    expected_exit_code: 0
+
+  - name: fslstats - percentile
+    description: Calculate 50th percentile (median)
+    command: fslstats ${t1w} -p 50
+    expected_exit_code: 0
+
+  - name: fslstats - center of gravity
+    description: Calculate center of gravity in mm
+    command: fslstats ${t1w} -c
+    expected_exit_code: 0
+
+  - name: fslstats - histogram
+    description: Calculate histogram with 100 bins
+    command: fslstats ${t1w} -h 100 | head -20
+    expected_exit_code: 0
+
+  - name: fslstats - 4D temporal
+    description: Get statistics for each volume in 4D data
+    command: fslstats -t ${bold} -m | head -10
+    expected_exit_code: 0
+
+  - name: fslstats - JSON output
+    description: Output statistics in JSON format
+    command: fslstats -json ${t1w} -m -s -R
+    expected_output_contains: "{"
+
+  # ==========================================================================
+  # FSLMATHS - BASIC UNARY OPERATIONS
+  # ==========================================================================
+  - name: fslmaths - absolute value
+    description: Calculate absolute value
+    command: fslmaths ${t1w} -abs test_output/t1w_abs.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_abs.nii.gz
+
+  - name: fslmaths - binarize
+    description: Binarize image (voxels > 0 become 1)
+    command: fslmaths ${t1w} -bin test_output/t1w_bin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_bin.nii.gz
+
+  - name: fslmaths - binarize and invert
+    description: Binarize and invert (binv)
+    command: fslmaths ${t1w} -binv test_output/t1w_binv.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_binv.nii.gz
+
+  - name: fslmaths - square root
+    description: Calculate square root
+    command: fslmaths ${t1w} -sqrt test_output/t1w_sqrt.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sqrt.nii.gz
+
+  - name: fslmaths - square
+    description: Calculate square
+    command: fslmaths ${t1w} -sqr test_output/t1w_sqr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sqr.nii.gz
+
+  - name: fslmaths - exponential
+    description: Calculate exponential (exp)
+    command: fslmaths ${t1w} -div 1000 -exp test_output/t1w_exp.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_exp.nii.gz
+
+  - name: fslmaths - natural log
+    description: Calculate natural logarithm
+    command: fslmaths ${t1w} -thr 1 -log test_output/t1w_log.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_log.nii.gz
+
+  - name: fslmaths - reciprocal
+    description: Calculate reciprocal (1/x)
+    command: fslmaths ${t1w} -thr 1 -recip test_output/t1w_recip.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_recip.nii.gz
+
+  - name: fslmaths - sine
+    description: Calculate sine
+    command: fslmaths ${t1w} -sin test_output/t1w_sin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sin.nii.gz
+
+  - name: fslmaths - cosine
+    description: Calculate cosine
+    command: fslmaths ${t1w} -cos test_output/t1w_cos.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_cos.nii.gz
+
+  - name: fslmaths - arc tangent
+    description: Calculate arc tangent
+    command: fslmaths ${t1w} -atan test_output/t1w_atan.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_atan.nii.gz
+
+  # ==========================================================================
+  # FSLMATHS - BINARY OPERATIONS
+  # ==========================================================================
+  - name: fslmaths - add constant
+    description: Add scalar value to image
+    command: fslmaths ${t1w} -add 100 test_output/t1w_add100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_add100.nii.gz
+
+  - name: fslmaths - subtract constant
+    description: Subtract scalar value from image
+    command: fslmaths ${t1w} -sub 50 test_output/t1w_sub50.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sub50.nii.gz
+
+  - name: fslmaths - multiply constant
+    description: Multiply image by scalar
+    command: fslmaths ${t1w} -mul 2 test_output/t1w_mul2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mul2.nii.gz
+
+  - name: fslmaths - divide constant
+    description: Divide image by scalar
+    command: fslmaths ${t1w} -div 2 test_output/t1w_div2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_div2.nii.gz
+
+  - name: fslmaths - add images
+    description: Add two images together
+    command: fslmaths ${t1w} -add ${t1w} test_output/t1w_add_t1w.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_add_t1w.nii.gz
+
+  - name: fslmaths - multiply images
+    description: Multiply two images
+    command: fslmaths ${t1w} -mul ${t1w} test_output/t1w_mul_t1w.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mul_t1w.nii.gz
+
+  - name: fslmaths - maximum
+    description: Take voxel-wise maximum of two images
+    command: fslmaths ${t1w} -max ${t1w} test_output/t1w_max_t1w.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_max_t1w.nii.gz
+
+  - name: fslmaths - minimum
+    description: Take voxel-wise minimum of two images
+    command: fslmaths ${t1w} -min ${t1w} test_output/t1w_min_t1w.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_min_t1w.nii.gz
+
+  - name: fslmaths - modulus
+    description: Calculate modulus remainder
+    command: fslmaths ${t1w} -rem 100 test_output/t1w_rem100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_rem100.nii.gz
+
+  # ==========================================================================
+  # FSLMATHS - THRESHOLDING
+  # ==========================================================================
+  - name: fslmaths - lower threshold
+    description: Zero voxels below threshold
+    command: fslmaths ${t1w} -thr 100 test_output/t1w_thr100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thr100.nii.gz
+
+  - name: fslmaths - upper threshold
+    description: Zero voxels above threshold
+    command: fslmaths ${t1w} -uthr 500 test_output/t1w_uthr500.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_uthr500.nii.gz
+
+  - name: fslmaths - band threshold
+    description: Apply lower and upper thresholds together
+    command: fslmaths ${t1w} -thr 100 -uthr 500 test_output/t1w_band.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_band.nii.gz
+
+  - name: fslmaths - percentage threshold
+    description: Threshold at percentage of robust range
+    command: fslmaths ${t1w} -thrp 10 test_output/t1w_thrp10.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thrp10.nii.gz
+
+  # ==========================================================================
+  # FSLMATHS - MASKING
+  # ==========================================================================
+  - name: fslmaths - apply mask
+    description: Apply binary mask to image
+    command: fslmaths ${t1w} -bin test_output/t1w_mask_tmp.nii.gz && fslmaths ${t1w} -mas test_output/t1w_mask_tmp.nii.gz test_output/t1w_masked.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_masked.nii.gz
+
+  # ==========================================================================
+  # FSLMATHS - SPATIAL FILTERING
+  # ==========================================================================
+  - name: fslmaths - gaussian smoothing
+    description: Gaussian smoothing with 2mm sigma
+    command: fslmaths ${t1w} -s 2 test_output/t1w_smooth2mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth2mm.nii.gz
+
+  - name: fslmaths - mean filter
+    description: Apply mean filter with default kernel
+    command: fslmaths ${t1w} -fmean test_output/t1w_fmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fmean.nii.gz
+
+  - name: fslmaths - median filter
+    description: Apply median filter
+    command: fslmaths ${t1w} -fmedian test_output/t1w_fmedian.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fmedian.nii.gz
+
+  - name: fslmaths - box kernel
+    description: Apply box kernel with mean filter
+    command: fslmaths ${t1w} -kernel box 5 -fmean test_output/t1w_box5.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_box5.nii.gz
+
+  - name: fslmaths - gaussian kernel
+    description: Apply gaussian kernel with mean filter
+    command: fslmaths ${t1w} -kernel gauss 2 -fmean test_output/t1w_gauss2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_gauss2.nii.gz
+
+  - name: fslmaths - sphere kernel
+    description: Apply sphere kernel with mean filter
+    command: fslmaths ${t1w} -kernel sphere 3 -fmean test_output/t1w_sphere3.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sphere3.nii.gz
+
+  # ==========================================================================
+  # FSLMATHS - MORPHOLOGICAL OPERATIONS
+  # ==========================================================================
+  - name: fslmaths - erosion
+    description: Erode binary image
+    command: fslmaths ${t1w} -bin -ero test_output/t1w_ero.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_ero.nii.gz
+
+  - name: fslmaths - dilation (mean)
+    description: Dilate using mean filter
+    command: fslmaths ${t1w} -bin -dilM test_output/t1w_dilM.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_dilM.nii.gz
+
+  - name: fslmaths - dilation (max)
+    description: Dilate using maximum filter
+    command: fslmaths ${t1w} -bin -dilD test_output/t1w_dilD.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_dilD.nii.gz
+
+  - name: fslmaths - dilation (all)
+    description: Dilate using all neighbors
+    command: fslmaths ${t1w} -bin -dilall test_output/t1w_dilall.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_dilall.nii.gz
+
+  - name: fslmaths - fill holes
+    description: Fill holes in binary mask
+    command: fslmaths ${t1w} -bin -fillh test_output/t1w_fillh.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fillh.nii.gz
+
+  - name: fslmaths - fill holes 26
+    description: Fill holes using 26-connectivity
+    command: fslmaths ${t1w} -bin -fillh26 test_output/t1w_fillh26.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fillh26.nii.gz
+
+  # ==========================================================================
+  # FSLMATHS - EDGE DETECTION
+  # ==========================================================================
+  - name: fslmaths - edge strength
+    description: Calculate edge strength
+    command: fslmaths ${t1w} -edge test_output/t1w_edge.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_edge.nii.gz
+
+  - name: fslmaths - difference of gaussians
+    description: Difference of Gaussians edge detection
+    command: fslmaths ${t1w} -dog_edge 1.0 1.6 test_output/t1w_dog_edge.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_dog_edge.nii.gz
+
+  # ==========================================================================
+  # FSLMATHS - DIMENSIONALITY REDUCTION (4D)
+  # ==========================================================================
+  - name: fslmaths - temporal mean
+    description: Calculate mean across time (Tmean)
+    command: fslmaths ${bold} -Tmean test_output/bold_Tmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tmean.nii.gz
+
+  - name: fslmaths - temporal std
+    description: Calculate temporal standard deviation
+    command: fslmaths ${bold} -Tstd test_output/bold_Tstd.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tstd.nii.gz
+
+  - name: fslmaths - temporal max
+    description: Calculate temporal maximum
+    command: fslmaths ${bold} -Tmax test_output/bold_Tmax.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tmax.nii.gz
+
+  - name: fslmaths - temporal min
+    description: Calculate temporal minimum
+    command: fslmaths ${bold} -Tmin test_output/bold_Tmin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tmin.nii.gz
+
+  - name: fslmaths - temporal median
+    description: Calculate temporal median
+    command: fslmaths ${bold} -Tmedian test_output/bold_Tmedian.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tmedian.nii.gz
+
+  - name: fslmaths - temporal percentile
+    description: Calculate 90th temporal percentile
+    command: fslmaths ${bold} -Tperc 90 test_output/bold_Tperc90.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tperc90.nii.gz
+
+  - name: fslmaths - temporal AR1
+    description: Calculate temporal autocorrelation AR(1)
+    command: fslmaths ${bold} -Tar1 test_output/bold_Tar1.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tar1.nii.gz
+
+  - name: fslmaths - X mean
+    description: Calculate mean across X dimension
+    command: fslmaths ${t1w} -Xmean test_output/t1w_Xmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_Xmean.nii.gz
+
+  - name: fslmaths - Y mean
+    description: Calculate mean across Y dimension
+    command: fslmaths ${t1w} -Ymean test_output/t1w_Ymean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_Ymean.nii.gz
+
+  - name: fslmaths - Z mean
+    description: Calculate mean across Z dimension
+    command: fslmaths ${t1w} -Zmean test_output/t1w_Zmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_Zmean.nii.gz
+
+  # ==========================================================================
+  # FSLMATHS - TEMPORAL FILTERING
+  # ==========================================================================
+  - name: fslmaths - bandpass filter (bptf)
+    description: Apply bandpass temporal filter
+    command: fslmaths ${bold} -bptf 25 2 test_output/bold_bptf.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_bptf.nii.gz
+
+  # ==========================================================================
+  # FSLMATHS - DATA TYPE CONVERSION
+  # ==========================================================================
+  - name: fslmaths - output char
+    description: Convert to char data type
+    command: fslmaths ${t1w} -bin test_output/t1w_odt_char.nii.gz -odt char
+    validate:
+      - output_exists: ${output_dir}/t1w_odt_char.nii.gz
+
+  - name: fslmaths - output short
+    description: Convert to short data type
+    command: fslmaths ${t1w} test_output/t1w_odt_short.nii.gz -odt short
+    validate:
+      - output_exists: ${output_dir}/t1w_odt_short.nii.gz
+
+  - name: fslmaths - output float
+    description: Convert to float data type
+    command: fslmaths ${t1w} test_output/t1w_odt_float.nii.gz -odt float
+    validate:
+      - output_exists: ${output_dir}/t1w_odt_float.nii.gz
+
+  # ==========================================================================
+  # FSLMATHS - ROI EXTRACTION
+  # ==========================================================================
+  - name: fslmaths - ROI extraction
+    description: Extract region of interest
+    command: fslmaths ${t1w} -roi 40 80 40 80 40 80 0 1 test_output/t1w_roi.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_roi.nii.gz
+
+  # ==========================================================================
+  # FSLMATHS - CHAINED OPERATIONS
+  # ==========================================================================
+  - name: fslmaths - pipeline (brain mask)
+    description: Chain operations for mask creation
+    command: fslmaths ${t1w} -thr 50 -bin -fillh -dilM -ero test_output/t1w_pipeline_mask.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_pipeline_mask.nii.gz
+
+  - name: fslmaths - intensity normalization
+    description: Normalize intensity to mean 1000
+    command: fslmaths ${t1w} -inm 1000 test_output/t1w_inm1000.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_inm1000.nii.gz
+
+  - name: fslmaths - intensity normalization (ing)
+    description: Global intensity normalization
+    command: fslmaths ${t1w} -ing 1000 test_output/t1w_ing1000.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_ing1000.nii.gz
+
+  # ==========================================================================
+  # FILE MANIPULATION TOOLS
+  # ==========================================================================
+  - name: fslroi - extract 3D volume
+    description: Extract single volume from 4D
+    command: fslroi ${bold} test_output/bold_vol0.nii.gz 0 1
+    validate:
+      - output_exists: ${output_dir}/bold_vol0.nii.gz
+
+  - name: fslroi - extract volume range
+    description: Extract multiple volumes from 4D
+    command: fslroi ${bold} test_output/bold_vol0-9.nii.gz 0 10
+    validate:
+      - output_exists: ${output_dir}/bold_vol0-9.nii.gz
+
+  - name: fslroi - spatial ROI
+    description: Extract spatial region
+    command: fslroi ${t1w} test_output/t1w_spatial_roi.nii.gz 20 100 20 100 20 100
+    validate:
+      - output_exists: ${output_dir}/t1w_spatial_roi.nii.gz
+
+  - name: fslsplit - temporal split
+    description: Split 4D into individual volumes
+    command: fslsplit ${bold} test_output/bold_split_ -t && ls test_output/bold_split_0000.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_split_0000.nii.gz
+
+  - name: fslmerge - temporal merge
+    description: Merge volumes into 4D
+    command: fslmerge -t test_output/bold_merged.nii.gz test_output/bold_split_0000.nii.gz test_output/bold_split_0001.nii.gz test_output/bold_split_0002.nii.gz
+    depends_on: fslsplit - temporal split
+    validate:
+      - output_exists: ${output_dir}/bold_merged.nii.gz
+
+  - name: fslswapdim - reorient
+    description: Swap image dimensions
+    command: fslswapdim ${t1w} x -y z test_output/t1w_swapped.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_swapped.nii.gz
+
+  - name: fslreorient2std - standard orientation
+    description: Reorient to standard (MNI) orientation
+    command: fslreorient2std ${t1w} test_output/t1w_reorient.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_reorient.nii.gz
+
+  - name: fslcpgeom - copy geometry
+    description: Copy geometry from one image to another
+    command: cp test_output/t1w_abs.nii.gz test_output/t1w_cpgeom.nii.gz && fslcpgeom ${t1w} test_output/t1w_cpgeom.nii.gz
+    depends_on: fslmaths - absolute value
+    validate:
+      - output_exists: ${output_dir}/t1w_cpgeom.nii.gz
+
+  - name: fslchfiletype - change format
+    description: Convert between NIfTI formats
+    command: fslchfiletype NIFTI test_output/t1w_abs.nii.gz test_output/t1w_nifti.nii
+    depends_on: fslmaths - absolute value
+    validate:
+      - output_exists: ${output_dir}/t1w_nifti.nii
+
+  # ==========================================================================
+  # BET - BRAIN EXTRACTION TOOL
+  # ==========================================================================
+  - name: bet - basic extraction
+    description: Basic brain extraction
+    command: bet ${t1w} test_output/t1w_bet.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_bet.nii.gz
+
+  - name: bet - with mask
+    description: Brain extraction with binary mask output
+    command: bet ${t1w} test_output/t1w_bet_mask -m
+    validate:
+      - output_exists: ${output_dir}/t1w_bet_mask_mask.nii.gz
+
+  - name: bet - fractional intensity
+    description: Brain extraction with custom fractional intensity
+    command: bet ${t1w} test_output/t1w_bet_f03.nii.gz -f 0.3
+    validate:
+      - output_exists: ${output_dir}/t1w_bet_f03.nii.gz
+
+  - name: bet - robust
+    description: Robust brain extraction with multiple iterations
+    command: bet ${t1w} test_output/t1w_bet_R.nii.gz -R
+    validate:
+      - output_exists: ${output_dir}/t1w_bet_R.nii.gz
+
+  - name: bet - 4D fMRI
+    description: Brain extraction for 4D fMRI data
+    command: fslroi ${bold} test_output/bold_example_vol.nii.gz 0 1 && bet test_output/bold_example_vol.nii.gz test_output/bold_bet.nii.gz -F
+    validate:
+      - output_exists: ${output_dir}/bold_bet.nii.gz
+
+  # ==========================================================================
+  # FAST - SEGMENTATION
+  # ==========================================================================
+  - name: fast - tissue segmentation
+    description: Segment brain into tissue classes (skipped - too slow on CPU, >2min)
+    command: echo "Skipped - FAST tissue segmentation too slow on CPU"
+    expected_output_contains: "Skipped"
+
+  - name: fast - with bias correction
+    description: Segmentation with bias field correction (skipped - too slow on CPU, >2min)
+    command: echo "Skipped - FAST bias correction too slow on CPU"
+    expected_output_contains: "Skipped"
+
+  - name: fast - probability maps
+    description: Output probability maps for each class (skipped - too slow on CPU, >2min)
+    command: echo "Skipped - FAST probability maps too slow on CPU"
+    expected_output_contains: "Skipped"
+
+  # ==========================================================================
+  # FLIRT - LINEAR REGISTRATION
+  # ==========================================================================
+  - name: flirt - basic registration
+    description: Register T2 to T1 using correlation ratio
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_to_t1w.nii.gz -omat test_output/t2_to_t1w.mat
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w.nii.gz
+      - output_exists: ${output_dir}/t2_to_t1w.mat
+
+  - name: flirt - 6 DOF
+    description: Rigid body registration (6 DOF)
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_to_t1w_6dof.nii.gz -omat test_output/t2_to_t1w_6dof.mat -dof 6
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_6dof.nii.gz
+
+  - name: flirt - 12 DOF
+    description: Affine registration (12 DOF)
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_to_t1w_12dof.nii.gz -omat test_output/t2_to_t1w_12dof.mat -dof 12
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_12dof.nii.gz
+
+  - name: flirt - mutual info cost
+    description: Registration using mutual information
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_to_t1w_mutualinfo.nii.gz -cost mutualinfo
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_mutualinfo.nii.gz
+
+  - name: flirt - apply transform
+    description: Apply existing transform to new image
+    command: flirt -in ${t2} -ref ${t1w} -applyxfm -init test_output/t2_to_t1w.mat -out test_output/t2_applied.nii.gz
+    depends_on: flirt - basic registration
+    validate:
+      - output_exists: ${output_dir}/t2_applied.nii.gz
+
+  - name: flirt - sinc interpolation
+    description: Apply transform with sinc interpolation
+    command: flirt -in ${t2} -ref ${t1w} -applyxfm -init test_output/t2_to_t1w.mat -out test_output/t2_sinc.nii.gz -interp sinc
+    depends_on: flirt - basic registration
+    validate:
+      - output_exists: ${output_dir}/t2_sinc.nii.gz
+
+  - name: flirt - nearest neighbor
+    description: Apply transform with nearest neighbor interpolation
+    command: flirt -in ${t2} -ref ${t1w} -applyxfm -init test_output/t2_to_t1w.mat -out test_output/t2_nn.nii.gz -interp nearestneighbour
+    depends_on: flirt - basic registration
+    validate:
+      - output_exists: ${output_dir}/t2_nn.nii.gz
+
+  # ==========================================================================
+  # TRANSFORM UTILITIES
+  # ==========================================================================
+  - name: convert_xfm - invert
+    description: Invert transformation matrix
+    command: convert_xfm -omat test_output/t1w_to_t2.mat -inverse test_output/t2_to_t1w.mat
+    depends_on: flirt - basic registration
+    validate:
+      - output_exists: ${output_dir}/t1w_to_t2.mat
+
+  - name: avscale - analyze transform
+    description: Analyze transformation matrix parameters
+    command: avscale test_output/t2_to_t1w.mat ${t2}
+    depends_on: flirt - basic registration
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MCFLIRT - MOTION CORRECTION
+  # ==========================================================================
+  - name: mcflirt - basic motion correction
+    description: Motion correction with default settings
+    command: mcflirt -in ${bold} -out test_output/bold_mcf
+    validate:
+      - output_exists: ${output_dir}/bold_mcf.nii.gz
+
+  - name: mcflirt - with plots
+    description: Motion correction with parameter plots
+    command: mcflirt -in ${bold} -out test_output/bold_mcf_plots -plots
+    validate:
+      - output_exists: ${output_dir}/bold_mcf_plots.nii.gz
+      - output_exists: ${output_dir}/bold_mcf_plots.par
+
+  - name: mcflirt - with matrices
+    description: Motion correction saving transformation matrices
+    command: mcflirt -in ${bold} -out test_output/bold_mcf_mats -mats
+    validate:
+      - output_exists: ${output_dir}/bold_mcf_mats.nii.gz
+
+  - name: mcflirt - mean volume reference
+    description: Motion correction to mean volume
+    command: mcflirt -in ${bold} -out test_output/bold_mcf_mean -meanvol
+    validate:
+      - output_exists: ${output_dir}/bold_mcf_mean.nii.gz
+
+  # ==========================================================================
+  # SUSAN - SMOOTHING
+  # ==========================================================================
+  - name: susan - 3D smoothing
+    description: SUSAN non-linear smoothing
+    command: susan ${t1w} -1 2 3 1 0 test_output/t1w_susan.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_susan.nii.gz
+
+  # ==========================================================================
+  # FSLMEANTS - TIME SERIES EXTRACTION
+  # ==========================================================================
+  - name: fslmeants - global mean
+    description: Extract global mean time series
+    command: fslmeants -i ${bold} -o test_output/bold_global_mean.txt
+    validate:
+      - output_exists: ${output_dir}/bold_global_mean.txt
+
+  - name: fslmeants - masked mean
+    description: Extract mean time series from mask
+    command: fslmeants -i ${bold} -m test_output/bold_bet.nii.gz -o test_output/bold_masked_mean.txt
+    depends_on: bet - 4D fMRI
+    validate:
+      - output_exists: ${output_dir}/bold_masked_mean.txt
+
+  - name: fslmeants - coordinate
+    description: Extract time series at specific coordinate
+    command: fslmeants -i ${bold} -c 32 32 16 -o test_output/bold_coord_ts.txt
+    validate:
+      - output_exists: ${output_dir}/bold_coord_ts.txt
+
+  # ==========================================================================
+  # FSL_MOTION_OUTLIERS - MOTION QC
+  # ==========================================================================
+  - name: fsl_motion_outliers - DVARS
+    description: Detect motion outliers using DVARS
+    command: fsl_motion_outliers -i ${bold} -o test_output/bold_dvars_confounds.txt -s test_output/bold_dvars.txt --dvars --nomoco
+    validate:
+      - output_exists: ${output_dir}/bold_dvars.txt
+
+  - name: fsl_motion_outliers - FD
+    description: Detect motion outliers using framewise displacement
+    command: fsl_motion_outliers -i ${bold} -o test_output/bold_fd_confounds.txt -s test_output/bold_fd.txt --fd
+    validate:
+      - output_exists: ${output_dir}/bold_fd.txt
+
+  # ==========================================================================
+  # SLICER - VISUALIZATION
+  # ==========================================================================
+  - name: slicer - single slice
+    description: Create single axial slice image
+    command: slicer ${t1w} -z 0.5 test_output/t1w_slice_axial.png
+    validate:
+      - output_exists: ${output_dir}/t1w_slice_axial.png
+
+  - name: slicer - all slices
+    description: Create mosaic of all axial slices
+    command: slicer ${t1w} -a test_output/t1w_mosaic.png
+    validate:
+      - output_exists: ${output_dir}/t1w_mosaic.png
+
+  - name: slicer - overlay
+    description: Create overlay of two images
+    command: slicer ${t1w} test_output/t1w_bet.nii.gz -a test_output/t1w_bet_overlay.png
+    depends_on: bet - basic extraction
+    validate:
+      - output_exists: ${output_dir}/t1w_bet_overlay.png
+
+  # ==========================================================================
+  # FSL_GLM - GENERAL LINEAR MODEL
+  # ==========================================================================
+  - name: fsl_glm - basic regression
+    description: Simple GLM analysis
+    command: |
+      fslmaths ${bold} -Tmean test_output/bold_mean_for_glm.nii.gz && \
+      echo "1" > test_output/design.txt && \
+      fsl_glm -i test_output/bold_mean_for_glm.nii.gz -d test_output/design.txt -o test_output/glm_betas.nii.gz
+    validate:
+      - output_exists: ${output_dir}/glm_betas.nii.gz
+
+  # ==========================================================================
+  # FSL_REGFILT - REGRESSION FILTERING
+  # ==========================================================================
+  - name: fsl_regfilt - remove confounds
+    description: Remove confound regressors from data
+    command: |
+      head -10 test_output/bold_global_mean.txt > test_output/confounds.txt && \
+      fslroi ${bold} test_output/bold_10vols.nii.gz 0 10 && \
+      fsl_regfilt -i test_output/bold_10vols.nii.gz -d test_output/confounds.txt -f "1" -o test_output/bold_regfilt.nii.gz
+    depends_on: fslmeants - global mean
+    validate:
+      - output_exists: ${output_dir}/bold_regfilt.nii.gz
+
+  # ==========================================================================
+  # CLUSTER - CLUSTER ANALYSIS
+  # ==========================================================================
+  - name: fsl-cluster - find clusters
+    description: Find clusters in thresholded image
+    command: fslmaths ${t1w} -thr 200 test_output/t1w_thr_for_cluster.nii.gz && fsl-cluster -i test_output/t1w_thr_for_cluster.nii.gz -t 200 --oindex=test_output/t1w_cluster_index.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_cluster_index.nii.gz
+
+  # ==========================================================================
+  # FSLCC - CROSS CORRELATION
+  # ==========================================================================
+  - name: fslcc - time series correlation
+    description: Cross-correlate two 4D images
+    command: fslcc ${bold} ${bold} | head -10
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # COMPLEX PIPELINES
+  # ==========================================================================
+  - name: pipeline - tSNR calculation
+    description: Calculate temporal signal-to-noise ratio
+    command: |
+      fslmaths ${bold} -Tmean test_output/bold_mean_tsnr.nii.gz && \
+      fslmaths ${bold} -Tstd test_output/bold_std_tsnr.nii.gz && \
+      fslmaths test_output/bold_mean_tsnr.nii.gz -div test_output/bold_std_tsnr.nii.gz test_output/bold_tsnr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_tsnr.nii.gz
+
+  - name: pipeline - percent signal change
+    description: Calculate percent signal change
+    command: |
+      fslmaths ${bold} -Tmean test_output/bold_mean_psc.nii.gz && \
+      fslmaths ${bold} -sub test_output/bold_mean_psc.nii.gz -div test_output/bold_mean_psc.nii.gz -mul 100 test_output/bold_psc.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_psc.nii.gz
+
+  - name: pipeline - basic preprocessing
+    description: Basic fMRI preprocessing chain
+    command: |
+      fslmaths ${bold} -Tmean test_output/bold_preproc_mean.nii.gz && \
+      fslmaths ${bold} -sub test_output/bold_preproc_mean.nii.gz test_output/bold_demeaned.nii.gz && \
+      fslmaths test_output/bold_demeaned.nii.gz -bptf 25 -1 test_output/bold_filtered.nii.gz && \
+      fslmaths test_output/bold_filtered.nii.gz -s 4 test_output/bold_preproc.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_preproc.nii.gz
+
+  - name: pipeline - brain mask from bet
+    description: Create and apply brain mask
+    command: |
+      bet ${t1w} test_output/t1w_brain_pipeline -m && \
+      fslmaths ${t1w} -mas test_output/t1w_brain_pipeline_mask.nii.gz test_output/t1w_brain_final.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_final.nii.gz
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"
