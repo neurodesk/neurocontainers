@@ -28,12 +28,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install runtime and test dependencies
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Apptainer
+        uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.4.3
+
+      - name: Install test dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y apptainer python3-pip
-          python3 -m pip install --upgrade pip
-          python3 -m pip install datalad pyyaml rich nibabel
+          uv pip install --system datalad
 
       - name: Pull container and run fulltest
         env:
@@ -42,7 +52,7 @@ jobs:
           CONTAINERS_DIR: ${{ github.event.inputs.containers_dir }}
         run: |
           mkdir -p "$CONTAINERS_DIR"
-          python3 - <<'PY'
+          uv run python - <<'PY'
           import json
           import os
           import subprocess
@@ -110,7 +120,8 @@ jobs:
           output_log = workdir / f"{container}-fulltest.log"
 
           cmd = [
-              "python3",
+              "uv",
+              "run",
               "builder/run_tests.py",
               str(suite_path),
               "-c",
