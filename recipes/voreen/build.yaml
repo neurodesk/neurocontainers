@@ -1,0 +1,68 @@
+name: voreen
+version: 5.3.0
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - build-essential
+        - cmake
+        - libglew-dev
+        - libboost-all-dev
+        - libdevil-dev
+        - qtbase5-dev
+        - libqt5svg5-dev
+        - wget
+
+    - workdir: /root
+
+    - run:
+        - wget https://www.uni-muenster.de/imperia/md/content/voreen/release/voreen-src-{{ context.version }}-unix.tar.gz
+        - tar -xf voreen-src-{{ context.version }}-unix.tar.gz
+
+    - run:
+        - cd /root/voreen-src-unix-nightly && mkdir build && cd build && cmake .. && make -j8 && export VRN_DEPLOYMENT=ON && export VRN_ADD_INSTALL_TARGET=ON && export CMAKE_INSTALL_PREFIX=/usr/share/voreen/ && make install && rm -rf /root/*
+
+deploy:
+  bins:
+    - voreenve
+    - voreentool
+
+categories:
+  - visualization
+
+gui_apps:
+  - name: voreenGUI
+    exec: voreenve
+
+readme: |
+  ----------------------------------
+  ## voreen/{{ context.version }} ##
+  Voreen is an open source rapid application development framework for the interactive visualization and analysis of multi-modal volumetric data sets. It provides GPU-based volume rendering and data analysis techniques.
+
+  Example:
+  ```
+  voreentool -platform minimal -w someworkspace.vws --script somescript.py
+  ```
+
+  More documentation can be found here: https://www.uni-muenster.de/Voreen/documentation/index.html
+
+  To run container outside of this environment: ml voreen/{{ context.version }}
+
+  Citation:
+  ```
+  Jennis Meyer-Spradow, Timo Ropinski, Jorg Mensmann, Klaus H. Hinrichs:
+  Voreen: A Rapid-Prototyping Environment for Ray-Casting-Based Volume Visualizations. IEEE Computer Graphics and Applications 29(6): 6-13 (2009)
+  ```
+
+  License: GNU General Public License
+  ----------------------------------

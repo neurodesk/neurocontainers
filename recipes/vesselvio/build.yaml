@@ -1,0 +1,88 @@
+name: vesselvio
+version: 1.1.2
+# https://github.com/JacobBumgarner/VesselVio/releases
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - git
+        - ca-certificates
+        - curl
+        - libqt5gui5
+
+    - template:
+        name: miniconda
+        version: latest
+        conda_install: python=3.8.8
+
+    - run:
+        - git clone https://github.com/JacobBumgarner/VesselVio.git /opt/vesselvio-{{ context.version }}/
+        - pip install -r /opt/vesselvio-{{ context.version }}/requirements.txt
+
+    - copy:
+        - vesselvio
+        - /opt/vesselvio-{{ context.version }}/vesselvio
+
+    - run:
+        - chmod a+x /opt/vesselvio-{{ context.version }}/vesselvio
+
+    - environment:
+        PATH: $PATH:/opt/vesselvio-{{ context.version }}
+
+deploy:
+  path:
+    - /opt/vesselvio-{{ context.version }}
+
+files:
+  - name: vesselvio
+    contents: |
+      #!/usr/bin/env bash
+      cd ~
+      mkdir -p ~/library/cache/
+
+      FILE=~/library/cache/preferences.json
+      if [ -f "$FILE" ]; then
+          echo "$FILE exists. Not overwriting."
+      else
+          echo "$FILE does not exist. Copying file template."
+          cp /opt/vesselvio-1.1.2/library/cache/preferences.json ~/library/cache/preferences.json
+      fi
+
+      cp -r /opt/vesselvio-1.1.2/library/annotation/ ~/library/
+      cp -r /opt/vesselvio-1.1.2/library/volumes/ ~/library/
+      python /opt/vesselvio-1.1.2/VesselVio.py
+
+categories:
+  - quantitative imaging
+  - visualization
+
+gui_apps:
+  - name: vesselvioGUI
+    exec: vesselvio
+
+readme: |
+  ----------------------------------
+  ## vesselvio/{{ context.version }} ##
+  VesselVio is an open-source application designed to allow researchers to analyze and visualize segmented vasculature datasets.
+
+  Example:
+  ```
+  vesselvio
+  ```
+
+  More documentation can be found here: https://jacobbumgarner.github.io/VesselVio/
+
+  To run container outside of this environment: ml vesselvio/{{ context.version }}
+
+  Citation: https://doi.org/10.1016/j.crmeth.2022.100189
+  ----------------------------------

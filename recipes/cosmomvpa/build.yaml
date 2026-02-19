@@ -1,0 +1,82 @@
+name: cosmomvpa
+version: 1.1.0
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - octave
+        - curl
+        - ca-certificates
+        - wget
+        - git
+        - unzip
+        - liboctave-dev
+        - patch
+        - make
+        - fonts-freefont-otf
+        - units
+
+    - workdir: /opt/{{ context.name }}-{{ context.version }}
+
+    - run:
+        - git clone https://github.com/CoSMoMVPA/CoSMoMVPA.git
+
+    - run:
+        - make -C CoSMoMVPA install
+
+    - copy: 
+        - setup_cosmomvpa.m
+        - /opt/{{ context.name }}-{{ context.version }}/setup_cosmomvpa.m
+
+    - run:
+        - octave --no-gui setup_cosmomvpa.m
+
+deploy:
+  bins:
+    - octave
+
+categories:
+  - statistics
+
+readme: |
+  ----------------------------------
+  ## cosmomvpa/{{ context.version }} ##
+  cosmomvpa A lightweight multi-modal, multi-variate pattern analysis (MVPA) toolbox for cognitive neuroscience in Matlab / Octave.
+
+  Example:
+  \`\`\`
+  octave 
+
+  cosmo_wtf
+  \`\`\`
+
+  More documentation can be found here: 
+  https://www.cosmomvpa.org/
+
+  To run applications outside of this container: ml cosmomvpa/{{ context.version }}
+
+  Citation:
+  \`\`\`
+  Oosterhof, N. N., Connolly, A. C., and Haxby, J. V. (2016). CoSMoMVPA: multi-modal multivariate pattern analysis of neuroimaging data in Matlab / GNU Octave. Frontiers in Neuroinformatics, doi:10.3389/fninf.2016.00027.
+  \`\`\`
+
+  License: MIT License
+  ----------------------------------
+
+files:
+  - name: setup_cosmomvpa.m
+    contents: |
+      pkg install -forge io
+      pkg install -forge nan
+      pkg install -forge general
+      pkg install -forge miscellaneous

@@ -1,0 +1,52 @@
+name: jamovi
+version: "2.3"
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: jamovi/jamovi:2.3.17
+  pkg-manager: yum
+
+  directives:
+    - run:
+        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
+        - chmod +x /usr/bin/ll
+
+    - install:
+        - flatpak
+        - ca-certificates
+
+    - run:
+        - flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+        - flatpak install flathub org.jamovi.jamovi -y
+
+deploy:
+  path:
+    - /usr/bin
+
+readme: |
+  ----------------------------------
+  ## jamovi/{{ context.version }} ##
+  Jamovi is a GUI-based statistics package based on R
+
+  Example:
+  ```
+  flatpak run org.jamovi.jamovi
+  ```
+
+  More documentation can be found here: https://www.jamovi.org/
+
+  To run applications outside of this container: ml jamovi/{{ context.version }}
+
+  Citation:
+  ```
+  The jamovi project (2021). jamovi (Version 2.3) [Computer Software]. Retrieved from https://www.jamovi.org
+  ```
+
+  WARNING: The flatpak install may not work inside a container because it requires usernamespaces.
+  It would be best to start from the official jamovi container: https://github.com/jamovi/jamovi/blob/current-dev/docker-compose.yaml
+
+  ----------------------------------
