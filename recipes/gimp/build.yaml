@@ -1,6 +1,9 @@
 name: gimp
 version: "2.10.18"
 
+architectures:
+  - x86_64
+
 build:
   kind: neurodocker
 
@@ -43,4 +46,4 @@ gui_apps:
     exec: "gimp"
 
 categories:
-  - "image processing"
+  - "visualization"

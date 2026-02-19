@@ -63,7 +63,8 @@ files:
       python /opt/vesselvio-1.1.2/VesselVio.py
 
 categories:
-  - vasculature analysis
+  - quantitative imaging
+  - visualization
 
 gui_apps:
   - name: vesselvioGUI

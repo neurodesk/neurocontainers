@@ -61,4 +61,5 @@ readme: |
   ----------------------------------
 
 categories:
-  - cryo-em
+  - microscopy
+  - machine learning

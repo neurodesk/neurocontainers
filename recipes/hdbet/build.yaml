@@ -4,8 +4,6 @@ version: 1.0.0
 architectures:
   - x86_64
 
-gpu: true
-
 build:
   kind: neurodocker
   base-image: ubuntu:16.04
