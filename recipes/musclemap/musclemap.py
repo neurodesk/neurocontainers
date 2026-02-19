@@ -154,25 +154,65 @@ def compute_nifti_affine(image_header, voxel_size):
     phase_dir     = image_header.phase_dir
     slice_dir     = image_header.slice_dir
 
-    # Convert from LPS to RAS
-    position_ras  = [ -position[0],  -position[1],  position[2]]
-    read_dir_ras  = [ -read_dir[0],  -read_dir[1],  read_dir[2]]
-    phase_dir_ras = [-phase_dir[0], -phase_dir[1], phase_dir[2]]
-    slice_dir_ras = [-slice_dir[0], -slice_dir[1], slice_dir[2]]
-
     # Construct rotation-scaling matrix
     rotation_scaling_matrix = np.column_stack([
-        voxel_size[0] * np.array( read_dir_ras),
-        voxel_size[1] * np.array(phase_dir_ras),
-        voxel_size[2] * np.array(slice_dir_ras)
+        voxel_size[0] * np.array(read_dir),
+        voxel_size[1] * np.array(phase_dir),
+        voxel_size[2] * np.array(slice_dir)
     ])
 
     # Construct affine matrix
     affine = np.eye(4)
     affine[:3, :3] = rotation_scaling_matrix
-    affine[:3,  3] = position_ras
+    affine[:3,  3] = position
 
     return affine
+
+
+def _get_first_sequence_param(metadata, name):
+    try:
+        seq = metadata.sequenceParameters
+        values = getattr(seq, name)
+        if values is None:
+            return None
+        if isinstance(values, (list, tuple)):
+            if len(values) == 0:
+                return None
+            return float(values[0])
+        return float(values)
+    except Exception:
+        return None
+
+
+def _format_acq_time_from_stamp(stamp):
+    try:
+        total_seconds = float(stamp) * 2.5e-3
+    except Exception:
+        return None
+
+    if total_seconds < 0:
+        return None
+
+    hours = int(total_seconds // 3600) % 24
+    minutes = int((total_seconds % 3600) // 60)
+    seconds = total_seconds - (hours * 3600 + minutes * 60)
+    return f"{hours:02d}{minutes:02d}{seconds:06.3f}"
+
+
+def _get_first_meta_float(meta_obj, keys):
+    for key in keys:
+        try:
+            value = meta_obj.get(key)
+            if value is None:
+                continue
+            if isinstance(value, (list, tuple)):
+                if len(value) == 0:
+                    continue
+                return float(value[0])
+            return float(value)
+        except Exception:
+            continue
+    return None
 
 
 def process_image(imgGroup, connection, config, metadata):
@@ -218,7 +258,7 @@ def process_image(imgGroup, connection, config, metadata):
     print("shape before transpose:")
     print(data.shape)
 
-    # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions
+    # Reformat data to [y x img cha z], i.e. [row col slice ...]
     data = data.transpose((3, 4, 0, 1, 2))
 
     print("shape after initial transpose:")
@@ -233,7 +273,49 @@ def process_image(imgGroup, connection, config, metadata):
     print("shape before saving nifti and running mm_segment:")
     print(data.shape)
 
-    new_img = nib.nifti1.Nifti1Image(data, affine)
+    # NIfTI is written as [x, y, z] for scanner-compatible geometry metadata.
+    if data.ndim == 2:
+        data_nifti = np.asarray(data.T[:, :, None], dtype=np.int16)
+    else:
+        data_nifti = np.asarray(data.transpose((1, 0, 2)), dtype=np.int16)
+    new_img = nib.nifti1.Nifti1Image(data_nifti, affine)
+
+    # Set scanner-like header fields explicitly (nib defaults are not suitable here).
+    header = new_img.header
+    header.set_data_dtype(np.int16)
+    header.set_dim_info(freq=1, phase=0, slice=2)
+    header.set_xyzt_units(xyz='mm', t='sec')
+
+    te = _get_first_sequence_param(metadata, "TE")
+    if te is None:
+        te = _get_first_meta_float(meta[0], ["EchoTime", "TE"])
+    tr = _get_first_sequence_param(metadata, "TR")
+    if te is not None and te < 1.0:
+        te = te * 1000.0  # seconds -> ms
+    if tr is None:
+        tr = 0.00368
+    elif tr > 1.0:
+        tr = tr / 1000.0  # ms -> sec
+    header["pixdim"][4] = float(tr)
+    header["pixdim"][5] = 0.0
+    header["pixdim"][6] = 0.0
+    header["pixdim"][7] = 0.0
+
+    acq_time_str = _format_acq_time_from_stamp(head[0].acquisition_time_stamp)
+    phase_num = int(getattr(head[0], "phase", 0)) + 1
+    desc_parts = []
+    if te is not None:
+        desc_parts.append(f"TE={te:g}")
+    if acq_time_str:
+        desc_parts.append(f"Time={acq_time_str}")
+    desc_parts.append(f"phase={phase_num}")
+    header["descrip"] = ";".join(desc_parts)
+    header["aux_file"] = "Not for diagnostic use"
+    header.set_slope_inter(1.0, 0.0)
+
+    new_img.set_qform(affine, code=1)
+    new_img.set_sform(affine, code=1)
+
     nib.save(new_img, "/opt/input.nii.gz")
 
     # Extract UI parameters from JSON config
@@ -282,6 +364,10 @@ def process_image(imgGroup, connection, config, metadata):
 
     if data.ndim == 2:
         data = data[:, :, None]
+
+    # Bring [x, y, z] NIfTI back to pipeline convention [y, x, z].
+    if data.ndim >= 3:
+        data = data.transpose((1, 0, 2))
 
     data = data[..., None, None]
     data = data.transpose((0, 1, 4, 3, 2))
@@ -442,6 +528,3 @@ def process_image(imgGroup, connection, config, metadata):
                 imagesOut.insert(0, tmpImg)
 
     return imagesOut
-
-
-
