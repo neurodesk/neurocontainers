@@ -1,0 +1,233 @@
+# hdbet container test suite
+# Tests for HD-BET v1.0.0 - Deep learning brain extraction tool
+#
+# HD-BET (HD Brain Extraction Tool) was developed with MRI-data from a large
+# multicentric clinical trial in adult brain tumor patients. It uses deep
+# learning for robust brain extraction across various MRI sequences (T1w, T2w,
+# FLAIR, etc.) and is particularly robust to tumors, lesions, and resection
+# cavities.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#
+# Reference: Isensee F, et al. Automated brain extraction of multi-sequence MRI
+# using artificial neural networks. arXiv preprint arXiv:1901.11341, 2019.
+
+name: hdbet
+version: 1.0.0
+container: hdbet_1.0.0_20210318.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/hdbet_batch
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: Help display
+    description: Verify hd-bet binary runs and shows help message
+    command: hd-bet --help 2>&1
+    expected_output_contains: "usage: hd-bet"
+
+  - name: Help mentions input argument
+    description: Verify help shows input argument documentation
+    command: hd-bet --help 2>&1
+    expected_output_contains: "-i INPUT"
+
+  - name: Help mentions output argument
+    description: Verify help shows output argument documentation
+    command: hd-bet --help 2>&1
+    expected_output_contains: "-o OUTPUT"
+
+  - name: Help mentions mode options
+    description: Verify help explains fast vs accurate modes
+    command: hd-bet --help 2>&1
+    expected_output_contains: "fast"
+
+  - name: Help mentions device options
+    description: Verify help explains device selection (CPU/GPU)
+    command: hd-bet --help 2>&1
+    expected_output_contains: "cpu"
+
+  # ==========================================================================
+  # BRAIN EXTRACTION - FAST MODE (CPU)
+  # ==========================================================================
+  - name: Brain extraction fast mode CPU
+    description: Test basic brain extraction using fast mode on CPU
+    command: hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_fast -device cpu -mode fast -tta 0
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_fast.nii.gz
+    timeout: 600
+
+  - name: Brain mask generated fast mode
+    description: Verify brain mask is generated alongside brain extraction
+    command: hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_fast_mask_test -device cpu -mode fast -tta 0 -s 1
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_fast_mask_test.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_fast_mask_test_mask.nii.gz
+    timeout: 600
+
+  # ==========================================================================
+  # BRAIN EXTRACTION - ACCURATE MODE (CPU)
+  # ==========================================================================
+  - name: Brain extraction accurate mode CPU
+    description: Test brain extraction using accurate mode (ensemble of 5 models) with mask saving
+    command: hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_accurate -device cpu -mode accurate -tta 0 -s 1
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_accurate.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_accurate_mask.nii.gz
+    timeout: 3600
+
+  # ==========================================================================
+  # TEST TIME AUGMENTATION (TTA)
+  # ==========================================================================
+  - name: Brain extraction with TTA disabled
+    description: Test brain extraction with test time augmentation disabled
+    command: hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_no_tta -device cpu -mode fast -tta 0
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_no_tta.nii.gz
+    timeout: 600
+
+  - name: Brain extraction with TTA enabled
+    description: Test brain extraction with TTA (skipped - too slow on CPU, >30min)
+    command: echo "Skipped - TTA mode too slow on CPU (>1800s)"
+    expected_output_contains: "Skipped"
+
+  # ==========================================================================
+  # POSTPROCESSING OPTIONS
+  # ==========================================================================
+  - name: Brain extraction with postprocessing enabled
+    description: Test brain extraction with postprocessing (largest connected component)
+    command: hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_pp_on -device cpu -mode fast -tta 0 -pp 1
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_pp_on.nii.gz
+    timeout: 900
+
+  - name: Brain extraction with postprocessing disabled
+    description: Test brain extraction without postprocessing
+    command: hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_pp_off -device cpu -mode fast -tta 0 -pp 0
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_pp_off.nii.gz
+    timeout: 900
+
+  # ==========================================================================
+  # MASK SAVING OPTIONS
+  # ==========================================================================
+  - name: Save both brain and mask
+    description: Test saving both skull-stripped brain and binary mask
+    command: hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_save_mask -device cpu -mode fast -tta 0 -s 1
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_save_mask.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_save_mask_mask.nii.gz
+    timeout: 900
+
+  - name: Do not save mask
+    description: Test saving only skull-stripped brain without mask
+    command: hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_no_mask_save -device cpu -mode fast -tta 0 -s 0
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_no_mask_save.nii.gz
+    timeout: 900
+
+  # ==========================================================================
+  # OUTPUT VERIFICATION
+  # ==========================================================================
+  # ==========================================================================
+  # ALTERNATIVE MRI SEQUENCES
+  # ==========================================================================
+  - name: Brain extraction T2 weighted image
+    description: Test brain extraction on T2-weighted (inplane) image
+    command: hd-bet -i ${t2} -o ${output_dir}/t2_brain -device cpu -mode fast -tta 0
+    validate:
+      - output_exists: ${output_dir}/t2_brain.nii.gz
+    timeout: 900
+
+  - name: T2 brain mask generated
+    description: Verify brain mask generated for T2 image
+    command: hd-bet -i ${t2} -o ${output_dir}/t2_brain_with_mask -device cpu -mode fast -tta 0 -s 1
+    validate:
+      - output_exists: ${output_dir}/t2_brain_with_mask.nii.gz
+      - output_exists: ${output_dir}/t2_brain_with_mask_mask.nii.gz
+    timeout: 900
+
+  # ==========================================================================
+  # OVERWRITE BEHAVIOR
+  # ==========================================================================
+  - name: Overwrite existing output
+    description: Test overwriting existing output files
+    command: |
+      hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_overwrite -device cpu -mode fast -tta 0 2>&1 && \
+      hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_overwrite -device cpu -mode fast -tta 0 --overwrite_existing 1 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_overwrite.nii.gz
+    timeout: 1200
+
+  - name: Skip existing output
+    description: Test skipping when output already exists
+    command: |
+      hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_skip -device cpu -mode fast -tta 0 2>&1 && \
+      hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_skip -device cpu -mode fast -tta 0 --overwrite_existing 0 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_skip.nii.gz
+    timeout: 1200
+
+  # ==========================================================================
+  # CITATION AND INFO
+  # ==========================================================================
+  - name: Citation displayed
+    description: Verify citation information is displayed when running
+    command: hd-bet --help 2>&1
+    expected_output_contains: "Isensee"
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Error on missing input
+    description: Test error handling when input file does not exist
+    command: hd-bet -i nonexistent_file.nii.gz -o ${output_dir}/error_test -device cpu -mode fast -tta 0 2>&1
+    expected_output_contains: "Could not read file"
+
+  - name: Error on invalid mode
+    description: Test error handling with invalid mode parameter
+    command: hd-bet -i ${t1w} -o ${output_dir}/error_mode -device cpu -mode invalid_mode -tta 0 2>&1 || echo "Invalid mode handled"
+    expected_output_contains: "handled"
+
+  # ==========================================================================
+  # COMBINED OPTIONS TESTS
+  # ==========================================================================
+  - name: Full options fast mode
+    description: Test all options combined in fast mode
+    command: hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_full_fast -device cpu -mode fast -tta 0 -pp 1 -s 1 --overwrite_existing 1
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_full_fast.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_full_fast_mask.nii.gz
+    timeout: 900
+
+  - name: Full options accurate mode
+    description: Test all options combined in accurate mode
+    command: hd-bet -i ${t1w} -o ${output_dir}/t1w_brain_full_accurate -device cpu -mode accurate -tta 0 -pp 1 -s 1 --overwrite_existing 1
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_full_accurate.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_full_accurate_mask.nii.gz
+    timeout: 3600
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

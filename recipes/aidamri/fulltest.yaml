@@ -1,0 +1,657 @@
+# AIDAmri container test suite
+# Tests for aidamri v1.1 - Atlas-based Image Data Analysis for mouse MRI
+#
+# AIDAmri is designed for automated processing of mouse brain MRI data
+# including T2-weighted MRI, DTI, and resting-state fMRI. It registers the
+# Allen Mouse Brain Reference Atlas (ARA, CCF v3) to MRI data for ROI analysis.
+#
+# Note: This container requires Python from miniconda (/opt/miniconda-latest/bin/python3)
+# to access nipype and other dependencies. The system python3 lacks these modules.
+#
+# Test data: ds000001/sub-01 (human data used for basic pipeline testing)
+#   - T2 inplane: 128x128x33, 1.56x1.56x4mm
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s
+
+name: aidamri
+version: "1.1"
+container: aidamri_1.1_20210708.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  atlas_template: /opt/aidamri-1.1/lib/average_template_50.nii.gz
+  atlas_annotation: /opt/aidamri-1.1/lib/annotation_50CHANGEDanno.nii.gz
+  output_dir: test_output/aidamri
+
+env_setup: |
+  export FSLDIR=/opt/fsl-5.0.11
+  export PATH=/opt/fsl-5.0.11/bin:$PATH
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/aidamri/preprocessing
+    mkdir -p test_output/aidamri/fsl_tests
+
+tests:
+  # ==========================================================================
+  # ENVIRONMENT AND DEPENDENCY CHECKS
+  # ==========================================================================
+  - name: Python version check
+    description: Verify miniconda Python is available
+    command: /opt/miniconda-latest/bin/python3 --version
+    expected_output_contains: "Python 3"
+
+  - name: Nipype availability
+    description: Verify nipype module is installed
+    command: /opt/miniconda-latest/bin/python3 -c "import nipype; print('nipype version:', nipype.__version__)"
+    expected_output_contains: "nipype version"
+
+  - name: Nibabel availability
+    description: Verify nibabel module is installed
+    command: /opt/miniconda-latest/bin/python3 -c "import nibabel as nib; print('nibabel version:', nib.__version__)"
+    expected_output_contains: "nibabel version"
+
+  - name: NumPy availability
+    description: Verify numpy module is installed
+    command: /opt/miniconda-latest/bin/python3 -c "import numpy as np; print('numpy version:', np.__version__)"
+    expected_output_contains: "numpy version"
+
+  - name: SciPy availability
+    description: Verify scipy module is installed
+    command: /opt/miniconda-latest/bin/python3 -c "import scipy; print('scipy version:', scipy.__version__)"
+    expected_output_contains: "scipy version"
+
+  # ==========================================================================
+  # AIDAMRI MAIN SCRIPTS HELP
+  # ==========================================================================
+  - name: batchProc help
+    description: Test batch processing script help
+    command: /opt/miniconda-latest/bin/python3 /opt/aidamri-1.1/bin/batchProc.py --help
+    expected_output_contains: "Batch processing of all data"
+
+  - name: T2 preprocessing help
+    description: Test T2 preprocessing script help
+    command: /opt/miniconda-latest/bin/python3 /opt/aidamri-1.1/bin/2.1_T2PreProcessing/preProcessing_T2.py --help
+    expected_output_contains: "Preprocessing of T2 Data"
+
+  - name: T2 registration help
+    description: Test T2 registration script help
+    command: /opt/miniconda-latest/bin/python3 /opt/aidamri-1.1/bin/2.1_T2PreProcessing/registration_T2.py --help
+    expected_output_contains: "Registration from ABA to T2 Data"
+
+  - name: fMRI preprocessing help
+    description: Test fMRI preprocessing script help
+    command: /opt/miniconda-latest/bin/python3 /opt/aidamri-1.1/bin/2.3_fMRIPreProcessing/preProcessing_fMRI.py --help
+    expected_output_contains: "Preprocessing of rsfMRI Data"
+
+  - name: fMRI registration help
+    description: Test fMRI registration script help
+    command: /opt/miniconda-latest/bin/python3 /opt/aidamri-1.1/bin/2.3_fMRIPreProcessing/registration_rsfMRI.py --help
+    expected_output_contains: "Registration of Allen Brain Atlas to rsfMRI"
+
+  - name: fMRI processing help
+    description: Test fMRI activity processing script help
+    command: /opt/miniconda-latest/bin/python3 /opt/aidamri-1.1/bin/3.3_fMRIActivity/process_fMRI.py --help
+    expected_output_contains: "Process fMRI data"
+
+  # ==========================================================================
+  # ATLAS AND TEMPLATE FILES
+  # ==========================================================================
+  - name: Allen Brain Atlas template exists
+    description: Verify ABA template is present
+    command: /opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-1.1/lib/average_template_50.nii.gz
+    expected_output_contains: "dim1"
+
+  - name: Allen Brain Atlas annotation exists
+    description: Verify ABA annotation file is present
+    command: /opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-1.1/lib/annotation_50CHANGEDanno.nii.gz
+    expected_output_contains: "dim1"
+
+  - name: Annotation volume exists
+    description: Verify annotation volume file is present
+    command: /opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-1.1/lib/annoVolume.nii.gz
+    expected_output_contains: "dim1"
+
+  - name: rsfMRI annotation volume exists
+    description: Verify rsfMRI annotation volume is present
+    command: /opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-1.1/lib/annoVolume+2000_rsfMRI.nii.gz
+    expected_output_contains: "dim1"
+
+  - name: ARA annotation exists
+    description: Verify ARA annotation file is present
+    command: /opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-1.1/lib/ARA_annotationR+2000.nii.gz
+    expected_output_contains: "dim1"
+
+  - name: NP template exists
+    description: Verify NP template file is present
+    command: /opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-1.1/lib/NP_template_sc0.nii.gz
+    expected_output_contains: "dim1"
+
+  # ==========================================================================
+  # FSL TOOLS - BRAIN EXTRACTION (BET)
+  # ==========================================================================
+  - name: BET help
+    description: Test FSL bet brain extraction tool
+    command: /opt/fsl-5.0.11/bin/bet 2>&1 | head -20
+    expected_output_contains: "bet <input> <output>"
+
+  - name: BET basic brain extraction
+    description: Run brain extraction on T2 image
+    command: /opt/fsl-5.0.11/bin/bet ${t2} test_output/aidamri/fsl_tests/t2_brain.nii.gz -f 0.3 -R
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_brain.nii.gz
+
+  - name: BET with mask output
+    description: Run brain extraction with binary mask
+    command: /opt/fsl-5.0.11/bin/bet ${t2} test_output/aidamri/fsl_tests/t2_brain_mask -f 0.3 -m
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_brain_mask.nii.gz
+      - output_exists: ${output_dir}/fsl_tests/t2_brain_mask_mask.nii.gz
+
+  - name: BET with skull output
+    description: Run brain extraction with skull estimate
+    command: /opt/fsl-5.0.11/bin/bet ${t2} test_output/aidamri/fsl_tests/t2_brain_skull -f 0.3 -s
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_brain_skull.nii.gz
+
+  - name: BET for 4D fMRI data
+    description: Run brain extraction optimized for fMRI
+    command: /opt/fsl-5.0.11/bin/bet ${bold} test_output/aidamri/fsl_tests/bold_brain -F
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/bold_brain.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - FLIRT (LINEAR REGISTRATION)
+  # ==========================================================================
+  - name: FLIRT help
+    description: Test FSL flirt linear registration tool
+    command: /opt/fsl-5.0.11/bin/flirt 2>&1 | head -20
+    expected_output_contains: "FLIRT version"
+
+  - name: FLIRT basic registration
+    description: Register T2 to mean BOLD
+    command: |
+      /opt/fsl-5.0.11/bin/fslmaths ${bold} -Tmean test_output/aidamri/fsl_tests/bold_mean.nii.gz && \
+      /opt/fsl-5.0.11/bin/flirt -in ${t2} -ref test_output/aidamri/fsl_tests/bold_mean.nii.gz -out test_output/aidamri/fsl_tests/t2_to_bold.nii.gz -omat test_output/aidamri/fsl_tests/t2_to_bold.mat -dof 6
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_to_bold.nii.gz
+      - output_exists: ${output_dir}/fsl_tests/t2_to_bold.mat
+
+  - name: FLIRT affine registration
+    description: Register with 12 DOF affine transformation
+    command: /opt/fsl-5.0.11/bin/flirt -in ${t2} -ref test_output/aidamri/fsl_tests/bold_mean.nii.gz -out test_output/aidamri/fsl_tests/t2_to_bold_affine.nii.gz -omat test_output/aidamri/fsl_tests/t2_to_bold_affine.mat -dof 12
+    depends_on: FLIRT basic registration
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_to_bold_affine.nii.gz
+
+  - name: FLIRT apply transform
+    description: Apply pre-computed transformation matrix
+    command: /opt/fsl-5.0.11/bin/flirt -in ${t2} -ref test_output/aidamri/fsl_tests/bold_mean.nii.gz -out test_output/aidamri/fsl_tests/t2_applied.nii.gz -init test_output/aidamri/fsl_tests/t2_to_bold.mat -applyxfm
+    depends_on: FLIRT basic registration
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_applied.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - FSLMATHS (IMAGE CALCULATOR)
+  # ==========================================================================
+  - name: fslmaths help
+    description: Test FSL fslmaths image calculator
+    command: /opt/fsl-5.0.11/bin/fslmaths 2>&1 | head -20
+    expected_output_contains: "fslmaths"
+
+  - name: fslmaths temporal mean
+    description: Calculate temporal mean of 4D data
+    command: /opt/fsl-5.0.11/bin/fslmaths ${bold} -Tmean test_output/aidamri/fsl_tests/bold_Tmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/bold_Tmean.nii.gz
+
+  - name: fslmaths temporal std
+    description: Calculate temporal standard deviation
+    command: /opt/fsl-5.0.11/bin/fslmaths ${bold} -Tstd test_output/aidamri/fsl_tests/bold_Tstd.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/bold_Tstd.nii.gz
+
+  - name: fslmaths threshold
+    description: Apply intensity threshold
+    command: /opt/fsl-5.0.11/bin/fslmaths ${t2} -thr 100 test_output/aidamri/fsl_tests/t2_thr100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_thr100.nii.gz
+
+  - name: fslmaths binarize
+    description: Binarize image
+    command: /opt/fsl-5.0.11/bin/fslmaths ${t2} -thr 100 -bin test_output/aidamri/fsl_tests/t2_bin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_bin.nii.gz
+
+  - name: fslmaths masking
+    description: Apply mask to image
+    command: /opt/fsl-5.0.11/bin/fslmaths ${t2} -mas test_output/aidamri/fsl_tests/t2_brain_mask_mask.nii.gz test_output/aidamri/fsl_tests/t2_masked.nii.gz
+    depends_on: BET with mask output
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_masked.nii.gz
+
+  - name: fslmaths smoothing
+    description: Apply Gaussian smoothing
+    command: /opt/fsl-5.0.11/bin/fslmaths ${t2} -s 2 test_output/aidamri/fsl_tests/t2_smooth.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_smooth.nii.gz
+
+  - name: fslmaths erosion
+    description: Morphological erosion on mask
+    command: /opt/fsl-5.0.11/bin/fslmaths test_output/aidamri/fsl_tests/t2_brain_mask_mask.nii.gz -ero test_output/aidamri/fsl_tests/mask_ero.nii.gz
+    depends_on: BET with mask output
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/mask_ero.nii.gz
+
+  - name: fslmaths dilation
+    description: Morphological dilation on mask
+    command: /opt/fsl-5.0.11/bin/fslmaths test_output/aidamri/fsl_tests/t2_brain_mask_mask.nii.gz -dilM test_output/aidamri/fsl_tests/mask_dilM.nii.gz
+    depends_on: BET with mask output
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/mask_dilM.nii.gz
+
+  - name: fslmaths fill holes
+    description: Fill holes in binary mask
+    command: /opt/fsl-5.0.11/bin/fslmaths test_output/aidamri/fsl_tests/t2_brain_mask_mask.nii.gz -fillh test_output/aidamri/fsl_tests/mask_fillh.nii.gz
+    depends_on: BET with mask output
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/mask_fillh.nii.gz
+
+  - name: fslmaths arithmetic operations
+    description: Test arithmetic operations (add, sub, mul, div)
+    command: /opt/fsl-5.0.11/bin/fslmaths ${t2} -add 100 -sub 50 -mul 2 -div 2 test_output/aidamri/fsl_tests/t2_arith.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_arith.nii.gz
+
+  - name: fslmaths intensity normalization
+    description: Normalize image intensity
+    command: /opt/fsl-5.0.11/bin/fslmaths ${t2} -inm 1000 test_output/aidamri/fsl_tests/t2_inm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_inm.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - FSLSTATS
+  # ==========================================================================
+  - name: fslstats basic
+    description: Get basic image statistics
+    command: /opt/fsl-5.0.11/bin/fslstats ${t2} -m -s -R
+    expected_output_contains: " "
+
+  - name: fslstats volume
+    description: Get volume of non-zero voxels
+    command: /opt/fsl-5.0.11/bin/fslstats ${t2} -V
+    expected_output_contains: " "
+
+  - name: fslstats robust range
+    description: Get robust min and max
+    command: /opt/fsl-5.0.11/bin/fslstats ${t2} -r
+    expected_output_contains: " "
+
+  - name: fslstats COG
+    description: Get center of gravity
+    command: /opt/fsl-5.0.11/bin/fslstats ${t2} -C
+    expected_output_contains: " "
+
+  # ==========================================================================
+  # FSL TOOLS - FSLROI
+  # ==========================================================================
+  - name: fslroi spatial crop
+    description: Extract spatial ROI from image
+    command: /opt/fsl-5.0.11/bin/fslroi ${t2} test_output/aidamri/fsl_tests/t2_roi.nii.gz 20 80 20 80 5 20
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_roi.nii.gz
+
+  - name: fslroi temporal crop
+    description: Extract temporal subset from 4D
+    command: /opt/fsl-5.0.11/bin/fslroi ${bold} test_output/aidamri/fsl_tests/bold_roi.nii.gz 0 -1 0 -1 0 -1 10 50
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/bold_roi.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - FSLSPLIT AND FSLMERGE
+  # ==========================================================================
+  - name: fslsplit temporal
+    description: Split 4D into 3D volumes
+    command: /opt/fsl-5.0.11/bin/fslsplit ${bold} test_output/aidamri/fsl_tests/bold_split -t
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/bold_split0000.nii.gz
+
+  - name: fslmerge temporal
+    description: Merge 3D volumes into 4D
+    command: /opt/fsl-5.0.11/bin/fslmerge -t test_output/aidamri/fsl_tests/bold_merged.nii.gz test_output/aidamri/fsl_tests/bold_split0000.nii.gz test_output/aidamri/fsl_tests/bold_split0001.nii.gz test_output/aidamri/fsl_tests/bold_split0002.nii.gz
+    depends_on: fslsplit temporal
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/bold_merged.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - FSLREORIENT2STD
+  # ==========================================================================
+  - name: fslreorient2std
+    description: Reorient image to standard orientation
+    command: /opt/fsl-5.0.11/bin/fslreorient2std ${t2} test_output/aidamri/fsl_tests/t2_reorient.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_reorient.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - FSLHD AND FSLINFO
+  # ==========================================================================
+  - name: fslhd header info
+    description: Display full NIfTI header
+    command: /opt/fsl-5.0.11/bin/fslhd ${t2} | head -30
+    expected_output_contains: "sizeof_hdr"
+
+  - name: fslinfo summary
+    description: Display image summary info
+    command: /opt/fsl-5.0.11/bin/fslinfo ${t2}
+    expected_output_contains: "dim1"
+
+  # ==========================================================================
+  # FSL TOOLS - FSLCPGEOM
+  # ==========================================================================
+  - name: fslcpgeom copy geometry
+    description: Copy geometry information between images
+    command: |
+      cp test_output/aidamri/fsl_tests/t2_bin.nii.gz test_output/aidamri/fsl_tests/t2_bin_geom.nii.gz && \
+      /opt/fsl-5.0.11/bin/fslcpgeom ${t2} test_output/aidamri/fsl_tests/t2_bin_geom.nii.gz
+    depends_on: fslmaths binarize
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_bin_geom.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - MCFLIRT (MOTION CORRECTION)
+  # ==========================================================================
+  - name: mcflirt help
+    description: Test FSL mcflirt motion correction tool
+    command: /opt/fsl-5.0.11/bin/mcflirt 2>&1 | head -20
+    expected_output_contains: "mcflirt"
+
+  - name: mcflirt motion correction
+    description: Run motion correction on fMRI
+    command: /opt/fsl-5.0.11/bin/mcflirt -in ${bold} -out test_output/aidamri/fsl_tests/bold_mcf -plots
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/bold_mcf.nii.gz
+      - output_exists: ${output_dir}/fsl_tests/bold_mcf.par
+
+  # ==========================================================================
+  # FSL TOOLS - SUSAN (SMOOTHING)
+  # ==========================================================================
+  - name: susan smoothing
+    description: Apply SUSAN noise reduction
+    command: /opt/fsl-5.0.11/bin/susan ${t2} 100 2 3 1 0 test_output/aidamri/fsl_tests/t2_susan.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/t2_susan.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - SLICETIMER
+  # ==========================================================================
+  - name: slicetimer help
+    description: Test FSL slicetimer tool
+    command: /opt/fsl-5.0.11/bin/slicetimer 2>&1 | head -20
+    expected_output_contains: "slicetimer"
+
+  # ==========================================================================
+  # FSL TOOLS - APPLYWARP
+  # ==========================================================================
+  - name: applywarp help
+    description: Test FSL applywarp tool
+    command: /opt/fsl-5.0.11/bin/applywarp 2>&1 | head -20
+    expected_output_contains: "applywarp"
+
+  # ==========================================================================
+  # FSL TOOLS - CLUSTER
+  # ==========================================================================
+  - name: cluster help
+    description: Test FSL cluster tool
+    command: /opt/fsl-5.0.11/bin/cluster --help 2>&1 | head -30
+    expected_output_contains: "cluster"
+
+  # ==========================================================================
+  # NIFTYREG TOOLS
+  # ==========================================================================
+  - name: NiftyReg reg_aladin exists
+    description: Check NiftyReg reg_aladin binary exists
+    command: ls -la /opt/aidamri-1.1/NiftyReg/bin/reg_aladin
+    expected_output_contains: "reg_aladin"
+
+  - name: NiftyReg reg_f3d exists
+    description: Check NiftyReg reg_f3d binary exists
+    command: ls -la /opt/aidamri-1.1/NiftyReg/bin/reg_f3d
+    expected_output_contains: "reg_f3d"
+
+  - name: NiftyReg reg_resample exists
+    description: Check NiftyReg reg_resample binary exists
+    command: ls -la /opt/aidamri-1.1/NiftyReg/bin/reg_resample
+    expected_output_contains: "reg_resample"
+
+  - name: NiftyReg reg_tools exists
+    description: Check NiftyReg reg_tools binary exists
+    command: ls -la /opt/aidamri-1.1/NiftyReg/bin/reg_tools
+    expected_output_contains: "reg_tools"
+
+  - name: NiftyReg reg_transform exists
+    description: Check NiftyReg reg_transform binary exists
+    command: ls -la /opt/aidamri-1.1/NiftyReg/bin/reg_transform
+    expected_output_contains: "reg_transform"
+
+  - name: NiftyReg reg_measure exists
+    description: Check NiftyReg reg_measure binary exists
+    command: ls -la /opt/aidamri-1.1/NiftyReg/bin/reg_measure
+    expected_output_contains: "reg_measure"
+
+  # ==========================================================================
+  # AIDAMRI SCRIPT VALIDATION
+  # ==========================================================================
+  - name: Script directory structure
+    description: Verify AIDAmri script directories exist
+    command: ls /opt/aidamri-1.1/bin/
+    expected_output_contains: "2.1_T2PreProcessing"
+
+  - name: PV2NIfTi converter scripts exist
+    description: Verify ParaVision to NIfTI converter scripts
+    command: ls /opt/aidamri-1.1/bin/1_PV2NIfTiConverter/
+    expected_output_contains: "pv_conv2Nifti.py"
+
+  - name: T2 preprocessing scripts exist
+    description: Verify T2 preprocessing scripts are present
+    command: ls /opt/aidamri-1.1/bin/2.1_T2PreProcessing/
+    expected_output_contains: "preProcessing_T2.py"
+
+  - name: DTI preprocessing scripts exist
+    description: Verify DTI preprocessing scripts are present
+    command: ls /opt/aidamri-1.1/bin/2.2_DTIPreprocessing/
+    expected_output_contains: "preProcessing_DTI.py"
+
+  - name: fMRI preprocessing scripts exist
+    description: Verify fMRI preprocessing scripts are present
+    command: ls /opt/aidamri-1.1/bin/2.3_fMRIPreProcessing/
+    expected_output_contains: "preProcessing_fMRI.py"
+
+  - name: T2 processing scripts exist
+    description: Verify T2 processing scripts are present
+    command: ls /opt/aidamri-1.1/bin/3.1_T2Processing/
+    expected_output_contains: "getIncidenceMap.py"
+
+  - name: DTI connectivity scripts exist
+    description: Verify DTI connectivity scripts are present
+    command: ls /opt/aidamri-1.1/bin/3.2_DTIConnectivity/
+    expected_output_contains: "dsi_main.py"
+
+  - name: fMRI activity scripts exist
+    description: Verify fMRI activity scripts are present
+    command: ls /opt/aidamri-1.1/bin/3.3_fMRIActivity/
+    expected_output_contains: "process_fMRI.py"
+
+  - name: ROI analysis scripts exist
+    description: Verify ROI analysis scripts are present
+    command: ls /opt/aidamri-1.1/bin/4.1_ROI_analysis/
+    expected_output_contains: "create_seed_rois.py"
+
+  # ==========================================================================
+  # NIBABEL-BASED IMAGE OPERATIONS
+  # ==========================================================================
+  - name: Load NIfTI with nibabel
+    description: Test loading NIfTI file with nibabel
+    command: /opt/miniconda-latest/bin/python3 -c "import nibabel as nib; img = nib.load('${t2}'); print('Shape:', img.shape); print('Affine:\\n', img.affine)"
+    expected_output_contains: "Shape:"
+
+  - name: Extract affine matrix
+    description: Extract affine transformation matrix
+    command: /opt/miniconda-latest/bin/python3 -c "import nibabel as nib; import numpy as np; img = nib.load('${t2}'); np.savetxt('test_output/aidamri/t2_affine.txt', img.affine); print('Saved affine matrix')"
+    validate:
+      - output_exists: ${output_dir}/t2_affine.txt
+
+  - name: Calculate image statistics with Python
+    description: Calculate mean, std, min, max using nibabel
+    command: /opt/miniconda-latest/bin/python3 -c "import nibabel as nib; import numpy as np; img = nib.load('${t2}'); data = img.get_fdata(); print('Mean:', np.mean(data)); print('Std:', np.std(data)); print('Min:', np.min(data)); print('Max:', np.max(data))"
+    expected_output_contains: "Mean:"
+
+  - name: Create binary mask with Python
+    description: Create threshold-based binary mask
+    command: |
+      /opt/miniconda-latest/bin/python3 << 'EOF'
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${t2}')
+      data = img.get_fdata()
+      mask = (data > 100).astype(np.int16)
+      mask_img = nib.Nifti1Image(mask, img.affine, img.header)
+      nib.save(mask_img, 'test_output/aidamri/t2_mask_py.nii.gz')
+      print('Mask saved')
+      EOF
+    validate:
+      - output_exists: ${output_dir}/t2_mask_py.nii.gz
+
+  - name: Extract 3D volume from 4D with Python
+    description: Extract single volume from 4D fMRI
+    command: |
+      /opt/miniconda-latest/bin/python3 << 'EOF'
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${bold}')
+      data = img.get_fdata()
+      vol = data[:,:,:,0]
+      vol_img = nib.Nifti1Image(vol, img.affine)
+      nib.save(vol_img, 'test_output/aidamri/bold_vol0.nii.gz')
+      print('Volume extracted')
+      EOF
+    validate:
+      - output_exists: ${output_dir}/bold_vol0.nii.gz
+
+  # ==========================================================================
+  # NIPYPE INTERFACE TESTS
+  # ==========================================================================
+  - name: Nipype FSL interface import
+    description: Test nipype FSL interface import
+    command: /opt/miniconda-latest/bin/python3 -c "import nipype.interfaces.fsl as fsl; print('FSL interfaces available')"
+    expected_output_contains: "FSL interfaces available"
+
+  - name: Nipype BET interface
+    description: Test nipype BET interface
+    command: |
+      /opt/miniconda-latest/bin/python3 << 'EOF'
+      import nipype.interfaces.fsl as fsl
+      bet = fsl.BET()
+      bet.inputs.in_file = '${t2}'
+      bet.inputs.out_file = 'test_output/aidamri/preprocessing/t2_nipype_bet.nii.gz'
+      bet.inputs.frac = 0.3
+      bet.inputs.robust = True
+      result = bet.run()
+      print('BET completed:', result.outputs.out_file)
+      EOF
+    validate:
+      - output_exists: ${output_dir}/preprocessing/t2_nipype_bet.nii.gz
+
+  - name: Nipype FLIRT interface
+    description: Test nipype FLIRT interface
+    command: |
+      /opt/miniconda-latest/bin/python3 << 'EOF'
+      import nipype.interfaces.fsl as fsl
+      flirt = fsl.FLIRT()
+      flirt.inputs.in_file = '${t2}'
+      flirt.inputs.reference = 'test_output/aidamri/fsl_tests/bold_mean.nii.gz'
+      flirt.inputs.out_file = 'test_output/aidamri/preprocessing/t2_nipype_flirt.nii.gz'
+      flirt.inputs.out_matrix_file = 'test_output/aidamri/preprocessing/t2_nipype_flirt.mat'
+      flirt.inputs.dof = 6
+      result = flirt.run()
+      print('FLIRT completed:', result.outputs.out_file)
+      EOF
+    depends_on: fslmaths temporal mean
+    validate:
+      - output_exists: ${output_dir}/preprocessing/t2_nipype_flirt.nii.gz
+      - output_exists: ${output_dir}/preprocessing/t2_nipype_flirt.mat
+
+  - name: Nipype MCFLIRT interface
+    description: Test nipype MCFLIRT interface
+    command: |
+      /opt/miniconda-latest/bin/python3 << 'EOF'
+      import nipype.interfaces.fsl as fsl
+      mcflirt = fsl.MCFLIRT()
+      mcflirt.inputs.in_file = '${bold}'
+      mcflirt.inputs.out_file = 'test_output/aidamri/preprocessing/bold_nipype_mcf.nii.gz'
+      mcflirt.inputs.save_plots = True
+      result = mcflirt.run()
+      print('MCFLIRT completed')
+      EOF
+    validate:
+      - output_exists: ${output_dir}/preprocessing/bold_nipype_mcf.nii.gz
+
+  # ==========================================================================
+  # DSI STUDIO INTEGRATION
+  # ==========================================================================
+  - name: DSI Studio directory exists
+    description: Verify DSI Studio is installed
+    command: ls -la /opt/dsi-studio/
+    expected_output_contains: "dsi_studio"
+
+  - name: DSI Studio binary exists
+    description: Verify DSI Studio binary is present
+    command: ls -la /opt/dsi-studio/dsi_studio_64/
+    expected_output_contains: "dsi_studio"
+
+  # ==========================================================================
+  # COMPLEX PIPELINE TESTS
+  # ==========================================================================
+  - name: fMRI tSNR calculation
+    description: Calculate temporal SNR for fMRI data
+    command: |
+      /opt/fsl-5.0.11/bin/fslmaths ${bold} -Tmean test_output/aidamri/fsl_tests/bold_mean_tsnr.nii.gz && \
+      /opt/fsl-5.0.11/bin/fslmaths ${bold} -Tstd test_output/aidamri/fsl_tests/bold_std_tsnr.nii.gz && \
+      /opt/fsl-5.0.11/bin/fslmaths test_output/aidamri/fsl_tests/bold_mean_tsnr.nii.gz -div test_output/aidamri/fsl_tests/bold_std_tsnr.nii.gz test_output/aidamri/fsl_tests/bold_tsnr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl_tests/bold_tsnr.nii.gz
+
+  - name: Brain extraction and masking pipeline
+    description: Full brain extraction and masking workflow
+    command: |
+      /opt/fsl-5.0.11/bin/bet ${t2} test_output/aidamri/preprocessing/t2_bet_pipeline -f 0.3 -m -R && \
+      /opt/fsl-5.0.11/bin/fslmaths test_output/aidamri/preprocessing/t2_bet_pipeline_mask.nii.gz -dilM -fillh test_output/aidamri/preprocessing/t2_mask_clean.nii.gz && \
+      /opt/fsl-5.0.11/bin/fslmaths ${t2} -mas test_output/aidamri/preprocessing/t2_mask_clean.nii.gz test_output/aidamri/preprocessing/t2_brain_clean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/preprocessing/t2_bet_pipeline.nii.gz
+      - output_exists: ${output_dir}/preprocessing/t2_mask_clean.nii.gz
+      - output_exists: ${output_dir}/preprocessing/t2_brain_clean.nii.gz
+
+  - name: fMRI preprocessing pipeline
+    description: Basic fMRI preprocessing workflow
+    command: |
+      /opt/fsl-5.0.11/bin/fslmaths ${bold} -Tmean test_output/aidamri/preprocessing/bold_mean_pipe.nii.gz && \
+      /opt/fsl-5.0.11/bin/bet test_output/aidamri/preprocessing/bold_mean_pipe.nii.gz test_output/aidamri/preprocessing/bold_brain_pipe -f 0.3 -m && \
+      /opt/fsl-5.0.11/bin/fslmaths ${bold} -bptf 25 -1 test_output/aidamri/preprocessing/bold_hp.nii.gz && \
+      /opt/fsl-5.0.11/bin/fslmaths test_output/aidamri/preprocessing/bold_hp.nii.gz -mas test_output/aidamri/preprocessing/bold_brain_pipe_mask.nii.gz test_output/aidamri/preprocessing/bold_preproc.nii.gz
+    validate:
+      - output_exists: ${output_dir}/preprocessing/bold_preproc.nii.gz
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/aidamri
+    echo "AIDAmri test outputs preserved in test_output/aidamri/"

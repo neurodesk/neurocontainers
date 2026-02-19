@@ -1,0 +1,710 @@
+# topaz container test suite
+# Tests for Topaz - cryo-EM particle picking using deep learning
+#
+# Topaz is a pipeline for particle detection in cryo-electron microscopy images
+# using convolutional neural networks trained from positive and unlabeled examples.
+# It also includes methods for micrograph and tomogram denoising.
+#
+# Note: Many topaz commands require actual cryo-EM data (MRC files, particle coordinates)
+# which are not included in this test suite. These tests focus on CLI validation,
+# help messages, and option parsing.
+
+name: topaz
+version: 0.2.5a
+container: topaz_0.2.5a_20211006.simg
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION
+  # ==========================================================================
+  - name: Version check
+    description: Verify topaz binary runs and reports version
+    command: topaz --version
+    expected_output_contains: "TOPAZ"
+
+  - name: Main help
+    description: Display main help message
+    command: topaz --help
+    expected_output_contains: "commands"
+
+  - name: Help shows particle picking commands
+    description: Verify particle picking commands are listed
+    command: topaz --help
+    expected_output_contains: "train"
+
+  - name: Help shows extract command
+    description: Verify extract command is listed
+    command: topaz --help
+    expected_output_contains: "extract"
+
+  - name: Help shows image processing commands
+    description: Verify image processing commands are listed
+    command: topaz --help
+    expected_output_contains: "downsample"
+
+  - name: Help shows denoise command
+    description: Verify denoise command is listed
+    command: topaz --help
+    expected_output_contains: "denoise"
+
+  - name: Help shows file utilities
+    description: Verify file utility commands are listed
+    command: topaz --help
+    expected_output_contains: "convert"
+
+  # ==========================================================================
+  # TRAIN SUBCOMMAND
+  # ==========================================================================
+  - name: Train help
+    description: Display train subcommand help
+    command: topaz train --help
+    expected_output_contains: "training data arguments"
+
+  - name: Train help shows device option
+    description: Verify device option in train help
+    command: topaz train --help
+    expected_output_contains: "--device"
+
+  - name: Train help shows model option
+    description: Verify model architecture option in train help
+    command: topaz train --help
+    expected_output_contains: "--model"
+
+  - name: Train help shows learning rate
+    description: Verify learning rate option in train help
+    command: topaz train --help
+    expected_output_contains: "--learning-rate"
+
+  - name: Train help shows num-epochs
+    description: Verify num-epochs option in train help
+    command: topaz train --help
+    expected_output_contains: "--num-epochs"
+
+  - name: Train help shows train-images
+    description: Verify train-images option in train help
+    command: topaz train --help
+    expected_output_contains: "--train-images"
+
+  - name: Train help shows train-targets
+    description: Verify train-targets option in train help
+    command: topaz train --help
+    expected_output_contains: "--train-targets"
+
+  - name: Train help shows radius option
+    description: Verify radius option in train help
+    command: topaz train --help
+    expected_output_contains: "--radius"
+
+  - name: Train help shows method option
+    description: Verify training method option in train help
+    command: topaz train --help
+    expected_output_contains: "--method"
+
+  - name: Train help shows pretrained option
+    description: Verify pretrained model option in train help
+    command: topaz train --help
+    expected_output_contains: "--pretrained"
+
+  - name: Train describe option
+    description: Verify describe option exists
+    command: topaz train --help
+    expected_output_contains: "--describe"
+
+  - name: Train help shows units option
+    description: Verify units option for model architecture
+    command: topaz train --help
+    expected_output_contains: "--units"
+
+  - name: Train help shows dropout option
+    description: Verify dropout option in train help
+    command: topaz train --help
+    expected_output_contains: "--dropout"
+
+  - name: Train help shows batch norm option
+    description: Verify batch normalization option
+    command: topaz train --help
+    expected_output_contains: "--bn"
+
+  - name: Train help shows k-fold option
+    description: Verify cross-validation k-fold option
+    command: topaz train --help
+    expected_output_contains: "--k-fold"
+
+  # ==========================================================================
+  # EXTRACT SUBCOMMAND
+  # ==========================================================================
+  - name: Extract help
+    description: Display extract subcommand help
+    command: topaz extract --help
+    expected_output_contains: "paths to image files"
+
+  - name: Extract help shows model option
+    description: Verify model option in extract help
+    command: topaz extract --help
+    expected_output_contains: "--model"
+
+  - name: Extract help shows radius option
+    description: Verify radius option in extract help
+    command: topaz extract --help
+    expected_output_contains: "--radius"
+
+  - name: Extract help shows threshold option
+    description: Verify threshold option in extract help
+    command: topaz extract --help
+    expected_output_contains: "--threshold"
+
+  - name: Extract help shows down-scale option
+    description: Verify down-scale option in extract help
+    command: topaz extract --help
+    expected_output_contains: "--down-scale"
+
+  - name: Extract help shows up-scale option
+    description: Verify up-scale option in extract help
+    command: topaz extract --help
+    expected_output_contains: "--up-scale"
+
+  - name: Extract help shows output format
+    description: Verify output format option in extract help
+    command: topaz extract --help
+    expected_output_contains: "--format"
+
+  - name: Extract help shows device option
+    description: Verify device option in extract help
+    command: topaz extract --help
+    expected_output_contains: "--device"
+
+  - name: Extract help shows batch-size option
+    description: Verify batch-size option in extract help
+    command: topaz extract --help
+    expected_output_contains: "--batch-size"
+
+  - name: Extract help shows per-micrograph option
+    description: Verify per-micrograph output option
+    command: topaz extract --help
+    expected_output_contains: "--per-micrograph"
+
+  - name: Extract help shows targets option
+    description: Verify targets option for validation
+    command: topaz extract --help
+    expected_output_contains: "--targets"
+
+  # ==========================================================================
+  # SEGMENT SUBCOMMAND
+  # ==========================================================================
+  - name: Segment help
+    description: Display segment subcommand help
+    command: topaz segment --help
+    expected_output_contains: "paths to image files"
+
+  - name: Segment help shows model option
+    description: Verify model option in segment help
+    command: topaz segment --help
+    expected_output_contains: "--model"
+
+  - name: Segment help shows destdir option
+    description: Verify destination directory option
+    command: topaz segment --help
+    expected_output_contains: "--destdir"
+
+  - name: Segment help shows device option
+    description: Verify device option in segment help
+    command: topaz segment --help
+    expected_output_contains: "--device"
+
+  - name: Segment help shows verbose option
+    description: Verify verbose option in segment help
+    command: topaz segment --help
+    expected_output_contains: "--verbose"
+
+  # ==========================================================================
+  # PREPROCESS SUBCOMMAND
+  # ==========================================================================
+  - name: Preprocess help
+    description: Display preprocess subcommand help
+    command: topaz preprocess --help
+    expected_output_contains: "downsample"
+
+  - name: Preprocess help shows scale option
+    description: Verify scale option in preprocess help
+    command: topaz preprocess --help
+    expected_output_contains: "--scale"
+
+  - name: Preprocess help shows affine option
+    description: Verify affine normalization option
+    command: topaz preprocess --help
+    expected_output_contains: "--affine"
+
+  - name: Preprocess help shows sample option
+    description: Verify sampling factor option
+    command: topaz preprocess --help
+    expected_output_contains: "--sample"
+
+  - name: Preprocess help shows niters option
+    description: Verify EM iterations option
+    command: topaz preprocess --help
+    expected_output_contains: "--niters"
+
+  - name: Preprocess help shows alpha option
+    description: Verify alpha parameter option
+    command: topaz preprocess --help
+    expected_output_contains: "--alpha"
+
+  - name: Preprocess help shows beta option
+    description: Verify beta parameter option
+    command: topaz preprocess --help
+    expected_output_contains: "--beta"
+
+  - name: Preprocess help shows format option
+    description: Verify output format option
+    command: topaz preprocess --help
+    expected_output_contains: "--format"
+
+  - name: Preprocess help shows destdir option
+    description: Verify destination directory option
+    command: topaz preprocess --help
+    expected_output_contains: "--destdir"
+
+  # ==========================================================================
+  # DOWNSAMPLE SUBCOMMAND
+  # ==========================================================================
+  - name: Downsample help
+    description: Display downsample subcommand help
+    command: topaz downsample --help
+    expected_output_contains: "downsampling factor"
+
+  - name: Downsample help shows scale option
+    description: Verify scale option in downsample help
+    command: topaz downsample --help
+    expected_output_contains: "--scale"
+
+  - name: Downsample help shows output option
+    description: Verify output option in downsample help
+    command: topaz downsample --help
+    expected_output_contains: "--output"
+
+  - name: Downsample help shows verbose option
+    description: Verify verbose option in downsample help
+    command: topaz downsample --help
+    expected_output_contains: "--verbose"
+
+  # ==========================================================================
+  # NORMALIZE SUBCOMMAND
+  # ==========================================================================
+  - name: Normalize help
+    description: Display normalize subcommand help
+    command: topaz normalize --help
+    expected_output_contains: "GMM normalization"
+
+  - name: Normalize help shows affine option
+    description: Verify affine option in normalize help
+    command: topaz normalize --help
+    expected_output_contains: "--affine"
+
+  - name: Normalize help shows metadata option
+    description: Verify metadata option in normalize help
+    command: topaz normalize --help
+    expected_output_contains: "--metadata"
+
+  # ==========================================================================
+  # DENOISE SUBCOMMAND
+  # ==========================================================================
+  - name: Denoise help
+    description: Display denoise subcommand help
+    command: topaz denoise --help
+    expected_output_contains: "micrographs to denoise"
+
+  - name: Denoise help shows model option
+    description: Verify model option in denoise help
+    command: topaz denoise --help
+    expected_output_contains: "--model"
+
+  - name: Denoise help shows output option
+    description: Verify output option in denoise help
+    command: topaz denoise --help
+    expected_output_contains: "--output"
+
+  - name: Denoise help shows normalize option
+    description: Verify normalize option in denoise help
+    command: topaz denoise --help
+    expected_output_contains: "--normalize"
+
+  - name: Denoise help shows patch-size option
+    description: Verify patch-size option in denoise help
+    command: topaz denoise --help
+    expected_output_contains: "--patch-size"
+
+  - name: Denoise help shows lowpass option
+    description: Verify lowpass filter option
+    command: topaz denoise --help
+    expected_output_contains: "--lowpass"
+
+  - name: Denoise help shows gaussian option
+    description: Verify gaussian filter option
+    command: topaz denoise --help
+    expected_output_contains: "--gaussian"
+
+  - name: Denoise help shows arch option
+    description: Verify architecture option in denoise help
+    command: topaz denoise --help
+    expected_output_contains: "--arch"
+
+  - name: Denoise help shows method option
+    description: Verify denoising method option
+    command: topaz denoise --help
+    expected_output_contains: "--method"
+
+  - name: Denoise help shows criteria option
+    description: Verify training criteria option
+    command: topaz denoise --help
+    expected_output_contains: "--criteria"
+
+  - name: Denoise help shows deconvolve option
+    description: Verify deconvolution option
+    command: topaz denoise --help
+    expected_output_contains: "--deconvolve"
+
+  - name: Denoise help shows stack option
+    description: Verify MRC stack option
+    command: topaz denoise --help
+    expected_output_contains: "--stack"
+
+  # ==========================================================================
+  # DENOISE3D SUBCOMMAND
+  # ==========================================================================
+  - name: Denoise3d help
+    description: Display denoise3d subcommand help
+    command: topaz denoise3d --help
+    expected_output_contains: "volumes to denoise"
+
+  - name: Denoise3d help shows model option
+    description: Verify model option in denoise3d help
+    command: topaz denoise3d --help
+    expected_output_contains: "--model"
+
+  - name: Denoise3d help shows even-train-path option
+    description: Verify even training data path option
+    command: topaz denoise3d --help
+    expected_output_contains: "--even-train-path"
+
+  - name: Denoise3d help shows odd-train-path option
+    description: Verify odd training data path option
+    command: topaz denoise3d --help
+    expected_output_contains: "--odd-train-path"
+
+  - name: Denoise3d help shows crop option
+    description: Verify crop option in denoise3d help
+    command: topaz denoise3d --help
+    expected_output_contains: "--crop"
+
+  - name: Denoise3d help shows patch-size option
+    description: Verify patch-size option in denoise3d help
+    command: topaz denoise3d --help
+    expected_output_contains: "--patch-size"
+
+  - name: Denoise3d help shows gaussian option
+    description: Verify gaussian postprocessing option
+    command: topaz denoise3d --help
+    expected_output_contains: "--gaussian"
+
+  # ==========================================================================
+  # CONVERT SUBCOMMAND
+  # ==========================================================================
+  - name: Convert help
+    description: Display convert subcommand help
+    command: topaz convert --help
+    expected_output_contains: "path to input particle file"
+
+  - name: Convert help shows from option
+    description: Verify input format option
+    command: topaz convert --help
+    expected_output_contains: "--from"
+
+  - name: Convert help shows to option
+    description: Verify output format option
+    command: topaz convert --help
+    expected_output_contains: "--to"
+
+  - name: Convert help shows threshold option
+    description: Verify score threshold option
+    command: topaz convert --help
+    expected_output_contains: "--threshold"
+
+  - name: Convert help shows down-scale option
+    description: Verify down-scale coordinate option
+    command: topaz convert --help
+    expected_output_contains: "--down-scale"
+
+  - name: Convert help shows up-scale option
+    description: Verify up-scale coordinate option
+    command: topaz convert --help
+    expected_output_contains: "--up-scale"
+
+  - name: Convert help shows boxsize option
+    description: Verify boxsize option for BOX format
+    command: topaz convert --help
+    expected_output_contains: "--boxsize"
+
+  - name: Convert help shows invert-y option
+    description: Verify y-axis inversion option
+    command: topaz convert --help
+    expected_output_contains: "--invert-y"
+
+  - name: Convert help shows imagedir option
+    description: Verify image directory option
+    command: topaz convert --help
+    expected_output_contains: "--imagedir"
+
+  # ==========================================================================
+  # SPLIT SUBCOMMAND
+  # ==========================================================================
+  - name: Split help
+    description: Display split subcommand help
+    command: topaz split --help
+    expected_output_contains: "path to input particle file"
+
+  - name: Split help shows output option
+    description: Verify output directory option
+    command: topaz split --help
+    expected_output_contains: "--output"
+
+  - name: Split help shows format option
+    description: Verify format option in split help
+    command: topaz split --help
+    expected_output_contains: "--format"
+
+  - name: Split help shows threshold option
+    description: Verify threshold option in split help
+    command: topaz split --help
+    expected_output_contains: "--threshold"
+
+  # ==========================================================================
+  # PARTICLE_STACK SUBCOMMAND
+  # ==========================================================================
+  - name: Particle stack help
+    description: Display particle_stack subcommand help
+    command: topaz particle_stack --help
+    expected_output_contains: "path to input coordinates file"
+
+  - name: Particle stack help shows image-root option
+    description: Verify image-root option
+    command: topaz particle_stack --help
+    expected_output_contains: "--image-root"
+
+  - name: Particle stack help shows size option
+    description: Verify size option for particle images
+    command: topaz particle_stack --help
+    expected_output_contains: "--size"
+
+  - name: Particle stack help shows resize option
+    description: Verify resize option for downsampling
+    command: topaz particle_stack --help
+    expected_output_contains: "--resize"
+
+  - name: Particle stack help shows metadata option
+    description: Verify metadata option for CTF parameters
+    command: topaz particle_stack --help
+    expected_output_contains: "--metadata"
+
+  # ==========================================================================
+  # TRAIN_TEST_SPLIT SUBCOMMAND
+  # ==========================================================================
+  - name: Train test split help
+    description: Display train_test_split subcommand help
+    command: topaz train_test_split --help
+    expected_output_contains: "path to particle file"
+
+  - name: Train test split help shows image-dir option
+    description: Verify image-dir option
+    command: topaz train_test_split --help
+    expected_output_contains: "--image-dir"
+
+  - name: Train test split help shows number option
+    description: Verify number option for test set size
+    command: topaz train_test_split --help
+    expected_output_contains: "--number"
+
+  - name: Train test split help shows seed option
+    description: Verify random seed option
+    command: topaz train_test_split --help
+    expected_output_contains: "--seed"
+
+  # ==========================================================================
+  # PRECISION_RECALL_CURVE SUBCOMMAND
+  # ==========================================================================
+  - name: Precision recall curve help
+    description: Display precision_recall_curve subcommand help
+    command: topaz precision_recall_curve --help
+    expected_output_contains: "predicted particle coordinates"
+
+  - name: Precision recall curve help shows predicted option
+    description: Verify predicted coordinates option
+    command: topaz precision_recall_curve --help
+    expected_output_contains: "--predicted"
+
+  - name: Precision recall curve help shows targets option
+    description: Verify target coordinates option
+    command: topaz precision_recall_curve --help
+    expected_output_contains: "--targets"
+
+  - name: Precision recall curve help shows assignment-radius option
+    description: Verify assignment radius option
+    command: topaz precision_recall_curve --help
+    expected_output_contains: "--assignment-radius"
+
+  # ==========================================================================
+  # DEPRECATED COMMANDS (verify they still exist)
+  # ==========================================================================
+  - name: Scale coordinates help
+    description: Verify deprecated scale_coordinates still works
+    command: topaz scale_coordinates --help 2>&1
+    expected_output_contains: "scale"
+
+  - name: Boxes to coordinates help
+    description: Verify deprecated boxes_to_coordinates still works
+    command: topaz boxes_to_coordinates --help 2>&1
+    expected_output_contains: "box"
+
+  - name: Star to coordinates help
+    description: Verify deprecated star_to_coordinates still works
+    command: topaz star_to_coordinates --help 2>&1
+    expected_output_contains: "star"
+
+  - name: Coordinates to star help
+    description: Verify deprecated coordinates_to_star still works
+    command: topaz coordinates_to_star --help 2>&1
+    expected_output_contains: "star"
+
+  - name: Coordinates to boxes help
+    description: Verify deprecated coordinates_to_boxes still works
+    command: topaz coordinates_to_boxes --help 2>&1
+    expected_output_contains: "box"
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Invalid subcommand error
+    description: Verify error on invalid subcommand
+    command: topaz invalid_command 2>&1
+    expected_output_contains: "invalid choice"
+    expected_exit_code: 2
+
+  - name: Train without required args
+    description: Verify train fails without required arguments
+    command: topaz train 2>&1
+    expected_exit_code: 1
+
+  - name: Extract without input files
+    description: Verify extract fails when run without args
+    command: topaz extract 2>&1
+    expected_output_contains: "Must specify targets"
+    expected_exit_code: 1
+
+  # ==========================================================================
+  # DEVICE AND THREADING OPTIONS (common across commands)
+  # ==========================================================================
+  - name: Train num-threads option
+    description: Verify num-threads option exists in train
+    command: topaz train --help
+    expected_output_contains: "--num-threads"
+
+  - name: Train num-workers option
+    description: Verify num-workers option exists in train
+    command: topaz train --help
+    expected_output_contains: "--num-workers"
+
+  - name: Extract num-workers option
+    description: Verify num-workers option exists in extract
+    command: topaz extract --help
+    expected_output_contains: "--num-workers"
+
+  - name: Denoise num-workers option
+    description: Verify num-workers option exists in denoise
+    command: topaz denoise --help
+    expected_output_contains: "--num-workers"
+
+  # ==========================================================================
+  # OUTPUT FORMAT OPTIONS
+  # ==========================================================================
+  - name: Extract format coord option
+    description: Verify coord format option in extract
+    command: topaz extract --help
+    expected_output_contains: "coord"
+
+  - name: Extract format star option
+    description: Verify star format option in extract
+    command: topaz extract --help
+    expected_output_contains: "star"
+
+  - name: Extract format json option
+    description: Verify json format option in extract
+    command: topaz extract --help
+    expected_output_contains: "json"
+
+  - name: Extract format box option
+    description: Verify box format option in extract
+    command: topaz extract --help
+    expected_output_contains: "box"
+
+  - name: Convert format csv option
+    description: Verify csv format option in convert
+    command: topaz convert --help
+    expected_output_contains: "csv"
+
+  # ==========================================================================
+  # MODEL ARCHITECTURE OPTIONS
+  # ==========================================================================
+  - name: Train resnet model default
+    description: Verify resnet8 is default model
+    command: topaz train --help
+    expected_output_contains: "resnet8"
+
+  - name: Denoise unet architecture
+    description: Verify unet architecture option in denoise
+    command: topaz denoise --help
+    expected_output_contains: "unet"
+
+  - name: Denoise3d unet-3d model
+    description: Verify unet-3d model option in denoise3d
+    command: topaz denoise3d --help
+    expected_output_contains: "unet-3d"
+
+  # ==========================================================================
+  # TRAINING METHOD OPTIONS
+  # ==========================================================================
+  - name: Train GE-binomial method
+    description: Verify GE-binomial training method
+    command: topaz train --help
+    expected_output_contains: "GE-binomial"
+
+  - name: Train GE-KL method
+    description: Verify GE-KL training method
+    command: topaz train --help
+    expected_output_contains: "GE-KL"
+
+  - name: Train PU method
+    description: Verify PU training method
+    command: topaz train --help
+    expected_output_contains: "PU"
+
+  - name: Denoise noise2noise method
+    description: Verify noise2noise denoising method
+    command: topaz denoise --help
+    expected_output_contains: "noise2noise"
+
+  # ==========================================================================
+  # OPTIMIZER OPTIONS
+  # ==========================================================================
+  - name: Denoise adam optimizer
+    description: Verify adam optimizer option in denoise
+    command: topaz denoise --help
+    expected_output_contains: "adam"
+
+  - name: Denoise adagrad optimizer
+    description: Verify adagrad optimizer option in denoise
+    command: topaz denoise --help
+    expected_output_contains: "adagrad"
+
+  - name: Denoise sgd optimizer
+    description: Verify sgd optimizer option in denoise
+    command: topaz denoise --help
+    expected_output_contains: "sgd"

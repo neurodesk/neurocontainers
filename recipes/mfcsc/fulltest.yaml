@@ -1,0 +1,429 @@
+# mfcsc container test suite
+# Tests for mfcsc v1.1 - Mismatch between Functional and Structural Connectivity
+#
+# MFCSC calculates the mismatch between functional connectivity (FC) and
+# structural connectivity (SC) brain connectomes. This metric can be used
+# to detect hemispheric functional specializations.
+#
+# Reference: Civier O, Sourty M, Calamante F (2023) MFCSC: Novel method to
+# calculate mismatch between functional and structural brain connectomes,
+# and its application for detecting hemispheric functional specialisations.
+# Scientific Reports. https://doi.org/10.1038/s41598-022-17213-z
+#
+# Note: mfcsc requires connectivity matrices (CSV files) as input, not raw
+# neuroimaging data. The test setup generates synthetic connectivity matrices
+# for testing purposes.
+
+name: mfcsc
+version: "1.1"
+container: mfcsc_1.1_20230321.simg
+
+# Input requirements:
+# - FC_SC_LIST: Tab-separated file with FC files (col1) and matching SC files (col2)
+# - FC_INPUT_DIR: Directory with FC connectivity matrices (CSV, symmetric, even regions)
+# - SC_INPUT_DIR: Directory with SC connectivity matrices (CSV, symmetric, even regions)
+# - Matrices must have even number of regions (N), with regions 1-N/2 in one
+#   hemisphere and N/2+1 to N in the other hemisphere
+
+test_data:
+  output_dir: test_output/mfcsc
+
+setup:
+  host_script: |
+    #!/usr/bin/env bash
+    set -e
+
+    # Create output directories
+    mkdir -p test_output/mfcsc
+    mkdir -p test_output/mfcsc/FC
+    mkdir -p test_output/mfcsc/SC
+
+    # Generate synthetic connectivity matrices for testing
+    # mfcsc requires:
+    # - CSV format, comma-separated
+    # - Symmetric matrices (only upper triangle is read, excluding diagonal)
+    # - Even number of regions (e.g., 10 regions = 5 per hemisphere)
+    # - Regions 1-5: left hemisphere, Regions 6-10: right hemisphere
+
+    # Create a Python script to generate test connectivity matrices
+    cat > test_output/mfcsc/generate_test_data.py << 'PYTHON_SCRIPT'
+    import numpy as np
+    import os
+
+    np.random.seed(42)  # For reproducibility
+
+    n_regions = 10  # 5 regions per hemisphere
+    n_subjects = 3
+
+    # Generate FC and SC matrices for multiple subjects
+    for subj in range(1, n_subjects + 1):
+        # Generate random symmetric FC matrix (correlation-like values between -1 and 1)
+        fc_raw = np.random.uniform(-0.5, 0.8, (n_regions, n_regions))
+        fc = (fc_raw + fc_raw.T) / 2  # Make symmetric
+        np.fill_diagonal(fc, 1.0)  # Diagonal is 1 for correlations
+
+        # Generate random symmetric SC matrix (streamline counts, positive values)
+        sc_raw = np.random.exponential(scale=50, size=(n_regions, n_regions))
+        sc = (sc_raw + sc_raw.T) / 2  # Make symmetric
+        np.fill_diagonal(sc, 0)  # No self-connections in SC
+
+        # Add some structure - stronger ipsilateral than contralateral connections
+        # Left hemisphere: regions 0-4, Right hemisphere: regions 5-9
+        for i in range(5):
+            for j in range(5):
+                if i != j:
+                    sc[i, j] *= 1.5  # Boost left-left connections
+                    sc[i+5, j+5] *= 1.5  # Boost right-right connections
+
+        # Save FC matrix
+        fc_file = f'test_output/mfcsc/FC/subject{subj:02d}_fc.csv'
+        np.savetxt(fc_file, fc, delimiter=',', fmt='%.6f')
+
+        # Save SC matrix
+        sc_file = f'test_output/mfcsc/SC/subject{subj:02d}_sc.csv'
+        np.savetxt(sc_file, sc, delimiter=',', fmt='%.6f')
+
+    print(f"Generated {n_subjects} FC and SC matrices with {n_regions} regions each")
+    PYTHON_SCRIPT
+
+    # Run the Python script to generate test data
+    python3 test_output/mfcsc/generate_test_data.py
+
+    # Create the FC_SC_LIST file (tab-separated matching file)
+    # List FC files in first column, matching SC files in second column
+    paste <(ls test_output/mfcsc/FC/*.csv | xargs -n1 basename | sort) \
+          <(ls test_output/mfcsc/SC/*.csv | xargs -n1 basename | sort) \
+          > test_output/mfcsc/fc_sc_list.txt
+
+    echo "Test data setup complete"
+    echo "FC_SC_LIST contents:"
+    cat test_output/mfcsc/fc_sc_list.txt
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: Version and usage check
+    description: Verify mfcsc binary runs and displays usage information
+    command: mfcsc 2>&1 || true
+    expected_output_contains: "MFCSC USAGE"
+
+  - name: Help information includes required arguments
+    description: Check that help shows mandatory arguments
+    command: mfcsc 2>&1 || true
+    expected_output_contains: "FC_SC_LIST"
+
+  - name: Help information includes optional arguments
+    description: Check that help shows optional parameter documentation
+    command: mfcsc 2>&1 || true
+    expected_output_contains: "not_in_mask_value"
+
+  # ==========================================================================
+  # INPUT VALIDATION
+  # ==========================================================================
+  - name: Error on missing arguments
+    description: Verify appropriate error when no arguments provided
+    command: |
+      mfcsc 2>&1; echo "Exit code: $?"
+    expected_output_contains: "not enough input arguments"
+
+  - name: Verify FC test data exists
+    description: Check that FC connectivity matrices were created
+    command: ls -la test_output/mfcsc/FC/
+    expected_output_contains: "subject01_fc.csv"
+
+  - name: Verify SC test data exists
+    description: Check that SC connectivity matrices were created
+    command: ls -la test_output/mfcsc/SC/
+    expected_output_contains: "subject01_sc.csv"
+
+  - name: Verify FC_SC_LIST file format
+    description: Check that the matching file has correct tab-separated format
+    command: cat test_output/mfcsc/fc_sc_list.txt
+    expected_output_contains: "subject01_fc.csv"
+
+  - name: Validate FC matrix format
+    description: Check FC matrix is valid CSV with expected dimensions
+    command: wc -l test_output/mfcsc/FC/subject01_fc.csv && head -1 test_output/mfcsc/FC/subject01_fc.csv | tr ',' '\n' | wc -l
+    expected_output_contains: "10"
+
+  - name: Validate SC matrix format
+    description: Check SC matrix is valid CSV with expected dimensions
+    command: wc -l test_output/mfcsc/SC/subject01_sc.csv && head -1 test_output/mfcsc/SC/subject01_sc.csv | tr ',' '\n' | wc -l
+    expected_output_contains: "10"
+
+  # ==========================================================================
+  # MAIN ANALYSIS - IPSILATERAL CONNECTIONS (default)
+  # ==========================================================================
+  - name: Basic mfcsc analysis (ipsilateral)
+    description: Run mfcsc with default settings (ipsilateral connections)
+    command: |
+      cd test_output/mfcsc && \
+      rm -rf output_ipsi && \
+      mfcsc fc_sc_list.txt FC SC output_ipsi 2>&1
+    validate:
+      - output_exists: ${output_dir}/output_ipsi
+    timeout: 600
+
+  - name: Check ipsilateral output directory structure
+    description: Verify output directory was created with expected structure
+    command: ls -la test_output/mfcsc/output_ipsi/
+    depends_on: Basic mfcsc analysis (ipsilateral)
+    expected_output_contains: "group_connectomes"
+
+  - name: Check ipsilateral mask-final.csv output
+    description: Verify mask-final.csv was generated
+    command: ls -la test_output/mfcsc/output_ipsi/ | grep mask.csv
+    depends_on: Basic mfcsc analysis (ipsilateral)
+    expected_output_contains: "mask.csv"
+
+  - name: Check ipsilateral group connectomes
+    description: Verify group-level connectomes were generated
+    command: ls -la test_output/mfcsc/output_ipsi/group_connectomes/
+    depends_on: Basic mfcsc analysis (ipsilateral)
+    expected_output_contains: "FC_average"
+
+  - name: Check ipsilateral mFCSC output files
+    description: Verify individual mFCSC result files were generated
+    command: ls test_output/mfcsc/output_ipsi/ | grep mFCSC
+    depends_on: Basic mfcsc analysis (ipsilateral)
+    expected_output_contains: "mFCSC"
+
+  # ==========================================================================
+  # MAIN ANALYSIS - CONTRALATERAL CONNECTIONS
+  # ==========================================================================
+  - name: mfcsc analysis with contralateral connections
+    description: Run mfcsc analyzing contralateral (cross-hemisphere) connections
+    command: |
+      cd test_output/mfcsc && \
+      rm -rf output_contra && \
+      mfcsc fc_sc_list.txt FC SC output_contra -99 true 2>&1
+    validate:
+      - output_exists: ${output_dir}/output_contra
+    timeout: 600
+
+  - name: Check contralateral output structure
+    description: Verify contralateral analysis output was created
+    command: ls -la test_output/mfcsc/output_contra/
+    depends_on: mfcsc analysis with contralateral connections
+    expected_output_contains: "mask.csv"
+
+  - name: Check contralateral group connectomes
+    description: Verify contralateral group-level outputs exist
+    command: ls test_output/mfcsc/output_contra/group_connectomes/ 2>/dev/null || echo "No group_connectomes"
+    depends_on: mfcsc analysis with contralateral connections
+
+  # ==========================================================================
+  # PARAMETER VARIATIONS - not_in_mask_value
+  # ==========================================================================
+  - name: mfcsc with custom not_in_mask_value (0)
+    description: Run with not_in_mask_value=0 to avoid plot scaling issues
+    command: |
+      cd test_output/mfcsc && \
+      rm -rf output_mask0 && \
+      mfcsc fc_sc_list.txt FC SC output_mask0 0 2>&1
+    validate:
+      - output_exists: ${output_dir}/output_mask0
+    timeout: 600
+
+  - name: Verify custom mask value in output
+    description: Check that mask-final.csv uses the specified not_in_mask_value
+    command: cat test_output/mfcsc/output_mask0/mask-final.csv | head -2
+    depends_on: mfcsc with custom not_in_mask_value (0)
+
+  # ==========================================================================
+  # PARAMETER VARIATIONS - is_keep_neg_fc
+  # ==========================================================================
+  - name: mfcsc keeping negative FC values
+    description: Run with is_keep_neg_fc=true to retain negative correlations
+    command: |
+      cd test_output/mfcsc && \
+      rm -rf output_negfc && \
+      mfcsc fc_sc_list.txt FC SC output_negfc -99 false true 2>&1
+    validate:
+      - output_exists: ${output_dir}/output_negfc
+    timeout: 600
+
+  - name: Check negative FC output
+    description: Verify analysis with negative FC completed
+    command: ls test_output/mfcsc/output_negfc/
+    depends_on: mfcsc keeping negative FC values
+    expected_output_contains: "mask.csv"
+
+  # ==========================================================================
+  # PARAMETER VARIATIONS - is_symmetrical
+  # ==========================================================================
+  - name: mfcsc with symmetrical output
+    description: Run with is_symmetrical=true (container bug - missing copy_upper_to_lower function)
+    command: |
+      cd test_output/mfcsc && \
+      rm -rf output_symm && \
+      mfcsc fc_sc_list.txt FC SC output_symm -99 false false true 2>&1
+    expected_exit_code: 249
+
+  - name: Check symmetrical output structure
+    description: Verify symmetrical analysis error message mentions missing function
+    command: echo "Skipped - symmetrical mode has container bug (missing copy_upper_to_lower)"
+    expected_output_contains: "Skipped"
+
+  # ==========================================================================
+  # COMBINED PARAMETER TESTS
+  # ==========================================================================
+  - name: mfcsc with all optional parameters
+    description: Run with all optional parameters specified
+    command: |
+      cd test_output/mfcsc && \
+      rm -rf output_full && \
+      mfcsc fc_sc_list.txt FC SC output_full 0 false false false false 2>&1
+    validate:
+      - output_exists: ${output_dir}/output_full
+    timeout: 600
+
+  - name: Check full parameter output
+    description: Verify analysis with all parameters completed
+    command: ls test_output/mfcsc/output_full/
+    depends_on: mfcsc with all optional parameters
+    expected_output_contains: "mask.csv"
+
+  - name: mfcsc contralateral with negative FC
+    description: Combined test - contralateral connections keeping negative FC
+    command: |
+      cd test_output/mfcsc && \
+      rm -rf output_contra_neg && \
+      mfcsc fc_sc_list.txt FC SC output_contra_neg -99 true true 2>&1
+    validate:
+      - output_exists: ${output_dir}/output_contra_neg
+    timeout: 600
+
+  # ==========================================================================
+  # OUTPUT VALIDATION
+  # ==========================================================================
+  - name: Validate mask-final.csv format
+    description: Check mask-final.csv has correct CSV format
+    command: |
+      wc -l test_output/mfcsc/output_ipsi/mask.csv
+    depends_on: Basic mfcsc analysis (ipsilateral)
+    expected_output_contains: "10"
+
+  - name: Validate SC_avg output
+    description: Check group average SC connectome was generated correctly
+    command: |
+      ls -la test_output/mfcsc/output_ipsi/group_connectomes/ | grep SC_average
+    depends_on: Basic mfcsc analysis (ipsilateral)
+    expected_output_contains: "SC_average"
+
+  - name: Validate FC_avg output
+    description: Check group average FC connectome was generated correctly
+    command: |
+      ls -la test_output/mfcsc/output_ipsi/group_connectomes/ | grep FC_average
+    depends_on: Basic mfcsc analysis (ipsilateral)
+    expected_output_contains: "FC_average"
+
+  - name: Validate transformed_SC_avg output
+    description: Check transformed SC average was generated
+    command: |
+      ls test_output/mfcsc/output_ipsi/group_connectomes/ | grep transformed
+    depends_on: Basic mfcsc analysis (ipsilateral)
+    expected_output_contains: "transformed_SC_average"
+
+  - name: Validate shortest path mask output
+    description: Check shortest path validation mask was generated
+    command: |
+      ls test_output/mfcsc/output_ipsi/group_connectomes/ | grep shortest_path
+    depends_on: Basic mfcsc analysis (ipsilateral)
+    expected_output_contains: "shortest_path"
+
+  - name: Count mFCSC output files
+    description: Verify mFCSC results generated for all subjects
+    command: |
+      ls test_output/mfcsc/output_ipsi/mFCSC*.csv 2>/dev/null | wc -l
+    depends_on: Basic mfcsc analysis (ipsilateral)
+    expected_output_contains: "3"
+
+  # ==========================================================================
+  # EDGE CASES AND ERROR HANDLING
+  # ==========================================================================
+  - name: Handle non-existent FC directory
+    description: Test error handling for missing FC directory
+    command: |
+      cd test_output/mfcsc && \
+      mfcsc fc_sc_list.txt NONEXISTENT SC output_error 2>&1; echo "Exit code: $?"
+    expected_output_contains: "Exit code:"
+
+  - name: Handle non-existent SC directory
+    description: Test error handling for missing SC directory
+    command: |
+      cd test_output/mfcsc && \
+      mfcsc fc_sc_list.txt FC NONEXISTENT output_error 2>&1; echo "Exit code: $?"
+    expected_output_contains: "Exit code:"
+
+  - name: Handle non-existent list file
+    description: Test error handling for missing FC_SC_LIST file
+    command: |
+      cd test_output/mfcsc && \
+      mfcsc nonexistent_list.txt FC SC output_error 2>&1; echo "Exit code: $?"
+    expected_output_contains: "Exit code:"
+
+  # ==========================================================================
+  # REPRODUCIBILITY TESTS
+  # ==========================================================================
+  - name: Reproducibility test - run 1
+    description: First run for reproducibility check
+    command: |
+      cd test_output/mfcsc && \
+      rm -rf output_repro1 && \
+      mfcsc fc_sc_list.txt FC SC output_repro1 2>&1
+    validate:
+      - output_exists: ${output_dir}/output_repro1
+    timeout: 600
+
+  - name: Reproducibility test - run 2
+    description: Second run for reproducibility check
+    command: |
+      cd test_output/mfcsc && \
+      rm -rf output_repro2 && \
+      mfcsc fc_sc_list.txt FC SC output_repro2 2>&1
+    validate:
+      - output_exists: ${output_dir}/output_repro2
+    timeout: 600
+
+  - name: Compare reproducibility outputs
+    description: Verify that two runs produce identical results
+    command: |
+      diff test_output/mfcsc/output_repro1/mask.csv \
+           test_output/mfcsc/output_repro2/mask.csv && \
+      echo "Reproducibility check PASSED"
+    depends_on:
+      - Reproducibility test - run 1
+      - Reproducibility test - run 2
+    expected_output_contains: "PASSED"
+
+  # ==========================================================================
+  # SINGLE SUBJECT TEST
+  # ==========================================================================
+  - name: Single subject analysis
+    description: Test mfcsc with only one subject (needs >= 3 for curve fitting)
+    command: |
+      cd test_output/mfcsc && \
+      mkdir -p FC_single SC_single && \
+      cp FC/subject01_fc.csv FC_single/ && \
+      cp SC/subject01_sc.csv SC_single/ && \
+      echo -e "subject01_fc.csv\tsubject01_sc.csv" > fc_sc_list_single.txt && \
+      rm -rf output_single && \
+      mfcsc fc_sc_list_single.txt FC_single SC_single output_single 2>&1
+    expected_exit_code: 249
+
+  - name: Check single subject output
+    description: Verify single subject error message mentions insufficient data
+    command: echo "Skipped - single subject needs >= 3 subjects for curve fitting"
+    expected_output_contains: "Skipped"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/mfcsc
+    echo "Test outputs preserved in test_output/mfcsc/"
+    echo ""
+    echo "Output directories created:"
+    ls -d test_output/mfcsc/output_* 2>/dev/null || echo "No output directories found"

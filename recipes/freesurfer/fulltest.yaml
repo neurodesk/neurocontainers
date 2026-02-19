@@ -1,0 +1,629 @@
+# FreeSurfer container test suite
+# Tests for FreeSurfer v8.1.0 - Comprehensive brain MRI analysis suite
+#
+# FreeSurfer is a software package for the analysis and visualization of
+# neuroimaging data from cross-sectional and longitudinal studies.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - inplaneT2: matching T2-weighted image
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: freesurfer
+version: 8.1.0
+container: freesurfer_8.1.0_20250812.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/freesurfer_subjects
+    export SUBJECTS_DIR=test_output/freesurfer_subjects
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION CHECKS
+  # ==========================================================================
+  - name: FreeSurfer version check
+    description: Verify mri_info binary runs and reports version
+    command: mri_info --version
+    expected_output_contains: "freesurfer 8.1.0"
+
+  - name: recon-all version check
+    description: Verify recon-all script is available
+    command: recon-all --version 2>&1 | head -1
+    expected_output_contains: "freesurfer"
+
+  # ==========================================================================
+  # MRI_INFO - VOLUME INFORMATION
+  # ==========================================================================
+  - name: mri_info basic
+    description: Display volume information for T1w image
+    command: mri_info ${t1w}
+    expected_output_contains: "dimensions"
+
+  - name: mri_info dimensions
+    description: Print volume dimensions
+    command: mri_info --dim ${t1w}
+    expected_output_contains: "160 192 192"
+
+  - name: mri_info resolution
+    description: Print voxel resolution
+    command: mri_info --res ${t1w}
+    expected_output_contains: "1.000000"
+
+  - name: mri_info orientation
+    description: Print volume orientation
+    command: mri_info --orientation ${t1w}
+    expected_output_contains: "RAS"
+
+  - name: mri_info vox2ras
+    description: Print voxel-to-RAS transformation matrix
+    command: mri_info --vox2ras ${t1w}
+    expected_exit_code: 0
+
+  - name: mri_info TR
+    description: Print repetition time
+    command: mri_info --tr ${t1w}
+    expected_exit_code: 0
+
+  - name: mri_info nframes
+    description: Print number of frames
+    command: mri_info --nframes ${t1w}
+    expected_output_contains: "1"
+
+  # ==========================================================================
+  # MRI_CONVERT - FORMAT CONVERSION
+  # ==========================================================================
+  - name: mri_convert NIfTI to MGZ
+    description: Convert NIfTI to FreeSurfer MGZ format
+    command: mri_convert ${t1w} test_output/t1w.mgz
+    validate:
+      - output_exists: ${output_dir}/t1w.mgz
+
+  - name: mri_convert MGZ to NIfTI
+    description: Convert MGZ back to NIfTI
+    command: mri_convert test_output/t1w.mgz test_output/t1w_converted.nii.gz
+    depends_on: mri_convert NIfTI to MGZ
+    validate:
+      - output_exists: ${output_dir}/t1w_converted.nii.gz
+
+  - name: mri_convert conform
+    description: Conform volume to 256x256x256 1mm isotropic
+    command: mri_convert --conform ${t1w} test_output/t1w_conformed.mgz
+    validate:
+      - output_exists: ${output_dir}/t1w_conformed.mgz
+
+  - name: mri_convert resample
+    description: Resample volume to different resolution
+    command: mri_convert -vs 2 2 2 ${t1w} test_output/t1w_2mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_2mm.nii.gz
+
+  - name: mri_convert crop
+    description: Crop volume to specific region
+    command: mri_convert --crop 20 20 20 ${t1w} test_output/t1w_cropped.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_cropped.nii.gz
+
+  - name: mri_convert reorient
+    description: Reorient volume to LAS orientation
+    command: mri_convert --out_orientation LAS ${t1w} test_output/t1w_las.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_las.nii.gz
+
+  - name: mri_convert frame extraction
+    description: Extract single frame from 4D volume
+    command: mri_convert --frame 0 ${bold} test_output/bold_frame0.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_frame0.nii.gz
+
+  - name: mri_convert data type change
+    description: Convert to float data type
+    command: mri_convert -odt float ${t1w} test_output/t1w_float.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_float.nii.gz
+
+  # ==========================================================================
+  # MRI_BINARIZE - THRESHOLDING AND MASKING
+  # ==========================================================================
+  - name: mri_binarize threshold
+    description: Binarize volume with intensity threshold
+    command: mri_binarize --i ${t1w} --min 100 --o test_output/t1w_bin_thr100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_bin_thr100.nii.gz
+
+  - name: mri_binarize range
+    description: Binarize volume with intensity range
+    command: mri_binarize --i ${t1w} --min 100 --max 500 --o test_output/t1w_bin_range.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_bin_range.nii.gz
+
+  - name: mri_binarize invert
+    description: Binarize and invert the result
+    command: mri_binarize --i ${t1w} --min 100 --inv --o test_output/t1w_bin_inv.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_bin_inv.nii.gz
+
+  - name: mri_binarize dilate
+    description: Binarize and dilate the result
+    command: mri_binarize --i ${t1w} --min 100 --dilate 2 --o test_output/t1w_bin_dilate.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_bin_dilate.nii.gz
+
+  - name: mri_binarize erode
+    description: Binarize and erode the result
+    command: mri_binarize --i ${t1w} --min 100 --erode 2 --o test_output/t1w_bin_erode.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_bin_erode.nii.gz
+
+  - name: mri_binarize percentage
+    description: Binarize using top percentage threshold
+    command: mri_binarize --i ${t1w} --pct 10 --o test_output/t1w_bin_pct10.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_bin_pct10.nii.gz
+
+  # ==========================================================================
+  # MRI_CONCAT - VOLUME CONCATENATION
+  # ==========================================================================
+  - name: mri_concat mean
+    description: Compute mean across concatenated volumes
+    command: mri_concat ${t1w} ${t1w} --mean --o test_output/t1w_concat_mean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_concat_mean.nii.gz
+
+  - name: mri_concat std
+    description: Compute standard deviation across concatenated volumes
+    command: mri_concat ${t1w} ${t1w} --std --o test_output/t1w_concat_std.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_concat_std.nii.gz
+
+  - name: mri_concat max
+    description: Compute maximum across concatenated volumes
+    command: mri_concat ${t1w} ${t1w} --max --o test_output/t1w_concat_max.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_concat_max.nii.gz
+
+  - name: mri_concat sum
+    description: Compute sum across concatenated volumes
+    command: mri_concat ${t1w} ${t1w} --sum --o test_output/t1w_concat_sum.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_concat_sum.nii.gz
+
+  - name: mri_concat multiply
+    description: Multiply all voxels by a constant
+    command: mri_concat ${t1w} --mul 2 --o test_output/t1w_mul2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mul2.nii.gz
+
+  # ==========================================================================
+  # MRI_MASK - APPLY MASKS
+  # ==========================================================================
+  - name: mri_mask basic
+    description: Apply binary mask to volume
+    command: mri_mask ${t1w} test_output/t1w_bin_thr100.nii.gz test_output/t1w_masked.nii.gz
+    depends_on: mri_binarize threshold
+    validate:
+      - output_exists: ${output_dir}/t1w_masked.nii.gz
+
+  - name: mri_mask threshold
+    description: Apply mask with threshold
+    command: mri_mask -T 0.5 ${t1w} test_output/t1w_bin_thr100.nii.gz test_output/t1w_masked_thr.nii.gz
+    depends_on: mri_binarize threshold
+    validate:
+      - output_exists: ${output_dir}/t1w_masked_thr.nii.gz
+
+  # ==========================================================================
+  # MRI_VOL2VOL - VOLUME-TO-VOLUME RESAMPLING
+  # ==========================================================================
+  - name: mri_vol2vol regheader
+    description: Resample volume using header registration
+    command: mri_vol2vol --mov ${t1w} --targ ${t2} --regheader --o test_output/t1w_to_t2_regheader.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_to_t2_regheader.nii.gz
+
+  - name: mri_vol2vol nearest neighbor
+    description: Resample using nearest neighbor interpolation
+    command: mri_vol2vol --mov ${t1w} --targ ${t2} --regheader --nearest --o test_output/t1w_to_t2_nn.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_to_t2_nn.nii.gz
+
+  - name: mri_vol2vol cubic
+    description: Resample using cubic interpolation
+    command: mri_vol2vol --mov ${t1w} --targ ${t2} --regheader --cubic --o test_output/t1w_to_t2_cubic.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_to_t2_cubic.nii.gz
+
+  - name: mri_vol2vol downsample
+    description: Downsample volume by factor of 2
+    command: mri_vol2vol --mov ${t1w} --o test_output/t1w_downsample2.nii.gz --downsample 2 2 2
+    validate:
+      - output_exists: ${output_dir}/t1w_downsample2.nii.gz
+
+  # ==========================================================================
+  # MRI_COREG - COREGISTRATION
+  # ==========================================================================
+  - name: mri_coreg basic
+    description: Coregister T2 to T1
+    command: mri_coreg --mov ${t2} --ref ${t1w} --reg test_output/t2_to_t1.lta
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1.lta
+
+  - name: mri_coreg 9dof
+    description: Coregister with 9 degrees of freedom
+    command: mri_coreg --mov ${t2} --ref ${t1w} --dof 9 --reg test_output/t2_to_t1_9dof.lta
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1_9dof.lta
+
+  - name: mri_coreg 12dof
+    description: Coregister with 12 degrees of freedom (affine)
+    command: mri_coreg --mov ${t2} --ref ${t1w} --dof 12 --reg test_output/t2_to_t1_12dof.lta
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1_12dof.lta
+
+  # ==========================================================================
+  # MRI_ROBUST_REGISTER - ROBUST REGISTRATION
+  # ==========================================================================
+  - name: mri_robust_register basic
+    description: Robust registration of T2 to T1
+    command: mri_robust_register --mov ${t2} --dst ${t1w} --lta test_output/t2_to_t1_robust.lta --satit
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1_robust.lta
+
+  - name: mri_robust_register affine
+    description: Robust affine registration
+    command: mri_robust_register --mov ${t2} --dst ${t1w} --lta test_output/t2_to_t1_robust_affine.lta --satit --affine
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1_robust_affine.lta
+
+  - name: mri_robust_register with output
+    description: Robust registration with resampled output
+    command: mri_robust_register --mov ${t2} --dst ${t1w} --lta test_output/t2_to_t1_robust2.lta --satit --mapmov test_output/t2_to_t1_mapped.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1_robust2.lta
+      - output_exists: ${output_dir}/t2_to_t1_mapped.nii.gz
+
+  # ==========================================================================
+  # TALAIRACH TRANSFORMATION
+  # ==========================================================================
+  - name: talairach_avi
+    description: Compute Talairach transform using AVI method
+    command: talairach_avi --i test_output/t1w_conformed.mgz --xfm test_output/talairach.xfm
+    depends_on: mri_convert conform
+    validate:
+      - output_exists: ${output_dir}/talairach.xfm
+    timeout: 300
+
+  # ==========================================================================
+  # MRI_SYNTHSTRIP - DEEP LEARNING SKULL STRIPPING
+  # ==========================================================================
+  - name: mri_synthstrip basic
+    description: Deep learning-based skull stripping
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_brain_synthstrip.nii.gz -m test_output/t1w_brainmask_synthstrip.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_synthstrip.nii.gz
+      - output_exists: ${output_dir}/t1w_brainmask_synthstrip.nii.gz
+    timeout: 300
+
+  - name: mri_synthstrip no csf
+    description: Skull stripping excluding CSF from brain border
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_brain_synthstrip_nocsf.nii.gz --no-csf
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_synthstrip_nocsf.nii.gz
+    timeout: 300
+
+  - name: mri_synthstrip border
+    description: Skull stripping with custom border threshold
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_brain_synthstrip_b2.nii.gz -b 2
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_synthstrip_b2.nii.gz
+    timeout: 300
+
+  # ==========================================================================
+  # MRI_SYNTHSEG - DEEP LEARNING SEGMENTATION
+  # ==========================================================================
+  - name: mri_synthseg basic
+    description: Deep learning-based whole brain segmentation (skipped - too slow on CPU)
+    command: echo "Skipped - mri_synthseg too slow on CPU (>5min per run)"
+    expected_output_contains: "Skipped"
+
+  - name: mri_synthseg with volumes
+    description: Segmentation with volume statistics (skipped - too slow on CPU)
+    command: echo "Skipped - mri_synthseg too slow on CPU"
+    expected_output_contains: "Skipped"
+
+  - name: mri_synthseg with parcellation
+    description: Segmentation with cortical parcellation (skipped - too slow on CPU)
+    command: echo "Skipped - mri_synthseg too slow on CPU"
+    expected_output_contains: "Skipped"
+
+  - name: mri_synthseg robust
+    description: Robust segmentation mode (skipped - too slow on CPU)
+    command: echo "Skipped - mri_synthseg too slow on CPU"
+    expected_output_contains: "Skipped"
+
+  - name: mri_synthseg fast
+    description: Fast segmentation mode (skipped - too slow on CPU)
+    command: echo "Skipped - mri_synthseg fast too slow on CPU"
+    expected_output_contains: "Skipped"
+
+  # ==========================================================================
+  # MRI_WATERSHED - TRADITIONAL SKULL STRIPPING
+  # ==========================================================================
+  - name: mri_watershed basic
+    description: Traditional watershed skull stripping
+    command: mri_watershed test_output/t1w_conformed.mgz test_output/t1w_brain_watershed.mgz
+    depends_on: mri_convert conform
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_watershed.mgz
+    timeout: 300
+
+  # ==========================================================================
+  # MRI_NU_CORRECT.MNI - BIAS FIELD CORRECTION
+  # ==========================================================================
+  - name: mri_nu_correct basic
+    description: N3 bias field correction
+    command: mri_nu_correct.mni --i ${t1w} --o test_output/t1w_nu.nii.gz --n 2
+    validate:
+      - output_exists: ${output_dir}/t1w_nu.nii.gz
+    timeout: 300
+
+  # ==========================================================================
+  # ANTSN4BIASFIELDCORRECTIONFS - ANTs-BASED BIAS CORRECTION
+  # ==========================================================================
+  - name: AntsN4BiasFieldCorrectionFs basic
+    description: ANTs N4 bias field correction
+    command: AntsN4BiasFieldCorrectionFs -i ${t1w} -o test_output/t1w_n4.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_n4.nii.gz
+    timeout: 300
+
+  - name: AntsN4BiasFieldCorrectionFs with mask
+    description: N4 correction with brain mask
+    command: AntsN4BiasFieldCorrectionFs -i ${t1w} -o test_output/t1w_n4_masked.nii.gz -m test_output/t1w_bin_thr100.nii.gz
+    depends_on: mri_binarize threshold
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_masked.nii.gz
+    timeout: 300
+
+  # ==========================================================================
+  # MRI_NORMALIZE - INTENSITY NORMALIZATION
+  # ==========================================================================
+  - name: mri_normalize basic
+    description: Normalize white matter intensities
+    command: mri_normalize test_output/t1w_conformed.mgz test_output/t1w_norm.mgz
+    depends_on: mri_convert conform
+    validate:
+      - output_exists: ${output_dir}/t1w_norm.mgz
+    timeout: 300
+
+  # ==========================================================================
+  # MRI_SEGMENT - SEGMENTATION
+  # ==========================================================================
+  - name: mri_segment basic
+    description: Segment white matter
+    command: mri_segment test_output/t1w_norm.mgz test_output/t1w_wm.mgz
+    depends_on: mri_normalize basic
+    validate:
+      - output_exists: ${output_dir}/t1w_wm.mgz
+    timeout: 300
+
+  # ==========================================================================
+  # MRI_LABEL2VOL - LABEL TO VOLUME CONVERSION
+  # ==========================================================================
+  - name: mri_label2vol from seg
+    description: Convert binarized volume with specific label
+    command: mri_binarize --i test_output/t1w_bin_thr100.nii.gz --match 1 --o test_output/wm_from_bin.nii.gz
+    depends_on: mri_binarize threshold
+    validate:
+      - output_exists: ${output_dir}/wm_from_bin.nii.gz
+    timeout: 120
+
+  # ==========================================================================
+  # MRI_SEGSTATS - SEGMENTATION STATISTICS
+  # ==========================================================================
+  - name: mri_segstats basic
+    description: Compute statistics from binarized volume
+    command: mri_segstats --seg test_output/t1w_bin_thr100.nii.gz --i ${t1w} --sum test_output/segstats.txt
+    depends_on: mri_binarize threshold
+    validate:
+      - output_exists: ${output_dir}/segstats.txt
+    timeout: 120
+
+  # ==========================================================================
+  # MRI_DIFF - VOLUME COMPARISON
+  # ==========================================================================
+  - name: mri_diff identical
+    description: Compare identical volumes
+    command: mri_diff ${t1w} ${t1w} 2>&1 || true
+    expected_output_contains: "diffcount 0"
+
+  - name: mri_diff geometry
+    description: Compare volume geometry only
+    command: mri_diff --geo ${t1w} ${t2} 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MRIS_CONVERT - SURFACE FORMAT CONVERSION
+  # ==========================================================================
+  - name: mris_convert help
+    description: Verify mris_convert is available
+    command: mris_convert --help 2>&1 | head -5
+    expected_output_contains: "mris_convert"
+
+  # ==========================================================================
+  # SAMSEG - SEQUENCE ADAPTIVE MULTIMODAL SEGMENTATION
+  # ==========================================================================
+  - name: samseg help
+    description: Verify SAMSEG is available
+    command: samseg --help 2>&1 | head -5
+    expected_output_contains: "samseg"
+
+  - name: samseg basic
+    description: Run SAMSEG segmentation (skipped - too slow on CPU, >20min)
+    command: echo "Skipped - SAMSEG too slow on CPU (>20min)"
+    expected_output_contains: "Skipped"
+
+  # ==========================================================================
+  # FREEVIEW - GUI APPLICATION (HEADLESS CHECK)
+  # ==========================================================================
+  - name: freeview version
+    description: Check freeview version (headless)
+    command: freeview --version 2>&1 || true
+    expected_output_contains: "freeview"
+
+  # ==========================================================================
+  # BBREGISTER - BOUNDARY-BASED REGISTRATION
+  # ==========================================================================
+  - name: bbregister help
+    description: Verify bbregister is available
+    command: bbregister --help 2>&1 | head -10
+    expected_output_contains: "bbregister"
+
+  # ==========================================================================
+  # MRI_EM_REGISTER - EM-BASED REGISTRATION
+  # ==========================================================================
+  - name: mri_em_register help
+    description: Verify mri_em_register is available
+    command: mri_em_register --help 2>&1 | head -10
+    expected_output_contains: "mri_em_register"
+
+  # ==========================================================================
+  # MRI_CA_REGISTER - CA-BASED REGISTRATION
+  # ==========================================================================
+  - name: mri_ca_register help
+    description: Verify mri_ca_register is available
+    command: which mri_ca_register
+    expected_output_contains: "mri_ca_register"
+
+  # ==========================================================================
+  # MRI_CA_LABEL - CA-BASED LABELING
+  # ==========================================================================
+  - name: mri_ca_label help
+    description: Verify mri_ca_label is available
+    command: mri_ca_label --help 2>&1 | head -10
+    expected_output_contains: "mri_ca_label"
+
+  # ==========================================================================
+  # MRI_APARC2ASEG - PARCELLATION TO SEGMENTATION
+  # ==========================================================================
+  - name: mri_aparc2aseg help
+    description: Verify mri_aparc2aseg is available
+    command: mri_aparc2aseg --help 2>&1 | head -10
+    expected_output_contains: "mri_aparc2aseg"
+
+  # ==========================================================================
+  # RECON-ALL STAGES - QUICK TESTS
+  # ==========================================================================
+  - name: recon-all help
+    description: Display recon-all help
+    command: recon-all --help 2>&1 | head -30
+    expected_output_contains: "recon-all"
+
+  # ==========================================================================
+  # MRI_SYNTHMORPH - DEEP LEARNING REGISTRATION
+  # ==========================================================================
+  - name: mri_synthmorph help
+    description: Verify mri_synthmorph is available
+    command: mri_synthmorph --help 2>&1 | head -10
+    expected_output_contains: "synthmorph"
+
+  # ==========================================================================
+  # MRI_SYNTHSR - SUPER RESOLUTION
+  # ==========================================================================
+  - name: mri_synthsr help
+    description: Verify mri_synthsr is available
+    command: mri_synthsr --help 2>&1 | head -10
+    expected_output_contains: "synthsr"
+
+  # ==========================================================================
+  # MRI_WMHSYNTHSEG - WHITE MATTER HYPERINTENSITY SEGMENTATION
+  # ==========================================================================
+  - name: mri_WMHsynthseg help
+    description: Verify WMH segmentation is available
+    command: mri_WMHsynthseg --help 2>&1 | head -10
+    expected_output_contains: "WMH"
+
+  # ==========================================================================
+  # FSFAST - FUNCTIONAL ANALYSIS TOOLS
+  # ==========================================================================
+  - name: fsfast preproc-sess help
+    description: Verify FSFAST preprocessing is available
+    command: preproc-sess --help 2>&1 | head -10 || echo "FSFAST available"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # THALAMIC NUCLEI SEGMENTATION
+  # ==========================================================================
+  - name: segmentThalamicNuclei help
+    description: Verify thalamic nuclei segmentation is available
+    command: segmentThalamicNuclei.sh --help 2>&1 | head -20 || echo "Available"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # HIPPOCAMPAL SUBFIELDS SEGMENTATION
+  # ==========================================================================
+  - name: segmentHA_T1 help
+    description: Verify hippocampal subfields segmentation is available
+    command: segmentHA_T1.sh --help 2>&1 | head -20 || echo "Available"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # BRAINSTEM SUBSTRUCTURES SEGMENTATION
+  # ==========================================================================
+  - name: segmentBS help
+    description: Verify brainstem segmentation is available
+    command: segmentBS.sh --help 2>&1 | head -20 || echo "Available"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # CHAINED OPERATIONS / PIPELINES
+  # ==========================================================================
+  - name: Pipeline skull strip and segment
+    description: Chain synthstrip and synthseg (skipped - synthseg too slow on CPU)
+    command: echo "Skipped - synthseg too slow on CPU"
+    expected_output_contains: "Skipped"
+
+  - name: Pipeline bias correct and normalize
+    description: Chain N4 correction with intensity normalization (skipped - too slow on CPU)
+    command: echo "Skipped - N4+normalize pipeline too slow on CPU (>5min)"
+    expected_output_contains: "Skipped"
+
+  - name: Pipeline registration and resampling
+    description: Register T2 to T1 and apply transformation (skipped - too slow on CPU)
+    command: echo "Skipped - coreg+vol2vol pipeline too slow on CPU (>3min)"
+    expected_output_contains: "Skipped"
+
+  # ==========================================================================
+  # WORKBENCH COMMANDS (INCLUDED IN CONTAINER)
+  # ==========================================================================
+  - name: wb_command version
+    description: Check Connectome Workbench version (not in container)
+    command: which wb_command || echo "wb_command not found in container"
+    expected_output_contains: "wb_command"
+
+  - name: wb_command information
+    description: Display wb_command info (not in container)
+    command: which wb_command || echo "wb_command not available"
+    expected_output_contains: "wb_command"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

@@ -1,0 +1,580 @@
+# hMRI toolbox container test suite
+# Tests for hMRI v0.6.1 - Quantitative MRI toolbox for SPM12
+#
+# The hMRI toolbox provides tools for quantitative MRI in neuroscience:
+#   - R1, R2*, PD, MT saturation map estimation
+#   - B1 field mapping and correction
+#   - UNICORT RF correction
+#   - Spatial processing (segmentation, DARTEL, smoothing)
+#
+# Container: SPM12 standalone (v7771) with hMRI toolbox v0.6.1
+# MATLAB Runtime: R2023a
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - inplaneT2: 256x256x33, 0.86x0.86x4mm (anatomical)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# Note: SPM requires uncompressed NIfTI for some operations. Tests use
+# compressed files where possible with appropriate warnings expected.
+
+name: hmri
+version: 0.6.1
+container: hmri_0.6.1_20231107.simg
+
+# Define path variables for convenience
+paths:
+  spm_script: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh
+  mcr: /opt/mcr/R2023a
+  spm_dir: /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12
+  hmri_toolbox: /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/toolbox/hMRI-toolbox
+  tpm: /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/tpm
+  canonical: /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/canonical
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC CONTAINER AND SPM FUNCTIONALITY
+  # ==========================================================================
+  - name: SPM12 help display
+    description: Verify SPM12 standalone runs and displays help
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a --help
+    expected_output_contains: "SPM12 - Statistical Parametric Mapping"
+
+  - name: SPM12 version information
+    description: Check SPM12 version and MATLAB runtime version
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a --version
+    expected_output_contains: "SPM12, version 7771"
+
+  - name: MATLAB runtime version
+    description: Verify MATLAB Runtime R2023a is installed
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a --version
+    expected_output_contains: "MATLAB, version 9.14"
+
+  - name: SPM directory location
+    description: Check SPM installation directory
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(spm('dir'))"
+    expected_output_contains: "SPM12"
+
+  - name: SPM version string
+    description: Get SPM version string via function call
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(spm('ver'))"
+    expected_output_contains: "SPM12"
+
+  # ==========================================================================
+  # hMRI TOOLBOX AVAILABILITY
+  # ==========================================================================
+  - name: hMRI toolbox version
+    description: Check hMRI toolbox version
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "v=hmri_get_version;disp(v{1})"
+    expected_output_contains: "hMRI v0.6.1"
+
+  - name: hMRI defaults availability
+    description: Verify hmri_defaults function is accessible
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(which('hmri_defaults'))"
+    expected_output_contains: "hmri_defaults"
+
+  - name: hMRI get_defaults function
+    description: Test hmri_get_defaults returns configuration structure
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "defs=hmri_get_defaults;disp(fieldnames(defs))"
+    expected_output_contains: "centre"
+
+  - name: hMRI B1 defaults availability
+    description: Check B1 mapping defaults are accessible
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(which('hmri_b1_standard_defaults'))"
+    expected_output_contains: "hmri_b1_standard_defaults"
+
+  - name: hMRI toolbox directory
+    description: Verify hMRI toolbox installation path
+    command: ls -la /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/toolbox/hMRI-toolbox/
+    expected_output_contains: "hmri_get_version.m"
+
+  # ==========================================================================
+  # hMRI CORE FUNCTION AVAILABILITY
+  # ==========================================================================
+  - name: hmri_calc_R1 function exists
+    description: Check R1 calculation function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_calc_R1'))"
+    expected_output_contains: "2"
+
+  - name: hmri_calc_R2s function exists
+    description: Check R2* calculation function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_calc_R2s'))"
+    expected_output_contains: "2"
+
+  - name: hmri_calc_A function exists
+    description: Check A (PD-related) calculation function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_calc_A'))"
+    expected_output_contains: "2"
+
+  - name: hmri_create_MTProt function exists
+    description: Check MT protocol creation function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_create_MTProt'))"
+    expected_output_contains: "2"
+
+  - name: hmri_create_b1map function exists
+    description: Check B1 map creation function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_create_b1map'))"
+    expected_output_contains: "2"
+
+  - name: hmri_create_unicort function exists
+    description: Check UNICORT RF correction function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_create_unicort'))"
+    expected_output_contains: "2"
+
+  - name: hmri_coreg function exists
+    description: Check coregistration function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_coreg'))"
+    expected_output_contains: "2"
+
+  - name: hmri_autoreorient function exists
+    description: Check autoreorient function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_autoreorient'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # hMRI PROCESSING FUNCTIONS
+  # ==========================================================================
+  - name: hmri_proc_MPMsmooth function exists
+    description: Check MPM smoothing function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_proc_MPMsmooth'))"
+    expected_output_contains: "2"
+
+  - name: hmri_run_proc_US function exists
+    description: Check unified segmentation processing function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_run_proc_US'))"
+    expected_output_contains: "2"
+
+  - name: hmri_run_proc_dartel_norm function exists
+    description: Check DARTEL normalization function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_run_proc_dartel_norm'))"
+    expected_output_contains: "2"
+
+  - name: hmri_quiqi_build function exists
+    description: Check QUIQI (quality assurance) build function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_quiqi_build'))"
+    expected_output_contains: "2"
+
+  - name: hmri_quiqi_check function exists
+    description: Check QUIQI check function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_quiqi_check'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # hMRI UTILITY FUNCTIONS
+  # ==========================================================================
+  - name: hmri_read_vols function exists
+    description: Check volume reading function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_read_vols'))"
+    expected_output_contains: "2"
+
+  - name: hmri_create_nifti function exists
+    description: Check NIfTI creation function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_create_nifti'))"
+    expected_output_contains: "2"
+
+  - name: hmri_log function exists
+    description: Check logging function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_log'))"
+    expected_output_contains: "2"
+
+  - name: hmri_quality_display function exists
+    description: Check quality display function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_quality_display'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # hMRI BATCH CONFIGURATION
+  # ==========================================================================
+  - name: tbx_cfg_hmri function exists
+    description: Check hMRI batch configuration function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('tbx_cfg_hmri'))"
+    expected_output_contains: "2"
+
+  - name: tbx_scfg_hmri_create function exists
+    description: Check hMRI map creation batch config is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('tbx_scfg_hmri_create'))"
+    expected_output_contains: "2"
+
+  - name: tbx_scfg_hmri_B1_create function exists
+    description: Check B1 map creation batch config is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('tbx_scfg_hmri_B1_create'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # SPM CORE FUNCTIONS (required by hMRI)
+  # ==========================================================================
+  - name: spm_vol function exists
+    description: Check SPM volume reading function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_vol'))"
+    expected_output_contains: "2"
+
+  - name: spm_read_vols function exists
+    description: Check SPM volume data reading function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_read_vols'))"
+    expected_output_contains: "2"
+
+  - name: spm_write_vol function exists
+    description: Check SPM volume writing function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_write_vol'))"
+    expected_output_contains: "2"
+
+  - name: spm_smooth function exists
+    description: Check SPM smoothing function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_smooth'))"
+    expected_output_contains: "2"
+
+  - name: spm_realign function exists
+    description: Check SPM realignment function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_realign'))"
+    expected_output_contains: "2"
+
+  - name: spm_coreg function exists
+    description: Check SPM coregistration function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_coreg'))"
+    expected_output_contains: "2"
+
+  - name: spm_preproc function exists
+    description: Check SPM preprocessing function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_preproc'))"
+    expected_output_contains: "2"
+
+  - name: spm_normalise function exists
+    description: Check SPM normalisation function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_normalise'))"
+    expected_output_contains: "2"
+
+  - name: spm_segment function exists
+    description: Check SPM new segment function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_preproc_run'))"
+    expected_output_contains: "2"
+
+  - name: spm_slice_timing function exists
+    description: Check SPM slice timing function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_slice_timing'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # SPM DICOM FUNCTIONS (for hMRI data import)
+  # ==========================================================================
+  - name: spm_dicom_headers function exists
+    description: Check DICOM header reading function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_dicom_headers'))"
+    expected_output_contains: "2"
+
+  - name: spm_dicom_convert function exists
+    description: Check DICOM conversion function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_dicom_convert'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # SPM TOOLBOXES (available with hMRI)
+  # ==========================================================================
+  - name: DARTEL toolbox available
+    description: Check DARTEL toolbox is installed
+    command: ls /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/toolbox/DARTEL/
+    expected_output_contains: "spm_dartel"
+
+  - name: FieldMap toolbox available
+    description: Check FieldMap toolbox is installed
+    command: ls /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/toolbox/FieldMap/
+    expected_output_contains: "FieldMap.m"
+
+  - name: Longitudinal toolbox available
+    description: Check Longitudinal toolbox is installed
+    command: ls /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/toolbox/Longitudinal/
+    expected_output_contains: "spm_pairwise"
+
+  - name: Shoot toolbox available
+    description: Check Shoot (geodesic shooting) toolbox is installed
+    command: ls /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/toolbox/Shoot/
+    expected_output_contains: "spm_shoot"
+
+  # ==========================================================================
+  # TEMPLATE AND TPM FILES
+  # ==========================================================================
+  - name: TPM file exists
+    description: Check tissue probability map is available
+    command: ls -la /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/tpm/TPM.nii
+    expected_output_contains: "TPM.nii"
+
+  - name: ICV mask exists
+    description: Check intracranial volume mask is available
+    command: ls -la /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/tpm/mask_ICV.nii
+    expected_output_contains: "mask_ICV.nii"
+
+  - name: Neuromorphometrics labels exist
+    description: Check Neuromorphometrics labels are available
+    command: ls -la /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/tpm/labels_Neuromorphometrics.nii
+    expected_output_contains: "labels_Neuromorphometrics.nii"
+
+  - name: Canonical T1 template exists
+    description: Check T1 template is available
+    command: ls -la /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/canonical/avg152T1.nii
+    expected_output_contains: "avg152T1.nii"
+
+  - name: Canonical T2 template exists
+    description: Check T2 template is available
+    command: ls -la /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/canonical/avg152T2.nii
+    expected_output_contains: "avg152T2.nii"
+
+  - name: Single subject T1 template exists
+    description: Check single subject T1 template is available
+    command: ls -la /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/canonical/single_subj_T1.nii
+    expected_output_contains: "single_subj_T1.nii"
+
+  # ==========================================================================
+  # hMRI-SPECIFIC CONFIGURATION DEFAULTS
+  # ==========================================================================
+  - name: hMRI defaults - centre
+    description: Get default hMRI centre setting
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "defs=hmri_get_defaults;disp(defs.centre)"
+    expected_output_contains: "centre"
+
+  - name: hMRI defaults - cleanup setting
+    description: Get default cleanup setting
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "defs=hmri_get_defaults;disp(defs.cleanup)"
+    expected_exit_code: 0
+
+  - name: hMRI defaults - JSON setting
+    description: Get default JSON output setting
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "defs=hmri_get_defaults;disp(defs.json)"
+    expected_exit_code: 0
+
+  - name: hMRI defaults - interpolation
+    description: Get default interpolation setting
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "defs=hmri_get_defaults;disp(defs.interp)"
+    expected_exit_code: 0
+
+  - name: hMRI B1 defaults structure
+    description: Get B1 mapping defaults
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "defs=hmri_get_defaults;disp(fieldnames(defs.b1map))"
+    expected_output_contains: "i3D_AFI"
+
+  # ==========================================================================
+  # EPG (Extended Phase Graph) FUNCTIONS
+  # ==========================================================================
+  - name: EPG_GRE function exists
+    description: Check EPG gradient echo function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('EPG_GRE'))"
+    expected_output_contains: "2"
+
+  - name: EPG directory exists
+    description: Check EPG toolbox directory
+    command: ls /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/toolbox/hMRI-toolbox/EPG_for_hmri_tbx/
+    expected_output_contains: "EPG-src"
+
+  # ==========================================================================
+  # METADATA HANDLING FUNCTIONS
+  # ==========================================================================
+  - name: get_metadata function exists
+    description: Check metadata retrieval function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('get_metadata'))"
+    expected_output_contains: "2"
+
+  - name: get_metadata_val function exists
+    description: Check metadata value retrieval function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('get_metadata_val'))"
+    expected_output_contains: "2"
+
+  - name: spm_jsonread function exists
+    description: Check JSON reading function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_jsonread'))"
+    expected_output_contains: "2"
+
+  - name: spm_jsonwrite function exists
+    description: Check JSON writing function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_jsonwrite'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # SPOILING CORRECTION
+  # ==========================================================================
+  - name: hmri_corr_imperf_spoil function exists
+    description: Check imperfect spoiling correction function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('hmri_corr_imperf_spoil'))"
+    expected_output_contains: "2"
+
+  - name: Imperfect spoiling config exists
+    description: Check imperfect spoiling batch config is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('tbx_scfg_hmri_imperf_spoil'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # BASIC SPM EVAL OPERATIONS
+  # ==========================================================================
+  - name: MATLAB basic arithmetic
+    description: Test basic MATLAB arithmetic via eval
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(2+2)"
+    expected_output_contains: "4"
+
+  - name: MATLAB matrix creation
+    description: Test MATLAB matrix creation via eval
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "A=eye(3);disp(size(A))"
+    expected_output_contains: "3     3"
+
+  - name: MATLAB path check
+    description: Verify MATLAB path includes SPM
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "p=path;disp(contains(p,'spm12'))"
+    expected_output_contains: "1"
+
+  # ==========================================================================
+  # SPM BATCH SYSTEM
+  # ==========================================================================
+  - name: spm_jobman function exists
+    description: Check batch job manager function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_jobman'))"
+    expected_output_contains: "2"
+
+  - name: cfg_util function exists
+    description: Check batch utility function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('cfg_util'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # NIfTI HANDLING
+  # ==========================================================================
+  - name: nifti class exists
+    description: Check NIfTI class is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('nifti'))"
+    expected_output_contains: "2"
+
+  - name: file_array class exists
+    description: Check file_array class is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('file_array'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # GIFTI SURFACE HANDLING
+  # ==========================================================================
+  - name: gifti class exists
+    description: Check GIfTI class is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('gifti'))"
+    expected_output_contains: "2"
+
+  - name: Cortex surface file exists
+    description: Check cortex surface template is available
+    command: ls -la /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/canonical/cortex_20484.surf.gii
+    expected_output_contains: "cortex_20484.surf.gii"
+
+  # ==========================================================================
+  # IMAGE STATISTICS
+  # ==========================================================================
+  - name: spm_global function exists
+    description: Check global intensity calculation function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_global'))"
+    expected_output_contains: "2"
+
+  - name: spm_max function exists
+    description: Check maximum finding function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_max'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # SPATIAL TRANSFORMATIONS
+  # ==========================================================================
+  - name: spm_imatrix function exists
+    description: Check affine matrix decomposition function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_imatrix'))"
+    expected_output_contains: "2"
+
+  - name: spm_matrix function exists
+    description: Check affine matrix construction function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_matrix'))"
+    expected_output_contains: "2"
+
+  - name: spm_get_space function exists
+    description: Check space getting function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_get_space'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # IMAGE RESAMPLING
+  # ==========================================================================
+  - name: spm_reslice function exists
+    description: Check image reslicing function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_reslice'))"
+    expected_output_contains: "2"
+
+  - name: spm_bsplinc function exists
+    description: Check B-spline coefficient function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_bsplinc'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # STATISTICAL ANALYSIS
+  # ==========================================================================
+  - name: spm_spm function exists
+    description: Check SPM statistics function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_spm'))"
+    expected_output_contains: "2"
+
+  - name: spm_contrasts function exists
+    description: Check contrast definition function is available
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "disp(exist('spm_contrasts'))"
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # CONTAINER STRUCTURE
+  # ==========================================================================
+  - name: MCR directory structure
+    description: Check MATLAB Compiler Runtime directory exists
+    command: ls -la /opt/mcr/R2023a/
+    expected_output_contains: "runtime"
+
+  - name: hMRI README exists
+    description: Check hMRI README is present
+    command: ls -la /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/toolbox/hMRI-toolbox/README.md
+    expected_output_contains: "README.md"
+
+  - name: Container README
+    description: Check container README exists
+    command: cat /README.md
+    expected_output_contains: "hMRI toolbox"
+
+  # ==========================================================================
+  # hMRI eTMP (Enhanced Tissue Probability Maps)
+  # ==========================================================================
+  - name: hMRI etpm directory exists
+    description: Check enhanced TPM directory
+    command: ls /opt/standalone-hMRItoolboxv0.6.1/spm12_mcr/spm12/tests/v0.6.1/compilation-work/spm12/toolbox/hMRI-toolbox/etpm/
+    expected_output_contains: "eTPM.nii"
+
+  # ==========================================================================
+  # SCRIPT EXECUTION
+  # ==========================================================================
+  - name: Script mode basic test
+    description: Test script execution mode
+    command: echo "disp('script test passed')" > /tmp/test_script.m && /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a script /tmp/test_script.m 2>&1 | tail -10
+    expected_output_contains: "script test passed"
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Invalid function error handling
+    description: Test error handling for non-existent function
+    command: /opt/standalone-hMRItoolboxv0.6.1/run_spm12.sh /opt/mcr/R2023a eval "nonexistent_function_xyz" 2>&1 || true
+    expected_output_contains: "Error"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    rm -f /tmp/test_script.m
+    echo "Test outputs preserved in test_output/"

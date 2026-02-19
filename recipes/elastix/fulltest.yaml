@@ -1,0 +1,686 @@
+# elastix container test suite
+# Tests for elastix v5.1.0 - medical image registration toolbox
+#
+# elastix is open source software based on ITK for rigid and nonrigid
+# registration of images. It provides a modular design allowing users to
+# quickly configure, test, and compare different registration methods.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - inplaneT2: T2-weighted image for registration tests
+#
+# Citation:
+#   S. Klein, M. Staring, K. Murphy, M.A. Viergever, J.P.W. Pluim,
+#   "elastix: a toolbox for intensity based medical image registration,"
+#   IEEE Transactions on Medical Imaging, vol. 29, no. 1, pp. 196-205, January 2010.
+
+name: elastix
+version: 5.1.0
+container: elastix_5.1.0_20230407.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/elastix
+    mkdir -p test_output/transformix
+    mkdir -p test_output/params
+
+    # Create a basic rigid registration parameter file
+    cat > test_output/params/rigid.txt << 'EOF'
+    // Rigid registration parameter file
+    (FixedInternalImagePixelType "float")
+    (MovingInternalImagePixelType "float")
+    (FixedImageDimension 3)
+    (MovingImageDimension 3)
+    (UseDirectionCosines "true")
+
+    // Main Components
+    (Registration "MultiResolutionRegistration")
+    (Interpolator "BSplineInterpolator")
+    (ResampleInterpolator "FinalBSplineInterpolator")
+    (Resampler "DefaultResampler")
+    (FixedImagePyramid "FixedRecursiveImagePyramid")
+    (MovingImagePyramid "MovingRecursiveImagePyramid")
+    (Optimizer "AdaptiveStochasticGradientDescent")
+    (Transform "EulerTransform")
+    (Metric "AdvancedMattesMutualInformation")
+
+    // Transformation
+    (AutomaticScalesEstimation "true")
+    (AutomaticTransformInitialization "true")
+    (HowToCombineTransforms "Compose")
+
+    // Similarity metric
+    (NumberOfHistogramBins 32)
+    (ErodeMask "false")
+
+    // Multi-resolution scheme
+    (NumberOfResolutions 2)
+    (ImagePyramidSchedule 4 4 4 2 2 2)
+
+    // Sampling
+    (ImageSampler "RandomCoordinate")
+    (NumberOfSpatialSamples 2000)
+    (NewSamplesEveryIteration "true")
+
+    // Optimizer settings
+    (MaximumNumberOfIterations 250)
+
+    // Output settings
+    (DefaultPixelValue 0)
+    (WriteResultImage "true")
+    (ResultImagePixelType "short")
+    (ResultImageFormat "nii.gz")
+    EOF
+
+    # Create an affine registration parameter file
+    cat > test_output/params/affine.txt << 'EOF'
+    // Affine registration parameter file
+    (FixedInternalImagePixelType "float")
+    (MovingInternalImagePixelType "float")
+    (FixedImageDimension 3)
+    (MovingImageDimension 3)
+    (UseDirectionCosines "true")
+
+    // Main Components
+    (Registration "MultiResolutionRegistration")
+    (Interpolator "BSplineInterpolator")
+    (ResampleInterpolator "FinalBSplineInterpolator")
+    (Resampler "DefaultResampler")
+    (FixedImagePyramid "FixedRecursiveImagePyramid")
+    (MovingImagePyramid "MovingRecursiveImagePyramid")
+    (Optimizer "AdaptiveStochasticGradientDescent")
+    (Transform "AffineTransform")
+    (Metric "AdvancedMattesMutualInformation")
+
+    // Transformation
+    (AutomaticScalesEstimation "true")
+    (AutomaticTransformInitialization "true")
+    (HowToCombineTransforms "Compose")
+
+    // Similarity metric
+    (NumberOfHistogramBins 32)
+    (ErodeMask "false")
+
+    // Multi-resolution scheme
+    (NumberOfResolutions 2)
+    (ImagePyramidSchedule 4 4 4 2 2 2)
+
+    // Sampling
+    (ImageSampler "RandomCoordinate")
+    (NumberOfSpatialSamples 2000)
+    (NewSamplesEveryIteration "true")
+
+    // Optimizer settings
+    (MaximumNumberOfIterations 250)
+
+    // Output settings
+    (DefaultPixelValue 0)
+    (WriteResultImage "true")
+    (ResultImagePixelType "short")
+    (ResultImageFormat "nii.gz")
+    EOF
+
+    # Create a B-spline (nonrigid) registration parameter file
+    cat > test_output/params/bspline.txt << 'EOF'
+    // B-spline (nonrigid) registration parameter file
+    (FixedInternalImagePixelType "float")
+    (MovingInternalImagePixelType "float")
+    (FixedImageDimension 3)
+    (MovingImageDimension 3)
+    (UseDirectionCosines "true")
+
+    // Main Components
+    (Registration "MultiResolutionRegistration")
+    (Interpolator "BSplineInterpolator")
+    (ResampleInterpolator "FinalBSplineInterpolator")
+    (Resampler "DefaultResampler")
+    (FixedImagePyramid "FixedRecursiveImagePyramid")
+    (MovingImagePyramid "MovingRecursiveImagePyramid")
+    (Optimizer "AdaptiveStochasticGradientDescent")
+    (Transform "BSplineTransform")
+    (Metric "AdvancedMattesMutualInformation")
+
+    // Transformation
+    (FinalGridSpacingInPhysicalUnits 10)
+    (HowToCombineTransforms "Compose")
+
+    // Similarity metric
+    (NumberOfHistogramBins 32)
+    (ErodeMask "false")
+
+    // Multi-resolution scheme
+    (NumberOfResolutions 2)
+    (ImagePyramidSchedule 4 4 4 2 2 2)
+
+    // Sampling
+    (ImageSampler "RandomCoordinate")
+    (NumberOfSpatialSamples 2000)
+    (NewSamplesEveryIteration "true")
+
+    // Optimizer settings
+    (MaximumNumberOfIterations 250)
+
+    // Output settings
+    (DefaultPixelValue 0)
+    (WriteResultImage "true")
+    (ResultImagePixelType "short")
+    (ResultImageFormat "nii.gz")
+    EOF
+
+    # Create a quick test parameter file (minimal iterations for fast testing)
+    cat > test_output/params/quick_rigid.txt << 'EOF'
+    // Quick rigid registration for testing (minimal iterations)
+    (FixedInternalImagePixelType "float")
+    (MovingInternalImagePixelType "float")
+    (FixedImageDimension 3)
+    (MovingImageDimension 3)
+    (UseDirectionCosines "true")
+
+    // Main Components
+    (Registration "MultiResolutionRegistration")
+    (Interpolator "BSplineInterpolator")
+    (ResampleInterpolator "FinalBSplineInterpolator")
+    (Resampler "DefaultResampler")
+    (FixedImagePyramid "FixedRecursiveImagePyramid")
+    (MovingImagePyramid "MovingRecursiveImagePyramid")
+    (Optimizer "AdaptiveStochasticGradientDescent")
+    (Transform "EulerTransform")
+    (Metric "AdvancedMattesMutualInformation")
+
+    // Transformation
+    (AutomaticScalesEstimation "true")
+    (AutomaticTransformInitialization "true")
+    (HowToCombineTransforms "Compose")
+
+    // Similarity metric
+    (NumberOfHistogramBins 32)
+    (ErodeMask "false")
+
+    // Multi-resolution scheme (single resolution for speed)
+    (NumberOfResolutions 1)
+    (ImagePyramidSchedule 4 4 4)
+
+    // Sampling
+    (ImageSampler "RandomCoordinate")
+    (NumberOfSpatialSamples 500)
+    (NewSamplesEveryIteration "true")
+
+    // Optimizer settings (very few iterations for testing)
+    (MaximumNumberOfIterations 10)
+
+    // Output settings
+    (DefaultPixelValue 0)
+    (WriteResultImage "true")
+    (ResultImagePixelType "short")
+    (ResultImageFormat "nii.gz")
+    EOF
+
+    # Create a similarity transform parameter file
+    cat > test_output/params/similarity.txt << 'EOF'
+    // Similarity transform (rigid + isotropic scaling) parameter file
+    (FixedInternalImagePixelType "float")
+    (MovingInternalImagePixelType "float")
+    (FixedImageDimension 3)
+    (MovingImageDimension 3)
+    (UseDirectionCosines "true")
+
+    // Main Components
+    (Registration "MultiResolutionRegistration")
+    (Interpolator "BSplineInterpolator")
+    (ResampleInterpolator "FinalBSplineInterpolator")
+    (Resampler "DefaultResampler")
+    (FixedImagePyramid "FixedRecursiveImagePyramid")
+    (MovingImagePyramid "MovingRecursiveImagePyramid")
+    (Optimizer "AdaptiveStochasticGradientDescent")
+    (Transform "SimilarityTransform")
+    (Metric "AdvancedMattesMutualInformation")
+
+    // Transformation
+    (AutomaticScalesEstimation "true")
+    (AutomaticTransformInitialization "true")
+    (HowToCombineTransforms "Compose")
+
+    // Similarity metric
+    (NumberOfHistogramBins 32)
+    (ErodeMask "false")
+
+    // Multi-resolution scheme
+    (NumberOfResolutions 1)
+    (ImagePyramidSchedule 4 4 4)
+
+    // Sampling
+    (ImageSampler "RandomCoordinate")
+    (NumberOfSpatialSamples 500)
+    (NewSamplesEveryIteration "true")
+
+    // Optimizer settings
+    (MaximumNumberOfIterations 10)
+
+    // Output settings
+    (DefaultPixelValue 0)
+    (WriteResultImage "true")
+    (ResultImagePixelType "short")
+    (ResultImageFormat "nii.gz")
+    EOF
+
+    # Create translation-only parameter file
+    cat > test_output/params/translation.txt << 'EOF'
+    // Translation-only registration parameter file
+    (FixedInternalImagePixelType "float")
+    (MovingInternalImagePixelType "float")
+    (FixedImageDimension 3)
+    (MovingImageDimension 3)
+    (UseDirectionCosines "true")
+
+    // Main Components
+    (Registration "MultiResolutionRegistration")
+    (Interpolator "BSplineInterpolator")
+    (ResampleInterpolator "FinalBSplineInterpolator")
+    (Resampler "DefaultResampler")
+    (FixedImagePyramid "FixedRecursiveImagePyramid")
+    (MovingImagePyramid "MovingRecursiveImagePyramid")
+    (Optimizer "AdaptiveStochasticGradientDescent")
+    (Transform "TranslationTransform")
+    (Metric "AdvancedMattesMutualInformation")
+
+    // Transformation
+    (AutomaticScalesEstimation "true")
+    (AutomaticTransformInitialization "true")
+    (HowToCombineTransforms "Compose")
+
+    // Similarity metric
+    (NumberOfHistogramBins 32)
+    (ErodeMask "false")
+
+    // Multi-resolution scheme
+    (NumberOfResolutions 1)
+    (ImagePyramidSchedule 4 4 4)
+
+    // Sampling
+    (ImageSampler "RandomCoordinate")
+    (NumberOfSpatialSamples 500)
+    (NewSamplesEveryIteration "true")
+
+    // Optimizer settings
+    (MaximumNumberOfIterations 10)
+
+    // Output settings
+    (DefaultPixelValue 0)
+    (WriteResultImage "true")
+    (ResultImagePixelType "short")
+    (ResultImageFormat "nii.gz")
+    EOF
+
+    # Create NCC (normalized cross correlation) metric parameter file
+    cat > test_output/params/ncc_rigid.txt << 'EOF'
+    // Rigid registration with NCC metric
+    (FixedInternalImagePixelType "float")
+    (MovingInternalImagePixelType "float")
+    (FixedImageDimension 3)
+    (MovingImageDimension 3)
+    (UseDirectionCosines "true")
+
+    // Main Components
+    (Registration "MultiResolutionRegistration")
+    (Interpolator "BSplineInterpolator")
+    (ResampleInterpolator "FinalBSplineInterpolator")
+    (Resampler "DefaultResampler")
+    (FixedImagePyramid "FixedRecursiveImagePyramid")
+    (MovingImagePyramid "MovingRecursiveImagePyramid")
+    (Optimizer "AdaptiveStochasticGradientDescent")
+    (Transform "EulerTransform")
+    (Metric "AdvancedNormalizedCorrelation")
+
+    // Transformation
+    (AutomaticScalesEstimation "true")
+    (AutomaticTransformInitialization "true")
+    (HowToCombineTransforms "Compose")
+
+    // Multi-resolution scheme
+    (NumberOfResolutions 1)
+    (ImagePyramidSchedule 4 4 4)
+
+    // Sampling
+    (ImageSampler "RandomCoordinate")
+    (NumberOfSpatialSamples 500)
+    (NewSamplesEveryIteration "true")
+
+    // Optimizer settings
+    (MaximumNumberOfIterations 10)
+
+    // Output settings
+    (DefaultPixelValue 0)
+    (WriteResultImage "true")
+    (ResultImagePixelType "short")
+    (ResultImageFormat "nii.gz")
+    EOF
+
+    # Create mean squares metric parameter file
+    cat > test_output/params/msd_rigid.txt << 'EOF'
+    // Rigid registration with Mean Squares metric
+    (FixedInternalImagePixelType "float")
+    (MovingInternalImagePixelType "float")
+    (FixedImageDimension 3)
+    (MovingImageDimension 3)
+    (UseDirectionCosines "true")
+
+    // Main Components
+    (Registration "MultiResolutionRegistration")
+    (Interpolator "BSplineInterpolator")
+    (ResampleInterpolator "FinalBSplineInterpolator")
+    (Resampler "DefaultResampler")
+    (FixedImagePyramid "FixedRecursiveImagePyramid")
+    (MovingImagePyramid "MovingRecursiveImagePyramid")
+    (Optimizer "AdaptiveStochasticGradientDescent")
+    (Transform "EulerTransform")
+    (Metric "AdvancedMeanSquares")
+
+    // Transformation
+    (AutomaticScalesEstimation "true")
+    (AutomaticTransformInitialization "true")
+    (HowToCombineTransforms "Compose")
+
+    // Multi-resolution scheme
+    (NumberOfResolutions 1)
+    (ImagePyramidSchedule 4 4 4)
+
+    // Sampling
+    (ImageSampler "RandomCoordinate")
+    (NumberOfSpatialSamples 500)
+    (NewSamplesEveryIteration "true")
+
+    // Optimizer settings
+    (MaximumNumberOfIterations 10)
+
+    // Output settings
+    (DefaultPixelValue 0)
+    (WriteResultImage "true")
+    (ResultImagePixelType "short")
+    (ResultImageFormat "nii.gz")
+    EOF
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - VERSION AND HELP
+  # ==========================================================================
+  - name: elastix version check
+    description: Verify elastix binary runs and reports version
+    command: elastix --version
+    expected_output_contains: "elastix version: 5.1.0"
+
+  - name: elastix extended version
+    description: Check extended version information including ITK and build details
+    command: elastix --extended-version
+    expected_output_contains: "ITK version"
+
+  - name: elastix help
+    description: Verify elastix help message displays correctly
+    command: elastix --help 2>&1
+    expected_output_contains: "elastix registers a moving image to a fixed image"
+
+  - name: transformix version check
+    description: Verify transformix binary runs and reports version
+    command: transformix --version
+    expected_output_contains: "transformix version: 5.1.0"
+
+  - name: transformix help
+    description: Verify transformix help message displays correctly
+    command: transformix --help 2>&1
+    expected_output_contains: "transformix applies a transform on an input image"
+
+  # ==========================================================================
+  # ELASTIX - RIGID REGISTRATION
+  # ==========================================================================
+  - name: Rigid registration (quick test)
+    description: Test rigid (Euler) registration with minimal iterations
+    command: mkdir -p test_output/elastix/rigid_quick && elastix -f ${t1w} -m ${t2} -out test_output/elastix/rigid_quick -p test_output/params/quick_rigid.txt
+    validate:
+      - output_exists: ${output_dir}/elastix/rigid_quick/result.0.nii.gz
+      - output_exists: ${output_dir}/elastix/rigid_quick/TransformParameters.0.txt
+      - output_exists: ${output_dir}/elastix/rigid_quick/elastix.log
+
+  - name: Rigid registration full
+    description: Test rigid registration with standard parameters
+    command: mkdir -p test_output/elastix/rigid_full && elastix -f ${t1w} -m ${t2} -out test_output/elastix/rigid_full -p test_output/params/rigid.txt
+    validate:
+      - output_exists: ${output_dir}/elastix/rigid_full/result.0.nii.gz
+      - output_exists: ${output_dir}/elastix/rigid_full/TransformParameters.0.txt
+
+  # ==========================================================================
+  # ELASTIX - AFFINE REGISTRATION
+  # ==========================================================================
+  - name: Affine registration
+    description: Test affine (12 DOF) registration
+    command: mkdir -p test_output/elastix/affine && elastix -f ${t1w} -m ${t2} -out test_output/elastix/affine -p test_output/params/affine.txt
+    validate:
+      - output_exists: ${output_dir}/elastix/affine/result.0.nii.gz
+      - output_exists: ${output_dir}/elastix/affine/TransformParameters.0.txt
+
+  # ==========================================================================
+  # ELASTIX - SIMILARITY REGISTRATION
+  # ==========================================================================
+  - name: Similarity registration
+    description: Test similarity transform (rigid + isotropic scaling)
+    command: mkdir -p test_output/elastix/similarity && elastix -f ${t1w} -m ${t2} -out test_output/elastix/similarity -p test_output/params/similarity.txt
+    validate:
+      - output_exists: ${output_dir}/elastix/similarity/result.0.nii.gz
+      - output_exists: ${output_dir}/elastix/similarity/TransformParameters.0.txt
+
+  # ==========================================================================
+  # ELASTIX - TRANSLATION REGISTRATION
+  # ==========================================================================
+  - name: Translation registration
+    description: Test translation-only registration (3 DOF)
+    command: mkdir -p test_output/elastix/translation && elastix -f ${t1w} -m ${t2} -out test_output/elastix/translation -p test_output/params/translation.txt
+    validate:
+      - output_exists: ${output_dir}/elastix/translation/result.0.nii.gz
+      - output_exists: ${output_dir}/elastix/translation/TransformParameters.0.txt
+
+  # ==========================================================================
+  # ELASTIX - BSPLINE (NONRIGID) REGISTRATION
+  # ==========================================================================
+  - name: BSpline nonrigid registration
+    description: Test B-spline deformable registration
+    command: mkdir -p test_output/elastix/bspline && elastix -f ${t1w} -m ${t2} -out test_output/elastix/bspline -p test_output/params/bspline.txt
+    validate:
+      - output_exists: ${output_dir}/elastix/bspline/result.0.nii.gz
+      - output_exists: ${output_dir}/elastix/bspline/TransformParameters.0.txt
+
+  # ==========================================================================
+  # ELASTIX - DIFFERENT METRICS
+  # ==========================================================================
+  - name: Registration with NCC metric
+    description: Test rigid registration using Normalized Cross Correlation
+    command: mkdir -p test_output/elastix/ncc && elastix -f ${t1w} -m ${t2} -out test_output/elastix/ncc -p test_output/params/ncc_rigid.txt
+    validate:
+      - output_exists: ${output_dir}/elastix/ncc/result.0.nii.gz
+      - output_exists: ${output_dir}/elastix/ncc/TransformParameters.0.txt
+
+  - name: Registration with MSD metric
+    description: Test rigid registration using Mean Squared Differences
+    command: mkdir -p test_output/elastix/msd && elastix -f ${t1w} -m ${t2} -out test_output/elastix/msd -p test_output/params/msd_rigid.txt
+    validate:
+      - output_exists: ${output_dir}/elastix/msd/result.0.nii.gz
+      - output_exists: ${output_dir}/elastix/msd/TransformParameters.0.txt
+
+  # ==========================================================================
+  # ELASTIX - MULTI-STAGE REGISTRATION
+  # ==========================================================================
+  - name: Multi-stage registration (rigid then affine)
+    description: Test cascaded registration with multiple parameter files
+    command: mkdir -p test_output/elastix/multistage && elastix -f ${t1w} -m ${t2} -out test_output/elastix/multistage -p test_output/params/quick_rigid.txt -p test_output/params/affine.txt
+    validate:
+      - output_exists: ${output_dir}/elastix/multistage/result.0.nii.gz
+      - output_exists: ${output_dir}/elastix/multistage/result.1.nii.gz
+      - output_exists: ${output_dir}/elastix/multistage/TransformParameters.0.txt
+      - output_exists: ${output_dir}/elastix/multistage/TransformParameters.1.txt
+
+  # ==========================================================================
+  # ELASTIX - THREADING OPTIONS
+  # ==========================================================================
+  - name: Single threaded registration
+    description: Test registration with single thread
+    command: mkdir -p test_output/elastix/singlethread && elastix -f ${t1w} -m ${t2} -out test_output/elastix/singlethread -p test_output/params/quick_rigid.txt -threads 1
+    validate:
+      - output_exists: ${output_dir}/elastix/singlethread/result.0.nii.gz
+
+  - name: Multi-threaded registration
+    description: Test registration with multiple threads
+    command: mkdir -p test_output/elastix/multithread && elastix -f ${t1w} -m ${t2} -out test_output/elastix/multithread -p test_output/params/quick_rigid.txt -threads 4
+    validate:
+      - output_exists: ${output_dir}/elastix/multithread/result.0.nii.gz
+
+  # ==========================================================================
+  # ELASTIX - SELF REGISTRATION (identity transform test)
+  # ==========================================================================
+  - name: Self registration (identity test)
+    description: Register image to itself - should produce near-identity transform
+    command: mkdir -p test_output/elastix/identity && elastix -f ${t1w} -m ${t1w} -out test_output/elastix/identity -p test_output/params/quick_rigid.txt
+    validate:
+      - output_exists: ${output_dir}/elastix/identity/result.0.nii.gz
+      - output_exists: ${output_dir}/elastix/identity/TransformParameters.0.txt
+
+  # ==========================================================================
+  # TRANSFORMIX - APPLY TRANSFORM
+  # ==========================================================================
+  - name: Apply transform to moving image
+    description: Use transformix to apply computed transform to moving image
+    command: mkdir -p test_output/transformix/apply_transform && transformix -in ${t2} -out test_output/transformix/apply_transform -tp test_output/elastix/rigid_quick/TransformParameters.0.txt
+    depends_on: Rigid registration (quick test)
+    validate:
+      - output_exists: ${output_dir}/transformix/apply_transform/result.nii.gz
+
+  - name: Apply transform with threads
+    description: Apply transform using multiple threads
+    command: mkdir -p test_output/transformix/threaded && transformix -in ${t2} -out test_output/transformix/threaded -tp test_output/elastix/rigid_quick/TransformParameters.0.txt -threads 4
+    depends_on: Rigid registration (quick test)
+    validate:
+      - output_exists: ${output_dir}/transformix/threaded/result.nii.gz
+
+  # ==========================================================================
+  # TRANSFORMIX - DEFORMATION FIELD
+  # ==========================================================================
+  - name: Generate deformation field
+    description: Use transformix to generate full deformation field
+    command: mkdir -p test_output/transformix/deformation && transformix -def all -out test_output/transformix/deformation -tp test_output/elastix/rigid_quick/TransformParameters.0.txt
+    depends_on: Rigid registration (quick test)
+    validate:
+      - output_exists: ${output_dir}/transformix/deformation/deformationField.nii.gz
+
+  - name: Generate deformation field from BSpline
+    description: Generate deformation field from nonrigid registration
+    command: mkdir -p test_output/transformix/deformation_bspline && transformix -def all -out test_output/transformix/deformation_bspline -tp test_output/elastix/bspline/TransformParameters.0.txt
+    depends_on: BSpline nonrigid registration
+    validate:
+      - output_exists: ${output_dir}/transformix/deformation_bspline/deformationField.nii.gz
+
+  # ==========================================================================
+  # TRANSFORMIX - JACOBIAN
+  # ==========================================================================
+  - name: Generate Jacobian determinant
+    description: Use transformix to compute spatial Jacobian determinant
+    command: mkdir -p test_output/transformix/jacobian && transformix -jac all -out test_output/transformix/jacobian -tp test_output/elastix/rigid_quick/TransformParameters.0.txt
+    depends_on: Rigid registration (quick test)
+    validate:
+      - output_exists: ${output_dir}/transformix/jacobian/spatialJacobian.nii.gz
+
+  - name: Generate Jacobian determinant from BSpline
+    description: Compute Jacobian from nonrigid registration (detects folding)
+    command: mkdir -p test_output/transformix/jacobian_bspline && transformix -jac all -out test_output/transformix/jacobian_bspline -tp test_output/elastix/bspline/TransformParameters.0.txt
+    depends_on: BSpline nonrigid registration
+    validate:
+      - output_exists: ${output_dir}/transformix/jacobian_bspline/spatialJacobian.nii.gz
+
+  - name: Generate Jacobian matrix
+    description: Use transformix to compute full spatial Jacobian matrix
+    command: mkdir -p test_output/transformix/jacobian_matrix && transformix -jacmat all -out test_output/transformix/jacobian_matrix -tp test_output/elastix/rigid_quick/TransformParameters.0.txt
+    depends_on: Rigid registration (quick test)
+    validate:
+      - output_exists: ${output_dir}/transformix/jacobian_matrix/fullSpatialJacobian.nii.gz
+
+  # ==========================================================================
+  # TRANSFORMIX - COMBINED OUTPUTS
+  # ==========================================================================
+  - name: Generate all transformix outputs
+    description: Generate transformed image, deformation field, and Jacobian together
+    command: mkdir -p test_output/transformix/all_outputs && transformix -in ${t2} -def all -jac all -out test_output/transformix/all_outputs -tp test_output/elastix/rigid_quick/TransformParameters.0.txt
+    depends_on: Rigid registration (quick test)
+    validate:
+      - output_exists: ${output_dir}/transformix/all_outputs/result.nii.gz
+      - output_exists: ${output_dir}/transformix/all_outputs/deformationField.nii.gz
+      - output_exists: ${output_dir}/transformix/all_outputs/spatialJacobian.nii.gz
+
+  # ==========================================================================
+  # TRANSFORMIX - APPLY MULTISTAGE TRANSFORM
+  # ==========================================================================
+  - name: Apply multi-stage transform
+    description: Apply cascaded transform from multi-stage registration
+    command: mkdir -p test_output/transformix/multistage && transformix -in ${t2} -out test_output/transformix/multistage -tp test_output/elastix/multistage/TransformParameters.1.txt
+    depends_on: Multi-stage registration (rigid then affine)
+    validate:
+      - output_exists: ${output_dir}/transformix/multistage/result.nii.gz
+
+  # ==========================================================================
+  # ELASTIX - LOG FILE VERIFICATION
+  # ==========================================================================
+  - name: Verify log file contents
+    description: Check that elastix log contains expected registration information
+    command: grep -q "Final metric value" test_output/elastix/rigid_quick/elastix.log && echo "Log contains metric value"
+    depends_on: Rigid registration (quick test)
+    expected_output_contains: "Log contains metric value"
+
+  - name: Check transform parameters format
+    description: Verify transform parameters file has correct format
+    command: grep -q "Transform" test_output/elastix/rigid_quick/TransformParameters.0.txt && echo "Transform type found"
+    depends_on: Rigid registration (quick test)
+    expected_output_contains: "Transform type found"
+
+  # ==========================================================================
+  # ELASTIX - INITIAL TRANSFORM
+  # ==========================================================================
+  - name: Registration with initial transform
+    description: Use previous transform as initialization for new registration
+    command: mkdir -p test_output/elastix/with_init && elastix -f ${t1w} -m ${t2} -out test_output/elastix/with_init -p test_output/params/quick_rigid.txt -t0 test_output/elastix/translation/TransformParameters.0.txt
+    depends_on: Translation registration
+    validate:
+      - output_exists: ${output_dir}/elastix/with_init/result.0.nii.gz
+      - output_exists: ${output_dir}/elastix/with_init/TransformParameters.0.txt
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Missing fixed image error
+    description: Verify proper error when fixed image is missing
+    command: mkdir -p test_output/elastix/error_test && elastix -m ${t2} -out test_output/elastix/error_test -p test_output/params/quick_rigid.txt 2>&1 || true
+    expected_output_contains: "-f"
+
+  - name: Missing parameter file error
+    description: Verify proper error when parameter file is missing
+    command: mkdir -p test_output/elastix/error_test && elastix -f ${t1w} -m ${t2} -out test_output/elastix/error_test 2>&1 || true
+    expected_output_contains: "-p"
+
+  - name: Transformix missing transform parameters error
+    description: Verify proper error when transform parameters are missing
+    command: mkdir -p test_output/transformix/error_test && transformix -in ${t2} -out test_output/transformix/error_test 2>&1 || true
+    expected_output_contains: "-tp"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"
+    echo "Parameter files preserved in test_output/params/"

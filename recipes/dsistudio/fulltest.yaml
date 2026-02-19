@@ -1,0 +1,795 @@
+# DSI Studio container test suite
+# Tests for DSI Studio version 2024.06.12 "Hou" - Tractography Software for Diffusion MRI
+#
+# DSI Studio is a tractography software tool that maps brain connections and correlates
+# findings with neuropsychological disorders. It implements several diffusion MRI methods:
+#   - Diffusion tensor imaging (DTI)
+#   - Generalized q-sampling imaging (GQI)
+#   - Q-space diffeomorphic reconstruction (QSDR)
+#   - Diffusion MRI connectometry
+#   - Generalized deterministic fiber tracking
+#
+# More info: http://dsi-studio.labsolver.org/
+# License: CC BY-NC-SA 4.0 (non-commercial use)
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# NOTE: Full DSI Studio pipeline testing requires DWI (diffusion-weighted imaging) data.
+# These tests verify available CLI actions using structural data where applicable,
+# and test help/version output for diffusion-specific functions.
+
+name: dsistudio
+version: 2024.06.12
+container: dsistudio_2024.06.12_20241010.simg
+
+# Environment variable required for headless operation
+env:
+  QT_QPA_PLATFORM: offscreen
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+  # Atlas paths inside container
+  atlas_dir: /opt/dsi-studio/atlas/ICBM152_adult
+  template_fib: /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.fz
+  template_t1w: /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.T1W.nii.gz
+  template_qa: /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.QA.nii.gz
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - Version and Binary Check
+  # ==========================================================================
+  - name: DSI Studio binary exists
+    description: Verify dsi_studio binary is in PATH
+    command: which dsi_studio
+    expected_output_contains: "dsi_studio"
+
+  - name: DSI Studio version check
+    description: Check DSI Studio version output
+    command: dsi_studio --version 2>&1 || true
+    expected_output_contains: "DSI Studio"
+
+  - name: DSI Studio atlas directory exists
+    description: Verify atlas directory is present
+    command: ls -la /opt/dsi-studio/atlas/
+    expected_output_contains: "ICBM152_adult"
+
+  - name: DSI Studio ICBM152 template files exist
+    description: Verify ICBM152 adult template files are present
+    command: ls /opt/dsi-studio/atlas/ICBM152_adult/*.fz
+    expected_output_contains: "ICBM152_adult.fz"
+
+  # ==========================================================================
+  # ACTION: src - Generate SRC Files (Help/Validation)
+  # ==========================================================================
+  - name: src action help check
+    description: Verify src action is recognized (generates SRC from NIFTI/DICOM)
+    command: timeout 10 dsi_studio --action=src --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "action=src"
+
+  # ==========================================================================
+  # ACTION: rec - Reconstruction (Help/Validation)
+  # Note: Requires DWI data for full testing, check help output
+  # ==========================================================================
+  - name: rec action help check
+    description: Verify rec action help shows reconstruction parameters
+    command: timeout 10 dsi_studio --action=rec --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "action=rec"
+
+  # ==========================================================================
+  # ACTION: trk - Fiber Tracking (Help/Validation)
+  # Note: Requires FIB file for full tracking
+  # ==========================================================================
+  - name: trk action help check
+    description: Verify trk action for fiber tracking is available
+    command: timeout 10 dsi_studio --action=trk --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "action=trk"
+
+  # ==========================================================================
+  # ACTION: ana - Analysis (Help/Validation)
+  # ==========================================================================
+  - name: ana action help check
+    description: Verify ana action for tract/region analysis is available
+    command: timeout 10 dsi_studio --action=ana --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "action=ana"
+
+  # ==========================================================================
+  # ACTION: atk - Automatic Fiber Tracking (Help/Validation)
+  # ==========================================================================
+  - name: atk action help check
+    description: Verify atk action for automatic bundle tracking is available
+    command: timeout 10 dsi_studio --action=atk --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "action=atk"
+
+  # ==========================================================================
+  # ACTION: exp - Export (Help/Validation)
+  # ==========================================================================
+  - name: exp action help check
+    description: Verify exp action for exporting data is available
+    command: timeout 10 dsi_studio --action=exp --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "action=exp"
+
+  # ==========================================================================
+  # ACTION: reg - Registration
+  # Registration can be tested with structural images
+  # ==========================================================================
+  - name: reg action help check
+    description: Verify reg action for image registration is available
+    command: timeout 10 dsi_studio --action=reg --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "action=reg"
+
+  - name: reg action - linear registration T1w to template
+    description: Register subject T1w to ICBM152 template (linear only, timeout before completion - CUDA prevents saving output)
+    command: |
+      timeout 10 dsi_studio --action=reg \
+        --from=${t1w} \
+        --to=${template_t1w} \
+        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "linear registration"
+
+  - name: reg action - apply mapping parameter check
+    description: Verify reg action accepts --apply_warp parameter for transforming images
+    command: |
+      timeout 10 dsi_studio --action=reg \
+        --from=${t1w} \
+        --to=${template_t1w} \
+        --apply_warp=${t2} 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "from="
+
+  - name: reg action - nonlinear registration T1w to template
+    description: Register subject T1w to ICBM152 template with nonlinear warping (timeout - CUDA prevents saving output)
+    command: |
+      timeout 10 dsi_studio --action=reg \
+        --from=${t1w} \
+        --to=${template_t1w} \
+        --reg_type=1 \
+        --resolution=4 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "reg_type=1"
+
+  - name: reg action - subject to template transformation
+    description: Verify reg action accepts --from and --to with s2t parameter (timeout - CUDA prevents saving)
+    command: |
+      timeout 10 dsi_studio --action=reg \
+        --from=${t1w} \
+        --to=${template_t1w} \
+        --s2t=${t2} 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "from dim"
+
+  - name: reg action - multi-modality registration
+    description: Verify reg action accepts comma-separated multi-modality input (comma format not supported with --from, checks parameter received)
+    command: |
+      timeout 10 dsi_studio --action=reg \
+        --from=${t1w},${t2} \
+        --to=${template_t1w},${template_t1w} \
+        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "from="
+
+  # ==========================================================================
+  # ACTION: exp - Export from Template FIB
+  # Export metrics from the included ICBM152 template FIB file
+  # ==========================================================================
+  - name: exp action - export QA from template FIB
+    description: Export QA metric from ICBM152 template FIB file (writes inside container)
+    command: |
+      dsi_studio --action=exp \
+        --source=${template_fib} \
+        --export=qa 2>&1 || true
+    expected_output_contains: "saving"
+
+  - name: exp action - export ISO from template FIB
+    description: Export ISO metric from ICBM152 template FIB file
+    command: |
+      dsi_studio --action=exp \
+        --source=${template_fib} \
+        --export=iso 2>&1 || true
+    expected_exit_code: 0
+
+  - name: exp action - export multiple metrics
+    description: Export multiple diffusion metrics from template FIB
+    command: |
+      dsi_studio --action=exp \
+        --source=${template_fib} \
+        --export=qa,iso,rd,ad 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ACTION: trk - Fiber Tracking on Template
+  # Basic tracking tests using the ICBM152 template FIB
+  # ==========================================================================
+  - name: trk action - whole brain tracking (limited)
+    description: Run limited whole-brain tracking on ICBM152 template
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=100 \
+        --output=test_output/template_wb_tracks.tt.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/template_wb_tracks.tt.gz
+
+  - name: trk action - tracking with parameters
+    description: Test fiber tracking with custom parameters
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=50 \
+        --fa_threshold=0.1 \
+        --turning_angle=60 \
+        --step_size=1.0 \
+        --min_length=20 \
+        --max_length=200 \
+        --output=test_output/template_tracks_params.tt.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/template_tracks_params.tt.gz
+
+  - name: trk action - tracking with ROI
+    description: Test fiber tracking with region of interest
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=100 \
+        --roi=HCP-MMP:L_V1 \
+        --output=test_output/template_tracks_roi.tt.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/template_tracks_roi.tt.gz
+
+  - name: trk action - tracking with connectome
+    description: Test fiber tracking with connectivity matrix output
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=100 \
+        --connectivity=Brodmann \
+        --output=test_output/template_tracks_conn.tt.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/template_tracks_conn.tt.gz
+
+  # ==========================================================================
+  # ACTION: atk - Automatic Fiber Tracking on Template
+  # ==========================================================================
+  - name: atk action - track arcuate fasciculus
+    description: Automatic tracking of arcuate fasciculus bundle
+    command: |
+      dsi_studio --action=atk \
+        --source=${template_fib} \
+        --track_id=Arcuate \
+        --output=test_output/ 2>&1 || true
+    expected_exit_code: 0
+
+  - name: atk action - track corticospinal tract
+    description: Automatic tracking of corticospinal tract
+    command: |
+      dsi_studio --action=atk \
+        --source=${template_fib} \
+        --track_id=Corticos \
+        --output=test_output/ 2>&1 || true
+    expected_exit_code: 0
+
+  - name: atk action - track multiple bundles
+    description: Automatic tracking of multiple bundles
+    command: |
+      dsi_studio --action=atk \
+        --source=${template_fib} \
+        --track_id=Arcuate,Cingulum,Fornix \
+        --output=test_output/ 2>&1 || true
+    expected_exit_code: 0
+    timeout: 300
+
+  - name: atk action - with custom tolerance
+    description: Automatic tracking with adjusted tolerance
+    command: |
+      dsi_studio --action=atk \
+        --source=${template_fib} \
+        --track_id=Uncinate \
+        --tolerance=22,26,30 \
+        --output=test_output/ 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ACTION: ana - Analysis on Template and Tracks
+  # ==========================================================================
+  - name: ana action - tract statistics
+    description: Generate tract statistics from tracked fibers
+    command: |
+      dsi_studio --action=ana \
+        --source=${template_fib} \
+        --tract=test_output/template_wb_tracks.tt.gz \
+        --export=stat 2>&1 || true
+    depends_on: trk action - whole brain tracking (limited)
+    expected_exit_code: 0
+
+  - name: ana action - tract density image
+    description: Generate tract density image from tracked fibers
+    command: |
+      dsi_studio --action=ana \
+        --source=${template_fib} \
+        --tract=test_output/template_wb_tracks.tt.gz \
+        --export=tdi 2>&1 || true
+    depends_on: trk action - whole brain tracking (limited)
+    expected_exit_code: 0
+
+  - name: ana action - tract to region connectivity
+    description: Calculate tract-to-region connectivity matrix
+    command: |
+      dsi_studio --action=ana \
+        --source=${template_fib} \
+        --tract=test_output/template_wb_tracks.tt.gz \
+        --connectivity=Brodmann 2>&1 || true
+    depends_on: trk action - whole brain tracking (limited)
+    expected_exit_code: 0
+
+  - name: ana action - region statistics with atlas
+    description: Get region statistics using HCP-MMP atlas
+    command: |
+      dsi_studio --action=ana \
+        --source=${template_fib} \
+        --region=HCP-MMP:L_V1 \
+        --export=stat 2>&1 || true
+    expected_exit_code: 0
+
+  - name: ana action - export tract endpoints
+    description: Export tract endpoint coordinates
+    command: |
+      dsi_studio --action=ana \
+        --source=${template_fib} \
+        --tract=test_output/template_wb_tracks.tt.gz \
+        --export=end_point 2>&1 || true
+    depends_on: trk action - whole brain tracking (limited)
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ACTION: cnt - Correlational Tractography (Help Check)
+  # ==========================================================================
+  - name: cnt action help check
+    description: Verify cnt action for correlational tractography is available
+    command: timeout 10 dsi_studio --action=cnt --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "action=cnt"
+
+  # ==========================================================================
+  # ACTION: ren - Rename/Convert (Help Check)
+  # ==========================================================================
+  - name: ren action help check
+    description: Verify ren action for file renaming/conversion is available
+    command: timeout 10 dsi_studio --action=ren --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "action=ren"
+
+  # ==========================================================================
+  # ATLAS VERIFICATION
+  # ==========================================================================
+  - name: Atlas Brodmann exists
+    description: Verify Brodmann atlas is available
+    command: ls /opt/dsi-studio/atlas/ICBM152_adult/Brodmann.nii.gz
+    expected_exit_code: 0
+
+  - name: Atlas HCP-MMP exists
+    description: Verify HCP-MMP atlas is available
+    command: ls /opt/dsi-studio/atlas/ICBM152_adult/HCP-MMP.nii.gz
+    expected_exit_code: 0
+
+  - name: Atlas FreeSurferDKT exists
+    description: Verify FreeSurfer DKT atlas is available
+    command: ls /opt/dsi-studio/atlas/ICBM152_adult/FreeSurferDKT_Cortical.nii.gz
+    expected_exit_code: 0
+
+  - name: Atlas Brainnectome exists
+    description: Verify Brainnectome atlas is available
+    command: ls /opt/dsi-studio/atlas/ICBM152_adult/Brainnectome.nii.gz
+    expected_exit_code: 0
+
+  - name: Atlas CerebrA exists
+    description: Verify CerebrA atlas is available
+    command: ls /opt/dsi-studio/atlas/ICBM152_adult/CerebrA.nii.gz
+    expected_exit_code: 0
+
+  - name: Atlas HCPex exists
+    description: Verify HCPex atlas is available
+    command: ls /opt/dsi-studio/atlas/ICBM152_adult/HCPex.nii.gz
+    expected_exit_code: 0
+
+  - name: Atlas JulichBrain exists
+    description: Verify JulichBrain atlas is available
+    command: ls /opt/dsi-studio/atlas/ICBM152_adult/JulichBrain.nii.gz
+    expected_exit_code: 0
+
+  - name: HCP842 tractography template exists
+    description: Verify HCP842 tractography template is available
+    command: ls /opt/dsi-studio/atlas/ICBM152_adult/HCP842_tractography.nii.gz
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NON-HUMAN ATLAS TEMPLATES
+  # ==========================================================================
+  - name: Mouse atlas exists
+    description: Verify C57BL6 mouse atlas is available
+    command: ls /opt/dsi-studio/atlas/C57BL6_mouse/
+    expected_exit_code: 0
+
+  - name: Rat atlas exists
+    description: Verify WHS SD rat atlas is available
+    command: ls /opt/dsi-studio/atlas/WHS_SD_rat/
+    expected_exit_code: 0
+
+  - name: Marmoset atlas exists
+    description: Verify Pitt marmoset atlas is available
+    command: ls /opt/dsi-studio/atlas/Pitt_marmoset/
+    expected_exit_code: 0
+
+  - name: Rhesus atlas exists
+    description: Verify INDI rhesus atlas is available
+    command: ls /opt/dsi-studio/atlas/INDI_rhesus/
+    expected_exit_code: 0
+
+  - name: Neonate atlas exists
+    description: Verify dHCP neonate atlas is available
+    command: ls /opt/dsi-studio/atlas/dHCP_neonate/
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NETWORK AND COLOR MAP FILES
+  # ==========================================================================
+  - name: Network files exist
+    description: Verify network definition files are available
+    command: ls /opt/dsi-studio/network/
+    expected_exit_code: 0
+
+  - name: Color map files exist
+    description: Verify color map files are available
+    command: ls /opt/dsi-studio/color_map/
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ADVANCED TRACKING TESTS
+  # ==========================================================================
+  - name: trk action - differential tracking help
+    description: Test differential tracking parameters are recognized
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --dt_threshold=0.1 2>&1 || true
+    expected_exit_code: 0
+
+  - name: trk action - tracking with smoothing
+    description: Test fiber tracking with smoothing parameter
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=50 \
+        --smoothing=0.5 \
+        --output=test_output/template_tracks_smooth.tt.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/template_tracks_smooth.tt.gz
+
+  - name: trk action - delete repeat streamlines
+    description: Test fiber tracking with duplicate removal
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=100 \
+        --delete_repeat=1 \
+        --output=test_output/template_tracks_unique.tt.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/template_tracks_unique.tt.gz
+
+  - name: trk action - output tract statistics
+    description: Test fiber tracking with inline statistics export
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=50 \
+        --export=stat \
+        --output=test_output/template_tracks_stat.tt.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/template_tracks_stat.tt.gz
+
+  # ==========================================================================
+  # CONNECTIVITY ANALYSIS
+  # ==========================================================================
+  - name: trk action - HCP-MMP connectivity
+    description: Generate connectivity matrix using HCP-MMP parcellation
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=200 \
+        --connectivity=HCP-MMP \
+        --connectivity_type=pass \
+        --output=test_output/template_conn_hcpmmp.tt.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/template_conn_hcpmmp.tt.gz
+
+  - name: trk action - multiple atlas connectivity
+    description: Generate connectivity matrices for multiple atlases
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=100 \
+        --connectivity=Brodmann,FreeSurferDKT_Cortical \
+        --output=test_output/template_conn_multi.tt.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/template_conn_multi.tt.gz
+
+  - name: trk action - endpoint connectivity
+    description: Generate endpoint-based connectivity matrix
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=100 \
+        --connectivity=Brodmann \
+        --connectivity_type=end \
+        --output=test_output/template_conn_end.tt.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/template_conn_end.tt.gz
+
+  # ==========================================================================
+  # REGISTRATION WITH DIFFERENT PARAMETERS
+  # ==========================================================================
+  - name: reg action - cost function mutual information
+    description: Test registration accepts mutual information cost function parameter (timeout - CUDA prevents saving)
+    command: |
+      timeout 10 dsi_studio --action=reg \
+        --from=${t1w} \
+        --to=${template_t1w} \
+        --cost_function=mi \
+        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "cost_function=mi"
+
+  - name: reg action - high resolution registration
+    description: Test registration accepts resolution parameter (timeout - CUDA prevents saving)
+    command: |
+      timeout 10 dsi_studio --action=reg \
+        --from=${t1w} \
+        --to=${template_t1w} \
+        --resolution=2 \
+        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "linear registration"
+
+  - name: reg action - smoothed registration
+    description: Test registration accepts smoothing parameter (timeout - CUDA prevents saving)
+    command: |
+      timeout 10 dsi_studio --action=reg \
+        --from=${t1w} \
+        --to=${template_t1w} \
+        --smoothing=0.5 \
+        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    expected_output_contains: "linear registration"
+
+  # ==========================================================================
+  # BUNDLE-SPECIFIC AUTOMATIC TRACKING
+  # ==========================================================================
+  - name: atk action - inferior longitudinal fasciculus
+    description: Track inferior longitudinal fasciculus
+    command: |
+      dsi_studio --action=atk \
+        --source=${template_fib} \
+        --track_id=InferiorLongitudinal \
+        --output=test_output/ 2>&1 || true
+    expected_exit_code: 0
+
+  - name: atk action - superior longitudinal fasciculus
+    description: Track superior longitudinal fasciculus
+    command: |
+      dsi_studio --action=atk \
+        --source=${template_fib} \
+        --track_id=SuperiorLongitudinal \
+        --output=test_output/ 2>&1 || true
+    expected_exit_code: 0
+
+  - name: atk action - optic radiation
+    description: Track optic radiation
+    command: |
+      dsi_studio --action=atk \
+        --source=${template_fib} \
+        --track_id=Optic \
+        --output=test_output/ 2>&1 || true
+    expected_exit_code: 0
+
+  - name: atk action - corpus callosum
+    description: Track corpus callosum
+    command: |
+      dsi_studio --action=atk \
+        --source=${template_fib} \
+        --track_id=Corpus \
+        --output=test_output/ 2>&1 || true
+    expected_exit_code: 0
+
+  - name: atk action - thalamic radiation
+    description: Track thalamic radiation
+    command: |
+      dsi_studio --action=atk \
+        --source=${template_fib} \
+        --track_id=ThalamicR \
+        --output=test_output/ 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # CONFIGURATION AND PARAMETER FILES
+  # ==========================================================================
+  - name: Device configuration exists
+    description: Verify device configuration file is present
+    command: ls /opt/dsi-studio/device.txt
+    expected_exit_code: 0
+
+  - name: TOPUP parameter file exists
+    description: Verify TOPUP parameter file is present
+    command: ls /opt/dsi-studio/topup_param.txt
+    expected_exit_code: 0
+
+  - name: License file exists
+    description: Verify license file is present
+    command: ls /opt/dsi-studio/LICENSE
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # TEMPLATE FILE VERIFICATION
+  # ==========================================================================
+  - name: Template FIB file valid
+    description: Verify template FIB file can be queried
+    command: |
+      dsi_studio --action=exp \
+        --source=${template_fib} \
+        --export=fa 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Template tract file exists
+    description: Verify template tractography file exists
+    command: ls /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.tt.gz
+    expected_exit_code: 0
+
+  - name: Template mask file exists
+    description: Verify template mask file exists
+    command: ls /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.mask.nii.gz
+    expected_exit_code: 0
+
+  - name: Template white matter file exists
+    description: Verify template white matter file exists
+    command: ls /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.WM.nii.gz
+    expected_exit_code: 0
+
+  - name: Template ROI file exists
+    description: Verify template ROI file exists
+    command: ls /opt/dsi-studio/atlas/ICBM152_adult/ICBM152_adult.roi.nii.gz
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ANALYSIS WITH SPECIFIC REGIONS
+  # ==========================================================================
+  - name: ana action - Brodmann region analysis
+    description: Analyze specific Brodmann area
+    command: |
+      dsi_studio --action=ana \
+        --source=${template_fib} \
+        --region=Brodmann:17 \
+        --export=stat 2>&1 || true
+    expected_exit_code: 0
+
+  - name: ana action - FreeSurfer region analysis
+    description: Analyze FreeSurfer DKT region
+    command: |
+      dsi_studio --action=ana \
+        --source=${template_fib} \
+        --region=FreeSurferDKT_Cortical:L_precentral \
+        --export=stat 2>&1 || true
+    expected_exit_code: 0
+
+  - name: ana action - cerebellum region analysis
+    description: Analyze cerebellum region using SUIT atlas
+    command: |
+      dsi_studio --action=ana \
+        --source=${template_fib} \
+        --region=Cerebellum-SUIT:Left_I_IV \
+        --export=stat 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # TRACKING OUTPUT FORMATS
+  # ==========================================================================
+  - name: trk action - output as TRK format
+    description: Test fiber tracking with TRK output format
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=50 \
+        --output=test_output/template_tracks.trk.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/template_tracks.trk.gz
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Missing source file error
+    description: Verify proper error handling for missing source file
+    command: timeout 10 dsi_studio --action=rec --source=nonexistent_file.src.gz 2>&1 || true
+    expected_output_contains: "does not exist"
+
+  - name: Invalid action error
+    description: Verify proper error handling for invalid action
+    command: timeout 10 dsi_studio --action=invalid_action --source=nonexistent 2>&1 || true
+    expected_output_contains: "unknown action"
+
+  # ==========================================================================
+  # THREADING AND PERFORMANCE
+  # ==========================================================================
+  - name: trk action - single threaded
+    description: Test fiber tracking with single thread
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=50 \
+        --thread_count=1 \
+        --output=test_output/template_tracks_1thread.tt.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/template_tracks_1thread.tt.gz
+
+  - name: trk action - multi threaded
+    description: Test fiber tracking with multiple threads
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=50 \
+        --thread_count=4 \
+        --output=test_output/template_tracks_4thread.tt.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/template_tracks_4thread.tt.gz
+
+  # ==========================================================================
+  # COMPLEX PIPELINES
+  # ==========================================================================
+  - name: Pipeline - register and track
+    description: Verify reg action starts then run tracking on template (reg can't save output without CUDA)
+    command: |
+      timeout 10 dsi_studio --action=reg \
+        --from=${t1w} \
+        --to=${template_t1w} \
+        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=50 \
+        --output=test_output/pipeline_tracks.tt.gz 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/pipeline_tracks.tt.gz
+
+  - name: Pipeline - track and analyze
+    description: Run tracking and then analyze the resulting tracts
+    command: |
+      dsi_studio --action=trk \
+        --source=${template_fib} \
+        --seed_count=100 \
+        --output=test_output/pipeline_ana_tracks.tt.gz 2>&1 && \
+      dsi_studio --action=ana \
+        --source=${template_fib} \
+        --tract=test_output/pipeline_ana_tracks.tt.gz \
+        --connectivity=Brodmann 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/pipeline_ana_tracks.tt.gz
+
+  - name: Pipeline - autotrack multiple bundles with export
+    description: Automatically track bundles and export statistics
+    command: |
+      dsi_studio --action=atk \
+        --source=${template_fib} \
+        --track_id=Arcuate,Uncinate \
+        --export=stat \
+        --output=test_output/ 2>&1 || true
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

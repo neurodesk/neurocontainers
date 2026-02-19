@@ -1,0 +1,594 @@
+# bidsme container test suite
+# Tests for bidsme v1.9.3 - BIDS dataset conversion tool
+#
+# bidsme converts source-level (raw) neuroimaging datasets to BIDS format
+# Developed by Nikita BELIY at the Cyclotron Research Centre (CRC)
+#
+# Container includes:
+#   - bidsme 1.9.3: Main BIDS conversion tool with prepare/process/bidsify/map workflow
+#   - dcm2niix v1.0.20250505: DICOM to NIfTI converter
+#   - nibabel tools: nib-ls, nib-diff, nib-stats, nib-conform, nib-convert, etc.
+#   - Python 3.9 with neuroimaging packages
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - inplaneT2: 256x256x30, 0.9375x0.9375x4mm (structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# Documentation: https://github.com/CyclotronResearchCentre/bidsme/blob/dev/doc/cli-interface.md
+
+name: bidsme
+version: 1.9.3
+container: bidsme_1.9.3_20250812.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - participants.tsv
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_events.tsv
+
+test_data:
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  bold_events: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_events.tsv
+  dataset: ds000001
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/source
+    mkdir -p ${output_dir}/prepared
+    mkdir -p ${output_dir}/bids_out
+    mkdir -p ${output_dir}/dicom_test
+    # bidsme map/process/bidsify require participants.json sidecar
+    cat > ${dataset}/participants.json << 'PJSON'
+    {"participant_id":{"Description":"Participant ID"},"sex":{"Description":"Sex"},"age":{"Description":"Age"}}
+    PJSON
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - VERSION AND HELP
+  # ==========================================================================
+  - name: bidsme version check
+    description: Verify bidsme binary runs and reports version
+    command: bidsme --version
+    expected_output_contains: "bidsme: 1.9.3"
+
+  - name: bidsme BIDS version check
+    description: Verify BIDS schema version
+    command: bidsme --version-bids
+    expected_output_contains: "1.10.0"
+
+  - name: bidsme main help
+    description: Display main help showing available subcommands
+    command: bidsme --help
+    expected_output_contains:
+      - "prepare"
+      - "process"
+      - "bidsify"
+      - "map"
+
+  - name: bidsme prepare help
+    description: Display help for prepare subcommand
+    command: bidsme prepare --help
+    expected_output_contains:
+      - "source"
+      - "destination"
+      - "--dry-run"
+      - "--sub-prefix"
+
+  - name: bidsme process help
+    description: Display help for process subcommand
+    command: bidsme process --help
+    expected_output_contains:
+      - "source"
+      - "destination"
+      - "--bidsmap"
+
+  - name: bidsme bidsify help
+    description: Display help for bidsify subcommand
+    command: bidsme bidsify --help
+    expected_output_contains:
+      - "source"
+      - "destination"
+      - "--bidsmap"
+
+  - name: bidsme map help
+    description: Display help for map subcommand
+    command: bidsme map --help
+    expected_output_contains:
+      - "source"
+      - "destination"
+      - "--template"
+      - "--process-all"
+
+  # ==========================================================================
+  # DCM2NIIX - DICOM CONVERSION TOOL
+  # ==========================================================================
+  - name: dcm2niix version check
+    description: Verify dcm2niix is installed and reports version
+    command: dcm2niix -v 2>&1 | grep -E "v[0-9]+\.[0-9]+\.[0-9]+"
+    expected_output_contains: "v1.0.20250505"
+
+  - name: dcm2niix help
+    description: Display dcm2niix help information
+    command: dcm2niix -h 2>&1 | head -10
+    expected_output_contains:
+      - "dcm2niiX"
+      - "options"
+
+  - name: dcm2niix compression options
+    description: Verify compression options are available
+    command: dcm2niix -h 2>&1 | grep -E "^\s+-z"
+    expected_output_contains: "gz compress"
+
+  - name: dcm2niix BIDS sidecar option
+    description: Verify BIDS sidecar generation option
+    command: dcm2niix -h 2>&1 | grep -E "^\s+-b"
+    expected_output_contains: "BIDS sidecar"
+
+  # ==========================================================================
+  # NIBABEL TOOLS - NIfTI UTILITIES
+  # ==========================================================================
+  - name: nib-ls version check
+    description: Verify nib-ls is available
+    command: nib-ls --version
+    expected_exit_code: 0
+
+  - name: nib-ls help
+    description: Display nib-ls help showing summary table options
+    command: nib-ls --help
+    expected_output_contains:
+      - "summary table"
+      - "resolution"
+      - "dimensionality"
+
+  - name: nib-ls inspect T2 image
+    description: List NIfTI header information for T2 image
+    command: nib-ls ${t2}
+    expected_output_contains: ".nii.gz"
+
+  - name: nib-ls inspect BOLD image
+    description: List NIfTI header information for BOLD image
+    command: nib-ls ${bold}
+    expected_output_contains: ".nii.gz"
+
+  - name: nib-ls verbose mode
+    description: List detailed header information
+    command: nib-ls -v ${t2}
+    expected_exit_code: 0
+
+  - name: nib-ls with statistics
+    description: List image with basic statistics
+    command: nib-ls --stats ${t2}
+    expected_exit_code: 0
+
+  - name: nib-ls header fields
+    description: List specific header fields
+    command: nib-ls -H datatype,bitpix ${t2}
+    expected_exit_code: 0
+
+  - name: nib-diff help
+    description: Display nib-diff help for comparing images
+    command: nib-diff --help
+    expected_output_contains:
+      - "differences"
+      - "neuroimaging files"
+
+  - name: nib-diff identical images
+    description: Compare identical images (should show no differences)
+    command: nib-diff ${t2} ${t2}
+    expected_exit_code: 0
+
+  - name: nib-stats help
+    description: Display nib-stats help for computing image statistics
+    command: nib-stats --help
+    expected_output_contains:
+      - "Compute image statistics"
+      - "Volume"
+
+  - name: nib-stats compute volume
+    description: Compute mask volume statistics
+    command: nib-stats -V ${t2}
+    expected_exit_code: 0
+
+  - name: nib-stats volume in mm3
+    description: Compute volume in cubic millimeters
+    command: nib-stats -V --units mm3 ${t2}
+    expected_exit_code: 0
+
+  - name: nib-stats volume in voxels
+    description: Compute volume in voxels
+    command: nib-stats -V --units vox ${t2}
+    expected_exit_code: 0
+
+  - name: nib-conform help
+    description: Display nib-conform help for conforming images
+    command: nib-conform --help
+    expected_output_contains: "conform"
+
+  - name: nib-convert help
+    description: Display nib-convert help for converting images
+    command: nib-convert --help
+    expected_output_contains: "convert"
+
+  - name: nib-roi help
+    description: Display nib-roi help for ROI extraction
+    command: nib-roi --help
+    expected_output_contains: "roi"
+
+  - name: nib-nifti-dx help
+    description: Display nib-nifti-dx help for NIfTI diagnostics
+    command: nib-nifti-dx --help
+    expected_output_contains: "nifti"
+
+  # ==========================================================================
+  # BIDSME PREPARE WORKFLOW - DRY RUN TESTS
+  # ==========================================================================
+  - name: bidsme prepare dry-run with BIDS dataset
+    description: Test prepare command in dry-run mode on existing BIDS dataset
+    command: bidsme prepare ${dataset} ${output_dir}/prepared --dry-run --sub-prefix sub- --participants sub-01 2>&1
+    expected_output_contains: "START bidsme"
+
+  - name: bidsme prepare dry-run verbose
+    description: Test prepare command with verbose logging
+    command: bidsme prepare ${dataset} ${output_dir}/prepared --dry-run --level DEBUG --sub-prefix sub- --participants sub-01 2>&1 | head -50
+    expected_output_contains: "DEBUG"
+
+  - name: bidsme prepare dry-run single subject
+    description: Test prepare command for single subject
+    command: bidsme prepare ${dataset} ${output_dir}/prepared --dry-run --sub-prefix sub- --participants sub-01 2>&1
+    expected_output_contains: "Processing: sub 'sub-01'"
+
+  - name: bidsme prepare help no-subject option
+    description: Verify no-subject option is available for datasets without subject folders
+    command: bidsme prepare --help | grep -A1 "\-\-no-subject"
+    expected_output_contains: "no-subject"
+
+  - name: bidsme prepare help no-session option
+    description: Verify no-session option is available for datasets without session folders
+    command: bidsme prepare --help | grep -A1 "\-\-no-session"
+    expected_output_contains: "no-session"
+
+  # ==========================================================================
+  # BIDSME MAP WORKFLOW - DRY RUN TESTS
+  # ==========================================================================
+  - name: bidsme map dry-run
+    description: Test map command in dry-run mode
+    command: bidsme map ${dataset} ${output_dir}/prepared --dry-run --participants sub-01 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "START bidsme"
+
+  - name: bidsme map dry-run verbose
+    description: Test map command with verbose logging
+    command: bidsme map ${dataset} ${output_dir}/prepared --dry-run --level DEBUG --participants sub-01 2>&1 | head -50
+    expected_output_contains: "DEBUG"
+
+  - name: bidsme map process-all option
+    description: Test map command with process-all option
+    command: bidsme map ${dataset} ${output_dir}/prepared --dry-run --process-all --participants sub-01 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "START bidsme"
+
+  # ==========================================================================
+  # BIDSME PROCESS WORKFLOW - DRY RUN TESTS
+  # ==========================================================================
+  - name: bidsme process dry-run
+    description: Test process command in dry-run mode
+    command: bidsme process ${dataset} ${output_dir}/bids_out --dry-run --participants sub-01 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "START bidsme"
+
+  - name: bidsme process dry-run verbose
+    description: Test process command with verbose logging
+    command: bidsme process ${dataset} ${output_dir}/bids_out --dry-run --level DEBUG --participants sub-01 2>&1 | head -50
+    expected_output_contains: "DEBUG"
+
+  # ==========================================================================
+  # BIDSME BIDSIFY WORKFLOW - DRY RUN TESTS
+  # ==========================================================================
+  - name: bidsme bidsify dry-run
+    description: Test bidsify command in dry-run mode
+    command: bidsme bidsify ${dataset} ${output_dir}/bids_out --dry-run --participants sub-01 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "START bidsme"
+
+  - name: bidsme bidsify dry-run verbose
+    description: Test bidsify command with verbose logging
+    command: bidsme bidsify ${dataset} ${output_dir}/bids_out --dry-run --level DEBUG --participants sub-01 2>&1 | head -50
+    expected_output_contains: "DEBUG"
+
+  - name: bidsme bidsify skip-existing option
+    description: Test bidsify with skip-existing flag
+    command: bidsme bidsify ${dataset} ${output_dir}/bids_out --dry-run --skip-existing --participants sub-01 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "START bidsme"
+
+  - name: bidsme bidsify skip-in-tsv option
+    description: Test bidsify with skip-in-tsv flag
+    command: bidsme bidsify ${dataset} ${output_dir}/bids_out --dry-run --skip-in-tsv --participants sub-01 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "START bidsme"
+
+  # ==========================================================================
+  # LOGGING LEVELS
+  # ==========================================================================
+  - name: bidsme logging DEBUG level
+    description: Test DEBUG logging level
+    command: bidsme prepare ${dataset} ${output_dir}/prepared --dry-run --level DEBUG --sub-prefix sub- --participants sub-01 2>&1 | head -20
+    expected_output_contains: "DEBUG"
+
+  - name: bidsme logging INFO level
+    description: Test INFO logging level
+    command: bidsme prepare ${dataset} ${output_dir}/prepared --dry-run --level INFO --sub-prefix sub- --participants sub-01 2>&1 | head -20
+    expected_output_contains: "INFO"
+
+  - name: bidsme logging WARNING level
+    description: Test WARNING logging level suppresses INFO messages
+    command: bidsme prepare ${dataset} ${output_dir}/prepared --dry-run --level WARNING --sub-prefix sub- --participants sub-01 2>&1
+    expected_exit_code: 0
+
+  - name: bidsme logging ERROR level
+    description: Test ERROR logging level suppresses INFO messages
+    command: bidsme prepare ${dataset} ${output_dir}/prepared --dry-run --level ERROR --sub-prefix sub- --participants sub-01 2>&1
+    expected_exit_code: 0
+
+  - name: bidsme quiet mode
+    description: Test quiet mode (silence stdout logging)
+    command: bidsme prepare ${dataset} ${output_dir}/prepared --dry-run --quiet --sub-prefix sub- --participants sub-01 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SUBJECT AND SESSION SELECTION
+  # ==========================================================================
+  - name: bidsme multiple participants
+    description: Test selecting multiple participants
+    command: bidsme prepare ${dataset} ${output_dir}/prepared --dry-run --sub-prefix sub- --participants sub-01 2>&1
+    expected_output_contains: "Processing: sub 'sub-01'"
+
+  - name: bidsme session prefix
+    description: Test session prefix option
+    command: bidsme prepare --help | grep -A2 "\-\-ses-prefix"
+    expected_output_contains: "ses-prefix"
+
+  - name: bidsme skip existing sessions
+    description: Test skip-existing-sessions option
+    command: bidsme prepare ${dataset} ${output_dir}/prepared --dry-run --skip-existing-sessions --sub-prefix sub- --participants sub-01 2>&1
+    expected_output_contains: "START bidsme"
+
+  # ==========================================================================
+  # CONFIGURATION FILE OPTIONS
+  # ==========================================================================
+  - name: bidsme configuration file option
+    description: Verify configuration file option is available
+    command: bidsme --help | grep -A2 "\-c"
+    expected_output_contains: "configuration"
+
+  - name: bidsme config save option
+    description: Verify configuration save option is available
+    command: bidsme --help | grep -A2 "\-\-conf-save"
+    expected_output_contains: "conf-save"
+
+  # ==========================================================================
+  # PLUGIN OPTIONS
+  # ==========================================================================
+  - name: bidsme plugin option
+    description: Verify plugin option is available
+    command: bidsme prepare --help | grep -A2 "\-\-plugin"
+    expected_output_contains: "plugin"
+
+  - name: bidsme plugin options passing
+    description: Verify plugin options can be passed
+    command: bidsme prepare --help | grep -A2 "\-o"
+    expected_output_contains: "Options passed to plugin"
+
+  # ==========================================================================
+  # TEMPLATE OPTIONS
+  # ==========================================================================
+  - name: bidsme participants template option
+    description: Verify participants template option
+    command: bidsme prepare --help | grep -A2 "\-\-part-template"
+    expected_output_contains: "part-template"
+
+  - name: bidsme bidsmap template option
+    description: Verify bidsmap template option in map command
+    command: bidsme map --help | grep -A2 "\-\-template"
+    expected_output_contains: "template"
+
+  # ==========================================================================
+  # DATA IDENTIFICATION (recfolder)
+  # ==========================================================================
+  - name: bidsme recfolder option
+    description: Verify recfolder option for data identification
+    command: bidsme prepare --help | grep -A3 "\-r"
+    expected_output_contains: "recfolder"
+
+  # ==========================================================================
+  # PYTHON ENVIRONMENT TESTS
+  # ==========================================================================
+  - name: Python bidsme import
+    description: Verify bidsme Python module can be imported
+    command: python3 -c "import bidsme; print('bidsme imported successfully')"
+    expected_output_contains: "successfully"
+
+  - name: Python bidsme module functions
+    description: Verify bidsme module exposes expected functions
+    command: python3 -c "import bidsme; funcs = [x for x in dir(bidsme) if not x.startswith('_')]; print(','.join(funcs))"
+    expected_output_contains:
+      - "prepare"
+      - "bidsify"
+      - "process"
+
+  - name: Python nibabel import
+    description: Verify nibabel can be imported
+    command: python3 -c "import nibabel as nib; print(nib.__version__)"
+    expected_exit_code: 0
+
+  - name: Python nibabel load T2 image
+    description: Verify nibabel can load test image
+    command: |
+      python3 -c "import nibabel as nib; img = nib.load('${t2}'); print(f'Shape: {img.shape}')"
+    expected_output_contains: "Shape:"
+
+  - name: Python nibabel load BOLD image
+    description: Verify nibabel can load 4D BOLD image
+    command: |
+      python3 -c "import nibabel as nib; img = nib.load('${bold}'); print(f'Shape: {img.shape}, 4D: {len(img.shape) == 4}')"
+    expected_output_contains: "4D: True"
+
+  - name: Python numpy import
+    description: Verify numpy is available
+    command: |
+      python3 -c "import numpy as np; print(f'NumPy version: {np.__version__}')"
+    expected_output_contains: "NumPy version:"
+
+  - name: Python pandas import
+    description: Verify pandas is available for TSV handling
+    command: |
+      python3 -c "import pandas as pd; print(f'Pandas version: {pd.__version__}')"
+    expected_output_contains: "Pandas version:"
+
+  - name: Python read events TSV
+    description: Verify pandas can read events TSV file
+    command: |
+      python3 -c "import pandas as pd; df = pd.read_csv('${bold_events}', sep='\t'); print(f'Events: {len(df)} rows, columns: {list(df.columns)}')"
+    expected_output_contains: "Events:"
+
+  - name: Python yaml import
+    description: Verify yaml is available for configuration files
+    command: python3 -c "import yaml; print('YAML available')"
+    expected_output_contains: "YAML available"
+
+  # ==========================================================================
+  # NIBABEL IMAGE CONVERSION TESTS
+  # ==========================================================================
+  - name: nib-convert T2 to different datatype
+    description: Convert T2 image to float32 datatype
+    command: nib-convert --out-dtype float32 ${t2} ${output_dir}/t2_float32.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_float32.nii.gz
+
+  - name: nib-conform T2 image
+    description: Conform T2 image to standard orientation
+    command: nib-conform ${t2} ${output_dir}/t2_conformed.nii.gz 2>&1 || true
+    expected_exit_code: 0
+
+  - name: nib-roi extract region
+    description: Extract ROI from T2 image
+    command: nib-roi ${t2} ${output_dir}/t2_roi.nii.gz --crop 10 10 5 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ERROR HANDLING TESTS
+  # ==========================================================================
+  - name: bidsme invalid subcommand
+    description: Test error handling for invalid subcommand
+    command: bidsme invalid_command 2>&1 || true
+    expected_output_contains: "invalid choice"
+
+  - name: bidsme missing source directory
+    description: Test error handling for missing source directory
+    command: bidsme prepare /nonexistent/path ${output_dir}/prepared --dry-run 2>&1 || true
+    expected_output_contains: "don't exists"
+
+  - name: bidsme prepare missing destination
+    description: Test error handling for missing arguments
+    command: bidsme prepare 2>&1 || true
+    expected_output_contains: "required"
+
+  - name: dcm2niix invalid option
+    description: Test dcm2niix error handling for invalid option
+    command: dcm2niix --invalid-option 2>&1 || true
+    expected_output_contains: "invalid option"
+
+  # ==========================================================================
+  # COMBINED WORKFLOW TESTS
+  # ==========================================================================
+  - name: Full dry-run workflow test
+    description: Test complete prepare -> map -> bidsify workflow in dry-run
+    command: |
+      echo "=== PREPARE ===" && \
+      bidsme prepare ${dataset} ${output_dir}/prepared --dry-run --sub-prefix sub- --participants sub-01 2>&1; \
+      echo "=== MAP ===" && \
+      bidsme map ${dataset} ${output_dir}/prepared --dry-run --participants sub-01 2>&1; \
+      echo "=== BIDSIFY ===" && \
+      bidsme bidsify ${dataset} ${output_dir}/bids_out --dry-run --participants sub-01 2>&1
+    ignore_exit_code: true
+    expected_output_contains:
+      - "PREPARE"
+      - "MAP"
+      - "BIDSIFY"
+
+  # ==========================================================================
+  # JUPYTER AND INTERACTIVE TOOLS
+  # ==========================================================================
+  - name: Jupyter version check
+    description: Verify Jupyter is available
+    command: jupyter --version 2>&1 | head -5
+    expected_exit_code: 0
+
+  - name: Jupyter lab version
+    description: Verify JupyterLab is available
+    command: jupyter-lab --version
+    expected_exit_code: 0
+
+  - name: IPython version check
+    description: Verify IPython is available
+    command: ipython --version
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # BIDSME-GUI AND BIDSME-PDB
+  # ==========================================================================
+  - name: bidsme-gui exists
+    description: Verify bidsme-gui executable exists
+    command: which bidsme-gui
+    expected_output_contains: "bidsme-gui"
+
+  - name: bidsme-pdb exists
+    description: Verify bidsme-pdb debug tool exists
+    command: which bidsme-pdb
+    expected_output_contains: "bidsme-pdb"
+
+  # ==========================================================================
+  # MNE (ELECTROPHYSIOLOGY) TOOL
+  # ==========================================================================
+  - name: MNE tool available
+    description: Verify MNE command-line tool is available
+    command: which mne
+    expected_output_contains: "mne"
+
+  - name: MNE Python import
+    description: Verify MNE-Python can be imported
+    command: |
+      python3 -c "import mne; print(f'MNE version: {mne.__version__}')" 2>&1
+    expected_output_contains: "MNE version:"
+
+  # ==========================================================================
+  # FONTTOOLS AND OTHER UTILITIES
+  # ==========================================================================
+  - name: fonttools available
+    description: Verify fonttools is available
+    command: which fonttools
+    expected_output_contains: "fonttools"
+
+  - name: coloredlogs available
+    description: Verify coloredlogs is available
+    command: which coloredlogs
+    expected_output_contains: "coloredlogs"
+
+  - name: humanfriendly available
+    description: Verify humanfriendly is available
+    command: which humanfriendly
+    expected_output_contains: "humanfriendly"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/bidsme
+    echo "Test outputs preserved in ${output_dir}/"

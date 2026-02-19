@@ -1,0 +1,724 @@
+# RELION container test suite
+# Tests for RELION v4.0.1 - REgularised LIkelihood OptimisatioN for cryo-EM
+#
+# RELION is a stand-alone computer program for Maximum A Posteriori (MAP)
+# refinement of (multiple) 3D reconstructions or 2D class averages in
+# cryo-electron microscopy (cryo-EM).
+#
+# This container also includes:
+#   - CTFFIND 4.1.14 for CTF estimation
+#   - MotionCor2 1.6.4 for motion correction
+#   - CUDA Toolkit 11.8
+
+name: relion
+version: 4.0.1
+container: relion_4.0.1.sm61_20240528.simg
+
+tests:
+  # ==========================================================================
+  # VERSION AND BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: RELION version check
+    description: Verify RELION binary runs and reports version
+    command: relion --version
+    expected_output_contains: "RELION version"
+
+  - name: RELION GUI help
+    description: Check RELION GUI command line options
+    command: relion --help 2>&1
+    expected_output_contains: "--version"
+
+  - name: RELION precision info
+    description: Verify RELION reports precision mode
+    command: relion --version 2>&1
+    expected_output_contains: "Precision"
+
+  # ==========================================================================
+  # RELION_REFINE - 3D REFINEMENT
+  # ==========================================================================
+  - name: relion_refine help
+    description: Check 3D refinement help output
+    command: relion_refine --help 2>&1 | head -20
+    expected_output_contains: "General options"
+
+  - name: relion_refine input options
+    description: Verify input star file option exists
+    command: relion_refine --help 2>&1
+    expected_output_contains: "--i"
+
+  - name: relion_refine symmetry options
+    description: Verify symmetry option exists
+    command: relion_refine --help 2>&1
+    expected_output_contains: "--sym"
+
+  - name: relion_refine CTF options
+    description: Verify CTF correction options exist
+    command: relion_refine --help 2>&1
+    expected_output_contains: "--ctf"
+
+  - name: relion_refine auto-refine option
+    description: Verify auto-refine option exists
+    command: relion_refine --help 2>&1
+    expected_output_contains: "--auto_refine"
+
+  - name: relion_refine SGD options
+    description: Verify stochastic gradient descent options exist
+    command: relion_refine --help 2>&1
+    expected_output_contains: "--grad"
+
+  - name: relion_refine GPU options
+    description: Verify GPU acceleration options exist
+    command: relion_refine --help 2>&1
+    expected_output_contains: "--gpu"
+
+  - name: relion_refine helical options
+    description: Verify helical reconstruction options exist
+    command: relion_refine --help 2>&1
+    expected_output_contains: "--helix"
+
+  - name: relion_refine MPI version exists
+    description: Check MPI version of refine exists
+    command: which relion_refine_mpi
+    expected_output_contains: "relion_refine_mpi"
+
+  # ==========================================================================
+  # RELION_RECONSTRUCT - 3D RECONSTRUCTION
+  # ==========================================================================
+  - name: relion_reconstruct help
+    description: Check 3D reconstruction help output
+    command: relion_reconstruct --help 2>&1 | head -20
+    expected_output_contains: "General options"
+
+  - name: relion_reconstruct symmetry option
+    description: Verify symmetry option for reconstruction
+    command: relion_reconstruct --help 2>&1
+    expected_output_contains: "--sym"
+
+  - name: relion_reconstruct CTF options
+    description: Verify CTF options for reconstruction
+    command: relion_reconstruct --help 2>&1
+    expected_output_contains: "--ctf"
+
+  - name: relion_reconstruct Ewald options
+    description: Verify Ewald sphere correction options
+    command: relion_reconstruct --help 2>&1
+    expected_output_contains: "--ewald"
+
+  - name: relion_reconstruct padding option
+    description: Verify padding factor option
+    command: relion_reconstruct --help 2>&1
+    expected_output_contains: "--pad"
+
+  - name: relion_reconstruct MPI version exists
+    description: Check MPI version of reconstruct exists
+    command: which relion_reconstruct_mpi
+    expected_output_contains: "relion_reconstruct_mpi"
+
+  # ==========================================================================
+  # RELION_POSTPROCESS - MAP SHARPENING AND FSC
+  # ==========================================================================
+  - name: relion_postprocess help
+    description: Check postprocessing help output
+    command: relion_postprocess --help 2>&1 | head -20
+    expected_output_contains: "General options"
+
+  - name: relion_postprocess masking options
+    description: Verify masking options exist
+    command: relion_postprocess --help 2>&1
+    expected_output_contains: "--auto_mask"
+
+  - name: relion_postprocess sharpening options
+    description: Verify B-factor sharpening options
+    command: relion_postprocess --help 2>&1
+    expected_output_contains: "--auto_bfac"
+
+  - name: relion_postprocess MTF option
+    description: Verify MTF correction option
+    command: relion_postprocess --help 2>&1
+    expected_output_contains: "--mtf"
+
+  - name: relion_postprocess local resolution
+    description: Verify local resolution estimation option
+    command: relion_postprocess --help 2>&1
+    expected_output_contains: "--locres"
+
+  # ==========================================================================
+  # RELION_PREPROCESS - PARTICLE EXTRACTION
+  # ==========================================================================
+  - name: relion_preprocess help
+    description: Check preprocessing help output
+    command: relion_preprocess --help 2>&1 | head -20
+    expected_output_contains: "General options"
+
+  - name: relion_preprocess extraction options
+    description: Verify particle extraction options
+    command: relion_preprocess --help 2>&1
+    expected_output_contains: "--extract"
+
+  - name: relion_preprocess normalization options
+    description: Verify normalization options
+    command: relion_preprocess --help 2>&1
+    expected_output_contains: "--norm"
+
+  - name: relion_preprocess CTF premultiplication
+    description: Verify CTF premultiplication option
+    command: relion_preprocess --help 2>&1
+    expected_output_contains: "--premultiply_ctf"
+
+  - name: relion_preprocess helix options
+    description: Verify helical extraction options
+    command: relion_preprocess --help 2>&1
+    expected_output_contains: "--helix"
+
+  - name: relion_preprocess MPI version exists
+    description: Check MPI version of preprocess exists
+    command: which relion_preprocess_mpi
+    expected_output_contains: "relion_preprocess_mpi"
+
+  # ==========================================================================
+  # RELION_AUTOPICK - PARTICLE PICKING
+  # ==========================================================================
+  - name: relion_autopick help
+    description: Check autopicking help output
+    command: relion_autopick --help 2>&1 | head -20
+    expected_output_contains: "General options"
+
+  - name: relion_autopick reference options
+    description: Verify reference-based picking options
+    command: relion_autopick --help 2>&1
+    expected_output_contains: "--ref"
+
+  - name: relion_autopick LoG options
+    description: Verify Laplacian of Gaussian picking options
+    command: relion_autopick --help 2>&1
+    expected_output_contains: "--LoG"
+
+  - name: relion_autopick Topaz options
+    description: Verify Topaz wrapper options
+    command: relion_autopick --help 2>&1
+    expected_output_contains: "--topaz_train"
+
+  - name: relion_autopick threshold options
+    description: Verify threshold options
+    command: relion_autopick --help 2>&1
+    expected_output_contains: "--threshold"
+
+  - name: relion_autopick GPU option
+    description: Verify GPU acceleration option
+    command: relion_autopick --help 2>&1
+    expected_output_contains: "--gpu"
+
+  - name: relion_autopick MPI version exists
+    description: Check MPI version of autopick exists
+    command: which relion_autopick_mpi
+    expected_output_contains: "relion_autopick_mpi"
+
+  # ==========================================================================
+  # RELION_CTF_REFINE - CTF REFINEMENT
+  # ==========================================================================
+  - name: relion_ctf_refine help
+    description: Check CTF refinement help output
+    command: relion_ctf_refine --help 2>&1 | head -20
+    expected_output_contains: "General options"
+
+  - name: relion_ctf_refine defocus options
+    description: Verify per-particle defocus refinement options
+    command: relion_ctf_refine --help 2>&1
+    expected_output_contains: "--fit_defocus"
+
+  - name: relion_ctf_refine beamtilt options
+    description: Verify beamtilt refinement options
+    command: relion_ctf_refine --help 2>&1
+    expected_output_contains: "--fit_beamtilt"
+
+  - name: relion_ctf_refine aberration options
+    description: Verify aberration estimation options
+    command: relion_ctf_refine --help 2>&1
+    expected_output_contains: "--fit_aberr"
+
+  - name: relion_ctf_refine magnification options
+    description: Verify anisotropic magnification options
+    command: relion_ctf_refine --help 2>&1
+    expected_output_contains: "--fit_aniso"
+
+  - name: relion_ctf_refine MPI version exists
+    description: Check MPI version of ctf_refine exists
+    command: which relion_ctf_refine_mpi
+    expected_output_contains: "relion_ctf_refine_mpi"
+
+  # ==========================================================================
+  # RELION_MOTION_REFINE - BAYESIAN POLISHING
+  # ==========================================================================
+  - name: relion_motion_refine help
+    description: Check motion refinement help output
+    command: relion_motion_refine --help 2>&1 | head -20
+    expected_output_contains: "General options"
+
+  - name: relion_motion_refine velocity options
+    description: Verify motion velocity sigma option
+    command: relion_motion_refine --help 2>&1
+    expected_output_contains: "--s_vel"
+
+  - name: relion_motion_refine divergence options
+    description: Verify motion divergence sigma option
+    command: relion_motion_refine --help 2>&1
+    expected_output_contains: "--s_div"
+
+  - name: relion_motion_refine combine frames
+    description: Verify frame combination option
+    command: relion_motion_refine --help 2>&1
+    expected_output_contains: "--combine_frames"
+
+  - name: relion_motion_refine MPI version exists
+    description: Check MPI version of motion_refine exists
+    command: which relion_motion_refine_mpi
+    expected_output_contains: "relion_motion_refine_mpi"
+
+  # ==========================================================================
+  # RELION_IMAGE_HANDLER - IMAGE MANIPULATION
+  # ==========================================================================
+  - name: relion_image_handler help
+    description: Check image handler help output
+    command: relion_image_handler --help 2>&1 | head -20
+    expected_output_contains: "General options"
+
+  - name: relion_image_handler constant operations
+    description: Verify constant arithmetic operations
+    command: relion_image_handler --help 2>&1
+    expected_output_contains: "--multiply_constant"
+
+  - name: relion_image_handler image operations
+    description: Verify image-by-image operations
+    command: relion_image_handler --help 2>&1
+    expected_output_contains: "--fsc"
+
+  - name: relion_image_handler filter options
+    description: Verify filtering options
+    command: relion_image_handler --help 2>&1
+    expected_output_contains: "--lowpass"
+
+  - name: relion_image_handler rescale options
+    description: Verify rescaling options
+    command: relion_image_handler --help 2>&1
+    expected_output_contains: "--rescale_angpix"
+
+  - name: relion_image_handler symmetry option
+    description: Verify 3D symmetry application option
+    command: relion_image_handler --help 2>&1
+    expected_output_contains: "--sym"
+
+  # ==========================================================================
+  # RELION_MASK_CREATE - MASK GENERATION
+  # ==========================================================================
+  - name: relion_mask_create help
+    description: Check mask creation help output
+    command: relion_mask_create --help 2>&1 | head -20
+    expected_output_contains: "Mask creation options"
+
+  - name: relion_mask_create threshold option
+    description: Verify threshold option
+    command: relion_mask_create --help 2>&1
+    expected_output_contains: "--ini_threshold"
+
+  - name: relion_mask_create extension option
+    description: Verify mask extension option
+    command: relion_mask_create --help 2>&1
+    expected_output_contains: "--extend_inimask"
+
+  - name: relion_mask_create soft edge option
+    description: Verify soft edge option
+    command: relion_mask_create --help 2>&1
+    expected_output_contains: "--width_soft_edge"
+
+  - name: relion_mask_create denovo option
+    description: Verify de novo mask creation option
+    command: relion_mask_create --help 2>&1
+    expected_output_contains: "--denovo"
+
+  # ==========================================================================
+  # RELION_STAR_HANDLER - STAR FILE MANIPULATION
+  # ==========================================================================
+  - name: relion_star_handler help
+    description: Check STAR handler help output
+    command: relion_star_handler --help 2>&1 | head -20
+    expected_output_contains: "General options"
+
+  - name: relion_star_handler compare option
+    description: Verify STAR file comparison option
+    command: relion_star_handler --help 2>&1
+    expected_output_contains: "--compare"
+
+  - name: relion_star_handler select options
+    description: Verify selection options
+    command: relion_star_handler --help 2>&1
+    expected_output_contains: "--select"
+
+  - name: relion_star_handler combine option
+    description: Verify STAR file combination option
+    command: relion_star_handler --help 2>&1
+    expected_output_contains: "--combine"
+
+  - name: relion_star_handler split option
+    description: Verify STAR file splitting option
+    command: relion_star_handler --help 2>&1
+    expected_output_contains: "--split"
+
+  - name: relion_star_handler operate options
+    description: Verify column operation options
+    command: relion_star_handler --help 2>&1
+    expected_output_contains: "--operate"
+
+  - name: relion_star_handler duplicate removal
+    description: Verify duplicate removal option
+    command: relion_star_handler --help 2>&1
+    expected_output_contains: "--remove_duplicates"
+
+  # ==========================================================================
+  # RELION_PROJECT - MAP PROJECTION
+  # ==========================================================================
+  - name: relion_project help
+    description: Check projection help output
+    command: relion_project --help 2>&1 | head -20
+    expected_output_contains: "Options"
+
+  - name: relion_project CTF option
+    description: Verify CTF application option
+    command: relion_project --help 2>&1
+    expected_output_contains: "--ctf"
+
+  - name: relion_project angle options
+    description: Verify Euler angle options
+    command: relion_project --help 2>&1
+    expected_output_contains: "--rot"
+
+  - name: relion_project uniform sampling
+    description: Verify uniform angular sampling option
+    command: relion_project --help 2>&1
+    expected_output_contains: "--nr_uniform"
+
+  - name: relion_project noise option
+    description: Verify noise addition option
+    command: relion_project --help 2>&1
+    expected_output_contains: "--add_noise"
+
+  # ==========================================================================
+  # RELION_CLASS_RANKER - CLASS SELECTION
+  # ==========================================================================
+  - name: relion_class_ranker help
+    description: Check class ranker help output
+    command: relion_class_ranker --help 2>&1 | head -20
+    expected_output_contains: "General options"
+
+  - name: relion_class_ranker auto select
+    description: Verify auto-selection option
+    command: relion_class_ranker --help 2>&1
+    expected_output_contains: "--auto_select"
+
+  - name: relion_class_ranker score options
+    description: Verify score threshold options
+    command: relion_class_ranker --help 2>&1
+    expected_output_contains: "--min_score"
+
+  # ==========================================================================
+  # RELION IMPORT AND CONVERSION
+  # ==========================================================================
+  - name: relion_import help
+    description: Check import help output
+    command: relion_import --help 2>&1 | head -20
+    expected_output_contains: "General options"
+
+  - name: relion_import movie option
+    description: Verify movie import option
+    command: relion_import --help 2>&1
+    expected_output_contains: "--do_movies"
+
+  - name: relion_import micrograph option
+    description: Verify micrograph import option
+    command: relion_import --help 2>&1
+    expected_output_contains: "--do_micrographs"
+
+  - name: relion_convert_star exists
+    description: Check STAR conversion tool exists
+    command: which relion_convert_star
+    expected_output_contains: "relion_convert_star"
+
+  # ==========================================================================
+  # RELION_RUN_CTFFIND - CTF ESTIMATION WRAPPER
+  # ==========================================================================
+  - name: relion_run_ctffind help
+    description: Check CTF estimation wrapper help
+    command: relion_run_ctffind --help 2>&1 | head -30
+    expected_output_contains: "CTF estimation"
+
+  - name: relion_run_ctffind CTFFIND4 option
+    description: Verify CTFFIND4 mode option
+    command: relion_run_ctffind --help 2>&1
+    expected_output_contains: "--is_ctffind4"
+
+  - name: relion_run_ctffind Gctf option
+    description: Verify Gctf wrapper option
+    command: relion_run_ctffind --help 2>&1
+    expected_output_contains: "--use_gctf"
+
+  - name: relion_run_ctffind phase shift option
+    description: Verify phase shift estimation option
+    command: relion_run_ctffind --help 2>&1
+    expected_output_contains: "--do_phaseshift"
+
+  - name: relion_run_ctffind MPI version exists
+    description: Check MPI version of run_ctffind exists
+    command: which relion_run_ctffind_mpi
+    expected_output_contains: "relion_run_ctffind_mpi"
+
+  # ==========================================================================
+  # RELION CTF TOOLBOX
+  # ==========================================================================
+  - name: relion_ctf_toolbox help
+    description: Check CTF toolbox help output
+    command: relion_ctf_toolbox --help 2>&1 | head -20
+    expected_output_contains: "Pre-multiply options"
+
+  - name: relion_ctf_toolbox simulate option
+    description: Verify CTF simulation option
+    command: relion_ctf_toolbox --help 2>&1
+    expected_output_contains: "--simulate"
+
+  # ==========================================================================
+  # RELION HELIX TOOLS
+  # ==========================================================================
+  - name: relion_helix_toolbox help
+    description: Check helix toolbox help output
+    command: relion_helix_toolbox --help 2>&1 | head -30
+    expected_output_contains: "List of functions"
+
+  - name: relion_helix_toolbox impose symmetry
+    description: Verify helical symmetry imposition option
+    command: relion_helix_toolbox --help 2>&1
+    expected_output_contains: "--impose"
+
+  - name: relion_helix_toolbox cylinder creation
+    description: Verify cylinder creation option
+    command: relion_helix_toolbox --help 2>&1
+    expected_output_contains: "--cylinder"
+
+  - name: relion_helix_inimodel2d exists
+    description: Check 2D helix initial model tool exists
+    command: which relion_helix_inimodel2d
+    expected_output_contains: "relion_helix_inimodel2d"
+
+  # ==========================================================================
+  # RELION LOCAL SYMMETRY
+  # ==========================================================================
+  - name: relion_localsym help
+    description: Check local symmetry help output
+    command: relion_localsym --help 2>&1 | head -20
+    expected_output_contains: "Options"
+
+  - name: relion_localsym apply option
+    description: Verify local symmetry application option
+    command: relion_localsym --help 2>&1
+    expected_output_contains: "--apply"
+
+  - name: relion_localsym search option
+    description: Verify local symmetry search option
+    command: relion_localsym --help 2>&1
+    expected_output_contains: "--search"
+
+  - name: relion_localsym MPI version exists
+    description: Check MPI version of localsym exists
+    command: which relion_localsym_mpi
+    expected_output_contains: "relion_localsym_mpi"
+
+  # ==========================================================================
+  # RELION PARTICLE TOOLS
+  # ==========================================================================
+  - name: relion_particle_symmetry_expand help
+    description: Check symmetry expansion help
+    command: relion_particle_symmetry_expand --help 2>&1 | head -15
+    expected_output_contains: "Options"
+
+  - name: relion_particle_symmetry_expand helix option
+    description: Verify helical symmetry expansion option
+    command: relion_particle_symmetry_expand --help 2>&1
+    expected_output_contains: "--helix"
+
+  - name: relion_particle_subtract exists
+    description: Check particle subtraction tool exists
+    command: which relion_particle_subtract
+    expected_output_contains: "relion_particle_subtract"
+
+  - name: relion_particle_reposition exists
+    description: Check particle reposition tool exists
+    command: which relion_particle_reposition
+    expected_output_contains: "relion_particle_reposition"
+
+  # ==========================================================================
+  # RELION STACK AND DATA TOOLS
+  # ==========================================================================
+  - name: relion_stack_create help
+    description: Check stack creation help output
+    command: relion_stack_create --help 2>&1 | head -15
+    expected_output_contains: "General options"
+
+  - name: relion_stack_create split option
+    description: Verify micrograph split option
+    command: relion_stack_create --help 2>&1
+    expected_output_contains: "--split_per_micrograph"
+
+  # ==========================================================================
+  # RELION TOMOGRAPHY TOOLS
+  # ==========================================================================
+  - name: relion_tomo_import_tomograms help
+    description: Check tomogram import help
+    command: relion_tomo_import_tomograms --help 2>&1 | head -20
+    expected_output_contains: "General options"
+
+  - name: relion_tomo_import_tomograms IMOD options
+    description: Verify IMOD import options
+    command: relion_tomo_import_tomograms --help 2>&1
+    expected_output_contains: "--nc"
+
+  - name: relion_tomo_reconstruct_tomogram exists
+    description: Check tomogram reconstruction tool exists
+    command: which relion_tomo_reconstruct_tomogram
+    expected_output_contains: "relion_tomo_reconstruct_tomogram"
+
+  - name: relion_tomo_subtomo exists
+    description: Check subtomogram extraction tool exists
+    command: which relion_tomo_subtomo
+    expected_output_contains: "relion_tomo_subtomo"
+
+  - name: relion_tomo_align exists
+    description: Check tilt series alignment tool exists
+    command: which relion_tomo_align
+    expected_output_contains: "relion_tomo_align"
+
+  - name: relion_tomo_refine_ctf exists
+    description: Check tomogram CTF refinement tool exists
+    command: which relion_tomo_refine_ctf
+    expected_output_contains: "relion_tomo_refine_ctf"
+
+  # ==========================================================================
+  # RELION FLEX ANALYSE - MULTI-BODY ANALYSIS
+  # ==========================================================================
+  - name: relion_flex_analyse help
+    description: Check multi-body analysis help output
+    command: relion_flex_analyse --help 2>&1 | head -20
+    expected_output_contains: "General options"
+
+  - name: relion_flex_analyse PCA option
+    description: Verify PCA analysis option
+    command: relion_flex_analyse --help 2>&1
+    expected_output_contains: "--PCA_orient"
+
+  - name: relion_flex_analyse 3D models option
+    description: Verify 3D model generation option
+    command: relion_flex_analyse --help 2>&1
+    expected_output_contains: "--3dmodels"
+
+  # ==========================================================================
+  # OTHER RELION UTILITIES
+  # ==========================================================================
+  - name: relion_display exists
+    description: Check display tool exists
+    command: which relion_display
+    expected_output_contains: "relion_display"
+
+  - name: relion_manualpick exists
+    description: Check manual picking tool exists
+    command: which relion_manualpick
+    expected_output_contains: "relion_manualpick"
+
+  - name: relion_pipeliner exists
+    description: Check pipeliner tool exists
+    command: which relion_pipeliner
+    expected_output_contains: "relion_pipeliner"
+
+  - name: relion_schemer exists
+    description: Check scheme executor exists
+    command: which relion_schemer
+    expected_output_contains: "relion_schemer"
+
+  - name: relion_estimate_gain exists
+    description: Check gain estimation tool exists
+    command: which relion_estimate_gain
+    expected_output_contains: "relion_estimate_gain"
+
+  - name: relion_convert_to_tiff exists
+    description: Check TIFF conversion tool exists
+    command: which relion_convert_to_tiff
+    expected_output_contains: "relion_convert_to_tiff"
+
+  # ==========================================================================
+  # CTFFIND (BUNDLED)
+  # ==========================================================================
+  - name: CTFFIND binary exists
+    description: Check CTFFIND 4 binary location
+    command: ls /opt/ctffind-4.1.14/bin/ctffind
+    expected_output_contains: "ctffind"
+
+  - name: CTFFIND usage
+    description: Check CTFFIND version and scripted mode
+    command: echo "" | /opt/ctffind-4.1.14/bin/ctffind 2>&1 | head -5
+    expected_output_contains: "Ctffind"
+    ignore_exit_code: true
+
+  - name: CTFFIND version info
+    description: Verify CTFFIND version displays correctly
+    command: echo "" | /opt/ctffind-4.1.14/bin/ctffind 2>&1
+    expected_output_contains: "Version"
+    ignore_exit_code: true
+
+  - name: CTFFIND plot script exists
+    description: Check CTFFIND plot results script
+    command: ls /opt/ctffind-4.1.14/bin/ctffind_plot_results.sh
+    expected_output_contains: "ctffind_plot_results.sh"
+
+  # ==========================================================================
+  # MOTIONCOR2 (BUNDLED)
+  # ==========================================================================
+  - name: MotionCor2 binaries exist
+    description: Check MotionCor2 CUDA binaries directory
+    command: ls /opt/motioncor2-1.6.4/bin/ | head -5
+    expected_output_contains: "MotionCor2"
+
+  - name: MotionCor2 CUDA 11.8 binary exists
+    description: Check MotionCor2 for CUDA 11.8
+    command: ls /opt/motioncor2-1.6.4/bin/MotionCor2_1.6.4_Cuda118_Mar312023
+    expected_output_contains: "MotionCor2"
+
+  - name: MotionCor2 manual exists
+    description: Check MotionCor2 user manual
+    command: ls /opt/motioncor2-1.6.4/bin/MotionCor2-UserManual-02-18-2023.pdf
+    expected_output_contains: "UserManual"
+
+  # ==========================================================================
+  # RELION STAR FILE UTILITIES
+  # ==========================================================================
+  - name: relion_star_printtable exists
+    description: Check STAR table printing tool
+    command: which relion_star_printtable
+    expected_output_contains: "relion_star_printtable"
+
+  - name: relion_star_loopheader exists
+    description: Check STAR loop header tool
+    command: which relion_star_loopheader
+    expected_output_contains: "relion_star_loopheader"
+
+  - name: relion_star_plottable exists
+    description: Check STAR plottable tool
+    command: which relion_star_plottable
+    expected_output_contains: "relion_star_plottable"
+
+  # ==========================================================================
+  # CUDA TOOLKIT
+  # ==========================================================================
+  - name: CUDA toolkit directory exists
+    description: Check CUDA 11.8 installation
+    command: ls /usr/local/cuda-11.8/
+    expected_output_contains: "bin"
+
+  - name: CUDA nvcc exists
+    description: Check CUDA compiler exists
+    command: ls /usr/local/cuda-11.8/bin/nvcc
+    expected_output_contains: "nvcc"

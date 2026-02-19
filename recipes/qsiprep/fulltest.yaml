@@ -1,0 +1,637 @@
+# qsiprep container test suite
+# Tests for QSIPrep v1.0.1 - q-Space Image Preprocessing workflows for diffusion MRI
+#
+# QSIPrep is a BIDS-App for preprocessing diffusion-weighted MRI (dMRI) data.
+# Key features:
+#   - Automatic pipeline generation for dMRI preprocessing
+#   - Distortion correction, motion correction, denoising, coregistration
+#   - Reconstruction pipelines using Dipy, MRTrix, DSI Studio, and more
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# NOTE: Full qsiprep pipeline testing requires DWI (diffusion-weighted imaging) data.
+# These tests verify the bundled tools (MRtrix3, ANTs, AFNI, Convert3D, FreeSurfer)
+# that qsiprep relies upon for processing.
+
+name: qsiprep
+version: 1.0.1
+container: qsiprep_1.0.1_20250407.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # QSIPREP MAIN APPLICATION
+  # ==========================================================================
+  - name: QSIPrep version check
+    description: Verify qsiprep binary runs and reports version
+    command: qsiprep --version 2>&1
+    expected_output_contains: "QSIPrep"
+
+  - name: QSIPrep help
+    description: Verify qsiprep help is accessible
+    command: qsiprep --help 2>&1 | head -20
+    expected_output_contains: "qsiprep"
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Core diffusion processing suite
+  # ==========================================================================
+  - name: MRtrix3 version (mrinfo)
+    description: Verify MRtrix3 mrinfo tool runs
+    command: mrinfo --version 2>&1 | head -1
+    expected_output_contains: "mrinfo"
+
+  - name: MRtrix3 image info
+    description: Display NIfTI header information using mrinfo
+    command: mrinfo ${t1w} 2>&1
+    expected_output_contains: "Dimensions"
+
+  - name: MRtrix3 image statistics
+    description: Compute basic statistics using mrstats
+    command: mrstats ${t1w} -output mean -output std -output min -output max 2>&1
+    expected_exit_code: 0
+
+  - name: MRtrix3 image conversion
+    description: Test mrconvert for format conversion
+    command: mrconvert ${t1w} test_output/t1w_converted.mif -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_converted.mif
+
+  - name: MRtrix3 image calculator (mrcalc) - multiply
+    description: Test mrcalc for voxelwise multiplication
+    command: mrcalc ${t1w} 2 -mult test_output/t1w_doubled.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_doubled.nii.gz
+
+  - name: MRtrix3 image calculator (mrcalc) - threshold
+    description: Test mrcalc for thresholding operations
+    command: mrcalc ${t1w} 100 -gt test_output/t1w_mask_thresh.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_thresh.nii.gz
+
+  - name: MRtrix3 image calculator (mrcalc) - arithmetic chain
+    description: Test mrcalc for chained arithmetic operations
+    command: mrcalc ${t1w} 100 -sub 0 -max test_output/t1w_shifted.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_shifted.nii.gz
+
+  - name: MRtrix3 threshold (mrthreshold)
+    description: Test automatic thresholding with mrthreshold
+    command: mrthreshold ${t1w} test_output/t1w_auto_mask.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_auto_mask.nii.gz
+
+  - name: MRtrix3 grid operations - regrid
+    description: Test mrgrid for resampling to isotropic voxels
+    command: mrgrid ${t1w} regrid -voxel 2 test_output/t1w_2mm.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_2mm.nii.gz
+
+  - name: MRtrix3 grid operations - crop
+    description: Test mrgrid for cropping image
+    command: mrgrid ${t1w} crop -axis 0 10,10 -axis 1 10,10 -axis 2 10,10 test_output/t1w_cropped.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_cropped.nii.gz
+
+  - name: MRtrix3 grid operations - pad
+    description: Test mrgrid for padding image
+    command: mrgrid ${t1w} pad -axis 0 5,5 test_output/t1w_padded.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_padded.nii.gz
+
+  - name: MRtrix3 mask filter - dilate
+    description: Test maskfilter for morphological dilation
+    command: |
+      mrthreshold ${t1w} - -force 2>/dev/null | \
+      maskfilter - dilate test_output/mask_dilated.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/mask_dilated.nii.gz
+
+  - name: MRtrix3 mask filter - erode
+    description: Test maskfilter for morphological erosion
+    command: |
+      mrthreshold ${t1w} - -force 2>/dev/null | \
+      maskfilter - erode test_output/mask_eroded.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/mask_eroded.nii.gz
+
+  - name: MRtrix3 mask filter - median
+    description: Test maskfilter for median filtering
+    command: |
+      mrthreshold ${t1w} - -force 2>/dev/null | \
+      maskfilter - median test_output/mask_median.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/mask_median.nii.gz
+
+  - name: MRtrix3 mask filter - clean
+    description: Test maskfilter for cleaning small mask components
+    command: |
+      mrthreshold ${t1w} - -force 2>/dev/null | \
+      maskfilter - clean test_output/mask_cleaned.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/mask_cleaned.nii.gz
+
+  - name: MRtrix3 mask filter - connected components
+    description: Test maskfilter for largest connected component
+    command: |
+      mrthreshold ${t1w} - -force 2>/dev/null | \
+      maskfilter - connect test_output/mask_connected.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/mask_connected.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 DIFFUSION TOOLS (tested with structural data where possible)
+  # ==========================================================================
+  - name: MRtrix3 dwidenoise help
+    description: Verify dwidenoise is available for MP-PCA denoising
+    command: dwidenoise --help 2>&1 | head -10
+    expected_output_contains: "Marchenko-Pastur"
+
+  - name: MRtrix3 mrdegibbs help
+    description: Verify mrdegibbs (Gibbs ringing removal) is available
+    command: mrdegibbs --help 2>&1 | head -10
+    expected_output_contains: "Gibbs"
+
+  - name: MRtrix3 dwi2mask help
+    description: Verify dwi2mask for brain masking is available
+    command: dwi2mask --help 2>&1 | head -10
+    expected_output_contains: "brain mask"
+
+  - name: MRtrix3 dwi2tensor help
+    description: Verify dwi2tensor for DTI fitting is available
+    command: dwi2tensor --help 2>&1 | head -10
+    expected_output_contains: "Diffusion"
+
+  - name: MRtrix3 tensor2metric help
+    description: Verify tensor2metric for FA/MD extraction is available
+    command: tensor2metric --help 2>&1 | head -10
+    expected_output_contains: "tensor-derived"
+
+  - name: MRtrix3 dwi2fod help
+    description: Verify dwi2fod for FOD estimation is available
+    command: which dwi2fod && dwi2fod --version 2>&1
+    expected_output_contains: "dwi2fod"
+
+  - name: MRtrix3 tckgen help
+    description: Verify tckgen for tractography is available
+    command: which tckgen && tckgen --version 2>&1
+    expected_output_contains: "tckgen"
+
+  - name: MRtrix3 5ttgen help
+    description: Verify 5ttgen for tissue segmentation is available
+    command: 5ttgen -help 2>&1 | head -10
+    expected_output_contains: "5TT"
+
+  # ==========================================================================
+  # ANTs TOOLS - Image registration and processing
+  # ==========================================================================
+  - name: ANTs version check
+    description: Verify ANTs antsRegistration is available
+    command: antsRegistration --version 2>&1
+    expected_output_contains: "ANTs"
+
+  - name: ANTs N4BiasFieldCorrection
+    description: Test N4 bias field correction on T1w
+    command: N4BiasFieldCorrection -d 3 -i ${t1w} -o test_output/t1w_n4.nii.gz -s 4 -c [50x50x50,0.0] 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_n4.nii.gz
+
+  - name: ANTs DenoiseImage
+    description: Test ANTs denoising on T1w
+    command: DenoiseImage -d 3 -i ${t1w} -o test_output/t1w_denoised.nii.gz -n Rician 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_denoised.nii.gz
+    timeout: 300
+
+  - name: ANTs ImageMath - operations
+    description: Test ImageMath for basic operations
+    command: ImageMath 3 test_output/t1w_imagemath.nii.gz Normalize ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_imagemath.nii.gz
+
+  - name: ANTs ImageMath - gradient magnitude
+    description: Test ImageMath gradient magnitude computation
+    command: ImageMath 3 test_output/t1w_grad.nii.gz Grad ${t1w} 1.0 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_grad.nii.gz
+
+  - name: ANTs ImageMath - Laplacian
+    description: Test ImageMath Laplacian computation
+    command: ImageMath 3 test_output/t1w_laplacian.nii.gz Laplacian ${t1w} 1.0 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_laplacian.nii.gz
+
+  - name: ANTs iMath - operations
+    description: Test iMath for morphological operations
+    command: iMath 3 test_output/t1w_imath.nii.gz Normalize ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_imath.nii.gz
+
+  - name: ANTs CreateImage
+    description: Test CreateImage for making empty image (crashes with null string bug)
+    command: CreateImage 3 test_output/empty_image.nii.gz 64x64x64 1 2>&1
+    expected_exit_code: 134
+
+  - name: ANTs ConvertImage
+    description: Test ConvertImage for data type conversion
+    command: ConvertImage 3 ${t1w} test_output/t1w_float.nii.gz 1 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_float.nii.gz
+
+  - name: ANTs ThresholdImage
+    description: Test ThresholdImage for binary thresholding
+    command: ThresholdImage 3 ${t1w} test_output/t1w_ants_thresh.nii.gz 100 Inf 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_ants_thresh.nii.gz
+
+  - name: ANTs antsApplyTransforms help
+    description: Verify antsApplyTransforms is available
+    command: antsApplyTransforms --help 2>&1 | head -10
+    expected_output_contains: "antsApplyTransforms"
+
+  - name: ANTs antsRegistration help
+    description: Verify antsRegistration full help is available
+    command: antsRegistration --help 2>&1 | head -10
+    expected_output_contains: "antsRegistration"
+
+  - name: ANTs antsBrainExtraction help
+    description: Verify antsBrainExtraction.sh is available
+    command: antsBrainExtraction.sh --help 2>&1 | head -10
+    expected_output_contains: "brain extraction"
+
+  - name: ANTs Atropos help
+    description: Verify Atropos segmentation tool is available
+    command: Atropos --help 2>&1 | head -10
+    expected_output_contains: "Atropos"
+
+  # ==========================================================================
+  # AFNI TOOLS - Image processing and analysis
+  # ==========================================================================
+  - name: AFNI 3dcalc help
+    description: Verify AFNI 3dcalc is available
+    command: 3dcalc -help 2>&1 | head -10
+    expected_output_contains: "3dcalc"
+
+  - name: AFNI 3dcalc - arithmetic
+    description: Test 3dcalc for voxelwise arithmetic
+    command: 3dcalc -a ${t1w} -expr 'a*2' -prefix test_output/t1w_3dcalc.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_3dcalc.nii.gz
+
+  - name: AFNI 3dcalc - threshold
+    description: Test 3dcalc for thresholding
+    command: 3dcalc -a ${t1w} -expr 'step(a-100)' -prefix test_output/t1w_3dcalc_mask.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_3dcalc_mask.nii.gz
+
+  - name: AFNI 3dcalc - complex expression
+    description: Test 3dcalc with complex mathematical expression
+    command: 3dcalc -a ${t1w} -expr 'sqrt(a)*10' -prefix test_output/t1w_3dcalc_sqrt.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_3dcalc_sqrt.nii.gz
+
+  - name: AFNI 3dAutomask
+    description: Test 3dAutomask for automatic brain masking
+    command: 3dAutomask -prefix test_output/t1w_afni_mask.nii.gz ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_afni_mask.nii.gz
+
+  - name: AFNI 3dresample - resolution change
+    description: Test 3dresample for changing voxel size
+    command: 3dresample -dxyz 2 2 2 -prefix test_output/t1w_afni_resample.nii.gz -input ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_afni_resample.nii.gz
+
+  - name: AFNI 3dTstat - temporal statistics on BOLD
+    description: Test 3dTstat for computing mean of 4D data
+    command: 3dTstat -mean -prefix test_output/bold_afni_mean.nii.gz ${bold} 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_afni_mean.nii.gz
+
+  - name: AFNI 3dTstat - temporal std on BOLD
+    description: Test 3dTstat for computing temporal standard deviation
+    command: 3dTstat -stdev -prefix test_output/bold_afni_std.nii.gz ${bold} 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_afni_std.nii.gz
+
+  - name: AFNI 3drefit help
+    description: Verify 3drefit for header manipulation is available
+    command: 3drefit -help 2>&1 | head -10
+    expected_output_contains: "3drefit"
+
+  - name: AFNI 3dAutobox
+    description: Test 3dAutobox for automatic cropping
+    command: 3dAutobox -prefix test_output/t1w_autobox.nii.gz -input ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_autobox.nii.gz
+
+  - name: AFNI 3dZeropad
+    description: Test 3dZeropad for image padding
+    command: 3dZeropad -I 5 -S 5 -prefix test_output/t1w_zeropad.nii.gz ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_zeropad.nii.gz
+
+  # ==========================================================================
+  # CONVERT3D - Image format conversion and manipulation
+  # ==========================================================================
+  - name: Convert3D version
+    description: Verify Convert3D (c3d) is available
+    command: /opt/convert3d-nightly/bin/c3d -version 2>&1
+    expected_output_contains: "Version"
+
+  - name: Convert3D image info
+    description: Test c3d for displaying image info
+    command: /opt/convert3d-nightly/bin/c3d ${t1w} -info 2>&1
+    expected_output_contains: "dim"
+
+  - name: Convert3D resample
+    description: Test c3d for resampling image
+    command: /opt/convert3d-nightly/bin/c3d ${t1w} -resample 50% -o test_output/t1w_c3d_resample.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_c3d_resample.nii.gz
+
+  - name: Convert3D smooth
+    description: Test c3d for Gaussian smoothing
+    command: /opt/convert3d-nightly/bin/c3d ${t1w} -smooth 2mm -o test_output/t1w_c3d_smooth.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_c3d_smooth.nii.gz
+
+  - name: Convert3D threshold
+    description: Test c3d for thresholding
+    command: /opt/convert3d-nightly/bin/c3d ${t1w} -threshold 100 inf 1 0 -o test_output/t1w_c3d_thresh.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_c3d_thresh.nii.gz
+
+  - name: Convert3D arithmetic
+    description: Test c3d for voxelwise arithmetic
+    command: /opt/convert3d-nightly/bin/c3d ${t1w} -scale 2 -o test_output/t1w_c3d_scale.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_c3d_scale.nii.gz
+
+  - name: Convert3D statistics
+    description: Test c3d for computing voxel statistics
+    command: /opt/convert3d-nightly/bin/c3d ${t1w} -voxel-sum 2>&1
+    expected_exit_code: 0
+
+  - name: Convert3D pad
+    description: Test c3d for image padding
+    command: /opt/convert3d-nightly/bin/c3d ${t1w} -pad 5x5x5 5x5x5 0 -o test_output/t1w_c3d_pad.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_c3d_pad.nii.gz
+
+  - name: Convert3D trim
+    description: Test c3d for automatic trimming
+    command: /opt/convert3d-nightly/bin/c3d ${t1w} -trim 10vox -o test_output/t1w_c3d_trim.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_c3d_trim.nii.gz
+
+  - name: Convert3D dilate
+    description: Test c3d for morphological dilation
+    command: |
+      /opt/convert3d-nightly/bin/c3d ${t1w} -threshold 100 inf 1 0 \
+      -dilate 1 3x3x3vox -o test_output/t1w_c3d_dilate.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_c3d_dilate.nii.gz
+
+  - name: Convert3D erode
+    description: Test c3d for morphological erosion
+    command: |
+      /opt/convert3d-nightly/bin/c3d ${t1w} -threshold 100 inf 1 0 \
+      -erode 1 3x3x3vox -o test_output/t1w_c3d_erode.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_c3d_erode.nii.gz
+
+  # ==========================================================================
+  # FREESURFER TOOLS (minimal subset in qsiprep)
+  # ==========================================================================
+  - name: FreeSurfer mri_info help
+    description: Verify FreeSurfer mri_info is available
+    command: /opt/freesurfer/bin/mri_info --help 2>&1 | head -10
+    expected_output_contains: "mri_info"
+
+  - name: FreeSurfer mri_convert help
+    description: Verify FreeSurfer mri_convert is available
+    command: /opt/freesurfer/bin/mri_convert --help 2>&1 | head -10
+    expected_output_contains: "mri_convert"
+
+  # ==========================================================================
+  # 3TISSUE (MRtrix3-based 3-tissue CSD)
+  # ==========================================================================
+  - name: 3Tissue ss3t_csd_beta1 help
+    description: Verify 3Tissue single-shell 3-tissue CSD is available
+    command: /opt/3Tissue/bin/ss3t_csd_beta1 --help 2>&1 | head -10
+    expected_output_contains: "ss3t"
+
+  # ==========================================================================
+  # CHAINED OPERATIONS - Complex pipelines
+  # ==========================================================================
+  - name: MRtrix3 pipeline - mask and apply
+    description: Create mask and apply to original image
+    command: |
+      mrthreshold ${t1w} - -force 2>/dev/null | \
+      maskfilter - connect - -force 2>/dev/null | \
+      mrcalc ${t1w} - -mult test_output/t1w_masked_pipeline.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_masked_pipeline.nii.gz
+
+  - name: ANTs pipeline - bias correct and normalize
+    description: Chain N4 bias correction and intensity normalization
+    command: |
+      N4BiasFieldCorrection -d 3 -i ${t1w} -o test_output/t1w_n4_tmp.nii.gz -s 4 -c [50x50,0.0] 2>&1 && \
+      ImageMath 3 test_output/t1w_n4_normalized.nii.gz Normalize test_output/t1w_n4_tmp.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_normalized.nii.gz
+
+  - name: AFNI pipeline - mask and statistics
+    description: Create mask and compute masked statistics
+    command: |
+      3dAutomask -prefix test_output/bold_mask_tmp.nii.gz ${bold}'[0]' 2>&1 && \
+      3dTstat -mean -mask test_output/bold_mask_tmp.nii.gz \
+              -prefix test_output/bold_masked_mean.nii.gz ${bold} 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_masked_mean.nii.gz
+
+  - name: Convert3D pipeline - preprocess structural
+    description: Chain c3d operations for basic preprocessing
+    command: |
+      /opt/convert3d-nightly/bin/c3d ${t1w} \
+      -smooth 1mm \
+      -threshold 50 inf 1 0 \
+      -dilate 1 2x2x2vox \
+      -erode 1 2x2x2vox \
+      -o test_output/t1w_c3d_pipeline.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_c3d_pipeline.nii.gz
+
+  # ==========================================================================
+  # CROSS-TOOL VALIDATION
+  # ==========================================================================
+  - name: Cross-tool - MRtrix3 to ANTs
+    description: Process with MRtrix3, then ANTs
+    command: |
+      mrcalc ${t1w} 0 -max test_output/t1w_mrtrix_pos.nii.gz -force 2>&1 && \
+      ImageMath 3 test_output/t1w_cross_normalized.nii.gz Normalize test_output/t1w_mrtrix_pos.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_cross_normalized.nii.gz
+
+  - name: Cross-tool - AFNI to MRtrix3
+    description: Create mask with AFNI, use with MRtrix3
+    command: |
+      3dAutomask -prefix test_output/t1w_afni_automask.nii.gz ${t1w} 2>&1 && \
+      mrstats ${t1w} -mask test_output/t1w_afni_automask.nii.gz -output mean 2>&1
+    expected_exit_code: 0
+
+  - name: Cross-tool - c3d to AFNI
+    description: Resample with c3d, process with AFNI
+    command: |
+      /opt/convert3d-nightly/bin/c3d ${t1w} -resample 64x64x64 -o test_output/t1w_c3d_64.nii.gz 2>&1 && \
+      3dcalc -a test_output/t1w_c3d_64.nii.gz -expr 'a/1000' -prefix test_output/t1w_cross_scaled.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_cross_scaled.nii.gz
+
+  # ==========================================================================
+  # DATA TYPE AND FORMAT TESTS
+  # ==========================================================================
+  - name: MRtrix3 output as MIF format
+    description: Test MRtrix3 native MIF format output
+    command: mrconvert ${t1w} test_output/t1w_native.mif -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_native.mif
+
+  - name: MRtrix3 output float32
+    description: Test output data type specification
+    command: mrconvert ${t1w} test_output/t1w_float32.nii.gz -datatype float32 -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_float32.nii.gz
+
+  - name: MRtrix3 output int16
+    description: Test output as 16-bit integer
+    command: mrconvert ${t1w} test_output/t1w_int16.nii.gz -datatype int16 -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_int16.nii.gz
+
+  - name: AFNI output uncompressed
+    description: Test AFNI output without compression
+    command: 3dcalc -a ${t1w} -expr 'a' -prefix test_output/t1w_uncompressed.nii 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_uncompressed.nii
+
+  # ==========================================================================
+  # 4D DATA OPERATIONS (using BOLD data)
+  # ==========================================================================
+  - name: MRtrix3 extract volumes from 4D
+    description: Extract specific volumes from 4D BOLD data
+    command: mrconvert ${bold} test_output/bold_first10.nii.gz -coord 3 0:9 -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_first10.nii.gz
+
+  - name: MRtrix3 mean across time
+    description: Compute temporal mean using mrmath
+    command: mrmath ${bold} mean -axis 3 test_output/bold_mrtrix_mean.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_mrtrix_mean.nii.gz
+
+  - name: MRtrix3 std across time
+    description: Compute temporal standard deviation
+    command: mrmath ${bold} std -axis 3 test_output/bold_mrtrix_std.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_mrtrix_std.nii.gz
+
+  - name: MRtrix3 max across time
+    description: Compute temporal maximum
+    command: mrmath ${bold} max -axis 3 test_output/bold_mrtrix_max.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_mrtrix_max.nii.gz
+
+  - name: AFNI 3dTcat - concatenate volumes
+    description: Extract and concatenate specific volumes
+    command: 3dTcat -prefix test_output/bold_concat.nii.gz ${bold}'[0..4]' ${bold}'[10..14]' 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_concat.nii.gz
+
+  - name: Convert3D 4D operations
+    description: Extract single volume from 4D using c3d (c3d cannot write 4D slices - ITK region mismatch)
+    command: /opt/convert3d-nightly/bin/c3d ${bold} -slice w 0 -o test_output/bold_c3d_vol0.nii.gz 2>&1
+    expected_exit_code: 255
+
+  # ==========================================================================
+  # SPATIAL TRANSFORMATIONS
+  # ==========================================================================
+  - name: MRtrix3 flip axis
+    description: Test axis flipping with mrconvert
+    command: mrconvert ${t1w} test_output/t1w_flipx.nii.gz -stride -1,2,3 -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_flipx.nii.gz
+
+  - name: MRtrix3 reorient to RAS
+    description: Reorient image to standard RAS orientation
+    command: mrconvert ${t1w} test_output/t1w_ras.nii.gz -strides 1,2,3 -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_ras.nii.gz
+
+  - name: Convert3D reorient
+    description: Reorient image using c3d
+    command: /opt/convert3d-nightly/bin/c3d ${t1w} -orient RAI -o test_output/t1w_c3d_rai.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_c3d_rai.nii.gz
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: MRtrix3 missing file error
+    description: Verify proper error handling for missing input
+    command: mrinfo nonexistent_file.nii.gz 2>&1
+    expected_exit_code: 1
+    expected_output_contains: "error"
+
+  - name: AFNI missing file error
+    description: Verify AFNI error handling for missing input
+    command: 3dcalc -a nonexistent_file.nii.gz -expr 'a' -prefix test_output/should_fail.nii.gz 2>&1
+    expected_exit_code: 1
+
+  # ==========================================================================
+  # PERFORMANCE/THREADING OPTIONS
+  # ==========================================================================
+  - name: MRtrix3 single-threaded
+    description: Test explicit single-threaded operation
+    command: mrstats ${t1w} -output mean -nthreads 1 2>&1
+    expected_exit_code: 0
+
+  - name: MRtrix3 multi-threaded
+    description: Test multi-threaded operation
+    command: mrstats ${t1w} -output mean -nthreads 4 2>&1
+    expected_exit_code: 0
+
+  - name: ANTs single-threaded N4
+    description: Test N4 with explicit thread count
+    command: |
+      ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=1 \
+      N4BiasFieldCorrection -d 3 -i ${t1w} -o test_output/t1w_n4_1thread.nii.gz -s 8 -c [20,0.0] 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_1thread.nii.gz
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

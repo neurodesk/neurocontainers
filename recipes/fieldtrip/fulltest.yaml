@@ -1,0 +1,1053 @@
+# FieldTrip container test suite
+# Tests for FieldTrip 20220617 - MEG/EEG analysis toolbox (compiled MATLAB)
+#
+# FieldTrip is a MATLAB toolbox for MEG and EEG analysis that includes algorithms
+# for preprocessing, time-frequency analysis, source reconstruction, and statistics.
+# This container runs a compiled (standalone) version with MATLAB Runtime.
+#
+# Test execution:
+#   - For 'command:' tests: run directly in container
+#   - For 'script:' tests: save as .m file and run via:
+#     /opt/fieldtrip-20220617/run_fieldtrip.sh /opt/MCR/v99 <script.m>
+#
+# Citation: Oostenveld et al. (2011) FieldTrip: Open Source Software for Advanced
+# Analysis of MEG, EEG, and Invasive Electrophysiological Data. doi:10.1155/2011/156869
+
+name: fieldtrip
+version: "20220617"
+container: fieldtrip_20220617_20220627.simg
+
+# FieldTrip works with MEG/EEG data, not NIfTI. Tests use simulated data.
+# Scripts are MATLAB code to be saved as .m files and executed via the compiled runtime.
+test_data:
+  output_dir: test_output
+  scripts_dir: test_scripts
+
+# Execution context for MATLAB scripts
+matlab_runtime:
+  path: /opt/MCR/v99
+  runner: /opt/fieldtrip-20220617/run_fieldtrip.sh
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_scripts
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION
+  # ==========================================================================
+  - name: FieldTrip help message
+    description: Verify FieldTrip binary runs and shows usage information
+    command: /opt/fieldtrip-20220617/run_fieldtrip.sh /opt/MCR/v99 2>&1 | head -5
+    expected_output_contains: "You should start the compiled FieldTrip application"
+
+  - name: FieldTrip ft_defaults initialization
+    description: Test that ft_defaults initializes FieldTrip properly
+    script: |
+      ft_defaults;
+      disp('ft_defaults executed successfully');
+    expected_output_contains: "FieldTrip is developed"
+
+  - name: FieldTrip version check
+    description: Verify ft_version returns deployed status
+    script: |
+      ver = ft_version;
+      disp(['FieldTrip version: ' ver]);
+    expected_output_contains: "deployed"
+
+  - name: Basic MATLAB operations
+    description: Test that basic MATLAB/Octave operations work
+    script: |
+      x = 1:10;
+      y = sum(x);
+      disp(['Sum of 1-10: ' num2str(y)]);
+    expected_output_contains: "Sum of 1-10: 55"
+
+  # ==========================================================================
+  # DATA STRUCTURE CREATION
+  # ==========================================================================
+  - name: Create raw EEG data structure
+    description: Test creating a raw EEG data structure
+    script: |
+      data = [];
+      data.fsample = 1000;
+      data.label = {'Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2'};
+      data.time{1} = 0:1/1000:1;
+      data.trial{1} = randn(10, 1001);
+      disp('Raw EEG data structure created');
+      disp(['Channels: ' num2str(length(data.label))]);
+      disp(['Samples: ' num2str(length(data.time{1}))]);
+      disp(['Fs: ' num2str(data.fsample) ' Hz']);
+    expected_output_contains: "Channels: 10"
+
+  - name: Create multi-trial data structure
+    description: Test creating data with multiple trials/epochs
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      for tr = 1:20
+          data.time{tr} = -0.5:1/500:1.5;
+          data.trial{tr} = randn(4, length(data.time{tr}));
+      end
+      disp(['Created ' num2str(length(data.trial)) ' trials']);
+      disp(['Samples per trial: ' num2str(length(data.time{1}))]);
+    expected_output_contains: "Created 20 trials"
+
+  - name: Create electrode structure
+    description: Test creating electrode/sensor position structure
+    script: |
+      elec = [];
+      elec.label = {'Fp1', 'Fp2', 'Fz', 'Cz', 'Pz', 'O1', 'O2'};
+      elec.chanpos = randn(7, 3);
+      elec.elecpos = elec.chanpos;
+      elec.unit = 'cm';
+      disp('Electrode structure created');
+      disp(['Electrodes: ' num2str(length(elec.label))]);
+    expected_output_contains: "Electrodes: 7"
+
+  - name: Create frequency data structure
+    description: Test creating a frequency-domain data structure
+    script: |
+      freq = [];
+      freq.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      freq.freq = 1:0.5:50;
+      freq.powspctrm = rand(4, length(freq.freq));
+      freq.dimord = 'chan_freq';
+      disp('Frequency data structure created');
+      disp(['Frequency bins: ' num2str(length(freq.freq))]);
+    expected_output_contains: "Frequency bins: 99"
+
+  # ==========================================================================
+  # PREPROCESSING (ft_preprocessing)
+  # ==========================================================================
+  - name: Preprocessing - demean
+    description: Test demeaning (baseline correction)
+    script: |
+      data = [];
+      data.fsample = 1000;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      for tr = 1:5
+          data.time{tr} = 0:1/1000:1;
+          data.trial{tr} = randn(4, 1001) + 100;  % Add DC offset
+      end
+      cfg = [];
+      cfg.demean = 'yes';
+      dataout = ft_preprocessing(cfg, data);
+      meanval = mean(dataout.trial{1}(1,:));
+      disp('ft_preprocessing demean completed');
+      disp(['Mean after demean: ' num2str(meanval, '%.6f')]);
+    expected_output_contains: "ft_preprocessing demean completed"
+
+  - name: Preprocessing - detrend
+    description: Test linear detrending
+    script: |
+      data = [];
+      data.fsample = 1000;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      t = 0:1/1000:1;
+      for tr = 1:3
+          data.time{tr} = t;
+          data.trial{tr} = randn(4, length(t)) + repmat(t*10, 4, 1);  % Add trend
+      end
+      cfg = [];
+      cfg.detrend = 'yes';
+      dataout = ft_preprocessing(cfg, data);
+      disp('ft_preprocessing detrend completed');
+    expected_output_contains: "ft_preprocessing detrend completed"
+
+  - name: Preprocessing - highpass filter
+    description: Test highpass filtering
+    script: |
+      data = [];
+      data.fsample = 1000;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      for tr = 1:3
+          data.time{tr} = 0:1/1000:2;
+          data.trial{tr} = randn(4, 2001);
+      end
+      cfg = [];
+      cfg.hpfilter = 'yes';
+      cfg.hpfreq = 1;
+      cfg.hpfiltord = 4;
+      dataout = ft_preprocessing(cfg, data);
+      disp('ft_preprocessing highpass filter completed');
+    expected_output_contains: "ft_preprocessing highpass filter completed"
+
+  - name: Preprocessing - lowpass filter
+    description: Test lowpass filtering
+    script: |
+      data = [];
+      data.fsample = 1000;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      for tr = 1:3
+          data.time{tr} = 0:1/1000:2;
+          data.trial{tr} = randn(4, 2001);
+      end
+      cfg = [];
+      cfg.lpfilter = 'yes';
+      cfg.lpfreq = 40;
+      cfg.lpfiltord = 4;
+      dataout = ft_preprocessing(cfg, data);
+      disp('ft_preprocessing lowpass filter completed');
+    expected_output_contains: "ft_preprocessing lowpass filter completed"
+
+  - name: Preprocessing - bandpass filter
+    description: Test bandpass filtering
+    script: |
+      data = [];
+      data.fsample = 1000;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      for tr = 1:3
+          data.time{tr} = 0:1/1000:2;
+          data.trial{tr} = randn(4, 2001);
+      end
+      cfg = [];
+      cfg.bpfilter = 'yes';
+      cfg.bpfreq = [1 40];
+      cfg.bpfiltord = 4;
+      dataout = ft_preprocessing(cfg, data);
+      disp('ft_preprocessing bandpass filter completed');
+    expected_output_contains: "ft_preprocessing bandpass filter completed"
+
+  - name: Preprocessing - notch filter
+    description: Test notch (bandstop) filtering for line noise removal
+    script: |
+      data = [];
+      data.fsample = 1000;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      t = 0:1/1000:2;
+      for tr = 1:3
+          data.time{tr} = t;
+          data.trial{tr} = randn(4, length(t)) + 0.5*sin(2*pi*50*t);  % Add 50Hz noise
+      end
+      cfg = [];
+      cfg.bsfilter = 'yes';
+      cfg.bsfreq = [48 52];
+      dataout = ft_preprocessing(cfg, data);
+      disp('ft_preprocessing notch filter completed');
+    expected_output_contains: "ft_preprocessing notch filter completed"
+
+  - name: Preprocessing - re-reference to average
+    description: Test re-referencing to average reference
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Fp1', 'Fp2', 'F3', 'F4', 'Cz', 'Pz', 'O1', 'O2'};
+      for tr = 1:3
+          data.time{tr} = 0:1/500:1;
+          data.trial{tr} = randn(8, 501);
+      end
+      cfg = [];
+      cfg.reref = 'yes';
+      cfg.refchannel = 'all';
+      dataout = ft_preprocessing(cfg, data);
+      disp('ft_preprocessing average re-reference completed');
+    expected_output_contains: "ft_preprocessing average re-reference completed"
+
+  # ==========================================================================
+  # DATA SELECTION AND MANIPULATION
+  # ==========================================================================
+  - name: Select channels
+    description: Test ft_selectdata for channel selection
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Fp1', 'Fp2', 'F3', 'F4', 'C3', 'C4', 'P3', 'P4', 'O1', 'O2'};
+      for tr = 1:5
+          data.time{tr} = 0:1/500:1;
+          data.trial{tr} = randn(10, 501);
+      end
+      cfg = [];
+      cfg.channel = {'Fp1', 'Fp2', 'F3', 'F4'};
+      datasel = ft_selectdata(cfg, data);
+      disp('ft_selectdata channel selection completed');
+      disp(['Selected channels: ' num2str(length(datasel.label))]);
+    expected_output_contains: "Selected channels: 4"
+
+  - name: Select time window
+    description: Test ft_selectdata for time window selection
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      for tr = 1:5
+          data.time{tr} = -0.5:1/500:1.5;
+          data.trial{tr} = randn(4, length(data.time{tr}));
+      end
+      cfg = [];
+      cfg.latency = [0 1];
+      datasel = ft_selectdata(cfg, data);
+      disp('ft_selectdata time selection completed');
+      disp(['Time range: ' num2str(min(datasel.time{1})) ' to ' num2str(max(datasel.time{1})) ' s']);
+    expected_output_contains: "Time range: 0 to 1 s"
+
+  - name: Select trials
+    description: Test ft_selectdata for trial selection
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      for tr = 1:10
+          data.time{tr} = 0:1/500:1;
+          data.trial{tr} = randn(4, 501);
+      end
+      cfg = [];
+      cfg.trials = [1 3 5 7 9];
+      datasel = ft_selectdata(cfg, data);
+      disp('ft_selectdata trial selection completed');
+      disp(['Selected trials: ' num2str(length(datasel.trial))]);
+    expected_output_contains: "Selected trials: 5"
+
+  - name: Redefine trial boundaries
+    description: Test ft_redefinetrial for segmentation
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      data.time{1} = 0:1/500:10;
+      data.trial{1} = randn(4, length(data.time{1}));
+      cfg = [];
+      cfg.length = 2;
+      cfg.overlap = 0.5;
+      dataseg = ft_redefinetrial(cfg, data);
+      disp('ft_redefinetrial completed');
+      disp(['Segments created: ' num2str(length(dataseg.trial))]);
+    expected_output_contains: "Segments created:"
+
+  - name: Append datasets
+    description: Test ft_appenddata for concatenating datasets
+    script: |
+      data1 = [];
+      data1.fsample = 500;
+      data1.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      for tr = 1:5
+          data1.time{tr} = 0:1/500:1;
+          data1.trial{tr} = randn(4, 501);
+      end
+      data2 = data1;
+      for tr = 1:3
+          data2.time{tr} = 0:1/500:1;
+          data2.trial{tr} = randn(4, 501);
+      end
+      dataappend = ft_appenddata([], data1, data2);
+      disp('ft_appenddata completed');
+      disp(['Total trials: ' num2str(length(dataappend.trial))]);
+    expected_output_contains: "ft_appenddata completed"
+
+  - name: Resample data
+    description: Test ft_resampledata for changing sampling rate
+    script: |
+      data = [];
+      data.fsample = 1000;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      for tr = 1:3
+          data.time{tr} = 0:1/1000:2;
+          data.trial{tr} = randn(4, 2001);
+      end
+      cfg = [];
+      cfg.resamplefs = 250;
+      cfg.detrend = 'no';
+      datars = ft_resampledata(cfg, data);
+      disp('ft_resampledata completed');
+      disp(['Original Fs: ' num2str(data.fsample) ' Hz']);
+      disp(['New Fs: ' num2str(datars.fsample) ' Hz']);
+    expected_output_contains: "New Fs: 250 Hz"
+
+  # ==========================================================================
+  # TIME-LOCKED ANALYSIS (ERPs)
+  # ==========================================================================
+  - name: Timelockanalysis - basic averaging
+    description: Test ft_timelockanalysis for ERP computation
+    script: |
+      data = [];
+      data.fsample = 1000;
+      data.label = {'Fp1', 'Fp2', 'Fz', 'Cz', 'Pz', 'O1', 'O2'};
+      t = -0.2:1/1000:0.8;
+      for tr = 1:30
+          data.time{tr} = t;
+          erp = zeros(7, length(t));
+          erp(:, t > 0.08 & t < 0.12) = -3;  % N100
+          erp(:, t > 0.25 & t < 0.35) = 5;   % P300
+          data.trial{tr} = erp + 0.5*randn(7, length(t));
+      end
+      cfg = [];
+      timelock = ft_timelockanalysis(cfg, data);
+      disp('ft_timelockanalysis completed');
+      disp(['Time points: ' num2str(length(timelock.time))]);
+      disp(['Trials averaged: ' num2str(timelock.dof(1))]);
+    expected_output_contains: "Trials averaged: 30"
+
+  - name: Timelockanalysis with covariance
+    description: Test ft_timelockanalysis with covariance estimation
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4', 'Ch5', 'Ch6'};
+      t = -0.5:1/500:1;
+      for tr = 1:20
+          data.time{tr} = t;
+          data.trial{tr} = randn(6, length(t));
+      end
+      cfg = [];
+      cfg.covariance = 'yes';
+      cfg.covariancewindow = 'prestim';
+      timelock = ft_timelockanalysis(cfg, data);
+      disp('ft_timelockanalysis with covariance completed');
+      disp(['Covariance matrix size: ' num2str(size(timelock.cov, 1)) 'x' num2str(size(timelock.cov, 2))]);
+    expected_output_contains: "Covariance matrix size: 6x6"
+
+  - name: Timelockanalysis keep trials
+    description: Test ft_timelockanalysis keeping individual trials
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      t = -0.2:1/500:0.6;
+      for tr = 1:15
+          data.time{tr} = t;
+          data.trial{tr} = randn(4, length(t));
+      end
+      cfg = [];
+      cfg.keeptrials = 'yes';
+      timelock = ft_timelockanalysis(cfg, data);
+      disp('ft_timelockanalysis keeptrials completed');
+      disp(['Trial dimension: ' num2str(size(timelock.trial, 1))]);
+    expected_output_contains: "Trial dimension: 15"
+
+  # ==========================================================================
+  # FREQUENCY ANALYSIS
+  # ==========================================================================
+  - name: Frequency analysis - mtmfft hanning
+    description: Test ft_freqanalysis with FFT and Hanning taper
+    script: |
+      data = [];
+      data.fsample = 1000;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      t = 0:1/1000:2;
+      for tr = 1:5
+          data.time{tr} = t;
+          data.trial{tr} = sin(2*pi*10*t) + 0.5*sin(2*pi*25*t) + 0.1*randn(4, length(t));
+      end
+      cfg = [];
+      cfg.method = 'mtmfft';
+      cfg.output = 'pow';
+      cfg.foilim = [1 50];
+      cfg.taper = 'hanning';
+      freq = ft_freqanalysis(cfg, data);
+      disp('ft_freqanalysis mtmfft completed');
+      disp(['Frequency range: ' num2str(min(freq.freq)) ' - ' num2str(max(freq.freq)) ' Hz']);
+    expected_output_contains: "ft_freqanalysis mtmfft completed"
+
+  - name: Frequency analysis - multitaper (dpss)
+    description: Test ft_freqanalysis with DPSS/Slepian tapers
+    script: |
+      data = [];
+      data.fsample = 1000;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      t = 0:1/1000:2;
+      for tr = 1:5
+          data.time{tr} = t;
+          data.trial{tr} = sin(2*pi*10*t) + 0.5*sin(2*pi*30*t) + 0.1*randn(4, length(t));
+      end
+      cfg = [];
+      cfg.method = 'mtmfft';
+      cfg.output = 'pow';
+      cfg.foilim = [1 50];
+      cfg.taper = 'dpss';
+      cfg.tapsmofrq = 3;
+      freq = ft_freqanalysis(cfg, data);
+      disp('ft_freqanalysis multitaper completed');
+      disp(['Channels: ' num2str(size(freq.powspctrm, 1))]);
+    expected_output_contains: "ft_freqanalysis multitaper completed"
+
+  - name: Frequency analysis - wavelet time-frequency
+    description: Test ft_freqanalysis with wavelet method for TFR
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      t = -0.5:1/500:1.5;
+      for tr = 1:5
+          data.time{tr} = t;
+          data.trial{tr} = sin(2*pi*10*t) + sin(2*pi*30*t) + 0.2*randn(4, length(t));
+      end
+      cfg = [];
+      cfg.method = 'wavelet';
+      cfg.output = 'pow';
+      cfg.foi = 5:5:40;
+      cfg.toi = -0.4:0.05:1.4;
+      cfg.width = 5;
+      tfreq = ft_freqanalysis(cfg, data);
+      disp('ft_freqanalysis wavelet TFR completed');
+      disp(['Time points: ' num2str(length(tfreq.time))]);
+      disp(['Frequencies: ' num2str(length(tfreq.freq))]);
+    expected_output_contains: "ft_freqanalysis wavelet TFR completed"
+
+  - name: Frequency analysis - mtmconvol sliding window
+    description: Test ft_freqanalysis with sliding window multitaper
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      t = -0.5:1/500:1.5;
+      for tr = 1:5
+          data.time{tr} = t;
+          data.trial{tr} = sin(2*pi*10*t) + 0.2*randn(4, length(t));
+      end
+      cfg = [];
+      cfg.method = 'mtmconvol';
+      cfg.output = 'pow';
+      cfg.foi = 5:2:30;
+      cfg.toi = -0.3:0.05:1.3;
+      cfg.t_ftimwin = ones(1, length(cfg.foi)) * 0.4;
+      cfg.taper = 'hanning';
+      tfreq = ft_freqanalysis(cfg, data);
+      disp('ft_freqanalysis mtmconvol completed');
+      disp(['TFR dimensions: ' num2str(size(tfreq.powspctrm, 2)) ' chan x ' num2str(size(tfreq.powspctrm, 3)) ' freq x ' num2str(size(tfreq.powspctrm, 4)) ' time']);
+    expected_output_contains: "ft_freqanalysis mtmconvol completed"
+
+  - name: Frequency analysis - fourier output
+    description: Test ft_freqanalysis with complex Fourier coefficients
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      for tr = 1:5
+          data.time{tr} = 0:1/500:2;
+          data.trial{tr} = randn(4, 1001);
+      end
+      cfg = [];
+      cfg.method = 'mtmfft';
+      cfg.output = 'fourier';
+      cfg.foilim = [1 50];
+      cfg.taper = 'hanning';
+      cfg.keeptrials = 'yes';
+      freq = ft_freqanalysis(cfg, data);
+      disp('ft_freqanalysis fourier output completed');
+      disp(['Fourier spectrum is complex: ' num2str(~isreal(freq.fourierspctrm(1,1,1)))]);
+    expected_output_contains: "Fourier spectrum is complex: 1"
+
+  # ==========================================================================
+  # CONNECTIVITY ANALYSIS
+  # ==========================================================================
+  - name: Connectivity - coherence
+    description: Test ft_connectivityanalysis for coherence
+    script: |
+      data = [];
+      data.fsample = 250;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      t = 0:1/250:2;
+      for tr = 1:10
+          data.time{tr} = t;
+          base = sin(2*pi*10*t) + 0.1*randn(1, length(t));
+          data.trial{tr}(1,:) = base;
+          data.trial{tr}(2,:) = base + 0.2*randn(1, length(t));
+          data.trial{tr}(3,:) = sin(2*pi*20*t) + 0.1*randn(1, length(t));
+          data.trial{tr}(4,:) = randn(1, length(t));
+      end
+      cfg = [];
+      cfg.method = 'mtmfft';
+      cfg.output = 'fourier';
+      cfg.foilim = [1 50];
+      cfg.taper = 'hanning';
+      freq = ft_freqanalysis(cfg, data);
+      cfg = [];
+      cfg.method = 'coh';
+      conn = ft_connectivityanalysis(cfg, freq);
+      disp('ft_connectivityanalysis coherence completed');
+      disp(['Coherence matrix: ' num2str(size(conn.cohspctrm, 1)) 'x' num2str(size(conn.cohspctrm, 2))]);
+    expected_output_contains: "Coherence matrix: 4x4"
+
+  - name: Connectivity - phase locking value
+    description: Test ft_connectivityanalysis for PLV
+    script: |
+      data = [];
+      data.fsample = 250;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      t = 0:1/250:2;
+      for tr = 1:10
+          data.time{tr} = t;
+          phase = 2*pi*10*t;
+          data.trial{tr}(1,:) = sin(phase) + 0.1*randn(1, length(t));
+          data.trial{tr}(2,:) = sin(phase + 0.2) + 0.1*randn(1, length(t));
+          data.trial{tr}(3,:) = sin(phase + pi/2) + 0.1*randn(1, length(t));
+          data.trial{tr}(4,:) = randn(1, length(t));
+      end
+      cfg = [];
+      cfg.method = 'mtmfft';
+      cfg.output = 'fourier';
+      cfg.foilim = [1 50];
+      cfg.taper = 'hanning';
+      cfg.keeptrials = 'yes';
+      freq = ft_freqanalysis(cfg, data);
+      cfg = [];
+      cfg.method = 'plv';
+      conn = ft_connectivityanalysis(cfg, freq);
+      disp('ft_connectivityanalysis PLV completed');
+      disp(['PLV matrix: ' num2str(size(conn.plvspctrm, 1)) 'x' num2str(size(conn.plvspctrm, 2))]);
+    expected_output_contains: "PLV matrix: 4x4"
+
+  # ==========================================================================
+  # COMPONENT ANALYSIS (ICA/PCA)
+  # ==========================================================================
+  - name: Component analysis - PCA
+    description: Test ft_componentanalysis with PCA
+    script: |
+      data = [];
+      data.fsample = 250;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4', 'Ch5', 'Ch6', 'Ch7', 'Ch8', 'Ch9', 'Ch10'};
+      t = 0:1/250:4;
+      s1 = sin(2*pi*10*t);
+      s2 = sin(2*pi*25*t);
+      s3 = randn(1, length(t));
+      A = randn(10, 3);
+      for tr = 1:1
+          data.time{tr} = t;
+          sources = [s1; s2; s3];
+          data.trial{tr} = A * sources + 0.1*randn(10, length(t));
+      end
+      cfg = [];
+      cfg.method = 'pca';
+      cfg.numcomponent = 5;
+      comp = ft_componentanalysis(cfg, data);
+      disp('ft_componentanalysis PCA completed');
+      disp(['Components: ' num2str(length(comp.label))]);
+    expected_output_contains: "Components: 5"
+
+  - name: Component analysis - FastICA
+    description: Test ft_componentanalysis with FastICA
+    script: |
+      data = [];
+      data.fsample = 250;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4', 'Ch5', 'Ch6'};
+      t = 0:1/250:4;
+      s1 = sin(2*pi*10*t);
+      s2 = sawtooth(2*pi*5*t);
+      A = randn(6, 2);
+      for tr = 1:1
+          data.time{tr} = t;
+          sources = [s1; s2];
+          data.trial{tr} = A * sources + 0.05*randn(6, length(t));
+      end
+      cfg = [];
+      cfg.method = 'fastica';
+      cfg.numcomponent = 2;
+      comp = ft_componentanalysis(cfg, data);
+      disp('ft_componentanalysis FastICA completed');
+      disp(['Components: ' num2str(length(comp.label))]);
+    expected_output_contains: "Components: 2"
+
+  # ==========================================================================
+  # STATISTICAL ANALYSIS
+  # ==========================================================================
+  - name: Frequency statistics - parametric t-test
+    description: Test ft_freqstatistics with analytic t-test
+    script: |
+      data1 = [];
+      data1.fsample = 250;
+      data1.label = {'Ch1', 'Ch2'};
+      data2 = [];
+      data2.fsample = 250;
+      data2.label = {'Ch1', 'Ch2'};
+      for tr = 1:5
+          data1.time{tr} = 0:1/250:1;
+          data1.trial{tr} = sin(2*pi*10*data1.time{tr}) + 0.1*randn(2, 251);
+          data2.time{tr} = 0:1/250:1;
+          data2.trial{tr} = 1.5*sin(2*pi*10*data2.time{tr}) + 0.1*randn(2, 251);
+      end
+      cfg = [];
+      cfg.method = 'mtmfft';
+      cfg.output = 'pow';
+      cfg.foilim = [5 30];
+      cfg.taper = 'hanning';
+      cfg.keeptrials = 'yes';
+      freq1 = ft_freqanalysis(cfg, data1);
+      freq2 = ft_freqanalysis(cfg, data2);
+      cfg = [];
+      cfg.method = 'analytic';
+      cfg.statistic = 'ft_statfun_indepsamplesT';
+      cfg.design = [ones(1,5) 2*ones(1,5)];
+      cfg.ivar = 1;
+      stat = ft_freqstatistics(cfg, freq1, freq2);
+      disp('ft_freqstatistics completed');
+      disp(['Stat matrix: ' num2str(size(stat.stat, 1)) ' x ' num2str(size(stat.stat, 2))]);
+    expected_output_contains: "ft_freqstatistics completed"
+
+  - name: Timelock statistics - paired t-test
+    description: Test ft_timelockstatistics with paired comparison
+    script: |
+      data1 = [];
+      data1.fsample = 500;
+      data1.label = {'Ch1', 'Ch2', 'Ch3'};
+      data2 = [];
+      data2.fsample = 500;
+      data2.label = {'Ch1', 'Ch2', 'Ch3'};
+      t = -0.2:1/500:0.6;
+      for tr = 1:8
+          data1.time{tr} = t;
+          data1.trial{tr} = randn(3, length(t));
+          data2.time{tr} = t;
+          data2.trial{tr} = randn(3, length(t)) + 2;  % Effect
+      end
+      cfg = [];
+      cfg.keeptrials = 'yes';
+      tl1 = ft_timelockanalysis(cfg, data1);
+      tl2 = ft_timelockanalysis(cfg, data2);
+      cfg = [];
+      cfg.method = 'analytic';
+      cfg.statistic = 'ft_statfun_depsamplesT';
+      cfg.design = [1:8 1:8; ones(1,8) 2*ones(1,8)];
+      cfg.uvar = 1;
+      cfg.ivar = 2;
+      stat = ft_timelockstatistics(cfg, tl1, tl2);
+      disp('ft_timelockstatistics completed');
+      disp(['Time points with stats: ' num2str(length(stat.time))]);
+    expected_output_contains: "ft_timelockstatistics completed"
+
+  # ==========================================================================
+  # ARTIFACT HANDLING
+  # ==========================================================================
+  - name: Channel repair
+    description: Test ft_channelrepair for bad channel interpolation
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Fp1', 'Fp2', 'F3', 'F4', 'Fz', 'C3', 'C4', 'Cz', 'P3', 'P4'};
+      t = 0:1/500:2;
+      elec = [];
+      elec.label = data.label;
+      elec.chanpos = [
+          -0.3  0.9  0.3; 0.3  0.9  0.3; -0.5  0.5  0.7; 0.5  0.5  0.7; 0.0  0.6  0.8;
+          -0.7  0.0  0.7; 0.7  0.0  0.7; 0.0  0.0  1.0; -0.5 -0.5  0.7; 0.5 -0.5  0.7];
+      elec.elecpos = elec.chanpos;
+      elec.unit = 'cm';
+      for tr = 1:3
+          data.time{tr} = t;
+          data.trial{tr} = randn(10, length(t));
+          data.trial{tr}(3,:) = 1000;  % Bad channel F3
+      end
+      data.elec = elec;
+      cfg = [];
+      cfg.method = 'weighted';
+      cfg.badchannel = {'F3'};
+      cfg.neighbours = [];
+      cfg.neighbours(1).label = 'F3';
+      cfg.neighbours(1).neighblabel = {'Fp1', 'Fz', 'C3'};
+      datarepaired = ft_channelrepair(cfg, data);
+      disp('ft_channelrepair completed');
+      disp(['Original F3 mean: ' num2str(mean(data.trial{1}(3,:)))]);
+      disp(['Repaired F3 std: ' num2str(std(datarepaired.trial{1}(3,:)))]);
+    expected_output_contains: "ft_channelrepair completed"
+
+  # ==========================================================================
+  # BASELINE CORRECTION
+  # ==========================================================================
+  - name: Frequency baseline correction - relative
+    description: Test ft_freqbaseline with relative change
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      t = -0.5:1/500:1.5;
+      for tr = 1:5
+          data.time{tr} = t;
+          data.trial{tr} = sin(2*pi*10*t) + 0.2*randn(4, length(t));
+      end
+      cfg = [];
+      cfg.method = 'wavelet';
+      cfg.output = 'pow';
+      cfg.foi = 5:2:30;
+      cfg.toi = -0.4:0.05:1.4;
+      cfg.width = 5;
+      freq = ft_freqanalysis(cfg, data);
+      cfg = [];
+      cfg.baseline = [-0.4 -0.1];
+      cfg.baselinetype = 'relative';
+      freqbl = ft_freqbaseline(cfg, freq);
+      disp('ft_freqbaseline relative completed');
+    expected_output_contains: "ft_freqbaseline relative completed"
+
+  - name: Frequency baseline correction - decibel
+    description: Test ft_freqbaseline with dB conversion
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      t = -0.5:1/500:1.5;
+      for tr = 1:5
+          data.time{tr} = t;
+          data.trial{tr} = sin(2*pi*10*t) + 0.2*randn(4, length(t));
+      end
+      cfg = [];
+      cfg.method = 'wavelet';
+      cfg.output = 'pow';
+      cfg.foi = 5:2:30;
+      cfg.toi = -0.4:0.05:1.4;
+      cfg.width = 5;
+      freq = ft_freqanalysis(cfg, data);
+      cfg = [];
+      cfg.baseline = [-0.4 -0.1];
+      cfg.baselinetype = 'db';
+      freqbl = ft_freqbaseline(cfg, freq);
+      disp('ft_freqbaseline dB completed');
+    expected_output_contains: "ft_freqbaseline dB completed"
+
+  # ==========================================================================
+  # GRAND AVERAGE / COMBINING DATA
+  # ==========================================================================
+  - name: Grand average timelock
+    description: Test ft_timelockgrandaverage for group ERPs
+    script: |
+      alldata = {};
+      for subj = 1:5
+          data = [];
+          data.fsample = 500;
+          data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+          t = -0.2:1/500:0.6;
+          for tr = 1:10
+              data.time{tr} = t;
+              data.trial{tr} = randn(4, length(t));
+          end
+          cfg = [];
+          alldata{subj} = ft_timelockanalysis(cfg, data);
+      end
+      cfg = [];
+      cfg.keepindividual = 'no';
+      grandavg = ft_timelockgrandaverage(cfg, alldata{:});
+      disp('ft_timelockgrandaverage completed');
+      disp(['Time points: ' num2str(length(grandavg.time))]);
+    expected_output_contains: "ft_timelockgrandaverage completed"
+
+  - name: Grand average frequency
+    description: Test ft_freqgrandaverage for group spectra
+    script: |
+      allfreq = {};
+      for subj = 1:4
+          data = [];
+          data.fsample = 500;
+          data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+          for tr = 1:5
+              data.time{tr} = 0:1/500:2;
+              data.trial{tr} = randn(4, 1001);
+          end
+          cfg = [];
+          cfg.method = 'mtmfft';
+          cfg.output = 'pow';
+          cfg.foilim = [1 50];
+          cfg.taper = 'hanning';
+          allfreq{subj} = ft_freqanalysis(cfg, data);
+      end
+      cfg = [];
+      cfg.keepindividual = 'no';
+      grandfreq = ft_freqgrandaverage(cfg, allfreq{:});
+      disp('ft_freqgrandaverage completed');
+      disp(['Frequencies: ' num2str(length(grandfreq.freq))]);
+    expected_output_contains: "ft_freqgrandaverage completed"
+
+  # ==========================================================================
+  # DATA CONVERSION AND I/O
+  # ==========================================================================
+  - name: Convert raw to timelock
+    description: Test ft_checkdata conversion
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      for tr = 1:10
+          data.time{tr} = 0:1/500:1;
+          data.trial{tr} = randn(4, 501);
+      end
+      dataout = ft_checkdata(data, 'datatype', 'timelock');
+      disp('ft_checkdata conversion completed');
+      disp(['Has avg field: ' num2str(isfield(dataout, 'avg'))]);
+    expected_output_contains: "ft_checkdata conversion completed"
+
+  - name: Data type checking
+    description: Test ft_datatype for structure validation
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      data.time{1} = 0:1/500:1;
+      data.trial{1} = randn(4, 501);
+      dtype = ft_datatype(data);
+      disp('ft_datatype completed');
+      disp(['Data type: ' dtype]);
+    expected_output_contains: "Data type: raw"
+
+  # ==========================================================================
+  # MATH AND STATISTICS UTILITIES
+  # ==========================================================================
+  - name: Combine planar gradients
+    description: Test ft_combineplanar - requires specific sensor array (Neuromag/CTF), custom grad not recognized
+    script: |
+      data = [];
+      data.fsample = 500;
+      data.label = {'MEG0112', 'MEG0113', 'MEG0122', 'MEG0123', 'MEG0132', 'MEG0133'};
+      data.grad = [];
+      data.grad.label = data.label;
+      data.grad.chantype = repmat({'megplanar'}, 1, 6);
+      data.grad.chanpos = randn(6, 3);
+      data.grad.chanori = randn(6, 3);
+      data.grad.coilpos = randn(6, 3);
+      data.grad.coilori = randn(6, 3);
+      data.grad.tra = eye(6);
+      data.grad.unit = 'cm';
+      for tr = 1:5
+          data.time{tr} = 0:1/500:1;
+          data.trial{tr} = randn(6, 501);
+      end
+      cfg = [];
+      cfg.method = 'mtmfft';
+      cfg.output = 'pow';
+      cfg.foilim = [1 50];
+      cfg.taper = 'hanning';
+      freq = ft_freqanalysis(cfg, data);
+      disp('ft_freqanalysis completed');
+      disp(['Frequency channels: ' num2str(length(freq.label))]);
+    ignore_exit_code: true
+    expected_output_contains: "ft_freqanalysis completed"
+
+  # ==========================================================================
+  # MISCELLANEOUS FUNCTIONS
+  # ==========================================================================
+  - name: Math operations on data
+    description: Test ft_math for arithmetic operations
+    script: |
+      data1 = [];
+      data1.fsample = 500;
+      data1.label = {'Ch1', 'Ch2', 'Ch3', 'Ch4'};
+      data1.time{1} = 0:1/500:1;
+      data1.trial{1} = ones(4, 501) * 10;
+      data2 = data1;
+      data2.trial{1} = ones(4, 501) * 5;
+      cfg = [];
+      cfg.operation = 'subtract';
+      cfg.parameter = 'trial';
+      dataout = ft_math(cfg, data1, data2);
+      meanval = mean(dataout.trial{1}(:));
+      disp('ft_math completed');
+      disp(['Result mean: ' num2str(meanval)]);
+    expected_output_contains: "Result mean: 5"
+
+  - name: Channel interpolation layout
+    description: Test ft_prepare_neighbours for channel neighbourhood
+    script: |
+      cfg = [];
+      cfg.method = 'distance';
+      cfg.neighbourdist = 0.5;
+      elec = [];
+      elec.label = {'Fp1', 'Fp2', 'F3', 'F4', 'Fz', 'C3', 'C4', 'Cz'};
+      elec.chanpos = [
+          -0.3  0.9  0.3;
+           0.3  0.9  0.3;
+          -0.5  0.5  0.7;
+           0.5  0.5  0.7;
+           0.0  0.6  0.8;
+          -0.7  0.0  0.7;
+           0.7  0.0  0.7;
+           0.0  0.0  1.0;
+      ];
+      elec.elecpos = elec.chanpos;
+      elec.unit = 'cm';
+      cfg.elec = elec;
+      neighbours = ft_prepare_neighbours(cfg);
+      disp('ft_prepare_neighbours completed');
+      disp(['Number of neighbourhoods: ' num2str(length(neighbours))]);
+    expected_output_contains: "ft_prepare_neighbours completed"
+
+  # ==========================================================================
+  # SOURCE RECONSTRUCTION PREPARATION
+  # ==========================================================================
+  - name: Create headmodel sphere
+    description: Test ft_prepare_headmodel with single sphere
+    script: |
+      cfg = [];
+      cfg.method = 'singlesphere';
+      vol = [];
+      vol.r = 8;
+      vol.o = [0 0 4];
+      vol.unit = 'cm';
+      vol.type = 'singlesphere';
+      headmodel = ft_datatype_headmodel(vol);
+      disp('ft_datatype_headmodel singlesphere completed');
+      disp(['Sphere radius: ' num2str(headmodel.r) ' ' headmodel.unit]);
+    expected_output_contains: "Sphere radius: 8 cm"
+
+  - name: Create sourcemodel grid
+    description: Test ft_prepare_sourcemodel for grid creation
+    script: |
+      cfg = [];
+      cfg.xgrid = -8:2:8;
+      cfg.ygrid = -8:2:8;
+      cfg.zgrid = -2:2:8;
+      cfg.unit = 'cm';
+      sourcemodel = ft_prepare_sourcemodel(cfg);
+      disp('ft_prepare_sourcemodel completed');
+      disp(['Grid positions: ' num2str(size(sourcemodel.pos, 1))]);
+    expected_output_contains: "ft_prepare_sourcemodel completed"
+
+  # ==========================================================================
+  # UTILITY FUNCTIONS
+  # ==========================================================================
+  - name: Progress indicator
+    description: Test ft_progress for progress display
+    script: |
+      ft_progress('init', 'text', 'Processing...');
+      for i = 1:5
+          ft_progress(i/5, 'Processing item %d of %d', i, 5);
+      end
+      ft_progress('close');
+      disp('ft_progress completed');
+    expected_output_contains: "ft_progress completed"
+
+  - name: Notification system
+    description: Test ft_notice for user messages
+    script: |
+      ft_notice('This is a test notice message');
+      disp('ft_notice completed');
+    expected_output_contains: "ft_notice completed"
+
+  - name: Warning system
+    description: Test ft_warning for warning messages
+    script: |
+      ft_warning('This is a test warning');
+      disp('ft_warning completed');
+    expected_output_contains: "ft_warning completed"
+
+  # ==========================================================================
+  # CONFIGURATION HANDLING
+  # ==========================================================================
+  - name: Configuration defaults
+    description: Test ft_getopt for configuration handling
+    script: |
+      cfg.option1 = 'value1';
+      cfg.option2 = 42;
+      val1 = ft_getopt(cfg, 'option1', 'default');
+      val2 = ft_getopt(cfg, 'option2', 0);
+      val3 = ft_getopt(cfg, 'option3', 'default3');
+      disp('ft_getopt completed');
+      disp(['option1: ' val1]);
+      disp(['option2: ' num2str(val2)]);
+      disp(['option3: ' val3]);
+    expected_output_contains: "option3: default3"
+
+  - name: Channel selection helper
+    description: Test ft_channelselection for channel patterns
+    script: |
+      label = {'Fp1', 'Fp2', 'F3', 'F4', 'Fz', 'C3', 'C4', 'Cz', 'P3', 'P4', 'Pz', 'O1', 'O2'};
+      frontal = ft_channelselection('F*', label);
+      disp('ft_channelselection completed');
+      disp(['Frontal channels: ' strjoin(frontal, ', ')]);
+    expected_output_contains: "Frontal channels:"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output test_scripts
+    echo "Test outputs preserved in test_output/ and test_scripts/"

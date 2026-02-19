@@ -1,0 +1,719 @@
+# convert3d (c3d) container test suite
+# Tests for convert3d v1.1.0 - 3D image conversion and processing tool
+#
+# C3D is a command-line tool for converting 3D images between common file formats.
+# It includes a growing list of commands for image manipulation, such as thresholding,
+# resampling, smoothing, morphological operations, and more.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - T2: inplaneT2 for comparison tests
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: convert3d
+version: 1.1.0
+container: convert3d_1.1.0_20251212.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND INFORMATION
+  # ==========================================================================
+  - name: Help output
+    description: Verify c3d binary runs and shows help
+    command: c3d -h 2>&1 | head -5
+    expected_output_contains: "Image Input/Output"
+
+  - name: Image info (brief)
+    description: Display brief image information
+    command: c3d ${t1w} -info
+    expected_output_contains: "dim ="
+
+  - name: Image info (full)
+    description: Display verbose image information
+    command: c3d ${t1w} -info-full 2>&1 | head -20
+    expected_output_contains: "Dimensions"
+
+  - name: Probe voxel intensity (center)
+    description: Report intensity at center voxel (50%)
+    command: c3d ${t1w} -probe 50%
+    expected_output_contains: "Interpolated image value"
+
+  - name: Probe voxel intensity (voxel coords)
+    description: Report intensity at specific voxel coordinates
+    command: c3d ${t1w} -probe 80x96x96vox
+    expected_output_contains: "Interpolated image value"
+
+  - name: Centroid calculation
+    description: Report centroid of foreground voxels
+    command: c3d ${t1w} -threshold 100 inf 1 0 -centroid
+    expected_output_contains: "CENTROID"
+
+  - name: Voxel sum
+    description: Print sum of all voxel intensities
+    command: c3d ${t1w} -voxel-sum
+    expected_output_contains: "Voxel Sum"
+
+  # ==========================================================================
+  # IMAGE OUTPUT AND FORMAT CONVERSION
+  # ==========================================================================
+  - name: Basic file copy
+    description: Read and write image (basic I/O test)
+    command: c3d ${t1w} -o ${output_dir}/t1w_copy.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_copy.nii.gz
+
+  - name: Output as uncompressed NIfTI
+    description: Write uncompressed NIfTI file
+    command: c3d ${t1w} -o ${output_dir}/t1w_uncompressed.nii
+    validate:
+      - output_exists: ${output_dir}/t1w_uncompressed.nii
+
+  - name: Output as short datatype
+    description: Convert to short integer datatype
+    command: c3d ${t1w} -type short -o ${output_dir}/t1w_short.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_short.nii.gz
+
+  - name: Output as unsigned char
+    description: Convert to unsigned char datatype
+    command: c3d ${t1w} -stretch 0 1258 0 255 -type uchar -o ${output_dir}/t1w_uchar.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_uchar.nii.gz
+
+  - name: Output as float
+    description: Convert to float datatype
+    command: c3d ${t1w} -type float -o ${output_dir}/t1w_float.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_float.nii.gz
+
+  - name: Output as double
+    description: Convert to double datatype
+    command: c3d ${t1w} -type double -o ${output_dir}/t1w_double.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_double.nii.gz
+
+  # ==========================================================================
+  # RESAMPLING OPERATIONS
+  # ==========================================================================
+  - name: Resample to percentage
+    description: Downsample image to 50% of original dimensions
+    command: c3d ${t1w} -resample 50% -o ${output_dir}/t1w_resample50pct.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_resample50pct.nii.gz
+
+  - name: Resample to specific dimensions
+    description: Resample to specific voxel dimensions
+    command: c3d ${t1w} -resample 100x100x100 -o ${output_dir}/t1w_resample100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_resample100.nii.gz
+
+  - name: Resample with cubic interpolation
+    description: Resample using cubic interpolation
+    command: c3d ${t1w} -interpolation Cubic -resample 50% -o ${output_dir}/t1w_resample_cubic.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_cubic.nii.gz
+
+  - name: Resample with nearest neighbor
+    description: Resample using nearest neighbor interpolation
+    command: c3d ${t1w} -interpolation NearestNeighbor -resample 50% -o ${output_dir}/t1w_resample_nn.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_nn.nii.gz
+
+  - name: Resample with sinc interpolation
+    description: Resample using sinc interpolation
+    command: c3d ${t1w} -interpolation Sinc -resample 50% -o ${output_dir}/t1w_resample_sinc.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_sinc.nii.gz
+
+  - name: Resample to specific resolution (mm)
+    description: Resample to 2mm isotropic resolution
+    command: c3d ${t1w} -resample-mm 2x2x2mm -o ${output_dir}/t1w_resample2mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_resample2mm.nii.gz
+
+  - name: Reslice to reference space
+    description: Reslice T1w into T2 space using identity transform
+    command: c3d ${t2} ${t1w} -reslice-identity -o ${output_dir}/t1w_in_t2_space.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_in_t2_space.nii.gz
+
+  # ==========================================================================
+  # SMOOTHING AND FILTERING
+  # ==========================================================================
+  - name: Gaussian smoothing (mm)
+    description: Apply Gaussian smoothing with 2mm sigma
+    command: c3d ${t1w} -smooth 2mm -o ${output_dir}/t1w_smooth2mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth2mm.nii.gz
+
+  - name: Gaussian smoothing (voxels)
+    description: Apply Gaussian smoothing with 2 voxel sigma
+    command: c3d ${t1w} -smooth 2vox -o ${output_dir}/t1w_smooth2vox.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth2vox.nii.gz
+
+  - name: Anisotropic smoothing
+    description: Apply anisotropic Gaussian smoothing
+    command: c3d ${t1w} -smooth 2x1x1mm -o ${output_dir}/t1w_smooth_aniso.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_aniso.nii.gz
+
+  - name: Fast approximate smoothing
+    description: Apply fast approximate Gaussian smoothing
+    command: c3d ${t1w} -smooth-fast 2mm -o ${output_dir}/t1w_smooth_fast.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_fast.nii.gz
+
+  - name: Median filter
+    description: Apply median filter with 2x2x2 neighborhood
+    command: c3d ${t1w} -median 2x2x2 -o ${output_dir}/t1w_median.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_median.nii.gz
+
+  - name: Mean filter
+    description: Apply mean filter
+    command: c3d ${t1w} -mf 2x2x2 -o ${output_dir}/t1w_meanfilt.nii.gz && ls ${output_dir}/t1w_meanfilt.nii.gz
+    expected_output_contains: "t1w_meanfilt.nii.gz"
+
+  - name: Edge sharpening
+    description: Sharpen edges in the image
+    command: c3d ${t1w} -sharpen -o ${output_dir}/t1w_sharpen.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sharpen.nii.gz
+
+  # ==========================================================================
+  # THRESHOLDING AND INTENSITY OPERATIONS
+  # ==========================================================================
+  - name: Binary threshold
+    description: Threshold image to binary (values 100-1000 become 1)
+    command: c3d ${t1w} -threshold 100 1000 1 0 -o ${output_dir}/t1w_thresh.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh.nii.gz
+
+  - name: Threshold with infinity
+    description: One-sided threshold (all above 200 become 1)
+    command: c3d ${t1w} -threshold 200 inf 1 0 -o ${output_dir}/t1w_thresh_inf.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_inf.nii.gz
+
+  - name: Threshold with percentile
+    description: Threshold using percentile values
+    command: c3d ${t1w} -threshold 20% 80% 1 0 -o ${output_dir}/t1w_thresh_pct.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_pct.nii.gz
+
+  - name: Binarize image
+    description: Convert image to binary (non-zero becomes 1)
+    command: c3d ${t1w} -binarize -o ${output_dir}/t1w_binarize.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_binarize.nii.gz
+
+  - name: Clip intensity range
+    description: Clip intensities to range
+    command: c3d ${t1w} -clip 100 800 -o ${output_dir}/t1w_clip.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_clip.nii.gz
+
+  - name: Clip at percentile
+    description: Clip at 95th percentile
+    command: c3d ${t1w} -clip -inf 95% -o ${output_dir}/t1w_clip95.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_clip95.nii.gz
+
+  - name: Stretch intensity
+    description: Linearly stretch intensities
+    command: c3d ${t1w} -stretch 0 1258 0 1000 -o ${output_dir}/t1w_stretch.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_stretch.nii.gz
+
+  - name: Scale intensity
+    description: Multiply intensity by constant factor
+    command: c3d ${t1w} -scale 0.5 -o ${output_dir}/t1w_scale.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_scale.nii.gz
+
+  - name: Shift intensity
+    description: Add constant to all voxels
+    command: c3d ${t1w} -shift 100 -o ${output_dir}/t1w_shift.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_shift.nii.gz
+
+  - name: Replace intensity values
+    description: Replace specific intensity values
+    command: c3d ${t1w} -replace 0 -1 -o ${output_dir}/t1w_replace.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_replace.nii.gz
+
+  # ==========================================================================
+  # MATHEMATICAL OPERATIONS
+  # ==========================================================================
+  - name: Add images
+    description: Voxelwise addition of two images
+    command: c3d ${t1w} ${t1w} -add -o ${output_dir}/t1w_add.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_add.nii.gz
+
+  - name: Multiply images
+    description: Voxelwise multiplication of two images
+    command: c3d ${t1w} ${t1w} -multiply -o ${output_dir}/t1w_multiply.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_multiply.nii.gz
+
+  - name: Divide images
+    description: Voxelwise division of two images
+    command: c3d ${t1w} ${t1w} -shift 1 -divide -o ${output_dir}/t1w_divide.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_divide.nii.gz
+
+  - name: Maximum of two images
+    description: Voxelwise maximum
+    command: c3d ${t1w} ${t1w} -max -o ${output_dir}/t1w_max.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_max.nii.gz
+
+  - name: Minimum of two images
+    description: Voxelwise minimum
+    command: c3d ${t1w} ${t1w} -min -o ${output_dir}/t1w_min.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_min.nii.gz
+
+  - name: Mean of images
+    description: Mean of all images on stack
+    command: c3d ${t1w} ${t1w} -mean -o ${output_dir}/t1w_mean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mean.nii.gz
+
+  - name: Square root
+    description: Voxelwise square root
+    command: c3d ${t1w} -sqrt -o ${output_dir}/t1w_sqrt.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sqrt.nii.gz
+
+  - name: Natural logarithm
+    description: Voxelwise natural logarithm
+    command: c3d ${t1w} -shift 1 -log -o ${output_dir}/t1w_log.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_log.nii.gz
+
+  - name: Log base 10
+    description: Voxelwise log base 10
+    command: c3d ${t1w} -shift 1 -log10 -o ${output_dir}/t1w_log10.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_log10.nii.gz
+
+  - name: Exponential
+    description: Voxelwise natural exponent
+    command: c3d ${t1w} -scale 0.001 -exp -o ${output_dir}/t1w_exp.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_exp.nii.gz
+
+  - name: Reciprocal
+    description: Voxelwise reciprocal (1/x)
+    command: c3d ${t1w} -shift 1 -reciprocal -o ${output_dir}/t1w_reciprocal.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_reciprocal.nii.gz
+
+  - name: Sine function
+    description: Voxelwise sine
+    command: c3d ${t1w} -sin -o ${output_dir}/t1w_sin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sin.nii.gz
+
+  - name: Cosine function
+    description: Voxelwise cosine
+    command: c3d ${t1w} -cos -o ${output_dir}/t1w_cos.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_cos.nii.gz
+
+  - name: Weighted sum
+    description: Weighted sum with constant weights
+    command: c3d ${t1w} ${t1w} -wsum 0.5 0.5 -o ${output_dir}/t1w_wsum.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_wsum.nii.gz
+
+  # ==========================================================================
+  # MORPHOLOGICAL OPERATIONS
+  # ==========================================================================
+  - name: Binary dilation
+    description: Dilate binary image
+    command: c3d ${t1w} -threshold 200 inf 1 0 -dilate 1 3x3x3vox -o ${output_dir}/t1w_dilate.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_dilate.nii.gz
+
+  - name: Binary erosion
+    description: Erode binary image
+    command: c3d ${t1w} -threshold 200 inf 1 0 -erode 1 3x3x3vox -o ${output_dir}/t1w_erode.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_erode.nii.gz
+
+  - name: Hole filling
+    description: Fill holes in binary image
+    command: c3d ${t1w} -threshold 200 inf 1 0 -holefill 1 0 -o ${output_dir}/t1w_holefill.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_holefill.nii.gz
+
+  - name: Hole filling (full connectivity)
+    description: Fill holes with full connectivity
+    command: c3d ${t1w} -threshold 200 inf 1 0 -holefill 1 1 -o ${output_dir}/t1w_holefill_full.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_holefill_full.nii.gz
+
+  - name: Connected components
+    description: Label connected components
+    command: c3d ${t1w} -threshold 200 inf 1 0 -comp -o ${output_dir}/t1w_comp.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_comp.nii.gz
+
+  - name: Largest connected component
+    description: Extract largest connected component
+    command: c3d ${t1w} -threshold 200 inf 1 0 -comp -threshold 1 1 1 0 -o ${output_dir}/t1w_largest_comp.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_largest_comp.nii.gz
+
+  # ==========================================================================
+  # EDGE DETECTION AND GRADIENTS
+  # ==========================================================================
+  - name: Laplacian filter
+    description: Apply Laplacian filter
+    command: c3d ${t1w} -smooth 1mm -laplacian -o ${output_dir}/t1w_laplacian.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_laplacian.nii.gz
+
+  - name: Gradient magnitude
+    description: Compute image gradient components
+    command: c3d ${t1w} -smooth 1mm -grad -oo ${output_dir}/t1w_grad_%02d.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_grad_00.nii.gz
+      - output_exists: ${output_dir}/t1w_grad_01.nii.gz
+      - output_exists: ${output_dir}/t1w_grad_02.nii.gz
+
+  - name: Canny edge detection
+    description: Detect edges using Canny filter
+    command: c3d ${t1w} -canny 1x1x1mm 50 100 -o ${output_dir}/t1w_canny.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_canny.nii.gz
+
+  # ==========================================================================
+  # DISTANCE TRANSFORMS
+  # ==========================================================================
+  - name: Signed distance transform
+    description: Compute signed distance transform of binary image
+    command: c3d ${t1w} -threshold 200 inf 1 0 -sdt -o ${output_dir}/t1w_sdt.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sdt.nii.gz
+
+  # ==========================================================================
+  # CROPPING AND PADDING
+  # ==========================================================================
+  - name: Pad image (voxels)
+    description: Pad image by specified voxels
+    command: c3d ${t1w} -pad 10x10x10vox 10x10x10vox 0 -o ${output_dir}/t1w_pad.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_pad.nii.gz
+
+  - name: Pad image (percentage)
+    description: Pad image by percentage
+    command: c3d ${t1w} -pad 10% 10% 0 -o ${output_dir}/t1w_pad_pct.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_pad_pct.nii.gz
+
+  - name: Pad asymmetric
+    description: Pad image asymmetrically
+    command: c3d ${t1w} -pad 5x0x0vox 0x5x0vox 0 -o ${output_dir}/t1w_pad_asym.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_pad_asym.nii.gz
+
+  - name: Trim background
+    description: Trim background from image with margin
+    command: c3d ${t1w} -threshold 100 inf 1 0 -trim 5vox -o ${output_dir}/t1w_trim.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_trim.nii.gz
+
+  - name: Extract region
+    description: Extract rectangular region from image
+    command: c3d ${t1w} -region 20x20x20vox 80x80x80vox -o ${output_dir}/t1w_region.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_region.nii.gz
+
+  - name: Extract region (percentage)
+    description: Extract region using percentages
+    command: c3d ${t1w} -region 25% 50% -o ${output_dir}/t1w_region_pct.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_region_pct.nii.gz
+
+  # ==========================================================================
+  # SLICE EXTRACTION
+  # ==========================================================================
+  - name: Extract single slice (axial)
+    description: Extract axial slice at 50%
+    command: c3d ${t1w} -slice z 50% -o ${output_dir}/t1w_slice_z.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_slice_z.nii.gz
+
+  - name: Extract single slice (sagittal)
+    description: Extract sagittal slice at 50%
+    command: c3d ${t1w} -slice x 50% -o ${output_dir}/t1w_slice_x.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_slice_x.nii.gz
+
+  - name: Extract single slice (coronal)
+    description: Extract coronal slice at 50%
+    command: c3d ${t1w} -slice y 50% -o ${output_dir}/t1w_slice_y.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_slice_y.nii.gz
+
+  # ==========================================================================
+  # ORIENTATION AND TRANSFORM
+  # ==========================================================================
+  - name: Reorient to RAS
+    description: Reorient image to RAS orientation
+    command: c3d ${t1w} -orient RAS -o ${output_dir}/t1w_ras.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_ras.nii.gz
+
+  - name: Reorient to LPI
+    description: Reorient image to LPI orientation
+    command: c3d ${t1w} -orient LPI -o ${output_dir}/t1w_lpi.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_lpi.nii.gz
+
+  - name: Flip X axis
+    description: Flip image around X axis
+    command: c3d ${t1w} -flip x -o ${output_dir}/t1w_flip_x.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_flip_x.nii.gz
+
+  - name: Flip Y axis
+    description: Flip image around Y axis
+    command: c3d ${t1w} -flip y -o ${output_dir}/t1w_flip_y.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_flip_y.nii.gz
+
+  - name: Flip XY axes
+    description: Flip image around both X and Y axes
+    command: c3d ${t1w} -flip xy -o ${output_dir}/t1w_flip_xy.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_flip_xy.nii.gz
+
+  - name: Copy transform
+    description: Copy transform from one image to another (crashes with different-sized images)
+    command: c3d ${t1w} ${t1w} -copy-transform -o ${output_dir}/t1w_copytransform.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_copytransform.nii.gz
+
+  # ==========================================================================
+  # IMAGE CREATION
+  # ==========================================================================
+  - name: Create blank image
+    description: Create new blank image with specified dimensions
+    command: c3d -create 64x64x64 2x2x2mm -o ${output_dir}/blank.nii.gz
+    validate:
+      - output_exists: ${output_dir}/blank.nii.gz
+
+  - name: Create blank image with background
+    description: Create blank image with non-zero background
+    command: c3d -background 100 -create 64x64x64 2x2x2mm -o ${output_dir}/blank_bg.nii.gz
+    validate:
+      - output_exists: ${output_dir}/blank_bg.nii.gz
+
+  # ==========================================================================
+  # COORDINATE MAPS
+  # ==========================================================================
+  - name: Voxel coordinate map
+    description: Generate voxel coordinate maps
+    command: c3d ${t1w} -cmv -oo ${output_dir}/t1w_cmv_%02d.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_cmv_00.nii.gz
+
+  - name: Physical coordinate map
+    description: Generate physical coordinate maps
+    command: c3d ${t1w} -cmp -oo ${output_dir}/t1w_cmp_%02d.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_cmp_00.nii.gz
+
+  # ==========================================================================
+  # BIAS CORRECTION
+  # ==========================================================================
+  - name: N3 bias field correction
+    description: Apply N3 bias field correction
+    command: c3d ${t1w} -biascorr -o ${output_dir}/t1w_biascorr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_biascorr.nii.gz
+
+  # ==========================================================================
+  # LABEL/SEGMENTATION OPERATIONS
+  # ==========================================================================
+  - name: Label statistics
+    description: Compute statistics for each label
+    command: c3d ${t1w} -as ORIG -threshold 0 300 1 0 -as L1 -push ORIG -threshold 300 600 2 0 -as L2 -push L1 -push L2 -add -as SEG -push ORIG -push SEG -lstat 2>&1
+    expected_output_contains: "LabelID"
+
+  - name: Split multilabel image
+    description: Split multilabel image into binary labels, smooth, and recombine
+    command: |
+      c3d ${t1w} -as ORIG \
+        -threshold 0 400 1 0 -smooth 1mm -as L1 \
+        -push ORIG -threshold 400 800 2 0 -smooth 1mm -as L2 \
+        -push L1 -push L2 -add \
+        -o ${output_dir}/t1w_split_merge.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_split_merge.nii.gz
+
+  - name: Vote among images
+    description: Vote among probability images
+    command: |
+      c3d ${t1w} -threshold 0 400 1 0 -as P1 \
+        ${t1w} -threshold 400 800 1 0 -as P2 \
+        -push P1 -push P2 -vote -o ${output_dir}/t1w_vote.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_vote.nii.gz
+
+  # ==========================================================================
+  # IMAGE COMPARISON
+  # ==========================================================================
+  - name: Overlap (Dice) coefficient
+    description: Compute Dice overlap between two binary images
+    command: |
+      c3d ${t1w} -threshold 200 inf 1 0 \
+        ${t1w} -threshold 200 inf 1 0 \
+        -overlap 1
+    expected_output_contains: "OVL:"
+
+  # ==========================================================================
+  # STACK OPERATIONS
+  # ==========================================================================
+  - name: Duplicate image
+    description: Duplicate last image on stack
+    command: c3d ${t1w} -dup -add -o ${output_dir}/t1w_dup_add.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_dup_add.nii.gz
+
+  - name: Stack manipulation with variables
+    description: Use variables for stack manipulation
+    command: c3d ${t1w} -as T1 -push T1 -add -o ${output_dir}/t1w_var_add.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_var_add.nii.gz
+
+  - name: Pop and clear operations
+    description: Test pop operation
+    command: c3d ${t1w} ${t1w} -pop -info
+    expected_output_contains: "dim ="
+
+  # ==========================================================================
+  # WRAP OPERATION
+  # ==========================================================================
+  - name: Wrap image
+    description: Wrap image around dimension
+    command: c3d ${t1w} -wrap 0x10x0 -o ${output_dir}/t1w_wrap.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_wrap.nii.gz
+
+  # ==========================================================================
+  # FOREACH LOOP
+  # ==========================================================================
+  - name: Foreach loop with info
+    description: Process multiple images with foreach
+    command: c3d ${t1w} ${t2} -foreach -info -endfor 2>&1
+    expected_output_contains: "dim ="
+
+  - name: Foreach with operations
+    description: Apply operations to multiple images
+    command: c3d ${t1w} ${t1w} -foreach -smooth 1mm -endfor -oo ${output_dir}/foreach_%02d.nii.gz
+    validate:
+      - output_exists: ${output_dir}/foreach_00.nii.gz
+      - output_exists: ${output_dir}/foreach_01.nii.gz
+
+  # ==========================================================================
+  # RMS (Vector Norm)
+  # ==========================================================================
+  - name: Vector magnitude (RMS)
+    description: Compute voxelwise vector magnitude
+    command: c3d ${t1w} ${t1w} -rms -o ${output_dir}/t1w_rms.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_rms.nii.gz
+
+  # ==========================================================================
+  # TILING
+  # ==========================================================================
+  - name: Tile along Z axis
+    description: Tile slices along Z axis
+    command: c3d ${t1w} -slice z 50% ${t1w} -slice z 60% -tile z -o ${output_dir}/t1w_tile.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_tile.nii.gz
+
+  # ==========================================================================
+  # COMPLEX PIPELINES
+  # ==========================================================================
+  - name: Brain mask pipeline
+    description: Create rough brain mask using thresholding and morphology
+    command: |
+      c3d ${t1w} \
+        -threshold 100 inf 1 0 \
+        -comp -threshold 1 1 1 0 \
+        -dilate 1 2x2x2vox \
+        -holefill 1 0 \
+        -erode 1 2x2x2vox \
+        -o ${output_dir}/t1w_brain_mask.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_mask.nii.gz
+
+  - name: Apply brain mask
+    description: Apply computed brain mask to T1w
+    command: c3d ${t1w} ${output_dir}/t1w_brain_mask.nii.gz -multiply -o ${output_dir}/t1w_masked.nii.gz
+    depends_on: Brain mask pipeline
+    validate:
+      - output_exists: ${output_dir}/t1w_masked.nii.gz
+
+  - name: Intensity normalization pipeline
+    description: Normalize intensities to 0-1000 range
+    command: |
+      c3d ${t1w} \
+        -clip 1% 99% \
+        -stretch 1% 99% 0 1000 \
+        -o ${output_dir}/t1w_normalized.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_normalized.nii.gz
+
+  - name: Multi-step processing
+    description: Chain multiple processing steps
+    command: |
+      c3d ${t1w} \
+        -smooth 1mm \
+        -resample 50% \
+        -threshold 100 inf 1 0 \
+        -dilate 1 2x2x2vox \
+        -o ${output_dir}/t1w_multistep.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_multistep.nii.gz
+
+  - name: Edge-preserving smoothing
+    description: Apply anisotropic diffusion for edge preservation
+    command: c3d ${t1w} -ad 0.1 5 -o ${output_dir}/t1w_aniso_diffusion.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_aniso_diffusion.nii.gz
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in ${output_dir}/"

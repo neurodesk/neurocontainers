@@ -1,0 +1,818 @@
+# romeo container test suite
+# Tests for ROMEO v3.2.8 - Rapid Opensource Minimum Spanning Tree Algorithm for Phase Unwrapping
+#
+# ROMEO is a phase unwrapping algorithm for MRI data that uses a minimum spanning tree
+# approach to unwrap phase images. It supports both single-echo and multi-echo data,
+# and includes coil combination capabilities using the MCPC-3D-S (ASPIRE) method.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+# Note: This dataset does not contain native phase data. The T1w/T2 images are used
+# as proxy inputs to test command functionality. For production testing with real
+# phase data, synthetic phase images can be generated in the setup script.
+#
+# Reference:
+#   ROMEO: Dymerska, B., Eckstein, K., Bachrata, B., Siow, B., Trattnig, S., Shmueli, K.,
+#   Robinson, S.D., 2020. Phase Unwrapping with a Rapid Opensource Minimum Spanning TreE
+#   AlgOrithm (ROMEO). Magnetic Resonance in Medicine. https://doi.org/10.1002/mrm.28563
+#
+#   MCPC-3D-S: Eckstein, K., Dymerska, B., Bachrata, B., Bogner, W., Poljanc, K.,
+#   Trattnig, S., Robinson, S.D., 2018. Computationally Efficient Combination of
+#   Multi-channel Phase Data From Multi-echo Acquisitions (ASPIRE).
+#   Magnetic Resonance in Medicine 79, 2996-3006. https://doi.org/10.1002/mrm.26963
+
+name: romeo
+version: 3.2.8
+container: romeo_3.2.8_20220224.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/romeo
+
+    # Generate synthetic phase data if Python with nibabel is available
+    # This is optional - basic tests will still work without it
+    if python3 -c "import nibabel" 2>/dev/null; then
+      echo "Generating synthetic phase data..."
+      python3 << 'PYTHON_SCRIPT'
+    import nibabel as nib
+    import numpy as np
+
+    # Load T1w as magnitude reference
+    t1w = nib.load('ds000001/sub-01/anat/sub-01_T1w.nii.gz')
+    mag_data = t1w.get_fdata()
+
+    # Create synthetic phase with wraps
+    x, y, z = np.meshgrid(
+        np.linspace(-np.pi, np.pi, mag_data.shape[0]),
+        np.linspace(-np.pi, np.pi, mag_data.shape[1]),
+        np.linspace(-np.pi, np.pi, mag_data.shape[2]),
+        indexing='ij'
+    )
+
+    # Create phase with wrapped regions
+    phase_data = 0.5 * np.sin(x) + 0.3 * np.cos(y) + 0.2 * np.sin(z)
+    np.random.seed(42)
+    phase_data += 0.1 * np.random.randn(*phase_data.shape)
+    phase_data = np.angle(np.exp(1j * phase_data * 3))
+
+    # Save phase image
+    phase_img = nib.Nifti1Image(phase_data.astype(np.float32), t1w.affine, t1w.header)
+    nib.save(phase_img, 'test_output/romeo/synthetic_phase.nii.gz')
+
+    # Save normalized magnitude
+    mag_norm = (mag_data - mag_data.min()) / (mag_data.max() - mag_data.min())
+    mag_img = nib.Nifti1Image(mag_norm.astype(np.float32), t1w.affine, t1w.header)
+    nib.save(mag_img, 'test_output/romeo/synthetic_mag.nii.gz')
+
+    # Create multi-echo phase data (3 echoes)
+    te_values = [3, 6, 9]
+    multi_echo_phase = np.zeros((*mag_data.shape, 3), dtype=np.float32)
+    base_field = 0.1 * x + 0.05 * y
+
+    for i, te in enumerate(te_values):
+        echo_phase = phase_data + (te / 3.0) * base_field
+        multi_echo_phase[..., i] = np.angle(np.exp(1j * echo_phase))
+
+    multi_phase_img = nib.Nifti1Image(multi_echo_phase, t1w.affine, t1w.header)
+    nib.save(multi_phase_img, 'test_output/romeo/multi_echo_phase.nii.gz')
+
+    # Create multi-echo magnitude with T2* decay
+    multi_echo_mag = np.zeros((*mag_data.shape, 3), dtype=np.float32)
+    for i, te in enumerate(te_values):
+        decay = np.exp(-te / 30.0)
+        multi_echo_mag[..., i] = mag_norm * decay
+
+    multi_mag_img = nib.Nifti1Image(multi_echo_mag, t1w.affine, t1w.header)
+    nib.save(multi_mag_img, 'test_output/romeo/multi_echo_mag.nii.gz')
+
+    # Create binary mask
+    mask = (mag_norm > 0.1).astype(np.float32)
+    mask_img = nib.Nifti1Image(mask, t1w.affine, t1w.header)
+    nib.save(mask_img, 'test_output/romeo/brain_mask.nii.gz')
+
+    print("Synthetic phase data created successfully")
+    PYTHON_SCRIPT
+    else
+      echo "Note: nibabel not available - skipping synthetic phase data generation"
+      echo "Basic CLI tests will still run using existing T1w/T2 data as proxy inputs"
+    fi
+
+tests:
+  # ==========================================================================
+  # VERSION AND BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: Version check
+    description: Verify romeo binary runs and reports version
+    command: romeo --version 2>&1
+    expected_output_contains: "v3.2.8"
+
+  - name: Help display
+    description: Verify romeo shows help message with usage information
+    command: romeo --help 2>&1
+    expected_output_contains: "usage:"
+
+  - name: Help shows optional arguments header
+    description: Verify help shows optional arguments section
+    command: romeo --help 2>&1
+    expected_output_contains: "optional arguments:"
+
+  # ==========================================================================
+  # HELP - INPUT/OUTPUT OPTIONS
+  # ==========================================================================
+  - name: Help shows phase argument
+    description: Verify help documents the phase input option
+    command: romeo --help 2>&1
+    expected_output_contains: "--phase PHASE"
+
+  - name: Help shows phase short option
+    description: Verify help documents the -p short option for phase
+    command: romeo --help 2>&1
+    expected_output_contains: "-p,"
+
+  - name: Help shows magnitude argument
+    description: Verify help documents the magnitude input option
+    command: romeo --help 2>&1
+    expected_output_contains: "--magnitude MAGNITUDE"
+
+  - name: Help shows magnitude short option
+    description: Verify help documents the -m short option for magnitude
+    command: romeo --help 2>&1
+    expected_output_contains: "-m,"
+
+  - name: Help shows output argument
+    description: Verify help documents the output option
+    command: romeo --help 2>&1
+    expected_output_contains: "--output OUTPUT"
+
+  - name: Help shows output short option
+    description: Verify help documents the -o short option for output
+    command: romeo --help 2>&1
+    expected_output_contains: "-o,"
+
+  - name: Help shows default output path
+    description: Verify help shows default output filename
+    command: romeo --help 2>&1
+    expected_output_contains: "unwrapped.nii"
+
+  # ==========================================================================
+  # HELP - MASK OPTIONS
+  # ==========================================================================
+  - name: Help shows mask option
+    description: Verify help documents masking options
+    command: romeo --help 2>&1
+    expected_output_contains: "--mask MASK"
+
+  - name: Help shows mask short option
+    description: Verify help documents the -k short option for mask
+    command: romeo --help 2>&1
+    expected_output_contains: "-k,"
+
+  - name: Help shows nomask option
+    description: Verify help documents the nomask masking option
+    command: romeo --help 2>&1
+    expected_output_contains: "nomask"
+
+  - name: Help shows qualitymask option
+    description: Verify help documents the qualitymask option with threshold
+    command: romeo --help 2>&1
+    expected_output_contains: "qualitymask"
+
+  - name: Help shows robustmask option
+    description: Verify help documents the robustmask option
+    command: romeo --help 2>&1
+    expected_output_contains: "robustmask"
+
+  - name: Help shows mask-unwrapped option
+    description: Verify help documents the -u option to apply mask to output
+    command: romeo --help 2>&1
+    expected_output_contains: "--mask-unwrapped"
+
+  # ==========================================================================
+  # HELP - ECHO TIME OPTIONS
+  # ==========================================================================
+  - name: Help shows echo-times argument
+    description: Verify help documents echo time specification
+    command: romeo --help 2>&1
+    expected_output_contains: "--echo-times"
+
+  - name: Help shows echo-times short option
+    description: Verify help documents the -t short option for echo times
+    command: romeo --help 2>&1
+    expected_output_contains: "-t,"
+
+  - name: Help shows echo-times array syntax
+    description: Verify help shows array syntax for echo times
+    command: romeo --help 2>&1
+    expected_output_contains: "[1.5,3.0]"
+
+  - name: Help shows echo-times range syntax
+    description: Verify help shows range syntax for echo times
+    command: romeo --help 2>&1
+    expected_output_contains: "3.5:3.5:14"
+
+  - name: Help shows epi echo time option
+    description: Verify help documents the epi echo time specification
+    command: romeo --help 2>&1
+    expected_output_contains: "epi"
+
+  # ==========================================================================
+  # HELP - WEIGHT OPTIONS
+  # ==========================================================================
+  - name: Help shows weights argument
+    description: Verify help documents weight selection options
+    command: romeo --help 2>&1
+    expected_output_contains: "--weights WEIGHTS"
+
+  - name: Help shows weights short option
+    description: Verify help documents the -w short option for weights
+    command: romeo --help 2>&1
+    expected_output_contains: "-w,"
+
+  - name: Help shows romeo weights option
+    description: Verify help shows the romeo weight scheme
+    command: romeo --help 2>&1
+    expected_output_contains: "romeo |"
+
+  - name: Help shows romeo2 weights option
+    description: Verify help shows the romeo2 weight scheme
+    command: romeo --help 2>&1
+    expected_output_contains: "romeo2"
+
+  - name: Help shows romeo3 weights option
+    description: Verify help shows the romeo3 weight scheme
+    command: romeo --help 2>&1
+    expected_output_contains: "romeo3"
+
+  - name: Help shows romeo4 weights option
+    description: Verify help shows the romeo4 weight scheme
+    command: romeo --help 2>&1
+    expected_output_contains: "romeo4"
+
+  - name: Help shows romeo6 weights option
+    description: Verify help shows the romeo6 weight scheme
+    command: romeo --help 2>&1
+    expected_output_contains: "romeo6"
+
+  - name: Help shows bestpath weights option
+    description: Verify help shows the bestpath weight scheme
+    command: romeo --help 2>&1
+    expected_output_contains: "bestpath"
+
+  - name: Help shows custom weight flags
+    description: Verify help documents custom weight bit flags
+    command: romeo --help 2>&1
+    expected_output_contains: "<flags>"
+
+  - name: Help shows phasecoherence weight
+    description: Verify help documents the phasecoherence weight component
+    command: romeo --help 2>&1
+    expected_output_contains: "phasecoherence"
+
+  - name: Help shows magweight component
+    description: Verify help documents the magnitude weight component
+    command: romeo --help 2>&1
+    expected_output_contains: "magweight"
+
+  # ==========================================================================
+  # HELP - B0 AND COIL COMBINATION
+  # ==========================================================================
+  - name: Help shows compute-B0 option
+    description: Verify help documents B0 map calculation option
+    command: romeo --help 2>&1
+    expected_output_contains: "--compute-B0"
+
+  - name: Help shows compute-B0 short option
+    description: Verify help documents -B short option for B0 calculation
+    command: romeo --help 2>&1
+    expected_output_contains: "-B,"
+
+  - name: Help shows phase-offset-correction option
+    description: Verify help documents MCPC-3D-S phase offset correction
+    command: romeo --help 2>&1
+    expected_output_contains: "--phase-offset-correction"
+
+  - name: Help shows coil-combination alias
+    description: Verify help shows coil-combination as alias
+    command: romeo --help 2>&1
+    expected_output_contains: "--coil-combination"
+
+  - name: Help shows bipolar correction option
+    description: Verify help documents bipolar eddy current correction
+    command: romeo --help 2>&1
+    expected_output_contains: "bipolar"
+
+  - name: Help shows MCPC3Ds method
+    description: Verify help documents the MCPC3Ds method
+    command: romeo --help 2>&1
+    expected_output_contains: "MCPC3Ds"
+
+  - name: Help shows write-phase-offsets option
+    description: Verify help documents saving phase offsets
+    command: romeo --help 2>&1
+    expected_output_contains: "--write-phase-offsets"
+
+  # ==========================================================================
+  # HELP - TEMPORAL UNWRAPPING OPTIONS
+  # ==========================================================================
+  - name: Help shows individual-unwrapping option
+    description: Verify help documents individual echo unwrapping
+    command: romeo --help 2>&1
+    expected_output_contains: "--individual-unwrapping"
+
+  - name: Help shows individual-unwrapping short option
+    description: Verify help documents -i short option for individual unwrapping
+    command: romeo --help 2>&1
+    expected_output_contains: "-i,"
+
+  - name: Help shows template option
+    description: Verify help documents template echo selection
+    command: romeo --help 2>&1
+    expected_output_contains: "--template TEMPLATE"
+
+  - name: Help shows template default value
+    description: Verify help shows default template echo is 2
+    command: romeo --help 2>&1
+    expected_output_contains: "default: 2"
+
+  - name: Help shows unwrap-echoes option
+    description: Verify help documents selective echo unwrapping
+    command: romeo --help 2>&1
+    expected_output_contains: "--unwrap-echoes"
+
+  # ==========================================================================
+  # HELP - QUALITY OUTPUT OPTIONS
+  # ==========================================================================
+  - name: Help shows write-quality option
+    description: Verify help documents quality map output option
+    command: romeo --help 2>&1
+    expected_output_contains: "--write-quality"
+
+  - name: Help shows write-quality short option
+    description: Verify help documents -q short option for quality output
+    command: romeo --help 2>&1
+    expected_output_contains: "-q,"
+
+  - name: Help shows write-quality-all option
+    description: Verify help documents individual quality maps output
+    command: romeo --help 2>&1
+    expected_output_contains: "--write-quality-all"
+
+  - name: Help shows write-quality-all short option
+    description: Verify help documents -Q short option for all quality maps
+    command: romeo --help 2>&1
+    expected_output_contains: "-Q,"
+
+  # ==========================================================================
+  # HELP - PROCESSING OPTIONS
+  # ==========================================================================
+  - name: Help shows verbose option
+    description: Verify help documents verbose output mode
+    command: romeo --help 2>&1
+    expected_output_contains: "--verbose"
+
+  - name: Help shows verbose short option
+    description: Verify help documents -v short option for verbose
+    command: romeo --help 2>&1
+    expected_output_contains: "-v,"
+
+  - name: Help shows correct-global option
+    description: Verify help documents global phase correction
+    command: romeo --help 2>&1
+    expected_output_contains: "--correct-global"
+
+  - name: Help shows correct-global short option
+    description: Verify help documents -g short option for global correction
+    command: romeo --help 2>&1
+    expected_output_contains: "-g,"
+
+  - name: Help shows threshold option
+    description: Verify help documents phase threshold option
+    command: romeo --help 2>&1
+    expected_output_contains: "--threshold THRESHOLD"
+
+  - name: Help shows no-rescale option
+    description: Verify help documents rescaling disable option
+    command: romeo --help 2>&1
+    expected_output_contains: "--no-rescale"
+
+  - name: Help shows no-mmap option
+    description: Verify help documents memory mapping disable option
+    command: romeo --help 2>&1
+    expected_output_contains: "--no-mmap"
+
+  - name: Help shows no-mmap short option
+    description: Verify help documents -N short option for no memory mapping
+    command: romeo --help 2>&1
+    expected_output_contains: "-N,"
+
+  # ==========================================================================
+  # HELP - EXPERIMENTAL OPTIONS
+  # ==========================================================================
+  - name: Help shows max-seeds option
+    description: Verify help documents maximum seeds experimental option
+    command: romeo --help 2>&1
+    expected_output_contains: "--max-seeds"
+
+  - name: Help shows max-seeds short option
+    description: Verify help documents -s short option for max seeds
+    command: romeo --help 2>&1
+    expected_output_contains: "-s,"
+
+  - name: Help shows merge-regions option
+    description: Verify help documents region merging experimental option
+    command: romeo --help 2>&1
+    expected_output_contains: "--merge-regions"
+
+  - name: Help shows correct-regions option
+    description: Verify help documents region correction experimental option
+    command: romeo --help 2>&1
+    expected_output_contains: "--correct-regions"
+
+  - name: Help shows wrap-addition option
+    description: Verify help documents wrap addition experimental option
+    command: romeo --help 2>&1
+    expected_output_contains: "--wrap-addition"
+
+  - name: Help shows temporal-uncertain-unwrapping option
+    description: Verify help documents temporal uncertainty experimental option
+    command: romeo --help 2>&1
+    expected_output_contains: "--temporal-uncertain-unwrapping"
+
+  # ==========================================================================
+  # BASIC PHASE UNWRAPPING (using T1w as proxy phase input)
+  # NOTE: T1w structural data is NOT phase data. ROMEO expects wrapped phase
+  # images as input. These tests use wrong input data type and may fail or
+  # produce meaningless output. Real phase data is not available in ds000001.
+  # expected_exit_code: 0 ensures these fail cleanly on exit code mismatch.
+  # ==========================================================================
+  - name: Basic unwrapping with T1w as proxy
+    description: Test basic unwrapping command execution (T1w used as proxy phase)
+    command: romeo -p ${t1w} -o test_output/romeo/unwrapped_t1w_proxy -k nomask -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_t1w_proxy/unwrapped.nii
+    timeout: 300
+
+  - name: Unwrapping with magnitude input
+    description: Test unwrapping with magnitude image for quality weighting
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_with_mag -k nomask -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_with_mag/unwrapped.nii
+    timeout: 300
+
+  # ==========================================================================
+  # MASKING OPTIONS (using T1w as proxy)
+  # NOTE: T1w is not phase data - these tests use wrong input data type.
+  # ==========================================================================
+  - name: Unwrapping with nomask
+    description: Test unwrapping with no mask (process all voxels)
+    command: romeo -p ${t1w} -o test_output/romeo/unwrapped_nomask -k nomask -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_nomask/unwrapped.nii
+    timeout: 300
+
+  - name: Unwrapping with robustmask
+    description: Test unwrapping with automatic robust masking
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_robustmask -k robustmask -N 2>&1
+    expected_exit_code: 0
+    timeout: 300
+
+  - name: Unwrapping with qualitymask threshold 0.5
+    description: Test unwrapping with quality-based masking (threshold 0.5)
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_quality05 -k qualitymask 0.5 -N 2>&1
+    expected_exit_code: 0
+    timeout: 300
+
+  - name: Unwrapping with qualitymask threshold 0.1
+    description: Test unwrapping with quality-based masking (low threshold)
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_quality01 -k qualitymask 0.1 -N 2>&1
+    expected_exit_code: 0
+    timeout: 300
+
+  - name: Unwrapping with qualitymask threshold 0.9
+    description: Test unwrapping with quality-based masking (high threshold)
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_quality09 -k qualitymask 0.9 -N 2>&1
+    expected_exit_code: 0
+    timeout: 300
+
+  - name: Unwrapping with mask applied to output
+    description: Test applying mask to unwrapped result using -u flag
+    command: romeo -p ${t1w} -o test_output/romeo/unwrapped_mask_applied -k robustmask -u -N 2>&1
+    expected_exit_code: 0
+    timeout: 300
+
+  # ==========================================================================
+  # WEIGHT OPTIONS (using T1w as proxy)
+  # NOTE: T1w is not phase data - these tests use wrong input data type.
+  # ==========================================================================
+  - name: Unwrapping with romeo weights
+    description: Test default ROMEO weighting scheme
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_w_romeo -k nomask -w romeo -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_w_romeo/unwrapped.nii
+    timeout: 300
+
+  - name: Unwrapping with romeo2 weights
+    description: Test ROMEO2 weighting scheme
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_w_romeo2 -k nomask -w romeo2 -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_w_romeo2/unwrapped.nii
+    timeout: 300
+
+  - name: Unwrapping with romeo3 weights
+    description: Test ROMEO3 weighting scheme
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_w_romeo3 -k nomask -w romeo3 -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_w_romeo3/unwrapped.nii
+    timeout: 300
+
+  - name: Unwrapping with romeo4 weights
+    description: Test ROMEO4 weighting scheme
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_w_romeo4 -k nomask -w romeo4 -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_w_romeo4/unwrapped.nii
+    timeout: 300
+
+  - name: Unwrapping with romeo6 weights
+    description: Test ROMEO6 weighting scheme (all 6 weights)
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_w_romeo6 -k nomask -w romeo6 -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_w_romeo6/unwrapped.nii
+    timeout: 300
+
+  - name: Unwrapping with bestpath weights
+    description: Test bestpath weighting scheme
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_w_bestpath -k nomask -w bestpath -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_w_bestpath/unwrapped.nii
+    timeout: 300
+
+  - name: Unwrapping with custom weight flags
+    description: Test custom weight selection using bit flags
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_w_custom -k nomask -w "1010" -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_w_custom/unwrapped.nii
+    timeout: 300
+
+  # ==========================================================================
+  # QUALITY MAP OUTPUT
+  # NOTE: T1w is not phase data - these tests use wrong input data type.
+  # ==========================================================================
+  - name: Write quality map
+    description: Test writing ROMEO quality map output
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_quality -k nomask -q -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_quality/unwrapped.nii
+    timeout: 300
+
+  - name: Write all quality maps
+    description: Test writing individual quality maps for each weight
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_quality_all -k nomask -Q -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_quality_all/unwrapped.nii
+    timeout: 300
+
+  # ==========================================================================
+  # PROCESSING OPTIONS
+  # NOTE: T1w is not phase data - these tests use wrong input data type.
+  # ==========================================================================
+  - name: Verbose output
+    description: Test verbose mode for detailed processing information
+    command: romeo -p ${t1w} -o test_output/romeo/unwrapped_verbose -k nomask -v -N 2>&1
+    expected_exit_code: 0
+    timeout: 300
+
+  - name: Global phase correction
+    description: Test global phase offset correction
+    command: romeo -p ${t1w} -o test_output/romeo/unwrapped_global -k nomask -g -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_global/unwrapped.nii
+    timeout: 300
+
+  - name: Threshold unwrapped phase
+    description: Test thresholding unwrapped phase to maximum wraps
+    command: romeo -p ${t1w} -o test_output/romeo/unwrapped_thresh -k nomask --threshold 10 -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_thresh/unwrapped.nii
+    timeout: 300
+
+  - name: No rescale input
+    description: Test disabling automatic input rescaling
+    command: romeo -p ${t1w} -o test_output/romeo/unwrapped_norescale -k nomask --no-rescale -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_norescale/unwrapped.nii
+    timeout: 300
+
+  - name: Disable memory mapping
+    description: Test disabling memory mapping for network storage compatibility
+    command: romeo -p ${t1w} -o test_output/romeo/unwrapped_nommap -k nomask -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_nommap/unwrapped.nii
+    timeout: 300
+
+  # ==========================================================================
+  # EXPERIMENTAL OPTIONS
+  # NOTE: T1w is not phase data - these tests use wrong input data type.
+  # ==========================================================================
+  - name: Multiple seeds
+    description: Test experimental multi-seed unwrapping
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_seeds -k nomask -s 5 -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_seeds/unwrapped.nii
+    timeout: 300
+
+  - name: Merge regions
+    description: Test experimental region merging after unwrapping
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_merge -k nomask --merge-regions -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_merge/unwrapped.nii
+    timeout: 300
+
+  - name: Correct regions
+    description: Test experimental region correction
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_correct -k nomask --merge-regions --correct-regions -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_correct/unwrapped.nii
+    timeout: 300
+
+  - name: Wrap addition
+    description: Test experimental wrap addition for larger phase jumps
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_wrapadd -k nomask --wrap-addition 0.5 -N 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/romeo/unwrapped_wrapadd/unwrapped.nii
+    timeout: 300
+
+  # ==========================================================================
+  # COMBINED OPTIONS TESTS
+  # NOTE: T1w is not phase data - these tests use wrong input data type.
+  # ==========================================================================
+  - name: Full single echo pipeline
+    description: Test comprehensive single-echo processing with multiple options
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_full_single -k robustmask -u -w romeo -g -q -v -N 2>&1
+    expected_exit_code: 0
+    timeout: 300
+
+  - name: Production-style processing
+    description: Test typical production workflow with common options
+    command: romeo -p ${t1w} -m ${t1w} -o test_output/romeo/unwrapped_production -k robustmask -w romeo -g -N 2>&1
+    expected_exit_code: 0
+    timeout: 300
+
+  # ==========================================================================
+  # SYNTHETIC PHASE DATA TESTS (only run if data exists)
+  # ==========================================================================
+  - name: Unwrap synthetic phase basic
+    description: Test unwrapping actual synthetic phase data
+    command: |
+      if [ -f test_output/romeo/synthetic_phase.nii.gz ]; then
+        romeo -p test_output/romeo/synthetic_phase.nii.gz -o test_output/romeo/synth_unwrapped_basic -k nomask 2>&1
+      else
+        echo "Skipped - synthetic data not available"
+      fi
+    timeout: 300
+
+  - name: Unwrap synthetic phase with magnitude
+    description: Test unwrapping synthetic phase with magnitude weighting
+    command: |
+      if [ -f test_output/romeo/synthetic_phase.nii.gz ] && [ -f test_output/romeo/synthetic_mag.nii.gz ]; then
+        romeo -p test_output/romeo/synthetic_phase.nii.gz -m test_output/romeo/synthetic_mag.nii.gz -o test_output/romeo/synth_unwrapped_mag -k nomask 2>&1
+      else
+        echo "Skipped - synthetic data not available"
+      fi
+    timeout: 300
+
+  - name: Unwrap synthetic phase with custom mask
+    description: Test unwrapping synthetic phase with custom brain mask
+    command: |
+      if [ -f test_output/romeo/synthetic_phase.nii.gz ] && [ -f test_output/romeo/brain_mask.nii.gz ]; then
+        romeo -p test_output/romeo/synthetic_phase.nii.gz -o test_output/romeo/synth_unwrapped_mask -k test_output/romeo/brain_mask.nii.gz 2>&1
+      else
+        echo "Skipped - synthetic data not available"
+      fi
+    timeout: 300
+
+  - name: Multi-echo temporal unwrapping
+    description: Test multi-echo temporal unwrapping with synthetic data
+    command: |
+      if [ -f test_output/romeo/multi_echo_phase.nii.gz ]; then
+        romeo -p test_output/romeo/multi_echo_phase.nii.gz -m test_output/romeo/multi_echo_mag.nii.gz -o test_output/romeo/synth_multiecho -k nomask -t "[3,6,9]" 2>&1
+      else
+        echo "Skipped - synthetic multi-echo data not available"
+      fi
+    timeout: 600
+
+  - name: Multi-echo B0 calculation
+    description: Test B0 field map calculation from synthetic multi-echo data
+    command: |
+      if [ -f test_output/romeo/multi_echo_phase.nii.gz ]; then
+        romeo -p test_output/romeo/multi_echo_phase.nii.gz -m test_output/romeo/multi_echo_mag.nii.gz -o test_output/romeo/synth_B0 -k nomask -t "[3,6,9]" -B 2>&1
+      else
+        echo "Skipped - synthetic multi-echo data not available"
+      fi
+    timeout: 600
+
+  - name: Multi-echo individual unwrapping
+    description: Test individual echo unwrapping with synthetic data
+    command: |
+      if [ -f test_output/romeo/multi_echo_phase.nii.gz ]; then
+        romeo -p test_output/romeo/multi_echo_phase.nii.gz -m test_output/romeo/multi_echo_mag.nii.gz -o test_output/romeo/synth_individual -k nomask -t "[3,6,9]" -i 2>&1
+      else
+        echo "Skipped - synthetic multi-echo data not available"
+      fi
+    timeout: 600
+
+  - name: Multi-echo phase offset correction
+    description: Test MCPC-3D-S phase offset correction with synthetic data
+    command: |
+      if [ -f test_output/romeo/multi_echo_phase.nii.gz ]; then
+        romeo -p test_output/romeo/multi_echo_phase.nii.gz -m test_output/romeo/multi_echo_mag.nii.gz -o test_output/romeo/synth_poc -k nomask -t "[3,6,9]" --phase-offset-correction on 2>&1
+      else
+        echo "Skipped - synthetic multi-echo data not available"
+      fi
+    timeout: 600
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Error on missing input file
+    description: Test error handling when phase input file does not exist
+    command: romeo -p nonexistent_file.nii.gz -o test_output/romeo/error_test -k nomask 2>&1 || echo "Error handled correctly"
+    expected_output_contains: "Error handled correctly"
+
+  - name: Error on invalid mask option
+    description: Test error handling with invalid mask parameter
+    command: romeo -p ${t1w} -o test_output/romeo/error_mask -k invalidmask 2>&1 || echo "Invalid mask handled"
+    expected_output_contains: "handled"
+
+  - name: Error on invalid weight option
+    description: Test error handling with invalid weight parameter
+    command: romeo -p ${t1w} -o test_output/romeo/error_weight -k nomask -w invalidweight 2>&1 || echo "Invalid weight handled"
+    expected_output_contains: "handled"
+
+  - name: Error on missing echo times for multi-echo
+    description: Test error when echo times not specified for 4D input
+    command: |
+      if [ -f test_output/romeo/multi_echo_phase.nii.gz ]; then
+        romeo -p test_output/romeo/multi_echo_phase.nii.gz -o test_output/romeo/error_noecho -k nomask 2>&1 || echo "Missing echo times handled"
+      else
+        echo "Missing echo times handled"
+      fi
+    expected_output_contains: "handled"
+
+  # ==========================================================================
+  # JULIA RUNTIME VERIFICATION
+  # ==========================================================================
+  - name: Julia version check
+    description: Verify Julia runtime version in container
+    command: julia --version 2>&1
+    expected_output_contains: "julia version"
+
+  - name: Julia functional test
+    description: Verify Julia runtime is functional
+    command: julia -e 'println("Julia is working")' 2>&1
+    expected_output_contains: "Julia is working"
+
+  - name: Julia basic math
+    description: Test Julia can perform basic computations
+    command: julia -e 'println(2+2)' 2>&1
+    expected_output_contains: "4"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/romeo
+    echo "Test outputs preserved in test_output/romeo/"

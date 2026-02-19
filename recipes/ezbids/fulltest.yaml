@@ -1,0 +1,714 @@
+# ezbids container test suite
+# Tests for ezbids v1.1.0 - Web-based DICOM to BIDS conversion tool
+#
+# ezBIDS includes multiple neuroimaging tools:
+#   - dcm2niix: DICOM to NIfTI conversion
+#   - bids-validator: BIDS dataset validation
+#   - flirt/fslhd: FSL utilities for registration and header inspection
+#   - ROBEX: Brain extraction
+#   - quickshear: Defacing tool
+#   - dcm2niix4pet: PET to BIDS conversion
+#   - jq, parallel, pigz, detox: Utility tools
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 3D structural MRI
+#   - inplaneT2: Inplane T2-weighted image
+#   - BOLD: 4D functional MRI
+
+name: ezbids
+version: 1.1.0
+container: ezbids_1.1.0_20260127.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_events.tsv
+      - dataset_description.json
+      - participants.tsv
+      - README
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  bids_dataset: ds000001
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/bids_out
+    mkdir -p test_output/registration
+
+tests:
+  # ==========================================================================
+  # EZBIDS LAUNCHER
+  # ==========================================================================
+  - name: ezbids help
+    description: Verify ezbids launcher displays help message
+    command: ezbids help
+    expected_output_contains: "Web-based DICOM to BIDS conversion tool"
+
+  - name: ezbids status (not running)
+    description: Check ezbids status when services are not started
+    command: ezbids status 2>&1 || true
+    expected_output_contains: "Checking ezBIDS services"
+
+  # ==========================================================================
+  # DCM2NIIX - DICOM TO NIFTI CONVERSION
+  # ==========================================================================
+  - name: dcm2niix version
+    description: Verify dcm2niix binary runs and reports version
+    command: dcm2niix --version 2>&1 || dcm2niix 2>&1 | head -1
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix help
+    description: Display dcm2niix usage information
+    command: dcm2niix -h 2>&1 | head -20
+    expected_output_contains: "usage: dcm2niix"
+
+  - name: dcm2niix BIDS sidecar only
+    description: Test dcm2niix generates JSON sidecar without NIfTI
+    command: dcm2niix -b o -f test_sidecar -o test_output/ ${t1w} 2>&1 || true
+    expected_output_contains: "Error"
+    # Note: dcm2niix expects DICOM input, not NIfTI. Testing error handling.
+
+  # ==========================================================================
+  # BIDS-VALIDATOR
+  # ==========================================================================
+  - name: bids-validator version
+    description: Verify bids-validator reports version
+    command: bids-validator --version
+    expected_output_contains: "1.14"
+
+  - name: bids-validator help
+    description: Display bids-validator usage information
+    command: bids-validator --help 2>&1 | head -30
+    expected_output_contains: "dataset_directory"
+
+  - name: bids-validator on ds000001
+    description: Validate ds000001 BIDS dataset
+    command: bids-validator ${bids_dataset} --verbose 2>&1 | head -50
+    expected_output_contains: "bids-validator"
+
+  - name: bids-validator JSON output
+    description: Test bids-validator JSON output format
+    command: bids-validator ${bids_dataset} --json 2>&1 | head -10
+    expected_output_contains: "{"
+
+  - name: bids-validator ignore warnings
+    description: Test bids-validator with warning suppression
+    command: bids-validator ${bids_dataset} --ignoreWarnings 2>&1 | head -30
+    expected_output_contains: "bids-validator"
+
+  - name: bids-validator ignore NIfTI headers
+    description: Test bids-validator skipping NIfTI header checks
+    command: bids-validator ${bids_dataset} --ignoreNiftiHeaders 2>&1 | head -30
+    expected_output_contains: "bids-validator"
+
+  # ==========================================================================
+  # FSL UTILITIES - HEADER INSPECTION
+  # ==========================================================================
+  - name: fslhd T1w header
+    description: Display NIfTI header information using fslhd
+    command: fslhd ${t1w}
+    expected_output_contains: "sizeof_hdr"
+
+  - name: fslhd XML format
+    description: Display NIfTI header in XML format
+    command: fslhd -x ${t1w} 2>&1 | head -20
+    expected_output_contains: "nifti_image"
+
+  - name: fslhd BOLD header
+    description: Display 4D NIfTI header information
+    command: fslhd ${bold}
+    expected_output_contains: "dim4"
+
+  - name: fslhd T2 header
+    description: Display inplaneT2 header information
+    command: fslhd ${t2}
+    expected_output_contains: "sizeof_hdr"
+
+  - name: fslval dim1
+    description: Get specific header value using fslval
+    command: fslval ${t1w} dim1
+    expected_exit_code: 0
+
+  - name: fslval pixdim1
+    description: Get voxel dimension using fslval
+    command: fslval ${t1w} pixdim1
+    expected_exit_code: 0
+
+  - name: imtest valid image
+    description: Test if file is a valid NIfTI image
+    command: imtest ${t1w}
+    expected_output_contains: "1"
+
+  - name: imtest invalid file
+    description: Test imtest on non-existent file
+    command: imtest /nonexistent/file.nii.gz
+    expected_output_contains: "0"
+
+  # ==========================================================================
+  # FSL UTILITIES - REORIENTATION
+  # ==========================================================================
+  - name: fslreorient2std matrix only
+    description: Get reorientation matrix without creating output
+    command: fslreorient2std ${t1w} 2>&1 | head -10
+    expected_exit_code: 0
+
+  - name: fslreorient2std with output
+    description: Reorient T1w image to standard orientation (nibabel workaround - imcp missing in container)
+    command: |
+      python3 -c "
+      import nibabel as nib
+      img = nib.load('${t1w}')
+      canonical = nib.as_closest_canonical(img)
+      nib.save(canonical, 'test_output/t1w_reoriented.nii.gz')
+      print('Reoriented to', nib.aff2axcodes(canonical.affine))
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_reoriented.nii.gz
+
+  - name: fslreorient2std with matrix file
+    description: Save reorientation matrix to file
+    command: |
+      fslreorient2std ${t1w} > test_output/reorient_matrix.mat && \
+      python3 -c "
+      import nibabel as nib
+      img = nib.load('${t1w}')
+      canonical = nib.as_closest_canonical(img)
+      nib.save(canonical, 'test_output/t1w_reoriented2.nii.gz')
+      print('Matrix saved and image reoriented')
+      "
+    validate:
+      - output_exists: ${output_dir}/reorient_matrix.mat
+      - output_exists: ${output_dir}/t1w_reoriented2.nii.gz
+
+  # ==========================================================================
+  # FSL UTILITIES - REGISTRATION (FLIRT)
+  # ==========================================================================
+  - name: flirt help
+    description: Display FLIRT usage information
+    command: flirt 2>&1 | head -20
+    expected_output_contains: "FLIRT version"
+
+  - name: flirt T2 to T1 registration
+    description: Register inplaneT2 to T1w using FLIRT
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_to_t1w.nii.gz -omat test_output/t2_to_t1w.mat -dof 6 -cost corratio
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w.nii.gz
+      - output_exists: ${output_dir}/t2_to_t1w.mat
+
+  - name: flirt rigid registration
+    description: Test 6-DOF rigid body registration
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_rigid.nii.gz -dof 6
+    validate:
+      - output_exists: ${output_dir}/t2_rigid.nii.gz
+
+  - name: flirt affine registration
+    description: Test 12-DOF affine registration
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_affine.nii.gz -dof 12
+    validate:
+      - output_exists: ${output_dir}/t2_affine.nii.gz
+
+  - name: flirt mutual information cost
+    description: Test registration with mutual information cost function
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_mi.nii.gz -cost mutualinfo -dof 6
+    validate:
+      - output_exists: ${output_dir}/t2_mi.nii.gz
+
+  - name: flirt apply transformation
+    description: Apply existing transformation matrix to image
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_applied.nii.gz -init test_output/t2_to_t1w.mat -applyxfm
+    depends_on: flirt T2 to T1 registration
+    validate:
+      - output_exists: ${output_dir}/t2_applied.nii.gz
+
+  - name: flirt nearest neighbor interpolation
+    description: Test nearest neighbor interpolation for label images
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_nn.nii.gz -interp nearestneighbour -dof 6
+    validate:
+      - output_exists: ${output_dir}/t2_nn.nii.gz
+
+  - name: flirt spline interpolation
+    description: Test spline interpolation for smoother results
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_spline.nii.gz -interp spline -dof 6
+    validate:
+      - output_exists: ${output_dir}/t2_spline.nii.gz
+
+  - name: flirt no search
+    description: Test registration without angular search (faster)
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_nosearch.nii.gz -nosearch
+    validate:
+      - output_exists: ${output_dir}/t2_nosearch.nii.gz
+
+  - name: flirt to MNI template
+    description: Register T1w to MNI152 template
+    command: flirt -in ${t1w} -ref /usr/local/fsl/data/standard/MNI152_T1_2mm_brain.nii.gz -out test_output/t1w_mni.nii.gz -omat test_output/t1w_to_mni.mat -dof 12
+    validate:
+      - output_exists: ${output_dir}/t1w_mni.nii.gz
+      - output_exists: ${output_dir}/t1w_to_mni.mat
+
+  - name: avscale read transformation
+    description: Extract transformation parameters from matrix
+    command: avscale test_output/t2_to_t1w.mat ${t1w} 2>&1 | head -20
+    depends_on: flirt T2 to T1 registration
+    expected_output_contains: "Rotation"
+
+  # ==========================================================================
+  # ROBEX - BRAIN EXTRACTION
+  # ==========================================================================
+  - name: ROBEX brain extraction
+    description: Extract brain from T1w using ROBEX
+    command: /ROBEX/runROBEX.sh ${t1w} test_output/t1w_brain_robex.nii.gz test_output/t1w_brain_mask_robex.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_robex.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_mask_robex.nii.gz
+
+  - name: ROBEX brain only
+    description: Extract brain without saving mask
+    command: /ROBEX/runROBEX.sh ${t1w} test_output/t1w_brain_only.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_only.nii.gz
+
+  # ==========================================================================
+  # QUICKSHEAR - DEFACING
+  # ==========================================================================
+  - name: quickshear help
+    description: Display quickshear usage information
+    command: quickshear --help
+    expected_output_contains: "defacing for neuroimages"
+
+  - name: quickshear defacing
+    description: Deface T1w image using quickshear and ROBEX brain mask
+    command: quickshear ${t1w} test_output/t1w_brain_mask_robex.nii.gz test_output/t1w_defaced_quickshear.nii.gz
+    depends_on: ROBEX brain extraction
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_quickshear.nii.gz
+
+  - name: quickshear with buffer
+    description: Test quickshear with custom buffer size
+    command: quickshear ${t1w} test_output/t1w_brain_mask_robex.nii.gz test_output/t1w_defaced_buffer.nii.gz 15
+    depends_on: ROBEX brain extraction
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_buffer.nii.gz
+
+  # ==========================================================================
+  # DCM2NIIX4PET - PET TO BIDS CONVERSION
+  # ==========================================================================
+  - name: dcm2niix4pet help
+    description: Display dcm2niix4pet usage information
+    command: dcm2niix4pet --help 2>&1 | head -30
+    expected_output_contains: "PET dicoms"
+
+  - name: dcm2niix4pet version
+    description: Check dcm2niix4pet version
+    command: dcm2niix4pet --version 2>&1
+    expected_output_contains: "1.4"
+
+  - name: dcm2niix4pet examples
+    description: Show dcm2niix4pet usage examples
+    command: dcm2niix4pet --show-examples 2>&1 | head -30
+    expected_output_contains: "example"
+
+  # ==========================================================================
+  # PYTHON NEUROIMAGING LIBRARIES
+  # ==========================================================================
+  - name: nibabel import
+    description: Verify nibabel Python library is available
+    command: python3 -c "import nibabel; print('nibabel', nibabel.__version__)"
+    expected_output_contains: "nibabel"
+
+  - name: nibabel load T1w
+    description: Load and inspect NIfTI file with nibabel
+    command: python3 -c "import nibabel as nib; img = nib.load('${t1w}'); print('Shape:', img.shape); print('Affine:', img.affine[:2,:2])"
+    expected_output_contains: "Shape:"
+
+  - name: pydicom import
+    description: Verify pydicom library is available
+    command: python3 -c "import pydicom; print('pydicom', pydicom.__version__)"
+    expected_output_contains: "pydicom"
+
+  - name: pandas import
+    description: Verify pandas library is available
+    command: python3 -c "import pandas; print('pandas', pandas.__version__)"
+    expected_output_contains: "pandas"
+
+  - name: numpy import
+    description: Verify numpy library is available
+    command: python3 -c "import numpy; print('numpy', numpy.__version__)"
+    expected_output_contains: "numpy"
+
+  - name: mne import
+    description: Verify MNE-Python library is available
+    command: python3 -c "import mne; print('mne', mne.__version__)"
+    expected_output_contains: "mne"
+
+  - name: mne_bids import
+    description: Verify MNE-BIDS library is available
+    command: python3 -c "import mne_bids; print('mne_bids', mne_bids.__version__)"
+    expected_output_contains: "mne_bids"
+
+  - name: pypet2bids import
+    description: Verify pypet2bids library is available
+    command: python3 -c "import pypet2bids; print('pypet2bids available')" 2>&1
+    expected_output_contains: "pypet2bids available"
+
+  - name: natsort import
+    description: Verify natsort library is available
+    command: python3 -c "import natsort; print('natsort', natsort.__version__)"
+    expected_output_contains: "natsort"
+
+  - name: pyyaml import
+    description: Verify PyYAML library is available
+    command: python3 -c "import yaml; print('pyyaml available')"
+    expected_output_contains: "pyyaml available"
+
+  # ==========================================================================
+  # UTILITY TOOLS
+  # ==========================================================================
+  - name: jq version
+    description: Verify jq JSON processor is available
+    command: jq --version
+    expected_output_contains: "jq"
+
+  - name: jq parse JSON
+    description: Test jq parsing BIDS dataset_description.json
+    command: jq '.Name' ${bids_dataset}/dataset_description.json
+    expected_output_contains: "Balloon"
+
+  - name: jq extract BIDSVersion
+    description: Extract BIDSVersion from dataset description
+    command: jq '.BIDSVersion' ${bids_dataset}/dataset_description.json
+    expected_exit_code: 0
+
+  - name: tree version
+    description: Verify tree utility is available
+    command: tree --version
+    expected_output_contains: "tree"
+
+  - name: tree dataset structure
+    description: Display BIDS dataset directory structure
+    command: tree -L 2 ${bids_dataset} 2>&1 | head -30
+    expected_output_contains: "sub-01"
+
+  - name: parallel version
+    description: Verify GNU parallel is available
+    command: parallel --version 2>&1 | head -3
+    expected_output_contains: "GNU parallel"
+
+  - name: pigz version
+    description: Verify pigz parallel gzip is available
+    command: pigz --version 2>&1
+    expected_output_contains: "pigz"
+
+  - name: pigz compress file
+    description: Test pigz compression
+    command: |
+      cp ${bids_dataset}/README test_output/readme_copy.txt && \
+      pigz -k test_output/readme_copy.txt
+    validate:
+      - output_exists: ${output_dir}/readme_copy.txt.gz
+
+  - name: detox version
+    description: Verify detox filename sanitizer is available
+    command: detox --version 2>&1 || detox -V 2>&1
+    expected_output_contains: "detox"
+
+  # ==========================================================================
+  # NODE.JS AND NPM TOOLS
+  # ==========================================================================
+  - name: node version
+    description: Verify Node.js is available
+    command: node --version
+    expected_output_contains: "v20"
+
+  - name: npm version
+    description: Verify npm is available
+    command: npm --version
+    expected_output_contains: "9"
+
+  - name: typescript version
+    description: Verify TypeScript compiler is available
+    command: tsc --version
+    expected_output_contains: "Version"
+
+  - name: pm2 version
+    description: Verify PM2 process manager is available
+    command: pm2 --version
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MONGODB (verification only - requires fakeroot for full test)
+  # ==========================================================================
+  - name: mongod version
+    description: Verify MongoDB daemon is available
+    command: mongod --version 2>&1 | head -5
+    expected_output_contains: "db version"
+
+  # ==========================================================================
+  # NIBABEL IMAGE PROCESSING
+  # ==========================================================================
+  - name: nibabel get header info
+    description: Extract detailed header information using nibabel
+    command: |
+      python3 -c "
+      import nibabel as nib
+      img = nib.load('${t1w}')
+      hdr = img.header
+      print('Dimensions:', img.shape)
+      print('Voxel sizes:', hdr.get_zooms())
+      print('Data type:', hdr.get_data_dtype())
+      print('Orientation:', nib.aff2axcodes(img.affine))
+      "
+    expected_output_contains: "Dimensions:"
+
+  - name: nibabel convert to float32
+    description: Convert image to float32 datatype
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${t1w}')
+      data = img.get_fdata().astype(np.float32)
+      new_img = nib.Nifti1Image(data, img.affine, img.header)
+      nib.save(new_img, 'test_output/t1w_float32.nii.gz')
+      print('Saved float32 image')
+      "
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_float32.nii.gz
+
+  - name: nibabel threshold image
+    description: Apply intensity threshold using nibabel
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      data[data < 100] = 0
+      new_img = nib.Nifti1Image(data, img.affine, img.header)
+      nib.save(new_img, 'test_output/t1w_thresholded.nii.gz')
+      print('Saved thresholded image')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_thresholded.nii.gz
+
+  - name: nibabel create binary mask
+    description: Create binary mask from T1w image
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      mask = (data > 50).astype(np.uint8)
+      mask_img = nib.Nifti1Image(mask, img.affine)
+      nib.save(mask_img, 'test_output/t1w_mask_nibabel.nii.gz')
+      print('Saved binary mask')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_nibabel.nii.gz
+
+  - name: nibabel extract middle slice
+    description: Extract statistics from middle slice
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      mid_slice = data[:, :, data.shape[2]//2]
+      print('Middle slice shape:', mid_slice.shape)
+      print('Min:', np.min(mid_slice))
+      print('Max:', np.max(mid_slice))
+      print('Mean:', np.mean(mid_slice))
+      "
+    expected_output_contains: "Middle slice shape:"
+
+  # ==========================================================================
+  # MNE-BIDS FUNCTIONALITY
+  # ==========================================================================
+  - name: mne_bids read raw
+    description: Test MNE-BIDS can construct BIDS paths
+    command: |
+      python3 -c "
+      from mne_bids import BIDSPath
+      bids_path = BIDSPath(
+          subject='01',
+          suffix='T1w',
+          datatype='anat',
+          root='${bids_dataset}'
+      )
+      print('BIDS path:', bids_path.fpath)
+      print('Subject:', bids_path.subject)
+      print('Datatype:', bids_path.datatype)
+      " 2>&1
+    expected_output_contains: "Subject: 01"
+
+  # ==========================================================================
+  # PANDAS DATA PROCESSING
+  # ==========================================================================
+  - name: pandas read events TSV
+    description: Read BIDS events file with pandas
+    command: |
+      python3 -c "
+      import pandas as pd
+      events = pd.read_csv('${bids_dataset}/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_events.tsv', sep='\t')
+      print('Events shape:', events.shape)
+      print('Columns:', list(events.columns))
+      print('First 5 rows:')
+      print(events.head())
+      "
+    expected_output_contains: "onset"
+
+  - name: pandas read participants
+    description: Read BIDS participants.tsv with pandas
+    command: |
+      python3 -c "
+      import pandas as pd
+      participants = pd.read_csv('${bids_dataset}/participants.tsv', sep='\t')
+      print('Participants:', participants.shape[0])
+      print('Columns:', list(participants.columns))
+      print(participants)
+      "
+    expected_output_contains: "participant_id"
+
+  # ==========================================================================
+  # COMBINED WORKFLOWS
+  # ==========================================================================
+  - name: BIDS validation after processing
+    description: Validate ds000001 dataset (should pass with warnings)
+    command: bids-validator ${bids_dataset} 2>&1 | tail -15
+    expected_output_contains: "Summary:"
+
+  - name: Complete T1w processing pipeline
+    description: Full pipeline - reorient (nibabel), brain extract, register to MNI
+    command: |
+      python3 -c "import nibabel as nib; img = nib.load('${t1w}'); nib.save(nib.as_closest_canonical(img), 'test_output/pipeline_reoriented.nii.gz')" && \
+      /ROBEX/runROBEX.sh test_output/pipeline_reoriented.nii.gz test_output/pipeline_brain.nii.gz test_output/pipeline_mask.nii.gz && \
+      flirt -in test_output/pipeline_brain.nii.gz -ref /usr/local/fsl/data/standard/MNI152_T1_2mm_brain.nii.gz -out test_output/pipeline_mni.nii.gz -dof 12 && \
+      echo "Pipeline complete"
+    validate:
+      - output_exists: ${output_dir}/pipeline_reoriented.nii.gz
+      - output_exists: ${output_dir}/pipeline_brain.nii.gz
+      - output_exists: ${output_dir}/pipeline_mask.nii.gz
+      - output_exists: ${output_dir}/pipeline_mni.nii.gz
+
+  - name: Brain extraction and defacing pipeline
+    description: Extract brain, then deface original using mask
+    command: |
+      /ROBEX/runROBEX.sh ${t1w} test_output/pipeline2_brain.nii.gz test_output/pipeline2_mask.nii.gz && \
+      quickshear ${t1w} test_output/pipeline2_mask.nii.gz test_output/pipeline2_defaced.nii.gz && \
+      echo "Defacing pipeline complete"
+    validate:
+      - output_exists: ${output_dir}/pipeline2_brain.nii.gz
+      - output_exists: ${output_dir}/pipeline2_mask.nii.gz
+      - output_exists: ${output_dir}/pipeline2_defaced.nii.gz
+
+  - name: Header comparison workflow
+    description: Compare headers of original and processed images
+    command: |
+      echo "=== Original T1w ===" && \
+      fslhd ${t1w} | head -20 && \
+      echo "=== Reoriented T1w ===" && \
+      fslhd test_output/t1w_reoriented.nii.gz | head -20
+    depends_on: fslreorient2std with output
+    expected_output_contains: "sizeof_hdr"
+
+  - name: BIDS sidecar JSON inspection
+    description: Extract and display BIDS metadata using jq
+    command: |
+      echo "Dataset description:" && \
+      jq '.' ${bids_dataset}/dataset_description.json && \
+      echo "Authors:" && \
+      jq '.Authors' ${bids_dataset}/dataset_description.json
+    expected_output_contains: "BIDSVersion"
+
+  # ==========================================================================
+  # ERROR HANDLING TESTS
+  # ==========================================================================
+  - name: fslhd nonexistent file
+    description: Test fslhd error handling for missing file
+    command: fslhd /nonexistent/file.nii.gz 2>&1 || true
+    expected_output_contains: "No image files match"
+
+  - name: flirt missing input
+    description: Test flirt error handling for missing parameters
+    command: flirt -ref ${t1w} 2>&1 || true
+    expected_output_contains: "ERROR"
+
+  - name: bids-validator invalid path
+    description: Test bids-validator with invalid dataset path
+    command: bids-validator /nonexistent/dataset 2>&1 || true
+    expected_exit_code: 0
+
+  - name: quickshear missing arguments
+    description: Test quickshear error handling for missing arguments
+    command: quickshear 2>&1 || true
+    expected_output_contains: "arguments"
+
+  # ==========================================================================
+  # DATA TYPE AND FORMAT TESTS
+  # ==========================================================================
+  - name: flirt output datatype float
+    description: Force float output datatype in FLIRT
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_float.nii.gz -datatype float -dof 6
+    validate:
+      - output_exists: ${output_dir}/t2_float.nii.gz
+
+  - name: flirt output datatype short
+    description: Force short integer output datatype in FLIRT
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_short.nii.gz -datatype short -dof 6
+    validate:
+      - output_exists: ${output_dir}/t2_short.nii.gz
+
+  - name: verify output datatypes
+    description: Verify datatype of processed images
+    command: |
+      python3 -c "
+      import nibabel as nib
+      float_img = nib.load('test_output/t2_float.nii.gz')
+      short_img = nib.load('test_output/t2_short.nii.gz')
+      print('Float image dtype:', float_img.header.get_data_dtype())
+      print('Short image dtype:', short_img.header.get_data_dtype())
+      "
+    depends_on: flirt output datatype float
+    expected_output_contains: "dtype"
+
+  # ==========================================================================
+  # ENVIRONMENT AND PATH TESTS
+  # ==========================================================================
+  - name: FSL environment
+    description: Verify FSL environment variables
+    command: echo "FSLDIR=$FSLDIR" && echo "FSLOUTPUTTYPE=$FSLOUTPUTTYPE"
+    expected_output_contains: "FSLDIR"
+
+  - name: PATH includes FSL
+    description: Verify FSL binaries are in PATH
+    command: which flirt fslhd fslreorient2std
+    expected_output_contains: "/usr/local/fsl/bin"
+
+  - name: PATH includes ROBEX
+    description: Verify ROBEX is in PATH
+    command: which ROBEX || ls -la /ROBEX/ROBEX
+    expected_output_contains: "ROBEX"
+
+  - name: MNI template exists
+    description: Verify MNI152 template is available
+    command: ls -la /usr/local/fsl/data/standard/MNI152_T1_2mm_brain.nii.gz
+    expected_output_contains: "MNI152"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

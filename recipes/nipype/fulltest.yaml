@@ -1,0 +1,1272 @@
+# nipype container test suite
+# Tests for nipype v1.8.3 - Neuroimaging pipeline framework
+#
+# Nipype provides a uniform interface to neuroimaging software packages
+# and facilitates interaction between these packages within a single workflow.
+
+name: nipype
+version: 1.8.3
+container: nipype_1.8.3_20220825.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output dicom_folder nifti_output
+    # Create dummy files for interface setup tests (Nipype validates file existence at assignment)
+    touch input.nii.gz reference.nii.gz bold.nii.gz source.nii.gz target.nii.gz mask.nii.gz
+    touch brain.nii.gz brain.mgz aparc+aseg.mgz dwi.nii.gz file.nii file.nii.gz
+    touch image.nii.gz image1.nii.gz image2.nii.gz seg1.nii.gz seg2.nii.gz
+    touch prob_map1.nii.gz prob_map2.nii.gz img1.nii.gz img2.nii.gz
+    touch bold.nii t1.nii bold_mean.nii run1.nii run2.nii template.nii.gz
+    touch moving.nii.gz affine.mat t1.nii.gz motion_params.txt motion.par
+    touch csf_mask.nii.gz wm_mask.nii.gz brain_mask.nii.gz dwi.mif
+    touch test_output/original.nii.gz
+
+tests:
+  # ==========================================================================
+  # CORE NIPYPE MODULE IMPORTS
+  # ==========================================================================
+  - name: Nipype version check
+    description: Verify nipype module imports and reports version
+    command: python -c "import nipype; print('nipype version:', nipype.__version__)"
+    expected_output_contains: "1.8.3"
+    expected_exit_code: 0
+
+  - name: Import nipype.pipeline
+    description: Test import of pipeline module
+    command: python -c "from nipype.pipeline import Workflow, Node, MapNode, JoinNode; print('Pipeline imports successful')"
+    expected_output_contains: "successful"
+    expected_exit_code: 0
+
+  - name: Import nipype.interfaces
+    description: Test import of interfaces module
+    command: python -c "from nipype import interfaces; print('Interfaces imports successful')"
+    expected_output_contains: "successful"
+    expected_exit_code: 0
+
+  - name: Import nipype.algorithms
+    description: Test import of algorithms module
+    command: python -c "import nipype.algorithms.confounds; import nipype.algorithms.metrics; print('Algorithms imports successful')"
+    expected_output_contains: "successful"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # WORKFLOW CREATION AND CONFIGURATION
+  # ==========================================================================
+  - name: Create basic workflow
+    description: Test creating a basic Nipype workflow
+    command: |
+      python -c "
+      from nipype.pipeline import Workflow
+      wf = Workflow(name='test_workflow', base_dir='test_output')
+      print('Workflow created:', wf.name)
+      print('Base dir:', wf.base_dir)
+      "
+    expected_output_contains: "test_workflow"
+    expected_exit_code: 0
+
+  - name: Create workflow with Node
+    description: Test creating a workflow with nodes
+    command: |
+      python -c "
+      from nipype.pipeline import Workflow, Node
+      from nipype.interfaces.utility import IdentityInterface
+      wf = Workflow(name='node_test', base_dir='test_output')
+      node = Node(IdentityInterface(fields=['input']), name='identity_node')
+      wf.add_nodes([node])
+      print('Workflow with node created successfully')
+      print('Number of nodes:', len(wf.list_node_names()))
+      "
+    expected_output_contains: "successfully"
+    expected_exit_code: 0
+
+  - name: Create MapNode
+    description: Test MapNode creation for iterating over inputs
+    command: |
+      python -c "
+      from nipype.pipeline import MapNode
+      from nipype.interfaces.utility import Function
+      func_str = 'def square(x):\n    return x ** 2\n'
+      mapnode = MapNode(
+          Function(input_names=['x'], output_names=['result'], function_str=func_str),
+          name='square_node',
+          iterfield=['x']
+      )
+      print('MapNode created successfully')
+      "
+    expected_output_contains: "successfully"
+    expected_exit_code: 0
+
+  - name: Create JoinNode
+    description: Test JoinNode creation for joining parallel outputs
+    command: |
+      python -c "
+      from nipype.pipeline import JoinNode
+      from nipype.interfaces.utility import IdentityInterface
+      joinnode = JoinNode(
+          IdentityInterface(fields=['merged_data']),
+          name='join_node',
+          joinsource='source_node',
+          joinfield=['merged_data']
+      )
+      print('JoinNode created successfully')
+      "
+    expected_output_contains: "successfully"
+    expected_exit_code: 0
+
+  - name: Workflow connect method
+    description: Test connecting nodes in a workflow
+    command: |
+      python -c "
+      from nipype.pipeline import Workflow, Node
+      from nipype.interfaces.utility import IdentityInterface
+      wf = Workflow(name='connect_test', base_dir='test_output')
+      node1 = Node(IdentityInterface(fields=['data']), name='input_node')
+      node2 = Node(IdentityInterface(fields=['data']), name='output_node')
+      wf.connect(node1, 'data', node2, 'data')
+      print('Nodes connected successfully')
+      "
+    expected_output_contains: "successfully"
+    expected_exit_code: 0
+
+  - name: Workflow configuration
+    description: Test workflow configuration options
+    command: |
+      python -c "
+      from nipype.pipeline import Workflow
+      wf = Workflow(name='config_test', base_dir='test_output')
+      wf.config['execution']['crashfile_format'] = 'txt'
+      wf.config['execution']['stop_on_first_crash'] = True
+      wf.config['execution']['remove_unnecessary_outputs'] = False
+      print('Workflow configuration set successfully')
+      "
+    expected_output_contains: "successfully"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # UTILITY INTERFACES
+  # ==========================================================================
+  - name: IdentityInterface
+    description: Test IdentityInterface for passing data through
+    command: |
+      python -c "
+      from nipype.interfaces.utility import IdentityInterface
+      iface = IdentityInterface(fields=['a', 'b', 'c'])
+      iface.inputs.a = 1
+      iface.inputs.b = 'test'
+      iface.inputs.c = [1, 2, 3]
+      print('IdentityInterface created with fields:', ['a', 'b', 'c'])
+      "
+    expected_output_contains: "IdentityInterface created"
+    expected_exit_code: 0
+
+  - name: Function interface
+    description: Test Function interface for custom Python functions
+    command: |
+      python -c "
+      from nipype.interfaces.utility import Function
+      func_str = 'def add_numbers(a, b):\n    return a + b\n'
+      func = Function(input_names=['a', 'b'], output_names=['sum'], function_str=func_str)
+      func.inputs.a = 5
+      func.inputs.b = 3
+      result = func.run()
+      print('Function result:', result.outputs.sum)
+      "
+    expected_output_contains: "8"
+    expected_exit_code: 0
+
+  - name: Merge interface
+    description: Test Merge interface for combining inputs
+    command: |
+      python -c "
+      from nipype.interfaces.utility import Merge
+      merge = Merge(2)
+      merge.inputs.in1 = 'file1.nii'
+      merge.inputs.in2 = 'file2.nii'
+      print('Merge interface configured successfully')
+      "
+    expected_output_contains: "successfully"
+    expected_exit_code: 0
+
+  - name: Select interface
+    description: Test Select interface for choosing from a list
+    command: |
+      python -c "
+      from nipype.interfaces.utility import Select
+      sel = Select()
+      sel.inputs.inlist = ['a', 'b', 'c', 'd']
+      sel.inputs.index = [1, 3]
+      result = sel.run()
+      print('Selected items:', result.outputs.out)
+      "
+    expected_output_contains: "['b', 'd']"
+    expected_exit_code: 0
+
+  - name: Split interface
+    description: Test Split interface for splitting lists
+    command: |
+      python -c "
+      from nipype.interfaces.utility import Split
+      split = Split()
+      split.inputs.inlist = [1, 2, 3, 4, 5, 6]
+      split.inputs.splits = [2, 4]
+      result = split.run()
+      print('Split outputs:', result.outputs.out1, result.outputs.out2)
+      "
+    expected_output_contains: "[1, 2]"
+    expected_exit_code: 0
+
+  - name: Rename interface
+    description: Test Rename interface for file renaming
+    command: |
+      python -c "
+      from nipype.interfaces.utility import Rename
+      rename = Rename()
+      rename.inputs.in_file = 'test_output/original.nii.gz'
+      rename.inputs.format_string = 'renamed_%(subject)s.nii.gz'
+      rename.inputs.subject = 'sub01'
+      print('Rename interface configured:', rename.inputs.format_string)
+      "
+    expected_output_contains: "renamed_%(subject)s"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # IO INTERFACES
+  # ==========================================================================
+  - name: DataGrabber interface
+    description: Test DataGrabber for file selection
+    command: |
+      python -c "
+      from nipype.interfaces.io import DataGrabber
+      dg = DataGrabber()
+      dg.inputs.base_directory = '.'
+      dg.inputs.template = '*.nii.gz'
+      print('DataGrabber configured with template:', dg.inputs.template)
+      "
+    expected_output_contains: "*.nii.gz"
+    expected_exit_code: 0
+
+  - name: SelectFiles interface
+    description: Test SelectFiles for template-based file selection
+    command: |
+      python -c "
+      from nipype.interfaces.io import SelectFiles
+      templates = {'anat': 'sub-{subject}/anat/*_T1w.nii.gz',
+                   'func': 'sub-{subject}/func/*_bold.nii.gz'}
+      sf = SelectFiles(templates)
+      sf.inputs.base_directory = 'ds000001'
+      sf.inputs.subject = '01'
+      print('SelectFiles configured with templates')
+      print('Anat template:', templates['anat'])
+      "
+    expected_output_contains: "T1w.nii.gz"
+    expected_exit_code: 0
+
+  - name: DataSink interface
+    description: Test DataSink for output organization
+    command: |
+      python -c "
+      from nipype.interfaces.io import DataSink
+      ds = DataSink()
+      ds.inputs.base_directory = 'test_output/results'
+      ds.inputs.container = 'subject01'
+      print('DataSink configured with base:', ds.inputs.base_directory)
+      "
+    expected_output_contains: "test_output/results"
+    expected_exit_code: 0
+
+  - name: JSONFileSink interface
+    description: Test JSONFileSink for JSON output
+    command: |
+      python -c "
+      from nipype.interfaces.io import JSONFileSink
+      js = JSONFileSink()
+      js.inputs.out_file = 'test_output/results.json'
+      js.inputs.in_dict = {'key1': 'value1', 'key2': 42}
+      print('JSONFileSink configured for output')
+      "
+    expected_output_contains: "configured"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FSL INTERFACES
+  # ==========================================================================
+  - name: Import FSL interfaces
+    description: Test FSL interface imports
+    command: |
+      python -c "
+      from nipype.interfaces import fsl
+      print('FSL BET available:', hasattr(fsl, 'BET'))
+      print('FSL FLIRT available:', hasattr(fsl, 'FLIRT'))
+      print('FSL FNIRT available:', hasattr(fsl, 'FNIRT'))
+      print('FSL FAST available:', hasattr(fsl, 'FAST'))
+      print('FSL MCFLIRT available:', hasattr(fsl, 'MCFLIRT'))
+      "
+    expected_output_contains: "True"
+    expected_exit_code: 0
+
+  - name: FSL BET interface setup
+    description: Test FSL BET brain extraction interface
+    command: |
+      python -c "
+      from nipype.interfaces.fsl import BET
+      bet = BET()
+      bet.inputs.in_file = 'ds000001/sub-01/anat/sub-01_T1w.nii.gz'
+      bet.inputs.frac = 0.5
+      bet.inputs.mask = True
+      bet.inputs.out_file = 'test_output/brain.nii.gz'
+      print('BET interface configured')
+      print('Frac:', bet.inputs.frac)
+      print('Mask:', bet.inputs.mask)
+      "
+    expected_output_contains: "BET interface configured"
+    expected_exit_code: 0
+
+  - name: FSL FLIRT interface setup
+    description: Test FSL FLIRT registration interface
+    command: |
+      python -c "
+      from nipype.interfaces.fsl import FLIRT
+      flirt = FLIRT()
+      flirt.inputs.in_file = 'input.nii.gz'
+      flirt.inputs.reference = 'reference.nii.gz'
+      flirt.inputs.dof = 12
+      flirt.inputs.cost = 'corratio'
+      print('FLIRT interface configured')
+      print('DOF:', flirt.inputs.dof)
+      print('Cost:', flirt.inputs.cost)
+      "
+    expected_output_contains: "corratio"
+    expected_exit_code: 0
+
+  - name: FSL MCFLIRT interface setup
+    description: Test FSL MCFLIRT motion correction interface
+    command: |
+      python -c "
+      from nipype.interfaces.fsl import MCFLIRT
+      mc = MCFLIRT()
+      mc.inputs.in_file = 'ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz'
+      mc.inputs.ref_vol = 0
+      mc.inputs.save_plots = True
+      mc.inputs.save_mats = True
+      print('MCFLIRT interface configured')
+      print('Ref vol:', mc.inputs.ref_vol)
+      "
+    expected_output_contains: "MCFLIRT interface configured"
+    expected_exit_code: 0
+
+  - name: FSL FAST interface setup
+    description: Test FSL FAST tissue segmentation interface
+    command: |
+      python -c "
+      from nipype.interfaces.fsl import FAST
+      fast = FAST()
+      fast.inputs.in_files = ['brain.nii.gz']
+      fast.inputs.number_classes = 3
+      fast.inputs.img_type = 1  # T1
+      print('FAST interface configured')
+      print('Number of classes:', fast.inputs.number_classes)
+      "
+    expected_output_contains: "3"
+    expected_exit_code: 0
+
+  - name: FSL SliceTimer interface setup
+    description: Test FSL SliceTimer for slice timing correction
+    command: |
+      python -c "
+      from nipype.interfaces.fsl import SliceTimer
+      st = SliceTimer()
+      st.inputs.in_file = 'bold.nii.gz'
+      st.inputs.interleaved = True
+      st.inputs.time_repetition = 2.0
+      print('SliceTimer interface configured')
+      print('TR:', st.inputs.time_repetition)
+      "
+    expected_output_contains: "2.0"
+    expected_exit_code: 0
+
+  - name: FSL ImageMaths interface setup
+    description: Test FSL ImageMaths for image calculations
+    command: |
+      python -c "
+      from nipype.interfaces.fsl import ImageMaths
+      im = ImageMaths()
+      im.inputs.in_file = 'input.nii.gz'
+      im.inputs.op_string = '-thr 100 -bin'
+      im.inputs.out_file = 'output.nii.gz'
+      print('ImageMaths configured with:', im.inputs.op_string)
+      "
+    expected_output_contains: "-thr 100"
+    expected_exit_code: 0
+
+  - name: FSL SUSAN interface setup
+    description: Test FSL SUSAN smoothing interface
+    command: |
+      python -c "
+      from nipype.interfaces.fsl import SUSAN
+      susan = SUSAN()
+      susan.inputs.in_file = 'input.nii.gz'
+      susan.inputs.brightness_threshold = 750
+      susan.inputs.fwhm = 6.0
+      print('SUSAN interface configured')
+      print('FWHM:', susan.inputs.fwhm)
+      "
+    expected_output_contains: "6.0"
+    expected_exit_code: 0
+
+  - name: FSL Smooth interface setup
+    description: Test FSL Smooth interface
+    command: |
+      python -c "
+      from nipype.interfaces.fsl import Smooth
+      sm = Smooth()
+      sm.inputs.in_file = 'input.nii.gz'
+      sm.inputs.fwhm = 5.0
+      print('Smooth interface configured with FWHM:', sm.inputs.fwhm)
+      "
+    expected_output_contains: "5.0"
+    expected_exit_code: 0
+
+  - name: FSL Threshold interface setup
+    description: Test FSL Threshold interface
+    command: |
+      python -c "
+      from nipype.interfaces.fsl import Threshold
+      th = Threshold()
+      th.inputs.in_file = 'input.nii.gz'
+      th.inputs.thresh = 100
+      print('Threshold interface configured:', th.inputs.thresh)
+      "
+    expected_output_contains: "100"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # AFNI INTERFACES
+  # ==========================================================================
+  - name: Import AFNI interfaces
+    description: Test AFNI interface imports
+    command: |
+      python -c "
+      from nipype.interfaces import afni
+      print('AFNI Despike available:', hasattr(afni, 'Despike'))
+      print('AFNI Allineate available:', hasattr(afni, 'Allineate'))
+      print('AFNI Automask available:', hasattr(afni, 'Automask'))
+      print('AFNI Bandpass available:', hasattr(afni, 'Bandpass'))
+      print('AFNI BlurInMask available:', hasattr(afni, 'BlurInMask'))
+      "
+    expected_output_contains: "True"
+    expected_exit_code: 0
+
+  - name: AFNI Despike interface setup
+    description: Test AFNI Despike interface
+    command: |
+      python -c "
+      from nipype.interfaces.afni import Despike
+      ds = Despike()
+      ds.inputs.in_file = 'bold.nii.gz'
+      ds.inputs.outputtype = 'NIFTI_GZ'
+      print('Despike interface configured')
+      print('Output type:', ds.inputs.outputtype)
+      "
+    expected_output_contains: "NIFTI_GZ"
+    expected_exit_code: 0
+
+  - name: AFNI Allineate interface setup
+    description: Test AFNI Allineate registration interface
+    command: |
+      python -c "
+      from nipype.interfaces.afni import Allineate
+      al = Allineate()
+      al.inputs.in_file = 'source.nii.gz'
+      al.inputs.reference = 'target.nii.gz'
+      al.inputs.warp_type = 'affine_general'
+      print('Allineate interface configured')
+      print('Warp type:', al.inputs.warp_type)
+      "
+    expected_output_contains: "affine_general"
+    expected_exit_code: 0
+
+  - name: AFNI Automask interface setup
+    description: Test AFNI Automask for brain masking
+    command: |
+      python -c "
+      from nipype.interfaces.afni import Automask
+      am = Automask()
+      am.inputs.in_file = 'bold.nii.gz'
+      am.inputs.dilate = 1
+      print('Automask interface configured')
+      print('Dilate:', am.inputs.dilate)
+      "
+    expected_output_contains: "1"
+    expected_exit_code: 0
+
+  - name: AFNI Bandpass interface setup
+    description: Test AFNI Bandpass temporal filtering
+    command: |
+      python -c "
+      from nipype.interfaces.afni import Bandpass
+      bp = Bandpass()
+      bp.inputs.in_file = 'bold.nii.gz'
+      bp.inputs.lowpass = 0.1
+      bp.inputs.highpass = 0.01
+      bp.inputs.tr = 2.0
+      print('Bandpass interface configured')
+      print('Lowpass:', bp.inputs.lowpass)
+      print('Highpass:', bp.inputs.highpass)
+      "
+    expected_output_contains: "0.1"
+    expected_exit_code: 0
+
+  - name: AFNI BlurInMask interface setup
+    description: Test AFNI BlurInMask for masked smoothing
+    command: |
+      python -c "
+      from nipype.interfaces.afni import BlurInMask
+      bim = BlurInMask()
+      bim.inputs.in_file = 'bold.nii.gz'
+      bim.inputs.mask = 'mask.nii.gz'
+      bim.inputs.fwhm = 6.0
+      print('BlurInMask interface configured')
+      print('FWHM:', bim.inputs.fwhm)
+      "
+    expected_output_contains: "6.0"
+    expected_exit_code: 0
+
+  - name: AFNI Detrend interface setup
+    description: Test AFNI Detrend for detrending
+    command: |
+      python -c "
+      from nipype.interfaces.afni import Detrend
+      dt = Detrend()
+      dt.inputs.in_file = 'bold.nii.gz'
+      dt.inputs.args = '-polort 2'
+      print('Detrend interface configured')
+      "
+    expected_output_contains: "configured"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SPM INTERFACES
+  # ==========================================================================
+  - name: Import SPM interfaces
+    description: Test SPM interface imports
+    command: |
+      python -c "
+      from nipype.interfaces import spm
+      print('SPM Smooth available:', hasattr(spm, 'Smooth'))
+      print('SPM Realign available:', hasattr(spm, 'Realign'))
+      print('SPM Coregister available:', hasattr(spm, 'Coregister'))
+      print('SPM Normalize12 available:', hasattr(spm, 'Normalize12'))
+      print('SPM NewSegment available:', hasattr(spm, 'NewSegment'))
+      "
+    expected_output_contains: "True"
+    expected_exit_code: 0
+
+  - name: SPM Smooth interface setup
+    description: Test SPM Smooth interface
+    command: |
+      python -c "
+      from nipype.interfaces.spm import Smooth
+      sm = Smooth()
+      sm.inputs.in_files = ['bold.nii']
+      sm.inputs.fwhm = [6, 6, 6]
+      print('SPM Smooth interface configured')
+      print('FWHM:', sm.inputs.fwhm)
+      "
+    expected_output_contains: "[6.0, 6.0, 6.0]"
+    expected_exit_code: 0
+
+  - name: SPM Realign interface setup
+    description: Test SPM Realign motion correction interface
+    command: |
+      python -c "
+      from nipype.interfaces.spm import Realign
+      rl = Realign()
+      rl.inputs.in_files = ['run1.nii', 'run2.nii']
+      rl.inputs.register_to_mean = True
+      print('SPM Realign interface configured')
+      print('Register to mean:', rl.inputs.register_to_mean)
+      "
+    expected_output_contains: "True"
+    expected_exit_code: 0
+
+  - name: SPM Coregister interface setup
+    description: Test SPM Coregister interface
+    command: |
+      python -c "
+      from nipype.interfaces.spm import Coregister
+      coreg = Coregister()
+      coreg.inputs.target = 't1.nii'
+      coreg.inputs.source = 'bold_mean.nii'
+      coreg.inputs.cost_function = 'nmi'
+      print('SPM Coregister interface configured')
+      print('Cost function:', coreg.inputs.cost_function)
+      "
+    expected_output_contains: "nmi"
+    expected_exit_code: 0
+
+  - name: SPM Normalize12 interface setup
+    description: Test SPM Normalize12 interface
+    command: |
+      python -c "
+      from nipype.interfaces.spm import Normalize12
+      norm = Normalize12()
+      norm.inputs.image_to_align = 't1.nii'
+      norm.inputs.write_voxel_sizes = [2, 2, 2]
+      print('SPM Normalize12 interface configured')
+      print('Voxel sizes:', norm.inputs.write_voxel_sizes)
+      "
+    expected_output_contains: "[2.0, 2.0, 2.0]"
+    expected_exit_code: 0
+
+  - name: SPM SliceTiming interface setup
+    description: Test SPM SliceTiming interface
+    command: |
+      python -c "
+      from nipype.interfaces.spm import SliceTiming
+      st = SliceTiming()
+      st.inputs.in_files = ['bold.nii']
+      st.inputs.num_slices = 40
+      st.inputs.time_repetition = 2.0
+      st.inputs.ref_slice = 20
+      print('SPM SliceTiming interface configured')
+      print('Num slices:', st.inputs.num_slices)
+      "
+    expected_output_contains: "40"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ANTs INTERFACES
+  # ==========================================================================
+  - name: Import ANTs interfaces
+    description: Test ANTs interface imports
+    command: |
+      python -c "
+      from nipype.interfaces import ants
+      print('ANTs Registration available:', hasattr(ants, 'Registration'))
+      print('ANTs N4BiasFieldCorrection available:', hasattr(ants, 'N4BiasFieldCorrection'))
+      print('ANTs ApplyTransforms available:', hasattr(ants, 'ApplyTransforms'))
+      print('ANTs BrainExtraction available:', hasattr(ants, 'BrainExtraction'))
+      print('ANTs CorticalThickness available:', hasattr(ants, 'CorticalThickness'))
+      "
+    expected_output_contains: "True"
+    expected_exit_code: 0
+
+  - name: ANTs Registration interface setup
+    description: Test ANTs Registration interface
+    command: |
+      python -c "
+      from nipype.interfaces.ants import Registration
+      reg = Registration()
+      reg.inputs.fixed_image = ['template.nii.gz']
+      reg.inputs.moving_image = ['t1.nii.gz']
+      reg.inputs.metric = ['MI', 'MI']
+      reg.inputs.transforms = ['Rigid', 'Affine']
+      print('ANTs Registration interface configured')
+      print('Transforms:', reg.inputs.transforms)
+      "
+    expected_output_contains: "['Rigid', 'Affine']"
+    expected_exit_code: 0
+
+  - name: ANTs N4BiasFieldCorrection interface setup
+    description: Test ANTs N4BiasFieldCorrection interface
+    command: |
+      python -c "
+      from nipype.interfaces.ants import N4BiasFieldCorrection
+      n4 = N4BiasFieldCorrection()
+      n4.inputs.input_image = 't1.nii.gz'
+      n4.inputs.dimension = 3
+      n4.inputs.n_iterations = [50, 50, 50, 50]
+      print('N4BiasFieldCorrection interface configured')
+      print('Iterations:', n4.inputs.n_iterations)
+      "
+    expected_output_contains: "[50, 50, 50, 50]"
+    expected_exit_code: 0
+
+  - name: ANTs ApplyTransforms interface setup
+    description: Test ANTs ApplyTransforms interface
+    command: |
+      python -c "
+      from nipype.interfaces.ants import ApplyTransforms
+      at = ApplyTransforms()
+      at.inputs.input_image = 'moving.nii.gz'
+      at.inputs.reference_image = 'reference.nii.gz'
+      at.inputs.transforms = ['affine.mat']
+      at.inputs.interpolation = 'Linear'
+      print('ApplyTransforms interface configured')
+      print('Interpolation:', at.inputs.interpolation)
+      "
+    expected_output_contains: "Linear"
+    expected_exit_code: 0
+
+  - name: ANTs DenoiseImage interface setup
+    description: Test ANTs DenoiseImage interface
+    command: |
+      python -c "
+      from nipype.interfaces.ants import DenoiseImage
+      dn = DenoiseImage()
+      dn.inputs.input_image = 't1.nii.gz'
+      dn.inputs.dimension = 3
+      print('DenoiseImage interface configured')
+      print('Dimension:', dn.inputs.dimension)
+      "
+    expected_output_contains: "3"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FREESURFER INTERFACES
+  # ==========================================================================
+  - name: Import FreeSurfer interfaces
+    description: Test FreeSurfer interface imports
+    command: |
+      python -c "
+      from nipype.interfaces import freesurfer as fs
+      print('FS ReconAll available:', hasattr(fs, 'ReconAll'))
+      print('FS BBRegister available:', hasattr(fs, 'BBRegister'))
+      print('FS Binarize available:', hasattr(fs, 'Binarize'))
+      print('FS MRIConvert available:', hasattr(fs, 'MRIConvert'))
+      print('FS ApplyVolTransform available:', hasattr(fs, 'ApplyVolTransform'))
+      "
+    expected_output_contains: "True"
+    expected_exit_code: 0
+
+  - name: FreeSurfer Binarize interface setup
+    description: Test FreeSurfer Binarize interface
+    command: |
+      python -c "
+      from nipype.interfaces.freesurfer import Binarize
+      binarize = Binarize()
+      binarize.inputs.in_file = 'aparc+aseg.mgz'
+      binarize.inputs.match = [41, 42]
+      print('FreeSurfer Binarize interface configured')
+      print('Match labels:', binarize.inputs.match)
+      "
+    expected_output_contains: "[41, 42]"
+    expected_exit_code: 0
+
+  - name: FreeSurfer MRIConvert interface setup
+    description: Test FreeSurfer MRIConvert interface
+    command: |
+      python -c "
+      from nipype.interfaces.freesurfer import MRIConvert
+      mc = MRIConvert()
+      mc.inputs.in_file = 'brain.mgz'
+      mc.inputs.out_file = 'brain.nii.gz'
+      mc.inputs.out_type = 'niigz'
+      print('MRIConvert interface configured')
+      print('Output type:', mc.inputs.out_type)
+      "
+    expected_output_contains: "niigz"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MRTRIX3 INTERFACES
+  # ==========================================================================
+  - name: Import MRtrix3 interfaces
+    description: Test MRtrix3 interface imports
+    command: |
+      python -c "
+      from nipype.interfaces import mrtrix3
+      print('MRtrix3 DWIDenoise available:', hasattr(mrtrix3, 'DWIDenoise'))
+      print('MRtrix3 MRConvert available:', hasattr(mrtrix3, 'MRConvert'))
+      print('MRtrix3 Tractography available:', hasattr(mrtrix3, 'Tractography'))
+      print('MRtrix3 FitTensor available:', hasattr(mrtrix3, 'FitTensor'))
+      "
+    expected_output_contains: "True"
+    expected_exit_code: 0
+
+  - name: MRtrix3 MRConvert interface setup
+    description: Test MRtrix3 MRConvert interface
+    command: |
+      python -c "
+      from nipype.interfaces.mrtrix3 import MRConvert
+      mc = MRConvert()
+      mc.inputs.in_file = 'dwi.nii.gz'
+      mc.inputs.out_file = 'dwi.mif'
+      print('MRtrix3 MRConvert interface configured')
+      "
+    expected_output_contains: "configured"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DIPY INTERFACES
+  # ==========================================================================
+  - name: Import DIPY interfaces
+    description: Test DIPY interface imports
+    command: |
+      python -c "
+      from nipype.interfaces import dipy
+      print('DIPY DTI available:', hasattr(dipy, 'DTI'))
+      print('DIPY CSD available:', hasattr(dipy, 'CSD'))
+      print('DIPY Denoise available:', hasattr(dipy, 'Denoise'))
+      print('DIPY TrackDensityMap available:', hasattr(dipy, 'TrackDensityMap'))
+      " 2>&1 | grep -v "We advise"
+    expected_output_contains: "True"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ALGORITHMS - CONFOUNDS
+  # ==========================================================================
+  - name: TSNR algorithm
+    description: Test TSNR (temporal SNR) algorithm interface
+    command: |
+      python -c "
+      from nipype.algorithms.confounds import TSNR
+      tsnr = TSNR()
+      tsnr.inputs.in_file = 'bold.nii.gz'
+      tsnr.inputs.regress_poly = 2
+      print('TSNR interface configured')
+      print('Regress poly:', tsnr.inputs.regress_poly)
+      "
+    expected_output_contains: "2"
+    expected_exit_code: 0
+
+  - name: CompCor algorithm
+    description: Test CompCor algorithm interface
+    command: |
+      python -c "
+      from nipype.algorithms.confounds import CompCor
+      cc = CompCor()
+      cc.inputs.realigned_file = 'bold.nii.gz'
+      cc.inputs.mask_files = ['csf_mask.nii.gz', 'wm_mask.nii.gz']
+      cc.inputs.num_components = 5
+      print('CompCor interface configured')
+      print('Num components:', cc.inputs.num_components)
+      "
+    expected_output_contains: "5"
+    expected_exit_code: 0
+
+  - name: ACompCor algorithm
+    description: Test ACompCor (anatomical CompCor) interface
+    command: |
+      python -c "
+      from nipype.algorithms.confounds import ACompCor
+      acc = ACompCor()
+      acc.inputs.realigned_file = 'bold.nii.gz'
+      acc.inputs.mask_files = ['csf_mask.nii.gz']
+      acc.inputs.num_components = 5
+      print('ACompCor interface configured')
+      "
+    expected_output_contains: "configured"
+    expected_exit_code: 0
+
+  - name: TCompCor algorithm
+    description: Test TCompCor (temporal CompCor) interface
+    command: |
+      python -c "
+      from nipype.algorithms.confounds import TCompCor
+      tcc = TCompCor()
+      tcc.inputs.realigned_file = 'bold.nii.gz'
+      tcc.inputs.num_components = 5
+      tcc.inputs.percentile_threshold = 0.02
+      print('TCompCor interface configured')
+      print('Percentile threshold:', tcc.inputs.percentile_threshold)
+      "
+    expected_output_contains: "0.02"
+    expected_exit_code: 0
+
+  - name: FramewiseDisplacement algorithm
+    description: Test FramewiseDisplacement motion metric
+    command: |
+      python -c "
+      from nipype.algorithms.confounds import FramewiseDisplacement
+      fd = FramewiseDisplacement()
+      fd.inputs.in_file = 'motion_params.txt'
+      fd.inputs.parameter_source = 'FSL'
+      fd.inputs.radius = 50
+      print('FramewiseDisplacement interface configured')
+      print('Radius:', fd.inputs.radius)
+      "
+    expected_output_contains: "50"
+    expected_exit_code: 0
+
+  - name: ComputeDVARS algorithm
+    description: Test ComputeDVARS metric interface
+    command: |
+      python -c "
+      from nipype.algorithms.confounds import ComputeDVARS
+      dvars = ComputeDVARS()
+      dvars.inputs.in_file = 'bold.nii.gz'
+      dvars.inputs.in_mask = 'brain_mask.nii.gz'
+      print('ComputeDVARS interface configured')
+      "
+    expected_output_contains: "configured"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ALGORITHMS - METRICS
+  # ==========================================================================
+  - name: Overlap metric algorithm
+    description: Test Overlap metric for comparing segmentations
+    command: |
+      python -c "
+      from nipype.algorithms.metrics import Overlap
+      overlap = Overlap()
+      overlap.inputs.volume1 = 'seg1.nii.gz'
+      overlap.inputs.volume2 = 'seg2.nii.gz'
+      print('Overlap metric interface configured')
+      "
+    expected_output_contains: "configured"
+    expected_exit_code: 0
+
+  - name: Distance metric algorithm
+    description: Test Distance metric interface
+    command: |
+      python -c "
+      from nipype.algorithms.metrics import Distance
+      dist = Distance()
+      dist.inputs.volume1 = 'seg1.nii.gz'
+      dist.inputs.volume2 = 'seg2.nii.gz'
+      dist.inputs.method = 'eucl_min'
+      print('Distance metric configured')
+      print('Method:', dist.inputs.method)
+      "
+    expected_output_contains: "eucl_min"
+    expected_exit_code: 0
+
+  - name: FuzzyOverlap metric algorithm
+    description: Test FuzzyOverlap for probabilistic maps
+    command: |
+      python -c "
+      from nipype.algorithms.metrics import FuzzyOverlap
+      fo = FuzzyOverlap()
+      fo.inputs.in_ref = 'prob_map1.nii.gz'
+      fo.inputs.in_tst = 'prob_map2.nii.gz'
+      print('FuzzyOverlap metric interface configured')
+      "
+    expected_output_contains: "configured"
+    expected_exit_code: 0
+
+  - name: Similarity metric algorithm
+    description: Test Similarity metric interface
+    command: |
+      python -c "
+      from nipype.algorithms.metrics import Similarity
+      sim = Similarity()
+      sim.inputs.volume1 = 'image1.nii.gz'
+      sim.inputs.volume2 = 'image2.nii.gz'
+      sim.inputs.metric = 'cc'
+      print('Similarity metric configured')
+      print('Metric:', sim.inputs.metric)
+      "
+    expected_output_contains: "cc"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ALGORITHMS - MISC
+  # ==========================================================================
+  - name: Gunzip algorithm
+    description: Test Gunzip decompression interface
+    command: |
+      python -c "
+      from nipype.algorithms.misc import Gunzip
+      gunzip = Gunzip()
+      gunzip.inputs.in_file = 'file.nii.gz'
+      print('Gunzip interface configured')
+      "
+    expected_output_contains: "configured"
+    expected_exit_code: 0
+
+  - name: Gzip algorithm
+    description: Test Gzip compression interface
+    command: |
+      python -c "
+      from nipype.algorithms.misc import Gzip
+      gzip = Gzip()
+      gzip.inputs.in_file = 'file.nii'
+      print('Gzip interface configured')
+      "
+    expected_output_contains: "configured"
+    expected_exit_code: 0
+
+  - name: CalculateMedian algorithm
+    description: Test CalculateMedian interface
+    command: |
+      python -c "
+      from nipype.algorithms.misc import CalculateMedian
+      median = CalculateMedian()
+      median.inputs.in_files = ['img1.nii.gz', 'img2.nii.gz']
+      print('CalculateMedian interface configured')
+      "
+    expected_output_contains: "configured"
+    expected_exit_code: 0
+
+  - name: AddNoise algorithm
+    description: Test AddNoise interface
+    command: |
+      python -c "
+      from nipype.algorithms.misc import AddNoise
+      noise = AddNoise()
+      noise.inputs.in_file = 'image.nii.gz'
+      noise.inputs.snr = 20
+      print('AddNoise interface configured')
+      print('SNR:', noise.inputs.snr)
+      "
+    expected_output_contains: "20"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ALGORITHMS - RAPIDART
+  # ==========================================================================
+  - name: ArtifactDetect algorithm
+    description: Test ArtifactDetect for motion artifact detection
+    command: |
+      python -c "
+      from nipype.algorithms.rapidart import ArtifactDetect
+      ad = ArtifactDetect()
+      ad.inputs.realigned_files = 'bold.nii.gz'
+      ad.inputs.realignment_parameters = 'motion.par'
+      ad.inputs.norm_threshold = 1.0
+      ad.inputs.zintensity_threshold = 3.0
+      ad.inputs.use_differences = [True, False]
+      print('ArtifactDetect interface configured')
+      print('Norm threshold:', ad.inputs.norm_threshold)
+      print('Z-intensity threshold:', ad.inputs.zintensity_threshold)
+      "
+    expected_output_contains: "3.0"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # IMAGE INTERFACES
+  # ==========================================================================
+  - name: Reorient image interface
+    description: Test Reorient image interface
+    command: |
+      python -c "
+      from nipype.interfaces.image import Reorient
+      reorient = Reorient()
+      reorient.inputs.in_file = 'image.nii.gz'
+      reorient.inputs.orientation = 'RAS'
+      print('Reorient interface configured')
+      print('Orientation:', reorient.inputs.orientation)
+      "
+    expected_output_contains: "RAS"
+    expected_exit_code: 0
+
+  - name: Rescale image interface
+    description: Test Rescale image interface
+    command: |
+      python -c "
+      from nipype.interfaces.image import Rescale
+      rescale = Rescale()
+      rescale.inputs.in_file = 'image.nii.gz'
+      rescale.inputs.percentile = 0.999
+      print('Rescale interface configured')
+      print('Percentile:', rescale.inputs.percentile)
+      "
+    expected_output_contains: "0.999"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NII INTERFACES
+  # ==========================================================================
+  - name: Dcm2niix interface setup
+    description: Test Dcm2niix DICOM conversion interface
+    command: |
+      python -c "
+      from nipype.interfaces.dcm2nii import Dcm2niix
+      d2n = Dcm2niix()
+      d2n.inputs.source_dir = 'dicom_folder'
+      d2n.inputs.output_dir = 'nifti_output'
+      d2n.inputs.compress = 'y'
+      d2n.inputs.bids_format = True
+      print('Dcm2niix interface configured')
+      print('BIDS format:', d2n.inputs.bids_format)
+      "
+    expected_output_contains: "True"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NIFTYREG INTERFACES
+  # ==========================================================================
+  - name: Import NiftyReg interfaces
+    description: Test NiftyReg interface imports
+    command: |
+      python -c "
+      from nipype.interfaces import niftyreg
+      print('NiftyReg RegAladin available:', hasattr(niftyreg, 'RegAladin'))
+      print('NiftyReg RegF3D available:', hasattr(niftyreg, 'RegF3D'))
+      print('NiftyReg RegResample available:', hasattr(niftyreg, 'RegResample'))
+      "
+    expected_output_contains: "True"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # CAMINO INTERFACES
+  # ==========================================================================
+  - name: Import Camino interfaces
+    description: Test Camino interface imports
+    command: |
+      python -c "
+      from nipype.interfaces import camino
+      print('Camino DTIFit available:', hasattr(camino, 'DTIFit'))
+      print('Camino ComputeFractionalAnisotropy available:', hasattr(camino, 'ComputeFractionalAnisotropy'))
+      print('Camino ProcStreamlines available:', hasattr(camino, 'ProcStreamlines'))
+      "
+    expected_output_contains: "True"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # WORKFLOW EXECUTION TESTS
+  # ==========================================================================
+  - name: Workflow with Function node execution
+    description: Test executing a simple workflow with Function node
+    command: |
+      python -c "
+      import os
+      os.chdir('test_output')
+      from nipype.pipeline import Workflow, Node
+      from nipype.interfaces.utility import Function
+
+      func_str = 'def double(x):\n    return x * 2\n'
+
+      wf = Workflow(name='function_test', base_dir='.')
+      node = Node(Function(input_names=['x'], output_names=['result'], function_str=func_str),
+                  name='double_node')
+      node.inputs.x = 5
+      wf.add_nodes([node])
+      result = wf.run()
+
+      # Get the result
+      double_node = list(result.nodes())[0]
+      print('Workflow executed successfully')
+      print('Input: 5, Output:', double_node.result.outputs.result)
+      "
+    expected_output_contains: "Output: 10"
+    expected_exit_code: 0
+
+  - name: Multi-node workflow execution
+    description: Test workflow with multiple connected nodes
+    command: |
+      python -c "
+      import os
+      os.chdir('test_output')
+      from nipype.pipeline import Workflow, Node
+      from nipype.interfaces.utility import Function
+
+      add_str = 'def add_ten(x):\n    return x + 10\n'
+      mul_str = 'def multiply_two(x):\n    return x * 2\n'
+
+      wf = Workflow(name='multinode_test', base_dir='.')
+      node1 = Node(Function(input_names=['x'], output_names=['result'], function_str=add_str),
+                   name='add_node')
+      node2 = Node(Function(input_names=['x'], output_names=['result'], function_str=mul_str),
+                   name='multiply_node')
+
+      node1.inputs.x = 5
+      wf.connect(node1, 'result', node2, 'x')
+      result = wf.run()
+
+      print('Multi-node workflow executed successfully')
+      for node in result.nodes():
+          print(f'{node.name}: {node.result.outputs.result}')
+      "
+    expected_output_contains: "30"
+    expected_exit_code: 0
+
+  - name: Workflow graph export
+    description: Test exporting workflow as graph
+    command: |
+      python -c "
+      import os
+      os.chdir('test_output')
+      from nipype.pipeline import Workflow, Node
+      from nipype.interfaces.utility import IdentityInterface
+
+      wf = Workflow(name='graph_test', base_dir='.')
+      node1 = Node(IdentityInterface(fields=['data']), name='input')
+      node2 = Node(IdentityInterface(fields=['data']), name='process')
+      node3 = Node(IdentityInterface(fields=['data']), name='output')
+
+      wf.connect(node1, 'data', node2, 'data')
+      wf.connect(node2, 'data', node3, 'data')
+
+      # Write graph
+      wf.write_graph(dotfilename='workflow_graph', graph2use='flat')
+      print('Workflow graph exported successfully')
+      if os.path.exists('workflow_graph.png') or os.path.exists('graph_test/workflow_graph.png'):
+          print('Graph file created')
+      else:
+          print('Graph dotfile created')
+      "
+    expected_output_contains: "Workflow graph exported"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NIPYPE UTILITY FUNCTIONS
+  # ==========================================================================
+  - name: Nipype logging configuration
+    description: Test nipype logging configuration
+    command: |
+      python -c "
+      from nipype import config, logging
+      config.enable_debug_mode()
+      logging.update_logging(config)
+      print('Nipype logging configured successfully')
+      "
+    expected_output_contains: "successfully"
+    expected_exit_code: 0
+
+  - name: Nipype config settings
+    description: Test nipype configuration settings
+    command: |
+      python -c "
+      from nipype import config
+      config.set('execution', 'stop_on_first_crash', 'true')
+      config.set('execution', 'remove_unnecessary_outputs', 'false')
+      config.set('execution', 'crashfile_format', 'txt')
+      print('stop_on_first_crash:', config.get('execution', 'stop_on_first_crash'))
+      print('crashfile_format:', config.get('execution', 'crashfile_format'))
+      "
+    expected_output_contains: "true"
+    expected_exit_code: 0
+
+  - name: Nipype isdefined utility
+    description: Test isdefined utility function
+    command: |
+      python -c "
+      from nipype.interfaces.base import isdefined, Undefined
+      print('isdefined(5):', isdefined(5))
+      print('isdefined(None):', isdefined(None))
+      print('isdefined(Undefined):', isdefined(Undefined))
+      "
+    expected_output_contains: "False"
+    expected_exit_code: 0
+
+  - name: Nipype TraitedSpec
+    description: Test TraitedSpec for custom interface creation
+    command: |
+      python -c "
+      from nipype.interfaces.base import TraitedSpec, BaseInterface, File, traits
+
+      class MyInputSpec(TraitedSpec):
+          in_file = File(exists=False, mandatory=True, desc='Input file')
+          threshold = traits.Float(0.5, usedefault=True, desc='Threshold value')
+
+      class MyOutputSpec(TraitedSpec):
+          out_file = File(desc='Output file')
+
+      print('Custom TraitedSpec classes created successfully')
+      print('Default threshold:', MyInputSpec().threshold)
+      "
+    expected_output_contains: "0.5"
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

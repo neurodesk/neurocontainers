@@ -1,0 +1,522 @@
+# syncro container test suite
+# Tests for SYNcro v0.1.1 - Spatial normalization toolkit for brain images
+#
+# SYNcro normalizes brain images to MNI space using:
+#   - SynthSR for T1w synthesis from any contrast
+#   - SynthStrip for skull stripping
+#   - ANTsPy for registration to MNI152 template
+#
+# Key features:
+#   - Supports lesion mapping (normalizes lesion maps alongside anatomical)
+#   - Auto-detects CT scans based on intensity values
+#   - Handles brain-extracted inputs with -b flag
+#   - GPU acceleration available (--force-gpu)
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+
+name: syncro
+version: 0.1.1
+container: syncro_0.1.1_20251216.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/syncro_basic
+    mkdir -p test_output/syncro_options
+    mkdir -p test_output/syncro_lesion
+    mkdir -p test_output/syncro_multiimage
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: Version check
+    description: Verify SYNcro.py reports version
+    command: SYNcro.py -v 2>&1
+    expected_output_contains: "SYNcro.py"
+
+  - name: Help output
+    description: Verify SYNcro.py displays help information
+    command: SYNcro.py --help 2>&1
+    expected_output_contains:
+      - "Normalize NIfTI images"
+      - "--force-gpu"
+      - "--bet"
+      - "--ct"
+      - "--directory"
+      - "--log"
+
+  - name: Help shows positional arguments
+    description: Verify help shows required NIfTI argument
+    command: SYNcro.py -h 2>&1
+    expected_output_contains: "positional arguments"
+
+  # ==========================================================================
+  # SYNTHSTRIP TOOL (bundled in container)
+  # ==========================================================================
+  - name: SynthStrip available
+    description: Verify mri_synthstrip is available in container
+    command: which mri_synthstrip
+    expected_output_contains: "mri_synthstrip"
+
+  - name: SynthStrip help
+    description: Verify SynthStrip displays help
+    command: mri_synthstrip --help 2>&1
+    ignore_exit_code: true
+    expected_output_contains:
+      - "skull-stripping"
+      - "--image"
+      - "--mask"
+
+  - name: SynthStrip skull stripping
+    description: Run SynthStrip on T1w image to extract brain
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_brain.nii.gz -m test_output/t1w_brain_mask.nii.gz
+    timeout: 600
+    validate:
+      - output_exists: ${output_dir}/t1w_brain.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_mask.nii.gz
+      - same_dimensions: ["${output_dir}/t1w_brain.nii.gz", "${t1w}"]
+
+  - name: SynthStrip with distance transform
+    description: Run SynthStrip and save signed distance transform
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_brain_sdt.nii.gz -d test_output/t1w_sdt.nii.gz
+    timeout: 600
+    depends_on: SynthStrip skull stripping
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_sdt.nii.gz
+      - output_exists: ${output_dir}/t1w_sdt.nii.gz
+
+  - name: SynthStrip with custom border
+    description: Run SynthStrip with modified mask border threshold
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_brain_border2.nii.gz -b 2
+    timeout: 600
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_border2.nii.gz
+
+  - name: SynthStrip exclude CSF
+    description: Run SynthStrip excluding CSF from brain border
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_brain_nocsf.nii.gz --no-csf
+    timeout: 600
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_nocsf.nii.gz
+
+  # ==========================================================================
+  # SYNCRO BASIC NORMALIZATION
+  # ==========================================================================
+  - name: Basic T1w normalization
+    description: Normalize T1w image to MNI space (core functionality)
+    command: SYNcro.py ${t1w} -d test_output/syncro_basic --log verbose 2>&1
+    timeout: 600
+    validate:
+      - output_exists: ${output_dir}/syncro_basic/wbt1sub-01_T1w.nii.gz
+    expected_output_contains: "SYNcro time"
+
+  - name: Verify normalized output dimensions
+    description: Check that normalized output matches MNI template space
+    command: |
+      # The output should be in MNI152 1mm space (182x218x182)
+      python3 -c "
+      import nibabel as nib
+      img = nib.load('test_output/syncro_basic/wbt1sub-01_T1w.nii.gz')
+      shape = img.shape
+      print(f'Output shape: {shape}')
+      # MNI152_T1_1mm_brain is 182x218x182
+      assert shape == (182, 218, 182), f'Expected MNI dimensions (182, 218, 182), got {shape}'
+      print('Dimensions match MNI152 template')
+      "
+    depends_on: Basic T1w normalization
+    expected_output_contains: "Dimensions match MNI152 template"
+
+  # ==========================================================================
+  # SYNCRO WITH OPTIONS
+  # ==========================================================================
+  - name: Normalization with debug logging
+    description: Run normalization with debug level logging
+    command: SYNcro.py ${t1w} -d test_output/syncro_options --log debug 2>&1
+    timeout: 600
+    validate:
+      - output_exists: ${output_dir}/syncro_options/wbt1sub-01_T1w.nii.gz
+    expected_output_contains: "INFO"
+
+  - name: Normalization with silent logging
+    description: Run normalization with minimal output
+    command: SYNcro.py ${t1w} -d test_output/syncro_options --log silent 2>&1
+    timeout: 600
+    expected_exit_code: 0
+
+  - name: Normalization with verbose logging
+    description: Run normalization with verbose logging
+    command: SYNcro.py ${t1w} -d test_output/syncro_options --log verbose 2>&1
+    timeout: 600
+    expected_output_contains: "INFO"
+
+  - name: Force GPU disabled
+    description: Run normalization with GPU explicitly disabled
+    command: SYNcro.py ${t1w} -d test_output/syncro_options --force-gpu false --log verbose 2>&1
+    timeout: 600
+    expected_exit_code: 0
+
+  - name: Auto GPU detection
+    description: Run normalization with auto GPU detection
+    command: SYNcro.py ${t1w} -d test_output/syncro_options --force-gpu auto --log verbose 2>&1
+    timeout: 600
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SYNCRO WITH LESION MAPS
+  # ==========================================================================
+  - name: Create synthetic lesion mask
+    description: Create a synthetic binary lesion mask for testing
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      # Load T1w to get dimensions and affine
+      t1 = nib.load('${t1w}')
+      data = np.zeros(t1.shape, dtype=np.uint8)
+      # Create a small spherical lesion in the center
+      cx, cy, cz = np.array(t1.shape) // 2
+      for x in range(cx-10, cx+10):
+          for y in range(cy-10, cy+10):
+              for z in range(cz-10, cz+10):
+                  if (x-cx)**2 + (y-cy)**2 + (z-cz)**2 < 100:
+                      data[x, y, z] = 1
+      lesion = nib.Nifti1Image(data, t1.affine, t1.header)
+      nib.save(lesion, 'test_output/syncro_lesion/synthetic_lesion.nii.gz')
+      print(f'Created lesion mask with {np.sum(data)} voxels')
+      "
+    validate:
+      - output_exists: ${output_dir}/syncro_lesion/synthetic_lesion.nii.gz
+
+  - name: Normalization with lesion map
+    description: Normalize T1w with accompanying lesion mask
+    command: SYNcro.py ${t1w} test_output/syncro_lesion/synthetic_lesion.nii.gz -d test_output/syncro_lesion --log verbose 2>&1
+    timeout: 600
+    depends_on: Create synthetic lesion mask
+    validate:
+      - output_exists: ${output_dir}/syncro_lesion/wbt1sub-01_T1w.nii.gz
+      - output_exists: ${output_dir}/syncro_lesion/wsynthetic_lesion.nii.gz
+
+  - name: Verify warped lesion is binary
+    description: Check that the warped lesion mask remains binary after transformation
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('test_output/syncro_lesion/wsynthetic_lesion.nii.gz')
+      data = img.get_fdata()
+      unique_vals = np.unique(data)
+      print(f'Unique values in warped lesion: {unique_vals}')
+      # Should only contain 0 and 1 after binarization
+      assert len(unique_vals) <= 2, f'Expected binary mask, got {len(unique_vals)} unique values'
+      print('Warped lesion mask is properly binarized')
+      "
+    depends_on: Normalization with lesion map
+    expected_output_contains: "properly binarized"
+
+  # ==========================================================================
+  # SYNCRO WITH MULTIPLE IMAGES
+  # ==========================================================================
+  - name: Create synthetic pathological map
+    description: Create a second synthetic map representing pathology
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      # Load T1w to get dimensions and affine
+      t1 = nib.load('${t1w}')
+      data = np.zeros(t1.shape, dtype=np.uint8)
+      # Create a different lesion pattern
+      cx, cy, cz = np.array(t1.shape) // 2
+      # Offset from center
+      ox, oy, oz = 20, 15, 10
+      for x in range(cx+ox-8, cx+ox+8):
+          for y in range(cy+oy-8, cy+oy+8):
+              for z in range(cz+oz-8, cz+oz+8):
+                  if (x-cx-ox)**2 + (y-cy-oy)**2 + (z-cz-oz)**2 < 64:
+                      data[x, y, z] = 1
+      pathology = nib.Nifti1Image(data, t1.affine, t1.header)
+      nib.save(pathology, 'test_output/syncro_multiimage/synthetic_pathology.nii.gz')
+      print(f'Created pathology mask with {np.sum(data)} voxels')
+      "
+    validate:
+      - output_exists: ${output_dir}/syncro_multiimage/synthetic_pathology.nii.gz
+
+  - name: Create lesion for multi-image test
+    description: Create lesion mask for multi-image normalization test
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      t1 = nib.load('${t1w}')
+      data = np.zeros(t1.shape, dtype=np.uint8)
+      cx, cy, cz = np.array(t1.shape) // 2
+      for x in range(cx-10, cx+10):
+          for y in range(cy-10, cy+10):
+              for z in range(cz-10, cz+10):
+                  if (x-cx)**2 + (y-cy)**2 + (z-cz)**2 < 100:
+                      data[x, y, z] = 1
+      lesion = nib.Nifti1Image(data, t1.affine, t1.header)
+      nib.save(lesion, 'test_output/syncro_multiimage/synthetic_lesion.nii.gz')
+      print(f'Created lesion mask')
+      "
+    validate:
+      - output_exists: ${output_dir}/syncro_multiimage/synthetic_lesion.nii.gz
+
+  - name: Normalization with multiple additional images
+    description: Normalize T1w with both lesion and pathology maps
+    command: SYNcro.py ${t1w} test_output/syncro_multiimage/synthetic_lesion.nii.gz test_output/syncro_multiimage/synthetic_pathology.nii.gz -d test_output/syncro_multiimage --log verbose 2>&1
+    timeout: 600
+    depends_on:
+      - Create synthetic pathological map
+      - Create lesion for multi-image test
+    validate:
+      - output_exists: ${output_dir}/syncro_multiimage/wbt1sub-01_T1w.nii.gz
+      - output_exists: ${output_dir}/syncro_multiimage/wsynthetic_lesion.nii.gz
+      - output_exists: ${output_dir}/syncro_multiimage/wsynthetic_pathology.nii.gz
+
+  # ==========================================================================
+  # SYNCRO CT MODE
+  # ==========================================================================
+  - name: CT mode flag
+    description: Test that CT mode flag is accepted (even for non-CT data)
+    command: SYNcro.py ${t1w} -c -d test_output/syncro_options --log verbose 2>&1
+    timeout: 600
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SYNCRO PRE-EXTRACTED BRAIN MODE
+  # ==========================================================================
+  - name: Brain-extracted mode
+    description: Test normalization assuming input is already brain-extracted
+    command: SYNcro.py test_output/t1w_brain.nii.gz -b -d test_output/syncro_options --log verbose 2>&1
+    timeout: 600
+    depends_on: SynthStrip skull stripping
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Missing input file error
+    description: Verify appropriate error for non-existent input
+    command: SYNcro.py nonexistent_file.nii.gz 2>&1 || true
+    expected_output_contains: "Error"
+
+  - name: Invalid output directory
+    description: Verify appropriate error for unwritable directory
+    command: SYNcro.py ${t1w} -d /nonexistent/path/that/does/not/exist 2>&1 || true
+    ignore_exit_code: true
+    expected_output_contains: "Write access required"
+
+  # ==========================================================================
+  # MNI TEMPLATE VERIFICATION
+  # ==========================================================================
+  - name: MNI template exists in container
+    description: Verify MNI152 template is bundled in container
+    command: ls -la /opt/MNI152_T1_1mm_brain.nii.gz
+    expected_output_contains: "MNI152_T1_1mm_brain.nii.gz"
+
+  - name: MNI template dimensions
+    description: Verify MNI template has expected dimensions
+    command: |
+      python3 -c "
+      import nibabel as nib
+      img = nib.load('/opt/MNI152_T1_1mm_brain.nii.gz')
+      print(f'MNI template shape: {img.shape}')
+      print(f'MNI template voxel size: {img.header.get_zooms()}')
+      assert img.shape == (182, 218, 182), f'Unexpected shape {img.shape}'
+      print('MNI template verified')
+      "
+    expected_output_contains: "MNI template verified"
+
+  # ==========================================================================
+  # PYTHON DEPENDENCIES VERIFICATION
+  # ==========================================================================
+  - name: ANTsPy available
+    description: Verify ANTsPy is installed and importable
+    command: |
+      python3 -c "import ants; print(f'ANTsPy version: {ants.__version__}')"
+    expected_output_contains: "ANTsPy version"
+
+  - name: SciPy available
+    description: Verify SciPy is installed
+    command: |
+      python3 -c "import scipy; print(f'SciPy version: {scipy.__version__}')"
+    expected_output_contains: "SciPy version"
+
+  - name: Nibabel available
+    description: Verify nibabel is installed
+    command: |
+      python3 -c "import nibabel as nib; print(f'Nibabel version: {nib.__version__}')"
+    expected_output_contains: "Nibabel version"
+
+  - name: NumPy available
+    description: Verify NumPy is installed
+    command: |
+      python3 -c "import numpy as np; print(f'NumPy version: {np.__version__}')"
+    expected_output_contains: "NumPy version"
+
+  # ==========================================================================
+  # SYNcro INTERNAL FUNCTIONS
+  # ==========================================================================
+  - name: Test distance transform smoothing
+    description: Verify binary mask dilation and smoothing works
+    command: |
+      python3 -c "
+      import sys
+      sys.path.insert(0, '/opt')
+      from SYNcro import dilate_smooth_nifti
+      import nibabel as nib
+      import numpy as np
+      import tempfile
+      import os
+
+      # Create a simple binary test image
+      data = np.zeros((50, 50, 50), dtype=np.float32)
+      data[20:30, 20:30, 20:30] = 1
+      affine = np.eye(4)
+      img = nib.Nifti1Image(data, affine)
+
+      with tempfile.NamedTemporaryFile(suffix='.nii.gz', delete=False) as f:
+          nib.save(img, f.name)
+          dilate_smooth_nifti(f.name, dilate_vox=2, fwhm_mm=2)
+          result = nib.load(f.name).get_fdata()
+          os.unlink(f.name)
+
+      # Check that dilation expanded the mask
+      assert result.sum() > data.sum(), 'Dilation should expand mask'
+      # Check that smoothing created non-binary values
+      unique_count = len(np.unique(result))
+      assert unique_count > 2, f'Smoothing should create gradient, got {unique_count} unique values'
+      print('Distance transform and smoothing work correctly')
+      "
+    expected_output_contains: "work correctly"
+
+  - name: Test nifti_min_max_binary function
+    description: Verify binary detection function works
+    command: |
+      python3 -c "
+      import sys
+      sys.path.insert(0, '/opt')
+      from SYNcro import nifti_min_max_binary
+      import nibabel as nib
+      import numpy as np
+      import tempfile
+      import os
+
+      # Test with binary image
+      data = np.zeros((10, 10, 10), dtype=np.float32)
+      data[3:7, 3:7, 3:7] = 1
+      affine = np.eye(4)
+      img = nib.Nifti1Image(data, affine)
+
+      with tempfile.NamedTemporaryFile(suffix='.nii.gz', delete=False) as f:
+          nib.save(img, f.name)
+          min_val, max_val, is_binary = nifti_min_max_binary(f.name)
+          os.unlink(f.name)
+
+      assert min_val == 0, f'Expected min 0, got {min_val}'
+      assert max_val == 1, f'Expected max 1, got {max_val}'
+      assert is_binary == True, f'Expected binary=True, got {is_binary}'
+
+      # Test with non-binary image
+      data = np.random.rand(10, 10, 10).astype(np.float32)
+      img = nib.Nifti1Image(data, affine)
+
+      with tempfile.NamedTemporaryFile(suffix='.nii.gz', delete=False) as f:
+          nib.save(img, f.name)
+          min_val, max_val, is_binary = nifti_min_max_binary(f.name)
+          os.unlink(f.name)
+
+      assert is_binary == False, f'Expected binary=False for random data, got {is_binary}'
+      print('nifti_min_max_binary function works correctly')
+      "
+    expected_output_contains: "works correctly"
+
+  - name: Test binarize_nifti function
+    description: Verify binarization function works
+    command: |
+      python3 -c "
+      import sys
+      sys.path.insert(0, '/opt')
+      from SYNcro import binarize_nifti
+      import nibabel as nib
+      import numpy as np
+      import tempfile
+      import os
+
+      # Create non-binary image (simulating post-interpolation)
+      data = np.array([[[0.0, 0.2, 0.5], [0.8, 1.0, 0.3], [0.1, 0.9, 0.4]]], dtype=np.float32)
+      affine = np.eye(4)
+      img = nib.Nifti1Image(data, affine)
+
+      with tempfile.NamedTemporaryFile(suffix='.nii.gz', delete=False) as f:
+          nib.save(img, f.name)
+          binarize_nifti(f.name)
+          result = nib.load(f.name).get_fdata()
+          os.unlink(f.name)
+
+      unique_vals = np.unique(result)
+      assert len(unique_vals) == 2, f'Expected 2 unique values, got {len(unique_vals)}'
+      assert 0 in unique_vals and 1 in unique_vals, 'Expected values 0 and 1'
+      print('binarize_nifti function works correctly')
+      "
+    expected_output_contains: "works correctly"
+
+  # ==========================================================================
+  # REGISTRATION QUALITY CHECKS
+  # ==========================================================================
+  - name: Output registration quality check
+    description: Verify registered output is reasonably aligned to MNI space
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+
+      # Load normalized output and template
+      output = nib.load('test_output/syncro_basic/wbt1sub-01_T1w.nii.gz')
+      template = nib.load('/opt/MNI152_T1_1mm_brain.nii.gz')
+
+      out_data = output.get_fdata()
+      tpl_data = template.get_fdata()
+
+      # Basic sanity checks
+      assert out_data.shape == tpl_data.shape, 'Shapes must match'
+
+      # Check that output has reasonable intensity range
+      out_nonzero = out_data[out_data > 0]
+      assert len(out_nonzero) > 0, 'Output should have nonzero voxels'
+
+      # Calculate overlap with template brain region
+      tpl_mask = tpl_data > 0
+      out_mask = out_data > 0
+      overlap = np.sum(tpl_mask & out_mask) / np.sum(tpl_mask | out_mask)
+      print(f'Dice-like overlap with template: {overlap:.3f}')
+
+      # Overlap should be reasonable (> 0.5 for brain region)
+      assert overlap > 0.4, f'Overlap too low: {overlap}'
+      print('Registration quality check passed')
+      "
+    depends_on: Basic T1w normalization
+    expected_output_contains: "quality check passed"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

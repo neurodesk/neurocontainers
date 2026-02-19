@@ -1,0 +1,1016 @@
+# gigaconnectome container test suite
+# Tests for giga_connectome v0.6.0 - BIDS-app for functional connectivity analysis
+#
+# giga_connectome generates denoised timeseries and Pearson's correlation based
+# connectomes from fMRIPrep processed datasets. It combines Nilearn and TemplateFlow
+# to denoise data, generate timeseries, and create functional connectomes.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# Note: The main giga_connectome workflow requires fMRIPrep derivatives, which
+# ds000001 does not contain. These tests focus on container utilities, Python
+# libraries, and basic command functionality.
+
+name: gigaconnectome
+version: 0.6.0
+container: gigaconnectome_0.6.0_20250630.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-02_bold.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-03_bold.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_events.tsv
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  events: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_events.tsv
+  bids_dir: ds000001
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - giga_connectome
+  # ==========================================================================
+  - name: giga_connectome version check
+    description: Verify giga_connectome binary runs and reports version
+    command: giga_connectome --version
+    expected_output_contains: "0.6.0"
+
+  - name: giga_connectome help
+    description: Verify giga_connectome displays help information
+    command: giga_connectome --help
+    expected_output_contains: "Generate denoised timeseries"
+
+  - name: giga_connectome help - participant label
+    description: Verify participant label option is documented
+    command: giga_connectome --help
+    expected_output_contains: "--participant-label"
+
+  - name: giga_connectome help - atlas option
+    description: Verify atlas option shows available choices
+    command: giga_connectome --help
+    expected_output_contains: "Schaefer2018"
+
+  - name: giga_connectome help - denoise strategy
+    description: Verify denoise strategy option shows available choices
+    command: giga_connectome --help
+    expected_output_contains: "simple"
+
+  - name: giga_connectome help - smoothing option
+    description: Verify smoothing FWHM option is documented
+    command: giga_connectome --help
+    expected_output_contains: "--smoothing_fwhm"
+
+  # ==========================================================================
+  # PYTHON ENVIRONMENT
+  # ==========================================================================
+  - name: Python version check
+    description: Verify Python 3.9 is available
+    command: python3 --version
+    expected_output_contains: "Python 3.9"
+
+  - name: Python import giga_connectome
+    description: Verify giga_connectome package can be imported
+    command: "python3 -c \"import giga_connectome; print('giga_connectome imported successfully')\""
+    expected_output_contains: "imported successfully"
+    expected_exit_code: 0
+
+  - name: Python nilearn version
+    description: Verify nilearn is installed with correct version
+    command: "python3 -c \"import nilearn; print('nilearn:', nilearn.__version__)\""
+    expected_output_contains: "nilearn: 0.10"
+    expected_exit_code: 0
+
+  - name: Python nibabel version
+    description: Verify nibabel is installed
+    command: "python3 -c \"import nibabel; print('nibabel:', nibabel.__version__)\""
+    expected_output_contains: "nibabel: 5."
+    expected_exit_code: 0
+
+  - name: Python pybids version
+    description: Verify pybids is installed
+    command: "python3 -c \"import bids; print('pybids:', bids.__version__)\""
+    expected_output_contains: "pybids: 0.15"
+    expected_exit_code: 0
+
+  - name: Python templateflow version
+    description: Verify templateflow is installed
+    command: "python3 -c \"import templateflow; print('templateflow:', templateflow.__version__)\""
+    expected_output_contains: "templateflow: 0.8"
+    expected_exit_code: 0
+
+  - name: Python numpy version
+    description: Verify numpy is installed
+    command: "python3 -c \"import numpy; print('numpy:', numpy.__version__)\""
+    expected_output_contains: "numpy: 1."
+    expected_exit_code: 0
+
+  - name: Python scipy import
+    description: Verify scipy is available
+    command: "python3 -c \"import scipy; print('scipy:', scipy.__version__)\""
+    expected_output_contains: "scipy:"
+    expected_exit_code: 0
+
+  - name: Python pandas import
+    description: Verify pandas is available
+    command: "python3 -c \"import pandas; print('pandas:', pandas.__version__)\""
+    expected_output_contains: "pandas:"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PYBIDS COMMAND LINE TOOL
+  # ==========================================================================
+  - name: pybids version check
+    description: Verify pybids CLI is available
+    command: pybids --version
+    expected_exit_code: 0
+
+  - name: pybids help
+    description: Verify pybids CLI shows help
+    command: pybids --help
+    expected_output_contains: "Command-line interface for PyBIDS"
+
+  - name: pybids layout help
+    description: Verify pybids layout command shows help
+    command: pybids layout --help
+    expected_output_contains: "Initialize a BIDSLayout"
+
+  - name: pybids upgrade help
+    description: Verify pybids upgrade command shows help
+    command: pybids upgrade --help
+    expected_output_contains: "Upgrade common experimental BIDS"
+
+  - name: pybids layout creation
+    description: Create BIDS layout database index
+    command: mkdir -p test_output/bids_layout && pybids layout ${bids_dir} test_output/bids_layout --no-validate 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/bids_layout
+
+  # ==========================================================================
+  # NIBABEL COMMAND LINE TOOLS
+  # ==========================================================================
+  - name: nib-ls help
+    description: Verify nib-ls shows help
+    command: nib-ls --help
+    expected_output_contains: "summary table for neuroimaging files"
+
+  - name: nib-ls T1w info
+    description: Display T1w image header information
+    command: nib-ls ${t1w}
+    expected_output_contains: "160"
+
+  - name: nib-ls T1w verbose
+    description: Display T1w image header with verbose mode
+    command: nib-ls -v ${t1w}
+    expected_output_contains: "160"
+
+  - name: nib-ls BOLD info
+    description: Display BOLD image header information
+    command: nib-ls ${bold}
+    expected_output_contains: "64"
+
+  - name: nib-ls with header fields
+    description: Display specific header fields
+    command: nib-ls -H dim ${t1w} 2>&1
+    expected_exit_code: 0
+
+  - name: nib-ls with stats
+    description: Display image statistics
+    command: nib-ls --stats ${t1w}
+    expected_exit_code: 0
+
+  - name: nib-stats help
+    description: Verify nib-stats shows help
+    command: nib-stats --help
+    expected_output_contains: "Compute image statistics"
+
+  - name: nib-stats T1w volume
+    description: Compute mask volume statistics
+    command: nib-stats -V ${t1w}
+    expected_exit_code: 0
+
+  - name: nib-diff help
+    description: Verify nib-diff shows help
+    command: nib-diff --help
+    expected_output_contains: "differences among a set of neuroimaging files"
+
+  - name: nib-diff identical images
+    description: Compare identical images
+    command: nib-diff ${t1w} ${t1w} 2>&1
+    expected_exit_code: 0
+
+  - name: nib-diff different images
+    description: Compare different images (T1w vs inplane T2)
+    command: nib-diff ${t1w} ${t2} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: nib-conform help
+    description: Verify nib-conform shows help
+    command: nib-conform --help
+    expected_output_contains: "Conform neuroimaging volume"
+
+  - name: nib-conform T1w to 1mm isotropic
+    description: Conform T1w to 1mm isotropic resolution
+    command: nib-conform ${t1w} test_output/t1w_conformed.nii.gz --voxel-size 1 1 1 --out-shape 256 256 256 -f
+    validate:
+      - output_exists: ${output_dir}/t1w_conformed.nii.gz
+
+  - name: nib-conform with orientation
+    description: Conform T1w to RAS orientation
+    command: nib-conform ${t1w} test_output/t1w_ras.nii.gz --orientation RAS -f
+    validate:
+      - output_exists: ${output_dir}/t1w_ras.nii.gz
+
+  - name: nib-convert help
+    description: Verify nib-convert shows help
+    command: nib-convert --help
+    expected_output_contains: "Convert neuroimaging file"
+
+  - name: nib-convert T1w to float32
+    description: Convert T1w to float32 data type
+    command: nib-convert ${t1w} test_output/t1w_float32.nii.gz --out-dtype float32 -f
+    validate:
+      - output_exists: ${output_dir}/t1w_float32.nii.gz
+
+  - name: nib-convert T1w to int32
+    description: Convert T1w to int32 data type
+    command: nib-convert ${t1w} test_output/t1w_int32.nii.gz --out-dtype int32 -f
+    validate:
+      - output_exists: ${output_dir}/t1w_int32.nii.gz
+
+  - name: nib-roi help
+    description: Verify nib-roi shows help
+    command: nib-roi --help
+    expected_output_contains: "Crop images to a region of interest"
+
+  - name: nib-roi extract T1w subvolume
+    description: Extract ROI from T1w image
+    command: nib-roi ${t1w} test_output/t1w_roi.nii.gz -i 40:120 -j 50:150 -k 50:150
+    validate:
+      - output_exists: ${output_dir}/t1w_roi.nii.gz
+
+  - name: nib-roi extract BOLD temporal subset
+    description: Extract first 10 volumes from BOLD
+    command: nib-roi ${bold} test_output/bold_first10.nii.gz -t 0:10
+    validate:
+      - output_exists: ${output_dir}/bold_first10.nii.gz
+
+  - name: nib-nifti-dx help
+    description: Verify nib-nifti-dx shows help
+    command: nib-nifti-dx --help
+    expected_output_contains: "nifti diagnostics"
+
+  - name: nib-nifti-dx T1w
+    description: Print NIfTI diagnostics for T1w
+    command: nib-nifti-dx ${t1w}
+    expected_exit_code: 0
+
+  - name: nib-nifti-dx BOLD
+    description: Print NIfTI diagnostics for BOLD
+    command: nib-nifti-dx ${bold}
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NILEARN PYTHON FUNCTIONALITY
+  # ==========================================================================
+  - name: nilearn load T1w image
+    description: Load T1w image using nilearn
+    command: python3 -c "from nilearn import image; img = image.load_img('${t1w}'); print('Shape:', img.shape)"
+    expected_output_contains: "Shape: (160, 192, 192)"
+
+  - name: nilearn load BOLD image
+    description: Load BOLD image using nilearn
+    command: python3 -c "from nilearn import image; img = image.load_img('${bold}'); print('Shape:', img.shape)"
+    expected_output_contains: "Shape: (64, 64, 33, 300)"
+
+  - name: nilearn smooth T1w
+    description: Apply Gaussian smoothing using nilearn
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${t1w}')
+      smoothed = image.smooth_img(img, fwhm=4)
+      smoothed.to_filename('test_output/t1w_smoothed_nilearn.nii.gz')
+      print('Smoothed image saved')
+      "
+    expected_output_contains: "Smoothed image saved"
+    validate:
+      - output_exists: ${output_dir}/t1w_smoothed_nilearn.nii.gz
+
+  - name: nilearn resample T1w
+    description: Resample T1w to different resolution using nilearn
+    command: |
+      python3 -c "
+      from nilearn import image
+      import numpy as np
+      img = image.load_img('${t1w}')
+      resampled = image.resample_img(img, target_affine=np.diag([2, 2, 2, 1]))
+      resampled.to_filename('test_output/t1w_resampled_nilearn.nii.gz')
+      print('Resampled image saved')
+      "
+    expected_output_contains: "Resampled image saved"
+    validate:
+      - output_exists: ${output_dir}/t1w_resampled_nilearn.nii.gz
+
+  - name: nilearn mean BOLD image
+    description: Compute mean BOLD image using nilearn
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${bold}')
+      mean_img = image.mean_img(img)
+      mean_img.to_filename('test_output/bold_mean_nilearn.nii.gz')
+      print('Mean BOLD shape:', mean_img.shape)
+      "
+    expected_output_contains: "Mean BOLD shape: (64, 64, 33)"
+    validate:
+      - output_exists: ${output_dir}/bold_mean_nilearn.nii.gz
+
+  - name: nilearn threshold image
+    description: Apply threshold to image using nilearn
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${t1w}')
+      thresh_img = image.threshold_img(img, threshold=100)
+      thresh_img.to_filename('test_output/t1w_thresh_nilearn.nii.gz')
+      print('Thresholded image saved')
+      "
+    expected_output_contains: "Thresholded image saved"
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_nilearn.nii.gz
+
+  - name: nilearn binarize image
+    description: Create binary mask using nilearn
+    command: |
+      python3 -c "
+      from nilearn import image
+      import numpy as np
+      img = image.load_img('${t1w}')
+      data = img.get_fdata()
+      binary_data = (data > 100).astype(np.float32)
+      binary_img = image.new_img_like(img, binary_data)
+      binary_img.to_filename('test_output/t1w_binary_nilearn.nii.gz')
+      print('Binary mask saved')
+      "
+    expected_output_contains: "Binary mask saved"
+    validate:
+      - output_exists: ${output_dir}/t1w_binary_nilearn.nii.gz
+
+  - name: nilearn index volume
+    description: Extract single volume from 4D image
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${bold}')
+      vol0 = image.index_img(img, 0)
+      vol0.to_filename('test_output/bold_vol0_nilearn.nii.gz')
+      print('First volume shape:', vol0.shape)
+      "
+    expected_output_contains: "First volume shape: (64, 64, 33)"
+    validate:
+      - output_exists: ${output_dir}/bold_vol0_nilearn.nii.gz
+
+  - name: nilearn concat images
+    description: Concatenate multiple volumes using nilearn
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${bold}')
+      vol0 = image.index_img(img, 0)
+      vol1 = image.index_img(img, 1)
+      concat_img = image.concat_imgs([vol0, vol1])
+      concat_img.to_filename('test_output/bold_concat_nilearn.nii.gz')
+      print('Concatenated shape:', concat_img.shape)
+      "
+    expected_output_contains: "Concatenated shape: (64, 64, 33, 2)"
+    validate:
+      - output_exists: ${output_dir}/bold_concat_nilearn.nii.gz
+
+  # ==========================================================================
+  # NILEARN MASKING OPERATIONS
+  # ==========================================================================
+  - name: nilearn compute EPI mask
+    description: Compute brain mask from EPI data
+    command: |
+      python3 -c "
+      from nilearn import masking
+      mask = masking.compute_epi_mask('${bold}')
+      mask.to_filename('test_output/bold_mask_nilearn.nii.gz')
+      print('EPI mask shape:', mask.shape)
+      "
+    expected_output_contains: "EPI mask shape: (64, 64, 33)"
+    validate:
+      - output_exists: ${output_dir}/bold_mask_nilearn.nii.gz
+
+  - name: nilearn apply mask
+    description: Apply mask and extract time series
+    command: |
+      python3 -c "
+      from nilearn import masking
+      masked_data = masking.apply_mask('${bold}', 'test_output/bold_mask_nilearn.nii.gz')
+      print('Masked data shape:', masked_data.shape)
+      "
+    depends_on: nilearn compute EPI mask
+    expected_output_contains: "Masked data shape:"
+
+  - name: nilearn unmask data
+    description: Unmask data back to image
+    command: |
+      python3 -c "
+      from nilearn import masking
+      import numpy as np
+      mask = 'test_output/bold_mask_nilearn.nii.gz'
+      masked_data = masking.apply_mask('${bold}', mask)
+      mean_ts = masked_data.mean(axis=0)
+      mean_img = masking.unmask(mean_ts, mask)
+      mean_img.to_filename('test_output/bold_mean_masked_nilearn.nii.gz')
+      print('Unmasked mean image saved')
+      "
+    depends_on: nilearn compute EPI mask
+    expected_output_contains: "Unmasked mean image saved"
+    validate:
+      - output_exists: ${output_dir}/bold_mean_masked_nilearn.nii.gz
+
+  # ==========================================================================
+  # NILEARN SIGNAL PROCESSING
+  # ==========================================================================
+  - name: nilearn clean signal
+    description: Clean time series (detrend, standardize)
+    command: |
+      python3 -c "
+      from nilearn import signal, masking
+      import numpy as np
+      masked_data = masking.apply_mask('${bold}', 'test_output/bold_mask_nilearn.nii.gz')
+      cleaned = signal.clean(masked_data, detrend=True, standardize=True, t_r=2.0)
+      print('Cleaned data shape:', cleaned.shape)
+      print('Mean after cleaning:', np.abs(cleaned.mean()).round(10))
+      "
+    depends_on: nilearn compute EPI mask
+    expected_output_contains: "Cleaned data shape:"
+
+  - name: nilearn bandpass filter
+    description: Apply bandpass filter to time series
+    command: |
+      python3 -c "
+      from nilearn import signal, masking
+      masked_data = masking.apply_mask('${bold}', 'test_output/bold_mask_nilearn.nii.gz')
+      filtered = signal.clean(masked_data, detrend=True, standardize=True,
+                             low_pass=0.1, high_pass=0.01, t_r=2.0)
+      print('Filtered data shape:', filtered.shape)
+      "
+    depends_on: nilearn compute EPI mask
+    expected_output_contains: "Filtered data shape:"
+
+  # ==========================================================================
+  # NILEARN CONNECTIVITY
+  # ==========================================================================
+  - name: nilearn correlation matrix
+    description: Compute correlation matrix from time series
+    command: |
+      python3 -c "
+      from nilearn import connectome, masking
+      import numpy as np
+      masked_data = masking.apply_mask('${bold}', 'test_output/bold_mask_nilearn.nii.gz')
+      # Use subset of voxels for speed
+      subset = masked_data[:, :100]
+      conn = connectome.ConnectivityMeasure(kind='correlation')
+      corr_matrix = conn.fit_transform([subset])[0]
+      print('Correlation matrix shape:', corr_matrix.shape)
+      np.save('test_output/correlation_matrix.npy', corr_matrix)
+      "
+    depends_on: nilearn compute EPI mask
+    expected_output_contains: "Correlation matrix shape: (100, 100)"
+    validate:
+      - output_exists: ${output_dir}/correlation_matrix.npy
+
+  - name: nilearn partial correlation
+    description: Compute partial correlation matrix
+    command: |
+      python3 -c "
+      from nilearn import connectome, masking
+      import numpy as np
+      masked_data = masking.apply_mask('${bold}', 'test_output/bold_mask_nilearn.nii.gz')
+      subset = masked_data[:, :50]
+      conn = connectome.ConnectivityMeasure(kind='partial correlation')
+      pcorr_matrix = conn.fit_transform([subset])[0]
+      print('Partial correlation matrix shape:', pcorr_matrix.shape)
+      "
+    depends_on: nilearn compute EPI mask
+    expected_output_contains: "Partial correlation matrix shape: (50, 50)"
+
+  - name: nilearn tangent connectivity
+    description: Compute tangent connectivity matrix (requires multiple subjects)
+    command: |
+      python3 -c "
+      from nilearn import connectome, masking
+      import numpy as np
+      masked_data = masking.apply_mask('${bold}', 'test_output/bold_mask_nilearn.nii.gz')
+      subset = masked_data[:, :50]
+      # Tangent needs multiple subjects - simulate with noise-added copies
+      subjects = [subset, subset + np.random.randn(*subset.shape) * 0.01]
+      conn = connectome.ConnectivityMeasure(kind='tangent')
+      tangent_matrices = conn.fit_transform(subjects)
+      print('Tangent connectivity matrix shape:', tangent_matrices[0].shape)
+      "
+    depends_on: nilearn compute EPI mask
+    expected_output_contains: "Tangent connectivity matrix shape: (50, 50)"
+
+  # ==========================================================================
+  # PYBIDS PYTHON FUNCTIONALITY
+  # ==========================================================================
+  - name: pybids create layout
+    description: Create BIDSLayout using Python
+    command: |
+      python3 -c "
+      from bids import BIDSLayout
+      layout = BIDSLayout('${bids_dir}', validate=False)
+      print('Number of subjects:', len(layout.get_subjects()))
+      print('Number of sessions:', len(layout.get_sessions()))
+      "
+    expected_output_contains: "Number of subjects:"
+
+  - name: pybids get subjects
+    description: List all subjects in dataset
+    command: |
+      python3 -c "
+      from bids import BIDSLayout
+      layout = BIDSLayout('${bids_dir}', validate=False)
+      subjects = layout.get_subjects()
+      print('Subjects:', subjects)
+      "
+    expected_output_contains: "01"
+
+  - name: pybids get modalities
+    description: Get available modalities
+    command: |
+      python3 -c "
+      from bids import BIDSLayout
+      layout = BIDSLayout('${bids_dir}', validate=False)
+      modalities = layout.get_datatypes()
+      print('Modalities:', modalities)
+      "
+    expected_output_contains: "func"
+
+  - name: pybids get BOLD files
+    description: Get all BOLD files for subject 01
+    command: |
+      python3 -c "
+      from bids import BIDSLayout
+      layout = BIDSLayout('${bids_dir}', validate=False)
+      bold_files = layout.get(subject='01', suffix='bold', extension='nii.gz')
+      print('Number of BOLD files:', len(bold_files))
+      for f in bold_files:
+          print('  -', f.filename)
+      "
+    expected_output_contains: "Number of BOLD files: 3"
+
+  - name: pybids get T1w files
+    description: Get all T1w files
+    command: |
+      python3 -c "
+      from bids import BIDSLayout
+      layout = BIDSLayout('${bids_dir}', validate=False)
+      t1w_files = layout.get(suffix='T1w', extension='nii.gz')
+      print('Number of T1w files:', len(t1w_files))
+      "
+    expected_output_contains: "Number of T1w files:"
+
+  - name: pybids get metadata
+    description: Get metadata for BOLD file
+    command: |
+      python3 -c "
+      from bids import BIDSLayout
+      layout = BIDSLayout('${bids_dir}', validate=False)
+      bold_file = layout.get(subject='01', suffix='bold', extension='nii.gz')[0]
+      meta = bold_file.get_metadata()
+      print('Metadata keys:', list(meta.keys()) if meta else 'No metadata')
+      "
+    expected_exit_code: 0
+
+  - name: pybids get tasks
+    description: Get available tasks
+    command: |
+      python3 -c "
+      from bids import BIDSLayout
+      layout = BIDSLayout('${bids_dir}', validate=False)
+      tasks = layout.get_tasks()
+      print('Tasks:', tasks)
+      "
+    expected_output_contains: "balloonanalogrisktask"
+
+  - name: pybids get runs
+    description: Get available runs for subject 01
+    command: |
+      python3 -c "
+      from bids import BIDSLayout
+      layout = BIDSLayout('${bids_dir}', validate=False)
+      runs = layout.get_runs(subject='01')
+      print('Runs:', runs)
+      "
+    expected_output_contains: "1"
+
+  # ==========================================================================
+  # NIBABEL PYTHON FUNCTIONALITY
+  # ==========================================================================
+  - name: nibabel load T1w
+    description: Load T1w image using nibabel
+    command: |
+      python3 -c "
+      import nibabel as nib
+      img = nib.load('${t1w}')
+      print('Shape:', img.shape)
+      print('Data type:', img.get_data_dtype())
+      print('Affine shape:', img.affine.shape)
+      "
+    expected_output_contains: "Shape: (160, 192, 192)"
+
+  - name: nibabel load BOLD
+    description: Load BOLD image using nibabel
+    command: |
+      python3 -c "
+      import nibabel as nib
+      img = nib.load('${bold}')
+      print('Shape:', img.shape)
+      print('Data type:', img.get_data_dtype())
+      "
+    expected_output_contains: "Shape: (64, 64, 33, 300)"
+
+  - name: nibabel header info
+    description: Print NIfTI header information
+    command: |
+      python3 -c "
+      import nibabel as nib
+      img = nib.load('${t1w}')
+      hdr = img.header
+      print('Dimensions:', hdr.get_data_shape())
+      print('Voxel sizes:', hdr.get_zooms())
+      print('Units:', hdr.get_xyzt_units())
+      "
+    expected_output_contains: "Dimensions: (160, 192, 192)"
+
+  - name: nibabel save image
+    description: Save modified image using nibabel
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      new_data = data * 2
+      new_img = nib.Nifti1Image(new_data, img.affine, img.header)
+      nib.save(new_img, 'test_output/t1w_doubled_nibabel.nii.gz')
+      print('Image saved successfully')
+      "
+    expected_output_contains: "Image saved successfully"
+    validate:
+      - output_exists: ${output_dir}/t1w_doubled_nibabel.nii.gz
+
+  - name: nibabel create new image
+    description: Create new NIfTI image from scratch
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      data = np.random.randn(64, 64, 32).astype(np.float32)
+      affine = np.diag([3, 3, 3, 1])
+      img = nib.Nifti1Image(data, affine)
+      nib.save(img, 'test_output/random_nibabel.nii.gz')
+      print('Random image shape:', img.shape)
+      "
+    expected_output_contains: "Random image shape: (64, 64, 32)"
+    validate:
+      - output_exists: ${output_dir}/random_nibabel.nii.gz
+
+  - name: nibabel qform sform
+    description: Check qform and sform codes
+    command: |
+      python3 -c "
+      import nibabel as nib
+      img = nib.load('${t1w}')
+      print('qform code:', img.header.get_qform(coded=True)[1])
+      print('sform code:', img.header.get_sform(coded=True)[1])
+      "
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NUMPY AND SCIPY OPERATIONS
+  # ==========================================================================
+  - name: numpy array operations
+    description: Verify numpy works with image data
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      print('Min:', data.min())
+      print('Max:', data.max())
+      print('Mean:', data.mean().round(2))
+      print('Std:', data.std().round(2))
+      "
+    expected_exit_code: 0
+
+  - name: scipy ndimage operations
+    description: Apply scipy ndimage filters
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import ndimage
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      smoothed = ndimage.gaussian_filter(data, sigma=2)
+      new_img = nib.Nifti1Image(smoothed.astype(np.float32), img.affine)
+      nib.save(new_img, 'test_output/t1w_scipy_smooth.nii.gz')
+      print('Scipy smoothed image saved')
+      "
+    expected_output_contains: "Scipy smoothed image saved"
+    validate:
+      - output_exists: ${output_dir}/t1w_scipy_smooth.nii.gz
+
+  - name: scipy morphology operations
+    description: Apply scipy morphological operations
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import ndimage
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      binary = (data > 100).astype(np.int32)
+      eroded = ndimage.binary_erosion(binary)
+      new_img = nib.Nifti1Image(eroded.astype(np.float32), img.affine)
+      nib.save(new_img, 'test_output/t1w_scipy_eroded.nii.gz')
+      print('Scipy eroded image saved')
+      "
+    expected_output_contains: "Scipy eroded image saved"
+    validate:
+      - output_exists: ${output_dir}/t1w_scipy_eroded.nii.gz
+
+  # ==========================================================================
+  # PANDAS OPERATIONS
+  # ==========================================================================
+  - name: pandas read events tsv
+    description: Read BIDS events file using pandas
+    command: |
+      python3 -c "
+      import pandas as pd
+      df = pd.read_csv('${events}', sep='\t')
+      print('Columns:', list(df.columns))
+      print('Number of events:', len(df))
+      "
+    expected_output_contains: "onset"
+
+  - name: pandas describe events
+    description: Get summary statistics of events
+    command: |
+      python3 -c "
+      import pandas as pd
+      df = pd.read_csv('${events}', sep='\t')
+      print(df.describe())
+      "
+    expected_exit_code: 0
+
+  - name: pandas save connectome as csv
+    description: Save connectivity matrix as CSV
+    command: |
+      python3 -c "
+      import pandas as pd
+      import numpy as np
+      # Create sample connectivity matrix
+      n_regions = 10
+      corr_matrix = np.random.randn(n_regions, n_regions)
+      corr_matrix = (corr_matrix + corr_matrix.T) / 2
+      np.fill_diagonal(corr_matrix, 1)
+      labels = [f'Region_{i}' for i in range(n_regions)]
+      df = pd.DataFrame(corr_matrix, index=labels, columns=labels)
+      df.to_csv('test_output/sample_connectome.csv')
+      print('Connectome CSV saved')
+      "
+    expected_output_contains: "Connectome CSV saved"
+    validate:
+      - output_exists: ${output_dir}/sample_connectome.csv
+
+  # ==========================================================================
+  # GIGA_CONNECTOME MODULE TESTS
+  # ==========================================================================
+  - name: giga_connectome import workflow
+    description: Import giga_connectome workflow module
+    command: python3 -c "from giga_connectome import workflow; print('workflow module imported')"
+    expected_output_contains: "workflow module imported"
+
+  - name: giga_connectome import methods
+    description: Import giga_connectome methods module
+    command: python3 -c "from giga_connectome import methods; print('methods module imported')"
+    expected_output_contains: "methods module imported"
+
+  - name: giga_connectome import atlas
+    description: Import giga_connectome atlas module
+    command: python3 -c "from giga_connectome import atlas; print('atlas module imported')"
+    expected_output_contains: "atlas module imported"
+
+  - name: giga_connectome import denoise
+    description: Import giga_connectome denoise module
+    command: python3 -c "from giga_connectome import denoise; print('denoise module imported')"
+    expected_output_contains: "denoise module imported"
+
+  - name: giga_connectome list atlases
+    description: List available atlas configurations
+    command: |
+      python3 -c "
+      from giga_connectome import atlas
+      import json
+      # Check available atlas methods
+      print('Atlas module attributes:', [a for a in dir(atlas) if not a.startswith('_')])
+      "
+    expected_exit_code: 0
+
+  - name: giga_connectome list denoise strategies
+    description: List available denoising strategies
+    command: |
+      python3 -c "
+      from giga_connectome import denoise
+      print('Denoise module attributes:', [a for a in dir(denoise) if not a.startswith('_')])
+      "
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: giga_connectome missing required args
+    description: Verify proper error when required arguments missing
+    command: giga_connectome 2>&1 || true
+    expected_output_contains: "required"
+
+  - name: giga_connectome invalid bids dir
+    description: Verify proper error for non-existent BIDS directory
+    command: giga_connectome /nonexistent/path test_output participant 2>&1 || true
+    expected_output_contains: "error"
+
+  - name: nib-ls nonexistent file
+    description: Verify proper error for nonexistent file
+    command: nib-ls /nonexistent/file.nii.gz 2>&1 || true
+    expected_exit_code: 0
+
+  - name: nib-conform missing output
+    description: Verify proper error when output not specified
+    command: nib-conform ${t1w} 2>&1 || true
+    expected_output_contains: "error"
+
+  # ==========================================================================
+  # INTEGRATION TESTS
+  # ==========================================================================
+  - name: full preprocessing pipeline
+    description: Complete preprocessing pipeline using nilearn
+    command: |
+      python3 -c "
+      from nilearn import image, masking, signal
+      import numpy as np
+
+      # Load BOLD data
+      bold_img = image.load_img('${bold}')
+      print('1. Loaded BOLD:', bold_img.shape)
+
+      # Compute mask
+      mask_img = masking.compute_epi_mask(bold_img)
+      print('2. Computed mask:', mask_img.shape)
+
+      # Apply mask
+      masked_data = masking.apply_mask(bold_img, mask_img)
+      print('3. Applied mask:', masked_data.shape)
+
+      # Clean signal
+      cleaned_data = signal.clean(masked_data, detrend=True, standardize=True, t_r=2.0)
+      print('4. Cleaned signal:', cleaned_data.shape)
+
+      # Save cleaned data back to image
+      cleaned_img = masking.unmask(cleaned_data, mask_img)
+      cleaned_img.to_filename('test_output/bold_preprocessed.nii.gz')
+      print('5. Saved preprocessed BOLD')
+
+      # Compute mean
+      mean_cleaned = cleaned_data.mean(axis=1)
+      print('6. Mean time series computed:', mean_cleaned.shape)
+      "
+    expected_output_contains: "6. Mean time series computed"
+    validate:
+      - output_exists: ${output_dir}/bold_preprocessed.nii.gz
+
+  - name: connectivity analysis pipeline
+    description: Complete connectivity analysis using nilearn
+    command: |
+      python3 -c "
+      from nilearn import connectome, masking
+      from nilearn.maskers import NiftiMasker
+      import numpy as np
+
+      # Create masker
+      masker = NiftiMasker(
+          mask_img='test_output/bold_mask_nilearn.nii.gz',
+          standardize=True,
+          detrend=True,
+          t_r=2.0
+      )
+
+      # Extract time series
+      time_series = masker.fit_transform('${bold}')
+      print('1. Extracted time series:', time_series.shape)
+
+      # Use subset of voxels for faster computation
+      subset = time_series[:, :50]
+
+      # Compute correlation
+      conn_corr = connectome.ConnectivityMeasure(kind='correlation')
+      corr_matrix = conn_corr.fit_transform([subset])[0]
+      print('2. Correlation matrix:', corr_matrix.shape)
+
+      # Compute covariance
+      conn_cov = connectome.ConnectivityMeasure(kind='covariance')
+      cov_matrix = conn_cov.fit_transform([subset])[0]
+      print('3. Covariance matrix:', cov_matrix.shape)
+
+      # Save results
+      np.save('test_output/connectivity_corr.npy', corr_matrix)
+      np.save('test_output/connectivity_cov.npy', cov_matrix)
+      print('4. Saved connectivity matrices')
+      "
+    depends_on: nilearn compute EPI mask
+    expected_output_contains: "4. Saved connectivity matrices"
+    validate:
+      - output_exists: ${output_dir}/connectivity_corr.npy
+      - output_exists: ${output_dir}/connectivity_cov.npy
+
+  - name: atlas-based extraction simulation
+    description: Simulate atlas-based time series extraction
+    command: |
+      python3 -c "
+      from nilearn import image, masking
+      import numpy as np
+      import nibabel as nib
+
+      # Load BOLD
+      bold_img = image.load_img('${bold}')
+      mask_img = masking.compute_epi_mask(bold_img)
+
+      # Create fake atlas (4 regions)
+      mask_data = mask_img.get_fdata()
+      atlas_data = np.zeros_like(mask_data)
+      nonzero = np.where(mask_data > 0)
+      n_voxels = len(nonzero[0])
+      region_size = n_voxels // 4
+
+      for i in range(4):
+          start = i * region_size
+          end = (i + 1) * region_size if i < 3 else n_voxels
+          for j in range(start, end):
+              atlas_data[nonzero[0][j], nonzero[1][j], nonzero[2][j]] = i + 1
+
+      atlas_img = nib.Nifti1Image(atlas_data.astype(np.int32), mask_img.affine)
+      atlas_img.to_filename('test_output/fake_atlas.nii.gz')
+      print('1. Created fake atlas with 4 regions')
+
+      # Extract regional time series
+      from nilearn.maskers import NiftiLabelsMasker
+      masker = NiftiLabelsMasker(
+          labels_img='test_output/fake_atlas.nii.gz',
+          standardize=True
+      )
+      regional_ts = masker.fit_transform(bold_img)
+      print('2. Extracted regional time series:', regional_ts.shape)
+
+      # Compute connectivity
+      from nilearn.connectome import ConnectivityMeasure
+      conn = ConnectivityMeasure(kind='correlation')
+      conn_matrix = conn.fit_transform([regional_ts])[0]
+      print('3. Connectivity matrix:', conn_matrix.shape)
+
+      np.save('test_output/regional_connectivity.npy', conn_matrix)
+      print('4. Pipeline completed successfully')
+      "
+    expected_output_contains: "4. Pipeline completed successfully"
+    validate:
+      - output_exists: ${output_dir}/fake_atlas.nii.gz
+      - output_exists: ${output_dir}/regional_connectivity.npy
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

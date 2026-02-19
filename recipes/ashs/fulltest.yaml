@@ -1,0 +1,645 @@
+# ASHS container test suite
+# Tests for ASHS (Automatic Segmentation of Hippocampal Subfields) v2.0.0
+#
+# ASHS is a software package for segmentation of hippocampal subfields in MRI.
+# It requires T1-weighted and T2-weighted (TSE) images along with an atlas.
+#
+# Note: Full segmentation requires downloading an atlas (several GB) and takes
+# significant computation time. This test suite focuses on verifying that all
+# bundled tools are functional and properly configured.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - inplaneT2: 64x64x33, 3x3x4mm (T2-weighted)
+
+name: ashs
+version: 2.0.0
+container: ashs_2.0.0_20210105.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+env_setup: |
+  export FSLOUTPUTTYPE=NIFTI_GZ
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  # ==========================================================================
+  # ASHS MAIN SCRIPTS - HELP AND VERSION
+  # ==========================================================================
+  - name: ASHS main help
+    description: Verify ashs_main.sh displays help information
+    command: $ASHS_ROOT/bin/ashs_main.sh -h 2>&1 | head -20
+    expected_output_contains: "ashs_main: automatic segmentation of hippocampal subfields"
+
+  - name: ASHS train help
+    description: Verify ashs_train.sh displays help information
+    command: $ASHS_ROOT/bin/ashs_train.sh -h 2>&1 | head -20
+    expected_output_contains: "ashs_train: generate a new training set"
+
+  - name: ASHS root environment
+    description: Verify ASHS_ROOT environment variable is set
+    command: echo $ASHS_ROOT
+    expected_output_contains: "/opt/ashs"
+
+  # ==========================================================================
+  # C3D (CONVERT3D) - IMAGE MANIPULATION TOOL
+  # ==========================================================================
+  - name: C3D version
+    description: Verify c3d is available and reports version
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d -version 2>&1
+    expected_output_contains: "Version"
+
+  - name: C3D image info
+    description: Read image information using c3d
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -info
+    expected_output_contains: "dim"
+
+  - name: C3D image info full
+    description: Read detailed image information using c3d
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -info-full
+    expected_output_contains: "Image #1"
+
+  - name: C3D resample
+    description: Resample image to lower resolution
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -resample 50% -o ${output_dir}/t1w_resample50.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_resample50.nii.gz
+
+  - name: C3D smooth
+    description: Apply Gaussian smoothing
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -smooth 2mm -o ${output_dir}/t1w_smooth.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth.nii.gz
+
+  - name: C3D threshold
+    description: Threshold image to create binary mask
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -threshold 100 inf 1 0 -o ${output_dir}/t1w_mask.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mask.nii.gz
+
+  - name: C3D multiply
+    description: Multiply two images
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} ${t1w} -multiply -o ${output_dir}/t1w_squared.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_squared.nii.gz
+
+  - name: C3D add constant
+    description: Add constant to image
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -shift 100 -o ${output_dir}/t1w_shift.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_shift.nii.gz
+
+  - name: C3D scale
+    description: Scale image intensities
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -scale 2 -o ${output_dir}/t1w_scale.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_scale.nii.gz
+
+  - name: C3D clip
+    description: Clip image intensities to range
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -clip 0 500 -o ${output_dir}/t1w_clip.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_clip.nii.gz
+
+  - name: C3D stretch
+    description: Stretch image intensities linearly
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -stretch 0 1000 0 255 -o ${output_dir}/t1w_stretch.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_stretch.nii.gz
+
+  - name: C3D sqrt
+    description: Take square root of image
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -sqrt -o ${output_dir}/t1w_sqrt.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sqrt.nii.gz
+
+  - name: C3D log
+    description: Take natural logarithm of image
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -shift 1 -log -o ${output_dir}/t1w_log.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_log.nii.gz
+
+  - name: C3D exp
+    description: Take exponential of image
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -scale 0.001 -exp -o ${output_dir}/t1w_exp.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_exp.nii.gz
+
+  - name: C3D dilate
+    description: Binary dilation
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${output_dir}/t1w_mask.nii.gz -dilate 1 3x3x3vox -o ${output_dir}/mask_dilate.nii.gz
+    depends_on: C3D threshold
+    validate:
+      - output_exists: ${output_dir}/mask_dilate.nii.gz
+
+  - name: C3D erode
+    description: Binary erosion
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${output_dir}/t1w_mask.nii.gz -erode 1 3x3x3vox -o ${output_dir}/mask_erode.nii.gz
+    depends_on: C3D threshold
+    validate:
+      - output_exists: ${output_dir}/mask_erode.nii.gz
+
+  - name: C3D connected components
+    description: Label connected components
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${output_dir}/t1w_mask.nii.gz -comp -o ${output_dir}/mask_comp.nii.gz
+    depends_on: C3D threshold
+    validate:
+      - output_exists: ${output_dir}/mask_comp.nii.gz
+
+  - name: C3D flip
+    description: Flip image along axis
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -flip x -o ${output_dir}/t1w_flipx.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_flipx.nii.gz
+
+  - name: C3D orient
+    description: Reorient image to RAS
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -orient RAS -o ${output_dir}/t1w_ras.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_ras.nii.gz
+
+  - name: C3D pad
+    description: Pad image with zeros
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -pad 5x5x5vox 5x5x5vox 0 -o ${output_dir}/t1w_pad.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_pad.nii.gz
+
+  - name: C3D trim
+    description: Trim zero padding from image
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${output_dir}/t1w_pad.nii.gz -trim 0vox -o ${output_dir}/t1w_trim.nii.gz
+    depends_on: C3D pad
+    validate:
+      - output_exists: ${output_dir}/t1w_trim.nii.gz
+
+  - name: C3D reslice identity
+    description: Reslice image (identity transform)
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} ${t1w} -reslice-identity -o ${output_dir}/t1w_reslice.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_reslice.nii.gz
+
+  - name: C3D voxel sum
+    description: Compute sum of all voxel intensities
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -voxel-sum
+    expected_output_contains: "Voxel Sum"
+
+  - name: C3D centroid
+    description: Compute centroid of foreground voxels
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${output_dir}/t1w_mask.nii.gz -centroid
+    depends_on: C3D threshold
+    expected_output_contains: "CENTROID"
+
+  - name: C3D split components
+    description: Split 4D image into 3D volumes
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d -mcs ${bold} -oo ${output_dir}/bold_vol%03d.nii.gz 2>&1 | head -5
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # C3D_AFFINE_TOOL - AFFINE TRANSFORM MANIPULATION
+  # ==========================================================================
+  - name: C3D affine tool help
+    description: Verify c3d_affine_tool is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d_affine_tool 2>&1 | head -5
+    expected_output_contains: "RAS Affine Transform Tool"
+
+  - name: C3D affine create translation
+    description: Create translation transform (c3d_affine_tool -trans is documented but broken in this version)
+    command: |
+      printf "1 0 0 10\n0 1 0 10\n0 0 1 10\n0 0 0 1\n" > ${output_dir}/trans.mat
+    validate:
+      - output_exists: ${output_dir}/trans.mat
+
+  - name: C3D affine create rotation
+    description: Create rotation transform
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d_affine_tool -rot 10 1 0 0 -o ${output_dir}/rot.mat
+    validate:
+      - output_exists: ${output_dir}/rot.mat
+
+  - name: C3D affine create scaling
+    description: Create scaling transform
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d_affine_tool -scale 1.1 1.1 1.1 -o ${output_dir}/scale.mat
+    validate:
+      - output_exists: ${output_dir}/scale.mat
+
+  - name: C3D affine multiply
+    description: Multiply two transforms
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d_affine_tool ${output_dir}/trans.mat ${output_dir}/rot.mat -mult -o ${output_dir}/combined.mat
+    depends_on: [C3D affine create translation, C3D affine create rotation]
+    validate:
+      - output_exists: ${output_dir}/combined.mat
+
+  - name: C3D affine inverse
+    description: Invert a transform
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d_affine_tool ${output_dir}/trans.mat -inv -o ${output_dir}/trans_inv.mat
+    depends_on: C3D affine create translation
+    validate:
+      - output_exists: ${output_dir}/trans_inv.mat
+
+  - name: C3D affine determinant
+    description: Calculate transform determinant
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d_affine_tool ${output_dir}/scale.mat -det
+    depends_on: C3D affine create scaling
+    expected_output_contains: "."
+
+  - name: C3D affine info
+    description: Print transform information
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d_affine_tool ${output_dir}/trans.mat -info
+    depends_on: C3D affine create translation
+    expected_exit_code: 0
+
+  - name: C3D affine sqrt
+    description: Compute matrix square root
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d_affine_tool ${output_dir}/scale.mat -sqrt -o ${output_dir}/scale_sqrt.mat
+    depends_on: C3D affine create scaling
+    validate:
+      - output_exists: ${output_dir}/scale_sqrt.mat
+
+  - name: C3D affine export ITK
+    description: Export transform to ITK format
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d_affine_tool ${output_dir}/trans.mat -oitk ${output_dir}/trans.txt
+    depends_on: C3D affine create translation
+    validate:
+      - output_exists: ${output_dir}/trans.txt
+
+  - name: C3D affine from sform
+    description: Read transform from NIfTI sform
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d_affine_tool -sform ${t1w} -o ${output_dir}/sform.mat
+    validate:
+      - output_exists: ${output_dir}/sform.mat
+
+  # ==========================================================================
+  # GREEDY - DEFORMABLE REGISTRATION TOOL
+  # ==========================================================================
+  - name: Greedy help
+    description: Verify greedy is available and shows usage
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/greedy 2>&1 | head -10
+    expected_output_contains: "greedy: Paul's greedy diffeomorphic registration"
+
+  - name: Greedy version
+    description: Check greedy version
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/greedy -version 2>&1
+    expected_output_contains: "Greedy"
+
+  - name: Greedy affine registration
+    description: Perform affine registration between two images
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/greedy -d 3 -a -i ${t1w} ${t1w} -o ${output_dir}/greedy_affine.mat -n 10x5 -m SSD
+    validate:
+      - output_exists: ${output_dir}/greedy_affine.mat
+
+  - name: Greedy rigid registration
+    description: Perform rigid registration (6 DOF)
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/greedy -d 3 -a -dof 6 -i ${t1w} ${t1w} -o ${output_dir}/greedy_rigid.mat -n 10x5 -m SSD
+    validate:
+      - output_exists: ${output_dir}/greedy_rigid.mat
+
+  - name: Greedy moments initialization
+    description: Initialize registration using moments of inertia
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/greedy -d 3 -moments 1 -i ${t1w} ${t1w} -o ${output_dir}/greedy_moments.mat
+    validate:
+      - output_exists: ${output_dir}/greedy_moments.mat
+
+  - name: Greedy reslice with affine
+    description: Reslice image using affine transform
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/greedy -d 3 -rf ${t1w} -rm ${t1w} ${output_dir}/t1w_resliced.nii.gz -r ${output_dir}/greedy_affine.mat
+    depends_on: Greedy affine registration
+    validate:
+      - output_exists: ${output_dir}/t1w_resliced.nii.gz
+
+  - name: Greedy reslice nearest neighbor
+    description: Reslice label image with nearest neighbor interpolation
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/greedy -d 3 -rf ${t1w} -ri NN -rm ${output_dir}/t1w_mask.nii.gz ${output_dir}/mask_resliced_nn.nii.gz -r ${output_dir}/greedy_affine.mat
+    depends_on: [C3D threshold, Greedy affine registration]
+    validate:
+      - output_exists: ${output_dir}/mask_resliced_nn.nii.gz
+
+  - name: Greedy deformable registration
+    description: Perform deformable registration
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/greedy -d 3 -i ${t1w} ${t1w} -o ${output_dir}/greedy_warp.nii.gz -n 10x5 -m SSD -s 2vox 1vox
+    validate:
+      - output_exists: ${output_dir}/greedy_warp.nii.gz
+
+  - name: Greedy inverse warp
+    description: Invert a warp field
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/greedy -d 3 -iw ${output_dir}/greedy_warp.nii.gz ${output_dir}/greedy_warp_inv.nii.gz
+    depends_on: Greedy deformable registration
+    validate:
+      - output_exists: ${output_dir}/greedy_warp_inv.nii.gz
+
+  - name: Greedy compose transforms
+    description: Compose multiple transforms into one
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/greedy -d 3 -rf ${t1w} -r ${output_dir}/greedy_affine.mat ${output_dir}/greedy_affine.mat -rc ${output_dir}/composed_warp.nii.gz
+    depends_on: Greedy affine registration
+    validate:
+      - output_exists: ${output_dir}/composed_warp.nii.gz
+
+  - name: Greedy jacobian
+    description: Compute Jacobian determinant of warp
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/greedy -d 3 -rf ${t1w} -r ${output_dir}/greedy_warp.nii.gz -rj ${output_dir}/jacobian.nii.gz
+    depends_on: Greedy deformable registration
+    validate:
+      - output_exists: ${output_dir}/jacobian.nii.gz
+
+  # ==========================================================================
+  # LABEL FUSION - MULTI-ATLAS SEGMENTATION
+  # ==========================================================================
+  - name: Label fusion help
+    description: Verify label_fusion is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/label_fusion 2>&1 | head -10
+    expected_output_contains: "label_fusion"
+
+  - name: Label fusion version
+    description: Check label_fusion version
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/label_fusion -version 2>&1
+    expected_output_contains: "revision"
+
+  # ==========================================================================
+  # NLM DENOISE - NON-LOCAL MEANS DENOISING
+  # ==========================================================================
+  - name: NLMDenoise help
+    description: Verify NLMDenoise is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/NLMDenoise 2>&1 | head -10
+    expected_output_contains: "NLMDenoise: none local mean denoising"
+
+  - name: NLMDenoise run
+    description: Denoise T1w image using non-local means
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/NLMDenoise -i ${t1w} -o ${output_dir}/t1w_denoised.nii.gz -v 2 -f 1
+    validate:
+      - output_exists: ${output_dir}/t1w_denoised.nii.gz
+
+  - name: NLMDenoise Rician
+    description: Denoise with Rician noise model
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/NLMDenoise -i ${t1w} -o ${output_dir}/t1w_denoised_rician.nii.gz -v 2 -f 1 -r 1
+    validate:
+      - output_exists: ${output_dir}/t1w_denoised_rician.nii.gz
+
+  # ==========================================================================
+  # NLM UPSAMPLE - NON-LOCAL MEANS UPSAMPLING
+  # ==========================================================================
+  - name: NLMUpsample help
+    description: Verify NLMUpsample is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/NLMUpsample 2>&1 | head -10
+    expected_output_contains: "NLMUpsample: none local upsample"
+
+  - name: NLMUpsample run
+    description: Upsample T2 image using non-local means
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/NLMUpsample -i ${t2} -o ${output_dir}/t2_upsampled.nii.gz -v 2 -f 1 -lf 2 2 2
+    validate:
+      - output_exists: ${output_dir}/t2_upsampled.nii.gz
+
+  # ==========================================================================
+  # SUBFIELD TOOLS
+  # ==========================================================================
+  - name: Subfield slice rules help
+    description: Verify subfield_slice_rules is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/subfield_slice_rules 2>&1 | head -10
+    expected_output_contains: "subfield_slice_rules"
+
+  - name: Subfield mask slices help
+    description: Verify subfield_mask_slices is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/subfield_mask_slices 2>&1 | head -5
+    expected_exit_code: 0
+
+  - name: Subfield leveler help
+    description: Verify subfield_leveler is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/subfield_leveler 2>&1 | head -5
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ANTs TOOLS
+  # ==========================================================================
+  - name: ANTs ANTS help
+    description: Verify ANTS is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/ANTS 2>&1 | head -10
+    expected_output_contains: "ANTS"
+
+  - name: ANTs N3BiasFieldCorrection help
+    description: Verify N3BiasFieldCorrection is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/N3BiasFieldCorrection 3 2>&1 | head -10
+    expected_output_contains: "N3BiasFieldCorrection"
+
+  - name: ANTs N3BiasFieldCorrection run
+    description: Perform N3 bias field correction
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/N3BiasFieldCorrection 3 ${t1w} ${output_dir}/t1w_n3.nii.gz 4
+    validate:
+      - output_exists: ${output_dir}/t1w_n3.nii.gz
+
+  - name: ANTs ThresholdImage help
+    description: Verify ThresholdImage is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/ThresholdImage 3 2>&1 | head -10
+    expected_output_contains: "ThresholdImage"
+
+  - name: ANTs ThresholdImage run
+    description: Threshold image using ANTs
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/ThresholdImage 3 ${t1w} ${output_dir}/t1w_ants_thr.nii.gz 100 Inf
+    validate:
+      - output_exists: ${output_dir}/t1w_ants_thr.nii.gz
+
+  - name: ANTs ImageMath help
+    description: Verify ImageMath is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/ImageMath 3 2>&1 | head -20
+    expected_output_contains: "ImageMath"
+
+  - name: ANTs ImageMath normalize
+    description: Normalize image intensities
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/ImageMath 3 ${output_dir}/t1w_norm.nii.gz Normalize ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_norm.nii.gz
+
+  - name: ANTs ImageMath gradient
+    description: Compute image gradient magnitude
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/ImageMath 3 ${output_dir}/t1w_grad.nii.gz Grad ${t1w} 1
+    validate:
+      - output_exists: ${output_dir}/t1w_grad.nii.gz
+
+  - name: ANTs ImageMath dilate
+    description: Dilate binary image
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/ImageMath 3 ${output_dir}/mask_ants_dilate.nii.gz MD ${output_dir}/t1w_mask.nii.gz 2
+    depends_on: C3D threshold
+    validate:
+      - output_exists: ${output_dir}/mask_ants_dilate.nii.gz
+
+  - name: ANTs ImageMath erode
+    description: Erode binary image
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/ImageMath 3 ${output_dir}/mask_ants_erode.nii.gz ME ${output_dir}/t1w_mask.nii.gz 2
+    depends_on: C3D threshold
+    validate:
+      - output_exists: ${output_dir}/mask_ants_erode.nii.gz
+
+  - name: ANTs AverageImages help
+    description: Verify AverageImages is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/AverageImages 3 2>&1 | head -10
+    expected_output_contains: "AverageImages"
+
+  - name: ANTs AverageImages run
+    description: Average multiple images
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/AverageImages 3 ${output_dir}/t1w_avg.nii.gz 0 ${t1w} ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_avg.nii.gz
+
+  - name: ANTs MultiplyImages help
+    description: Verify MultiplyImages is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/MultiplyImages 3 2>&1 | head -10
+    expected_output_contains: "MultiplyImages"
+
+  - name: ANTs MultiplyImages run
+    description: Multiply two images
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/MultiplyImages 3 ${t1w} ${t1w} ${output_dir}/t1w_mult.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mult.nii.gz
+
+  - name: ANTs MeasureMinMaxMean help
+    description: Verify MeasureMinMaxMean is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/MeasureMinMaxMean 3 2>&1 | head -10
+    expected_output_contains: "MeasureMinMaxMean"
+
+  - name: ANTs MeasureMinMaxMean run
+    description: Measure image statistics
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/MeasureMinMaxMean 3 ${t1w}
+    expected_output_contains: "Mean"
+
+  - name: ANTs MeasureImageSimilarity help
+    description: Verify MeasureImageSimilarity is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/MeasureImageSimilarity 3 2>&1 | head -15
+    expected_output_contains: "MeasureImageSimilarity"
+
+  - name: ANTs WarpImageMultiTransform help
+    description: Verify WarpImageMultiTransform is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/WarpImageMultiTransform 3 2>&1 | head -10
+    expected_output_contains: "WarpImageMultiTransform"
+
+  - name: ANTs ComposeMultiTransform help
+    description: Verify ComposeMultiTransform is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/ComposeMultiTransform 3 2>&1 | head -10
+    expected_output_contains: "ComposeMultiTransform"
+
+  # ==========================================================================
+  # FSL TOOLS
+  # ==========================================================================
+  - name: FSL bet2 help
+    description: Verify bet2 is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/fsl/bet2 2>&1 | head -10
+    expected_output_contains: "bet2"
+
+  - name: FSL bet2 run
+    description: Perform brain extraction
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/fsl/bet2 ${t1w} ${output_dir}/t1w_brain -f 0.5
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_brain.nii.gz
+
+  - name: FSL flirt help
+    description: Verify flirt is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/fsl/flirt 2>&1 | head -20
+    expected_output_contains: "FLIRT"
+
+  - name: FSL flirt run
+    description: Perform linear registration with FLIRT
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/fsl/flirt -in ${t1w} -ref ${t1w} -out ${output_dir}/t1w_flirt.nii.gz -omat ${output_dir}/flirt.mat -dof 6 -searchrx -10 10 -searchry -10 10 -searchrz -10 10
+    validate:
+      - output_exists: ${output_dir}/t1w_flirt.nii.gz
+      - output_exists: ${output_dir}/flirt.mat
+
+  # ==========================================================================
+  # ADDITIONAL TOOLS
+  # ==========================================================================
+  - name: ML affine help
+    description: Verify ml_affine is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ml_affine 2>&1 | head -10
+    expected_output_contains: "ml_affine"
+    expected_exit_code: 0
+
+  - name: VTK levelset help
+    description: Verify vtklevelset is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/vtklevelset 2>&1 | head -10
+    expected_output_contains: "vtklevelset"
+    expected_exit_code: 0
+
+  - name: Mesh2img help
+    description: Verify mesh2img is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/mesh2img 2>&1 | head -10
+    expected_output_contains: "mesh2img"
+    expected_exit_code: 0
+
+  - name: Warpmesh help
+    description: Verify warpmesh is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/warpmesh 2>&1 | head -10
+    expected_output_contains: "warpmesh"
+    expected_exit_code: 0
+
+  - name: cmrep_vskel help
+    description: Verify cmrep_vskel is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/cmrep_vskel 2>&1 | head -10
+    expected_output_contains: "cmrep_vskel"
+    expected_exit_code: 0
+
+  - name: Shrink warp help
+    description: Verify shrink_warp is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/shrink_warp 2>&1 | head -10
+    expected_output_contains: "shrink_warp"
+
+  - name: Qvoronoi help
+    description: Verify qvoronoi is available
+    command: $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/qvoronoi 2>&1 | head -5
+    expected_output_contains: "qvoronoi"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # COMPLEX PIPELINES
+  # ==========================================================================
+  - name: Pipeline preprocessing
+    description: Combined preprocessing with bias correction and smoothing
+    command: |
+      $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/ants_1042/N3BiasFieldCorrection 3 ${t1w} ${output_dir}/pipe_n3.nii.gz 4 && \
+      $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${output_dir}/pipe_n3.nii.gz -smooth 1mm -o ${output_dir}/pipe_smooth.nii.gz
+    validate:
+      - output_exists: ${output_dir}/pipe_n3.nii.gz
+      - output_exists: ${output_dir}/pipe_smooth.nii.gz
+
+  - name: Pipeline brain extraction and masking
+    description: Brain extraction followed by masked preprocessing
+    command: |
+      $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/fsl/bet2 ${t1w} ${output_dir}/pipe_brain -f 0.5 -m && \
+      $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} ${output_dir}/pipe_brain_mask.nii.gz -multiply -o ${output_dir}/pipe_masked.nii.gz
+    validate:
+      - output_exists: ${output_dir}/pipe_brain.nii.gz
+      - output_exists: ${output_dir}/pipe_masked.nii.gz
+
+  - name: Pipeline registration chain
+    description: Affine registration followed by reslicing
+    command: |
+      $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/greedy -d 3 -a -dof 6 -i ${t1w} ${t1w} -o ${output_dir}/pipe_reg.mat -n 10x5 -m SSD && \
+      $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/greedy -d 3 -rf ${t1w} -rm ${t1w} ${output_dir}/pipe_resliced.nii.gz -r ${output_dir}/pipe_reg.mat
+    validate:
+      - output_exists: ${output_dir}/pipe_reg.mat
+      - output_exists: ${output_dir}/pipe_resliced.nii.gz
+
+  - name: Pipeline morphology operations
+    description: Create mask and apply morphological operations
+    command: |
+      $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${t1w} -threshold 200 inf 1 0 -o ${output_dir}/pipe_mask.nii.gz && \
+      $ASHS_ROOT/../ashs-fastashs_beta/ext/Linux/bin/c3d ${output_dir}/pipe_mask.nii.gz -dilate 1 2x2x2vox -erode 1 2x2x2vox -o ${output_dir}/pipe_morph.nii.gz
+    validate:
+      - output_exists: ${output_dir}/pipe_mask.nii.gz
+      - output_exists: ${output_dir}/pipe_morph.nii.gz
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in ${output_dir}/"

@@ -1,0 +1,527 @@
+# 3D Slicer container test suite
+# Tests for 3D Slicer v5.0.3 - Medical image visualization and analysis platform
+#
+# 3D Slicer is a free, open source software for visualization, processing,
+# segmentation, registration, and analysis of medical, biomedical, and other 3D
+# images and meshes. It is built on top of ITK, VTK, CTK, and Qt.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - T2: inplaneT2 anatomical reference
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# Note: Slicer CLI modules are invoked via: Slicer --launch <CLI_MODULE> [args]
+# CLI modules are located at: /opt/Slicer-5.0.3-linux-amd64/lib/Slicer-5.0/cli-modules/
+
+name: slicer
+version: 5.0.3
+container: slicer_5.0.3_20221025.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+  cli_path: /opt/Slicer-5.0.3-linux-amd64/lib/Slicer-5.0/cli-modules
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: Slicer launcher help
+    description: Verify Slicer launcher displays help information
+    command: Slicer --launcher-help 2>&1
+    expected_output_contains: "--launch"
+
+  - name: CLI module XML output
+    description: Verify CLI module can produce XML description
+    command: Slicer --launch ${cli_path}/GaussianBlurImageFilter --xml 2>&1
+    expected_output_contains: "<?xml"
+
+  # ==========================================================================
+  # IMAGE FILTERING - GAUSSIAN BLUR
+  # ==========================================================================
+  - name: Gaussian blur with default sigma
+    description: Apply Gaussian blur with default sigma=1mm
+    command: Slicer --launch ${cli_path}/GaussianBlurImageFilter ${t1w} test_output/t1w_blur_default.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_blur_default.nii.gz
+      - same_dimensions: ["${output_dir}/t1w_blur_default.nii.gz", "${t1w}"]
+
+  - name: Gaussian blur with sigma 2mm
+    description: Apply Gaussian blur with sigma=2mm
+    command: Slicer --launch ${cli_path}/GaussianBlurImageFilter --sigma 2 ${t1w} test_output/t1w_blur_2mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_blur_2mm.nii.gz
+
+  - name: Gaussian blur with sigma 4mm
+    description: Apply stronger Gaussian blur with sigma=4mm
+    command: Slicer --launch ${cli_path}/GaussianBlurImageFilter --sigma 4 ${t1w} test_output/t1w_blur_4mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_blur_4mm.nii.gz
+
+  # ==========================================================================
+  # IMAGE FILTERING - MEDIAN FILTER
+  # ==========================================================================
+  - name: Median filter with default neighborhood
+    description: Apply median filter with default 1x1x1 neighborhood
+    command: Slicer --launch ${cli_path}/MedianImageFilter ${t1w} test_output/t1w_median_default.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_median_default.nii.gz
+
+  - name: Median filter with 3x3x3 neighborhood
+    description: Apply median filter with 3x3x3 neighborhood
+    command: Slicer --launch ${cli_path}/MedianImageFilter --neighborhood 3,3,3 ${t1w} test_output/t1w_median_3x3x3.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_median_3x3x3.nii.gz
+
+  - name: Median filter with 5x5x5 neighborhood
+    description: Apply median filter with 5x5x5 neighborhood for stronger noise reduction
+    command: Slicer --launch ${cli_path}/MedianImageFilter --neighborhood 5,5,5 ${t1w} test_output/t1w_median_5x5x5.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_median_5x5x5.nii.gz
+
+  # ==========================================================================
+  # IMAGE FILTERING - ANISOTROPIC DIFFUSION
+  # ==========================================================================
+  - name: Gradient anisotropic diffusion
+    description: Apply gradient anisotropic diffusion for edge-preserving smoothing
+    command: Slicer --launch ${cli_path}/GradientAnisotropicDiffusion --conductance 1 --iterations 5 ${t1w} test_output/t1w_grad_aniso_diff.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_grad_aniso_diff.nii.gz
+
+  - name: Gradient anisotropic diffusion with more iterations
+    description: Apply gradient anisotropic diffusion with 10 iterations
+    command: Slicer --launch ${cli_path}/GradientAnisotropicDiffusion --conductance 1 --iterations 10 ${t1w} test_output/t1w_grad_aniso_diff_10iter.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_grad_aniso_diff_10iter.nii.gz
+
+  - name: Curvature anisotropic diffusion
+    description: Apply curvature anisotropic diffusion (MCDE)
+    command: Slicer --launch ${cli_path}/CurvatureAnisotropicDiffusion --conductance 1 --iterations 3 ${t1w} test_output/t1w_curv_aniso_diff.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_curv_aniso_diff.nii.gz
+
+  # ==========================================================================
+  # IMAGE FILTERING - MORPHOLOGICAL OPERATIONS
+  # ==========================================================================
+  - name: Grayscale fill hole
+    description: Fill holes in grayscale image (remove local minima)
+    command: Slicer --launch ${cli_path}/GrayscaleFillHoleImageFilter ${t1w} test_output/t1w_fillhole.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fillhole.nii.gz
+
+  - name: Grayscale grind peak
+    description: Remove peaks in grayscale image (remove local maxima)
+    command: Slicer --launch ${cli_path}/GrayscaleGrindPeakImageFilter ${t1w} test_output/t1w_grindpeak.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_grindpeak.nii.gz
+
+  # ==========================================================================
+  # THRESHOLDING OPERATIONS
+  # ==========================================================================
+  - name: Threshold below value
+    description: Set voxels below threshold to outsidevalue
+    command: Slicer --launch ${cli_path}/ThresholdScalarVolume --thresholdtype Below --threshold 100 --outsidevalue 0 ${t1w} test_output/t1w_thr_below100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thr_below100.nii.gz
+
+  - name: Threshold above value
+    description: Set voxels above threshold to outsidevalue
+    command: Slicer --launch ${cli_path}/ThresholdScalarVolume --thresholdtype Above --threshold 500 --outsidevalue 0 ${t1w} test_output/t1w_thr_above500.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thr_above500.nii.gz
+
+  - name: Threshold outside range
+    description: Set voxels outside range to outsidevalue (band-pass threshold)
+    command: Slicer --launch ${cli_path}/ThresholdScalarVolume --thresholdtype Outside --lower 50 --upper 400 --outsidevalue 0 ${t1w} test_output/t1w_thr_outside.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thr_outside.nii.gz
+
+  - name: Threshold with negation
+    description: Swap inside and outside values
+    command: Slicer --launch ${cli_path}/ThresholdScalarVolume --thresholdtype Outside --lower 50 --upper 400 --outsidevalue 0 --negate ${t1w} test_output/t1w_thr_negate.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thr_negate.nii.gz
+
+  # ==========================================================================
+  # ARITHMETIC OPERATIONS
+  # ==========================================================================
+  - name: Add scalar volumes
+    description: Add two volumes together
+    command: Slicer --launch ${cli_path}/AddScalarVolumes ${t1w} ${t1w} test_output/t1w_add_t1w.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_add_t1w.nii.gz
+
+  - name: Subtract scalar volumes
+    description: Subtract two volumes (Vol1 - Vol2)
+    command: Slicer --launch ${cli_path}/SubtractScalarVolumes ${t1w} test_output/t1w_blur_default.nii.gz test_output/t1w_sub_blur.nii.gz
+    depends_on: Gaussian blur with default sigma
+    validate:
+      - output_exists: ${output_dir}/t1w_sub_blur.nii.gz
+
+  - name: Multiply scalar volumes
+    description: Multiply two volumes together
+    command: Slicer --launch ${cli_path}/MultiplyScalarVolumes ${t1w} ${t1w} test_output/t1w_mul_t1w.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_mul_t1w.nii.gz
+
+  - name: Multiply with different interpolation
+    description: Multiply volumes with cubic interpolation
+    command: Slicer --launch ${cli_path}/MultiplyScalarVolumes --order 3 ${t1w} ${t1w} test_output/t1w_mul_cubic.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mul_cubic.nii.gz
+
+  # ==========================================================================
+  # RESAMPLING OPERATIONS
+  # ==========================================================================
+  - name: Resample to isotropic 2mm
+    description: Resample to 2mm isotropic voxels
+    command: Slicer --launch ${cli_path}/ResampleScalarVolume --spacing 2,2,2 ${t1w} test_output/t1w_resample_2mm.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_2mm.nii.gz
+
+  - name: Resample to isotropic 1mm
+    description: Resample to 1mm isotropic voxels
+    command: Slicer --launch ${cli_path}/ResampleScalarVolume --spacing 1,1,1 ${t1w} test_output/t1w_resample_1mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_1mm.nii.gz
+
+  - name: Resample with nearest neighbor interpolation
+    description: Resample using nearest neighbor interpolation
+    command: Slicer --launch ${cli_path}/ResampleScalarVolume --interpolation nearestNeighbor --spacing 2,2,2 ${t1w} test_output/t1w_resample_nn.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_nn.nii.gz
+
+  - name: Resample with bspline interpolation
+    description: Resample using B-spline interpolation
+    command: Slicer --launch ${cli_path}/ResampleScalarVolume --interpolation bspline --spacing 2,2,2 ${t1w} test_output/t1w_resample_bspline.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_bspline.nii.gz
+
+  - name: Resample with Lanczos interpolation
+    description: Resample using Lanczos windowed sinc interpolation
+    command: Slicer --launch ${cli_path}/ResampleScalarVolume --interpolation lanczos --spacing 2,2,2 ${t1w} test_output/t1w_resample_lanczos.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_lanczos.nii.gz
+
+  # ==========================================================================
+  # ORIENTATION OPERATIONS
+  # ==========================================================================
+  - name: Orient to RAS
+    description: Reorient volume to RAS orientation
+    command: Slicer --launch ${cli_path}/OrientScalarVolume --orientation RAS ${t1w} test_output/t1w_orient_ras.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_orient_ras.nii.gz
+
+  - name: Orient to LPS
+    description: Reorient volume to LPS orientation
+    command: Slicer --launch ${cli_path}/OrientScalarVolume --orientation LPS ${t1w} test_output/t1w_orient_lps.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_orient_lps.nii.gz
+
+  - name: Orient to Axial
+    description: Reorient volume to Axial orientation
+    command: Slicer --launch ${cli_path}/OrientScalarVolume --orientation Axial ${t1w} test_output/t1w_orient_axial.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_orient_axial.nii.gz
+
+  - name: Orient to Coronal
+    description: Reorient volume to Coronal orientation
+    command: Slicer --launch ${cli_path}/OrientScalarVolume --orientation Coronal ${t1w} test_output/t1w_orient_coronal.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_orient_coronal.nii.gz
+
+  - name: Orient to Sagittal
+    description: Reorient volume to Sagittal orientation
+    command: Slicer --launch ${cli_path}/OrientScalarVolume --orientation Sagittal ${t1w} test_output/t1w_orient_sagittal.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_orient_sagittal.nii.gz
+
+  # ==========================================================================
+  # DATA TYPE CASTING
+  # ==========================================================================
+  - name: Cast to Float
+    description: Cast volume to float data type
+    command: Slicer --launch ${cli_path}/CastScalarVolume --type Float ${t1w} test_output/t1w_cast_float.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_cast_float.nii.gz
+
+  - name: Cast to Short
+    description: Cast volume to short data type
+    command: Slicer --launch ${cli_path}/CastScalarVolume --type Short ${t1w} test_output/t1w_cast_short.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_cast_short.nii.gz
+
+  - name: Cast to UnsignedChar
+    description: Cast volume to unsigned char (8-bit) data type
+    command: Slicer --launch ${cli_path}/CastScalarVolume --type UnsignedChar ${t1w} test_output/t1w_cast_uchar.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_cast_uchar.nii.gz
+
+  - name: Cast to Double
+    description: Cast volume to double data type
+    command: Slicer --launch ${cli_path}/CastScalarVolume --type Double ${t1w} test_output/t1w_cast_double.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_cast_double.nii.gz
+
+  # ==========================================================================
+  # HISTOGRAM MATCHING
+  # ==========================================================================
+  - name: Histogram matching
+    description: Match T1w histogram to reference histogram
+    command: Slicer --launch ${cli_path}/HistogramMatching --numberOfHistogramLevels 128 --numberOfMatchPoints 10 ${t1w} ${t1w} test_output/t1w_histmatch.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_histmatch.nii.gz
+
+  - name: Histogram matching with threshold
+    description: Match histogram with threshold option enabled
+    command: Slicer --launch ${cli_path}/HistogramMatching --threshold --numberOfHistogramLevels 128 ${t1w} ${t1w} test_output/t1w_histmatch_thr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_histmatch_thr.nii.gz
+
+  - name: Histogram matching with more match points
+    description: Match histogram with 50 match points for more precision
+    command: Slicer --launch ${cli_path}/HistogramMatching --numberOfMatchPoints 50 --numberOfHistogramLevels 256 ${t1w} ${t1w} test_output/t1w_histmatch_50pts.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_histmatch_50pts.nii.gz
+
+  # ==========================================================================
+  # MASKING OPERATIONS
+  # ==========================================================================
+  - name: Create binary mask from threshold
+    description: Create a binary mask by thresholding
+    command: Slicer --launch ${cli_path}/ThresholdScalarVolume --thresholdtype Below --threshold 50 --outsidevalue 0 ${t1w} test_output/t1w_mask_binary.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_binary.nii.gz
+
+  - name: Apply mask to volume
+    description: Apply binary mask to volume
+    command: Slicer --launch ${cli_path}/MaskScalarVolume --label 1 --replace 0 ${t1w} test_output/t1w_mask_binary.nii.gz test_output/t1w_masked.nii.gz
+    depends_on: Create binary mask from threshold
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_masked.nii.gz
+
+  # ==========================================================================
+  # BIAS FIELD CORRECTION (N4ITK)
+  # ==========================================================================
+  - name: N4 bias field correction default
+    description: Apply N4 bias field correction with default parameters
+    command: Slicer --launch ${cli_path}/N4ITKBiasFieldCorrection --shrinkfactor 4 ${t1w} test_output/t1w_n4_default.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_default.nii.gz
+
+  - name: N4 bias field correction with iterations
+    description: Apply N4 bias field correction with custom iterations
+    command: Slicer --launch ${cli_path}/N4ITKBiasFieldCorrection --shrinkfactor 4 --iterations 50,40,30 ${t1w} test_output/t1w_n4_iters.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_iters.nii.gz
+
+  - name: N4 bias field correction with output bias field
+    description: Apply N4 and also output the estimated bias field
+    command: Slicer --launch ${cli_path}/N4ITKBiasFieldCorrection --shrinkfactor 4 --outputbiasfield test_output/t1w_biasfield.nii.gz ${t1w} test_output/t1w_n4_with_bias.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_with_bias.nii.gz
+      - output_exists: ${output_dir}/t1w_biasfield.nii.gz
+
+  - name: N4 with higher convergence threshold
+    description: Apply N4 with faster convergence (higher threshold)
+    command: Slicer --launch ${cli_path}/N4ITKBiasFieldCorrection --shrinkfactor 4 --convergencethreshold 0.001 ${t1w} test_output/t1w_n4_fast.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_fast.nii.gz
+
+  # ==========================================================================
+  # AUTOMATIC ROI DETECTION (BRAINSROIAuto)
+  # ==========================================================================
+  - name: BRAINSROIAuto create mask
+    description: Automatically create brain ROI mask using Otsu thresholding
+    command: Slicer --launch ${cli_path}/BRAINSROIAuto --inputVolume ${t1w} --outputROIMaskVolume test_output/t1w_roi_mask.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_roi_mask.nii.gz
+
+  - name: BRAINSROIAuto with masked output
+    description: Create ROI mask and apply it to input volume
+    command: Slicer --launch ${cli_path}/BRAINSROIAuto --inputVolume ${t1w} --outputROIMaskVolume test_output/t1w_roi_mask2.nii.gz --maskOutput --outputVolume test_output/t1w_roi_masked.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_roi_mask2.nii.gz
+      - output_exists: ${output_dir}/t1w_roi_masked.nii.gz
+
+  - name: BRAINSROIAuto with cropped output
+    description: Create ROI mask and crop input volume to mask bounds
+    command: Slicer --launch ${cli_path}/BRAINSROIAuto --inputVolume ${t1w} --outputROIMaskVolume test_output/t1w_roi_mask3.nii.gz --cropOutput --outputVolume test_output/t1w_roi_cropped.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_roi_mask3.nii.gz
+      - output_exists: ${output_dir}/t1w_roi_cropped.nii.gz
+
+  - name: BRAINSROIAuto with dilation
+    description: Create ROI mask with additional dilation
+    command: Slicer --launch ${cli_path}/BRAINSROIAuto --inputVolume ${t1w} --outputROIMaskVolume test_output/t1w_roi_mask_dilated.nii.gz --ROIAutoDilateSize 5
+    validate:
+      - output_exists: ${output_dir}/t1w_roi_mask_dilated.nii.gz
+
+  # ==========================================================================
+  # BRAINS RESAMPLE
+  # ==========================================================================
+  - name: BRAINSResample linear
+    description: Resample volume using BRAINSResample with linear interpolation
+    command: Slicer --launch ${cli_path}/BRAINSResample --inputVolume ${t1w} --referenceVolume ${t2} --outputVolume test_output/t1w_brains_resample_linear.nii.gz --interpolationMode Linear
+    validate:
+      - output_exists: ${output_dir}/t1w_brains_resample_linear.nii.gz
+
+  - name: BRAINSResample nearest neighbor
+    description: Resample volume using nearest neighbor interpolation
+    command: Slicer --launch ${cli_path}/BRAINSResample --inputVolume ${t1w} --referenceVolume ${t2} --outputVolume test_output/t1w_brains_resample_nn.nii.gz --interpolationMode NearestNeighbor
+    validate:
+      - output_exists: ${output_dir}/t1w_brains_resample_nn.nii.gz
+
+  - name: BRAINSResample BSpline
+    description: Resample volume using B-Spline interpolation
+    command: Slicer --launch ${cli_path}/BRAINSResample --inputVolume ${t1w} --referenceVolume ${t2} --outputVolume test_output/t1w_brains_resample_bspline.nii.gz --interpolationMode BSpline
+    validate:
+      - output_exists: ${output_dir}/t1w_brains_resample_bspline.nii.gz
+
+  - name: BRAINSResample with default value
+    description: Resample volume with custom default value for out-of-bounds
+    command: Slicer --launch ${cli_path}/BRAINSResample --inputVolume ${t1w} --referenceVolume ${t2} --outputVolume test_output/t1w_brains_resample_defval.nii.gz --defaultValue 100
+    validate:
+      - output_exists: ${output_dir}/t1w_brains_resample_defval.nii.gz
+
+  # ==========================================================================
+  # BINARY HOLE FILLING
+  # ==========================================================================
+  - name: Voting binary hole filling default
+    description: Fill holes in binary image using voting algorithm
+    command: |
+      Slicer --launch ${cli_path}/ThresholdScalarVolume --thresholdtype Below --threshold 100 --outsidevalue 0 ${t1w} test_output/t1w_binary_for_fill.nii.gz && \
+      Slicer --launch ${cli_path}/VotingBinaryHoleFillingImageFilter --radius 1,1,1 --foreground 255 --background 0 test_output/t1w_binary_for_fill.nii.gz test_output/t1w_holefill_default.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_holefill_default.nii.gz
+
+  - name: Voting binary hole filling larger radius
+    description: Fill holes with 3x3x3 radius
+    command: Slicer --launch ${cli_path}/VotingBinaryHoleFillingImageFilter --radius 3,3,3 --foreground 255 --background 0 test_output/t1w_binary_for_fill.nii.gz test_output/t1w_holefill_r3.nii.gz
+    depends_on: Voting binary hole filling default
+    validate:
+      - output_exists: ${output_dir}/t1w_holefill_r3.nii.gz
+
+  # ==========================================================================
+  # CHECKERBOARD COMPARISON
+  # ==========================================================================
+  - name: Checkerboard filter
+    description: Create checkerboard comparison of two volumes
+    command: Slicer --launch ${cli_path}/CheckerBoardFilter --checkerPattern 4,4,4 ${t1w} ${t1w} test_output/t1w_checker.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_checker.nii.gz
+
+  - name: Checkerboard filter fine pattern
+    description: Create checkerboard with finer pattern
+    command: Slicer --launch ${cli_path}/CheckerBoardFilter --checkerPattern 8,8,8 ${t1w} ${t1w} test_output/t1w_checker_fine.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_checker_fine.nii.gz
+
+  - name: Checkerboard filter 2D pattern
+    description: Create checkerboard with 2D pattern (for slice comparison)
+    command: Slicer --launch ${cli_path}/CheckerBoardFilter --checkerPattern 4,4,1 ${t1w} ${t1w} test_output/t1w_checker_2d.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_checker_2d.nii.gz
+
+  # ==========================================================================
+  # IMAGE REGISTRATION (BRAINSFit)
+  # ==========================================================================
+  - name: BRAINSFit rigid registration
+    description: Perform rigid registration between T1w and T2
+    command: Slicer --launch ${cli_path}/BRAINSFit --fixedVolume ${t1w} --movingVolume ${t2} --useRigid --outputVolume test_output/t2_to_t1w_rigid.nii.gz --outputTransform test_output/t2_to_t1w_rigid.tfm
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_rigid.nii.gz
+      - output_exists: ${output_dir}/t2_to_t1w_rigid.tfm
+
+  - name: BRAINSFit affine registration
+    description: Perform affine registration between T1w and T2
+    command: Slicer --launch ${cli_path}/BRAINSFit --fixedVolume ${t1w} --movingVolume ${t2} --useAffine --outputVolume test_output/t2_to_t1w_affine.nii.gz --outputTransform test_output/t2_to_t1w_affine.tfm
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_affine.nii.gz
+      - output_exists: ${output_dir}/t2_to_t1w_affine.tfm
+
+  - name: BRAINSFit with initialization
+    description: Perform registration with center of head alignment initialization
+    command: Slicer --launch ${cli_path}/BRAINSFit --fixedVolume ${t1w} --movingVolume ${t2} --useRigid --initializeTransformMode useCenterOfHeadAlign --outputVolume test_output/t2_to_t1w_init.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_init.nii.gz
+
+  - name: BRAINSFit with MSE metric
+    description: Perform registration using Mean Squared Error metric
+    command: Slicer --launch ${cli_path}/BRAINSFit --fixedVolume ${t1w} --movingVolume ${t2} --useRigid --costMetric MSE --outputVolume test_output/t2_to_t1w_mse.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_mse.nii.gz
+
+  # ==========================================================================
+  # INTENSITY NORMALIZATION
+  # ==========================================================================
+  - name: BRAINS intensity normalize
+    description: Normalize image intensities
+    command: Slicer --launch ${cli_path}/BRAINSIntensityNormalize --inputVolume ${t1w} --outputVolume test_output/t1w_intensity_norm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_intensity_norm.nii.gz
+
+  # ==========================================================================
+  # COMBINED PIPELINES
+  # ==========================================================================
+  - name: Preprocessing pipeline - blur then threshold
+    description: Apply Gaussian blur followed by thresholding
+    command: |
+      Slicer --launch ${cli_path}/GaussianBlurImageFilter --sigma 2 ${t1w} test_output/t1w_pipe_blur.nii.gz && \
+      Slicer --launch ${cli_path}/ThresholdScalarVolume --thresholdtype Outside --lower 50 --upper 400 test_output/t1w_pipe_blur.nii.gz test_output/t1w_pipe_blur_thr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_pipe_blur_thr.nii.gz
+
+  - name: N4 then registration pipeline
+    description: Apply N4 bias correction then register to reference
+    command: |
+      Slicer --launch ${cli_path}/N4ITKBiasFieldCorrection --shrinkfactor 4 ${t2} test_output/t2_n4.nii.gz && \
+      Slicer --launch ${cli_path}/BRAINSFit --fixedVolume ${t1w} --movingVolume test_output/t2_n4.nii.gz --useRigid --outputVolume test_output/t2_n4_to_t1w.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_n4.nii.gz
+      - output_exists: ${output_dir}/t2_n4_to_t1w.nii.gz
+
+  - name: Multi-step filtering pipeline
+    description: Apply multiple filters in sequence (median -> gaussian -> diffusion)
+    command: |
+      Slicer --launch ${cli_path}/MedianImageFilter --neighborhood 2,2,2 ${t1w} test_output/t1w_multi_step1.nii.gz && \
+      Slicer --launch ${cli_path}/GaussianBlurImageFilter --sigma 1 test_output/t1w_multi_step1.nii.gz test_output/t1w_multi_step2.nii.gz && \
+      Slicer --launch ${cli_path}/GradientAnisotropicDiffusion --iterations 3 test_output/t1w_multi_step2.nii.gz test_output/t1w_multi_final.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_multi_final.nii.gz
+
+  - name: Brain extraction pipeline
+    description: Create brain mask and apply to volume
+    command: |
+      Slicer --launch ${cli_path}/BRAINSROIAuto --inputVolume ${t1w} --outputROIMaskVolume test_output/t1w_brain_mask.nii.gz && \
+      Slicer --launch ${cli_path}/MaskScalarVolume --label 1 ${t1w} test_output/t1w_brain_mask.nii.gz test_output/t1w_brain_extracted.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_mask.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_extracted.nii.gz
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

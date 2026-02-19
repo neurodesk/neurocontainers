@@ -1,0 +1,748 @@
+# itksnap container test suite
+# Tests for itksnap v4.4.0 - medical image viewer and segmentation tool
+#
+# This container includes:
+#   - itksnap: Interactive medical image viewer with manual segmentation
+#   - c3d: Convert3D - powerful command-line image processing tool
+#   - greedy: Fast diffeomorphic registration
+#   - c3d_affine_tool: Affine transform manipulation utility
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: itksnap
+version: 4.4.0
+container: itksnap_4.4.0_20260117.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # ITKSNAP BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: ITK-SNAP help
+    description: Verify itksnap binary runs and shows help
+    command: itksnap --help 2>&1 | head -5
+    expected_output_contains: "ITK-SnAP Command Line Usage"
+
+  - name: ITK-SNAP version check
+    description: Verify itksnap version information
+    command: itksnap --help 2>&1 | grep -i "snap"
+    expected_output_contains: "SNAP"
+
+  # ==========================================================================
+  # C3D BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: C3D help
+    description: Verify c3d binary runs and shows help
+    command: c3d --help 2>&1 | head -5
+    expected_output_contains: "Image Input/Output"
+
+  - name: C3D image info
+    description: Display brief image information
+    command: c3d ${t1w} -info
+    expected_output_contains: "dim"
+
+  - name: C3D verbose image info
+    description: Display verbose image information
+    command: c3d ${t1w} -info-full
+    expected_output_contains: "Image"
+
+  # ==========================================================================
+  # C3D VOXELWISE CALCULATIONS
+  # ==========================================================================
+  - name: C3D absolute value
+    description: Test -abs operation for voxelwise absolute value
+    command: c3d ${t1w} -abs -o test_output/c3d_t1w_abs.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_abs.nii.gz
+
+  - name: C3D scale intensity
+    description: Test -scale operation (multiply by constant)
+    command: c3d ${t1w} -scale 2 -o test_output/c3d_t1w_scale2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_scale2.nii.gz
+
+  - name: C3D shift intensity
+    description: Test -shift operation (add constant)
+    command: c3d ${t1w} -shift 100 -o test_output/c3d_t1w_shift100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_shift100.nii.gz
+
+  - name: C3D add images
+    description: Test -add operation (voxelwise addition)
+    command: c3d ${t1w} ${t1w} -add -o test_output/c3d_t1w_add.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_add.nii.gz
+
+  - name: C3D multiply images
+    description: Test -multiply operation (voxelwise multiplication)
+    command: c3d ${t1w} ${t1w} -multiply -o test_output/c3d_t1w_multiply.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_multiply.nii.gz
+
+  - name: C3D divide images
+    description: Test -divide operation (voxelwise division)
+    command: c3d ${t1w} ${t1w} -shift 1 -divide -o test_output/c3d_t1w_divide.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_divide.nii.gz
+
+  - name: C3D square root
+    description: Test -sqrt operation
+    command: c3d ${t1w} -sqrt -o test_output/c3d_t1w_sqrt.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_sqrt.nii.gz
+
+  - name: C3D exponential
+    description: Test -exp operation (natural exponent)
+    command: c3d ${t1w} -scale 0.001 -exp -o test_output/c3d_t1w_exp.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_exp.nii.gz
+
+  - name: C3D natural logarithm
+    description: Test -log operation
+    command: c3d ${t1w} -shift 1 -log -o test_output/c3d_t1w_log.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_log.nii.gz
+
+  - name: C3D reciprocal
+    description: Test -reciprocal operation (1/x)
+    command: c3d ${t1w} -shift 1 -reciprocal -o test_output/c3d_t1w_reciprocal.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_reciprocal.nii.gz
+
+  - name: C3D sine
+    description: Test -sin operation
+    command: c3d ${t1w} -sin -o test_output/c3d_t1w_sin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_sin.nii.gz
+
+  - name: C3D cosine
+    description: Test -cos operation
+    command: c3d ${t1w} -cos -o test_output/c3d_t1w_cos.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_cos.nii.gz
+
+  - name: C3D ceiling
+    description: Test -ceil operation (round up)
+    command: c3d ${t1w} -scale 0.01 -ceil -o test_output/c3d_t1w_ceil.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_ceil.nii.gz
+
+  - name: C3D floor
+    description: Test -floor operation (round down)
+    command: c3d ${t1w} -scale 0.01 -floor -o test_output/c3d_t1w_floor.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_floor.nii.gz
+
+  - name: C3D voxel-wise max
+    description: Test -max operation (maximum of two images)
+    command: c3d ${t1w} ${t1w} -max -o test_output/c3d_max.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_max.nii.gz
+
+  - name: C3D voxel-wise min
+    description: Test -min operation (minimum of two images)
+    command: c3d ${t1w} ${t1w} -min -o test_output/c3d_min.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_min.nii.gz
+
+  - name: C3D clip intensities
+    description: Test -clip operation (clip to range)
+    command: c3d ${t1w} -clip 100 500 -o test_output/c3d_t1w_clip.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_clip.nii.gz
+
+  - name: C3D voxel sum
+    description: Test -voxel-sum operation (print sum of intensities)
+    command: c3d ${t1w} -voxel-sum
+    expected_output_contains: "Voxel"
+
+  # ==========================================================================
+  # C3D THRESHOLDING AND BINARIZATION
+  # ==========================================================================
+  - name: C3D threshold
+    description: Test -thresh operation (binary thresholding)
+    command: c3d ${t1w} -thresh 100 500 1 0 -o test_output/c3d_t1w_thresh.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_thresh.nii.gz
+
+  - name: C3D Otsu threshold
+    description: Test -otsu operation for automatic thresholding
+    command: c3d ${t1w} -otsu 3 -o test_output/c3d_t1w_otsu.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_otsu.nii.gz
+
+  - name: C3D binarize
+    description: Test -binarize operation (convert to binary)
+    command: c3d ${t1w} -thresh 100 inf 1 0 -binarize -o test_output/c3d_t1w_binary.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_binary.nii.gz
+
+  # ==========================================================================
+  # C3D IMAGE PROCESSING
+  # ==========================================================================
+  - name: C3D Gaussian smoothing
+    description: Test -smooth operation (Gaussian smoothing)
+    command: c3d ${t1w} -smooth 2mm -o test_output/c3d_t1w_smooth.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_smooth.nii.gz
+
+  - name: C3D fast smoothing
+    description: Test -smooth-fast operation (approximate Gaussian smoothing)
+    command: c3d ${t1w} -smooth-fast 2mm -o test_output/c3d_t1w_smooth_fast.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_smooth_fast.nii.gz
+
+  - name: C3D mean filter
+    description: Test -mean-filter operation
+    command: c3d ${t1w} -mf 3x3x3 -o test_output/c3d_t1w_meanfilt.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_meanfilt.nii.gz
+
+  - name: C3D median filter
+    description: Test -median operation
+    command: c3d ${t1w} -median 3x3x3 -o test_output/c3d_t1w_median.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_median.nii.gz
+
+  - name: C3D Laplacian filter
+    description: Test -laplacian operation
+    command: c3d ${t1w} -laplacian -o test_output/c3d_t1w_laplacian.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_laplacian.nii.gz
+
+  - name: C3D gradient
+    description: Test -gradient operation (image gradient)
+    command: c3d ${t1w} -gradient -oo test_output/c3d_t1w_grad_%02d.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_grad_00.nii.gz
+
+  - name: C3D Canny edge detection
+    description: Test -canny operation (edge detection)
+    command: c3d ${t1w} -canny 1.0mm 50 100 -o test_output/c3d_t1w_canny.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_canny.nii.gz
+
+  - name: C3D sharpen
+    description: Test -sharpen operation (edge enhancement)
+    command: c3d ${t1w} -sharpen -o test_output/c3d_t1w_sharpen.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_sharpen.nii.gz
+
+  - name: C3D anisotropic diffusion
+    description: Test -anisotropic-diffusion operation (noise reduction preserving edges)
+    command: c3d ${t1w} -ad 0.1 5 -o test_output/c3d_t1w_aniso_diff.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_aniso_diff.nii.gz
+
+  # ==========================================================================
+  # C3D MORPHOLOGICAL OPERATIONS
+  # ==========================================================================
+  - name: C3D dilation
+    description: Test -dilate operation on binary mask
+    command: c3d ${t1w} -thresh 100 inf 1 0 -dilate 1 2x2x2 -o test_output/c3d_mask_dilate.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_mask_dilate.nii.gz
+
+  - name: C3D erosion
+    description: Test -erode operation on binary mask
+    command: c3d ${t1w} -thresh 100 inf 1 0 -erode 1 2x2x2 -o test_output/c3d_mask_erode.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_mask_erode.nii.gz
+
+  - name: C3D hole filling
+    description: Test -holefill operation on binary mask
+    command: c3d ${t1w} -thresh 100 inf 1 0 -holefill 1 0 -o test_output/c3d_mask_holefill.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_mask_holefill.nii.gz
+
+  - name: C3D connected components
+    description: Test -connected-components operation
+    command: c3d ${t1w} -thresh 100 inf 1 0 -comp -o test_output/c3d_t1w_components.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_components.nii.gz
+
+  # ==========================================================================
+  # C3D DISTANCE TRANSFORMS
+  # ==========================================================================
+  - name: C3D signed distance transform
+    description: Test -signed-distance-transform operation
+    command: c3d ${t1w} -thresh 100 inf 1 0 -sdt -o test_output/c3d_mask_sdt.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_mask_sdt.nii.gz
+
+  # ==========================================================================
+  # C3D RESAMPLING AND GEOMETRY
+  # ==========================================================================
+  - name: C3D resample dimensions
+    description: Test -resample operation (resample to new dimensions)
+    command: c3d ${t1w} -resample 50% -o test_output/c3d_t1w_resample50.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_resample50.nii.gz
+
+  - name: C3D resample isotropic
+    description: Test -resample-iso operation (resample to isotropic)
+    command: c3d ${t1w} -resample-iso min -o test_output/c3d_t1w_resample_iso.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_resample_iso.nii.gz
+
+  - name: C3D resample mm
+    description: Test -resample-mm operation (resample to specific resolution)
+    command: c3d ${t1w} -resample-mm 2x2x2mm -o test_output/c3d_t1w_resample_2mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_resample_2mm.nii.gz
+
+  - name: C3D flip X
+    description: Test -flip operation around X axis
+    command: c3d ${t1w} -flip x -o test_output/c3d_t1w_flip_x.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_flip_x.nii.gz
+
+  - name: C3D flip Y
+    description: Test -flip operation around Y axis
+    command: c3d ${t1w} -flip y -o test_output/c3d_t1w_flip_y.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_flip_y.nii.gz
+
+  - name: C3D flip Z
+    description: Test -flip operation around Z axis
+    command: c3d ${t1w} -flip z -o test_output/c3d_t1w_flip_z.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_flip_z.nii.gz
+
+  - name: C3D reorient
+    description: Test -orient operation (change orientation)
+    command: c3d ${t1w} -orient RAS -o test_output/c3d_t1w_orient_ras.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_orient_ras.nii.gz
+
+  - name: C3D set origin
+    description: Test -origin operation
+    command: c3d ${t1w} -origin 0x0x0mm -o test_output/c3d_t1w_origin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_origin.nii.gz
+
+  - name: C3D set spacing
+    description: Test -spacing operation
+    command: c3d ${t1w} -spacing 1x1x1mm -o test_output/c3d_t1w_spacing.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_spacing.nii.gz
+
+  # ==========================================================================
+  # C3D REGION EXTRACTION AND PADDING
+  # ==========================================================================
+  - name: C3D extract region
+    description: Test -region operation (extract subregion)
+    command: c3d ${t1w} -region 40x40x40vox 80x80x80vox -o test_output/c3d_t1w_region.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_region.nii.gz
+
+  - name: C3D pad image
+    description: Test -pad operation (pad with constant)
+    command: c3d ${t1w} -pad 10x10x10vox 10x10x10vox 0 -o test_output/c3d_t1w_pad.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_pad.nii.gz
+
+  - name: C3D trim background
+    description: Test -trim operation (remove background)
+    command: c3d ${t1w} -trim 10vox -o test_output/c3d_t1w_trim.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_trim.nii.gz
+
+  - name: C3D extract slice
+    description: Test -slice operation (extract 2D slice)
+    command: c3d ${t1w} -slice z 50% -o test_output/c3d_t1w_slice.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_slice.nii.gz
+
+  # ==========================================================================
+  # C3D STATISTICAL OPERATIONS
+  # ==========================================================================
+  - name: C3D mean of stack
+    description: Test -mean operation (mean of images on stack)
+    command: c3d ${t1w} ${t1w} -mean -o test_output/c3d_t1w_mean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_mean.nii.gz
+
+  - name: C3D label statistics
+    description: Test -label-statistics operation
+    command: c3d ${t1w} test_output/c3d_t1w_otsu.nii.gz -lstat
+    depends_on: C3D Otsu threshold
+    expected_output_contains: "LabelID"
+
+  - name: C3D centroid
+    description: Test -centroid operation (report centroid of foreground)
+    command: c3d ${t1w} -thresh 100 inf 1 0 -centroid
+    expected_output_contains: "CENTROID"
+
+  # ==========================================================================
+  # C3D INTENSITY TRANSFORMATIONS
+  # ==========================================================================
+  - name: C3D stretch intensities
+    description: Test -stretch operation (linear intensity stretch)
+    command: c3d ${t1w} -stretch 0% 99% 0 255 -o test_output/c3d_t1w_stretch.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_stretch.nii.gz
+
+  - name: C3D replace intensities
+    description: Test -replace operation (replace specific values)
+    command: c3d test_output/c3d_t1w_otsu.nii.gz -replace 1 10 2 20 3 30 -o test_output/c3d_replace.nii.gz
+    depends_on: C3D Otsu threshold
+    validate:
+      - output_exists: ${output_dir}/c3d_replace.nii.gz
+
+  # ==========================================================================
+  # C3D STACK MANIPULATION
+  # ==========================================================================
+  - name: C3D duplicate
+    description: Test -dup operation (duplicate image on stack)
+    command: c3d ${t1w} -dup -add -o test_output/c3d_t1w_dup_add.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_dup_add.nii.gz
+
+  - name: C3D weighted sum
+    description: Test -weighted-sum operation
+    command: c3d ${t1w} ${t1w} -wsum 0.5 0.5 -o test_output/c3d_t1w_wsum.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_wsum.nii.gz
+
+  # ==========================================================================
+  # C3D IMAGE CREATION
+  # ==========================================================================
+  - name: C3D create blank image
+    description: Test -create operation (generate blank image)
+    command: c3d -create 64x64x64 1x1x1mm -o test_output/c3d_blank.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_blank.nii.gz
+
+  - name: C3D coordinate maps
+    description: Test -coordinate-map-voxel operation
+    command: c3d ${t1w} -cmv -oo test_output/c3d_coord_%02d.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_coord_00.nii.gz
+
+  # ==========================================================================
+  # C3D INTERPOLATION MODES
+  # ==========================================================================
+  - name: C3D nearest neighbor interpolation
+    description: Test -interpolation NearestNeighbor with resample
+    command: c3d ${t1w} -interpolation NearestNeighbor -resample 50% -o test_output/c3d_t1w_nn_resample.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_nn_resample.nii.gz
+
+  - name: C3D linear interpolation
+    description: Test -interpolation Linear with resample
+    command: c3d ${t1w} -interpolation Linear -resample 50% -o test_output/c3d_t1w_linear_resample.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_linear_resample.nii.gz
+
+  - name: C3D cubic interpolation
+    description: Test -interpolation Cubic with resample
+    command: c3d ${t1w} -interpolation Cubic -resample 50% -o test_output/c3d_t1w_cubic_resample.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_cubic_resample.nii.gz
+
+  # ==========================================================================
+  # C3D OUTPUT DATA TYPES
+  # ==========================================================================
+  - name: C3D output as uchar
+    description: Test -type uchar output
+    command: c3d ${t1w} -stretch 0% 99% 0 255 -type uchar -o test_output/c3d_t1w_uchar.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_uchar.nii.gz
+
+  - name: C3D output as short
+    description: Test -type short output
+    command: c3d ${t1w} -type short -o test_output/c3d_t1w_short.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_short.nii.gz
+
+  - name: C3D output as float
+    description: Test -type float output
+    command: c3d ${t1w} -type float -o test_output/c3d_t1w_float.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_float.nii.gz
+
+  # ==========================================================================
+  # GREEDY REGISTRATION TOOL
+  # ==========================================================================
+  - name: Greedy help
+    description: Verify greedy binary runs and shows help
+    command: greedy --help 2>&1 | head -10
+    expected_output_contains: "diffeomorphic registration"
+
+  - name: Greedy moments alignment
+    description: Test greedy -moments for rigid alignment based on moments of inertia
+    command: greedy -d 3 -i ${t1w} ${t2} -moments 1 -o test_output/greedy_moments.mat
+    validate:
+      - output_exists: ${output_dir}/greedy_moments.mat
+
+  - name: Greedy affine registration
+    description: Test greedy -a for affine registration
+    command: greedy -d 3 -a -i ${t1w} ${t2} -ia-image-centers -n 50x20x0 -m NCC 4 -o test_output/greedy_affine.mat
+    validate:
+      - output_exists: ${output_dir}/greedy_affine.mat
+
+  - name: Greedy rigid registration
+    description: Test greedy with -dof 6 for rigid registration
+    command: greedy -d 3 -a -dof 6 -i ${t1w} ${t2} -ia-image-centers -n 50x20x0 -m NCC 4 -o test_output/greedy_rigid.mat
+    validate:
+      - output_exists: ${output_dir}/greedy_rigid.mat
+
+  - name: Greedy similarity registration
+    description: Test greedy with -dof 7 for similarity registration
+    command: greedy -d 3 -a -dof 7 -i ${t1w} ${t2} -ia-image-centers -n 50x20x0 -m NCC 4 -o test_output/greedy_similarity.mat
+    validate:
+      - output_exists: ${output_dir}/greedy_similarity.mat
+
+  - name: Greedy reslice with affine
+    description: Test greedy -r for reslicing with affine transform
+    command: greedy -d 3 -rf ${t1w} -rm ${t2} test_output/greedy_t2_resliced.nii.gz -r test_output/greedy_affine.mat
+    depends_on: Greedy affine registration
+    validate:
+      - output_exists: ${output_dir}/greedy_t2_resliced.nii.gz
+
+  - name: Greedy reslice nearest neighbor
+    description: Test greedy -r with nearest neighbor interpolation
+    command: greedy -d 3 -rf ${t1w} -ri NN -rm ${t2} test_output/greedy_t2_resliced_nn.nii.gz -r test_output/greedy_affine.mat
+    depends_on: Greedy affine registration
+    validate:
+      - output_exists: ${output_dir}/greedy_t2_resliced_nn.nii.gz
+
+  - name: Greedy deformable registration
+    description: Test greedy for deformable registration with stationary velocity
+    command: greedy -d 3 -i ${t1w} ${t2} -it test_output/greedy_affine.mat -o test_output/greedy_warp.nii.gz -oinv test_output/greedy_warp_inv.nii.gz -n 50x20x0 -m NCC 4 -sv
+    depends_on: Greedy affine registration
+    validate:
+      - output_exists: ${output_dir}/greedy_warp.nii.gz
+      - output_exists: ${output_dir}/greedy_warp_inv.nii.gz
+
+  - name: Greedy Jacobian determinant
+    description: Test greedy -jac for computing Jacobian determinant
+    command: greedy -d 3 -jac test_output/greedy_warp.nii.gz test_output/greedy_jacobian.nii.gz
+    depends_on: Greedy deformable registration
+    validate:
+      - output_exists: ${output_dir}/greedy_jacobian.nii.gz
+
+  - name: Greedy metric computation
+    description: Test greedy -metric for computing registration metric
+    timeout: 300
+    command: greedy -d 3 -i ${t1w} ${t2} -it test_output/greedy_affine.mat -m NCC 4 -o test_output/greedy_metric.nii.gz
+    depends_on: Greedy affine registration
+    validate:
+      - output_exists: ${output_dir}/greedy_metric.nii.gz
+
+  # ==========================================================================
+  # C3D_AFFINE_TOOL
+  # ==========================================================================
+  - name: C3D affine tool help
+    description: Verify c3d_affine_tool binary runs
+    command: c3d_affine_tool 2>&1 | head -5
+    expected_output_contains: "Affine Transform Tool"
+
+  - name: C3D affine tool info
+    description: Test c3d_affine_tool -info to display matrix
+    command: c3d_affine_tool test_output/greedy_affine.mat -info
+    depends_on: Greedy affine registration
+    expected_output_contains: "Matrix"
+
+  - name: C3D affine tool determinant
+    description: Test c3d_affine_tool -det to compute determinant
+    command: c3d_affine_tool test_output/greedy_affine.mat -det
+    depends_on: Greedy affine registration
+    expected_output_contains: ""
+
+  - name: C3D affine tool invert
+    description: Test c3d_affine_tool -inv to invert matrix
+    command: c3d_affine_tool test_output/greedy_affine.mat -inv -o test_output/greedy_affine_inv.mat
+    depends_on: Greedy affine registration
+    validate:
+      - output_exists: ${output_dir}/greedy_affine_inv.mat
+
+  - name: C3D affine tool multiply
+    description: Test c3d_affine_tool -mult to multiply matrices
+    command: c3d_affine_tool test_output/greedy_affine.mat test_output/greedy_affine_inv.mat -mult -o test_output/greedy_identity.mat
+    depends_on: C3D affine tool invert
+    validate:
+      - output_exists: ${output_dir}/greedy_identity.mat
+
+  - name: C3D affine tool sqrt
+    description: Test c3d_affine_tool -sqrt to compute matrix square root
+    command: c3d_affine_tool test_output/greedy_affine.mat -sqrt -o test_output/greedy_affine_sqrt.mat
+    depends_on: Greedy affine registration
+    validate:
+      - output_exists: ${output_dir}/greedy_affine_sqrt.mat
+
+  - name: C3D affine tool rotation
+    description: Test c3d_affine_tool -rot to generate rotation matrix
+    command: c3d_affine_tool -rot 10 0 0 1 -o test_output/rotation_z10.mat
+    validate:
+      - output_exists: ${output_dir}/rotation_z10.mat
+
+  - name: C3D affine tool translation
+    description: Test c3d_affine_tool -trans to generate translation matrix
+    command: c3d_affine_tool -tran 10 20 30 -o test_output/translation.mat
+    validate:
+      - output_exists: ${output_dir}/translation.mat
+
+  - name: C3D affine tool scaling
+    description: Test c3d_affine_tool -scale to generate scaling matrix
+    command: c3d_affine_tool -scale 1.1 1.1 1.1 -o test_output/scaling.mat
+    validate:
+      - output_exists: ${output_dir}/scaling.mat
+
+  - name: C3D affine tool read sform
+    description: Test c3d_affine_tool -sform to read sform from NIfTI
+    command: c3d_affine_tool -sform ${t1w} -info
+    expected_output_contains: "Matrix"
+
+  - name: C3D affine tool ITK export
+    description: Test c3d_affine_tool -oitk to export ITK format transform
+    command: c3d_affine_tool test_output/greedy_affine.mat -oitk test_output/greedy_affine.txt
+    depends_on: Greedy affine registration
+    validate:
+      - output_exists: ${output_dir}/greedy_affine.txt
+
+  # ==========================================================================
+  # C3D COMPLEX PIPELINES
+  # ==========================================================================
+  - name: C3D brain extraction pipeline
+    description: Chain operations for simple skull stripping
+    command: c3d ${t1w} -otsu 3 -holefill 1 0 -dilate 1 3x3x3 -erode 1 3x3x3 -as MASK ${t1w} -times -o test_output/c3d_brain.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_brain.nii.gz
+
+  - name: C3D intensity normalization pipeline
+    description: Chain operations for intensity normalization
+    command: c3d ${t1w} -stretch 0% 99.5% 0 1000 -clip 0 1000 -o test_output/c3d_t1w_normalized.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_normalized.nii.gz
+
+  - name: C3D bias correction
+    description: Test -biascorr for automatic bias field correction
+    command: c3d ${t1w} -biascorr -o test_output/c3d_t1w_biascorr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_biascorr.nii.gz
+
+  - name: C3D reslice with identity
+    description: Test -reslice-identity for resampling to reference space
+    command: c3d ${t1w} ${t2} -reslice-identity -o test_output/c3d_t2_reslice_identity.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t2_reslice_identity.nii.gz
+
+  # ==========================================================================
+  # C3D TILE AND MERGE OPERATIONS
+  # ==========================================================================
+  - name: C3D tile images
+    description: Test -tile operation (combine images into grid)
+    command: c3d ${t1w} -dup -tile 1x1x2 -o test_output/c3d_tiled.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_tiled.nii.gz
+
+  # ==========================================================================
+  # C3D METRICS AND OVERLAP
+  # ==========================================================================
+  - name: C3D compute overlap
+    description: Test -overlap operation (compute Dice/Jaccard)
+    command: c3d test_output/c3d_t1w_binary.nii.gz test_output/c3d_t1w_binary.nii.gz -overlap 1
+    depends_on: C3D binarize
+    expected_output_contains: "OVL"
+
+  - name: C3D mean squared error
+    description: Test -mean-square operation
+    command: c3d ${t1w} ${t1w} -msq
+    expected_output_contains: "MSQ"
+
+  - name: C3D normalized cross correlation
+    description: Test -ncc operation
+    command: c3d ${t1w} ${t1w} -ncc 5x5x5 -o test_output/c3d_ncc.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_ncc.nii.gz
+
+  # ==========================================================================
+  # C3D NOISE OPERATIONS
+  # ==========================================================================
+  - name: C3D add Gaussian noise
+    description: Test -noise-gaussian operation
+    command: c3d ${t1w} -noise-gaussian 0x10 -o test_output/c3d_t1w_noisy.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_noisy.nii.gz
+
+  - name: C3D add salt and pepper noise
+    description: Test -noise-salt-pepper operation
+    command: c3d ${t1w} -noise-salt-pepper 0.01 -o test_output/c3d_t1w_salt_pepper.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_salt_pepper.nii.gz
+
+  # ==========================================================================
+  # C3D DENOISING
+  # ==========================================================================
+  - name: C3D NLM denoising
+    description: Test -nlm-denoise operation (Non-local Means)
+    command: c3d ${t1w} -nlm-denoise -o test_output/c3d_t1w_nlm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_t1w_nlm.nii.gz
+
+  # ==========================================================================
+  # C3D HESSIAN OPERATIONS
+  # ==========================================================================
+  - name: C3D Hessian eigenvalues
+    description: Test -hessian-eigenvalues for vessel/tube detection
+    command: c3d ${t1w} -hesseig 1mm -oo test_output/c3d_hess_%02d.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_hess_00.nii.gz
+
+  - name: C3D Hessian objectness
+    description: Test -hessian-objectness for structure detection
+    command: c3d ${t1w} -hessobj 1mm 1 -o test_output/c3d_hessobj.nii.gz
+    validate:
+      - output_exists: ${output_dir}/c3d_hessobj.nii.gz
+
+  # ==========================================================================
+  # GREEDY ADVANCED FEATURES
+  # ==========================================================================
+  - name: Greedy with mask
+    description: Test greedy with fixed image mask
+    command: |
+      c3d ${t1w} -thresh 50 inf 1 0 -o test_output/t1w_mask.nii.gz && \
+      greedy -d 3 -a -i ${t1w} ${t2} -gm test_output/t1w_mask.nii.gz -ia-image-centers -n 50x20x0 -m NCC 4 -o test_output/greedy_affine_masked.mat
+    validate:
+      - output_exists: ${output_dir}/greedy_affine_masked.mat
+
+  - name: Greedy SSD metric
+    description: Test greedy with SSD metric
+    command: greedy -d 3 -a -i ${t1w} ${t2} -ia-image-centers -n 50x20x0 -m SSD -o test_output/greedy_affine_ssd.mat
+    validate:
+      - output_exists: ${output_dir}/greedy_affine_ssd.mat
+
+  - name: Greedy MI metric
+    description: Test greedy with mutual information metric
+    command: greedy -d 3 -a -i ${t1w} ${t2} -ia-image-centers -n 50x20x0 -m MI -o test_output/greedy_affine_mi.mat
+    validate:
+      - output_exists: ${output_dir}/greedy_affine_mi.mat
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

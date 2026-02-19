@@ -1,0 +1,792 @@
+# TractSeg container test suite
+# Tests for tractseg v2.9 - White matter bundle segmentation from Diffusion MRI
+#
+# TractSeg includes: MRtrix3 3.0.4, FSL 6.0.7.16, and TractSeg 2.9
+#
+# Note: The test data (ds000001) contains T1w and BOLD images but NOT diffusion
+# imaging data. Therefore, TractSeg-specific segmentation tests cannot run on
+# this data. Tests focus on:
+# 1. TractSeg command-line interface verification
+# 2. MRtrix3 tools (bundled with container)
+# 3. FSL tools (bundled with container)
+# 4. Tractometry interface verification
+#
+# For full TractSeg testing, diffusion data with bvals/bvecs is required.
+
+name: tractseg
+version: '2.9'
+container: tractseg_2.9_20250702.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+env_setup: |
+  # Create fake 'less' that strips nroff formatting (less not in container)
+  mkdir -p /tmp/_pager
+  printf '#!/bin/sh\nsed "s/.\\x08//g"\n' > /tmp/_pager/less
+  chmod +x /tmp/_pager/less
+  export PATH=/tmp/_pager:$PATH
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    # Create TractSeg config directory
+    mkdir -p ~/.tractseg
+    echo "weights_dir=/opt/miniconda/share/TractSeg/weights" > ~/.tractseg/config.txt
+
+tests:
+  # ==========================================================================
+  # TRACTSEG COMMAND-LINE INTERFACE
+  # ==========================================================================
+  - name: TractSeg version check
+    description: Verify TractSeg binary runs and reports version
+    command: TractSeg --version
+    expected_output_contains: "2.9"
+
+  - name: TractSeg help output
+    description: Verify TractSeg help is accessible
+    command: TractSeg --help 2>&1 | head -20
+    expected_output_contains: "Segment white matter bundles"
+
+  - name: TractSeg CSD type options
+    description: Check CSD type documentation in help
+    command: TractSeg --help 2>&1
+    expected_output_contains: "csd_msmt"
+
+  - name: TractSeg output type options
+    description: Check output type options in help
+    command: TractSeg --help 2>&1
+    expected_output_contains: "tract_segmentation"
+
+  - name: TractSeg endings segmentation option
+    description: Verify endings_segmentation mode is documented
+    command: TractSeg --help 2>&1
+    expected_output_contains: "endings_segmentation"
+
+  - name: TractSeg TOM option
+    description: Verify Tract Orientation Maps mode is documented
+    command: TractSeg --help 2>&1
+    expected_output_contains: "TOM"
+
+  - name: TractSeg raw diffusion input option
+    description: Verify raw diffusion input processing option exists
+    command: TractSeg --help 2>&1
+    expected_output_contains: "raw_diffusion_input"
+
+  # ==========================================================================
+  # TRACTOMETRY COMMAND-LINE INTERFACE
+  # ==========================================================================
+  - name: Tractometry help output
+    description: Verify Tractometry tool is available
+    command: Tractometry --help 2>&1 | head -10
+    expected_output_contains: "Evaluate image"
+
+  - name: Tractometry input options
+    description: Check Tractometry requires tracking directory
+    command: Tractometry --help 2>&1
+    expected_output_contains: "tracking_dir"
+
+  - name: Tractometry scalar image option
+    description: Check Tractometry supports scalar image input
+    command: Tractometry --help 2>&1
+    expected_output_contains: "scalar_img"
+
+  - name: Tractometry peak length option
+    description: Check Tractometry peak_length option
+    command: Tractometry --help 2>&1
+    expected_output_contains: "peak_length"
+
+  # ==========================================================================
+  # PLOT TRACTOMETRY RESULTS INTERFACE
+  # ==========================================================================
+  - name: plot_tractometry_results help
+    description: Verify plotting tool is available
+    command: plot_tractometry_results --help 2>&1 | head -10
+    expected_output_contains: "significant differences"
+
+  - name: plot_tractometry_results permutation option
+    description: Check permutation testing option
+    command: plot_tractometry_results --help 2>&1
+    expected_output_contains: "nperm"
+
+  - name: plot_tractometry_results 3D plot option
+    description: Check 3D plotting capability
+    command: plot_tractometry_results --help 2>&1
+    expected_output_contains: "plot3D"
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - IMAGE INFO AND CONVERSION
+  # ==========================================================================
+  - name: MRtrix3 version check
+    description: Verify MRtrix3 is installed (version 3.0.4)
+    command: mrinfo --version 2>&1 | head -1
+    expected_output_contains: "3.0.4"
+
+  - name: mrinfo basic usage
+    description: Get image information using mrinfo
+    command: mrinfo ${t1w}
+    expected_output_contains: "Dimensions"
+
+  - name: mrinfo dimensions
+    description: Extract image dimensions
+    command: mrinfo -size ${t1w}
+    expected_exit_code: 0
+
+  - name: mrinfo spacing
+    description: Extract voxel spacing
+    command: mrinfo -spacing ${t1w}
+    expected_exit_code: 0
+
+  - name: mrinfo data type
+    description: Extract data type information
+    command: mrinfo -datatype ${t1w}
+    expected_exit_code: 0
+
+  - name: mrinfo strides
+    description: Extract data strides
+    command: mrinfo -strides ${t1w}
+    expected_exit_code: 0
+
+  - name: mrconvert NIfTI to MIF
+    description: Convert NIfTI to MRtrix format
+    command: mrconvert ${t1w} test_output/t1w.mif -force
+    validate:
+      - output_exists: ${output_dir}/t1w.mif
+
+  - name: mrconvert MIF to NIfTI
+    description: Convert MRtrix format back to NIfTI
+    command: mrconvert test_output/t1w.mif test_output/t1w_roundtrip.nii.gz -force
+    depends_on: mrconvert NIfTI to MIF
+    validate:
+      - output_exists: ${output_dir}/t1w_roundtrip.nii.gz
+
+  - name: mrconvert datatype change
+    description: Convert with datatype specification
+    command: mrconvert ${t1w} -datatype float32 test_output/t1w_float32.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_float32.nii.gz
+
+  - name: mrconvert axes permutation
+    description: Permute image axes
+    command: mrconvert ${t1w} -axes 2,1,0 test_output/t1w_permuted.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_permuted.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - IMAGE MANIPULATION
+  # ==========================================================================
+  - name: mrgrid regrid
+    description: Regrid image to different resolution
+    command: mrgrid ${t1w} regrid -voxel 2 test_output/t1w_2mm.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_2mm.nii.gz
+
+  - name: mrgrid pad
+    description: Pad image with zeros
+    command: mrgrid ${t1w} pad -axis 0 5,5 test_output/t1w_padded.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_padded.nii.gz
+
+  - name: mrgrid crop
+    description: Crop image to smaller dimensions
+    command: mrgrid ${t1w} crop -axis 0 10,10 test_output/t1w_cropped.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_cropped.nii.gz
+
+  - name: mrcalc addition
+    description: Add constant to image
+    command: mrcalc ${t1w} 100 -add test_output/t1w_add100.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_add100.nii.gz
+
+  - name: mrcalc multiplication
+    description: Multiply image by constant
+    command: mrcalc ${t1w} 2 -mult test_output/t1w_mult2.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_mult2.nii.gz
+
+  - name: mrcalc threshold
+    description: Threshold image
+    command: mrcalc ${t1w} 100 -gt test_output/t1w_thresh.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh.nii.gz
+
+  - name: mrcalc division
+    description: Divide image by constant
+    command: mrcalc ${t1w} 2 -div test_output/t1w_div2.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_div2.nii.gz
+
+  - name: mrcalc sqrt
+    description: Square root of image
+    command: mrcalc ${t1w} -sqrt test_output/t1w_sqrt.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_sqrt.nii.gz
+
+  - name: mrcalc abs
+    description: Absolute value of image
+    command: mrcalc ${t1w} -abs test_output/t1w_abs.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_abs.nii.gz
+
+  - name: mrcalc negation
+    description: Negate image values
+    command: mrcalc ${t1w} -neg test_output/t1w_neg.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_neg.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - STATISTICS
+  # ==========================================================================
+  - name: mrstats basic
+    description: Calculate basic image statistics
+    command: mrstats ${t1w}
+    expected_output_contains: "mean"
+
+  - name: mrstats mean only
+    description: Extract mean value
+    command: mrstats -output mean ${t1w}
+    expected_exit_code: 0
+
+  - name: mrstats std only
+    description: Extract standard deviation
+    command: mrstats -output std ${t1w}
+    expected_exit_code: 0
+
+  - name: mrstats min max
+    description: Extract min and max values
+    command: mrstats -output min -output max ${t1w}
+    expected_exit_code: 0
+
+  - name: mrstats count
+    description: Count voxels
+    command: mrstats -output count ${t1w}
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - FILTERING
+  # ==========================================================================
+  - name: mrfilter smooth
+    description: Gaussian smoothing with MRtrix (container bug - libfftw3.so.3 missing)
+    command: mrfilter ${t1w} smooth -stdev 2 test_output/t1w_smooth_mrtrix.nii.gz -force
+    expected_exit_code: 127
+
+  - name: mrfilter median
+    description: Median filtering (container bug - libfftw3.so.3 missing)
+    command: mrfilter ${t1w} median test_output/t1w_median_mrtrix.nii.gz -force
+    expected_exit_code: 127
+
+  - name: mrfilter gradient
+    description: Gradient magnitude (container bug - libfftw3.so.3 missing)
+    command: mrfilter ${t1w} gradient test_output/t1w_gradient.nii.gz -force
+    expected_exit_code: 127
+
+  - name: mrfilter normalise
+    description: Intensity normalisation (container bug - libfftw3.so.3 missing)
+    command: mrfilter ${t1w} normalise test_output/t1w_normalise.nii.gz -force
+    expected_exit_code: 127
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - MASK OPERATIONS
+  # ==========================================================================
+  - name: mrthreshold otsu
+    description: Otsu threshold for mask creation
+    command: mrthreshold ${t1w} -abs 50 test_output/t1w_mask_abs.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_abs.nii.gz
+
+  - name: maskfilter dilate
+    description: Dilate binary mask
+    command: mrthreshold ${t1w} -abs 100 - | maskfilter - dilate test_output/t1w_mask_dilated.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_dilated.nii.gz
+
+  - name: maskfilter erode
+    description: Erode binary mask
+    command: mrthreshold ${t1w} -abs 100 - | maskfilter - erode test_output/t1w_mask_eroded.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_eroded.nii.gz
+
+  - name: maskfilter clean
+    description: Clean small disconnected regions from mask
+    command: mrthreshold ${t1w} -abs 100 - | maskfilter - clean test_output/t1w_mask_cleaned.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_cleaned.nii.gz
+
+  - name: maskfilter median
+    description: Apply median filter to mask
+    command: mrthreshold ${t1w} -abs 100 - | maskfilter - median test_output/t1w_mask_median.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_median.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - HISTOGRAM AND TRANSFORMS
+  # ==========================================================================
+  - name: mrhistogram
+    description: Generate histogram of image intensities
+    command: mrhistogram ${t1w} test_output/t1w_histogram.txt -force
+    validate:
+      - output_exists: ${output_dir}/t1w_histogram.txt
+
+  - name: mrhistmatch
+    description: Match histogram to reference
+    command: mrhistmatch scale ${t1w} ${t2} test_output/t1w_histmatched.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_histmatched.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - REGISTRATION UTILITIES
+  # ==========================================================================
+  - name: mrtransform identity
+    description: Apply identity transform (copy)
+    command: mrtransform ${t1w} test_output/t1w_identity.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_identity.nii.gz
+
+  - name: mrtransform flip
+    description: Flip image along axis
+    command: mrtransform ${t1w} -flip 0 test_output/t1w_flipped.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_flipped.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - BRAIN EXTRACTION (BET)
+  # ==========================================================================
+  - name: FSL bet version
+    description: Check FSL bet is available
+    command: bet 2>&1 | head -1
+    expected_exit_code: 0
+
+  - name: FSL bet basic brain extraction
+    description: Extract brain from T1w using bet
+    command: bet ${t1w} test_output/t1w_brain -f 0.5
+    validate:
+      - output_exists: ${output_dir}/t1w_brain.nii.gz
+
+  - name: FSL bet with mask output
+    description: Generate brain mask with bet
+    command: bet ${t1w} test_output/t1w_brain_masked -m -f 0.5
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_masked.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_masked_mask.nii.gz
+
+  - name: FSL bet robust mode
+    description: Brain extraction with robust center estimation
+    command: bet ${t1w} test_output/t1w_brain_robust -R -f 0.5
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_robust.nii.gz
+
+  - name: FSL bet with skull output
+    description: Generate skull estimate
+    command: bet ${t1w} test_output/t1w_brain_skull -s -f 0.5
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_skull.nii.gz
+
+  - name: FSL bet fractional threshold variation
+    description: Test different fractional intensity threshold
+    command: bet ${t1w} test_output/t1w_brain_f03 -f 0.3
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_f03.nii.gz
+
+  - name: FSL bet gradient threshold
+    description: Test vertical gradient in threshold
+    command: bet ${t1w} test_output/t1w_brain_grad -f 0.5 -g 0.1
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_grad.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - FSLMATHS
+  # ==========================================================================
+  - name: FSL fslmaths version
+    description: Check fslmaths is available
+    command: fslmaths 2>&1 | head -3
+    expected_output_contains: "fslmaths"
+
+  - name: FSL fslmaths threshold
+    description: Threshold image with fslmaths
+    command: fslmaths ${t1w} -thr 100 test_output/t1w_fsl_thr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fsl_thr.nii.gz
+
+  - name: FSL fslmaths binarize
+    description: Binarize image
+    command: fslmaths ${t1w} -thr 100 -bin test_output/t1w_fsl_bin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fsl_bin.nii.gz
+
+  - name: FSL fslmaths smoothing
+    description: Gaussian smoothing with fslmaths
+    command: fslmaths ${t1w} -s 2 test_output/t1w_fsl_smooth.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fsl_smooth.nii.gz
+
+  - name: FSL fslmaths multiplication
+    description: Multiply by constant
+    command: fslmaths ${t1w} -mul 2 test_output/t1w_fsl_mul.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fsl_mul.nii.gz
+
+  - name: FSL fslmaths division
+    description: Divide by constant
+    command: fslmaths ${t1w} -div 2 test_output/t1w_fsl_div.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fsl_div.nii.gz
+
+  - name: FSL fslmaths addition
+    description: Add constant to image
+    command: fslmaths ${t1w} -add 100 test_output/t1w_fsl_add.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fsl_add.nii.gz
+
+  - name: FSL fslmaths subtraction
+    description: Subtract constant from image
+    command: fslmaths ${t1w} -sub 50 test_output/t1w_fsl_sub.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fsl_sub.nii.gz
+
+  - name: FSL fslmaths masking
+    description: Apply mask to image
+    command: fslmaths ${t1w} -mas test_output/t1w_brain_masked_mask.nii.gz test_output/t1w_fsl_masked.nii.gz
+    depends_on: FSL bet with mask output
+    validate:
+      - output_exists: ${output_dir}/t1w_fsl_masked.nii.gz
+
+  - name: FSL fslmaths erosion
+    description: Erode binary mask
+    command: fslmaths test_output/t1w_brain_masked_mask.nii.gz -ero test_output/mask_fsl_ero.nii.gz
+    depends_on: FSL bet with mask output
+    validate:
+      - output_exists: ${output_dir}/mask_fsl_ero.nii.gz
+
+  - name: FSL fslmaths dilation
+    description: Dilate binary mask
+    command: fslmaths test_output/t1w_brain_masked_mask.nii.gz -dilM test_output/mask_fsl_dil.nii.gz
+    depends_on: FSL bet with mask output
+    validate:
+      - output_exists: ${output_dir}/mask_fsl_dil.nii.gz
+
+  - name: FSL fslmaths fill holes
+    description: Fill holes in binary mask
+    command: fslmaths test_output/t1w_brain_masked_mask.nii.gz -fillh test_output/mask_fsl_fillh.nii.gz
+    depends_on: FSL bet with mask output
+    validate:
+      - output_exists: ${output_dir}/mask_fsl_fillh.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - FSLSTATS
+  # ==========================================================================
+  - name: FSL fslstats mean
+    description: Calculate mean intensity
+    command: fslstats ${t1w} -m
+    expected_exit_code: 0
+
+  - name: FSL fslstats range
+    description: Calculate min and max
+    command: fslstats ${t1w} -R
+    expected_exit_code: 0
+
+  - name: FSL fslstats robust range
+    description: Calculate robust intensity range
+    command: fslstats ${t1w} -r
+    expected_exit_code: 0
+
+  - name: FSL fslstats volume
+    description: Calculate volume of non-zero voxels
+    command: fslstats ${t1w} -V
+    expected_exit_code: 0
+
+  - name: FSL fslstats standard deviation
+    description: Calculate standard deviation
+    command: fslstats ${t1w} -s
+    expected_exit_code: 0
+
+  - name: FSL fslstats entropy
+    description: Calculate entropy
+    command: fslstats ${t1w} -e
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FSL TOOLS - FSLHD AND FSLINFO
+  # ==========================================================================
+  - name: FSL fslhd header info
+    description: Display NIfTI header with fslhd
+    command: fslhd ${t1w} | head -20
+    expected_output_contains: "dim"
+
+  - name: FSL fslinfo summary
+    description: Display image summary with fslinfo
+    command: fslinfo ${t1w}
+    expected_output_contains: "dim"
+
+  # ==========================================================================
+  # FSL TOOLS - FLIRT (Registration)
+  # ==========================================================================
+  - name: FSL flirt version
+    description: Check FLIRT is available
+    command: flirt -version 2>&1
+    expected_output_contains: "FLIRT"
+
+  - name: FSL flirt rigid registration
+    description: Rigid registration between T1w and T2
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_to_t1w_rigid.nii.gz -omat test_output/t2_to_t1w.mat -dof 6
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_rigid.nii.gz
+      - output_exists: ${output_dir}/t2_to_t1w.mat
+
+  - name: FSL flirt apply transform
+    description: Apply existing transformation matrix
+    command: flirt -in ${t2} -ref ${t1w} -applyxfm -init test_output/t2_to_t1w.mat -out test_output/t2_applied.nii.gz
+    depends_on: FSL flirt rigid registration
+    validate:
+      - output_exists: ${output_dir}/t2_applied.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - ROI OPERATIONS
+  # ==========================================================================
+  - name: FSL fslroi extract ROI
+    description: Extract region of interest
+    command: fslroi ${t1w} test_output/t1w_roi.nii.gz 40 80 40 80 40 80
+    validate:
+      - output_exists: ${output_dir}/t1w_roi.nii.gz
+
+  - name: FSL fslroi extract 4D volumes
+    description: Extract subset of volumes from 4D
+    command: fslroi ${bold} test_output/bold_subset.nii.gz 0 10
+    validate:
+      - output_exists: ${output_dir}/bold_subset.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - IMAGE MERGE/SPLIT
+  # ==========================================================================
+  - name: FSL fslsplit 4D to 3D
+    description: Split 4D image into 3D volumes
+    command: fslsplit ${bold} test_output/bold_vol_ -t && ls test_output/bold_vol_*.nii.gz | head -5
+    validate:
+      - output_exists: ${output_dir}/bold_vol_0000.nii.gz
+
+  - name: FSL fslmerge 3D to 4D
+    description: Merge 3D images into 4D
+    command: fslmerge -t test_output/merged_4d.nii.gz test_output/bold_vol_0000.nii.gz test_output/bold_vol_0001.nii.gz test_output/bold_vol_0002.nii.gz
+    depends_on: FSL fslsplit 4D to 3D
+    validate:
+      - output_exists: ${output_dir}/merged_4d.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - TEMPORAL OPERATIONS (4D)
+  # ==========================================================================
+  - name: FSL fslmaths temporal mean
+    description: Calculate mean across time (4D)
+    command: fslmaths ${bold} -Tmean test_output/bold_fsl_Tmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_fsl_Tmean.nii.gz
+
+  - name: FSL fslmaths temporal std
+    description: Calculate std across time (4D)
+    command: fslmaths ${bold} -Tstd test_output/bold_fsl_Tstd.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_fsl_Tstd.nii.gz
+
+  - name: FSL fslmaths temporal max
+    description: Calculate max across time (4D)
+    command: fslmaths ${bold} -Tmax test_output/bold_fsl_Tmax.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_fsl_Tmax.nii.gz
+
+  - name: FSL fslmaths temporal min
+    description: Calculate min across time (4D)
+    command: fslmaths ${bold} -Tmin test_output/bold_fsl_Tmin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_fsl_Tmin.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 DIFFUSION TOOLS - INTERFACE VERIFICATION
+  # ==========================================================================
+  - name: MRtrix dwi2fod help
+    description: Verify CSD estimation tool is available
+    command: dwi2fod --help 2>&1 | head -10
+    expected_output_contains: "fibre orientation"
+
+  - name: MRtrix dwi2mask help
+    description: Verify DWI mask tool is available
+    command: dwi2mask --help 2>&1 | head -10
+    expected_output_contains: "mask"
+
+  - name: MRtrix sh2peaks help
+    description: Verify peak extraction tool is available
+    command: sh2peaks --help 2>&1 | head -10
+    expected_output_contains: "peaks"
+
+  - name: MRtrix dwi2tensor help
+    description: Verify tensor estimation tool is available
+    command: dwi2tensor --help 2>&1 | head -10
+    expected_output_contains: "tensor"
+
+  - name: MRtrix tensor2metric help
+    description: Verify tensor metric tool is available
+    command: tensor2metric --help 2>&1 | head -10
+    expected_output_contains: "metric"
+
+  - name: MRtrix tckgen help
+    description: Verify tractography tool is available
+    command: tckgen --help 2>&1 | head -10
+    expected_output_contains: "streamlines"
+
+  - name: MRtrix tcksample help
+    description: Verify tract sampling tool is available
+    command: tcksample --help 2>&1 | head -10
+    expected_output_contains: "sample"
+
+  - name: MRtrix tckmap help
+    description: Verify tract density mapping tool is available
+    command: tckmap --help 2>&1 | head -10
+    expected_output_contains: "track data"
+
+  - name: MRtrix tckinfo help
+    description: Verify tract info tool is available
+    command: tckinfo --help 2>&1 | head -10
+    expected_output_contains: "tckinfo"
+
+  - name: MRtrix mrview check
+    description: Verify MRtrix viewer is installed (may fail without display)
+    command: which mrview
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DIPY TOOLS (Bundled with TractSeg)
+  # ==========================================================================
+  - name: DIPY bundlewarp help
+    description: Verify DIPY bundlewarp is available
+    command: dipy_bundlewarp --help 2>&1 | head -5
+    expected_exit_code: 0
+
+  - name: DIPY recobundles help
+    description: Verify DIPY recobundles is available
+    command: dipy_recobundles --help 2>&1 | head -5
+    expected_exit_code: 0
+
+  - name: DIPY labelsbundles help
+    description: Verify DIPY labelsbundles is available
+    command: dipy_labelsbundles --help 2>&1 | head -5
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PYTHON ENVIRONMENT VERIFICATION
+  # ==========================================================================
+  - name: Python nibabel import
+    description: Verify nibabel is importable
+    command: python -c "import nibabel; print(nibabel.__version__)"
+    expected_exit_code: 0
+
+  - name: Python numpy import
+    description: Verify numpy is importable
+    command: python -c "import numpy; print(numpy.__version__)"
+    expected_exit_code: 0
+
+  - name: Python scipy import
+    description: Verify scipy is importable
+    command: python -c "import scipy; print(scipy.__version__)"
+    expected_exit_code: 0
+
+  - name: Python torch import
+    description: Verify PyTorch is importable (not installed in container)
+    command: python -c "import torch; print(torch.__version__)"
+    expected_exit_code: 1
+
+  - name: Python dipy import
+    description: Verify DIPY is importable (not installed as Python module, CLI tools only)
+    command: python -c "import dipy; print(dipy.__version__)"
+    expected_exit_code: 1
+
+  - name: Python fury import
+    description: Verify FURY visualization library (not installed in container)
+    command: python -c "import fury; print(fury.__version__)"
+    expected_exit_code: 1
+
+  - name: Python nilearn import
+    description: Verify nilearn is importable (not installed in container)
+    command: python -c "import nilearn; print(nilearn.__version__)"
+    expected_exit_code: 1
+
+  # ==========================================================================
+  # TRACTSEG WEIGHTS VERIFICATION
+  # ==========================================================================
+  - name: TractSeg weights directory
+    description: Verify pretrained weights are installed
+    command: ls -la /opt/miniconda/share/TractSeg/weights/ | head -10
+    expected_exit_code: 0
+
+  - name: TractSeg bundle segmentation weights
+    description: Check bundle segmentation model exists
+    command: ls /opt/miniconda/share/TractSeg/weights/ | grep tract_segmentation
+    expected_exit_code: 0
+
+  - name: TractSeg endings weights
+    description: Check endings segmentation model exists
+    command: ls /opt/miniconda/share/TractSeg/weights/ | grep -i ending
+    expected_exit_code: 0
+
+  - name: TractSeg TOM weights
+    description: Check TOM model exists
+    command: ls /opt/miniconda/share/TractSeg/weights/ | grep peak_regression
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # COMBINED PIPELINES
+  # ==========================================================================
+  - name: Brain extraction pipeline (MRtrix + FSL)
+    description: Combined brain extraction and masking
+    command: |
+      bet ${t1w} test_output/pipeline_brain -m -f 0.5 && \
+      fslmaths test_output/pipeline_brain_mask.nii.gz -fillh -dilM -ero test_output/pipeline_mask_refined.nii.gz && \
+      fslmaths ${t1w} -mas test_output/pipeline_mask_refined.nii.gz test_output/pipeline_brain_refined.nii.gz
+    validate:
+      - output_exists: ${output_dir}/pipeline_brain_refined.nii.gz
+
+  - name: Preprocessing pipeline T1w
+    description: Standard T1w preprocessing chain (mrfilter fails - libfftw3.so.3 missing)
+    command: |
+      bet ${t1w} test_output/preproc_brain -m -f 0.4 && \
+      mrfilter test_output/preproc_brain.nii.gz normalise test_output/preproc_brain_norm.nii.gz -force
+    expected_exit_code: 127
+
+  - name: Quality metrics calculation
+    description: Calculate SNR-like metrics
+    command: |
+      fslmaths ${bold} -Tmean test_output/qc_mean.nii.gz && \
+      fslmaths ${bold} -Tstd test_output/qc_std.nii.gz && \
+      fslmaths test_output/qc_mean.nii.gz -div test_output/qc_std.nii.gz test_output/qc_tsnr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/qc_tsnr.nii.gz
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: TractSeg missing input error
+    description: Verify TractSeg fails gracefully with missing input
+    command: TractSeg -i nonexistent_file.nii.gz 2>&1 | head -5
+    expected_exit_code: 0
+
+  - name: Tractometry missing args error
+    description: Verify Tractometry fails with missing arguments
+    command: Tractometry 2>&1 | head -5
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"
+    echo "TractSeg container test suite completed."

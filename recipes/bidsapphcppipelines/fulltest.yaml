@@ -1,0 +1,568 @@
+# bidsapphcppipelines container test suite
+# Tests for HCP Pipelines BIDS App v4.3.0
+#
+# Container includes:
+#   - HCP Pipelines v4.3.0 (structural and functional processing)
+#   - FreeSurfer v6.0.1 (cortical reconstruction)
+#   - Connectome Workbench v1.5.0 (CIFTI/GIFTI tools)
+#   - FSL (FLIRT, BET, and other tools)
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T2: inplaneT2.nii.gz (coplanar with functional)
+#   - BOLD: 64x64x33x300, TR=2s (4D functional)
+#
+# NOTE: The main run.py BIDS app requires a FreeSurfer license key and
+# complete T1w/T2w data to run full pipelines. These tests focus on
+# individual tools available in the container.
+
+name: bidsapphcppipelines
+version: 4.3.0_20230524
+container: bidsapphcppipelines_4.3.0_20230524.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  mni_template: /opt/HCP-Pipelines/global/templates/MNI152_T1_2mm.nii.gz
+  mni_brain: /opt/HCP-Pipelines/global/templates/MNI152_T1_2mm_brain_mask_dil.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/workdir
+
+tests:
+  # ==========================================================================
+  # MAIN BIDS APP - VERSION AND HELP
+  # ==========================================================================
+  - name: BIDS App version check
+    description: Verify run.py reports version
+    command: python3 /run.py --version
+    expected_output_contains: "HCP Pipelines BIDS App"
+
+  - name: BIDS App help
+    description: Verify run.py help output
+    command: python3 /run.py --help
+    expected_output_contains: "HCP Pipelines BIDS App"
+
+  - name: BIDS App stages list
+    description: Verify available processing stages in help
+    command: python3 /run.py --help
+    expected_output_contains: "PreFreeSurfer"
+
+  # ==========================================================================
+  # HCP PIPELINES VERSION INFO
+  # ==========================================================================
+  - name: HCP Pipelines version file
+    description: Check HCP Pipelines version
+    command: cat /opt/HCP-Pipelines/version.txt
+    expected_output_contains: "v4.3.0"
+
+  - name: HCP Pipelines show_version script
+    description: Run HCP show_version script
+    command: /opt/HCP-Pipelines/show_version
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FREESURFER TOOLS
+  # ==========================================================================
+  - name: FreeSurfer version
+    description: Check FreeSurfer version via recon-all
+    command: recon-all --version
+    expected_output_contains: "freesurfer"
+
+  - name: mri_convert help
+    description: Verify mri_convert is available
+    command: mri_convert --help 2>&1 | head -5
+    expected_output_contains: "mri_convert"
+
+  - name: mri_info on T2 image
+    description: Get volume info using mri_info
+    command: mri_info ${t2} --dim
+    expected_exit_code: 0
+
+  - name: mri_info resolution
+    description: Get voxel resolution
+    command: mri_info ${t2} --res
+    expected_exit_code: 0
+
+  - name: mri_info TR
+    description: Get TR from BOLD image
+    command: mri_info ${bold} --tr
+    expected_exit_code: 0
+
+  - name: mri_convert format conversion
+    description: Convert NIfTI to MGZ format
+    command: mri_convert ${t2} ${output_dir}/t2_converted.mgz
+    validate:
+      - output_exists: ${output_dir}/t2_converted.mgz
+
+  - name: mri_convert back to NIfTI
+    description: Convert MGZ back to NIfTI
+    command: mri_convert ${output_dir}/t2_converted.mgz ${output_dir}/t2_reconverted.nii.gz
+    depends_on: mri_convert format conversion
+    validate:
+      - output_exists: ${output_dir}/t2_reconverted.nii.gz
+
+  - name: mri_convert resample
+    description: Resample T2 to 2mm isotropic
+    command: mri_convert ${t2} -vs 2 2 2 ${output_dir}/t2_2mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_2mm.nii.gz
+
+  - name: mri_convert conform
+    description: Conform T2 to 256x256x256 1mm
+    command: mri_convert ${t2} --conform ${output_dir}/t2_conformed.mgz
+    validate:
+      - output_exists: ${output_dir}/t2_conformed.mgz
+
+  - name: mri_binarize simple threshold
+    description: Binarize T2 with threshold
+    command: mri_binarize --i ${t2} --min 100 --o ${output_dir}/t2_bin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_bin.nii.gz
+
+  - name: mri_binarize with dilation
+    description: Binarize and dilate
+    command: mri_binarize --i ${t2} --min 50 --dilate 2 --o ${output_dir}/t2_bin_dilate.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_bin_dilate.nii.gz
+
+  - name: mri_binarize with erosion
+    description: Binarize and erode
+    command: mri_binarize --i ${t2} --min 50 --erode 2 --o ${output_dir}/t2_bin_erode.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_bin_erode.nii.gz
+
+  - name: mri_vol2vol identity transform
+    description: Apply identity transform to volume
+    command: mri_vol2vol --mov ${t2} --targ ${t2} --o ${output_dir}/t2_vol2vol.nii.gz --regheader --no-save-reg
+    validate:
+      - output_exists: ${output_dir}/t2_vol2vol.nii.gz
+
+  - name: mris_convert help
+    description: Verify surface conversion tool available
+    command: mris_convert --help 2>&1 | head -3
+    expected_output_contains: "mris_convert"
+
+  # ==========================================================================
+  # CONNECTOME WORKBENCH (wb_command)
+  # ==========================================================================
+  - name: Workbench version
+    description: Check Connectome Workbench version
+    command: wb_command -version
+    expected_output_contains: "1.5.0"
+
+  - name: Workbench list commands
+    description: List available wb_command operations
+    command: wb_command -list-commands | head -20
+    expected_output_contains: "cifti"
+
+  - name: Workbench CIFTI help
+    description: Get CIFTI format explanation
+    command: wb_command -cifti-help | head -20
+    expected_output_contains: "CIFTI"
+
+  - name: Workbench volume info
+    description: Get volume information using wb_command
+    command: wb_command -nifti-information ${t2} -print-header | head -20
+    expected_exit_code: 0
+
+  - name: Workbench volume create
+    description: Create a blank volume
+    command: wb_command -volume-create 64 64 32 ${output_dir}/blank_volume.nii.gz -plumb XYZ 2 2 2 -90 -126 -72
+    validate:
+      - output_exists: ${output_dir}/blank_volume.nii.gz
+
+  - name: Workbench volume math identity
+    description: Copy volume using volume-math
+    command: wb_command -volume-math "x" ${output_dir}/t2_copy.nii.gz -var x ${t2}
+    validate:
+      - output_exists: ${output_dir}/t2_copy.nii.gz
+
+  - name: Workbench volume math add constant
+    description: Add constant to volume
+    command: wb_command -volume-math "x + 100" ${output_dir}/t2_plus100.nii.gz -var x ${t2}
+    validate:
+      - output_exists: ${output_dir}/t2_plus100.nii.gz
+
+  - name: Workbench volume math multiply
+    description: Multiply volume by constant
+    command: wb_command -volume-math "x * 2" ${output_dir}/t2_times2.nii.gz -var x ${t2}
+    validate:
+      - output_exists: ${output_dir}/t2_times2.nii.gz
+
+  - name: Workbench volume math threshold
+    description: Threshold using volume-math
+    command: wb_command -volume-math "x * (x > 100)" ${output_dir}/t2_thresh100.nii.gz -var x ${t2}
+    validate:
+      - output_exists: ${output_dir}/t2_thresh100.nii.gz
+
+  - name: Workbench volume math binarize
+    description: Binarize using volume-math
+    command: wb_command -volume-math "(x > 50)" ${output_dir}/t2_bin_wb.nii.gz -var x ${t2}
+    validate:
+      - output_exists: ${output_dir}/t2_bin_wb.nii.gz
+
+  - name: Workbench volume smoothing
+    description: Gaussian smooth volume
+    command: wb_command -volume-smoothing ${t2} 4 ${output_dir}/t2_smooth4mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_smooth4mm.nii.gz
+
+  - name: Workbench volume smoothing FWHM
+    description: Gaussian smooth with FWHM specification
+    command: wb_command -volume-smoothing ${t2} 6 ${output_dir}/t2_smooth6mm_fwhm.nii.gz -fwhm
+    validate:
+      - output_exists: ${output_dir}/t2_smooth6mm_fwhm.nii.gz
+
+  - name: Workbench volume stats mean
+    description: Calculate volume mean
+    command: wb_command -volume-stats ${t2} -reduce MEAN
+    expected_exit_code: 0
+
+  - name: Workbench volume stats max
+    description: Calculate volume maximum
+    command: wb_command -volume-stats ${t2} -reduce MAX
+    expected_exit_code: 0
+
+  - name: Workbench volume stats min
+    description: Calculate volume minimum
+    command: wb_command -volume-stats ${t2} -reduce MIN
+    expected_exit_code: 0
+
+  - name: Workbench volume stats stdev
+    description: Calculate volume standard deviation
+    command: wb_command -volume-stats ${t2} -reduce STDEV
+    expected_exit_code: 0
+
+  - name: Workbench volume stats percentile
+    description: Calculate 95th percentile
+    command: wb_command -volume-stats ${t2} -percentile 95
+    expected_exit_code: 0
+
+  - name: Workbench volume resample trilinear
+    description: Resample volume with trilinear interpolation
+    command: wb_command -volume-resample ${t2} ${mni_template} TRILINEAR ${output_dir}/t2_resample_trilin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_resample_trilin.nii.gz
+
+  - name: Workbench volume resample cubic
+    description: Resample volume with cubic interpolation
+    command: wb_command -volume-resample ${t2} ${mni_template} CUBIC ${output_dir}/t2_resample_cubic.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_resample_cubic.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS
+  # ==========================================================================
+  - name: FLIRT version
+    description: Check FLIRT version
+    command: flirt -version 2>&1
+    expected_output_contains: "FLIRT"
+
+  - name: BET help
+    description: Check BET (brain extraction) help
+    command: bet 2>&1 | head -5
+    expected_output_contains: "bet"
+
+  - name: fslinfo T2
+    description: Get volume info with fslinfo
+    command: fslinfo ${t2}
+    expected_exit_code: 0
+
+  - name: fslinfo BOLD
+    description: Get BOLD volume info
+    command: fslinfo ${bold}
+    expected_exit_code: 0
+
+  - name: fslmaths copy
+    description: Copy volume with fslmaths
+    command: fslmaths ${t2} ${output_dir}/t2_fslcopy.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_fslcopy.nii.gz
+
+  - name: fslmaths add constant
+    description: Add constant with fslmaths
+    command: fslmaths ${t2} -add 100 ${output_dir}/t2_fsl_add100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_fsl_add100.nii.gz
+
+  - name: fslmaths multiply
+    description: Multiply with fslmaths
+    command: fslmaths ${t2} -mul 2 ${output_dir}/t2_fsl_mul2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_fsl_mul2.nii.gz
+
+  - name: fslmaths threshold
+    description: Threshold with fslmaths
+    command: fslmaths ${t2} -thr 100 ${output_dir}/t2_fsl_thr100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_fsl_thr100.nii.gz
+
+  - name: fslmaths binarize
+    description: Binarize with fslmaths
+    command: fslmaths ${t2} -bin ${output_dir}/t2_fsl_bin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_fsl_bin.nii.gz
+
+  - name: fslmaths smooth
+    description: Gaussian smooth with fslmaths
+    command: fslmaths ${t2} -s 2 ${output_dir}/t2_fsl_smooth2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_fsl_smooth2.nii.gz
+
+  - name: fslmaths dilate
+    description: Dilate binary mask
+    command: fslmaths ${t2} -bin -dilM ${output_dir}/t2_fsl_dilM.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_fsl_dilM.nii.gz
+
+  - name: fslmaths erode
+    description: Erode binary mask
+    command: fslmaths ${t2} -bin -ero ${output_dir}/t2_fsl_ero.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_fsl_ero.nii.gz
+
+  - name: fslmaths temporal mean
+    description: Calculate temporal mean of BOLD
+    command: fslmaths ${bold} -Tmean ${output_dir}/bold_fsl_Tmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_fsl_Tmean.nii.gz
+
+  - name: fslmaths temporal std
+    description: Calculate temporal std of BOLD
+    command: fslmaths ${bold} -Tstd ${output_dir}/bold_fsl_Tstd.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_fsl_Tstd.nii.gz
+
+  - name: fslmaths temporal max
+    description: Calculate temporal max of BOLD
+    command: fslmaths ${bold} -Tmax ${output_dir}/bold_fsl_Tmax.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_fsl_Tmax.nii.gz
+
+  - name: fslmaths temporal min
+    description: Calculate temporal min of BOLD
+    command: fslmaths ${bold} -Tmin ${output_dir}/bold_fsl_Tmin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_fsl_Tmin.nii.gz
+
+  - name: FLIRT registration to template
+    description: Register T2 to MNI template
+    command: flirt -in ${t2} -ref ${mni_template} -out ${output_dir}/t2_flirt_mni.nii.gz -omat ${output_dir}/t2_to_mni.mat -dof 12
+    validate:
+      - output_exists: ${output_dir}/t2_flirt_mni.nii.gz
+      - output_exists: ${output_dir}/t2_to_mni.mat
+
+  - name: FLIRT apply transform
+    description: Apply saved transformation matrix
+    command: flirt -in ${t2} -ref ${mni_template} -applyxfm -init ${output_dir}/t2_to_mni.mat -out ${output_dir}/t2_flirt_applied.nii.gz
+    depends_on: FLIRT registration to template
+    validate:
+      - output_exists: ${output_dir}/t2_flirt_applied.nii.gz
+
+  - name: FLIRT rigid body registration
+    description: 6-DOF rigid registration
+    command: flirt -in ${t2} -ref ${mni_template} -out ${output_dir}/t2_flirt_rigid.nii.gz -dof 6
+    validate:
+      - output_exists: ${output_dir}/t2_flirt_rigid.nii.gz
+
+  - name: BET brain extraction
+    description: Extract brain from T2 using BET
+    command: bet ${t2} ${output_dir}/t2_bet -m -f 0.3
+    validate:
+      - output_exists: ${output_dir}/t2_bet.nii.gz
+      - output_exists: ${output_dir}/t2_bet_mask.nii.gz
+
+  - name: BET robust brain extraction
+    description: Robust brain extraction with multiple iterations
+    command: bet ${t2} ${output_dir}/t2_bet_robust -R -f 0.3
+    ignore_exit_code: true
+    validate:
+      - output_exists: ${output_dir}/t2_bet_robust.nii.gz
+
+  # ==========================================================================
+  # HCP TEMPLATES
+  # ==========================================================================
+  - name: MNI152 1mm template exists
+    description: Verify MNI152 1mm template
+    command: ls -la /opt/HCP-Pipelines/global/templates/MNI152_T1_1mm.nii.gz
+    expected_exit_code: 0
+
+  - name: MNI152 2mm template exists
+    description: Verify MNI152 2mm template
+    command: ls -la /opt/HCP-Pipelines/global/templates/MNI152_T1_2mm.nii.gz
+    expected_exit_code: 0
+
+  - name: MNI152 T2 template exists
+    description: Verify MNI152 T2 template
+    command: ls -la /opt/HCP-Pipelines/global/templates/MNI152_T2_1mm.nii.gz
+    expected_exit_code: 0
+
+  - name: MNI152 brain mask exists
+    description: Verify MNI brain mask template
+    command: ls -la /opt/HCP-Pipelines/global/templates/MNI152_T1_1mm_brain_mask.nii.gz
+    expected_exit_code: 0
+
+  - name: Standard mesh atlases exist
+    description: Verify standard mesh atlases directory
+    command: ls /opt/HCP-Pipelines/global/templates/standard_mesh_atlases/
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # HCP PIPELINE SCRIPTS (existence check)
+  # ==========================================================================
+  - name: PreFreeSurfer pipeline exists
+    description: Verify PreFreeSurfer pipeline script
+    command: ls -la /opt/HCP-Pipelines/PreFreeSurfer/PreFreeSurferPipeline.sh
+    expected_exit_code: 0
+
+  - name: FreeSurfer pipeline exists
+    description: Verify FreeSurfer pipeline script
+    command: ls -la /opt/HCP-Pipelines/FreeSurfer/FreeSurferPipeline.sh
+    expected_exit_code: 0
+
+  - name: PostFreeSurfer pipeline exists
+    description: Verify PostFreeSurfer pipeline script
+    command: ls -la /opt/HCP-Pipelines/PostFreeSurfer/PostFreeSurferPipeline.sh
+    expected_exit_code: 0
+
+  - name: fMRIVolume pipeline exists
+    description: Verify fMRIVolume pipeline script
+    command: ls -la /opt/HCP-Pipelines/fMRIVolume/GenericfMRIVolumeProcessingPipeline.sh
+    expected_exit_code: 0
+
+  - name: fMRISurface pipeline exists
+    description: Verify fMRISurface pipeline script
+    command: ls -la /opt/HCP-Pipelines/fMRISurface/GenericfMRISurfaceProcessingPipeline.sh
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # HCP GLOBAL SCRIPTS
+  # ==========================================================================
+  - name: TopupPreprocessing script exists
+    description: Verify Topup preprocessing script
+    command: ls -la /opt/HCP-Pipelines/global/scripts/TopupPreprocessingAll.sh
+    expected_exit_code: 0
+
+  - name: FieldMapPreprocessing script exists
+    description: Verify FieldMap preprocessing script
+    command: ls -la /opt/HCP-Pipelines/global/scripts/FieldMapPreprocessingAll.sh
+    expected_exit_code: 0
+
+  - name: GradientDistortionUnwarp script exists
+    description: Verify gradient distortion correction script
+    command: ls -la /opt/HCP-Pipelines/global/scripts/GradientDistortionUnwarp.sh
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PYTHON ENVIRONMENT
+  # ==========================================================================
+  - name: Python3 available
+    description: Check Python3 is available
+    command: python3 --version
+    expected_output_contains: "Python"
+
+  - name: NumPy available
+    description: Check NumPy is installed
+    command: python3 -c "import numpy; print(numpy.__version__)"
+    expected_exit_code: 0
+
+  - name: NiBabel available
+    description: Check NiBabel is installed
+    command: python3 -c "import nibabel; print(nibabel.__version__)"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # COMBINED WORKFLOWS
+  # ==========================================================================
+  - name: Brain extraction and smoothing pipeline
+    description: BET followed by smoothing
+    command: |
+      bet ${t2} ${output_dir}/workflow_bet -m -f 0.3 && \
+      fslmaths ${output_dir}/workflow_bet.nii.gz -s 2 ${output_dir}/workflow_bet_smooth.nii.gz
+    validate:
+      - output_exists: ${output_dir}/workflow_bet.nii.gz
+      - output_exists: ${output_dir}/workflow_bet_smooth.nii.gz
+
+  - name: BOLD preprocessing basic
+    description: Temporal mean and masking
+    command: |
+      fslmaths ${bold} -Tmean ${output_dir}/bold_mean.nii.gz && \
+      fslmaths ${output_dir}/bold_mean.nii.gz -bin -dilM ${output_dir}/bold_mask.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_mean.nii.gz
+      - output_exists: ${output_dir}/bold_mask.nii.gz
+
+  - name: tSNR calculation
+    description: Calculate temporal signal-to-noise ratio
+    command: |
+      fslmaths ${bold} -Tmean ${output_dir}/bold_tsnr_mean.nii.gz && \
+      fslmaths ${bold} -Tstd ${output_dir}/bold_tsnr_std.nii.gz && \
+      fslmaths ${output_dir}/bold_tsnr_mean.nii.gz -div ${output_dir}/bold_tsnr_std.nii.gz ${output_dir}/bold_tsnr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_tsnr.nii.gz
+
+  - name: Volume math complex expression
+    description: Complex mathematical operation with wb_command
+    command: wb_command -volume-math "sqrt(x*x + 100)" ${output_dir}/t2_complex.nii.gz -var x ${t2}
+    validate:
+      - output_exists: ${output_dir}/t2_complex.nii.gz
+
+  - name: Multi-tool pipeline
+    description: FreeSurfer convert, wb_command stats, FSL smooth
+    command: |
+      mri_convert ${t2} ${output_dir}/pipeline_step1.nii.gz && \
+      wb_command -volume-stats ${output_dir}/pipeline_step1.nii.gz -reduce MEAN && \
+      fslmaths ${output_dir}/pipeline_step1.nii.gz -s 3 ${output_dir}/pipeline_final.nii.gz
+    validate:
+      - output_exists: ${output_dir}/pipeline_final.nii.gz
+
+  # ==========================================================================
+  # ENVIRONMENT AND PATHS
+  # ==========================================================================
+  - name: FREESURFER_HOME set correctly
+    description: Verify FREESURFER_HOME environment variable
+    command: echo $FREESURFER_HOME
+    expected_output_contains: "/opt/freesurfer"
+
+  - name: HCPPIPEDIR set correctly
+    description: Verify HCPPIPEDIR environment variable
+    command: echo $HCPPIPEDIR
+    expected_output_contains: "/opt/HCP-Pipelines"
+
+  - name: CARET7DIR set correctly
+    description: Verify CARET7DIR environment variable
+    command: echo $CARET7DIR
+    expected_output_contains: "/opt/workbench"
+
+  - name: FSL in PATH
+    description: Verify FSL binaries are in PATH
+    command: which flirt
+    expected_output_contains: "fsl"
+
+  - name: FreeSurfer in PATH
+    description: Verify FreeSurfer binaries are in PATH
+    command: which mri_convert
+    expected_output_contains: "freesurfer"
+
+  - name: Workbench in PATH
+    description: Verify Workbench is in PATH
+    command: which wb_command
+    expected_output_contains: "workbench"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in ${output_dir}/"

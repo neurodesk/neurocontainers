@@ -1,0 +1,770 @@
+# gingerale container test suite
+# Tests for GingerALE 3.0.2 - Activation Likelihood Estimation meta-analysis
+#
+# GingerALE performs coordinate-based meta-analyses of neuroimaging data using
+# the Activation Likelihood Estimation (ALE) method. Key features include:
+#   - ALE meta-analysis for foci in Talairach or MNI space
+#   - Multiple thresholding methods (uncorrected, FDR, FWE, cluster-level)
+#   - Contrast analysis between datasets
+#   - Cluster analysis with anatomical labeling
+#   - Coordinate space transformations (icbm2tal)
+#
+# Command-line tools available:
+#   - org.brainmap.meta.getALE2: Main ALE computation
+#   - org.brainmap.meta.getALE2Contrast: Contrast analysis between datasets
+#   - org.brainmap.meta.getClustersOnly: Cluster detection on images
+#   - org.brainmap.meta.getClustersStats: Cluster statistics and labeling
+#
+# References:
+#   - Eickhoff SB et al. (2009) Hum Brain Mapp 30:2907-2926
+#   - Eickhoff SB et al. (2012) NeuroImage 59:2349-2361
+#   - Turkeltaub PE et al. (2012) Hum Brain Mapp 33:1-13
+
+name: gingerale
+version: 3.0.2
+container: gingerale_3.0.2_20250804.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/gingerale
+    mkdir -p test_output/gingerale/foci
+    mkdir -p test_output/gingerale/ale_results
+    mkdir -p test_output/gingerale/contrast
+
+    # Create sample foci file in Talairach space (motor task meta-analysis example)
+    # Format: Reference space header, then // Author (Year) with Subject count
+    # followed by x, y, z coordinates
+    cat > test_output/gingerale/foci/motor_task_tal.txt << 'EOFTAL'
+    // Reference=Talairach
+    // Smith (2010)
+    // Subjects=15
+    -38 -20 52
+    -32 -8 48
+    32 -12 50
+    -4 -8 56
+    8 -4 52
+    // Jones (2011)
+    // Subjects=18
+    -36 -22 54
+    -28 -6 50
+    28 -10 48
+    -2 -10 58
+    6 -6 54
+    -24 -14 60
+    // Williams (2012)
+    // Subjects=20
+    -40 -18 50
+    -30 -10 52
+    30 -8 52
+    -6 -6 54
+    4 -8 50
+    26 -16 46
+    // Brown (2013)
+    // Subjects=12
+    -34 -24 56
+    -26 -12 48
+    34 -14 46
+    -8 -4 60
+    10 -2 56
+    // Davis (2014)
+    // Subjects=16
+    -42 -16 48
+    -34 -4 54
+    36 -6 54
+    0 -12 52
+    -20 -18 58
+    22 -20 56
+    EOFTAL
+
+    # Create sample foci file in MNI space
+    cat > test_output/gingerale/foci/motor_task_mni.txt << 'EOFMNI'
+    // Reference=MNI
+    // Anderson (2015)
+    // Subjects=22
+    -40 -22 56
+    -34 -10 52
+    34 -14 54
+    -4 -10 60
+    8 -6 56
+    // Taylor (2016)
+    // Subjects=19
+    -38 -24 58
+    -30 -8 54
+    30 -12 52
+    -2 -12 62
+    6 -8 58
+    -26 -16 64
+    // Wilson (2017)
+    // Subjects=25
+    -42 -20 54
+    -32 -12 56
+    32 -10 56
+    -6 -8 58
+    4 -10 54
+    28 -18 50
+    EOFMNI
+
+    # Create a second foci file for contrast analysis (cognitive task)
+    cat > test_output/gingerale/foci/cognitive_task_tal.txt << 'EOFCOG'
+    // Reference=Talairach
+    // Miller (2011)
+    // Subjects=14
+    -44 8 28
+    -48 24 16
+    44 12 30
+    46 26 18
+    -32 40 22
+    // Clark (2012)
+    // Subjects=17
+    -42 10 26
+    -50 22 18
+    42 14 28
+    48 24 20
+    -30 42 24
+    34 38 20
+    // Harris (2013)
+    // Subjects=21
+    -46 6 30
+    -52 20 14
+    46 8 32
+    50 22 16
+    -34 38 26
+    32 36 22
+    -28 44 18
+    EOFCOG
+
+    # Create pooled foci file (motor + cognitive combined for contrast)
+    cat > test_output/gingerale/foci/pooled_foci_tal.txt << 'EOFPOOL'
+    // Reference=Talairach
+    // Smith (2010)
+    // Subjects=15
+    -38 -20 52
+    -32 -8 48
+    32 -12 50
+    -4 -8 56
+    8 -4 52
+    // Jones (2011)
+    // Subjects=18
+    -36 -22 54
+    -28 -6 50
+    28 -10 48
+    -2 -10 58
+    6 -6 54
+    -24 -14 60
+    // Williams (2012)
+    // Subjects=20
+    -40 -18 50
+    -30 -10 52
+    30 -8 52
+    -6 -6 54
+    4 -8 50
+    26 -16 46
+    // Miller (2011)
+    // Subjects=14
+    -44 8 28
+    -48 24 16
+    44 12 30
+    46 26 18
+    -32 40 22
+    // Clark (2012)
+    // Subjects=17
+    -42 10 26
+    -50 22 18
+    42 14 28
+    48 24 20
+    -30 42 24
+    34 38 20
+    // Harris (2013)
+    // Subjects=21
+    -46 6 30
+    -52 20 14
+    46 8 32
+    50 22 16
+    -34 38 26
+    32 36 22
+    -28 44 18
+    EOFPOOL
+
+    # Create a minimal foci file for quick testing
+    cat > test_output/gingerale/foci/minimal_tal.txt << 'EOFMIN'
+    // Reference=Talairach
+    // Test (2020)
+    // Subjects=10
+    0 0 50
+    -20 -10 55
+    20 -10 55
+    // Test2 (2021)
+    // Subjects=12
+    5 5 48
+    -15 -5 52
+    15 -5 52
+    EOFMIN
+
+    # Create a foci file with single experiment for edge case testing
+    cat > test_output/gingerale/foci/single_exp_tal.txt << 'EOFSINGLE'
+    // Reference=Talairach
+    // SingleStudy (2022)
+    // Subjects=15
+    -30 -15 50
+    -25 -10 48
+    25 -10 48
+    0 -5 55
+    EOFSINGLE
+
+    echo "Setup complete: foci files created"
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - getALE2
+  # ==========================================================================
+  - name: getALE2 usage/help
+    description: Display getALE2 command usage and options
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 2>&1
+    expected_output_contains: "getALE2 usage"
+
+  - name: getALE2 required parameters
+    description: Verify required parameter documentation
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 2>&1
+    expected_output_contains: "Foci_Text"
+
+  - name: getALE2 mask options
+    description: Verify mask parameter documentation
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 2>&1
+    expected_output_contains: "-mask="
+
+  - name: getALE2 threshold options
+    description: Verify thresholding method options
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 2>&1
+    expected_output_contains: "Thresholding Method"
+
+  # ==========================================================================
+  # BASIC ALE ANALYSIS
+  # ==========================================================================
+  - name: Basic ALE analysis (Talairach)
+    description: Run basic ALE meta-analysis on Talairach coordinates
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/motor_task_tal.txt \
+        -ale=test_output/gingerale/ale_results/motor_tal_ALE \
+        -pval=test_output/gingerale/ale_results/motor_tal_P \
+        2>&1
+    expected_output_contains: "Foci"
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_tal_ALE.nii
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_tal_P.nii
+
+  - name: Basic ALE analysis (MNI)
+    description: Run basic ALE meta-analysis on MNI coordinates
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/motor_task_mni.txt \
+        -mask=MNI_wb.nii \
+        -ale=test_output/gingerale/ale_results/motor_mni_ALE \
+        -pval=test_output/gingerale/ale_results/motor_mni_P \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_mni_ALE.nii
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_mni_P.nii
+
+  - name: ALE with minimal foci
+    description: Run ALE on minimal dataset for quick test
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/minimal_tal.txt \
+        -ale=test_output/gingerale/ale_results/minimal_ALE \
+        -pval=test_output/gingerale/ale_results/minimal_P \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/minimal_ALE.nii
+
+  # ==========================================================================
+  # MASK OPTIONS
+  # ==========================================================================
+  - name: ALE with Talairach conservative mask
+    description: Use more conservative Talairach whole brain mask
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/minimal_tal.txt \
+        -mask=Tal_wb.nii \
+        -ale=test_output/gingerale/ale_results/tal_conservative_ALE \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/tal_conservative_ALE.nii
+
+  - name: ALE with Talairach dilated mask
+    description: Use less conservative (dilated) Talairach mask
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/minimal_tal.txt \
+        -mask=Tal_wb_dil.nii \
+        -ale=test_output/gingerale/ale_results/tal_dilated_ALE \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/tal_dilated_ALE.nii
+
+  - name: ALE with MNI conservative mask
+    description: Use more conservative MNI whole brain mask
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/motor_task_mni.txt \
+        -mask=MNI_wb.nii \
+        -ale=test_output/gingerale/ale_results/mni_conservative_ALE \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/mni_conservative_ALE.nii
+
+  - name: ALE with MNI dilated mask
+    description: Use less conservative (dilated) MNI mask
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/motor_task_mni.txt \
+        -mask=MNI_wb_dil.nii \
+        -ale=test_output/gingerale/ale_results/mni_dilated_ALE \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/mni_dilated_ALE.nii
+
+  # ==========================================================================
+  # THRESHOLDING METHODS - UNCORRECTED
+  # ==========================================================================
+  - name: ALE with uncorrected p-value threshold (p=0.05)
+    description: Apply uncorrected p-value threshold at 0.05
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/motor_task_tal.txt \
+        -ale=test_output/gingerale/ale_results/motor_p05_ALE \
+        -pval=test_output/gingerale/ale_results/motor_p05_P \
+        -thresh=test_output/gingerale/ale_results/motor_p05_thresh \
+        -p=0.05 \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p05_ALE.nii
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p05_thresh.nii
+
+  - name: ALE with uncorrected p-value threshold (p=0.01)
+    description: Apply stricter uncorrected p-value threshold at 0.01
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/motor_task_tal.txt \
+        -ale=test_output/gingerale/ale_results/motor_p01_ALE \
+        -pval=test_output/gingerale/ale_results/motor_p01_P \
+        -thresh=test_output/gingerale/ale_results/motor_p01_thresh \
+        -p=0.01 \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_thresh.nii
+
+  - name: ALE with uncorrected p-value threshold (p=0.001)
+    description: Apply very strict uncorrected p-value threshold at 0.001
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/motor_task_tal.txt \
+        -ale=test_output/gingerale/ale_results/motor_p001_ALE \
+        -thresh=test_output/gingerale/ale_results/motor_p001_thresh \
+        -p=0.001 \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p001_thresh.nii
+
+  # ==========================================================================
+  # THRESHOLDING METHODS - FDR
+  # ==========================================================================
+  - name: ALE with FDR pN correction (q=0.05)
+    description: Apply FDR pN threshold at q=0.05
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/motor_task_tal.txt \
+        -ale=test_output/gingerale/ale_results/motor_fdrN_ALE \
+        -thresh=test_output/gingerale/ale_results/motor_fdrN_thresh \
+        -pN=0.05 \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_fdrN_thresh.nii
+
+  - name: ALE with FDR pID correction (q=0.05)
+    description: Apply FDR pID threshold at q=0.05
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/motor_task_tal.txt \
+        -ale=test_output/gingerale/ale_results/motor_fdrID_ALE \
+        -thresh=test_output/gingerale/ale_results/motor_fdrID_thresh \
+        -pID=0.05 \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_fdrID_thresh.nii
+
+  # ==========================================================================
+  # THRESHOLDING METHODS - PERMUTATION-BASED (FWE)
+  # ==========================================================================
+  - name: ALE with FWE correction (100 perms)
+    description: Apply family-wise error correction with 100 permutations
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/minimal_tal.txt \
+        -ale=test_output/gingerale/ale_results/minimal_fwe_ALE \
+        -thresh=test_output/gingerale/ale_results/minimal_fwe_thresh \
+        -perm=100 \
+        -fwe=0.05 \
+        2>&1
+    expected_output_contains: "Perm"
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/minimal_fwe_ALE.nii
+
+  - name: ALE with FWE correction (500 perms)
+    description: Apply FWE correction with more permutations for accuracy
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/minimal_tal.txt \
+        -ale=test_output/gingerale/ale_results/minimal_fwe500_ALE \
+        -thresh=test_output/gingerale/ale_results/minimal_fwe500_thresh \
+        -perm=500 \
+        -fwe=0.05 \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/minimal_fwe500_ALE.nii
+
+  # ==========================================================================
+  # THRESHOLDING METHODS - CLUSTER-LEVEL INFERENCE
+  # ==========================================================================
+  - name: ALE with cluster-level inference
+    description: Apply cluster-level FWE correction with forming threshold
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/minimal_tal.txt \
+        -ale=test_output/gingerale/ale_results/minimal_clust_ALE \
+        -thresh=test_output/gingerale/ale_results/minimal_clust_thresh \
+        -perm=100 \
+        -p=0.001 \
+        -clust=0.05 \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/minimal_clust_ALE.nii
+
+  # ==========================================================================
+  # MINIMUM CLUSTER VOLUME
+  # ==========================================================================
+  - name: ALE with minimum cluster volume
+    description: Apply minimum cluster size threshold
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/motor_task_tal.txt \
+        -ale=test_output/gingerale/ale_results/motor_minvol_ALE \
+        -thresh=test_output/gingerale/ale_results/motor_minvol_thresh \
+        -p=0.01 \
+        -minVol=200 \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_minvol_thresh.nii
+
+  # ==========================================================================
+  # ALE METHOD OPTIONS
+  # ==========================================================================
+  - name: ALE with non-additive method
+    description: Use Turkeltaub non-additive ALE method (HBM 2012)
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/motor_task_tal.txt \
+        -ale=test_output/gingerale/ale_results/motor_nonadd_ALE \
+        -pval=test_output/gingerale/ale_results/motor_nonadd_P \
+        -nonadd \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_nonadd_ALE.nii
+
+  - name: ALE only (no P-value image)
+    description: Generate only ALE image without P-value computation
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/minimal_tal.txt \
+        -ale=test_output/gingerale/ale_results/minimal_aleonly \
+        -noPVal \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/minimal_aleonly.nii
+
+  # ==========================================================================
+  # getClustersOnly - CLUSTER DETECTION
+  # ==========================================================================
+  - name: getClustersOnly usage/help
+    description: Display getClustersOnly command usage and options
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersOnly 2>&1
+    expected_output_contains: "required arguments"
+
+  - name: getClustersOnly optional parameters
+    description: Verify optional parameter documentation
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersOnly 2>&1
+    expected_output_contains: "-min="
+
+  - name: Basic cluster detection
+    description: Detect clusters from thresholded ALE image
+    depends_on: ALE with uncorrected p-value threshold (p=0.01)
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersOnly \
+        test_output/gingerale/ale_results/motor_p01_thresh.nii \
+        -out=test_output/gingerale/ale_results/motor_p01_clust \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_clust.nii
+
+  - name: Cluster detection with minimum volume
+    description: Detect clusters with minimum volume threshold
+    depends_on: ALE with uncorrected p-value threshold (p=0.01)
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersOnly \
+        test_output/gingerale/ale_results/motor_p01_thresh.nii \
+        -min=100 \
+        -out=test_output/gingerale/ale_results/motor_p01_clust_min100 \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_clust_min100.nii
+
+  - name: Cluster detection with large minimum volume
+    description: Detect only large clusters (min 500 mm3)
+    depends_on: ALE with uncorrected p-value threshold (p=0.01)
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersOnly \
+        test_output/gingerale/ale_results/motor_p01_thresh.nii \
+        -min=500 \
+        -out=test_output/gingerale/ale_results/motor_p01_clust_min500 \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_clust_min500.nii
+
+  # ==========================================================================
+  # getClustersStats - CLUSTER STATISTICS
+  # ==========================================================================
+  - name: getClustersStats usage/help
+    description: Display getClustersStats command usage and options
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats 2>&1
+    expected_output_contains: "getClustersStats usage"
+
+  - name: getClustersStats required parameters
+    description: Verify required parameter documentation
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats 2>&1
+    expected_output_contains: "Foci_Text.txt"
+
+  - name: getClustersStats optional parameters
+    description: Verify optional parameter documentation
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats 2>&1
+    expected_output_contains: "-mni"
+
+  - name: Basic cluster statistics
+    description: Generate cluster statistics with Talairach labels
+    depends_on: Basic cluster detection
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats \
+        test_output/gingerale/foci/motor_task_tal.txt \
+        test_output/gingerale/ale_results/motor_p01_ALE.nii \
+        test_output/gingerale/ale_results/motor_p01_clust.nii \
+        -out=test_output/gingerale/ale_results/motor_p01_stats \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_stats.txt
+
+  - name: Cluster statistics with P values
+    description: Include P values in cluster statistics
+    depends_on: Basic cluster detection
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats \
+        test_output/gingerale/foci/motor_task_tal.txt \
+        test_output/gingerale/ale_results/motor_p01_ALE.nii \
+        test_output/gingerale/ale_results/motor_p01_clust.nii \
+        -p=test_output/gingerale/ale_results/motor_p01_P.nii \
+        -out=test_output/gingerale/ale_results/motor_p01_stats_pval \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_stats_pval.txt
+
+  - name: Cluster statistics including all labels
+    description: Include non-gray matter labels in statistics
+    depends_on: Basic cluster detection
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats \
+        test_output/gingerale/foci/motor_task_tal.txt \
+        test_output/gingerale/ale_results/motor_p01_ALE.nii \
+        test_output/gingerale/ale_results/motor_p01_clust.nii \
+        -noGrayOnly \
+        -out=test_output/gingerale/ale_results/motor_p01_stats_alllab \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_stats_alllab.txt
+
+  - name: Cluster statistics with foci listing
+    description: List contributing foci for each cluster
+    depends_on: Basic cluster detection
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersStats \
+        test_output/gingerale/foci/motor_task_tal.txt \
+        test_output/gingerale/ale_results/motor_p01_ALE.nii \
+        test_output/gingerale/ale_results/motor_p01_clust.nii \
+        -printFoci \
+        -out=test_output/gingerale/ale_results/motor_p01_stats_foci \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/ale_results/motor_p01_stats_foci.txt
+
+  # ==========================================================================
+  # getALE2Contrast - CONTRAST ANALYSIS
+  # ==========================================================================
+  - name: getALE2Contrast usage/help
+    description: Display getALE2Contrast command usage and options
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2Contrast 2>&1
+    expected_output_contains: "getALE2Contrast usage"
+
+  - name: getALE2Contrast required parameters
+    description: Verify required parameter documentation
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2Contrast 2>&1
+    expected_output_contains: "ALE_1"
+
+  - name: getALE2Contrast optional parameters
+    description: Verify optional parameter documentation
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2Contrast 2>&1
+    expected_output_contains: "-perm="
+
+  # Create ALE images for contrast analysis
+  - name: ALE for contrast dataset 1 (motor)
+    description: Generate ALE image for motor task dataset
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/motor_task_tal.txt \
+        -ale=test_output/gingerale/contrast/motor_ALE \
+        -thresh=test_output/gingerale/contrast/motor_thresh \
+        -p=0.01 \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/contrast/motor_thresh.nii
+
+  - name: ALE for contrast dataset 2 (cognitive)
+    description: Generate ALE image for cognitive task dataset
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/cognitive_task_tal.txt \
+        -ale=test_output/gingerale/contrast/cognitive_ALE \
+        -thresh=test_output/gingerale/contrast/cognitive_thresh \
+        -p=0.01 \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/contrast/cognitive_thresh.nii
+
+  - name: ALE for pooled dataset
+    description: Generate ALE image for pooled (combined) dataset
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 \
+        test_output/gingerale/foci/pooled_foci_tal.txt \
+        -ale=test_output/gingerale/contrast/pooled_ALE \
+        -thresh=test_output/gingerale/contrast/pooled_thresh \
+        -p=0.01 \
+        2>&1
+    validate:
+      - output_exists: ${output_dir}/gingerale/contrast/pooled_thresh.nii
+
+  - name: Basic contrast analysis
+    description: Run contrast analysis between motor and cognitive datasets
+    depends_on: ALE for pooled dataset
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2Contrast \
+        test_output/gingerale/contrast/motor_thresh.nii \
+        test_output/gingerale/contrast/cognitive_thresh.nii \
+        test_output/gingerale/contrast/pooled_thresh.nii \
+        -out1=Motor \
+        -out2=Cognitive \
+        -perm=100 \
+        2>&1
+    expected_output_contains: "Contrast"
+
+  - name: Contrast with uncorrected threshold
+    description: Contrast analysis with uncorrected p-value threshold
+    depends_on: ALE for pooled dataset
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2Contrast \
+        test_output/gingerale/contrast/motor_thresh.nii \
+        test_output/gingerale/contrast/cognitive_thresh.nii \
+        test_output/gingerale/contrast/pooled_thresh.nii \
+        -out1=Motor \
+        -out2=Cognitive \
+        -perm=100 \
+        -p=0.05 \
+        2>&1
+
+  - name: Contrast with foci files
+    description: Contrast analysis specifying original foci files
+    depends_on: ALE for pooled dataset
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2Contrast \
+        test_output/gingerale/contrast/motor_thresh.nii \
+        test_output/gingerale/contrast/cognitive_thresh.nii \
+        test_output/gingerale/contrast/pooled_thresh.nii \
+        -foci1=test_output/gingerale/foci/motor_task_tal.txt \
+        -foci2=test_output/gingerale/foci/cognitive_task_tal.txt \
+        -foci3=test_output/gingerale/foci/pooled_foci_tal.txt \
+        -out1=Motor \
+        -out2=Cognitive \
+        -perm=100 \
+        2>&1
+
+  - name: Contrast with non-additive method
+    description: Contrast analysis using Turkeltaub non-additive method
+    depends_on: ALE for pooled dataset
+    command: |
+      java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2Contrast \
+        test_output/gingerale/contrast/motor_thresh.nii \
+        test_output/gingerale/contrast/cognitive_thresh.nii \
+        test_output/gingerale/contrast/pooled_thresh.nii \
+        -out1=Motor \
+        -out2=Cognitive \
+        -perm=100 \
+        -nonadd \
+        2>&1
+
+  # ==========================================================================
+  # JAVA VERSION AND RUNTIME
+  # ==========================================================================
+  - name: Java version check
+    description: Verify Java runtime is available and version
+    command: java -version 2>&1
+    expected_output_contains: "openjdk version"
+
+  - name: Java heap size test
+    description: Verify Java can run with adequate heap
+    command: java -Xmx1g -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 2>&1
+    expected_output_contains: "getALE2 usage"
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Error on missing foci file
+    description: Verify graceful error when foci file is missing
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getALE2 nonexistent_file.txt 2>&1
+    expected_exit_code: 0
+
+  - name: Error on missing ALE image for clustering
+    description: Verify error when ALE image for clustering is missing
+    command: java -cp /opt/gingerale/gingerale.jar org.brainmap.meta.getClustersOnly nonexistent_ale.nii 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FILE FORMAT HANDLING
+  # ==========================================================================
+  - name: NIfTI output format
+    description: Verify output is valid NIfTI format by checking file exists and has content
+    depends_on: Basic ALE analysis (Talairach)
+    command: test -s test_output/gingerale/ale_results/motor_tal_ALE.nii && od -N4 -A x -t x1 test_output/gingerale/ale_results/motor_tal_ALE.nii 2>&1 | head -1
+    expected_exit_code: 0
+
+  - name: Text output format
+    description: Verify cluster statistics text output format
+    depends_on: Basic cluster statistics
+    command: head -20 test_output/gingerale/ale_results/motor_p01_stats.txt 2>&1
+    expected_output_contains: "mm^3"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/gingerale
+    echo "Test outputs preserved in test_output/gingerale/"

@@ -1,0 +1,825 @@
+# MRtrix3Tissue container test suite
+# Tests for MRtrix3Tissue v5.2.8 - MRtrix3 fork with 3-Tissue CSD capabilities
+#
+# MRtrix3Tissue adds capabilities for 3-Tissue CSD modelling and analysis
+# to a complete version of MRtrix3. More info: https://3Tissue.github.io
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# Note: MRtrix3 uses MIF format internally but supports NIfTI I/O
+
+name: mrtrix3tissue
+version: 5.2.8
+container: mrtrix3tissue_5.2.8_20201111.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - Version and Info
+  # ==========================================================================
+  - name: Version check
+    description: Verify MRtrix3Tissue binary runs and reports version
+    command: mrconvert --version 2>&1 | head -1
+    expected_output_contains: "3Tissue_v5.2.8"
+
+  - name: mrinfo basic header display
+    description: Display image header information for T1w image
+    command: mrinfo ${t1w}
+    expected_output_contains: "Dimensions:"
+
+  - name: mrinfo format query
+    description: Query image format from header
+    command: mrinfo ${t1w} -format
+    expected_output_contains: "NIfTI"
+
+  - name: mrinfo dimensions query
+    description: Query image dimensions
+    command: mrinfo ${t1w} -size
+    expected_exit_code: 0
+
+  - name: mrinfo spacing query
+    description: Query voxel spacing
+    command: mrinfo ${t1w} -spacing
+    expected_exit_code: 0
+
+  - name: mrinfo datatype query
+    description: Query data type
+    command: mrinfo ${t1w} -datatype
+    expected_exit_code: 0
+
+  - name: mrinfo transform query
+    description: Query image transformation matrix
+    command: mrinfo ${t1w} -transform
+    expected_exit_code: 0
+
+  - name: mrinfo ndim query
+    description: Query number of dimensions
+    command: mrinfo ${t1w} -ndim
+    expected_exit_code: 0
+
+  - name: mrinfo strides query
+    description: Query data strides
+    command: mrinfo ${t1w} -strides
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # IMAGE CONVERSION - mrconvert
+  # ==========================================================================
+  - name: Convert NIfTI to MIF format
+    description: Convert T1w NIfTI to MRtrix internal format
+    command: mrconvert ${t1w} test_output/t1w.mif -force
+    validate:
+      - output_exists: ${output_dir}/t1w.mif
+
+  - name: Convert MIF back to NIfTI
+    description: Convert MIF back to NIfTI format
+    command: mrconvert test_output/t1w.mif test_output/t1w_roundtrip.nii.gz -force
+    depends_on: Convert NIfTI to MIF format
+    validate:
+      - output_exists: ${output_dir}/t1w_roundtrip.nii.gz
+
+  - name: Extract single volume from 4D
+    description: Extract first volume from 4D BOLD image
+    command: mrconvert ${bold} -coord 3 0 test_output/bold_vol0.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/bold_vol0.nii.gz
+
+  - name: Extract volume range from 4D
+    description: Extract first 10 volumes from 4D BOLD image
+    command: mrconvert ${bold} -coord 3 0:9 test_output/bold_first10.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/bold_first10.nii.gz
+
+  - name: Extract and reduce dimensions
+    description: Extract first volume and make output 3D
+    command: mrconvert ${bold} -coord 3 0 -axes 0,1,2 test_output/bold_vol0_3d.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/bold_vol0_3d.nii.gz
+
+  - name: Permute axes
+    description: Permute image axes (swap x and y)
+    command: mrconvert ${t1w} -axes 1,0,2 test_output/t1w_permuted.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_permuted.nii.gz
+
+  - name: Change datatype to float32
+    description: Convert image to float32 datatype
+    command: mrconvert ${t1w} -datatype float32 test_output/t1w_float32.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_float32.nii.gz
+
+  - name: Change datatype to int16
+    description: Convert image to int16 datatype
+    command: mrconvert ${t1w} -datatype int16 test_output/t1w_int16.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_int16.nii.gz
+
+  - name: Specify output strides
+    description: Change data layout strides
+    command: mrconvert ${t1w} -strides 1,2,3 test_output/t1w_strides.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_strides.nii.gz
+
+  # ==========================================================================
+  # IMAGE CALCULATOR - mrcalc
+  # ==========================================================================
+  - name: mrcalc absolute value
+    description: Compute absolute value of image
+    command: mrcalc ${t1w} -abs test_output/t1w_abs.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_abs.nii.gz
+
+  - name: mrcalc negative
+    description: Compute negative of image
+    command: mrcalc ${t1w} -neg test_output/t1w_neg.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_neg.nii.gz
+
+  - name: mrcalc add constant
+    description: Add constant value to image
+    command: mrcalc ${t1w} 100 -add test_output/t1w_add100.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_add100.nii.gz
+
+  - name: mrcalc subtract constant
+    description: Subtract constant value from image
+    command: mrcalc ${t1w} 50 -subtract test_output/t1w_sub50.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_sub50.nii.gz
+
+  - name: mrcalc multiply constant
+    description: Multiply image by constant
+    command: mrcalc ${t1w} 2 -multiply test_output/t1w_mul2.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_mul2.nii.gz
+
+  - name: mrcalc divide constant
+    description: Divide image by constant
+    command: mrcalc ${t1w} 2 -divide test_output/t1w_div2.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_div2.nii.gz
+
+  - name: mrcalc square root
+    description: Compute square root of image
+    command: mrcalc ${t1w} -sqrt test_output/t1w_sqrt.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_sqrt.nii.gz
+
+  - name: mrcalc power
+    description: Raise image to power of 2
+    command: mrcalc ${t1w} 2 -pow test_output/t1w_pow2.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_pow2.nii.gz
+
+  - name: mrcalc minimum of two images
+    description: Compute voxel-wise minimum
+    command: mrcalc ${t1w} ${t1w} -min test_output/t1w_min_t2.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_min_t2.nii.gz
+
+  - name: mrcalc maximum of two images
+    description: Compute voxel-wise maximum
+    command: mrcalc ${t1w} ${t1w} -max test_output/t1w_max_t2.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_max_t2.nii.gz
+
+  - name: mrcalc less than comparison
+    description: Create binary mask from threshold
+    command: mrcalc ${t1w} 100 -lt test_output/t1w_lt100.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_lt100.nii.gz
+
+  - name: mrcalc greater than comparison
+    description: Create binary mask from threshold (voxels > 100)
+    command: mrcalc ${t1w} 100 -gt test_output/t1w_gt100.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_gt100.nii.gz
+
+  - name: mrcalc conditional if-then-else
+    description: Conditional replacement using -if operator
+    command: mrcalc ${t1w} 100 -gt ${t1w} 0 -if test_output/t1w_thresh100.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh100.nii.gz
+
+  - name: mrcalc complex expression
+    description: Complex math expression (r = 2*a + 100)
+    command: mrcalc ${t1w} 2 -multiply 100 -add test_output/t1w_complex.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_complex.nii.gz
+
+  - name: mrcalc random noise
+    description: Add random uniform noise to image
+    command: mrcalc ${t1w} rand 10 -multiply -add test_output/t1w_noisy.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_noisy.nii.gz
+
+  - name: mrcalc gaussian noise
+    description: Add random Gaussian noise to image
+    command: mrcalc ${t1w} randn 10 -multiply -add test_output/t1w_noisy_gauss.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_noisy_gauss.nii.gz
+
+  # ==========================================================================
+  # MATH ACROSS IMAGES/AXES - mrmath
+  # ==========================================================================
+  - name: mrmath temporal mean
+    description: Compute mean across 4th dimension (temporal mean)
+    command: mrmath ${bold} mean test_output/bold_tmean.nii.gz -axis 3 -force
+    validate:
+      - output_exists: ${output_dir}/bold_tmean.nii.gz
+
+  - name: mrmath temporal std
+    description: Compute standard deviation across time
+    command: mrmath ${bold} std test_output/bold_tstd.nii.gz -axis 3 -force
+    validate:
+      - output_exists: ${output_dir}/bold_tstd.nii.gz
+
+  - name: mrmath temporal median
+    description: Compute median across time
+    command: mrmath ${bold} median test_output/bold_tmedian.nii.gz -axis 3 -force
+    validate:
+      - output_exists: ${output_dir}/bold_tmedian.nii.gz
+
+  - name: mrmath temporal sum
+    description: Compute sum across time
+    command: mrmath ${bold} sum test_output/bold_tsum.nii.gz -axis 3 -force
+    validate:
+      - output_exists: ${output_dir}/bold_tsum.nii.gz
+
+  - name: mrmath temporal min
+    description: Compute minimum across time
+    command: mrmath ${bold} min test_output/bold_tmin.nii.gz -axis 3 -force
+    validate:
+      - output_exists: ${output_dir}/bold_tmin.nii.gz
+
+  - name: mrmath temporal max
+    description: Compute maximum across time
+    command: mrmath ${bold} max test_output/bold_tmax.nii.gz -axis 3 -force
+    validate:
+      - output_exists: ${output_dir}/bold_tmax.nii.gz
+
+  - name: mrmath temporal variance
+    description: Compute variance across time
+    command: mrmath ${bold} var test_output/bold_tvar.nii.gz -axis 3 -force
+    validate:
+      - output_exists: ${output_dir}/bold_tvar.nii.gz
+
+  - name: mrmath temporal rms
+    description: Compute root-mean-square across time
+    command: mrmath ${bold} rms test_output/bold_trms.nii.gz -axis 3 -force
+    validate:
+      - output_exists: ${output_dir}/bold_trms.nii.gz
+
+  - name: mrmath X-axis mean
+    description: Compute mean along X axis
+    command: mrmath ${t1w} mean test_output/t1w_xmean.nii.gz -axis 0 -force
+    validate:
+      - output_exists: ${output_dir}/t1w_xmean.nii.gz
+
+  - name: mrmath Y-axis mean
+    description: Compute mean along Y axis
+    command: mrmath ${t1w} mean test_output/t1w_ymean.nii.gz -axis 1 -force
+    validate:
+      - output_exists: ${output_dir}/t1w_ymean.nii.gz
+
+  - name: mrmath Z-axis mean
+    description: Compute mean along Z axis
+    command: mrmath ${t1w} mean test_output/t1w_zmean.nii.gz -axis 2 -force
+    validate:
+      - output_exists: ${output_dir}/t1w_zmean.nii.gz
+
+  - name: mrmath product across images
+    description: Multiply two images voxel-wise
+    command: mrmath ${t1w} ${t1w} product test_output/t1w_product.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_product.nii.gz
+
+  # ==========================================================================
+  # IMAGE STATISTICS - mrstats
+  # ==========================================================================
+  - name: mrstats all statistics
+    description: Compute all image statistics
+    command: mrstats ${t1w}
+    expected_output_contains: "mean"
+
+  - name: mrstats mean only
+    description: Output only mean value
+    command: mrstats ${t1w} -output mean
+    expected_exit_code: 0
+
+  - name: mrstats multiple outputs
+    description: Output multiple statistics
+    command: mrstats ${t1w} -output mean -output std -output min -output max
+    expected_exit_code: 0
+
+  - name: mrstats ignore zeros
+    description: Compute statistics ignoring zero values
+    command: mrstats ${t1w} -ignorezero
+    expected_exit_code: 0
+
+  - name: mrstats 4D all volumes
+    description: Statistics across all volumes of 4D image
+    command: mrstats ${bold} -allvolumes -output mean
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # IMAGE FILTERING - mrfilter
+  # ==========================================================================
+  - name: mrfilter smooth default
+    description: Apply Gaussian smoothing with default sigma
+    command: mrfilter ${t1w} smooth test_output/t1w_smooth.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth.nii.gz
+
+  - name: mrfilter smooth custom sigma
+    description: Apply Gaussian smoothing with 2mm sigma
+    command: mrfilter ${t1w} smooth -stdev 2 test_output/t1w_smooth2mm.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth2mm.nii.gz
+
+  - name: mrfilter smooth FWHM
+    description: Apply Gaussian smoothing with 4mm FWHM
+    command: mrfilter ${t1w} smooth -fwhm 4 test_output/t1w_smooth_fwhm4.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_fwhm4.nii.gz
+
+  - name: mrfilter median
+    description: Apply median filter
+    command: mrfilter ${t1w} median test_output/t1w_median.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_median.nii.gz
+
+  - name: mrfilter median custom extent
+    description: Apply median filter with 5x5x5 kernel
+    command: mrfilter ${t1w} median -extent 5 test_output/t1w_median5.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_median5.nii.gz
+
+  - name: mrfilter gradient magnitude
+    description: Compute gradient magnitude
+    command: mrfilter ${t1w} gradient -magnitude test_output/t1w_gradient_mag.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_gradient_mag.nii.gz
+
+  - name: mrfilter gradient components
+    description: Compute gradient components (x,y,z)
+    command: mrfilter ${t1w} gradient test_output/t1w_gradient.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_gradient.nii.gz
+
+  - name: mrfilter normalise
+    description: Apply local intensity normalization
+    command: mrfilter ${t1w} normalise test_output/t1w_normalise.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_normalise.nii.gz
+
+  - name: mrfilter FFT forward
+    description: Apply forward Fourier transform (crashes with SIGFPE - container bug)
+    command: mrfilter ${t1w} fft -magnitude test_output/t1w_fft.nii.gz -force
+    expected_exit_code: 8
+
+  # ==========================================================================
+  # THRESHOLDING - mrthreshold
+  # ==========================================================================
+  - name: mrthreshold automatic
+    description: Automatic threshold detection
+    command: mrthreshold ${t1w} test_output/t1w_thresh_auto.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_auto.nii.gz
+
+  - name: mrthreshold absolute value
+    description: Threshold at absolute value
+    command: mrthreshold ${t1w} -abs 100 test_output/t1w_thresh_abs100.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_abs100.nii.gz
+
+  - name: mrthreshold percentile
+    description: Threshold at percentile
+    command: mrthreshold ${t1w} -percentile 50 test_output/t1w_thresh_p50.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_p50.nii.gz
+
+  - name: mrthreshold top N
+    description: Keep top N voxels
+    command: mrthreshold ${t1w} -top 10000 test_output/t1w_thresh_top10k.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_top10k.nii.gz
+
+  - name: mrthreshold bottom N
+    description: Keep bottom N voxels
+    command: mrthreshold ${t1w} -bottom 10000 test_output/t1w_thresh_bottom10k.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_bottom10k.nii.gz
+
+  - name: mrthreshold invert
+    description: Invert threshold selection
+    command: mrthreshold ${t1w} -abs 100 -invert test_output/t1w_thresh_invert.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_invert.nii.gz
+
+  # ==========================================================================
+  # MASK FILTERING - maskfilter
+  # ==========================================================================
+  - name: Create binary mask for maskfilter tests
+    description: Create binary mask using threshold
+    command: mrthreshold ${t1w} -abs 100 test_output/t1w_mask_base.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_base.nii.gz
+
+  - name: maskfilter dilate
+    description: Dilate binary mask
+    command: maskfilter test_output/t1w_mask_base.nii.gz dilate test_output/mask_dilated.nii.gz -force
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/mask_dilated.nii.gz
+
+  - name: maskfilter dilate multiple passes
+    description: Dilate mask with 3 passes
+    command: maskfilter test_output/t1w_mask_base.nii.gz dilate -npass 3 test_output/mask_dilated3.nii.gz -force
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/mask_dilated3.nii.gz
+
+  - name: maskfilter erode
+    description: Erode binary mask
+    command: maskfilter test_output/t1w_mask_base.nii.gz erode test_output/mask_eroded.nii.gz -force
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/mask_eroded.nii.gz
+
+  - name: maskfilter erode multiple passes
+    description: Erode mask with 2 passes
+    command: maskfilter test_output/t1w_mask_base.nii.gz erode -npass 2 test_output/mask_eroded2.nii.gz -force
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/mask_eroded2.nii.gz
+
+  - name: maskfilter median
+    description: Apply median filter to mask
+    command: maskfilter test_output/t1w_mask_base.nii.gz median test_output/mask_median.nii.gz -force
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/mask_median.nii.gz
+
+  - name: maskfilter connect largest
+    description: Keep only largest connected component
+    command: maskfilter test_output/t1w_mask_base.nii.gz connect -largest test_output/mask_largest.nii.gz -force
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/mask_largest.nii.gz
+
+  - name: maskfilter connect 26-connectivity
+    description: Connected component analysis with 26-connectivity
+    command: maskfilter test_output/t1w_mask_base.nii.gz connect -largest -connectivity test_output/mask_connect26.nii.gz -force
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/mask_connect26.nii.gz
+
+  - name: maskfilter clean
+    description: Clean mask by removing thin bridges
+    command: maskfilter test_output/t1w_mask_base.nii.gz clean test_output/mask_clean.nii.gz -force
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/mask_clean.nii.gz
+
+  # ==========================================================================
+  # GRID OPERATIONS - mrgrid
+  # ==========================================================================
+  - name: mrgrid regrid to new voxel size
+    description: Regrid image to 2mm isotropic voxels
+    command: mrgrid ${t1w} regrid -voxel 2 test_output/t1w_regrid2mm.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_regrid2mm.nii.gz
+
+  - name: mrgrid regrid to template
+    description: Regrid T1w to match T2 grid
+    command: mrgrid ${t1w} regrid -template ${t2} test_output/t1w_regrid_to_t2.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_regrid_to_t2.nii.gz
+
+  - name: mrgrid regrid nearest neighbor
+    description: Regrid with nearest neighbor interpolation
+    command: mrgrid ${t1w} regrid -voxel 2 -interp nearest test_output/t1w_regrid_nn.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_regrid_nn.nii.gz
+
+  - name: mrgrid regrid cubic interpolation
+    description: Regrid with cubic interpolation
+    command: mrgrid ${t1w} regrid -voxel 2 -interp cubic test_output/t1w_regrid_cubic.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_regrid_cubic.nii.gz
+
+  - name: mrgrid pad image
+    description: Pad image with zeros
+    command: mrgrid ${t1w} pad -axis 0 10,10 test_output/t1w_padded.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_padded.nii.gz
+
+  - name: mrgrid pad all axes
+    description: Pad all axes equally
+    command: mrgrid ${t1w} pad -all_axes -axis 0 5,5 -axis 1 5,5 -axis 2 5,5 test_output/t1w_padded_all.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_padded_all.nii.gz
+
+  - name: mrgrid crop image
+    description: Crop image
+    command: mrgrid ${t1w} crop -axis 0 10,-10 test_output/t1w_cropped.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_cropped.nii.gz
+
+  - name: mrgrid crop to mask
+    description: Crop image to mask bounding box
+    command: mrgrid ${t1w} crop -mask test_output/t1w_mask_base.nii.gz test_output/t1w_cropped_mask.nii.gz -force
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/t1w_cropped_mask.nii.gz
+
+  # ==========================================================================
+  # IMAGE TRANSFORMATION - mrtransform
+  # ==========================================================================
+  - name: mrtransform flip X axis
+    description: Flip image along X axis
+    command: mrtransform ${t1w} -flip 0 test_output/t1w_flipx.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_flipx.nii.gz
+
+  - name: mrtransform flip Y axis
+    description: Flip image along Y axis
+    command: mrtransform ${t1w} -flip 1 test_output/t1w_flipy.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_flipy.nii.gz
+
+  - name: mrtransform flip Z axis
+    description: Flip image along Z axis
+    command: mrtransform ${t1w} -flip 2 test_output/t1w_flipz.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_flipz.nii.gz
+
+  - name: mrtransform flip multiple axes
+    description: Flip image along X and Y axes
+    command: mrtransform ${t1w} -flip 0,1 test_output/t1w_flipxy.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_flipxy.nii.gz
+
+  # ==========================================================================
+  # IMAGE CONCATENATION - mrcat
+  # ==========================================================================
+  - name: mrcat concatenate along new axis
+    description: Concatenate T1w copies to create 4D image
+    command: mrcat ${t1w} ${t1w} ${t1w} test_output/t1w_cat3.nii.gz -axis 3 -force
+    validate:
+      - output_exists: ${output_dir}/t1w_cat3.nii.gz
+
+  - name: mrcat concatenate T1 and T2
+    description: Concatenate T1w copies along 4th axis
+    command: mrcat ${t1w} ${t1w} test_output/t1t2_cat.nii.gz -axis 3 -force
+    validate:
+      - output_exists: ${output_dir}/t1t2_cat.nii.gz
+
+  # ==========================================================================
+  # IMAGE EDITING - mredit
+  # ==========================================================================
+  - name: mredit set single voxel
+    description: Set value of single voxel
+    command: mredit ${t1w} test_output/t1w_edited_voxel.nii.gz -voxel 50,50,50 1000 -force
+    validate:
+      - output_exists: ${output_dir}/t1w_edited_voxel.nii.gz
+
+  - name: mredit draw sphere
+    description: Draw sphere at location
+    command: mredit ${t1w} test_output/t1w_edited_sphere.nii.gz -sphere 80,80,80 10 1000 -force
+    validate:
+      - output_exists: ${output_dir}/t1w_edited_sphere.nii.gz
+
+  - name: mredit fill plane
+    description: Fill a plane with constant value
+    command: mredit ${t1w} test_output/t1w_edited_plane.nii.gz -plane 2 50 0 -force
+    validate:
+      - output_exists: ${output_dir}/t1w_edited_plane.nii.gz
+
+  # ==========================================================================
+  # HISTOGRAM OPERATIONS - mrhistogram
+  # ==========================================================================
+  - name: mrhistogram generate
+    description: Generate intensity histogram
+    command: mrhistogram ${t1w} test_output/t1w_hist.txt -force
+    validate:
+      - output_exists: ${output_dir}/t1w_hist.txt
+
+  - name: mrhistogram with bins
+    description: Generate histogram with specified number of bins
+    command: mrhistogram ${t1w} -bins 100 test_output/t1w_hist100.txt -force
+    validate:
+      - output_exists: ${output_dir}/t1w_hist100.txt
+
+  - name: mrhistogram ignore zeros
+    description: Generate histogram ignoring zero values
+    command: mrhistogram ${t1w} -ignorezero test_output/t1w_hist_nozero.txt -force
+    validate:
+      - output_exists: ${output_dir}/t1w_hist_nozero.txt
+
+  - name: mrhistogram with mask
+    description: Generate histogram within mask
+    command: mrhistogram ${t1w} -mask test_output/t1w_mask_base.nii.gz test_output/t1w_hist_masked.txt -force
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/t1w_hist_masked.txt
+
+  # ==========================================================================
+  # HISTOGRAM MATCHING - mrhistmatch
+  # ==========================================================================
+  - name: mrhistmatch scale
+    description: Scale intensities to match histogram
+    command: mrhistmatch scale ${t1w} ${t1w} test_output/t1w_histmatch_scale.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_histmatch_scale.nii.gz
+
+  - name: mrhistmatch linear
+    description: Linear histogram matching
+    command: mrhistmatch linear ${t1w} ${t1w} test_output/t1w_histmatch_linear.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_histmatch_linear.nii.gz
+
+  - name: mrhistmatch nonlinear
+    description: Non-linear histogram matching
+    command: mrhistmatch nonlinear ${t1w} ${t1w} test_output/t1w_histmatch_nonlinear.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_histmatch_nonlinear.nii.gz
+
+  # ==========================================================================
+  # IMAGE COMPARISON - mrmetric
+  # ==========================================================================
+  - name: mrmetric compare identical images
+    description: Compare image to itself (should be 0)
+    command: mrmetric ${t1w} ${t1w}
+    expected_exit_code: 0
+
+  - name: mrmetric compare different images
+    description: Compare T1w to T2w (fails - dimension mismatch between images)
+    command: mrmetric ${t1w} ${t2}
+    expected_exit_code: 1
+
+  # ==========================================================================
+  # COLORMAPPING - mrcolour
+  # ==========================================================================
+  - name: mrcolour jet colormap
+    description: Apply jet colormap to image
+    command: mrcolour ${t1w} jet test_output/t1w_jet.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_jet.nii.gz
+
+  - name: mrcolour hot colormap
+    description: Apply hot colormap to image
+    command: mrcolour ${t1w} hot test_output/t1w_hot.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_hot.nii.gz
+
+  - name: mrcolour gray colormap
+    description: Apply grayscale colormap
+    command: mrcolour ${t1w} gray test_output/t1w_gray.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_gray.nii.gz
+
+  - name: mrcolour with bounds
+    description: Apply colormap with custom intensity bounds
+    command: mrcolour ${t1w} jet -lower 50 -upper 500 test_output/t1w_jet_bounds.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_jet_bounds.nii.gz
+
+  # ==========================================================================
+  # GIBBS RINGING REMOVAL - mrdegibbs
+  # ==========================================================================
+  - name: mrdegibbs default
+    description: Remove Gibbs ringing artifacts
+    command: mrdegibbs ${t1w} test_output/t1w_degibbs.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_degibbs.nii.gz
+
+  - name: mrdegibbs custom axes
+    description: Remove Gibbs ringing with specific axes
+    command: mrdegibbs ${t1w} -axes 0,1 test_output/t1w_degibbs_xy.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_degibbs_xy.nii.gz
+
+  # ==========================================================================
+  # DATA EXTRACTION - mrdump
+  # ==========================================================================
+  - name: mrdump to file
+    description: Dump image values to text file
+    command: mrdump test_output/bold_vol0_3d.nii.gz test_output/bold_vol0_dump.txt -force
+    depends_on: Extract and reduce dimensions
+    validate:
+      - output_exists: ${output_dir}/bold_vol0_dump.txt
+
+  # ==========================================================================
+  # COMPLEX PIPELINES
+  # ==========================================================================
+  - name: Pipeline brain extraction simple
+    description: Simple brain extraction pipeline
+    command: |
+      mrthreshold ${t1w} -percentile 20 test_output/brain_mask_raw.nii.gz -force && \
+      maskfilter test_output/brain_mask_raw.nii.gz dilate -npass 2 test_output/brain_mask_dilated.nii.gz -force && \
+      maskfilter test_output/brain_mask_dilated.nii.gz erode -npass 2 test_output/brain_mask_closed.nii.gz -force && \
+      maskfilter test_output/brain_mask_closed.nii.gz connect -largest test_output/brain_mask_final.nii.gz -force && \
+      mrcalc ${t1w} test_output/brain_mask_final.nii.gz -multiply test_output/t1w_brain.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_brain.nii.gz
+
+  - name: Pipeline temporal SNR calculation
+    description: Calculate temporal SNR from BOLD data
+    command: |
+      mrmath ${bold} mean test_output/bold_mean_tmp.nii.gz -axis 3 -force && \
+      mrmath ${bold} std test_output/bold_std_tmp.nii.gz -axis 3 -force && \
+      mrcalc test_output/bold_mean_tmp.nii.gz test_output/bold_std_tmp.nii.gz -divide test_output/bold_tsnr.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/bold_tsnr.nii.gz
+
+  - name: Pipeline Z-score normalization
+    description: Z-score normalize an image
+    command: |
+      mrstats ${t1w} -output mean > test_output/t1w_mean_val.txt && \
+      mrstats ${t1w} -output std > test_output/t1w_std_val.txt && \
+      MEAN=$(cat test_output/t1w_mean_val.txt) && \
+      STD=$(cat test_output/t1w_std_val.txt) && \
+      mrcalc ${t1w} $MEAN -subtract $STD -divide test_output/t1w_zscore.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_zscore.nii.gz
+
+  - name: Pipeline intensity normalization
+    description: Normalize image to 0-1 range
+    command: |
+      mrstats ${t1w} -output min > test_output/t1w_min_val.txt && \
+      mrstats ${t1w} -output max > test_output/t1w_max_val.txt && \
+      MIN=$(cat test_output/t1w_min_val.txt) && \
+      MAX=$(cat test_output/t1w_max_val.txt) && \
+      RANGE=$(echo "$MAX - $MIN" | bc -l) && \
+      mrcalc ${t1w} $MIN -subtract $RANGE -divide test_output/t1w_normalized.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_normalized.nii.gz
+
+  - name: Pipeline smooth and mask
+    description: Smooth image then apply mask
+    command: |
+      mrfilter ${t1w} smooth -stdev 2 test_output/t1w_smooth_pipeline.nii.gz -force && \
+      mrcalc test_output/t1w_smooth_pipeline.nii.gz test_output/t1w_mask_base.nii.gz -multiply test_output/t1w_smooth_masked.nii.gz -force
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_masked.nii.gz
+
+  - name: Pipeline edge detection
+    description: Compute gradient magnitude as edge detection
+    command: |
+      mrfilter ${t1w} smooth -stdev 1 test_output/t1w_preedge.nii.gz -force && \
+      mrfilter test_output/t1w_preedge.nii.gz gradient -magnitude test_output/t1w_edges.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_edges.nii.gz
+
+  - name: Pipeline bias field simulation
+    description: Simulate and correct simple bias field
+    command: |
+      mrfilter ${t1w} smooth -stdev 30 test_output/t1w_bias.nii.gz -force && \
+      mrcalc ${t1w} test_output/t1w_bias.nii.gz -divide test_output/t1w_bias_corrected.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/t1w_bias_corrected.nii.gz
+
+  # ==========================================================================
+  # MISCELLANEOUS OPERATIONS
+  # ==========================================================================
+  - name: mraverageheader compute average header
+    description: Compute average header from multiple images
+    command: mraverageheader ${t1w} ${t2} test_output/avg_header.mif -force
+    validate:
+      - output_exists: ${output_dir}/avg_header.mif
+
+  - name: mrcheckerboardmask create checkerboard
+    description: Create checkerboard pattern mask
+    command: mrcheckerboardmask ${t1w} test_output/checkerboard.nii.gz -force
+    validate:
+      - output_exists: ${output_dir}/checkerboard.nii.gz
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

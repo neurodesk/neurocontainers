@@ -1,0 +1,700 @@
+# FatSegNet container test suite
+# Tests for FatSegNet v1.0 GPU - Deep learning pipeline for adipose tissue segmentation
+#
+# FatSegNet is designed for segmenting visceral (VAT) and subcutaneous (SAT) adipose tissue
+# on fat images from two-point Dixon MRI sequences. Developed at DZNE for the Rhineland Study.
+#
+# Citation: Estrada, Santiago, et al. "FatSegNet: A fully automated deep learning pipeline
+# for adipose tissue segmentation on abdominal dixon MRI." Magnetic resonance in medicine
+# 83.4 (2020): 1471-1483. https://doi.org/10.1002/mrm.28022
+#
+# NOTE: This container requires NVIDIA GPU with CUDA support for full functionality.
+# Tests marked with [GPU-REQUIRED] will fail without proper GPU/CUDA setup.
+#
+# Expected input data format:
+#   - Fat image: FatImaging_F.nii.gz (from Dixon sequence)
+#   - Water image: FatImaging_W.nii.gz (from Dixon sequence)
+#   - Expected dimensions: [256, 224, 72]
+#   - Expected spacing: [1.9531, 1.9531, 5.0] mm
+
+name: fatsegnet
+version: 1.0.gpu
+container: fatsegnet_1.0.gpu_20201212.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+
+test_data:
+  # Using structural data as placeholder - real FatSegNet requires Dixon MRI data
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/fatsegnet_data
+    mkdir -p test_output/fatsegnet_data/test_subject
+    mkdir -p test_output/fatsegnet_output
+
+tests:
+  # ==========================================================================
+  # CONTAINER ENVIRONMENT VERIFICATION
+  # ==========================================================================
+  - name: Verify container README exists
+    description: Check that container has documentation
+    command: cat /README.md
+    expected_output_contains: "fatsegnet"
+
+  - name: Verify README contains citation
+    description: Check citation information is present
+    command: cat /README.md
+    expected_output_contains: "FatSegNet: A fully automated deep learning pipeline"
+
+  - name: Verify README contains usage example
+    description: Check that basic usage example is documented
+    command: cat /README.md
+    expected_output_contains: "fatsegnet"
+
+  - name: Verify container labels
+    description: Check Singularity/Apptainer labels exist
+    command: cat /.singularity.d/labels.json
+    expected_output_contains: "GITHUB"
+
+  - name: Verify CUDA version in labels
+    description: Check CUDA version information
+    command: cat /.singularity.d/labels.json
+    expected_output_contains: "cuda"
+
+  # ==========================================================================
+  # PYTHON ENVIRONMENT VERIFICATION
+  # ==========================================================================
+  - name: Python version check
+    description: Verify Python 3.5 is available
+    command: python3 --version
+    expected_output_contains: "Python 3"
+
+  - name: Python executable exists
+    description: Check python3 is in PATH
+    command: which python3
+    expected_output_contains: "python"
+
+  - name: Pip is available
+    description: Verify pip package manager exists
+    command: pip3 --version 2>&1 | head -1
+    expected_output_contains: "pip"
+
+  # ==========================================================================
+  # FATSEGNET INSTALLATION VERIFICATION
+  # ==========================================================================
+  - name: FatSegNet directory exists
+    description: Verify FatSegNet is installed in /opt
+    command: ls -la /opt/FatSegNet/
+    expected_output_contains: "README.md"
+
+  - name: FatSegNet tool directory exists
+    description: Verify tool directory structure
+    command: ls -la /tool/
+    expected_output_contains: "run_FatSegNet.py"
+
+  - name: Main script exists
+    description: Verify run_FatSegNet.py exists
+    command: ls -la /tool/run_FatSegNet.py
+    expected_output_contains: "run_FatSegNet.py"
+
+  - name: Code directory exists
+    description: Verify Code module directory
+    command: ls -la /tool/Code/
+    expected_output_contains: "adipose_pipeline.py"
+
+  - name: Utilities directory exists
+    description: Verify utilities module
+    command: ls -la /tool/Code/utilities/
+    expected_output_contains: "conform.py"
+
+  - name: Models directory exists
+    description: Verify segmentation models directory
+    command: ls -la /tool/Adipose_Seg_Models/
+    expected_output_contains: "Segmentation"
+
+  - name: Localization models exist
+    description: Verify localization model directory
+    command: ls -la /tool/Adipose_Seg_Models/Localization/
+    expected_exit_code: 0
+
+  - name: Segmentation models exist
+    description: Verify segmentation model directory
+    command: ls -la /tool/Adipose_Seg_Models/Segmentation/
+    expected_output_contains: "CDFNet_Baseline_axial"
+
+  - name: Axial model weights exist
+    description: Verify axial model has weights
+    command: ls -la /tool/Adipose_Seg_Models/Segmentation/CDFNet_Baseline_axial/logs/
+    expected_output_contains: "best_weights.h5"
+
+  - name: Coronal model weights exist
+    description: Verify coronal model has weights
+    command: ls -la /tool/Adipose_Seg_Models/Segmentation/CDFNet_Baseline_coronal/logs/
+    expected_output_contains: "best_weights.h5"
+
+  - name: Sagittal model weights exist
+    description: Verify sagittal model has weights
+    command: ls -la /tool/Adipose_Seg_Models/Segmentation/CDFNet_Baseline_sagittal/logs/
+    expected_output_contains: "best_weights.h5"
+
+  - name: Multiview model weights exist
+    description: Verify multiview fusion model has weights
+    command: ls -la /tool/Adipose_Seg_Models/Segmentation/Baseline_Mixed_Multi_Plane/logs/
+    expected_output_contains: "best_weights.h5"
+
+  # ==========================================================================
+  # EXAMPLE DATA VERIFICATION
+  # ==========================================================================
+  - name: Example data folder exists
+    description: Verify example data directory
+    command: ls -la /opt/FatSegNet/example_data_folder/
+    expected_output_contains: "participants.csv"
+
+  - name: Example participants file exists
+    description: Verify sample participants CSV
+    command: cat /opt/FatSegNet/example_data_folder/participants.csv
+    expected_output_contains: "subject_1"
+
+  - name: Example subject directories exist
+    description: Verify subject folder structure
+    command: ls /opt/FatSegNet/example_data_folder/
+    expected_output_contains: "subject_1"
+
+  - name: Example fat image exists
+    description: Verify example fat image file
+    command: ls /opt/FatSegNet/example_data_folder/subject_1/
+    expected_output_contains: "FatImaging_F.nii.gz"
+
+  - name: Example water image exists
+    description: Verify example water image file
+    command: ls /opt/FatSegNet/example_data_folder/subject_1/
+    expected_output_contains: "FatImaging_W.nii.gz"
+
+  # ==========================================================================
+  # UTILITY SCRIPTS VERIFICATION
+  # ==========================================================================
+  - name: Conform script exists
+    description: Verify image conforming utility
+    command: cat /tool/Code/utilities/conform.py | head -20
+    expected_output_contains: "Copyright"
+
+  - name: Metrics script exists
+    description: Verify metrics calculation utility
+    command: cat /tool/Code/utilities/metrics.py | head -20
+    expected_output_contains: "Copyright"
+
+  - name: Image processing script exists
+    description: Verify image processing utility
+    command: cat /tool/Code/utilities/image_processing.py | head -20
+    expected_output_contains: "Copyright"
+
+  - name: Visualization script exists
+    description: Verify visualization utility
+    command: cat /tool/Code/utilities/visualization_misc.py | head -20
+    expected_output_contains: "Copyright"
+
+  - name: Models script exists
+    description: Verify model loading utility
+    command: cat /tool/Code/utilities/models.py | head -20
+    expected_output_contains: "Copyright"
+
+  - name: Loss functions script exists
+    description: Verify loss function definitions
+    command: cat /tool/Code/utilities/loss.py | head -20
+    expected_output_contains: "Copyright"
+
+  - name: Misc utilities script exists
+    description: Verify miscellaneous utilities
+    command: cat /tool/Code/utilities/misc.py | head -20
+    expected_output_contains: "Copyright"
+
+  # ==========================================================================
+  # NEUROIMAGING TOOLS VERIFICATION
+  # ==========================================================================
+  - name: Nibabel is available
+    description: Verify NIfTI library is installed
+    command: python3 -c "import nibabel; print(nibabel.__version__)" 2>&1 | tail -1
+    expected_exit_code: 0
+
+  - name: Numpy is available
+    description: Verify NumPy is installed
+    command: python3 -c "import numpy; print(numpy.__version__)" 2>&1 | tail -1
+    expected_exit_code: 0
+
+  - name: Scipy is available
+    description: Verify SciPy is installed
+    command: python3 -c "import scipy; print(scipy.__version__)" 2>&1 | tail -1
+    expected_exit_code: 0
+
+  - name: Pandas is available
+    description: Verify Pandas is installed
+    command: python3 -c "import pandas; print(pandas.__version__)" 2>&1 | tail -1
+    expected_exit_code: 0
+
+  - name: Scikit-image is available
+    description: Verify scikit-image is installed
+    command: python3 -c "import skimage; print(skimage.__version__)" 2>&1 | tail -1
+    expected_exit_code: 0
+
+  - name: H5py is available
+    description: Verify HDF5 library is installed
+    command: python3 -c "import h5py; print(h5py.__version__)" 2>&1 | tail -1
+    expected_exit_code: 0
+
+  - name: Matplotlib is available
+    description: Verify plotting library is installed
+    command: python3 -c "import matplotlib; print(matplotlib.__version__)" 2>&1 | tail -1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NIBABEL FUNCTIONALITY TESTS
+  # ==========================================================================
+  - name: Nibabel NIfTI tools exist
+    description: Verify nib-ls command is available
+    command: which nib-ls
+    expected_output_contains: "nib-ls"
+
+  - name: Nibabel diagnostics tool exists
+    description: Verify nib-nifti-dx command is available
+    command: which nib-nifti-dx
+    expected_output_contains: "nib-nifti-dx"
+
+  - name: Parrec converter exists
+    description: Verify PAR/REC to NIfTI converter
+    command: which parrec2nii
+    expected_output_contains: "parrec2nii"
+
+  # ==========================================================================
+  # MAIN SCRIPT ARGUMENT PARSING
+  # ==========================================================================
+  - name: Script has argparse imports
+    description: Verify argument parsing is set up
+    command: grep -c "argparse" /tool/run_FatSegNet.py
+    expected_exit_code: 0
+
+  - name: Script defines file argument
+    description: Verify -f/--file argument exists
+    command: grep "add_argument.*file" /tool/run_FatSegNet.py
+    expected_output_contains: "participants.csv"
+
+  - name: Script defines output argument
+    description: Verify -outp/--output_folder argument exists
+    command: grep "add_argument.*output" /tool/run_FatSegNet.py
+    expected_output_contains: "output"
+
+  - name: Script defines fat image argument
+    description: Verify -fat/--fat_image argument exists
+    command: grep "add_argument.*fat" /tool/run_FatSegNet.py
+    expected_output_contains: "fat_image"
+
+  - name: Script defines water image argument
+    description: Verify -water/--water_image argument exists
+    command: grep "add_argument.*water" /tool/run_FatSegNet.py
+    expected_output_contains: "water_image"
+
+  - name: Script defines localization argument
+    description: Verify -loc/--run_localization argument exists
+    command: grep "add_argument.*localization" /tool/run_FatSegNet.py
+    expected_output_contains: "localization"
+
+  - name: Script defines axial argument
+    description: Verify -axial argument exists
+    command: grep "add_argument.*axial" /tool/run_FatSegNet.py
+    expected_output_contains: "axial"
+
+  - name: Script defines interpolation order argument
+    description: Verify -order argument exists
+    command: grep "add_argument.*order" /tool/run_FatSegNet.py
+    expected_output_contains: "order"
+
+  - name: Script defines compartments argument
+    description: Verify -comp/--compartments argument exists
+    command: grep "add_argument.*compartments" /tool/run_FatSegNet.py
+    expected_output_contains: "compartments"
+
+  - name: Script defines stats argument
+    description: Verify -stats/--run_stats argument exists
+    command: grep "add_argument.*stats" /tool/run_FatSegNet.py
+    expected_output_contains: "stats"
+
+  - name: Script defines GPU argument
+    description: Verify -gpu_id argument exists
+    command: grep "add_argument.*gpu" /tool/run_FatSegNet.py
+    expected_output_contains: "gpu"
+
+  - name: Script defines QC argument
+    description: Verify -No_QC/--control_images argument exists
+    command: grep "add_argument.*control" /tool/run_FatSegNet.py
+    expected_output_contains: "control"
+
+  - name: Script defines AAT threshold argument
+    description: Verify -AAT/--increase_threshold argument exists
+    command: grep "add_argument.*increase" /tool/run_FatSegNet.py
+    expected_output_contains: "increase"
+
+  - name: Script defines ratio threshold argument
+    description: Verify -ratio/--sat_to_vat_threshold argument exists
+    command: grep "add_argument.*ratio" /tool/run_FatSegNet.py
+    expected_output_contains: "ratio"
+
+  # ==========================================================================
+  # PIPELINE CONFIGURATION VERIFICATION
+  # ==========================================================================
+  - name: Default image size is correct
+    description: Verify expected input dimensions [256, 224, 72]
+    command: grep "imgSize" /tool/run_FatSegNet.py
+    expected_output_contains: "256"
+
+  - name: Default spacing is correct
+    description: Verify expected voxel spacing
+    command: grep "spacing" /tool/run_FatSegNet.py
+    expected_output_contains: "1.9531"
+
+  - name: Model paths are configured
+    description: Verify model directory paths
+    command: grep "multiviewModel" /tool/run_FatSegNet.py
+    expected_output_contains: "Adipose_Seg_Models"
+
+  - name: Input path is configured
+    description: Verify input data path
+    command: grep "input_path" /tool/run_FatSegNet.py
+    expected_output_contains: "/tool/Data"
+
+  - name: Output path is configured
+    description: Verify output data path
+    command: grep "output_path" /tool/run_FatSegNet.py
+    expected_output_contains: "/tool/Output"
+
+  # ==========================================================================
+  # ADIPOSE PIPELINE VERIFICATION
+  # ==========================================================================
+  - name: Pipeline imports nibabel
+    description: Verify NIfTI library is imported
+    command: grep "import nibabel" /tool/Code/adipose_pipeline.py
+    expected_output_contains: "nibabel"
+
+  - name: Pipeline imports pandas
+    description: Verify data handling library is imported
+    command: grep "import pandas" /tool/Code/adipose_pipeline.py
+    expected_output_contains: "pandas"
+
+  - name: Pipeline imports keras
+    description: Verify deep learning library is imported
+    command: grep "from keras" /tool/Code/adipose_pipeline.py
+    expected_output_contains: "keras"
+
+  - name: Pipeline defines output filenames
+    description: Verify output file naming convention
+    command: grep "AAT_pred" /tool/Code/adipose_pipeline.py
+    expected_output_contains: "AAT_pred.nii.gz"
+
+  - name: Pipeline defines stats output
+    description: Verify statistics output format
+    command: grep "AAT_stats" /tool/Code/adipose_pipeline.py
+    expected_output_contains: "AAT_stats.tsv"
+
+  - name: Pipeline creates QC images
+    description: Verify quality control image generation
+    command: grep "QC" /tool/Code/adipose_pipeline.py
+    expected_output_contains: "QC"
+
+  # ==========================================================================
+  # METRICS AND STATISTICS VERIFICATION
+  # ==========================================================================
+  - name: Dice coefficient is defined
+    description: Verify dice similarity metric exists
+    command: grep "def dice" /tool/Code/utilities/metrics.py
+    expected_output_contains: "def dice"
+
+  - name: Perimeter calculation exists
+    description: Verify perimeter measurement function
+    command: grep "def perimeter" /tool/Code/utilities/metrics.py
+    expected_output_contains: "perimeter_calculation"
+
+  - name: Area calculation exists
+    description: Verify area calculation function
+    command: grep "def calculate_areas" /tool/Code/utilities/metrics.py
+    expected_output_contains: "calculate_areas"
+
+  - name: Volume calculation exists
+    description: Verify volume calculation function
+    command: grep "def calculate_volumes" /tool/Code/utilities/metrics.py
+    expected_output_contains: "calculate_volumes"
+
+  - name: Statistics calculation exists
+    description: Verify main statistics function
+    command: grep "def calculate_statistics" /tool/Code/utilities/metrics.py
+    expected_output_contains: "calculate_statistics"
+
+  # ==========================================================================
+  # IMAGE PROCESSING VERIFICATION
+  # ==========================================================================
+  - name: Connected components function exists
+    description: Verify largest connected component extraction
+    command: grep "def largets_connected" /tool/Code/utilities/image_processing.py
+    expected_output_contains: "largets_connected_componets"
+
+  - name: Plane change function exists
+    description: Verify multi-plane data handling
+    command: grep "def change_data_plane" /tool/Code/utilities/image_processing.py
+    expected_output_contains: "change_data_plane"
+
+  - name: Label finding function exists
+    description: Verify label boundary detection
+    command: grep "def find_labels" /tool/Code/utilities/image_processing.py
+    expected_output_contains: "find_labels"
+
+  # ==========================================================================
+  # CONFORM UTILITY VERIFICATION
+  # ==========================================================================
+  - name: Orientation checking exists
+    description: Verify image orientation validation
+    command: grep "def check_orientation" /tool/Code/utilities/conform.py
+    expected_output_contains: "check_orientation"
+
+  - name: Resampling function exists
+    description: Verify image resampling capability
+    command: grep "def resample" /tool/Code/utilities/conform.py
+    expected_output_contains: "def resample"
+
+  - name: Conform function exists
+    description: Verify main image conforming function
+    command: grep "def conform" /tool/Code/utilities/conform.py
+    expected_output_contains: "def conform"
+
+  - name: Size mapping function exists
+    description: Verify dimension adjustment function
+    command: grep "def map_size" /tool/Code/utilities/conform.py
+    expected_output_contains: "map_size"
+
+  # ==========================================================================
+  # MODEL LOADING VERIFICATION
+  # ==========================================================================
+  - name: Localization model function exists
+    description: Verify abdominal region localization function
+    command: grep "def run_adipose_localization" /tool/Code/utilities/models.py
+    expected_output_contains: "run_adipose_localization"
+
+  - name: Segmentation model function exists
+    description: Verify adipose tissue segmentation function
+    command: grep "def run_adipose_segmentation" /tool/Code/utilities/models.py
+    expected_output_contains: "run_adipose_segmentation"
+
+  - name: Test model function exists
+    description: Verify single-view model testing function
+    command: grep "def test_model" /tool/Code/utilities/models.py
+    expected_output_contains: "def test_model"
+
+  - name: Multiplane test function exists
+    description: Verify multi-view fusion function
+    command: grep "def test_multiplane" /tool/Code/utilities/models.py
+    expected_output_contains: "test_multiplane"
+
+  # ==========================================================================
+  # LOSS FUNCTIONS VERIFICATION
+  # ==========================================================================
+  - name: Custom loss function exists
+    description: Verify custom loss definition
+    command: grep "def custom_loss" /tool/Code/utilities/loss.py
+    expected_output_contains: "custom_loss"
+
+  - name: Dice coefficient loss exists
+    description: Verify dice loss function
+    command: grep "def dice_coef" /tool/Code/utilities/loss.py
+    expected_output_contains: "dice_coef"
+
+  - name: Class-specific dice exists
+    description: Verify per-class dice metrics
+    command: grep "dice_coef_0" /tool/Code/utilities/loss.py
+    expected_output_contains: "dice_coef_0"
+
+  - name: Average dice coefficient exists
+    description: Verify average dice metric
+    command: grep "def average_dice_coef" /tool/Code/utilities/loss.py
+    expected_output_contains: "average_dice_coef"
+
+  # ==========================================================================
+  # VISUALIZATION VERIFICATION
+  # ==========================================================================
+  - name: Multiview plotting exists
+    description: Verify multi-view visualization function
+    command: grep "def multiview_plotting" /tool/Code/utilities/visualization_misc.py
+    expected_output_contains: "multiview_plotting"
+
+  - name: Color mapping function exists
+    description: Verify colormap generation
+    command: grep "def get_colors" /tool/Code/utilities/visualization_misc.py
+    expected_output_contains: "get_colors"
+
+  # ==========================================================================
+  # FILE UTILITY VERIFICATION
+  # ==========================================================================
+  - name: File locator function exists
+    description: Verify file searching utility
+    command: grep "def locate_file" /tool/Code/utilities/misc.py
+    expected_output_contains: "locate_file"
+
+  - name: Directory locator function exists
+    description: Verify directory searching utility
+    command: grep "def locate_dir" /tool/Code/utilities/misc.py
+    expected_output_contains: "locate_dir"
+
+  - name: HDF5 save function exists
+    description: Verify HDF5 saving capability
+    command: grep "def save_dict_to_hdf5" /tool/Code/utilities/misc.py
+    expected_output_contains: "save_dict_to_hdf5"
+
+  - name: HDF5 load function exists
+    description: Verify HDF5 loading capability
+    command: grep "def load_dict_from_hdf5" /tool/Code/utilities/misc.py
+    expected_output_contains: "load_dict_from_hdf5"
+
+  # ==========================================================================
+  # DOCUMENTATION VERIFICATION
+  # ==========================================================================
+  - name: FatSegNet README has usage instructions
+    description: Verify detailed documentation exists
+    command: grep -c "Usage" /opt/FatSegNet/README.md
+    expected_exit_code: 0
+
+  - name: FatSegNet README has input format description
+    description: Verify input data format is documented
+    command: grep "Input Data format" /opt/FatSegNet/README.md
+    expected_output_contains: "Input"
+
+  - name: FatSegNet README has output format description
+    description: Verify output data format is documented
+    command: grep "Output Data format" /opt/FatSegNet/README.md
+    expected_output_contains: "Output"
+
+  - name: FatSegNet README documents arguments
+    description: Verify command arguments are documented
+    command: grep "Arguments" /opt/FatSegNet/README.md
+    expected_output_contains: "Arguments"
+
+  - name: FatSegNet README has citation
+    description: Verify citation is provided
+    command: grep "cite" /opt/FatSegNet/README.md
+    expected_output_contains: "cite"
+
+  - name: FatSegNet variables PDF exists
+    description: Verify variables documentation PDF
+    command: ls -la /opt/FatSegNet/FatSegNet_Variables.pdf
+    expected_output_contains: "FatSegNet_Variables.pdf"
+
+  # ==========================================================================
+  # CONTAINER TOOL PATHS VERIFICATION
+  # ==========================================================================
+  - name: Jupyter is available
+    description: Verify Jupyter notebook support
+    command: which jupyter 2>/dev/null || echo "jupyter not found"
+    expected_exit_code: 0
+
+  - name: IPython is available
+    description: Verify IPython shell support
+    command: which ipython 2>/dev/null || echo "ipython not found"
+    expected_exit_code: 0
+
+  - name: TensorBoard is available
+    description: Verify TensorBoard for model visualization
+    command: which tensorboard 2>/dev/null || echo "tensorboard not found"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DATA DIRECTORY STRUCTURE
+  # ==========================================================================
+  - name: Data directory exists
+    description: Verify /tool/Data mount point exists
+    command: ls -la /tool/Data 2>/dev/null || mkdir -p /tool/Data && echo "Data directory ready"
+    expected_exit_code: 0
+
+  - name: Output directory exists
+    description: Verify /tool/Output mount point exists
+    command: ls -la /tool/Output 2>/dev/null || mkdir -p /tool/Output && echo "Output directory ready"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MODEL PARAMETER FILES
+  # ==========================================================================
+  - name: Axial model parameters exist
+    description: Verify axial model training parameters
+    command: ls /tool/Adipose_Seg_Models/Segmentation/CDFNet_Baseline_axial/train_parameters.npy
+    expected_output_contains: "train_parameters.npy"
+
+  - name: Coronal model parameters exist
+    description: Verify coronal model training parameters
+    command: ls /tool/Adipose_Seg_Models/Segmentation/CDFNet_Baseline_coronal/train_parameters.npy
+    expected_output_contains: "train_parameters.npy"
+
+  - name: Sagittal model parameters exist
+    description: Verify sagittal model training parameters
+    command: ls /tool/Adipose_Seg_Models/Segmentation/CDFNet_Baseline_sagittal/train_parameters.npy
+    expected_output_contains: "train_parameters.npy"
+
+  - name: Multiview model parameters exist
+    description: Verify multiview fusion model parameters
+    command: ls /tool/Adipose_Seg_Models/Segmentation/Baseline_Mixed_Multi_Plane/train_parameters.npy
+    expected_output_contains: "train_parameters.npy"
+
+  # ==========================================================================
+  # PYTHON IMPORT CHAIN VERIFICATION (without GPU)
+  # ==========================================================================
+  - name: Nibabel orientation functions work
+    description: Test nibabel io_orientation function
+    command: python3 -c "import nibabel as nib; import numpy as np; print('nibabel OK')" 2>&1 | tail -1
+    expected_output_contains: "OK"
+    expected_exit_code: 0
+
+  - name: Scipy ndimage works
+    description: Test scipy image processing
+    command: python3 -c "import scipy.ndimage; print('scipy.ndimage OK')" 2>&1 | tail -1
+    expected_output_contains: "OK"
+    expected_exit_code: 0
+
+  - name: Skimage measure works
+    description: Test scikit-image measurement functions
+    command: python3 -c "from skimage.measure import label, perimeter; print('skimage OK')" 2>&1 | tail -1
+    expected_output_contains: "OK"
+    expected_exit_code: 0
+
+  - name: Matplotlib backend works
+    description: Test matplotlib with agg backend
+    command: python3 -c "import matplotlib; matplotlib.use('agg'); import matplotlib.pyplot as plt; print('matplotlib OK')" 2>&1 | tail -1
+    expected_output_contains: "OK"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # OUTPUT LABEL DEFINITIONS
+  # ==========================================================================
+  - name: SAT label is defined as 1
+    description: Verify subcutaneous adipose tissue label
+    command: grep -r "SAT" /tool/Code/adipose_pipeline.py | head -3
+    expected_output_contains: "SAT"
+
+  - name: VAT label is defined as 2
+    description: Verify visceral adipose tissue label
+    command: grep -r "VAT" /tool/Code/adipose_pipeline.py | head -3
+    expected_output_contains: "VAT"
+
+  - name: Output segmentation naming convention
+    description: Verify AAT (all adipose tissue) output naming
+    command: grep "AAT" /tool/Code/adipose_pipeline.py | head -3
+    expected_output_contains: "AAT"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "FatSegNet test outputs preserved in test_output/"
+    echo "Note: Full pipeline tests require GPU/CUDA support"

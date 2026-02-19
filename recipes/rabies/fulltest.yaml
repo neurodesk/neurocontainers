@@ -1,0 +1,750 @@
+# RABIES container test suite
+# Tests for RABIES v0.5.3 - Rodent Automated Bold Improvement of EPI Sequences
+#
+# RABIES is an open source image processing pipeline for rodent fMRI.
+# It conducts preprocessing, confound correction, and resting-state functional
+# connectivity analyses.
+#
+# Note: RABIES is designed for rodent fMRI data in BIDS format. The ds000001
+# human dataset is used here only for basic tool verification. Full pipeline
+# tests would require proper rodent BIDS data.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: rabies
+version: 0.5.3
+container: rabies_0.5.3_20251014.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/rabies_test
+
+tests:
+  # ==========================================================================
+  # RABIES MAIN COMMAND
+  # ==========================================================================
+  - name: RABIES help
+    description: Verify rabies command runs and shows help
+    command: rabies --help 2>&1 | head -20
+    expected_output_contains: "RABIES performs multiple stages"
+
+  - name: RABIES preprocess help
+    description: Verify rabies preprocess subcommand help
+    command: rabies preprocess --help 2>&1 | head -10
+    expected_output_contains: "rabies preprocess"
+
+  - name: RABIES confound_correction help
+    description: Verify rabies confound_correction subcommand help
+    command: rabies confound_correction --help 2>&1 | head -10
+    expected_output_contains: "rabies confound_correction"
+
+  - name: RABIES analysis help
+    description: Verify rabies analysis subcommand help
+    command: rabies analysis --help 2>&1 | head -10
+    expected_output_contains: "rabies analysis"
+
+  # ==========================================================================
+  # RABIES ERROR CHECK UTILITY
+  # ==========================================================================
+  - name: Error check utility help
+    description: Verify error_check_rabies.py utility is available
+    command: error_check_rabies.py --help 2>&1 | head -5
+    expected_output_contains: "Parser to handle testing"
+
+  # ==========================================================================
+  # ANTs TOOLS (Primary registration backend)
+  # ==========================================================================
+  - name: ANTs version check
+    description: Verify ANTs is installed (v2.5.0)
+    command: antsRegistration --version 2>&1
+    expected_output_contains: "ANTs Version: 2.5.0"
+
+  - name: antsApplyTransforms help
+    description: Verify antsApplyTransforms is available
+    command: antsApplyTransforms --help 2>&1 | head -5
+    expected_output_contains: "antsApplyTransforms"
+
+  - name: antsMotionCorr help
+    description: Verify antsMotionCorr for head motion correction
+    command: antsMotionCorr --help 2>&1 | head -10
+    expected_output_contains: "antsMotionCorr"
+
+  - name: antsMotionCorrStats help
+    description: Verify antsMotionCorrStats for motion statistics
+    command: antsMotionCorrStats --help 2>&1 | head -5
+    expected_output_contains: "antsMotionCorrStats"
+
+  - name: N4BiasFieldCorrection help
+    description: Verify N4 bias field correction tool
+    command: N4BiasFieldCorrection --help 2>&1 | head -10
+    expected_output_contains: "N4BiasFieldCorrection"
+
+  - name: ImageMath help
+    description: Verify ANTs ImageMath tool
+    command: ImageMath 2>&1 | head -10
+    expected_output_contains: "ImageMath"
+
+  - name: ResampleImage help
+    description: Verify ANTs ResampleImage tool
+    command: ResampleImage 2>&1 | head -5
+    expected_output_contains: "Usage"
+
+  - name: ANTs registration on T1w
+    description: Test basic affine registration with ANTs
+    command: |
+      antsRegistrationSyNQuick.sh -d 3 \
+        -f ${t1w} -m ${t2} \
+        -o test_output/ants_reg_ \
+        -t a -n 1 2>&1 | tail -5
+    validate:
+      - output_exists: ${output_dir}/ants_reg_Warped.nii.gz
+
+  - name: ANTs N4 bias correction
+    description: Test N4 inhomogeneity correction
+    command: |
+      N4BiasFieldCorrection -d 3 \
+        -i ${t1w} \
+        -o test_output/t1w_n4corrected.nii.gz \
+        -c [20x20x20,0.0] \
+        -s 4 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_n4corrected.nii.gz
+
+  - name: ANTs apply transforms
+    description: Test applying identity transform
+    command: |
+      antsApplyTransforms -d 3 \
+        -i ${t1w} \
+        -r ${t1w} \
+        -o test_output/t1w_identity.nii.gz \
+        -n Linear 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_identity.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS (via FSL conda package)
+  # ==========================================================================
+  - name: fslmaths help
+    description: Verify fslmaths is available
+    command: fslmaths 2>&1 | head -3
+    expected_output_contains: "fslmaths"
+
+  - name: fslmaths mean operation
+    description: Test fslmaths temporal mean on BOLD
+    command: fslmaths ${bold} -Tmean test_output/bold_fsl_tmean.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_fsl_tmean.nii.gz
+
+  - name: fslmaths smoothing
+    description: Test fslmaths Gaussian smoothing
+    command: fslmaths ${t1w} -s 2 test_output/t1w_fsl_smooth.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_fsl_smooth.nii.gz
+
+  - name: fslmaths threshold and binarize
+    description: Test fslmaths thresholding
+    command: fslmaths ${t1w} -thr 100 -bin test_output/t1w_fsl_mask.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_fsl_mask.nii.gz
+
+  - name: fslmaths multiply images
+    description: Test fslmaths image multiplication (masking)
+    command: |
+      fslmaths ${t1w} -thr 100 -bin test_output/mask_tmp.nii.gz && \
+      fslmaths ${t1w} -mul test_output/mask_tmp.nii.gz test_output/t1w_fsl_masked.nii.gz 2>&1
+    depends_on: fslmaths threshold and binarize
+    validate:
+      - output_exists: ${output_dir}/t1w_fsl_masked.nii.gz
+
+  - name: fslmaths bandpass filter
+    description: Test fslmaths bandpass temporal filtering
+    command: fslmaths ${bold} -bptf 25 2 test_output/bold_fsl_bptf.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_fsl_bptf.nii.gz
+
+  # ==========================================================================
+  # AFNI TOOLS
+  # ==========================================================================
+  - name: 3dDespike help
+    description: Verify AFNI 3dDespike is available
+    command: 3dDespike 2>&1 | head -5
+    expected_output_contains: "3dDespike"
+
+  - name: 3dTshift help
+    description: Verify AFNI 3dTshift for slice timing correction
+    command: 3dTshift -help 2>&1 | head -10
+    expected_output_contains: "3dTshift"
+
+  - name: 3dAutobox help
+    description: Verify AFNI 3dAutobox for cropping
+    command: 3dAutobox -help 2>&1 | head -10
+    expected_output_contains: "3dAutobox"
+
+  - name: 3dWarp help
+    description: Verify AFNI 3dWarp for oblique correction
+    command: 3dWarp -help 2>&1 | head -10
+    expected_output_contains: "3dWarp"
+
+  - name: 3dDespike on BOLD
+    description: Test spike removal on BOLD data
+    command: |
+      3dDespike -prefix test_output/bold_despike.nii.gz \
+        -NEW -nomask ${bold} 2>&1 | tail -3
+    validate:
+      - output_exists: ${output_dir}/bold_despike.nii.gz
+
+  - name: 3dTshift slice timing
+    description: Test slice timing correction
+    command: |
+      3dTshift -prefix test_output/bold_stc.nii.gz \
+        -tpattern alt+z \
+        -TR 2.0 \
+        ${bold} 2>&1 | tail -3
+    validate:
+      - output_exists: ${output_dir}/bold_stc.nii.gz
+
+  - name: 3dAutobox on T1w
+    description: Test automatic bounding box cropping
+    command: |
+      3dAutobox -prefix test_output/t1w_autobox.nii.gz \
+        -npad 5 -input ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_autobox.nii.gz
+
+  # ==========================================================================
+  # MINC TOOLKIT (N3 inhomogeneity correction)
+  # ==========================================================================
+  - name: nu_correct help
+    description: Verify MINC nu_correct (N3) is available
+    command: nu_correct -help 2>&1 | head -10
+    expected_output_contains: "nu_correct"
+
+  - name: mincinfo help
+    description: Verify mincinfo is available
+    command: mincinfo -help 2>&1 | head -5
+    expected_output_contains: "Command-specific options"
+
+  - name: mincresample help
+    description: Verify mincresample is available
+    command: mincresample -help 2>&1 | head -5
+    expected_output_contains: "Command-specific options"
+
+  # ==========================================================================
+  # PYTHON NEUROIMAGING PACKAGES
+  # ==========================================================================
+  - name: nibabel import
+    description: Verify nibabel is installed
+    command: python -c "import nibabel; print('nibabel', nibabel.__version__)" 2>&1
+    expected_output_contains: "nibabel"
+
+  - name: nilearn import
+    description: Verify nilearn is installed
+    command: python -c "import nilearn; print('nilearn', nilearn.__version__)" 2>&1
+    expected_output_contains: "nilearn"
+
+  - name: nipype import
+    description: Verify nipype is installed (workflow engine)
+    command: python -c "import nipype; print('nipype', nipype.__version__)" 2>&1
+    expected_output_contains: "nipype"
+
+  - name: scipy import
+    description: Verify scipy is installed
+    command: python -c "import scipy; print('scipy', scipy.__version__)" 2>&1
+    expected_output_contains: "scipy"
+
+  - name: sklearn import
+    description: Verify scikit-learn is installed
+    command: python -c "import sklearn; print('sklearn', sklearn.__version__)" 2>&1
+    expected_output_contains: "sklearn"
+
+  - name: pandas import
+    description: Verify pandas is installed
+    command: python -c "import pandas; print('pandas', pandas.__version__)" 2>&1
+    expected_output_contains: "pandas"
+
+  - name: matplotlib import
+    description: Verify matplotlib is installed
+    command: python -c "import matplotlib; print('matplotlib', matplotlib.__version__)" 2>&1
+    expected_output_contains: "matplotlib"
+
+  - name: rabies import
+    description: Verify rabies Python package is importable
+    command: python -c "import rabies; print('rabies imported successfully')" 2>&1
+    expected_output_contains: "rabies imported successfully"
+
+  # ==========================================================================
+  # RABIES TEMPLATE AND ATLAS FILES
+  # ==========================================================================
+  - name: DSURQE template exists
+    description: Verify DSURQE mouse atlas template is available
+    command: ls -la /opt/rabies/share/rabies/DSURQE_40micron_average.nii.gz 2>&1
+    expected_output_contains: "DSURQE_40micron_average.nii.gz"
+
+  - name: DSURQE brain mask exists
+    description: Verify DSURQE brain mask is available
+    command: ls -la /opt/rabies/share/rabies/DSURQE_40micron_mask.nii.gz 2>&1
+    expected_output_contains: "DSURQE_40micron_mask.nii.gz"
+
+  - name: DSURQE labels exist
+    description: Verify DSURQE atlas labels are available
+    command: ls -la /opt/rabies/share/rabies/DSURQE_40micron_labels.nii.gz 2>&1
+    expected_output_contains: "DSURQE_40micron_labels.nii.gz"
+
+  - name: WM mask exists
+    description: Verify white matter mask is available
+    command: ls -la /opt/rabies/share/rabies/DSURQE_40micron_eroded_WM_mask.nii.gz 2>&1
+    expected_output_contains: "DSURQE_40micron_eroded_WM_mask.nii.gz"
+
+  - name: CSF mask exists
+    description: Verify CSF mask is available
+    command: ls -la /opt/rabies/share/rabies/DSURQE_40micron_eroded_CSF_mask.nii.gz 2>&1
+    expected_output_contains: "DSURQE_40micron_eroded_CSF_mask.nii.gz"
+
+  - name: Vascular mask exists
+    description: Verify vascular mask is available
+    command: ls -la /opt/rabies/share/rabies/vascular_mask.nii.gz 2>&1
+    expected_output_contains: "vascular_mask.nii.gz"
+
+  - name: EPI template exists
+    description: Verify EPI reference template is available
+    command: ls -la /opt/rabies/share/rabies/EPI_template.nii.gz 2>&1
+    expected_output_contains: "EPI_template.nii.gz"
+
+  - name: Melodic ICA priors exist
+    description: Verify ICA prior maps for dual regression
+    command: ls -la /opt/rabies/share/rabies/melodic_IC.nii.gz 2>&1
+    expected_output_contains: "melodic_IC.nii.gz"
+
+  - name: ROI mapping CSV exists
+    description: Verify ROI label mapping file is available
+    command: ls -la /opt/rabies/share/rabies/DSURQE_40micron_R_mapping.csv 2>&1
+    expected_output_contains: "DSURQE_40micron_R_mapping.csv"
+
+  # ==========================================================================
+  # NIBABEL/NILEARN OPERATIONS
+  # ==========================================================================
+  - name: Load NIfTI with nibabel
+    description: Test loading NIfTI file with nibabel
+    command: |
+      python -c "
+      import nibabel as nib
+      img = nib.load(\"${t1w}\")
+      print(\"Shape:\", img.shape)
+      print(\"Affine:\", img.affine.shape)
+      print(\"Header:\", img.header.get_data_dtype())
+      " 2>&1
+    expected_output_contains: "Shape:"
+
+  - name: nilearn smoothing
+    description: Test nilearn spatial smoothing
+    command: |
+      python -c "
+      from nilearn.image import smooth_img
+      import nibabel as nib
+      smoothed = smooth_img('${t1w}', fwhm=4)
+      nib.save(smoothed, 'test_output/t1w_nilearn_smooth.nii.gz')
+      print('Smoothed image saved')
+      " 2>&1
+    expected_output_contains: "Smoothed image saved"
+    validate:
+      - output_exists: ${output_dir}/t1w_nilearn_smooth.nii.gz
+
+  - name: nilearn mean image
+    description: Test nilearn mean computation on 4D
+    command: |
+      python -c "
+      from nilearn.image import mean_img
+      import nibabel as nib
+      mean = mean_img('${bold}')
+      nib.save(mean, 'test_output/bold_nilearn_mean.nii.gz')
+      print('Mean image saved')
+      " 2>&1
+    expected_output_contains: "Mean image saved"
+    validate:
+      - output_exists: ${output_dir}/bold_nilearn_mean.nii.gz
+
+  - name: nilearn resample to template
+    description: Test nilearn resampling functionality
+    command: |
+      python -c "
+      from nilearn.image import resample_to_img
+      import nibabel as nib
+      resampled = resample_to_img('${t1w}', '${t2}')
+      nib.save(resampled, 'test_output/t1w_nilearn_resampled.nii.gz')
+      print('Resampled image saved')
+      " 2>&1
+    expected_output_contains: "Resampled image saved"
+    validate:
+      - output_exists: ${output_dir}/t1w_nilearn_resampled.nii.gz
+
+  - name: nilearn masking
+    description: Test nilearn brain masking
+    command: |
+      python -c "
+      from nilearn.image import math_img
+      import nibabel as nib
+      masked = math_img('img * (img > 100)', img='${t1w}')
+      nib.save(masked, 'test_output/t1w_nilearn_masked.nii.gz')
+      print('Masked image saved')
+      " 2>&1
+    expected_output_contains: "Masked image saved"
+    validate:
+      - output_exists: ${output_dir}/t1w_nilearn_masked.nii.gz
+
+  # ==========================================================================
+  # NIPYPE INTERFACE TESTS
+  # ==========================================================================
+  - name: nipype ANTs interface
+    description: Test nipype ANTs interface availability
+    command: |
+      python -c "
+      from nipype.interfaces.ants import Registration, ApplyTransforms, N4BiasFieldCorrection
+      print('ANTs interfaces available')
+      " 2>&1
+    expected_output_contains: "ANTs interfaces available"
+
+  - name: nipype FSL interface
+    description: Test nipype FSL interface availability
+    command: |
+      python -c "
+      from nipype.interfaces.fsl import ImageMaths, BET, MCFLIRT
+      print('FSL interfaces available')
+      " 2>&1
+    expected_output_contains: "FSL interfaces available"
+
+  - name: nipype AFNI interface
+    description: Test nipype AFNI interface availability
+    command: |
+      python -c "
+      from nipype.interfaces.afni import Despike, TShift, Autobox
+      print('AFNI interfaces available')
+      " 2>&1
+    expected_output_contains: "AFNI interfaces available"
+
+  # ==========================================================================
+  # MOTION CORRECTION TESTS
+  # ==========================================================================
+  - name: antsMotionCorr on BOLD subset
+    description: Test motion correction on first 10 volumes
+    command: |
+      # Extract first 10 volumes for faster testing
+      fslroi ${bold} test_output/bold_10vol.nii.gz 0 10 && \
+      antsMotionCorr -d 3 -a test_output/bold_10vol.nii.gz \
+        -o test_output/bold_avg.nii.gz 2>&1 | tail -3
+    validate:
+      - output_exists: ${output_dir}/bold_avg.nii.gz
+
+  # ==========================================================================
+  # IMAGE MATH AND STATISTICS
+  # ==========================================================================
+  - name: ANTs ImageMath normalize
+    description: Test image normalization with ANTs
+    command: |
+      ImageMath 3 test_output/t1w_norm.nii.gz Normalize ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_norm.nii.gz
+
+  - name: ANTs ImageMath pad
+    description: Test image padding with ANTs
+    command: |
+      ImageMath 3 test_output/t1w_padded.nii.gz PadImage ${t1w} 5 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_padded.nii.gz
+
+  - name: fslmaths statistics
+    description: Test fslmaths statistical operations
+    command: |
+      fslmaths ${bold} -Tstd test_output/bold_fsl_tstd.nii.gz && \
+      fslmaths ${bold} -Tmin test_output/bold_fsl_tmin.nii.gz && \
+      fslmaths ${bold} -Tmax test_output/bold_fsl_tmax.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_fsl_tstd.nii.gz
+      - output_exists: ${output_dir}/bold_fsl_tmin.nii.gz
+      - output_exists: ${output_dir}/bold_fsl_tmax.nii.gz
+
+  # ==========================================================================
+  # CONFOUND COMPUTATION TESTS
+  # ==========================================================================
+  - name: Compute framewise displacement
+    description: Test FD calculation using Python
+    command: |
+      python -c "
+      import numpy as np
+      # Simulate motion parameters (6 DOF)
+      motion = np.random.randn(100, 6) * 0.1
+      # FD calculation (simplified)
+      fd = np.sum(np.abs(np.diff(motion, axis=0)), axis=1)
+      print('Mean FD:', np.mean(fd))
+      print('Max FD:', np.max(fd))
+      " 2>&1
+    expected_output_contains: "Mean FD:"
+
+  - name: Compute DVARS
+    description: Test DVARS calculation concept
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      # Load BOLD and compute simplified DVARS
+      img = nib.load('${bold}')
+      data = img.get_fdata()
+      # Temporal derivative
+      diff = np.diff(data, axis=3)
+      # RMS across voxels
+      dvars = np.sqrt(np.mean(diff**2, axis=(0,1,2)))
+      print('Mean DVARS:', np.mean(dvars))
+      print('Shape:', dvars.shape)
+      " 2>&1
+    expected_output_contains: "Mean DVARS:"
+
+  # ==========================================================================
+  # CONNECTIVITY ANALYSIS TESTS
+  # ==========================================================================
+  - name: nilearn connectivity matrix
+    description: Test nilearn connectivity tools
+    command: |
+      python -c "
+      from nilearn.connectome import ConnectivityMeasure
+      import numpy as np
+
+      # Simulate timeseries for 5 ROIs, 100 timepoints
+      ts = np.random.randn(100, 5)
+
+      # Compute correlation matrix
+      corr = ConnectivityMeasure(kind='correlation')
+      matrix = corr.fit_transform([ts])[0]
+      print('Connectivity matrix shape:', matrix.shape)
+      print('Matrix is symmetric:', np.allclose(matrix, matrix.T))
+      " 2>&1
+    expected_output_contains: "Connectivity matrix shape: (5, 5)"
+
+  # ==========================================================================
+  # DSURQE ATLAS VALIDATION
+  # ==========================================================================
+  - name: Load DSURQE template
+    description: Verify DSURQE template can be loaded
+    command: |
+      python -c "
+      import nibabel as nib
+      img = nib.load('/opt/rabies/share/rabies/DSURQE_40micron_average.nii.gz')
+      print('Template shape:', img.shape)
+      print('Voxel size:', img.header.get_zooms())
+      " 2>&1
+    expected_output_contains: "Template shape:"
+
+  - name: Load DSURQE labels
+    description: Verify DSURQE atlas labels
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      img = nib.load('/opt/rabies/share/rabies/DSURQE_40micron_labels.nii.gz')
+      labels = img.get_fdata()
+      unique_labels = np.unique(labels)
+      print('Labels shape:', img.shape)
+      print('Number of unique labels:', len(unique_labels))
+      " 2>&1
+    expected_output_contains: "Number of unique labels:"
+
+  - name: Read ROI mapping
+    description: Verify ROI mapping CSV can be read
+    command: |
+      python -c "
+      import pandas as pd
+      df = pd.read_csv('/opt/rabies/share/rabies/DSURQE_40micron_R_mapping.csv')
+      print('ROI mapping columns:', list(df.columns))
+      print('Number of ROIs:', len(df))
+      " 2>&1
+    expected_output_contains: "Number of ROIs:"
+
+  - name: Load melodic ICA priors
+    description: Verify ICA prior maps for dual regression
+    command: |
+      python -c "
+      import nibabel as nib
+      img = nib.load('/opt/rabies/share/rabies/melodic_IC.nii.gz')
+      print('ICA priors shape:', img.shape)
+      print('Number of components:', img.shape[3] if len(img.shape) > 3 else 1)
+      " 2>&1
+    expected_output_contains: "ICA priors shape:"
+
+  # ==========================================================================
+  # ICA-AROMA RELATED TESTS
+  # ==========================================================================
+  - name: MELODIC availability
+    description: Check if FSL MELODIC is available for ICA
+    command: melodic --help 2>&1 | head -5
+    expected_output_contains: "MELODIC"
+
+  # ==========================================================================
+  # CHAINED PREPROCESSING OPERATIONS
+  # ==========================================================================
+  - name: fMRI preprocessing chain
+    description: Test typical preprocessing chain (despike, STC, smooth)
+    command: |
+      # Extract subset for faster processing
+      fslroi ${bold} test_output/bold_5vol.nii.gz 0 15 && \
+      # Despike
+      3dDespike -prefix test_output/chain_despike.nii.gz \
+        -NEW -nomask test_output/bold_5vol.nii.gz && \
+      # Smooth
+      fslmaths test_output/chain_despike.nii.gz \
+        -s 2 test_output/chain_smooth.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/chain_smooth.nii.gz
+
+  - name: Registration chain
+    description: Test registration workflow concept
+    command: |
+      # N4 correction then registration
+      N4BiasFieldCorrection -d 3 \
+        -i ${t1w} \
+        -o test_output/chain_n4.nii.gz \
+        -c [10x10,0.0] -s 4 && \
+      # Simple registration
+      antsApplyTransforms -d 3 \
+        -i test_output/chain_n4.nii.gz \
+        -r ${t1w} \
+        -o test_output/chain_registered.nii.gz \
+        -n Linear 2>&1
+    validate:
+      - output_exists: ${output_dir}/chain_registered.nii.gz
+
+  # ==========================================================================
+  # CONFOUND CORRECTION SIMULATION
+  # ==========================================================================
+  - name: Simulate confound regression
+    description: Test confound regression with numpy
+    command: |
+      python -c "
+      import numpy as np
+      from scipy import signal
+
+      # Simulate BOLD signal (100 timepoints, 50 voxels)
+      bold = np.random.randn(100, 50)
+
+      # Simulate confounds (motion + global signal)
+      confounds = np.random.randn(100, 7)  # 6 motion + 1 global
+
+      # Linear detrending
+      bold_detrended = signal.detrend(bold, axis=0)
+
+      # Simple regression
+      beta = np.linalg.lstsq(confounds, bold_detrended, rcond=None)[0]
+      residuals = bold_detrended - confounds @ beta
+
+      print('Original variance:', np.var(bold_detrended))
+      print('Residual variance:', np.var(residuals))
+      " 2>&1
+    expected_output_contains: "Residual variance:"
+
+  - name: Bandpass filter simulation
+    description: Test bandpass filtering concept
+    command: |
+      python -c "
+      import numpy as np
+      from scipy import signal
+
+      # Simulate signal
+      fs = 0.5  # 2s TR = 0.5 Hz sampling
+      t = np.arange(0, 200, 2)  # 200s acquisition
+      sig = np.sin(2*np.pi*0.05*t) + 0.5*np.sin(2*np.pi*0.1*t)
+
+      # Bandpass filter (0.01 - 0.1 Hz)
+      nyq = fs / 2
+      low = 0.01 / nyq
+      high = 0.1 / nyq
+      b, a = signal.butter(2, [low, high], btype='band')
+      filtered = signal.filtfilt(b, a, sig)
+
+      print('Original std:', np.std(sig))
+      print('Filtered std:', np.std(filtered))
+      " 2>&1
+    expected_output_contains: "Filtered std:"
+
+  # ==========================================================================
+  # OUTPUT FORMAT TESTS
+  # ==========================================================================
+  - name: Save as float32
+    description: Test saving with specific data type
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+
+      img = nib.load('${t1w}')
+      data = img.get_fdata().astype(np.float32)
+      new_img = nib.Nifti1Image(data, img.affine)
+      nib.save(new_img, 'test_output/t1w_float32.nii.gz')
+
+      # Verify
+      loaded = nib.load('test_output/t1w_float32.nii.gz')
+      print('Data type:', loaded.get_data_dtype())
+      " 2>&1
+    expected_output_contains: "float32"
+    validate:
+      - output_exists: ${output_dir}/t1w_float32.nii.gz
+
+  - name: fslmaths output types
+    description: Test fslmaths data type conversion
+    command: |
+      fslmaths ${t1w} test_output/t1w_fsl_float.nii.gz -odt float && \
+      fslmaths ${t1w} test_output/t1w_fsl_short.nii.gz -odt short 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_fsl_float.nii.gz
+      - output_exists: ${output_dir}/t1w_fsl_short.nii.gz
+
+  # ==========================================================================
+  # PARALLEL PROCESSING CHECKS
+  # ==========================================================================
+  - name: Check multiprocessing
+    description: Verify Python multiprocessing works
+    command: |
+      python -c "
+      from multiprocessing import Pool, cpu_count
+
+      def square(x):
+          return x * x
+
+      print('Available CPUs:', cpu_count())
+      with Pool(2) as p:
+          result = p.map(square, range(5))
+      print('Parallel result:', result)
+      " 2>&1
+    expected_output_contains: "Parallel result:"
+
+  - name: nipype plugin check
+    description: Verify nipype MultiProc plugin
+    command: |
+      python -c "
+      from nipype.pipeline import plugins
+      print('Available plugins:', dir(plugins))
+      from nipype.pipeline.plugins import MultiProcPlugin
+      print('MultiProcPlugin available')
+      " 2>&1
+    expected_output_contains: "MultiProcPlugin available"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

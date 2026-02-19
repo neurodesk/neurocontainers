@@ -1,0 +1,797 @@
+# Spinal Cord Toolbox container test suite
+# Tests for spinalcordtoolbox v7.2 - Comprehensive MRI analysis tools for spinal cord
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - T2: inplane T2 image
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# Note: Spinal Cord Toolbox is optimized for spinal cord imaging.
+# These tests use brain MRI data for basic functionality verification.
+
+name: spinalcordtoolbox
+version: "7.2"
+container: spinalcordtoolbox_7.2_20251211.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # SYSTEM AND VERSION CHECKS
+  # ==========================================================================
+  - name: Version check
+    description: Verify sct_version binary runs and reports version
+    command: sct_version
+    expected_output_contains: "7.2"
+
+  - name: Check dependencies (short)
+    description: Run minimal dependency check
+    command: sct_check_dependencies -short
+    expected_output_contains: "SCT"
+
+  # ==========================================================================
+  # IMAGE CONVERSION (sct_convert)
+  # ==========================================================================
+  - name: Convert compressed to uncompressed
+    description: Test sct_convert for format conversion
+    command: sct_convert -i ${t1w} -o test_output/t1w_converted.nii
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_converted.nii
+
+  - name: Convert with squeeze disabled
+    description: Test sct_convert with squeeze option
+    command: sct_convert -i ${t1w} -o test_output/t1w_nosqueeze.nii -squeeze 0
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_nosqueeze.nii
+
+  # ==========================================================================
+  # IMAGE MANIPULATION (sct_image)
+  # ==========================================================================
+  - name: Display image header (sct format)
+    description: Test sct_image header display in sct format
+    command: sct_image -i ${t1w} -header sct
+    expected_output_contains: "dim"
+
+  - name: Display image header (fslhd format)
+    description: Test sct_image header display in fslhd format
+    command: sct_image -i ${t1w} -header fslhd
+    expected_output_contains: "dim"
+
+  - name: Get image orientation
+    description: Test sct_image orientation query
+    command: sct_image -i ${t1w} -getorient
+    expected_exit_code: 0
+
+  - name: Pad image symmetric
+    description: Test sct_image symmetric padding
+    command: sct_image -i ${t1w} -pad 2,2,2 -o test_output/t1w_padded.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_padded.nii.gz
+
+  - name: Pad image asymmetric
+    description: Test sct_image asymmetric padding
+    command: sct_image -i ${t1w} -pad-asym 1,2,1,2,1,2 -o test_output/t1w_padded_asym.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_padded_asym.nii.gz
+
+  - name: Set image orientation
+    description: Test sct_image reorientation to RPI
+    command: sct_image -i ${t1w} -setorient RPI -o test_output/t1w_rpi.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_rpi.nii.gz
+
+  - name: Set image orientation LAS
+    description: Test sct_image reorientation to LAS
+    command: sct_image -i ${t1w} -setorient LAS -o test_output/t1w_las.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_las.nii.gz
+
+  - name: Change data type to float32
+    description: Test sct_image data type conversion
+    command: sct_image -i ${t1w} -type float32 -o test_output/t1w_float32.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_float32.nii.gz
+
+  - name: Change data type to int16
+    description: Test sct_image data type conversion to int16
+    command: sct_image -i ${t1w} -type int16 -o test_output/t1w_int16.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_int16.nii.gz
+
+  - name: Split 4D along time
+    description: Test sct_image splitting along time dimension
+    command: sct_image -i ${bold} -split t -o test_output/bold_split.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/bold_split_0000.nii.gz
+
+  - name: Split 3D along z
+    description: Test sct_image splitting along z dimension
+    command: sct_image -i ${t1w} -split z -o test_output/t1w_split_z.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_split_z_0000.nii.gz
+
+  - name: Concatenate images along z
+    description: Test sct_image concatenation
+    command: sct_image -i test_output/t1w_split_z_0000.nii.gz test_output/t1w_split_z_0001.nii.gz -concat z -o test_output/t1w_concat.nii.gz
+    depends_on: Split 3D along z
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_concat.nii.gz
+
+  - name: Remove volumes from 4D
+    description: Test sct_image volume removal
+    command: sct_image -i ${bold} -remove-vol 0,1,2 -o test_output/bold_removed.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/bold_removed.nii.gz
+
+  - name: Keep specific volumes
+    description: Test sct_image keep volumes
+    command: sct_image -i ${bold} -keep-vol 0,1,2,3,4 -o test_output/bold_kept.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/bold_kept.nii.gz
+
+  - name: Flip along x axis
+    description: Test sct_image flip operation
+    command: sct_image -i ${t1w} -flip x -o test_output/t1w_flip_x.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_flip_x.nii.gz
+
+  - name: Flip along y axis
+    description: Test sct_image flip along y
+    command: sct_image -i ${t1w} -flip y -o test_output/t1w_flip_y.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_flip_y.nii.gz
+
+  - name: Flip along z axis
+    description: Test sct_image flip along z
+    command: sct_image -i ${t1w} -flip z -o test_output/t1w_flip_z.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_flip_z.nii.gz
+
+  - name: Copy header
+    description: Test sct_image header copy
+    command: sct_image -i ${t1w} -copy-header ${t1w} -o test_output/t1w_header_copy.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_header_copy.nii.gz
+
+  - name: Set sform to qform
+    description: Test sct_image sform/qform synchronization
+    command: sct_image -i ${t1w} -set-sform-to-qform -o test_output/t1w_sform.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_sform.nii.gz
+
+  - name: Transpose axes
+    description: Test sct_image axis transposition
+    command: sct_image -i ${t1w} -transpose z,y,x -o test_output/t1w_transposed.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_transposed.nii.gz
+
+  # ==========================================================================
+  # MATHEMATICAL OPERATIONS (sct_maths)
+  # ==========================================================================
+  - name: Add constant
+    description: Test sct_maths addition with scalar
+    command: sct_maths -i ${t1w} -add 100 -o test_output/t1w_add100.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_add100.nii.gz
+
+  - name: Subtract constant
+    description: Test sct_maths subtraction with scalar
+    command: sct_maths -i ${t1w} -sub 50 -o test_output/t1w_sub50.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_sub50.nii.gz
+
+  - name: Multiply by constant
+    description: Test sct_maths multiplication with scalar
+    command: sct_maths -i ${t1w} -mul 2 -o test_output/t1w_mul2.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_mul2.nii.gz
+
+  - name: Divide by constant
+    description: Test sct_maths division with scalar
+    command: sct_maths -i ${t1w} -div 2 -o test_output/t1w_div2.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_div2.nii.gz
+
+  - name: Add images
+    description: Test sct_maths addition with another image
+    command: sct_maths -i ${t1w} -add ${t1w} -o test_output/t1w_add_t1w.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_add_t1w.nii.gz
+
+  - name: Multiply images
+    description: Test sct_maths multiplication with another image
+    command: sct_maths -i ${t1w} -mul ${t1w} -o test_output/t1w_mul_t1w.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_mul_t1w.nii.gz
+
+  - name: Mean across x dimension
+    description: Test sct_maths mean along x axis
+    command: sct_maths -i ${t1w} -mean x -o test_output/t1w_mean_x.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_mean_x.nii.gz
+
+  - name: Mean across y dimension
+    description: Test sct_maths mean along y axis
+    command: sct_maths -i ${t1w} -mean y -o test_output/t1w_mean_y.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_mean_y.nii.gz
+
+  - name: Mean across z dimension
+    description: Test sct_maths mean along z axis
+    command: sct_maths -i ${t1w} -mean z -o test_output/t1w_mean_z.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_mean_z.nii.gz
+
+  - name: Temporal mean (4D)
+    description: Test sct_maths mean along time dimension
+    command: sct_maths -i ${bold} -mean t -o test_output/bold_mean_t.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/bold_mean_t.nii.gz
+
+  - name: Standard deviation across time
+    description: Test sct_maths std along time dimension
+    command: sct_maths -i ${bold} -std t -o test_output/bold_std_t.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/bold_std_t.nii.gz
+
+  - name: RMS across time
+    description: Test sct_maths RMS along time dimension
+    command: sct_maths -i ${bold} -rms t -o test_output/bold_rms_t.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/bold_rms_t.nii.gz
+
+  - name: Binarize with threshold
+    description: Test sct_maths binarization
+    command: sct_maths -i ${t1w} -bin 100 -o test_output/t1w_bin100.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_bin100.nii.gz
+
+  - name: Otsu thresholding
+    description: Test sct_maths Otsu automatic thresholding
+    command: sct_maths -i ${t1w} -otsu 3 -o test_output/t1w_otsu.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_otsu.nii.gz
+
+  - name: Percentile thresholding
+    description: Test sct_maths percentile-based thresholding
+    command: sct_maths -i ${t1w} -percent 90 -o test_output/t1w_percent90.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_percent90.nii.gz
+
+  - name: Lower threshold
+    description: Test sct_maths lower threshold (zero below)
+    command: sct_maths -i ${t1w} -thr 100 -o test_output/t1w_thr100.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_thr100.nii.gz
+
+  - name: Upper threshold
+    description: Test sct_maths upper threshold (zero above)
+    command: sct_maths -i ${t1w} -uthr 500 -o test_output/t1w_uthr500.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_uthr500.nii.gz
+
+  - name: Combined thresholds
+    description: Test sct_maths band-pass thresholding
+    command: sct_maths -i ${t1w} -thr 100 -o test_output/t1w_tmp_thr.nii.gz && sct_maths -i test_output/t1w_tmp_thr.nii.gz -uthr 500 -o test_output/t1w_bandpass.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_bandpass.nii.gz
+
+  - name: Dilate image
+    description: Test sct_maths morphological dilation
+    command: sct_maths -i test_output/t1w_otsu.nii.gz -dilate 2 -o test_output/t1w_dilate.nii.gz
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_dilate.nii.gz
+
+  - name: Erode image
+    description: Test sct_maths morphological erosion
+    command: sct_maths -i test_output/t1w_otsu.nii.gz -erode 2 -o test_output/t1w_erode.nii.gz
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_erode.nii.gz
+
+  - name: Dilate with ball shape
+    description: Test sct_maths dilation with ball structuring element
+    command: sct_maths -i test_output/t1w_otsu.nii.gz -dilate 2 -shape ball -o test_output/t1w_dilate_ball.nii.gz
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_dilate_ball.nii.gz
+
+  - name: Erode with cube shape
+    description: Test sct_maths erosion with cube structuring element
+    command: sct_maths -i test_output/t1w_otsu.nii.gz -erode 2 -shape cube -o test_output/t1w_erode_cube.nii.gz
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_erode_cube.nii.gz
+
+  - name: Gaussian smoothing
+    description: Test sct_maths Gaussian smoothing
+    command: sct_maths -i ${t1w} -smooth 2,2,2 -o test_output/t1w_smooth.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth.nii.gz
+
+  - name: Isotropic smoothing
+    description: Test sct_maths isotropic Gaussian smoothing
+    command: sct_maths -i ${t1w} -smooth 3 -o test_output/t1w_smooth_iso.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_iso.nii.gz
+
+  - name: Laplacian filtering
+    description: Test sct_maths Laplacian filter
+    command: sct_maths -i ${t1w} -laplacian 1,1,1 -o test_output/t1w_laplacian.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_laplacian.nii.gz
+
+  - name: Denoise with patch2self
+    description: Test sct_maths non-local means denoising
+    command: sct_maths -i ${t1w} -denoise p=1,b=3 -o test_output/t1w_denoise.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_denoise.nii.gz
+
+  - name: Symmetrize along x
+    description: Test sct_maths symmetrization
+    command: sct_maths -i ${t1w} -symmetrize 0 -o test_output/t1w_sym_x.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_sym_x.nii.gz
+
+  - name: Change output data type
+    description: Test sct_maths output type conversion
+    command: sct_maths -i ${t1w} -mul 1 -type float32 -o test_output/t1w_maths_float.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_maths_float.nii.gz
+
+  # ==========================================================================
+  # IMAGE CROPPING (sct_crop_image)
+  # ==========================================================================
+  - name: Crop with manual boundaries
+    description: Test sct_crop_image with explicit coordinates
+    command: sct_crop_image -i ${t1w} -xmin 20 -xmax 140 -ymin 30 -ymax 170 -zmin 40 -zmax 160 -o test_output/t1w_crop_manual.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_crop_manual.nii.gz
+
+  - name: Crop with mask
+    description: Test sct_crop_image using a mask for bounding box
+    command: sct_crop_image -i ${t1w} -m test_output/t1w_otsu.nii.gz -o test_output/t1w_crop_mask.nii.gz
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_crop_mask.nii.gz
+
+  - name: Crop with dilation
+    description: Test sct_crop_image with mask and extra margin
+    command: sct_crop_image -i ${t1w} -m test_output/t1w_otsu.nii.gz -dilate 5x5x5 -o test_output/t1w_crop_dilate.nii.gz
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_crop_dilate.nii.gz
+
+  - name: Crop z-dimension only
+    description: Test sct_crop_image cropping only z axis
+    command: sct_crop_image -i ${t1w} -zmin 50 -zmax 150 -o test_output/t1w_crop_z.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_crop_z.nii.gz
+
+  - name: Blank outside bounding box
+    description: Test sct_crop_image with blanking (preserves dimensions)
+    command: sct_crop_image -i ${t1w} -xmin 40 -xmax 120 -ymin 50 -ymax 140 -b 0 -o test_output/t1w_blanked.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_blanked.nii.gz
+
+  # ==========================================================================
+  # RESAMPLING (sct_resample)
+  # ==========================================================================
+  - name: Resample by factor (downsample)
+    description: Test sct_resample with downsampling factor
+    command: sct_resample -i ${t1w} -f 0.5x0.5x0.5 -o test_output/t1w_resample_down.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_down.nii.gz
+
+  - name: Resample by factor (upsample)
+    description: Test sct_resample with upsampling factor
+    command: sct_resample -i ${t1w} -f 2x2x2 -o test_output/t1w_resample_up.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_up.nii.gz
+
+  - name: Resample to specific resolution
+    description: Test sct_resample with target resolution in mm
+    command: sct_resample -i ${t1w} -mm 2x2x2 -o test_output/t1w_resample_2mm.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_2mm.nii.gz
+
+  - name: Resample to isotropic 1mm
+    description: Test sct_resample to 1mm isotropic
+    command: sct_resample -i ${t1w} -mm 1x1x1 -o test_output/t1w_resample_1mm.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_1mm.nii.gz
+
+  - name: Resample with linear interpolation
+    description: Test sct_resample with linear interpolation
+    command: sct_resample -i ${t1w} -f 0.5x0.5x0.5 -x linear -o test_output/t1w_resample_linear.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_linear.nii.gz
+
+  - name: Resample with nearest neighbor
+    description: Test sct_resample with nearest neighbor (for labels/masks)
+    command: sct_resample -i test_output/t1w_otsu.nii.gz -f 0.5x0.5x0.5 -x nn -o test_output/t1w_resample_nn.nii.gz
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_nn.nii.gz
+
+  - name: Resample with spline interpolation
+    description: Test sct_resample with spline interpolation
+    command: sct_resample -i ${t1w} -f 0.5x0.5x0.5 -x spline -o test_output/t1w_resample_spline.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_spline.nii.gz
+
+  - name: Resample to specific voxel count
+    description: Test sct_resample with target number of voxels
+    command: sct_resample -i ${t1w} -vox 100x100x100 -o test_output/t1w_resample_vox.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_vox.nii.gz
+
+  # ==========================================================================
+  # LABEL UTILITIES (sct_label_utils)
+  # ==========================================================================
+  - name: Create single label
+    description: Test sct_label_utils label creation
+    command: sct_label_utils -i ${t1w} -create 80,96,96,1 -o test_output/label_single.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/label_single.nii.gz
+
+  - name: Create multiple labels
+    description: Test sct_label_utils multiple label creation
+    command: sct_label_utils -i ${t1w} -create 60,80,80,1:80,96,96,2:100,112,112,3 -o test_output/labels_multiple.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/labels_multiple.nii.gz
+
+  - name: Cubic to point labels
+    description: Test sct_label_utils center of mass calculation
+    command: sct_label_utils -i test_output/t1w_otsu.nii.gz -cubic-to-point -o test_output/label_com.nii.gz
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/label_com.nii.gz
+
+  - name: Increment labels
+    description: Test sct_label_utils auto-increment labels
+    command: sct_label_utils -i test_output/labels_multiple.nii.gz -increment -o test_output/labels_increment.nii.gz
+    depends_on: Create multiple labels
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/labels_increment.nii.gz
+
+  # ==========================================================================
+  # MASK CREATION (sct_create_mask)
+  # ==========================================================================
+  - name: Create cylinder mask
+    description: Test sct_create_mask with cylinder shape
+    command: sct_create_mask -i ${t1w} -p center -size 30 -f cylinder -o test_output/mask_cylinder.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/mask_cylinder.nii.gz
+
+  - name: Create box mask
+    description: Test sct_create_mask with box shape
+    command: sct_create_mask -i ${t1w} -p center -size 40 -f box -o test_output/mask_box.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/mask_box.nii.gz
+
+  - name: Create Gaussian mask
+    description: Test sct_create_mask with Gaussian shape
+    command: sct_create_mask -i ${t1w} -p center -size 20 -f gaussian -o test_output/mask_gaussian.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/mask_gaussian.nii.gz
+
+  - name: Create mask at specific coordinates
+    description: Test sct_create_mask with coordinate specification
+    command: sct_create_mask -i ${t1w} -p coord,80,96,96 -size 25 -f cylinder -o test_output/mask_coord.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/mask_coord.nii.gz
+
+  # ==========================================================================
+  # SIMILARITY METRICS (sct_dice_coefficient)
+  # ==========================================================================
+  - name: Dice coefficient identical images
+    description: Test sct_dice_coefficient with identical images
+    command: sct_dice_coefficient -i test_output/t1w_otsu.nii.gz -d test_output/t1w_otsu.nii.gz
+    depends_on: Otsu thresholding
+    expected_output_contains: "3D Dice coefficient"
+
+  - name: Dice coefficient with output file
+    description: Test sct_dice_coefficient saving results
+    command: sct_dice_coefficient -i test_output/t1w_otsu.nii.gz -d test_output/t1w_otsu.nii.gz -o test_output/dice_result.txt
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/dice_result.txt
+
+  - name: Dice coefficient per slice
+    description: Test sct_dice_coefficient 2D slicewise computation
+    command: sct_dice_coefficient -i test_output/t1w_otsu.nii.gz -d test_output/t1w_otsu.nii.gz -2d-slices 2
+    depends_on: Otsu thresholding
+    expected_output_contains: "Dice coefficient"
+
+  - name: Dice with binarization
+    description: Test sct_dice_coefficient with binarization option
+    command: sct_dice_coefficient -i ${t1w} -d ${t1w} -bin 1
+    expected_output_contains: "Dice coefficient"
+
+  # ==========================================================================
+  # DENOISING (sct_denoising_onlm)
+  # ==========================================================================
+  - name: Non-local means denoising
+    description: Test sct_denoising_onlm basic operation
+    command: sct_denoising_onlm -i ${t1w} -o test_output/t1w_nlm.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_nlm.nii.gz
+
+  - name: Denoising with custom parameters
+    description: Test sct_denoising_onlm with patch radius
+    command: sct_denoising_onlm -i ${t1w} -p 1 -o test_output/t1w_nlm_p1.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_nlm_p1.nii.gz
+
+  # ==========================================================================
+  # IMAGE MERGING (sct_merge_images)
+  # ==========================================================================
+  - name: Merge images along z
+    description: Test sct_merge_images concatenation along z
+    command: sct_merge_images -i test_output/t1w_split_z_0000.nii.gz,test_output/t1w_split_z_0001.nii.gz,test_output/t1w_split_z_0002.nii.gz -d z -o test_output/t1w_merged.nii.gz
+    depends_on: Split 3D along z
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_merged.nii.gz
+
+  # ==========================================================================
+  # CENTERLINE EXTRACTION (sct_get_centerline)
+  # Note: These tests may require appropriate spinal cord data
+  # Using brain data for basic functionality verification
+  # ==========================================================================
+  - name: Get centerline with fitseg method
+    description: Test sct_get_centerline with fitseg (from segmentation)
+    command: sct_get_centerline -i test_output/t1w_otsu.nii.gz -method fitseg -o test_output/centerline_fitseg
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/centerline_fitseg.nii.gz
+
+  # ==========================================================================
+  # SEGMENTATION ANALYSIS (sct_process_segmentation)
+  # Note: Basic metrics computation tests
+  # ==========================================================================
+  - name: Process segmentation basic
+    description: Test sct_process_segmentation cross-sectional area
+    command: sct_process_segmentation -i test_output/t1w_otsu.nii.gz -o test_output/csa_basic.csv
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/csa_basic.csv
+
+  - name: Process segmentation per slice
+    description: Test sct_process_segmentation per-slice metrics
+    command: sct_process_segmentation -i test_output/t1w_otsu.nii.gz -perslice 1 -o test_output/csa_perslice.csv
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/csa_perslice.csv
+
+  - name: Process segmentation with angle correction
+    description: Test sct_process_segmentation angle correction
+    command: sct_process_segmentation -i test_output/t1w_otsu.nii.gz -angle-corr 1 -o test_output/csa_angle.csv
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/csa_angle.csv
+
+  - name: Process segmentation slice range
+    description: Test sct_process_segmentation with slice range
+    command: sct_process_segmentation -i test_output/t1w_otsu.nii.gz -z 50:100 -o test_output/csa_zrange.csv
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/csa_zrange.csv
+
+  # ==========================================================================
+  # FLATTEN SAGITTAL (sct_flatten_sagittal)
+  # Note: Requires segmentation for centerline
+  # ==========================================================================
+  - name: Flatten sagittal
+    description: Test sct_flatten_sagittal basic operation
+    command: sct_flatten_sagittal -i ${t1w} -s test_output/t1w_otsu.nii.gz
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_flatten.nii.gz
+
+  # ==========================================================================
+  # fMRI TOOLS (sct_fmri_compute_tsnr)
+  # ==========================================================================
+  - name: Compute tSNR
+    description: Test sct_fmri_compute_tsnr temporal signal-to-noise ratio
+    command: sct_fmri_compute_tsnr -i ${bold} -o test_output/bold_tsnr.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/bold_tsnr.nii.gz
+
+  # ==========================================================================
+  # SNR COMPUTATION (sct_compute_snr)
+  # ==========================================================================
+  - name: Compute SNR
+    description: Test sct_compute_snr with mask
+    command: sct_compute_snr -i ${t1w} -m test_output/t1w_otsu.nii.gz
+    depends_on: Otsu thresholding
+    expected_output_contains: "SNR"
+
+  # ==========================================================================
+  # ERNST ANGLE (sct_compute_ernst_angle)
+  # ==========================================================================
+  - name: Compute Ernst angle
+    description: Test sct_compute_ernst_angle calculation
+    command: sct_compute_ernst_angle -tr 2000 -t1 1000
+    expected_output_contains: "Ernst"
+
+  - name: Compute Ernst angle different TR
+    description: Test sct_compute_ernst_angle with different TR
+    command: sct_compute_ernst_angle -tr 500 -t1 800
+    expected_output_contains: "Ernst"
+
+  # ==========================================================================
+  # TEXTURE ANALYSIS (sct_analyze_texture)
+  # ==========================================================================
+  - name: Analyze texture GLCM
+    description: Test sct_analyze_texture grey level co-occurrence matrix
+    command: sct_analyze_texture -i ${t1w} -m test_output/t1w_otsu.nii.gz -feature contrast -distance 1 -o test_output/texture_contrast.nii.gz
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/texture_contrast.nii.gz
+
+  - name: Analyze texture energy
+    description: Test sct_analyze_texture energy feature
+    command: sct_analyze_texture -i ${t1w} -m test_output/t1w_otsu.nii.gz -feature energy -distance 1 -o test_output/texture_energy.nii.gz
+    depends_on: Otsu thresholding
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/texture_energy.nii.gz
+
+  # ==========================================================================
+  # COMPLEX PIPELINES
+  # ==========================================================================
+  - name: Brain mask creation pipeline
+    description: Chain operations for brain mask creation
+    command: |
+      sct_maths -i ${t1w} -otsu 3 -o test_output/pipe_otsu.nii.gz && \
+      sct_maths -i test_output/pipe_otsu.nii.gz -dilate 2 -shape ball -o test_output/pipe_dilate.nii.gz && \
+      sct_maths -i test_output/pipe_dilate.nii.gz -erode 2 -shape ball -o test_output/pipe_mask.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/pipe_mask.nii.gz
+
+  - name: Image preprocessing pipeline
+    description: Chain smoothing, resampling, and cropping
+    command: |
+      sct_maths -i ${t1w} -smooth 1,1,1 -o test_output/preproc_smooth.nii.gz && \
+      sct_resample -i test_output/preproc_smooth.nii.gz -mm 1x1x1 -o test_output/preproc_resample.nii.gz && \
+      sct_image -i test_output/preproc_resample.nii.gz -setorient RPI -o test_output/preproc_final.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/preproc_final.nii.gz
+
+  - name: Temporal SNR calculation
+    description: Calculate tSNR manually (mean/std)
+    command: |
+      sct_maths -i ${bold} -mean t -o test_output/tsnr_mean.nii.gz && \
+      sct_maths -i ${bold} -std t -o test_output/tsnr_std.nii.gz && \
+      sct_maths -i test_output/tsnr_mean.nii.gz -div test_output/tsnr_std.nii.gz -o test_output/tsnr_manual.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/tsnr_manual.nii.gz
+
+  - name: Multi-resolution pyramid
+    description: Create multi-resolution image pyramid
+    command: |
+      sct_resample -i ${t1w} -f 0.5x0.5x0.5 -o test_output/pyramid_half.nii.gz && \
+      sct_resample -i test_output/pyramid_half.nii.gz -f 0.5x0.5x0.5 -o test_output/pyramid_quarter.nii.gz && \
+      sct_resample -i test_output/pyramid_quarter.nii.gz -f 0.5x0.5x0.5 -o test_output/pyramid_eighth.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/pyramid_eighth.nii.gz
+
+  - name: Intensity normalization
+    description: Normalize image intensities using mask
+    command: |
+      sct_maths -i ${t1w} -otsu 3 -o test_output/norm_mask.nii.gz && \
+      sct_maths -i ${t1w} -mul test_output/norm_mask.nii.gz -o test_output/norm_masked.nii.gz && \
+      sct_maths -i test_output/norm_masked.nii.gz -smooth 2,2,2 -o test_output/norm_smooth.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/norm_smooth.nii.gz
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

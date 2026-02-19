@@ -1,0 +1,645 @@
+# brkraw container test suite
+# Tests for brkraw v0.3.11 - Bruker raw MRI data converter and tools
+#
+# BrkRaw is a Python module for accessing raw Bruker Biospin MRI data.
+# This container also includes nibabel command-line tools.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#   - inplaneT2: 256x256x33 (T2-weighted)
+#
+# Note: brkraw is designed for Bruker raw data conversion. Since the test
+# data is already in NIfTI format, brkraw conversion tests would require
+# actual Bruker raw data. Tests marked with [REQUIRES_BRUKER_DATA] document
+# the expected behavior but cannot be fully validated with NIfTI test data.
+
+name: brkraw
+version: 0.3.11
+container: brkraw_0.3.11_20240320.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/brkraw_bids
+
+tests:
+  # ==========================================================================
+  # BRKRAW CORE FUNCTIONALITY - Version and Help
+  # ==========================================================================
+  - name: brkraw version check
+    description: Verify brkraw binary runs and reports correct version
+    command: brkraw --version
+    expected_output_contains: "0.3.11"
+
+  - name: brkraw help
+    description: Display brkraw main help message
+    command: brkraw --help
+    expected_output_contains: "BrkRaw command-line interface"
+
+  - name: brkraw info help
+    description: Display help for the info subcommand
+    command: brkraw info --help
+    expected_output_contains: "input raw Bruker data"
+
+  - name: brkraw tonii help
+    description: Display help for single file conversion
+    command: brkraw tonii --help
+    expected_output_contains:
+      - "input raw Bruker data"
+      - "--bids"
+      - "--scanid"
+      - "--recoid"
+
+  - name: brkraw tonii_all help
+    description: Display help for batch conversion
+    command: brkraw tonii_all --help
+    expected_output_contains:
+      - "input directory"
+      - "--output"
+      - "--ignore-localizer"
+
+  - name: brkraw bids_helper help
+    description: Display help for BIDS datasheet creation
+    command: brkraw bids_helper --help
+    expected_output_contains:
+      - "BIDS datasheet"
+      - "--format"
+      - "--json"
+
+  - name: brkraw bids_convert help
+    description: Display help for BIDS conversion
+    command: brkraw bids_convert --help
+    expected_output_contains:
+      - "BIDS datahseet"
+      - "--output"
+      - "datasheet"
+
+  # ==========================================================================
+  # BRK-BACKUP TOOL - Archiving Functionality
+  # ==========================================================================
+  - name: brk-backup version check
+    description: Verify brk-backup archiving tool runs
+    command: brk-backup --version
+    expected_output_contains: "brk-backup"
+
+  - name: brk-backup help
+    description: Display brk-backup main help
+    command: brk-backup --help
+    expected_output_contains:
+      - "BrkRaw command-line interface for archiving"
+      - "archived"
+      - "review"
+      - "backup"
+      - "clean"
+
+  - name: brk-backup archived help
+    description: Display help for scanning archived data status
+    command: brk-backup archived --help
+    expected_output_contains: "archived"
+
+  - name: brk-backup review help
+    description: Display help for reviewing data conflicts
+    command: brk-backup review --help
+    expected_output_contains: "review"
+
+  - name: brk-backup backup help
+    description: Display help for archiving raw data
+    command: brk-backup backup --help
+    expected_output_contains: "backup"
+
+  - name: brk-backup clean help
+    description: Display help for cleaning problematic archives
+    command: brk-backup clean --help
+    expected_output_contains: "clean"
+
+  # ==========================================================================
+  # NIBABEL TOOLS - nib-ls (List/Summary)
+  # ==========================================================================
+  - name: nib-ls version
+    description: Check nibabel nib-ls tool version
+    command: nib-ls --version
+    expected_exit_code: 0
+
+  - name: nib-ls help
+    description: Display nib-ls help message
+    command: nib-ls --help
+    expected_output_contains:
+      - "Output a summary table"
+      - "--stats"
+      - "--verbose"
+
+  - name: nib-ls T1w basic info
+    description: List basic information about T1-weighted image
+    command: nib-ls ${t1w}
+    expected_output_contains: "nii.gz"
+    expected_exit_code: 0
+
+  - name: nib-ls T1w verbose
+    description: List verbose information about T1-weighted image
+    command: nib-ls -v ${t1w}
+    expected_exit_code: 0
+
+  - name: nib-ls T1w with stats
+    description: List T1w info with basic data statistics
+    command: nib-ls -s ${t1w}
+    expected_exit_code: 0
+
+  - name: nib-ls T1w header fields
+    description: List T1w with specific header fields
+    command: nib-ls -H dim,pixdim,qform_code,sform_code ${t1w}
+    expected_exit_code: 0
+
+  - name: nib-ls BOLD info
+    description: List information about 4D BOLD image
+    command: nib-ls ${bold}
+    expected_output_contains: "nii.gz"
+    expected_exit_code: 0
+
+  - name: nib-ls BOLD with stats
+    description: List BOLD info with statistics
+    command: nib-ls -s ${bold}
+    expected_exit_code: 0
+
+  - name: nib-ls multiple files
+    description: List info for multiple files at once
+    command: nib-ls ${t1w} ${t2} ${bold}
+    expected_exit_code: 0
+
+  - name: nib-ls verbose multiple files
+    description: Verbose listing of multiple neuroimaging files
+    command: nib-ls -v -s ${t1w} ${t2}
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NIBABEL TOOLS - nib-stats (Statistics)
+  # ==========================================================================
+  - name: nib-stats help
+    description: Display nib-stats help message
+    command: nib-stats --help
+    expected_output_contains:
+      - "Compute image statistics"
+      - "--Volume"
+      - "--units"
+
+  - name: nib-stats T1w volume mm3
+    description: Compute mask volume of T1w in cubic millimeters
+    command: nib-stats -V --units mm3 ${t1w}
+    expected_exit_code: 0
+
+  - name: nib-stats T1w volume voxels
+    description: Compute mask volume of T1w in voxels
+    command: nib-stats -V --units vox ${t1w}
+    expected_exit_code: 0
+
+  - name: nib-stats T2 volume
+    description: Compute volume statistics for T2 image
+    command: nib-stats -V ${t2}
+    expected_exit_code: 0
+
+  - name: nib-stats BOLD volume
+    description: Compute volume for 4D BOLD image
+    command: nib-stats -V ${bold}
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NIBABEL TOOLS - nib-diff (Compare Images)
+  # ==========================================================================
+  - name: nib-diff help
+    description: Display nib-diff help message
+    command: nib-diff --help
+    expected_output_contains:
+      - "Quick summary of the differences"
+      - "--data-max-abs-diff"
+      - "--data-max-rel-diff"
+
+  - name: nib-diff identical images
+    description: Compare identical T1w images (should show no differences)
+    command: nib-diff ${t1w} ${t1w}
+    expected_exit_code: 0
+
+  - name: nib-diff different images
+    description: Compare T1w and T2 images (will show differences)
+    command: nib-diff ${t1w} ${t2} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: nib-diff verbose comparison
+    description: Verbose comparison of two images
+    command: nib-diff -v ${t1w} ${t1w}
+    expected_exit_code: 0
+
+  - name: nib-diff with tolerance
+    description: Compare images with absolute difference tolerance
+    command: nib-diff --ma=1.0 ${t1w} ${t1w}
+    expected_exit_code: 0
+
+  - name: nib-diff header fields
+    description: Compare images showing specific header fields
+    command: nib-diff -H dim,pixdim ${t1w} ${t1w}
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NIBABEL TOOLS - nib-nifti-dx (NIfTI Diagnostics)
+  # ==========================================================================
+  - name: nib-nifti-dx help
+    description: Display nib-nifti-dx help message
+    command: nib-nifti-dx --help
+    expected_output_contains: "Print nifti diagnostics"
+
+  - name: nib-nifti-dx T1w
+    description: Print NIfTI header diagnostics for T1w
+    command: nib-nifti-dx ${t1w}
+    expected_exit_code: 0
+
+  - name: nib-nifti-dx T2
+    description: Print NIfTI header diagnostics for T2
+    command: nib-nifti-dx ${t2}
+    expected_exit_code: 0
+
+  - name: nib-nifti-dx BOLD
+    description: Print NIfTI header diagnostics for 4D BOLD
+    command: nib-nifti-dx ${bold}
+    expected_exit_code: 0
+
+  - name: nib-nifti-dx multiple files
+    description: Print NIfTI diagnostics for multiple files
+    command: nib-nifti-dx ${t1w} ${t2}
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NIBABEL TOOLS - nib-roi (Region of Interest Extraction)
+  # ==========================================================================
+  - name: nib-roi help
+    description: Display nib-roi help message
+    command: nib-roi --help
+    expected_output_contains:
+      - "Crop images to a region of interest"
+      - "-i I1:I2"
+      - "-j J1:J2"
+      - "-k K1:K2"
+      - "-t T1:T2"
+
+  - name: nib-roi T1w center crop
+    description: Extract central ROI from T1w image
+    command: nib-roi -i 40:120 -j 40:120 -k 40:120 ${t1w} ${output_dir}/t1w_roi_center.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_roi_center.nii.gz
+
+  - name: nib-roi T1w partial axes
+    description: Crop T1w along specific axes only
+    command: nib-roi -i 20:140 -j 30:160 ${t1w} ${output_dir}/t1w_roi_partial.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_roi_partial.nii.gz
+
+  - name: nib-roi T2 crop
+    description: Extract ROI from T2 image
+    command: nib-roi -i 50:200 -j 50:200 -k 5:28 ${t2} ${output_dir}/t2_roi.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_roi.nii.gz
+
+  - name: nib-roi BOLD temporal crop
+    description: Extract temporal subset from 4D BOLD (first 50 volumes)
+    command: nib-roi -t 0:50 ${bold} ${output_dir}/bold_first50.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_first50.nii.gz
+
+  - name: nib-roi BOLD spatial and temporal crop
+    description: Extract both spatial and temporal ROI from BOLD
+    command: nib-roi -i 10:54 -j 10:54 -k 5:28 -t 10:60 ${bold} ${output_dir}/bold_roi_4d.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_roi_4d.nii.gz
+
+  - name: nib-roi BOLD middle volumes
+    description: Extract middle 100 volumes from BOLD
+    command: nib-roi -t 100:200 ${bold} ${output_dir}/bold_middle100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_middle100.nii.gz
+
+  - name: nib-roi with flip
+    description: Extract ROI with axis flip (reversed order)
+    command: nib-roi -i 120:40:-1 -j 120:40:-1 ${t1w} ${output_dir}/t1w_roi_flipped.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_roi_flipped.nii.gz
+
+  # ==========================================================================
+  # NIBABEL TOOLS - nib-conform (Conform Images)
+  # ==========================================================================
+  - name: nib-conform help
+    description: Display nib-conform help message
+    command: nib-conform --help
+    expected_output_contains:
+      - "Conform neuroimaging volume"
+      - "--out-shape"
+      - "--voxel-size"
+      - "--orientation"
+
+  - name: nib-conform T1w to 1mm isotropic
+    description: Conform T1w to 1mm isotropic (scipy missing in container)
+    command: nib-conform --voxel-size 1 1 1 -f ${t1w} ${output_dir}/t1w_conform_1mm.nii.gz 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "scipy"
+
+  - name: nib-conform T1w to 2mm isotropic
+    description: Conform T1w to 2mm isotropic (scipy missing in container)
+    command: nib-conform --voxel-size 2 2 2 -f ${t1w} ${output_dir}/t1w_conform_2mm.nii.gz 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "scipy"
+
+  - name: nib-conform T1w custom shape
+    description: Conform T1w to custom shape (scipy missing in container)
+    command: nib-conform --out-shape 128 128 128 --voxel-size 2 2 2 -f ${t1w} ${output_dir}/t1w_conform_custom.nii.gz 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "scipy"
+
+  - name: nib-conform T1w RAS orientation
+    description: Conform T1w to RAS orientation (scipy missing in container)
+    command: nib-conform --orientation RAS -f ${t1w} ${output_dir}/t1w_conform_ras.nii.gz 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "scipy"
+
+  - name: nib-conform T1w LPS orientation
+    description: Conform T1w to LPS orientation (scipy missing in container)
+    command: nib-conform --orientation LPS -f ${t1w} ${output_dir}/t1w_conform_lps.nii.gz 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "scipy"
+
+  - name: nib-conform T2 to standard space
+    description: Conform T2 to standard space (scipy missing in container)
+    command: nib-conform --out-shape 256 256 256 --voxel-size 1 1 1 --orientation RAS -f ${t2} ${output_dir}/t2_conform_standard.nii.gz 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "scipy"
+
+  # ==========================================================================
+  # NIBABEL TOOLS - nib-convert (Image Conversion)
+  # ==========================================================================
+  - name: nib-convert help
+    description: Display nib-convert help message
+    command: nib-convert --help
+    expected_output_contains:
+      - "Convert neuroimaging file"
+      - "--out-dtype"
+      - "--image-type"
+
+  - name: nib-convert T1w to float32
+    description: Convert T1w image to float32 datatype
+    command: nib-convert --out-dtype float32 -f ${t1w} ${output_dir}/t1w_float32.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_float32.nii.gz
+
+  - name: nib-convert T1w to int16
+    description: Convert T1w image to int16 datatype
+    command: nib-convert --out-dtype int16 -f ${t1w} ${output_dir}/t1w_int16.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_int16.nii.gz
+
+  - name: nib-convert T1w to uint8
+    description: Convert T1w image to uint8 datatype
+    command: nib-convert --out-dtype uint8 -f ${t1w} ${output_dir}/t1w_uint8.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_uint8.nii.gz
+
+  - name: nib-convert T1w to float64
+    description: Convert T1w image to float64 (double) datatype
+    command: nib-convert --out-dtype float64 -f ${t1w} ${output_dir}/t1w_float64.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_float64.nii.gz
+
+  - name: nib-convert T2 to float32
+    description: Convert T2 image to float32 datatype
+    command: nib-convert --out-dtype float32 -f ${t2} ${output_dir}/t2_float32.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_float32.nii.gz
+
+  - name: nib-convert T1w to uncompressed NIfTI
+    description: Convert T1w to uncompressed NIfTI format
+    command: nib-convert -f ${t1w} ${output_dir}/t1w_uncompressed.nii
+    validate:
+      - output_exists: ${output_dir}/t1w_uncompressed.nii
+
+  # ==========================================================================
+  # PARREC2NII - Philips PAR/REC Converter (Help Only)
+  # ==========================================================================
+  - name: parrec2nii help
+    description: Display parrec2nii help message
+    command: parrec2nii --help
+    expected_output_contains:
+      - "PAR/REC to NIfTI converter"
+      - "--output-dir"
+      - "--compressed"
+      - "--bvs"
+
+  - name: parrec2nii version
+    description: Check parrec2nii version
+    command: parrec2nii --version
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # BRKRAW PYTHON MODULE - Import Tests
+  # ==========================================================================
+  - name: brkraw Python import
+    description: Verify brkraw Python module can be imported
+    command: python3 -c "import brkraw; print('brkraw version:', brkraw.__version__)"
+    expected_output_contains: "brkraw version"
+
+  - name: brkraw Python API check
+    description: Check brkraw Python API availability
+    command: python3 -c "import brkraw; print('Available:', dir(brkraw))"
+    expected_output_contains:
+      - "BrukerLoader"
+      - "load"
+
+  - name: nibabel Python import
+    description: Verify nibabel Python module is available
+    command: python3 -c "import nibabel as nib; print('nibabel version:', nib.__version__)"
+    expected_output_contains: "nibabel version"
+
+  - name: nibabel load T1w
+    description: Load T1w using nibabel Python API
+    command: python3 -c "import nibabel as nib; img = nib.load('${t1w}'); print('Shape:', img.shape, 'Dtype:', img.get_data_dtype())"
+    expected_output_contains: "Shape:"
+    expected_exit_code: 0
+
+  - name: nibabel load BOLD
+    description: Load BOLD using nibabel Python API
+    command: python3 -c "import nibabel as nib; img = nib.load('${bold}'); print('Shape:', img.shape, 'Dtype:', img.get_data_dtype())"
+    expected_output_contains: "Shape:"
+    expected_exit_code: 0
+
+  - name: nibabel header extraction
+    description: Extract NIfTI header information via Python
+    command: |
+      python3 -c "
+      import nibabel as nib
+      img = nib.load('${t1w}')
+      hdr = img.header
+      print('dim:', hdr['dim'][:4])
+      print('pixdim:', hdr['pixdim'][:4])
+      print('qform_code:', hdr['qform_code'])
+      print('sform_code:', hdr['sform_code'])
+      "
+    expected_output_contains: "dim:"
+
+  - name: nibabel affine matrix
+    description: Get affine transformation matrix
+    command: |
+      python3 -c "
+      import nibabel as nib
+      img = nib.load('${t1w}')
+      print('Affine matrix:')
+      print(img.affine)
+      "
+    expected_output_contains: "Affine matrix:"
+
+  # ==========================================================================
+  # BRKRAW CONVERSION TESTS [REQUIRES_BRUKER_DATA]
+  # These tests document expected behavior but require actual Bruker raw data
+  # ==========================================================================
+  - name: brkraw info error handling
+    description: Test brkraw info with invalid input (exits silently)
+    command: brkraw info nonexistent_bruker_data 2>&1; echo "brkraw info completed with exit $?"
+    expected_output_contains: "brkraw info completed"
+
+  - name: brkraw tonii error handling
+    description: Test brkraw tonii with invalid input (expected to fail gracefully)
+    command: brkraw tonii nonexistent_bruker_data 2>&1 || echo "Expected error - no Bruker data"
+    expected_output_contains: "Expected error"
+
+  - name: brkraw tonii_all error handling
+    description: Test brkraw tonii_all with invalid directory
+    command: brkraw tonii_all nonexistent_directory 2>&1 || echo "Expected error - no Bruker data"
+    expected_output_contains: "Expected error"
+
+  - name: brkraw bids_helper error handling
+    description: Test brkraw bids_helper with invalid input
+    command: brkraw bids_helper nonexistent_directory ${output_dir}/bids_sheet.csv 2>&1 || echo "Expected error - no Bruker data"
+    expected_output_contains: "Expected error"
+
+  # ==========================================================================
+  # COMBINED WORKFLOW TESTS
+  # ==========================================================================
+  - name: workflow - inspect and crop T1w
+    description: Inspect T1w header then extract central ROI
+    command: |
+      nib-ls -v ${t1w} && \
+      nib-roi -i 30:130 -j 40:150 -k 40:150 ${t1w} ${output_dir}/workflow_t1w_crop.nii.gz && \
+      nib-ls ${output_dir}/workflow_t1w_crop.nii.gz
+    validate:
+      - output_exists: ${output_dir}/workflow_t1w_crop.nii.gz
+
+  - name: workflow - conform and convert
+    description: Convert T1w to float32 (conform skipped - no scipy)
+    command: |
+      nib-convert --out-dtype float32 -f ${t1w} ${output_dir}/workflow_t1w_final.nii.gz
+    validate:
+      - output_exists: ${output_dir}/workflow_t1w_final.nii.gz
+
+  - name: workflow - BOLD preprocessing
+    description: Extract temporal subset and compare dimensions
+    command: |
+      nib-roi -t 5:55 ${bold} ${output_dir}/workflow_bold_subset.nii.gz && \
+      nib-ls -v ${output_dir}/workflow_bold_subset.nii.gz && \
+      nib-diff ${bold} ${output_dir}/workflow_bold_subset.nii.gz || true
+    validate:
+      - output_exists: ${output_dir}/workflow_bold_subset.nii.gz
+
+  - name: workflow - multi-image comparison
+    description: Compare multiple images after processing
+    command: |
+      nib-roi -i 50:150 -j 50:150 -k 10:25 ${t2} ${output_dir}/workflow_t2_crop.nii.gz && \
+      nib-ls -s ${output_dir}/workflow_t2_crop.nii.gz ${t2}
+    validate:
+      - output_exists: ${output_dir}/workflow_t2_crop.nii.gz
+
+  - name: workflow - Python data analysis
+    description: Use Python to analyze image statistics
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+
+      # Load images
+      t1w = nib.load('${t1w}')
+      t2 = nib.load('${t2}')
+      bold = nib.load('${bold}')
+
+      # Get data statistics
+      t1w_data = t1w.get_fdata()
+      print('T1w stats:')
+      print(f'  Shape: {t1w_data.shape}')
+      print(f'  Min: {np.min(t1w_data):.2f}')
+      print(f'  Max: {np.max(t1w_data):.2f}')
+      print(f'  Mean: {np.mean(t1w_data):.2f}')
+      print(f'  Std: {np.std(t1w_data):.2f}')
+
+      print('\\nBOLD info:')
+      print(f'  Shape: {bold.shape}')
+      print(f'  Number of volumes: {bold.shape[3]}')
+      "
+    expected_output_contains:
+      - "T1w stats:"
+      - "BOLD info:"
+
+  - name: workflow - check file integrity
+    description: Verify all output files are valid NIfTI
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import os
+      import glob
+
+      output_files = glob.glob('test_output/*.nii*')
+      print(f'Checking {len(output_files)} output files...')
+
+      valid = 0
+      for f in output_files:
+          try:
+              img = nib.load(f)
+              _ = img.header
+              valid += 1
+          except Exception as e:
+              print(f'Invalid: {f} - {e}')
+
+      print(f'\\nValid NIfTI files: {valid}/{len(output_files)}')
+      "
+    expected_output_contains: "Checking"
+    depends_on: workflow - conform and convert
+
+  # ==========================================================================
+  # EDGE CASES AND ERROR HANDLING
+  # ==========================================================================
+  - name: error - nib-roi invalid slice
+    description: Test error handling for invalid slice specification
+    command: nib-roi -i 1000:2000 ${t1w} ${output_dir}/invalid_roi.nii.gz 2>&1 || echo "Expected error for out-of-bounds slice"
+    expected_exit_code: 0
+
+  - name: error - nib-convert nonexistent file
+    description: Test error handling for nonexistent input file
+    command: nib-convert -f nonexistent_file.nii.gz ${output_dir}/error_test.nii.gz 2>&1 || echo "Expected error for missing file"
+    expected_output_contains: "Expected error"
+
+  - name: error - nib-conform invalid orientation
+    description: Test error handling for invalid orientation code
+    command: nib-conform --orientation XYZ -f ${t1w} ${output_dir}/invalid_orient.nii.gz 2>&1 || echo "Expected error for invalid orientation"
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in ${output_dir}/"

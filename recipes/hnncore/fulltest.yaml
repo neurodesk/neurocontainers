@@ -1,0 +1,640 @@
+# hnncore container test suite
+# Tests for HNN-core v0.3 - Human Neocortical Neurosolver
+#
+# HNN-core is a Python library for simulation and optimization of neural
+# circuits for MEG/EEG source estimates. It provides biophysically detailed
+# models of neocortical circuits to study the neural origins of brain signals.
+#
+# Documentation: https://jonescompneurolab.github.io/hnn-core
+
+name: hnncore
+version: "0.3"
+container: hnncore_0.3_20231112.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION CHECKS
+  # ==========================================================================
+  - name: Python version check
+    description: Verify Python interpreter is available
+    command: python3 --version
+    expected_output_contains: "Python 3"
+
+  - name: hnn-core version check
+    description: Verify hnn_core module version
+    command: python3 -c "import hnn_core; print(\"hnn_core version:\", hnn_core.__version__)"
+    expected_output_contains: "0.3"
+
+  - name: NEURON version check
+    description: Verify NEURON simulator is available
+    command: python3 -c "import neuron; print(\"NEURON version:\", neuron.__version__)"
+    expected_output_contains: "8.2"
+
+  - name: nrniv executable check
+    description: Verify NEURON nrniv executable works
+    command: nrniv --version 2>&1 | grep -o "NEURON -- VERSION [0-9.]*"
+    expected_output_contains: "NEURON -- VERSION"
+
+  - name: hnn-gui exists
+    description: Verify hnn-gui command is available
+    command: which hnn-gui
+    expected_output_contains: "/usr/local/bin/hnn-gui"
+
+  # ==========================================================================
+  # CORE MODULE IMPORTS
+  # ==========================================================================
+  - name: Import hnn_core package
+    description: Test main package import
+    command: python3 -c "import hnn_core; print(\"hnn_core imported successfully\")"
+    expected_output_contains: "hnn_core imported successfully"
+
+  - name: Import Network class
+    description: Test Network class import
+    command: python3 -c "from hnn_core import Network; print(\"Network class:\", Network)"
+    expected_output_contains: "class 'hnn_core.network.Network'"
+
+  - name: Import Cell class
+    description: Test Cell class import
+    command: python3 -c "from hnn_core import Cell; print(\"Cell class:\", Cell)"
+    expected_output_contains: "class 'hnn_core.cell.Cell'"
+
+  - name: Import Dipole class
+    description: Test Dipole class import
+    command: python3 -c "from hnn_core import Dipole; print(\"Dipole class:\", Dipole)"
+    expected_output_contains: "class 'hnn_core.dipole.Dipole'"
+
+  - name: Import CellResponse class
+    description: Test CellResponse class import
+    command: python3 -c "from hnn_core import CellResponse; print(\"CellResponse class:\", CellResponse)"
+    expected_output_contains: "class 'hnn_core.cell_response.CellResponse'"
+
+  - name: Import Params class
+    description: Test Params class import
+    command: python3 -c "from hnn_core import Params; print(\"Params class:\", Params)"
+    expected_output_contains: "class 'hnn_core.params.Params'"
+
+  - name: Import simulation functions
+    description: Test simulate_dipole and average_dipoles imports
+    command: python3 -c "from hnn_core import simulate_dipole, average_dipoles; print(\"Simulation functions imported\")"
+    expected_output_contains: "Simulation functions imported"
+
+  - name: Import read functions
+    description: Test read_dipole, read_spikes, read_params imports
+    command: python3 -c "from hnn_core import read_dipole, read_spikes, read_params; print(\"Read functions imported\")"
+    expected_output_contains: "Read functions imported"
+
+  - name: Import pick_connection function
+    description: Test pick_connection function import
+    command: python3 -c "from hnn_core import pick_connection; print(\"pick_connection imported\")"
+    expected_output_contains: "pick_connection imported"
+
+  # ==========================================================================
+  # NETWORK MODEL IMPORTS
+  # ==========================================================================
+  - name: Import jones_2009_model
+    description: Test Jones 2009 network model import
+    command: python3 -c "from hnn_core import jones_2009_model; print(\"jones_2009_model:\", jones_2009_model)"
+    expected_output_contains: "function jones_2009_model"
+
+  - name: Import law_2021_model
+    description: Test Law 2021 network model import
+    command: python3 -c "from hnn_core import law_2021_model; print(\"law_2021_model:\", law_2021_model)"
+    expected_output_contains: "function law_2021_model"
+
+  # ==========================================================================
+  # PARALLEL BACKENDS
+  # ==========================================================================
+  - name: Import JoblibBackend
+    description: Test JoblibBackend import
+    command: python3 -c "from hnn_core import JoblibBackend; print(\"JoblibBackend:\", JoblibBackend)"
+    expected_output_contains: "class 'hnn_core.parallel_backends.JoblibBackend'"
+
+  - name: Import MPIBackend
+    description: Test MPIBackend import
+    command: python3 -c "from hnn_core import MPIBackend; print(\"MPIBackend:\", MPIBackend)"
+    expected_output_contains: "class 'hnn_core.parallel_backends.MPIBackend'"
+
+  - name: Create JoblibBackend instance
+    description: Test JoblibBackend initialization
+    command: python3 -c "from hnn_core import JoblibBackend; backend = JoblibBackend(n_jobs=2); print(\"JoblibBackend created with n_jobs=2\")"
+    expected_output_contains: "JoblibBackend created"
+
+  # ==========================================================================
+  # VISUALIZATION MODULE
+  # ==========================================================================
+  - name: Import viz module
+    description: Test visualization module import
+    command: python3 -c "from hnn_core import viz; print(\"viz module imported\")"
+    expected_output_contains: "viz module imported"
+
+  - name: Import plot_dipole
+    description: Test plot_dipole function import
+    command: python3 -c "from hnn_core.viz import plot_dipole; print(\"plot_dipole imported\")"
+    expected_output_contains: "plot_dipole imported"
+
+  - name: Import plot_spikes_hist
+    description: Test plot_spikes_hist function import
+    command: python3 -c "from hnn_core.viz import plot_spikes_hist; print(\"plot_spikes_hist imported\")"
+    expected_output_contains: "plot_spikes_hist imported"
+
+  - name: Import plot_spikes_raster
+    description: Test plot_spikes_raster function import
+    command: python3 -c "from hnn_core.viz import plot_spikes_raster; print(\"plot_spikes_raster imported\")"
+    expected_output_contains: "plot_spikes_raster imported"
+
+  - name: Import plot_cells
+    description: Test plot_cells function import
+    command: python3 -c "from hnn_core.viz import plot_cells; print(\"plot_cells imported\")"
+    expected_output_contains: "plot_cells imported"
+
+  - name: Import plot_cell_morphology
+    description: Test plot_cell_morphology function import
+    command: python3 -c "from hnn_core.viz import plot_cell_morphology; print(\"plot_cell_morphology imported\")"
+    expected_output_contains: "plot_cell_morphology imported"
+
+  - name: Import plot_connectivity_matrix
+    description: Test plot_connectivity_matrix function import
+    command: python3 -c "from hnn_core.viz import plot_connectivity_matrix; print(\"plot_connectivity_matrix imported\")"
+    expected_output_contains: "plot_connectivity_matrix imported"
+
+  - name: Import plot_psd
+    description: Test plot_psd (power spectral density) function import
+    command: python3 -c "from hnn_core.viz import plot_psd; print(\"plot_psd imported\")"
+    expected_output_contains: "plot_psd imported"
+
+  - name: Import plot_tfr_morlet
+    description: Test plot_tfr_morlet (time-frequency) function import
+    command: python3 -c "from hnn_core.viz import plot_tfr_morlet; print(\"plot_tfr_morlet imported\")"
+    expected_output_contains: "plot_tfr_morlet imported"
+
+  - name: Import plot_laminar_lfp
+    description: Test plot_laminar_lfp function import
+    command: python3 -c "from hnn_core.viz import plot_laminar_lfp; print(\"plot_laminar_lfp imported\")"
+    expected_output_contains: "plot_laminar_lfp imported"
+
+  - name: Import plot_laminar_csd
+    description: Test plot_laminar_csd (current source density) function import
+    command: python3 -c "from hnn_core.viz import plot_laminar_csd; print(\"plot_laminar_csd imported\")"
+    expected_output_contains: "plot_laminar_csd imported"
+
+  # ==========================================================================
+  # EXTRACELLULAR MODULE
+  # ==========================================================================
+  - name: Import ExtracellularArray
+    description: Test ExtracellularArray class import
+    command: python3 -c "from hnn_core.extracellular import ExtracellularArray; print(\"ExtracellularArray:\", ExtracellularArray)"
+    expected_output_contains: "class 'hnn_core.extracellular.ExtracellularArray'"
+
+  - name: Create ExtracellularArray
+    description: Test ExtracellularArray instantiation
+    command: python3 -c "from hnn_core.extracellular import ExtracellularArray; arr = ExtracellularArray([(0., 0., 1000.), (0., 0., 2000.)]); print(\"ExtracellularArray created with\", len(arr.positions), \"electrodes\")"
+    expected_output_contains: "ExtracellularArray created with 2 electrodes"
+
+  # ==========================================================================
+  # CELL DEFAULT FUNCTIONS
+  # ==========================================================================
+  - name: Import basket function
+    description: Test basket cell creation function import
+    command: python3 -c "from hnn_core.cells_default import basket; print(\"basket function:\", basket)"
+    expected_output_contains: "function basket"
+
+  - name: Import pyramidal function
+    description: Test pyramidal cell creation function import
+    command: python3 -c "from hnn_core.cells_default import pyramidal; print(\"pyramidal function:\", pyramidal)"
+    expected_output_contains: "function pyramidal"
+
+  # ==========================================================================
+  # PARAMETER FUNCTIONS
+  # ==========================================================================
+  - name: Import get_params_default
+    description: Test get_params_default function import
+    command: python3 -c "from hnn_core.params_default import get_params_default; print(\"get_params_default:\", get_params_default)"
+    expected_output_contains: "function get_params_default"
+
+  - name: Get default parameters
+    description: Test obtaining default simulation parameters
+    command: python3 -c "from hnn_core.params_default import get_params_default; params = get_params_default(); print(\"Default params count:\", len(params)); print(\"tstop:\", params.get(\"tstop\"))"
+    expected_output_contains: "tstop: 250.0"
+
+  - name: Read parameter file
+    description: Test reading parameter file
+    command: python3 -c "from hnn_core import read_params; import hnn_core, os; params = read_params(os.path.join(os.path.dirname(hnn_core.__file__), \"param\", \"default.json\")); print(\"Parameters loaded, count:\", len(params))"
+    expected_output_contains: "Parameters loaded"
+
+  - name: Create Params object
+    description: Test Params class instantiation
+    command: |
+      python3 -c "
+      from hnn_core import Params
+      params = Params({\"sim_prefix\": \"test\", \"tstop\": 100})
+      print(\"Params created, sim_prefix:\", params.get(\"sim_prefix\"))
+      "
+    expected_output_contains: "Params created, sim_prefix: test"
+
+  # ==========================================================================
+  # NETWORK CREATION - JONES 2009 MODEL
+  # ==========================================================================
+  - name: Create Jones 2009 network
+    description: Test creating Jones 2009 network model
+    command: python3 -c "from hnn_core import jones_2009_model; net = jones_2009_model(); print(\"Network created\"); print(\"Cell types:\", list(net.cell_types.keys()))"
+    expected_output_contains: "L2_basket"
+
+  - name: Jones 2009 network cell counts
+    description: Verify correct number of cells in Jones 2009 model
+    command: python3 -c "from hnn_core import jones_2009_model; net = jones_2009_model(); print(\"L2_basket:\", len(net.gid_ranges[\"L2_basket\"])); print(\"L2_pyramidal:\", len(net.gid_ranges[\"L2_pyramidal\"])); print(\"L5_basket:\", len(net.gid_ranges[\"L5_basket\"])); print(\"L5_pyramidal:\", len(net.gid_ranges[\"L5_pyramidal\"]))"
+    expected_output_contains: "L2_pyramidal: 100"
+
+  # ==========================================================================
+  # NETWORK CREATION - LAW 2021 MODEL
+  # ==========================================================================
+  - name: Create Law 2021 network
+    description: Test creating Law 2021 network model
+    command: python3 -c "from hnn_core import law_2021_model; net = law_2021_model(); print(\"Law 2021 network created\"); print(\"Cell types:\", list(net.cell_types.keys()))"
+    expected_output_contains: "L5_pyramidal"
+
+  # ==========================================================================
+  # NETWORK METHODS - DRIVES
+  # ==========================================================================
+  - name: Add evoked drive
+    description: Test adding evoked drive to network
+    command: |
+      python3 -c "
+      from hnn_core import jones_2009_model
+      net = jones_2009_model()
+      net.add_evoked_drive(
+          \"evprox1\",
+          mu=26.61,
+          sigma=2.47,
+          numspikes=1,
+          weights_ampa={\"L2_basket\": 0.08831, \"L2_pyramidal\": 0.01525,
+                        \"L5_basket\": 0.19934, \"L5_pyramidal\": 0.00865},
+          weights_nmda={\"L2_basket\": 0., \"L2_pyramidal\": 0.,
+                        \"L5_basket\": 0., \"L5_pyramidal\": 0.},
+          location=\"proximal\",
+          synaptic_delays=0.1
+      )
+      print(\"Evoked drive added successfully\")
+      print(\"Drives:\", list(net.external_drives.keys()))
+      "
+    expected_output_contains: "evprox1"
+
+  - name: Add bursty drive
+    description: Test adding bursty drive to network
+    command: |
+      python3 -c "
+      from hnn_core import jones_2009_model
+      net = jones_2009_model()
+      net.add_bursty_drive(
+          \"bursty1\",
+          tstart=50.,
+          tstart_std=0.,
+          burst_rate=10,
+          burst_std=2.,
+          numspikes=2,
+          spike_isi=10,
+          weights_ampa={\"L2_pyramidal\": 5e-4},
+          synaptic_delays=0.1,
+          location=\"distal\"
+      )
+      print(\"Bursty drive added successfully\")
+      "
+    expected_output_contains: "Bursty drive added successfully"
+
+  - name: Add Poisson drive
+    description: Test adding Poisson drive to network
+    command: |
+      python3 -c "
+      from hnn_core import jones_2009_model
+      net = jones_2009_model()
+      net.add_poisson_drive(
+          \"poisson1\",
+          tstart=0.,
+          tstop=100.,
+          rate_constant=10.,
+          weights_ampa={\"L2_pyramidal\": 5e-4},
+          synaptic_delays=0.1,
+          location=\"proximal\"
+      )
+      print(\"Poisson drive added successfully\")
+      "
+    expected_output_contains: "Poisson drive added successfully"
+
+  - name: Add tonic bias
+    description: Test adding tonic bias to network
+    command: |
+      python3 -c "
+      from hnn_core import jones_2009_model
+      net = jones_2009_model()
+      net.add_tonic_bias(cell_type=\"L5_pyramidal\", amplitude=0.1)
+      print(\"Tonic bias added successfully\")
+      "
+    expected_output_contains: "Tonic bias added successfully"
+
+  - name: Clear drives
+    description: Test clearing all drives from network
+    command: |
+      python3 -c "
+      from hnn_core import jones_2009_model
+      net = jones_2009_model()
+      net.add_evoked_drive(\"ev1\", mu=10, sigma=1, numspikes=1,
+                           weights_ampa={\"L2_pyramidal\": 0.01},
+                           location=\"proximal\", synaptic_delays=0.1)
+      print(\"Before clear:\", len(net.external_drives))
+      net.clear_drives()
+      print(\"After clear:\", len(net.external_drives))
+      "
+    expected_output_contains: "After clear: 0"
+
+  # ==========================================================================
+  # NETWORK METHODS - CONNECTIONS
+  # ==========================================================================
+  - name: Add connection
+    description: Test adding custom connection to network
+    command: |
+      python3 -c "
+      from hnn_core import jones_2009_model
+      net = jones_2009_model()
+      net.add_connection(
+          src_gids=\"L5_pyramidal\",
+          target_gids=\"L5_pyramidal\",
+          loc=\"proximal\",
+          receptor=\"ampa\",
+          weight=5e-4,
+          delay=1.0,
+          lamtha=3.0
+      )
+      print(\"Connection added successfully\")
+      print(\"Total connections:\", len(net.connectivity))
+      "
+    expected_output_contains: "Connection added successfully"
+
+  - name: Pick connection
+    description: Test pick_connection function
+    command: |
+      python3 -c "
+      from hnn_core import jones_2009_model, pick_connection
+      net = jones_2009_model()
+      conn_idx = pick_connection(net, src_gids=\"L2_pyramidal\", target_gids=\"L5_pyramidal\")
+      print(\"Found\", len(conn_idx), \"connections from L2_pyr to L5_pyr\")
+      "
+    expected_output_contains: "Found 2 connections"
+
+  - name: Clear connectivity
+    description: Test clearing all connectivity from network
+    command: |
+      python3 -c "
+      from hnn_core import jones_2009_model
+      net = jones_2009_model()
+      print(\"Before clear:\", len(net.connectivity))
+      net.clear_connectivity()
+      print(\"After clear:\", len(net.connectivity))
+      "
+    expected_output_contains: "After clear: 0"
+
+  # ==========================================================================
+  # NETWORK METHODS - UTILITIES
+  # ==========================================================================
+  - name: GID to type mapping
+    description: Test gid_to_type method
+    command: |
+      python3 -c "
+      from hnn_core import jones_2009_model
+      net = jones_2009_model()
+      print(\"GID 0 type:\", net.gid_to_type(0))
+      print(\"GID 50 type:\", net.gid_to_type(50))
+      print(\"GID 150 type:\", net.gid_to_type(150))
+      "
+    expected_output_contains: "L2_basket"
+
+  - name: Network copy
+    description: Test copying network
+    command: |
+      python3 -c "
+      from hnn_core import jones_2009_model
+      net = jones_2009_model()
+      net_copy = net.copy()
+      print(\"Network copied\")
+      print(\"Original cell types:\", list(net.cell_types.keys()))
+      print(\"Copy cell types:\", list(net_copy.cell_types.keys()))
+      "
+    expected_output_contains: "Network copied"
+
+  - name: Add electrode array to network
+    description: Test adding electrode array to network
+    command: |
+      python3 -c "
+      from hnn_core import jones_2009_model
+      net = jones_2009_model()
+      positions = [(0., 0., 1000.), (0., 0., 2000.)]
+      net.add_electrode_array(\"laminar_array\", positions)
+      print(\"Electrode array added\")
+      print(\"Array names:\", list(net.rec_arrays.keys()))
+      "
+    expected_output_contains: "laminar_array"
+
+  # ==========================================================================
+  # DIPOLE CLASS
+  # ==========================================================================
+  - name: Create Dipole object
+    description: Test Dipole class instantiation
+    command: |
+      python3 -c "
+      from hnn_core import Dipole
+      import numpy as np
+      times = np.arange(0, 100, 0.025)
+      data = np.random.randn(len(times), 3) * 10
+      dpl = Dipole(times, data)
+      print(\"Dipole created with\", len(times), \"time points\")
+      print(\"Data keys:\", list(dpl.data.keys()))
+      "
+    expected_output_contains: "agg"
+
+  - name: Dipole smooth method
+    description: Test Dipole smoothing
+    command: |
+      python3 -c "
+      from hnn_core import Dipole
+      import numpy as np
+      times = np.arange(0, 100, 0.025)
+      data = np.random.randn(len(times), 3) * 10
+      dpl = Dipole(times, data)
+      dpl_smooth = dpl.smooth(window_len=30)
+      print(\"Dipole smoothed successfully\")
+      "
+    expected_output_contains: "Dipole smoothed successfully"
+
+  - name: Dipole scale method
+    description: Test Dipole scaling
+    command: |
+      python3 -c "
+      from hnn_core import Dipole
+      import numpy as np
+      times = np.arange(0, 100, 0.025)
+      data = np.random.randn(len(times), 3) * 10
+      dpl = Dipole(times, data)
+      dpl.scale(3000)
+      print(\"Dipole scaled successfully\")
+      "
+    expected_output_contains: "Dipole scaled successfully"
+
+  - name: Dipole savgol_filter method
+    description: Test Dipole Savitzky-Golay filtering
+    command: |
+      python3 -c "
+      from hnn_core import Dipole
+      import numpy as np
+      times = np.arange(0, 100, 0.025)
+      data = np.random.randn(len(times), 3) * 10
+      dpl = Dipole(times, data)
+      dpl.savgol_filter(h_freq=40)
+      print(\"Savgol filter applied successfully\")
+      "
+    expected_output_contains: "Savgol filter applied successfully"
+
+  - name: Dipole copy method
+    description: Test Dipole copying
+    command: |
+      python3 -c "
+      from hnn_core import Dipole
+      import numpy as np
+      times = np.arange(0, 100, 0.025)
+      data = np.random.randn(len(times), 3) * 10
+      dpl = Dipole(times, data)
+      dpl_copy = dpl.copy()
+      print(\"Dipole copied, times equal:\", np.array_equal(dpl.times, dpl_copy.times))
+      "
+    expected_output_contains: "times equal: True"
+
+  - name: Average dipoles
+    description: Test averaging multiple dipoles
+    command: |
+      python3 -c "
+      from hnn_core import Dipole, average_dipoles
+      import numpy as np
+      times = np.arange(0, 100, 0.025)
+      dipoles = []
+      for i in range(3):
+          data = np.random.randn(len(times), 3) * 10
+          dipoles.append(Dipole(times, data))
+      avg_dpl = average_dipoles(dipoles)
+      print(\"Averaged\", len(dipoles), \"dipoles\")
+      print(\"Result has\", len(avg_dpl.times), \"time points\")
+      "
+    expected_output_contains: "Averaged 3 dipoles"
+
+  # ==========================================================================
+  # CELL RESPONSE CLASS
+  # ==========================================================================
+  - name: Create CellResponse object
+    description: Test CellResponse class instantiation
+    command: |
+      python3 -c "
+      from hnn_core import CellResponse
+      spike_times = [[10.5, 20.3, 15.2], [25.1, 12.0, 30.5]]
+      spike_gids = [[0, 0, 1], [1, 2, 2]]
+      spike_types = [[\"L2_pyramidal\", \"L2_pyramidal\", \"L2_basket\"],
+                     [\"L2_basket\", \"L5_pyramidal\", \"L5_pyramidal\"]]
+      cell_resp = CellResponse(spike_times, spike_gids, spike_types)
+      print(\"CellResponse created with\", len(cell_resp.spike_times), \"trials\")
+      "
+    expected_output_contains: "CellResponse created with 2 trials"
+
+  # ==========================================================================
+  # DEPENDENCY CHECKS
+  # ==========================================================================
+  - name: NumPy available
+    description: Test NumPy import
+    command: python3 -c "import numpy as np; print(\"NumPy version:\", np.__version__)"
+    expected_output_contains: "NumPy version:"
+
+  - name: SciPy available
+    description: Test SciPy import
+    command: python3 -c "import scipy; print(\"SciPy version:\", scipy.__version__)"
+    expected_output_contains: "SciPy version:"
+
+  - name: Matplotlib available
+    description: Test Matplotlib import
+    command: python3 -c "import matplotlib; print(\"Matplotlib version:\", matplotlib.__version__)"
+    expected_output_contains: "Matplotlib version:"
+
+  - name: joblib available
+    description: Test joblib import
+    command: python3 -c "import joblib; print(\"joblib version:\", joblib.__version__)"
+    expected_output_contains: "joblib version:"
+
+  - name: mpi4py available
+    description: Test mpi4py import
+    command: python3 -c "import mpi4py; print(\"mpi4py version:\", mpi4py.__version__)"
+    expected_output_contains: "mpi4py version:"
+
+  # ==========================================================================
+  # PARAMETER FILE CHECKS
+  # ==========================================================================
+  - name: Default parameter file exists
+    description: Verify default.json parameter file exists
+    command: python3 -c "import hnn_core, os; path = os.path.join(os.path.dirname(hnn_core.__file__), \"param\", \"default.json\"); print(\"Exists:\", os.path.exists(path))"
+    expected_output_contains: "Exists: True"
+
+  - name: N20 parameter file exists
+    description: Verify N20.json parameter file exists
+    command: python3 -c "import hnn_core, os; path = os.path.join(os.path.dirname(hnn_core.__file__), \"param\", \"N20.json\"); print(\"Exists:\", os.path.exists(path))"
+    expected_output_contains: "Exists: True"
+
+  - name: Gamma parameter file exists
+    description: Verify gamma_L5weak_L2weak.json parameter file exists
+    command: python3 -c "import hnn_core, os; path = os.path.join(os.path.dirname(hnn_core.__file__), \"param\", \"gamma_L5weak_L2weak.json\"); print(\"Exists:\", os.path.exists(path))"
+    expected_output_contains: "Exists: True"
+
+  # ==========================================================================
+  # COMPREHENSIVE WORKFLOW TEST
+  # ==========================================================================
+  - name: Complete network setup workflow
+    description: Test complete network setup with drives and connections
+    command: |
+      python3 -c "
+      from hnn_core import jones_2009_model
+
+      # Create network
+      net = jones_2009_model()
+
+      # Add proximal evoked drive
+      net.add_evoked_drive(
+          \"evprox1\", mu=26.61, sigma=2.47, numspikes=1,
+          weights_ampa={\"L2_basket\": 0.08831, \"L2_pyramidal\": 0.01525,
+                        \"L5_basket\": 0.19934, \"L5_pyramidal\": 0.00865},
+          weights_nmda={\"L2_basket\": 0., \"L2_pyramidal\": 0.,
+                        \"L5_basket\": 0., \"L5_pyramidal\": 0.},
+          location=\"proximal\", synaptic_delays=0.1
+      )
+
+      # Add distal evoked drive
+      net.add_evoked_drive(
+          \"evdist1\", mu=63.53, sigma=3.85, numspikes=1,
+          weights_ampa={\"L2_basket\": 0.006562, \"L2_pyramidal\": 0.000007,
+                        \"L5_pyramidal\": 0.142300},
+          weights_nmda={\"L2_basket\": 0.019482, \"L2_pyramidal\": 0.004317,
+                        \"L5_pyramidal\": 0.080074},
+          location=\"distal\", synaptic_delays=0.1
+      )
+
+      print(\"Network setup complete\")
+      print(\"Number of drives:\", len(net.external_drives))
+      print(\"Drive names:\", list(net.external_drives.keys()))
+      "
+    expected_output_contains: "evdist1"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

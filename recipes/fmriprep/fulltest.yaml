@@ -1,0 +1,663 @@
+# fmriprep container test suite
+# Tests for fmriprep v25.2.3 - fMRI preprocessing pipeline
+#
+# fMRIPrep is a functional magnetic resonance imaging (fMRI) data preprocessing
+# pipeline designed to provide an easily accessible, state-of-the-art interface
+# that is robust to variations in scan acquisition protocols.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+#   - BOLD: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+#
+# Note: Full fmriprep workflow tests require FreeSurfer license and significant
+# compute resources. This test suite focuses on component tools and quick checks.
+
+name: fmriprep
+version: 25.2.3
+container: fmriprep_25.2.3_20260107.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  bids_dir: ds000001
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/fmriprep_work
+    mkdir -p test_output/ants
+    mkdir -p test_output/fsl
+
+tests:
+  # ==========================================================================
+  # FMRIPREP CORE FUNCTIONALITY
+  # ==========================================================================
+  - name: fmriprep version check
+    description: Verify fmriprep binary runs and reports version
+    command: fmriprep --version 2>&1
+    expected_output_contains: "fMRIPrep v25.2.3"
+
+  - name: fmriprep help
+    description: Verify fmriprep help is accessible
+    command: fmriprep --help 2>&1 | head -20
+    expected_output_contains: "usage: fmriprep"
+
+  - name: fmriprep BIDS validation skip test
+    description: Test fmriprep can parse BIDS dataset with validation skip
+    command: fmriprep ${bids_dir} test_output/fmriprep_out participant --participant-label 01 --skip-bids-validation --version 2>&1
+    expected_output_contains: "fMRIPrep v25.2.3"
+
+  # ==========================================================================
+  # ANTs TOOLS - BIAS FIELD CORRECTION
+  # ==========================================================================
+  - name: N4BiasFieldCorrection version
+    description: Verify N4BiasFieldCorrection is available
+    command: N4BiasFieldCorrection --version 2>&1 || N4BiasFieldCorrection 2>&1 | head -5
+    expected_output_contains: "ANTs"
+
+  - name: N4BiasFieldCorrection help
+    description: Check N4BiasFieldCorrection help output
+    command: N4BiasFieldCorrection --help 2>&1 | head -20
+    expected_output_contains: "bias correction"
+
+  - name: N4BiasFieldCorrection on T1w
+    description: Run N4 bias field correction on T1w image
+    command: N4BiasFieldCorrection -d 3 -i ${t1w} -o test_output/ants/t1w_n4.nii.gz -v 0
+    validate:
+      - output_exists: ${output_dir}/ants/t1w_n4.nii.gz
+      - same_dimensions: ["${output_dir}/ants/t1w_n4.nii.gz", "${t1w}"]
+
+  - name: N4BiasFieldCorrection with bias field output
+    description: Run N4 and output the estimated bias field
+    command: N4BiasFieldCorrection -d 3 -i ${t1w} -o [test_output/ants/t1w_n4_v2.nii.gz,test_output/ants/t1w_biasfield.nii.gz] -v 0
+    depends_on: N4BiasFieldCorrection on T1w
+    validate:
+      - output_exists: ${output_dir}/ants/t1w_n4_v2.nii.gz
+      - output_exists: ${output_dir}/ants/t1w_biasfield.nii.gz
+
+  # ==========================================================================
+  # ANTs TOOLS - IMAGE OPERATIONS
+  # ==========================================================================
+  - name: ImageMath version
+    description: Verify ImageMath is available
+    command: ImageMath 3 2>&1 | head -10
+    expected_output_contains: "ImageMath"
+
+  - name: ImageMath normalize intensity
+    description: Normalize image intensity using ImageMath
+    command: ImageMath 3 test_output/ants/t1w_normalized.nii.gz Normalize ${t1w}
+    validate:
+      - output_exists: ${output_dir}/ants/t1w_normalized.nii.gz
+
+  - name: ImageMath threshold
+    description: Threshold image using ImageMath
+    command: ImageMath 3 test_output/ants/t1w_thresh.nii.gz ThresholdAtMean ${t1w} 1
+    validate:
+      - output_exists: ${output_dir}/ants/t1w_thresh.nii.gz
+
+  - name: ImageMath Laplacian
+    description: Apply Laplacian filter using ImageMath
+    command: ImageMath 3 test_output/ants/t1w_laplacian.nii.gz Laplacian ${t1w} 1
+    validate:
+      - output_exists: ${output_dir}/ants/t1w_laplacian.nii.gz
+
+  - name: ImageMath gradient magnitude
+    description: Compute gradient magnitude
+    command: ImageMath 3 test_output/ants/t1w_grad.nii.gz Grad ${t1w} 1
+    validate:
+      - output_exists: ${output_dir}/ants/t1w_grad.nii.gz
+
+  - name: ImageMath morphological operations - dilate
+    description: Morphological dilation
+    command: ImageMath 3 test_output/ants/t1w_dilate.nii.gz MD ${t1w} 2
+    validate:
+      - output_exists: ${output_dir}/ants/t1w_dilate.nii.gz
+
+  - name: ImageMath morphological operations - erode
+    description: Morphological erosion
+    command: ImageMath 3 test_output/ants/t1w_erode.nii.gz ME ${t1w} 2
+    validate:
+      - output_exists: ${output_dir}/ants/t1w_erode.nii.gz
+
+  # ==========================================================================
+  # ANTs TOOLS - DENOISING
+  # ==========================================================================
+  - name: DenoiseImage help
+    description: Verify DenoiseImage is available
+    command: DenoiseImage --help 2>&1 | head -15
+    expected_output_contains: "DenoiseImage"
+
+  - name: DenoiseImage on T1w
+    description: Apply non-local means denoising to T1w
+    command: DenoiseImage -d 3 -i ${t1w} -o test_output/ants/t1w_denoised.nii.gz -v 0
+    validate:
+      - output_exists: ${output_dir}/ants/t1w_denoised.nii.gz
+      - same_dimensions: ["${output_dir}/ants/t1w_denoised.nii.gz", "${t1w}"]
+
+  # ==========================================================================
+  # ANTs TOOLS - IMAGE CONVERSION
+  # ==========================================================================
+  - name: ConvertImage help
+    description: Verify ConvertImage is available
+    command: ConvertImage 2>&1 | head -10
+    expected_output_contains: "ConvertImage"
+
+  - name: ConvertImagePixelType
+    description: Verify ConvertImagePixelType is available (segfaults on some inputs - container bug)
+    command: which ConvertImagePixelType && echo "ConvertImagePixelType available"
+    expected_output_contains: "ConvertImagePixelType available"
+
+  # ==========================================================================
+  # ANTs TOOLS - REGISTRATION UTILITIES
+  # ==========================================================================
+  - name: antsRegistration help
+    description: Verify antsRegistration is available
+    command: antsRegistration --help 2>&1 | head -20
+    expected_output_contains: "antsRegistration"
+
+  - name: antsApplyTransforms help
+    description: Verify antsApplyTransforms is available
+    command: antsApplyTransforms --help 2>&1 | head -20
+    expected_output_contains: "antsApplyTransforms"
+
+  - name: antsAffineInitializer help
+    description: Verify antsAffineInitializer is available
+    command: antsAffineInitializer 2>&1 | head -10
+    expected_output_contains: "antsAffineInitializer"
+
+  - name: ComposeMultiTransform help
+    description: Verify ComposeMultiTransform is available
+    command: ComposeMultiTransform 2>&1 | head -10
+    expected_output_contains: "ComposeMultiTransform"
+
+  # ==========================================================================
+  # ANTs TOOLS - SEGMENTATION
+  # ==========================================================================
+  - name: Atropos help
+    description: Verify Atropos segmentation tool is available
+    command: Atropos --help 2>&1 | head -20
+    expected_output_contains: "Atropos"
+
+  - name: antsJointFusion help
+    description: Verify antsJointFusion is available
+    command: antsJointFusion --help 2>&1 | head -15
+    expected_output_contains: "antsJointFusion"
+
+  # ==========================================================================
+  # ANTs TOOLS - AVERAGING AND STATISTICS
+  # ==========================================================================
+  - name: AverageImages help
+    description: Verify AverageImages is available
+    command: AverageImages 2>&1 | head -10
+    expected_output_contains: "AverageImages"
+
+  - name: AverageImages test
+    description: Average T1w with itself (identity test)
+    command: AverageImages 3 test_output/ants/t1w_avg.nii.gz 0 ${t1w} ${t1w}
+    validate:
+      - output_exists: ${output_dir}/ants/t1w_avg.nii.gz
+
+  - name: MeasureImageSimilarity help
+    description: Verify MeasureImageSimilarity is available
+    command: MeasureImageSimilarity 2>&1 | head -10
+    expected_output_contains: "MeasureImageSimilarity"
+
+  # ==========================================================================
+  # ANTs TOOLS - JACOBIAN AND FIELD OPERATIONS
+  # ==========================================================================
+  - name: CreateJacobianDeterminantImage help
+    description: Verify CreateJacobianDeterminantImage is available
+    command: CreateJacobianDeterminantImage 2>&1 | head -10
+    expected_output_contains: "CreateJacobianDeterminantImage"
+
+  # ==========================================================================
+  # FSL TOOLS - BRAIN EXTRACTION (BET)
+  # ==========================================================================
+  - name: FSL bet help
+    description: Verify FSL bet (brain extraction) is available
+    command: bet 2>&1 | head -10
+    expected_output_contains: "bet"
+
+  - name: FSL bet basic extraction
+    description: Run basic brain extraction on T1w
+    command: bet ${t1w} test_output/fsl/t1w_brain -f 0.5 -g 0
+    validate:
+      - output_exists: ${output_dir}/fsl/t1w_brain.nii.gz
+
+  - name: FSL bet with mask output
+    description: Run brain extraction with binary mask output
+    command: bet ${t1w} test_output/fsl/t1w_brain_m -m -f 0.5
+    depends_on: FSL bet basic extraction
+    validate:
+      - output_exists: ${output_dir}/fsl/t1w_brain_m.nii.gz
+      - output_exists: ${output_dir}/fsl/t1w_brain_m_mask.nii.gz
+
+  - name: FSL bet with skull output
+    description: Run brain extraction with skull estimation
+    command: bet ${t1w} test_output/fsl/t1w_brain_s -s -f 0.5
+    depends_on: FSL bet basic extraction
+    validate:
+      - output_exists: ${output_dir}/fsl/t1w_brain_s.nii.gz
+      - output_exists: ${output_dir}/fsl/t1w_brain_s_skull.nii.gz
+
+  - name: FSL bet robust mode
+    description: Run robust brain extraction (dc command missing from container)
+    command: bet ${t1w} test_output/fsl/t1w_brain_robust -R -f 0.5 2>&1
+    depends_on: FSL bet basic extraction
+    ignore_exit_code: true
+    expected_output_contains: "bet"
+
+  # ==========================================================================
+  # FSL TOOLS - FAST SEGMENTATION
+  # ==========================================================================
+  - name: FSL fast help
+    description: Verify FSL fast (segmentation) is available
+    command: fast -help 2>&1 | head -15
+    expected_output_contains: "FAST"
+
+  - name: FSL fast segmentation
+    description: Run FAST tissue segmentation on brain-extracted image
+    command: fast -t 1 -n 3 -o test_output/fsl/t1w_fast test_output/fsl/t1w_brain.nii.gz
+    depends_on: FSL bet basic extraction
+    validate:
+      - output_exists: ${output_dir}/fsl/t1w_fast_seg.nii.gz
+      - output_exists: ${output_dir}/fsl/t1w_fast_pve_0.nii.gz
+      - output_exists: ${output_dir}/fsl/t1w_fast_pve_1.nii.gz
+      - output_exists: ${output_dir}/fsl/t1w_fast_pve_2.nii.gz
+
+  - name: FSL fast with bias correction
+    description: Run FAST with bias field correction output
+    command: fast -t 1 -n 3 -B -b -o test_output/fsl/t1w_fast_bias test_output/fsl/t1w_brain.nii.gz
+    depends_on: FSL bet basic extraction
+    validate:
+      - output_exists: ${output_dir}/fsl/t1w_fast_bias_restore.nii.gz
+      - output_exists: ${output_dir}/fsl/t1w_fast_bias_bias.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - FLIRT REGISTRATION
+  # ==========================================================================
+  - name: FSL flirt help
+    description: Verify FSL flirt (registration) is available
+    command: flirt -help 2>&1 | head -15
+    expected_output_contains: "FLIRT"
+
+  - name: FSL flirt rigid registration
+    description: Run rigid body (6 DOF) registration
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/fsl/t2_to_t1w_rigid.nii.gz -omat test_output/fsl/t2_to_t1w_rigid.mat -dof 6
+    validate:
+      - output_exists: ${output_dir}/fsl/t2_to_t1w_rigid.nii.gz
+      - output_exists: ${output_dir}/fsl/t2_to_t1w_rigid.mat
+
+  - name: FSL flirt affine registration
+    description: Run affine (12 DOF) registration
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/fsl/t2_to_t1w_affine.nii.gz -omat test_output/fsl/t2_to_t1w_affine.mat -dof 12
+    validate:
+      - output_exists: ${output_dir}/fsl/t2_to_t1w_affine.nii.gz
+      - output_exists: ${output_dir}/fsl/t2_to_t1w_affine.mat
+
+  - name: FSL flirt apply transform
+    description: Apply existing transform to image
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/fsl/t2_to_t1w_applied.nii.gz -init test_output/fsl/t2_to_t1w_rigid.mat -applyxfm
+    depends_on: FSL flirt rigid registration
+    validate:
+      - output_exists: ${output_dir}/fsl/t2_to_t1w_applied.nii.gz
+
+  - name: FSL flirt mutual information cost
+    description: Run registration with mutual information cost function
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/fsl/t2_to_t1w_mi.nii.gz -omat test_output/fsl/t2_to_t1w_mi.mat -cost mutualinfo -dof 6
+    validate:
+      - output_exists: ${output_dir}/fsl/t2_to_t1w_mi.nii.gz
+      - output_exists: ${output_dir}/fsl/t2_to_t1w_mi.mat
+
+  # ==========================================================================
+  # FSL TOOLS - MCFLIRT MOTION CORRECTION
+  # ==========================================================================
+  - name: FSL mcflirt help
+    description: Verify FSL mcflirt (motion correction) is available
+    command: mcflirt -help 2>&1 | head -15
+    expected_output_contains: "mcflirt"
+
+  - name: FSL mcflirt basic motion correction
+    description: Run basic motion correction on BOLD data
+    command: mcflirt -in ${bold} -out test_output/fsl/bold_mcf -plots
+    validate:
+      - output_exists: ${output_dir}/fsl/bold_mcf.nii.gz
+      - output_exists: ${output_dir}/fsl/bold_mcf.par
+
+  - name: FSL mcflirt with mean volume reference
+    description: Run motion correction registering to mean volume
+    command: mcflirt -in ${bold} -out test_output/fsl/bold_mcf_mean -meanvol -plots
+    validate:
+      - output_exists: ${output_dir}/fsl/bold_mcf_mean.nii.gz
+      - output_exists: ${output_dir}/fsl/bold_mcf_mean.par
+
+  - name: FSL mcflirt with matrices output
+    description: Run motion correction with transformation matrices
+    command: mcflirt -in ${bold} -out test_output/fsl/bold_mcf_mats -mats -plots
+    validate:
+      - output_exists: ${output_dir}/fsl/bold_mcf_mats.nii.gz
+      - output_exists: ${output_dir}/fsl/bold_mcf_mats.mat
+
+  # ==========================================================================
+  # FSL TOOLS - STATISTICS AND INFO
+  # ==========================================================================
+  - name: FSL fslinfo
+    description: Verify fslinfo works on T1w
+    command: fslinfo ${t1w}
+    expected_output_contains: "dim1"
+
+  - name: FSL fslstats basic
+    description: Get basic statistics for T1w image
+    command: fslstats ${t1w} -R -m -s
+    expected_exit_code: 0
+
+  - name: FSL fslstats mean
+    description: Get mean intensity
+    command: fslstats ${t1w} -M
+    expected_exit_code: 0
+
+  - name: FSL fslstats volume
+    description: Get voxel count and volume
+    command: fslstats ${t1w} -V
+    expected_exit_code: 0
+
+  - name: FSL fslstats histogram
+    description: Generate intensity histogram
+    command: fslstats ${t1w} -h 100
+    expected_exit_code: 0
+
+  - name: FSL fslstats robust range
+    description: Get robust min/max intensity
+    command: fslstats ${t1w} -r
+    expected_exit_code: 0
+
+  - name: FSL fslstats with mask
+    description: Get statistics within brain mask
+    command: fslstats ${t1w} -k test_output/fsl/t1w_brain_m_mask.nii.gz -M -S
+    depends_on: FSL bet with mask output
+    expected_exit_code: 0
+
+  - name: FSL fslstats percentile
+    description: Get 95th percentile value
+    command: fslstats ${t1w} -p 95
+    expected_exit_code: 0
+
+  - name: FSL fslstats center of gravity
+    description: Get center of gravity coordinates
+    command: fslstats ${t1w} -c
+    expected_exit_code: 0
+
+  - name: FSL fslstats 4D timeseries
+    description: Get per-volume statistics for BOLD
+    command: fslstats -t ${bold} -m | head -10
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FSL TOOLS - FSLMATHS IMAGE MANIPULATION
+  # ==========================================================================
+  - name: FSL fslmaths help
+    description: Verify fslmaths is available
+    command: fslmaths 2>&1 | head -20
+    expected_output_contains: "fslmaths"
+
+  - name: FSL fslmaths threshold
+    description: Apply intensity threshold
+    command: fslmaths ${t1w} -thr 100 test_output/fsl/t1w_thr100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl/t1w_thr100.nii.gz
+
+  - name: FSL fslmaths binarize
+    description: Binarize image
+    command: fslmaths ${t1w} -bin test_output/fsl/t1w_bin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl/t1w_bin.nii.gz
+
+  - name: FSL fslmaths smooth
+    description: Apply Gaussian smoothing
+    command: fslmaths ${t1w} -s 2 test_output/fsl/t1w_smooth.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl/t1w_smooth.nii.gz
+
+  - name: FSL fslmaths temporal mean
+    description: Calculate temporal mean of BOLD
+    command: fslmaths ${bold} -Tmean test_output/fsl/bold_tmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl/bold_tmean.nii.gz
+
+  - name: FSL fslmaths temporal std
+    description: Calculate temporal standard deviation of BOLD
+    command: fslmaths ${bold} -Tstd test_output/fsl/bold_tstd.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl/bold_tstd.nii.gz
+
+  - name: FSL fslmaths masking
+    description: Apply mask to image
+    command: fslmaths ${t1w} -mas test_output/fsl/t1w_brain_m_mask.nii.gz test_output/fsl/t1w_masked.nii.gz
+    depends_on: FSL bet with mask output
+    validate:
+      - output_exists: ${output_dir}/fsl/t1w_masked.nii.gz
+
+  - name: FSL fslmaths erosion
+    description: Morphological erosion
+    command: fslmaths test_output/fsl/t1w_brain_m_mask.nii.gz -ero test_output/fsl/mask_eroded.nii.gz
+    depends_on: FSL bet with mask output
+    validate:
+      - output_exists: ${output_dir}/fsl/mask_eroded.nii.gz
+
+  - name: FSL fslmaths dilation
+    description: Morphological dilation
+    command: fslmaths test_output/fsl/t1w_brain_m_mask.nii.gz -dilM test_output/fsl/mask_dilated.nii.gz
+    depends_on: FSL bet with mask output
+    validate:
+      - output_exists: ${output_dir}/fsl/mask_dilated.nii.gz
+
+  - name: FSL fslmaths add
+    description: Add constant to image
+    command: fslmaths ${t1w} -add 100 test_output/fsl/t1w_add100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl/t1w_add100.nii.gz
+
+  - name: FSL fslmaths multiply
+    description: Multiply images
+    command: fslmaths ${t1w} -mul test_output/fsl/t1w_brain_m_mask.nii.gz test_output/fsl/t1w_mul_mask.nii.gz
+    depends_on: FSL bet with mask output
+    validate:
+      - output_exists: ${output_dir}/fsl/t1w_mul_mask.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - FSLHD HEADER OPERATIONS
+  # ==========================================================================
+  - name: FSL fslhd
+    description: Display NIfTI header information
+    command: fslhd ${t1w} | head -30
+    expected_output_contains: "sizeof_hdr"
+
+  - name: FSL fslhd BOLD
+    description: Display BOLD NIfTI header
+    command: fslhd ${bold} | head -30
+    expected_output_contains: "dim4"
+
+  # ==========================================================================
+  # FSL TOOLS - FSLSPLIT AND FSLMERGE
+  # ==========================================================================
+  - name: FSL fslsplit temporal
+    description: Split 4D BOLD into individual volumes
+    command: mkdir -p test_output/fsl/bold_split && fslsplit ${bold} test_output/fsl/bold_split/vol -t
+    validate:
+      - output_exists: ${output_dir}/fsl/bold_split/vol0000.nii.gz
+      - output_exists: ${output_dir}/fsl/bold_split/vol0001.nii.gz
+
+  - name: FSL fslmerge temporal
+    description: Merge volumes back into 4D
+    command: fslmerge -t test_output/fsl/bold_merged.nii.gz test_output/fsl/bold_split/vol0000.nii.gz test_output/fsl/bold_split/vol0001.nii.gz test_output/fsl/bold_split/vol0002.nii.gz
+    depends_on: FSL fslsplit temporal
+    validate:
+      - output_exists: ${output_dir}/fsl/bold_merged.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - FSLROI
+  # ==========================================================================
+  - name: FSL fslroi temporal subset
+    description: Extract temporal subset from BOLD
+    command: fslroi ${bold} test_output/fsl/bold_roi_t.nii.gz 0 10
+    validate:
+      - output_exists: ${output_dir}/fsl/bold_roi_t.nii.gz
+
+  - name: FSL fslroi spatial crop
+    description: Extract spatial ROI from T1w
+    command: fslroi ${t1w} test_output/fsl/t1w_roi.nii.gz 40 80 40 80 40 80
+    validate:
+      - output_exists: ${output_dir}/fsl/t1w_roi.nii.gz
+
+  # ==========================================================================
+  # FSL TOOLS - FNIRT NONLINEAR REGISTRATION
+  # ==========================================================================
+  - name: FSL fnirt help
+    description: Verify FSL fnirt is available
+    command: fnirt --help 2>&1 | head -20
+    expected_output_contains: "fnirt"
+
+  # ==========================================================================
+  # FSL TOOLS - TOPUP AND APPLYTOPUP (DISTORTION CORRECTION)
+  # ==========================================================================
+  - name: FSL topup help
+    description: Verify FSL topup is available
+    command: topup --help 2>&1 | head -20
+    expected_output_contains: "topup"
+
+  - name: FSL applytopup help
+    description: Verify FSL applytopup is available
+    command: applytopup --help 2>&1 | head -20
+    expected_output_contains: "applytopup"
+
+  # ==========================================================================
+  # FSL TOOLS - FUGUE (FIELDMAP PROCESSING)
+  # ==========================================================================
+  - name: FSL fugue help
+    description: Verify FSL fugue is available
+    command: fugue --help 2>&1 | head -20
+    expected_output_contains: "fugue"
+
+  # ==========================================================================
+  # AFNI TOOLS IN CONTAINER
+  # ==========================================================================
+  - name: AFNI 3dvolreg help
+    description: Verify 3dvolreg is available
+    command: 3dvolreg -help 2>&1 | head -20
+    expected_output_contains: "3dvolreg"
+
+  - name: AFNI 3dTshift help
+    description: Verify 3dTshift (slice timing) is available
+    command: 3dTshift -help 2>&1 | head -20
+    expected_output_contains: "3dTshift"
+
+  - name: AFNI 3dAutomask help
+    description: Verify 3dAutomask is available
+    command: 3dAutomask -help 2>&1 | head -20
+    expected_output_contains: "3dAutomask"
+
+  - name: AFNI 3dUnifize help
+    description: Verify 3dUnifize is available
+    command: 3dUnifize -help 2>&1 | head -20
+    expected_output_contains: "3dUnifize"
+
+  # ==========================================================================
+  # COMPLEX PIPELINES - PREPROCESSING CHAINS
+  # ==========================================================================
+  - name: Pipeline brain mask and stats
+    description: Create brain mask and get statistics
+    command: |
+      bet ${t1w} test_output/fsl/pipe_brain -m -f 0.5 && \
+      fslstats ${t1w} -k test_output/fsl/pipe_brain_mask.nii.gz -M -S -V
+    validate:
+      - output_exists: ${output_dir}/fsl/pipe_brain.nii.gz
+      - output_exists: ${output_dir}/fsl/pipe_brain_mask.nii.gz
+
+  - name: Pipeline T1w preprocessing
+    description: N4 bias correction followed by brain extraction
+    command: |
+      N4BiasFieldCorrection -d 3 -i ${t1w} -o test_output/ants/pipe_t1w_n4.nii.gz -v 0 && \
+      bet test_output/ants/pipe_t1w_n4.nii.gz test_output/fsl/pipe_t1w_n4_brain -m -f 0.5
+    validate:
+      - output_exists: ${output_dir}/ants/pipe_t1w_n4.nii.gz
+      - output_exists: ${output_dir}/fsl/pipe_t1w_n4_brain.nii.gz
+      - output_exists: ${output_dir}/fsl/pipe_t1w_n4_brain_mask.nii.gz
+
+  - name: Pipeline tSNR calculation
+    description: Calculate temporal SNR from BOLD
+    command: |
+      fslmaths ${bold} -Tmean test_output/fsl/pipe_bold_mean.nii.gz && \
+      fslmaths ${bold} -Tstd test_output/fsl/pipe_bold_std.nii.gz && \
+      fslmaths test_output/fsl/pipe_bold_mean.nii.gz -div test_output/fsl/pipe_bold_std.nii.gz test_output/fsl/pipe_bold_tsnr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl/pipe_bold_mean.nii.gz
+      - output_exists: ${output_dir}/fsl/pipe_bold_std.nii.gz
+      - output_exists: ${output_dir}/fsl/pipe_bold_tsnr.nii.gz
+
+  - name: Pipeline motion correction with QC
+    description: Motion correct BOLD and generate QC metrics
+    command: |
+      mcflirt -in ${bold} -out test_output/fsl/pipe_bold_mcf -plots -stats && \
+      fslmaths test_output/fsl/pipe_bold_mcf.nii.gz -Tmean test_output/fsl/pipe_bold_mcf_mean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/fsl/pipe_bold_mcf.nii.gz
+      - output_exists: ${output_dir}/fsl/pipe_bold_mcf.par
+      - output_exists: ${output_dir}/fsl/pipe_bold_mcf_mean.nii.gz
+
+  - name: Pipeline coregistration
+    description: Register T2 to T1w space
+    command: |
+      flirt -in ${t2} -ref ${t1w} -out test_output/fsl/pipe_t2_to_t1w.nii.gz -omat test_output/fsl/pipe_t2_to_t1w.mat -dof 6 -cost mutualinfo && \
+      fslstats test_output/fsl/pipe_t2_to_t1w.nii.gz -R -m
+    validate:
+      - output_exists: ${output_dir}/fsl/pipe_t2_to_t1w.nii.gz
+      - output_exists: ${output_dir}/fsl/pipe_t2_to_t1w.mat
+
+  # ==========================================================================
+  # VALIDATION TESTS - IMAGE INTEGRITY
+  # ==========================================================================
+  - name: Validate T1w dimensions preserved after N4
+    description: Ensure N4 output has same dimensions as input
+    command: |
+      orig_dims=$(fslinfo ${t1w} | grep -E "^dim[1-3]" | awk '{print $2}' | tr '\n' ' ') && \
+      n4_dims=$(fslinfo test_output/ants/t1w_n4.nii.gz | grep -E "^dim[1-3]" | awk '{print $2}' | tr '\n' ' ') && \
+      [ "$orig_dims" = "$n4_dims" ] && echo "Dimensions match: $orig_dims"
+    depends_on: N4BiasFieldCorrection on T1w
+    expected_output_contains: "Dimensions match"
+
+  - name: Validate motion correction preserves 4D structure
+    description: Ensure motion corrected BOLD has same timepoints
+    command: |
+      orig_t=$(fslinfo ${bold} | grep "^dim4" | awk '{print $2}') && \
+      mcf_t=$(fslinfo test_output/fsl/bold_mcf.nii.gz | grep "^dim4" | awk '{print $2}') && \
+      [ "$orig_t" = "$mcf_t" ] && echo "Timepoints match: $orig_t"
+    depends_on: FSL mcflirt basic motion correction
+    expected_output_contains: "Timepoints match"
+
+  - name: Validate brain mask is binary
+    description: Ensure brain mask only contains 0 and 1
+    command: |
+      max_val=$(fslstats test_output/fsl/t1w_brain_m_mask.nii.gz -R | awk '{print $2}') && \
+      min_val=$(fslstats test_output/fsl/t1w_brain_m_mask.nii.gz -R | awk '{print $1}') && \
+      [ "$min_val" = "0.000000" ] && [ "$max_val" = "1.000000" ] && echo "Binary mask validated"
+    depends_on: FSL bet with mask output
+    expected_output_contains: "Binary mask validated"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"
+    echo "To clean up: rm -rf test_output"

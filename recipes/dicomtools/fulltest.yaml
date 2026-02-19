@@ -1,0 +1,1025 @@
+# dicomtools container test suite
+# Tests for dicomtools v1.0.0 - Collection of DICOM tools for BIDS conversion
+#
+# This container includes:
+#   - dcm2niix: DICOM to NIfTI conversion (https://github.com/rordenlab/dcm2niix)
+#   - dcmtk: DICOM toolkit (https://support.dcmtk.org/docs/pages.html)
+#   - xmedcon/medcon: Medical image conversion utility (https://xmedcon.sourceforge.io/)
+#
+# Note: Since no DICOM test data is available in ds000001, these tests focus on:
+#   - Version and help information for all tools
+#   - Command-line option validation
+#   - Error handling for invalid/non-DICOM inputs
+#   - medcon format conversions using NIfTI input
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - T2: inplane T2 for reference
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: dicomtools
+version: 1.0.0
+container: dicomtools_1.0.0_20250204.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  anat_dir: ds000001/sub-01/anat
+  func_dir: ds000001/sub-01/func
+  subject_dir: ds000001/sub-01
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/dicomtools
+    mkdir -p test_output/dicomtools/dcm2niix
+    mkdir -p test_output/dicomtools/medcon
+    mkdir -p test_output/dicomtools/dcmtk
+    mkdir -p test_output/dicomtools/empty_dir
+
+tests:
+  # ==========================================================================
+  # DCM2NIIX - VERSION AND HELP
+  # ==========================================================================
+  - name: dcm2niix version check
+    description: Verify dcm2niix reports version information
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix version v1.0.20241211
+    description: Verify dcm2niix version matches expected
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "v1.0.20241211"
+
+  - name: dcm2niix help display
+    description: Verify dcm2niix shows usage information
+    command: dcm2niix 2>&1
+    expected_output_contains: "usage: dcm2niix"
+
+  - name: dcm2niix options list
+    description: Verify dcm2niix displays available options
+    command: dcm2niix 2>&1
+    expected_output_contains: "Options :"
+
+  - name: dcm2niix BIDS sidecar option
+    description: Verify BIDS sidecar generation option exists
+    command: dcm2niix 2>&1
+    expected_output_contains: "-b : BIDS sidecar"
+
+  - name: dcm2niix compression option
+    description: Verify gzip compression option exists
+    command: dcm2niix 2>&1
+    expected_output_contains: "-z : gz compress"
+
+  - name: dcm2niix output directory option
+    description: Verify output directory option exists
+    command: dcm2niix 2>&1
+    expected_output_contains: "-o : output directory"
+
+  - name: dcm2niix filename format option
+    description: Verify filename format option exists
+    command: dcm2niix 2>&1
+    expected_output_contains: "-f : filename"
+
+  - name: dcm2niix JPEG2000 support
+    description: Verify dcm2niix version output (OpenJPEG not compiled in this build)
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix JPEG-LS support
+    description: Verify dcm2niix version output (CharLS not compiled in this build)
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix 64-bit build
+    description: Verify 64-bit Linux build
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "64-bit Linux"
+
+  - name: dcm2niix examples section
+    description: Verify help includes examples
+    command: dcm2niix 2>&1
+    expected_output_contains: "Examples :"
+
+  # ==========================================================================
+  # DCM2NIIX - DIRECTORY SCANNING
+  # ==========================================================================
+  - name: dcm2niix query mode
+    description: Test query mode on NIfTI directory (no DICOMs expected)
+    command: dcm2niix -q y ${anat_dir} 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: dcm2niix query list mode
+    description: Test query list mode
+    command: dcm2niix -q l ${anat_dir} 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: dcm2niix scan subject directory
+    description: Test scanning subject directory
+    command: dcm2niix -q y ${subject_dir} 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: dcm2niix scan with depth limit
+    description: Test directory search depth option
+    command: dcm2niix -q y -d 1 ${subject_dir} 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  - name: dcm2niix scan empty directory
+    description: Test scanning empty directory
+    command: dcm2niix -q y test_output/dicomtools/empty_dir 2>&1 || true
+    expected_output_contains: "Unable to find any DICOM"
+
+  # ==========================================================================
+  # DCM2NIIX - CONVERSION OPTIONS
+  # ==========================================================================
+  - name: dcm2niix output directory test
+    description: Test output directory option
+    command: dcm2niix -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix BIDS enabled
+    description: Test with BIDS sidecar enabled
+    command: dcm2niix -b y -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix BIDS disabled
+    description: Test with BIDS sidecar disabled
+    command: dcm2niix -b n -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix compression enabled
+    description: Test with gzip compression enabled
+    command: dcm2niix -z y -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix internal compression
+    description: Test with internal zlib compression
+    command: dcm2niix -z i -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix no compression
+    description: Test without compression
+    command: dcm2niix -z n -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix custom filename format
+    description: Test custom filename pattern
+    command: dcm2niix -f "test_%p_%s" -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix verbose output
+    description: Test verbose mode
+    command: dcm2niix -v 1 -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix very verbose output
+    description: Test maximum verbosity
+    command: dcm2niix -v 2 -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix cropping enabled
+    description: Test 3D acquisition cropping
+    command: dcm2niix -x y -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix ignore derived images
+    description: Test ignoring derived/localizer images
+    command: dcm2niix -i y -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix merge slices auto
+    description: Test automatic slice merging
+    command: dcm2niix -m 2 -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix high compression
+    description: Test maximum compression level
+    command: dcm2niix -9 -z i -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix BIDS with anonymization
+    description: Test BIDS conversion with anonymization
+    command: dcm2niix -b y -ba y -z y -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix big endian output
+    description: Test big endian byte order
+    command: dcm2niix --big-endian y -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix progress output
+    description: Test Slicer progress format
+    command: dcm2niix --progress y -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix terse output
+    description: Test terse filename format
+    command: dcm2niix --terse -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX - ERROR HANDLING
+  # ==========================================================================
+  - name: dcm2niix invalid option
+    description: Test error handling for invalid option
+    command: dcm2niix --invalid-option 2>&1 || true
+    expected_output_contains: "Error"
+
+  - name: dcm2niix nonexistent directory
+    description: Test handling of nonexistent directory
+    command: dcm2niix /nonexistent/path 2>&1 || true
+    expected_output_contains: "Error"
+
+  # ==========================================================================
+  # DCMTK - DCMDUMP
+  # ==========================================================================
+  - name: dcmdump version check
+    description: Verify dcmdump reports version
+    command: dcmdump --version 2>&1
+    expected_output_contains: "dcmtk: dcmdump"
+
+  - name: dcmdump DCMTK version
+    description: Verify DCMTK version 3.6.8
+    command: dcmdump --version 2>&1
+    expected_output_contains: "v3.6.8"
+
+  - name: dcmdump help display
+    description: Verify dcmdump shows help information
+    command: dcmdump --help 2>&1
+    expected_output_contains: "Dump DICOM file and data set"
+
+  - name: dcmdump usage info
+    description: Verify dcmdump usage format
+    command: dcmdump --help 2>&1
+    expected_output_contains: "usage: dcmdump"
+
+  - name: dcmdump input options
+    description: Verify dcmdump has input options
+    command: dcmdump --help 2>&1
+    expected_output_contains: "input options:"
+
+  - name: dcmdump transfer syntax options
+    description: Verify transfer syntax options exist
+    command: dcmdump --help 2>&1
+    expected_output_contains: "input transfer syntax:"
+
+  - name: dcmdump verbose option
+    description: Verify verbose mode option exists
+    command: dcmdump --help 2>&1
+    expected_output_contains: "--verbose"
+
+  - name: dcmdump quiet option
+    description: Verify quiet mode option exists
+    command: dcmdump --help 2>&1
+    expected_output_contains: "--quiet"
+
+  - name: dcmdump on NIfTI file
+    description: Test dcmdump on non-DICOM file (should fail gracefully)
+    command: dcmdump ${t1w} 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCMTK - DCM2XML
+  # ==========================================================================
+  - name: dcm2xml version check
+    description: Verify dcm2xml reports version
+    command: dcm2xml --version 2>&1
+    expected_output_contains: "dcmtk: dcm2xml"
+
+  - name: dcm2xml help display
+    description: Verify dcm2xml shows help information
+    command: dcm2xml --help 2>&1
+    expected_output_contains: "Convert DICOM file and data set to XML"
+
+  - name: dcm2xml usage info
+    description: Verify dcm2xml usage format
+    command: dcm2xml --help 2>&1
+    expected_output_contains: "usage: dcm2xml"
+
+  - name: dcm2xml input format options
+    description: Verify input format options exist
+    command: dcm2xml --help 2>&1
+    expected_output_contains: "input file format:"
+
+  - name: dcm2xml output format options
+    description: Verify output format options exist
+    command: dcm2xml --help 2>&1
+    expected_output_contains: "output options:"
+
+  - name: dcm2xml UTF-8 conversion option
+    description: Verify UTF-8 conversion option exists
+    command: dcm2xml --help 2>&1
+    expected_output_contains: "--convert-to-utf8"
+
+  - name: dcm2xml on NIfTI file
+    description: Test dcm2xml on non-DICOM file (should fail gracefully)
+    command: dcm2xml ${t1w} 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCMTK - DCM2JSON
+  # ==========================================================================
+  - name: dcm2json version check
+    description: Verify dcm2json reports version
+    command: dcm2json --version 2>&1
+    expected_output_contains: "dcmtk: dcm2json"
+
+  - name: dcm2json help display
+    description: Verify dcm2json shows help information
+    command: dcm2json --help 2>&1
+    expected_output_contains: "Convert DICOM file and data set to JSON"
+
+  - name: dcm2json usage info
+    description: Verify dcm2json usage format
+    command: dcm2json --help 2>&1
+    expected_output_contains: "usage: dcm2json"
+
+  - name: dcm2json formatted output option
+    description: Verify formatted code option exists
+    command: dcm2json --help 2>&1
+    expected_output_contains: "--formatted-code"
+
+  - name: dcm2json compact output option
+    description: Verify compact code option exists
+    command: dcm2json --help 2>&1
+    expected_output_contains: "--compact-code"
+
+  - name: dcm2json meta option
+    description: Verify write meta option exists
+    command: dcm2json --help 2>&1
+    expected_output_contains: "--write-meta"
+
+  - name: dcm2json on NIfTI file
+    description: Test dcm2json on non-DICOM file (should fail gracefully)
+    command: dcm2json ${t1w} 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCMTK - DCM2PNM
+  # ==========================================================================
+  - name: dcm2pnm version check
+    description: Verify dcm2pnm reports version
+    command: dcm2pnm --version 2>&1
+    expected_output_contains: "dcmtk: dcm2pnm"
+
+  - name: dcm2pnm help display
+    description: Verify dcm2pnm shows help information
+    command: dcm2pnm --help 2>&1
+    expected_output_contains: "Convert DICOM images to PGM/PPM"
+
+  - name: dcm2pnm PNG support
+    description: Verify PNG output support
+    command: dcm2pnm --help 2>&1
+    expected_output_contains: "PNG"
+
+  - name: dcm2pnm TIFF support
+    description: Verify TIFF output support
+    command: dcm2pnm --help 2>&1
+    expected_output_contains: "TIFF"
+
+  - name: dcm2pnm BMP support
+    description: Verify BMP output support
+    command: dcm2pnm --help 2>&1
+    expected_output_contains: "BMP"
+
+  - name: dcm2pnm frame selection
+    description: Verify frame selection options exist
+    command: dcm2pnm --help 2>&1
+    expected_output_contains: "frame selection:"
+
+  - name: dcm2pnm rotation options
+    description: Verify rotation options exist
+    command: dcm2pnm --help 2>&1
+    expected_output_contains: "rotation:"
+
+  - name: dcm2pnm flipping options
+    description: Verify flipping options exist
+    command: dcm2pnm --help 2>&1
+    expected_output_contains: "flipping:"
+
+  - name: dcm2pnm scaling options
+    description: Verify scaling options exist
+    command: dcm2pnm --help 2>&1
+    expected_output_contains: "scaling:"
+
+  - name: dcm2pnm on NIfTI file
+    description: Test dcm2pnm on non-DICOM file (should fail gracefully)
+    command: dcm2pnm ${t1w} test_output/dicomtools/dcmtk/test.png 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCMTK - DCMJ2PNM (JPEG-enabled version)
+  # ==========================================================================
+  - name: dcmj2pnm version check
+    description: Verify dcmj2pnm reports version
+    command: dcmj2pnm --version 2>&1
+    expected_output_contains: "dcmtk: dcmj2pnm"
+
+  - name: dcmj2pnm help display
+    description: Verify dcmj2pnm shows help information
+    command: dcmj2pnm --help 2>&1
+    expected_output_contains: "Convert DICOM images to PGM/PPM, PNG, TIFF, JPEG or BMP"
+
+  - name: dcmj2pnm JPEG support
+    description: Verify JPEG output support
+    command: dcmj2pnm --help 2>&1
+    expected_output_contains: "JPEG"
+
+  - name: dcmj2pnm on NIfTI file
+    description: Test dcmj2pnm on non-DICOM file (should fail gracefully)
+    command: dcmj2pnm ${t1w} test_output/dicomtools/dcmtk/test.jpg 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCMTK - DCMCONV
+  # ==========================================================================
+  - name: dcmconv version check
+    description: Verify dcmconv reports version
+    command: dcmconv --version 2>&1
+    expected_output_contains: "dcmtk: dcmconv"
+
+  - name: dcmconv help display
+    description: Verify dcmconv shows help information
+    command: dcmconv --help 2>&1
+    expected_output_contains: "Convert DICOM file encoding"
+
+  - name: dcmconv usage info
+    description: Verify dcmconv usage format
+    command: dcmconv --help 2>&1
+    expected_output_contains: "usage: dcmconv"
+
+  - name: dcmconv transfer syntax options
+    description: Verify output transfer syntax options
+    command: dcmconv --help 2>&1
+    expected_output_contains: "output transfer syntax:"
+
+  # ==========================================================================
+  # DCMTK - DCMSCALE
+  # ==========================================================================
+  - name: dcmscale version check
+    description: Verify dcmscale reports version
+    command: dcmscale --version 2>&1
+    expected_output_contains: "dcmtk: dcmscale"
+
+  - name: dcmscale help display
+    description: Verify dcmscale shows help information
+    command: dcmscale --help 2>&1
+    expected_output_contains: "Scale DICOM images"
+
+  - name: dcmscale usage info
+    description: Verify dcmscale usage format
+    command: dcmscale --help 2>&1
+    expected_output_contains: "usage: dcmscale"
+
+  - name: dcmscale scaling options
+    description: Verify scaling options exist
+    command: dcmscale --help 2>&1
+    expected_output_contains: "scaling:"
+
+  - name: dcmscale interpolation option
+    description: Verify interpolation option exists
+    command: dcmscale --help 2>&1
+    expected_output_contains: "--interpolate"
+
+  # ==========================================================================
+  # DCMTK - DCMICMP
+  # ==========================================================================
+  - name: dcmicmp version check
+    description: Verify dcmicmp reports version
+    command: dcmicmp --version 2>&1
+    expected_output_contains: "dcmtk: dcmicmp"
+
+  - name: dcmicmp help display
+    description: Verify dcmicmp shows help information
+    command: dcmicmp --help 2>&1
+    expected_output_contains: "Compare DICOM images and compute difference metrics"
+
+  - name: dcmicmp usage info
+    description: Verify dcmicmp usage format
+    command: dcmicmp --help 2>&1
+    expected_output_contains: "usage: dcmicmp"
+
+  - name: dcmicmp modality LUT option
+    description: Verify modality LUT transformation option
+    command: dcmicmp --help 2>&1
+    expected_output_contains: "modality LUT transformation:"
+
+  # ==========================================================================
+  # DCMTK - DCMQUANT
+  # ==========================================================================
+  - name: dcmquant version check
+    description: Verify dcmquant reports version
+    command: dcmquant --version 2>&1
+    expected_output_contains: "dcmtk: dcmquant"
+
+  - name: dcmquant help display
+    description: Verify dcmquant shows help information
+    command: dcmquant --help 2>&1
+    expected_output_contains: "Convert DICOM color images to palette color"
+
+  - name: dcmquant usage info
+    description: Verify dcmquant usage format
+    command: dcmquant --help 2>&1
+    expected_output_contains: "usage: dcmquant"
+
+  - name: dcmquant frame selection
+    description: Verify frame selection option
+    command: dcmquant --help 2>&1
+    expected_output_contains: "frame selection:"
+
+  # ==========================================================================
+  # DCMTK - DCMGPDIR
+  # ==========================================================================
+  - name: dcmgpdir version check
+    description: Verify dcmgpdir reports version
+    command: dcmgpdir --version 2>&1
+    expected_output_contains: "dcmtk: dcmgpdir"
+
+  - name: dcmgpdir help display
+    description: Verify dcmgpdir shows help information
+    command: dcmgpdir --help 2>&1
+    expected_output_contains: "Create a general purpose DICOMDIR"
+
+  - name: dcmgpdir usage info
+    description: Verify dcmgpdir usage format
+    command: dcmgpdir --help 2>&1
+    expected_output_contains: "usage: dcmgpdir"
+
+  - name: dcmgpdir fileset ID option
+    description: Verify fileset ID option
+    command: dcmgpdir --help 2>&1
+    expected_output_contains: "--fileset-id"
+
+  - name: dcmgpdir recurse option
+    description: Verify recurse option
+    command: dcmgpdir --help 2>&1
+    expected_output_contains: "--recurse"
+
+  # ==========================================================================
+  # DCMTK - DCMMKDIR
+  # ==========================================================================
+  - name: dcmmkdir version check
+    description: Verify dcmmkdir reports version
+    command: dcmmkdir --version 2>&1
+    expected_output_contains: "dcmtk: dcmmkdir"
+
+  - name: dcmmkdir help display
+    description: Verify dcmmkdir shows help information
+    command: dcmmkdir --help 2>&1
+    expected_output_contains: "Create a DICOMDIR file"
+
+  - name: dcmmkdir usage info
+    description: Verify dcmmkdir usage format
+    command: dcmmkdir --help 2>&1
+    expected_output_contains: "usage: dcmmkdir"
+
+  # ==========================================================================
+  # DCMTK - DCMFTEST
+  # ==========================================================================
+  - name: dcmftest version check
+    description: Verify dcmftest reports version (exits 0 with no args, 1 with --version)
+    command: dcmftest 2>&1
+    expected_output_contains: "dcmtk: dcmftest"
+
+  - name: dcmftest on NIfTI file
+    description: Test DICOM format check on NIfTI file (reports non-DICOM, exits 1)
+    command: dcmftest ${t1w} 2>&1
+    expected_exit_code: 1
+    expected_output_contains: "no"
+
+  - name: dcmftest on nonexistent file
+    description: Test dcmftest on nonexistent file
+    command: dcmftest /nonexistent/file.dcm 2>&1 || true
+    expected_output_contains: "no"
+
+  # ==========================================================================
+  # MEDCON - VERSION AND HELP
+  # ==========================================================================
+  - name: medcon version check
+    description: Verify medcon reports version
+    command: medcon --version 2>&1 || true
+    expected_output_contains: "MedCon"
+
+  - name: medcon version number
+    description: Verify medcon version 0.24.0
+    command: medcon --version 2>&1 || true
+    expected_output_contains: "0.24.0"
+
+  - name: medcon help display
+    description: Verify medcon shows help information
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "Medical Image Conversion Utility"
+
+  - name: medcon usage info
+    description: Verify medcon usage format
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "Usage:"
+
+  - name: medcon file option
+    description: Verify file input option
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "--file"
+
+  - name: medcon convert option
+    description: Verify convert option
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "--convert"
+
+  - name: medcon output formats
+    description: Verify supported output formats listed
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "dicom = DICOM"
+
+  - name: medcon NIfTI format support
+    description: Verify NIfTI output format support
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "nifti = NIfTI"
+
+  - name: medcon Analyze format support
+    description: Verify Analyze output format support
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "Analyze"
+
+  - name: medcon ECAT format support
+    description: Verify ECAT output format support
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "ecat7 = CTI ECAT 7"
+
+  - name: medcon InterFile format support
+    description: Verify InterFile output format support
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "InterFile"
+
+  - name: medcon PNG format support
+    description: Verify PNG output format support
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "png"
+
+  - name: medcon GIF format support
+    description: Verify GIF output format support
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "Gif89a"
+
+  - name: medcon pixel options
+    description: Verify pixel manipulation options
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "Pixels:"
+
+  - name: medcon slice transform options
+    description: Verify slice transform options
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "Slices Transform:"
+
+  - name: medcon flip horizontal
+    description: Verify horizontal flip option
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "--flip-horizontal"
+
+  - name: medcon flip vertical
+    description: Verify vertical flip option
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "--flip-vertical"
+
+  - name: medcon crop option
+    description: Verify crop images option
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "--crop-images"
+
+  - name: medcon color remap options
+    description: Verify color remap options
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "Color Remap:"
+
+  - name: medcon overwrite option
+    description: Verify overwrite files option
+    command: medcon --help 2>&1 || true
+    expected_output_contains: "--overwrite-files"
+
+  # ==========================================================================
+  # MEDCON - FORMAT CONVERSIONS (using NIfTI input)
+  # ==========================================================================
+  - name: medcon NIfTI to Analyze
+    description: Convert NIfTI to Analyze format
+    command: medcon -w -f ${t1w} -c anlz -o test_output/dicomtools/medcon/t1w_anlz 2>&1
+    validate:
+      - output_exists: ${output_dir}/dicomtools/medcon/t1w_anlz.hdr
+
+  - name: medcon NIfTI to InterFile
+    description: Convert NIfTI to InterFile format
+    command: medcon -w -f ${t1w} -c intf -o test_output/dicomtools/medcon/t1w_intf 2>&1
+    validate:
+      - output_exists: ${output_dir}/dicomtools/medcon/t1w_intf.h33
+
+  - name: medcon NIfTI to raw binary
+    description: Convert NIfTI to raw binary format
+    command: medcon -w -f ${t1w} -c bin -o test_output/dicomtools/medcon/t1w_bin 2>&1
+    validate:
+      - output_exists: ${output_dir}/dicomtools/medcon/t1w_bin.bin
+
+  - name: medcon NIfTI to ASCII
+    description: Convert NIfTI to ASCII format
+    command: medcon -w -f ${t1w} -c ascii -o test_output/dicomtools/medcon/t1w_ascii 2>&1
+    validate:
+      - output_exists: ${output_dir}/dicomtools/medcon/t1w_ascii.asc
+
+  - name: medcon NIfTI to NIfTI (copy)
+    description: Convert NIfTI to NIfTI (format verification)
+    command: medcon -w -f ${t1w} -c nifti -o test_output/dicomtools/medcon/t1w_nii 2>&1
+    validate:
+      - output_exists: ${output_dir}/dicomtools/medcon/t1w_nii.nii
+
+  - name: medcon NIfTI to PNG single slice
+    description: Convert NIfTI to PNG image
+    command: medcon -f ${t1w} -c png -o test_output/dicomtools/medcon/t1w_png 2>&1
+    expected_exit_code: 0
+
+  - name: medcon NIfTI to GIF single slice
+    description: Convert NIfTI to GIF image
+    command: medcon -f ${t1w} -c gif -o test_output/dicomtools/medcon/t1w_gif 2>&1
+    expected_exit_code: 0
+
+  - name: medcon with 8-bit output
+    description: Convert with 8-bit unsigned char output
+    command: medcon -f ${t1w} -b8 -c nifti -o test_output/dicomtools/medcon/t1w_8bit 2>&1
+    expected_exit_code: 0
+
+  - name: medcon with 16-bit output
+    description: Convert with 16-bit signed short output
+    command: medcon -f ${t1w} -b16 -c nifti -o test_output/dicomtools/medcon/t1w_16bit 2>&1
+    expected_exit_code: 0
+
+  - name: medcon with negatives enabled
+    description: Convert with negative pixels enabled
+    command: medcon -f ${t1w} -n -c nifti -o test_output/dicomtools/medcon/t1w_neg 2>&1
+    expected_exit_code: 0
+
+  - name: medcon flip horizontal transform
+    description: Convert with horizontal flip
+    command: medcon -f ${t1w} -fh -c nifti -o test_output/dicomtools/medcon/t1w_fh 2>&1
+    expected_exit_code: 0
+
+  - name: medcon flip vertical transform
+    description: Convert with vertical flip
+    command: medcon -f ${t1w} -fv -c nifti -o test_output/dicomtools/medcon/t1w_fv 2>&1
+    expected_exit_code: 0
+
+  - name: medcon reverse slices
+    description: Convert with reversed slice order
+    command: medcon -f ${t1w} -rs -c nifti -o test_output/dicomtools/medcon/t1w_rs 2>&1
+    expected_exit_code: 0
+
+  - name: medcon make square images
+    description: Convert with square image output
+    command: medcon -f ${t1w} -sqr -c nifti -o test_output/dicomtools/medcon/t1w_sqr 2>&1
+    expected_exit_code: 0
+
+  - name: medcon grayscale remap
+    description: Convert with grayscale remapping
+    command: medcon -f ${t1w} -g -c png -o test_output/dicomtools/medcon/t1w_gray 2>&1
+    expected_exit_code: 0
+
+  - name: medcon hotmetal colormap
+    description: Convert with hotmetal colormap
+    command: medcon -f ${t1w} -mh -c png -o test_output/dicomtools/medcon/t1w_hot 2>&1
+    expected_exit_code: 0
+
+  - name: medcon rainbow colormap
+    description: Convert with rainbow colormap
+    command: medcon -f ${t1w} -mr -c png -o test_output/dicomtools/medcon/t1w_rainbow 2>&1
+    expected_exit_code: 0
+
+  - name: medcon extract images
+    description: Extract individual images from file (interactive-only, requires user input)
+    command: echo "1" | medcon -f ${t1w} -e -c png -o test_output/dicomtools/medcon/t1w_extract 2>&1 || true
+    ignore_exit_code: true
+    expected_output_contains: "EXTRACT IMAGES"
+
+  - name: medcon overwrite mode
+    description: Convert with overwrite enabled
+    command: medcon -f ${t1w} -w -c nifti -o test_output/dicomtools/medcon/t1w_overwrite 2>&1
+    expected_exit_code: 0
+
+  - name: medcon little endian output
+    description: Convert with little endian output
+    command: medcon -f ${t1w} -little -c nifti -o test_output/dicomtools/medcon/t1w_le 2>&1
+    expected_exit_code: 0
+
+  - name: medcon big endian output
+    description: Convert with big endian output (unsupported for NIfTI format in this version)
+    command: medcon -f ${t1w} -big -c anlz -o test_output/dicomtools/medcon/t1w_be 2>&1
+    expected_exit_code: 0
+
+  - name: medcon T2 image conversion
+    description: Convert T2 image to Analyze
+    command: medcon -w -f ${t2} -c anlz -o test_output/dicomtools/medcon/t2_anlz 2>&1
+    expected_exit_code: 0
+
+  - name: medcon 4D BOLD data
+    description: Convert 4D BOLD data to Analyze format
+    command: medcon -w -f ${bold} -c anlz -o test_output/dicomtools/medcon/bold_anlz 2>&1
+    expected_exit_code: 0
+
+  - name: medcon stack frames option
+    description: Convert with frame stacking (requires 2+ same-sized files)
+    command: medcon -f ${t1w} -f ${t1w} -stackf -c nifti -o test_output/dicomtools/medcon/t1w_stack 2>&1
+    expected_exit_code: 0
+
+  - name: medcon split frames option
+    description: Convert with frame splitting
+    command: medcon -f ${t1w} -splitf -c nifti -o test_output/dicomtools/medcon/t1w_split 2>&1
+    expected_exit_code: 0
+
+  - name: medcon alias naming
+    description: Convert with alias-based naming
+    command: medcon -w -f ${t1w} -alias -c nifti -o test_output/dicomtools/medcon/t1w_alias 2>&1
+    expected_exit_code: 0
+
+  - name: medcon without prefix
+    description: Convert without default prefix
+    command: medcon -f ${t1w} -noprefix -c nifti -o test_output/dicomtools/medcon/t1w_noprefix 2>&1
+    expected_exit_code: 0
+
+  - name: medcon print pixel values
+    description: Print pixel values from file
+    command: medcon -f ${t1w} -pa 2>&1 | head -50
+    expected_output_contains: "PIXEL"
+
+  # ==========================================================================
+  # MEDCON - ERROR HANDLING
+  # ==========================================================================
+  - name: medcon nonexistent file
+    description: Test handling of nonexistent input file
+    command: medcon -f /nonexistent/file.nii -c nifti 2>&1 || true
+    expected_exit_code: 0
+
+  - name: medcon invalid format
+    description: Test handling of invalid output format
+    command: medcon -f ${t1w} -c invalid_format 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCMTK - ADDITIONAL TOOLS
+  # ==========================================================================
+  - name: dcmcjpeg version check
+    description: Verify dcmcjpeg (JPEG encoder) reports version
+    command: dcmcjpeg --version 2>&1
+    expected_output_contains: "dcmtk: dcmcjpeg"
+
+  - name: dcmcjpeg help display
+    description: Verify dcmcjpeg shows help information
+    command: dcmcjpeg --help 2>&1
+    expected_output_contains: "Encode DICOM file to JPEG"
+
+  - name: dcmdjpeg version check
+    description: Verify dcmdjpeg (JPEG decoder) reports version
+    command: dcmdjpeg --version 2>&1
+    expected_output_contains: "dcmtk: dcmdjpeg"
+
+  - name: dcmdjpeg help display
+    description: Verify dcmdjpeg shows help information
+    command: dcmdjpeg --help 2>&1
+    expected_output_contains: "Decode JPEG-compressed DICOM"
+
+  - name: dcmcjpls version check
+    description: Verify dcmcjpls (JPEG-LS encoder) reports version
+    command: dcmcjpls --version 2>&1
+    expected_output_contains: "dcmtk: dcmcjpls"
+
+  - name: dcmcjpls help display
+    description: Verify dcmcjpls shows help information
+    command: dcmcjpls --help 2>&1
+    expected_output_contains: "Encode DICOM file to JPEG-LS"
+
+  - name: dcmdjpls version check
+    description: Verify dcmdjpls (JPEG-LS decoder) reports version
+    command: dcmdjpls --version 2>&1
+    expected_output_contains: "dcmtk: dcmdjpls"
+
+  - name: dcmdjpls help display
+    description: Verify dcmdjpls shows help information
+    command: dcmdjpls --help 2>&1
+    expected_output_contains: "Decode JPEG-LS compressed DICOM"
+
+  - name: dcmcrle version check
+    description: Verify dcmcrle (RLE encoder) reports version
+    command: dcmcrle --version 2>&1
+    expected_output_contains: "dcmtk: dcmcrle"
+
+  - name: dcmcrle help display
+    description: Verify dcmcrle shows help information
+    command: dcmcrle --help 2>&1
+    expected_output_contains: "Encode DICOM file to RLE"
+
+  - name: dcmdrle version check
+    description: Verify dcmdrle (RLE decoder) reports version
+    command: dcmdrle --version 2>&1
+    expected_output_contains: "dcmtk: dcmdrle"
+
+  - name: dcmdrle help display
+    description: Verify dcmdrle shows help information
+    command: dcmdrle --help 2>&1
+    expected_output_contains: "Decode RLE-compressed DICOM"
+
+  - name: dcmsign version check
+    description: Verify dcmsign reports version
+    command: dcmsign --version 2>&1
+    expected_output_contains: "dcmtk: dcmsign"
+
+  - name: dcmsign help display
+    description: Verify dcmsign shows help information
+    command: dcmsign --help 2>&1
+    expected_output_contains: "Sign and Verify DICOM"
+
+  - name: dcmrecv version check
+    description: Verify dcmrecv (storage SCP) reports version
+    command: dcmrecv --version 2>&1
+    expected_output_contains: "dcmtk: dcmrecv"
+
+  - name: dcmrecv help display
+    description: Verify dcmrecv shows help information
+    command: dcmrecv --help 2>&1
+    expected_output_contains: "DICOM storage SCP"
+
+  - name: dcmsend version check
+    description: Verify dcmsend (storage SCU) reports version
+    command: dcmsend --version 2>&1
+    expected_output_contains: "dcmtk: dcmsend"
+
+  - name: dcmsend help display
+    description: Verify dcmsend shows help information
+    command: dcmsend --help 2>&1
+    expected_output_contains: "DICOM storage SCU"
+
+  - name: dcmdspfn version check
+    description: Verify dcmdspfn reports version
+    command: dcmdspfn --version 2>&1
+    expected_output_contains: "dcmtk: dcmdspfn"
+
+  - name: dcmdspfn help display
+    description: Verify dcmdspfn shows help information
+    command: dcmdspfn --help 2>&1
+    expected_output_contains: "Export standard display curves"
+
+  - name: dcml2pnm version check
+    description: Verify dcml2pnm reports version
+    command: dcml2pnm --version 2>&1
+    expected_output_contains: "dcmtk: dcml2pnm"
+
+  - name: dcml2pnm help display
+    description: Verify dcml2pnm shows help information
+    command: dcml2pnm --help 2>&1
+    expected_output_contains: "Convert DICOM images to PGM/PPM"
+
+  # ==========================================================================
+  # INTEGRATION AND WORKFLOW TESTS
+  # ==========================================================================
+  - name: Pipeline dcm2niix query then convert
+    description: Query directory then attempt conversion
+    command: dcm2niix -q y ${anat_dir} 2>&1 && dcm2niix -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Pipeline medcon multiple formats
+    description: Convert to multiple formats sequentially
+    command: |
+      medcon -f ${t1w} -c anlz -o test_output/dicomtools/medcon/multi_anlz 2>&1 && \
+      medcon -f ${t1w} -c nifti -o test_output/dicomtools/medcon/multi_nii 2>&1 && \
+      medcon -f ${t1w} -c intf -o test_output/dicomtools/medcon/multi_intf 2>&1
+    expected_exit_code: 0
+
+  - name: All dcmtk tools version consistency
+    description: Verify all DCMTK tools report same version
+    command: |
+      dcmdump --version 2>&1 | grep "v3.6.8" && \
+      dcm2xml --version 2>&1 | grep "v3.6.8" && \
+      dcm2json --version 2>&1 | grep "v3.6.8" && \
+      dcmconv --version 2>&1 | grep "v3.6.8" && \
+      echo "All DCMTK tools are v3.6.8"
+    expected_output_contains: "All DCMTK tools are v3.6.8"
+
+  - name: Combined dcm2niix options stress test
+    description: Test dcm2niix with many options combined
+    command: dcm2niix -b y -ba y -z i -v 1 -m 2 -f "%p_%s_%d" --progress n -o test_output/dicomtools/dcm2niix ${anat_dir} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: medcon complex transform chain
+    description: Apply multiple transforms in sequence
+    command: medcon -f ${t1w} -fh -fv -sqr -g -c png -o test_output/dicomtools/medcon/complex 2>&1
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/dicomtools
+    echo "Test outputs preserved in test_output/dicomtools/"

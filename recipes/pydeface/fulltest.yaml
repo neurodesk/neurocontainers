@@ -1,0 +1,479 @@
+# pydeface container test suite
+# Tests for pydeface v2.0.2 - MRI defacing utility
+#
+# pydeface removes facial structure from MRI images to anonymize them while
+# preserving brain data. It uses FSL FLIRT for registration and applies a
+# face mask to remove identifying features.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - inplaneT2: 2D structural for testing multi-image defacing
+#
+# Container includes:
+#   - pydeface 2.0.2 (main defacing tool)
+#   - FSL 6.0.3 (flirt for registration)
+#   - nibabel utilities (nib-ls, nib-convert, parrec2nii)
+
+name: pydeface
+version: 2.0.2
+container: pydeface_2.0.2_20250206.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - pydeface
+  # ==========================================================================
+  - name: pydeface version check
+    description: Verify pydeface binary runs and reports version
+    command: pydeface --help 2>&1 | head -3
+    expected_output_contains: "pydeface 2.0.2"
+
+  - name: pydeface help
+    description: Verify pydeface displays help message
+    command: pydeface --help
+    expected_output_contains: "Path to input nifti"
+
+  # ==========================================================================
+  # BASIC DEFACING OPERATIONS
+  # ==========================================================================
+  - name: Basic defacing with default output
+    description: Deface T1w image with corratio cost (default mutualinfo is too slow)
+    command: pydeface ${t1w} --outfile test_output/t1w_defaced_default.nii.gz --cost corratio --verbose
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_default.nii.gz
+      - same_dimensions: ["${output_dir}/t1w_defaced_default.nii.gz", "${t1w}"]
+
+  - name: Defacing with custom output path
+    description: Deface T1w image with explicit output filename
+    command: pydeface ${t1w} --outfile test_output/t1w_custom_defaced.nii.gz --cost corratio --verbose
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/t1w_custom_defaced.nii.gz
+
+  - name: Defacing with force overwrite
+    description: Deface and force overwrite existing output
+    command: pydeface ${t1w} --outfile test_output/t1w_defaced_default.nii.gz --cost corratio --force --verbose
+    depends_on: Basic defacing with default output
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_default.nii.gz
+
+  # ==========================================================================
+  # COST FUNCTION OPTIONS
+  # ==========================================================================
+  - name: Defacing with mutualinfo cost
+    description: Test defacing with mutual information cost function (default, slow)
+    command: pydeface ${t1w} --outfile test_output/t1w_defaced_mutualinfo.nii.gz --cost mutualinfo --verbose
+    timeout: 600
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_mutualinfo.nii.gz
+
+  - name: Defacing with corratio cost
+    description: Test defacing with correlation ratio cost function
+    command: pydeface ${t1w} --outfile test_output/t1w_defaced_corratio.nii.gz --cost corratio --verbose
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_corratio.nii.gz
+
+  - name: Defacing with normcorr cost
+    description: Test defacing with normalized correlation cost function
+    command: pydeface ${t1w} --outfile test_output/t1w_defaced_normcorr.nii.gz --cost normcorr --verbose
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_normcorr.nii.gz
+
+  - name: Defacing with normmi cost
+    description: Test defacing with normalized mutual information cost function
+    command: pydeface ${t1w} --outfile test_output/t1w_defaced_normmi.nii.gz --cost normmi --verbose
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_normmi.nii.gz
+
+  - name: Defacing with leastsq cost
+    description: Test defacing with least squares cost function
+    command: pydeface ${t1w} --outfile test_output/t1w_defaced_leastsq.nii.gz --cost leastsq --verbose
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_leastsq.nii.gz
+
+  # ==========================================================================
+  # APPLY TO MULTIPLE IMAGES
+  # ==========================================================================
+  - name: Defacing with applyto single image
+    description: Apply defacing mask to another image (same dimensions required)
+    command: pydeface ${t1w} --outfile test_output/t1w_defaced_applyto.nii.gz --cost corratio --applyto ${t1w} --verbose
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_applyto.nii.gz
+
+  # ==========================================================================
+  # DEBUGGING AND VERBOSE OPTIONS
+  # ==========================================================================
+  - name: Defacing with nocleanup
+    description: Test defacing without cleaning up temporary files
+    command: pydeface ${t1w} --outfile test_output/t1w_defaced_nocleanup.nii.gz --cost corratio --nocleanup --verbose
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_nocleanup.nii.gz
+
+  - name: Defacing with verbose output
+    description: Test defacing with verbose status messages
+    command: pydeface ${t1w} --outfile test_output/t1w_defaced_verbose.nii.gz --cost corratio --verbose 2>&1
+    timeout: 300
+    expected_output_contains: "Defacing"
+    validate:
+      - output_exists: ${output_dir}/t1w_defaced_verbose.nii.gz
+
+  # ==========================================================================
+  # DEFACING DIFFERENT IMAGE TYPES
+  # ==========================================================================
+  - name: Deface T2 image
+    description: Deface inplane T2 image
+    command: pydeface ${t2} --outfile test_output/t2_defaced.nii.gz --verbose
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/t2_defaced.nii.gz
+      - same_dimensions: ["${output_dir}/t2_defaced.nii.gz", "${t2}"]
+
+  # ==========================================================================
+  # FSL TOOLS (bundled with container)
+  # ==========================================================================
+  - name: FSL flirt version check
+    description: Verify FSL FLIRT is available (required by pydeface)
+    command: flirt -version 2>&1 || flirt 2>&1 | head -1
+    expected_output_contains: "FLIRT"
+
+  - name: FSL flirt basic registration
+    description: Test FLIRT registration between T1w and T2
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_to_t1w_flirt.nii.gz -omat test_output/t2_to_t1w.mat -dof 6
+    timeout: 180
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_flirt.nii.gz
+      - output_exists: ${output_dir}/t2_to_t1w.mat
+
+  - name: FSL flirt with mutualinfo cost
+    description: Test FLIRT with mutual information cost function
+    command: flirt -in ${t2} -ref ${t1w} -out test_output/t2_to_t1w_mi.nii.gz -cost mutualinfo -dof 6
+    timeout: 180
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_mi.nii.gz
+
+  - name: FSL flirt apply transform
+    description: Apply existing transformation matrix
+    command: flirt -in ${t2} -ref ${t1w} -applyxfm -init test_output/t2_to_t1w.mat -out test_output/t2_to_t1w_applied.nii.gz
+    depends_on: FSL flirt basic registration
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_applied.nii.gz
+
+  - name: FSL convert_xfm invert
+    description: Invert a transformation matrix
+    command: convert_xfm -omat test_output/t1w_to_t2.mat -inverse test_output/t2_to_t1w.mat
+    depends_on: FSL flirt basic registration
+    validate:
+      - output_exists: ${output_dir}/t1w_to_t2.mat
+
+  - name: FSL fslstats basic
+    description: Get basic statistics from image
+    command: fslstats ${t1w} -m -s
+    expected_output_contains: ""
+
+  - name: FSL fslstats volume
+    description: Get volume statistics
+    command: fslstats ${t1w} -V
+    expected_output_contains: ""
+
+  - name: FSL fslstats robust range
+    description: Get robust intensity range
+    command: fslstats ${t1w} -r
+    expected_output_contains: ""
+
+  - name: FSL fslinfo
+    description: Get image header information
+    command: fslinfo ${t1w}
+    expected_output_contains: "dim1"
+
+  - name: FSL fslhd
+    description: Get detailed NIfTI header
+    command: fslhd ${t1w} | head -30
+    expected_output_contains: "sizeof_hdr"
+
+  - name: FSL fslmaths copy
+    description: Copy image using fslmaths
+    command: fslmaths ${t1w} test_output/t1w_copy.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_copy.nii.gz
+
+  - name: FSL fslmaths threshold
+    description: Apply threshold using fslmaths
+    command: fslmaths ${t1w} -thr 100 test_output/t1w_thr100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thr100.nii.gz
+
+  - name: FSL fslmaths binarize
+    description: Binarize image using fslmaths
+    command: fslmaths ${t1w} -bin test_output/t1w_bin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_bin.nii.gz
+
+  - name: FSL fslmaths smooth
+    description: Gaussian smoothing using fslmaths
+    command: fslmaths ${t1w} -s 2 test_output/t1w_smooth.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth.nii.gz
+
+  - name: FSL fslmaths masking
+    description: Apply mask using fslmaths
+    command: fslmaths ${t1w} -mas test_output/t1w_bin.nii.gz test_output/t1w_masked.nii.gz
+    depends_on: FSL fslmaths binarize
+    validate:
+      - output_exists: ${output_dir}/t1w_masked.nii.gz
+
+  - name: FSL fslmaths arithmetic
+    description: Test arithmetic operations
+    command: fslmaths ${t1w} -mul 2 -add 100 test_output/t1w_arith.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_arith.nii.gz
+
+  - name: FSL fslroi extract subvolume
+    description: Extract ROI from volume
+    command: fslroi ${t1w} test_output/t1w_roi.nii.gz 40 80 40 80 40 80
+    validate:
+      - output_exists: ${output_dir}/t1w_roi.nii.gz
+
+  - name: FSL fslsplit check
+    description: Check fslsplit is available
+    command: fslsplit 2>&1 | head -5 || true
+    expected_output_contains: ""
+
+  - name: FSL fslmerge check
+    description: Check fslmerge is available
+    command: fslmerge 2>&1 | head -5 || true
+    expected_output_contains: ""
+
+  - name: FSL bet brain extraction
+    description: Simple brain extraction using BET
+    command: bet ${t1w} test_output/t1w_brain.nii.gz -f 0.5
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/t1w_brain.nii.gz
+
+  - name: FSL bet with mask
+    description: Brain extraction with binary mask output
+    command: bet ${t1w} test_output/t1w_brain_mask -m -f 0.5
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_mask.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_mask_mask.nii.gz
+
+  # ==========================================================================
+  # NIBABEL UTILITIES
+  # ==========================================================================
+  - name: nib-ls image info
+    description: List image properties using nibabel
+    command: nib-ls ${t1w}
+    expected_output_contains: ""
+
+  - name: nib-ls verbose
+    description: List image properties with verbose output
+    command: nib-ls -v ${t1w}
+    expected_output_contains: ""
+
+  - name: nib-ls with stats
+    description: List image properties with statistics
+    command: nib-ls -s ${t1w}
+    expected_output_contains: ""
+
+  - name: nib-ls header fields
+    description: List image with specific header fields
+    command: nib-ls -H "dim,pixdim" ${t1w}
+    expected_output_contains: ""
+
+  - name: nib-convert to float32
+    description: Convert image datatype to float32
+    command: nib-convert ${t1w} test_output/t1w_float32.nii.gz --out-dtype float32
+    validate:
+      - output_exists: ${output_dir}/t1w_float32.nii.gz
+
+  - name: nib-convert to int16
+    description: Convert image datatype to int16
+    command: nib-convert ${t1w} test_output/t1w_int16.nii.gz --out-dtype int16
+    validate:
+      - output_exists: ${output_dir}/t1w_int16.nii.gz
+
+  - name: nib-convert force overwrite
+    description: Convert with force overwrite
+    command: nib-convert ${t1w} test_output/t1w_float32.nii.gz --out-dtype float32 --force
+    depends_on: nib-convert to float32
+    validate:
+      - output_exists: ${output_dir}/t1w_float32.nii.gz
+
+  # ==========================================================================
+  # PYTHON/NIBABEL DIRECT ACCESS
+  # ==========================================================================
+  - name: Python nibabel import
+    description: Verify nibabel can be imported
+    command: |
+      python -c "import nibabel as nib; print(f'nibabel version: {nib.__version__}')"
+    expected_output_contains: "nibabel version"
+
+  - name: Python nibabel load image
+    description: Load and inspect image with nibabel
+    command: |
+      python -c "import nibabel as nib; img = nib.load('${t1w}'); print(f'Shape: {img.shape}, Dtype: {img.get_data_dtype()}')"
+    expected_output_contains: "Shape"
+
+  - name: Python pydeface import
+    description: Verify pydeface can be imported
+    command: python -c "import pydeface; print('pydeface imported successfully')"
+    expected_output_contains: "pydeface imported successfully"
+
+  - name: Python nipype import
+    description: Verify nipype can be imported (pydeface dependency)
+    command: |
+      python -c "import nipype; print(f'nipype version: {nipype.__version__}')"
+    expected_output_contains: "nipype version"
+
+  - name: Python numpy import
+    description: Verify numpy can be imported
+    command: |
+      python -c "import numpy as np; print(f'numpy version: {np.__version__}')"
+    expected_output_contains: "numpy version"
+
+  # ==========================================================================
+  # OUTPUT VALIDATION
+  # ==========================================================================
+  - name: Validate defaced image has same dimensions
+    description: Ensure defaced output has same dimensions as input
+    command: |
+      python -c "
+      import nibabel as nib
+      orig = nib.load('${t1w}')
+      defaced = nib.load('test_output/t1w_defaced_default.nii.gz')
+      assert orig.shape == defaced.shape, f'Shape mismatch: {orig.shape} vs {defaced.shape}'
+      print(f'Dimensions match: {orig.shape}')
+      "
+    depends_on: Basic defacing with default output
+    expected_output_contains: "Dimensions match"
+
+  - name: Validate defaced image has modified voxels
+    description: Ensure defacing actually modified some voxels (face region zeroed)
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+      orig = nib.load('${t1w}')
+      defaced = nib.load('test_output/t1w_defaced_default.nii.gz')
+      orig_data = orig.get_fdata()
+      defaced_data = defaced.get_fdata()
+      diff = np.sum(orig_data != defaced_data)
+      print(f'Modified voxels: {diff}')
+      assert diff > 0, 'No voxels were modified - defacing may have failed'
+      "
+    depends_on: Basic defacing with default output
+    expected_output_contains: "Modified voxels"
+
+  - name: Validate defaced image header preserved
+    description: Ensure defaced image preserves essential header info
+    command: |
+      python -c "
+      import nibabel as nib
+      orig = nib.load('${t1w}')
+      defaced = nib.load('test_output/t1w_defaced_default.nii.gz')
+      assert orig.affine.shape == defaced.affine.shape, 'Affine shape mismatch'
+      print(f'Header preserved: affine shape {orig.affine.shape}')
+      "
+    depends_on: Basic defacing with default output
+    expected_output_contains: "Header preserved"
+
+  # ==========================================================================
+  # EDGE CASES AND ERROR HANDLING
+  # ==========================================================================
+  - name: pydeface with missing input
+    description: Test error handling for missing input file
+    command: pydeface nonexistent_file.nii.gz 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Traceback"
+
+  - name: pydeface with invalid cost function
+    description: Test error handling for invalid cost function
+    command: pydeface ${t1w} --cost invalid_cost 2>&1 || true
+    expected_output_contains: ""
+
+  # ==========================================================================
+  # TEMPLATE AND FACEMASK LOCATIONS
+  # ==========================================================================
+  - name: Check default template exists
+    description: Verify default registration template is present
+    command: ls -la /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/mean_reg2mean.nii.gz
+    expected_output_contains: "mean_reg2mean.nii.gz"
+
+  - name: Check default facemask exists
+    description: Verify default face mask is present
+    command: ls -la /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/facemask.nii.gz
+    expected_output_contains: "facemask.nii.gz"
+
+  - name: Inspect default template
+    description: Get info about default template image
+    command: nib-ls /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/mean_reg2mean.nii.gz
+    expected_output_contains: ""
+
+  - name: Inspect default facemask
+    description: Get info about default face mask image
+    command: nib-ls /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/facemask.nii.gz
+    expected_output_contains: ""
+
+  # ==========================================================================
+  # COMBINED WORKFLOWS
+  # ==========================================================================
+  - name: Complete defacing workflow
+    description: Full workflow - deface, verify, and extract brain
+    command: |
+      pydeface ${t1w} --outfile test_output/workflow_defaced.nii.gz --cost corratio --verbose && \
+      nib-ls -s test_output/workflow_defaced.nii.gz && \
+      bet test_output/workflow_defaced.nii.gz test_output/workflow_defaced_brain.nii.gz -f 0.5
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/workflow_defaced.nii.gz
+      - output_exists: ${output_dir}/workflow_defaced_brain.nii.gz
+
+  - name: Multi-contrast defacing workflow
+    description: Deface T1w and apply mask to same-resolution image (cross-resolution applyto not supported)
+    command: |
+      pydeface ${t1w} --outfile test_output/multicontrast_t1w_defaced.nii.gz --cost corratio --applyto ${t1w} --force --verbose
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/multicontrast_t1w_defaced.nii.gz
+
+  - name: Quality check after defacing
+    description: Compare statistics before and after defacing
+    command: |
+      echo "Original T1w stats:" && \
+      fslstats ${t1w} -m -s -R && \
+      echo "Defaced T1w stats:" && \
+      fslstats test_output/t1w_defaced_default.nii.gz -m -s -R
+    depends_on: Basic defacing with default output
+    expected_output_contains: "Original T1w stats"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

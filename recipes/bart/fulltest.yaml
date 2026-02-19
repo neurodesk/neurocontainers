@@ -1,0 +1,925 @@
+# BART (Berkeley Advanced Reconstruction Toolbox) container test suite
+# Tests for BART v0.9.00 - MRI image reconstruction framework
+#
+# BART uses its own complex floating-point (CFL) format for multi-dimensional
+# arrays. It provides tools for MRI calibration, reconstruction, and image
+# processing including compressed sensing (CS) and parallel imaging (PI).
+#
+# Documentation: https://mrirecon.github.io/bart/
+# License: 3-clause BSD license
+
+name: bart
+version: 0.9.00
+container: bart_0.9.00_20240723.simg
+
+test_data:
+  # BART generates synthetic test data via phantom commands
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: Version check
+    description: Verify BART binary runs and reports version
+    command: bart version
+    expected_output_contains: "v0.9.00"
+
+  - name: Benchmark
+    description: Run BART benchmark to verify computational kernels
+    command: bart bench 2>&1 | head -5
+    expected_output_contains: "md_zaxpy"
+
+  - name: List available commands
+    description: Show all available BART commands
+    command: bart 2>&1 | head -3
+    expected_output_contains: "Available commands"
+
+  # ==========================================================================
+  # ARRAY CREATION AND MANIPULATION
+  # ==========================================================================
+  - name: Create zeros array
+    description: Create a zero-filled array (3D, 64x64x32)
+    command: bart zeros 3 64 64 32 ${output_dir}/zeros
+    validate:
+      - output_exists: ${output_dir}/zeros.cfl
+      - output_exists: ${output_dir}/zeros.hdr
+
+  - name: Create ones array
+    description: Create an array filled with ones (3D, 64x64x32)
+    command: bart ones 3 64 64 32 ${output_dir}/ones
+    validate:
+      - output_exists: ${output_dir}/ones.cfl
+      - output_exists: ${output_dir}/ones.hdr
+
+  - name: Show array dimensions
+    description: Display dimensions of created array
+    command: bart show -m ${output_dir}/ones
+    expected_output_contains: "64"
+
+  - name: Show specific dimension
+    description: Show size of dimension 0
+    command: bart show -d 0 ${output_dir}/ones
+    expected_output_contains: "64"
+
+  # ==========================================================================
+  # PHANTOM GENERATION
+  # ==========================================================================
+  - name: Generate Shepp-Logan phantom
+    description: Create 2D Shepp-Logan phantom in image domain
+    command: bart phantom -x 128 ${output_dir}/phantom
+    validate:
+      - output_exists: ${output_dir}/phantom.cfl
+
+  - name: Generate Shepp-Logan phantom (k-space)
+    description: Create 2D Shepp-Logan phantom in k-space domain
+    command: bart phantom -x 128 -k ${output_dir}/phantom_kspace
+    validate:
+      - output_exists: ${output_dir}/phantom_kspace.cfl
+
+  - name: Generate 3D phantom
+    description: Create 3D Shepp-Logan phantom
+    command: bart phantom -x 64 -3 ${output_dir}/phantom_3d
+    validate:
+      - output_exists: ${output_dir}/phantom_3d.cfl
+
+  - name: Generate phantom with sensitivities
+    description: Create phantom with 8 coil sensitivities
+    command: bart phantom -x 128 -s 8 ${output_dir}/phantom_sens
+    validate:
+      - output_exists: ${output_dir}/phantom_sens.cfl
+
+  - name: Generate sensitivity maps only
+    description: Create 8-channel sensitivity maps
+    command: bart phantom -x 128 -S 8 ${output_dir}/sens_only
+    validate:
+      - output_exists: ${output_dir}/sens_only.cfl
+
+  - name: Generate tubes phantom
+    description: Create tubes phantom pattern
+    command: bart phantom -x 128 -T ${output_dir}/phantom_tubes
+    validate:
+      - output_exists: ${output_dir}/phantom_tubes.cfl
+
+  - name: Generate BART logo phantom
+    description: Create BART logo phantom
+    command: bart phantom -x 128 -B ${output_dir}/phantom_bart_logo
+    validate:
+      - output_exists: ${output_dir}/phantom_bart_logo.cfl
+
+  - name: Generate geometric phantom
+    description: Create geometric object phantom
+    command: bart phantom -x 128 -G ${output_dir}/phantom_geom
+    validate:
+      - output_exists: ${output_dir}/phantom_geom.cfl
+
+  - name: Generate random tubes phantom
+    description: Create phantom with 10 random tubes
+    command: bart phantom -x 128 -N 10 -r 42 ${output_dir}/phantom_random_tubes
+    validate:
+      - output_exists: ${output_dir}/phantom_random_tubes.cfl
+
+  - name: Generate brain geometry phantom
+    description: Create brain geometry phantom
+    command: bart phantom -x 128 --BRAIN ${output_dir}/phantom_brain
+    validate:
+      - output_exists: ${output_dir}/phantom_brain.cfl
+
+  # ==========================================================================
+  # TRAJECTORY GENERATION
+  # ==========================================================================
+  - name: Generate Cartesian trajectory
+    description: Create Cartesian k-space trajectory
+    command: bart traj -x 128 -y 128 ${output_dir}/traj_cart
+    validate:
+      - output_exists: ${output_dir}/traj_cart.cfl
+
+  - name: Generate radial trajectory
+    description: Create radial k-space trajectory
+    command: bart traj -r -x 128 -y 128 ${output_dir}/traj_radial
+    validate:
+      - output_exists: ${output_dir}/traj_radial.cfl
+
+  - name: Generate golden angle trajectory
+    description: Create golden angle radial trajectory
+    command: bart traj -r -G -x 128 -y 128 ${output_dir}/traj_golden
+    validate:
+      - output_exists: ${output_dir}/traj_golden.cfl
+
+  - name: Generate 3D trajectory
+    description: Create 3D radial trajectory
+    command: bart traj -r -3 -x 64 -y 64 ${output_dir}/traj_3d
+    validate:
+      - output_exists: ${output_dir}/traj_3d.cfl
+
+  - name: Generate undersampled trajectory
+    description: Create 4x undersampled Cartesian trajectory
+    command: bart traj -x 128 -y 32 -a 4 ${output_dir}/traj_undersampled
+    validate:
+      - output_exists: ${output_dir}/traj_undersampled.cfl
+
+  - name: Generate spiral-like trajectory with turns
+    description: Create trajectory with multiple turns
+    command: bart traj -r -x 128 -y 64 -t 8 ${output_dir}/traj_turns
+    validate:
+      - output_exists: ${output_dir}/traj_turns.cfl
+
+  # ==========================================================================
+  # FFT OPERATIONS
+  # ==========================================================================
+  - name: Forward FFT
+    description: Perform forward FFT on phantom (image to k-space)
+    command: bart fft 3 ${output_dir}/phantom ${output_dir}/phantom_fft
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_fft.cfl
+
+  - name: Inverse FFT
+    description: Perform inverse FFT (k-space to image)
+    command: bart fft -i 3 ${output_dir}/phantom_fft ${output_dir}/phantom_ifft
+    expected_exit_code: 0
+    depends_on: Forward FFT
+    validate:
+      - output_exists: ${output_dir}/phantom_ifft.cfl
+
+  - name: Unitary FFT
+    description: Perform unitary FFT (normalized)
+    command: bart fft -u 3 ${output_dir}/phantom ${output_dir}/phantom_fft_unitary
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_fft_unitary.cfl
+
+  - name: FFT along single dimension
+    description: Perform FFT along dimension 0 only
+    command: bart fft 1 ${output_dir}/phantom ${output_dir}/phantom_fft_dim0
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_fft_dim0.cfl
+
+  - name: FFT modulation
+    description: Apply fftmod (multiply by checkerboard pattern)
+    command: bart fftmod 3 ${output_dir}/phantom ${output_dir}/phantom_fftmod
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_fftmod.cfl
+
+  - name: FFT shift
+    description: Apply fftshift operation
+    command: bart fftshift 3 ${output_dir}/phantom_fft ${output_dir}/phantom_fftshift
+    depends_on: Forward FFT
+    validate:
+      - output_exists: ${output_dir}/phantom_fftshift.cfl
+
+  # ==========================================================================
+  # NUFFT OPERATIONS
+  # ==========================================================================
+  - name: Create phantom for NUFFT
+    description: Generate phantom and k-space data on radial trajectory
+    command: bart phantom -x 128 -k -t ${output_dir}/traj_radial ${output_dir}/phantom_radial_ksp
+    depends_on: Generate radial trajectory
+    validate:
+      - output_exists: ${output_dir}/phantom_radial_ksp.cfl
+
+  - name: NUFFT adjoint
+    description: Perform adjoint NUFFT (k-space to image)
+    command: bart nufft -a -x 128:128:1 ${output_dir}/traj_radial ${output_dir}/phantom_radial_ksp ${output_dir}/nufft_adj
+    depends_on: Create phantom for NUFFT
+    validate:
+      - output_exists: ${output_dir}/nufft_adj.cfl
+
+  - name: NUFFT forward
+    description: Perform forward NUFFT (image to k-space)
+    command: bart nufft ${output_dir}/traj_radial ${output_dir}/phantom ${output_dir}/nufft_fwd
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/nufft_fwd.cfl
+
+  - name: NUFFT inverse with Toeplitz
+    description: Perform inverse NUFFT with Toeplitz embedding
+    command: bart nufft -i -t -x 128:128:1 ${output_dir}/traj_radial ${output_dir}/phantom_radial_ksp ${output_dir}/nufft_inv
+    depends_on: Create phantom for NUFFT
+    validate:
+      - output_exists: ${output_dir}/nufft_inv.cfl
+
+  # ==========================================================================
+  # COMPLEX OPERATIONS
+  # ==========================================================================
+  - name: Complex absolute value
+    description: Compute magnitude of complex array
+    command: bart cabs ${output_dir}/phantom ${output_dir}/phantom_abs
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_abs.cfl
+
+  - name: Complex phase
+    description: Extract phase of complex array
+    command: bart carg ${output_dir}/phantom ${output_dir}/phantom_phase
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_phase.cfl
+
+  - name: Complex conjugate
+    description: Compute complex conjugate
+    command: bart conj ${output_dir}/phantom ${output_dir}/phantom_conj
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_conj.cfl
+
+  - name: Real part
+    description: Extract real part of complex array
+    command: bart creal ${output_dir}/phantom ${output_dir}/phantom_real
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_real.cfl
+
+  # ==========================================================================
+  # ARITHMETIC OPERATIONS
+  # ==========================================================================
+  - name: Scale array
+    description: Multiply array by scalar factor
+    command: bart scale 2.0 ${output_dir}/phantom ${output_dir}/phantom_scaled
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_scaled.cfl
+
+  - name: Scale by complex number
+    description: Multiply array by complex scalar (1+0.5i)
+    command: bart scale 1.0+0.5i ${output_dir}/phantom ${output_dir}/phantom_cscaled
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_cscaled.cfl
+
+  - name: SAXPY operation
+    description: Compute a*x + y (scale and add)
+    command: bart ones 2 128 128 ${output_dir}/ones_128 && bart saxpy 0.5 ${output_dir}/phantom ${output_dir}/ones_128 ${output_dir}/saxpy_result
+    depends_on:
+      - Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/saxpy_result.cfl
+
+  - name: FMAC multiply
+    description: Element-wise multiplication
+    command: bart fmac ${output_dir}/phantom ${output_dir}/phantom ${output_dir}/phantom_squared
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_squared.cfl
+
+  - name: FMAC with squash
+    description: Multiply and sum along dimension
+    command: bart fmac -s 4 ${output_dir}/phantom_sens ${output_dir}/sens_only ${output_dir}/fmac_squash
+    depends_on:
+      - Generate phantom with sensitivities
+      - Generate sensitivity maps only
+    validate:
+      - output_exists: ${output_dir}/fmac_squash.cfl
+
+  - name: Invert array
+    description: Compute element-wise reciprocal (1/x)
+    command: bart invert ${output_dir}/phantom ${output_dir}/phantom_inv
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_inv.cfl
+
+  - name: Power operation
+    description: Raise array to power of 2
+    command: bart spow 2 ${output_dir}/phantom ${output_dir}/phantom_pow2
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_pow2.cfl
+
+  - name: Square root
+    description: Compute square root
+    command: bart spow 0.5 ${output_dir}/phantom ${output_dir}/phantom_sqrt
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_sqrt.cfl
+
+  # ==========================================================================
+  # CALC FUNCTIONS (element-wise mathematical functions)
+  # ==========================================================================
+  - name: Calc exponential
+    description: Compute complex exponential
+    command: bart calc zexp ${output_dir}/phantom ${output_dir}/phantom_exp
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_exp.cfl
+
+  - name: Calc logarithm
+    description: Compute complex logarithm
+    command: bart calc zlog ${output_dir}/phantom ${output_dir}/phantom_log
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_log.cfl
+
+  - name: Calc sine
+    description: Compute complex sine
+    command: bart calc zsin ${output_dir}/phantom ${output_dir}/phantom_sin
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_sin.cfl
+
+  - name: Calc cosine
+    description: Compute complex cosine
+    command: bart calc zcos ${output_dir}/phantom ${output_dir}/phantom_cos
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_cos.cfl
+
+  - name: Calc absolute value (via calc)
+    description: Compute absolute value using calc
+    command: bart calc zabs ${output_dir}/phantom ${output_dir}/phantom_calc_abs
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_calc_abs.cfl
+
+  - name: Calc square root (via calc)
+    description: Compute square root using calc
+    command: bart calc zsqrt ${output_dir}/phantom ${output_dir}/phantom_calc_sqrt
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_calc_sqrt.cfl
+
+  # ==========================================================================
+  # ARRAY RESHAPING AND MANIPULATION
+  # ==========================================================================
+  - name: Resize (zero-pad)
+    description: Zero-pad array to larger size
+    command: bart resize -c 0 256 1 256 ${output_dir}/phantom ${output_dir}/phantom_resize_up
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_resize_up.cfl
+
+  - name: Resize (crop)
+    description: Crop array to smaller size
+    command: bart resize -c 0 64 1 64 ${output_dir}/phantom ${output_dir}/phantom_resize_down
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_resize_down.cfl
+
+  - name: Crop operation
+    description: Extract central portion along dimension
+    command: bart crop 0 64 ${output_dir}/phantom ${output_dir}/phantom_crop
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_crop.cfl
+
+  - name: Flip dimension
+    description: Reverse array along dimension 0
+    command: bart flip 1 ${output_dir}/phantom ${output_dir}/phantom_flip
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_flip.cfl
+
+  - name: Transpose
+    description: Transpose dimensions 0 and 1
+    command: bart transpose 0 1 ${output_dir}/phantom ${output_dir}/phantom_transpose
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_transpose.cfl
+
+  - name: Circular shift
+    description: Circularly shift array along dimension 0
+    command: bart circshift 0 32 ${output_dir}/phantom ${output_dir}/phantom_circshift
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_circshift.cfl
+
+  - name: Squeeze
+    description: Remove singleton dimensions
+    command: bart squeeze ${output_dir}/phantom ${output_dir}/phantom_squeezed
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_squeezed.cfl
+
+  - name: Reshape
+    description: Reshape array dimensions
+    command: bart reshape 3 64 256 ${output_dir}/phantom ${output_dir}/phantom_reshaped
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_reshaped.cfl
+
+  - name: Repmat
+    description: Replicate array along dimension
+    command: bart repmat 2 4 ${output_dir}/phantom ${output_dir}/phantom_repmat
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_repmat.cfl
+
+  - name: Slice extraction
+    description: Extract a single slice from array
+    command: bart slice 0 64 ${output_dir}/phantom ${output_dir}/phantom_slice
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_slice.cfl
+
+  - name: Join arrays
+    description: Join multiple arrays along dimension
+    command: bart join 2 ${output_dir}/phantom ${output_dir}/phantom ${output_dir}/phantom_joined
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_joined.cfl
+
+  - name: Copy array
+    description: Copy array to new location
+    command: bart copy ${output_dir}/phantom ${output_dir}/phantom_copy
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_copy.cfl
+
+  # ==========================================================================
+  # STATISTICAL OPERATIONS
+  # ==========================================================================
+  - name: Root sum of squares
+    description: Compute RSS along coil dimension
+    command: bart rss 8 ${output_dir}/phantom_sens ${output_dir}/phantom_rss
+    depends_on: Generate phantom with sensitivities
+    validate:
+      - output_exists: ${output_dir}/phantom_rss.cfl
+
+  - name: Average along dimension
+    description: Compute average along dimension
+    command: bart avg 1 ${output_dir}/phantom ${output_dir}/phantom_avg
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_avg.cfl
+
+  - name: Standard deviation
+    description: Compute standard deviation along dimension
+    command: bart std 1 ${output_dir}/phantom ${output_dir}/phantom_std
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_std.cfl
+
+  - name: Variance
+    description: Compute variance along dimension
+    command: bart var 1 ${output_dir}/phantom ${output_dir}/phantom_var
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_var.cfl
+
+  - name: Maximum intensity projection
+    description: Compute MIP along dimension
+    command: bart mip 1 ${output_dir}/phantom ${output_dir}/phantom_mip
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_mip.cfl
+
+  - name: Minimum intensity projection
+    description: Compute minimum projection along dimension
+    command: bart mip -m 1 ${output_dir}/phantom ${output_dir}/phantom_minip
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_minip.cfl
+
+  # ==========================================================================
+  # NORMALIZATION AND THRESHOLDING
+  # ==========================================================================
+  - name: Normalize array
+    description: Normalize along selected dimensions
+    command: bart normalize 3 ${output_dir}/phantom ${output_dir}/phantom_norm
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_norm.cfl
+
+  - name: L1 normalize
+    description: L1 normalize along selected dimensions
+    command: bart normalize -b 3 ${output_dir}/phantom ${output_dir}/phantom_norm_l1
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_norm_l1.cfl
+
+  - name: Soft threshold
+    description: Apply soft thresholding
+    command: bart threshold 0.1 ${output_dir}/phantom ${output_dir}/phantom_soft_thresh
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_soft_thresh.cfl
+
+  - name: Hard threshold
+    description: Apply hard thresholding
+    command: bart threshold -H 0.1 ${output_dir}/phantom ${output_dir}/phantom_hard_thresh
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_hard_thresh.cfl
+
+  - name: Binary threshold (greater than)
+    description: Create binary mask where val > lambda
+    command: bart threshold -B 0.5 ${output_dir}/phantom ${output_dir}/phantom_bin_gt
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_bin_gt.cfl
+
+  - name: Binary threshold (less than)
+    description: Create binary mask where val < lambda
+    command: bart threshold -M 0.5 ${output_dir}/phantom ${output_dir}/phantom_bin_lt
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_bin_lt.cfl
+
+  - name: Wavelet soft threshold
+    description: Apply wavelet-domain soft thresholding
+    command: bart threshold -W 0.01 ${output_dir}/phantom ${output_dir}/phantom_wavelet_thresh
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_wavelet_thresh.cfl
+
+  # ==========================================================================
+  # FILTERING
+  # ==========================================================================
+  - name: Median filter
+    description: Apply median filter along dimension
+    command: bart filter -m 0 -l 3 ${output_dir}/phantom ${output_dir}/phantom_median
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_median.cfl
+
+  - name: Moving average filter
+    description: Apply moving average filter
+    command: bart filter -a 0 -l 5 ${output_dir}/phantom ${output_dir}/phantom_movavg
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_movavg.cfl
+
+  # ==========================================================================
+  # WAVELET OPERATIONS
+  # ==========================================================================
+  - name: Wavelet transform (Haar)
+    description: Perform Haar wavelet transform
+    command: bart wavelet -H 3 ${output_dir}/phantom ${output_dir}/phantom_wavelet_haar
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_wavelet_haar.cfl
+
+  - name: Wavelet transform (Daubechies-2)
+    description: Perform Daubechies-2 wavelet transform
+    command: bart wavelet -D 3 ${output_dir}/phantom ${output_dir}/phantom_wavelet_dau2
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_wavelet_dau2.cfl
+
+  - name: Wavelet transform (CDF 4/4)
+    description: Perform CDF 4/4 wavelet transform
+    command: bart wavelet -C 3 ${output_dir}/phantom ${output_dir}/phantom_wavelet_cdf44
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_wavelet_cdf44.cfl
+
+  - name: Inverse wavelet transform
+    description: Perform inverse Haar wavelet transform
+    command: bart wavelet -a -H 3 128 128 ${output_dir}/phantom_wavelet_haar ${output_dir}/phantom_iwavelet
+    expected_exit_code: 0
+    depends_on: Wavelet transform (Haar)
+    validate:
+      - output_exists: ${output_dir}/phantom_iwavelet.cfl
+
+  # ==========================================================================
+  # SVD AND LINEAR ALGEBRA
+  # ==========================================================================
+  - name: Create matrix for SVD
+    description: Create small matrix for SVD test
+    command: bart ones 2 8 8 ${output_dir}/matrix_for_svd && bart noise -n 0.1 ${output_dir}/matrix_for_svd ${output_dir}/matrix_noisy
+    validate:
+      - output_exists: ${output_dir}/matrix_noisy.cfl
+
+  - name: SVD decomposition
+    description: Compute singular value decomposition
+    command: bart svd ${output_dir}/matrix_noisy ${output_dir}/svd_U ${output_dir}/svd_S ${output_dir}/svd_VH
+    depends_on: Create matrix for SVD
+    validate:
+      - output_exists: ${output_dir}/svd_U.cfl
+      - output_exists: ${output_dir}/svd_S.cfl
+      - output_exists: ${output_dir}/svd_VH.cfl
+
+  - name: SVD economic mode
+    description: Compute SVD in economic mode
+    command: bart svd -e ${output_dir}/matrix_noisy ${output_dir}/svd_econ_U ${output_dir}/svd_econ_S ${output_dir}/svd_econ_VH
+    depends_on: Create matrix for SVD
+    validate:
+      - output_exists: ${output_dir}/svd_econ_U.cfl
+
+  # ==========================================================================
+  # NOISE OPERATIONS
+  # ==========================================================================
+  - name: Add noise
+    description: Add Gaussian noise to array
+    command: bart noise -n 0.1 ${output_dir}/phantom ${output_dir}/phantom_noisy
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_noisy.cfl
+
+  - name: Add noise with seed
+    description: Add reproducible noise with seed
+    command: bart noise -s 42 -n 0.1 ${output_dir}/phantom ${output_dir}/phantom_noisy_seed
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_noisy_seed.cfl
+
+  # ==========================================================================
+  # SAMPLING PATTERNS
+  # ==========================================================================
+  - name: Poisson disc sampling
+    description: Generate Poisson-disc undersampling pattern
+    command: bart poisson -Y 128 -Z 128 -y 2 -z 2 -C 24 ${output_dir}/poisson_mask
+    validate:
+      - output_exists: ${output_dir}/poisson_mask.cfl
+
+  - name: Variable density Poisson
+    description: Generate variable-density Poisson pattern
+    command: bart poisson -Y 128 -Z 128 -y 3 -z 3 -C 24 -v ${output_dir}/poisson_vd_mask
+    validate:
+      - output_exists: ${output_dir}/poisson_vd_mask.cfl
+
+  - name: Elliptical Poisson
+    description: Generate elliptical Poisson pattern
+    command: bart poisson -Y 128 -Z 128 -y 2 -z 2 -C 24 -e ${output_dir}/poisson_ellip_mask
+    validate:
+      - output_exists: ${output_dir}/poisson_ellip_mask.cfl
+
+  # ==========================================================================
+  # COIL SENSITIVITY ESTIMATION (ESPIRiT)
+  # ==========================================================================
+  - name: Generate multi-coil k-space
+    description: Create k-space data with 8 coils for calibration
+    command: bart phantom -x 128 -k -s 8 ${output_dir}/kspace_multicoil
+    validate:
+      - output_exists: ${output_dir}/kspace_multicoil.cfl
+
+  - name: ESPIRiT calibration
+    description: Estimate coil sensitivities using ESPIRiT
+    command: bart ecalib -m 1 ${output_dir}/kspace_multicoil ${output_dir}/sens_espirit
+    depends_on: Generate multi-coil k-space
+    validate:
+      - output_exists: ${output_dir}/sens_espirit.cfl
+
+  - name: ESPIRiT with eigenvalue maps
+    description: ESPIRiT calibration with eigenvalue output
+    command: bart ecalib -m 1 ${output_dir}/kspace_multicoil ${output_dir}/sens_espirit2 ${output_dir}/ev_maps
+    depends_on: Generate multi-coil k-space
+    validate:
+      - output_exists: ${output_dir}/sens_espirit2.cfl
+      - output_exists: ${output_dir}/ev_maps.cfl
+
+  - name: ESPIRiT with 2 maps
+    description: Compute 2 ESPIRiT sensitivity maps
+    command: bart ecalib -m 2 ${output_dir}/kspace_multicoil ${output_dir}/sens_espirit_2maps
+    depends_on: Generate multi-coil k-space
+    validate:
+      - output_exists: ${output_dir}/sens_espirit_2maps.cfl
+
+  - name: ESPIRiT soft-SENSE
+    description: ESPIRiT with smooth transitions (Soft-SENSE)
+    command: bart ecalib -m 1 -S ${output_dir}/kspace_multicoil ${output_dir}/sens_softsense
+    depends_on: Generate multi-coil k-space
+    validate:
+      - output_exists: ${output_dir}/sens_softsense.cfl
+
+  # ==========================================================================
+  # PARALLEL IMAGING RECONSTRUCTION (PICS)
+  # ==========================================================================
+  - name: PICS L2 reconstruction
+    description: L2-regularized parallel imaging reconstruction
+    command: bart pics -l2 -r 0.01 -i 30 ${output_dir}/kspace_multicoil ${output_dir}/sens_espirit ${output_dir}/recon_pics_l2
+    expected_exit_code: 0
+    depends_on:
+      - Generate multi-coil k-space
+      - ESPIRiT calibration
+    validate:
+      - output_exists: ${output_dir}/recon_pics_l2.cfl
+
+  - name: PICS L1 wavelet reconstruction
+    description: L1-wavelet regularized reconstruction
+    command: bart pics -l1 -r 0.001 -i 30 ${output_dir}/kspace_multicoil ${output_dir}/sens_espirit ${output_dir}/recon_pics_l1
+    expected_exit_code: 0
+    depends_on:
+      - Generate multi-coil k-space
+      - ESPIRiT calibration
+    validate:
+      - output_exists: ${output_dir}/recon_pics_l1.cfl
+
+  - name: PICS with IST
+    description: PICS using Iterative Soft Thresholding
+    command: bart pics -I -l1 -r 0.001 -i 20 ${output_dir}/kspace_multicoil ${output_dir}/sens_espirit ${output_dir}/recon_pics_ist
+    depends_on:
+      - Generate multi-coil k-space
+      - ESPIRiT calibration
+    validate:
+      - output_exists: ${output_dir}/recon_pics_ist.cfl
+
+  - name: PICS with FISTA
+    description: PICS using Fast IST (FISTA)
+    command: bart pics --fista -l1 -r 0.001 -i 20 ${output_dir}/kspace_multicoil ${output_dir}/sens_espirit ${output_dir}/recon_pics_fista
+    depends_on:
+      - Generate multi-coil k-space
+      - ESPIRiT calibration
+    validate:
+      - output_exists: ${output_dir}/recon_pics_fista.cfl
+
+  # ==========================================================================
+  # NONLINEAR INVERSION (NLINV)
+  # ==========================================================================
+  - name: NLINV reconstruction
+    description: Joint image and sensitivity estimation via NLINV
+    command: bart nlinv -i 5 ${output_dir}/kspace_multicoil ${output_dir}/recon_nlinv
+    depends_on: Generate multi-coil k-space
+    validate:
+      - output_exists: ${output_dir}/recon_nlinv.cfl
+
+  - name: NLINV with sensitivities output
+    description: NLINV with separate sensitivity output
+    command: bart nlinv -i 5 ${output_dir}/kspace_multicoil ${output_dir}/recon_nlinv2 ${output_dir}/sens_nlinv
+    depends_on: Generate multi-coil k-space
+    validate:
+      - output_exists: ${output_dir}/recon_nlinv2.cfl
+      - output_exists: ${output_dir}/sens_nlinv.cfl
+
+  # ==========================================================================
+  # HOMODYNE RECONSTRUCTION
+  # ==========================================================================
+  - name: Homodyne reconstruction
+    description: Partial Fourier reconstruction via homodyne
+    command: bart homodyne 0 0.6 ${output_dir}/phantom_kspace ${output_dir}/recon_homodyne
+    depends_on: Generate Shepp-Logan phantom (k-space)
+    validate:
+      - output_exists: ${output_dir}/recon_homodyne.cfl
+
+  - name: Homodyne from image domain
+    description: Homodyne with image-domain input
+    command: bart homodyne -I 0 0.6 ${output_dir}/phantom ${output_dir}/recon_homodyne_img
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/recon_homodyne_img.cfl
+
+  # ==========================================================================
+  # ERROR METRICS
+  # ==========================================================================
+  - name: NRMSE identical arrays
+    description: Compute NRMSE between identical arrays (should be 0)
+    command: bart nrmse ${output_dir}/phantom ${output_dir}/phantom_copy
+    depends_on:
+      - Generate Shepp-Logan phantom
+      - Copy array
+    expected_output_contains: "0.000000"
+
+  - name: NRMSE with tolerance
+    description: Compare arrays with tolerance threshold
+    command: bart nrmse -t 0.001 ${output_dir}/phantom ${output_dir}/phantom_copy && echo "PASS"
+    depends_on:
+      - Generate Shepp-Logan phantom
+      - Copy array
+    expected_output_contains: "PASS"
+
+  - name: NRMSE noisy vs original
+    description: Compute NRMSE between noisy and original phantom
+    command: bart nrmse ${output_dir}/phantom ${output_dir}/phantom_noisy
+    depends_on:
+      - Generate Shepp-Logan phantom
+      - Add noise
+
+  # ==========================================================================
+  # IMAGE EXPORT
+  # ==========================================================================
+  - name: Export to PNG
+    description: Export magnitude image as PNG
+    command: bart toimg ${output_dir}/phantom ${output_dir}/phantom_img
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_img.png
+
+  - name: Export with gamma correction
+    description: Export image with gamma correction
+    command: bart toimg -g 0.5 ${output_dir}/phantom ${output_dir}/phantom_gamma
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_gamma.png
+
+  - name: Export with contrast/window
+    description: Export image with contrast and window levels
+    command: bart toimg -c 0.8 -w 0.5 ${output_dir}/phantom ${output_dir}/phantom_contrast
+    depends_on: Generate Shepp-Logan phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_contrast.png
+
+  - name: Export 3D slices
+    description: Export 3D phantom as multiple PNG slices
+    command: bart toimg ${output_dir}/phantom_3d ${output_dir}/phantom_3d_slice
+    depends_on: Generate 3D phantom
+    validate:
+      - output_exists: ${output_dir}/phantom_3d_slice-0000.png
+
+  # ==========================================================================
+  # BITMASK UTILITY
+  # ==========================================================================
+  - name: Bitmask generation
+    description: Generate bitmask for dimensions 0,1,2
+    command: bart bitmask 0 1 2
+    expected_output_contains: "7"
+
+  - name: Bitmask single dimension
+    description: Generate bitmask for dimension 3 (coil dimension)
+    command: bart bitmask 3
+    expected_output_contains: "8"
+
+  # ==========================================================================
+  # INDEX GENERATION
+  # ==========================================================================
+  - name: Generate index array
+    description: Create index array along dimension
+    command: bart index 0 64 ${output_dir}/index_arr
+    validate:
+      - output_exists: ${output_dir}/index_arr.cfl
+
+  # ==========================================================================
+  # COMPLEX PIPELINES
+  # ==========================================================================
+  - name: Full CS reconstruction pipeline
+    description: Complete compressed sensing MRI reconstruction
+    command: |
+      # Generate k-space with 8 coils
+      bart phantom -x 128 -k -s 8 ${output_dir}/cs_kspace &&
+      # Estimate sensitivities
+      bart ecalib -m 1 ${output_dir}/cs_kspace ${output_dir}/cs_sens &&
+      # L1-wavelet reconstruction
+      bart pics -l1 -r 0.01 -i 20 ${output_dir}/cs_kspace ${output_dir}/cs_sens ${output_dir}/cs_recon
+    validate:
+      - output_exists: ${output_dir}/cs_recon.cfl
+
+  - name: Radial reconstruction pipeline
+    description: Non-Cartesian radial reconstruction
+    command: |
+      # Generate radial trajectory
+      bart traj -r -G -x 256 -y 64 ${output_dir}/radial_traj &&
+      # Generate phantom with trajectory
+      bart phantom -x 256 -k -t ${output_dir}/radial_traj -s 4 ${output_dir}/radial_ksp &&
+      # NUFFT adjoint for initial image
+      bart nufft -a -x 256:256:1 ${output_dir}/radial_traj ${output_dir}/radial_ksp ${output_dir}/radial_adj &&
+      # Estimate sensitivities
+      bart rss 8 ${output_dir}/radial_adj ${output_dir}/radial_rss
+    validate:
+      - output_exists: ${output_dir}/radial_rss.cfl
+
+  - name: Temporal mean of dynamic data
+    description: Create dynamic phantom and compute temporal mean
+    command: |
+      # Create multiple phantoms as temporal frames
+      bart phantom -x 64 ${output_dir}/dyn_frame1 &&
+      bart scale 1.1 ${output_dir}/dyn_frame1 ${output_dir}/dyn_frame2 &&
+      bart scale 0.9 ${output_dir}/dyn_frame1 ${output_dir}/dyn_frame3 &&
+      # Join along temporal dimension
+      bart join 10 ${output_dir}/dyn_frame1 ${output_dir}/dyn_frame2 ${output_dir}/dyn_frame3 ${output_dir}/dyn_data &&
+      # Compute temporal average
+      bart avg 1024 ${output_dir}/dyn_data ${output_dir}/dyn_avg
+    validate:
+      - output_exists: ${output_dir}/dyn_avg.cfl
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/bart
+    echo "Test outputs preserved in ${output_dir}/"

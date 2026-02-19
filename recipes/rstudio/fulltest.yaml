@@ -1,0 +1,811 @@
+# rstudio container test suite
+# Tests for RStudio 2023.12.1 with R 4.1.2 and 335 packages
+#
+# This container provides RStudio IDE (Desktop and Server) with a comprehensive
+# set of R packages for data science, statistics, machine learning, and visualization.
+
+name: rstudio
+version: 2023.12.1
+container: rstudio_2023.12.1_20260127.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  # ==========================================================================
+  # BASIC R ENVIRONMENT
+  # ==========================================================================
+  - name: R version check
+    description: Verify R binary runs and reports correct version
+    command: R --version
+    expected_output_contains: "R version 4.1.2"
+
+  - name: R version codename
+    description: Verify R version codename
+    command: R --version
+    expected_output_contains: "Bird Hippie"
+
+  - name: Rscript version check
+    description: Verify Rscript binary runs
+    command: Rscript --version
+    expected_output_contains: "4.1.2"
+
+  - name: Rscript help
+    description: Verify Rscript help is available
+    command: Rscript --help
+    expected_output_contains: "--default-packages"
+
+  - name: R interactive mode test
+    description: Test basic R expression evaluation
+    command: Rscript -e "print('Hello R')"
+    expected_output_contains: "Hello R"
+
+  - name: R arithmetic operations
+    description: Test basic arithmetic in R
+    command: Rscript -e "print(2 + 2)"
+    expected_output_contains: "4"
+
+  - name: R variable assignment
+    description: Test variable assignment and retrieval
+    command: Rscript -e "x <- 42; print(x)"
+    expected_output_contains: "42"
+
+  # ==========================================================================
+  # RSTUDIO COMPONENTS
+  # ==========================================================================
+  - name: RStudio version check
+    description: Verify RStudio binary exists and reports version
+    command: rstudio --version 2>&1 | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1
+    expected_output_contains: "2023.12.1"
+
+  - name: RStudio server exists
+    description: Verify RStudio Server binary exists
+    command: which rstudio-server
+    expected_output_contains: "/usr/sbin/rstudio-server"
+
+  - name: RStudio binary path
+    description: Verify RStudio desktop binary path
+    command: which rstudio
+    expected_output_contains: "/usr/bin/rstudio"
+
+  # ==========================================================================
+  # R CONFIGURATION
+  # ==========================================================================
+  - name: R home directory
+    description: Verify R_HOME is set correctly
+    command: Rscript -e "print(Sys.getenv('R_HOME'))"
+    expected_output_contains: "/usr/lib/R"
+
+  - name: R library paths
+    description: Verify R library paths are configured
+    command: Rscript -e "print(.libPaths())"
+    expected_output_contains: "library"
+
+  - name: R capabilities - PNG
+    description: Verify PNG graphics capability
+    command: Rscript -e "print(capabilities()['png'])"
+    expected_output_contains: "TRUE"
+
+  - name: R capabilities - JPEG
+    description: Verify JPEG graphics capability
+    command: Rscript -e "print(capabilities()['jpeg'])"
+    expected_output_contains: "TRUE"
+
+  - name: R capabilities - TCP/IP
+    description: Verify network capability
+    command: Rscript -e "print(capabilities()['http/ftp'])"
+    expected_output_contains: "TRUE"
+
+  - name: R session info
+    description: Verify sessionInfo runs correctly
+    command: Rscript -e "sessionInfo()"
+    expected_output_contains: "R version 4.1.2"
+
+  # ==========================================================================
+  # CORE TIDYVERSE PACKAGES
+  # ==========================================================================
+  - name: tidyverse package load
+    description: Verify tidyverse meta-package loads
+    command: Rscript -e "library(tidyverse); packageVersion('tidyverse')"
+    expected_output_contains: "2.0.0"
+
+  - name: dplyr package
+    description: Verify dplyr loads and works
+    command: Rscript -e "library(dplyr); df <- tibble(x=1:3); print(filter(df, x>1))"
+    expected_output_contains: "2"
+
+  - name: ggplot2 package
+    description: Verify ggplot2 loads
+    command: Rscript -e "library(ggplot2); packageVersion('ggplot2')"
+    expected_output_contains: "4.0"
+
+  - name: tidyr package
+    description: Verify tidyr loads
+    command: Rscript -e "library(tidyr); packageVersion('tidyr')"
+    expected_output_contains: "1.3"
+
+  - name: readr package
+    description: Verify readr loads
+    command: Rscript -e "library(readr); packageVersion('readr')"
+    expected_output_contains: "2.1"
+
+  - name: purrr package
+    description: Verify purrr loads
+    command: Rscript -e "library(purrr); print(map_dbl(1:3, ~.x^2))"
+    expected_output_contains: "9"
+
+  - name: stringr package
+    description: Verify stringr loads and works
+    command: Rscript -e "library(stringr); print(str_to_upper('hello'))"
+    expected_output_contains: "HELLO"
+
+  - name: forcats package
+    description: Verify forcats loads
+    command: Rscript -e "library(forcats); packageVersion('forcats')"
+    expected_output_contains: "1.0"
+
+  - name: lubridate package
+    description: Verify lubridate loads and works
+    command: Rscript -e "library(lubridate); print(year(ymd('2024-01-15')))"
+    expected_output_contains: "2024"
+
+  # ==========================================================================
+  # DATA MANIPULATION PACKAGES
+  # ==========================================================================
+  - name: data.table package
+    description: Verify data.table loads and works
+    command: Rscript -e "library(data.table); dt <- data.table(x=1:3, y=4:6); print(dt[x>1])"
+    expected_output_contains: "2"
+
+  - name: tibble package
+    description: Verify tibble loads
+    command: Rscript -e "library(tibble); print(tibble(a=1, b=2))"
+    expected_output_contains: "tibble"
+
+  - name: reshape2 package
+    description: Verify reshape2 loads
+    command: Rscript -e "library(reshape2); packageVersion('reshape2')"
+    expected_output_contains: "1.4"
+
+  - name: plyr package
+    description: Verify plyr loads
+    command: Rscript -e "library(plyr); packageVersion('plyr')"
+    expected_output_contains: "1.8"
+
+  # ==========================================================================
+  # STATISTICS AND MODELING
+  # ==========================================================================
+  - name: stats package - t-test
+    description: Test basic t-test functionality
+    command: Rscript -e 'result <- t.test(1:10, mu=5); print(result$p.value)'
+    expected_exit_code: 0
+
+  - name: stats package - linear model
+    description: Test linear model functionality
+    command: Rscript -e "m <- lm(mpg ~ wt, data=mtcars); print(coef(m))"
+    expected_output_contains: "wt"
+
+  - name: MASS package
+    description: Verify MASS loads and works
+    command: Rscript -e "library(MASS); print(nrow(Boston))"
+    expected_output_contains: "506"
+
+  - name: Matrix package
+    description: Verify Matrix loads
+    command: Rscript -e "library(Matrix); packageVersion('Matrix')"
+    expected_exit_code: 0
+
+  - name: nlme package
+    description: Verify nlme loads
+    command: Rscript -e "library(nlme); packageVersion('nlme')"
+    expected_exit_code: 0
+
+  - name: mgcv package - GAM
+    description: Verify mgcv GAM functionality
+    command: Rscript -e 'library(mgcv); m <- gam(mpg ~ s(wt), data=mtcars); print(summary(m)$r.sq)'
+    expected_exit_code: 0
+
+  - name: survival package
+    description: Verify survival loads
+    command: Rscript -e "library(survival); packageVersion('survival')"
+    expected_exit_code: 0
+
+  - name: mvtnorm package
+    description: Verify mvtnorm loads
+    command: Rscript -e "library(mvtnorm); print(pmvnorm(lower=-Inf, upper=c(1,1)))"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MACHINE LEARNING PACKAGES
+  # ==========================================================================
+  - name: caret package
+    description: Verify caret loads
+    command: Rscript -e "library(caret); packageVersion('caret')"
+    expected_output_contains: "7.0"
+
+  - name: randomForest package
+    description: Verify randomForest loads and works
+    command: Rscript -e "library(randomForest); rf <- randomForest(Species~., data=iris, ntree=10); print(rf$type)"
+    expected_output_contains: "classification"
+
+  - name: e1071 package - SVM
+    description: Verify e1071 SVM functionality
+    command: Rscript -e "library(e1071); m <- svm(Species~., data=iris); print(class(m))"
+    expected_output_contains: "svm"
+
+  - name: kernlab package
+    description: Verify kernlab loads
+    command: Rscript -e "library(kernlab); packageVersion('kernlab')"
+    expected_exit_code: 0
+
+  - name: earth package - MARS
+    description: Verify earth package loads
+    command: Rscript -e "library(earth); packageVersion('earth')"
+    expected_exit_code: 0
+
+  - name: party package - trees
+    description: Verify party package loads
+    command: Rscript -e "library(party); packageVersion('party')"
+    expected_exit_code: 0
+
+  - name: Cubist package
+    description: Verify Cubist loads
+    command: Rscript -e "library(Cubist); packageVersion('Cubist')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # BAYESIAN STATISTICS
+  # ==========================================================================
+  - name: rstan package
+    description: Verify rstan loads
+    command: Rscript -e "library(rstan); packageVersion('rstan')"
+    expected_output_contains: "2.32"
+
+  - name: StanHeaders package
+    description: Verify StanHeaders loads
+    command: Rscript -e "library(StanHeaders); packageVersion('StanHeaders')"
+    expected_exit_code: 0
+
+  - name: rstantools package
+    description: Verify rstantools loads
+    command: Rscript -e "library(rstantools); packageVersion('rstantools')"
+    expected_exit_code: 0
+
+  - name: bayesplot package
+    description: Verify bayesplot loads
+    command: Rscript -e "library(bayesplot); packageVersion('bayesplot')"
+    expected_output_contains: "1.15"
+
+  - name: loo package
+    description: Verify loo loads
+    command: Rscript -e "library(loo); packageVersion('loo')"
+    expected_exit_code: 0
+
+  - name: posterior package
+    description: Verify posterior loads
+    command: Rscript -e "library(posterior); packageVersion('posterior')"
+    expected_exit_code: 0
+
+  - name: coda package
+    description: Verify coda loads
+    command: Rscript -e "library(coda); packageVersion('coda')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # VISUALIZATION PACKAGES
+  # ==========================================================================
+  - name: ggplot2 basic plot
+    description: Test ggplot2 plot creation
+    command: Rscript -e "library(ggplot2); p <- ggplot(mtcars, aes(wt, mpg)) + geom_point(); print(class(p))"
+    expected_output_contains: "ggplot"
+
+  - name: cowplot package
+    description: Verify cowplot loads
+    command: Rscript -e "library(cowplot); packageVersion('cowplot')"
+    expected_exit_code: 0
+
+  - name: ggrepel package
+    description: Verify ggrepel loads
+    command: Rscript -e "library(ggrepel); packageVersion('ggrepel')"
+    expected_exit_code: 0
+
+  - name: ggridges package
+    description: Verify ggridges loads
+    command: Rscript -e "library(ggridges); packageVersion('ggridges')"
+    expected_exit_code: 0
+
+  - name: ggsci package
+    description: Verify ggsci loads
+    command: Rscript -e "library(ggsci); packageVersion('ggsci')"
+    expected_exit_code: 0
+
+  - name: ggthemes package
+    description: Verify ggthemes loads
+    command: Rscript -e "library(ggthemes); packageVersion('ggthemes')"
+    expected_exit_code: 0
+
+  - name: gridExtra package
+    description: Verify gridExtra loads
+    command: Rscript -e "library(gridExtra); packageVersion('gridExtra')"
+    expected_exit_code: 0
+
+  - name: corrplot package
+    description: Verify corrplot loads
+    command: Rscript -e "library(corrplot); packageVersion('corrplot')"
+    expected_exit_code: 0
+
+  - name: plotly package
+    description: Verify plotly loads
+    command: Rscript -e "library(plotly); packageVersion('plotly')"
+    expected_output_contains: "4.12"
+
+  - name: RColorBrewer package
+    description: Verify RColorBrewer loads
+    command: Rscript -e "library(RColorBrewer); print(brewer.pal(3, 'Set1'))"
+    expected_output_contains: "#"
+
+  - name: viridisLite package
+    description: Verify viridisLite loads
+    command: Rscript -e "library(viridisLite); print(viridis(3))"
+    expected_output_contains: "#"
+
+  - name: hexbin package
+    description: Verify hexbin loads
+    command: Rscript -e "library(hexbin); packageVersion('hexbin')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # WEB AND INTERACTIVE PACKAGES
+  # ==========================================================================
+  - name: shiny package
+    description: Verify shiny loads
+    command: Rscript -e "library(shiny); packageVersion('shiny')"
+    expected_output_contains: "1.12"
+
+  - name: htmlwidgets package
+    description: Verify htmlwidgets loads
+    command: Rscript -e "library(htmlwidgets); packageVersion('htmlwidgets')"
+    expected_exit_code: 0
+
+  - name: DT package
+    description: Verify DT (DataTables) loads
+    command: Rscript -e "library(DT); packageVersion('DT')"
+    expected_exit_code: 0
+
+  - name: crosstalk package
+    description: Verify crosstalk loads
+    command: Rscript -e "library(crosstalk); packageVersion('crosstalk')"
+    expected_exit_code: 0
+
+  - name: visNetwork package
+    description: Verify visNetwork loads
+    command: Rscript -e "library(visNetwork); packageVersion('visNetwork')"
+    expected_exit_code: 0
+
+  - name: httpuv package
+    description: Verify httpuv loads
+    command: Rscript -e "library(httpuv); packageVersion('httpuv')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # REPORTING AND DOCUMENT GENERATION
+  # ==========================================================================
+  - name: knitr package
+    description: Verify knitr loads
+    command: Rscript -e "library(knitr); packageVersion('knitr')"
+    expected_output_contains: "1.51"
+
+  - name: rmarkdown package
+    description: Verify rmarkdown loads
+    command: Rscript -e "library(rmarkdown); packageVersion('rmarkdown')"
+    expected_exit_code: 0
+
+  - name: tinytex package
+    description: Verify tinytex loads
+    command: Rscript -e "library(tinytex); packageVersion('tinytex')"
+    expected_exit_code: 0
+
+  - name: markdown package
+    description: Verify markdown loads
+    command: Rscript -e "library(markdown); packageVersion('markdown')"
+    expected_exit_code: 0
+
+  - name: yaml package
+    description: Verify yaml loads
+    command: Rscript -e "library(yaml); print(as.yaml(list(a=1, b=2)))"
+    expected_output_contains: "a: 1"
+
+  # ==========================================================================
+  # DATA I/O PACKAGES
+  # ==========================================================================
+  - name: readxl package
+    description: Verify readxl loads
+    command: Rscript -e "library(readxl); packageVersion('readxl')"
+    expected_exit_code: 0
+
+  - name: haven package
+    description: Verify haven loads (SPSS/Stata/SAS support)
+    command: Rscript -e "library(haven); packageVersion('haven')"
+    expected_exit_code: 0
+
+  - name: jsonlite package
+    description: Verify jsonlite loads and works
+    command: Rscript -e "library(jsonlite); print(toJSON(list(a=1, b=2)))"
+    expected_output_contains: "a"
+
+  - name: xml2 package
+    description: Verify xml2 loads
+    command: Rscript -e "library(xml2); packageVersion('xml2')"
+    expected_exit_code: 0
+
+  - name: ncdf4 package
+    description: Verify ncdf4 loads (NetCDF support)
+    command: Rscript -e "library(ncdf4); packageVersion('ncdf4')"
+    expected_output_contains: "1.19"
+
+  - name: DBI package
+    description: Verify DBI loads
+    command: Rscript -e "library(DBI); packageVersion('DBI')"
+    expected_exit_code: 0
+
+  - name: vroom package
+    description: Verify vroom loads (fast data reading)
+    command: Rscript -e "library(vroom); packageVersion('vroom')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PARALLEL PROCESSING
+  # ==========================================================================
+  - name: parallel package
+    description: Verify parallel package works
+    command: Rscript -e "library(parallel); print(detectCores())"
+    expected_exit_code: 0
+
+  - name: foreach package
+    description: Verify foreach loads
+    command: Rscript -e "library(foreach); print(foreach(i=1:3) %do% i^2)"
+    expected_output_contains: "9"
+
+  - name: doParallel package
+    description: Verify doParallel loads
+    command: Rscript -e "library(doParallel); packageVersion('doParallel')"
+    expected_exit_code: 0
+
+  - name: future package
+    description: Verify future loads
+    command: Rscript -e "library(future); packageVersion('future')"
+    expected_output_contains: "1.69"
+
+  - name: future.apply package
+    description: Verify future.apply loads
+    command: Rscript -e "library(future.apply); packageVersion('future.apply')"
+    expected_exit_code: 0
+
+  - name: parallelly package
+    description: Verify parallelly loads
+    command: Rscript -e "library(parallelly); packageVersion('parallelly')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DEVELOPMENT TOOLS
+  # ==========================================================================
+  - name: devtools package
+    description: Verify devtools loads
+    command: Rscript -e "library(devtools); packageVersion('devtools')"
+    expected_exit_code: 0
+
+  - name: roxygen2 package
+    description: Verify roxygen2 loads
+    command: Rscript -e "library(roxygen2); packageVersion('roxygen2')"
+    expected_exit_code: 0
+
+  - name: testthat package
+    description: Verify testthat loads
+    command: Rscript -e "library(testthat); packageVersion('testthat')"
+    expected_exit_code: 0
+
+  - name: usethis package
+    description: Verify usethis loads
+    command: Rscript -e "library(usethis); packageVersion('usethis')"
+    expected_exit_code: 0
+
+  - name: pkgbuild package
+    description: Verify pkgbuild loads
+    command: Rscript -e "library(pkgbuild); packageVersion('pkgbuild')"
+    expected_exit_code: 0
+
+  - name: pkgdown package
+    description: Verify pkgdown loads
+    command: Rscript -e "library(pkgdown); packageVersion('pkgdown')"
+    expected_exit_code: 0
+
+  - name: covr package
+    description: Verify covr loads
+    command: Rscript -e "library(covr); packageVersion('covr')"
+    expected_exit_code: 0
+
+  - name: profvis package
+    description: Verify profvis loads
+    command: Rscript -e "library(profvis); packageVersion('profvis')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # RCPP AND C++ INTEGRATION
+  # ==========================================================================
+  - name: Rcpp package
+    description: Verify Rcpp loads
+    command: Rscript -e "library(Rcpp); packageVersion('Rcpp')"
+    expected_exit_code: 0
+
+  - name: RcppArmadillo package
+    description: Verify RcppArmadillo loads
+    command: Rscript -e "library(RcppArmadillo); packageVersion('RcppArmadillo')"
+    expected_exit_code: 0
+
+  - name: RcppEigen package
+    description: Verify RcppEigen loads
+    command: Rscript -e "library(RcppEigen); packageVersion('RcppEigen')"
+    expected_exit_code: 0
+
+  - name: RcppParallel package
+    description: Verify RcppParallel loads
+    command: Rscript -e "library(RcppParallel); packageVersion('RcppParallel')"
+    expected_exit_code: 0
+
+  - name: BH package (Boost Headers)
+    description: Verify BH loads
+    command: Rscript -e "library(BH); packageVersion('BH')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NUMERICAL AND MATRIX OPERATIONS
+  # ==========================================================================
+  - name: matrixStats package
+    description: Verify matrixStats loads and works
+    command: Rscript -e "library(matrixStats); m <- matrix(1:9, 3); print(rowMeans2(m))"
+    expected_output_contains: "4"
+
+  - name: fastICA package
+    description: Verify fastICA loads
+    command: Rscript -e "library(fastICA); packageVersion('fastICA')"
+    expected_exit_code: 0
+
+  - name: SparseM package
+    description: Verify SparseM loads
+    command: Rscript -e "library(SparseM); packageVersion('SparseM')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STRING AND TEXT PROCESSING
+  # ==========================================================================
+  - name: stringi package
+    description: Verify stringi loads
+    command: Rscript -e "library(stringi); print(stri_length('hello'))"
+    expected_output_contains: "5"
+
+  - name: glue package
+    description: Verify glue loads and works
+    command: Rscript -e "library(glue); x <- 'world'; print(glue('Hello {x}'))"
+    expected_output_contains: "Hello world"
+
+  # ==========================================================================
+  # DATE AND TIME
+  # ==========================================================================
+  - name: hms package
+    description: Verify hms loads
+    command: Rscript -e "library(hms); print(hms(seconds=3661))"
+    expected_output_contains: "01:01:01"
+
+  - name: clock package
+    description: Verify clock loads
+    command: Rscript -e "library(clock); packageVersion('clock')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # GOOGLE INTEGRATION
+  # ==========================================================================
+  - name: googledrive package
+    description: Verify googledrive loads
+    command: Rscript -e "library(googledrive); packageVersion('googledrive')"
+    expected_exit_code: 0
+
+  - name: googlesheets4 package
+    description: Verify googlesheets4 loads
+    command: Rscript -e "library(googlesheets4); packageVersion('googlesheets4')"
+    expected_exit_code: 0
+
+  - name: gargle package
+    description: Verify gargle loads
+    command: Rscript -e "library(gargle); packageVersion('gargle')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # GIT INTEGRATION
+  # ==========================================================================
+  - name: gert package
+    description: Verify gert loads
+    command: Rscript -e "library(gert); packageVersion('gert')"
+    expected_exit_code: 0
+
+  - name: gitcreds package
+    description: Verify gitcreds loads
+    command: Rscript -e "library(gitcreds); packageVersion('gitcreds')"
+    expected_exit_code: 0
+
+  - name: gh package
+    description: Verify gh loads
+    command: Rscript -e "library(gh); packageVersion('gh')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # HTTP AND WEB
+  # ==========================================================================
+  - name: httr package
+    description: Verify httr loads
+    command: Rscript -e "library(httr); packageVersion('httr')"
+    expected_exit_code: 0
+
+  - name: httr2 package
+    description: Verify httr2 loads
+    command: Rscript -e "library(httr2); packageVersion('httr2')"
+    expected_exit_code: 0
+
+  - name: curl package
+    description: Verify curl loads
+    command: Rscript -e "library(curl); packageVersion('curl')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # BATCH AND WORKFLOW
+  # ==========================================================================
+  - name: batchtools package
+    description: Verify batchtools loads
+    command: Rscript -e "library(batchtools); packageVersion('batchtools')"
+    expected_exit_code: 0
+
+  - name: progressr package
+    description: Verify progressr loads
+    command: Rscript -e "library(progressr); packageVersion('progressr')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # RETICULATE (PYTHON INTEGRATION)
+  # ==========================================================================
+  - name: reticulate package
+    description: Verify reticulate loads
+    command: Rscript -e "library(reticulate); packageVersion('reticulate')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SCIENTIFIC AND RESEARCH TOOLS
+  # ==========================================================================
+  - name: deSolve package
+    description: Verify deSolve loads (differential equations)
+    command: Rscript -e "library(deSolve); packageVersion('deSolve')"
+    expected_exit_code: 0
+
+  - name: numDeriv package
+    description: Verify numDeriv loads
+    command: Rscript -e "library(numDeriv); print(grad(sin, pi))"
+    expected_output_contains: "-1"
+
+  # ==========================================================================
+  # UTILITY PACKAGES
+  # ==========================================================================
+  - name: here package
+    description: Verify here loads
+    command: Rscript -e "library(here); packageVersion('here')"
+    expected_exit_code: 0
+
+  - name: fs package
+    description: Verify fs loads
+    command: Rscript -e "library(fs); print(path_home())"
+    expected_exit_code: 0
+
+  - name: digest package
+    description: Verify digest loads and works
+    command: Rscript -e "library(digest); print(digest('hello'))"
+    expected_exit_code: 0
+
+  - name: uuid package
+    description: Verify uuid loads
+    command: Rscript -e "library(uuid); print(UUIDgenerate())"
+    expected_exit_code: 0
+
+  - name: memoise package
+    description: Verify memoise loads
+    command: Rscript -e "library(memoise); packageVersion('memoise')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FILE OUTPUT TESTS
+  # ==========================================================================
+  - name: CSV write and read
+    description: Test writing and reading CSV files
+    command: Rscript -e "write.csv(mtcars, '${output_dir}/mtcars.csv'); d <- read.csv('${output_dir}/mtcars.csv'); print(nrow(d))"
+    expected_output_contains: "32"
+    validate:
+      - output_exists: ${output_dir}/mtcars.csv
+
+  - name: RDS save and load
+    description: Test saving and loading RDS files
+    command: Rscript -e "saveRDS(iris, '${output_dir}/iris.rds'); d <- readRDS('${output_dir}/iris.rds'); print(nrow(d))"
+    expected_output_contains: "150"
+    validate:
+      - output_exists: ${output_dir}/iris.rds
+
+  - name: PNG graphics output
+    description: Test PNG graphics device
+    command: Rscript -e "png('${output_dir}/plot.png'); plot(1:10); dev.off(); print('done')"
+    expected_output_contains: "done"
+    validate:
+      - output_exists: ${output_dir}/plot.png
+
+  - name: PDF graphics output
+    description: Test PDF graphics device
+    command: Rscript -e "pdf('${output_dir}/plot.pdf'); plot(1:10); dev.off(); print('done')"
+    expected_output_contains: "done"
+    validate:
+      - output_exists: ${output_dir}/plot.pdf
+
+  - name: ggplot2 save
+    description: Test ggplot2 ggsave functionality
+    command: Rscript -e "library(ggplot2); p <- ggplot(mtcars, aes(wt, mpg)) + geom_point(); ggsave('${output_dir}/ggplot.png', p, width=6, height=4)"
+    validate:
+      - output_exists: ${output_dir}/ggplot.png
+
+  - name: JSON write
+    description: Test JSON file output
+    command: Rscript -e "library(jsonlite); write_json(list(a=1, b=2), '${output_dir}/data.json'); print('done')"
+    expected_output_contains: "done"
+    validate:
+      - output_exists: ${output_dir}/data.json
+
+  # ==========================================================================
+  # DATA ANALYSIS WORKFLOWS
+  # ==========================================================================
+  - name: Data manipulation pipeline
+    description: Test dplyr pipeline operations
+    command: Rscript -e "library(dplyr); result <- mtcars %>% filter(mpg > 20) %>% group_by(cyl) %>% summarize(mean_mpg = mean(mpg)) %>% arrange(cyl); print(result)"
+    expected_output_contains: "mean_mpg"
+
+  - name: Statistical summary
+    description: Test summary statistics calculation
+    command: Rscript -e 'summary_stats <- function(x) c(mean=mean(x), sd=sd(x), median=median(x)); print(summary_stats(mtcars$mpg))'
+    expected_output_contains: "mean"
+
+  - name: Correlation matrix
+    description: Test correlation calculation
+    command: Rscript -e "print(round(cor(mtcars[,1:4]), 2))"
+    expected_output_contains: "mpg"
+
+  - name: PCA analysis
+    description: Test principal component analysis
+    command: Rscript -e 'pca <- prcomp(mtcars[,1:7], scale=TRUE); print(summary(pca)$importance[,1:2])'
+    expected_output_contains: "Proportion of Variance"
+
+  - name: k-means clustering
+    description: Test k-means clustering
+    command: Rscript -e "set.seed(42); km <- kmeans(iris[,1:4], centers=3); print(km$size)"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # TOTAL PACKAGE COUNT VERIFICATION
+  # ==========================================================================
+  - name: Package count verification
+    description: Verify total number of installed packages
+    command: Rscript -e "n <- nrow(installed.packages()); cat('Total packages:', n); stopifnot(n >= 300)"
+    expected_output_contains: "Total packages:"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

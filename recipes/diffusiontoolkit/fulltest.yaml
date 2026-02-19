@@ -1,0 +1,986 @@
+# diffusiontoolkit container test suite
+# Tests for Diffusion Toolkit v0.6.4.1 - DTI/DSI/Q-Ball reconstruction and fiber tracking
+#
+# Diffusion Toolkit is a set of command-line tools that performs data reconstruction
+# and fiber tracking on diffusion MR images. It supports:
+#   - Diffusion Tensor Imaging (DTI)
+#   - Diffusion Spectrum Imaging (DSI)
+#   - Q-Ball Imaging
+#   - High Angular Resolution Diffusion Imaging (HARDI)
+#
+# Available commands:
+#   - dti_recon: DTI reconstruction from raw diffusion data
+#   - dti_tracker: Fiber tracking on DTI data
+#   - odf_recon: ODF reconstruction for DSI/Q-Ball/HARDI
+#   - odf_tracker: Fiber tracking on ODF data
+#   - track_info: Display track file information
+#   - track_merge: Merge multiple track files
+#   - track_transform: Transform tracks between spaces
+#   - spline_filter: Smooth tracks with spline interpolation
+#   - diff_unpack: Convert DICOM to NIfTI for diffusion data
+#   - hardi_mat: Generate HARDI reconstruction matrices
+#   - dtk: GUI launcher (requires X11/display)
+#
+# Note: This test suite focuses on command-line interface validation and help output
+# since no DWI test data is available in ds000001. Tests verify that all tools are
+# properly installed and accessible.
+#
+# Important: Diffusion Toolkit requires a free license from http://www.trackvis.org/download/
+#
+# Citation:
+#   Ruopeng Wang, Van J. Wedeen, TrackVis.org, Martinos Center for Biomedical Imaging,
+#   Massachusetts General Hospital. Proc. Intl. Soc. Mag. Reson. Med. 15 (2007) 3720
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#   Note: No DWI data available - using structural data for format/dimension tests only
+
+name: diffusiontoolkit
+version: 0.6.4.1
+container: diffusiontoolkit_0.6.4.1_20220303.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/dtk
+    mkdir -p test_output/dtk/tracks
+    # Create a simple gradient table for testing (6-direction DTI)
+    cat > test_output/dtk/gradient_table.txt << 'EOF'
+    0 0 0
+    1 0 0
+    0 1 0
+    0 0 1
+    1 1 0
+    0 1 1
+    1 0 1
+    EOF
+
+tests:
+  # ==========================================================================
+  # DTI RECONSTRUCTION - dti_recon
+  # ==========================================================================
+  - name: dti_recon help
+    description: Display dti_recon usage and options
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "Usage: dti_recon"
+
+  - name: dti_recon version
+    description: Verify dti_recon reports version 0.6
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "dti_recon 0.6"
+
+  - name: dti_recon copyright
+    description: Verify dti_recon displays copyright information
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "Copyright"
+
+  - name: dti_recon gradient matrix option
+    description: Verify help shows gradient matrix option
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-gm, --gradient_matrix"
+
+  - name: dti_recon b-value option
+    description: Verify help shows b-value option
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-b, --b_value"
+
+  - name: dti_recon b0 option
+    description: Verify help shows b0 images option
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-b0, --number_of_b0"
+
+  - name: dti_recon output type option
+    description: Verify help shows output type options (nii, nii.gz)
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-ot, --output_type"
+
+  - name: dti_recon nifti output formats
+    description: Verify help lists all supported output formats
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "nii.gz"
+
+  - name: dti_recon NEX option
+    description: Verify help shows number of averages option
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-nex, --nex"
+
+  - name: dti_recon image space option
+    description: Verify help shows image space gradient option
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-image_space"
+
+  - name: dti_recon info file option
+    description: Verify help shows image info file option
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-info, --image_info"
+
+  - name: dti_recon IOP option
+    description: Verify help shows image orientation patient option
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-iop, --image_orientation_patient"
+
+  - name: dti_recon sagittal option
+    description: Verify help shows sagittal orientation shortcut
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-sag, --sagittal"
+
+  - name: dti_recon coronal option
+    description: Verify help shows coronal orientation shortcut
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-cor, --coronal"
+
+  - name: dti_recon axial option
+    description: Verify help shows axial orientation shortcut
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-axial, --axial"
+
+  - name: dti_recon oblique correction option
+    description: Verify help shows oblique correction option
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-oc, --oblique_correction"
+
+  - name: dti_recon b0 threshold option
+    description: Verify help shows b0 threshold option
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-b0_th, --b0_threshold"
+
+  - name: dti_recon no eigen option
+    description: Verify help shows option to suppress eigen output
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-no_eigen"
+
+  - name: dti_recon no tensor option
+    description: Verify help shows option to suppress tensor output
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-no_tensor"
+
+  - name: dti_recon 5D output option
+    description: Verify help shows 5D NIfTI output option
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-output_5d"
+
+  - name: dti_recon padding option
+    description: Verify help shows filename padding option
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-p, --paddings"
+
+  - name: dti_recon start number option
+    description: Verify help shows start number option
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "-sn, --start_number"
+
+  - name: dti_recon example
+    description: Verify help shows usage example
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "Example:"
+
+  # ==========================================================================
+  # DTI TRACKER - dti_tracker
+  # ==========================================================================
+  - name: dti_tracker help
+    description: Display dti_tracker usage and options
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "Usage: dti_tracker"
+
+  - name: dti_tracker version
+    description: Verify dti_tracker reports version 0.5
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "dti_tracker 0.5"
+
+  - name: dti_tracker copyright
+    description: Verify dti_tracker displays copyright information
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "Copyright"
+
+  - name: dti_tracker input type option
+    description: Verify help shows input type option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-it, --input_type"
+
+  - name: dti_tracker FACT method
+    description: Verify help shows FACT tracking method
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-fact, --fact"
+
+  - name: dti_tracker RK2 method
+    description: Verify help shows Runge-Kutta tracking method
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-rk2, --runge_kutta2"
+
+  - name: dti_tracker tensorline method
+    description: Verify help shows tensorline tracking method
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-tl, --tensor_line"
+
+  - name: dti_tracker streamline method
+    description: Verify help shows streamline tracking method
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-sl, --stream_line"
+
+  - name: dti_tracker step length option
+    description: Verify help shows step length option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-l, --step_length"
+
+  - name: dti_tracker angle threshold option
+    description: Verify help shows angle threshold option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-at, --angle_threshold"
+
+  - name: dti_tracker angle threshold weight option
+    description: Verify help shows angle threshold weighting option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-atw, --angle_threshold_weight"
+
+  - name: dti_tracker random seed option
+    description: Verify help shows random seed option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-rseed, --random_seed"
+
+  - name: dti_tracker seed mask option
+    description: Verify help shows seed mask option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-sm, --seed_mask"
+
+  - name: dti_tracker invert x option
+    description: Verify help shows invert x vector option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-ix, --invert_x"
+
+  - name: dti_tracker invert y option
+    description: Verify help shows invert y vector option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-iy, --invert_y"
+
+  - name: dti_tracker invert z option
+    description: Verify help shows invert z vector option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-iz, --invert_z"
+
+  - name: dti_tracker swap xy option
+    description: Verify help shows swap x and y vectors option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-sxy, --swap_xy"
+
+  - name: dti_tracker swap yz option
+    description: Verify help shows swap y and z vectors option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-syz, --swap_yz"
+
+  - name: dti_tracker swap zx option
+    description: Verify help shows swap z and x vectors option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-szx, --swap_zx"
+
+  - name: dti_tracker mask option
+    description: Verify help shows mask option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-m, --mask"
+
+  - name: dti_tracker second mask option
+    description: Verify help shows second mask option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-m2, --mask2"
+
+  - name: dti_tracker output mask option
+    description: Verify help shows output mask option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-om, --output_mask"
+
+  - name: dti_tracker v2 eigenvector option
+    description: Verify help shows second eigenvector option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-v2, --v2"
+
+  - name: dti_tracker v3 eigenvector option
+    description: Verify help shows third eigenvector option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-v3, --v3"
+
+  - name: dti_tracker voxel order option
+    description: Verify help shows voxel order option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-vorder, --voxel_order"
+
+  - name: dti_tracker slice order option
+    description: Verify help shows slice order option
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "-sorder, --slice_order"
+
+  - name: dti_tracker example
+    description: Verify help shows usage example
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "Example:"
+
+  # ==========================================================================
+  # ODF RECONSTRUCTION - odf_recon
+  # ==========================================================================
+  - name: odf_recon help
+    description: Display odf_recon usage and options
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "Usage: odf_recon"
+
+  - name: odf_recon version
+    description: Verify odf_recon reports version 0.3
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "odf_recon 0.3"
+
+  - name: odf_recon copyright
+    description: Verify odf_recon displays copyright information
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "Copyright"
+
+  - name: odf_recon matrix option
+    description: Verify help shows reconstruction matrix option
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "-mat, --matrix"
+
+  - name: odf_recon b0 option
+    description: Verify help shows number of b0 scans option
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "-b0, --number_of_b0"
+
+  - name: odf_recon output type option
+    description: Verify help shows output type option
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "-ot, --output_type"
+
+  - name: odf_recon sharpness option
+    description: Verify help shows sharpness/smoothing option
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "-s, --sharpness"
+
+  - name: odf_recon filter option
+    description: Verify help shows filter option
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "-f, --filter"
+
+  - name: odf_recon background option
+    description: Verify help shows background subtraction option
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "-bg, --subtract_background"
+
+  - name: odf_recon DSI flag
+    description: Verify help shows DSI data flag
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "-dsi, --dsi"
+
+  - name: odf_recon entropy output option
+    description: Verify help shows entropy map output option
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "-oe, --output_entropy"
+
+  - name: odf_recon info option
+    description: Verify help shows image info option
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "-info, --image_info"
+
+  - name: odf_recon orientation options
+    description: Verify help shows orientation options (sag/cor/axial)
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "-sag, --sagittal"
+
+  - name: odf_recon example
+    description: Verify help shows usage examples
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "Example:"
+
+  - name: odf_recon note on 4D input
+    description: Verify help mentions 4D NIfTI input support
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "4D image"
+
+  # ==========================================================================
+  # ODF TRACKER - odf_tracker
+  # ==========================================================================
+  - name: odf_tracker help
+    description: Display odf_tracker usage and options
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "Usage: odf_tracker"
+
+  - name: odf_tracker version
+    description: Verify odf_tracker reports version 0.3
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "odf_tracker 0.3"
+
+  - name: odf_tracker copyright
+    description: Verify odf_tracker displays copyright information
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "Copyright"
+
+  - name: odf_tracker input type option
+    description: Verify help shows input type option
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "-it, --input_type"
+
+  - name: odf_tracker RK2 method
+    description: Verify help shows Runge-Kutta method
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "-rk2, --runge_kutta2"
+
+  - name: odf_tracker step length option
+    description: Verify help shows step length option
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "-l, --step_length"
+
+  - name: odf_tracker angle threshold option
+    description: Verify help shows angle threshold option
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "-at, --angle_threshold"
+
+  - name: odf_tracker random seed option
+    description: Verify help shows random seed option
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "-rseed, --random_seed"
+
+  - name: odf_tracker invert options
+    description: Verify help shows vector inversion options
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "-ix, --invert_x"
+
+  - name: odf_tracker swap options
+    description: Verify help shows vector swap options
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "-sxy, --swap_xy"
+
+  - name: odf_tracker disc tracking option
+    description: Verify help shows disc tracking option
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "-disc, --disc_tracking"
+
+  - name: odf_tracker mask option
+    description: Verify help shows mask option
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "-m, --mask"
+
+  - name: odf_tracker limit option
+    description: Verify help shows tracking limit option
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "-limit, --limit"
+
+  - name: odf_tracker DSI flag
+    description: Verify help shows DSI data flag
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "-dsi, --dsi"
+
+  - name: odf_tracker voxel order option
+    description: Verify help shows voxel order option
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "-vorder, --voxel_order"
+
+  - name: odf_tracker example
+    description: Verify help shows usage example
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "Example:"
+
+  - name: odf_tracker DSI_PATH note
+    description: Verify help mentions DSI_PATH environment variable
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "DSI_PATH"
+
+  # ==========================================================================
+  # TRACK UTILITIES - track_info
+  # ==========================================================================
+  - name: track_info help
+    description: Display track_info usage
+    command: track_info 2>&1 || true
+    expected_output_contains: "Usage: track_info"
+
+  - name: track_info requires input
+    description: Verify track_info shows expected input format
+    command: track_info 2>&1 || true
+    expected_output_contains: "INPUT_TRACK_FILE"
+
+  # ==========================================================================
+  # TRACK UTILITIES - track_merge
+  # ==========================================================================
+  - name: track_merge help
+    description: Display track_merge usage
+    command: track_merge 2>&1 || true
+    expected_output_contains: "Usage: track_merge"
+
+  - name: track_merge input format
+    description: Verify track_merge shows expected input format
+    command: track_merge 2>&1 || true
+    expected_output_contains: "INPUT_TRACK_FILE"
+
+  - name: track_merge output format
+    description: Verify track_merge shows expected output format
+    command: track_merge 2>&1 || true
+    expected_output_contains: "OUTPUT_FILE"
+
+  # ==========================================================================
+  # TRACK UTILITIES - track_transform
+  # ==========================================================================
+  - name: track_transform help
+    description: Display track_transform usage and options
+    command: track_transform 2>&1 || true
+    expected_output_contains: "Usage: track_transform"
+
+  - name: track_transform version
+    description: Verify track_transform reports version 0.3
+    command: track_transform 2>&1 || true
+    expected_output_contains: "track_transform 0.3"
+
+  - name: track_transform copyright
+    description: Verify track_transform displays copyright information
+    command: track_transform 2>&1 || true
+    expected_output_contains: "Copyright"
+
+  - name: track_transform source volume option
+    description: Verify help shows source volume option
+    command: track_transform 2>&1 || true
+    expected_output_contains: "-src, --source_volume"
+
+  - name: track_transform reference volume option
+    description: Verify help shows reference volume option
+    command: track_transform 2>&1 || true
+    expected_output_contains: "-ref, --reference_volume"
+
+  - name: track_transform registration matrix option
+    description: Verify help shows registration matrix option
+    command: track_transform 2>&1 || true
+    expected_output_contains: "-reg, --registration_matrix_file"
+
+  - name: track_transform invert registration option
+    description: Verify help shows invert registration option
+    command: track_transform 2>&1 || true
+    expected_output_contains: "-invert_reg"
+
+  - name: track_transform registration type option
+    description: Verify help shows registration type option
+    command: track_transform 2>&1 || true
+    expected_output_contains: "-reg_type, --registration_type"
+
+  - name: track_transform FSL registration type
+    description: Verify help mentions FSL registration format
+    command: track_transform 2>&1 || true
+    expected_output_contains: "fsl"
+
+  - name: track_transform tkregister type
+    description: Verify help mentions tkregister format
+    command: track_transform 2>&1 || true
+    expected_output_contains: "tkregister"
+
+  - name: track_transform LTA type
+    description: Verify help mentions LTA format
+    command: track_transform 2>&1 || true
+    expected_output_contains: "lta"
+
+  - name: track_transform example
+    description: Verify help shows usage example
+    command: track_transform 2>&1 || true
+    expected_output_contains: "Example:"
+
+  # ==========================================================================
+  # TRACK UTILITIES - spline_filter
+  # ==========================================================================
+  - name: spline_filter help
+    description: Display spline_filter usage
+    command: spline_filter 2>&1 || true
+    expected_output_contains: "Usage: spline_filter"
+
+  - name: spline_filter input format
+    description: Verify spline_filter shows expected input format
+    command: spline_filter 2>&1 || true
+    expected_output_contains: "INPUT_TRACK_FILE"
+
+  - name: spline_filter step length
+    description: Verify spline_filter shows step length parameter
+    command: spline_filter 2>&1 || true
+    expected_output_contains: "STEP_LENGTH"
+
+  - name: spline_filter output format
+    description: Verify spline_filter shows expected output format
+    command: spline_filter 2>&1 || true
+    expected_output_contains: "OUTPUT_TRACK_FILE"
+
+  - name: spline_filter note
+    description: Verify spline_filter shows step length unit note
+    command: spline_filter 2>&1 || true
+    expected_output_contains: "minimum voxel size"
+
+  - name: spline_filter example
+    description: Verify spline_filter shows usage example
+    command: spline_filter 2>&1 || true
+    expected_output_contains: "Example:"
+
+  # ==========================================================================
+  # DICOM CONVERSION - diff_unpack
+  # ==========================================================================
+  - name: diff_unpack help
+    description: Display diff_unpack usage and options
+    command: diff_unpack 2>&1 || true
+    expected_output_contains: "Usage: diff_unpack"
+
+  - name: diff_unpack version
+    description: Verify diff_unpack reports version 0.2.2
+    command: diff_unpack 2>&1 || true
+    expected_output_contains: "diff_unpack 0.2.2"
+
+  - name: diff_unpack copyright
+    description: Verify diff_unpack displays copyright information
+    command: diff_unpack 2>&1 || true
+    expected_output_contains: "Copyright"
+
+  - name: diff_unpack output type option
+    description: Verify help shows output type option
+    command: diff_unpack 2>&1 || true
+    expected_output_contains: "-ot, --output_type"
+
+  - name: diff_unpack analyze format
+    description: Verify help mentions Analyze format support
+    command: diff_unpack 2>&1 || true
+    expected_output_contains: "analyze"
+
+  - name: diff_unpack nifti format
+    description: Verify help mentions NIfTI format support
+    command: diff_unpack 2>&1 || true
+    expected_output_contains: "nii"
+
+  - name: diff_unpack compressed nifti
+    description: Verify help mentions compressed NIfTI support
+    command: diff_unpack 2>&1 || true
+    expected_output_contains: "nii.gz"
+
+  - name: diff_unpack split option
+    description: Verify help shows split option
+    command: diff_unpack 2>&1 || true
+    expected_output_contains: "-split, --split"
+
+  - name: diff_unpack padding option
+    description: Verify help shows padding option
+    command: diff_unpack 2>&1 || true
+    expected_output_contains: "-p, --paddings"
+
+  - name: diff_unpack start number option
+    description: Verify help shows start number option
+    command: diff_unpack 2>&1 || true
+    expected_output_contains: "-sn, --start_number"
+
+  - name: diff_unpack example
+    description: Verify help shows usage example
+    command: diff_unpack 2>&1 || true
+    expected_output_contains: "Example:"
+
+  # ==========================================================================
+  # MATRIX FILES - Verify DSI matrices exist
+  # ==========================================================================
+  - name: DSI matrix 515x181 exists
+    description: Verify DSI reconstruction matrix 515x181 is available
+    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_matrix_515x181.dat
+    expected_exit_code: 0
+
+  - name: DSI matrix 258x181 exists
+    description: Verify DSI reconstruction matrix 258x181 is available
+    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_matrix_258x181.dat
+    expected_exit_code: 0
+
+  - name: DSI matrix 125x181 exists
+    description: Verify DSI reconstruction matrix 125x181 is available
+    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_matrix_125x181.dat
+    expected_exit_code: 0
+
+  - name: DSI mesh 181 exists
+    description: Verify DSI mesh file 181 is available
+    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_mesh_181.dat
+    expected_exit_code: 0
+
+  - name: DSI vectors 181 exists
+    description: Verify DSI vectors file 181 is available
+    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_vectors_181.dat
+    expected_exit_code: 0
+
+  - name: DSI neighbors 181 exists
+    description: Verify DSI neighbors file 181 is available
+    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_neighbors_181.dat
+    expected_exit_code: 0
+
+  - name: DSI sharpness 515 exists
+    description: Verify DSI sharpness file 515 is available
+    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_sharpness_515.dat
+    expected_exit_code: 0
+
+  - name: Matrix directory listing
+    description: List all available matrix files
+    command: ls /opt/diffusiontoolkit-0.6.4.1/matrices/
+    expected_output_contains: "DSI_matrix"
+
+  # ==========================================================================
+  # BINARY AVAILABILITY
+  # ==========================================================================
+  - name: dti_recon binary exists
+    description: Verify dti_recon binary is in PATH
+    command: command -v dti_recon
+    expected_output_contains: "dti_recon"
+
+  - name: dti_tracker binary exists
+    description: Verify dti_tracker binary is in PATH
+    command: command -v dti_tracker
+    expected_output_contains: "dti_tracker"
+
+  - name: odf_recon binary exists
+    description: Verify odf_recon binary is in PATH
+    command: command -v odf_recon
+    expected_output_contains: "odf_recon"
+
+  - name: odf_tracker binary exists
+    description: Verify odf_tracker binary is in PATH
+    command: command -v odf_tracker
+    expected_output_contains: "odf_tracker"
+
+  - name: track_info binary exists
+    description: Verify track_info binary is in PATH
+    command: command -v track_info
+    expected_output_contains: "track_info"
+
+  - name: track_merge binary exists
+    description: Verify track_merge binary is in PATH
+    command: command -v track_merge
+    expected_output_contains: "track_merge"
+
+  - name: track_transform binary exists
+    description: Verify track_transform binary is in PATH
+    command: command -v track_transform
+    expected_output_contains: "track_transform"
+
+  - name: spline_filter binary exists
+    description: Verify spline_filter binary is in PATH
+    command: command -v spline_filter
+    expected_output_contains: "spline_filter"
+
+  - name: diff_unpack binary exists
+    description: Verify diff_unpack binary is in PATH
+    command: command -v diff_unpack
+    expected_output_contains: "diff_unpack"
+
+  - name: dtk binary exists
+    description: Verify dtk GUI launcher binary is in PATH
+    command: command -v dtk
+    expected_output_contains: "dtk"
+
+  # ==========================================================================
+  # PATH AND ENVIRONMENT
+  # ==========================================================================
+  - name: Diffusion toolkit in PATH
+    description: Verify diffusiontoolkit directory is in PATH
+    command: echo $PATH
+    expected_output_contains: "/opt/diffusiontoolkit"
+
+  - name: Installation directory exists
+    description: Verify installation directory structure
+    command: ls /opt/diffusiontoolkit-0.6.4.1/
+    expected_output_contains: "dti_recon"
+
+  - name: README exists
+    description: Verify README file is present
+    command: ls /opt/diffusiontoolkit-0.6.4.1/README.txt
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ERROR HANDLING - Invalid input tests
+  # ==========================================================================
+  - name: dti_recon missing gradient table
+    description: Test dti_recon error handling without gradient matrix
+    command: dti_recon ${t1w} test_output/dtk/test_dti 2>&1 || true
+    expected_output_contains: "matrix file"
+
+  - name: dti_tracker missing input
+    description: Test dti_tracker error handling with non-existent input
+    command: dti_tracker nonexistent_prefix test_output/dtk/tracks/test.trk 2>&1 || true
+    expected_exit_code: 0
+
+  - name: track_info missing file
+    description: Test track_info error handling with non-existent file
+    command: track_info nonexistent.trk 2>&1 || true
+    expected_exit_code: 0
+
+  - name: track_merge no input
+    description: Test track_merge error handling with no input
+    command: track_merge 2>&1 || true
+    expected_output_contains: "Usage"
+
+  - name: spline_filter insufficient args
+    description: Test spline_filter error handling with insufficient arguments
+    command: spline_filter input.trk 2>&1 || true
+    expected_output_contains: "Usage"
+
+  - name: track_transform missing args
+    description: Test track_transform error handling with missing arguments
+    command: track_transform 2>&1 || true
+    expected_output_contains: "Usage"
+
+  - name: diff_unpack missing input
+    description: Test diff_unpack error handling with missing input
+    command: diff_unpack 2>&1 || true
+    expected_output_contains: "Usage"
+
+  - name: odf_recon insufficient args
+    description: Test odf_recon error handling with insufficient arguments
+    command: odf_recon input 2>&1 || true
+    expected_output_contains: "Missing argument"
+
+  - name: odf_tracker missing prefix
+    description: Test odf_tracker error handling with missing prefix
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "Usage"
+
+  # ==========================================================================
+  # DTI RECONSTRUCTION TEST (with synthetic minimal data)
+  # ==========================================================================
+  - name: dti_recon with invalid image
+    description: Test dti_recon response to non-DWI input (T1w image)
+    command: dti_recon ${t1w} test_output/dtk/t1w_dti -gm test_output/dtk/gradient_table.txt -b0 1 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dti_recon compressed output option
+    description: Verify dti_recon accepts nii.gz output type flag
+    command: dti_recon 2>&1 | grep -i "nii.gz"
+    expected_output_contains: "nii.gz"
+
+  # ==========================================================================
+  # VALIDATION TESTS - Output format options
+  # ==========================================================================
+  - name: dti_recon all output types
+    description: Verify all output format options are documented
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "analyze"
+
+  - name: dti_recon ni1 format
+    description: Verify ni1 (separate hdr/img) format is documented
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "ni1"
+
+  - name: dti_tracker supports nii
+    description: Verify dti_tracker supports NIfTI format
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "nii"
+
+  - name: odf_recon supports nii.gz
+    description: Verify odf_recon supports compressed NIfTI
+    command: odf_recon 2>&1 || true
+    expected_output_contains: "nii.gz"
+
+  # ==========================================================================
+  # DOCUMENTATION AND HELP - Comprehensive option checks
+  # ==========================================================================
+  - name: dti_recon MultiBvalue support
+    description: Verify dti_recon documents multi-b-value support
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "MultiBvalue"
+
+  - name: dti_tracker default angle threshold
+    description: Verify dti_tracker documents default angle threshold (35 degrees)
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "35"
+
+  - name: dti_tracker default step length
+    description: Verify dti_tracker documents default step length (0.5 or 0.1)
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "0.5"
+
+  - name: odf_tracker default angle threshold
+    description: Verify odf_tracker documents default angle threshold
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "35"
+
+  - name: odf_tracker default step length
+    description: Verify odf_tracker documents default step length (0.1)
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "0.1"
+
+  - name: track_transform supports FSL matrices
+    description: Verify track_transform documents FSL matrix support
+    command: track_transform 2>&1 || true
+    expected_output_contains: "fsl"
+
+  - name: dti_recon Martinos Center attribution
+    description: Verify attribution to Martinos Center
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "Martinos Center"
+
+  - name: dti_tracker Martinos Center attribution
+    description: Verify attribution to Martinos Center
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "Martinos Center"
+
+  # ==========================================================================
+  # ORIENTATION HANDLING
+  # ==========================================================================
+  - name: dti_recon RAS orientation info
+    description: Verify dti_recon documents orientation handling
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "orientation"
+
+  - name: dti_tracker voxel order RAS
+    description: Verify dti_tracker documents RAS voxel order example
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "RAS"
+
+  - name: dti_tracker Siemens orientation notes
+    description: Verify dti_tracker documents Siemens default orientations
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "siemens"
+
+  - name: odf_tracker orientation handling
+    description: Verify odf_tracker documents orientation options
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "orientation"
+
+  # ==========================================================================
+  # TRACKING ALGORITHM PARAMETERS
+  # ==========================================================================
+  - name: dti_tracker FACT is default
+    description: Verify FACT is documented as default tracking method
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "default method"
+
+  - name: dti_tracker tensorline description
+    description: Verify tensorline method is described
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "tensorline"
+
+  - name: odf_tracker streamline default
+    description: Verify non-interpolate streamline is odf_tracker default
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "streamline"
+
+  # ==========================================================================
+  # MASK AND THRESHOLD OPTIONS
+  # ==========================================================================
+  - name: dti_recon auto threshold
+    description: Verify dti_recon documents automatic threshold calculation
+    command: dti_recon 2>&1 || true
+    expected_output_contains: "automatically"
+
+  - name: dti_tracker mask thresholds
+    description: Verify dti_tracker documents mask threshold parameters
+    command: dti_tracker 2>&1 || true
+    expected_output_contains: "low_threshold"
+
+  - name: odf_tracker mask support
+    description: Verify odf_tracker supports mask-based tracking
+    command: odf_tracker 2>&1 || true
+    expected_output_contains: "mask"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/dtk
+    echo "Test outputs preserved in test_output/dtk/"

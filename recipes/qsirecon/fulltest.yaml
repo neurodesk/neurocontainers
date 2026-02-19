@@ -1,0 +1,950 @@
+# qsirecon container test suite
+# Tests for QSIRecon v1.1.0 - Diffusion MRI reconstruction and analysis toolkit
+#
+# QSIRecon is companion software for QSIPrep, designed for post-processing
+# workflows that produce biologically-interesting dMRI derivatives.
+# It integrates tools from MRtrix3, DSI Studio, DIPY, ANTs, and others.
+#
+# Documentation: https://qsirecon.readthedocs.io/
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# Note: QSIRecon is primarily for diffusion MRI data. These tests focus on
+# the bundled tools (MRtrix3, ANTs, AFNI, DSI Studio) using available test data.
+
+name: qsirecon
+version: 1.1.0
+container: qsirecon_1.1.0_20250423.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # QSIRECON VERSION AND BASIC CHECKS
+  # ==========================================================================
+  - name: QSIRecon version check
+    description: Verify qsirecon binary runs and reports version
+    command: qsirecon --version
+    expected_output_contains: "QSIRecon"
+
+  - name: QSIRecon help check
+    description: Verify qsirecon help is accessible
+    command: qsirecon --help 2>&1 | head -5
+    expected_output_contains: "qsirecon"
+
+  - name: QSIRecon Python module version
+    description: Check qsirecon Python module imports correctly
+    command: python -c "import qsirecon; print('qsirecon version:', qsirecon.__version__)"
+    expected_output_contains: "qsirecon version:"
+
+  - name: List available atlases
+    description: Verify atlases option documentation
+    command: qsirecon --help 2>&1 | grep -A2 "atlases"
+    expected_output_contains: "atlases"
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Version and Info
+  # ==========================================================================
+  - name: MRtrix3 mrinfo version
+    description: Check MRtrix3 mrinfo version
+    command: mrinfo --version 2>&1 | head -1
+    expected_output_contains: "mrinfo"
+
+  - name: MRtrix3 mrconvert version
+    description: Check MRtrix3 mrconvert version
+    command: mrconvert --version 2>&1 | head -1
+    expected_output_contains: "mrconvert"
+
+  - name: mrinfo basic header display
+    description: Display image header information for T1w image
+    command: mrinfo ${t1w} 2>&1 | head -20
+    expected_output_contains: "Dimensions:"
+
+  - name: mrinfo format query
+    description: Query image format from header
+    command: mrinfo ${t1w} -format 2>&1
+    expected_output_contains: "NIfTI"
+
+  - name: mrinfo dimensions query
+    description: Query image dimensions
+    command: mrinfo ${t1w} -size 2>&1
+    expected_exit_code: 0
+
+  - name: mrinfo spacing query
+    description: Query voxel spacing
+    command: mrinfo ${t1w} -spacing 2>&1
+    expected_exit_code: 0
+
+  - name: mrinfo datatype query
+    description: Query data type
+    command: mrinfo ${t1w} -datatype 2>&1
+    expected_exit_code: 0
+
+  - name: mrinfo transform query
+    description: Query image transformation matrix
+    command: mrinfo ${t1w} -transform 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Image Conversion
+  # ==========================================================================
+  - name: Convert NIfTI to MIF format
+    description: Convert T1w NIfTI to MRtrix internal format
+    command: mrconvert ${t1w} test_output/t1w.mif -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w.mif
+
+  - name: Convert MIF back to NIfTI
+    description: Convert MIF back to NIfTI format
+    command: mrconvert test_output/t1w.mif test_output/t1w_roundtrip.nii.gz -force 2>&1
+    depends_on: Convert NIfTI to MIF format
+    validate:
+      - output_exists: ${output_dir}/t1w_roundtrip.nii.gz
+
+  - name: Extract single volume from 4D
+    description: Extract first volume from 4D BOLD image
+    command: mrconvert ${bold} -coord 3 0 test_output/bold_vol0.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_vol0.nii.gz
+
+  - name: Extract volume range from 4D
+    description: Extract first 10 volumes from 4D BOLD image
+    command: mrconvert ${bold} -coord 3 0:9 test_output/bold_first10.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_first10.nii.gz
+
+  - name: Change datatype to float32
+    description: Convert image to float32 datatype
+    command: mrconvert ${t1w} -datatype float32 test_output/t1w_float32.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_float32.nii.gz
+
+  - name: Change datatype to int16
+    description: Convert image to int16 datatype
+    command: mrconvert ${t1w} -datatype int16 test_output/t1w_int16.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_int16.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Image Calculator (mrcalc)
+  # ==========================================================================
+  - name: mrcalc absolute value
+    description: Compute absolute value of image
+    command: mrcalc ${t1w} -abs test_output/t1w_abs.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_abs.nii.gz
+
+  - name: mrcalc negative
+    description: Compute negative of image
+    command: mrcalc ${t1w} -neg test_output/t1w_neg.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_neg.nii.gz
+
+  - name: mrcalc add constant
+    description: Add constant value to image
+    command: mrcalc ${t1w} 100 -add test_output/t1w_add100.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_add100.nii.gz
+
+  - name: mrcalc subtract constant
+    description: Subtract constant value from image
+    command: mrcalc ${t1w} 50 -subtract test_output/t1w_sub50.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_sub50.nii.gz
+
+  - name: mrcalc multiply constant
+    description: Multiply image by constant
+    command: mrcalc ${t1w} 2 -multiply test_output/t1w_mul2.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_mul2.nii.gz
+
+  - name: mrcalc divide constant
+    description: Divide image by constant
+    command: mrcalc ${t1w} 2 -divide test_output/t1w_div2.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_div2.nii.gz
+
+  - name: mrcalc square root
+    description: Compute square root of image
+    command: mrcalc ${t1w} -sqrt test_output/t1w_sqrt.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_sqrt.nii.gz
+
+  - name: mrcalc power
+    description: Raise image to power of 2
+    command: mrcalc ${t1w} 2 -pow test_output/t1w_pow2.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_pow2.nii.gz
+
+  - name: mrcalc threshold comparison
+    description: Create binary mask from threshold (voxels > 100)
+    command: mrcalc ${t1w} 100 -gt test_output/t1w_gt100.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_gt100.nii.gz
+
+  - name: mrcalc conditional if-then-else
+    description: Conditional replacement using -if operator
+    command: mrcalc ${t1w} 100 -gt ${t1w} 0 -if test_output/t1w_thresh100.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh100.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Math Operations (mrmath)
+  # ==========================================================================
+  - name: mrmath temporal mean
+    description: Compute mean across 4th dimension (temporal mean)
+    command: mrmath ${bold} mean test_output/bold_tmean.nii.gz -axis 3 -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_tmean.nii.gz
+
+  - name: mrmath temporal std
+    description: Compute standard deviation across time
+    command: mrmath ${bold} std test_output/bold_tstd.nii.gz -axis 3 -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_tstd.nii.gz
+
+  - name: mrmath temporal median
+    description: Compute median across time
+    command: mrmath ${bold} median test_output/bold_tmedian.nii.gz -axis 3 -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_tmedian.nii.gz
+
+  - name: mrmath temporal min
+    description: Compute minimum across time
+    command: mrmath ${bold} min test_output/bold_tmin.nii.gz -axis 3 -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_tmin.nii.gz
+
+  - name: mrmath temporal max
+    description: Compute maximum across time
+    command: mrmath ${bold} max test_output/bold_tmax.nii.gz -axis 3 -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_tmax.nii.gz
+
+  - name: mrmath X-axis mean
+    description: Compute mean along X axis
+    command: mrmath ${t1w} mean test_output/t1w_xmean.nii.gz -axis 0 -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_xmean.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Statistics (mrstats)
+  # ==========================================================================
+  - name: mrstats all statistics
+    description: Compute all image statistics
+    command: mrstats ${t1w} 2>&1
+    expected_output_contains: "mean"
+
+  - name: mrstats mean only
+    description: Output only mean value
+    command: mrstats ${t1w} -output mean 2>&1
+    expected_exit_code: 0
+
+  - name: mrstats multiple outputs
+    description: Output multiple statistics
+    command: mrstats ${t1w} -output mean -output std -output min -output max 2>&1
+    expected_exit_code: 0
+
+  - name: mrstats ignore zeros
+    description: Compute statistics ignoring zero values
+    command: mrstats ${t1w} -ignorezero 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Filtering (mrfilter)
+  # ==========================================================================
+  - name: mrfilter smooth default
+    description: Apply Gaussian smoothing with default sigma
+    command: mrfilter ${t1w} smooth test_output/t1w_smooth.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth.nii.gz
+
+  - name: mrfilter smooth custom sigma
+    description: Apply Gaussian smoothing with 2mm sigma
+    command: mrfilter ${t1w} smooth -stdev 2 test_output/t1w_smooth2mm.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth2mm.nii.gz
+
+  - name: mrfilter median
+    description: Apply median filter
+    command: mrfilter ${t1w} median test_output/t1w_median.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_median.nii.gz
+
+  - name: mrfilter gradient magnitude
+    description: Compute gradient magnitude
+    command: mrfilter ${t1w} gradient -magnitude test_output/t1w_gradient_mag.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_gradient_mag.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Thresholding (mrthreshold)
+  # ==========================================================================
+  - name: mrthreshold automatic
+    description: Automatic threshold detection
+    command: mrthreshold ${t1w} test_output/t1w_thresh_auto.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_auto.nii.gz
+
+  - name: mrthreshold absolute value
+    description: Threshold at absolute value
+    command: mrthreshold ${t1w} -abs 100 test_output/t1w_thresh_abs100.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_abs100.nii.gz
+
+  - name: mrthreshold percentile
+    description: Threshold at percentile
+    command: mrthreshold ${t1w} -percentile 50 test_output/t1w_thresh_p50.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_p50.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Mask Operations (maskfilter)
+  # ==========================================================================
+  - name: Create binary mask for maskfilter tests
+    description: Create binary mask using threshold
+    command: mrthreshold ${t1w} -abs 100 test_output/t1w_mask_base.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_base.nii.gz
+
+  - name: maskfilter dilate
+    description: Dilate binary mask
+    command: maskfilter test_output/t1w_mask_base.nii.gz dilate test_output/mask_dilated.nii.gz -npass 1 -force 2>&1
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/mask_dilated.nii.gz
+
+  - name: maskfilter erode
+    description: Erode binary mask
+    command: maskfilter test_output/t1w_mask_base.nii.gz erode test_output/mask_eroded.nii.gz -npass 1 -force 2>&1
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/mask_eroded.nii.gz
+
+  - name: maskfilter median
+    description: Apply median filter to mask
+    command: maskfilter test_output/t1w_mask_base.nii.gz median test_output/mask_median.nii.gz -force 2>&1
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/mask_median.nii.gz
+
+  - name: maskfilter connect largest
+    description: Keep only largest connected component
+    command: maskfilter test_output/t1w_mask_base.nii.gz connect test_output/mask_largest.nii.gz -largest -force 2>&1
+    depends_on: Create binary mask for maskfilter tests
+    validate:
+      - output_exists: ${output_dir}/mask_largest.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Grid Operations (mrgrid)
+  # ==========================================================================
+  - name: mrgrid regrid to new voxel size
+    description: Regrid image to 2mm isotropic voxels
+    command: mrgrid ${t1w} regrid -voxel 2 test_output/t1w_regrid2mm.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_regrid2mm.nii.gz
+
+  - name: mrgrid regrid nearest neighbor
+    description: Regrid with nearest neighbor interpolation
+    command: mrgrid ${t1w} regrid -voxel 2 -interp nearest test_output/t1w_regrid_nn.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_regrid_nn.nii.gz
+
+  - name: mrgrid pad image
+    description: Pad image with zeros
+    command: mrgrid ${t1w} pad -axis 0 10,10 test_output/t1w_padded.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_padded.nii.gz
+
+  - name: mrgrid crop image
+    description: Crop image
+    command: mrgrid ${t1w} crop -axis 0 10,-10 test_output/t1w_cropped.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_cropped.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Transform (mrtransform)
+  # ==========================================================================
+  - name: mrtransform flip X axis
+    description: Flip image along X axis
+    command: mrtransform ${t1w} -flip 0 test_output/t1w_flipx.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_flipx.nii.gz
+
+  - name: mrtransform flip Y axis
+    description: Flip image along Y axis
+    command: mrtransform ${t1w} -flip 1 test_output/t1w_flipy.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_flipy.nii.gz
+
+  - name: mrtransform flip Z axis
+    description: Flip image along Z axis
+    command: mrtransform ${t1w} -flip 2 test_output/t1w_flipz.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_flipz.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Concatenation (mrcat)
+  # ==========================================================================
+  - name: mrcat concatenate along new axis
+    description: Concatenate T1w copies to create 4D image
+    command: mrcat ${t1w} ${t1w} ${t1w} test_output/t1w_cat3.nii.gz -axis 3 -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_cat3.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Gibbs Ringing Removal
+  # ==========================================================================
+  - name: mrdegibbs default
+    description: Remove Gibbs ringing artifacts
+    command: mrdegibbs ${t1w} test_output/t1w_degibbs.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_degibbs.nii.gz
+
+  # ==========================================================================
+  # MRTRIX3 TOOLS - Histogram
+  # ==========================================================================
+  - name: mrhistogram generate
+    description: Generate intensity histogram
+    command: mrhistogram ${t1w} test_output/t1w_hist.txt -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_hist.txt
+
+  - name: mrhistogram with bins
+    description: Generate histogram with specified number of bins
+    command: mrhistogram ${t1w} -bins 100 test_output/t1w_hist100.txt -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_hist100.txt
+
+  # ==========================================================================
+  # ANTs TOOLS - Version Checks
+  # ==========================================================================
+  - name: ANTs antsRegistration version
+    description: Check ANTs registration version
+    command: /opt/ants/bin/antsRegistration --version 2>&1
+    expected_output_contains: "ANTs Version"
+
+  - name: ANTs N4BiasFieldCorrection version
+    description: Check N4 bias correction version
+    command: /opt/ants/bin/N4BiasFieldCorrection --version 2>&1
+    expected_output_contains: "ANTs Version"
+
+  - name: ANTs antsApplyTransforms version
+    description: Check antsApplyTransforms version
+    command: /opt/ants/bin/antsApplyTransforms --help 2>&1 | head -5
+    expected_output_contains: "antsApplyTransforms"
+
+  # ==========================================================================
+  # ANTs TOOLS - Header and Image Info
+  # ==========================================================================
+  - name: PrintHeader origin
+    description: Print image origin information
+    command: /opt/ants/bin/PrintHeader ${t1w} 0 2>&1
+    expected_exit_code: 0
+
+  - name: PrintHeader spacing
+    description: Print image voxel spacing
+    command: /opt/ants/bin/PrintHeader ${t1w} 1 2>&1
+    expected_exit_code: 0
+
+  - name: PrintHeader size
+    description: Print image dimensions
+    command: /opt/ants/bin/PrintHeader ${t1w} 2 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ANTs TOOLS - Bias Field Correction (N4)
+  # ==========================================================================
+  - name: N4 bias field correction basic
+    description: Run N4 bias field correction with default parameters
+    command: /opt/ants/bin/N4BiasFieldCorrection -d 3 -i ${t1w} -o test_output/t1w_n4.nii.gz -s 4 -c [50x50x50,0.0] -v 0 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_n4.nii.gz
+
+  - name: N4 with bias field output
+    description: Run N4 and output the estimated bias field
+    command: /opt/ants/bin/N4BiasFieldCorrection -d 3 -i ${t1w} -o [test_output/t1w_n4_with_bias.nii.gz,test_output/t1w_biasfield.nii.gz] -s 4 -c [50x50x50,0.0] -v 0 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_with_bias.nii.gz
+      - output_exists: ${output_dir}/t1w_biasfield.nii.gz
+
+  # ==========================================================================
+  # ANTs TOOLS - Image Denoising
+  # ==========================================================================
+  - name: Denoise image Rician model
+    description: Denoise image using Rician noise model
+    command: /opt/ants/bin/DenoiseImage -d 3 -i ${t1w} -n Rician -o test_output/t1w_denoise_rician.nii.gz -v 0 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_denoise_rician.nii.gz
+
+  - name: Denoise image Gaussian model
+    description: Denoise image using Gaussian noise model
+    command: /opt/ants/bin/DenoiseImage -d 3 -i ${t1w} -n Gaussian -o test_output/t1w_denoise_gaussian.nii.gz -v 0 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_denoise_gaussian.nii.gz
+
+  # ==========================================================================
+  # ANTs TOOLS - Thresholding
+  # ==========================================================================
+  - name: ANTs threshold basic
+    description: Binary threshold with low and high values
+    command: /opt/ants/bin/ThresholdImage 3 ${t1w} test_output/t1w_ants_thresh.nii.gz 100 500 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_ants_thresh.nii.gz
+
+  - name: ANTs Otsu thresholding single class
+    description: Otsu automatic thresholding with 1 threshold
+    command: /opt/ants/bin/ThresholdImage 3 ${t1w} test_output/t1w_otsu1.nii.gz Otsu 1 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_otsu1.nii.gz
+
+  - name: ANTs Otsu thresholding multi-class
+    description: Otsu automatic thresholding with 3 classes
+    command: /opt/ants/bin/ThresholdImage 3 ${t1w} test_output/t1w_otsu3.nii.gz Otsu 3 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_otsu3.nii.gz
+
+  # ==========================================================================
+  # ANTs TOOLS - Smoothing
+  # ==========================================================================
+  - name: ANTs smooth image Gaussian
+    description: Gaussian smoothing with sigma in mm
+    command: /opt/ants/bin/SmoothImage 3 ${t1w} 2 test_output/t1w_ants_smooth2mm.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_ants_smooth2mm.nii.gz
+
+  # ==========================================================================
+  # ANTs TOOLS - Resampling
+  # ==========================================================================
+  - name: ANTs resample by spacing
+    description: Resample image to new voxel spacing
+    command: /opt/ants/bin/ResampleImage 3 ${t1w} test_output/t1w_resample_2mm.nii.gz 2x2x2 0 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_2mm.nii.gz
+
+  - name: ANTs resample nearest neighbor
+    description: Resample using nearest neighbor interpolation
+    command: /opt/ants/bin/ResampleImage 3 ${t1w} test_output/t1w_resample_nn.nii.gz 80x96x96 1 1 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_nn.nii.gz
+
+  # ==========================================================================
+  # ANTs TOOLS - ImageMath Operations
+  # ==========================================================================
+  - name: ImageMath multiply by scalar
+    description: Multiply image by a scalar value
+    command: /opt/ants/bin/ImageMath 3 test_output/t1w_imgmath_mul2.nii.gz m ${t1w} 2 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_imgmath_mul2.nii.gz
+
+  - name: ImageMath add scalar
+    description: Add a scalar value to image
+    command: /opt/ants/bin/ImageMath 3 test_output/t1w_imgmath_add100.nii.gz + ${t1w} 100 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_imgmath_add100.nii.gz
+
+  - name: ImageMath Gaussian smoothing
+    description: Smooth image using ImageMath
+    command: /opt/ants/bin/ImageMath 3 test_output/t1w_imgmath_smooth.nii.gz G ${t1w} 2 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_imgmath_smooth.nii.gz
+
+  # ==========================================================================
+  # ANTs TOOLS - Morphological Operations
+  # ==========================================================================
+  - name: ImageMath morphological dilation
+    description: Dilate binary image using ImageMath
+    command: |
+      /opt/ants/bin/ThresholdImage 3 ${t1w} test_output/t1w_mask_for_morph.nii.gz Otsu 1 && \
+      /opt/ants/bin/ImageMath 3 test_output/ants_mask_dilate.nii.gz MD test_output/t1w_mask_for_morph.nii.gz 2
+    validate:
+      - output_exists: ${output_dir}/ants_mask_dilate.nii.gz
+
+  - name: ImageMath morphological erosion
+    description: Erode binary image using ImageMath
+    command: /opt/ants/bin/ImageMath 3 test_output/ants_mask_erode.nii.gz ME test_output/t1w_mask_for_morph.nii.gz 2 2>&1
+    depends_on: ImageMath morphological dilation
+    validate:
+      - output_exists: ${output_dir}/ants_mask_erode.nii.gz
+
+  - name: ImageMath morphological opening
+    description: Open binary image (erosion then dilation)
+    command: /opt/ants/bin/ImageMath 3 test_output/ants_mask_open.nii.gz MO test_output/t1w_mask_for_morph.nii.gz 2 2>&1
+    depends_on: ImageMath morphological dilation
+    validate:
+      - output_exists: ${output_dir}/ants_mask_open.nii.gz
+
+  - name: ImageMath morphological closing
+    description: Close binary image (dilation then erosion)
+    command: /opt/ants/bin/ImageMath 3 test_output/ants_mask_close.nii.gz MC test_output/t1w_mask_for_morph.nii.gz 2 2>&1
+    depends_on: ImageMath morphological dilation
+    validate:
+      - output_exists: ${output_dir}/ants_mask_close.nii.gz
+
+  # ==========================================================================
+  # ANTs TOOLS - Segmentation (Atropos)
+  # ==========================================================================
+  - name: Atropos Kmeans 3 classes
+    description: Tissue segmentation with Kmeans initialization
+    command: |
+      /opt/ants/bin/ThresholdImage 3 ${t1w} test_output/t1w_atropos_mask.nii.gz Otsu 1 && \
+      /opt/ants/bin/Atropos -d 3 -a ${t1w} -i KMeans[3] -x test_output/t1w_atropos_mask.nii.gz -o test_output/t1w_atropos_seg.nii.gz -v 0 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_atropos_seg.nii.gz
+
+  - name: Atropos Otsu initialization
+    description: Tissue segmentation with Otsu initialization
+    command: |
+      /opt/ants/bin/ThresholdImage 3 ${t1w} test_output/t1w_atropos_otsu_mask.nii.gz Otsu 1 && \
+      /opt/ants/bin/Atropos -d 3 -a ${t1w} -i Otsu[3] -x test_output/t1w_atropos_otsu_mask.nii.gz -o test_output/t1w_atropos_otsu.nii.gz -v 0 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_atropos_otsu.nii.gz
+
+  # ==========================================================================
+  # ANTs TOOLS - Registration
+  # ==========================================================================
+  - name: Affine initializer
+    description: Initialize affine transform between two images
+    command: /opt/ants/bin/antsAffineInitializer 3 ${t1w} ${t2} test_output/affine_init.mat 15 0.1 0 10 2>&1
+    validate:
+      - output_exists: ${output_dir}/affine_init.mat
+
+  - name: Rigid registration
+    description: Rigid registration between T1w and T2
+    command: |
+      /opt/ants/bin/antsRegistration -d 3 \
+        --output [test_output/rigid_,test_output/rigid_warped.nii.gz] \
+        --metric MI[${t1w},${t2},1,32,Regular,0.25] \
+        --transform Rigid[0.1] \
+        --convergence [100x50x25,1e-6,10] \
+        --shrink-factors 4x2x1 \
+        --smoothing-sigmas 2x1x0vox \
+        -v 0
+    validate:
+      - output_exists: ${output_dir}/rigid_warped.nii.gz
+      - output_exists: ${output_dir}/rigid_0GenericAffine.mat
+
+  - name: Affine registration
+    description: Affine registration between T1w and T2
+    command: |
+      /opt/ants/bin/antsRegistration -d 3 \
+        --output [test_output/affine_,test_output/affine_warped.nii.gz] \
+        --metric MI[${t1w},${t2},1,32,Regular,0.25] \
+        --transform Affine[0.1] \
+        --convergence [100x50x25,1e-6,10] \
+        --shrink-factors 4x2x1 \
+        --smoothing-sigmas 2x1x0vox \
+        -v 0
+    validate:
+      - output_exists: ${output_dir}/affine_warped.nii.gz
+      - output_exists: ${output_dir}/affine_0GenericAffine.mat
+
+  # ==========================================================================
+  # ANTs TOOLS - Apply Transforms
+  # ==========================================================================
+  - name: Apply affine transform
+    description: Apply affine transform to image
+    command: |
+      /opt/ants/bin/antsApplyTransforms -d 3 \
+        -i ${t2} \
+        -r ${t1w} \
+        -o test_output/t2_to_t1w_affine.nii.gz \
+        -t test_output/affine_0GenericAffine.mat \
+        -n Linear \
+        -v 0
+    depends_on: Affine registration
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_affine.nii.gz
+
+  - name: Apply transform nearest neighbor
+    description: Apply transform with nearest neighbor interpolation
+    command: |
+      /opt/ants/bin/antsApplyTransforms -d 3 \
+        -i test_output/t1w_atropos_seg.nii.gz \
+        -r ${t2} \
+        -o test_output/seg_to_t2_nn.nii.gz \
+        -t [test_output/affine_0GenericAffine.mat,1] \
+        -n NearestNeighbor \
+        -v 0
+    depends_on: Atropos Kmeans 3 classes
+    validate:
+      - output_exists: ${output_dir}/seg_to_t2_nn.nii.gz
+
+  # ==========================================================================
+  # ANTs TOOLS - Image Similarity
+  # ==========================================================================
+  - name: Measure similarity MI
+    description: Measure mutual information similarity
+    command: /opt/ants/bin/MeasureImageSimilarity -d 3 -m MI[${t1w},${t2},1,32] 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ANTs TOOLS - Transform Info
+  # ==========================================================================
+  - name: Transform info
+    description: Get information about a transform
+    command: /opt/ants/bin/antsTransformInfo test_output/affine_0GenericAffine.mat 2>&1
+    depends_on: Affine registration
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # AFNI TOOLS - Basic Operations
+  # ==========================================================================
+  - name: AFNI 3dcalc version
+    description: Check AFNI 3dcalc version
+    command: /opt/afni-latest/3dcalc -help 2>&1 | head -3
+    expected_output_contains: "3dcalc"
+
+  - name: AFNI 3dcalc add constant
+    description: Add constant value using 3dcalc
+    command: /opt/afni-latest/3dcalc -a ${t1w} -expr 'a+100' -prefix test_output/t1w_afni_add100.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_afni_add100.nii.gz
+
+  - name: AFNI 3dcalc multiply
+    description: Multiply image by constant using 3dcalc
+    command: /opt/afni-latest/3dcalc -a ${t1w} -expr 'a*2' -prefix test_output/t1w_afni_mul2.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_afni_mul2.nii.gz
+
+  - name: AFNI 3dcalc threshold
+    description: Threshold image using 3dcalc
+    command: /opt/afni-latest/3dcalc -a ${t1w} -expr 'step(a-100)*a' -prefix test_output/t1w_afni_thr100.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_afni_thr100.nii.gz
+
+  - name: AFNI 3dcalc square root
+    description: Compute square root using 3dcalc
+    command: /opt/afni-latest/3dcalc -a ${t1w} -expr 'sqrt(a)' -prefix test_output/t1w_afni_sqrt.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_afni_sqrt.nii.gz
+
+  # ==========================================================================
+  # AFNI TOOLS - 3dTstat for temporal statistics
+  # ==========================================================================
+  - name: AFNI 3dTstat mean
+    description: Compute temporal mean of BOLD data
+    command: /opt/afni-latest/3dTstat -mean -prefix test_output/bold_afni_tmean.nii.gz ${bold} 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_afni_tmean.nii.gz
+
+  - name: AFNI 3dTstat stdev
+    description: Compute temporal standard deviation of BOLD data
+    command: /opt/afni-latest/3dTstat -stdev -prefix test_output/bold_afni_tstd.nii.gz ${bold} 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_afni_tstd.nii.gz
+
+  - name: AFNI 3dTstat max
+    description: Compute temporal maximum of BOLD data
+    command: /opt/afni-latest/3dTstat -max -prefix test_output/bold_afni_tmax.nii.gz ${bold} 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_afni_tmax.nii.gz
+
+  # ==========================================================================
+  # AFNI TOOLS - Automasking and Skull Stripping
+  # ==========================================================================
+  - name: AFNI 3dAutomask basic
+    description: Create brain mask using 3dAutomask
+    command: /opt/afni-latest/3dAutomask -prefix test_output/t1w_afni_automask.nii.gz ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_afni_automask.nii.gz
+
+  # ==========================================================================
+  # AFNI TOOLS - 3dresample
+  # ==========================================================================
+  - name: AFNI 3dresample orientation
+    description: Resample to different orientation
+    command: /opt/afni-latest/3dresample -orient RPI -prefix test_output/t1w_afni_rpi.nii.gz -inset ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_afni_rpi.nii.gz
+
+  # ==========================================================================
+  # AFNI TOOLS - 3dAutobox
+  # ==========================================================================
+  - name: AFNI 3dAutobox crop
+    description: Automatically crop image to brain
+    command: /opt/afni-latest/3dAutobox -prefix test_output/t1w_afni_autobox.nii.gz -input ${t1w} 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_afni_autobox.nii.gz
+
+  # ==========================================================================
+  # AFNI TOOLS - 3drefit
+  # ==========================================================================
+  - name: AFNI 3drefit space
+    description: Set image space attribute (copy then modify)
+    command: |
+      cp ${t1w} test_output/t1w_afni_refit.nii.gz && \
+      /opt/afni-latest/3drefit -space ORIG test_output/t1w_afni_refit.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_afni_refit.nii.gz
+
+  # ==========================================================================
+  # AFNI TOOLS - 3dTcat for volume selection
+  # ==========================================================================
+  - name: AFNI 3dTcat extract volumes
+    description: Extract first 5 volumes from BOLD data
+    command: /opt/afni-latest/3dTcat -prefix test_output/bold_afni_first5.nii.gz "${bold}[0..4]" 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_afni_first5.nii.gz
+
+  # ==========================================================================
+  # DSI STUDIO TOOLS - Version Check
+  # ==========================================================================
+  - name: DSI Studio version check
+    description: Check DSI Studio version
+    command: /opt/dsi-studio/dsi_studio --action=rec 2>&1 | head -1
+    expected_output_contains: "DSI Studio"
+
+  # ==========================================================================
+  # 3TISSUE TOOLS - Version Check
+  # ==========================================================================
+  - name: 3Tissue ss3t_csd_beta1 help
+    description: Check 3Tissue-specific command availability
+    command: /opt/3Tissue/bin/ss3t_csd_beta1 --help 2>&1 | head -3
+    expected_output_contains: "ss3t_csd_beta1"
+
+  # ==========================================================================
+  # CONNECTOME WORKBENCH - Version Check
+  # ==========================================================================
+  - name: Workbench version check
+    description: Check Connectome Workbench version
+    command: /opt/workbench/bin_linux64/wb_command -version 2>&1 | head -3
+    expected_output_contains: "Connectome Workbench"
+
+  # ==========================================================================
+  # DIPY TOOLS (via Python)
+  # ==========================================================================
+  - name: DIPY import check
+    description: Verify DIPY Python module imports
+    command: python -c "import dipy; print('DIPY version:', dipy.__version__)"
+    expected_output_contains: "DIPY version:"
+
+  - name: DIPY IO check
+    description: Verify DIPY can read NIfTI files
+    command: python -c "from dipy.io.image import load_nifti; data, affine = load_nifti('${t1w}'); print('Shape:', data.shape)"
+    expected_output_contains: "Shape:"
+
+  # ==========================================================================
+  # NIBABEL (via Python)
+  # ==========================================================================
+  - name: Nibabel import check
+    description: Verify nibabel Python module imports
+    command: python -c "import nibabel as nib; print('Nibabel version:', nib.__version__)"
+    expected_output_contains: "Nibabel version:"
+
+  - name: Nibabel read image
+    description: Read image header with nibabel
+    command: python -c "import nibabel as nib; img = nib.load('${t1w}'); print('Dimensions:', img.shape)"
+    expected_output_contains: "Dimensions:"
+
+  # ==========================================================================
+  # NUMPY/SCIPY (via Python)
+  # ==========================================================================
+  - name: NumPy import check
+    description: Verify NumPy Python module imports
+    command: python -c "import numpy as np; print('NumPy version:', np.__version__)"
+    expected_output_contains: "NumPy version:"
+
+  - name: SciPy import check
+    description: Verify SciPy Python module imports
+    command: python -c "import scipy; print('SciPy version:', scipy.__version__)"
+    expected_output_contains: "SciPy version:"
+
+  # ==========================================================================
+  # COMPLEX PIPELINES
+  # ==========================================================================
+  - name: Pipeline brain extraction MRtrix
+    description: Simple brain extraction pipeline with MRtrix tools
+    command: |
+      mrthreshold ${t1w} -percentile 20 test_output/brain_mask_raw.nii.gz -force 2>&1 && \
+      maskfilter test_output/brain_mask_raw.nii.gz dilate -npass 2 test_output/brain_mask_dilated_pipeline.nii.gz -force 2>&1 && \
+      maskfilter test_output/brain_mask_dilated_pipeline.nii.gz erode -npass 2 test_output/brain_mask_closed.nii.gz -force 2>&1 && \
+      maskfilter test_output/brain_mask_closed.nii.gz connect test_output/brain_mask_final.nii.gz -largest -force 2>&1 && \
+      mrcalc ${t1w} test_output/brain_mask_final.nii.gz -multiply test_output/t1w_brain_mrtrix.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_mrtrix.nii.gz
+
+  - name: Pipeline temporal SNR calculation
+    description: Calculate temporal SNR from BOLD data
+    command: |
+      mrmath ${bold} mean test_output/bold_mean_pipeline.nii.gz -axis 3 -force 2>&1 && \
+      mrmath ${bold} std test_output/bold_std_pipeline.nii.gz -axis 3 -force 2>&1 && \
+      mrcalc test_output/bold_mean_pipeline.nii.gz test_output/bold_std_pipeline.nii.gz -divide test_output/bold_tsnr.nii.gz -force 2>&1
+    validate:
+      - output_exists: ${output_dir}/bold_tsnr.nii.gz
+
+  - name: Pipeline N4 then denoise
+    description: Chain N4 bias correction followed by denoising
+    command: |
+      /opt/ants/bin/N4BiasFieldCorrection -d 3 -i ${t1w} -o test_output/t1w_n4_pipeline.nii.gz -s 4 -c [50x50x50,0.0] -v 0 2>&1 && \
+      /opt/ants/bin/DenoiseImage -d 3 -i test_output/t1w_n4_pipeline.nii.gz -n Rician -o test_output/t1w_n4_denoise_pipeline.nii.gz -v 0 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_denoise_pipeline.nii.gz
+
+  - name: Pipeline preprocessing chain
+    description: Full preprocessing chain (denoise, N4, threshold)
+    command: |
+      /opt/ants/bin/DenoiseImage -d 3 -i ${t1w} -n Rician -o test_output/t1w_preproc_denoise.nii.gz -v 0 2>&1 && \
+      /opt/ants/bin/N4BiasFieldCorrection -d 3 -i test_output/t1w_preproc_denoise.nii.gz -o test_output/t1w_preproc_n4.nii.gz -s 4 -c [50x50x50,0.0] -v 0 2>&1 && \
+      /opt/ants/bin/ThresholdImage 3 test_output/t1w_preproc_n4.nii.gz test_output/t1w_preproc_mask.nii.gz Otsu 1 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_preproc_denoise.nii.gz
+      - output_exists: ${output_dir}/t1w_preproc_n4.nii.gz
+      - output_exists: ${output_dir}/t1w_preproc_mask.nii.gz
+
+  # ==========================================================================
+  # QSIRECON PIPELINE SPECS CHECK
+  # ==========================================================================
+  - name: List available pipeline specs
+    description: List QSIRecon built-in pipeline specifications
+    command: ls /opt/conda/envs/qsiprep/lib/python3.10/site-packages/qsirecon/data/pipelines/ 2>&1
+    expected_output_contains: "mrtrix"
+
+  - name: Check mrtrix multishell pipeline spec
+    description: Verify mrtrix multishell pipeline spec exists and is valid YAML
+    command: python -c "import yaml; yaml.safe_load(open('/opt/conda/envs/qsiprep/lib/python3.10/site-packages/qsirecon/data/pipelines/mrtrix_multishell_msmt_noACT.yaml')); print('Valid YAML')"
+    expected_output_contains: "Valid YAML"
+
+  - name: Check dipy dki pipeline spec
+    description: Verify dipy DKI pipeline spec exists and is valid YAML
+    command: python -c "import yaml; yaml.safe_load(open('/opt/conda/envs/qsiprep/lib/python3.10/site-packages/qsirecon/data/pipelines/dipy_dki.yaml')); print('Valid YAML')"
+    expected_output_contains: "Valid YAML"
+
+  - name: Check dsi_studio_gqi pipeline spec
+    description: Verify DSI Studio GQI pipeline spec exists
+    command: python -c "import yaml; yaml.safe_load(open('/opt/conda/envs/qsiprep/lib/python3.10/site-packages/qsirecon/data/pipelines/dsi_studio_gqi.yaml')); print('Valid YAML')"
+    expected_output_contains: "Valid YAML"
+
+  # ==========================================================================
+  # FREESURFER TOOLS (Limited)
+  # ==========================================================================
+  - name: FreeSurfer mri_convert check
+    description: Check FreeSurfer mri_convert availability
+    command: /opt/freesurfer/bin/mri_convert --help 2>&1 | head -5
+    expected_output_contains: "mri_convert"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"
