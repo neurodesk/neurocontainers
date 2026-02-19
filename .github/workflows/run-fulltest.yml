@@ -43,7 +43,10 @@ jobs:
 
       - name: Install test dependencies
         run: |
-          uv pip install --system datalad
+          uv pip install --system datalad datalad-installer
+          datalad-installer git-annex -m datalad/packages
+          git-annex version
+          datalad --version
 
       - name: Configure git for DataLad
         run: |
