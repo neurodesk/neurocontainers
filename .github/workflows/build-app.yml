@@ -60,10 +60,15 @@ jobs:
     steps:
       - name: Configure runner
         run: |
-          sudo mkdir -p /mnt/tmp
-          sudo chown $USER /mnt/tmp
-          sudo mkdir -p /mnt/docker
-          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          BASE_PATH=/mnt
+          if [ -d /storage ]; then
+            BASE_PATH=/storage
+          fi
+          echo "BASE_PATH=$BASE_PATH" >> $GITHUB_ENV
+          sudo mkdir -p $BASE_PATH/tmp
+          sudo chown $USER $BASE_PATH/tmp
+          sudo mkdir -p $BASE_PATH/docker
+          echo "{\"data-root\": \"$BASE_PATH/docker\"}" | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
 
       - name: Checkout repository
@@ -157,7 +162,7 @@ jobs:
         run: |
           sudo swapoff -a && sudo rm -rf /mnt/*
           BASE_PATH=/mnt
-          if [ "${{ inputs.runner }}" = "self-hosted" ]; then
+          if [ "${{ inputs.runner }}" = "self-hosted" ] && [ -d /storage ]; then
             BASE_PATH=/storage
           fi
           echo "BASE_PATH=$BASE_PATH" >> $GITHUB_ENV
@@ -213,7 +218,7 @@ jobs:
       - name: Debug storage
         run: |
           sudo df -ha
-          sudo du -sh /mnt
+          sudo du -sh $BASE_PATH
 
       - name: Build new image
         if: inputs.skip_docker_build != 'true'
@@ -226,7 +231,7 @@ jobs:
       - name: Debug storage
         run: |
           sudo df -ha
-          sudo du -sh /mnt
+          sudo du -sh $BASE_PATH
           
       # - name: Save new image to file
       #   if: inputs.skip_docker_build != 'true'
