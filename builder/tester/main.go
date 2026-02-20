@@ -238,7 +238,17 @@ func (ct *containerTester) run() error {
 
 	captureOutput := fs.Bool("capture-output", false, "Capture output of running each executable")
 	deployBins := fs.String("deploy-bins", os.Getenv("DEPLOY_BINS"), "Colon-separated list of binaries to test")
-	deployPaths := fs.String("deploy-paths", os.Getenv("DEPLOY_PATHS"), "Colon-separated list of paths to search for executables to test")
+
+	deployPathsEnv := os.Getenv("DEPLOY_PATH")
+	if deployPathsEnv == "" {
+		// Backward compatibility for images that still set the old plural variable.
+		deployPathsEnv = os.Getenv("DEPLOY_PATHS")
+	}
+	deployPaths := fs.String(
+		"deploy-paths",
+		deployPathsEnv,
+		"Colon-separated list of paths to search for executables to test",
+	)
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return fmt.Errorf("parsing flags: %w", err)
