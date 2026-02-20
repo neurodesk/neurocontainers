@@ -14,11 +14,16 @@ tests:
 
       #test if DEPLOY_ENV_FSLDIR is set correctly
       if [ -z "$DEPLOY_ENV_FSLDIR" ]; then
-          echo "Variable is NOT set."
+          echo "Error: Variable is NOT set."
           exit 1
       else
           echo "Variable is set to: $DEPLOY_ENV_FSLDIR"
+          if [ -d "$DEPLOY_ENV_FSLDIR" ]; then
+              echo "Directory exists and is valid."
+          else
+              echo "Error: Directory does not exist or is not a directory."
+              exit 1
+          fi
       fi
 
-      ls $FSLDIR
 
