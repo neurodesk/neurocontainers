@@ -63,7 +63,7 @@ build:
 
     - environment:
         PATH: "/opt/ICA-AROMA/:$PATH"
-        DEPLOY_ENV_FSLDIR: "BASEPATH/opt/{{ context.original_version }}"
+        DEPLOY_ENV_FSLDIR: "BASEPATH/opt/fsl-{{ context.original_version }}"
         # This will add: setenv FSLDIR "/cvmfs/neurodesk.ardc.edu.au/containers/fsl_*/fsl_*simg/opt/fsl-*" to the module load commmand or 
         # in LUA: setenv("FSLDIR", "/cvmfs/neurodesk.ardc.edu.au/containers/fsl_6.0.7.18_20250928/fsl_6.0.7.18_20250928.simg/opt/fsl-6.0.7.18")
 

@@ -20,3 +20,5 @@ tests:
           echo "Variable is set to: $DEPLOY_ENV_FSLDIR"
       fi
 
+      ls $FSLDIR
+
