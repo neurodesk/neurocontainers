@@ -1,12 +1,12 @@
 {
   "apps": {
     "fsl 6.0.7.19": {
-      "version": "20260217",
+      "version": "20260220",
       "exec": "",
       "apptainer_args": []
     },
     "fsleyesGUI-fsl 6.0.7.19": {
-      "version": "20260217",
+      "version": "20260220",
       "exec": "fsleyes",
       "apptainer_args": []
     }
