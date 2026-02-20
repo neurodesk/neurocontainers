@@ -25,11 +25,11 @@ tests:
       python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
       sleep 2
 
-      rm /buildhostdirectory/output_fixed_conversion_fixed_musclemap.h5
+      rm /buildhostdirectory/output.h5
       python3 /opt/code/python-ismrmrd-server/client.py \
         -G dataset \
-        -o /buildhostdirectory/output_fixed_conversion_fixed_musclemap.h5 \
-        /buildhostdirectory/input_fromDCM_fixed_conversion.h5 \
+        -o /buildhostdirectory/output.h5 \
+        /buildhostdirectory/input_fromNIFTI.h5 \
         -c musclemap
 
       # Check output h5 data in "H5Web" VS code plugin viewer

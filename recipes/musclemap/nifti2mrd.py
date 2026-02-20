@@ -214,6 +214,11 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
     elif len(data.shape) == 4:
         data = data[:, :, :, 0]  # Take first volume
         print(f"📝 Reduced 4D to 3D: {data.shape}")
+
+    # Undo scanner-style NIfTI Y-row ordering so output matches
+    # the DICOM->MRD geometry convention used in enhanceddicom2mrd.py.
+    data = data[:, ::-1, :]
+    print(f"🔁 Applied Y-axis row unflip for MRD consistency: {data.shape}")
     
     # Create ISMRMRD Image object
     print("🏗️ Creating ISMRMRD Image object...")
