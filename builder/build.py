@@ -2282,12 +2282,44 @@ def build_and_run_container(
         value = os.path.abspath(value)
         docker_args += ["--build-context", key + "=" + value]
 
-    # Shell out to Docker
-    # docker-py does not support using BuildKit
-    subprocess.check_call(
-        docker_args + ["."],
-        cwd=build_directory,
-    )
+    # Shell out to Docker/Podman.
+    # docker-py does not support using BuildKit.
+    build_cmd = docker_args + ["."]
+    try:
+        subprocess.check_call(
+            build_cmd,
+            cwd=build_directory,
+        )
+    except subprocess.CalledProcessError as original_error:
+        # Docker BuildKit can intermittently fail with daemon EOF/unavailable
+        # errors. Retry once with the legacy builder unless disabled.
+        allow_legacy_fallback = _env_truthy(
+            "DOCKER_BUILDKIT_FALLBACK_ON_ERROR", default=True
+        )
+        docker_buildkit_enabled = os.environ.get("DOCKER_BUILDKIT", "").strip() != "0"
+        should_retry_with_legacy = (
+            not use_podman and allow_legacy_fallback and docker_buildkit_enabled
+        )
+
+        if not should_retry_with_legacy:
+            raise
+
+        print(
+            "Docker build failed. Retrying once with DOCKER_BUILDKIT=0 "
+            "(set DOCKER_BUILDKIT_FALLBACK_ON_ERROR=0 to disable)."
+        )
+        legacy_env = os.environ.copy()
+        legacy_env["DOCKER_BUILDKIT"] = "0"
+
+        try:
+            subprocess.check_call(
+                build_cmd,
+                cwd=build_directory,
+                env=legacy_env,
+            )
+        except subprocess.CalledProcessError:
+            raise original_error
+
     print("Docker image built successfully at", tag)
     run_container_tester(tag, architecture, use_podman=use_podman)
 
