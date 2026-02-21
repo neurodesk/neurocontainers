@@ -467,6 +467,7 @@ class LocalBuildContext(object):
         # if not then link it from the cache (skip in Pyodide to avoid large file copying)
         try:
             import sys
+            import errno
 
             if "pyodide" in sys.modules:
                 # In Pyodide, skip copying large files
@@ -475,6 +476,12 @@ class LocalBuildContext(object):
                 os.link(cache_filename, cached_file)
         except FileNotFoundError:
             return None
+        except OSError as e:
+            if e.errno == errno.EXDEV:
+                # Hard links are not possible across filesystems; copy instead.
+                shutil.copy2(cache_filename, cached_file)
+            else:
+                raise
         except AttributeError:
             # Fallback if os.link is not available
             return guest_filename
