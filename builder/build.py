@@ -1815,7 +1815,38 @@ def _get_tester_binary_cache_path() -> str:
     return os.path.join(tester_cache_dir, CONTAINER_TESTER_BINARY_NAME)
 
 
-def ensure_container_tester_image(container_cli: str) -> str:
+def _get_tester_binary_hash_cache_path() -> str:
+    return _get_tester_binary_cache_path() + ".sha256"
+
+
+def _get_container_tester_source_hash() -> str:
+    tester_dir = os.path.join(get_repo_path(), "builder", "tester")
+    source_files = ["Dockerfile", "go.mod", "go.sum", "main.go"]
+
+    hasher = hashlib.sha256()
+    for filename in source_files:
+        source_path = os.path.join(tester_dir, filename)
+        if not os.path.exists(source_path):
+            continue
+
+        hasher.update(filename.encode("utf-8"))
+        with open(source_path, "rb") as f:
+            hasher.update(f.read())
+
+    return hasher.hexdigest()
+
+
+def ensure_container_tester_image(container_cli: str, force_rebuild: bool = False) -> str:
+    tester_dir = os.path.join(get_repo_path(), "builder", "tester")
+
+    if force_rebuild:
+        print(f"Rebuilding container tester image {CONTAINER_TESTER_IMAGE}...")
+        subprocess.check_call(
+            [container_cli, "build", "-t", CONTAINER_TESTER_IMAGE, "."],
+            cwd=tester_dir,
+        )
+        return CONTAINER_TESTER_IMAGE
+
     try:
         subprocess.check_call(
             [container_cli, "image", "inspect", CONTAINER_TESTER_IMAGE],
@@ -1823,7 +1854,6 @@ def ensure_container_tester_image(container_cli: str) -> str:
             stderr=subprocess.DEVNULL,
         )
     except subprocess.CalledProcessError:
-        tester_dir = os.path.join(get_repo_path(), "builder", "tester")
         print(
             f"Container tester image {CONTAINER_TESTER_IMAGE} not found; building it now..."
         )
@@ -1836,10 +1866,20 @@ def ensure_container_tester_image(container_cli: str) -> str:
 
 def ensure_container_tester_binary(container_cli: str) -> str:
     binary_path = _get_tester_binary_cache_path()
-    if os.path.exists(binary_path):
+    source_hash = _get_container_tester_source_hash()
+    hash_cache_path = _get_tester_binary_hash_cache_path()
+
+    cached_hash = ""
+    if os.path.exists(hash_cache_path):
+        with open(hash_cache_path, "r") as f:
+            cached_hash = f.read().strip()
+
+    if os.path.exists(binary_path) and cached_hash == source_hash and cached_hash != "":
         return binary_path
 
-    ensure_container_tester_image(container_cli)
+    # If the tester source changed (or hash metadata is missing), rebuild the
+    # tester image to avoid reusing a stale cached binary.
+    ensure_container_tester_image(container_cli, force_rebuild=True)
 
     fd, tmp_path = tempfile.mkstemp(
         dir=os.path.dirname(binary_path),
@@ -1878,6 +1918,10 @@ def ensure_container_tester_binary(container_cli: str) -> str:
 
     os.chmod(tmp_path, 0o755)
     os.replace(tmp_path, binary_path)
+
+    with open(hash_cache_path, "w") as f:
+        f.write(source_hash)
+
     return binary_path
 
 
@@ -1911,6 +1955,55 @@ def _collect_tester_failures(results: dict[str, typing.Any]) -> list[str]:
             if isinstance(dependency, dict):
                 _collect_dependency_failures(name, dependency, failures)
     return failures
+
+
+def _compact_tester_summary(
+    results: dict[str, typing.Any], failures: list[str]
+) -> dict[str, typing.Any]:
+    deploy_bins_raw = results.get("DeployBins")
+    deploy_paths_raw = results.get("DeployPaths")
+    executables = results.get("Executables") or {}
+
+    deploy_bins = (
+        [entry for entry in deploy_bins_raw if isinstance(entry, str) and entry != ""]
+        if isinstance(deploy_bins_raw, list)
+        else []
+    )
+    deploy_paths = (
+        [entry for entry in deploy_paths_raw if isinstance(entry, str) and entry != ""]
+        if isinstance(deploy_paths_raw, list)
+        else []
+    )
+
+    executable_count = len(executables) if isinstance(executables, dict) else 0
+    summary: dict[str, typing.Any] = {
+        "DeployBins": deploy_bins,
+        "DeployPaths": deploy_paths,
+        "ExecutableCount": executable_count,
+        "FailureCount": len(failures),
+    }
+
+    if failures:
+        summary["FailurePreview"] = failures[:10]
+        if len(failures) > 10:
+            summary["FailurePreviewTruncated"] = len(failures) - 10
+
+    return summary
+
+
+def _format_tester_failures(failures: list[str], verbose: bool) -> str:
+    if verbose or len(failures) <= 25:
+        return "\n".join(f"- {failure}" for failure in failures)
+
+    shown = failures[:25]
+    remaining = len(failures) - len(shown)
+    failure_text = "\n".join(f"- {failure}" for failure in shown)
+    failure_text += (
+        "\n"
+        f"- ... {remaining} more failure(s) hidden. "
+        "Set CONTAINER_TESTER_VERBOSE=1 for full details."
+    )
+    return failure_text
 
 
 def _parse_tester_output(raw_output: str) -> dict[str, typing.Any] | None:
@@ -1965,6 +2058,7 @@ def run_container_tester(tag: str, architecture: str, use_podman: bool = False) 
         exit_code = process.wait()
 
     raw_output = "".join(captured_output)
+    verbose_tester_output = _env_truthy("CONTAINER_TESTER_VERBOSE", default=False)
 
     if exit_code != 0:
         if raw_output:
@@ -1972,18 +2066,29 @@ def run_container_tester(tag: str, architecture: str, use_podman: bool = False) 
         raise subprocess.CalledProcessError(exit_code, run_cmd)
 
     parsed_output = _parse_tester_output(raw_output)
+    failures: list[str] = []
     if parsed_output is not None:
-        print("Container tester results:")
-        print(json.dumps(parsed_output, indent=2, sort_keys=True))
+        failures = _collect_tester_failures(parsed_output)
+        if verbose_tester_output:
+            print("Container tester results:")
+            print(json.dumps(parsed_output, indent=2, sort_keys=True))
+        else:
+            print("Container tester summary:")
+            print(
+                json.dumps(
+                    _compact_tester_summary(parsed_output, failures),
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
     else:
         print(raw_output, end="")
 
     if parsed_output is None:
         return
 
-    failures = _collect_tester_failures(parsed_output)
     if failures:
-        failure_text = "\n".join(f"- {failure}" for failure in failures)
+        failure_text = _format_tester_failures(failures, verbose=verbose_tester_output)
         raise RuntimeError(
             "Container tester reported failures:\n"
             f"{failure_text}"
@@ -2294,6 +2399,47 @@ def run_docker_prep(prep, volume_name):
     )
 
 
+def _parse_builtin_test_json(raw_output: str) -> dict[str, typing.Any] | None:
+    text = raw_output.strip()
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+        return payload if isinstance(payload, dict) else None
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            snippet = text[start : end + 1]
+            try:
+                payload = json.loads(snippet)
+                return payload if isinstance(payload, dict) else None
+            except json.JSONDecodeError:
+                return None
+    return None
+
+
+def _summarise_builtin_test_payload(
+    payload: dict[str, typing.Any],
+) -> tuple[dict[str, typing.Any], list[dict[str, typing.Any]]]:
+    tests = payload.get("tests")
+    failed_entries: list[dict[str, typing.Any]] = []
+    if isinstance(tests, list):
+        failed_entries = [
+            entry
+            for entry in tests
+            if isinstance(entry, dict) and entry.get("status") == "failed"
+        ]
+
+    summary = {
+        "total": payload.get("total", 0),
+        "passed": payload.get("passed", 0),
+        "failed": payload.get("failed", len(failed_entries)),
+        "skipped": payload.get("skipped", 0),
+    }
+    return summary, failed_entries
+
+
 def run_builtin_test(tag, test, gpu=False):
     # Locate builtin tests in either the legacy builder directory or the
     # relocated workflows directory.
@@ -2324,16 +2470,37 @@ def run_builtin_test(tag, test, gpu=False):
     if gpu:
         docker_run_cmd.extend(["--gpus", "all"])
 
-    docker_run_cmd.extend(
-        [
-            tag,
-            "bash",
-            "-c",
-            test_content,
-        ]
+    docker_run_cmd.extend([tag, "bash", "-c", test_content])
+
+    process = subprocess.run(
+        docker_run_cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
     )
 
-    subprocess.check_call(docker_run_cmd)
+    raw_output = process.stdout or ""
+    verbose_builtin_output = _env_truthy("CONTAINER_TESTER_VERBOSE", default=False)
+
+    # test_deploy.sh emits JSON. Show a compact summary by default and print
+    # per-entry details only when failures occur (or when verbose mode is enabled).
+    parsed_output = _parse_builtin_test_json(raw_output)
+    if parsed_output is not None and {"total", "passed", "failed", "skipped"} <= set(parsed_output):
+        summary, failed_entries = _summarise_builtin_test_payload(parsed_output)
+        print("Builtin deploy test summary:")
+        print(json.dumps(summary, indent=2, sort_keys=True))
+
+        if verbose_builtin_output:
+            print("Builtin deploy test details:")
+            print(json.dumps(parsed_output, indent=2, sort_keys=True))
+        elif failed_entries:
+            print("Builtin deploy test failures:")
+            print(json.dumps(failed_entries, indent=2, sort_keys=True))
+    elif raw_output:
+        print(raw_output, end="")
+
+    if process.returncode != 0:
+        raise subprocess.CalledProcessError(process.returncode, docker_run_cmd)
 
 
 def run_docker_test(tag, test, gpu=False):
