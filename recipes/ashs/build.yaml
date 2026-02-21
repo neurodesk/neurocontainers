@@ -10,15 +10,41 @@ build:
   pkg-manager: apt
 
   directives:
-    - template:
-        name: ashs
-        version: "{{ context.version }}"
+    - install:
+        - ca-certificates
+        - curl
+        - unzip
+        - libxt6
+        - libxext6
+        - libxtst6
+        - libgl1-mesa-glx
+        - libc6
+        - libice6
+        - libsm6
+        - libx11-6
+        - tcsh
+
+    - run:
+        - ASHS_PATH=$(curl -fsSL "https://www.nitrc.org/frs/?group_id=370" | grep -Eo '/frs/download.php/[0-9]+/ashs-fastashs[^\" ]+' | head -n1)
+        - '[ -n "$ASHS_PATH" ] || { echo "Unable to locate ASHS download URL."; exit 1; }'
+        - ASHS_URL="https://www.nitrc.org${ASHS_PATH}"
+        - curl -fsSL "$ASHS_URL" -o /tmp/ashs_fastashs.pkg
+        - 'case "$ASHS_URL" in *.zip) unzip -q /tmp/ashs_fastashs.pkg -d /opt ;; *.tgz|*.tar.gz) tar -xzf /tmp/ashs_fastashs.pkg -C /opt ;; *) echo "Unsupported ASHS archive format: $ASHS_URL"; exit 1 ;; esac'
+        - ASHS_DIR=$(find /opt -maxdepth 1 -mindepth 1 -type d -name 'ashs-fastashs*' | head -n1)
+        - '[ -n "$ASHS_DIR" ] || { echo "Unable to find extracted ASHS directory."; exit 1; }'
+        - ln -sfn "$ASHS_DIR" /opt/ashs-{{ context.version }}
+        - ln -sfn /opt/ashs-{{ context.version }} /opt/ashs
+        - rm -f /tmp/ashs_fastashs.pkg
+
+    - environment:
+        ASHS_ROOT: /opt/ashs
+        PATH: "/opt/ashs/bin:$PATH"
 
     - user: neuro
 
 deploy:
   path:
-    - /opt/ashs-{{ context.version }}/bin
+    - /opt/ashs/bin
 
 categories:
   - image segmentation
