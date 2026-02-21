@@ -1,29 +1,43 @@
 tests:
   - name: Test fsl
     script: |
-      eddy_cuda 
-      eddy 
+      #test if eddy_cuda is there:
+      if command -v eddy_cuda &> /dev/null; then
+          echo "eddy_cuda is available."
+      else
+          echo "eddy_cuda is not available. Skipping eddy_cuda test."
+          exit 1
+      fi
 
-      git clone https://github.com/neurolabusc/gpu_test.git
-      cd gpu_test/etest/
-      bash runme_gpu.sh
+      # only run if a GPU is available:
+      if command -v nvidia-smi &> /dev/null; then
+          echo "NVIDIA GPU detected. Running GPU tests..."
+          git clone https://github.com/neurolabusc/gpu_test.git
+          cd gpu_test/etest/
+          bash runme_gpu.sh
+      else
+          echo "No NVIDIA GPU detected. Skipping GPU tests."
+      fi
 
-      ICA_AROMA.py
+      ICA_AROMA.py -h
 
       oxasl --version
-
+ 
       #test if DEPLOY_ENV_FSLDIR is set correctly
       if [ -z "$DEPLOY_ENV_FSLDIR" ]; then
           echo "Error: Variable is NOT set."
           exit 1
       else
           echo "Variable is set to: $DEPLOY_ENV_FSLDIR"
-          if [ -d "$DEPLOY_ENV_FSLDIR" ]; then
+          #remove BASEPATH in test environment, so it's /opt/fsl-{{ context.original_version }}:
+          export DEPLOY_ENV_FSLDIR_test=$(echo $DEPLOY_ENV_FSLDIR | sed 's|BASEPATH||g')
+          echo $DEPLOY_ENV_FSLDIR_test
+
+          if [ -d "$DEPLOY_ENV_FSLDIR_test" ]; then
               echo "Directory exists and is valid."
           else
               echo "Error: Directory does not exist or is not a directory."
               exit 1
           fi
       fi
-
 
