@@ -107,6 +107,9 @@ build:
 
     - workdir: /opt/freesurfer-{{ context.version }}
 
+    - environment:
+        LD_LIBRARY_PATH: ""
+
     - template:
         name: matlabmcr
         install_path: /opt/MCR2014b
@@ -122,9 +125,6 @@ build:
 
     - run:
         - ln -s /opt/MCR2014a/v83/ /opt/freesurfer-{{ context.version }}/MCRv83
-
-    - environment:
-        LD_LIBRARY_PATH: ""
 
     - template:
         name: matlabmcr
