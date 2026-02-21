@@ -97,9 +97,7 @@ build:
         - xauth
 
     - run:
-        - wget --quiet https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}/freesurfer_ubuntu22-{{ context.version }}_amd64.deb
-        - dpkg -i freesurfer_ubuntu22-{{ context.version }}_amd64.deb
-        - rm -rf freesurfer_ubuntu22-{{ context.version }}_amd64.deb
+        - dpkg -i {{ get_file("freesurfer_deb") }}
 
     # - template:
     #     name: freesurfer
@@ -224,6 +222,9 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: freesurfer_deb
+    url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}/freesurfer_ubuntu22-{{ context.version }}_amd64.deb
+
   - name: segmentNuclei
     contents: |-
       #!/usr/bin/env bash
