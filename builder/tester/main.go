@@ -170,6 +170,11 @@ func (ct *containerTester) testExecutable(name string, top bool) (ExecutableResu
 			if line == "" {
 				continue
 			}
+			// ldd may emit "<absolute/path>:" as a header line when reporting results.
+			// This is not a dependency path and should be skipped.
+			if strings.HasPrefix(line, "/") && strings.HasSuffix(line, ":") && !strings.Contains(line, "=>") {
+				continue
+			}
 			if strings.HasPrefix(line, "ldd:") {
 				// Warning/error from ldd itself; surface as a dependency error for visibility.
 				ret.Dependencies = append(ret.Dependencies, ExecutableResult{Error: line})
