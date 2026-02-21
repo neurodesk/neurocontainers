@@ -70,7 +70,7 @@ def _env_truthy(name: str, default: bool = False) -> bool:
 
 def ensure_neurodocker_renderer():
     """
-    Ensure NeuroDocker is importable and update to the latest PyPI version by default.
+    Ensure NeuroDocker is importable.
 
     Set NEURODOCKER_AUTO_UPGRADE=0 to skip automatic upgrades.
     """
