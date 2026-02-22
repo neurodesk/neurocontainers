@@ -1,0 +1,730 @@
+# SPM25 container test suite
+# Tests for SPM25 v25.01.02 - Statistical Parametric Mapping
+#
+# SPM25 is the latest version of SPM, a comprehensive software package for
+# analysis of brain imaging data including fMRI, PET, SPECT, EEG, and MEG.
+#
+# Test data: ds000001 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: sub-02 structural MRI
+#   - T2: sub-01 inplane T2
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: spm25
+version: 25.01.02
+container: spm25_25.01.02_20251210.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-02_bold.nii.gz
+      - sub-02/anat/sub-02_T1w.nii.gz
+
+test_data:
+  t1w: ds000001/sub-02/anat/sub-02_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  bold_run2: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-02_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/stats
+    mkdir -p ${output_dir}/preproc
+    mkdir -p ${output_dir}/smooth
+    mkdir -p ${output_dir}/realign
+    mkdir -p ${output_dir}/coreg
+    mkdir -p ${output_dir}/segment
+    mkdir -p ${output_dir}/normalize
+    mkdir -p ${output_dir}/slicetime
+    mkdir -p ${output_dir}/imcalc
+    mkdir -p ${output_dir}/util
+    mkdir -p ${output_dir}/dartel
+    mkdir -p ${output_dir}/shoot
+    mkdir -p ${output_dir}/longit
+    # Decompress .nii.gz to .nii for SPM standalone (cannot read gzipped NIfTI)
+    gunzip -c ${t1w} > ${output_dir}/sub-02_T1w.nii
+    gunzip -c ${t2} > ${output_dir}/sub-01_inplaneT2.nii
+    gunzip -c ${bold} > ${output_dir}/bold_run01.nii
+    gunzip -c ${bold_run2} > ${output_dir}/bold_run02.nii
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND ENVIRONMENT
+  # ==========================================================================
+  - name: SPM25 help
+    description: Verify SPM25 binary runs and displays help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b help 2>&1
+    expected_output_contains: "Usage: spm"
+
+  - name: SPM25 verbose help
+    description: List all available batch nodes
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b help --verbose 2>&1 | head -20
+    expected_output_contains: "spm.spatial"
+
+  - name: MATLAB Runtime check
+    description: Verify MATLAB Runtime is available
+    command: ls -la /usr/local/MATLAB/MATLAB_Runtime/R2024b/
+    expected_output_contains: "runtime"
+
+  - name: SPM25 binary exists
+    description: Verify SPM25 compiled binary exists
+    command: ls -la /opt/spm/spm25
+    expected_output_contains: "spm25"
+
+  - name: SPM25 CTF archive exists
+    description: Verify SPM25 compiled archive exists
+    command: ls -la /opt/spm/spm25.ctf
+    expected_output_contains: "spm25.ctf"
+
+  # ==========================================================================
+  # UTILITY FUNCTIONS - IMAGE CALCULATOR
+  # ==========================================================================
+  - name: ImCalc help
+    description: Display image calculator help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc help 2>&1
+    expected_output_contains: "--expression"
+
+  - name: ImCalc identity operation
+    description: Copy image using image calculator (i1)
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_copy.nii --expression "i1" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_copy.nii
+
+  - name: ImCalc scalar multiplication
+    description: Multiply image by scalar value
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_mul2.nii --expression "i1*2" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_mul2.nii
+
+  - name: ImCalc scalar addition
+    description: Add scalar to image
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_add100.nii --expression "i1+100" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_add100.nii
+
+  - name: ImCalc division
+    description: Divide image by scalar
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_div2.nii --expression "i1/2" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_div2.nii
+
+  - name: ImCalc square root
+    description: Calculate square root of image
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_sqrt.nii --expression "sqrt(i1)" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_sqrt.nii
+
+  - name: ImCalc log transform
+    description: Calculate natural log (with threshold)
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_log.nii --expression "log(i1+1)" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_log.nii
+
+  - name: ImCalc exponential
+    description: Calculate exponential (scaled)
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_exp.nii --expression "exp(i1/1000)" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_exp.nii
+
+  - name: ImCalc absolute value
+    description: Calculate absolute value
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_abs.nii --expression "abs(i1)" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_abs.nii
+
+  - name: ImCalc thresholding
+    description: Apply threshold to image
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_thr.nii --expression "i1.*(i1>100)" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_thr.nii
+
+  - name: ImCalc binarize
+    description: Binarize image at threshold
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_bin.nii --expression "i1>100" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_bin.nii
+
+  - name: ImCalc power function
+    description: Raise image to power
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_pow2.nii --expression "i1.^2" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_pow2.nii
+
+  - name: ImCalc trigonometric sin
+    description: Calculate sine of image
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_sin.nii --expression "sin(i1)" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_sin.nii
+
+  - name: ImCalc trigonometric cos
+    description: Calculate cosine of image
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_cos.nii --expression "cos(i1)" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_cos.nii
+
+  - name: ImCalc min clamp
+    description: Clamp minimum values
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_minclamp.nii --expression "max(i1,50)" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_minclamp.nii
+
+  - name: ImCalc max clamp
+    description: Clamp maximum values
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output test_output/imcalc/t1w_maxclamp.nii --expression "min(i1,500)" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_maxclamp.nii
+
+  - name: ImCalc NaN replacement
+    description: Replace NaN values with zero
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output ${output_dir}/imcalc/t1w_nantozero.nii --expression "i1" --options --mask "NaNs should be zeroed" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_nantozero.nii
+
+  - name: ImCalc output dtype float
+    description: Output as single precision float
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output ${output_dir}/imcalc/t1w_float.nii --expression "i1" --dtype "FLOAT32 - single prec. float" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_float.nii
+
+  - name: ImCalc output dtype float64
+    description: Output as double precision float (INT16 broken - MATLAB collapses whitespace in option strings)
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.imcalc --input ${output_dir}/sub-02_T1w.nii --output ${output_dir}/imcalc/t1w_float64.nii --expression "i1" --dtype "FLOAT64 - double prec. float" 2>&1
+    validate:
+      - output_exists: ${output_dir}/imcalc/t1w_float64.nii
+
+  # ==========================================================================
+  # UTILITY FUNCTIONS - GENERAL
+  # ==========================================================================
+  - name: Bounding box help
+    description: Display bbox utility help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.bbox help 2>&1
+    expected_output_contains: "--image"
+
+  - name: Bounding box calculation
+    description: Calculate image bounding box
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.bbox --image ${output_dir}/sub-02_T1w.nii 2>&1
+    expected_exit_code: 0
+
+  - name: Reorient help
+    description: Display reorient utility help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.reorient help 2>&1
+    expected_output_contains: "--transform"
+
+  - name: Cat (concatenate) help
+    description: Display 3D to 4D concatenation help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.cat help 2>&1
+    expected_output_contains: "--vols"
+
+  - name: Split help
+    description: Display 4D to 3D split help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.split help 2>&1
+    expected_output_contains: "--vol"
+
+  - name: Split 4D to 3D volumes
+    description: Split 4D BOLD into 3D volumes
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.split --vol ${output_dir}/bold_run01.nii --outdir test_output/util 2>&1
+    expected_exit_code: 0
+    validate:
+      - output_dir_not_empty: test_output/util
+
+  - name: Deface help
+    description: Display deface utility help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.deface help 2>&1
+    expected_output_contains: "--images"
+
+  - name: Tissue volume help
+    description: Display tissue volume calculation help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.tvol help 2>&1
+    expected_output_contains: "--matfiles"
+
+  # ==========================================================================
+  # SPATIAL PROCESSING - SMOOTHING
+  # ==========================================================================
+  - name: Smooth help
+    description: Display smoothing help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.smooth help 2>&1
+    expected_output_contains: "--fwhm"
+
+  - name: Smooth 4mm FWHM
+    description: Apply 4mm isotropic Gaussian smoothing
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.smooth --data ${output_dir}/sub-02_T1w.nii --fwhm "[4 4 4]" --prefix s4_ 2>&1
+    validate:
+      - output_exists: ${output_dir}/s4_sub-02_T1w.nii
+
+  - name: Smooth 6mm FWHM
+    description: Apply 6mm isotropic Gaussian smoothing
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.smooth --data ${output_dir}/sub-02_T1w.nii --fwhm "[6 6 6]" --prefix s6_ 2>&1
+    validate:
+      - output_exists: ${output_dir}/s6_sub-02_T1w.nii
+
+  - name: Smooth 8mm FWHM
+    description: Apply 8mm isotropic Gaussian smoothing (common for fMRI)
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.smooth --data ${output_dir}/sub-02_T1w.nii --fwhm "[8 8 8]" --prefix s8_ 2>&1
+    validate:
+      - output_exists: ${output_dir}/s8_sub-02_T1w.nii
+
+  - name: Smooth 12mm FWHM
+    description: Apply 12mm isotropic Gaussian smoothing
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.smooth --data ${output_dir}/sub-02_T1w.nii --fwhm "[12 12 12]" --prefix s12_ 2>&1
+    validate:
+      - output_exists: ${output_dir}/s12_sub-02_T1w.nii
+
+  - name: Smooth anisotropic
+    description: Apply anisotropic Gaussian smoothing
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.smooth --data ${output_dir}/sub-02_T1w.nii --fwhm "[4 6 8]" --prefix saniso_ 2>&1
+    validate:
+      - output_exists: ${output_dir}/saniso_sub-02_T1w.nii
+
+  - name: Smooth with implicit mask
+    description: Apply smoothing with implicit masking
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.smooth --data ${output_dir}/sub-02_T1w.nii --fwhm "[6 6 6]" --im Yes --prefix sim_ 2>&1
+    validate:
+      - output_exists: ${output_dir}/sim_sub-02_T1w.nii
+
+  # ==========================================================================
+  # SPATIAL PROCESSING - REALIGNMENT (MOTION CORRECTION)
+  # ==========================================================================
+  - name: Realign estimate help
+    description: Display realignment estimation help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.realign.estimate help 2>&1
+    expected_output_contains: "--quality"
+
+  - name: Realign write help
+    description: Display realignment reslice help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.realign.write help 2>&1
+    expected_output_contains: "--interp"
+
+  - name: Realign estwrite help
+    description: Display combined realignment help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.realign.estwrite help 2>&1
+    expected_output_contains: "--quality"
+
+  # ==========================================================================
+  # SPATIAL PROCESSING - COREGISTRATION
+  # ==========================================================================
+  - name: Coreg estimate help
+    description: Display coregistration estimation help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.coreg.estimate help 2>&1
+    expected_output_contains: "--cost_fun"
+
+  - name: Coreg write help
+    description: Display coregistration reslice help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.coreg.write help 2>&1
+    expected_output_contains: "--interp"
+
+  - name: Coreg estwrite help
+    description: Display combined coregistration help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.coreg.estwrite help 2>&1
+    expected_output_contains: "--cost_fun"
+
+  # ==========================================================================
+  # SPATIAL PROCESSING - SEGMENTATION
+  # ==========================================================================
+  - name: Preproc (Segment) help
+    description: Display unified segmentation help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.preproc help 2>&1
+    expected_output_contains: "--biasreg"
+
+  # ==========================================================================
+  # SPATIAL PROCESSING - NORMALIZATION
+  # ==========================================================================
+  - name: Normalize estimate help
+    description: Display normalization estimation help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.normalise.est help 2>&1
+    expected_output_contains: "--tpm"
+
+  - name: Normalize write help
+    description: Display normalization write help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.normalise.write help 2>&1
+    expected_output_contains: "--interp"
+
+  - name: Normalize estwrite help
+    description: Display combined normalization help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.normalise.estwrite help 2>&1
+    expected_output_contains: "--biasreg"
+
+  # ==========================================================================
+  # TEMPORAL PROCESSING - SLICE TIMING CORRECTION
+  # ==========================================================================
+  - name: Slice timing help
+    description: Display slice timing correction help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.temporal.st help 2>&1
+    expected_output_contains: "--nslices"
+
+  # ==========================================================================
+  # STATISTICAL ANALYSIS - fMRI
+  # ==========================================================================
+  - name: fMRI specification help
+    description: Display fMRI model specification help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.stats.fmri_spec help 2>&1
+    expected_output_contains: "--timing"
+
+  - name: fMRI design help
+    description: Display fMRI design matrix help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.stats.fmri_design help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: fMRI estimation help
+    description: Display fMRI model estimation help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.stats.fmri_est help 2>&1
+    expected_output_contains: "--spmmat"
+
+  - name: Contrast help
+    description: Display contrast specification help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.stats.con help 2>&1
+    expected_output_contains: "--spmmat"
+
+  - name: Results help
+    description: Display results reporting help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.stats.results help 2>&1
+    expected_output_contains: "--spmmat"
+
+  - name: Factorial design help
+    description: Display factorial design help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.stats.factorial_design help 2>&1
+    expected_output_contains: "--dir"
+
+  - name: PPI help
+    description: Display PPI extraction help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.stats.ppi help 2>&1
+    expected_output_contains: "--spmmat"
+
+  - name: VOI extraction help
+    description: Display VOI time series extraction help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.voi help 2>&1
+    expected_output_contains: "--spmmat"
+
+  # ==========================================================================
+  # DYNAMIC CAUSAL MODELLING (DCM)
+  # ==========================================================================
+  - name: DCM estimate help
+    description: Display DCM estimation help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.dcm.estimate help 2>&1
+    expected_output_contains: "--dcms"
+
+  - name: DCM BMS inference help
+    description: Display DCM Bayesian model selection help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.dcm.bms.inference help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: DCM PEB specify help
+    description: Display PEB specification help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.dcm.peb.specify help 2>&1
+    expected_output_contains: "Usage:"
+
+  # ==========================================================================
+  # DARTEL TOOLS
+  # ==========================================================================
+  - name: DARTEL warp help
+    description: Display DARTEL warping help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.dartel.warp help 2>&1
+    expected_output_contains: "--images"
+
+  - name: DARTEL warp1 help
+    description: Display DARTEL single subject warp help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.dartel.warp1 help 2>&1
+    expected_output_contains: "--images"
+
+  - name: DARTEL MNI norm help
+    description: Display DARTEL to MNI normalization help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.dartel.mni_norm help 2>&1
+    expected_output_contains: "--template"
+
+  - name: DARTEL create warped help
+    description: Display DARTEL create warped images help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.dartel.crt_warped help 2>&1
+    expected_output_contains: "--flowfields"
+
+  - name: DARTEL Jacobian help
+    description: Display DARTEL Jacobian determinant help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.dartel.jacdet help 2>&1
+    expected_output_contains: "--flowfields"
+
+  # ==========================================================================
+  # GEODESIC SHOOTING TOOLS
+  # ==========================================================================
+  - name: Shoot warp help
+    description: Display Shoot warping help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.shoot.warp help 2>&1
+    expected_output_contains: "--images"
+
+  - name: Shoot warp1 help
+    description: Display Shoot single subject warp help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.shoot.warp1 help 2>&1
+    expected_output_contains: "--images"
+
+  - name: Shoot MNI norm help
+    description: Display Shoot to MNI normalization help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.shoot.norm help 2>&1
+    expected_output_contains: "--template"
+
+  # ==========================================================================
+  # LONGITUDINAL REGISTRATION
+  # ==========================================================================
+  - name: Longitudinal pairwise help
+    description: Display pairwise longitudinal registration help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.longit.pairwise help 2>&1
+    expected_output_contains: "--vols1"
+
+  - name: Longitudinal series help
+    description: Display series longitudinal registration help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.longit.series help 2>&1
+    expected_output_contains: "--vols"
+
+  # ==========================================================================
+  # SPATIAL TOOLS
+  # ==========================================================================
+  - name: SCOPE help
+    description: Display SCOPE susceptibility correction help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.spatial.scope help 2>&1
+    expected_output_contains: "--vol1"
+
+  - name: Denoise help
+    description: Display TV denoising help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.spatial.denoise help 2>&1
+    expected_output_contains: "--lambda"
+
+  - name: Slice2Vol help
+    description: Display slice-to-volume alignment help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.spatial.slice2vol help 2>&1
+    expected_output_contains: "Usage:"
+
+  # ==========================================================================
+  # FIELDMAP TOOLS
+  # ==========================================================================
+  - name: Fieldmap calculate VDM help
+    description: Display fieldmap VDM calculation help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.fieldmap.calculatevdm help 2>&1
+    expected_output_contains: "--subj"
+
+  - name: Fieldmap apply VDM help
+    description: Display fieldmap VDM application help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.fieldmap.applyvdm help 2>&1
+    expected_output_contains: "--data"
+
+  # ==========================================================================
+  # OLD SEGMENTATION/NORMALIZATION (COMPATIBILITY)
+  # ==========================================================================
+  - name: Old segment help
+    description: Display old segmentation help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.oldseg help 2>&1
+    expected_output_contains: "--data"
+
+  - name: Old normalize estimate help
+    description: Display old normalization estimation help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.oldnorm.est help 2>&1
+    expected_output_contains: "--source"
+
+  - name: Old normalize write help
+    description: Display old normalization write help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.oldnorm.write help 2>&1
+    expected_output_contains: "--subj"
+
+  # ==========================================================================
+  # MEEG PROCESSING
+  # ==========================================================================
+  - name: MEEG convert help
+    description: Display MEEG conversion help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.convert help 2>&1
+    expected_output_contains: "--dataset"
+
+  - name: MEEG epoch help
+    description: Display MEEG epoching help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.preproc.epoch help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: MEEG filter help
+    description: Display MEEG filtering help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.preproc.filter help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: MEEG downsample help
+    description: Display MEEG downsampling help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.preproc.downsample help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: MEEG artefact help
+    description: Display MEEG artefact detection help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.preproc.artefact help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: MEEG baseline correction help
+    description: Display MEEG baseline correction help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.preproc.bc help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: MEEG montage help
+    description: Display MEEG montage help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.preproc.montage help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: MEEG average help
+    description: Display MEEG averaging help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.averaging.average help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: MEEG time-frequency help
+    description: Display MEEG TF analysis help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.tf.tf help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: MEEG source invert help
+    description: Display MEEG source reconstruction help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.source.invert help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: MEEG headmodel help
+    description: Display MEEG head model help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.source.headmodel help 2>&1
+    expected_output_contains: "Usage:"
+
+  # ==========================================================================
+  # OPM (OPTICALLY PUMPED MAGNETOMETERS) - NEW IN SPM25
+  # ==========================================================================
+  - name: OPM create help
+    description: Display OPM creation help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.OPM.create help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: OPM denoise help
+    description: Display OPM denoising help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.OPM.denoise help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: OPM epoch help
+    description: Display OPM epoching help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.meeg.OPM.epoch help 2>&1
+    expected_output_contains: "Usage:"
+
+  # ==========================================================================
+  # BEAMFORMING
+  # ==========================================================================
+  - name: Beamforming data help
+    description: Display beamforming data preparation help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.beamforming.data help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: Beamforming sources help
+    description: Display beamforming source definition help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.beamforming.sources help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: Beamforming inverse help
+    description: Display beamforming inverse help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.beamforming.inverse help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: Beamforming output help
+    description: Display beamforming output help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.beamforming.output help 2>&1
+    expected_output_contains: "Usage:"
+
+  # ==========================================================================
+  # SURFACE RENDERING
+  # ==========================================================================
+  - name: Surface extract help
+    description: Display surface extraction help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.render.extract help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: Surface render help
+    description: Display surface rendering help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.render.display help 2>&1
+    expected_output_contains: "Usage:"
+
+  # ==========================================================================
+  # IMPORT UTILITIES
+  # ==========================================================================
+  - name: MINC import help
+    description: Display MINC import help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.import.minc help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: ECAT import help
+    description: Display ECAT import help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.import.ecat help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: PAR/REC import help
+    description: Display Philips PAR/REC import help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.import.parrec help 2>&1
+    expected_output_contains: "Usage:"
+
+  # ==========================================================================
+  # TSSS (MEG)
+  # ==========================================================================
+  - name: TSSS help
+    description: Display TSSS cleanup help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.tsss.tsss help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: TSSS momentspace help
+    description: Display TSSS moment space help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.tools.tsss.momentspace help 2>&1
+    expected_output_contains: "Usage:"
+
+  # ==========================================================================
+  # REALIGNMENT-UNWARP
+  # ==========================================================================
+  - name: Realign unwarp help
+    description: Display realignment with unwarping help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.spatial.realignunwarp help 2>&1
+    expected_output_contains: "Usage:"
+
+  # ==========================================================================
+  # PRINT UTILITY
+  # ==========================================================================
+  - name: Print help
+    description: Display print utility help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.util.print help 2>&1
+    expected_output_contains: "Usage:"
+
+  # ==========================================================================
+  # ADDITIONAL STATS FUNCTIONS
+  # ==========================================================================
+  - name: Model review help
+    description: Display model review help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.stats.review help 2>&1
+    expected_output_contains: "--spmmat"
+
+  - name: Set level test help
+    description: Display set level test help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.stats.setlevel help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: BMS map inference help
+    description: Display BMS map inference help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.stats.bms_map.inference help 2>&1
+    expected_output_contains: "Usage:"
+
+  # ==========================================================================
+  # MIXED EFFECTS ANALYSIS
+  # ==========================================================================
+  - name: MFX FFX help
+    description: Display mixed effects FFX help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.stats.mfx.ffx help 2>&1
+    expected_output_contains: "Usage:"
+
+  - name: MFX spec help
+    description: Display mixed effects specification help
+    command: /opt/spm/run_spm25.sh /usr/local/MATLAB/MATLAB_Runtime/R2024b spm.stats.mfx.spec help 2>&1
+    expected_output_contains: "Usage:"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Remove smoothed images from test_output directory
+    rm -f test_output/s4_*.nii
+    rm -f test_output/s6_*.nii
+    rm -f test_output/s8_*.nii
+    rm -f test_output/s12_*.nii
+    rm -f test_output/saniso_*.nii
+    rm -f test_output/sim_*.nii
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

@@ -10,6 +10,8 @@ on:
   push:
     paths:
       - recipes/**
+      - '!recipes/**/fulltest.yaml'
+      - '!recipes/**/test.yaml'
     branches:
       - main
 
@@ -35,8 +37,13 @@ jobs:
       id: find_changed_recipes
       if: steps.find_changed_dirs.outputs.any_changed == 'true'
       run: |
-        # Get dir changelist -> convert list to json -> extract app name only -> remove duplicate apps
-        changed_recipes=$(echo "${{ steps.find_changed_dirs.outputs.all_changed_files }}" | jq -rc '.[]'  | cut -d/ -s -f 2-2 | jq -ncR '[inputs]' | jq -rc 'unique')
+        # Get dir changelist -> remove test-only diffs -> extract app name only -> remove duplicate apps
+        changed_files=$(echo "${{ steps.find_changed_dirs.outputs.all_changed_files }}" | jq -rc '.[]' | grep -Ev '/(fulltest|test)\.yaml$' || true)
+        if [ -z "$changed_files" ]; then
+          changed_recipes='[]'
+        else
+          changed_recipes=$(echo "$changed_files" | cut -d/ -s -f 2-2 | jq -ncR '[inputs]' | jq -rc 'unique')
+        fi
         echo "changed_recipes=${changed_recipes}"
         
         app_list='['

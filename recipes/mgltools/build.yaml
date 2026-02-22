@@ -1,0 +1,53 @@
+name: mgltools
+version: 1.5.7
+# check for latest version: https://ccsb.scripps.edu/mgltools/downloads/
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: centos:7
+  pkg-manager: yum
+
+  directives:
+    - install:
+        - curl
+        - ca-certificates
+        - tk
+        - mesa-libGLU
+        - libXmu
+        - libXi
+        - mesa-dri-drivers
+
+    - workdir: /opt
+
+    - run:
+        - curl -SL https://ccsb.scripps.edu/mgltools/download/491 | tar -zx
+        - cd mgltools_x86_64Linux2_{{ context.version }} && ./install.sh -d /opt/mgltools -c 1
+
+deploy:
+  path:
+    - /opt/mgltools/bin
+
+readme: |
+  ----------------------------------
+  ## mgltools/{{ context.version }} ##
+  The MGLTools software suite was developed in the Sanner lab at the Center for Computational Structural Biology (CCRB) formerly known as the Molecular Graphics Laboratory (MGL) of The Scripps Research Institute for visualization and analysis of molecular structures. MGLTools comprises:
+
+  - the Python Molecular Viewer (PMV), a general purpose molecular viewer
+  - AutoDockTools (ADT) a set of PMV commands specifically developed to support AutoDock users
+  - Vision, a visual programming environment.
+
+  Example:
+  ```
+  vision
+  adt
+  ```
+
+  More documentation can be found here: https://ccsb.scripps.edu/mgltools/
+
+  To run container outside of this environment: ml mgltools/{{ context.version }}
+
+  ----------------------------------

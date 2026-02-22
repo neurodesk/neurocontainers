@@ -1,0 +1,850 @@
+# AFNI container test suite
+# Tests for AFNI v26.0.07 - Analysis of Functional NeuroImages
+#
+# AFNI is a suite of programs for looking at and analyzing MRI brain images
+# at all stages of analysis. It contains C, Python, and R programs, as well
+# as shell scripts, primarily developed for the analysis and display of
+# multiple MRI modalities including anatomical, functional, and diffusion MRI.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - T2: Inplane T2 (for registration tests)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: afni
+version: 26.0.07
+container: afni_26.0.07_20260128.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION CHECKS
+  # ==========================================================================
+  - name: AFNI version check
+    description: Verify AFNI installation and version
+    command: afni -ver 2>&1 | head -5
+    expected_output_contains: "AFNI"
+
+  - name: 3dinfo version check
+    description: Verify 3dinfo is available
+    command: 3dinfo -help 2>&1 | head -20
+    expected_output_contains: "3dinfo"
+
+  # ==========================================================================
+  # DATASET INFORMATION (3dinfo)
+  # ==========================================================================
+  - name: Dataset info - basic
+    description: Display basic dataset information
+    command: 3dinfo ${t1w}
+    expected_output_contains: "Dataset File"
+
+  - name: Dataset info - verbose
+    description: Display verbose dataset information
+    command: 3dinfo -verb ${t1w}
+    expected_output_contains: "Template Space"
+
+  - name: Dataset info - dimensions
+    description: Get dataset dimensions (ni, nj, nk)
+    command: 3dinfo -n4 ${t1w}
+    expected_exit_code: 0
+
+  - name: Dataset info - voxel sizes
+    description: Get voxel dimensions
+    command: 3dinfo -d3 ${t1w}
+    expected_exit_code: 0
+
+  - name: Dataset info - orientation
+    description: Get dataset orientation
+    command: 3dinfo -orient ${t1w}
+    expected_exit_code: 0
+
+  - name: Dataset info - space
+    description: Get coordinate space
+    command: 3dinfo -space ${t1w}
+    expected_exit_code: 0
+
+  - name: Dataset info - TR
+    description: Get TR from 4D dataset
+    command: 3dinfo -tr ${bold}
+    expected_exit_code: 0
+
+  - name: Dataset info - min/max
+    description: Get data min and max values
+    command: 3dinfo -dmin -dmax ${t1w}
+    expected_exit_code: 0
+
+  - name: Dataset info - prefix extraction
+    description: Extract dataset prefix
+    command: 3dinfo -prefix ${t1w}
+    expected_output_contains: "sub-01_T1w"
+
+  - name: Dataset info - check existence
+    description: Check if dataset exists
+    command: 3dinfo -exists ${t1w}
+    expected_output_contains: "1"
+
+  - name: Dataset info - check same grid
+    description: Compare grid properties of two datasets
+    command: 3dinfo -same_grid ${t1w} ${t1w}
+    expected_output_contains: "1"
+
+  # ==========================================================================
+  # DATASET COPYING AND CONVERSION (3dcopy)
+  # ==========================================================================
+  - name: Copy dataset
+    description: Copy NIfTI dataset
+    command: 3dcopy ${t1w} test_output/t1w_copy.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_copy.nii.gz
+
+  # ==========================================================================
+  # VOXELWISE CALCULATOR (3dcalc)
+  # ==========================================================================
+  - name: 3dcalc - scale by constant
+    description: Multiply dataset by constant factor
+    command: 3dcalc -a ${t1w} -expr 'a*2' -prefix test_output/t1w_scaled.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_scaled.nii.gz
+
+  - name: 3dcalc - add constant
+    description: Add constant to all voxels
+    command: 3dcalc -a ${t1w} -expr 'a+100' -prefix test_output/t1w_add100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_add100.nii.gz
+
+  - name: 3dcalc - threshold
+    description: Zero out voxels below threshold
+    command: 3dcalc -a ${t1w} -expr 'step(a-100)*a' -prefix test_output/t1w_thr100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thr100.nii.gz
+
+  - name: 3dcalc - binarize
+    description: Create binary mask from intensities
+    command: 3dcalc -a ${t1w} -expr 'ispositive(a-100)' -prefix test_output/t1w_bin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_bin.nii.gz
+
+  - name: 3dcalc - square root
+    description: Take square root of voxel values
+    command: 3dcalc -a ${t1w} -expr 'sqrt(a)' -prefix test_output/t1w_sqrt.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sqrt.nii.gz
+
+  - name: 3dcalc - natural log
+    description: Take natural log (with protection for zeros)
+    command: 3dcalc -a ${t1w} -expr 'log(a+1)' -prefix test_output/t1w_log.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_log.nii.gz
+
+  - name: 3dcalc - trigonometric
+    description: Apply sine function
+    command: 3dcalc -a ${t1w} -expr 'sin(a/100)' -prefix test_output/t1w_sin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sin.nii.gz
+
+  - name: 3dcalc - two inputs average
+    description: Average two datasets (same image here)
+    command: 3dcalc -a ${t1w} -b ${t1w} -expr '(a+b)/2' -prefix test_output/t1w_avg.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_avg.nii.gz
+
+  - name: 3dcalc - maximum of two
+    description: Take voxelwise maximum
+    command: 3dcalc -a ${t1w} -b ${t1w} -expr 'max(a,b)' -prefix test_output/t1w_max.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_max.nii.gz
+
+  - name: 3dcalc - minimum of two
+    description: Take voxelwise minimum
+    command: 3dcalc -a ${t1w} -b ${t1w} -expr 'min(a,b)' -prefix test_output/t1w_min.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_min.nii.gz
+
+  - name: 3dcalc - clip range
+    description: Clip values to range [100, 500]
+    command: 3dcalc -a ${t1w} -expr 'min(max(a,100),500)' -prefix test_output/t1w_clipped.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_clipped.nii.gz
+
+  - name: 3dcalc - output float
+    description: Force float output datatype
+    command: 3dcalc -a ${t1w} -expr 'a' -float -prefix test_output/t1w_float.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_float.nii.gz
+
+  - name: 3dcalc - output short
+    description: Force short integer output
+    command: 3dcalc -a ${t1w} -expr 'a' -short -prefix test_output/t1w_short.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_short.nii.gz
+
+  - name: 3dcalc - sub-brick selection
+    description: Extract first volume from 4D dataset
+    command: 3dcalc -a "${bold}[0]" -expr 'a' -prefix test_output/bold_vol0.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_vol0.nii.gz
+
+  # ==========================================================================
+  # TEMPORAL STATISTICS (3dTstat)
+  # ==========================================================================
+  - name: 3dTstat - temporal mean
+    description: Compute mean across time
+    command: 3dTstat -mean -prefix test_output/bold_mean.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_mean.nii.gz
+
+  - name: 3dTstat - temporal stdev
+    description: Compute standard deviation across time
+    command: 3dTstat -stdev -prefix test_output/bold_stdev.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_stdev.nii.gz
+
+  - name: 3dTstat - temporal sum
+    description: Compute sum across time
+    command: 3dTstat -sum -prefix test_output/bold_sum.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_sum.nii.gz
+
+  - name: 3dTstat - temporal max
+    description: Find maximum value across time
+    command: 3dTstat -max -prefix test_output/bold_tmax.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_tmax.nii.gz
+
+  - name: 3dTstat - temporal min
+    description: Find minimum value across time
+    command: 3dTstat -min -prefix test_output/bold_tmin.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_tmin.nii.gz
+
+  - name: 3dTstat - median
+    description: Compute median across time
+    command: 3dTstat -median -prefix test_output/bold_median.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_median.nii.gz
+
+  - name: 3dTstat - temporal SNR (tSNR)
+    description: Compute temporal signal-to-noise ratio
+    command: 3dTstat -tsnr -prefix test_output/bold_tsnr.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_tsnr.nii.gz
+
+  - name: 3dTstat - coefficient of variation
+    description: Compute CV (stdev/mean) across time
+    command: 3dTstat -cvar -prefix test_output/bold_cvar.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_cvar.nii.gz
+
+  - name: 3dTstat - percentile
+    description: Compute 90th percentile across time
+    command: 3dTstat -percentile 90 -prefix test_output/bold_p90.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_p90.nii.gz
+
+  - name: 3dTstat - argmax
+    description: Find index of maximum value
+    command: 3dTstat -argmax -prefix test_output/bold_argmax.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_argmax.nii.gz
+
+  - name: 3dTstat - MAD
+    description: Compute median absolute deviation
+    command: 3dTstat -MAD -prefix test_output/bold_mad.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_mad.nii.gz
+
+  - name: 3dTstat - autocorrelation
+    description: Compute autocorrelation at lag 1
+    command: 3dTstat -autocorr 1 -prefix test_output/bold_autocorr.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_autocorr.nii.gz
+
+  # ==========================================================================
+  # BRAIN MASKING (3dAutomask)
+  # ==========================================================================
+  - name: 3dAutomask - basic mask
+    description: Create brain mask from functional data
+    command: 3dAutomask -prefix test_output/bold_mask.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_mask.nii.gz
+
+  - name: 3dAutomask - dilated mask
+    description: Create dilated brain mask
+    command: 3dAutomask -dilate 2 -prefix test_output/bold_mask_dil.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_mask_dil.nii.gz
+
+  - name: 3dAutomask - eroded mask
+    description: Create eroded brain mask
+    command: 3dAutomask -erode 1 -prefix test_output/bold_mask_ero.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_mask_ero.nii.gz
+
+  - name: 3dAutomask - adjusted clfrac
+    description: Create mask with lower clip fraction
+    command: 3dAutomask -clfrac 0.3 -prefix test_output/bold_mask_cf03.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_mask_cf03.nii.gz
+
+  - name: 3dAutomask - apply mask
+    description: Create and apply mask to data
+    command: 3dAutomask -apply_prefix test_output/bold_masked.nii.gz -prefix test_output/bold_mask2.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_masked.nii.gz
+      - output_exists: ${output_dir}/bold_mask2.nii.gz
+
+  # ==========================================================================
+  # SKULL STRIPPING (3dSkullStrip)
+  # ==========================================================================
+  - name: 3dSkullStrip - basic
+    description: Skull strip T1-weighted image
+    command: 3dSkullStrip -input ${t1w} -prefix test_output/t1w_brain.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_brain.nii.gz
+    timeout: 300
+
+  - name: 3dSkullStrip - push to edge
+    description: Skull strip with edge preservation
+    command: 3dSkullStrip -input ${t1w} -push_to_edge -prefix test_output/t1w_brain_edge.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_edge.nii.gz
+    timeout: 300
+
+  # ==========================================================================
+  # MASK OPERATIONS (3dmask_tool)
+  # ==========================================================================
+  - name: 3dmask_tool - dilate
+    description: Dilate an existing mask
+    command: 3dmask_tool -input test_output/bold_mask.nii.gz -dilate_input 2 -prefix test_output/mask_dilated.nii.gz
+    depends_on: 3dAutomask - basic mask
+    validate:
+      - output_exists: ${output_dir}/mask_dilated.nii.gz
+
+  - name: 3dmask_tool - erode
+    description: Erode an existing mask
+    command: 3dmask_tool -input test_output/bold_mask.nii.gz -dilate_input -2 -prefix test_output/mask_eroded.nii.gz
+    depends_on: 3dAutomask - basic mask
+    validate:
+      - output_exists: ${output_dir}/mask_eroded.nii.gz
+
+  - name: 3dmask_tool - fill holes
+    description: Fill holes in mask
+    command: 3dmask_tool -input test_output/bold_mask.nii.gz -fill_holes -prefix test_output/mask_filled.nii.gz
+    depends_on: 3dAutomask - basic mask
+    validate:
+      - output_exists: ${output_dir}/mask_filled.nii.gz
+
+  - name: 3dmask_tool - intersection
+    description: Compute intersection of masks
+    command: 3dmask_tool -input test_output/bold_mask.nii.gz test_output/bold_mask_dil.nii.gz -inter -prefix test_output/mask_inter.nii.gz
+    depends_on:
+      - 3dAutomask - basic mask
+      - 3dAutomask - dilated mask
+    validate:
+      - output_exists: ${output_dir}/mask_inter.nii.gz
+
+  - name: 3dmask_tool - union
+    description: Compute union of masks
+    command: 3dmask_tool -input test_output/bold_mask.nii.gz test_output/bold_mask_ero.nii.gz -union -prefix test_output/mask_union.nii.gz
+    depends_on:
+      - 3dAutomask - basic mask
+      - 3dAutomask - eroded mask
+    validate:
+      - output_exists: ${output_dir}/mask_union.nii.gz
+
+  # ==========================================================================
+  # RESAMPLING AND ORIENTATION (3dresample)
+  # ==========================================================================
+  - name: 3dresample - change orientation
+    description: Reorient dataset to RPI
+    command: 3dresample -orient RPI -prefix test_output/t1w_rpi.nii.gz -input ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_rpi.nii.gz
+
+  - name: 3dresample - change orientation to LAS
+    description: Reorient dataset to LAS
+    command: 3dresample -orient LAS -prefix test_output/t1w_las.nii.gz -input ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_las.nii.gz
+
+  - name: 3dresample - downsample
+    description: Downsample by factor of 2
+    command: 3dresample -dxyz 2 2 2 -rmode Cu -prefix test_output/t1w_down2.nii.gz -input ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_down2.nii.gz
+
+  - name: 3dresample - upsample
+    description: Upsample by factor of 2
+    command: 3dresample -dxyz 0.5 0.5 0.5 -rmode Cu -prefix test_output/t1w_up2.nii.gz -input ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_up2.nii.gz
+
+  - name: 3dresample - match master grid
+    description: Resample to match master dataset grid
+    command: 3dresample -master ${t2} -prefix test_output/t1w_to_t2_grid.nii.gz -input ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_to_t2_grid.nii.gz
+
+  # ==========================================================================
+  # SPATIAL FILTERING AND BLURRING (3dmerge)
+  # ==========================================================================
+  - name: 3dmerge - Gaussian blur FWHM
+    description: Apply Gaussian smoothing with 4mm FWHM
+    command: 3dmerge -1blur_fwhm 4 -prefix test_output/t1w_blur4mm.nii.gz ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_blur4mm.nii.gz
+
+  - name: 3dmerge - Gaussian blur sigma
+    description: Apply Gaussian smoothing with sigma=2mm
+    command: 3dmerge -1blur_sigma 2 -prefix test_output/t1w_blurs2.nii.gz ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_blurs2.nii.gz
+
+  - name: 3dmerge - mean filter
+    description: Apply mean filter within radius
+    command: 3dmerge -1filter_mean 3 -prefix test_output/t1w_meanfilt.nii.gz ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_meanfilt.nii.gz
+
+  - name: 3dmerge - max filter
+    description: Apply max filter within radius
+    command: 3dmerge -1filter_max 3 -prefix test_output/t1w_maxfilt.nii.gz ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_maxfilt.nii.gz
+
+  - name: 3dmerge - combine datasets (mean)
+    description: Average multiple datasets together
+    command: 3dmerge -gmean -prefix test_output/t1w_gmean.nii.gz ${t1w} ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_gmean.nii.gz
+
+  # ==========================================================================
+  # MOTION CORRECTION (3dvolreg)
+  # ==========================================================================
+  - name: 3dvolreg - basic motion correction
+    description: Register all volumes to first volume
+    command: 3dvolreg -base 0 -prefix test_output/bold_volreg.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_volreg.nii.gz
+    timeout: 300
+
+  - name: 3dvolreg - with motion parameters
+    description: Save motion parameters to file
+    command: 3dvolreg -base 0 -1Dfile test_output/bold_motion.1D -prefix test_output/bold_volreg2.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_volreg2.nii.gz
+      - output_exists: ${output_dir}/bold_motion.1D
+    timeout: 300
+
+  - name: 3dvolreg - two-pass registration
+    description: Use two-pass coarse-to-fine registration
+    command: 3dvolreg -base 0 -twopass -prefix test_output/bold_volreg_2pass.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_volreg_2pass.nii.gz
+    timeout: 300
+
+  - name: 3dvolreg - save matrices
+    description: Save transformation matrices
+    command: 3dvolreg -base 0 -1Dmatrix_save test_output/bold_volreg_mat.1D -prefix test_output/bold_volreg3.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_volreg3.nii.gz
+      - output_exists: ${output_dir}/bold_volreg_mat.1D
+    timeout: 300
+
+  - name: 3dvolreg - max displacement
+    description: Compute maximum voxel displacement
+    command: 3dvolreg -base 0 -maxdisp1D test_output/bold_maxdisp.1D -prefix test_output/bold_volreg4.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_volreg4.nii.gz
+      - output_exists: ${output_dir}/bold_maxdisp.1D
+    timeout: 300
+
+  # ==========================================================================
+  # SLICE TIMING CORRECTION (3dTshift)
+  # ==========================================================================
+  - name: 3dTshift - alternating plus
+    description: Slice timing correction with alt+z pattern
+    command: 3dTshift -tpattern alt+z -prefix test_output/bold_tshift.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_tshift.nii.gz
+
+  - name: 3dTshift - sequential
+    description: Slice timing correction with sequential pattern
+    command: 3dTshift -tpattern seq+z -prefix test_output/bold_tshift_seq.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_tshift_seq.nii.gz
+
+  - name: 3dTshift - align to specific time
+    description: Align all slices to time zero
+    command: 3dTshift -tpattern alt+z -tzero 0 -prefix test_output/bold_tshift_t0.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_tshift_t0.nii.gz
+
+  - name: 3dTshift - Fourier interpolation
+    description: Use Fourier interpolation for timing correction
+    command: 3dTshift -tpattern alt+z -Fourier -prefix test_output/bold_tshift_fourier.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_tshift_fourier.nii.gz
+
+  - name: 3dTshift - ignore initial volumes
+    description: Ignore first 2 volumes in timing correction
+    command: 3dTshift -tpattern alt+z -ignore 2 -prefix test_output/bold_tshift_ig2.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_tshift_ig2.nii.gz
+
+  # ==========================================================================
+  # DETRENDING (3dDetrend)
+  # ==========================================================================
+  - name: 3dDetrend - polynomial
+    description: Remove polynomial trend (linear)
+    command: 3dDetrend -polort 1 -prefix test_output/bold_detrend.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_detrend.nii.gz
+
+  - name: 3dDetrend - quadratic
+    description: Remove quadratic trend
+    command: 3dDetrend -polort 2 -prefix test_output/bold_detrend_q.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_detrend_q.nii.gz
+
+  # ==========================================================================
+  # TEMPORAL FILTERING (3dBandpass)
+  # ==========================================================================
+  - name: 3dBandpass - basic
+    description: Bandpass filter 0.01-0.1 Hz
+    command: 3dBandpass -prefix test_output/bold_bandpass.nii.gz 0.01 0.1 ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_bandpass.nii.gz
+
+  - name: 3dBandpass - lowpass only
+    description: Lowpass filter at 0.1 Hz
+    command: 3dBandpass -prefix test_output/bold_lowpass.nii.gz 0 0.1 ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_lowpass.nii.gz
+
+  - name: 3dBandpass - highpass only
+    description: Highpass filter at 0.01 Hz
+    command: 3dBandpass -prefix test_output/bold_highpass.nii.gz 0.01 99999 ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_highpass.nii.gz
+
+  - name: 3dBandpass - with despike
+    description: Bandpass with despiking
+    command: 3dBandpass -despike -prefix test_output/bold_bp_despike.nii.gz 0.01 0.1 ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_bp_despike.nii.gz
+
+  # ==========================================================================
+  # TEMPORAL PROJECTION (3dTproject)
+  # ==========================================================================
+  - name: 3dTproject - detrend and bandpass
+    description: Combined detrending and bandpass filtering
+    command: 3dTproject -polort 2 -passband 0.01 0.1 -prefix test_output/bold_tproject.nii.gz -input ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_tproject.nii.gz
+
+  - name: 3dTproject - with blur
+    description: Project with spatial blur
+    command: 3dTproject -polort 2 -blur 4 -prefix test_output/bold_tproj_blur.nii.gz -input ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_tproj_blur.nii.gz
+
+  # ==========================================================================
+  # AFFINE REGISTRATION (3dAllineate)
+  # ==========================================================================
+  - name: 3dAllineate - rigid body
+    description: Rigid body (6 DOF) alignment
+    command: 3dAllineate -base ${t2} -source ${t1w} -prefix test_output/t1w_allin_rigid.nii.gz -cost lpa -warp shift_rotate
+    validate:
+      - output_exists: ${output_dir}/t1w_allin_rigid.nii.gz
+    timeout: 300
+
+  - name: 3dAllineate - affine
+    description: Full affine (12 DOF) alignment
+    command: 3dAllineate -base ${t2} -source ${t1w} -prefix test_output/t1w_allin_affine.nii.gz -cost lpa -warp affine_general
+    validate:
+      - output_exists: ${output_dir}/t1w_allin_affine.nii.gz
+    timeout: 300
+
+  - name: 3dAllineate - save matrix
+    description: Save transformation matrix
+    command: 3dAllineate -base ${t2} -source ${t1w} -prefix test_output/t1w_allin_mat.nii.gz -cost lpa -1Dmatrix_save test_output/t1w_allin.1D
+    validate:
+      - output_exists: ${output_dir}/t1w_allin_mat.nii.gz
+      - output_exists: ${output_dir}/t1w_allin.1D
+    timeout: 300
+
+  # ==========================================================================
+  # SMOOTHNESS ESTIMATION (3dFWHMx)
+  # ==========================================================================
+  - name: 3dFWHMx - estimate smoothness
+    description: Estimate spatial smoothness with ACF
+    command: 3dFWHMx -acf test_output/bold_acf.1D -input ${bold} -automask > test_output/bold_fwhm.txt
+    validate:
+      - output_exists: ${output_dir}/bold_acf.1D
+    timeout: 300
+
+  - name: 3dFWHMx - detrended
+    description: Estimate smoothness with detrending
+    command: 3dFWHMx -detrend -acf test_output/bold_acf_det.1D -input ${bold} -automask > test_output/bold_fwhm_det.txt
+    validate:
+      - output_exists: ${output_dir}/bold_acf_det.1D
+    timeout: 300
+
+  # ==========================================================================
+  # INTENSITY UNIFORMIZATION (3dUnifize)
+  # ==========================================================================
+  - name: 3dUnifize - basic
+    description: Correct intensity nonuniformity
+    command: 3dUnifize -prefix test_output/t1w_unifize.nii.gz -input ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_unifize.nii.gz
+    timeout: 300
+
+  - name: 3dUnifize - with GM scaling
+    description: Unifize with gray matter scaling
+    command: 3dUnifize -GM -prefix test_output/t1w_unifize_gm.nii.gz -input ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_unifize_gm.nii.gz
+    timeout: 300
+
+  # ==========================================================================
+  # ROI STATISTICS (3dROIstats)
+  # ==========================================================================
+  - name: 3dROIstats - mean
+    description: Extract mean within mask
+    command: 3dROIstats -mask test_output/bold_mask.nii.gz ${bold} > test_output/bold_roistats.txt
+    depends_on: 3dAutomask - basic mask
+    validate:
+      - output_exists: ${output_dir}/bold_roistats.txt
+
+  - name: 3dROIstats - multiple stats
+    description: Extract multiple statistics within mask
+    command: 3dROIstats -mask test_output/bold_mask.nii.gz -minmax -sigma -median ${bold} > test_output/bold_roistats_full.txt
+    depends_on: 3dAutomask - basic mask
+    validate:
+      - output_exists: ${output_dir}/bold_roistats_full.txt
+
+  # ==========================================================================
+  # CLUSTER ANALYSIS (3dClusterize)
+  # ==========================================================================
+  - name: 3dClusterize - basic threshold
+    description: Find clusters above threshold
+    command: 3dClusterize -inset test_output/bold_mean.nii.gz -ithr 0 -1sided RIGHT_TAIL 500 -NN 1 -clust_nvox 10 -pref_map test_output/bold_clusters.nii.gz
+    depends_on: 3dTstat - temporal mean
+    validate:
+      - output_exists: ${output_dir}/bold_clusters.nii.gz
+
+  # ==========================================================================
+  # DATASET CONCATENATION (3dTcat)
+  # ==========================================================================
+  - name: 3dTcat - concatenate volumes
+    description: Concatenate sub-bricks from datasets
+    command: 3dTcat -prefix test_output/bold_concat.nii.gz "${bold}[0..9]"
+    validate:
+      - output_exists: ${output_dir}/bold_concat.nii.gz
+
+  - name: 3dTcat - select specific volumes
+    description: Select specific volumes
+    command: 3dTcat -prefix test_output/bold_select.nii.gz "${bold}[0,5,10,15,20]"
+    validate:
+      - output_exists: ${output_dir}/bold_select.nii.gz
+
+  # ==========================================================================
+  # BUCKET ASSEMBLY (3dbucket)
+  # ==========================================================================
+  - name: 3dbucket - combine datasets
+    description: Combine datasets into bucket
+    command: 3dbucket -prefix test_output/combined_bucket.nii.gz test_output/bold_mean.nii.gz test_output/bold_stdev.nii.gz
+    depends_on:
+      - 3dTstat - temporal mean
+      - 3dTstat - temporal stdev
+    validate:
+      - output_exists: ${output_dir}/combined_bucket.nii.gz
+
+  # ==========================================================================
+  # ZERO PADDING (3dZeropad)
+  # ==========================================================================
+  - name: 3dZeropad - add slices
+    description: Add zero padding to dataset
+    command: 3dZeropad -I 5 -S 5 -A 5 -P 5 -L 5 -R 5 -prefix test_output/t1w_padded.nii.gz ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_padded.nii.gz
+
+  # ==========================================================================
+  # DATASET CROPPING (3dAutobox)
+  # ==========================================================================
+  - name: 3dAutobox - crop to data extent
+    description: Crop dataset to non-zero extent
+    command: 3dAutobox -prefix test_output/t1w_cropped.nii.gz -input ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_cropped.nii.gz
+
+  # ==========================================================================
+  # DESPIKE (3dDespike)
+  # ==========================================================================
+  - name: 3dDespike - remove spikes
+    description: Remove time series spikes
+    command: 3dDespike -prefix test_output/bold_despike.nii.gz ${bold}
+    validate:
+      - output_exists: ${output_dir}/bold_despike.nii.gz
+
+  # ==========================================================================
+  # CHAINED OPERATIONS (complex pipelines)
+  # ==========================================================================
+  - name: Pipeline - simple brain extraction
+    description: Chain mask creation and application
+    command: |
+      3dAutomask -prefix test_output/pipe_mask.nii.gz ${t1w} && \
+      3dcalc -a ${t1w} -b test_output/pipe_mask.nii.gz -expr 'a*b' -prefix test_output/t1w_extracted.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_extracted.nii.gz
+
+  - name: Pipeline - temporal preprocessing
+    description: Demean and smooth temporal data
+    command: |
+      3dTstat -mean -prefix test_output/pipe_mean.nii.gz ${bold} && \
+      3dcalc -a ${bold} -b test_output/pipe_mean.nii.gz -expr 'a-b' -prefix test_output/bold_demeaned.nii.gz && \
+      3dmerge -1blur_fwhm 6 -doall -prefix test_output/bold_demeaned_smooth.nii.gz test_output/bold_demeaned.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_demeaned_smooth.nii.gz
+
+  - name: Pipeline - percent signal change
+    description: Compute percent signal change from mean
+    command: |
+      3dTstat -mean -prefix test_output/pipe2_mean.nii.gz ${bold} && \
+      3dcalc -a ${bold} -b test_output/pipe2_mean.nii.gz -expr '100*(a-b)/b' -prefix test_output/bold_psc.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_psc.nii.gz
+
+  - name: Pipeline - create masked tSNR
+    description: Compute tSNR within brain mask
+    command: |
+      3dAutomask -prefix test_output/pipe3_mask.nii.gz ${bold} && \
+      3dTstat -tsnr -prefix test_output/pipe3_tsnr.nii.gz ${bold} && \
+      3dcalc -a test_output/pipe3_tsnr.nii.gz -b test_output/pipe3_mask.nii.gz -expr 'a*b' -prefix test_output/bold_tsnr_masked.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_tsnr_masked.nii.gz
+
+  # ==========================================================================
+  # EDGE DETECTION
+  # ==========================================================================
+  - name: 3dedge3 - edge detection
+    description: Compute edges using gradient
+    command: 3dedge3 -prefix test_output/t1w_edges.nii.gz -input ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_edges.nii.gz
+
+  # ==========================================================================
+  # HISTOGRAM COMPUTATION
+  # ==========================================================================
+  - name: 3dhistog - compute histogram
+    description: Compute intensity histogram
+    command: 3dhistog ${t1w} > test_output/t1w_histogram.txt
+    validate:
+      - output_exists: ${output_dir}/t1w_histogram.txt
+
+  # ==========================================================================
+  # BRAIN SURFACE MODELING (3dSurf2Vol and related)
+  # ==========================================================================
+  - name: 3dBrickStat - compute statistics
+    description: Compute basic brick statistics
+    command: 3dBrickStat -mean -var -min -max ${t1w}
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # WARP APPLICATION (3dNwarpApply)
+  # ==========================================================================
+  # Note: Requires pre-computed warp, so testing with identity/simple cases
+
+  # ==========================================================================
+  # ADDITIONAL UTILITIES
+  # ==========================================================================
+  - name: 3dAttribute - read attributes
+    description: Read dataset attributes
+    command: 3dAttribute BRICK_TYPES ${t1w}
+    expected_exit_code: 0
+
+  - name: 3dNotes - view notes
+    description: View dataset notes
+    command: 3dNotes ${t1w} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: 3drefit - show help
+    description: Verify 3drefit is available
+    command: 3drefit -help 2>&1 | head -10
+    expected_output_contains: "3drefit"
+
+  - name: 3dUndump - show help
+    description: Verify 3dUndump is available
+    command: 3dUndump -help 2>&1 | head -10
+    expected_output_contains: "3dUndump"
+
+  - name: 3dMean - average images
+    description: Average multiple datasets
+    command: 3dMean -prefix test_output/t1w_3dmean.nii.gz ${t1w} ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_3dmean.nii.gz
+
+  - name: 3dMedianFilter - median filter
+    description: Apply 3D median filter
+    command: 3dMedianFilter -irad 1 -prefix test_output/t1w_medfilt.nii.gz ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_medfilt.nii.gz
+
+  # ==========================================================================
+  # REORIENT TOOLS (@Align_Centers)
+  # ==========================================================================
+  - name: 3dCM - center of mass
+    description: Compute center of mass
+    command: 3dCM ${t1w}
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STATISTICAL TESTS (3dttest++)
+  # ==========================================================================
+  - name: 3dttest++ - show help
+    description: Verify 3dttest++ is available
+    command: 3dttest++ -help 2>&1 | head -20
+    expected_output_contains: "3dttest++"
+
+  # ==========================================================================
+  # REGRESSION (3dDeconvolve)
+  # ==========================================================================
+  - name: 3dDeconvolve - show help
+    description: Verify 3dDeconvolve is available
+    command: 3dDeconvolve -help 2>&1 | head -20
+    expected_output_contains: "3dDeconvolve"
+
+  # ==========================================================================
+  # ICA (3dGroupInCorr)
+  # ==========================================================================
+  - name: 3dGroupInCorr - show help
+    description: Verify 3dGroupInCorr is available
+    command: 3dGroupInCorr -help 2>&1 | head -10
+    expected_output_contains: "3dGroupInCorr"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

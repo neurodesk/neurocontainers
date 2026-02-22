@@ -1,0 +1,893 @@
+# MINC Toolkit container test suite
+# Tests for MINC v1.9.18 - Medical Image NetCDF toolkit from BIC-MNI
+#
+# MINC is a flexible format for medical imaging data developed at the
+# McConnell Brain Imaging Centre, Montreal Neurological Institute.
+# This container includes MINC tools plus ANTs (Advanced Normalization Tools).
+#
+# Documentation: http://bic-mni.github.io/ and http://bic-mni.github.io/man-pages/
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: minc
+version: 1.9.18
+container: minc_1.9.18_20230208.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w_nii: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2_nii: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold_nii: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # FORMAT CONVERSION - NIfTI to MINC
+  # ==========================================================================
+  - name: Version check (mincinfo)
+    description: Verify mincinfo binary runs and reports version
+    command: mincinfo -version 2>&1 | head -1
+    expected_output_contains: "program"
+
+  - name: Convert T1w NIfTI to MINC
+    description: Convert NIfTI structural image to MINC format using nii2mnc
+    command: nii2mnc ${t1w_nii} test_output/t1w.mnc -clobber
+    validate:
+      - output_exists: ${output_dir}/t1w.mnc
+
+  - name: Convert T2 NIfTI to MINC
+    description: Convert NIfTI T2 image to MINC format
+    command: nii2mnc ${t2_nii} test_output/t2.mnc -clobber
+    validate:
+      - output_exists: ${output_dir}/t2.mnc
+
+  - name: Convert BOLD NIfTI to MINC
+    description: Convert 4D NIfTI functional image to MINC format
+    command: nii2mnc ${bold_nii} test_output/bold.mnc -clobber
+    validate:
+      - output_exists: ${output_dir}/bold.mnc
+
+  # ==========================================================================
+  # MINC FILE INFORMATION (mincinfo)
+  # ==========================================================================
+  - name: Get image info
+    description: Display default information about MINC file
+    command: mincinfo test_output/t1w.mnc -image_info
+    depends_on: Convert T1w NIfTI to MINC
+    expected_output_contains: "image"
+
+  - name: Get dimension names
+    description: List dimension names in MINC file
+    command: mincinfo test_output/t1w.mnc -dimnames
+    depends_on: Convert T1w NIfTI to MINC
+    expected_output_contains: "space"
+
+  - name: Get variable names
+    description: List all variables in MINC file
+    command: mincinfo test_output/t1w.mnc -varnames
+    depends_on: Convert T1w NIfTI to MINC
+    expected_output_contains: "image"
+
+  - name: Get dimension length
+    description: Get length of a specific dimension
+    command: mincinfo test_output/t1w.mnc -dimlength xspace
+    depends_on: Convert T1w NIfTI to MINC
+    expected_exit_code: 0
+
+  - name: Get MINC version
+    description: Check MINC file version (netcdf or hdf5)
+    command: mincinfo test_output/t1w.mnc -minc_version
+    depends_on: Convert T1w NIfTI to MINC
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MINC STATISTICS (mincstats)
+  # ==========================================================================
+  - name: Basic statistics
+    description: Compute all basic statistics on MINC file
+    command: mincstats test_output/t1w.mnc -all 2>&1 | head -20
+    depends_on: Convert T1w NIfTI to MINC
+    expected_output_contains: "Mean"
+
+  - name: Volume statistics
+    description: Compute volume in mm3
+    command: mincstats test_output/t1w.mnc -volume -quiet
+    depends_on: Convert T1w NIfTI to MINC
+    expected_exit_code: 0
+
+  - name: Min max mean statistics
+    description: Get minimum, maximum and mean values
+    command: mincstats test_output/t1w.mnc -min -max -mean -quiet
+    depends_on: Convert T1w NIfTI to MINC
+    expected_exit_code: 0
+
+  - name: Histogram statistics
+    description: Compute histogram-based statistics including median
+    command: mincstats test_output/t1w.mnc -median -quiet
+    depends_on: Convert T1w NIfTI to MINC
+    expected_exit_code: 0
+
+  - name: BimodalT threshold
+    description: Calculate bimodal threshold using Otsu algorithm
+    command: mincstats test_output/t1w.mnc -biModalT -quiet
+    depends_on: Convert T1w NIfTI to MINC
+    expected_exit_code: 0
+
+  - name: Percentile threshold
+    description: Calculate 95th percentile threshold
+    command: mincstats test_output/t1w.mnc -pctT 95 -quiet
+    depends_on: Convert T1w NIfTI to MINC
+    expected_exit_code: 0
+
+  - name: Center of mass
+    description: Calculate center of mass of the volume
+    command: mincstats test_output/t1w.mnc -CoM -quiet
+    depends_on: Convert T1w NIfTI to MINC
+    expected_exit_code: 0
+
+  - name: Statistics with floor threshold
+    description: Compute statistics ignoring voxels below threshold
+    command: mincstats test_output/t1w.mnc -floor 50 -mean -stddev -quiet
+    depends_on: Convert T1w NIfTI to MINC
+    expected_exit_code: 0
+
+  - name: Statistics within range
+    description: Compute statistics for voxels within a range
+    command: mincstats -floor 50 -ceil 500 -count -mean -quiet test_output/t1w.mnc
+    depends_on: Convert T1w NIfTI to MINC
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MINC MATHEMATICAL OPERATIONS (mincmath)
+  # ==========================================================================
+  - name: Add constant
+    description: Add a constant value to all voxels
+    command: mincmath -add -const 100 test_output/t1w.mnc test_output/t1w_add100.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_add100.mnc
+
+  - name: Subtract constant
+    description: Subtract a constant value from all voxels
+    command: mincmath -sub -const 50 test_output/t1w.mnc test_output/t1w_sub50.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_sub50.mnc
+
+  - name: Multiply by constant
+    description: Multiply all voxels by a constant
+    command: mincmath -mult -const 2 test_output/t1w.mnc test_output/t1w_mult2.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_mult2.mnc
+
+  - name: Divide by constant
+    description: Divide all voxels by a constant
+    command: mincmath -div -const 2 test_output/t1w.mnc test_output/t1w_div2.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_div2.mnc
+
+  - name: Square root
+    description: Calculate square root of all voxels
+    command: mincmath -sqrt test_output/t1w.mnc test_output/t1w_sqrt.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_sqrt.mnc
+
+  - name: Square
+    description: Calculate square of all voxels
+    command: mincmath -square test_output/t1w.mnc test_output/t1w_square.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_square.mnc
+
+  - name: Absolute value
+    description: Calculate absolute value of all voxels
+    command: mincmath -abs test_output/t1w.mnc test_output/t1w_abs.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_abs.mnc
+
+  - name: Invert (reciprocal)
+    description: Calculate 1/x for all voxels
+    command: mincmath -invert -const 1 test_output/t1w.mnc test_output/t1w_invert.mnc -clobber -zero
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_invert.mnc
+
+  - name: Exponential
+    description: Calculate exp(x) for all voxels (scaled)
+    command: mincmath -exp -const 0.01 test_output/t1w.mnc test_output/t1w_exp.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_exp.mnc
+
+  - name: Logarithm
+    description: Calculate log(x) for all voxels
+    command: mincmath -log test_output/t1w.mnc test_output/t1w_log.mnc -clobber -zero
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_log.mnc
+
+  - name: Scale operation
+    description: Scale volume (multiply and add constants)
+    command: mincmath -scale -const2 2 100 test_output/t1w.mnc test_output/t1w_scaled.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_scaled.mnc
+
+  - name: Clamp values
+    description: Clamp voxel values between two thresholds
+    command: mincmath -clamp -const2 50 500 test_output/t1w.mnc test_output/t1w_clamped.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_clamped.mnc
+
+  - name: Segment by range
+    description: Segment volume (1 inside range, 0 outside)
+    command: mincmath -segment -const2 100 500 test_output/t1w.mnc test_output/t1w_segment.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_segment.mnc
+
+  - name: Add two images
+    description: Add two MINC volumes together
+    command: mincmath -add test_output/t1w.mnc test_output/t1w.mnc test_output/t1w_add_self.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_add_self.mnc
+
+  - name: Subtract two images
+    description: Subtract a constant-added volume from original
+    command: mincmath -sub test_output/t1w.mnc test_output/t1w_add100.mnc test_output/t1w_sub_self.mnc -clobber
+    depends_on:
+      - Add constant
+    validate:
+      - output_exists: ${output_dir}/t1w_sub_self.mnc
+
+  - name: Maximum of two images
+    description: Calculate maximum of two volumes
+    command: mincmath -maximum test_output/t1w.mnc test_output/t1w_add100.mnc test_output/t1w_max_self.mnc -clobber
+    depends_on:
+      - Add constant
+    validate:
+      - output_exists: ${output_dir}/t1w_max_self.mnc
+
+  - name: Minimum of two images
+    description: Calculate minimum of two volumes
+    command: mincmath -minimum test_output/t1w.mnc test_output/t1w_add100.mnc test_output/t1w_min_self.mnc -clobber
+    depends_on:
+      - Add constant
+    validate:
+      - output_exists: ${output_dir}/t1w_min_self.mnc
+
+  - name: Greater than comparison
+    description: Test for voxels greater than a threshold
+    command: mincmath -gt -const 200 test_output/t1w.mnc test_output/t1w_gt200.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_gt200.mnc
+
+  - name: Less than comparison
+    description: Test for voxels less than a threshold
+    command: mincmath -lt -const 100 test_output/t1w.mnc test_output/t1w_lt100.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_lt100.mnc
+
+  - name: Logical NOT
+    description: Calculate logical NOT of volume
+    command: mincmath -not test_output/t1w_segment.mnc test_output/t1w_segment_not.mnc -clobber
+    depends_on: Segment by range
+    validate:
+      - output_exists: ${output_dir}/t1w_segment_not.mnc
+
+  - name: Logical AND
+    description: Calculate logical AND of two volumes
+    command: mincmath -and test_output/t1w_segment.mnc test_output/t1w_gt200.mnc test_output/t1w_and.mnc -clobber
+    depends_on:
+      - Segment by range
+      - Greater than comparison
+    validate:
+      - output_exists: ${output_dir}/t1w_and.mnc
+
+  - name: Logical OR
+    description: Calculate logical OR of two volumes
+    command: mincmath -or test_output/t1w_lt100.mnc test_output/t1w_gt200.mnc test_output/t1w_or.mnc -clobber
+    depends_on:
+      - Less than comparison
+      - Greater than comparison
+    validate:
+      - output_exists: ${output_dir}/t1w_or.mnc
+
+  - name: Output as float
+    description: Convert output to floating-point format
+    command: mincmath -abs -float test_output/t1w.mnc test_output/t1w_float.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_float.mnc
+
+  - name: Output as short
+    description: Convert output to short integer format
+    command: mincmath -abs -short test_output/t1w.mnc test_output/t1w_short.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_short.mnc
+
+  # ==========================================================================
+  # MINC CALCULATOR (minccalc) - Expression-based operations
+  # ==========================================================================
+  - name: Expression-based calculation
+    description: Use minccalc with expression for complex operations
+    command: minccalc -expression "A[0] * 2 + 100" test_output/t1w.mnc test_output/t1w_expr1.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_expr1.mnc
+
+  - name: Conditional expression
+    description: Use minccalc with conditional expression
+    command: 'minccalc -expression "A[0] > 200 ? A[0] : 0" test_output/t1w.mnc test_output/t1w_cond.mnc -clobber'
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_cond.mnc
+
+  - name: Multiple input expression
+    description: Combine two images using expression
+    command: minccalc -expression "(A[0] + A[1]) / 2" test_output/t1w.mnc test_output/t1w.mnc test_output/t1w_avg.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_avg.mnc
+
+  - name: Binarize with expression
+    description: Create binary mask using expression
+    command: 'minccalc -expression "A[0] > 150 ? 1 : 0" test_output/t1w.mnc test_output/t1w_bin_expr.mnc -clobber'
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_bin_expr.mnc
+
+  # ==========================================================================
+  # MINC RESAMPLING (mincresample)
+  # ==========================================================================
+  - name: Resample to different resolution
+    description: Resample volume to 2mm isotropic resolution
+    command: mincresample -step 2 2 2 test_output/t1w.mnc test_output/t1w_2mm.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_2mm.mnc
+
+  - name: Resample with trilinear interpolation
+    description: Resample using trilinear interpolation (default)
+    command: mincresample -trilinear -step 1.5 1.5 1.5 test_output/t1w.mnc test_output/t1w_trilinear.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_trilinear.mnc
+
+  - name: Resample with tricubic interpolation
+    description: Resample using tricubic interpolation
+    command: mincresample -tricubic -step 2 2 2 test_output/t1w.mnc test_output/t1w_tricubic.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_tricubic.mnc
+
+  - name: Resample with nearest neighbour
+    description: Resample using nearest neighbour interpolation (for labels)
+    command: mincresample -nearest_neighbour -step 2 2 2 test_output/t1w_segment.mnc test_output/segment_nn.mnc -clobber
+    depends_on: Segment by range
+    validate:
+      - output_exists: ${output_dir}/segment_nn.mnc
+
+  - name: Resample with sinc interpolation
+    description: Resample using sinc interpolation
+    command: mincresample -sinc -step 2 2 2 test_output/t1w.mnc test_output/t1w_sinc.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_sinc.mnc
+
+  - name: Resample to specific size
+    description: Resample to specific number of elements
+    command: mincresample -nelements 128 128 128 test_output/t1w.mnc test_output/t1w_128.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_128.mnc
+
+  - name: Resample like another volume
+    description: Resample to match another volume's sampling
+    command: mincresample -like test_output/t2.mnc test_output/t1w.mnc test_output/t1w_like_t2.mnc -clobber
+    depends_on:
+      - Convert T1w NIfTI to MINC
+      - Convert T2 NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_like_t2.mnc
+
+  - name: Resample transverse slices
+    description: Resample to transverse orientation
+    command: mincresample -transverse test_output/t1w.mnc test_output/t1w_transverse.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_transverse.mnc
+
+  - name: Resample sagittal slices
+    description: Resample to sagittal orientation
+    command: mincresample -sagittal test_output/t1w.mnc test_output/t1w_sagittal.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_sagittal.mnc
+
+  - name: Resample coronal slices
+    description: Resample to coronal orientation
+    command: mincresample -coronal test_output/t1w.mnc test_output/t1w_coronal.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_coronal.mnc
+
+  # ==========================================================================
+  # MINC RESHAPE (mincreshape)
+  # ==========================================================================
+  - name: Reshape to different data type
+    description: Convert volume to float data type
+    command: mincreshape -float test_output/t1w.mnc test_output/t1w_reshape_float.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_reshape_float.mnc
+
+  - name: Reshape to byte
+    description: Convert volume to byte data type
+    command: mincreshape -byte -normalize test_output/t1w.mnc test_output/t1w_byte.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_byte.mnc
+
+  - name: Extract subvolume with dimrange
+    description: Extract a subvolume using dimension range
+    command: mincreshape -dimrange xspace=50,60 -dimrange yspace=50,60 -dimrange zspace=50,60 test_output/t1w.mnc test_output/t1w_subvol.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_subvol.mnc
+
+  - name: Reshape with positive direction
+    description: Ensure positive step values for spatial axes
+    command: mincreshape +direction test_output/t1w.mnc test_output/t1w_posdir.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_posdir.mnc
+
+  - name: Reshape image size
+    description: Resize image to specified dimensions
+    command: mincreshape -imgsize 128 test_output/t1w.mnc test_output/t1w_img128.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_img128.mnc
+
+  # ==========================================================================
+  # MINC AVERAGING (mincaverage)
+  # ==========================================================================
+  - name: Average two volumes
+    description: Compute average of two volumes
+    command: mincaverage test_output/t1w.mnc test_output/t1w.mnc test_output/t1w_averaged.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_averaged.mnc
+
+  - name: Weighted average
+    description: Compute weighted average of volumes
+    command: mincaverage -weights "0.7,0.3" test_output/t1w.mnc test_output/t1w.mnc test_output/t1w_wavg.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_wavg.mnc
+
+  - name: Average with standard deviation
+    description: Compute average and standard deviation
+    command: mincaverage test_output/t1w.mnc test_output/t1w.mnc test_output/t1w_avg2.mnc -sdfile test_output/t1w_std.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_avg2.mnc
+      - output_exists: ${output_dir}/t1w_std.mnc
+
+  - name: Normalized average
+    description: Compute normalized average of volumes
+    command: mincaverage -normalize test_output/t1w.mnc test_output/t1w_mult2.mnc test_output/t1w_navg.mnc -clobber
+    depends_on:
+      - Convert T1w NIfTI to MINC
+      - Multiply by constant
+    validate:
+      - output_exists: ${output_dir}/t1w_navg.mnc
+
+  # ==========================================================================
+  # MINC CONCATENATION (mincconcat)
+  # ==========================================================================
+  - name: Concatenate along new dimension
+    description: Concatenate volumes along a new time dimension
+    command: mincconcat -concat_dimension time test_output/t1w.mnc test_output/t1w.mnc test_output/t1w_concat.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_concat.mnc
+
+  - name: Concatenate with step size
+    description: Concatenate volumes with specified step size
+    command: mincconcat -concat_dimension time -start 0 -step 2 test_output/t1w.mnc test_output/t1w.mnc test_output/t1w_concat2.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_concat2.mnc
+
+  # ==========================================================================
+  # MINC BLURRING (mincblur)
+  # ==========================================================================
+  - name: Gaussian blur
+    description: Apply Gaussian smoothing with FWHM=4mm
+    command: mincblur -fwhm 4 test_output/t1w.mnc test_output/t1w_blur -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_blur_blur.mnc
+
+  - name: Blur with gradient
+    description: Apply Gaussian smoothing and compute gradient magnitude
+    command: mincblur -fwhm 4 -gradient test_output/t1w.mnc test_output/t1w_grad -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_grad_blur.mnc
+      - output_exists: ${output_dir}/t1w_grad_dxyz.mnc
+
+  - name: Blur with partial derivatives
+    description: Compute partial derivatives during smoothing
+    command: mincblur -fwhm 4 -partial test_output/t1w.mnc test_output/t1w_partial -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_partial_blur.mnc
+
+  - name: 2D blur
+    description: Apply 2D Gaussian smoothing (within slices)
+    command: mincblur -fwhm 4 -dimensions 2 test_output/t1w.mnc test_output/t1w_blur2d -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_blur2d_blur.mnc
+
+  - name: Box (rectangular) blur
+    description: Apply rectangular (box) smoothing kernel
+    command: mincblur -fwhm 4 -rect test_output/t1w.mnc test_output/t1w_rect -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_rect_blur.mnc
+
+  # ==========================================================================
+  # MINC MORPHOLOGICAL OPERATIONS (mincmorph)
+  # ==========================================================================
+  - name: Create binary mask
+    description: Binarize volume for morphological operations
+    command: mincmorph -binarise -floor 150 -ceil 1000 test_output/t1w.mnc test_output/t1w_mask.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_mask.mnc
+
+  - name: Erosion
+    description: Apply morphological erosion
+    command: mincmorph -erosion test_output/t1w_mask.mnc test_output/mask_eroded.mnc -clobber
+    depends_on: Create binary mask
+    validate:
+      - output_exists: ${output_dir}/mask_eroded.mnc
+
+  - name: Dilation
+    description: Apply morphological dilation
+    command: mincmorph -dilation test_output/t1w_mask.mnc test_output/mask_dilated.mnc -clobber
+    depends_on: Create binary mask
+    validate:
+      - output_exists: ${output_dir}/mask_dilated.mnc
+
+  - name: Morphological opening
+    description: Apply morphological opening (erosion then dilation)
+    command: mincmorph -open test_output/t1w_mask.mnc test_output/mask_opened.mnc -clobber
+    depends_on: Create binary mask
+    validate:
+      - output_exists: ${output_dir}/mask_opened.mnc
+
+  - name: Morphological closing
+    description: Apply morphological closing (dilation then erosion)
+    command: mincmorph -close test_output/t1w_mask.mnc test_output/mask_closed.mnc -clobber
+    depends_on: Create binary mask
+    validate:
+      - output_exists: ${output_dir}/mask_closed.mnc
+
+  - name: Distance transform
+    description: Compute distance transform from mask boundary
+    command: mincmorph -distance test_output/t1w_mask.mnc test_output/mask_distance.mnc -clobber
+    depends_on: Create binary mask
+    validate:
+      - output_exists: ${output_dir}/mask_distance.mnc
+
+  - name: Group labeling
+    description: Label connected components
+    command: mincmorph -group test_output/t1w_mask.mnc test_output/mask_labeled.mnc -clobber
+    depends_on: Create binary mask
+    validate:
+      - output_exists: ${output_dir}/mask_labeled.mnc
+
+  - name: Successive operations
+    description: Apply multiple morphological operations in sequence
+    command: mincmorph -successive "EDDC" test_output/t1w_mask.mnc test_output/mask_successive.mnc -clobber
+    depends_on: Create binary mask
+    validate:
+      - output_exists: ${output_dir}/mask_successive.mnc
+
+  - name: Morphology with 26-connectivity
+    description: Apply dilation with 26-connectivity kernel
+    command: mincmorph -3D26 -dilation test_output/t1w_mask.mnc test_output/mask_dilated26.mnc -clobber
+    depends_on: Create binary mask
+    validate:
+      - output_exists: ${output_dir}/mask_dilated26.mnc
+
+  - name: Clamp volume
+    description: Clamp values to specified range
+    command: mincmorph -clamp -floor 50 -ceil 500 test_output/t1w.mnc test_output/t1w_morph_clamp.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_morph_clamp.mnc
+
+  # ==========================================================================
+  # MINC MASKING (mincmask)
+  # ==========================================================================
+  - name: Apply mask
+    description: Apply binary mask to volume
+    command: mincmask test_output/t1w.mnc test_output/t1w_mask.mnc test_output/t1w_masked.mnc -clobber
+    depends_on:
+      - Convert T1w NIfTI to MINC
+      - Create binary mask
+    validate:
+      - output_exists: ${output_dir}/t1w_masked.mnc
+
+  - name: Apply inverted mask
+    description: Apply inverted mask to volume
+    command: mincmask -invert_mask test_output/t1w.mnc test_output/t1w_mask.mnc test_output/t1w_masked_inv.mnc -clobber
+    depends_on:
+      - Convert T1w NIfTI to MINC
+      - Create binary mask
+    validate:
+      - output_exists: ${output_dir}/t1w_masked_inv.mnc
+
+  # ==========================================================================
+  # MINC LOOKUP TABLE (minclookup)
+  # ==========================================================================
+  - name: Apply grayscale lookup
+    description: Apply grayscale lookup table
+    command: minclookup -gray test_output/t1w.mnc test_output/t1w_gray.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_gray.mnc
+
+  - name: Apply hotmetal lookup
+    description: Apply hot metal colormap lookup table
+    command: minclookup -hotmetal test_output/t1w.mnc test_output/t1w_hotmetal.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_hotmetal.mnc
+
+  - name: Apply spectral lookup
+    description: Apply spectral colormap lookup table
+    command: minclookup -spectral test_output/t1w.mnc test_output/t1w_spectral.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_spectral.mnc
+
+  - name: Inverted lookup
+    description: Apply inverted grayscale lookup table
+    command: minclookup -gray -invert test_output/t1w.mnc test_output/t1w_gray_inv.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_gray_inv.mnc
+
+  # ==========================================================================
+  # MINC NORMALIZATION (mincnorm)
+  # ==========================================================================
+  - name: Intensity normalization
+    description: Normalize intensity between 0-100
+    command: mincnorm test_output/t1w.mnc test_output/t1w_norm.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_norm.mnc
+
+  - name: Normalization with mask
+    description: Normalize intensity using a mask
+    command: mincnorm -mask test_output/t1w_mask.mnc test_output/t1w.mnc test_output/t1w_norm_masked.mnc -clobber
+    depends_on:
+      - Convert T1w NIfTI to MINC
+      - Create binary mask
+    validate:
+      - output_exists: ${output_dir}/t1w_norm_masked.mnc
+
+  - name: Normalization with custom range
+    description: Normalize intensity to custom range
+    command: mincnorm -out_floor 0 -out_ceil 255 test_output/t1w.mnc test_output/t1w_norm255.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_norm255.mnc
+
+  # ==========================================================================
+  # MINC CONVERSION (mincconvert)
+  # ==========================================================================
+  - name: Convert to MINC2
+    description: Convert to MINC 2.0 format (HDF5-based)
+    command: mincconvert -2 test_output/t1w.mnc test_output/t1w_minc2.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_minc2.mnc
+
+  - name: Convert with compression
+    description: Convert with compression level 6
+    command: mincconvert -compress 6 test_output/t1w.mnc test_output/t1w_compressed.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_compressed.mnc
+
+  # ==========================================================================
+  # FORMAT CONVERSION - MINC to NIfTI
+  # ==========================================================================
+  - name: Convert MINC back to NIfTI
+    description: Convert MINC file back to NIfTI-1 format
+    command: mnc2nii test_output/t1w.mnc test_output/t1w_back.nii
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_back.nii
+
+  - name: Convert MINC to compressed NIfTI
+    description: Convert MINC file to compressed NIfTI-1 format
+    command: mnc2nii -nii test_output/t1w.mnc test_output/t1w_back2.nii && gzip -f test_output/t1w_back2.nii
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_back2.nii.gz
+
+  # ==========================================================================
+  # MINC REGISTRATION (minctracc) - Linear registration
+  # ==========================================================================
+  - name: Identity registration
+    description: Test registration with identity transformation
+    command: minctracc -identity -lsq6 test_output/t1w.mnc test_output/t1w.mnc test_output/identity.xfm -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/identity.xfm
+
+  - name: 6-parameter registration
+    description: Rigid body registration (3 trans + 3 rot)
+    command: minctracc -lsq6 -step 8 8 8 -simplex 10 test_output/t1w_2mm.mnc test_output/t1w.mnc test_output/t1w_lsq6.xfm -clobber
+    depends_on:
+      - Convert T1w NIfTI to MINC
+      - Resample to different resolution
+    validate:
+      - output_exists: ${output_dir}/t1w_lsq6.xfm
+
+  - name: 9-parameter registration
+    description: Affine registration with anisotropic scaling
+    command: minctracc -lsq9 -step 8 8 8 -simplex 10 test_output/t1w_2mm.mnc test_output/t1w.mnc test_output/t1w_lsq9.xfm -clobber
+    depends_on:
+      - Convert T1w NIfTI to MINC
+      - Resample to different resolution
+    validate:
+      - output_exists: ${output_dir}/t1w_lsq9.xfm
+
+  # ==========================================================================
+  # ANTs TOOLS (included in MINC container)
+  # ==========================================================================
+  - name: ANTs version check
+    description: Verify ANTs tools are available
+    command: antsRegistration --version 2>&1 | head -3
+    expected_output_contains: "ANTs"
+
+  - name: N4 Bias Field Correction
+    description: Apply N4 bias field correction using ANTs
+    command: N4BiasFieldCorrection -d 3 -i test_output/t1w_back.nii -o test_output/t1w_n4.nii -s 4 -c [50x50x50,0.0] -b [200]
+    depends_on: Convert MINC back to NIfTI
+    validate:
+      - output_exists: ${output_dir}/t1w_n4.nii
+
+  - name: ANTs ImageMath mean
+    description: Calculate mean using ANTs ImageMath
+    command: ImageMath 3 test_output/t1w_ants_mean.nii m test_output/t1w_back.nii 2
+    depends_on: Convert MINC back to NIfTI
+    validate:
+      - output_exists: ${output_dir}/t1w_ants_mean.nii
+
+  - name: ANTs smooth image
+    description: Smooth image using ANTs SmoothImage
+    command: SmoothImage 3 test_output/t1w_back.nii 2 test_output/t1w_ants_smooth.nii
+    depends_on: Convert MINC back to NIfTI
+    validate:
+      - output_exists: ${output_dir}/t1w_ants_smooth.nii
+
+  - name: ANTs threshold image
+    description: Threshold image using ANTs ThresholdImage
+    command: ThresholdImage 3 test_output/t1w_back.nii test_output/t1w_ants_thresh.nii 150 Inf
+    depends_on: Convert MINC back to NIfTI
+    validate:
+      - output_exists: ${output_dir}/t1w_ants_thresh.nii
+
+  # ==========================================================================
+  # 4D DATA PROCESSING (using BOLD data)
+  # ==========================================================================
+  - name: Extract single volume from 4D
+    description: Extract first volume from 4D MINC file
+    command: mincreshape -dimrange time=0,1 test_output/bold.mnc test_output/bold_vol0.mnc -clobber
+    depends_on: Convert BOLD NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/bold_vol0.mnc
+
+  - name: Statistics on 4D data
+    description: Compute statistics on 4D MINC file
+    command: mincstats test_output/bold.mnc -mean -stddev -quiet 2>&1 | head -5
+    depends_on: Convert BOLD NIfTI to MINC
+    expected_exit_code: 0
+
+  - name: Average along time dimension
+    description: Average 4D data along time dimension
+    command: mincaverage -avgdim time test_output/bold.mnc test_output/bold_tmean.mnc -clobber
+    depends_on: Convert BOLD NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/bold_tmean.mnc
+
+  # ==========================================================================
+  # HEADER MANIPULATION
+  # ==========================================================================
+  - name: View header with mincdump
+    description: Dump MINC header information
+    command: mincdump -h test_output/t1w.mnc 2>&1 | head -30
+    depends_on: Convert T1w NIfTI to MINC
+    expected_output_contains: "hdf5"
+
+  - name: Get history
+    description: Show processing history of MINC file
+    command: minchistory test_output/t1w_blur_blur.mnc 2>&1 | head -10
+    depends_on: Gaussian blur
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # CHAINED OPERATIONS (complex pipelines)
+  # ==========================================================================
+  - name: Preprocessing pipeline
+    description: Chain of operations - blur, normalize, threshold
+    command: |
+      mincblur -fwhm 2 test_output/t1w.mnc test_output/t1w_pipe1 -clobber && \
+      mincnorm test_output/t1w_pipe1_blur.mnc test_output/t1w_pipe2.mnc -clobber && \
+      mincmath -segment -const2 20 80 test_output/t1w_pipe2.mnc test_output/t1w_pipe_final.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_pipe_final.mnc
+
+  - name: Brain extraction approximation
+    description: Simple brain extraction using threshold and morphology
+    command: |
+      mincmath -segment -const2 100 1000 test_output/t1w.mnc test_output/brain_seg.mnc -clobber && \
+      mincmorph -successive "DDDDEEEEC" test_output/brain_seg.mnc test_output/brain_mask.mnc -clobber && \
+      mincmask test_output/t1w.mnc test_output/brain_mask.mnc test_output/t1w_brain.mnc -clobber
+    depends_on: Convert T1w NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_brain.mnc
+
+  - name: Intensity standardization
+    description: Standardize intensities between two images
+    command: |
+      mincstats test_output/t1w.mnc -mean -quiet > test_output/mean1.txt && \
+      mincstats test_output/t2.mnc -mean -quiet > test_output/mean2.txt && \
+      mincmath -scale -const2 1 0 test_output/t1w.mnc test_output/t1w_std.mnc -clobber
+    depends_on:
+      - Convert T1w NIfTI to MINC
+      - Convert T2 NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_std.mnc
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

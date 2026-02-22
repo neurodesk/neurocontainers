@@ -1,0 +1,74 @@
+name: ashs
+version: 2.0.0
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:16.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - ca-certificates
+        - curl
+        - unzip
+        - libxt6
+        - libxext6
+        - libxtst6
+        - libgl1-mesa-glx
+        - libc6
+        - libice6
+        - libsm6
+        - libx11-6
+        - tcsh
+
+    - run:
+        - ASHS_PATH=$(curl -fsSL "https://www.nitrc.org/frs/?group_id=370" | grep -Eo '/frs/download.php/[0-9]+/ashs-fastashs[^\" ]+' | head -n1)
+        - '[ -n "$ASHS_PATH" ] || { echo "Unable to locate ASHS download URL."; exit 1; }'
+        - ASHS_URL="https://www.nitrc.org${ASHS_PATH}"
+        - curl -fsSL "$ASHS_URL" -o /tmp/ashs_fastashs.pkg
+        - 'case "$ASHS_URL" in *.zip) unzip -q /tmp/ashs_fastashs.pkg -d /opt ;; *.tgz|*.tar.gz) tar -xzf /tmp/ashs_fastashs.pkg -C /opt ;; *) echo "Unsupported ASHS archive format: $ASHS_URL"; exit 1 ;; esac'
+        - ASHS_DIR=$(find /opt -maxdepth 1 -mindepth 1 -type d -name 'ashs-fastashs*' | head -n1)
+        - '[ -n "$ASHS_DIR" ] || { echo "Unable to find extracted ASHS directory."; exit 1; }'
+        - ln -sfn "$ASHS_DIR" /opt/ashs-{{ context.version }}
+        - ln -sfn /opt/ashs-{{ context.version }} /opt/ashs
+        - rm -f /tmp/ashs_fastashs.pkg
+
+    - environment:
+        ASHS_ROOT: /opt/ashs
+        PATH: "/opt/ashs/bin:$PATH"
+
+    - user: neuro
+
+deploy:
+  path:
+    - /opt/ashs/bin
+
+categories:
+  - image segmentation
+
+readme: |
+  ----------------------------------
+  ## ashs/{{ context.version }} ##
+  Automatic Segmentation of Hippocampal Subfields (ASHS) - a software for automated segmentation of hippocampal subfields in MRI.
+
+  Example:
+  ```
+  curl -o sub-01_ses-01_7T_T1w_defaced.nii.gz "https://files.au-1.osf.io/v1/resources/bt4ez/providers/osfstorage/5e9bf3ab430166067ea05564?action=download&direct&version=1"
+  curl -o sub-01_ses-01_7T_T2w_run-1_tse.nii.gz "https://files.au-1.osf.io/v1/resources/bt4ez/providers/osfstorage/5e9bf3d1430166067ba07bff?action=download&direct&version=1"
+
+  mkdir myworkdir
+
+  $ASHS_ROOT/bin/ashs_main.sh -I subj001 -a /ashs_atlas_* \
+     -g sub-01_ses-01_7T_T1w_defaced.nii.gz -f sub-01_ses-01_7T_T2w_run-1_tse.nii.gz \
+     -w myworkdir/subj001
+  ```
+
+  More documentation can be found here: https://sites.google.com/view/ashs-dox/quick-start
+
+  To run container outside of this environment: ml ashs/{{ context.version }}
+
+  License: GNU General Public License (GPL)
+  ----------------------------------

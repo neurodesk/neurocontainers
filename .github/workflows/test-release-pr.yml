@@ -5,6 +5,7 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - "releases/*/**.json"
+      - "recipes/**/test.yaml"
     branches:
       - master
       - main
@@ -26,42 +27,123 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect release files
+      - name: Detect release and test-only changes
         id: detect
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          # Get list of modified release JSON files
-          MODIFIED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | grep 'releases/.*/.*\.json' || true)
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          from pathlib import Path
 
-          if [ -z "$MODIFIED_FILES" ]; then
-            echo "has-changes=false" >> $GITHUB_OUTPUT
-            echo "modified-releases=[]" >> $GITHUB_OUTPUT
-            exit 0
-          fi
+          def find_latest_release_file(release_dir: Path):
+              if not release_dir.is_dir():
+                  return None, None
 
-          echo "has-changes=true" >> $GITHUB_OUTPUT
-          echo "Modified release files:"
-          echo "$MODIFIED_FILES"
+              latest_path = None
+              latest_build_date = ""
+              latest_version = ""
 
-          # Extract container name and version from release file paths
-          RELEASES_JSON="["
-          FIRST=true
-          for file in $MODIFIED_FILES; do
-            # Extract from path like releases/container_name/version.json
-            CONTAINER_NAME=$(echo "$file" | sed 's|releases/\([^/]*\)/.*|\1|')
-            VERSION=$(echo "$file" | sed 's|releases/.*/\([^/]*\)\.json|\1|')
-            
-            if [ "$FIRST" = true ]; then
-              FIRST=false
-            else
-              RELEASES_JSON="$RELEASES_JSON,"
-            fi
-            
-            RELEASES_JSON="$RELEASES_JSON{\"name\":\"$CONTAINER_NAME\",\"version\":\"$VERSION\",\"file\":\"$file\"}"
-          done
-          RELEASES_JSON="$RELEASES_JSON]"
+              for entry in sorted(release_dir.iterdir()):
+                  if entry.suffix != ".json":
+                      continue
 
-          echo "Generated releases JSON: $RELEASES_JSON"
-          echo "modified-releases=$RELEASES_JSON" >> $GITHUB_OUTPUT
+                  candidate_version = entry.stem
+                  build_date = ""
+
+                  try:
+                      data = json.loads(entry.read_text(encoding="utf-8"))
+                      apps = data.get("apps", {}) or {}
+                      if apps:
+                          first_value = next(iter(apps.values()))
+                          build_date = str(first_value.get("version", "")).strip()
+                  except Exception:
+                      build_date = ""
+
+                  if latest_path is None:
+                      latest_path = entry
+                      latest_build_date = build_date
+                      latest_version = candidate_version
+                      continue
+
+                  if build_date and (not latest_build_date or build_date > latest_build_date):
+                      latest_path = entry
+                      latest_build_date = build_date
+                      latest_version = candidate_version
+                  elif build_date == latest_build_date and candidate_version > latest_version:
+                      latest_path = entry
+                      latest_version = candidate_version
+
+              return latest_path, latest_version
+
+          diff_range = f"origin/{os.environ['BASE_REF']}...HEAD"
+          proc = subprocess.run(
+              ["git", "diff", "--name-only", diff_range],
+              check=False,
+              capture_output=True,
+              text=True,
+          )
+          if proc.returncode != 0:
+              print(proc.stderr.strip(), file=sys.stderr)
+              raise SystemExit(proc.returncode)
+
+          changed_files = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+          release_pattern = re.compile(r"^releases/([^/]+)/([^/]+)\.json$")
+          test_pattern = re.compile(r"^recipes/([^/]+)/test\.yaml$")
+
+          entries = {}
+
+          for path in changed_files:
+              match = release_pattern.match(path)
+              if not match:
+                  continue
+
+              recipe, version = match.groups()
+              entries[recipe] = {
+                  "name": recipe,
+                  "version": version,
+                  "file": path,
+              }
+
+          missing_release = []
+          for path in changed_files:
+              match = test_pattern.match(path)
+              if not match:
+                  continue
+
+              recipe = match.group(1)
+              if recipe in entries:
+                  continue
+
+              release_file, version = find_latest_release_file(Path("releases") / recipe)
+              if release_file and version:
+                  entries[recipe] = {
+                      "name": recipe,
+                      "version": version,
+                      "file": release_file.as_posix(),
+                  }
+              else:
+                  missing_release.append(recipe)
+
+          matrix = sorted(entries.values(), key=lambda item: item["name"])
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"has-changes={'true' if matrix else 'false'}\n")
+              handle.write(f"modified-releases={json.dumps(matrix)}\n")
+
+          if missing_release:
+              unique_missing = sorted(set(missing_release))
+              print(
+                  "Missing release metadata for recipes with changed test.yaml: "
+                  + ", ".join(unique_missing),
+                  file=sys.stderr,
+              )
+              raise SystemExit(1)
+          PY
 
   test-containers:
     needs: detect-changes

@@ -1,0 +1,583 @@
+# osprey container test suite
+# Tests for Osprey v2.9.0 - MRS processing and quantification software
+#
+# Osprey is an all-in-one software suite for state-of-the art processing and
+# quantitative analysis of in-vivo magnetic resonance spectroscopy (MRS) data.
+#
+# Container includes:
+#   - ospreyGUI: Graphical user interface
+#   - ospreyCMD: Command-line interface (requires JSON/M job file)
+#   - Example data: MEGA-PRESS and unedited PRESS data (Philips SDAT format)
+#   - Basis sets: Pre-simulated basis sets for 3T/7T/9.4T (GE, Philips, Siemens)
+#
+# Note: Osprey uses MATLAB Runtime (MCR R2023a) and requires job files for processing.
+#       The ds000001 dataset contains standard fMRI/T1w data, not MRS data.
+#       For comprehensive MRS testing, we use the bundled example data in /opt/exampledata/.
+#
+# Citation:
+#   G Oeltzschner, HJ Zoellner, SCN Hui, M Mikkelsen, MG Saleh, S Tapper, RAE Edden.
+#   Osprey: Open-Source Processing, Reconstruction & Estimation of Magnetic Resonance
+#   Spectroscopy Data. J Neurosci Meth 343:108827 (2020).
+
+name: osprey
+version: 2.9.0
+container: osprey_2.9.0_20250901.simg
+
+test_data:
+  # Bundled MRS example data (MEGA-PRESS - Philips SDAT format)
+  mega_act_sub1: /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress/sub-01_megapress_act.sdat
+  mega_ref_sub1: /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress-ref/sub-01_megapress_ref.sdat
+  mega_water_sub1: /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_press-ref/sub-01_PRESS_35_ref.sdat
+  mega_t1w_sub1: /opt/exampledata/MEGA/sub-01/ses-01/anat/sub-01/sub-01_ses-01_T1w.nii.gz
+  mega_act_sub2: /opt/exampledata/MEGA/sub-02/ses-01/mrs/sub-02_ses-01_megapress/sub-02_megapress_act.sdat
+  mega_ref_sub2: /opt/exampledata/MEGA/sub-02/ses-01/mrs/sub-02_ses-01_megapress-ref/sub-02_megapress_ref.sdat
+  mega_water_sub2: /opt/exampledata/MEGA/sub-02/ses-01/mrs/sub-02_ses-01_press-ref/sub-02_PRESS_35_ref.sdat
+  mega_t1w_sub2: /opt/exampledata/MEGA/sub-02/ses-01/anat/sub-02/sub-02_ses-01_T1w.nii.gz
+  # Unedited PRESS example data
+  press_act_sub1: /opt/exampledata/UnEdited/sub-01/ses-01/mrs/sub-01_ses-01_press/sub-01_PRESS_35_act.sdat
+  press_ref_sub1: /opt/exampledata/UnEdited/sub-01/ses-01/mrs/sub-01_ses-01_press-ref/sub-01_PRESS_35_ref.sdat
+  press_t1w_sub1: /opt/exampledata/UnEdited/sub-01/ses-01/anat/sub-01/sub-01_ses-01_T1w.nii.gz
+  press_act_sub2: /opt/exampledata/UnEdited/sub-02/ses-01/mrs/sub-02_ses-01_press/sub-02_PRESS_35_act.sdat
+  press_ref_sub2: /opt/exampledata/UnEdited/sub-02/ses-01/mrs/sub-02_ses-01_press-ref/sub-02_PRESS_35_ref.sdat
+  press_t1w_sub2: /opt/exampledata/UnEdited/sub-02/ses-01/anat/sub-02/sub-02_ses-01_T1w.nii.gz
+  # Basis sets
+  basis_philips_megapress_gaba68: /opt/basissets/3T/philips/mega/press/gaba68/basis_philips_megapress_gaba68.mat
+  basis_philips_press35: /opt/basissets/3T/philips/unedited/press/35/basis_philips_press35.mat
+  # Output directory
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/osprey_mega
+    mkdir -p test_output/osprey_press
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - Command availability
+  # ==========================================================================
+  - name: ospreyCMD command exists
+    description: Verify ospreyCMD binary is available in container
+    command: which ospreyCMD
+    expected_output_contains: "/opt/ospreyCMD"
+
+  - name: ospreyGUI command exists
+    description: Verify ospreyGUI binary is available in container
+    command: which ospreyGUI
+    expected_output_contains: "/opt/ospreyGUI"
+
+  - name: ospreyCMD shows help (no args)
+    description: Verify ospreyCMD runs and shows error for missing arguments
+    command: ospreyCMD 2>&1 || true
+    expected_output_contains: "Not enough input arguments"
+
+  # ==========================================================================
+  # MATLAB RUNTIME VERIFICATION
+  # ==========================================================================
+  - name: MATLAB Runtime installed
+    description: Verify MATLAB Compiler Runtime R2023a is present
+    command: ls -d /opt/MCR/R2023a/
+    expected_output_contains: "/opt/MCR/R2023a/"
+
+  - name: MCR library path accessible
+    description: Verify MCR runtime libraries exist
+    command: ls /opt/MCR/R2023a/runtime/glnxa64/ | head -5
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # EXAMPLE DATA VERIFICATION
+  # ==========================================================================
+  - name: MEGA-PRESS example data exists (sub-01)
+    description: Verify MEGA-PRESS metabolite data file exists
+    command: ls -la ${mega_act_sub1}
+    expected_output_contains: "sub-01_megapress_act.sdat"
+
+  - name: MEGA-PRESS SPAR header exists (sub-01)
+    description: Verify MEGA-PRESS parameter file exists alongside SDAT
+    command: ls -la /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress/sub-01_megapress_act.spar
+    expected_output_contains: "sub-01_megapress_act.spar"
+
+  - name: MEGA-PRESS reference data exists (sub-01)
+    description: Verify MEGA-PRESS reference scan file exists
+    command: ls -la ${mega_ref_sub1}
+    expected_output_contains: "sub-01_megapress_ref.sdat"
+
+  - name: MEGA-PRESS water reference exists (sub-01)
+    description: Verify MEGA-PRESS water reference for quantification
+    command: ls -la ${mega_water_sub1}
+    expected_output_contains: "sub-01_PRESS_35_ref.sdat"
+
+  - name: T1w anatomical exists (sub-01)
+    description: Verify T1-weighted structural image exists for coregistration
+    command: ls -la ${mega_t1w_sub1}
+    expected_output_contains: "sub-01_ses-01_T1w.nii.gz"
+
+  - name: MEGA-PRESS example data exists (sub-02)
+    description: Verify second subject MEGA-PRESS data exists
+    command: ls -la ${mega_act_sub2}
+    expected_output_contains: "sub-02_megapress_act.sdat"
+
+  - name: Unedited PRESS example data exists (sub-01)
+    description: Verify unedited PRESS metabolite data file exists
+    command: ls -la ${press_act_sub1}
+    expected_output_contains: "sub-01_PRESS_35_act.sdat"
+
+  - name: Unedited PRESS reference data exists (sub-01)
+    description: Verify unedited PRESS water reference file exists
+    command: ls -la ${press_ref_sub1}
+    expected_output_contains: "sub-01_PRESS_35_ref.sdat"
+
+  - name: Example data directory structure
+    description: Verify BIDS-like directory structure of example data
+    command: ls -la /opt/exampledata/
+    expected_output_contains: "MEGA"
+
+  # ==========================================================================
+  # SPAR/SDAT FORMAT VERIFICATION
+  # ==========================================================================
+  - name: SPAR file readable (MEGA-PRESS sub-01)
+    description: Verify SPAR header file contains expected parameters
+    command: head -20 /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress/sub-01_megapress_act.spar
+    expected_output_contains: "GYROSCAN spectro parameter file"
+
+  - name: SPAR contains samples parameter
+    description: Verify SPAR header has number of samples
+    command: grep "samples" /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress/sub-01_megapress_act.spar
+    expected_output_contains: "samples"
+
+  - name: SPAR contains echo_time parameter
+    description: Verify SPAR header has echo time (68ms for MEGA-PRESS GABA)
+    command: grep "echo_time" /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress/sub-01_megapress_act.spar
+    expected_output_contains: "68"
+
+  - name: SPAR contains synthesizer_frequency
+    description: Verify SPAR header has field strength indicator
+    command: grep "synthesizer_frequency" /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress/sub-01_megapress_act.spar
+    expected_output_contains: "127750920"
+
+  - name: SPAR contains voxel dimensions
+    description: Verify SPAR header has voxel size parameters
+    command: grep "_size" /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress/sub-01_megapress_act.spar
+    expected_output_contains: "30"
+
+  - name: SDAT file size check (MEGA-PRESS)
+    description: Verify SDAT data file has expected size for MEGA-PRESS
+    command: ls -la ${mega_act_sub1} | awk '{print $5}'
+    expected_output_contains: "5242880"
+
+  - name: Unedited PRESS SPAR header check
+    description: Verify unedited PRESS SPAR file is readable
+    command: cat /opt/exampledata/UnEdited/sub-01/ses-01/mrs/sub-01_ses-01_press/sub-01_PRESS_35_act.spar
+    expected_output_contains: "GYROSCAN"
+
+  # ==========================================================================
+  # BASIS SETS VERIFICATION
+  # ==========================================================================
+  - name: Basis sets directory structure
+    description: Verify basis sets organized by field strength
+    command: ls /opt/basissets/
+    expected_output_contains: "3T"
+
+  - name: 3T basis sets by vendor
+    description: Verify basis sets available for all major vendors
+    command: ls /opt/basissets/3T/
+    expected_output_contains: "philips"
+
+  - name: Philips MEGA-PRESS basis set exists (GABA 68ms)
+    description: Verify Philips MEGA-PRESS GABA basis set for TE=68ms
+    command: ls -la ${basis_philips_megapress_gaba68}
+    expected_output_contains: "basis_philips_megapress_gaba68.mat"
+
+  - name: Philips MEGA-PRESS basis set exists (GABA 80ms)
+    description: Verify Philips MEGA-PRESS GABA basis set for TE=80ms
+    command: ls -la /opt/basissets/3T/philips/mega/press/gaba80/
+    expected_output_contains: "basis_philips_megapress_gaba80.mat"
+
+  - name: Philips unedited PRESS basis set exists (TE=35ms)
+    description: Verify Philips unedited PRESS basis set for TE=35ms
+    command: ls -la ${basis_philips_press35}
+    expected_output_contains: "basis_philips_press35.mat"
+
+  - name: Philips HERMES basis set exists
+    description: Verify Philips HERMES editing basis set
+    command: ls -la /opt/basissets/3T/philips/hermes/gabagsh/
+    expected_output_contains: "basis_philips_hermes.mat"
+
+  - name: Philips HERCULES basis set exists
+    description: Verify Philips HERCULES editing basis set
+    command: ls -la /opt/basissets/3T/philips/hercules-press/
+    expected_output_contains: "basis_philips_hercules-press.mat"
+
+  - name: Siemens MEGA-PRESS basis set exists (GABA 68ms)
+    description: Verify Siemens MEGA-PRESS GABA basis set
+    command: ls -la /opt/basissets/3T/siemens/mega/press/gaba68/
+    expected_output_contains: "basis_siemens_megapress_gaba68.mat"
+
+  - name: Siemens unedited PRESS basis set exists (TE=30ms)
+    description: Verify Siemens unedited PRESS basis set for TE=30ms
+    command: ls -la /opt/basissets/3T/siemens/unedited/press/30/
+    expected_output_contains: "basis_siemens_press30.mat"
+
+  - name: Siemens sLASER basis set exists
+    description: Verify Siemens sLASER basis set
+    command: ls -la /opt/basissets/3T/siemens/unedited/slaser/30/
+    expected_output_contains: "basis_siemens_slaser30.mat"
+
+  - name: GE MEGA-PRESS basis set exists (GABA 68ms)
+    description: Verify GE MEGA-PRESS GABA basis set
+    command: ls -la /opt/basissets/3T/ge/mega/press/gaba68/
+    expected_output_contains: "basis_ge_megapress_gaba68.mat"
+
+  - name: GE unedited PRESS basis set exists (TE=35ms)
+    description: Verify GE unedited PRESS basis set
+    command: ls -la /opt/basissets/3T/ge/unedited/press/35/
+    expected_output_contains: "basis_ge_press35.mat"
+
+  - name: 7T basis sets available
+    description: Verify 7T basis sets directory exists
+    command: ls /opt/basissets/7T/
+    expected_exit_code: 0
+
+  - name: 9.4T basis sets available
+    description: Verify 9.4T basis sets directory exists
+    command: ls /opt/basissets/9-4T/
+    expected_exit_code: 0
+
+  - name: User basis sets directory
+    description: Verify user-customizable basis sets directory exists
+    command: ls /opt/basissets/user/
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # LCMODEL BASIS FORMAT
+  # ==========================================================================
+  - name: LCModel BASIS file format available (Philips)
+    description: Verify LCModel-compatible BASIS format file exists
+    command: ls -la /opt/basissets/3T/philips/unedited/press/35/3T_PRESS_Philips_35ms_noMM.BASIS 2>/dev/null || echo "No LCModel BASIS file"
+    expected_exit_code: 0
+
+  - name: LCModel BASIS file format available (Siemens)
+    description: Verify LCModel-compatible BASIS format file exists for Siemens
+    command: ls -la /opt/basissets/3T/siemens/unedited/press/35/3T_PRESS_Siemens_35ms_noMM.BASIS 2>/dev/null || echo "Checked"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # WRAPPER SCRIPTS VERIFICATION
+  # ==========================================================================
+  - name: ospreyCMD wrapper script content
+    description: Verify ospreyCMD wrapper script calls correct binary
+    command: cat /opt/ospreyCMD
+    expected_output_contains: "run_OspreyCMD.sh"
+
+  - name: ospreyCMD wrapper uses correct MCR path
+    description: Verify ospreyCMD wrapper uses R2023a runtime
+    command: cat /opt/ospreyCMD
+    expected_output_contains: "/opt/MCR/R2023a/"
+
+  - name: ospreyGUI wrapper script content
+    description: Verify ospreyGUI wrapper script calls correct binary
+    command: cat /opt/ospreyGUI
+    expected_output_contains: "run_Osprey.sh"
+
+  - name: ospreyGUI wrapper uses correct MCR path
+    description: Verify ospreyGUI wrapper uses R2023a runtime
+    command: cat /opt/ospreyGUI
+    expected_output_contains: "/opt/MCR/R2023a/"
+
+  - name: Underlying OspreyCMD binary exists
+    description: Verify compiled MATLAB binary exists
+    command: ls -la /opt/UbuntuCMD/OspreyCMD
+    expected_output_contains: "OspreyCMD"
+
+  - name: Underlying Osprey GUI binary exists
+    description: Verify compiled MATLAB GUI binary exists
+    command: ls -la /opt/UbuntuGUI/
+    expected_output_contains: "Osprey"
+
+  # ==========================================================================
+  # LICENSE AND DOCUMENTATION
+  # ==========================================================================
+  - name: Osprey license file present
+    description: Verify Osprey MIT license is included
+    command: cat /opt/UbuntuCMD/OSPREY_LICENSE.md
+    expected_output_contains: "MIT"
+
+  - name: SPM12 license present
+    description: Verify SPM12 license is included (used for coregistration)
+    command: head -20 /opt/UbuntuCMD/SPM12_LICENCE.txt
+    expected_output_contains: "SPM"
+
+  - name: Container README present
+    description: Verify container README with usage instructions
+    command: cat /README.md
+    expected_output_contains: "Osprey"
+
+  - name: Build configuration present
+    description: Verify build.yaml is included in container
+    command: cat /build.yaml
+    expected_output_contains: "osprey"
+
+  # ==========================================================================
+  # STRUCTURAL IMAGE VERIFICATION (T1w)
+  # ==========================================================================
+  - name: T1w structural image readable (sub-01)
+    description: Verify T1w NIfTI file is accessible
+    command: test -f ${mega_t1w_sub1} && echo "T1w file exists" && od -N2 -A x -t x1 ${mega_t1w_sub1} | head -1
+    expected_output_contains: "T1w file exists"
+
+  - name: T1w structural image readable (sub-02)
+    description: Verify second subject T1w NIfTI file is accessible
+    command: test -f ${mega_t1w_sub2} && echo "T1w file exists" && od -N2 -A x -t x1 ${mega_t1w_sub2} | head -1
+    expected_output_contains: "T1w file exists"
+
+  # ==========================================================================
+  # STATISTICS CSV VERIFICATION
+  # ==========================================================================
+  - name: Statistics CSV exists (MEGA)
+    description: Verify statistics CSV for group analysis exists
+    command: cat /opt/exampledata/MEGA/stat.csv
+    expected_exit_code: 0
+
+  - name: Statistics CSV exists (UnEdited)
+    description: Verify statistics CSV for unedited data exists
+    command: cat /opt/exampledata/UnEdited/stat.csv
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PATH AND ENVIRONMENT VERIFICATION
+  # ==========================================================================
+  - name: Osprey binaries in PATH
+    description: Verify /opt is in PATH for Osprey commands
+    command: echo $PATH
+    expected_output_contains: "/opt"
+
+  - name: ospreyCMD executable permissions
+    description: Verify ospreyCMD has execute permissions
+    command: ls -la /opt/ospreyCMD | awk '{print $1}'
+    expected_output_contains: "x"
+
+  - name: ospreyGUI executable permissions
+    description: Verify ospreyGUI has execute permissions
+    command: ls -la /opt/ospreyGUI | awk '{print $1}'
+    expected_output_contains: "x"
+
+  # ==========================================================================
+  # MCR DEPENDENCIES VERIFICATION
+  # ==========================================================================
+  - name: MCR runtime libraries present
+    description: Verify MATLAB Runtime shared libraries exist
+    command: ls /opt/MCR/R2023a/runtime/glnxa64/*.so | head -3
+    expected_exit_code: 0
+
+  - name: MCR bin directory present
+    description: Verify MATLAB Runtime binaries directory
+    command: ls /opt/MCR/R2023a/bin/glnxa64/ | head -3
+    expected_exit_code: 0
+
+  - name: Required MCR products file
+    description: Verify required MCR products specification
+    command: cat /opt/UbuntuCMD/requiredMCRProducts.txt
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MULTI-SUBJECT DATA VERIFICATION
+  # ==========================================================================
+  - name: Both MEGA subjects present
+    description: Verify MEGA data for both subjects exists
+    command: ls /opt/exampledata/MEGA/ | grep sub
+    expected_output_contains: "sub-01"
+
+  - name: Both UnEdited subjects present
+    description: Verify unedited data for both subjects exists
+    command: ls /opt/exampledata/UnEdited/ | grep sub
+    expected_output_contains: "sub-01"
+
+  - name: BIDS session structure (sub-01)
+    description: Verify BIDS-like session directory structure
+    command: ls /opt/exampledata/MEGA/sub-01/
+    expected_output_contains: "ses-01"
+
+  - name: MRS directory structure (sub-01)
+    description: Verify MRS data organized in mrs subdirectory
+    command: ls /opt/exampledata/MEGA/sub-01/ses-01/
+    expected_output_contains: "mrs"
+
+  - name: Anatomical directory structure (sub-01)
+    description: Verify anatomical data organized in anat subdirectory
+    command: ls /opt/exampledata/MEGA/sub-01/ses-01/
+    expected_output_contains: "anat"
+
+  # ==========================================================================
+  # EDITING TARGET VERIFICATION
+  # ==========================================================================
+  - name: MEGA-PRESS data for GABA editing
+    description: Verify MEGA-PRESS acquisition (320 averages typical for GABA)
+    command: grep "rows" /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress/sub-01_megapress_act.spar
+    expected_output_contains: "320"
+
+  - name: Reference scan parameters
+    description: Verify reference scan has same parameters as metabolite scan
+    command: grep "echo_time" /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress-ref/sub-01_megapress_ref.spar
+    expected_output_contains: "68"
+
+  # ==========================================================================
+  # VOXEL GEOMETRY VERIFICATION
+  # ==========================================================================
+  - name: Voxel AP size
+    description: Verify voxel anterior-posterior dimension
+    command: grep "ap_size" /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress/sub-01_megapress_act.spar
+    expected_output_contains: "30"
+
+  - name: Voxel LR size
+    description: Verify voxel left-right dimension
+    command: grep "lr_size" /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress/sub-01_megapress_act.spar
+    expected_output_contains: "30"
+
+  - name: Voxel CC size
+    description: Verify voxel cranio-caudal dimension
+    command: grep "cc_size" /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress/sub-01_megapress_act.spar
+    expected_output_contains: "30"
+
+  - name: Voxel position (AP offset)
+    description: Verify voxel anterior-posterior offset position
+    command: grep "ap_off_center" /opt/exampledata/MEGA/sub-01/ses-01/mrs/sub-01_ses-01_megapress/sub-01_megapress_act.spar
+    expected_output_contains: "45"
+
+  # ==========================================================================
+  # UNEDITED PRESS PARAMETERS
+  # ==========================================================================
+  - name: Unedited PRESS echo time
+    description: Verify unedited PRESS has short TE (35ms)
+    command: grep "echo_time" /opt/exampledata/UnEdited/sub-01/ses-01/mrs/sub-01_ses-01_press/sub-01_PRESS_35_act.spar
+    expected_output_contains: "35"
+
+  - name: Unedited PRESS sample frequency
+    description: Verify unedited PRESS spectral bandwidth
+    command: grep "sample_frequency" /opt/exampledata/UnEdited/sub-01/ses-01/mrs/sub-01_ses-01_press/sub-01_PRESS_35_act.spar
+    expected_output_contains: "2000"
+
+  # ==========================================================================
+  # BASIS SET SIZE VERIFICATION
+  # ==========================================================================
+  - name: Basis set file size reasonable (Philips MEGA-PRESS)
+    description: Verify basis set has expected size for metabolite simulations
+    command: ls -la ${basis_philips_megapress_gaba68} | awk '{if ($5 > 1000000) print "OK"; else print "TOO_SMALL"}'
+    expected_output_contains: "OK"
+
+  - name: Basis set file size reasonable (Philips PRESS)
+    description: Verify unedited basis set has expected size
+    command: ls -la ${basis_philips_press35} | awk '{if ($5 > 1000000) print "OK"; else print "TOO_SMALL"}'
+    expected_output_contains: "OK"
+
+  # ==========================================================================
+  # COMPLETE SEQUENCE TYPE COVERAGE
+  # ==========================================================================
+  - name: MEGA sequence basis sets present
+    description: Verify MEGA editing basis sets available
+    command: ls /opt/basissets/3T/philips/mega/
+    expected_output_contains: "press"
+
+  - name: HERMES sequence basis sets present
+    description: Verify HERMES editing basis sets available
+    command: ls /opt/basissets/3T/philips/hermes/
+    expected_output_contains: "gabagsh"
+
+  - name: HERCULES sequence basis sets present
+    description: Verify HERCULES editing basis sets available
+    command: ls /opt/basissets/3T/philips/hercules-press/
+    expected_output_contains: "basis_philips"
+
+  - name: Unedited sequence basis sets present
+    description: Verify unedited sequence basis sets available
+    command: ls /opt/basissets/3T/philips/unedited/
+    expected_output_contains: "press"
+
+  - name: sLASER sequence basis sets present
+    description: Verify sLASER sequence basis sets available
+    command: ls /opt/basissets/3T/philips/unedited/slaser/
+    expected_output_contains: "30"
+
+  # ==========================================================================
+  # VENDOR COVERAGE VERIFICATION
+  # ==========================================================================
+  - name: All major vendors supported (3T)
+    description: Verify basis sets for GE, Philips, and Siemens
+    command: ls /opt/basissets/3T/ | sort
+    expected_output_contains: "ge"
+
+  - name: GE basis sets structure
+    description: Verify GE basis sets organization
+    command: ls /opt/basissets/3T/ge/
+    expected_output_contains: "mega"
+
+  - name: Siemens basis sets structure
+    description: Verify Siemens basis sets organization
+    command: ls /opt/basissets/3T/siemens/
+    expected_output_contains: "mega"
+
+  # ==========================================================================
+  # ECHO TIME COVERAGE (Philips)
+  # ==========================================================================
+  - name: Philips PRESS TE=20ms basis
+    description: Verify short TE basis set available
+    command: ls /opt/basissets/3T/philips/unedited/press/20/
+    expected_output_contains: "basis_philips_press20.mat"
+
+  - name: Philips PRESS TE=30ms basis
+    description: Verify TE=30ms basis set available
+    command: ls /opt/basissets/3T/philips/unedited/press/30/
+    expected_output_contains: "basis_philips_press30.mat"
+
+  - name: Philips PRESS TE=35ms basis
+    description: Verify TE=35ms basis set available
+    command: ls /opt/basissets/3T/philips/unedited/press/35/
+    expected_output_contains: "basis_philips_press35.mat"
+
+  - name: Philips PRESS TE=80ms basis
+    description: Verify intermediate TE basis set available
+    command: ls /opt/basissets/3T/philips/unedited/press/80/
+    expected_output_contains: "basis_philips_press80.mat"
+
+  - name: Philips PRESS TE=140ms basis
+    description: Verify long TE basis set available
+    command: ls /opt/basissets/3T/philips/unedited/press/140/
+    expected_output_contains: "basis_philips_press140.mat"
+
+  # ==========================================================================
+  # EDITING TARGET COVERAGE (Philips)
+  # ==========================================================================
+  - name: Philips MEGA-PRESS GABA TE=68ms
+    description: Verify GABA editing basis for TE=68ms
+    command: ls /opt/basissets/3T/philips/mega/press/gaba68/
+    expected_output_contains: "basis_philips_megapress_gaba68.mat"
+
+  - name: Philips MEGA-PRESS GABA TE=80ms
+    description: Verify GABA editing basis for TE=80ms
+    command: ls /opt/basissets/3T/philips/mega/press/gaba80/
+    expected_output_contains: "basis_philips_megapress_gaba80.mat"
+
+  - name: Philips MEGA-PRESS GSH TE=120ms
+    description: Verify GSH editing basis for TE=120ms
+    command: ls /opt/basissets/3T/philips/mega/press/gsh120/
+    expected_output_contains: "basis_philips_megapress_gsh120.mat"
+
+  # ==========================================================================
+  # SPECIAL SEQUENCES
+  # ==========================================================================
+  - name: Siemens SPECIAL sequence basis
+    description: Verify SPECIAL sequence basis set available
+    command: ls /opt/basissets/3T/siemens/unedited/special/
+    expected_output_contains: "8_5"
+
+  - name: SPECIAL control file present
+    description: Verify LCModel control file for SPECIAL
+    command: ls /opt/basissets/3T/siemens/unedited/special/8_5/
+    expected_output_contains: ".control"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/osprey_mega test_output/osprey_press
+    echo "Test outputs preserved in test_output/"

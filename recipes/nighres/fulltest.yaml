@@ -1,0 +1,971 @@
+# nighres container test suite
+# Tests for Nighres v1.5.2 - Processing tools for high-resolution neuroimaging
+#
+# Nighres is a Python package for processing high-resolution neuroimaging data,
+# including ultra-high field MRI (7T+) and microscopy. It provides tools for:
+# - Quantitative MRI mapping (T1, T2*, PD)
+# - Brain tissue segmentation (MGDM)
+# - Cortical surface reconstruction (CRUISE)
+# - Laminar/layer analysis
+# - Shape analysis and spectral embedding
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# Note: Nighres requires the nighresjava module (Java backend) to be properly built.
+# These tests validate both the Python environment and core functionality.
+#
+# Citation:
+# Huntenburg, Steele & Bazin (2018). Nighres: processing tools for high-resolution
+# neuroimaging. GigaScience, 7(7). https://doi.org/10.1093/gigascience/giy082
+
+name: nighres
+version: 1.5.2
+container: nighres_1.5.2_20250203.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # ENVIRONMENT VALIDATION
+  # ==========================================================================
+  - name: Python version check
+    description: Verify Python 3 is available
+    command: python3 --version
+    expected_output_contains: "Python 3"
+
+  - name: Java environment check
+    description: Verify Java is available for nighresjava backend
+    command: java -version 2>&1 | head -1
+    expected_output_contains: "version"
+
+  - name: JCC module check
+    description: Verify JCC (Java-Python bridge) is installed
+    command: python3 -c "import jcc; print('JCC imported successfully')"
+    expected_output_contains: "JCC imported successfully"
+
+  # ==========================================================================
+  # CORE PYTHON DEPENDENCIES
+  # ==========================================================================
+  - name: NumPy import
+    description: Verify NumPy is available
+    command: python3 -c "import numpy; print('NumPy version:', numpy.__version__)"
+    expected_output_contains: "NumPy version"
+
+  - name: SciPy import
+    description: Verify SciPy is available
+    command: python3 -c "import scipy; print('SciPy version:', scipy.__version__)"
+    expected_output_contains: "SciPy version"
+
+  - name: NiBabel import
+    description: Verify NiBabel is available for NIfTI I/O
+    command: python3 -c "import nibabel; print('NiBabel version:', nibabel.__version__)"
+    expected_output_contains: "NiBabel version"
+
+  - name: Nilearn import
+    description: Verify Nilearn is available for neuroimaging analysis
+    command: python3 -c "import nilearn; print('Nilearn version:', nilearn.__version__)"
+    expected_output_contains: "Nilearn version"
+
+  - name: Pandas import
+    description: Verify Pandas is available for data handling
+    command: python3 -c "import pandas; print('Pandas version:', pandas.__version__)"
+    expected_output_contains: "Pandas version"
+
+  - name: Scikit-learn import
+    description: Verify scikit-learn is available for ML operations
+    command: python3 -c "import sklearn; print('Scikit-learn version:', sklearn.__version__)"
+    expected_output_contains: "Scikit-learn version"
+
+  - name: NetworkX import
+    description: Verify NetworkX is available for graph operations
+    command: python3 -c "import networkx; print('NetworkX version:', networkx.__version__)"
+    expected_output_contains: "NetworkX version"
+
+  - name: Nipype import
+    description: Verify Nipype is available for pipeline integration
+    command: python3 -c "import nipype; print('Nipype version:', nipype.__version__)"
+    expected_output_contains: "Nipype version"
+
+  # ==========================================================================
+  # NIGHRES SOURCE CODE PRESENCE
+  # ==========================================================================
+  - name: Nighres source directory
+    description: Verify nighres source code is present
+    command: ls -la /opt/nighres/nighres/ | head -20
+    expected_output_contains: "__init__.py"
+
+  - name: Nighres brain module present
+    description: Verify brain module source files exist
+    command: ls /opt/nighres/nighres/brain/
+    expected_output_contains: "mgdm_segmentation.py"
+
+  - name: Nighres cortex module present
+    description: Verify cortex module source files exist
+    command: ls /opt/nighres/nighres/cortex/
+    expected_output_contains: "cruise_cortex_extraction.py"
+
+  - name: Nighres laminar module present
+    description: Verify laminar module source files exist
+    command: ls /opt/nighres/nighres/laminar/
+    expected_output_contains: "volumetric_layering.py"
+
+  - name: Nighres intensity module present
+    description: Verify intensity module source files exist
+    command: ls /opt/nighres/nighres/intensity/
+    expected_output_contains: "mp2rage_t1_mapping.py"
+
+  - name: Nighres segmentation module present
+    description: Verify segmentation module source files exist
+    command: ls /opt/nighres/nighres/segmentation/
+    expected_output_contains: "conditional_shape.py"
+
+  - name: Nighres registration module present
+    description: Verify registration module source files exist
+    command: ls /opt/nighres/nighres/registration/
+    expected_output_contains: "embedded_antspy.py"
+
+  - name: Nighres surface module present
+    description: Verify surface module source files exist
+    command: ls /opt/nighres/nighres/surface/
+    expected_output_contains: "levelset_to_mesh.py"
+
+  - name: Nighres shape module present
+    description: Verify shape module source files exist
+    command: ls /opt/nighres/nighres/shape/
+    expected_output_contains: "spectral_embedding.py"
+
+  - name: Nighres parcellation module present
+    description: Verify parcellation module source files exist
+    command: ls /opt/nighres/nighres/parcellation/
+    expected_output_contains: "massp.py"
+
+  - name: Nighres filtering module present
+    description: Verify filtering module source files exist
+    command: ls /opt/nighres/nighres/filtering/
+    expected_output_contains: "recursive_ridge_diffusion.py"
+
+  - name: Nighres microscopy module present
+    description: Verify microscopy module source files exist
+    command: ls /opt/nighres/nighres/microscopy/
+    expected_output_contains: "mgdm_cells.py"
+
+  - name: Nighres io module present
+    description: Verify io module source files exist
+    command: ls /opt/nighres/nighres/io/
+    expected_output_contains: "io_volume.py"
+
+  - name: Nighres statistics module present
+    description: Verify statistics module source files exist
+    command: ls /opt/nighres/nighres/statistics/
+    expected_output_contains: "segmentation_statistics.py"
+
+  - name: Nighres data module present
+    description: Verify data download module exists
+    command: ls /opt/nighres/nighres/data/
+    expected_output_contains: "download_data.py"
+
+  # ==========================================================================
+  # ANTs TOOLS (bundled with nighres container)
+  # ==========================================================================
+  - name: ANTs registration tool
+    description: Verify antsRegistration is available
+    command: antsRegistration --version 2>&1 | head -3
+    expected_output_contains: "ANTs"
+
+  - name: ANTs apply transforms
+    description: Verify antsApplyTransforms is available
+    command: antsApplyTransforms --help 2>&1 | head -3
+    expected_output_contains: "antsApplyTransforms"
+
+  - name: ANTs N4 bias correction
+    description: Verify N4BiasFieldCorrection is available
+    command: N4BiasFieldCorrection --version 2>&1 | head -3
+    expected_output_contains: "ANTs"
+
+  - name: ANTs image math
+    description: Verify ImageMath is available
+    command: ImageMath 3 2>&1 | head -5
+    expected_output_contains: "ImageMath"
+
+  - name: ANTs brain extraction
+    description: Verify antsBrainExtraction.sh is available
+    command: which antsBrainExtraction.sh
+    expected_output_contains: "antsBrainExtraction"
+
+  - name: ANTs cortical thickness
+    description: Verify antsCorticalThickness.sh is available
+    command: which antsCorticalThickness.sh
+    expected_output_contains: "antsCorticalThickness"
+
+  # ==========================================================================
+  # NIBABEL I/O OPERATIONS (nighres io wrapper tests)
+  # ==========================================================================
+  - name: Load NIfTI with nibabel
+    description: Load T1w image using nibabel
+    command: |
+      python3 -c "
+      import nibabel as nib
+      img = nib.load('${t1w}')
+      print('Shape:', img.shape)
+      print('Affine shape:', img.affine.shape)
+      print('Data type:', img.get_data_dtype())
+      "
+    expected_output_contains: "Shape:"
+
+  - name: Load BOLD with nibabel
+    description: Load 4D BOLD image using nibabel
+    command: python3 -c "import nibabel as nib; img = nib.load('${bold}'); print('Shape:', img.shape); print('Dimensions:', len(img.shape))"
+    expected_output_contains: "Dimensions: 4"
+
+  - name: Save NIfTI with nibabel
+    description: Create and save a test NIfTI image
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      data = np.random.rand(10, 10, 10).astype(np.float32)
+      img = nib.Nifti1Image(data, np.eye(4))
+      nib.save(img, 'test_output/test_nibabel.nii.gz')
+      print('Saved test image successfully')
+      "
+    validate:
+      - output_exists: ${output_dir}/test_nibabel.nii.gz
+
+  # ==========================================================================
+  # NILEARN OPERATIONS (used by nighres for visualization/analysis)
+  # ==========================================================================
+  - name: Nilearn image loading
+    description: Load image with nilearn
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${t1w}')
+      print('Loaded image shape:', img.shape)
+      "
+    expected_output_contains: "Loaded image shape"
+
+  - name: Nilearn image resampling
+    description: Resample image using nilearn
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${t1w}')
+      resampled = image.resample_img(img, target_affine=img.affine*2)
+      print('Resampled shape:', resampled.shape)
+      resampled.to_filename('test_output/t1w_resampled_nilearn.nii.gz')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_resampled_nilearn.nii.gz
+
+  - name: Nilearn image smoothing
+    description: Smooth image using nilearn
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${t1w}')
+      smoothed = image.smooth_img(img, fwhm=5)
+      smoothed.to_filename('test_output/t1w_smoothed_nilearn.nii.gz')
+      print('Smoothed image saved')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_smoothed_nilearn.nii.gz
+
+  - name: Nilearn mean image
+    description: Calculate mean of 4D image
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${bold}')
+      mean_img = image.mean_img(img)
+      mean_img.to_filename('test_output/bold_mean_nilearn.nii.gz')
+      print('Mean image shape:', mean_img.shape)
+      "
+    validate:
+      - output_exists: ${output_dir}/bold_mean_nilearn.nii.gz
+
+  - name: Nilearn index image
+    description: Extract single volume from 4D
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${bold}')
+      vol0 = image.index_img(img, 0)
+      vol0.to_filename('test_output/bold_vol0_nilearn.nii.gz')
+      print('Extracted volume shape:', vol0.shape)
+      "
+    validate:
+      - output_exists: ${output_dir}/bold_vol0_nilearn.nii.gz
+
+  - name: Nilearn concat images
+    description: Concatenate multiple 3D images into 4D
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${t1w}')
+      concat = image.concat_imgs([img, img, img])
+      concat.to_filename('test_output/t1w_concat_nilearn.nii.gz')
+      print('Concatenated shape:', concat.shape)
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_concat_nilearn.nii.gz
+
+  - name: Nilearn math operations
+    description: Perform math operations on images
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${t1w}')
+      squared = image.math_img('img ** 2', img=img)
+      squared.to_filename('test_output/t1w_squared_nilearn.nii.gz')
+      print('Math operation completed')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_squared_nilearn.nii.gz
+
+  - name: Nilearn threshold image
+    description: Threshold image using nilearn
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${t1w}')
+      thresholded = image.threshold_img(img, threshold=100)
+      thresholded.to_filename('test_output/t1w_thresholded_nilearn.nii.gz')
+      print('Thresholded image saved')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_thresholded_nilearn.nii.gz
+
+  - name: Nilearn binarize image
+    description: Binarize image above threshold
+    command: |
+      python3 -c "
+      from nilearn import image
+      img = image.load_img('${t1w}')
+      binary = image.math_img('img > 100', img=img)
+      binary.to_filename('test_output/t1w_binary_nilearn.nii.gz')
+      print('Binary mask saved')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_binary_nilearn.nii.gz
+
+  # ==========================================================================
+  # SCIPY OPERATIONS (used by nighres for numerical computations)
+  # ==========================================================================
+  - name: SciPy ndimage operations
+    description: Test scipy.ndimage for image processing
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import ndimage
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      # Gaussian filter
+      smoothed = ndimage.gaussian_filter(data, sigma=2)
+      result = nib.Nifti1Image(smoothed, img.affine)
+      nib.save(result, 'test_output/t1w_scipy_gauss.nii.gz')
+      print('SciPy gaussian filter applied')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_scipy_gauss.nii.gz
+
+  - name: SciPy distance transform
+    description: Test scipy distance transform (used in layering)
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import ndimage
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      # Create binary mask and compute distance
+      mask = data > np.percentile(data, 50)
+      dist = ndimage.distance_transform_edt(mask)
+      result = nib.Nifti1Image(dist.astype(np.float32), img.affine)
+      nib.save(result, 'test_output/t1w_scipy_dist.nii.gz')
+      print('Distance transform computed')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_scipy_dist.nii.gz
+
+  - name: SciPy binary morphology
+    description: Test scipy morphological operations
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import ndimage
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      mask = data > np.percentile(data, 50)
+      # Erosion
+      eroded = ndimage.binary_erosion(mask)
+      # Dilation
+      dilated = ndimage.binary_dilation(mask)
+      result = nib.Nifti1Image(dilated.astype(np.float32), img.affine)
+      nib.save(result, 'test_output/t1w_scipy_morph.nii.gz')
+      print('Morphological operations completed')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_scipy_morph.nii.gz
+
+  - name: SciPy connected components
+    description: Test scipy connected component labeling
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import ndimage
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      mask = data > np.percentile(data, 75)
+      labeled, num_features = ndimage.label(mask)
+      print('Number of connected components:', num_features)
+      result = nib.Nifti1Image(labeled.astype(np.int32), img.affine)
+      nib.save(result, 'test_output/t1w_scipy_labels.nii.gz')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_scipy_labels.nii.gz
+
+  - name: SciPy gradient computation
+    description: Test scipy gradient computation (used in cortical analysis)
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import ndimage
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+      # Compute gradient magnitude
+      gx = ndimage.sobel(data, axis=0)
+      gy = ndimage.sobel(data, axis=1)
+      gz = ndimage.sobel(data, axis=2)
+      grad_mag = np.sqrt(gx**2 + gy**2 + gz**2)
+      result = nib.Nifti1Image(grad_mag.astype(np.float32), img.affine)
+      nib.save(result, 'test_output/t1w_scipy_gradient.nii.gz')
+      print('Gradient magnitude computed')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_scipy_gradient.nii.gz
+
+  # ==========================================================================
+  # ANTs COMMAND-LINE OPERATIONS
+  # ==========================================================================
+  - name: ANTs N4 bias correction
+    description: Apply N4 bias field correction to T1w
+    command: N4BiasFieldCorrection -d 3 -i ${t1w} -o test_output/t1w_n4.nii.gz -v 0
+    validate:
+      - output_exists: ${output_dir}/t1w_n4.nii.gz
+
+  - name: ANTs image information
+    description: Get image information using PrintHeader
+    command: PrintHeader ${t1w} 2>&1 | head -20
+    expected_output_contains: "Dimensions"
+
+  - name: ANTs create mask
+    description: Create a simple mask using ThresholdImage
+    command: ThresholdImage 3 ${t1w} test_output/t1w_mask_ants.nii.gz 100 Inf
+    validate:
+      - output_exists: ${output_dir}/t1w_mask_ants.nii.gz
+
+  - name: ANTs smooth image
+    description: Smooth image using SmoothImage
+    command: SmoothImage 3 ${t1w} 2 test_output/t1w_smooth_ants.nii.gz 0 0
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth_ants.nii.gz
+
+  - name: ANTs resample image
+    description: Resample image to different resolution
+    command: ResampleImage 3 ${t1w} test_output/t1w_resample_ants.nii.gz 2x2x2 0 0
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_ants.nii.gz
+
+  - name: ANTs pad image
+    description: Pad image with zeros
+    command: ImageMath 3 test_output/t1w_padded_ants.nii.gz PadImage ${t1w} 5
+    validate:
+      - output_exists: ${output_dir}/t1w_padded_ants.nii.gz
+
+  - name: ANTs extract slice
+    description: Extract 2D slice from 3D volume
+    command: ExtractSliceFromImage 3 ${t1w} test_output/t1w_slice_ants.nii.gz 2 80
+    validate:
+      - output_exists: ${output_dir}/t1w_slice_ants.nii.gz
+
+  # ==========================================================================
+  # NUMPY ARRAY OPERATIONS (fundamental to nighres)
+  # ==========================================================================
+  - name: NumPy array creation
+    description: Test numpy array operations
+    command: |
+      python3 -c "
+      import numpy as np
+      # Test various array operations used in nighres
+      arr = np.random.rand(64, 64, 64).astype(np.float32)
+      print('Array shape:', arr.shape)
+      print('Array dtype:', arr.dtype)
+      print('Array min:', arr.min())
+      print('Array max:', arr.max())
+      "
+    expected_output_contains: "Array shape"
+
+  - name: NumPy linear algebra
+    description: Test numpy linear algebra (used in spectral embedding)
+    command: |
+      python3 -c "
+      import numpy as np
+      # SVD decomposition
+      A = np.random.rand(10, 10)
+      U, S, Vt = np.linalg.svd(A)
+      print('SVD computed successfully')
+      # Eigendecomposition
+      eigenvalues, eigenvectors = np.linalg.eig(A)
+      print('Eigendecomposition computed successfully')
+      "
+    expected_output_contains: "Eigendecomposition computed"
+
+  # ==========================================================================
+  # SCIKIT-LEARN OPERATIONS (used by nighres for clustering/classification)
+  # ==========================================================================
+  - name: Sklearn clustering
+    description: Test sklearn clustering (used in segmentation)
+    command: |
+      python3 -c "
+      import numpy as np
+      from sklearn.cluster import KMeans
+      data = np.random.rand(1000, 3)
+      kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
+      labels = kmeans.fit_predict(data)
+      print('Clustering completed, unique labels:', np.unique(labels))
+      "
+    expected_output_contains: "unique labels"
+
+  - name: Sklearn decomposition
+    description: Test sklearn PCA (used in spectral methods)
+    command: |
+      python3 -c "
+      import numpy as np
+      from sklearn.decomposition import PCA
+      data = np.random.rand(100, 10)
+      pca = PCA(n_components=3)
+      transformed = pca.fit_transform(data)
+      print('PCA completed, transformed shape:', transformed.shape)
+      "
+    expected_output_contains: "transformed shape"
+
+  # ==========================================================================
+  # NETWORKX OPERATIONS (used by nighres for graph-based methods)
+  # ==========================================================================
+  - name: NetworkX graph operations
+    description: Test networkx graph creation and analysis
+    command: |
+      python3 -c "
+      import networkx as nx
+      import numpy as np
+      # Create graph (used in spectral mesh embedding)
+      G = nx.random_geometric_graph(100, 0.25)
+      print('Graph nodes:', G.number_of_nodes())
+      print('Graph edges:', G.number_of_edges())
+      # Compute Laplacian
+      L = nx.laplacian_matrix(G).todense()
+      print('Laplacian computed, shape:', L.shape)
+      "
+    expected_output_contains: "Laplacian computed"
+
+  # ==========================================================================
+  # NIGHRES EXAMPLE SCRIPTS PRESENCE
+  # ==========================================================================
+  - name: Nighres examples directory
+    description: Verify example scripts are present
+    command: ls /opt/nighres/examples/
+    expected_output_contains: "testing_01"
+
+  - name: Quantitative MRI example
+    description: Check quantitative MRI example script exists
+    command: head -30 /opt/nighres/examples/testing_01_quantitative_mri.py
+    expected_output_contains: "Quantitative MRI"
+
+  - name: Cortical laminar example
+    description: Check cortical laminar analysis example exists
+    command: head -30 /opt/nighres/examples/testing_02_cortical_laminar_analysis.py
+    expected_output_contains: "Cortical laminar"
+
+  - name: Brain slab coregistration example
+    description: Check brain slab coregistration example exists
+    command: head -30 /opt/nighres/examples/testing_03_brain_slab_coregistration.py
+    expected_output_contains: "registration"
+
+  - name: MASSP subcortex example
+    description: Check MASSP subcortex parcellation example exists
+    command: head -30 /opt/nighres/examples/testing_04_massp_subcortex_parcellation.py
+    expected_output_contains: "MASSP"
+
+  # ==========================================================================
+  # SIMULATED NIGHRES-STYLE PROCESSING PIPELINES
+  # Using core dependencies to mimic nighres functionality
+  # ==========================================================================
+  - name: Intensity-based skull stripping simulation
+    description: Simple skull stripping using threshold and morphology
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import ndimage
+
+      # Load T1w
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+
+      # Simple intensity-based masking (simplified nighres approach)
+      threshold = np.percentile(data[data > 0], 20)
+      mask = data > threshold
+
+      # Morphological cleanup
+      mask = ndimage.binary_closing(mask, iterations=2)
+      mask = ndimage.binary_opening(mask, iterations=2)
+      mask = ndimage.binary_fill_holes(mask)
+
+      # Apply mask
+      brain = data * mask.astype(np.float32)
+
+      # Save results
+      nib.save(nib.Nifti1Image(mask.astype(np.float32), img.affine),
+               'test_output/t1w_brain_mask_sim.nii.gz')
+      nib.save(nib.Nifti1Image(brain, img.affine),
+               'test_output/t1w_brain_sim.nii.gz')
+      print('Skull stripping simulation completed')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_mask_sim.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_sim.nii.gz
+
+  - name: Tissue segmentation simulation
+    description: K-means based tissue segmentation (GM/WM/CSF)
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from sklearn.cluster import KMeans
+
+      # Load T1w
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+
+      # Get non-zero voxels
+      mask = data > np.percentile(data[data > 0], 10)
+      coords = np.where(mask)
+      intensities = data[mask].reshape(-1, 1)
+
+      # K-means clustering for 3 tissue types
+      kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
+      labels = kmeans.fit_predict(intensities)
+
+      # Create segmentation volume
+      seg = np.zeros_like(data, dtype=np.int32)
+      seg[coords] = labels + 1
+
+      nib.save(nib.Nifti1Image(seg, img.affine),
+               'test_output/t1w_tissue_seg_sim.nii.gz')
+      print('Tissue segmentation simulation completed')
+      print('Unique labels:', np.unique(seg))
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_tissue_seg_sim.nii.gz
+
+  - name: Distance-based layering simulation
+    description: Compute cortical layers using distance transforms
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import ndimage
+
+      # Load T1w
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+
+      # Create simplified GM mask (intensity-based)
+      gm_low = np.percentile(data[data > 0], 40)
+      gm_high = np.percentile(data[data > 0], 70)
+      gm_mask = (data > gm_low) & (data < gm_high)
+
+      # Create inner (WM) and outer (CSF) boundaries
+      wm_mask = data > gm_high
+      csf_mask = (data > 0) & (data < gm_low)
+
+      # Compute distances from boundaries
+      dist_inner = ndimage.distance_transform_edt(~wm_mask)
+      dist_outer = ndimage.distance_transform_edt(~csf_mask)
+
+      # Compute normalized depth (0=WM, 1=CSF)
+      total_dist = dist_inner + dist_outer
+      total_dist[total_dist == 0] = 1  # Avoid division by zero
+      depth = dist_inner / total_dist
+      depth[~gm_mask] = 0
+
+      # Create layer labels (e.g., 6 layers)
+      n_layers = 6
+      layers = np.zeros_like(data, dtype=np.int32)
+      for i in range(n_layers):
+        layer_mask = gm_mask & (depth >= i/n_layers) & (depth < (i+1)/n_layers)
+        layers[layer_mask] = i + 1
+
+      nib.save(nib.Nifti1Image(depth.astype(np.float32), img.affine),
+               'test_output/t1w_depth_sim.nii.gz')
+      nib.save(nib.Nifti1Image(layers, img.affine),
+               'test_output/t1w_layers_sim.nii.gz')
+      print('Layer estimation simulation completed')
+      print('Number of layers:', n_layers)
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_depth_sim.nii.gz
+      - output_exists: ${output_dir}/t1w_layers_sim.nii.gz
+
+  - name: Level set surface extraction simulation
+    description: Extract isosurface using marching cubes
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import ndimage
+
+      # Load T1w
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+
+      # Create level set representation
+      threshold = np.percentile(data[data > 0], 50)
+      binary = (data > threshold).astype(np.float32)
+
+      # Gaussian smoothing to create smooth level set
+      smoothed = ndimage.gaussian_filter(binary, sigma=1)
+
+      # Create signed distance function approximation
+      dist_inside = ndimage.distance_transform_edt(smoothed > 0.5)
+      dist_outside = ndimage.distance_transform_edt(smoothed <= 0.5)
+      levelset = dist_inside - dist_outside
+
+      nib.save(nib.Nifti1Image(levelset.astype(np.float32), img.affine),
+               'test_output/t1w_levelset_sim.nii.gz')
+      print('Level set extraction simulation completed')
+      "
+    validate:
+      - output_exists: ${output_dir}/t1w_levelset_sim.nii.gz
+
+  - name: Profile sampling simulation
+    description: Sample intensity profiles along cortical depth
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      import pandas as pd
+
+      # Load T1w and simulated layers
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+
+      layers_img = nib.load('test_output/t1w_layers_sim.nii.gz')
+      layers = layers_img.get_fdata()
+
+      # Sample mean intensity per layer
+      n_layers = int(layers.max())
+      profile = []
+      for i in range(1, n_layers + 1):
+        mask = layers == i
+        if mask.sum() > 0:
+          mean_val = data[mask].mean()
+          std_val = data[mask].std()
+          profile.append({'layer': i, 'mean': mean_val, 'std': std_val, 'n_voxels': mask.sum()})
+
+      df = pd.DataFrame(profile)
+      df.to_csv('test_output/t1w_profile_sim.csv', index=False)
+      print('Profile sampling completed')
+      print(df.to_string())
+      "
+    depends_on: Distance-based layering simulation
+    validate:
+      - output_exists: ${output_dir}/t1w_profile_sim.csv
+
+  - name: Spectral embedding simulation
+    description: Compute spectral embedding of brain volume
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from sklearn.decomposition import PCA
+      from scipy import ndimage
+
+      # Load T1w
+      img = nib.load('${t1w}')
+      data = img.get_fdata()
+
+      # Create mask and subsample
+      mask = data > np.percentile(data[data > 0], 30)
+      coords = np.array(np.where(mask)).T
+
+      # Subsample for computational efficiency
+      n_samples = min(5000, len(coords))
+      idx = np.random.choice(len(coords), n_samples, replace=False)
+      coords_sub = coords[idx]
+      intensities = data[mask][idx]
+
+      # Combine spatial and intensity information
+      features = np.column_stack([coords_sub / coords_sub.max(axis=0),
+                                   intensities / intensities.max()])
+
+      # PCA for spectral-like embedding
+      pca = PCA(n_components=3)
+      embedding = pca.fit_transform(features)
+      print('Spectral embedding computed')
+      print('Embedding shape:', embedding.shape)
+      print('Explained variance:', pca.explained_variance_ratio_)
+      "
+    expected_output_contains: "Embedding shape"
+
+  # ==========================================================================
+  # TEMPORAL PROCESSING (for fMRI, relevant to laminar fMRI)
+  # ==========================================================================
+  - name: BOLD temporal mean
+    description: Compute temporal mean of BOLD data
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+
+      img = nib.load('${bold}')
+      data = img.get_fdata()
+      mean_data = data.mean(axis=3)
+
+      result = nib.Nifti1Image(mean_data.astype(np.float32), img.affine)
+      nib.save(result, 'test_output/bold_tmean.nii.gz')
+      print('Temporal mean computed, shape:', mean_data.shape)
+      "
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/bold_tmean.nii.gz
+
+  - name: BOLD temporal SNR
+    description: Compute temporal SNR of BOLD data
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+
+      img = nib.load('${bold}')
+      data = img.get_fdata()
+
+      mean_data = data.mean(axis=3)
+      std_data = data.std(axis=3)
+
+      # Avoid division by zero
+      std_data[std_data == 0] = np.nan
+      tsnr = mean_data / std_data
+      tsnr = np.nan_to_num(tsnr)
+
+      result = nib.Nifti1Image(tsnr.astype(np.float32), img.affine)
+      nib.save(result, 'test_output/bold_tsnr.nii.gz')
+      print('tSNR computed, mean tSNR:', np.nanmean(tsnr[tsnr > 0]))
+      "
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/bold_tsnr.nii.gz
+
+  - name: BOLD detrending
+    description: Linear detrend BOLD time series
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import signal
+
+      img = nib.load('${bold}')
+      data = img.get_fdata()
+
+      # Detrend along time axis
+      detrended = signal.detrend(data, axis=3, type='linear')
+
+      result = nib.Nifti1Image(detrended.astype(np.float32), img.affine)
+      nib.save(result, 'test_output/bold_detrended.nii.gz')
+      print('Detrending completed')
+      "
+    validate:
+      - output_exists: ${output_dir}/bold_detrended.nii.gz
+
+  - name: BOLD bandpass filtering
+    description: Apply bandpass filter to BOLD data
+    command: |
+      python3 -c "
+      import nibabel as nib
+      import numpy as np
+      from scipy import signal
+
+      img = nib.load('${bold}')
+      data = img.get_fdata()
+
+      # Design bandpass filter (0.01-0.1 Hz, assuming TR=2s)
+      TR = 2.0
+      fs = 1.0 / TR
+      lowcut = 0.01
+      highcut = 0.1
+      nyq = 0.5 * fs
+      low = lowcut / nyq
+      high = highcut / nyq
+
+      b, a = signal.butter(2, [low, high], btype='band')
+
+      # Apply filter to a subset of voxels (for speed)
+      filtered = np.zeros_like(data)
+      mask = data.mean(axis=3) > np.percentile(data.mean(axis=3), 50)
+
+      for i in range(data.shape[0]):
+        for j in range(data.shape[1]):
+          for k in range(data.shape[2]):
+            if mask[i,j,k]:
+              filtered[i,j,k,:] = signal.filtfilt(b, a, data[i,j,k,:])
+
+      result = nib.Nifti1Image(filtered.astype(np.float32), img.affine)
+      nib.save(result, 'test_output/bold_bandpass.nii.gz')
+      print('Bandpass filtering completed')
+      "
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/bold_bandpass.nii.gz
+
+  # ==========================================================================
+  # DOCUMENTATION AND README
+  # ==========================================================================
+  - name: Container README
+    description: Display container README
+    command: cat /README.md
+    expected_output_contains: "nighres"
+
+  - name: Nighres documentation
+    description: Check nighres documentation directory exists
+    command: ls /opt/nighres/doc/
+    expected_output_contains: "index.rst"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

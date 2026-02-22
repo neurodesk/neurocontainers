@@ -170,6 +170,16 @@ func (ct *containerTester) testExecutable(name string, top bool) (ExecutableResu
 			if line == "" {
 				continue
 			}
+			fields := strings.Fields(line)
+			// ldd may emit warning/header lines with the form:
+			//   "<absolute/path>: ..."
+			// These are not dependency entries and should be skipped.
+			if len(fields) > 0 &&
+				strings.HasPrefix(fields[0], "/") &&
+				strings.HasSuffix(fields[0], ":") &&
+				!strings.Contains(line, "=>") {
+				continue
+			}
 			if strings.HasPrefix(line, "ldd:") {
 				// Warning/error from ldd itself; surface as a dependency error for visibility.
 				ret.Dependencies = append(ret.Dependencies, ExecutableResult{Error: line})
@@ -188,18 +198,19 @@ func (ct *containerTester) testExecutable(name string, top bool) (ExecutableResu
 				} else {
 					fields := strings.Fields(right)
 					if len(fields) > 0 && strings.HasPrefix(fields[0], "/") {
-						dep.FullPath = fields[0]
-						if _, err := os.Stat(fields[0]); err != nil {
-							dep.Error = fmt.Sprintf("stat %q: %v", fields[0], err)
+						path := strings.TrimSuffix(fields[0], ":")
+						dep.FullPath = path
+						if _, err := os.Stat(path); err != nil {
+							dep.Error = fmt.Sprintf("stat %q: %v", path, err)
 						}
 					}
 				}
 			} else {
-				fields := strings.Fields(line)
 				if len(fields) > 0 && strings.HasPrefix(fields[0], "/") {
-					dep.FullPath = fields[0]
-					if _, err := os.Stat(fields[0]); err != nil {
-						dep.Error = fmt.Sprintf("stat %q: %v", fields[0], err)
+					path := strings.TrimSuffix(fields[0], ":")
+					dep.FullPath = path
+					if _, err := os.Stat(path); err != nil {
+						dep.Error = fmt.Sprintf("stat %q: %v", path, err)
 					}
 				} else {
 					continue
@@ -238,7 +249,17 @@ func (ct *containerTester) run() error {
 
 	captureOutput := fs.Bool("capture-output", false, "Capture output of running each executable")
 	deployBins := fs.String("deploy-bins", os.Getenv("DEPLOY_BINS"), "Colon-separated list of binaries to test")
-	deployPaths := fs.String("deploy-paths", os.Getenv("DEPLOY_PATHS"), "Colon-separated list of paths to search for executables to test")
+
+	deployPathsEnv := os.Getenv("DEPLOY_PATH")
+	if deployPathsEnv == "" {
+		// Backward compatibility for images that still set the old plural variable.
+		deployPathsEnv = os.Getenv("DEPLOY_PATHS")
+	}
+	deployPaths := fs.String(
+		"deploy-paths",
+		deployPathsEnv,
+		"Colon-separated list of paths to search for executables to test",
+	)
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return fmt.Errorf("parsing flags: %w", err)

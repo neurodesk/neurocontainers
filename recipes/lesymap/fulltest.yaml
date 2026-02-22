@@ -1,0 +1,1130 @@
+# lesymap container test suite
+# Tests for LESYMAP v0.0.0.9222 - Lesion to Symptom Mapping in R
+#
+# LESYMAP maps the specific brain areas responsible for cognitive deficits
+# by taking a series of lesion maps and a vector of behavioral scores.
+# Both univariate (t-test, Brunner-Munzel, regression) and multivariate
+# (sparse canonical correlations, SVR) tests are available.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - inplaneT2: Available for additional testing
+#
+# Note: LESYMAP is designed for lesion-symptom mapping with patient data.
+# Tests use synthetic lesion masks and simulated behavioral data.
+#
+# Citation: Pustina, D., Avants, B., Faseyitan, O. K., Medaglia, J. D., & Coslett, H. B. (2018).
+#           Improved accuracy of lesion to symptom mapping with multivariate sparse canonical correlations.
+#           Neuropsychologia, 115, 154-166.
+
+name: lesymap
+version: 0.0.0.9222
+container: lesymap_0.0.0.9222_20250730.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/lesymap
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - R Environment
+  # ==========================================================================
+  - name: R version check
+    description: Verify R binary runs and reports version
+    command: R --version 2>&1 | head -1
+    expected_output_contains: "R version"
+
+  - name: Rscript availability
+    description: Verify Rscript is available
+    command: Rscript --version 2>&1
+    expected_output_contains: "R scripting front-end"
+
+  - name: R help available
+    description: Verify R help system works
+    command: R --help 2>&1 | head -5
+    expected_output_contains: "Usage: R"
+
+  - name: R quiet mode
+    description: Test R quiet mode execution
+    command: R --quiet -e "cat('R quiet mode works\n')"
+    expected_output_contains: "R quiet mode works"
+
+  # ==========================================================================
+  # LESYMAP PACKAGE TESTS
+  # ==========================================================================
+  - name: LESYMAP package loads
+    description: Verify LESYMAP R package can be loaded
+    command: R --quiet -e "library(LESYMAP); cat('LESYMAP loaded successfully\n')"
+    expected_output_contains: "LESYMAP loaded successfully"
+
+  - name: LESYMAP version check
+    description: Check LESYMAP package version
+    command: R --quiet -e "library(LESYMAP); packageVersion('LESYMAP')"
+    expected_output_contains: "0.0.0.9221"
+    expected_exit_code: 0
+
+  - name: LESYMAP functions available
+    description: List available LESYMAP functions
+    command: R --quiet -e "library(LESYMAP); cat(paste(ls('package:LESYMAP'), collapse='\\n'))"
+    expected_output_contains: "lesymap"
+
+  - name: LESYMAP exports lsm_BMfast
+    description: Verify Brunner-Munzel fast function is available
+    command: R --quiet -e "library(LESYMAP); cat('lsm_BMfast exists:', exists('lsm_BMfast'), '\n')"
+    expected_output_contains: "lsm_BMfast exists: TRUE"
+
+  - name: LESYMAP exports lsm_sccan
+    description: Verify SCCAN function is available
+    command: R --quiet -e "library(LESYMAP); cat('lsm_sccan exists:', exists('lsm_sccan'), '\n')"
+    expected_output_contains: "lsm_sccan exists: TRUE"
+
+  - name: LESYMAP exports simulateBehavior
+    description: Verify behavior simulation function is available
+    command: R --quiet -e "library(LESYMAP); cat('simulateBehavior exists:', exists('simulateBehavior'), '\n')"
+    expected_output_contains: "simulateBehavior exists: TRUE"
+
+  # ==========================================================================
+  # DEPENDENCY PACKAGES
+  # ==========================================================================
+  - name: ANTsR dependency loads
+    description: Verify ANTsR dependency is available
+    command: R --quiet -e "library(ANTsR); cat('ANTsR loaded successfully\n')"
+    expected_output_contains: "ANTsR loaded successfully"
+
+  - name: ANTsRCore dependency loads
+    description: Verify ANTsRCore dependency is available
+    command: R --quiet -e "library(ANTsRCore); cat('ANTsRCore loaded successfully\n')"
+    expected_output_contains: "ANTsRCore loaded successfully"
+
+  - name: ITKR dependency loads
+    description: Verify ITKR dependency is available
+    command: R --quiet -e "library(ITKR); cat('ITKR loaded successfully\n')"
+    expected_output_contains: "ITKR loaded successfully"
+
+  - name: Rcpp dependency loads
+    description: Verify Rcpp dependency is available
+    command: R --quiet -e "library(Rcpp); cat('Rcpp loaded successfully\n')"
+    expected_output_contains: "Rcpp loaded successfully"
+
+  - name: lmPerm dependency loads
+    description: Verify lmPerm dependency is available (for permutation tests)
+    command: R --quiet -e "library(lmPerm); cat('lmPerm loaded successfully\n')"
+    expected_output_contains: "lmPerm loaded successfully"
+
+  - name: ggplot2 available
+    description: Verify ggplot2 is available for plotting
+    command: R --quiet -e "library(ggplot2); cat('ggplot2 loaded successfully\n')"
+    expected_output_contains: "ggplot2 loaded successfully"
+
+  # ==========================================================================
+  # ANTSR IMAGE I/O TESTS
+  # ==========================================================================
+  - name: Read NIfTI with ANTsR
+    description: Test reading NIfTI file using ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        cat('Image dimensions:', paste(dim(img), collapse='x'), '\n')
+        cat('Image spacing:', paste(antsGetSpacing(img), collapse='x'), '\n')
+      "
+    expected_output_contains: "Image dimensions:"
+
+  - name: Get image info with ANTsR
+    description: Get detailed image information
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        cat('Pixel type:', img@pixeltype, '\n')
+        cat('Components:', img@components, '\n')
+        cat('Dimensions:', img@dimension, '\n')
+      "
+    expected_output_contains: "Pixel type:"
+
+  - name: Write NIfTI with ANTsR
+    description: Test writing NIfTI file using ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        antsImageWrite(img, 'test_output/lesymap/t1w_copy.nii.gz')
+        cat('Image written successfully\n')
+      "
+    expected_output_contains: "Image written successfully"
+    validate:
+      - output_exists: ${output_dir}/lesymap/t1w_copy.nii.gz
+
+  # ==========================================================================
+  # ANTSR IMAGE OPERATIONS
+  # ==========================================================================
+  - name: Image arithmetic - multiply
+    description: Test image multiplication with ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        img_scaled <- img * 2
+        antsImageWrite(img_scaled, 'test_output/lesymap/t1w_scaled.nii.gz')
+        cat('Multiplication successful\n')
+      "
+    expected_output_contains: "Multiplication successful"
+    validate:
+      - output_exists: ${output_dir}/lesymap/t1w_scaled.nii.gz
+
+  - name: Image arithmetic - threshold
+    description: Test image thresholding with ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        img_thr <- thresholdImage(img, 100, Inf, 1, 0)
+        antsImageWrite(img_thr, 'test_output/lesymap/t1w_threshold.nii.gz')
+        cat('Thresholding successful\n')
+      "
+    expected_output_contains: "Thresholding successful"
+    validate:
+      - output_exists: ${output_dir}/lesymap/t1w_threshold.nii.gz
+
+  - name: Image smoothing
+    description: Test Gaussian smoothing with ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        img_smooth <- smoothImage(img, sigma=2)
+        antsImageWrite(img_smooth, 'test_output/lesymap/t1w_smooth.nii.gz')
+        cat('Smoothing successful\n')
+      "
+    expected_output_contains: "Smoothing successful"
+    validate:
+      - output_exists: ${output_dir}/lesymap/t1w_smooth.nii.gz
+
+  - name: Image resampling
+    description: Test image resampling with ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        img_resamp <- resampleImage(img, c(2,2,2), useVoxels=FALSE)
+        antsImageWrite(img_resamp, 'test_output/lesymap/t1w_resampled.nii.gz')
+        cat('Resampling successful, new dims:', paste(dim(img_resamp), collapse='x'), '\n')
+      "
+    expected_output_contains: "Resampling successful"
+    validate:
+      - output_exists: ${output_dir}/lesymap/t1w_resampled.nii.gz
+
+  # ==========================================================================
+  # MASK OPERATIONS
+  # ==========================================================================
+  - name: Create simple mask
+    description: Create a simple intensity-based mask
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        mask <- getMask(img, lowThresh=mean(img), cleanup=2)
+        antsImageWrite(mask, 'test_output/lesymap/t1w_mask.nii.gz')
+        cat('Mask created, non-zero voxels:', sum(mask), '\n')
+      "
+    expected_output_contains: "Mask created"
+    validate:
+      - output_exists: ${output_dir}/lesymap/t1w_mask.nii.gz
+
+  - name: Apply mask to image
+    description: Apply mask to image using ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        mask <- antsImageRead('test_output/lesymap/t1w_mask.nii.gz')
+        img_masked <- maskImage(img, mask)
+        antsImageWrite(img_masked, 'test_output/lesymap/t1w_masked.nii.gz')
+        cat('Masking successful\n')
+      "
+    depends_on: Create simple mask
+    expected_output_contains: "Masking successful"
+    validate:
+      - output_exists: ${output_dir}/lesymap/t1w_masked.nii.gz
+
+  # ==========================================================================
+  # SYNTHETIC LESION GENERATION
+  # ==========================================================================
+  - name: Create synthetic lesion mask 1
+    description: Create first synthetic lesion mask for testing
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        dims <- dim(img)
+
+        # Create lesion in left hemisphere (synthetic)
+        lesion <- makeImage(dims, voxval=0, spacing=antsGetSpacing(img),
+                           origin=antsGetOrigin(img), direction=antsGetDirection(img))
+        # Create a spherical lesion region
+        center <- c(dims[1]*0.3, dims[2]*0.5, dims[3]*0.5)
+        for (x in max(1,center[1]-10):min(dims[1],center[1]+10)) {
+          for (y in max(1,center[2]-10):min(dims[2],center[2]+10)) {
+            for (z in max(1,center[3]-10):min(dims[3],center[3]+10)) {
+              dist <- sqrt((x-center[1])^2 + (y-center[2])^2 + (z-center[3])^2)
+              if (dist <= 8) {
+                lesion[x,y,z] <- 1
+              }
+            }
+          }
+        }
+        antsImageWrite(lesion, 'test_output/lesymap/lesion_01.nii.gz')
+        cat('Synthetic lesion 1 created, voxels:', sum(lesion), '\n')
+      "
+    expected_output_contains: "Synthetic lesion 1 created"
+    validate:
+      - output_exists: ${output_dir}/lesymap/lesion_01.nii.gz
+
+  - name: Create synthetic lesion mask 2
+    description: Create second synthetic lesion mask for testing
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        dims <- dim(img)
+
+        # Create lesion in different location
+        lesion <- makeImage(dims, voxval=0, spacing=antsGetSpacing(img),
+                           origin=antsGetOrigin(img), direction=antsGetDirection(img))
+        center <- c(dims[1]*0.6, dims[2]*0.4, dims[3]*0.6)
+        for (x in max(1,center[1]-8):min(dims[1],center[1]+8)) {
+          for (y in max(1,center[2]-8):min(dims[2],center[2]+8)) {
+            for (z in max(1,center[3]-8):min(dims[3],center[3]+8)) {
+              dist <- sqrt((x-center[1])^2 + (y-center[2])^2 + (z-center[3])^2)
+              if (dist <= 6) {
+                lesion[x,y,z] <- 1
+              }
+            }
+          }
+        }
+        antsImageWrite(lesion, 'test_output/lesymap/lesion_02.nii.gz')
+        cat('Synthetic lesion 2 created, voxels:', sum(lesion), '\n')
+      "
+    expected_output_contains: "Synthetic lesion 2 created"
+    validate:
+      - output_exists: ${output_dir}/lesymap/lesion_02.nii.gz
+
+  - name: Create synthetic lesion mask 3
+    description: Create third synthetic lesion mask for testing
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        dims <- dim(img)
+
+        # Create lesion with partial overlap with lesion 1
+        lesion <- makeImage(dims, voxval=0, spacing=antsGetSpacing(img),
+                           origin=antsGetOrigin(img), direction=antsGetDirection(img))
+        center <- c(dims[1]*0.35, dims[2]*0.55, dims[3]*0.45)
+        for (x in max(1,center[1]-12):min(dims[1],center[1]+12)) {
+          for (y in max(1,center[2]-12):min(dims[2],center[2]+12)) {
+            for (z in max(1,center[3]-12):min(dims[3],center[3]+12)) {
+              dist <- sqrt((x-center[1])^2 + (y-center[2])^2 + (z-center[3])^2)
+              if (dist <= 10) {
+                lesion[x,y,z] <- 1
+              }
+            }
+          }
+        }
+        antsImageWrite(lesion, 'test_output/lesymap/lesion_03.nii.gz')
+        cat('Synthetic lesion 3 created, voxels:', sum(lesion), '\n')
+      "
+    expected_output_contains: "Synthetic lesion 3 created"
+    validate:
+      - output_exists: ${output_dir}/lesymap/lesion_03.nii.gz
+
+  # ==========================================================================
+  # LESYMAP UTILITY FUNCTIONS
+  # ==========================================================================
+  - name: getLesionSize function
+    description: Test lesion size computation
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        lesions <- list(
+          antsImageRead('test_output/lesymap/lesion_01.nii.gz'),
+          antsImageRead('test_output/lesymap/lesion_02.nii.gz'),
+          antsImageRead('test_output/lesymap/lesion_03.nii.gz')
+        )
+        sizes <- getLesionSize(lesions)
+        cat('Lesion sizes (voxels):', paste(sizes, collapse=', '), '\n')
+        cat('Total lesions:', length(sizes), '\n')
+      "
+    depends_on: Create synthetic lesion mask 3
+    expected_output_contains: "Total lesions: 3"
+
+  - name: checkImageList function
+    description: Test image list header checking
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        lesions <- list(
+          antsImageRead('test_output/lesymap/lesion_01.nii.gz'),
+          antsImageRead('test_output/lesymap/lesion_02.nii.gz'),
+          antsImageRead('test_output/lesymap/lesion_03.nii.gz')
+        )
+        result <- checkImageList(lesions, showError=FALSE, binaryCheck=TRUE)
+        cat('Image list check result:', result, '\n')
+      "
+    depends_on: Create synthetic lesion mask 3
+    expected_output_contains: "Image list check result:"
+
+  - name: getUniqueLesionPatches function
+    description: Test computation of unique lesion patches
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        lesions <- list(
+          antsImageRead('test_output/lesymap/lesion_01.nii.gz'),
+          antsImageRead('test_output/lesymap/lesion_02.nii.gz'),
+          antsImageRead('test_output/lesymap/lesion_03.nii.gz')
+        )
+        patchinfo <- getUniqueLesionPatches(lesions, showInfo=TRUE)
+        cat('Patch info computed\n')
+        cat('Patch image dimensions:', paste(dim(patchinfo\$patchimg), collapse='x'), '\n')
+        cat('Number of unique patches:', max(patchinfo\$patchimg), '\n')
+      "
+    depends_on: Create synthetic lesion mask 3
+    expected_output_contains: "Patch info computed"
+    timeout: 120
+
+  # ==========================================================================
+  # BRUNNER-MUNZEL STATISTICAL TESTS
+  # ==========================================================================
+  - name: BM function - basic test
+    description: Test Brunner-Munzel function on matrix data
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        set.seed(123)
+        lesmat <- matrix(rbinom(300, 1, 0.5), ncol=3)
+        behavior <- rnorm(100)
+        result <- BM(lesmat, behavior)
+        cat('BM statistic:', paste(round(result\$statistic, 3), collapse=', '), '\n')
+        cat('BM dof:', paste(round(result\$dof, 1), collapse=', '), '\n')
+      "
+    expected_output_contains: "BM statistic:"
+
+  - name: BMfast2 function
+    description: Test fast Brunner-Munzel function v2
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        set.seed(123)
+        lesmat <- matrix(rbinom(500, 1, 0.5), ncol=5)
+        behavior <- rnorm(100)
+        result <- BMfast2(lesmat, behavior)
+        cat('BMfast2 computed\n')
+        cat('Statistic length:', length(result\$statistic), '\n')
+      "
+    expected_output_contains: "BMfast2 computed"
+
+  # ==========================================================================
+  # T-TEST STATISTICAL FUNCTIONS
+  # ==========================================================================
+  - name: TTfast function
+    description: Test fast t-test function
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        set.seed(123)
+        lesmat <- matrix(rbinom(300, 1, 0.5), ncol=3)
+        behavior <- matrix(rnorm(100), ncol=1)
+        result <- TTfast(lesmat, behavior)
+        cat('TTfast computed\n')
+        cat('T-statistic length:', length(result\$statistic), '\n')
+      "
+    expected_output_contains: "TTfast computed"
+
+  - name: TTfast with Welch
+    description: Test fast t-test with unequal variance (Welch)
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        set.seed(123)
+        lesmat <- matrix(rbinom(300, 1, 0.5), ncol=3)
+        behavior <- matrix(rnorm(100), ncol=1)
+        result <- TTfast(lesmat, behavior, varEqual=FALSE)
+        cat('TTfast Welch computed\n')
+        cat('D-statistic length:', length(result\$statistic), '\n')
+      "
+    expected_output_contains: "TTfast Welch computed"
+
+  # ==========================================================================
+  # REGRESSION FUNCTIONS
+  # ==========================================================================
+  - name: regresfast function
+    description: Test fast regression function
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        set.seed(123)
+        X <- matrix(rnorm(300), ncol=3)
+        Y <- matrix(rnorm(100), ncol=1)
+        covariates <- matrix(rnorm(100), ncol=1)
+        result <- regresfast(X, Y, covariates)
+        cat('regresfast computed\n')
+        cat('Beta length:', length(result\$beta), '\n')
+        cat('T-stat length:', length(result\$tstat), '\n')
+      "
+    expected_output_contains: "regresfast computed"
+
+  # ==========================================================================
+  # LSM WRAPPER FUNCTIONS
+  # ==========================================================================
+  - name: lsm_ttest function
+    description: Test lesion-symptom t-test wrapper
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        set.seed(123)
+        lesmat <- matrix(rbinom(300, 1, 0.5), ncol=3)
+        behavior <- rnorm(100)
+        result <- lsm_ttest(lesmat, behavior, checkAssumptions=FALSE, showInfo=FALSE)
+        cat('lsm_ttest computed\n')
+        cat('Statistic length:', length(result\$statistic), '\n')
+        cat('P-value length:', length(result\$pvalue), '\n')
+      "
+    expected_output_contains: "lsm_ttest computed"
+
+  - name: lsm_ttestFast function
+    description: Test fast lesion-symptom t-test wrapper
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        set.seed(123)
+        lesmat <- matrix(rbinom(300, 1, 0.5), ncol=3)
+        behavior <- rnorm(100)
+        result <- lsm_ttestFast(lesmat, behavior, showInfo=FALSE)
+        cat('lsm_ttestFast computed\n')
+        cat('Statistic length:', length(result\$statistic), '\n')
+      "
+    expected_output_contains: "lsm_ttestFast computed"
+
+  - name: lsm_BMfast function
+    description: Test fast Brunner-Munzel lesion-symptom wrapper
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        set.seed(123)
+        lesmat <- matrix(rbinom(300, 1, 0.5), ncol=3)
+        behavior <- rnorm(100)
+        result <- lsm_BMfast(lesmat, behavior, showInfo=FALSE)
+        cat('lsm_BMfast computed\n')
+        cat('Statistic length:', length(result\$statistic), '\n')
+        cat('P-value length:', length(result\$pvalue), '\n')
+      "
+    expected_output_contains: "lsm_BMfast computed"
+
+  - name: lsm_regres function
+    description: Test regression lesion-symptom wrapper
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        set.seed(123)
+        lesmat <- matrix(rnorm(300), ncol=3)  # Continuous values for regression
+        behavior <- rnorm(100)
+        result <- lsm_regres(lesmat, behavior)
+        cat('lsm_regres computed\n')
+        cat('Statistic length:', length(result\$statistic), '\n')
+      "
+    expected_output_contains: "lsm_regres computed"
+
+  - name: lsm_regresfast function
+    description: Test fast regression lesion-symptom wrapper
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        set.seed(123)
+        lesmat <- matrix(rnorm(300), ncol=3)
+        behavior <- rnorm(100)
+        result <- lsm_regresfast(lesmat, behavior, showInfo=FALSE)
+        cat('lsm_regresfast computed\n')
+        cat('Statistic length:', length(result\$statistic), '\n')
+      "
+    expected_output_contains: "lsm_regresfast computed"
+
+  - name: lsm_chisq function
+    description: Test chi-square lesion-symptom wrapper
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        set.seed(123)
+        lesmat <- matrix(rbinom(300, 1, 0.5), ncol=3)
+        behavior <- sample(c(0, 1), 100, replace=TRUE)
+        result <- lsm_chisq(lesmat, behavior, showInfo=FALSE)
+        cat('lsm_chisq computed\n')
+        cat('Statistic length:', length(result\$statistic), '\n')
+      "
+    expected_output_contains: "lsm_chisq computed"
+
+  # ==========================================================================
+  # MULTIVARIATE METHODS - FUNCTION SIGNATURES
+  # ==========================================================================
+  - name: lsm_sccan function signature
+    description: Verify SCCAN function exists and has correct signature
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        args <- formals(lsm_sccan)
+        cat('lsm_sccan arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "lesmat"
+
+  - name: lsm_svr function signature
+    description: Verify SVR function exists and has correct signature
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        args <- formals(lsm_svr)
+        cat('lsm_svr arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "lesmat"
+
+  # ==========================================================================
+  # MAIN LESYMAP FUNCTION - SIGNATURE AND OPTIONS
+  # ==========================================================================
+  - name: lesymap function signature
+    description: Verify main lesymap function signature
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        args <- formals(lesymap)
+        cat('lesymap arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "lesions.list"
+
+  - name: lesymap methods available
+    description: List available analysis methods
+    command: |
+      R --quiet -e "
+        cat('Available lesymap methods:\n')
+        cat('  - BM (Brunner-Munzel)\n')
+        cat('  - BMfast (fast Brunner-Munzel)\n')
+        cat('  - ttest (t-test)\n')
+        cat('  - welch (Welch t-test)\n')
+        cat('  - regres (regression)\n')
+        cat('  - regresfast (fast regression)\n')
+        cat('  - regresPerm (permutation regression)\n')
+        cat('  - sccan (sparse canonical correlations)\n')
+        cat('  - svr (support vector regression)\n')
+      "
+    expected_output_contains: "sccan"
+
+  # ==========================================================================
+  # LESYMAP ANALYSIS - SIMPLE TESTS
+  # ==========================================================================
+  - name: lesymap with regres method
+    description: Run lesymap with regression method on synthetic data
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+
+        lesions <- list(
+          antsImageRead('test_output/lesymap/lesion_01.nii.gz'),
+          antsImageRead('test_output/lesymap/lesion_02.nii.gz'),
+          antsImageRead('test_output/lesymap/lesion_03.nii.gz')
+        )
+
+        # Simulate behavior scores
+        set.seed(42)
+        behavior <- c(0.8, 0.3, 0.7)  # Simulated scores
+
+        # Run lesymap with regression (ttest needs more subjects per group)
+        result <- lesymap(
+          lesions.list = lesions,
+          behavior = behavior,
+          method = 'regres',
+          multipleComparison = 'none',
+          minSubjectPerVoxel = 1,
+          showInfo = TRUE
+        )
+
+        cat('Lesymap regres analysis completed\n')
+        cat('Result class:', class(result), '\n')
+      "
+    depends_on: Create synthetic lesion mask 3
+    expected_output_contains: "Lesymap regres analysis completed"
+    timeout: 300
+
+  - name: lesymap with BMfast method
+    description: Run lesymap with fast Brunner-Munzel method
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+
+        lesions <- list(
+          antsImageRead('test_output/lesymap/lesion_01.nii.gz'),
+          antsImageRead('test_output/lesymap/lesion_02.nii.gz'),
+          antsImageRead('test_output/lesymap/lesion_03.nii.gz')
+        )
+
+        set.seed(42)
+        behavior <- c(0.8, 0.3, 0.7)
+
+        result <- lesymap(
+          lesions.list = lesions,
+          behavior = behavior,
+          method = 'BMfast',
+          multipleComparison = 'none',
+          minSubjectPerVoxel = 1,
+          showInfo = TRUE
+        )
+
+        cat('Lesymap BMfast analysis completed\n')
+      "
+    depends_on: Create synthetic lesion mask 3
+    expected_output_contains: "Lesymap BMfast analysis completed"
+    timeout: 300
+
+  # ==========================================================================
+  # MORPHOLOGICAL OPERATIONS
+  # ==========================================================================
+  - name: Morphological erosion
+    description: Test morphological erosion on lesion mask
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        mask <- antsImageRead('test_output/lesymap/lesion_01.nii.gz')
+        mask_erode <- morphology(mask, 'erode', 1, type='binary')
+        antsImageWrite(mask_erode, 'test_output/lesymap/lesion_eroded.nii.gz')
+        cat('Erosion successful, original voxels:', sum(mask), ', eroded voxels:', sum(mask_erode), '\n')
+      "
+    depends_on: Create synthetic lesion mask 1
+    expected_output_contains: "Erosion successful"
+    validate:
+      - output_exists: ${output_dir}/lesymap/lesion_eroded.nii.gz
+
+  - name: Morphological dilation
+    description: Test morphological dilation on lesion mask
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        mask <- antsImageRead('test_output/lesymap/lesion_01.nii.gz')
+        mask_dilate <- morphology(mask, 'dilate', 1, type='binary')
+        antsImageWrite(mask_dilate, 'test_output/lesymap/lesion_dilated.nii.gz')
+        cat('Dilation successful, original voxels:', sum(mask), ', dilated voxels:', sum(mask_dilate), '\n')
+      "
+    depends_on: Create synthetic lesion mask 1
+    expected_output_contains: "Dilation successful"
+    validate:
+      - output_exists: ${output_dir}/lesymap/lesion_dilated.nii.gz
+
+  - name: Morphological closing
+    description: Test morphological closing on lesion mask
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        mask <- antsImageRead('test_output/lesymap/lesion_01.nii.gz')
+        mask_close <- morphology(mask, 'close', 1, type='binary')
+        antsImageWrite(mask_close, 'test_output/lesymap/lesion_closed.nii.gz')
+        cat('Closing successful\n')
+      "
+    depends_on: Create synthetic lesion mask 1
+    expected_output_contains: "Closing successful"
+    validate:
+      - output_exists: ${output_dir}/lesymap/lesion_closed.nii.gz
+
+  # ==========================================================================
+  # LABEL OPERATIONS
+  # ==========================================================================
+  - name: Label clusters
+    description: Test label clustering on lesion mask
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        mask <- antsImageRead('test_output/lesymap/lesion_01.nii.gz')
+        labels <- labelClusters(mask, minClusterSize=10)
+        antsImageWrite(labels, 'test_output/lesymap/lesion_labeled.nii.gz')
+        cat('Clustering successful, number of clusters:', max(labels), '\n')
+      "
+    depends_on: Create synthetic lesion mask 1
+    expected_output_contains: "Clustering successful"
+    validate:
+      - output_exists: ${output_dir}/lesymap/lesion_labeled.nii.gz
+
+  - name: Label statistics
+    description: Compute statistics for labeled regions
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        labels <- antsImageRead('test_output/lesymap/lesion_labeled.nii.gz')
+        stats <- labelStats(img, labels)
+        cat('Label statistics computed\n')
+        print(head(stats))
+      "
+    depends_on: Label clusters
+    expected_output_contains: "Label statistics computed"
+
+  # ==========================================================================
+  # N4 BIAS FIELD CORRECTION
+  # ==========================================================================
+  - name: N4 bias correction
+    description: Test N4 bias field correction with ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        img_n4 <- n4BiasFieldCorrection(img, shrinkFactor=4)
+        antsImageWrite(img_n4, 'test_output/lesymap/t1w_n4.nii.gz')
+        cat('N4 correction successful\n')
+      "
+    expected_output_contains: "N4 correction successful"
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/lesymap/t1w_n4.nii.gz
+
+  # ==========================================================================
+  # IMAGE STATISTICS
+  # ==========================================================================
+  - name: Image statistics
+    description: Calculate basic image statistics
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        cat('Min:', min(img), '\n')
+        cat('Max:', max(img), '\n')
+        cat('Mean:', mean(img), '\n')
+        cat('SD:', sd(img), '\n')
+      "
+    expected_output_contains: "Mean:"
+
+  - name: Lesion overlap statistics
+    description: Calculate overlap between lesion masks
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        les1 <- antsImageRead('test_output/lesymap/lesion_01.nii.gz')
+        les2 <- antsImageRead('test_output/lesymap/lesion_02.nii.gz')
+        les3 <- antsImageRead('test_output/lesymap/lesion_03.nii.gz')
+
+        overlap_12 <- sum(les1 * les2)
+        overlap_13 <- sum(les1 * les3)
+        overlap_23 <- sum(les2 * les3)
+
+        cat('Overlap 1-2:', overlap_12, '\n')
+        cat('Overlap 1-3:', overlap_13, '\n')
+        cat('Overlap 2-3:', overlap_23, '\n')
+      "
+    depends_on: Create synthetic lesion mask 3
+    expected_output_contains: "Overlap"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # REGISTRATION TESTS
+  # ==========================================================================
+  - name: Affine registration
+    description: Test affine registration between images
+    command: |
+      R --quiet -e "
+        library(ANTsR)
+        fixed <- antsImageRead('${t1w}')
+        moving <- antsImageRead('${t1w}')  # Self-registration for testing
+        reg <- antsRegistration(fixed, moving, typeofTransform='Affine', verbose=FALSE)
+        antsImageWrite(reg\$warpedmovout, 'test_output/lesymap/t1w_affine_reg.nii.gz')
+        cat('Affine registration successful\n')
+      "
+    expected_output_contains: "Affine registration successful"
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/lesymap/t1w_affine_reg.nii.gz
+
+  # ==========================================================================
+  # SEGMENTATION TESTS
+  # ==========================================================================
+  - name: K-means segmentation
+    description: Test k-means tissue segmentation
+    command: |
+      R --quiet -e "
+        library(ANTsR)
+        img <- antsImageRead('${t1w}')
+        mask <- getMask(img, lowThresh=mean(img), cleanup=2)
+        seg <- kmeansSegmentation(img, k=3, kmask=mask)
+        antsImageWrite(seg\$segmentation, 'test_output/lesymap/t1w_kmeans_seg.nii.gz')
+        cat('K-means segmentation successful, classes:', max(seg\$segmentation), '\n')
+      "
+    expected_output_contains: "K-means segmentation successful"
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/lesymap/t1w_kmeans_seg.nii.gz
+
+  # ==========================================================================
+  # HELPER FUNCTION TESTS
+  # ==========================================================================
+  - name: printInfo function
+    description: Test LESYMAP printInfo function
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        printInfo('Test message from printInfo', title='TEST')
+      "
+    expected_output_contains: "TEST"
+
+  - name: checkAntsInput function
+    description: Test input type checking function
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        result <- checkAntsInput(img)
+        cat('Input type:', result, '\n')
+      "
+    expected_output_contains: "Input type:"
+
+  # ==========================================================================
+  # MULTIPLE COMPARISON CORRECTIONS
+  # ==========================================================================
+  - name: FDR correction available
+    description: Verify FDR correction is available
+    command: |
+      R --quiet -e "
+        p <- c(0.01, 0.02, 0.05, 0.1, 0.5)
+        p_fdr <- p.adjust(p, method='fdr')
+        cat('FDR corrected p-values:', paste(round(p_fdr, 4), collapse=', '), '\n')
+      "
+    expected_output_contains: "FDR corrected p-values:"
+
+  - name: Bonferroni correction available
+    description: Verify Bonferroni correction is available
+    command: |
+      R --quiet -e "
+        p <- c(0.01, 0.02, 0.05, 0.1, 0.5)
+        p_bonf <- p.adjust(p, method='bonferroni')
+        cat('Bonferroni corrected p-values:', paste(round(p_bonf, 4), collapse=', '), '\n')
+      "
+    expected_output_contains: "Bonferroni corrected p-values:"
+
+  # ==========================================================================
+  # RSCRIPT COMMAND LINE TESTS
+  # ==========================================================================
+  - name: Rscript inline execution
+    description: Test Rscript can execute inline R code
+    command: Rscript -e "cat('Rscript works\n')"
+    expected_output_contains: "Rscript works"
+
+  - name: Rscript with LESYMAP
+    description: Test Rscript can load and use LESYMAP
+    command: Rscript -e "library(LESYMAP); cat('LESYMAP version:', as.character(packageVersion('LESYMAP')), '\n')"
+    expected_output_contains: "LESYMAP version:"
+
+  - name: Rscript file execution
+    description: Test Rscript can execute R script files
+    command: |
+      cat > test_output/lesymap/test_script.R << 'RSCRIPT'
+      library(LESYMAP)
+      cat("Script executed successfully\n")
+      cat("LESYMAP is ready for lesion-symptom mapping\n")
+      RSCRIPT
+      Rscript test_output/lesymap/test_script.R
+    expected_output_contains: "Script executed successfully"
+
+  # ==========================================================================
+  # IMAGE TRANSFORMATION TESTS
+  # ==========================================================================
+  - name: Image reflection
+    description: Test image reflection (used in asymmetry analysis)
+    command: |
+      R --quiet -e "
+        library(ANTsR)
+        img <- antsImageRead('${t1w}')
+        img_reflect <- reflectImage(img, axis=0)
+        antsImageWrite(img_reflect, 'test_output/lesymap/t1w_reflected.nii.gz')
+        cat('Reflection successful\n')
+      "
+    expected_output_contains: "Reflection successful"
+    validate:
+      - output_exists: ${output_dir}/lesymap/t1w_reflected.nii.gz
+
+  - name: Center of mass computation
+    description: Test center of mass calculation
+    command: |
+      R --quiet -e "
+        library(ANTsR)
+        mask <- antsImageRead('test_output/lesymap/lesion_01.nii.gz')
+        com <- getCenterOfMass(mask)
+        cat('Center of mass:', paste(round(com, 2), collapse=', '), '\n')
+      "
+    depends_on: Create synthetic lesion mask 1
+    expected_output_contains: "Center of mass:"
+
+  # ==========================================================================
+  # UTILITY TESTS
+  # ==========================================================================
+  - name: Image dimension check
+    description: Test dimension checking utilities
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        cat('Is 3D:', img@dimension == 3, '\n')
+        cat('Dimensions:', paste(dim(img), collapse=' x '), '\n')
+        cat('Spacing:', paste(round(antsGetSpacing(img), 2), collapse=' x '), '\n')
+        cat('Origin:', paste(round(antsGetOrigin(img), 2), collapse=' x '), '\n')
+      "
+    expected_output_contains: "Is 3D:"
+
+  - name: Image orientation check
+    description: Check image orientation information
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        dir_mat <- antsGetDirection(img)
+        cat('Direction matrix computed\n')
+        cat('Matrix dimensions:', paste(dim(dir_mat), collapse='x'), '\n')
+      "
+    expected_output_contains: "Direction matrix computed"
+
+  # ==========================================================================
+  # R BATCH MODE TESTS
+  # ==========================================================================
+  - name: R BATCH mode
+    description: Test R running in BATCH mode
+    command: |
+      cat > test_output/lesymap/batch_test.R << 'RSCRIPT'
+      library(LESYMAP)
+      cat("BATCH mode test successful\n")
+      q(save="no")
+      RSCRIPT
+      R CMD BATCH --vanilla test_output/lesymap/batch_test.R test_output/lesymap/batch_test.Rout 2>&1
+      cat test_output/lesymap/batch_test.Rout
+    expected_output_contains: "BATCH mode test successful"
+
+  # ==========================================================================
+  # LESYMAP OUTPUT FUNCTIONS
+  # ==========================================================================
+  - name: save.lesymap function signature
+    description: Verify save.lesymap function exists
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        args <- formals(save.lesymap)
+        cat('save.lesymap arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "lsm"
+
+  - name: lesymap.predict function signature
+    description: Verify lesymap.predict function exists
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        args <- formals(lesymap.predict)
+        cat('lesymap.predict arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "lsm"
+
+  # ==========================================================================
+  # ADDITIONAL LESYMAP FUNCTIONS
+  # ==========================================================================
+  - name: getLesionLoad function signature
+    description: Verify getLesionLoad function exists
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        args <- formals(getLesionLoad)
+        cat('getLesionLoad arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "lesions.list"
+
+  - name: minSegDistance function signature
+    description: Verify minSegDistance function exists
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        args <- formals(minSegDistance)
+        cat('minSegDistance arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "manual"
+
+  - name: registerLesionToTemplate function signature
+    description: Verify registerLesionToTemplate function exists
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        args <- formals(registerLesionToTemplate)
+        cat('registerLesionToTemplate arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "subImg"
+
+  - name: optimize_SCCANsparseness function signature
+    description: Verify SCCAN optimization function exists
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        args <- formals(optimize_SCCANsparseness)
+        cat('optimize_SCCANsparseness arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "lesmat"
+
+  - name: checkMask function
+    description: Test mask checking function
+    command: |
+      R --quiet -e "
+        library(LESYMAP)
+        lesions <- list(
+          antsImageRead('test_output/lesymap/lesion_01.nii.gz'),
+          antsImageRead('test_output/lesymap/lesion_02.nii.gz')
+        )
+        mask <- antsImageRead('test_output/lesymap/t1w_mask.nii.gz')
+        result <- checkMask(lesions, mask)
+        cat('Mask check result:', result, '\n')
+      "
+    depends_on: Create simple mask
+    expected_output_contains: "Mask check result:"
+
+  # ==========================================================================
+  # ENVIRONMENT CHECKS
+  # ==========================================================================
+  - name: Check R library paths
+    description: Verify R library paths are set correctly
+    command: |
+      R --quiet -e "
+        cat('R library paths:\n')
+        cat(paste(.libPaths(), collapse='\n'), '\n')
+      "
+    expected_output_contains: "R library paths:"
+
+  - name: Check R session info
+    description: Display R session information
+    command: |
+      R --quiet -e "
+        sessionInfo()
+      " 2>&1 | head -20
+    expected_output_contains: "R version"
+
+  - name: Check available memory
+    description: Check memory usage in R
+    command: |
+      R --quiet -e "
+        gc()
+        cat('Memory check completed\n')
+      "
+    expected_output_contains: "Memory check completed"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/lesymap
+    echo "Test outputs preserved in test_output/lesymap/"

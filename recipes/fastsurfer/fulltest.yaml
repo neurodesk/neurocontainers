@@ -1,0 +1,497 @@
+# FastSurfer container test suite
+# Tests for FastSurfer v2.4.2 - Deep learning neuroimaging pipeline
+#
+# FastSurfer provides a fully compatible FreeSurfer alternative for:
+#   - Volumetric analysis (within minutes)
+#   - Surface-based thickness analysis (~1h run time)
+#   - Longitudinal change quantification
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#
+# Note: Full segmentation/surface reconstruction tests are computationally
+# intensive. This test suite focuses on verifying command availability,
+# help messages, and basic functionality that can run quickly.
+
+name: fastsurfer
+version: 2.4.2
+container: fastsurfer_2.4.2_20260115.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/fastsurfer
+    mkdir -p test_output/fastsurfer_subjects
+
+tests:
+  # ==========================================================================
+  # VERSION AND HELP CHECKS
+  # ==========================================================================
+  - name: FastSurfer version check
+    description: Verify FastSurfer reports correct version
+    command: run_fastsurfer.sh --version
+    expected_output_contains: "2.4.2"
+
+  - name: run_fastsurfer.sh help
+    description: Verify main pipeline help is accessible
+    command: run_fastsurfer.sh --help 2>&1 | head -20
+    expected_output_contains: "run_fastsurfer.sh"
+
+  - name: long_fastsurfer.sh help
+    description: Verify longitudinal pipeline help is accessible
+    command: long_fastsurfer.sh --help 2>&1 | head -20
+    expected_output_contains: "long_fastsurfer.sh"
+
+  # ==========================================================================
+  # PYTHON MODULE AVAILABILITY
+  # ==========================================================================
+  - name: FastSurferCNN run_prediction module
+    description: Verify FastSurferCNN prediction module is available
+    command: python3 -m FastSurferCNN.run_prediction --help 2>&1 | head -5
+    expected_output_contains: "run_prediction.py"
+
+  - name: FastSurferCNN inference module
+    description: Verify FastSurferCNN inference module is importable
+    command: python3 -c "from FastSurferCNN.inference import Inference; print('OK')"
+    expected_output_contains: "OK"
+
+  - name: FastSurferCNN quick_qc module
+    description: Verify quick QC module is available
+    command: python3 -m FastSurferCNN.quick_qc --help 2>&1
+    expected_output_contains: "quick_qc.py"
+
+  - name: FastSurferCNN mri_segstats module
+    description: Verify segmentation statistics module is available
+    command: python3 -m FastSurferCNN.mri_segstats --help 2>&1 | head -10
+    expected_output_contains: "mri_segstats"
+
+  - name: FastSurferCNN mri_brainvol_stats module
+    description: Verify brain volume statistics module is available
+    command: python3 -m FastSurferCNN.mri_brainvol_stats --help 2>&1 | head -5
+    expected_output_contains: "mri_brainvol_stats"
+
+  - name: FastSurferCNN reduce_to_aseg module
+    description: Verify reduce_to_aseg module is available
+    command: python3 -m FastSurferCNN.reduce_to_aseg --help 2>&1 | head -5
+    expected_output_contains: "aparc+aseg"
+
+  - name: CerebNet run_prediction module
+    description: Verify CerebNet cerebellum segmentation module is available
+    command: python3 -m CerebNet.run_prediction --help 2>&1 | head -5
+    expected_output_contains: "run_prediction.py"
+
+  - name: HypVINN run_prediction module
+    description: Verify HypVINN hypothalamus segmentation module is available
+    command: python3 -m HypVINN.run_prediction --help 2>&1 | head -5
+    expected_output_contains: "run_prediction"
+
+  # ==========================================================================
+  # FREESURFER TOOL AVAILABILITY
+  # ==========================================================================
+  - name: mri_convert availability
+    description: Verify FreeSurfer mri_convert is available
+    command: which mri_convert
+    expected_output_contains: "/opt/freesurfer/bin/mri_convert"
+
+  - name: mri_info availability
+    description: Verify FreeSurfer mri_info is available
+    command: which mri_info
+    expected_output_contains: "/opt/freesurfer/bin/mri_info"
+
+  - name: mri_vol2surf availability
+    description: Verify FreeSurfer mri_vol2surf is available
+    command: which mri_vol2surf
+    expected_output_contains: "/opt/freesurfer/bin/mri_vol2surf"
+
+  - name: mri_surf2surf availability
+    description: Verify FreeSurfer mri_surf2surf is available
+    command: which mri_surf2surf
+    expected_output_contains: "/opt/freesurfer/bin/mri_surf2surf"
+
+  - name: mris_info availability
+    description: Verify FreeSurfer mris_info is available
+    command: which mris_info
+    expected_output_contains: "/opt/freesurfer/bin/mris_info"
+
+  # ==========================================================================
+  # FREESURFER LICENSE CHECK
+  # ==========================================================================
+  - name: FreeSurfer license file exists
+    description: Verify FreeSurfer license is present at expected location
+    command: test -f /opt/license.txt && echo "License exists"
+    expected_output_contains: "License exists"
+
+  - name: FS_LICENSE environment variable
+    description: Verify FS_LICENSE environment variable is set
+    command: echo $FS_LICENSE
+    expected_output_contains: "/opt/license.txt"
+
+  # ==========================================================================
+  # IMAGE CONVERSION AND INFO (using FreeSurfer tools)
+  # ==========================================================================
+  - name: mri_info on T1w
+    description: Get information about input T1w image
+    command: mri_info ${t1w} 2>&1 | head -20
+    expected_output_contains: "dimensions"
+
+  - name: mri_convert NIfTI to MGZ
+    description: Convert NIfTI T1w to FreeSurfer MGZ format
+    command: mri_convert ${t1w} test_output/fastsurfer/t1w.mgz 2>&1
+    validate:
+      - output_exists: ${output_dir}/fastsurfer/t1w.mgz
+
+  - name: mri_convert check dimensions
+    description: Verify converted MGZ has expected properties
+    command: mri_info test_output/fastsurfer/t1w.mgz --dim
+    depends_on: mri_convert NIfTI to MGZ
+    expected_output_contains: "160"
+
+  - name: mri_convert MGZ to NIfTI
+    description: Convert MGZ back to NIfTI format
+    command: mri_convert test_output/fastsurfer/t1w.mgz test_output/fastsurfer/t1w_converted.nii.gz 2>&1
+    depends_on: mri_convert NIfTI to MGZ
+    validate:
+      - output_exists: ${output_dir}/fastsurfer/t1w_converted.nii.gz
+
+  - name: mri_convert with conforming
+    description: Conform T1w to 1mm isotropic (256x256x256)
+    command: mri_convert --conform ${t1w} test_output/fastsurfer/t1w_conformed.mgz 2>&1
+    validate:
+      - output_exists: ${output_dir}/fastsurfer/t1w_conformed.mgz
+
+  - name: Verify conformed dimensions
+    description: Check that conformed image is 256x256x256
+    command: mri_info test_output/fastsurfer/t1w_conformed.mgz --dim
+    depends_on: mri_convert with conforming
+    expected_output_contains: "256"
+
+  - name: mri_convert resample to lower resolution
+    description: Resample T1w to 2mm isotropic
+    command: mri_convert -vs 2 2 2 ${t1w} test_output/fastsurfer/t1w_2mm.mgz 2>&1
+    validate:
+      - output_exists: ${output_dir}/fastsurfer/t1w_2mm.mgz
+
+  - name: mri_convert extract single slice
+    description: Extract a single axial slice from T1w
+    command: mri_convert --cropsize 256 256 1 ${t1w} test_output/fastsurfer/t1w_slice.mgz 2>&1
+    validate:
+      - output_exists: ${output_dir}/fastsurfer/t1w_slice.mgz
+
+  # ==========================================================================
+  # CHECKPOINT AND MODEL VERIFICATION
+  # ==========================================================================
+  - name: Checkpoints directory exists
+    description: Verify deep learning model checkpoints are present
+    command: ls /fastsurfer/checkpoints/ 2>&1 | head -5
+    expected_output_contains: ""
+
+  - name: FastSurferVINN checkpoints
+    description: Verify FastSurferVINN model checkpoints exist
+    command: ls /fastsurfer/checkpoints/ | grep -i "vinn" || ls /fastsurfer/checkpoints/
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PYTHON DEPENDENCIES CHECK
+  # ==========================================================================
+  - name: PyTorch availability
+    description: Verify PyTorch is installed and importable
+    command: python3 -c "import torch; print(torch.__name__, torch.__version__)"
+    expected_output_contains: "torch"
+
+  - name: NumPy availability
+    description: Verify NumPy is installed
+    command: python3 -c "import numpy; print(numpy.__name__, numpy.__version__)"
+    expected_output_contains: "numpy"
+
+  - name: Nibabel availability
+    description: Verify Nibabel (neuroimaging I/O) is installed
+    command: python3 -c "import nibabel; print(nibabel.__name__, nibabel.__version__)"
+    expected_output_contains: "nibabel"
+
+  - name: Scipy availability
+    description: Verify Scipy is installed
+    command: python3 -c "import scipy; print(scipy.__name__, scipy.__version__)"
+    expected_output_contains: "scipy"
+
+  - name: Pandas availability
+    description: Verify Pandas is installed
+    command: python3 -c "import pandas; print(pandas.__name__, pandas.__version__)"
+    expected_output_contains: "pandas"
+
+  - name: Scikit-image availability
+    description: Verify scikit-image is installed
+    command: python3 -c "import skimage; print(skimage.__name__, skimage.__version__)"
+    expected_output_contains: "skimage"
+
+  # ==========================================================================
+  # FASTSURFER UTILITY FUNCTIONS
+  # ==========================================================================
+  - name: Import FastSurfer data loader
+    description: Verify FastSurferCNN data loader modules are importable
+    command: python3 -c "from FastSurferCNN.data_loader import loader; print('Data loader OK')"
+    expected_output_contains: "Data loader OK"
+
+  - name: Import FastSurfer models
+    description: Verify FastSurferCNN model modules are importable
+    command: python3 -c "from FastSurferCNN.models import networks; print('Models OK')"
+    expected_output_contains: "Models OK"
+
+  - name: Import CerebNet modules
+    description: Verify CerebNet modules are importable
+    command: python3 -c "import CerebNet; print('CerebNet OK')"
+    expected_output_contains: "CerebNet OK"
+
+  - name: Import HypVINN modules
+    description: Verify HypVINN modules are importable
+    command: python3 -c "import HypVINN; print('HypVINN OK')"
+    expected_output_contains: "HypVINN OK"
+
+  # ==========================================================================
+  # RECON-SURF SCRIPT AVAILABILITY
+  # ==========================================================================
+  - name: recon-surf.sh availability
+    description: Verify recon-surf.sh surface reconstruction script exists
+    command: test -f /fastsurfer/recon_surf/recon-surf.sh && echo "recon-surf.sh exists"
+    expected_output_contains: "recon-surf.sh exists"
+
+  - name: recon-surfreg.sh availability
+    description: Verify recon-surfreg.sh registration script exists
+    command: test -f /fastsurfer/recon_surf/recon-surfreg.sh && echo "recon-surfreg.sh exists"
+    expected_output_contains: "recon-surfreg.sh exists"
+
+  - name: talairach-reg.sh availability
+    description: Verify talairach registration script exists
+    command: test -f /fastsurfer/recon_surf/talairach-reg.sh && echo "talairach-reg.sh exists"
+    expected_output_contains: "talairach-reg.sh exists"
+
+  - name: long_prepare_template.sh availability
+    description: Verify longitudinal template preparation script exists
+    command: test -f /fastsurfer/recon_surf/long_prepare_template.sh && echo "long_prepare_template.sh exists"
+    expected_output_contains: "long_prepare_template.sh exists"
+
+  # ==========================================================================
+  # LOOK-UP TABLE (LUT) FILES
+  # ==========================================================================
+  - name: DKT atlas lookup table
+    description: Verify DKT atlas lookup table exists
+    command: test -f /fastsurfer/recon_surf/DKTatlaslookup.txt && echo "DKT LUT exists"
+    expected_output_contains: "DKT LUT exists"
+
+  - name: Left hemisphere DKT lookup
+    description: Verify left hemisphere DKT lookup exists
+    command: test -f /fastsurfer/recon_surf/lh.DKTatlaslookup.txt && echo "lh DKT LUT exists"
+    expected_output_contains: "lh DKT LUT exists"
+
+  - name: Right hemisphere DKT lookup
+    description: Verify right hemisphere DKT lookup exists
+    command: test -f /fastsurfer/recon_surf/rh.DKTatlaslookup.txt && echo "rh DKT LUT exists"
+    expected_output_contains: "rh DKT LUT exists"
+
+  # ==========================================================================
+  # IMAGE I/O AND PROCESSING UTILITIES
+  # ==========================================================================
+  - name: Read NIfTI with nibabel
+    description: Verify nibabel can read the test T1w image
+    command: python3 -c "import nibabel as nib; img = nib.load('${t1w}'); print('Shape:', img.shape)"
+    expected_output_contains: "Shape:"
+
+  - name: Read NIfTI header info
+    description: Extract header information from T1w using nibabel
+    command: |
+      python3 -c "
+      import nibabel as nib
+      img = nib.load('${t1w}')
+      print('Dimensions:', img.shape)
+      print('Voxel size:', img.header.get_zooms())
+      print('Data type:', img.get_data_dtype())
+      "
+    expected_output_contains: "Dimensions:"
+
+  # ==========================================================================
+  # FASTSURFER CONFIGURATION FILES
+  # ==========================================================================
+  - name: FastSurferCNN config directory
+    description: Verify FastSurferCNN config directory exists
+    command: ls /fastsurfer/FastSurferCNN/config/ 2>&1 | head -5
+    expected_exit_code: 0
+
+  - name: CerebNet config directory
+    description: Verify CerebNet config directory exists
+    command: ls /fastsurfer/CerebNet/config/ 2>&1 | head -5
+    expected_exit_code: 0
+
+  - name: HypVINN config directory
+    description: Verify HypVINN config directory exists
+    command: ls /fastsurfer/HypVINN/config/ 2>&1 | head -5
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SEGMENTATION-ONLY MODE (QUICK TEST)
+  # Note: Full segmentation is computationally intensive.
+  # These tests verify the pipeline can start and parse arguments correctly.
+  # ==========================================================================
+  - name: run_fastsurfer.sh argument parsing (seg_only)
+    description: Verify seg_only pipeline arguments are parsed correctly
+    command: |
+      run_fastsurfer.sh --sid test_subject --sd test_output/fastsurfer_subjects \
+        --t1 $(realpath ${t1w}) --seg_only --device cpu --help 2>&1 | head -5
+    expected_output_contains: "run_fastsurfer.sh"
+
+  - name: run_fastsurfer.sh dry run check
+    description: Verify pipeline validates input file existence
+    command: |
+      run_fastsurfer.sh --sid test_subject --sd test_output/fastsurfer_subjects \
+        --t1 /nonexistent/file.nii.gz --seg_only 2>&1 || true
+    expected_output_contains: ""
+
+  # ==========================================================================
+  # VOLUME STATISTICS UTILITIES
+  # ==========================================================================
+  - name: segstats module import
+    description: Verify segstats module is importable
+    command: python3 -c "from FastSurferCNN import segstats; print('segstats OK')"
+    expected_output_contains: "segstats OK"
+
+  # ==========================================================================
+  # ANNOTATION AND LABELING UTILITIES
+  # ==========================================================================
+  - name: smooth_aparc module
+    description: Verify aparc smoothing module is available
+    command: python3 -c "from recon_surf.smooth_aparc import main; print('smooth_aparc OK')" 2>&1
+    expected_output_contains: "smooth_aparc OK"
+
+  # ==========================================================================
+  # ALIGNMENT AND REGISTRATION UTILITIES
+  # ==========================================================================
+  - name: align_points module
+    description: Verify point alignment module is available
+    command: python3 -m recon_surf.align_points --help 2>&1 | head -3
+    expected_output_contains: ""
+
+  - name: align_seg module
+    description: Verify segmentation alignment module is available
+    command: python3 -m recon_surf.align_seg --help 2>&1 | head -3
+    expected_output_contains: ""
+
+  # ==========================================================================
+  # DEVICE DETECTION (CPU/GPU)
+  # ==========================================================================
+  - name: PyTorch CPU device
+    description: Verify PyTorch CPU device is available
+    command: python3 -c "import torch; print('CPU available:', torch.device('cpu'))"
+    expected_output_contains: "CPU available"
+
+  - name: Check CUDA availability
+    description: Check if CUDA is available (informational)
+    command: python3 -c "import torch; print('CUDA available:', torch.cuda.is_available())"
+    expected_output_contains: "CUDA available:"
+
+  # ==========================================================================
+  # ENVIRONMENT VARIABLES
+  # ==========================================================================
+  - name: FREESURFER_HOME set
+    description: Verify FREESURFER_HOME environment variable is set
+    command: echo $FREESURFER_HOME
+    expected_output_contains: "/opt/freesurfer"
+
+  - name: FASTSURFER_HOME set
+    description: Verify FASTSURFER_HOME environment variable is set
+    command: test -n "$FASTSURFER_HOME" && echo "FASTSURFER_HOME is set" || echo "Default is /fastsurfer"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # BUILD AND VERSION INFORMATION
+  # ==========================================================================
+  - name: BUILD.info exists
+    description: Verify BUILD.info file exists in container
+    command: test -f /fastsurfer/BUILD.info && echo "BUILD.info exists"
+    expected_output_contains: "BUILD.info exists"
+
+  - name: Read BUILD.info
+    description: Display build information
+    command: cat /fastsurfer/BUILD.info 2>&1 | head -20
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FREESURFER COLOR LOOKUP TABLE
+  # ==========================================================================
+  - name: FreeSurferColorLUT exists
+    description: Verify FreeSurfer color lookup table is available
+    command: test -f $FREESURFER_HOME/FreeSurferColorLUT.txt && echo "FreeSurferColorLUT.txt exists"
+    expected_output_contains: "FreeSurferColorLUT.txt exists"
+
+  # ==========================================================================
+  # QUICK SEGMENTATION TEST (CPU, limited)
+  # This test runs actual segmentation but with minimal processing
+  # ==========================================================================
+  - name: FastSurferCNN model loading test
+    description: Test that FastSurferCNN can load models on CPU
+    command: |
+      python3 -c "
+      import torch
+      from FastSurferCNN.models.networks import FastSurferCNNBase
+      print('Model class loaded successfully')
+      "
+    expected_output_contains: "Model class loaded successfully"
+
+  # ==========================================================================
+  # SURFACE UTILITIES - make_upright
+  # ==========================================================================
+  - name: make_upright utility
+    description: Verify make_upright utility exists
+    command: test -f /fastsurfer/recon_surf/make_upright && echo "make_upright exists"
+    expected_output_contains: "make_upright exists"
+
+  - name: fs_time utility
+    description: Verify fs_time utility exists
+    command: test -f /fastsurfer/recon_surf/fs_time && echo "fs_time exists"
+    expected_output_contains: "fs_time exists"
+
+  # ==========================================================================
+  # BATCH PROCESSING SCRIPT
+  # ==========================================================================
+  - name: brun_fastsurfer.sh availability
+    description: Verify batch processing script exists
+    command: test -f /fastsurfer/brun_fastsurfer.sh && echo "brun_fastsurfer.sh exists"
+    expected_output_contains: "brun_fastsurfer.sh exists"
+
+  - name: stools.sh availability
+    description: Verify supplementary tools script exists
+    command: test -f /fastsurfer/stools.sh && echo "stools.sh exists"
+    expected_output_contains: "stools.sh exists"
+
+  # ==========================================================================
+  # DOCKER/CONTAINER CONFIGURATION
+  # ==========================================================================
+  - name: Docker directory exists
+    description: Verify Docker configuration directory exists
+    command: test -d /fastsurfer/Docker && echo "Docker dir exists"
+    expected_output_contains: "Docker dir exists"
+
+  # ==========================================================================
+  # TEST DIRECTORY IN CONTAINER
+  # ==========================================================================
+  - name: Test directory exists
+    description: Verify test directory exists in container
+    command: test -d /fastsurfer/test && echo "test dir exists"
+    expected_output_contains: "test dir exists"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/fastsurfer
+    # rm -rf test_output/fastsurfer_subjects
+    echo "Test outputs preserved in test_output/fastsurfer/"

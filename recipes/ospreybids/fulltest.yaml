@@ -1,0 +1,632 @@
+# ospreybids container test suite
+# Tests for ospreybids v4.2.1 - BIDS-compatible Osprey MRS processing
+#
+# Osprey is used in the Healthy Brain and Child Development (HBCD) study
+# for processing magnetic resonance spectroscopy (MRS) data.
+#
+# Citation: G Oeltzschner, HJ Zoellner, SCN Hui, M Mikkelsen, MG Saleh,
+#           S Tapper, RAE Edden. Osprey: Open-Source Processing,
+#           Reconstruction & Estimation of Magnetic Resonance Spectroscopy Data.
+#           J Neurosci Meth 343:108827 (2020).
+
+name: ospreybids
+version: 4.2.1
+container: ospreybids_4.2.1_20250808.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION CHECKS
+  # ==========================================================================
+  - name: Osprey CLI help
+    description: Verify osprey command shows help information
+    command: osprey --help 2>&1 | head -20
+    expected_output_contains: "positional arguments"
+
+  - name: Osprey CLI usage
+    description: Verify osprey shows usage information
+    command: osprey --help 2>&1
+    expected_output_contains: "bids_dir"
+
+  - name: Osprey output_dir argument
+    description: Verify osprey recognizes output_dir argument
+    command: osprey --help 2>&1
+    expected_output_contains: "output_dir"
+
+  - name: Osprey analysis_level argument
+    description: Verify osprey recognizes analysis_level argument
+    command: osprey --help 2>&1
+    expected_output_contains: "analysis_level"
+
+  - name: Osprey json_settings argument
+    description: Verify osprey recognizes json_settings argument
+    command: osprey --help 2>&1
+    expected_output_contains: "json_settings"
+
+  - name: Osprey participant_label option
+    description: Verify participant_label option exists
+    command: osprey --help 2>&1
+    expected_output_contains: "--participant_label"
+
+  - name: Osprey session_id option
+    description: Verify session_id option exists
+    command: osprey --help 2>&1
+    expected_output_contains: "--session_id"
+
+  - name: Osprey segmentation_dir option
+    description: Verify segmentation_dir option exists
+    command: osprey --help 2>&1
+    expected_output_contains: "--segmentation_dir"
+
+  - name: Osprey localizer_registration option
+    description: Verify localizer_registration option exists
+    command: osprey --help 2>&1
+    expected_output_contains: "--localizer_registration"
+
+  - name: Osprey preferred_anat_modality option
+    description: Verify preferred_anat_modality option exists
+    command: osprey --help 2>&1
+    expected_output_contains: "--preferred_anat_modality"
+
+  # ==========================================================================
+  # MATLAB RUNTIME ENVIRONMENT
+  # ==========================================================================
+  - name: MCR path exists
+    description: Verify MATLAB Compiler Runtime directory exists
+    command: ls -d /mcr_path/v912 2>&1
+    expected_output_contains: "/mcr_path/v912"
+
+  - name: MCR runtime libraries exist
+    description: Verify MCR runtime directory exists
+    command: ls -d /mcr_path/v912/runtime 2>&1
+    expected_output_contains: "runtime"
+
+  - name: MCR bin directory exists
+    description: Verify MCR bin directory exists
+    command: ls -d /mcr_path/v912/bin 2>&1
+    expected_output_contains: "bin"
+
+  - name: MCR extern directory exists
+    description: Verify MCR extern directory exists
+    command: ls -d /mcr_path/v912/extern 2>&1
+    expected_output_contains: "extern"
+
+  - name: MCR glnxa64 runtime libraries
+    description: Verify MCR glnxa64 runtime libraries directory exists
+    command: ls -d /mcr_path/v912/runtime/glnxa64 2>&1
+    expected_output_contains: "glnxa64"
+
+  - name: MCR version check
+    description: Verify MCR version 9.12 (R2022a) is installed
+    command: cat /mcr_path/v912/MCR_license.txt 2>&1 | head -5
+    expected_output_contains: "MATLAB"
+
+  - name: LD_LIBRARY_PATH includes MCR
+    description: Verify LD_LIBRARY_PATH environment variable includes MCR paths
+    command: echo $LD_LIBRARY_PATH 2>&1
+    expected_output_contains: "/mcr_path/v912"
+
+  # ==========================================================================
+  # OSPREY COMPILED EXECUTABLE
+  # ==========================================================================
+  - name: OspreyHBCD executable exists
+    description: Verify OspreyHBCD compiled MATLAB executable exists
+    command: ls -l /code/OspreyHBCD 2>&1
+    expected_output_contains: "OspreyHBCD"
+
+  - name: OspreyHBCD executable permissions
+    description: Verify OspreyHBCD has executable permissions
+    command: test -x /code/OspreyHBCD && echo "executable"
+    expected_output_contains: "executable"
+
+  - name: run_compiled.sh exists
+    description: Verify run_compiled.sh wrapper script exists
+    command: ls -l /code/run_compiled.sh 2>&1
+    expected_output_contains: "run_compiled.sh"
+
+  - name: run_OspreyHBCD.sh exists
+    description: Verify run_OspreyHBCD.sh wrapper script exists
+    command: ls -l /code/run_OspreyHBCD.sh 2>&1
+    expected_output_contains: "run_OspreyHBCD.sh"
+
+  - name: Osprey license file exists
+    description: Verify OSPREY_LICENSE.md exists
+    command: cat /code/OSPREY_LICENSE.md 2>&1 | head -5
+    expected_output_contains: "MIT License"
+
+  - name: SPM12 license bundled
+    description: Verify SPM12 license is included
+    command: ls -l /code/SPM12_LICENCE.txt 2>&1
+    expected_output_contains: "SPM12_LICENCE.txt"
+
+  # ==========================================================================
+  # PYTHON ENVIRONMENT
+  # ==========================================================================
+  - name: Python version check
+    description: Verify Python 3.9 is available
+    command: python3 --version 2>&1
+    expected_output_contains: "Python 3.9"
+
+  - name: Python executable path
+    description: Verify Python 3 is in expected location
+    command: which python3 2>&1
+    expected_output_contains: "python3"
+
+  - name: NumPy availability
+    description: Verify NumPy library is installed
+    command: 'python3 -c "import numpy; print(''numpy:'', numpy.__version__)" 2>&1'
+    expected_output_contains: "numpy:"
+
+  - name: SciPy availability
+    description: Verify SciPy library is installed
+    command: 'python3 -c "import scipy; print(''scipy:'', scipy.__version__)" 2>&1'
+    expected_output_contains: "scipy:"
+
+  - name: NiBabel availability
+    description: Verify NiBabel neuroimaging library is installed
+    command: 'python3 -c "import nibabel; print(''nibabel:'', nibabel.__version__)" 2>&1'
+    expected_output_contains: "nibabel:"
+
+  - name: Matplotlib availability
+    description: Verify Matplotlib library is installed
+    command: 'python3 -c "import matplotlib; print(''matplotlib:'', matplotlib.__version__)" 2>&1'
+    expected_output_contains: "matplotlib:"
+
+  - name: JSON module availability
+    description: Verify JSON module is available
+    command: python3 -c "import json; print('json available')" 2>&1
+    expected_output_contains: "json available"
+
+  - name: Argparse module availability
+    description: Verify argparse module is available
+    command: python3 -c "import argparse; print('argparse available')" 2>&1
+    expected_output_contains: "argparse available"
+
+  - name: Glob module availability
+    description: Verify glob module is available
+    command: python3 -c "import glob; print('glob available')" 2>&1
+    expected_output_contains: "glob available"
+
+  - name: OS module availability
+    description: Verify os module is available
+    command: python3 -c "import os; print('os available')" 2>&1
+    expected_output_contains: "os available"
+
+  # ==========================================================================
+  # PYTHON CODE SCRIPTS
+  # ==========================================================================
+  - name: Osprey Python wrapper exists
+    description: Verify osprey Python script exists
+    command: ls -l /python_code/osprey 2>&1
+    expected_output_contains: "osprey"
+
+  - name: run.py script exists
+    description: Verify run.py script exists
+    command: ls -l /python_code/run.py 2>&1
+    expected_output_contains: "run.py"
+
+  - name: localizer_alignment.py exists
+    description: Verify localizer_alignment.py script exists
+    command: ls -l /python_code/localizer_alignment.py 2>&1
+    expected_output_contains: "localizer_alignment.py"
+
+  - name: HBCD pilot config exists
+    description: Verify hbcd_pilot_config.json exists
+    command: ls -l /python_code/hbcd_pilot_config.json 2>&1
+    expected_output_contains: "hbcd_pilot_config.json"
+
+  - name: HBCD pilot config is valid JSON
+    description: Verify hbcd_pilot_config.json is valid JSON
+    command: 'python3 -c "import json; json.load(open(''/python_code/hbcd_pilot_config.json'')); print(''valid'')" 2>&1'
+    expected_output_contains: "valid"
+
+  - name: HBCD config has HERCULES section
+    description: Verify HBCD config contains HERCULES sequence settings
+    command: 'python3 -c "import json; c=json.load(open(''/python_code/hbcd_pilot_config.json'')); print(''HERCULES'' in c)" 2>&1'
+    expected_output_contains: "True"
+
+  - name: HBCD config has unedited section
+    description: Verify HBCD config contains unedited sequence settings
+    command: 'python3 -c "import json; c=json.load(open(''/python_code/hbcd_pilot_config.json'')); print(''unedited'' in c)" 2>&1'
+    expected_output_contains: "True"
+
+  # ==========================================================================
+  # BASIS SETS - DIRECTORY STRUCTURE
+  # ==========================================================================
+  - name: BASIS_SETS_PATH environment variable
+    description: Verify BASIS_SETS_PATH environment variable is set
+    command: echo $BASIS_SETS_PATH 2>&1
+    expected_output_contains: "/HBCD_basissets"
+
+  - name: Basis sets directory exists
+    description: Verify HBCD_basissets directory exists
+    command: ls -d /HBCD_basissets 2>&1
+    expected_output_contains: "/HBCD_basissets"
+
+  - name: 3T basis sets directory exists
+    description: Verify 3T basis sets directory exists
+    command: ls -d /HBCD_basissets/3T 2>&1
+    expected_output_contains: "3T"
+
+  # ==========================================================================
+  # BASIS SETS - SIEMENS
+  # ==========================================================================
+  - name: Siemens basis sets directory exists
+    description: Verify Siemens basis sets directory exists
+    command: ls -d /HBCD_basissets/3T/siemens 2>&1
+    expected_output_contains: "siemens"
+
+  - name: Siemens HERCULES-PRESS basis set directory
+    description: Verify Siemens HERCULES-PRESS basis set directory exists
+    command: ls -d /HBCD_basissets/3T/siemens/hercules-press 2>&1
+    expected_output_contains: "hercules-press"
+
+  - name: Siemens HERCULES-PRESS basis set file
+    description: Verify Siemens HERCULES-PRESS basis set .mat file exists
+    command: ls /HBCD_basissets/3T/siemens/hercules-press/*.mat 2>&1
+    expected_output_contains: ".mat"
+
+  - name: Siemens unedited basis set directory
+    description: Verify Siemens unedited basis set directory exists
+    command: ls -d /HBCD_basissets/3T/siemens/unedited 2>&1
+    expected_output_contains: "unedited"
+
+  - name: Siemens unedited PRESS basis set directory
+    description: Verify Siemens unedited PRESS basis set directory exists
+    command: ls -d /HBCD_basissets/3T/siemens/unedited/press 2>&1
+    expected_output_contains: "press"
+
+  # ==========================================================================
+  # BASIS SETS - GE
+  # ==========================================================================
+  - name: GE basis sets directory exists
+    description: Verify GE basis sets directory exists
+    command: ls -d /HBCD_basissets/3T/ge 2>&1
+    expected_output_contains: "ge"
+
+  - name: GE HERCULES-PRESS basis set directory
+    description: Verify GE HERCULES-PRESS basis set directory exists
+    command: ls -d /HBCD_basissets/3T/ge/hercules-press 2>&1
+    expected_output_contains: "hercules-press"
+
+  - name: GE unedited basis set directory
+    description: Verify GE unedited basis set directory exists
+    command: ls -d /HBCD_basissets/3T/ge/unedited 2>&1
+    expected_output_contains: "unedited"
+
+  # ==========================================================================
+  # BASIS SETS - PHILIPS
+  # ==========================================================================
+  - name: Philips basis sets directory exists
+    description: Verify Philips basis sets directory exists
+    command: ls -d /HBCD_basissets/3T/philips 2>&1
+    expected_output_contains: "philips"
+
+  - name: Philips HERCULES-PRESS basis set directory
+    description: Verify Philips HERCULES-PRESS basis set directory exists
+    command: ls -d /HBCD_basissets/3T/philips/hercules-press 2>&1
+    expected_output_contains: "hercules-press"
+
+  - name: Philips unedited basis set directory
+    description: Verify Philips unedited basis set directory exists
+    command: ls -d /HBCD_basissets/3T/philips/unedited 2>&1
+    expected_output_contains: "unedited"
+
+  # ==========================================================================
+  # LOCALIZER ALIGNMENT MODULE
+  # ==========================================================================
+  - name: Import localizer_alignment module
+    description: Verify localizer_alignment module can be imported
+    command: python3 -c "import sys; sys.path.insert(0, '/python_code'); from localizer_alignment import *; print('import successful')" 2>&1
+    expected_output_contains: "import successful"
+
+  - name: Localizer alignment calc_center_of_mass function
+    description: Verify calc_center_of_mass function exists
+    command: python3 -c "import sys; sys.path.insert(0, '/python_code'); from localizer_alignment import calc_center_of_mass; print('function exists')" 2>&1
+    expected_output_contains: "function exists"
+
+  - name: Localizer alignment calc_affine function
+    description: Verify calc_affine function exists
+    command: python3 -c "import sys; sys.path.insert(0, '/python_code'); from localizer_alignment import calc_affine; print('function exists')" 2>&1
+    expected_output_contains: "function exists"
+
+  - name: Localizer alignment grab_image_vals function
+    description: Verify grab_image_vals function exists
+    command: python3 -c "import sys; sys.path.insert(0, '/python_code'); from localizer_alignment import grab_image_vals; print('function exists')" 2>&1
+    expected_output_contains: "function exists"
+
+  # ==========================================================================
+  # SCIPY NDIMAGE FUNCTIONS (used by localizer_alignment)
+  # ==========================================================================
+  - name: SciPy ndimage module
+    description: Verify scipy.ndimage module is available
+    command: python3 -c "from scipy import ndimage; print('ndimage available')" 2>&1
+    expected_output_contains: "ndimage available"
+
+  - name: SciPy ndimage center_of_mass
+    description: Verify scipy.ndimage.center_of_mass is available
+    command: python3 -c "from scipy.ndimage import center_of_mass; print('center_of_mass available')" 2>&1
+    expected_output_contains: "center_of_mass available"
+
+  - name: SciPy interpolate module
+    description: Verify scipy.interpolate module is available
+    command: python3 -c "from scipy.interpolate import RegularGridInterpolator; print('interpolator available')" 2>&1
+    expected_output_contains: "interpolator available"
+
+  - name: SciPy optimize module
+    description: Verify scipy.optimize module is available
+    command: python3 -c "from scipy import optimize; print('optimize available')" 2>&1
+    expected_output_contains: "optimize available"
+
+  # ==========================================================================
+  # NIBABEL FUNCTIONALITY (for MRS/NIfTI handling)
+  # ==========================================================================
+  - name: NiBabel processing module
+    description: Verify nibabel.processing module is available
+    command: python3 -c "from nibabel import processing; print('processing available')" 2>&1
+    expected_output_contains: "processing available"
+
+  - name: NiBabel Nifti1Image class
+    description: Verify NiBabel Nifti1Image class is available
+    command: python3 -c "from nibabel import Nifti1Image; print('Nifti1Image available')" 2>&1
+    expected_output_contains: "Nifti1Image available"
+
+  - name: NiBabel load function
+    description: Verify NiBabel load function is available
+    command: python3 -c "from nibabel import load; print('load available')" 2>&1
+    expected_output_contains: "load available"
+
+  - name: NiBabel save function
+    description: Verify NiBabel save function is available
+    command: python3 -c "from nibabel import save; print('save available')" 2>&1
+    expected_output_contains: "save available"
+
+  # ==========================================================================
+  # CONTAINER ENVIRONMENT VARIABLES
+  # ==========================================================================
+  - name: EXECUTABLE_PATH environment variable
+    description: Verify EXECUTABLE_PATH environment variable is set
+    command: echo $EXECUTABLE_PATH 2>&1
+    expected_output_contains: "/code/run_compiled.sh"
+
+  - name: MCR_PATH environment variable
+    description: Verify MCR_PATH environment variable is set
+    command: echo $MCR_PATH 2>&1
+    expected_output_contains: "/mcr_path/v912"
+
+  - name: DEPLOY_BINS environment variable
+    description: Verify DEPLOY_BINS environment variable includes osprey
+    command: echo $DEPLOY_BINS 2>&1
+    expected_output_contains: "osprey"
+
+  # ==========================================================================
+  # CONTAINER METADATA
+  # ==========================================================================
+  - name: Singularity labels exist
+    description: Verify container has Singularity labels
+    command: cat /.singularity.d/labels.json 2>&1
+    expected_output_contains: "org.label-schema"
+
+  - name: Container build date in labels
+    description: Verify container build date is recorded
+    command: cat /.singularity.d/labels.json 2>&1
+    expected_output_contains: "build-date"
+
+  - name: Container architecture in labels
+    description: Verify container architecture is recorded
+    command: cat /.singularity.d/labels.json 2>&1
+    expected_output_contains: "amd64"
+
+  - name: README.md exists
+    description: Verify container README.md exists
+    command: cat /README.md 2>&1 | head -5
+    expected_output_contains: "ospreybids"
+
+  - name: build.yaml exists
+    description: Verify container build.yaml exists
+    command: cat /build.yaml 2>&1 | head -5
+    expected_output_contains: "ospreybids"
+
+  # ==========================================================================
+  # SYSTEM UTILITIES
+  # ==========================================================================
+  - name: Bash available
+    description: Verify bash shell is available
+    command: bash --version 2>&1 | head -1
+    expected_output_contains: "bash"
+
+  - name: Cat utility available
+    description: Verify cat utility is available
+    command: which cat 2>&1
+    expected_output_contains: "cat"
+
+  - name: Ls utility available
+    description: Verify ls utility is available
+    command: which ls 2>&1
+    expected_output_contains: "ls"
+
+  - name: Mkdir utility available
+    description: Verify mkdir utility is available
+    command: which mkdir 2>&1
+    expected_output_contains: "mkdir"
+
+  - name: Cp utility available
+    description: Verify cp utility is available
+    command: which cp 2>&1
+    expected_output_contains: "cp"
+
+  # ==========================================================================
+  # OSPREY CLI ADVANCED OPTIONS
+  # ==========================================================================
+  - name: Localizer search term option
+    description: Verify localizer_search_term option exists
+    command: osprey --help 2>&1
+    expected_output_contains: "--localizer_search_term"
+
+  - name: Terms not allowed in anat option
+    description: Verify terms_not_allowed_in_anat option exists
+    command: osprey --help 2>&1
+    expected_output_contains: "--terms_not_allowed_in_anat"
+
+  - name: Require same MRS localizer SUID option
+    description: Verify require_same_mrs_localizer_suid option exists
+    command: osprey --help 2>&1
+    expected_output_contains: "--require_same_mrs_localizer_suid"
+
+  - name: Analysis level must be participant
+    description: Verify documentation mentions participant analysis level
+    command: osprey --help 2>&1
+    expected_output_contains: "participant"
+
+  - name: T1w modality option
+    description: Verify T1w is a valid preferred_anat_modality option
+    command: osprey --help 2>&1
+    expected_output_contains: "T1w"
+
+  - name: T2w modality option
+    description: Verify T2w is a valid preferred_anat_modality option
+    command: osprey --help 2>&1
+    expected_output_contains: "T2w"
+
+  # ==========================================================================
+  # NUMPY ARRAY OPERATIONS (used by localizer_alignment)
+  # ==========================================================================
+  - name: NumPy eye function
+    description: Verify numpy.eye (identity matrix) is available
+    command: python3 -c "import numpy as np; m = np.eye(4); print('eye works')" 2>&1
+    expected_output_contains: "eye works"
+
+  - name: NumPy matmul function
+    description: Verify numpy.matmul (matrix multiplication) is available
+    command: python3 -c "import numpy as np; a = np.eye(4); b = np.matmul(a, a); print('matmul works')" 2>&1
+    expected_output_contains: "matmul works"
+
+  - name: NumPy linalg.inv function
+    description: Verify numpy.linalg.inv (matrix inverse) is available
+    command: python3 -c "import numpy as np; a = np.eye(4); b = np.linalg.inv(a); print('inv works')" 2>&1
+    expected_output_contains: "inv works"
+
+  - name: NumPy indices function
+    description: Verify numpy.indices is available
+    command: python3 -c "import numpy as np; i = np.indices((3,3,3)); print('indices works')" 2>&1
+    expected_output_contains: "indices works"
+
+  - name: NumPy reshape function
+    description: Verify numpy.reshape is available
+    command: python3 -c "import numpy as np; a = np.zeros((3,3,3)); b = a.reshape(-1); print('reshape works')" 2>&1
+    expected_output_contains: "reshape works"
+
+  - name: NumPy vstack function
+    description: Verify numpy.vstack is available
+    command: python3 -c "import numpy as np; a = np.zeros((3,9)); b = np.ones((1,9)); c = np.vstack([a,b]); print('vstack works')" 2>&1
+    expected_output_contains: "vstack works"
+
+  - name: NumPy sin and cos functions
+    description: Verify numpy trigonometric functions are available
+    command: python3 -c "import numpy as np; print(np.sin(0), np.cos(0))" 2>&1
+    expected_output_contains: "0.0 1.0"
+
+  # ==========================================================================
+  # MATPLOTLIB BACKEND (for visualization)
+  # ==========================================================================
+  - name: Matplotlib pyplot module
+    description: Verify matplotlib.pyplot is available
+    command: 'python3 -c "import matplotlib; matplotlib.use(''Agg''); import matplotlib.pyplot as plt; print(''pyplot available'')" 2>&1'
+    expected_output_contains: "pyplot available"
+
+  - name: Matplotlib Agg backend
+    description: Verify Agg backend can be used (for headless operation)
+    command: 'python3 -c "import matplotlib; matplotlib.use(''Agg''); print(matplotlib.get_backend())" 2>&1'
+    expected_output_contains: "agg"
+
+  # ==========================================================================
+  # FILE I/O OPERATIONS
+  # ==========================================================================
+  - name: Shutil module available
+    description: Verify shutil module is available for file operations
+    command: python3 -c "import shutil; print('shutil available')" 2>&1
+    expected_output_contains: "shutil available"
+
+  - name: Time module available
+    description: Verify time module is available
+    command: python3 -c "import time; print('time available')" 2>&1
+    expected_output_contains: "time available"
+
+  # ==========================================================================
+  # DIRECTORY STRUCTURE FOR BIDS APPS
+  # ==========================================================================
+  - name: Data mount point exists
+    description: Verify /data mount point exists
+    command: ls -d /data 2>&1
+    expected_output_contains: "/data"
+
+  - name: Neurodocker directory exists
+    description: Verify /neurodocker directory exists
+    command: ls -d /neurodocker 2>&1
+    expected_output_contains: "/neurodocker"
+
+  - name: Tmp directory accessible
+    description: Verify /tmp directory is accessible
+    command: ls -d /tmp 2>&1
+    expected_output_contains: "/tmp"
+
+  # ==========================================================================
+  # JSON CONFIG FILE VALIDATION
+  # ==========================================================================
+  - name: HBCD config HERCULES seqType
+    description: Verify HERCULES sequence type is correctly defined
+    command: 'python3 -c "import json; c=json.load(open(''/python_code/hbcd_pilot_config.json'')); print(c[''HERCULES''][''seqType''])" 2>&1'
+    expected_output_contains: "HERCULES"
+
+  - name: HBCD config HERCULES editTarget
+    description: Verify HERCULES editTarget includes GABA
+    command: 'python3 -c "import json; c=json.load(open(''/python_code/hbcd_pilot_config.json'')); print(''GABA'' in c[''HERCULES''][''editTarget''])" 2>&1'
+    expected_output_contains: "True"
+
+  - name: HBCD config HERCULES editTarget GSH
+    description: Verify HERCULES editTarget includes GSH
+    command: 'python3 -c "import json; c=json.load(open(''/python_code/hbcd_pilot_config.json'')); print(''GSH'' in c[''HERCULES''][''editTarget''])" 2>&1'
+    expected_output_contains: "True"
+
+  - name: HBCD config unedited seqType
+    description: Verify unedited sequence type is correctly defined
+    command: 'python3 -c "import json; c=json.load(open(''/python_code/hbcd_pilot_config.json'')); print(c[''unedited''][''seqType''])" 2>&1'
+    expected_output_contains: "unedited"
+
+  - name: HBCD config HERCULES prerequisites files pattern
+    description: Verify HERCULES files prerequisite pattern is defined
+    command: 'python3 -c "import json; c=json.load(open(''/python_code/hbcd_pilot_config.json'')); print(c[''HERCULES''][''prerequisites''][''files''])" 2>&1'
+    expected_output_contains: "hercules"
+
+  - name: HBCD config HERCULES prerequisites ref pattern
+    description: Verify HERCULES ref prerequisite pattern is defined
+    command: 'python3 -c "import json; c=json.load(open(''/python_code/hbcd_pilot_config.json'')); print(c[''HERCULES''][''prerequisites''][''files_ref''])" 2>&1'
+    expected_output_contains: "ref"
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Osprey missing arguments error
+    description: Verify osprey shows error when no arguments provided
+    command: osprey 2>&1 || true
+    expected_output_contains: "error"
+
+  - name: OspreyHBCD job file error
+    description: Verify OspreyHBCD shows appropriate error for missing job file
+    command: /code/OspreyHBCD 2>&1 || true
+    expected_output_contains: "Not enough"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

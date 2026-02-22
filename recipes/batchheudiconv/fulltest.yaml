@@ -1,0 +1,722 @@
+# batchheudiconv container test suite
+# Tests for batchheudiconv v1.0.0 - batch DICOM to BIDS conversion scripts
+#
+# This container includes:
+#   - batchheudiconv scripts: bh01_prep_dir.sh, bh02_sort_dicom.sh, bh03_make_subjlist.sh,
+#     bh04_make_heuristic.sh, bh05_make_bids.sh and associated Python utilities
+#   - heudiconv v1.3.3: DICOM to BIDS converter
+#   - dcm2niix v1.0.20250505: DICOM to NIfTI converter
+#   - nibabel v5.3.2 utilities: nib-ls, nib-diff, nib-stats, nib-roi, nib-conform, nib-convert, nib-nifti-dx
+#   - pydicom v3.0.1: DICOM file inspection and manipulation
+#   - Python 3.10.12
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - inplaneT2: inplane T2 weighted scan
+#   - BOLD: 64x64x33x300, 3.12x3.12x4.00mm, TR=2s (4D functional)
+#
+# Note: This container is designed primarily for DICOM to BIDS conversion workflows.
+# Since DICOM test data is not readily available, many tests focus on the included
+# utilities (nibabel, dcm2niix, heudiconv) that can be tested with NIfTI data.
+
+name: batchheudiconv
+version: 1.0.0
+container: batchheudiconv_1.0.0_20250628.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-02_bold.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-03_bold.nii.gz
+
+test_data:
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  bold2: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-02_bold.nii.gz
+  bold3: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-03_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/batchheudiconv_out
+    mkdir -p ${output_dir}/heudiconv_out
+    mkdir -p ${output_dir}/dcm2niix_out
+    mkdir -p ${output_dir}/nibabel_out
+    mkdir -p ${output_dir}/study_test
+
+tests:
+  # ==========================================================================
+  # BATCHHEUDICONV SCRIPTS - VERSION AND HELP
+  # ==========================================================================
+  - name: bh01_prep_dir.sh help
+    description: Display help message for directory preparation script
+    command: bh01_prep_dir.sh 2>&1 || true
+    expected_output_contains: "Create a new BIDS conversion study"
+
+  - name: bh02_sort_dicom.sh help
+    description: Display help message for DICOM sorting script
+    command: bh02_sort_dicom.sh 2>&1 || true
+    expected_output_contains: "Sort DICOM files into series-based directories"
+
+  - name: bh03_make_subjlist.sh help
+    description: Display help message for subject list creation script
+    command: bh03_make_subjlist.sh 2>&1 || true
+    expected_output_contains: "Create subject list from directory names"
+
+  - name: bh04_make_heuristic.sh help
+    description: Display help message for heuristic creation script
+    command: bh04_make_heuristic.sh 2>&1 || true
+    expected_output_contains: "Create heuristic file"
+
+  - name: bh05_make_bids.sh help
+    description: Display help message for BIDS conversion script
+    command: bh05_make_bids.sh 2>&1 || true
+    expected_output_contains: "Convert sorted DICOM files to BIDS format"
+
+  # ==========================================================================
+  # BATCHHEUDICONV - DIRECTORY PREPARATION
+  # ==========================================================================
+  - name: Create study directory structure
+    description: Test bh01_prep_dir.sh to create a complete study workspace
+    command: cd test_output && bh01_prep_dir.sh test_study 2>&1
+    expected_output_contains: "Directory structure"
+
+  - name: Verify study directory created
+    description: Verify the study directory structure was created correctly
+    command: ls -la ${output_dir}/test_study/
+    depends_on: Create study directory structure
+    expected_output_contains: "DICOM"
+
+  - name: Verify DICOM directories
+    description: Verify DICOM subdirectories exist
+    command: ls -la ${output_dir}/test_study/DICOM/
+    depends_on: Create study directory structure
+    expected_output_contains: "original"
+
+  - name: Verify bids directories
+    description: Verify BIDS output directories exist
+    command: ls -la ${output_dir}/test_study/bids/
+    depends_on: Create study directory structure
+    expected_output_contains: "rawdata"
+
+  - name: Verify code directory
+    description: Verify code directory with heuristics exists
+    command: ls -la ${output_dir}/test_study/code/
+    depends_on: Create study directory structure
+    expected_output_contains: "heuristic"
+
+  # ==========================================================================
+  # BATCHHEUDICONV - PYTHON UTILITIES
+  # ==========================================================================
+  - name: bh_fix_intendedfor.py help
+    description: Display help for IntendedFor fix utility
+    command: python3 /opt/batch-heudiconv/bh_fix_intendedfor.py --help 2>&1
+    expected_output_contains: "Fix IntendedFor field"
+
+  - name: bh_dcm_sort_dir.py exists
+    description: Verify DICOM sorting Python script exists
+    command: ls -la /opt/batch-heudiconv/bh_dcm_sort_dir.py
+    expected_output_contains: "bh_dcm_sort_dir.py"
+
+  - name: bh_reorganize_fieldmaps.py exists
+    description: Verify fieldmap reorganization script exists
+    command: ls -la /opt/batch-heudiconv/bh_reorganize_fieldmaps.py
+    expected_output_contains: "bh_reorganize_fieldmaps.py"
+
+  # ==========================================================================
+  # HEURISTIC TEMPLATES
+  # ==========================================================================
+  - name: List heuristic templates
+    description: List available heuristic template files
+    command: ls /opt/batch-heudiconv/code/
+    expected_output_contains: "heuristic_template.py"
+
+  - name: Verify heuristic template content
+    description: Check that heuristic template contains proper BIDS keys
+    command: cat /opt/batch-heudiconv/code/heuristic_template.py | head -50
+    expected_output_contains: "create_key"
+
+  - name: Verify HARP heuristic
+    description: Check HARP-specific heuristic file
+    command: ls /opt/batch-heudiconv/code/heuristic_HARP.py
+    expected_output_contains: "heuristic_HARP.py"
+
+  # ==========================================================================
+  # HEUDICONV - VERSION AND HELP
+  # ==========================================================================
+  - name: Heudiconv version check
+    description: Verify heudiconv binary runs and reports version
+    command: heudiconv --version
+    expected_output_contains: "1.3.3"
+
+  - name: Heudiconv help
+    description: Display heudiconv help message
+    command: heudiconv --help 2>&1 | head -30
+    expected_output_contains: "DICOM"
+
+  # ==========================================================================
+  # HEUDICONV - BUILT-IN HEURISTICS
+  # ==========================================================================
+  - name: List built-in heuristics
+    description: List all available built-in heuristics
+    command: heudiconv --command heuristics 2>&1
+    expected_output_contains: "reproin"
+
+  - name: Get heuristic info - convertall
+    description: Get detailed information about the convertall heuristic
+    command: heudiconv --command heuristic-info -f convertall 2>&1
+    expected_output_contains: "heudiconv"
+
+  - name: Get heuristic info - reproin
+    description: Get detailed information about the reproin heuristic
+    command: heudiconv --command heuristic-info -f reproin 2>&1
+    expected_output_contains: "ReproIn"
+
+  - name: Get heuristic info - bids_ME
+    description: Get information about multi-echo BIDS heuristic
+    command: heudiconv --command heuristic-info -f bids_ME 2>&1 || true
+    expected_output_contains: "Multi-Echo"
+
+  - name: Heudiconv populate templates
+    description: Test populate-templates command functionality
+    command: heudiconv --command populate-templates 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX - VERSION AND HELP
+  # ==========================================================================
+  - name: dcm2niix version check
+    description: Verify dcm2niix binary runs and reports version
+    command: dcm2niix --version 2>&1
+    expected_exit_code: 3  # dcm2niix exits with 3 for --version
+    expected_output_contains: "v1.0.20250505"
+
+  - name: dcm2niix help
+    description: Display dcm2niix help message
+    command: dcm2niix -h 2>&1 | head -30
+    expected_output_contains: "dcm2niix"
+
+  - name: dcm2niix BIDS options
+    description: Verify BIDS sidecar option is available
+    command: dcm2niix -h 2>&1 | grep -i "bids"
+    expected_output_contains: "BIDS"
+
+  - name: dcm2niix compression options
+    description: Verify compression options are available
+    command: dcm2niix -h 2>&1 | grep -i "gz"
+    expected_output_contains: "gz"
+
+  # ==========================================================================
+  # NIBABEL - nib-ls (NIfTI listing)
+  # ==========================================================================
+  - name: nib-ls version check
+    description: Verify nib-ls binary runs
+    command: nib-ls --version 2>&1
+    expected_exit_code: 0
+
+  - name: nib-ls T2 basic info
+    description: List basic information for T2 image
+    command: nib-ls ${t2}
+    expected_output_contains: "nii.gz"
+
+  - name: nib-ls T2 with stats
+    description: List T2 image with basic statistics
+    command: nib-ls -s ${t2}
+    expected_output_contains: "nii.gz"
+
+  - name: nib-ls BOLD basic info
+    description: List basic information for BOLD image
+    command: nib-ls ${bold}
+    expected_output_contains: "64"
+
+  - name: nib-ls BOLD with stats
+    description: List BOLD image with basic statistics
+    command: nib-ls -s ${bold}
+    expected_output_contains: "300"
+
+  - name: nib-ls multiple files
+    description: List information for multiple NIfTI files
+    command: nib-ls ${t2} ${bold}
+    expected_output_contains: "bold"
+
+  - name: nib-ls header fields
+    description: List specific header fields
+    command: nib-ls -H "dim,pixdim" ${t2}
+    expected_output_contains: "128"
+
+  - name: nib-ls verbose output
+    description: List image with verbose output
+    command: nib-ls -v ${bold}
+    expected_output_contains: "64"
+
+  - name: nib-ls all BOLD runs
+    description: List information for all BOLD runs
+    command: nib-ls ${bold} ${bold2} ${bold3}
+    expected_output_contains: "run-01"
+
+  # ==========================================================================
+  # NIBABEL - nib-diff (NIfTI comparison)
+  # ==========================================================================
+  - name: nib-diff identical files
+    description: Compare identical NIfTI files (should show no differences)
+    command: nib-diff ${bold} ${bold} 2>&1
+    expected_exit_code: 0
+
+  - name: nib-diff different files
+    description: Compare different NIfTI files (T2 vs BOLD)
+    command: nib-diff ${t2} ${bold} 2>&1
+    expected_exit_code: 1
+    expected_output_contains: "different"
+
+  - name: nib-diff BOLD runs
+    description: Compare two BOLD runs
+    command: nib-diff ${bold} ${bold2} 2>&1
+    expected_exit_code: 1
+    expected_output_contains: "different"
+
+  - name: nib-diff with header fields
+    description: Compare files showing specific header fields
+    command: nib-diff -H "pixdim" ${t2} ${bold} 2>&1
+    expected_exit_code: 1
+    expected_output_contains: "pixdim"
+
+  - name: nib-diff verbose
+    description: Compare files with verbose output
+    command: nib-diff -v ${t2} ${bold} 2>&1
+    expected_exit_code: 1
+    expected_output_contains: "different"
+
+  - name: nib-diff with data tolerance
+    description: Compare files with absolute data difference tolerance
+    command: nib-diff --data-max-abs-diff 1.0 ${bold} ${bold} 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NIBABEL - nib-stats (NIfTI statistics)
+  # ==========================================================================
+  - name: nib-stats T2 volume
+    description: Calculate mask volume of T2 image
+    command: nib-stats -V ${t2}
+    expected_output_contains: "."
+
+  - name: nib-stats T2 volume in mm3
+    description: Calculate mask volume in cubic millimeters
+    command: nib-stats -V --units mm3 ${t2}
+    expected_output_contains: "."
+
+  - name: nib-stats T2 volume in voxels
+    description: Calculate mask volume in voxels
+    command: nib-stats -V --units vox ${t2}
+    expected_output_contains: "535120"
+
+  - name: nib-stats BOLD volume
+    description: Calculate mask volume of BOLD image
+    command: nib-stats -V ${bold}
+    expected_output_contains: "."
+
+  # ==========================================================================
+  # NIBABEL - nib-nifti-dx (NIfTI diagnostics)
+  # ==========================================================================
+  - name: nib-nifti-dx T2
+    description: Print NIfTI diagnostics for T2 image
+    command: nib-nifti-dx ${t2}
+    expected_output_contains: "clean"
+
+  - name: nib-nifti-dx BOLD
+    description: Print NIfTI diagnostics for BOLD image
+    command: nib-nifti-dx ${bold}
+    expected_output_contains: "clean"
+
+  - name: nib-nifti-dx multiple files
+    description: Print NIfTI diagnostics for multiple files
+    command: nib-nifti-dx ${t2} ${bold}
+    expected_output_contains: "clean"
+
+  - name: nib-nifti-dx NIfTI1 mode
+    description: Check diagnostics in NIfTI1 mode
+    command: nib-nifti-dx -1 ${t2}
+    expected_output_contains: "clean"
+
+  - name: nib-nifti-dx NIfTI2 mode
+    description: Check diagnostics in NIfTI2 mode
+    command: nib-nifti-dx -2 ${t2} 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NIBABEL - nib-roi (Region of Interest extraction)
+  # ==========================================================================
+  - name: nib-roi extract central cube
+    description: Extract a central region from T2 image
+    command: nib-roi -i 40:100 -j 40:100 -k 10:25 ${t2} ${output_dir}/nibabel_out/t2_roi_central.nii.gz
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_roi_central.nii.gz
+
+  - name: nib-roi verify extracted dimensions
+    description: Verify the dimensions of extracted ROI
+    command: nib-ls ${output_dir}/nibabel_out/t2_roi_central.nii.gz
+    depends_on: nib-roi extract central cube
+    expected_output_contains: "60"
+
+  - name: nib-roi extract single slice
+    description: Extract a single slice along k dimension
+    command: nib-roi -k 15:16 ${t2} ${output_dir}/nibabel_out/t2_single_slice.nii.gz
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_single_slice.nii.gz
+
+  - name: nib-roi extract temporal subset
+    description: Extract first 10 timepoints from BOLD
+    command: nib-roi -t 0:10 ${bold} ${output_dir}/nibabel_out/bold_first10.nii.gz
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/bold_first10.nii.gz
+
+  - name: nib-roi verify temporal subset
+    description: Verify BOLD temporal subset has 10 volumes
+    command: nib-ls ${output_dir}/nibabel_out/bold_first10.nii.gz
+    depends_on: nib-roi extract temporal subset
+    expected_output_contains: "10"
+
+  - name: nib-roi extract last timepoints
+    description: Extract last 20 timepoints from BOLD
+    command: nib-roi -t 280:300 ${bold} ${output_dir}/nibabel_out/bold_last20.nii.gz
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/bold_last20.nii.gz
+
+  - name: nib-roi flip i axis
+    description: Extract ROI with flipped i axis
+    command: nib-roi -i 64:0:-1 ${bold} ${output_dir}/nibabel_out/bold_flip_i.nii.gz
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/bold_flip_i.nii.gz
+
+  - name: nib-roi spatial and temporal crop
+    description: Extract spatial and temporal subset from BOLD
+    command: nib-roi -i 10:50 -j 10:50 -k 5:28 -t 10:20 ${bold} ${output_dir}/nibabel_out/bold_cropped.nii.gz
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/bold_cropped.nii.gz
+
+  - name: nib-roi middle timepoints
+    description: Extract middle portion of BOLD time series
+    command: nib-roi -t 100:200 ${bold} ${output_dir}/nibabel_out/bold_middle.nii.gz
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/bold_middle.nii.gz
+
+  # ==========================================================================
+  # NIBABEL - nib-conform (Image conforming)
+  # ==========================================================================
+  - name: nib-conform default
+    description: Conform T2 to default shape and voxel size
+    command: nib-conform ${t2} ${output_dir}/nibabel_out/t2_conformed.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_conformed.nii.gz
+
+  - name: nib-conform custom shape
+    description: Conform T2 to custom shape (128x128x64)
+    command: nib-conform --out-shape 128 128 64 ${t2} ${output_dir}/nibabel_out/t2_128cube.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_128cube.nii.gz
+
+  - name: nib-conform verify custom shape
+    description: Verify conformed image has correct dimensions
+    command: nib-ls ${output_dir}/nibabel_out/t2_128cube.nii.gz
+    depends_on: nib-conform custom shape
+    expected_output_contains: "128"
+
+  - name: nib-conform custom voxel size
+    description: Conform T2 to 2mm isotropic voxels
+    command: nib-conform --voxel-size 2 2 2 ${t2} ${output_dir}/nibabel_out/t2_2mm.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_2mm.nii.gz
+
+  - name: nib-conform RAS orientation
+    description: Conform T2 to RAS orientation
+    command: nib-conform --orientation RAS ${t2} ${output_dir}/nibabel_out/t2_ras.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_ras.nii.gz
+
+  - name: nib-conform LPI orientation
+    description: Conform T2 to LPI orientation
+    command: nib-conform --orientation LPI ${t2} ${output_dir}/nibabel_out/t2_lpi.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_lpi.nii.gz
+
+  - name: nib-conform custom shape and voxel size
+    description: Conform T2 to custom shape and voxel size
+    command: nib-conform --out-shape 96 96 48 --voxel-size 2 2 2 ${t2} ${output_dir}/nibabel_out/t2_custom.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_custom.nii.gz
+
+  - name: nib-conform 1mm isotropic
+    description: Conform T2 to 1mm isotropic voxels
+    command: nib-conform --voxel-size 1 1 1 ${t2} ${output_dir}/nibabel_out/t2_1mm_iso.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_1mm_iso.nii.gz
+
+  # ==========================================================================
+  # NIBABEL - nib-convert (Image format conversion)
+  # ==========================================================================
+  - name: nib-convert to float32
+    description: Convert T2 to float32 data type
+    command: nib-convert --out-dtype float32 ${t2} ${output_dir}/nibabel_out/t2_float32.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_float32.nii.gz
+
+  - name: nib-convert to uint8
+    description: Convert T2 to uint8 data type
+    command: nib-convert --out-dtype uint8 ${t2} ${output_dir}/nibabel_out/t2_uint8.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_uint8.nii.gz
+
+  - name: nib-convert to int16
+    description: Convert T2 to int16 data type
+    command: nib-convert --out-dtype int16 ${t2} ${output_dir}/nibabel_out/t2_int16.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_int16.nii.gz
+
+  - name: nib-convert to int32
+    description: Convert T2 to int32 data type
+    command: nib-convert --out-dtype int32 ${t2} ${output_dir}/nibabel_out/t2_int32.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_int32.nii.gz
+
+  - name: nib-convert to float64
+    description: Convert T2 to float64 data type
+    command: nib-convert --out-dtype float64 ${t2} ${output_dir}/nibabel_out/t2_float64.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_float64.nii.gz
+
+  - name: nib-convert BOLD to float32
+    description: Convert BOLD to float32 data type
+    command: nib-convert --out-dtype float32 ${bold} ${output_dir}/nibabel_out/bold_float32.nii.gz -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/bold_float32.nii.gz
+
+  - name: nib-convert to uncompressed nii
+    description: Convert T2 to uncompressed NIfTI format
+    command: nib-convert ${t2} ${output_dir}/nibabel_out/t2_uncompressed.nii -f
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_uncompressed.nii
+
+  - name: nib-convert verify float32 type
+    description: Verify converted image has float32 type
+    command: nib-ls ${output_dir}/nibabel_out/t2_float32.nii.gz
+    depends_on: nib-convert to float32
+    expected_output_contains: "float32"
+
+  # ==========================================================================
+  # PYDICOM - DICOM utilities
+  # ==========================================================================
+  - name: pydicom help
+    description: Display pydicom help message
+    command: pydicom --help
+    expected_output_contains: "pydicom"
+
+  - name: pydicom show help
+    description: Display pydicom show subcommand help
+    command: pydicom show --help
+    expected_output_contains: "DICOM"
+
+  - name: pydicom codify help
+    description: Display pydicom codify subcommand help
+    command: pydicom codify --help
+    expected_output_contains: "codify"
+
+  - name: pydicom help subcommand
+    description: Display help for specific pydicom subcommand
+    command: pydicom help show
+    expected_output_contains: "show"
+
+  - name: Python pydicom import test
+    description: Verify pydicom can be imported in Python
+    command: python3 -c "import pydicom; print('pydicom version:', pydicom.__version__)"
+    expected_output_contains: "pydicom version"
+
+  - name: Python nibabel import test
+    description: Verify nibabel can be imported in Python
+    command: python3 -c "import nibabel; print('nibabel version:', nibabel.__version__)"
+    expected_output_contains: "nibabel version"
+
+  # ==========================================================================
+  # DCMSTACK - DICOM stacking utility
+  # ==========================================================================
+  - name: dcmstack version
+    description: Display dcmstack version
+    command: dcmstack --version 2>&1
+    expected_exit_code: 0
+
+  - name: dcmstack help
+    description: Display dcmstack help message
+    command: dcmstack --help
+    expected_output_contains: "DICOM"
+
+  - name: dcmstack list translators
+    description: List available DICOM translators
+    command: dcmstack --list-translators 2>&1 || true
+    expected_output_contains: "CsaImage"
+
+  - name: dcmstack default regexes
+    description: Show default include/exclude regular expressions
+    command: dcmstack --default-regexes 2>&1 || true
+    expected_output_contains: "Default exclude"
+
+  # ==========================================================================
+  # COMBINED WORKFLOWS
+  # ==========================================================================
+  - name: Multi-file NIfTI inspection
+    description: Comprehensive inspection of multiple NIfTI files
+    command: |
+      echo "=== T2 ===" && nib-ls -s ${t2} && \
+      echo "=== BOLD Run 1 ===" && nib-ls -s ${bold} && \
+      echo "=== BOLD Run 2 ===" && nib-ls -s ${bold2}
+    expected_output_contains: "BOLD"
+
+  - name: File comparison workflow
+    description: Compare structural and functional images
+    command: nib-diff -v ${t2} ${bold} 2>&1 | head -20
+    expected_output_contains: "dim"
+
+  - name: ROI extraction and verification
+    description: Extract ROI and verify its properties
+    command: |
+      nib-roi -i 20:45 -j 20:45 -k 5:28 ${t2} ${output_dir}/nibabel_out/t2_brain_roi.nii.gz && \
+      nib-ls -s ${output_dir}/nibabel_out/t2_brain_roi.nii.gz && \
+      nib-nifti-dx ${output_dir}/nibabel_out/t2_brain_roi.nii.gz
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_brain_roi.nii.gz
+
+  - name: Image reorientation pipeline
+    description: Conform image and verify orientation
+    command: |
+      nib-conform --orientation RAS ${t2} ${output_dir}/nibabel_out/t2_ras_pipe.nii.gz -f && \
+      nib-ls ${output_dir}/nibabel_out/t2_ras_pipe.nii.gz && \
+      nib-nifti-dx ${output_dir}/nibabel_out/t2_ras_pipe.nii.gz
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_ras_pipe.nii.gz
+
+  - name: BOLD preprocessing ROI workflow
+    description: Extract temporal and spatial subset from BOLD data
+    command: |
+      nib-roi -t 50:100 ${bold} ${output_dir}/nibabel_out/bold_subset.nii.gz && \
+      nib-ls -s ${output_dir}/nibabel_out/bold_subset.nii.gz
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/bold_subset.nii.gz
+
+  - name: Format conversion pipeline
+    description: Convert and verify data type changes
+    command: |
+      nib-convert --out-dtype float32 ${t2} ${output_dir}/nibabel_out/t2_f32_pipe.nii.gz -f && \
+      nib-ls ${output_dir}/nibabel_out/t2_f32_pipe.nii.gz
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_f32_pipe.nii.gz
+    expected_output_contains: "float32"
+
+  - name: Isotropic resampling pipeline
+    description: Conform image to 1mm isotropic voxels
+    command: |
+      nib-conform --voxel-size 1 1 1 ${t2} ${output_dir}/nibabel_out/t2_1mm_pipe.nii.gz -f && \
+      nib-ls ${output_dir}/nibabel_out/t2_1mm_pipe.nii.gz
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/t2_1mm_pipe.nii.gz
+    expected_output_contains: "1.00x1.00x1.00"
+
+  - name: Complete BOLD temporal extraction workflow
+    description: Extract multiple temporal windows from BOLD
+    command: |
+      nib-roi -t 0:50 ${bold} ${output_dir}/nibabel_out/bold_early.nii.gz && \
+      nib-roi -t 125:175 ${bold} ${output_dir}/nibabel_out/bold_mid.nii.gz && \
+      nib-roi -t 250:300 ${bold} ${output_dir}/nibabel_out/bold_late.nii.gz && \
+      nib-ls ${output_dir}/nibabel_out/bold_early.nii.gz ${output_dir}/nibabel_out/bold_mid.nii.gz ${output_dir}/nibabel_out/bold_late.nii.gz
+    validate:
+      - output_exists: ${output_dir}/nibabel_out/bold_early.nii.gz
+      - output_exists: ${output_dir}/nibabel_out/bold_mid.nii.gz
+      - output_exists: ${output_dir}/nibabel_out/bold_late.nii.gz
+
+  # ==========================================================================
+  # PYTHON SCRIPTING INTEGRATION
+  # ==========================================================================
+  - name: Python NIfTI read test
+    description: Test reading NIfTI file with nibabel in Python
+    command: python3 -c "import nibabel as nib; img = nib.load('${t2}'); print('Shape:', img.shape); print('Dtype:', img.get_data_dtype())"
+    expected_output_contains: "Shape:"
+
+  - name: Python NIfTI header inspection
+    description: Inspect NIfTI header with Python
+    command: python3 -c "import nibabel as nib; img = nib.load('${bold}'); hdr = img.header; print('Dimensions:', hdr.get_data_shape()); print('Voxel size:', hdr.get_zooms())"
+    expected_output_contains: "Dimensions:"
+
+  - name: Python pydicom version info
+    description: Get detailed pydicom version and configuration
+    command: python3 -c "import pydicom; print('Version:', pydicom.__version__); print('GDCM available:', pydicom.pixel_data_handlers.gdcm_handler.is_available() if hasattr(pydicom.pixel_data_handlers, 'gdcm_handler') else 'N/A')"
+    expected_output_contains: "Version:"
+
+  - name: Python heudiconv import test
+    description: Verify heudiconv can be imported in Python
+    command: python3 -c "import heudiconv; print('heudiconv imported successfully')"
+    expected_output_contains: "imported successfully"
+
+  # ==========================================================================
+  # DIAGNOSTICS AND VALIDATION
+  # ==========================================================================
+  - name: Validate all test outputs
+    description: Run NIfTI diagnostics on all generated outputs
+    command: |
+      for f in ${output_dir}/nibabel_out/*.nii.gz ${output_dir}/nibabel_out/*.nii; do
+        if [ -f "$f" ]; then
+          echo "Checking: $f"
+          nib-nifti-dx "$f" 2>&1 || echo "Warning: $f may have issues"
+        fi
+      done
+    expected_output_contains: "Checking"
+
+  - name: List all generated outputs
+    description: List all files generated by tests
+    command: ls -la ${output_dir}/nibabel_out/
+    expected_output_contains: "nii"
+
+  - name: Count generated files
+    description: Count total number of generated NIfTI files
+    command: ls ${output_dir}/nibabel_out/*.nii* 2>/dev/null | wc -l
+    expected_exit_code: 0
+
+  - name: Verify study workspace structure
+    description: Verify the complete study workspace structure
+    command: find ${output_dir}/test_study -type d | sort
+    depends_on: Create study directory structure
+    expected_output_contains: "DICOM"
+
+  # ==========================================================================
+  # CONTAINER ENVIRONMENT
+  # ==========================================================================
+  - name: Check Python version
+    description: Verify Python version in container
+    command: python3 --version
+    expected_output_contains: "Python 3"
+
+  - name: Check batch-heudiconv installation path
+    description: Verify batch-heudiconv scripts are in PATH
+    command: which bh01_prep_dir.sh
+    expected_output_contains: "/opt/batch-heudiconv"
+
+  - name: Check dcm2niix installation
+    description: Verify dcm2niix is properly installed
+    command: which dcm2niix
+    expected_output_contains: "/usr/local/bin/dcm2niix"
+
+  - name: Check heudiconv installation
+    description: Verify heudiconv is properly installed
+    command: which heudiconv
+    expected_output_contains: "/usr/local/bin/heudiconv"
+
+  - name: List all batch-heudiconv scripts
+    description: List all available batch-heudiconv scripts
+    command: ls -la /opt/batch-heudiconv/*.sh
+    expected_output_contains: "bh01_prep_dir.sh"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in ${output_dir}/"

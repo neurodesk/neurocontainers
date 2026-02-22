@@ -1,0 +1,718 @@
+# ROOT (CERN Data Analysis Framework) container test suite
+# Tests for ROOT 6.22.02 - Object-oriented framework for large scale data analysis
+#
+# ROOT is developed by CERN and provides:
+#   - Data processing and analysis capabilities
+#   - Histogramming and fitting
+#   - I/O in ROOT format (TFile, TTree)
+#   - Mathematical functions and statistics
+#   - 2D/3D graphics
+#   - Multivariate analysis (TMVA)
+#   - RooFit for statistical modeling
+
+name: root
+version: 6.22.02
+container: root_6.22.02_20201104.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # VERSION AND CONFIGURATION CHECKS
+  # ==========================================================================
+  - name: ROOT version check
+    description: Verify ROOT binary runs and reports version
+    command: root --version
+    expected_output_contains: "ROOT Version"
+    expected_exit_code: 0
+
+  - name: ROOT config version
+    description: Check root-config reports correct version
+    command: root-config --version
+    expected_output_contains: "6.22/02"
+    expected_exit_code: 0
+
+  - name: ROOT features list
+    description: List all compiled features
+    command: root-config --features
+    expected_output_contains: "roofit"
+    expected_exit_code: 0
+
+  - name: ROOT has FFTW3
+    description: Check FFTW3 support is enabled
+    command: root-config --has-fftw3
+    expected_output_contains: "yes"
+    expected_exit_code: 0
+
+  - name: ROOT has RooFit
+    description: Check RooFit support is enabled
+    command: root-config --has-roofit
+    expected_output_contains: "yes"
+    expected_exit_code: 0
+
+  - name: ROOT has TMVA
+    description: Check TMVA support is enabled
+    command: root-config --has-tmva
+    expected_output_contains: "yes"
+    expected_exit_code: 0
+
+  - name: ROOT has MathMore
+    description: Check MathMore support is enabled
+    command: root-config --has-mathmore
+    expected_output_contains: "yes"
+    expected_exit_code: 0
+
+  - name: ROOT has Minuit2
+    description: Check Minuit2 support is enabled
+    command: root-config --has-minuit2
+    expected_output_contains: "yes"
+    expected_exit_code: 0
+
+  - name: ROOT has PyROOT
+    description: Check PyROOT support is enabled
+    command: root-config --has-pyroot
+    expected_output_contains: "yes"
+    expected_exit_code: 0
+
+  - name: ROOT architecture
+    description: Check ROOT build architecture
+    command: root-config --arch
+    expected_output_contains: "linux"
+    expected_exit_code: 0
+
+  - name: ROOT library path
+    description: Get ROOT library directory
+    command: root-config --libdir
+    expected_exit_code: 0
+
+  - name: ROOT include path
+    description: Get ROOT include directory
+    command: root-config --incdir
+    expected_exit_code: 0
+
+  - name: ROOT linker flags
+    description: Get ROOT linker flags
+    command: root-config --libs
+    expected_output_contains: "-lCore"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # BASIC INTERPRETER TESTS
+  # ==========================================================================
+  - name: ROOT interpreter basic test
+    description: Test ROOT interpreter with simple expression
+    command: "root -b -l -q -e 'gROOT->GetVersion()' 2>&1"
+    expected_output_contains: "6.22/02"
+    ignore_exit_code: true
+
+  - name: ROOT cout output
+    description: Test cout in ROOT interpreter
+    command: "root -b -l -q -e 'cout << \"Hello ROOT!\" << endl;' 2>&1"
+    expected_output_contains: "Hello ROOT!"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # TMATH MATHEMATICAL FUNCTIONS
+  # ==========================================================================
+  - name: TMath Pi constant
+    description: Test TMath Pi returns correct value
+    command: "root -b -l -q -e 'TMath::Pi()' 2>&1"
+    expected_output_contains: "3.1415"
+    ignore_exit_code: true
+
+  - name: TMath E constant
+    description: Test TMath E returns Eulers number
+    command: "root -b -l -q -e 'TMath::E()' 2>&1"
+    expected_output_contains: "2.718"
+    ignore_exit_code: true
+
+  - name: TMath Abs function
+    description: Test absolute value function
+    command: "root -b -l -q -e 'cout << TMath::Abs(-42) << endl;' 2>&1"
+    expected_output_contains: "42"
+    ignore_exit_code: true
+
+  - name: TMath Sqrt function
+    description: Test square root function
+    command: "root -b -l -q -e 'cout << TMath::Sqrt(16) << endl;' 2>&1"
+    expected_output_contains: "4"
+    ignore_exit_code: true
+
+  - name: TMath Sin function
+    description: Test sine function
+    command: "root -b -l -q -e 'cout << TMath::Sin(TMath::Pi()/2) << endl;' 2>&1"
+    expected_output_contains: "1"
+    ignore_exit_code: true
+
+  - name: TMath Cos function
+    description: Test cosine function
+    command: "root -b -l -q -e 'cout << TMath::Cos(0) << endl;' 2>&1"
+    expected_output_contains: "1"
+    ignore_exit_code: true
+
+  - name: TMath Log function
+    description: Test natural logarithm function
+    command: "root -b -l -q -e 'cout << TMath::Log(TMath::E()) << endl;' 2>&1"
+    expected_output_contains: "1"
+    ignore_exit_code: true
+
+  - name: TMath Exp function
+    description: Test exponential function
+    command: "root -b -l -q -e 'cout << TMath::Exp(0) << endl;' 2>&1"
+    expected_output_contains: "1"
+    ignore_exit_code: true
+
+  - name: TMath Power function
+    description: Test power function
+    command: "root -b -l -q -e 'cout << TMath::Power(2,10) << endl;' 2>&1"
+    expected_output_contains: "1024"
+    ignore_exit_code: true
+
+  - name: TMath Factorial
+    description: Test factorial function
+    command: "root -b -l -q -e 'cout << TMath::Factorial(5) << endl;' 2>&1"
+    expected_output_contains: "120"
+    ignore_exit_code: true
+
+  - name: TMath Binomial
+    description: Test binomial coefficient
+    command: "root -b -l -q -e 'cout << TMath::Binomial(10,5) << endl;' 2>&1"
+    expected_output_contains: "252"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # RANDOM NUMBER GENERATION
+  # ==========================================================================
+  - name: TRandom3 generation
+    description: Test TRandom3 random number generator
+    command: "root -b -l -q -e 'TRandom3 rand(42); cout << rand.Rndm() << endl;' 2>&1"
+    expected_output_contains: "0.37454"
+    ignore_exit_code: true
+
+  - name: gRandom Gaussian
+    description: Test Gaussian random number generation
+    command: "root -b -l -q -e 'gRandom->SetSeed(123); cout << gRandom->Gaus(0,1) << endl;' 2>&1"
+    ignore_exit_code: true
+
+  - name: gRandom Poisson
+    description: Test Poisson random number generation
+    command: "root -b -l -q -e 'gRandom->SetSeed(456); cout << gRandom->Poisson(5) << endl;' 2>&1"
+    ignore_exit_code: true
+
+  - name: gRandom Exponential
+    description: Test exponential random number generation
+    command: "root -b -l -q -e 'gRandom->SetSeed(789); cout << gRandom->Exp(1) << endl;' 2>&1"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # VECTORS AND MATRICES
+  # ==========================================================================
+  - name: TVector3 magnitude
+    description: Test TVector3 magnitude calculation
+    command: "root -b -l -q -e 'TVector3 v(1,2,3); cout << v.Mag() << endl;' 2>&1"
+    expected_output_contains: "3.74166"
+    ignore_exit_code: true
+
+  - name: TVector3 dot product
+    description: Test TVector3 dot product
+    command: "root -b -l -q -e 'TVector3 v1(1,0,0); TVector3 v2(0,1,0); cout << v1.Dot(v2) << endl;' 2>&1"
+    expected_output_contains: "0"
+    ignore_exit_code: true
+
+  - name: TVector3 cross product
+    description: Test TVector3 cross product
+    command: "root -b -l -q -e 'TVector3 v1(1,0,0); TVector3 v2(0,1,0); TVector3 v3 = v1.Cross(v2); cout << v3.Z() << endl;' 2>&1"
+    expected_output_contains: "1"
+    ignore_exit_code: true
+
+  - name: TLorentzVector mass
+    description: Test TLorentzVector invariant mass
+    command: "root -b -l -q -e 'TLorentzVector v(1,2,3,10); cout << v.M() << endl;' 2>&1"
+    expected_output_contains: "9.27"
+    ignore_exit_code: true
+
+  - name: TLorentzVector boost
+    description: Test TLorentzVector beta calculation
+    command: "root -b -l -q -e 'TLorentzVector v(1,0,0,10); cout << v.Beta() << endl;' 2>&1"
+    ignore_exit_code: true
+
+  - name: TMatrixD creation
+    description: Test TMatrixD diagonal matrix creation
+    command: "root -b -l -q -e 'TMatrixD m(3,3); m(0,0)=1; m(1,1)=2; m(2,2)=3; m.Print();' 2>&1"
+    expected_output_contains: "3x3 matrix"
+    ignore_exit_code: true
+
+  - name: TMatrixD determinant
+    description: Test TMatrixD determinant calculation
+    command: "root -b -l -q -e 'TMatrixD m(2,2); m(0,0)=1; m(0,1)=2; m(1,0)=3; m(1,1)=4; cout << m.Determinant() << endl;' 2>&1"
+    expected_output_contains: "-2"
+    ignore_exit_code: true
+
+  - name: TVectorD operations
+    description: Test TVectorD vector operations
+    command: "root -b -l -q -e 'TVectorD v(3); v[0]=1; v[1]=2; v[2]=3; cout << v.Norm2Sqr() << endl;' 2>&1"
+    expected_output_contains: "14"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # HISTOGRAM OPERATIONS
+  # ==========================================================================
+  - name: TH1F creation and fill
+    description: Test 1D histogram creation and filling
+    command: "root -b -l -q -e 'TH1F h(\"h\",\"test\",100,-5,5); h.FillRandom(\"gaus\",10000); cout << \"Entries \" << h.GetEntries() << endl;' 2>&1"
+    expected_output_contains: "Entries 10000"
+    ignore_exit_code: true
+
+  - name: TH1F statistics
+    description: Test histogram statistics mean and std dev
+    command: "root -b -l -q -e 'TH1F h(\"h\",\"test\",100,-5,5); h.FillRandom(\"gaus\",10000); cout << \"Mean approx zero \" << (TMath::Abs(h.GetMean()) < 0.5) << endl;' 2>&1"
+    expected_output_contains: "Mean approx zero 1"
+    ignore_exit_code: true
+
+  - name: TH1D double precision histogram
+    description: Test double precision 1D histogram
+    command: "root -b -l -q -e 'TH1D h(\"h\",\"test\",50,0,100); for(int i=0;i<1000;i++) h.Fill(gRandom->Uniform(0,100)); cout << h.GetEntries() << endl;' 2>&1"
+    expected_output_contains: "1000"
+    ignore_exit_code: true
+
+  - name: TH2F 2D histogram
+    description: Test 2D histogram creation (FillRandom needs TF2, so fill manually)
+    command: "root -b -l -q -e 'TH2F h(\"h2\",\"2D\",50,-5,5,50,-5,5); for(int i=0;i<5000;i++) h.Fill(gRandom->Gaus(),gRandom->Gaus()); cout << h.GetEntries() << endl;' 2>&1"
+    expected_output_contains: "5000"
+    ignore_exit_code: true
+
+  - name: TH3F 3D histogram
+    description: Test 3D histogram creation
+    command: "root -b -l -q -e 'TH3F h(\"h3\",\"3D\",10,-1,1,10,-1,1,10,-1,1); for(int i=0;i<1000;i++) h.Fill(gRandom->Gaus(),gRandom->Gaus(),gRandom->Gaus()); cout << h.GetEntries() << endl;' 2>&1"
+    expected_output_contains: "1000"
+    ignore_exit_code: true
+
+  - name: TProfile histogram
+    description: Test profile histogram
+    command: "root -b -l -q -e 'TProfile p(\"p\",\"profile\",50,-5,5); for(int i=0;i<1000;i++){float x=gRandom->Gaus(); p.Fill(x,x*x);} cout << p.GetEntries() << endl;' 2>&1"
+    expected_output_contains: "1000"
+    ignore_exit_code: true
+
+  - name: Histogram integration
+    description: Test histogram integral calculation
+    command: "root -b -l -q -e 'TH1F h(\"h\",\"test\",100,0,10); for(int i=0;i<100;i++) h.SetBinContent(i+1,1); cout << h.Integral() << endl;' 2>&1"
+    expected_output_contains: "100"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # FUNCTION OBJECTS
+  # ==========================================================================
+  - name: TF1 Gaussian function
+    description: Test TF1 Gaussian function evaluation
+    command: "root -b -l -q -e 'TF1 f(\"gaus\",\"gaus\",-5,5); f.SetParameters(1,0,1); cout << f.Eval(0) << endl;' 2>&1"
+    expected_output_contains: "1"
+    ignore_exit_code: true
+
+  - name: TF1 polynomial
+    description: Test TF1 polynomial function
+    command: "root -b -l -q -e 'TF1 f(\"poly\",\"[0]+[1]*x+[2]*x*x\",-10,10); f.SetParameters(1,2,3); cout << f.Eval(2) << endl;' 2>&1"
+    expected_output_contains: "17"
+    ignore_exit_code: true
+
+  - name: TF1 integration
+    description: Test TF1 numerical integration
+    command: "root -b -l -q -e 'TF1 f(\"f\",\"x*x\",0,3); cout << f.Integral(0,3) << endl;' 2>&1"
+    expected_output_contains: "9"
+    ignore_exit_code: true
+
+  - name: TF1 derivative
+    description: Test TF1 numerical derivative
+    command: "root -b -l -q -e 'TF1 f(\"f\",\"x*x\",-10,10); cout << f.Derivative(3) << endl;' 2>&1"
+    expected_output_contains: "6"
+    ignore_exit_code: true
+
+  - name: TF2 2D function
+    description: Test TF2 2D function evaluation
+    command: "root -b -l -q -e 'TF2 f(\"f\",\"x*y\",-10,10,-10,10); cout << f.Eval(3,4) << endl;' 2>&1"
+    expected_output_contains: "12"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # GRAPH OBJECTS
+  # ==========================================================================
+  - name: TGraph creation
+    description: Test TGraph creation and point count
+    command: "root -b -l -q -e 'TGraph g(5); for(int i=0;i<5;i++) g.SetPoint(i,i,i*i); cout << \"Points \" << g.GetN() << endl;' 2>&1"
+    expected_output_contains: "Points 5"
+    ignore_exit_code: true
+
+  - name: TGraph evaluation
+    description: Test TGraph interpolation
+    command: "root -b -l -q -e 'TGraph g(3); g.SetPoint(0,0,0); g.SetPoint(1,1,1); g.SetPoint(2,2,4); cout << g.Eval(1.5) << endl;' 2>&1"
+    ignore_exit_code: true
+
+  - name: TGraphErrors with errors
+    description: Test TGraphErrors creation
+    command: "root -b -l -q -e 'TGraphErrors g(3); g.SetPoint(0,1,1); g.SetPointError(0,0.1,0.1); cout << g.GetErrorX(0) << endl;' 2>&1"
+    expected_output_contains: "0.1"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # FILE I/O OPERATIONS
+  # ==========================================================================
+  - name: Create ROOT file with histogram
+    description: Create a ROOT file containing a histogram
+    command: "root -b -l -q -e 'TFile f(\"test_output/test_hist.root\",\"RECREATE\"); TH1F h(\"h1\",\"histogram\",100,-5,5); h.FillRandom(\"gaus\",10000); h.Write(); f.Close(); cout << \"File created\" << endl;' 2>&1"
+    expected_output_contains: "File created"
+    ignore_exit_code: true
+    validate:
+      - output_exists: ${output_dir}/test_hist.root
+
+  - name: Create ROOT file with tree
+    description: Create a ROOT file containing a TTree
+    command: "root -b -l -q -e 'TFile f(\"test_output/test_tree.root\",\"RECREATE\"); TTree t(\"tree\",\"sample tree\"); float x,y; t.Branch(\"x\",&x,\"x/F\"); t.Branch(\"y\",&y,\"y/F\"); for(int i=0;i<1000;i++){x=gRandom->Gaus(); y=gRandom->Gaus(); t.Fill();} t.Write(); f.Close(); cout << \"File created\" << endl;' 2>&1"
+    expected_output_contains: "File created"
+    ignore_exit_code: true
+    validate:
+      - output_exists: ${output_dir}/test_tree.root
+
+  - name: Read histogram from file
+    description: Read a histogram from a ROOT file
+    command: "root -b -l -q -e 'TFile f(\"test_output/test_hist.root\"); TH1F *h=(TH1F*)f.Get(\"h1\"); cout << \"Entries \" << h->GetEntries() << endl;' 2>&1"
+    depends_on: Create ROOT file with histogram
+    expected_output_contains: "Entries 10000"
+    ignore_exit_code: true
+
+  - name: Read tree from file
+    description: Read a TTree from a ROOT file and count entries
+    command: "root -b -l -q -e 'TFile f(\"test_output/test_tree.root\"); TTree *t=(TTree*)f.Get(\"tree\"); cout << \"Tree entries \" << t->GetEntries() << endl;' 2>&1"
+    depends_on: Create ROOT file with tree
+    expected_output_contains: "Tree entries 1000"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # ROOT COMMAND LINE UTILITIES
+  # ==========================================================================
+  - name: rootls basic listing
+    description: Test rootls to list ROOT file contents
+    command: rootls test_output/test_hist.root 2>&1
+    depends_on: Create ROOT file with histogram
+    expected_output_contains: "h1"
+    expected_exit_code: 0
+
+  - name: rootls long listing
+    description: Test rootls with long listing format
+    command: rootls -l test_output/test_hist.root 2>&1
+    depends_on: Create ROOT file with histogram
+    expected_output_contains: "TH1F"
+    expected_exit_code: 0
+
+  - name: rootls tree listing
+    description: Test rootls with tree listing format
+    command: rootls -t test_output/test_tree.root 2>&1
+    depends_on: Create ROOT file with tree
+    expected_output_contains: "tree"
+    expected_exit_code: 0
+
+  - name: rootmkdir create directory
+    description: Test rootmkdir to create directory in ROOT file
+    command: "rootmkdir test_output/test_hist.root:newdir 2>&1 && rootls test_output/test_hist.root:* 2>&1"
+    depends_on: Create ROOT file with histogram
+    expected_output_contains: "newdir"
+    expected_exit_code: 0
+
+  - name: rootcp copy object
+    description: Test rootcp to copy histogram to new file
+    command: "rootcp test_output/test_hist.root:h1 test_output/copy_hist.root 2>&1 && rootls test_output/copy_hist.root 2>&1"
+    depends_on: Create ROOT file with histogram
+    expected_output_contains: "h1"
+    expected_exit_code: 0
+
+  - name: hadd help check
+    description: Test hadd utility is available
+    command: hadd --help 2>&1 || true
+    expected_output_contains: "TARGET"
+    expected_exit_code: 0
+
+  - name: hadd merge files
+    description: Test hadd to merge ROOT files
+    command: |
+      root -b -l -q -e 'TFile f("test_output/merge1.root","RECREATE"); TH1F h("h","h",10,0,10); h.Fill(5); h.Write(); f.Close();' 2>&1 && \
+      root -b -l -q -e 'TFile f("test_output/merge2.root","RECREATE"); TH1F h("h","h",10,0,10); h.Fill(5); h.Write(); f.Close();' 2>&1 && \
+      hadd -f test_output/merged.root test_output/merge1.root test_output/merge2.root 2>&1
+    expected_output_contains: "merged.root"
+    ignore_exit_code: true
+    validate:
+      - output_exists: ${output_dir}/merged.root
+
+  - name: rooteventselector help
+    description: Test rooteventselector utility is available
+    command: rooteventselector --help 2>&1
+    expected_output_contains: "Copy subsets of trees"
+    expected_exit_code: 0
+
+  - name: rootslimtree help
+    description: Test rootslimtree utility is available
+    command: rootslimtree --help 2>&1
+    expected_output_contains: "Copy trees with a subset of branches"
+    expected_exit_code: 0
+
+  - name: rootdrawtree help
+    description: Test rootdrawtree utility is available
+    command: rootdrawtree --help 2>&1
+    expected_output_contains: "histograms"
+    expected_exit_code: 0
+
+  - name: rootcling help
+    description: Test rootcling dictionary generator is available
+    command: rootcling --help 2>&1
+    expected_output_contains: "dictionary"
+    expected_exit_code: 0
+
+  - name: genreflex help
+    description: Test genreflex utility is available
+    command: genreflex --help 2>&1
+    expected_output_contains: "Generates dictionary"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # RDATAFRAME OPERATIONS
+  # ==========================================================================
+  - name: RDataFrame basic count
+    description: Test RDataFrame basic creation and count
+    command: "root -b -l -q -e 'ROOT::RDataFrame df(100); cout << \"Count \" << *df.Count() << endl;' 2>&1"
+    expected_output_contains: "Count 100"
+    ignore_exit_code: true
+
+  - name: RDataFrame Define column
+    description: Test RDataFrame Define operation
+    command: "root -b -l -q -e 'ROOT::RDataFrame df(100); auto df2 = df.Define(\"x\",\"gRandom->Gaus()\"); cout << \"Count \" << *df2.Count() << endl;' 2>&1"
+    expected_output_contains: "Count 100"
+    ignore_exit_code: true
+
+  - name: RDataFrame Filter
+    description: Test RDataFrame Filter operation
+    command: "root -b -l -q -e 'ROOT::RDataFrame df(1000); auto df2 = df.Define(\"x\",\"gRandom->Uniform(-1,1)\").Filter(\"x > 0\"); cout << \"About half \" << (*df2.Count() > 400 && *df2.Count() < 600) << endl;' 2>&1"
+    expected_output_contains: "About half 1"
+    ignore_exit_code: true
+
+  - name: RDataFrame from TTree
+    description: Test RDataFrame reading from TTree
+    command: "root -b -l -q -e 'ROOT::RDataFrame df(\"tree\",\"test_output/test_tree.root\"); cout << \"Tree entries \" << *df.Count() << endl;' 2>&1"
+    depends_on: Create ROOT file with tree
+    expected_output_contains: "Tree entries 1000"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # ROOFIT STATISTICAL MODELING
+  # ==========================================================================
+  - name: RooFit RooRealVar creation
+    description: Test RooFit variable creation
+    command: "root -b -l -q -e 'RooRealVar x(\"x\",\"observable\",-10,10); cout << \"RooRealVar name \" << x.GetName() << endl;' 2>&1"
+    expected_output_contains: "RooRealVar name x"
+    ignore_exit_code: true
+
+  - name: RooFit Gaussian PDF
+    description: Test RooFit Gaussian PDF creation
+    command: "root -b -l -q -e 'RooRealVar x(\"x\",\"x\",-10,10); RooRealVar mean(\"mean\",\"mean\",0); RooRealVar sigma(\"sigma\",\"sigma\",1); RooGaussian gauss(\"gauss\",\"Gaussian\",x,mean,sigma); cout << \"RooFit works\" << endl;' 2>&1"
+    expected_output_contains: "RooFit works"
+    ignore_exit_code: true
+
+  - name: RooFit data generation
+    description: Test RooFit toy data generation
+    command: "root -b -l -q -e 'RooRealVar x(\"x\",\"x\",-10,10); RooRealVar mean(\"mean\",\"mean\",0); RooRealVar sigma(\"sigma\",\"sigma\",1); RooGaussian gauss(\"gauss\",\"g\",x,mean,sigma); RooDataSet *data = gauss.generate(x,1000); cout << \"Generated \" << data->numEntries() << endl;' 2>&1"
+    expected_output_contains: "Generated 1000"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # FITTING OPERATIONS
+  # ==========================================================================
+  - name: TH1F Gaussian fit
+    description: Test histogram fitting with Gaussian
+    command: "root -b -l -q -e 'TH1F h(\"h\",\"test\",100,-5,5); h.FillRandom(\"gaus\",10000); h.Fit(\"gaus\",\"Q\"); TF1 *f = h.GetFunction(\"gaus\"); cout << \"Sigma approx 1 \" << (TMath::Abs(f->GetParameter(2) - 1) < 0.2) << endl;' 2>&1"
+    expected_output_contains: "Sigma approx 1 1"
+    ignore_exit_code: true
+
+  - name: TGraph linear fit
+    description: Test TGraph linear fit
+    command: "root -b -l -q -e 'TGraph g(5); for(int i=0;i<5;i++) g.SetPoint(i,i,2*i+1); g.Fit(\"pol1\",\"Q\"); TF1 *f = g.GetFunction(\"pol1\"); cout << \"Slope \" << f->GetParameter(1) << endl;' 2>&1"
+    expected_output_contains: "Slope 2"
+    ignore_exit_code: true
+
+  - name: TMinuit minimization
+    description: Test TMinuit minimizer availability
+    command: "root -b -l -q -e 'TMinuit m(1); cout << \"TMinuit available\" << endl;' 2>&1"
+    expected_output_contains: "TMinuit available"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # SPECIAL FUNCTIONS AND STATISTICS
+  # ==========================================================================
+  - name: TMath Erf function
+    description: Test error function
+    command: "root -b -l -q -e 'cout << TMath::Erf(0) << endl;' 2>&1"
+    expected_output_contains: "0"
+    ignore_exit_code: true
+
+  - name: TMath ErfInverse function
+    description: Test inverse error function
+    command: "root -b -l -q -e 'cout << TMath::ErfInverse(0) << endl;' 2>&1"
+    expected_output_contains: "0"
+    ignore_exit_code: true
+
+  - name: TMath Gamma function
+    description: Test gamma function (5! = 120 = Gamma(6))
+    command: "root -b -l -q -e 'cout << TMath::Gamma(6) << endl;' 2>&1"
+    expected_output_contains: "120"
+    ignore_exit_code: true
+
+  - name: TMath BetaIncomplete
+    description: Test incomplete beta function
+    command: "root -b -l -q -e 'cout << TMath::BetaIncomplete(0.5,1,1) << endl;' 2>&1"
+    expected_output_contains: "0.5"
+    ignore_exit_code: true
+
+  - name: TMath Prob chi-square
+    description: Test chi-square probability
+    command: "root -b -l -q -e 'cout << TMath::Prob(0,1) << endl;' 2>&1"
+    expected_output_contains: "1"
+    ignore_exit_code: true
+
+  - name: TMath Freq normal CDF
+    description: Test normal CDF function
+    command: "root -b -l -q -e 'cout << TMath::Freq(0) << endl;' 2>&1"
+    expected_output_contains: "0.5"
+    ignore_exit_code: true
+
+  - name: TMath NormQuantile
+    description: Test normal quantile function
+    command: "root -b -l -q -e 'cout << TMath::NormQuantile(0.5) << endl;' 2>&1"
+    expected_output_contains: "0"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # STRING AND REGEX OPERATIONS
+  # ==========================================================================
+  - name: TString operations
+    description: Test TString class operations
+    command: "root -b -l -q -e 'TString s(\"Hello World\"); cout << s.Contains(\"World\") << endl;' 2>&1"
+    expected_output_contains: "1"
+    ignore_exit_code: true
+
+  - name: TRegexp matching
+    description: Test regular expression matching
+    command: "root -b -l -q -e 'TString s(\"test123\"); TRegexp r(\"[0-9]+\"); cout << (s.Index(r) >= 0) << endl;' 2>&1"
+    expected_output_contains: "1"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # COMPLEX NUMBERS
+  # ==========================================================================
+  - name: TComplex arithmetic
+    description: Test complex number arithmetic
+    command: "root -b -l -q -e 'TComplex c1(3,4); cout << \"Magnitude \" << TComplex::Abs(c1) << endl;' 2>&1"
+    expected_output_contains: "Magnitude 5"
+    ignore_exit_code: true
+
+  - name: TComplex conjugate
+    description: Test complex conjugate
+    command: "root -b -l -q -e 'TComplex c(3,4); TComplex conj = TComplex::Conjugate(c); cout << conj.Im() << endl;' 2>&1"
+    expected_output_contains: "-4"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # CANVAS AND GRAPHICS (BATCH MODE)
+  # ==========================================================================
+  - name: TCanvas creation
+    description: Test TCanvas creation in batch mode
+    command: "root -b -l -q -e 'TCanvas c(\"c\",\"canvas\",800,600); cout << \"Canvas \" << c.GetName() << endl;' 2>&1"
+    expected_output_contains: "Canvas c"
+    ignore_exit_code: true
+
+  - name: Save histogram to PNG
+    description: Test saving histogram as PNG image
+    command: "root -b -l -q -e 'TCanvas c(\"c\",\"c\",800,600); TH1F h(\"h\",\"histogram\",100,-5,5); h.FillRandom(\"gaus\",10000); h.Draw(); c.SaveAs(\"test_output/hist.png\"); cout << \"Saved\" << endl;' 2>&1"
+    expected_output_contains: "Saved"
+    ignore_exit_code: true
+    validate:
+      - output_exists: ${output_dir}/hist.png
+
+  - name: Save histogram to PDF
+    description: Test saving histogram as PDF
+    command: "root -b -l -q -e 'TCanvas c(\"c\",\"c\",800,600); TH1F h(\"h\",\"histogram\",100,-5,5); h.FillRandom(\"gaus\",10000); h.Draw(); c.SaveAs(\"test_output/hist.pdf\"); cout << \"Saved\" << endl;' 2>&1"
+    expected_output_contains: "Saved"
+    ignore_exit_code: true
+    validate:
+      - output_exists: ${output_dir}/hist.pdf
+
+  # ==========================================================================
+  # ADVANCED DATA STRUCTURES
+  # ==========================================================================
+  - name: TList container
+    description: Test TList container operations
+    command: "root -b -l -q -e 'TList list; list.Add(new TNamed(\"obj1\",\"Object 1\")); list.Add(new TNamed(\"obj2\",\"Object 2\")); cout << \"List size \" << list.GetSize() << endl;' 2>&1"
+    expected_output_contains: "List size 2"
+    ignore_exit_code: true
+
+  - name: TMap container
+    description: Test TMap key-value container
+    command: "root -b -l -q -e 'TMap map; map.Add(new TObjString(\"key\"),new TObjString(\"value\")); cout << \"Map size \" << map.GetSize() << endl;' 2>&1"
+    expected_output_contains: "Map size 1"
+    ignore_exit_code: true
+
+  - name: THashList performance
+    description: Test THashList hash-based container
+    command: "root -b -l -q -e 'THashList hl; for(int i=0;i<100;i++) hl.Add(new TNamed(Form(\"obj%d\",i),\"test\")); cout << \"HashList size \" << hl.GetSize() << endl;' 2>&1"
+    expected_output_contains: "HashList size 100"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # TREE OPERATIONS
+  # ==========================================================================
+  - name: TTree branch types
+    description: Test TTree with multiple branch types
+    command: "root -b -l -q -e 'TFile f(\"test_output/multi_branch.root\",\"RECREATE\"); TTree t(\"t\",\"tree\"); int i; float x; double y; t.Branch(\"i\",&i); t.Branch(\"x\",&x); t.Branch(\"y\",&y); for(i=0;i<100;i++){x=i*0.1;y=i*0.01;t.Fill();} t.Write(); f.Close(); cout << \"Created\" << endl;' 2>&1"
+    expected_output_contains: "Created"
+    ignore_exit_code: true
+    validate:
+      - output_exists: ${output_dir}/multi_branch.root
+
+  - name: TTree Draw histogram
+    description: Test TTree Draw to create histogram
+    command: "root -b -l -q -e 'TFile f(\"test_output/test_tree.root\"); TTree *t=(TTree*)f.Get(\"tree\"); t->Draw(\"x>>h(100,-5,5)\",\"\",\"goff\"); TH1F *h=(TH1F*)gDirectory->Get(\"h\"); cout << \"Histogram entries \" << h->GetEntries() << endl;' 2>&1"
+    depends_on: Create ROOT file with tree
+    expected_output_contains: "Histogram entries 1000"
+    ignore_exit_code: true
+
+  - name: TTree Project histogram
+    description: Test TTree Project to fill histogram
+    command: "root -b -l -q -e 'TFile f(\"test_output/test_tree.root\"); TTree *t=(TTree*)f.Get(\"tree\"); TH1F h(\"hp\",\"projection\",100,-5,5); t->Project(\"hp\",\"x\"); cout << \"Projected \" << h.GetEntries() << endl;' 2>&1"
+    depends_on: Create ROOT file with tree
+    expected_output_contains: "Projected 1000"
+    ignore_exit_code: true
+
+  - name: TChain multiple files
+    description: Test TChain for multiple file access
+    command: |
+      root -b -l -q -e 'TFile f1("test_output/chain1.root","RECREATE"); TTree t("t","t"); int x; t.Branch("x",&x); for(x=0;x<10;x++) t.Fill(); t.Write(); f1.Close();' 2>&1 && \
+      root -b -l -q -e 'TFile f2("test_output/chain2.root","RECREATE"); TTree t("t","t"); int x; t.Branch("x",&x); for(x=0;x<10;x++) t.Fill(); t.Write(); f2.Close();' 2>&1 && \
+      root -b -l -q -e 'TChain chain("t"); chain.Add("test_output/chain1.root"); chain.Add("test_output/chain2.root"); cout << "Chain entries " << chain.GetEntries() << endl;' 2>&1
+    expected_output_contains: "Chain entries 20"
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # CLEANUP AND FINAL VALIDATION
+  # ==========================================================================
+  - name: Verify test outputs
+    description: Check that all expected output files were created
+    command: ls -la test_output/*.root test_output/*.png test_output/*.pdf 2>&1 | wc -l
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

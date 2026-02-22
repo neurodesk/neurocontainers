@@ -1,0 +1,1268 @@
+# AMICO container test suite
+# Tests for AMICO v2.1.0 - Accelerated Microstructure Imaging via Convex Optimization
+#
+# AMICO is a Python framework for fitting microstructure models to diffusion MRI data.
+# It implements several diffusion models including:
+#   - NODDI (Neurite Orientation Dispersion and Density Imaging)
+#   - SANDI (Soma And Neurite Density Imaging)
+#   - FreeWater model
+#   - ActiveAx (Cylinder-Zeppelin-Ball model)
+#   - Stick-Zeppelin-Ball model
+#   - VolumeFractions model
+#
+# More info: https://github.com/daducci/AMICO/wiki
+#
+# Citations:
+#   Daducci et al. (2015) AMICO: Accelerated Microstructure Imaging via Convex Optimization.
+#   NeuroImage 105: 32-44. https://doi.org/10.1016/j.neuroimage.2014.10.026
+#
+#   Zhang et al. (2012) NODDI: Practical in vivo neurite orientation dispersion and
+#   density imaging of the human brain. NeuroImage 61.4: 1000-1016.
+#
+#   Palombo et al. (2020) SANDI: A compartment-based model for non-invasive apparent
+#   soma and neurite imaging by diffusion MRI. NeuroImage 215: 116835.
+#
+# Test data: ds000001/sub-01 (OpenNeuro - no DWI data)
+# Note: Full AMICO testing requires diffusion MRI data with bvals/bvecs.
+# These tests verify Python module functionality, model instantiation,
+# utility functions, and synthetic signal generation.
+
+name: amico
+version: 2.1.0
+container: amico_2.1.0_20250628.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - Python and Module Verification
+  # ==========================================================================
+  - name: Python interpreter available
+    description: Verify Python interpreter is available in container
+    command: which python
+    expected_output_contains: "python"
+
+  - name: Python version check
+    description: Check Python version in container
+    command: python --version
+    expected_output_contains: "Python"
+
+  - name: AMICO module import
+    description: Verify AMICO module can be imported
+    command: python -c "import amico; print('AMICO imported successfully')"
+    expected_output_contains: "AMICO imported successfully"
+
+  - name: AMICO version check
+    description: Verify AMICO version
+    command: python -c "import amico; print('AMICO version:', amico.__version__)"
+    expected_output_contains: "2.1.0"
+
+  - name: AMICO README check
+    description: Verify AMICO README contains expected information
+    command: cat /README.md
+    expected_output_contains: "amico/2.1.0"
+
+  # ==========================================================================
+  # SUBMODULE IMPORTS
+  # ==========================================================================
+  - name: Import amico.core
+    description: Verify amico.core module can be imported
+    command: python -c "from amico.core import Evaluation; print('amico.core imported')"
+    expected_output_contains: "amico.core imported"
+
+  - name: Import amico.models
+    description: Verify amico.models module can be imported
+    command: python -c "import amico.models; print('amico.models imported')"
+    expected_output_contains: "amico.models imported"
+
+  - name: Import amico.scheme
+    description: Verify amico.scheme module can be imported
+    command: python -c "from amico.scheme import Scheme; print('amico.scheme imported')"
+    expected_output_contains: "amico.scheme imported"
+
+  - name: Import amico.util
+    description: Verify amico.util module can be imported
+    command: python -c "import amico.util; print('amico.util imported')"
+    expected_output_contains: "amico.util imported"
+
+  - name: Import amico.synthesis
+    description: Verify amico.synthesis module can be imported
+    command: python -c "import amico.synthesis; print('amico.synthesis imported')"
+    expected_output_contains: "amico.synthesis imported"
+
+  - name: Import amico.preproc
+    description: Verify amico.preproc module can be imported
+    command: python -c "import amico.preproc; print('amico.preproc imported')"
+    expected_output_contains: "amico.preproc imported"
+
+  - name: Import amico.lut
+    description: Verify amico.lut module can be imported
+    command: python -c "import amico.lut; print('amico.lut imported')"
+    expected_output_contains: "amico.lut imported"
+
+  # ==========================================================================
+  # DEPENDENCY CHECKS
+  # ==========================================================================
+  - name: NumPy available
+    description: Verify NumPy is installed and accessible
+    command: python -c "import numpy as np; print('NumPy version:', np.__version__)"
+    expected_output_contains: "NumPy version"
+
+  - name: SciPy available
+    description: Verify SciPy is installed and accessible
+    command: python -c "import scipy; print('SciPy version:', scipy.__version__)"
+    expected_output_contains: "SciPy version"
+
+  - name: Nibabel available
+    description: Verify Nibabel is installed for NIfTI file handling
+    command: python -c "import nibabel as nib; print('Nibabel version:', nib.__version__)"
+    expected_output_contains: "Nibabel version"
+
+  - name: DIPY available
+    description: Verify DIPY is installed for diffusion processing
+    command: python -c "import dipy; print('DIPY version:', dipy.__version__)"
+    expected_output_contains: "DIPY version"
+
+  # ==========================================================================
+  # MODEL CLASS INSTANTIATION - NODDI
+  # ==========================================================================
+  - name: NODDI model instantiation
+    description: Verify NODDI model can be instantiated
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.NODDI()
+      print('NODDI model created:', model.id)
+      print('NODDI model name:', model.name)
+      "
+    expected_output_contains: "NODDI"
+
+  - name: NODDI model parameters
+    description: Verify NODDI model default parameters
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.NODDI()
+      params = model.get_params()
+      print('dPar:', params['dPar'])
+      print('dIso:', params['dIso'])
+      print('isExvivo:', params['isExvivo'])
+      print('IC_VFs length:', len(params['IC_VFs']))
+      print('IC_ODs length:', len(params['IC_ODs']))
+      "
+    expected_output_contains: "dPar"
+
+  - name: NODDI model set parameters
+    description: Verify NODDI model parameters can be modified
+    command: |
+      python -c "
+      import amico.models
+      import numpy as np
+      model = amico.models.NODDI()
+      model.set(dPar=0.0015, dIso=0.0025, isExvivo=True)
+      params = model.get_params()
+      print('Modified dPar:', params['dPar'])
+      print('Modified dIso:', params['dIso'])
+      print('Modified isExvivo:', params['isExvivo'])
+      "
+    expected_output_contains: "Modified dPar: 0.0015"
+
+  - name: NODDI model custom volume fractions
+    description: Verify NODDI model with custom volume fractions
+    command: |
+      python -c "
+      import amico.models
+      import numpy as np
+      model = amico.models.NODDI()
+      custom_vfs = np.linspace(0.1, 0.9, 5)
+      model.set(IC_VFs=custom_vfs)
+      params = model.get_params()
+      print('Custom IC_VFs:', params['IC_VFs'])
+      "
+    expected_output_contains: "Custom IC_VFs"
+
+  - name: NODDI model maps names
+    description: Verify NODDI model output map names
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.NODDI()
+      print('NODDI maps:', model.maps_name)
+      "
+    expected_output_contains: "NDI"
+
+  # ==========================================================================
+  # MODEL CLASS INSTANTIATION - SANDI
+  # ==========================================================================
+  - name: SANDI model instantiation
+    description: Verify SANDI model can be instantiated
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.SANDI()
+      print('SANDI model created:', model.id)
+      print('SANDI model name:', model.name)
+      "
+    expected_output_contains: "SANDI"
+
+  - name: SANDI model parameters
+    description: Verify SANDI model default parameters
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.SANDI()
+      params = model.get_params()
+      print('d_is:', params['d_is'])
+      print('Rs length:', len(params['Rs']))
+      print('d_in length:', len(params['d_in']))
+      print('d_isos length:', len(params['d_isos']))
+      "
+    expected_output_contains: "d_is"
+
+  - name: SANDI model set parameters
+    description: Verify SANDI model parameters can be modified
+    command: |
+      python -c "
+      import amico.models
+      import numpy as np
+      model = amico.models.SANDI()
+      model.set(d_is=0.002)
+      params = model.get_params()
+      print('Modified d_is:', params['d_is'])
+      "
+    expected_output_contains: "Modified d_is: 0.002"
+
+  - name: SANDI model maps names
+    description: Verify SANDI model output map names
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.SANDI()
+      print('SANDI maps:', model.maps_name)
+      "
+    expected_output_contains: "fsoma"
+
+  # ==========================================================================
+  # MODEL CLASS INSTANTIATION - FreeWater
+  # ==========================================================================
+  - name: FreeWater model instantiation
+    description: Verify FreeWater model can be instantiated
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.FreeWater()
+      print('FreeWater model created:', model.id)
+      print('FreeWater model name:', model.name)
+      "
+    expected_output_contains: "FreeWater"
+
+  - name: FreeWater model human type
+    description: Verify FreeWater model with human type parameters
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.FreeWater()
+      model.set(type='Human')
+      params = model.get_params()
+      print('FreeWater type: Human')
+      print('Parameters set successfully')
+      "
+    expected_output_contains: "Parameters set successfully"
+
+  - name: FreeWater model mouse type
+    description: Verify FreeWater model with mouse type parameters
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.FreeWater()
+      model.set(type='Mouse')
+      params = model.get_params()
+      print('FreeWater type: Mouse')
+      print('Parameters set successfully')
+      "
+    expected_output_contains: "Parameters set successfully"
+
+  - name: FreeWater model maps names
+    description: Verify FreeWater model output map names
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.FreeWater()
+      print('FreeWater maps:', model.maps_name)
+      "
+    expected_output_contains: "FW"
+
+  # ==========================================================================
+  # MODEL CLASS INSTANTIATION - CylinderZeppelinBall (ActiveAx)
+  # ==========================================================================
+  - name: CylinderZeppelinBall model instantiation
+    description: Verify CylinderZeppelinBall (ActiveAx) model can be instantiated
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.CylinderZeppelinBall()
+      print('CylinderZeppelinBall model created:', model.id)
+      print('CylinderZeppelinBall model name:', model.name)
+      "
+    expected_output_contains: "CylinderZeppelinBall"
+
+  - name: CylinderZeppelinBall model maps names
+    description: Verify CylinderZeppelinBall model output map names
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.CylinderZeppelinBall()
+      print('CylinderZeppelinBall maps:', model.maps_name)
+      "
+    expected_output_contains: "'v'"
+
+  # ==========================================================================
+  # MODEL CLASS INSTANTIATION - StickZeppelinBall
+  # ==========================================================================
+  - name: StickZeppelinBall model instantiation
+    description: Verify StickZeppelinBall model can be instantiated
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.StickZeppelinBall()
+      print('StickZeppelinBall model created:', model.id)
+      print('StickZeppelinBall model name:', model.name)
+      "
+    expected_output_contains: "StickZeppelinBall"
+
+  - name: StickZeppelinBall model parameters
+    description: Verify StickZeppelinBall model default parameters
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.StickZeppelinBall()
+      params = model.get_params()
+      print('d_par:', params['d_par'])
+      print('params keys:', sorted(params.keys()))
+      "
+    expected_output_contains: "d_par"
+
+  # ==========================================================================
+  # MODEL CLASS INSTANTIATION - VolumeFractions
+  # ==========================================================================
+  - name: VolumeFractions model instantiation
+    description: Verify VolumeFractions model can be instantiated
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.VolumeFractions()
+      print('VolumeFractions model created:', model.id)
+      print('VolumeFractions model name:', model.name)
+      "
+    expected_output_contains: "VolumeFractions"
+
+  # ==========================================================================
+  # SCHEME CLASS FUNCTIONALITY
+  # ==========================================================================
+  - name: Scheme class creation from array
+    description: Verify Scheme class can be created from numpy array
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      # Create simple scheme: 3 b0s + 6 directions at b=1000
+      data = np.array([
+          [0, 0, 0, 0],
+          [0, 0, 0, 0],
+          [0, 0, 0, 0],
+          [1, 0, 0, 1000],
+          [0, 1, 0, 1000],
+          [0, 0, 1, 1000],
+          [-1, 0, 0, 1000],
+          [0, -1, 0, 1000],
+          [0, 0, -1, 1000],
+      ])
+      scheme = Scheme(data)
+      print('Scheme created with', scheme.nS, 'measurements')
+      print('Number of b0s:', sum(scheme.b < 10))
+      "
+    expected_output_contains: "Scheme created with 9 measurements"
+
+  - name: Scheme class multi-shell
+    description: Verify Scheme class handles multi-shell data
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      # Create multi-shell scheme
+      data = np.array([
+          [0, 0, 0, 0],
+          [1, 0, 0, 1000],
+          [0, 1, 0, 1000],
+          [0, 0, 1, 1000],
+          [1, 0, 0, 2000],
+          [0, 1, 0, 2000],
+          [0, 0, 1, 2000],
+          [1, 0, 0, 3000],
+          [0, 1, 0, 3000],
+          [0, 0, 1, 3000],
+      ])
+      scheme = Scheme(data)
+      print('Multi-shell scheme with', scheme.nS, 'measurements')
+      unique_b = np.unique(np.round(scheme.b, -2))
+      print('Unique b-values:', unique_b)
+      "
+    expected_output_contains: "Multi-shell scheme with 10 measurements"
+
+  - name: Scheme class b0 threshold
+    description: Verify Scheme class respects b0 threshold parameter
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      data = np.array([
+          [0, 0, 0, 5],
+          [0, 0, 0, 10],
+          [1, 0, 0, 1000],
+      ])
+      scheme = Scheme(data, b0_thr=15)
+      print('With b0_thr=15:', sum(scheme.b < 15), 'b0 volumes')
+      "
+    expected_output_contains: "With b0_thr=15: 2 b0 volumes"
+
+  - name: Scheme class get_table
+    description: Verify Scheme class get_table method
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      data = np.array([
+          [0, 0, 0, 0],
+          [1, 0, 0, 1000],
+          [0, 1, 0, 1000],
+      ])
+      scheme = Scheme(data)
+      table = scheme.get_table()
+      print('Table shape:', table.shape)
+      print('Table type:', type(table).__name__)
+      "
+    expected_output_contains: "Table shape: (3, 4)"
+
+  # ==========================================================================
+  # UTILITY FUNCTIONS - fsl2scheme
+  # ==========================================================================
+  - name: Create test bvals file
+    description: Create test bvals file for fsl2scheme testing
+    command: |
+      python -c "
+      import numpy as np
+      bvals = np.array([0, 0, 1000, 1000, 1000, 2000, 2000, 2000])
+      np.savetxt('${output_dir}/test.bvals', bvals.reshape(1, -1), fmt='%d')
+      print('bvals file created')
+      "
+    expected_output_contains: "bvals file created"
+
+  - name: Create test bvecs file
+    description: Create test bvecs file for fsl2scheme testing
+    command: |
+      python -c "
+      import numpy as np
+      bvecs = np.array([
+          [0, 0, 1, 0, 0, 1, 0, 0],
+          [0, 0, 0, 1, 0, 0, 1, 0],
+          [0, 0, 0, 0, 1, 0, 0, 1],
+      ])
+      np.savetxt('${output_dir}/test.bvecs', bvecs, fmt='%.6f')
+      print('bvecs file created')
+      "
+    expected_output_contains: "bvecs file created"
+
+  - name: fsl2scheme conversion
+    description: Test fsl2scheme utility function
+    command: |
+      python -c "
+      import amico.util
+      amico.util.fsl2scheme(
+          '${output_dir}/test.bvals',
+          '${output_dir}/test.bvecs',
+          '${output_dir}/test.scheme'
+      )
+      print('Scheme file created: ${output_dir}/test.scheme')
+      import os
+      print('File exists:', os.path.exists('${output_dir}/test.scheme'))
+      "
+    depends_on: Create test bvecs file
+    expected_output_contains: "File exists: True"
+    validate:
+      - output_exists: ${output_dir}/test.scheme
+
+  - name: fsl2scheme with axis flipping
+    description: Test fsl2scheme with gradient axis flipping
+    command: |
+      python -c "
+      import amico.util
+      scheme = amico.util.fsl2scheme(
+          '${output_dir}/test.bvals',
+          '${output_dir}/test.bvecs',
+          '${output_dir}/test_flipped.scheme',
+          flipAxes=[True, False, False]
+      )
+      print('Scheme created with X-axis flipped')
+      "
+    depends_on: Create test bvecs file
+    expected_output_contains: "Scheme created with X-axis flipped"
+
+  # ==========================================================================
+  # UTILITY FUNCTIONS - Verbosity
+  # ==========================================================================
+  - name: Verbosity level get
+    description: Test get_verbose utility function
+    command: |
+      python -c "
+      import amico.util
+      level = amico.util.get_verbose()
+      print('Current verbosity level:', level)
+      "
+    expected_output_contains: "Current verbosity level"
+
+  - name: Verbosity level set
+    description: Test set_verbose utility function
+    command: |
+      python -c "
+      import amico.util
+      amico.util.set_verbose(0)
+      level = amico.util.get_verbose()
+      print('Verbosity set to:', level)
+      amico.util.set_verbose(3)
+      "
+    expected_output_contains: "Verbosity set to: 0"
+
+  # ==========================================================================
+  # SYNTHESIS MODULE - Signal Generation Classes
+  # ==========================================================================
+  - name: Synthesis Ball compartment
+    description: Test Ball signal synthesis
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      from amico.synthesis import Ball
+      data = np.array([
+          [0, 0, 0, 0],
+          [1, 0, 0, 1000],
+          [0, 1, 0, 1000],
+          [0, 0, 1, 1000],
+      ])
+      scheme = Scheme(data)
+      ball = Ball(scheme)
+      signal = ball.get_signal(0.003)  # Free water diffusivity
+      print('Ball signal shape:', signal.shape)
+      print('Ball signal at b=0: %.4f' % signal[0])
+      print('Ball signal at b=1000: %.4f' % signal[1])
+      "
+    expected_output_contains: "Ball signal at b=0: 1.0000"
+
+  - name: Synthesis Astrosticks compartment
+    description: Test Astrosticks signal synthesis
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      from amico.synthesis import Astrosticks
+      data = np.array([
+          [0, 0, 0, 0],
+          [1, 0, 0, 1000],
+          [0, 1, 0, 1000],
+          [0, 0, 1, 1000],
+      ])
+      scheme = Scheme(data)
+      astro = Astrosticks(scheme)
+      signal = astro.get_signal(0.0017)
+      print('Astrosticks signal shape:', signal.shape)
+      print('Astrosticks signal computed successfully')
+      "
+    expected_output_contains: "Astrosticks signal computed successfully"
+
+  # ==========================================================================
+  # EVALUATION CLASS
+  # ==========================================================================
+  - name: Evaluation class instantiation
+    description: Test Evaluation class can be created
+    command: |
+      python -c "
+      import amico
+      ae = amico.Evaluation()
+      print('Evaluation object created successfully')
+      print('Study path:', ae.get_config('study_path'))
+      print('Subject:', ae.get_config('subject'))
+      "
+    expected_output_contains: "Evaluation object created successfully"
+
+  - name: Evaluation class with paths
+    description: Test Evaluation class with custom paths
+    command: |
+      python -c "
+      import amico
+      ae = amico.Evaluation(study_path='test_output', subject='test_subject')
+      print('Study path:', ae.get_config('study_path'))
+      print('Subject:', ae.get_config('subject'))
+      "
+    expected_output_contains: "test_output"
+
+  - name: Evaluation class with output path
+    description: Test Evaluation class with custom output path
+    command: |
+      python -c "
+      import amico
+      ae = amico.Evaluation(
+          study_path='test_output',
+          subject='test_subject',
+          output_path='${output_dir}/amico_results'
+      )
+      print('Evaluation with custom output path created')
+      "
+    expected_output_contains: "Evaluation with custom output path created"
+
+  # ==========================================================================
+  # NODDI SYNTHESIS COMPARTMENTS
+  # ==========================================================================
+  - name: NODDI Isotropic compartment
+    description: Test NODDIIsotropic synthesis
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      from amico.synthesis import NODDIIsotropic
+      data = np.array([
+          [0, 0, 0, 0],
+          [1, 0, 0, 1000],
+          [0, 1, 0, 1000],
+          [0, 0, 1, 1000],
+      ])
+      scheme = Scheme(data)
+      iso = NODDIIsotropic(scheme)
+      signal = iso.get_signal(0.003)  # CSF diffusivity
+      print('NODDI ISO signal shape:', signal.shape)
+      print('NODDI ISO signal computed successfully')
+      "
+    expected_output_contains: "NODDI ISO signal computed successfully"
+
+  # ==========================================================================
+  # SANDI SYNTHESIS COMPARTMENTS
+  # ==========================================================================
+  - name: SphereGPD compartment
+    description: Test SphereGPD (soma) signal synthesis
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      from amico.synthesis import SphereGPD
+      # SANDI requires full gradient specification (Nx7 format)
+      data = np.array([
+          [0, 0, 0, 0, 0.050, 0.010, 0.080],      # b0
+          [1, 0, 0, 0.040, 0.050, 0.010, 0.080],  # gradient
+          [0, 1, 0, 0.040, 0.050, 0.010, 0.080],
+          [0, 0, 1, 0.040, 0.050, 0.010, 0.080],
+      ])
+      scheme = Scheme(data)
+      sphere = SphereGPD(scheme)
+      signal = sphere.get_signal(6e-6, 0.003)  # radius 6um, diffusivity
+      print('SphereGPD signal shape:', signal.shape)
+      print('SphereGPD signal computed successfully')
+      "
+    expected_output_contains: "SphereGPD signal computed successfully"
+
+  # ==========================================================================
+  # SOLVER PARAMETER CONFIGURATION
+  # ==========================================================================
+  - name: NODDI solver parameters
+    description: Test NODDI solver parameter configuration
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.NODDI()
+      solver_params = model.set_solver(lambda1=0.5, lambda2=0.001)
+      print('NODDI solver configured')
+      print('Solver params type:', type(solver_params).__name__)
+      "
+    expected_output_contains: "NODDI solver configured"
+
+  - name: SANDI solver parameters
+    description: Test SANDI solver parameter configuration
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.SANDI()
+      solver_params = model.set_solver(lambda1=0.0, lambda2=0.005)
+      print('SANDI solver configured')
+      print('Solver params type:', type(solver_params).__name__)
+      "
+    expected_output_contains: "SANDI solver configured"
+
+  - name: FreeWater solver parameters
+    description: Test FreeWater solver parameter configuration
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.FreeWater()
+      solver_params = model.set_solver(lambda1=0.0, lambda2=0.001)
+      print('FreeWater solver configured')
+      print('Solver params type:', type(solver_params).__name__)
+      "
+    expected_output_contains: "FreeWater solver configured"
+
+  - name: CylinderZeppelinBall solver parameters
+    description: Test CylinderZeppelinBall solver parameter configuration
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.CylinderZeppelinBall()
+      solver_params = model.set_solver(lambda1=0.0, lambda2=4.0)
+      print('CylinderZeppelinBall solver configured')
+      print('Solver params type:', type(solver_params).__name__)
+      "
+    expected_output_contains: "CylinderZeppelinBall solver configured"
+
+  # ==========================================================================
+  # SYNTHETIC DWI DATA CREATION AND PROCESSING
+  # ==========================================================================
+  - name: Create synthetic DWI scheme file
+    description: Create a realistic multi-shell scheme file for testing
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+
+      # Create realistic multi-shell acquisition scheme
+      # b=0 (5 volumes), b=1000 (30 directions), b=2000 (60 directions)
+      np.random.seed(42)
+
+      # Generate random unit vectors on sphere
+      def random_directions(n):
+          dirs = np.random.randn(n, 3)
+          dirs /= np.linalg.norm(dirs, axis=1, keepdims=True)
+          return dirs
+
+      b0_dirs = np.zeros((5, 3))
+      b1000_dirs = random_directions(30)
+      b2000_dirs = random_directions(60)
+
+      # Combine into scheme array
+      scheme_data = np.vstack([
+          np.hstack([b0_dirs, np.zeros((5, 1))]),
+          np.hstack([b1000_dirs, np.full((30, 1), 1000)]),
+          np.hstack([b2000_dirs, np.full((60, 1), 2000)]),
+      ])
+
+      scheme = Scheme(scheme_data)
+      np.savetxt('${output_dir}/multishell.scheme', scheme.get_table(), fmt='%.6f')
+      print('Created multi-shell scheme with', scheme.nS, 'measurements')
+      b_counts = [sum(scheme.b < 10), sum((scheme.b > 500) & (scheme.b < 1500)), sum(scheme.b > 1500)]
+      print('b-values: 0 (%d), 1000 (%d), 2000 (%d)' % tuple(b_counts))
+      "
+    expected_output_contains: "Created multi-shell scheme with 95 measurements"
+
+  - name: Synthesize NODDI phantom signal
+    description: Generate synthetic NODDI signal for validation
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      from amico.synthesis import NODDIIntraCellular, NODDIExtraCellular, NODDIIsotropic
+
+      # Load scheme
+      scheme_data = np.loadtxt('${output_dir}/multishell.scheme')
+      scheme = Scheme(scheme_data)
+
+      # Create NODDI signal compartments
+      ic = NODDIIntraCellular(scheme)
+      ec = NODDIExtraCellular(scheme)
+      iso = NODDIIsotropic(scheme)
+
+      # Set typical white matter parameters
+      dPar = 0.0017
+      dIso = 0.003
+      OD = 0.2    # Orientation dispersion
+      ICVF = 0.6  # Intra-cellular volume fraction
+      ISOVF = 0.1 # Isotropic volume fraction
+      ECVF = 1 - ICVF - ISOVF
+
+      # Generate signal
+      S_ic = ic.get_signal(dPar, OD)
+      S_ec = ec.get_signal(dPar, OD, ICVF)
+      S_iso = iso.get_signal(dIso)
+
+      # Combine compartments
+      S_total = ICVF * S_ic + ECVF * S_ec + ISOVF * S_iso
+
+      print('Synthesized NODDI signal with', len(S_total), 'measurements')
+      print('Signal range: [%.4f, %.4f]' % (S_total.min(), S_total.max()))
+      print('Mean b0 signal: %.4f' % S_total[scheme.b < 10].mean())
+      print('Mean b1000 signal: %.4f' % S_total[(scheme.b > 500) & (scheme.b < 1500)].mean())
+      print('Mean b2000 signal: %.4f' % S_total[scheme.b > 1500].mean())
+      "
+    depends_on: Create synthetic DWI scheme file
+    expected_output_contains: "Synthesized NODDI signal"
+
+  # ==========================================================================
+  # FULL SYNTHETIC WORKFLOW TEST
+  # ==========================================================================
+  - name: Create synthetic DWI volume
+    description: Create complete synthetic 4D DWI volume with NODDI signal
+    command: |
+      python -c "
+      import numpy as np
+      import nibabel as nib
+      from amico.scheme import Scheme
+      from amico.synthesis import Ball
+
+      # Load scheme
+      scheme_data = np.loadtxt('${output_dir}/multishell.scheme')
+      scheme = Scheme(scheme_data)
+
+      # Create small test volume (10x10x10 voxels)
+      nx, ny, nz = 10, 10, 10
+      nv = scheme.nS
+
+      # Generate isotropic diffusion signal for each voxel
+      ball = Ball(scheme)
+
+      # Create volume with varying diffusivity
+      dwi_data = np.zeros((nx, ny, nz, nv), dtype=np.float32)
+      for i in range(nx):
+          for j in range(ny):
+              for k in range(nz):
+                  # Varying diffusivity from 1.0 to 3.0 x10^-3 mm^2/s
+                  diff = 0.001 + 0.002 * (i + j + k) / (nx + ny + nz - 3)
+                  dwi_data[i, j, k, :] = ball.get_signal(diff)
+
+      # Add noise
+      np.random.seed(42)
+      noise_level = 0.02
+      dwi_data += noise_level * np.random.randn(*dwi_data.shape)
+      dwi_data = np.clip(dwi_data, 0, 1)
+
+      # Create NIfTI image
+      affine = np.eye(4) * 2  # 2mm isotropic voxels
+      affine[3, 3] = 1
+      img = nib.Nifti1Image(dwi_data, affine)
+      nib.save(img, '${output_dir}/synthetic_dwi.nii.gz')
+
+      print('Created synthetic DWI:', dwi_data.shape)
+      print('Voxel dimensions: 2mm isotropic')
+      print('Number of volumes:', nv)
+      "
+    depends_on: Create synthetic DWI scheme file
+    expected_output_contains: "Created synthetic DWI"
+    validate:
+      - output_exists: ${output_dir}/synthetic_dwi.nii.gz
+
+  - name: Create synthetic mask
+    description: Create binary mask for synthetic DWI
+    command: |
+      python -c "
+      import numpy as np
+      import nibabel as nib
+
+      # Create mask (all voxels in the 10x10x10 volume)
+      mask_data = np.ones((10, 10, 10), dtype=np.uint8)
+
+      # Create NIfTI image
+      affine = np.eye(4) * 2
+      affine[3, 3] = 1
+      img = nib.Nifti1Image(mask_data, affine)
+      nib.save(img, '${output_dir}/synthetic_mask.nii.gz')
+
+      print('Created mask:', mask_data.shape)
+      print('Non-zero voxels:', mask_data.sum())
+      "
+    expected_output_contains: "Created mask"
+    validate:
+      - output_exists: ${output_dir}/synthetic_mask.nii.gz
+
+  # ==========================================================================
+  # ERROR HANDLING TESTS
+  # ==========================================================================
+  - name: Error handling - invalid scheme
+    description: Test error handling for invalid scheme data
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      data = np.array([[1, 2]])  # Should be Nx4 or Nx7
+      scheme = Scheme(data)
+      " 2>&1
+    expected_exit_code: 64
+    expected_output_contains: "ERROR"
+
+  - name: Error handling - missing file
+    description: Test error handling for missing bvals/bvecs files
+    command: |
+      python -c "
+      import amico.util
+      amico.util.fsl2scheme(
+          'nonexistent.bvals',
+          'nonexistent.bvecs',
+          '${output_dir}/error.scheme'
+      )
+      " 2>&1
+    expected_exit_code: 64
+    expected_output_contains: "ERROR"
+
+  # ==========================================================================
+  # NIBABEL INTEGRATION TESTS
+  # ==========================================================================
+  - name: Load NIfTI with nibabel
+    description: Test loading NIfTI files with nibabel (AMICO dependency)
+    command: |
+      python -c "
+      import nibabel as nib
+      import numpy as np
+
+      # Load synthetic DWI
+      img = nib.load('${output_dir}/synthetic_dwi.nii.gz')
+      data = img.get_fdata()
+
+      print('Loaded image shape:', data.shape)
+      print('Data type:', data.dtype)
+      print('Affine shape:', img.affine.shape)
+      print('Header type:', type(img.header).__name__)
+      "
+    depends_on: Create synthetic DWI volume
+    expected_output_contains: "Loaded image shape"
+
+  - name: NIfTI header inspection
+    description: Test NIfTI header access for DWI data
+    command: |
+      python -c "
+      import nibabel as nib
+
+      img = nib.load('${output_dir}/synthetic_dwi.nii.gz')
+      header = img.header
+
+      print('Dimensions:', header.get_data_shape())
+      print('Voxel sizes:', header.get_zooms())
+      print('Data dtype:', header.get_data_dtype())
+      "
+    depends_on: Create synthetic DWI volume
+    expected_output_contains: "Dimensions"
+
+  # ==========================================================================
+  # NUMERICAL VALIDATION TESTS
+  # ==========================================================================
+  - name: Ball signal attenuation validation
+    description: Validate Ball signal follows expected exponential decay
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      from amico.synthesis import Ball
+
+      # Single direction at different b-values
+      data = np.array([
+          [0, 0, 0, 0],
+          [1, 0, 0, 500],
+          [1, 0, 0, 1000],
+          [1, 0, 0, 2000],
+          [1, 0, 0, 3000],
+      ])
+      scheme = Scheme(data)
+      ball = Ball(scheme)
+
+      D = 0.002  # Diffusivity
+      signal = ball.get_signal(D)
+
+      # Expected: S = exp(-b*D)
+      expected = np.exp(-scheme.b * D)
+
+      error = np.abs(signal - expected).max()
+      print('Max error from analytical solution: %.2e' % error)
+
+      if error < 1e-10:
+          print('PASSED: Ball signal matches exponential decay model')
+      else:
+          print('FAILED: Unexpected deviation from analytical model')
+      "
+    expected_output_contains: "PASSED"
+
+  # ==========================================================================
+  # MODEL OUTPUT MAPS VERIFICATION
+  # ==========================================================================
+  - name: NODDI output maps list
+    description: Verify NODDI model defines expected output maps
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.NODDI()
+
+      expected_maps = ['NDI', 'ODI', 'FWF']
+
+      all_present = all(m in model.maps_name for m in expected_maps)
+
+      print('NODDI maps:', model.maps_name)
+      print('Map descriptions:', model.maps_descr)
+
+      if all_present:
+          print('PASSED: All expected NODDI maps present')
+      else:
+          print('FAILED: Missing expected maps')
+      "
+    expected_output_contains: "PASSED"
+
+  - name: SANDI output maps list
+    description: Verify SANDI model defines expected output maps
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.SANDI()
+
+      expected_maps = ['fsoma', 'fneurite', 'fextra', 'Din', 'Rsoma', 'De']
+
+      all_present = all(m in model.maps_name for m in expected_maps)
+
+      print('SANDI maps:', model.maps_name)
+
+      if all_present:
+          print('PASSED: All expected SANDI maps present')
+      else:
+          print('FAILED: Missing expected maps')
+      "
+    expected_output_contains: "PASSED"
+
+  - name: FreeWater output maps list
+    description: Verify FreeWater model defines expected output maps
+    command: |
+      python -c "
+      import amico.models
+      model = amico.models.FreeWater()
+
+      expected_maps = ['FW', 'FA', 'MD']
+
+      some_present = any(m in model.maps_name for m in expected_maps)
+
+      print('FreeWater maps:', model.maps_name)
+
+      if some_present:
+          print('PASSED: FreeWater maps defined')
+      else:
+          print('FAILED: No expected maps found')
+      "
+    expected_output_contains: "PASSED"
+
+  # ==========================================================================
+  # DIPY INTEGRATION TESTS
+  # ==========================================================================
+  - name: DIPY gradient table compatibility
+    description: Test AMICO scheme to DIPY gradient table conversion
+    command: |
+      python -c "
+      import numpy as np
+      from dipy.core.gradients import gradient_table
+      from amico.scheme import Scheme
+
+      # Create AMICO scheme
+      data = np.array([
+          [0, 0, 0, 0],
+          [1, 0, 0, 1000],
+          [0, 1, 0, 1000],
+          [0, 0, 1, 2000],
+      ])
+      scheme = Scheme(data)
+
+      # Convert to DIPY gradient table
+      bvals = scheme.b
+      bvecs = scheme.raw[:, :3]
+
+      gtab = gradient_table(bvals, bvecs)
+
+      print('DIPY gradient table created')
+      print('Number of gradients:', len(gtab.bvals))
+      print('B0 count:', sum(gtab.b0s_mask))
+      "
+    expected_output_contains: "DIPY gradient table created"
+
+  - name: DIPY tensor fit available
+    description: Verify DIPY DTI module is available
+    command: |
+      python -c "
+      from dipy.reconst.dti import TensorModel
+      print('DIPY TensorModel available')
+      "
+    expected_output_contains: "DIPY TensorModel available"
+
+  # ==========================================================================
+  # ADVANCED SCHEME CREATION
+  # ==========================================================================
+  - name: Extended scheme format (Nx7)
+    description: Test scheme creation with full gradient specification
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+
+      # Nx7 format: [gx, gy, gz, |G|, Delta, delta, TE]
+      # Units: T/m for |G|, seconds for timing
+      data = np.array([
+          [0, 0, 0, 0, 0.050, 0.010, 0.080],        # b0
+          [1, 0, 0, 0.040, 0.050, 0.010, 0.080],    # ~b1000
+          [0, 1, 0, 0.040, 0.050, 0.010, 0.080],
+          [0, 0, 1, 0.040, 0.050, 0.010, 0.080],
+          [1, 0, 0, 0.060, 0.050, 0.010, 0.080],    # ~b2000
+          [0, 1, 0, 0.060, 0.050, 0.010, 0.080],
+          [0, 0, 1, 0.060, 0.050, 0.010, 0.080],
+      ])
+      scheme = Scheme(data)
+
+      print('Extended scheme with', scheme.nS, 'measurements')
+      table = scheme.get_table()
+      print('Table shape:', table.shape)
+      print('Scheme contains timing information')
+      "
+    expected_output_contains: "Extended scheme with 7 measurements"
+
+  - name: Signal with noise simulation
+    description: Test adding realistic Rician noise to synthetic signal
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      from amico.synthesis import Ball
+
+      data = np.array([
+          [0, 0, 0, 0],
+          [1, 0, 0, 1000],
+          [1, 0, 0, 2000],
+      ])
+      scheme = Scheme(data)
+      ball = Ball(scheme)
+
+      # Clean signal
+      S_clean = ball.get_signal(0.001)
+
+      # Add Rician noise (magnitude of complex Gaussian)
+      np.random.seed(42)
+      SNR = 20
+      sigma = 1.0 / SNR
+
+      real_part = S_clean + sigma * np.random.randn(len(S_clean))
+      imag_part = sigma * np.random.randn(len(S_clean))
+      S_noisy = np.sqrt(real_part**2 + imag_part**2)
+
+      print('Clean signal:', S_clean)
+      print('Noisy signal:', S_noisy)
+      print('SNR:', SNR)
+      print('Signal noise simulation complete')
+      "
+    expected_output_contains: "Signal noise simulation complete"
+
+  # ==========================================================================
+  # PREPROCESSING FUNCTIONS
+  # ==========================================================================
+  - name: Preproc module functions available
+    description: Verify preprocessing functions are accessible
+    command: |
+      python -c "
+      import amico.preproc
+
+      # Check functions exist
+      functions = ['debiasRician', 'F_norm_Diff_K', 'der_Diff']
+
+      for func in functions:
+          if hasattr(amico.preproc, func):
+              print(func + ': available')
+          else:
+              print(func + ': NOT FOUND')
+      "
+    expected_output_contains: "debiasRician: available"
+
+  # ==========================================================================
+  # MEMORY AND PERFORMANCE CHECKS
+  # ==========================================================================
+  - name: Large scheme handling
+    description: Test handling of large acquisition schemes
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      import time
+
+      # Simulate HCP-style acquisition (288 volumes)
+      np.random.seed(42)
+      n_b0 = 18
+      n_b1000 = 90
+      n_b2000 = 90
+      n_b3000 = 90
+
+      def random_dirs(n):
+          d = np.random.randn(n, 3)
+          return d / np.linalg.norm(d, axis=1, keepdims=True)
+
+      scheme_data = np.vstack([
+          np.hstack([np.zeros((n_b0, 3)), np.zeros((n_b0, 1))]),
+          np.hstack([random_dirs(n_b1000), np.full((n_b1000, 1), 1000)]),
+          np.hstack([random_dirs(n_b2000), np.full((n_b2000, 1), 2000)]),
+          np.hstack([random_dirs(n_b3000), np.full((n_b3000, 1), 3000)]),
+      ])
+
+      start = time.time()
+      scheme = Scheme(scheme_data)
+      elapsed = time.time() - start
+
+      print('Created HCP-style scheme with', scheme.nS, 'volumes')
+      print('Time to create: %.1fms' % (elapsed*1000))
+      print('Large scheme handling: OK')
+      "
+    expected_output_contains: "Large scheme handling: OK"
+
+  - name: Batch signal synthesis
+    description: Test batch synthesis of multiple voxel signals
+    command: |
+      python -c "
+      import numpy as np
+      from amico.scheme import Scheme
+      from amico.synthesis import Ball
+      import time
+
+      data = np.array([
+          [0, 0, 0, 0],
+          [1, 0, 0, 1000],
+          [0, 1, 0, 1000],
+          [0, 0, 1, 2000],
+      ])
+      scheme = Scheme(data)
+      ball = Ball(scheme)
+
+      # Synthesize 1000 voxels
+      n_voxels = 1000
+      diffusivities = np.linspace(0.001, 0.003, n_voxels)
+
+      start = time.time()
+      signals = np.array([ball.get_signal(d) for d in diffusivities])
+      elapsed = time.time() - start
+
+      print('Synthesized', n_voxels, 'voxel signals')
+      print('Output shape:', signals.shape)
+      print('Time: %.1fms' % (elapsed*1000))
+      print('Rate: %.0f voxels/sec' % (n_voxels/elapsed))
+      print('Batch synthesis: OK')
+      "
+    expected_output_contains: "Batch synthesis: OK"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

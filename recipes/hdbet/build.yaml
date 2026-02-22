@@ -1,0 +1,67 @@
+name: hdbet
+version: 1.0.0
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:16.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - git
+        - curl
+
+    - template:
+        name: miniconda
+        version: 4.7.12.1
+        conda_install: python=3.6
+
+    - workdir: /opt
+
+    - run:
+        - git clone https://github.com/MIC-DKFZ/HD-BET
+
+    - workdir: /opt/HD-BET
+
+    - run:
+        - echo 'import os' > /opt/HD-BET/HD_BET/paths.py
+        - echo 'folder_with_parameter_files = "/opt/HD-BET/hd-bet_params"' >> /opt/HD-BET/HD_BET/paths.py
+        - mkdir -p /opt/HD-BET/hd-bet_params
+        - curl -o /opt/HD-BET/hd-bet_params/0.model https://zenodo.org/record/2540695/files/0.model?download=1
+        - curl -o /opt/HD-BET/hd-bet_params/1.model https://zenodo.org/record/2540695/files/1.model?download=1
+        - curl -o /opt/HD-BET/hd-bet_params/2.model https://zenodo.org/record/2540695/files/2.model?download=1
+        - curl -o /opt/HD-BET/hd-bet_params/3.model https://zenodo.org/record/2540695/files/3.model?download=1
+        - curl -o /opt/HD-BET/hd-bet_params/4.model https://zenodo.org/record/2540695/files/4.model?download=1
+        - pip install -e .
+
+deploy:
+  bins:
+    - hd-bet
+
+categories:
+  - image segmentation
+
+readme: |
+  ----------------------------------
+  ## hdbet/{{ context.version }} ##
+  HD-BET (High Definition Brain Extraction Tool) was developed for robust brain extraction across different MRI sequences and scanners.
+
+  Example:
+  ```
+  # Single file (CPU, fast mode):
+  hd-bet -i INPUT_FILENAME -device cpu -mode fast -tta 0
+
+  # Directory processing:
+  hd-bet -i INPUT_FOLDER -o OUTPUT_FOLDER -device cpu -mode fast -tta 0
+
+  # With GPU:
+  hd-bet -i INPUT_FILENAME
+  ```
+
+  More documentation can be found here: https://github.com/MIC-DKFZ/HD-BET
+
+  To run container outside of this environment: ml hdbet/{{ context.version }}
+  ----------------------------------

@@ -1,0 +1,859 @@
+# ANTs container test suite
+# Tests for ANTs (Advanced Normalization Tools) v2.6.0
+#
+# ANTs is a state-of-the-art medical image registration and segmentation toolkit.
+# It provides tools for image registration, bias correction, segmentation, and more.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# Citation: Avants BB, Tustison NJ, Song G, Cook PA, Klein A, Gee JC. A reproducible
+#           evaluation of ANTs similarity metric performance in brain image registration.
+#           Neuroimage. 2011 Feb 1;54(3):2033-44.
+
+name: ants
+version: 2.6.0
+container: ants_2.6.0_20250424.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION CHECKS
+  # ==========================================================================
+  - name: ANTs version check
+    description: Verify antsRegistration binary runs and reports version
+    command: antsRegistration --version
+    expected_output_contains: "ANTs Version"
+
+  - name: N4BiasFieldCorrection version check
+    description: Verify N4BiasFieldCorrection binary runs
+    command: N4BiasFieldCorrection --version
+    expected_output_contains: "ANTs Version"
+
+  - name: antsApplyTransforms version check
+    description: Verify antsApplyTransforms binary runs
+    command: antsApplyTransforms --help
+    expected_output_contains: "antsApplyTransforms"
+
+  # ==========================================================================
+  # HEADER AND IMAGE INFORMATION
+  # ==========================================================================
+  - name: PrintHeader origin
+    description: Print image origin information
+    command: PrintHeader ${t1w} 0
+    expected_exit_code: 0
+
+  - name: PrintHeader spacing
+    description: Print image voxel spacing
+    command: PrintHeader ${t1w} 1
+    expected_exit_code: 0
+
+  - name: PrintHeader size
+    description: Print image dimensions
+    command: PrintHeader ${t1w} 2
+    expected_exit_code: 0
+
+  - name: PrintHeader direction
+    description: Print image direction matrix
+    command: PrintHeader ${t1w} 4
+    expected_exit_code: 0
+
+  - name: Image intensity statistics
+    description: Compute intensity statistics on T1w image
+    command: ImageIntensityStatistics 3 ${t1w}
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # IMAGE CONVERSION AND TYPE OPERATIONS
+  # ==========================================================================
+  - name: Convert to unsigned char
+    description: Convert image to unsigned char pixel type
+    command: ConvertImage 3 ${t1w} ${output_dir}/t1w_uchar.nii.gz 1
+    validate:
+      - output_exists: ${output_dir}/t1w_uchar.nii.gz
+
+  - name: Convert to unsigned short
+    description: Convert image to unsigned short pixel type
+    command: ConvertImage 3 ${t1w} ${output_dir}/t1w_ushort.nii.gz 2
+    validate:
+      - output_exists: ${output_dir}/t1w_ushort.nii.gz
+
+  - name: Convert to float
+    description: Convert image to float pixel type
+    command: ConvertImage 3 ${t1w} ${output_dir}/t1w_float.nii.gz 0
+    validate:
+      - output_exists: ${output_dir}/t1w_float.nii.gz
+
+  # ==========================================================================
+  # BIAS FIELD CORRECTION (N4)
+  # ==========================================================================
+  - name: N4 bias field correction basic
+    description: Run N4 bias field correction with default parameters
+    command: N4BiasFieldCorrection -d 3 -i ${t1w} -o ${output_dir}/t1w_n4.nii.gz -s 4 -c [50x50x50,0.0] -v 0
+    validate:
+      - output_exists: ${output_dir}/t1w_n4.nii.gz
+      - same_dimensions: ["${output_dir}/t1w_n4.nii.gz", "${t1w}"]
+
+  - name: N4 with bias field output
+    description: Run N4 and output the estimated bias field
+    command: N4BiasFieldCorrection -d 3 -i ${t1w} -o [${output_dir}/t1w_n4_with_bias.nii.gz,${output_dir}/t1w_biasfield.nii.gz] -s 4 -c [50x50x50,0.0] -v 0
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_with_bias.nii.gz
+      - output_exists: ${output_dir}/t1w_biasfield.nii.gz
+
+  - name: N4 with custom convergence
+    description: Run N4 with custom convergence settings
+    command: N4BiasFieldCorrection -d 3 -i ${t1w} -o ${output_dir}/t1w_n4_custom.nii.gz -s 2 -c [100x100x100x50,0.001] -b [200] -v 0
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_custom.nii.gz
+
+  # ==========================================================================
+  # IMAGE DENOISING
+  # ==========================================================================
+  - name: Denoise image Rician model
+    description: Denoise image using Rician noise model
+    command: DenoiseImage -d 3 -i ${t1w} -n Rician -o ${output_dir}/t1w_denoise_rician.nii.gz -v 0
+    validate:
+      - output_exists: ${output_dir}/t1w_denoise_rician.nii.gz
+
+  - name: Denoise image Gaussian model
+    description: Denoise image using Gaussian noise model
+    command: DenoiseImage -d 3 -i ${t1w} -n Gaussian -o ${output_dir}/t1w_denoise_gaussian.nii.gz -v 0
+    validate:
+      - output_exists: ${output_dir}/t1w_denoise_gaussian.nii.gz
+
+  - name: Denoise with noise image output
+    description: Denoise and output estimated noise image
+    command: DenoiseImage -d 3 -i ${t1w} -n Gaussian -o [${output_dir}/t1w_denoise_with_noise.nii.gz,${output_dir}/t1w_noise_estimate.nii.gz] -v 0
+    validate:
+      - output_exists: ${output_dir}/t1w_denoise_with_noise.nii.gz
+      - output_exists: ${output_dir}/t1w_noise_estimate.nii.gz
+
+  - name: Denoise with shrink factor
+    description: Denoise with shrink factor for faster processing
+    command: DenoiseImage -d 3 -i ${t1w} -n Gaussian -s 2 -o ${output_dir}/t1w_denoise_shrink.nii.gz -v 0
+    validate:
+      - output_exists: ${output_dir}/t1w_denoise_shrink.nii.gz
+
+  # ==========================================================================
+  # THRESHOLDING OPERATIONS
+  # ==========================================================================
+  - name: Threshold image basic
+    description: Binary threshold with low and high values
+    command: ThresholdImage 3 ${t1w} ${output_dir}/t1w_thresh.nii.gz 100 500
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh.nii.gz
+
+  - name: Threshold with inside/outside values
+    description: Threshold with custom inside and outside values
+    command: ThresholdImage 3 ${t1w} ${output_dir}/t1w_thresh_custom.nii.gz 100 500 1 0
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh_custom.nii.gz
+
+  - name: Otsu thresholding single class
+    description: Otsu automatic thresholding with 1 threshold
+    command: ThresholdImage 3 ${t1w} ${output_dir}/t1w_otsu1.nii.gz Otsu 1
+    validate:
+      - output_exists: ${output_dir}/t1w_otsu1.nii.gz
+
+  - name: Otsu thresholding multi-class
+    description: Otsu automatic thresholding with 3 classes
+    command: ThresholdImage 3 ${t1w} ${output_dir}/t1w_otsu3.nii.gz Otsu 3
+    validate:
+      - output_exists: ${output_dir}/t1w_otsu3.nii.gz
+
+  - name: Kmeans thresholding
+    description: K-means clustering with 3 classes
+    command: ThresholdImage 3 ${t1w} ${output_dir}/t1w_kmeans3.nii.gz Kmeans 3
+    validate:
+      - output_exists: ${output_dir}/t1w_kmeans3.nii.gz
+
+  # ==========================================================================
+  # SMOOTHING OPERATIONS
+  # ==========================================================================
+  - name: Smooth image Gaussian
+    description: Gaussian smoothing with sigma in mm
+    command: SmoothImage 3 ${t1w} 2 ${output_dir}/t1w_smooth2mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth2mm.nii.gz
+
+  - name: Smooth image in voxel units
+    description: Gaussian smoothing with sigma in voxels
+    command: SmoothImage 3 ${t1w} 2 ${output_dir}/t1w_smooth2vox.nii.gz 0
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth2vox.nii.gz
+
+  - name: Smooth image in spacing units
+    description: Gaussian smoothing with sigma in spacing units
+    command: SmoothImage 3 ${t1w} 2 ${output_dir}/t1w_smooth2spacing.nii.gz 1
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth2spacing.nii.gz
+
+  - name: Median filter
+    description: Median filtering for noise reduction
+    command: SmoothImage 3 ${t1w} 1 ${output_dir}/t1w_median.nii.gz 0 1
+    validate:
+      - output_exists: ${output_dir}/t1w_median.nii.gz
+
+  # ==========================================================================
+  # RESAMPLING OPERATIONS
+  # ==========================================================================
+  - name: Resample by size
+    description: Resample image to new dimensions
+    command: ResampleImage 3 ${t1w} ${output_dir}/t1w_resample_80x96x96.nii.gz 80x96x96 1
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_80x96x96.nii.gz
+
+  - name: Resample by spacing
+    description: Resample image to new voxel spacing
+    command: ResampleImage 3 ${t1w} ${output_dir}/t1w_resample_2mm.nii.gz 2x2x2 0
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_2mm.nii.gz
+
+  - name: Resample nearest neighbor
+    description: Resample using nearest neighbor interpolation
+    command: ResampleImage 3 ${t1w} ${output_dir}/t1w_resample_nn.nii.gz 80x96x96 1 1
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_nn.nii.gz
+
+  - name: Resample with BSpline
+    description: Resample using B-spline interpolation
+    command: ResampleImage 3 ${t1w} ${output_dir}/t1w_resample_bspline.nii.gz 80x96x96 1 4
+    validate:
+      - output_exists: ${output_dir}/t1w_resample_bspline.nii.gz
+
+  # ==========================================================================
+  # IMAGE MATH OPERATIONS
+  # ==========================================================================
+  - name: ImageMath multiply by scalar
+    description: Multiply image by a scalar value
+    command: ImageMath 3 ${output_dir}/t1w_mul2.nii.gz m ${t1w} 2
+    validate:
+      - output_exists: ${output_dir}/t1w_mul2.nii.gz
+
+  - name: ImageMath add scalar
+    description: Add a scalar value to image
+    command: ImageMath 3 ${output_dir}/t1w_add100.nii.gz + ${t1w} 100
+    validate:
+      - output_exists: ${output_dir}/t1w_add100.nii.gz
+
+  - name: ImageMath subtract
+    description: Subtract a scalar from image
+    command: ImageMath 3 ${output_dir}/t1w_sub50.nii.gz - ${t1w} 50
+    validate:
+      - output_exists: ${output_dir}/t1w_sub50.nii.gz
+
+  - name: ImageMath divide
+    description: Divide image by a scalar
+    command: ImageMath 3 ${output_dir}/t1w_div2.nii.gz / ${t1w} 2
+    validate:
+      - output_exists: ${output_dir}/t1w_div2.nii.gz
+
+  - name: ImageMath power
+    description: Raise image values to a power
+    command: ImageMath 3 ${output_dir}/t1w_pow2.nii.gz ^ ${t1w} 0.5
+    validate:
+      - output_exists: ${output_dir}/t1w_pow2.nii.gz
+
+  - name: ImageMath absolute value
+    description: Compute absolute value of image
+    command: ImageMath 3 ${output_dir}/t1w_abs.nii.gz abs ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_abs.nii.gz
+
+  - name: ImageMath negative
+    description: Compute negative of image
+    command: ImageMath 3 ${output_dir}/t1w_neg.nii.gz Neg ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_neg.nii.gz
+
+  - name: ImageMath exponential
+    description: Compute exponential of scaled image
+    command: ImageMath 3 ${output_dir}/t1w_exp.nii.gz exp ${t1w} 0.001
+    validate:
+      - output_exists: ${output_dir}/t1w_exp.nii.gz
+
+  - name: ImageMath Gaussian smoothing
+    description: Smooth image using ImageMath
+    command: ImageMath 3 ${output_dir}/t1w_imgmath_smooth.nii.gz G ${t1w} 2
+    validate:
+      - output_exists: ${output_dir}/t1w_imgmath_smooth.nii.gz
+
+  - name: ImageMath total intensity
+    description: Sum all voxel values in image
+    command: ImageMath 3 ${output_dir}/t1w_total.nii.gz total ${t1w}
+    expected_exit_code: 0
+
+  - name: ImageMath mean intensity
+    description: Compute mean voxel value
+    command: ImageMath 3 ${output_dir}/t1w_mean.nii.gz mean ${t1w}
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MORPHOLOGICAL OPERATIONS (ImageMath)
+  # ==========================================================================
+  - name: Morphological dilation
+    description: Dilate binary image using ImageMath
+    command: |
+      ThresholdImage 3 ${t1w} ${output_dir}/t1w_mask_for_morph.nii.gz Otsu 1 && \
+      ImageMath 3 ${output_dir}/mask_dilate.nii.gz MD ${output_dir}/t1w_mask_for_morph.nii.gz 2
+    validate:
+      - output_exists: ${output_dir}/mask_dilate.nii.gz
+
+  - name: Morphological erosion
+    description: Erode binary image using ImageMath
+    command: ImageMath 3 ${output_dir}/mask_erode.nii.gz ME ${output_dir}/t1w_mask_for_morph.nii.gz 2
+    depends_on: Morphological dilation
+    validate:
+      - output_exists: ${output_dir}/mask_erode.nii.gz
+
+  - name: Morphological opening
+    description: Open binary image (erosion then dilation)
+    command: ImageMath 3 ${output_dir}/mask_open.nii.gz MO ${output_dir}/t1w_mask_for_morph.nii.gz 2
+    depends_on: Morphological dilation
+    validate:
+      - output_exists: ${output_dir}/mask_open.nii.gz
+
+  - name: Morphological closing
+    description: Close binary image (dilation then erosion)
+    command: ImageMath 3 ${output_dir}/mask_close.nii.gz MC ${output_dir}/t1w_mask_for_morph.nii.gz 2
+    depends_on: Morphological dilation
+    validate:
+      - output_exists: ${output_dir}/mask_close.nii.gz
+
+  - name: Grayscale dilation
+    description: Grayscale morphological dilation
+    command: ImageMath 3 ${output_dir}/t1w_gdilate.nii.gz GD ${t1w} 2
+    validate:
+      - output_exists: ${output_dir}/t1w_gdilate.nii.gz
+
+  - name: Grayscale erosion
+    description: Grayscale morphological erosion
+    command: ImageMath 3 ${output_dir}/t1w_gerode.nii.gz GE ${t1w} 2
+    validate:
+      - output_exists: ${output_dir}/t1w_gerode.nii.gz
+
+  # ==========================================================================
+  # iMath OPERATIONS
+  # ==========================================================================
+  - name: iMath get largest component
+    description: Extract largest connected component
+    command: iMath 3 ${output_dir}/mask_largest.nii.gz GetLargestComponent ${output_dir}/t1w_mask_for_morph.nii.gz
+    depends_on: Morphological dilation
+    validate:
+      - output_exists: ${output_dir}/mask_largest.nii.gz
+
+  - name: iMath morphological dilation ball
+    description: Morphological dilation with ball structuring element
+    command: iMath 3 ${output_dir}/mask_imath_dilate.nii.gz MD ${output_dir}/t1w_mask_for_morph.nii.gz 2 1 ball
+    depends_on: Morphological dilation
+    validate:
+      - output_exists: ${output_dir}/mask_imath_dilate.nii.gz
+
+  - name: iMath morphological erosion box
+    description: Morphological erosion with box structuring element
+    command: iMath 3 ${output_dir}/mask_imath_erode.nii.gz ME ${output_dir}/t1w_mask_for_morph.nii.gz 2 1 box
+    depends_on: Morphological dilation
+    validate:
+      - output_exists: ${output_dir}/mask_imath_erode.nii.gz
+
+  # ==========================================================================
+  # MULTIPLY IMAGES
+  # ==========================================================================
+  - name: Multiply images
+    description: Multiply two images together
+    command: MultiplyImages 3 ${t1w} ${t1w} ${output_dir}/t1w_squared.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_squared.nii.gz
+
+  - name: Multiply image by scalar
+    description: Multiply image by scalar using MultiplyImages
+    command: MultiplyImages 3 ${t1w} 2.0 ${output_dir}/t1w_mul2_alt.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mul2_alt.nii.gz
+
+  - name: Apply mask using multiply
+    description: Apply binary mask by multiplication
+    command: MultiplyImages 3 ${t1w} ${output_dir}/t1w_mask_for_morph.nii.gz ${output_dir}/t1w_masked.nii.gz
+    depends_on: Morphological dilation
+    validate:
+      - output_exists: ${output_dir}/t1w_masked.nii.gz
+
+  # ==========================================================================
+  # AVERAGE IMAGES
+  # ==========================================================================
+  - name: Average images no normalization
+    description: Average images without normalization
+    command: AverageImages 3 ${output_dir}/t1w_avg.nii.gz 0 ${t1w} ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_avg.nii.gz
+
+  - name: Average images with normalization
+    description: Average images with intensity normalization
+    command: AverageImages 3 ${output_dir}/t1w_avg_norm.nii.gz 1 ${t1w} ${t1w}
+    validate:
+      - output_exists: ${output_dir}/t1w_avg_norm.nii.gz
+
+  # ==========================================================================
+  # SEGMENTATION (ATROPOS)
+  # ==========================================================================
+  - name: Atropos Kmeans 3 classes
+    description: Tissue segmentation with Kmeans initialization
+    command: Atropos -d 3 -a ${t1w} -x ${output_dir}/t1w_otsu1.nii.gz -i KMeans[3] -o ${output_dir}/t1w_atropos_seg.nii.gz -v 0
+    depends_on: Otsu thresholding single class
+    validate:
+      - output_exists: ${output_dir}/t1w_atropos_seg.nii.gz
+
+  - name: Atropos Otsu initialization
+    description: Tissue segmentation with Otsu initialization
+    command: Atropos -d 3 -a ${t1w} -x ${output_dir}/t1w_otsu1.nii.gz -i Otsu[3] -o ${output_dir}/t1w_atropos_otsu.nii.gz -v 0
+    depends_on: Otsu thresholding single class
+    validate:
+      - output_exists: ${output_dir}/t1w_atropos_otsu.nii.gz
+
+  - name: Atropos with probability outputs
+    description: Segmentation with posterior probability images
+    command: Atropos -d 3 -a ${t1w} -x ${output_dir}/t1w_otsu1.nii.gz -i KMeans[3] -o [${output_dir}/t1w_atropos_prob_seg.nii.gz,${output_dir}/t1w_atropos_prob_%02d.nii.gz] -v 0
+    depends_on: Otsu thresholding single class
+    validate:
+      - output_exists: ${output_dir}/t1w_atropos_prob_seg.nii.gz
+
+  # ==========================================================================
+  # LABEL OPERATIONS
+  # ==========================================================================
+  - name: Label geometry measures
+    description: Compute geometric measures for labeled regions
+    command: LabelGeometryMeasures 3 ${output_dir}/t1w_atropos_seg.nii.gz ${t1w} ${output_dir}/label_geometry.csv
+    depends_on: Atropos Kmeans 3 classes
+    validate:
+      - output_exists: ${output_dir}/label_geometry.csv
+
+  - name: Label overlap measures
+    description: Compute overlap between two label images
+    command: LabelOverlapMeasures 3 ${output_dir}/t1w_atropos_seg.nii.gz ${output_dir}/t1w_atropos_otsu.nii.gz ${output_dir}/label_overlap.csv
+    depends_on: Atropos Otsu initialization
+    validate:
+      - output_exists: ${output_dir}/label_overlap.csv
+
+  - name: Label clusters uniquely
+    description: Relabel connected components with unique labels
+    command: LabelClustersUniquely 3 ${output_dir}/t1w_mask_for_morph.nii.gz ${output_dir}/mask_labeled.nii.gz 1
+    depends_on: Morphological dilation
+    validate:
+      - output_exists: ${output_dir}/mask_labeled.nii.gz
+
+  # ==========================================================================
+  # REGISTRATION - AFFINE INITIALIZATION
+  # ==========================================================================
+  - name: Affine initializer
+    description: Initialize affine transform between two images
+    command: antsAffineInitializer 3 ${t1w} ${t2} ${output_dir}/affine_init.mat 15 0.1 0 10
+    validate:
+      - output_exists: ${output_dir}/affine_init.mat
+
+  # ==========================================================================
+  # REGISTRATION - RIGID
+  # ==========================================================================
+  - name: Rigid registration
+    description: Rigid registration between T1w and T2
+    command: |
+      antsRegistration -d 3 \
+        --output [${output_dir}/rigid_,${output_dir}/rigid_warped.nii.gz] \
+        --metric MI[${t1w},${t2},1,32,Regular,0.25] \
+        --transform Rigid[0.1] \
+        --convergence [100x50x25,1e-6,10] \
+        --shrink-factors 4x2x1 \
+        --smoothing-sigmas 2x1x0vox \
+        -v 0
+    validate:
+      - output_exists: ${output_dir}/rigid_warped.nii.gz
+      - output_exists: ${output_dir}/rigid_0GenericAffine.mat
+
+  # ==========================================================================
+  # REGISTRATION - AFFINE
+  # ==========================================================================
+  - name: Affine registration
+    description: Affine registration between T1w and T2
+    command: |
+      antsRegistration -d 3 \
+        --output [${output_dir}/affine_,${output_dir}/affine_warped.nii.gz] \
+        --metric MI[${t1w},${t2},1,32,Regular,0.25] \
+        --transform Affine[0.1] \
+        --convergence [100x50x25,1e-6,10] \
+        --shrink-factors 4x2x1 \
+        --smoothing-sigmas 2x1x0vox \
+        -v 0
+    validate:
+      - output_exists: ${output_dir}/affine_warped.nii.gz
+      - output_exists: ${output_dir}/affine_0GenericAffine.mat
+
+  # ==========================================================================
+  # REGISTRATION - SyN (NON-LINEAR)
+  # ==========================================================================
+  - name: SyN registration quick
+    description: Quick SyN non-linear registration
+    timeout: 600
+    command: |
+      antsRegistration -d 3 \
+        --output [${output_dir}/syn_,${output_dir}/syn_warped.nii.gz,${output_dir}/syn_inverse_warped.nii.gz] \
+        --metric CC[${t1w},${t2},1,4] \
+        --transform SyN[0.1,3,0] \
+        --convergence [20x10,1e-6,5] \
+        --shrink-factors 4x2 \
+        --smoothing-sigmas 2x1vox \
+        -v 0
+    validate:
+      - output_exists: ${output_dir}/syn_warped.nii.gz
+      - output_exists: ${output_dir}/syn_inverse_warped.nii.gz
+      - output_exists: ${output_dir}/syn_0Warp.nii.gz
+      - output_exists: ${output_dir}/syn_0InverseWarp.nii.gz
+
+  # ==========================================================================
+  # APPLY TRANSFORMS
+  # ==========================================================================
+  - name: Apply affine transform
+    description: Apply affine transform to image
+    command: |
+      antsApplyTransforms -d 3 \
+        -i ${t2} \
+        -r ${t1w} \
+        -o ${output_dir}/t2_to_t1w_affine.nii.gz \
+        -t ${output_dir}/affine_0GenericAffine.mat \
+        -n Linear \
+        -v 0
+    depends_on: Affine registration
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_affine.nii.gz
+
+  - name: Apply transform nearest neighbor
+    description: Apply transform with nearest neighbor interpolation
+    command: |
+      antsApplyTransforms -d 3 \
+        -i ${output_dir}/t1w_atropos_seg.nii.gz \
+        -r ${t2} \
+        -o ${output_dir}/seg_to_t2_nn.nii.gz \
+        -t [${output_dir}/affine_0GenericAffine.mat,1] \
+        -n NearestNeighbor \
+        -v 0
+    depends_on: Atropos Kmeans 3 classes
+    validate:
+      - output_exists: ${output_dir}/seg_to_t2_nn.nii.gz
+
+  - name: Apply SyN warp forward
+    description: Apply SyN warp (forward direction)
+    command: |
+      antsApplyTransforms -d 3 \
+        -i ${t2} \
+        -r ${t1w} \
+        -o ${output_dir}/t2_to_t1w_syn.nii.gz \
+        -t ${output_dir}/syn_0Warp.nii.gz \
+        -n Linear \
+        -v 0
+    depends_on: SyN registration quick
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_syn.nii.gz
+
+  - name: Apply SyN warp inverse
+    description: Apply SyN warp (inverse direction)
+    command: |
+      antsApplyTransforms -d 3 \
+        -i ${t1w} \
+        -r ${t2} \
+        -o ${output_dir}/t1w_to_t2_syn.nii.gz \
+        -t ${output_dir}/syn_0InverseWarp.nii.gz \
+        -n Linear \
+        -v 0
+    depends_on: SyN registration quick
+    validate:
+      - output_exists: ${output_dir}/t1w_to_t2_syn.nii.gz
+
+  - name: Apply transform BSpline interpolation
+    description: Apply transform with B-spline interpolation
+    command: |
+      antsApplyTransforms -d 3 \
+        -i ${t2} \
+        -r ${t1w} \
+        -o ${output_dir}/t2_to_t1w_bspline.nii.gz \
+        -t ${output_dir}/affine_0GenericAffine.mat \
+        -n BSpline[3] \
+        -v 0
+    depends_on: Affine registration
+    validate:
+      - output_exists: ${output_dir}/t2_to_t1w_bspline.nii.gz
+
+  # ==========================================================================
+  # JACOBIAN DETERMINANT
+  # ==========================================================================
+  - name: Create Jacobian determinant
+    description: Compute Jacobian determinant from warp field
+    command: CreateJacobianDeterminantImage 3 ${output_dir}/syn_0Warp.nii.gz ${output_dir}/syn_jacobian.nii.gz 0 0
+    depends_on: SyN registration quick
+    validate:
+      - output_exists: ${output_dir}/syn_jacobian.nii.gz
+
+  - name: Create log Jacobian determinant
+    description: Compute log Jacobian determinant
+    command: CreateJacobianDeterminantImage 3 ${output_dir}/syn_0Warp.nii.gz ${output_dir}/syn_log_jacobian.nii.gz 1 0
+    depends_on: SyN registration quick
+    validate:
+      - output_exists: ${output_dir}/syn_log_jacobian.nii.gz
+
+  # ==========================================================================
+  # IMAGE SIMILARITY MEASURES
+  # ==========================================================================
+  - name: Measure similarity CC
+    description: Measure cross-correlation similarity
+    command: MeasureImageSimilarity -d 3 -m CC[${t1w},${t1w},1,4]
+    expected_exit_code: 0
+
+  - name: Measure similarity MI
+    description: Measure mutual information similarity
+    command: MeasureImageSimilarity -d 3 -m MI[${t1w},${t2},1,32]
+    expected_exit_code: 0
+
+  - name: Measure similarity MeanSquares
+    description: Measure mean squares difference
+    command: MeasureImageSimilarity -d 3 -m MeanSquares[${t1w},${t1w},1]
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # TRANSFORM UTILITIES
+  # ==========================================================================
+  - name: Transform info
+    description: Get information about a transform
+    command: antsTransformInfo ${output_dir}/affine_0GenericAffine.mat
+    depends_on: Affine registration
+    expected_exit_code: 0
+
+  - name: Compose transforms
+    description: Compose multiple transforms into one
+    command: |
+      ComposeMultiTransform 3 ${output_dir}/composed_affine.mat \
+        ${output_dir}/affine_0GenericAffine.mat \
+        ${output_dir}/rigid_0GenericAffine.mat
+    depends_on: Affine registration
+    validate:
+      - output_exists: ${output_dir}/composed_affine.mat
+
+  - name: Average affine transforms
+    description: Average multiple affine transforms
+    command: AverageAffineTransform 3 ${output_dir}/avg_affine.mat ${output_dir}/affine_0GenericAffine.mat ${output_dir}/rigid_0GenericAffine.mat
+    depends_on: Affine registration
+    validate:
+      - output_exists: ${output_dir}/avg_affine.mat
+
+  # ==========================================================================
+  # MOTION CORRECTION (4D data)
+  # ==========================================================================
+  - name: Motion correction basic
+    description: Basic motion correction on BOLD data
+    command: |
+      antsMotionCorr -d 3 -a ${bold} -o ${output_dir}/bold_avg.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_avg.nii.gz
+
+  - name: Motion correction with output
+    description: Motion correction with corrected output
+    timeout: 600
+    command: |
+      antsMotionCorr -d 3 \
+        -o [${output_dir}/moco_,${output_dir}/bold_moco.nii.gz,${output_dir}/bold_avg_moco.nii.gz] \
+        -m MI[${output_dir}/bold_avg.nii.gz,${bold},1,32,Regular,0.2] \
+        -t Rigid[0.1] \
+        -i 20x10 \
+        -s 1x0 \
+        -f 2x1 \
+        -u 1 \
+        -v 0
+    depends_on: Motion correction basic
+    validate:
+      - output_exists: ${output_dir}/bold_moco.nii.gz
+      - output_exists: ${output_dir}/bold_avg_moco.nii.gz
+
+  # ==========================================================================
+  # IMAGE EXTRACTION AND MANIPULATION
+  # ==========================================================================
+  - name: Extract region from image
+    description: Extract a subregion from image
+    command: ExtractRegionFromImage 3 ${t1w} ${output_dir}/t1w_roi.nii.gz 40x40x40 80x80x80
+    validate:
+      - output_exists: ${output_dir}/t1w_roi.nii.gz
+
+  - name: Extract slice from image axial
+    description: Extract a 2D axial slice
+    command: ExtractSliceFromImage 3 ${t1w} ${output_dir}/t1w_slice_axial.nii.gz 2 96
+    validate:
+      - output_exists: ${output_dir}/t1w_slice_axial.nii.gz
+
+  - name: Extract slice from image sagittal
+    description: Extract a 2D sagittal slice
+    command: ExtractSliceFromImage 3 ${t1w} ${output_dir}/t1w_slice_sagittal.nii.gz 0 80
+    validate:
+      - output_exists: ${output_dir}/t1w_slice_sagittal.nii.gz
+
+  - name: Extract slice from image coronal
+    description: Extract a 2D coronal slice
+    command: ExtractSliceFromImage 3 ${t1w} ${output_dir}/t1w_slice_coronal.nii.gz 1 96
+    validate:
+      - output_exists: ${output_dir}/t1w_slice_coronal.nii.gz
+
+  # ==========================================================================
+  # IMAGE TILING AND MOSAIC
+  # ==========================================================================
+  - name: Create tiled mosaic
+    description: Create a mosaic image for visualization
+    command: CreateTiledMosaic -i ${t1w} -o ${output_dir}/t1w_mosaic.png -r ${output_dir}/t1w_mask_for_morph.nii.gz -a 0.5 -t -1x-1 -p mask
+    depends_on: Morphological dilation
+    validate:
+      - output_exists: ${output_dir}/t1w_mosaic.png
+
+  - name: Tile images
+    description: Tile multiple images into one
+    command: |
+      TileImages 3 ${output_dir}/tiled_2x1.nii.gz 2x1 ${t1w} ${t1w}
+    validate:
+      - output_exists: ${output_dir}/tiled_2x1.nii.gz
+
+  # ==========================================================================
+  # ORIENTATION AND HEADER OPERATIONS
+  # ==========================================================================
+  - name: Copy image header
+    description: Copy header information between images
+    command: CopyImageHeaderInformation ${t1w} ${t1w} ${output_dir}/t1w_header_copy.nii.gz 1 1 1
+    validate:
+      - output_exists: ${output_dir}/t1w_header_copy.nii.gz
+
+  - name: Permute and flip axes
+    description: Permute and flip image orientation axes
+    command: PermuteFlipImageOrientationAxes 3 ${t1w} ${output_dir}/t1w_permuted.nii.gz 0 1 2 0 0 0
+    validate:
+      - output_exists: ${output_dir}/t1w_permuted.nii.gz
+
+  - name: Reset direction
+    description: Reset image direction to identity (known segfault in ANTs 2.6.0)
+    command: ResetDirection 3 ${t1w} ${output_dir}/t1w_reset_dir.nii.gz
+    ignore_exit_code: true
+
+  - name: Set origin
+    description: Set image origin
+    command: SetOrigin 3 ${t1w} ${output_dir}/t1w_new_origin.nii.gz 0 0 0
+    validate:
+      - output_exists: ${output_dir}/t1w_new_origin.nii.gz
+
+  - name: Set spacing
+    description: Set image voxel spacing
+    command: SetSpacing 3 ${t1w} ${output_dir}/t1w_new_spacing.nii.gz 1 1 1
+    validate:
+      - output_exists: ${output_dir}/t1w_new_spacing.nii.gz
+
+  # ==========================================================================
+  # TIME SERIES OPERATIONS
+  # ==========================================================================
+  - name: Time series to matrix
+    description: Convert 4D time series to matrix (CSV)
+    command: |
+      ThresholdImage 3 ${output_dir}/bold_avg.nii.gz ${output_dir}/bold_mask.nii.gz Otsu 1 && \
+      ImageMath 4 ${output_dir}/bold_matrix.csv TimeSeriesToMatrix ${bold} ${output_dir}/bold_mask.nii.gz
+    depends_on: Motion correction basic
+    validate:
+      - output_exists: ${output_dir}/bold_matrix.csv
+
+  - name: Time series subset
+    description: Extract subset of 3D volumes from 4D
+    command: ImageMath 4 ${output_dir}/bold_subset.nii.gz TimeSeriesSubset ${bold} 5
+
+  - name: Time series disassemble
+    description: Disassemble 4D into individual 3D volumes (known crash in ANTs 2.6.0)
+    command: ImageMath 4 ${output_dir}/bold_vol_ TimeSeriesDisassemble ${bold}
+    ignore_exit_code: true
+
+  # ==========================================================================
+  # ADD NOISE OPERATIONS
+  # ==========================================================================
+  - name: Add Gaussian noise
+    description: Add Gaussian noise to image
+    command: AddNoiseToImage -d 3 -i ${t1w} -n AdditiveGaussian[0,50] -o ${output_dir}/t1w_noisy_gaussian.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_noisy_gaussian.nii.gz
+
+  - name: Add Speckle noise
+    description: Add Speckle noise to image
+    command: AddNoiseToImage -d 3 -i ${t1w} -n Speckle[50] -o ${output_dir}/t1w_noisy_speckle.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_noisy_speckle.nii.gz
+
+  # ==========================================================================
+  # CHAINED OPERATIONS / COMPLEX PIPELINES
+  # ==========================================================================
+  - name: N4 then denoise pipeline
+    description: Chain N4 bias correction followed by denoising
+    timeout: 600
+    command: |
+      N4BiasFieldCorrection -d 3 -i ${t1w} -o ${output_dir}/t1w_n4_pipeline.nii.gz -s 4 -c [50x50x50,0.0] -v 0 && \
+      DenoiseImage -d 3 -i ${output_dir}/t1w_n4_pipeline.nii.gz -n Rician -o ${output_dir}/t1w_n4_denoise_pipeline.nii.gz -v 0
+    validate:
+      - output_exists: ${output_dir}/t1w_n4_denoise_pipeline.nii.gz
+
+  - name: Preprocessing pipeline
+    description: Full preprocessing chain (denoise, N4, threshold)
+    timeout: 600
+    command: |
+      DenoiseImage -d 3 -i ${t1w} -n Rician -o ${output_dir}/t1w_preproc_denoise.nii.gz -v 0 && \
+      N4BiasFieldCorrection -d 3 -i ${output_dir}/t1w_preproc_denoise.nii.gz -o ${output_dir}/t1w_preproc_n4.nii.gz -s 4 -c [50x50x50,0.0] -v 0 && \
+      ThresholdImage 3 ${output_dir}/t1w_preproc_n4.nii.gz ${output_dir}/t1w_preproc_mask.nii.gz Otsu 1
+    validate:
+      - output_exists: ${output_dir}/t1w_preproc_denoise.nii.gz
+      - output_exists: ${output_dir}/t1w_preproc_n4.nii.gz
+      - output_exists: ${output_dir}/t1w_preproc_mask.nii.gz
+
+  - name: Registration and segmentation pipeline
+    description: Register then segment
+    command: |
+      Atropos -d 3 -a ${output_dir}/t2_to_t1w_affine.nii.gz -x ${output_dir}/t1w_otsu1.nii.gz -i KMeans[3] -o ${output_dir}/t2_registered_seg.nii.gz -v 0
+    depends_on: Apply affine transform
+    validate:
+      - output_exists: ${output_dir}/t2_registered_seg.nii.gz
+
+  # ==========================================================================
+  # SCRIPT-BASED OPERATIONS
+  # ==========================================================================
+  - name: antsRegistrationSyNQuick script
+    description: Quick SyN registration using wrapper script
+    command: |
+      antsRegistrationSyNQuick.sh -d 3 -f ${t1w} -m ${t2} -o ${output_dir}/synquick_ -t r -n 2
+    validate:
+      - output_exists: ${output_dir}/synquick_Warped.nii.gz
+
+  - name: antsRegistrationSyN script affine
+    description: Affine-only registration using SyN script
+    timeout: 600
+    command: |
+      antsRegistrationSyN.sh -d 3 -f ${t1w} -m ${t2} -o ${output_dir}/syn_affine_ -t a -n 2
+    validate:
+      - output_exists: ${output_dir}/syn_affine_Warped.nii.gz
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in ${output_dir}/"

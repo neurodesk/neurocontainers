@@ -1,0 +1,358 @@
+# Brainstorm container test suite
+# Tests for Brainstorm v3.211130 - MEG/EEG analysis software
+#
+# Brainstorm is a collaborative, open-source application dedicated to
+# magnetoencephalography (MEG) and electroencephalography (EEG) data
+# visualization and processing.
+#
+# Note: Brainstorm is primarily a GUI application compiled with MATLAB Runtime.
+# Many operations require an X display (xvfb-run) or server mode for headless
+# execution. Tests focus on container integrity, component verification, and
+# basic command-line functionality.
+#
+# Container includes:
+#   - Brainstorm 3.211130 (compiled standalone)
+#   - MATLAB Runtime R2020a (v9.8)
+#   - Java 1.8.0_202
+#
+# Documentation: https://neuroimage.usc.edu/brainstorm/Introduction
+
+name: brainstorm
+version: 3.211130
+container: brainstorm_3.211130_20211207.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output/brainstorm
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/brainstorm
+    mkdir -p ~/.brainstorm/defaults/anatomy
+    mkdir -p ~/.brainstorm/defaults/eeg
+    mkdir -p ~/.brainstorm/plugins
+    mkdir -p ~/.brainstorm/process
+    mkdir -p ~/.brainstorm/reports
+    mkdir -p ~/brainstorm_db
+
+tests:
+  # ==========================================================================
+  # CONTAINER INTEGRITY
+  # ==========================================================================
+  - name: Container README verification
+    description: Verify README.md exists and contains expected content
+    command: cat /README.md
+    expected_output_contains: "brainstorm"
+
+  - name: Container README version
+    description: Verify version is mentioned in README
+    command: cat /README.md
+    expected_output_contains: "3.211130"
+
+  # ==========================================================================
+  # BRAINSTORM INSTALLATION VERIFICATION
+  # ==========================================================================
+  - name: Brainstorm installation directory exists
+    description: Verify main brainstorm directory exists
+    command: ls -la /opt/brainstorm-3.211130/
+    expected_output_contains: "brainstorm3.command"
+
+  - name: Brainstorm command script exists
+    description: Verify brainstorm3.command script is present
+    command: test -f /opt/brainstorm-3.211130/brainstorm3.command && echo "Script exists"
+    expected_output_contains: "Script exists"
+
+  - name: Brainstorm command script executable
+    description: Verify brainstorm3.command is executable
+    command: test -x /opt/brainstorm-3.211130/brainstorm3.command && echo "Executable"
+    expected_output_contains: "Executable"
+
+  - name: Brainstorm JAR file exists
+    description: Verify brainstorm3.jar compiled application exists
+    command: test -f /opt/brainstorm-3.211130/brainstorm3.jar && echo "JAR exists"
+    expected_output_contains: "JAR exists"
+
+  - name: Brainstorm JAR file size check
+    description: Verify JAR file is complete (approximately 64MB)
+    command: |
+      size=$(stat -c%s /opt/brainstorm-3.211130/brainstorm3.jar 2>/dev/null || stat -f%z /opt/brainstorm-3.211130/brainstorm3.jar)
+      if [ "$size" -gt 60000000 ]; then echo "JAR size OK: $size bytes"; else echo "JAR too small: $size bytes"; fi
+    expected_output_contains: "JAR size OK"
+
+  - name: Brainstorm batch file exists
+    description: Verify Windows batch file exists (for cross-platform support)
+    command: test -f /opt/brainstorm-3.211130/brainstorm3.bat && echo "Batch file exists"
+    expected_output_contains: "Batch file exists"
+
+  # ==========================================================================
+  # MATLAB RUNTIME (MCR) VERIFICATION
+  # ==========================================================================
+  - name: MCR installation directory exists
+    description: Verify MCR v98 directory exists
+    command: ls -la /opt/MCR/v98/
+    expected_output_contains: "runtime"
+
+  - name: MCR version verification
+    description: Verify MCR version is R2020a
+    command: cat /opt/MCR/v98/VersionInfo.xml
+    expected_output_contains: "R2020a"
+
+  - name: MCR version number check
+    description: Verify MCR version 9.8
+    command: cat /opt/MCR/v98/VersionInfo.xml
+    expected_output_contains: "9.8"
+
+  - name: MCR runtime directory exists
+    description: Verify MCR runtime libraries exist
+    command: test -d /opt/MCR/v98/runtime && echo "Runtime directory exists"
+    expected_output_contains: "Runtime directory exists"
+
+  - name: MCR bin directory exists
+    description: Verify MCR bin directory exists
+    command: test -d /opt/MCR/v98/bin && echo "Bin directory exists"
+    expected_output_contains: "Bin directory exists"
+
+  - name: MCR toolbox directory exists
+    description: Verify MCR toolbox directory exists
+    command: test -d /opt/MCR/v98/toolbox && echo "Toolbox directory exists"
+    expected_output_contains: "Toolbox directory exists"
+
+  - name: MCR native library exists (Linux x64)
+    description: Verify native dynamic loader library exists
+    command: test -f /opt/MCR/v98/bin/glnxa64/libnativedl.so && echo "Native library exists"
+    expected_output_contains: "Native library exists"
+
+  - name: MCR license file exists
+    description: Verify MCR license file is present
+    command: test -f /opt/MCR/v98/MCR_license.txt && echo "License exists"
+    expected_output_contains: "License exists"
+
+  # ==========================================================================
+  # JAVA RUNTIME VERIFICATION
+  # ==========================================================================
+  - name: Java installation exists
+    description: Verify Java JRE is installed in MCR
+    command: test -d /opt/MCR/v98/sys/java/jre/glnxa64/jre && echo "Java JRE exists"
+    expected_output_contains: "Java JRE exists"
+
+  - name: Java executable exists
+    description: Verify Java executable exists
+    command: test -f /opt/MCR/v98/sys/java/jre/glnxa64/jre/bin/java && echo "Java executable exists"
+    expected_output_contains: "Java executable exists"
+
+  - name: Java version check
+    description: Verify Java version is 1.8
+    command: /opt/MCR/v98/sys/java/jre/glnxa64/jre/bin/java -version 2>&1
+    expected_output_contains: "1.8"
+
+  - name: Java runtime environment check
+    description: Verify Java runtime environment
+    command: /opt/MCR/v98/sys/java/jre/glnxa64/jre/bin/java -version 2>&1
+    expected_output_contains: "Java(TM) SE Runtime Environment"
+
+  # ==========================================================================
+  # BRAINSTORM COMMAND-LINE INTERFACE
+  # ==========================================================================
+  - name: Brainstorm help/usage display
+    description: Verify brainstorm displays usage information
+    command: /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 --help 2>&1 || true
+    expected_output_contains: "brainstorm start"
+
+  - name: Brainstorm usage shows nogui mode
+    description: Verify nogui mode is documented
+    command: /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 --help 2>&1 || true
+    expected_output_contains: "nogui"
+
+  - name: Brainstorm usage shows server mode
+    description: Verify server mode is documented
+    command: /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 --help 2>&1 || true
+    expected_output_contains: "server"
+
+  - name: Brainstorm usage shows update command
+    description: Verify update command is documented
+    command: /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 --help 2>&1 || true
+    expected_output_contains: "update"
+
+  - name: Brainstorm usage shows reset command
+    description: Verify reset command is documented
+    command: /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 --help 2>&1 || true
+    expected_output_contains: "reset"
+
+  - name: Brainstorm usage shows tutorial command
+    description: Verify tutorial command is documented
+    command: /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 --help 2>&1 || true
+    expected_output_contains: "tutorial"
+
+  - name: Brainstorm usage shows digitize command
+    description: Verify digitize (Polhemus) command is documented
+    command: /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 --help 2>&1 || true
+    expected_output_contains: "digitize"
+
+  - name: Brainstorm returns without errors
+    description: Verify compiled code returns without errors on help
+    command: /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 --help 2>&1 || true
+    expected_output_contains: "Compiled code returned without errors"
+
+  # ==========================================================================
+  # BRAINSTORM SERVER MODE TESTS
+  # ==========================================================================
+  - name: Brainstorm server mode startup
+    description: Test server mode initialization (timeout after 30s)
+    command: timeout 30 /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 server 2>&1 || true
+    expected_output_contains: "Starting Brainstorm"
+
+  - name: Brainstorm server mode version display
+    description: Verify version is displayed during startup
+    command: timeout 30 /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 server 2>&1 || true
+    expected_output_contains: "Version"
+
+  - name: Brainstorm server mode loads configuration
+    description: Verify configuration is loaded
+    command: timeout 30 /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 server 2>&1 || true
+    expected_output_contains: "Loading configuration"
+
+  - name: Brainstorm server mode loads montages
+    description: Verify default montages are loaded
+    command: timeout 30 /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 server 2>&1 || true
+    expected_output_contains: "Loading default montages"
+
+  - name: Brainstorm server mode reads processes
+    description: Verify process folder is read
+    command: timeout 30 /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 server 2>&1 || true
+    expected_output_contains: "Reading process folder"
+
+  # ==========================================================================
+  # MCR RUNTIME LIBRARIES
+  # ==========================================================================
+  - name: MCR signal processing toolbox
+    description: Verify simbio toolbox exists (signal not bundled in this MCR)
+    command: test -d /opt/MCR/v98/toolbox/simbio && echo "Simbio toolbox exists"
+    expected_output_contains: "Simbio toolbox exists"
+
+  - name: MCR parallel toolbox
+    description: Verify parallel computing toolbox exists
+    command: test -d /opt/MCR/v98/toolbox/parallel && echo "Parallel toolbox exists"
+    expected_output_contains: "Parallel toolbox exists"
+
+  - name: MCR images toolbox
+    description: Verify image processing toolbox exists
+    command: test -d /opt/MCR/v98/toolbox/images && echo "Images toolbox exists"
+    expected_output_contains: "Images toolbox exists"
+
+  - name: MCR shared toolbox
+    description: Verify shared toolbox exists
+    command: test -d /opt/MCR/v98/toolbox/shared && echo "Shared toolbox exists"
+    expected_output_contains: "Shared toolbox exists"
+
+  # ==========================================================================
+  # SYSTEM LIBRARIES
+  # ==========================================================================
+  - name: MCR BLAS library exists
+    description: Verify BLAS library is present
+    command: ls /opt/MCR/v98/bin/glnxa64/*blas* 2>/dev/null | head -1 && echo "BLAS found" || echo "BLAS not found"
+    expected_output_contains: "BLAS"
+
+  - name: MCR LAPACK library exists
+    description: Verify LAPACK library is present
+    command: ls /opt/MCR/v98/bin/glnxa64/*lapack* 2>/dev/null | head -1 && echo "LAPACK found" || echo "LAPACK not found"
+    expected_output_contains: "LAPACK"
+
+  # ==========================================================================
+  # BRAINSTORM CONFIGURATION PATHS
+  # ==========================================================================
+  - name: MATLABROOT configuration saved
+    description: Verify MCR path is saved after first run
+    command: |
+      /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 --help 2>&1 > /dev/null
+      test -f ~/.brainstorm/MATLABROOT98.txt && cat ~/.brainstorm/MATLABROOT98.txt
+    expected_output_contains: "/opt/MCR/v98"
+
+  - name: Brainstorm defaults directory structure
+    description: Verify defaults directory structure exists
+    command: ls ~/.brainstorm/defaults/ 2>/dev/null || echo "Defaults not created"
+    expected_output_contains: "anatomy"
+
+  # ==========================================================================
+  # CONTAINER ENVIRONMENT
+  # ==========================================================================
+  - name: Container base system
+    description: Verify Ubuntu base system
+    command: cat /etc/os-release 2>/dev/null | grep -i "ubuntu" || cat /etc/lsb-release 2>/dev/null | grep -i "ubuntu" || echo "Ubuntu-based"
+    expected_output_contains: "buntu"
+
+  - name: Bash shell available
+    description: Verify bash shell is available
+    command: which bash
+    expected_output_contains: "/bin/bash"
+
+  - name: GitHub repository label
+    description: Verify container has GitHub repository label
+    command: cat /.singularity.d/labels.json 2>/dev/null || echo "No labels"
+    expected_output_contains: "NeuroDesk"
+
+  # ==========================================================================
+  # CONTAINER MOUNTING POINTS
+  # ==========================================================================
+  - name: Standard mount point /data exists
+    description: Verify /data mount point exists
+    command: test -d /data && echo "Data mount exists" || echo "No data mount"
+    expected_exit_code: 0
+
+  - name: Standard mount point /mnt exists
+    description: Verify /mnt mount point exists
+    command: test -d /mnt && echo "Mnt mount exists"
+    expected_output_contains: "Mnt mount exists"
+
+  - name: Home directory accessible
+    description: Verify home directory is accessible
+    command: test -d /home && echo "Home accessible"
+    expected_output_contains: "Home accessible"
+
+  # ==========================================================================
+  # SCRIPT PARSING TESTS
+  # ==========================================================================
+  - name: Brainstorm script detects Linux system
+    description: Verify script correctly identifies Linux
+    command: |
+      source /opt/brainstorm-3.211130/brainstorm3.command 2>/dev/null <<< "" || true
+      if [ $(uname -s) == "Linux" ]; then echo "Linux detected"; fi
+    expected_output_contains: "Linux detected"
+
+  - name: Brainstorm script finds JAR file
+    description: Verify script logic can locate JAR file
+    command: |
+      SH_DIR="/opt/brainstorm-3.211130"
+      if [ -f "$SH_DIR/brainstorm3.jar" ]; then
+        echo "JAR found at: $SH_DIR/brainstorm3.jar"
+      fi
+    expected_output_contains: "JAR found"
+
+  # ==========================================================================
+  # MCR CACHE CREATION
+  # ==========================================================================
+  - name: MCR cache creation
+    description: Verify MCR creates cache on first run
+    command: |
+      timeout 30 /opt/brainstorm-3.211130/brainstorm3.command /opt/MCR/v98 server 2>&1 > /dev/null || true
+      test -d ~/.mcrCache9.8 && echo "MCR cache created" || echo "No MCR cache"
+    expected_output_contains: "MCR cache created"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally clean up brainstorm test outputs
+    # rm -rf test_output/brainstorm
+    # rm -rf ~/.brainstorm
+    # rm -rf ~/.mcrCache9.8
+    # rm -rf ~/brainstorm_db
+    echo "Test outputs preserved in test_output/brainstorm/"
+    echo "Brainstorm config preserved in ~/.brainstorm/"

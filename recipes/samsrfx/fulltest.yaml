@@ -1,0 +1,685 @@
+# samsrfx container test suite
+# Tests for SamSrf X v10.004 - Population Receptive Field (pRF) analysis toolbox
+#
+# SamSrf is a MATLAB-based toolbox for analyzing population receptive fields
+# and connective fields in fMRI data, particularly for retinotopic mapping.
+#
+# This is a compiled standalone application using MATLAB Compiler Runtime (MCR) R2023b
+# The main entry point is the SamSrfX GUI, but many underlying functions exist.
+
+name: samsrfx
+version: v10.004
+container: samsrfx_v10.004_20241127.simg
+
+# Note: This container runs compiled MATLAB code, so tests focus on:
+# - Container structure and file integrity
+# - MCR runtime environment
+# - SamSrf toolbox files and models
+# - Configuration and colormap resources
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC CONTAINER VERIFICATION
+  # ==========================================================================
+  - name: Container README exists
+    description: Verify the container has README documentation
+    command: cat /README.md
+    expected_output_contains: "SamsrfX standalone"
+
+  - name: Container labels
+    description: Verify container metadata labels exist
+    command: cat /.singularity.d/labels.json
+    expected_output_contains: "NeuroDesk/neurocontainers"
+
+  - name: SamSrfX entry script exists
+    description: Verify the main samsrfx launcher exists
+    command: cat /opt/samsrfx-v10.004/samsrfx
+    expected_output_contains: "run_SamSrfX.sh"
+
+  - name: SamSrfX in PATH
+    description: Verify samsrfx is accessible via PATH
+    command: which samsrfx
+    expected_output_contains: "/opt/samsrfx-v10.004/"
+
+  # ==========================================================================
+  # MATLAB COMPILER RUNTIME (MCR) VERIFICATION
+  # ==========================================================================
+  - name: MCR installation directory
+    description: Verify MCR R2023b is installed
+    command: ls -la /opt/MCR-2023b/R2023b/
+    expected_output_contains: "runtime"
+
+  - name: MCR version info
+    description: Check MCR version information file
+    command: cat /opt/MCR-2023b/R2023b/VersionInfo.xml
+    expected_output_contains: "R2023b"
+
+  - name: MCR runtime libraries
+    description: Verify MCR runtime library directory exists
+    command: ls /opt/MCR-2023b/R2023b/runtime/glnxa64/ | head -10
+    expected_output_contains: "libmw"
+
+  - name: MCR bin directory
+    description: Verify MCR bin directory exists
+    command: ls /opt/MCR-2023b/R2023b/bin/glnxa64/ | head -10
+    expected_output_contains: ".so"
+
+  - name: MCR toolbox directory
+    description: Verify MCR toolbox directory exists
+    command: ls /opt/MCR-2023b/R2023b/toolbox/
+    expected_output_contains: "matlab"
+
+  - name: MCR Java runtime
+    description: Verify Java is available for MCR
+    command: java -version 2>&1 | head -1
+    expected_output_contains: "openjdk"
+
+  # ==========================================================================
+  # SAMSRF MAIN APPLICATION
+  # ==========================================================================
+  - name: SamSrfX binary exists
+    description: Verify the compiled SamSrfX binary exists
+    command: ls -la /opt/samsrfx-v10.004/samsrf/SamSrfX
+    expected_output_contains: "SamSrfX"
+
+  - name: SamSrfX runner script
+    description: Verify run_SamSrfX.sh script exists and is executable
+    command: ls -la /opt/samsrfx-v10.004/samsrf/run_SamSrfX.sh
+    expected_output_contains: "rwx"
+
+  - name: SamSrfX runner script content
+    description: Verify runner script sets up MCR environment
+    command: cat /opt/samsrfx-v10.004/samsrf/run_SamSrfX.sh
+    expected_output_contains: "LD_LIBRARY_PATH"
+
+  - name: SamSrfX main MATLAB source
+    description: Verify main SamSrfX.m source file exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/SamSrfX.m
+    expected_output_contains: "GUI for running SamSrf"
+
+  - name: SamSrf version function
+    description: Verify version information
+    command: cat /opt/samsrfx-v10.004/samsrf/Various/samsrf_version.m
+    expected_output_contains: "v = 10.003"
+
+  - name: SamSrf ReadMe documentation
+    description: Verify ReadMe.md documentation exists
+    command: head -30 /opt/samsrfx-v10.004/samsrf/ReadMe.md
+    expected_output_contains: "SamSrf X"
+
+  # ==========================================================================
+  # SAMSRF CONFIGURATION
+  # ==========================================================================
+  - name: SamSrf defaults JSON
+    description: Verify default configuration file exists
+    command: cat /opt/samsrfx-v10.004/samsrf/SamSrf_defaults.json
+    expected_output_contains: "def_cmap_angle"
+
+  - name: Default colormap settings
+    description: Verify colormap defaults are configured
+    command: cat /opt/samsrfx-v10.004/samsrf/SamSrf_defaults.json
+    expected_output_contains: "berlin"
+
+  - name: Default ROI list
+    description: Verify default ROI list includes visual areas
+    command: cat /opt/samsrfx-v10.004/samsrf/SamSrf_defaults.json
+    expected_output_contains: "V1"
+
+  - name: Load defaults function
+    description: Verify LoadSamSrfDefaults function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Utils/LoadSamSrfDefaults.m
+    expected_output_contains: "LoadSamSrfDefaults"
+
+  # ==========================================================================
+  # SAMSRF ANALYSIS FUNCTIONS
+  # ==========================================================================
+  - name: Analysis directory structure
+    description: Verify Analysis directory contains functions
+    command: ls /opt/samsrfx-v10.004/samsrf/Analysis/ | wc -l
+    expected_output_contains: "25"
+
+  - name: pRF backprojection function
+    description: Verify samsrf_backproj_prf.m exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Analysis/samsrf_backproj_prf.m
+    expected_output_contains: "backproj_prf"
+
+  - name: Reverse correlation backprojection
+    description: Verify samsrf_backproj_revcor.m exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Analysis/samsrf_backproj_revcor.m
+    expected_output_contains: "backproj_revcor"
+
+  - name: Heatmap function
+    description: Verify samsrf_heatmap.m exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Analysis/samsrf_heatmap.m
+    expected_output_contains: "heatmap"
+
+  - name: Polar plot function
+    description: Verify samsrf_polarplot.m exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Analysis/samsrf_polarplot.m
+    expected_output_contains: "polarplot"
+
+  - name: Plot function
+    description: Verify samsrf_plot.m exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Analysis/samsrf_plot.m
+    expected_output_contains: "samsrf_plot"
+
+  - name: Visual field coverage function
+    description: Verify samsrf_vfcoverage.m exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Analysis/samsrf_vfcoverage.m
+    expected_output_contains: "vfcoverage"
+
+  - name: Comet plot function
+    description: Verify samsrf_cometplot.m exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Analysis/samsrf_cometplot.m
+    expected_output_contains: "cometplot"
+
+  - name: Wedge plot function
+    description: Verify samsrf_wedgeplot.m exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Analysis/samsrf_wedgeplot.m
+    expected_output_contains: "wedgeplot"
+
+  # ==========================================================================
+  # SAMSRF FITTING FUNCTIONS
+  # ==========================================================================
+  - name: Fitting directory structure
+    description: Verify Fitting directory contains functions
+    command: ls /opt/samsrfx-v10.004/samsrf/Fitting/
+    expected_output_contains: "samsrf_fit_prf.m"
+
+  - name: pRF fitting function
+    description: Verify main pRF fitting function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Fitting/samsrf_fit_prf.m
+    expected_output_contains: "fit_prf"
+
+  - name: CF fitting function
+    description: Verify connective field fitting function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Fitting/samsrf_fit_cf.m
+    expected_output_contains: "fit_cf"
+
+  - name: Reverse correlation pRF function
+    description: Verify reverse correlation pRF function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Fitting/samsrf_revcor_prf.m
+    expected_output_contains: "revcor_prf"
+
+  - name: Reverse correlation CF function
+    description: Verify reverse correlation CF function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Fitting/samsrf_revcor_cf.m
+    expected_output_contains: "revcor_cf"
+
+  - name: GLM function
+    description: Verify GLM analysis function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Fitting/samsrf_glm.m
+    expected_output_contains: "samsrf_glm"
+
+  - name: Hooke-Jeeves optimization
+    description: Verify Hooke-Jeeves algorithm implementation exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Fitting/samsrf_hookejeeves.m
+    expected_output_contains: "hookejeeves"
+
+  - name: Bandpass filter function
+    description: Verify bandpass filtering function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Fitting/samsrf_bandpass.m
+    expected_output_contains: "bandpass"
+
+  # ==========================================================================
+  # SAMSRF PRF FUNCTIONS
+  # ==========================================================================
+  - name: pRF directory structure
+    description: Verify pRF directory contains functions
+    command: ls /opt/samsrfx-v10.004/samsrf/pRF/ | wc -l
+    expected_output_contains: "15"
+
+  - name: Gaussian pRF function
+    description: Verify Gaussian receptive field function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/pRF/prf_gaussian_rf.m
+    expected_output_contains: "gaussian_rf"
+
+  - name: DOG pRF function
+    description: Verify difference-of-Gaussians pRF function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/pRF/prf_dog_rf.m
+    expected_output_contains: "dog_rf"
+
+  - name: Multivariate pRF function
+    description: Verify multivariate pRF function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/pRF/prf_multivariate_rf.m
+    expected_output_contains: "multivariate_rf"
+
+  - name: pRF search space generation
+    description: Verify search space generation function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/pRF/prf_generate_searchspace.m
+    expected_output_contains: "searchspace"
+
+  - name: pRF prediction function
+    description: Verify timecourse prediction function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/pRF/prf_predict_timecourse.m
+    expected_output_contains: "predict_timecourse"
+
+  - name: pRF error function
+    description: Verify error function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/pRF/prf_errfun.m
+    expected_output_contains: "errfun"
+
+  - name: pRF contour function
+    description: Verify contour function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/pRF/prf_contour.m
+    expected_output_contains: "contour"
+
+  # ==========================================================================
+  # SAMSRF MODEL SPECIFICATIONS
+  # ==========================================================================
+  - name: Models directory structure
+    description: Verify Models directory contains model definitions
+    command: ls /opt/samsrfx-v10.004/samsrf/Models/
+    expected_output_contains: "Standard_2d_Gaussian_Prf.m"
+
+  - name: Standard 2D Gaussian pRF model
+    description: Verify standard 2D Gaussian model exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Models/Standard_2d_Gaussian_Prf.m
+    expected_output_contains: "Standard"
+
+  - name: Difference of Gaussians model
+    description: Verify DoG model exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Models/Difference_of_Gaussians_Prf.m
+    expected_output_contains: "Difference"
+
+  - name: Connective Fields model
+    description: Verify CF model exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Models/Connective_Fields.m
+    expected_output_contains: "Connective"
+
+  - name: Circular tuning curve model
+    description: Verify circular tuning curve model exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Models/Circular_Tuning_Curve.m
+    expected_output_contains: "Circular"
+
+  - name: Reverse correlation pRF model
+    description: Verify reverse correlation model exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Models/Reverse_Correlation_Prf.m
+    expected_output_contains: "Reverse"
+
+  - name: Oriented 2D multivariate model
+    description: Verify oriented multivariate model exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Models/Oriented_2d_Multivariate_Prf.m
+    expected_output_contains: "Oriented"
+
+  - name: Model specification files (.mod)
+    description: Verify .mod model spec files exist
+    command: ls /opt/samsrfx-v10.004/samsrf/Models/*.mod | wc -l
+    expected_output_contains: "11"
+
+  # ==========================================================================
+  # SAMSRF HRF FUNCTIONS
+  # ==========================================================================
+  - name: HRF directory structure
+    description: Verify HRF directory contains functions
+    command: ls /opt/samsrfx-v10.004/samsrf/Hrf/
+    expected_output_contains: "samsrf_hrf.m"
+
+  - name: HRF main function
+    description: Verify main HRF function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Hrf/samsrf_hrf.m
+    expected_output_contains: "samsrf_hrf"
+
+  - name: Double gamma HRF function
+    description: Verify double gamma HRF function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Hrf/samsrf_doublegamma.m
+    expected_output_contains: "doublegamma"
+
+  - name: HRF extraction function
+    description: Verify HRF extraction function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Hrf/samsrf_extract_hrf.m
+    expected_output_contains: "extract_hrf"
+
+  - name: HRF plotting function
+    description: Verify HRF plotting function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Hrf/samsrf_plothrf.m
+    expected_output_contains: "plothrf"
+
+  # ==========================================================================
+  # SAMSRF SURFACE FUNCTIONS
+  # ==========================================================================
+  - name: Surfs directory structure
+    description: Verify Surfs directory contains surface functions
+    command: ls /opt/samsrfx-v10.004/samsrf/Surfs/ | wc -l
+    expected_output_contains: "44"
+
+  - name: GIfTI to Srf conversion
+    description: Verify GIfTI conversion function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Surfs/samsrf_gii2srf.m
+    expected_output_contains: "gii2srf"
+
+  - name: Srf to GIfTI conversion
+    description: Verify reverse conversion function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Surfs/samsrf_srf2gii.m
+    expected_output_contains: "srf2gii"
+
+  - name: MGH to Srf conversion
+    description: Verify MGH conversion function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Surfs/samsrf_mgh2srf.m
+    expected_output_contains: "mgh2srf"
+
+  - name: Volume to surface projection
+    description: Verify volume to surface function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Surfs/samsrf_vol2srf.m
+    expected_output_contains: "vol2srf"
+
+  - name: Anatomy to map function
+    description: Verify anatomy function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Surfs/samsrf_anat2map.m
+    expected_output_contains: "anat2map"
+
+  - name: Bilateral surface function
+    description: Verify bilateral surface handling exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Surfs/samsrf_bilat_srf.m
+    expected_output_contains: "bilat"
+
+  - name: Surface smoothing function
+    description: Verify Dijkstra smoothing function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Surfs/samsrf_smooth_dijkstra.m
+    expected_output_contains: "dijkstra"
+
+  - name: Field sign calculation
+    description: Verify field sign function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Surfs/samsrf_fieldsign.m
+    expected_output_contains: "fieldsign"
+
+  - name: Cortical magnification function
+    description: Verify cortical magnification function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Surfs/samsrf_cortmagn.m
+    expected_output_contains: "cortmagn"
+
+  - name: Label export function
+    description: Verify label export function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Surfs/samsrf_export_labels.m
+    expected_output_contains: "export_labels"
+
+  # ==========================================================================
+  # SAMSRF UTILITY FUNCTIONS
+  # ==========================================================================
+  - name: Utils directory structure
+    description: Verify Utils directory contains utility functions
+    command: ls /opt/samsrfx-v10.004/samsrf/Utils/ | wc -l
+    expected_output_contains: "57"
+
+  - name: Display maps tool
+    description: Verify DisplayMaps function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Utils/DisplayMaps.m
+    expected_output_contains: "DisplayMaps"
+
+  - name: Delineation tool
+    description: Verify DelineationTool function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Utils/DelineationTool.m
+    expected_output_contains: "DelineationTool"
+
+  - name: Auto delineation function
+    description: Verify AutoDelineation function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Utils/AutoDelineation.m
+    expected_output_contains: "AutoDelineation"
+
+  - name: View apertures tool
+    description: Verify ViewApertures function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Utils/ViewApertures.m
+    expected_output_contains: "ViewApertures"
+
+  - name: Surface projection tool
+    description: Verify SurfaceProjection function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Utils/SurfaceProjection.m
+    expected_output_contains: "SurfaceProjection"
+
+  - name: Model help function
+    description: Verify ModelHelp function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Utils/ModelHelp.m
+    expected_output_contains: "ModelHelp"
+
+  - name: Function help tool
+    description: Verify FuncHelp function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Utils/FuncHelp.m
+    expected_output_contains: "FuncHelp"
+
+  - name: FreeSurfer surface reader
+    description: Verify FreeSurfer reader exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Utils/fs_read_surf.m
+    expected_output_contains: "read_surf"
+
+  - name: Native to template map conversion
+    description: Verify Native2TemplateMap exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Utils/Native2TemplateMap.m
+    expected_output_contains: "Native2TemplateMap"
+
+  - name: Template to native map conversion
+    description: Verify Template2NativeMap exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Utils/Template2NativeMap.m
+    expected_output_contains: "Template2NativeMap"
+
+  - name: Colormap function
+    description: Verify colormap function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Utils/samsrf_cmap.m
+    expected_output_contains: "samsrf_cmap"
+
+  # ==========================================================================
+  # SAMSRF SIMULATION FUNCTIONS
+  # ==========================================================================
+  - name: Simulations directory structure
+    description: Verify Simulations directory exists
+    command: ls /opt/samsrfx-v10.004/samsrf/Simulations/
+    expected_output_contains: "samsrf_simulate_prfs.m"
+
+  - name: pRF simulation function
+    description: Verify pRF simulation function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Simulations/samsrf_simulate_prfs.m
+    expected_output_contains: "simulate_prfs"
+
+  - name: Simulation vs fit comparison
+    description: Verify simulation comparison function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Simulations/samsrf_simvsfit.m
+    expected_output_contains: "simvsfit"
+
+  - name: Example apertures for simulation
+    description: Verify example apertures exist
+    command: ls -la /opt/samsrfx-v10.004/samsrf/Simulations/*.mat
+    expected_output_contains: "aps_SweepingBars.mat"
+
+  # ==========================================================================
+  # SAMSRF RENDERING FUNCTIONS
+  # ==========================================================================
+  - name: Render directory structure
+    description: Verify Render directory contains rendering functions
+    command: ls /opt/samsrfx-v10.004/samsrf/Render/
+    expected_output_contains: "samsrf_surf.m"
+
+  - name: Surface rendering function
+    description: Verify main surface rendering function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Render/samsrf_surf.m
+    expected_output_contains: "samsrf_surf"
+
+  - name: Colour coding function
+    description: Verify colour coding function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Render/samsrf_colourcode.m
+    expected_output_contains: "colourcode"
+
+  - name: Timecourse movie function
+    description: Verify timecourse movie function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Render/samsrf_tcmovie.m
+    expected_output_contains: "tcmovie"
+
+  - name: Aperture movie function
+    description: Verify aperture movie function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Render/samsrf_apmovie.m
+    expected_output_contains: "apmovie"
+
+  # ==========================================================================
+  # SAMSRF VOLUME FUNCTIONS
+  # ==========================================================================
+  - name: Vols directory structure
+    description: Verify Vols directory contains volume functions
+    command: ls /opt/samsrfx-v10.004/samsrf/Vols/
+    expected_output_contains: "samsrf_vol2mat.m"
+
+  - name: Volume to mat function
+    description: Verify volume to mat function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Vols/samsrf_vol2mat.m
+    expected_output_contains: "vol2mat"
+
+  - name: Mat to volume function
+    description: Verify mat to volume function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Vols/samsrf_mat2vol.m
+    expected_output_contains: "mat2vol"
+
+  # ==========================================================================
+  # SAMSRF COLORMAPS
+  # ==========================================================================
+  - name: Colormaps directory structure
+    description: Verify Colours directory contains colormap files
+    command: ls /opt/samsrfx-v10.004/samsrf/Colours/
+    expected_output_contains: "berlin.csv"
+
+  - name: Berlin colormap
+    description: Verify berlin colormap exists
+    command: head -5 /opt/samsrfx-v10.004/samsrf/Colours/berlin.csv
+    expected_output_contains: ","
+
+  - name: Fire colormap
+    description: Verify fire colormap exists
+    command: head -5 /opt/samsrfx-v10.004/samsrf/Colours/fire.csv
+    expected_output_contains: ","
+
+  - name: Hawaii colormap
+    description: Verify hawaii colormap exists
+    command: head -5 /opt/samsrfx-v10.004/samsrf/Colours/hawaii.csv
+    expected_output_contains: ","
+
+  - name: Romao colormap for polar angle
+    description: Verify romao colormap exists
+    command: ls -la /opt/samsrfx-v10.004/samsrf/Colours/romao.csv
+    expected_output_contains: "romao.csv"
+
+  - name: Eccentricity colorwheel image
+    description: Verify eccentricity colorwheel PNG exists
+    command: ls -la /opt/samsrfx-v10.004/samsrf/Colours/Eccentricity.png
+    expected_output_contains: "Eccentricity.png"
+
+  - name: Polar angle colorwheel images
+    description: Verify polar angle colorwheel PNGs exist
+    command: ls /opt/samsrfx-v10.004/samsrf/Colours/Polar*.png
+    expected_output_contains: "Polar"
+
+  # ==========================================================================
+  # SAMSRF VARIOUS/HELPER FUNCTIONS
+  # ==========================================================================
+  - name: Various directory structure
+    description: Verify Various directory contains helper functions
+    command: ls /opt/samsrfx-v10.004/samsrf/Various/
+    expected_output_contains: "samsrf_version.m"
+
+  - name: R-squared calculation function
+    description: Verify gsr2 function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Various/samsrf_gsr2.m
+    expected_output_contains: "gsr2"
+
+  - name: Model defaults function
+    description: Verify model defaults function exists
+    command: head -20 /opt/samsrfx-v10.004/samsrf/Various/samsrf_model_defaults.m
+    expected_output_contains: "model_defaults"
+
+  - name: DOG FWHM calculation
+    description: Verify DOG FWHM function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Various/samsrf_dog_fwhm.m
+    expected_output_contains: "dog_fwhm"
+
+  - name: Progress bar function
+    description: Verify progress bar function exists
+    command: head -10 /opt/samsrfx-v10.004/samsrf/Various/samsrf_progbar.m
+    expected_output_contains: "progbar"
+
+  # ==========================================================================
+  # GUI RESOURCES
+  # ==========================================================================
+  - name: DisplayMaps GUI figure
+    description: Verify DisplayMaps.fig GUI file exists
+    command: ls -la /opt/samsrfx-v10.004/samsrf/Utils/DisplayMaps.fig
+    expected_output_contains: "DisplayMaps.fig"
+
+  - name: DelineationTool GUI figure
+    description: Verify DelineationTool.fig GUI file exists
+    command: ls -la /opt/samsrfx-v10.004/samsrf/Utils/DelineationTool.fig
+    expected_output_contains: "DelineationTool.fig"
+
+  - name: ViewApertures GUI figure
+    description: Verify ViewApertures.fig GUI file exists
+    command: ls -la /opt/samsrfx-v10.004/samsrf/Utils/ViewApertures.fig
+    expected_output_contains: "ViewApertures.fig"
+
+  - name: FuncHelp GUI figure
+    description: Verify FuncHelp.fig GUI file exists
+    command: ls -la /opt/samsrfx-v10.004/samsrf/Utils/FuncHelp.fig
+    expected_output_contains: "FuncHelp.fig"
+
+  - name: ModelHelp GUI figure
+    description: Verify ModelHelp.fig GUI file exists
+    command: ls -la /opt/samsrfx-v10.004/samsrf/Utils/ModelHelp.fig
+    expected_output_contains: "ModelHelp.fig"
+
+  # ==========================================================================
+  # ATLAS AND TEMPLATE DATA
+  # ==========================================================================
+  - name: Benson atlas data
+    description: Verify Benson atlas delineation data exists
+    command: ls -la /opt/samsrfx-v10.004/samsrf/Utils/AutoDelinAtlas_Benson.mat
+    expected_output_contains: "AutoDelinAtlas_Benson.mat"
+
+  - name: InfernoSerpents atlas data
+    description: Verify InfernoSerpents atlas exists
+    command: ls -la /opt/samsrfx-v10.004/samsrf/Utils/AutoDelinAtlas_InfernoSerpents.mat
+    expected_output_contains: "InfernoSerpents"
+
+  - name: Scalp head model
+    description: Verify scalp head model exists for EEG
+    command: ls -la /opt/samsrfx-v10.004/samsrf/Utils/ScalpHeadModel.mat
+    expected_output_contains: "ScalpHeadModel.mat"
+
+  # ==========================================================================
+  # ENVIRONMENT AND PATH VERIFICATION
+  # ==========================================================================
+  - name: Deploy bins environment
+    description: Verify DEPLOY_BINS is set correctly
+    command: echo $DEPLOY_BINS
+    expected_output_contains: "samsrfx"
+
+  - name: PATH includes samsrfx
+    description: Verify PATH includes samsrfx directory
+    command: echo $PATH
+    expected_output_contains: "/opt/samsrfx-v10.004/"
+
+  - name: Samsrfx directory structure
+    description: Verify samsrf subdirectory structure
+    command: ls /opt/samsrfx-v10.004/samsrf/
+    expected_output_contains: "SamSrfX.m"
+
+  # ==========================================================================
+  # REQUIRED SYSTEM LIBRARIES
+  # ==========================================================================
+  - name: X11 libraries available
+    description: Verify X11 extension library is available
+    command: ldconfig -p | grep libXext || ls /usr/lib/x86_64-linux-gnu/libXext* 2>/dev/null | head -1
+    expected_output_contains: "libXext"
+
+  - name: Ncurses library available
+    description: Verify ncurses library is available
+    command: ldconfig -p | grep libncurses || ls /usr/lib/x86_64-linux-gnu/libncurses* 2>/dev/null | head -1
+    expected_output_contains: "libncurses"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

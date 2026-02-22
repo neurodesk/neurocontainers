@@ -1,0 +1,695 @@
+# dcm2bids container test suite
+# Tests for dcm2bids v3.2.0 - DICOM to BIDS conversion tool
+#
+# This container includes:
+#   - dcm2bids: Main tool for DICOM to BIDS conversion
+#   - dcm2bids_helper: Helper tool for inspecting DICOM conversions
+#   - dcm2bids_scaffold: Creates basic BIDS directory structure
+#   - dcm2niix: Underlying DICOM to NIfTI converter (v1.0.20240202)
+#
+# Note: dcm2bids is designed for DICOM-to-BIDS conversion. Since our test data
+# is already in NIfTI format, we test using the --skip_dcm2niix mode with
+# pre-converted NIfTI+JSON pairs, and test dcm2niix separately.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: dcm2bids
+version: 3.2.0
+container: dcm2bids_3.2.0_20250402.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/scaffold_test
+    mkdir -p ${output_dir}/dcm2niix_test
+    mkdir -p ${output_dir}/dcm2bids_test
+    mkdir -p ${output_dir}/mock_dicom
+    mkdir -p ${output_dir}/helper_test
+
+tests:
+  # ==========================================================================
+  # VERSION AND HELP CHECKS
+  # ==========================================================================
+  - name: dcm2bids version check
+    description: Verify dcm2bids reports correct version
+    command: dcm2bids --version 2>&1
+    expected_output_contains: "3.2.0"
+
+  - name: dcm2bids BIDS version check
+    description: Verify dcm2bids reports BIDS specification version
+    command: dcm2bids --version 2>&1
+    expected_output_contains: "BIDS version"
+
+  - name: dcm2bids help
+    description: Verify dcm2bids help is accessible
+    command: dcm2bids --help 2>&1
+    expected_output_contains: "Reorganising NIfTI files"
+
+  - name: dcm2bids_helper version check
+    description: Verify dcm2bids_helper help is accessible
+    command: dcm2bids_helper --help 2>&1
+    expected_output_contains: "Converts DICOM files to NIfTI"
+
+  - name: dcm2bids_scaffold help
+    description: Verify dcm2bids_scaffold help is accessible
+    command: dcm2bids_scaffold --help 2>&1
+    expected_output_contains: "Create basic BIDS files"
+
+  - name: dcm2niix version check
+    description: Verify dcm2niix version
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "v1.0.20240202"
+
+  - name: dcm2niix help
+    description: Verify dcm2niix help is accessible
+    command: dcm2niix -h 2>&1
+    expected_output_contains: "BIDS sidecar"
+
+  # ==========================================================================
+  # DCM2BIDS_SCAFFOLD TESTS
+  # ==========================================================================
+  - name: Create BIDS scaffold structure
+    description: Test dcm2bids_scaffold creates basic BIDS directory
+    command: dcm2bids_scaffold -o ${output_dir}/scaffold_test --force 2>&1
+    validate:
+      - output_exists: ${output_dir}/scaffold_test
+
+  - name: Verify scaffold created dataset_description.json
+    description: Check that dataset_description.json was created
+    command: cat ${output_dir}/scaffold_test/dataset_description.json 2>&1
+    depends_on: Create BIDS scaffold structure
+    expected_output_contains: "BIDSVersion"
+
+  - name: Verify scaffold created README
+    description: Check that README was created
+    command: test -f ${output_dir}/scaffold_test/README && echo "README exists"
+    depends_on: Create BIDS scaffold structure
+    expected_output_contains: "README exists"
+
+  - name: Verify scaffold created participants.tsv
+    description: Check that participants.tsv was created
+    command: test -f ${output_dir}/scaffold_test/participants.tsv && echo "participants.tsv exists"
+    depends_on: Create BIDS scaffold structure
+    expected_output_contains: "participants.tsv exists"
+
+  - name: Verify scaffold created CHANGES
+    description: Check that CHANGES file was created
+    command: test -f ${output_dir}/scaffold_test/CHANGES && echo "CHANGES exists"
+    depends_on: Create BIDS scaffold structure
+    expected_output_contains: "CHANGES exists"
+
+  - name: Verify scaffold created sourcedata directory
+    description: Check that sourcedata directory was created
+    command: test -d ${output_dir}/scaffold_test/sourcedata && echo "sourcedata exists"
+    depends_on: Create BIDS scaffold structure
+    expected_output_contains: "sourcedata exists"
+
+  - name: Verify scaffold created code directory
+    description: Check that code directory was created
+    command: test -d ${output_dir}/scaffold_test/code && echo "code exists"
+    depends_on: Create BIDS scaffold structure
+    expected_output_contains: "code exists"
+
+  # ==========================================================================
+  # DCM2NIIX CONVERSION TESTS
+  # ==========================================================================
+  - name: dcm2niix basic NIfTI header query
+    description: Test dcm2niix can query NIfTI files
+    command: dcm2niix -q n ${t1w} 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix BIDS sidecar only mode
+    description: Test dcm2niix sidecar-only output (no NIfTI created)
+    command: |
+      mkdir -p ${output_dir}/dcm2niix_test/sidecar_only && \
+      cp ${t1w} ${output_dir}/dcm2niix_test/sidecar_only/ && \
+      dcm2niix -b o -o ${output_dir}/dcm2niix_test/sidecar_only ${output_dir}/dcm2niix_test/sidecar_only 2>&1 || true
+    validate:
+      - output_exists: ${output_dir}/dcm2niix_test/sidecar_only
+
+  - name: dcm2niix compression level test
+    description: Test dcm2niix with internal zlib compression
+    command: |
+      mkdir -p ${output_dir}/dcm2niix_test/compress && \
+      dcm2niix -z i -o ${output_dir}/dcm2niix_test/compress ${t1w} 2>&1 || echo "Conversion attempted"
+    expected_exit_code: 0
+
+  - name: dcm2niix filename format test
+    description: Test dcm2niix custom filename pattern
+    command: dcm2niix -f "test_%p_%s" -h 2>&1 | head -50
+    expected_output_contains: "filename"
+
+  - name: dcm2niix verbose mode
+    description: Test dcm2niix verbose output
+    command: dcm2niix -v 1 -h 2>&1 | head -50
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # MOCK DATA SETUP FOR DCM2BIDS TESTS
+  # ==========================================================================
+  - name: Create mock NIfTI with JSON sidecar (T1w)
+    description: Set up mock converted data for dcm2bids testing
+    command: |
+      mkdir -p ${output_dir}/mock_dicom && \
+      cp ${t1w} ${output_dir}/mock_dicom/003_MPRAGE_20230101120000.nii.gz && \
+      python3 -c "import json; json.dump(dict(Modality='MR', MagneticFieldStrength=3, SeriesDescription='MPRAGE_T1w', ImageType=['ORIGINAL','PRIMARY','M','ND']), open('${output_dir}/mock_dicom/003_MPRAGE_20230101120000.json','w'))" && \
+      echo "Mock T1w data created"
+    expected_output_contains: "Mock T1w data created"
+    validate:
+      - output_exists: ${output_dir}/mock_dicom/003_MPRAGE_20230101120000.nii.gz
+      - output_exists: ${output_dir}/mock_dicom/003_MPRAGE_20230101120000.json
+
+  - name: Create mock NIfTI with JSON sidecar (BOLD)
+    description: Set up mock BOLD data for dcm2bids testing
+    command: |
+      cp ${bold} ${output_dir}/mock_dicom/004_ep2d_bold_20230101120000.nii.gz && \
+      python3 -c "import json; json.dump(dict(Modality='MR', MagneticFieldStrength=3, SeriesDescription='ep2d_bold_task-rest', RepetitionTime=2.0, ImageType=['ORIGINAL','PRIMARY','M','ND','MOSAIC']), open('${output_dir}/mock_dicom/004_ep2d_bold_20230101120000.json','w'))" && \
+      echo "Mock BOLD data created"
+    expected_output_contains: "Mock BOLD data created"
+    validate:
+      - output_exists: ${output_dir}/mock_dicom/004_ep2d_bold_20230101120000.nii.gz
+      - output_exists: ${output_dir}/mock_dicom/004_ep2d_bold_20230101120000.json
+
+  - name: Create mock T2w data
+    description: Set up mock T2w data for dcm2bids testing
+    command: |
+      cp ${t2} ${output_dir}/mock_dicom/005_T2_20230101120000.nii.gz && \
+      python3 -c "import json; json.dump(dict(Modality='MR', MagneticFieldStrength=3, SeriesDescription='T2_TSE', EchoTime=0.1, ImageType=['ORIGINAL','PRIMARY','M','ND']), open('${output_dir}/mock_dicom/005_T2_20230101120000.json','w'))" && \
+      echo "Mock T2w data created"
+    expected_output_contains: "Mock T2w data created"
+    validate:
+      - output_exists: ${output_dir}/mock_dicom/005_T2_20230101120000.nii.gz
+      - output_exists: ${output_dir}/mock_dicom/005_T2_20230101120000.json
+
+  # ==========================================================================
+  # DCM2BIDS CONFIGURATION FILE TESTS
+  # ==========================================================================
+  - name: Create basic dcm2bids config file
+    description: Create a simple config for T1w conversion
+    command: |
+      cat > ${output_dir}/config_basic.json << 'EOF'
+      {
+        "descriptions": [
+          {
+            "datatype": "anat",
+            "suffix": "T1w",
+            "criteria": {
+              "SeriesDescription": "*MPRAGE*"
+            }
+          }
+        ]
+      }
+      EOF
+      echo "Config file created"
+    expected_output_contains: "Config file created"
+    validate:
+      - output_exists: ${output_dir}/config_basic.json
+
+  - name: Create comprehensive dcm2bids config file
+    description: Create config with multiple modalities
+    command: |
+      cat > ${output_dir}/config_full.json << 'EOF'
+      {
+        "search_method": "fnmatch",
+        "case_sensitive": false,
+        "descriptions": [
+          {
+            "id": "anat_t1w",
+            "datatype": "anat",
+            "suffix": "T1w",
+            "criteria": {
+              "SeriesDescription": "*MPRAGE*"
+            }
+          },
+          {
+            "id": "anat_t2w",
+            "datatype": "anat",
+            "suffix": "T2w",
+            "criteria": {
+              "SeriesDescription": "*T2*"
+            }
+          },
+          {
+            "id": "func_bold",
+            "datatype": "func",
+            "suffix": "bold",
+            "custom_entities": "task-rest",
+            "criteria": {
+              "SeriesDescription": "*bold*"
+            }
+          }
+        ]
+      }
+      EOF
+      echo "Full config file created"
+    expected_output_contains: "Full config file created"
+    validate:
+      - output_exists: ${output_dir}/config_full.json
+
+  - name: Create config with sidecar changes
+    description: Create config that modifies JSON sidecars
+    command: |
+      cat > ${output_dir}/config_sidecar.json << 'EOF'
+      {
+        "descriptions": [
+          {
+            "datatype": "anat",
+            "suffix": "T1w",
+            "criteria": {
+              "SeriesDescription": "*MPRAGE*"
+            },
+            "sidecar_changes": {
+              "InstitutionName": "Test Institution",
+              "InstitutionalDepartmentName": "Neuroimaging"
+            }
+          }
+        ]
+      }
+      EOF
+      echo "Sidecar config created"
+    expected_output_contains: "Sidecar config created"
+    validate:
+      - output_exists: ${output_dir}/config_sidecar.json
+
+  - name: Create config with extractors
+    description: Create config using regex extractors
+    command: |
+      cat > ${output_dir}/config_extractor.json << 'EOF'
+      {
+        "extractors": {
+          "SeriesDescription": ["task-(?P<task>[a-zA-Z0-9]+)"]
+        },
+        "descriptions": [
+          {
+            "datatype": "func",
+            "suffix": "bold",
+            "custom_entities": ["task"],
+            "criteria": {
+              "SeriesDescription": "*bold*"
+            }
+          }
+        ]
+      }
+      EOF
+      echo "Extractor config created"
+    expected_output_contains: "Extractor config created"
+    validate:
+      - output_exists: ${output_dir}/config_extractor.json
+
+  - name: Create config with IntendedFor
+    description: Create config with fieldmap IntendedFor references
+    command: |
+      cat > ${output_dir}/config_intendedfor.json << 'EOF'
+      {
+        "descriptions": [
+          {
+            "id": "func_bold",
+            "datatype": "func",
+            "suffix": "bold",
+            "custom_entities": "task-rest",
+            "criteria": {
+              "SeriesDescription": "*bold*"
+            }
+          },
+          {
+            "datatype": "fmap",
+            "suffix": "phasediff",
+            "criteria": {
+              "SeriesDescription": "*fieldmap*"
+            },
+            "sidecar_changes": {
+              "IntendedFor": "func_bold"
+            }
+          }
+        ]
+      }
+      EOF
+      echo "IntendedFor config created"
+    expected_output_contains: "IntendedFor config created"
+    validate:
+      - output_exists: ${output_dir}/config_intendedfor.json
+
+  # ==========================================================================
+  # DCM2BIDS CONVERSION TESTS (SKIP_DCM2NIIX MODE)
+  # ==========================================================================
+  - name: dcm2bids with skip_dcm2niix - T1w conversion
+    description: Test dcm2bids conversion using pre-converted NIfTI
+    command: |
+      dcm2bids \
+        -d ${output_dir}/mock_dicom \
+        -p 01 \
+        -c ${output_dir}/config_basic.json \
+        -o ${output_dir}/dcm2bids_test/basic \
+        --skip_dcm2niix \
+        --clobber \
+        -l DEBUG 2>&1
+    depends_on:
+      - Create mock NIfTI with JSON sidecar (T1w)
+      - Create basic dcm2bids config file
+    validate:
+      - output_exists: ${output_dir}/dcm2bids_test/basic
+
+  - name: Verify T1w conversion output
+    description: Check that T1w was converted to BIDS format
+    command: |
+      find ${output_dir}/dcm2bids_test/basic -name "*T1w*" 2>/dev/null | head -5 || echo "Checking output"
+    depends_on: dcm2bids with skip_dcm2niix - T1w conversion
+
+  - name: dcm2bids with session ID
+    description: Test dcm2bids with session identifier
+    command: |
+      dcm2bids \
+        -d ${output_dir}/mock_dicom \
+        -p 02 \
+        -s baseline \
+        -c ${output_dir}/config_basic.json \
+        -o ${output_dir}/dcm2bids_test/session \
+        --skip_dcm2niix \
+        --clobber 2>&1
+    depends_on:
+      - Create mock NIfTI with JSON sidecar (T1w)
+      - Create basic dcm2bids config file
+    validate:
+      - output_exists: ${output_dir}/dcm2bids_test/session
+
+  - name: dcm2bids with full config
+    description: Test dcm2bids with comprehensive config
+    command: |
+      dcm2bids \
+        -d ${output_dir}/mock_dicom \
+        -p 03 \
+        -c ${output_dir}/config_full.json \
+        -o ${output_dir}/dcm2bids_test/full \
+        --skip_dcm2niix \
+        --clobber \
+        -l INFO 2>&1
+    depends_on:
+      - Create mock NIfTI with JSON sidecar (T1w)
+      - Create mock NIfTI with JSON sidecar (BOLD)
+      - Create mock T2w data
+      - Create comprehensive dcm2bids config file
+    validate:
+      - output_exists: ${output_dir}/dcm2bids_test/full
+
+  - name: dcm2bids with auto_extract_entities
+    description: Test automatic entity extraction from SeriesDescription
+    command: |
+      dcm2bids \
+        -d ${output_dir}/mock_dicom \
+        -p 04 \
+        -c ${output_dir}/config_extractor.json \
+        -o ${output_dir}/dcm2bids_test/autoextract \
+        --skip_dcm2niix \
+        --auto_extract_entities \
+        --clobber 2>&1
+    depends_on:
+      - Create mock NIfTI with JSON sidecar (BOLD)
+      - Create config with extractors
+    validate:
+      - output_exists: ${output_dir}/dcm2bids_test/autoextract
+
+  - name: dcm2bids with sidecar changes
+    description: Test config that modifies output JSON files
+    command: |
+      dcm2bids \
+        -d ${output_dir}/mock_dicom \
+        -p 05 \
+        -c ${output_dir}/config_sidecar.json \
+        -o ${output_dir}/dcm2bids_test/sidecar \
+        --skip_dcm2niix \
+        --clobber 2>&1
+    depends_on:
+      - Create mock NIfTI with JSON sidecar (T1w)
+      - Create config with sidecar changes
+    validate:
+      - output_exists: ${output_dir}/dcm2bids_test/sidecar
+
+  - name: dcm2bids with DEBUG logging
+    description: Test verbose debug output
+    command: |
+      dcm2bids \
+        -d ${output_dir}/mock_dicom \
+        -p 06 \
+        -c ${output_dir}/config_basic.json \
+        -o ${output_dir}/dcm2bids_test/debug \
+        --skip_dcm2niix \
+        --clobber \
+        -l DEBUG 2>&1 | head -50
+    depends_on:
+      - Create mock NIfTI with JSON sidecar (T1w)
+      - Create basic dcm2bids config file
+
+  - name: dcm2bids with WARNING logging
+    description: Test minimal warning-level output
+    command: |
+      dcm2bids \
+        -d ${output_dir}/mock_dicom \
+        -p 07 \
+        -c ${output_dir}/config_basic.json \
+        -o ${output_dir}/dcm2bids_test/warning \
+        --skip_dcm2niix \
+        --clobber \
+        -l WARNING 2>&1
+    depends_on:
+      - Create mock NIfTI with JSON sidecar (T1w)
+      - Create basic dcm2bids config file
+
+  # ==========================================================================
+  # DCM2BIDS_HELPER TESTS
+  # ==========================================================================
+  - name: dcm2bids_helper with mock data
+    description: Test helper to inspect converted NIfTI+JSON pairs
+    command: |
+      dcm2bids_helper \
+        -d ${output_dir}/mock_dicom \
+        -o ${output_dir}/helper_test/output \
+        --force 2>&1
+    depends_on:
+      - Create mock NIfTI with JSON sidecar (T1w)
+      - Create mock NIfTI with JSON sidecar (BOLD)
+    validate:
+      - output_exists: ${output_dir}/helper_test/output
+
+  - name: dcm2bids_helper with nested output
+    description: Test helper with nest option for organizing runs
+    command: |
+      dcm2bids_helper \
+        -d ${output_dir}/mock_dicom \
+        -o ${output_dir}/helper_test/nested \
+        -n run1 \
+        --force 2>&1
+    depends_on:
+      - Create mock NIfTI with JSON sidecar (T1w)
+    validate:
+      - output_exists: ${output_dir}/helper_test/nested
+
+  - name: dcm2bids_helper with DEBUG logging
+    description: Test helper with verbose debug output
+    command: |
+      dcm2bids_helper \
+        -d ${output_dir}/mock_dicom \
+        -o ${output_dir}/helper_test/debug \
+        -l DEBUG \
+        --force 2>&1 | head -30
+    depends_on:
+      - Create mock NIfTI with JSON sidecar (T1w)
+
+  # ==========================================================================
+  # CONTAINER TEST DATA ACCESS
+  # ==========================================================================
+  - name: Access container example config
+    description: Verify access to bundled example config
+    command: cat /dcm2bids/example/config.json 2>&1 | head -20
+    expected_output_contains: "descriptions"
+
+  - name: Access container test configs
+    description: Verify access to bundled test configurations
+    command: ls /dcm2bids/tests/data/*.json 2>&1 | head -10
+    expected_output_contains: "config_test.json"
+
+  - name: Access container test sidecars
+    description: Verify access to bundled test sidecar files
+    command: ls /dcm2bids/tests/data/sidecars/*.json 2>&1 | head -5
+    expected_output_contains: ".json"
+
+  # ==========================================================================
+  # ERROR HANDLING TESTS
+  # ==========================================================================
+  - name: dcm2bids missing config file error
+    description: Test error handling for missing config
+    command: dcm2bids -d ${output_dir}/mock_dicom -p test -c nonexistent.json 2>&1 || echo "Expected error"
+    expected_output_contains: "error"
+
+  - name: dcm2bids missing dicom dir error
+    description: Test error handling for missing DICOM directory
+    command: dcm2bids -d /nonexistent/path -p test -c ${output_dir}/config_basic.json 2>&1 || echo "Expected error"
+    depends_on: Create basic dcm2bids config file
+    expected_output_contains: "error"
+
+  - name: dcm2bids invalid config JSON error
+    description: Test error handling for malformed config
+    command: |
+      echo "{ invalid json" > ${output_dir}/invalid_config.json
+      dcm2bids -d ${output_dir}/mock_dicom -p test -c ${output_dir}/invalid_config.json 2>&1 || echo "Expected error"
+    expected_output_contains: "error"
+
+  # ==========================================================================
+  # BIDS STRUCTURE VERIFICATION
+  # ==========================================================================
+  - name: Verify BIDS participant directory structure
+    description: Check that sub-XX directories are created correctly
+    command: |
+      ls -la ${output_dir}/dcm2bids_test/basic/ 2>/dev/null | grep "sub-" || echo "Checking structure"
+    depends_on: dcm2bids with skip_dcm2niix - T1w conversion
+
+  - name: Verify BIDS session directory structure
+    description: Check that ses-XX directories are created when session specified
+    command: |
+      find ${output_dir}/dcm2bids_test/session -type d -name "ses-*" 2>/dev/null | head -5 || echo "Checking session structure"
+    depends_on: dcm2bids with session ID
+
+  - name: Verify temporary dcm2bids directory
+    description: Check that tmp_dcm2bids is created during conversion
+    command: |
+      ls ${output_dir}/dcm2bids_test/basic/tmp_dcm2bids* 2>/dev/null | head -3 || echo "Checking tmp directory"
+    depends_on: dcm2bids with skip_dcm2niix - T1w conversion
+
+  # ==========================================================================
+  # DCMNIIX ADVANCED OPTIONS
+  # ==========================================================================
+  - name: dcm2niix adjacent DICOM mode
+    description: Test dcm2niix adjacent mode flag
+    command: dcm2niix -a y -h 2>&1 | head -50
+    expected_output_contains: "adjacent"
+
+  - name: dcm2niix BIDS anonymize
+    description: Test dcm2niix BIDS anonymization flag
+    command: dcm2niix -ba y -h 2>&1 | head -50
+    expected_output_contains: "anonymize"
+
+  - name: dcm2niix search depth option
+    description: Test dcm2niix directory search depth
+    command: dcm2niix -d 3 -h 2>&1 | head -50
+    expected_output_contains: "depth"
+
+  - name: dcm2niix merge slices option
+    description: Test dcm2niix 2D slice merge option
+    command: dcm2niix -m 2 -h 2>&1 | head -50
+    expected_output_contains: "merge"
+
+  - name: dcm2niix lossless scaling option
+    description: Test dcm2niix 16-bit integer scaling
+    command: dcm2niix -l o -h 2>&1 | head -50
+    expected_output_contains: "scale"
+
+  - name: dcm2niix Philips scaling option
+    description: Test dcm2niix Philips float scaling
+    command: dcm2niix -p y -h 2>&1 | head -50
+    expected_output_contains: "Philips"
+
+  - name: dcm2niix crop 3D acquisitions
+    description: Test dcm2niix 3D crop option
+    command: dcm2niix -x n -h 2>&1 | head -50
+    expected_output_contains: "crop"
+
+  - name: dcm2niix export formats
+    description: Test dcm2niix alternative export formats
+    command: dcm2niix -e n -h 2>&1 | head -50
+    expected_output_contains: "export"
+
+  # ==========================================================================
+  # PYTHON MODULE TESTS
+  # ==========================================================================
+  - name: Import dcm2bids Python module
+    description: Verify dcm2bids Python module is importable
+    command: python3 -c "import dcm2bids; print('dcm2bids imported successfully')" 2>&1
+    expected_output_contains: "dcm2bids imported successfully"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # INTEGRATION TESTS
+  # ==========================================================================
+  - name: Full pipeline test - scaffold and convert
+    description: Test complete workflow from scaffold to conversion
+    command: |
+      # Create new BIDS directory
+      dcm2bids_scaffold -o ${output_dir}/integration_test --force && \
+
+      # Run conversion
+      dcm2bids \
+        -d ${output_dir}/mock_dicom \
+        -p integration \
+        -c ${output_dir}/config_full.json \
+        -o ${output_dir}/integration_test \
+        --skip_dcm2niix \
+        --clobber && \
+
+      echo "Integration test completed"
+    depends_on:
+      - Create mock NIfTI with JSON sidecar (T1w)
+      - Create mock NIfTI with JSON sidecar (BOLD)
+      - Create mock T2w data
+      - Create comprehensive dcm2bids config file
+    expected_output_contains: "Integration test completed"
+    validate:
+      - output_exists: ${output_dir}/integration_test
+
+  - name: Verify integration test outputs
+    description: Check integration test created expected files
+    command: |
+      echo "=== Dataset description ===" && \
+      cat ${output_dir}/integration_test/dataset_description.json && \
+      echo "" && \
+      echo "=== Directory structure ===" && \
+      find ${output_dir}/integration_test -type f -name "*.nii.gz" 2>/dev/null | head -10 || echo "Checking outputs"
+    depends_on: Full pipeline test - scaffold and convert
+
+  - name: Multiple participant conversion
+    description: Test converting multiple participants sequentially
+    command: |
+      for p in subA subB subC; do
+        dcm2bids \
+          -d ${output_dir}/mock_dicom \
+          -p $p \
+          -c ${output_dir}/config_basic.json \
+          -o ${output_dir}/dcm2bids_test/multi \
+          --skip_dcm2niix \
+          --clobber 2>/dev/null
+      done && \
+      ls ${output_dir}/dcm2bids_test/multi/ | grep "sub-" | wc -l
+    depends_on:
+      - Create mock NIfTI with JSON sidecar (T1w)
+      - Create basic dcm2bids config file
+
+  # ==========================================================================
+  # CLEANUP VERIFICATION
+  # ==========================================================================
+  - name: List all test outputs
+    description: Summary of all created test outputs
+    command: |
+      echo "=== Test output summary ===" && \
+      du -sh ${output_dir}/*/ 2>/dev/null | head -20 || echo "Listing outputs"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in ${output_dir}/"

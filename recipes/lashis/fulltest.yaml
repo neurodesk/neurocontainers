@@ -1,0 +1,805 @@
+# lashis container test suite
+# Tests for LASHiS 2.0 - Longitudinal Automatic Segmentation of Hippocampal Subfields
+#
+# LASHiS performs longitudinal hippocampal subfield segmentation using:
+#   - ANTs (Advanced Normalization Tools) v2.3.0 for image registration
+#   - ASHS (Automatic Segmentation of Hippocampal Subfields) v2.0.0 for segmentation
+#
+# Reference: https://doi.org/10.1016/j.neuroimage.2020.116798
+#
+# Note: Full LASHiS pipeline tests require T1w and T2w hippocampal imaging data
+# and are computationally intensive. These tests focus on component availability
+# and basic functionality verification.
+
+name: lashis
+version: 2.0_20210211
+container: lashis_2.0_20210211.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # LASHIS MAIN SCRIPT
+  # ==========================================================================
+  - name: LASHiS help
+    description: Verify LASHiS main script displays help information
+    command: /LASHiS/LASHiS.sh -h 2>&1 | head -50
+    expected_output_contains: "LASHiS.sh performs a longitudinal estimation"
+
+  - name: LASHiS script exists
+    description: Verify LASHiS main script is executable
+    command: test -x /LASHiS/LASHiS.sh && echo "LASHiS script is executable"
+    expected_output_contains: "executable"
+
+  - name: LASHiS usage information
+    description: Check LASHiS displays required arguments
+    command: /LASHiS/LASHiS.sh -h 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Required arguments"
+
+  - name: LASHiS optional arguments
+    description: Check LASHiS displays optional arguments
+    command: /LASHiS/LASHiS.sh -h 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Optional arguments"
+
+  - name: LASHiS atlas option
+    description: Verify atlas selection option is documented
+    command: /LASHiS/LASHiS.sh -h 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "-a: Atlas selection"
+
+  - name: LASHiS output prefix option
+    description: Verify output prefix option is documented
+    command: /LASHiS/LASHiS.sh -h 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "-o:  Output prefix"
+
+  - name: LASHiS parallel computation option
+    description: Verify parallel computation control option
+    command: /LASHiS/LASHiS.sh -h 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "control type"
+
+  - name: LASHiS N4 bias correction option
+    description: Verify N4 bias correction option exists
+    command: /LASHiS/LASHiS.sh -h 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "N4 Bias Correction"
+
+  - name: LASHiS denoising option
+    description: Verify denoising option exists
+    command: /LASHiS/LASHiS.sh -h 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "denoise"
+
+  # ==========================================================================
+  # ENVIRONMENT VARIABLES
+  # ==========================================================================
+  - name: ANTSPATH environment variable
+    description: Verify ANTSPATH is set correctly
+    command: echo $ANTSPATH
+    expected_output_contains: "/opt/ants-2.3.0"
+
+  - name: ASHS_ROOT environment variable
+    description: Verify ASHS_ROOT is set correctly
+    command: echo $ASHS_ROOT
+    expected_output_contains: "/opt/ashs-2.0.0"
+
+  - name: PATH includes ANTs
+    description: Verify PATH includes ANTs directory
+    command: echo $PATH
+    expected_output_contains: "/opt/ants-2.3.0"
+
+  - name: PATH includes ASHS
+    description: Verify PATH includes ASHS bin directory
+    command: echo $PATH
+    expected_output_contains: "/opt/ashs-2.0.0/bin"
+
+  # ==========================================================================
+  # ASHS COMPONENTS
+  # ==========================================================================
+  - name: ASHS main script help
+    description: Verify ASHS main script displays help
+    command: /opt/ashs-2.0.0/bin/ashs_main.sh -h 2>&1 | head -30
+    expected_output_contains: "ashs_main: automatic segmentation of hippocampal subfields"
+
+  - name: ASHS required options
+    description: Verify ASHS documents required options
+    command: /opt/ashs-2.0.0/bin/ashs_main.sh -h 2>&1
+    expected_output_contains: "required options"
+
+  - name: ASHS atlas option
+    description: Verify ASHS atlas directory option
+    command: /opt/ashs-2.0.0/bin/ashs_main.sh -h 2>&1
+    expected_output_contains: "-a dir"
+
+  - name: ASHS T1w input option
+    description: Verify ASHS gradient echo (T1w) option
+    command: /opt/ashs-2.0.0/bin/ashs_main.sh -h 2>&1
+    expected_output_contains: "-g image"
+
+  - name: ASHS T2w input option
+    description: Verify ASHS fast spin echo (T2w) option
+    command: /opt/ashs-2.0.0/bin/ashs_main.sh -h 2>&1
+    expected_output_contains: "-f image"
+
+  - name: ASHS working directory option
+    description: Verify ASHS working directory option
+    command: /opt/ashs-2.0.0/bin/ashs_main.sh -h 2>&1
+    expected_output_contains: "-w path"
+
+  - name: ASHS config file exists
+    description: Verify ASHS config file exists
+    command: test -f /opt/ashs-2.0.0/bin/ashs_config.sh && echo "config exists"
+    expected_output_contains: "config exists"
+
+  - name: ASHS library file exists
+    description: Verify ASHS library file exists
+    command: test -f /opt/ashs-2.0.0/bin/ashs_lib.sh && echo "library exists"
+    expected_output_contains: "library exists"
+
+  - name: ASHS train script exists
+    description: Verify ASHS training script exists
+    command: test -x /opt/ashs-2.0.0/bin/ashs_train.sh && echo "train script exists"
+    expected_output_contains: "train script exists"
+
+  # ==========================================================================
+  # ATLAS AVAILABILITY
+  # ==========================================================================
+  - name: Magdeburg 7T atlas exists
+    description: Verify Magdeburg 7T atlas directory exists
+    command: test -d /ashs_atlas_magdeburg_7t_20180416 && echo "atlas exists"
+    expected_output_contains: "atlas exists"
+
+  - name: Atlas variables file
+    description: Verify atlas variables file exists
+    command: test -f /ashs_atlas_magdeburg_7t_20180416/ashs_atlas_vars.sh && echo "vars exists"
+    expected_output_contains: "vars exists"
+
+  - name: Atlas template directory
+    description: Verify atlas template directory exists
+    command: test -d /ashs_atlas_magdeburg_7t_20180416/template && echo "template exists"
+    expected_output_contains: "template exists"
+
+  - name: Atlas training directory
+    description: Verify atlas training directory exists
+    command: test -d /ashs_atlas_magdeburg_7t_20180416/train && echo "train exists"
+    expected_output_contains: "train exists"
+
+  - name: Atlas snap directory
+    description: Verify atlas snap labels directory exists
+    command: test -d /ashs_atlas_magdeburg_7t_20180416/snap && echo "snap exists"
+    expected_output_contains: "snap exists"
+
+  # ==========================================================================
+  # ANTs REGISTRATION TOOLS
+  # ==========================================================================
+  - name: antsRegistration help
+    description: Verify antsRegistration displays help
+    command: /opt/ants-2.3.0/antsRegistration --help 2>&1 | head -10
+    expected_output_contains: "antsRegistration"
+
+  - name: antsRegistration dimensionality option
+    description: Verify antsRegistration dimensionality option
+    command: /opt/ants-2.3.0/antsRegistration --help 2>&1
+    expected_output_contains: "--dimensionality"
+
+  - name: antsRegistration output option
+    description: Verify antsRegistration output option
+    command: /opt/ants-2.3.0/antsRegistration --help 2>&1
+    expected_output_contains: "--output"
+
+  - name: antsRegistrationSyN.sh help
+    description: Verify SyN registration script help
+    command: /opt/ants-2.3.0/antsRegistrationSyN.sh -h 2>&1 | head -20
+    expected_output_contains: "antsRegistrationSyN.sh"
+
+  - name: antsRegistrationSyNQuick.sh help
+    description: Verify quick SyN registration script help
+    command: /opt/ants-2.3.0/antsRegistrationSyNQuick.sh -h 2>&1 | head -20
+    expected_output_contains: "antsRegistrationSyN"
+
+  - name: antsApplyTransforms help
+    description: Verify antsApplyTransforms displays help
+    command: /opt/ants-2.3.0/antsApplyTransforms --help 2>&1 | head -10
+    expected_output_contains: "antsApplyTransforms"
+
+  - name: antsApplyTransforms input option
+    description: Verify antsApplyTransforms input option
+    command: /opt/ants-2.3.0/antsApplyTransforms --help 2>&1
+    expected_output_contains: "--input"
+
+  - name: antsApplyTransforms reference option
+    description: Verify antsApplyTransforms reference option
+    command: /opt/ants-2.3.0/antsApplyTransforms --help 2>&1
+    expected_output_contains: "--reference-image"
+
+  # ==========================================================================
+  # ANTs TEMPLATE CONSTRUCTION
+  # ==========================================================================
+  - name: antsMultivariateTemplateConstruction2.sh help
+    description: Verify template construction script help
+    command: /opt/ants-2.3.0/antsMultivariateTemplateConstruction2.sh -h 2>&1 | head -20
+    expected_output_contains: "antsMultivariateTemplateConstruction2"
+
+  - name: Template construction dimensionality option
+    description: Verify template construction dimensionality option
+    command: /opt/ants-2.3.0/antsMultivariateTemplateConstruction2.sh -h 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "ImageDimension"
+
+  - name: Template construction parallel option
+    description: Verify template construction parallel option
+    command: /opt/ants-2.3.0/antsMultivariateTemplateConstruction2.sh -h 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "parallel"
+
+  # ==========================================================================
+  # ANTs BIAS CORRECTION
+  # ==========================================================================
+  - name: N4BiasFieldCorrection help
+    description: Verify N4BiasFieldCorrection displays help
+    command: /opt/ants-2.3.0/N4BiasFieldCorrection --help 2>&1 | head -15
+    expected_output_contains: "N4BiasFieldCorrection"
+
+  - name: N4BiasFieldCorrection input option
+    description: Verify N4BiasFieldCorrection input option
+    command: /opt/ants-2.3.0/N4BiasFieldCorrection --help 2>&1
+    expected_output_contains: "--input-image"
+
+  - name: N4BiasFieldCorrection mask option
+    description: Verify N4BiasFieldCorrection mask option
+    command: /opt/ants-2.3.0/N4BiasFieldCorrection --help 2>&1
+    expected_output_contains: "--mask-image"
+
+  - name: N4BiasFieldCorrection on test data
+    description: Run N4BiasFieldCorrection on test T1w image
+    command: /opt/ants-2.3.0/N4BiasFieldCorrection -d 3 -i ${t1w} -o test_output/t1w_n4.nii.gz -s 4 -c [50x50x50,0.0] 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_n4.nii.gz
+
+  # ==========================================================================
+  # ANTs DENOISING
+  # ==========================================================================
+  - name: DenoiseImage help
+    description: Verify DenoiseImage displays help
+    command: /opt/ants-2.3.0/DenoiseImage --help 2>&1 | head -15
+    expected_output_contains: "DenoiseImage"
+
+  - name: DenoiseImage noise model option
+    description: Verify DenoiseImage noise model option
+    command: /opt/ants-2.3.0/DenoiseImage --help 2>&1
+    expected_output_contains: "--noise-model"
+
+  - name: DenoiseImage on test data
+    description: Run DenoiseImage on test T1w image
+    command: /opt/ants-2.3.0/DenoiseImage -d 3 -i ${t1w} -o test_output/t1w_denoised.nii.gz -s 2 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_denoised.nii.gz
+
+  # ==========================================================================
+  # ANTs SEGMENTATION (Atropos)
+  # ==========================================================================
+  - name: Atropos help
+    description: Verify Atropos displays help
+    command: /opt/ants-2.3.0/Atropos --help 2>&1 | head -15
+    expected_output_contains: "Atropos"
+
+  - name: Atropos segmentation description
+    description: Verify Atropos describes FMM segmentation
+    command: /opt/ants-2.3.0/Atropos --help 2>&1
+    expected_output_contains: "finite mixture modeling"
+
+  - name: Atropos intensity image option
+    description: Verify Atropos intensity image option
+    command: /opt/ants-2.3.0/Atropos --help 2>&1
+    expected_output_contains: "--intensity-image"
+
+  - name: antsAtroposN4.sh help
+    description: Verify combined Atropos/N4 script help
+    command: /opt/ants-2.3.0/antsAtroposN4.sh -h 2>&1 | head -20
+    expected_output_contains: "antsAtroposN4"
+
+  # ==========================================================================
+  # ANTs BRAIN EXTRACTION
+  # ==========================================================================
+  - name: antsBrainExtraction.sh help
+    description: Verify brain extraction script help
+    command: /opt/ants-2.3.0/antsBrainExtraction.sh -h 2>&1 | head -20
+    expected_output_contains: "antsBrainExtraction.sh performs template-based brain extraction"
+
+  - name: Brain extraction anatomical image option
+    description: Verify brain extraction anatomical image option
+    command: /opt/ants-2.3.0/antsBrainExtraction.sh -h 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "-a:  Anatomical image"
+
+  - name: Brain extraction template option
+    description: Verify brain extraction template option
+    command: /opt/ants-2.3.0/antsBrainExtraction.sh -h 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "-e:  Brain extraction template"
+
+  # ==========================================================================
+  # ANTs CORTICAL THICKNESS
+  # ==========================================================================
+  - name: antsCorticalThickness.sh exists
+    description: Verify cortical thickness script exists
+    command: test -x /opt/ants-2.3.0/antsCorticalThickness.sh && echo "script exists"
+    expected_output_contains: "script exists"
+
+  - name: antsLongitudinalCorticalThickness.sh exists
+    description: Verify longitudinal cortical thickness script exists
+    command: test -x /opt/ants-2.3.0/antsLongitudinalCorticalThickness.sh && echo "script exists"
+    expected_output_contains: "script exists"
+
+  # ==========================================================================
+  # ANTs JOINT LABEL FUSION
+  # ==========================================================================
+  - name: antsJointFusion help
+    description: Verify antsJointFusion binary displays help
+    command: /opt/ants-2.3.0/antsJointFusion --help 2>&1 | head -15
+    expected_output_contains: "antsJointFusion"
+
+  - name: antsJointLabelFusion.sh exists
+    description: Verify joint label fusion script exists
+    command: test -f /opt/ants-2.3.0/antsJointLabelFusion.sh && echo "script exists"
+    expected_output_contains: "script exists"
+
+  - name: antsLongitudinalJointLabelFusion.sh exists
+    description: Verify longitudinal joint label fusion script exists
+    command: test -f /opt/ants-2.3.0/antsLongitudinalJointLabelFusion.sh && echo "script exists"
+    expected_output_contains: "script exists"
+
+  # ==========================================================================
+  # ANTs IMAGE UTILITIES
+  # ==========================================================================
+  - name: ImageMath usage
+    description: Verify ImageMath displays usage
+    command: /opt/ants-2.3.0/ImageMath 3 2>&1 | head -10
+    expected_output_contains: "ImageMath"
+
+  - name: ImageMath mathematical operations
+    description: Verify ImageMath documents math operations
+    command: /opt/ants-2.3.0/ImageMath 3 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Mathematical Operations"
+
+  - name: ImageMath spatial filtering
+    description: Verify ImageMath documents spatial filtering
+    command: /opt/ants-2.3.0/ImageMath 3 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Spatial Filtering"
+
+  - name: ImageMath multiply operation
+    description: Test ImageMath multiply operation
+    command: /opt/ants-2.3.0/ImageMath 3 test_output/t1w_doubled.nii.gz m ${t1w} 2 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_doubled.nii.gz
+
+  - name: ImageMath Gaussian smoothing
+    description: Test ImageMath Gaussian smoothing
+    command: /opt/ants-2.3.0/ImageMath 3 test_output/t1w_smooth.nii.gz G ${t1w} 2 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth.nii.gz
+
+  - name: PrintHeader usage
+    description: Verify PrintHeader displays usage
+    command: /opt/ants-2.3.0/PrintHeader 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "PrintHeader"
+
+  - name: PrintHeader origin
+    description: Test PrintHeader origin output
+    command: /opt/ants-2.3.0/PrintHeader ${t1w} 0 2>&1
+    expected_exit_code: 0
+
+  - name: PrintHeader spacing
+    description: Test PrintHeader spacing output
+    command: /opt/ants-2.3.0/PrintHeader ${t1w} 1 2>&1
+    expected_exit_code: 0
+
+  - name: PrintHeader size
+    description: Test PrintHeader size output
+    command: /opt/ants-2.3.0/PrintHeader ${t1w} 2 2>&1
+    expected_exit_code: 0
+
+  - name: PrintHeader direction
+    description: Test PrintHeader direction output
+    command: /opt/ants-2.3.0/PrintHeader ${t1w} 4 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ANTs THRESHOLDING AND MASKING
+  # ==========================================================================
+  - name: ThresholdImage usage
+    description: Verify ThresholdImage displays usage
+    command: /opt/ants-2.3.0/ThresholdImage 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "ThresholdImage"
+
+  - name: ThresholdImage Otsu option
+    description: Verify ThresholdImage Otsu option
+    command: /opt/ants-2.3.0/ThresholdImage 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Otsu"
+
+  - name: ThresholdImage basic threshold
+    description: Test basic threshold operation
+    command: /opt/ants-2.3.0/ThresholdImage 3 ${t1w} test_output/t1w_thresh.nii.gz 100 10000 1 0 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_thresh.nii.gz
+
+  - name: ThresholdImage Otsu thresholding
+    description: Test Otsu automatic thresholding
+    command: /opt/ants-2.3.0/ThresholdImage 3 ${t1w} test_output/t1w_otsu.nii.gz Otsu 3 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_otsu.nii.gz
+
+  # ==========================================================================
+  # ANTs IMAGE CONVERSION
+  # ==========================================================================
+  - name: ConvertImagePixelType usage
+    description: Verify ConvertImagePixelType displays usage
+    command: /opt/ants-2.3.0/ConvertImagePixelType 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "ConvertImagePixelType"
+
+  - name: ConvertImagePixelType types
+    description: Verify pixel type options are documented
+    command: /opt/ants-2.3.0/ConvertImagePixelType 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "unsigned char"
+
+  - name: ConvertImage exists
+    description: Verify ConvertImage binary exists
+    command: test -x /opt/ants-2.3.0/ConvertImage && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  # ==========================================================================
+  # ANTs RESAMPLING
+  # ==========================================================================
+  - name: ResampleImage usage
+    description: Verify ResampleImage displays usage
+    command: /opt/ants-2.3.0/ResampleImage 2>&1 | head -20
+    expected_output_contains: "ResampleImage"
+
+  - name: ResampleImageBySpacing usage
+    description: Verify ResampleImageBySpacing displays usage
+    command: /opt/ants-2.3.0/ResampleImageBySpacing 2>&1 | head -10
+    expected_output_contains: "ResampleImageBySpacing"
+
+  - name: ResampleImageBySpacing test
+    description: Test resampling to 2mm isotropic
+    command: /opt/ants-2.3.0/ResampleImageBySpacing 3 ${t1w} test_output/t1w_2mm.nii.gz 2 2 2 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_2mm.nii.gz
+
+  # ==========================================================================
+  # ANTs IMAGE AVERAGING
+  # ==========================================================================
+  - name: AverageImages usage
+    description: Verify AverageImages displays usage
+    command: /opt/ants-2.3.0/AverageImages 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "AverageImages"
+
+  - name: AverageImages normalize option
+    description: Verify AverageImages normalize option
+    command: /opt/ants-2.3.0/AverageImages 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Normalize"
+
+  # ==========================================================================
+  # ANTs LABEL ANALYSIS
+  # ==========================================================================
+  - name: LabelGeometryMeasures usage
+    description: Verify LabelGeometryMeasures displays usage
+    command: /opt/ants-2.3.0/LabelGeometryMeasures 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "LabelGeometryMeasures"
+
+  - name: LabelGeometryMeasures test
+    description: Test label geometry measurement on Otsu segmentation
+    command: /opt/ants-2.3.0/LabelGeometryMeasures 3 test_output/t1w_otsu.nii.gz 2>&1
+    depends_on: ThresholdImage Otsu thresholding
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ANTs IMAGE SIMILARITY
+  # ==========================================================================
+  - name: MeasureImageSimilarity help
+    description: Verify MeasureImageSimilarity displays help
+    command: /opt/ants-2.3.0/MeasureImageSimilarity --help 2>&1 | head -15
+    expected_output_contains: "MeasureImageSimilarity"
+
+  - name: MeasureImageSimilarity metrics
+    description: Verify similarity metrics are documented
+    command: /opt/ants-2.3.0/MeasureImageSimilarity --help 2>&1
+    expected_output_contains: "CC"
+
+  # ==========================================================================
+  # ANTs TRANSFORM UTILITIES
+  # ==========================================================================
+  - name: ComposeMultiTransform usage
+    description: Verify ComposeMultiTransform displays usage
+    command: /opt/ants-2.3.0/ComposeMultiTransform 2>&1 | head -10
+    expected_output_contains: "ComposeMultiTransform"
+
+  - name: antsTransformInfo exists
+    description: Verify antsTransformInfo binary exists
+    command: test -x /opt/ants-2.3.0/antsTransformInfo && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: CreateJacobianDeterminantImage exists
+    description: Verify CreateJacobianDeterminantImage exists
+    command: test -x /opt/ants-2.3.0/CreateJacobianDeterminantImage && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  # ==========================================================================
+  # ANTs MOTION CORRECTION
+  # ==========================================================================
+  - name: antsMotionCorr help
+    description: Verify antsMotionCorr displays help
+    command: /opt/ants-2.3.0/antsMotionCorr --help 2>&1 | head -15
+    expected_output_contains: "antsMotionCorr"
+
+  - name: antsMotionCorrStats exists
+    description: Verify antsMotionCorrStats binary exists
+    command: test -x /opt/ants-2.3.0/antsMotionCorrStats && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  # ==========================================================================
+  # ANTs IMAGE CREATION AND MANIPULATION
+  # ==========================================================================
+  - name: CreateImage usage
+    description: Verify CreateImage displays usage
+    command: /opt/ants-2.3.0/CreateImage 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "CreateImage"
+
+  - name: CopyImageHeaderInformation exists
+    description: Verify CopyImageHeaderInformation exists
+    command: test -x /opt/ants-2.3.0/CopyImageHeaderInformation && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: SetOrigin exists
+    description: Verify SetOrigin binary exists
+    command: test -x /opt/ants-2.3.0/SetOrigin && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: SetSpacing exists
+    description: Verify SetSpacing binary exists
+    command: test -x /opt/ants-2.3.0/SetSpacing && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: ResetDirection exists
+    description: Verify ResetDirection binary exists
+    command: test -x /opt/ants-2.3.0/ResetDirection && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  # ==========================================================================
+  # ANTs MORPHOLOGICAL OPERATIONS
+  # ==========================================================================
+  - name: ImageMath morphological dilation
+    description: Test morphological dilation
+    command: /opt/ants-2.3.0/ImageMath 3 test_output/t1w_dilated.nii.gz MD test_output/t1w_otsu.nii.gz 2 2>&1
+    depends_on: ThresholdImage Otsu thresholding
+    validate:
+      - output_exists: ${output_dir}/t1w_dilated.nii.gz
+
+  - name: ImageMath morphological erosion
+    description: Test morphological erosion
+    command: /opt/ants-2.3.0/ImageMath 3 test_output/t1w_eroded.nii.gz ME test_output/t1w_otsu.nii.gz 2 2>&1
+    depends_on: ThresholdImage Otsu thresholding
+    validate:
+      - output_exists: ${output_dir}/t1w_eroded.nii.gz
+
+  - name: ImageMath morphological opening
+    description: Test morphological opening
+    command: /opt/ants-2.3.0/ImageMath 3 test_output/t1w_opened.nii.gz MO test_output/t1w_otsu.nii.gz 2 2>&1
+    depends_on: ThresholdImage Otsu thresholding
+    validate:
+      - output_exists: ${output_dir}/t1w_opened.nii.gz
+
+  - name: ImageMath morphological closing
+    description: Test morphological closing
+    command: /opt/ants-2.3.0/ImageMath 3 test_output/t1w_closed.nii.gz MC test_output/t1w_otsu.nii.gz 2 2>&1
+    depends_on: ThresholdImage Otsu thresholding
+    validate:
+      - output_exists: ${output_dir}/t1w_closed.nii.gz
+
+  # ==========================================================================
+  # ANTs SMOOTHING
+  # ==========================================================================
+  - name: SmoothImage usage
+    description: Verify SmoothImage displays usage
+    command: /opt/ants-2.3.0/SmoothImage 2>&1 | head -10
+    expected_output_contains: "SmoothImage"
+
+  - name: SmoothImage test
+    description: Test image smoothing
+    command: /opt/ants-2.3.0/SmoothImage 3 ${t1w} 2 test_output/t1w_smoothed.nii.gz 2>&1
+    validate:
+      - output_exists: ${output_dir}/t1w_smoothed.nii.gz
+
+  # ==========================================================================
+  # ANTs EXTRACTION TOOLS
+  # ==========================================================================
+  - name: ExtractRegionFromImage exists
+    description: Verify ExtractRegionFromImage exists
+    command: test -x /opt/ants-2.3.0/ExtractRegionFromImage && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: ExtractSliceFromImage exists
+    description: Verify ExtractSliceFromImage exists
+    command: test -x /opt/ants-2.3.0/ExtractSliceFromImage && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: ExtractRegionFromImageByMask exists
+    description: Verify ExtractRegionFromImageByMask exists
+    command: test -x /opt/ants-2.3.0/ExtractRegionFromImageByMask && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  # ==========================================================================
+  # ANTs TILING AND VISUALIZATION
+  # ==========================================================================
+  - name: TileImages exists
+    description: Verify TileImages binary exists
+    command: test -x /opt/ants-2.3.0/TileImages && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: CreateTiledMosaic exists
+    description: Verify CreateTiledMosaic exists
+    command: test -x /opt/ants-2.3.0/CreateTiledMosaic && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: StackSlices exists
+    description: Verify StackSlices binary exists
+    command: test -x /opt/ants-2.3.0/StackSlices && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  # ==========================================================================
+  # ANTs AFFINE TOOLS
+  # ==========================================================================
+  - name: antsAffineInitializer help
+    description: Verify antsAffineInitializer displays help
+    command: /opt/ants-2.3.0/antsAffineInitializer --help 2>&1 | head -15
+    expected_output_contains: "antsAffineInitializer"
+
+  - name: AverageAffineTransform exists
+    description: Verify AverageAffineTransform exists
+    command: test -x /opt/ants-2.3.0/AverageAffineTransform && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: AverageAffineTransformNoRigid exists
+    description: Verify AverageAffineTransformNoRigid exists
+    command: test -x /opt/ants-2.3.0/AverageAffineTransformNoRigid && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  # ==========================================================================
+  # ANTs LANDMARK TOOLS
+  # ==========================================================================
+  - name: antsLandmarkBasedTransformInitializer exists
+    description: Verify antsLandmarkBasedTransformInitializer exists
+    command: test -x /opt/ants-2.3.0/antsLandmarkBasedTransformInitializer && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: ANTSUseLandmarkImagesToGetAffineTransform exists
+    description: Verify landmark affine tool exists
+    command: test -x /opt/ants-2.3.0/ANTSUseLandmarkImagesToGetAffineTransform && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  # ==========================================================================
+  # ANTs SUPER RESOLUTION
+  # ==========================================================================
+  - name: SuperResolution exists
+    description: Verify SuperResolution binary exists
+    command: test -x /opt/ants-2.3.0/SuperResolution && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: NonLocalSuperResolution exists
+    description: Verify NonLocalSuperResolution exists
+    command: test -x /opt/ants-2.3.0/NonLocalSuperResolution && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  # ==========================================================================
+  # ANTs TEXTURE ANALYSIS
+  # ==========================================================================
+  - name: TextureCooccurrenceFeatures exists
+    description: Verify TextureCooccurrenceFeatures exists
+    command: test -x /opt/ants-2.3.0/TextureCooccurrenceFeatures && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: TextureRunLengthFeatures exists
+    description: Verify TextureRunLengthFeatures exists
+    command: test -x /opt/ants-2.3.0/TextureRunLengthFeatures && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  # ==========================================================================
+  # ANTs SURFACE TOOLS
+  # ==========================================================================
+  - name: SurfaceBasedSmoothing exists
+    description: Verify SurfaceBasedSmoothing exists
+    command: test -x /opt/ants-2.3.0/SurfaceBasedSmoothing && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: SurfaceCurvature exists
+    description: Verify SurfaceCurvature exists
+    command: test -x /opt/ants-2.3.0/SurfaceCurvature && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  # ==========================================================================
+  # ANTs JACOBIAN TOOLS
+  # ==========================================================================
+  - name: ANTSJacobian exists
+    description: Verify ANTSJacobian binary exists
+    command: test -x /opt/ants-2.3.0/ANTSJacobian && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: CreateJacobianDeterminantImage help
+    description: Verify CreateJacobianDeterminantImage displays help
+    command: /opt/ants-2.3.0/CreateJacobianDeterminantImage 2>&1 | head -5
+    expected_output_contains: "CreateJacobianDeterminantImage"
+
+  # ==========================================================================
+  # WARP TOOLS
+  # ==========================================================================
+  - name: WarpImageMultiTransform exists
+    description: Verify WarpImageMultiTransform exists
+    command: test -x /opt/ants-2.3.0/WarpImageMultiTransform && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: WarpTimeSeriesImageMultiTransform exists
+    description: Verify WarpTimeSeriesImageMultiTransform exists
+    command: test -x /opt/ants-2.3.0/WarpTimeSeriesImageMultiTransform && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: CreateWarpedGridImage exists
+    description: Verify CreateWarpedGridImage exists
+    command: test -x /opt/ants-2.3.0/CreateWarpedGridImage && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  - name: CreateDisplacementField exists
+    description: Verify CreateDisplacementField exists
+    command: test -x /opt/ants-2.3.0/CreateDisplacementField && echo "binary exists"
+    expected_output_contains: "binary exists"
+
+  # ==========================================================================
+  # CONTAINER INTEGRITY
+  # ==========================================================================
+  - name: Container README exists
+    description: Verify container README file exists
+    command: test -f /README.md && echo "README exists"
+    expected_output_contains: "README exists"
+
+  - name: Container LASHiS directory structure
+    description: Verify LASHiS directory structure
+    command: ls /LASHiS/ | wc -l
+    expected_exit_code: 0
+
+  - name: Container experiment files
+    description: Verify experiment files directory exists
+    command: test -d /LASHiS/Experiment_files_for_LASHiS && echo "experiment files exist"
+    expected_output_contains: "experiment files exist"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

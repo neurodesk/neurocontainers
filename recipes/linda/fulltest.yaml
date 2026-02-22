@@ -1,0 +1,728 @@
+# linda container test suite
+# Tests for linda v0.5.1 - Lesion Identification with Neighborhood Data Analysis
+#
+# LINDA is an R package for automatic segmentation of chronic stroke lesions.
+# It uses random forest machine learning on T1-weighted MRI images.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - inplaneT2: Available for additional testing
+#
+# Note: LINDA is designed for stroke lesion segmentation on patient data.
+# Tests on healthy brain data will run but may not produce meaningful lesion masks.
+
+name: linda
+version: 0.5.1
+container: linda_0.5.1_20250814.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/linda
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - R Environment
+  # ==========================================================================
+  - name: R version check
+    description: Verify R binary runs and reports version
+    command: R --version 2>&1 | head -1
+    expected_output_contains: "R version"
+
+  - name: Rscript availability
+    description: Verify Rscript is available
+    command: Rscript --version 2>&1
+    expected_output_contains: "R scripting front-end"
+
+  - name: R help available
+    description: Verify R help system works
+    command: R --help 2>&1 | head -5
+    expected_output_contains: "Usage: R"
+
+  # ==========================================================================
+  # LINDA PACKAGE TESTS
+  # ==========================================================================
+  - name: LINDA package loads
+    description: Verify LINDA R package can be loaded
+    command: R --quiet -e "library(LINDA); cat('LINDA loaded successfully\n')"
+    expected_output_contains: "LINDA loaded successfully"
+
+  - name: LINDA version check
+    description: Check LINDA package version
+    command: R --quiet -e "library(LINDA); packageVersion('LINDA')"
+    expected_output_contains: "0.5.1"
+
+  - name: LINDA functions available
+    description: List available LINDA functions
+    command: R --quiet -e "library(LINDA); cat(paste(ls('package:LINDA'), collapse='\\n'))"
+    expected_output_contains: "linda_predict"
+
+  - name: ANTsR dependency loads
+    description: Verify ANTsR dependency is available
+    command: R --quiet -e "library(ANTsR); cat('ANTsR loaded successfully\n')"
+    expected_output_contains: "ANTsR loaded successfully"
+
+  - name: ANTsRCore dependency loads
+    description: Verify ANTsRCore dependency is available
+    command: R --quiet -e "library(ANTsRCore); cat('ANTsRCore loaded successfully\n')"
+    expected_output_contains: "ANTsRCore loaded successfully"
+
+  - name: randomForest dependency loads
+    description: Verify randomForest dependency is available
+    command: R --quiet -e "library(randomForest); cat('randomForest loaded successfully\n')"
+    expected_output_contains: "randomForest loaded successfully"
+
+  # ==========================================================================
+  # LINDA WRAPPER SCRIPT TESTS
+  # ==========================================================================
+  - name: linda_predict.sh available
+    description: Verify linda_predict.sh wrapper script is in PATH
+    command: which linda_predict.sh
+    expected_output_contains: "linda_predict.sh"
+
+  - name: linda_predict.sh help
+    description: Check linda_predict.sh displays usage information
+    command: linda_predict.sh 2>&1 || true
+    expected_output_contains: "Usage:"
+
+  - name: linda_predict.sh usage details
+    description: Verify linda_predict.sh shows argument details
+    command: linda_predict.sh 2>&1 || true
+    expected_output_contains: "input_T1_file"
+
+  - name: linda_predict.sh example
+    description: Verify linda_predict.sh shows example usage
+    command: linda_predict.sh 2>&1 || true
+    expected_output_contains: "Example:"
+
+  # ==========================================================================
+  # LINDA INTERNAL RESOURCES
+  # ==========================================================================
+  - name: LINDA template available
+    description: Verify LINDA template files are installed
+    command: |
+      R --quiet -e "
+        template_path <- system.file('extdata', 'pennTemplate', 'template.nii.gz', package='LINDA')
+        if (file.exists(template_path)) {
+          cat('Template found:', template_path, '\n')
+        } else {
+          stop('Template not found')
+        }
+      "
+    expected_output_contains: "Template found"
+
+  - name: LINDA template brain available
+    description: Verify LINDA template brain is installed
+    command: |
+      R --quiet -e "
+        template_brain <- system.file('extdata', 'pennTemplate', 'templateBrain.nii.gz', package='LINDA')
+        if (file.exists(template_brain)) {
+          cat('Template brain found:', template_brain, '\n')
+        } else {
+          stop('Template brain not found')
+        }
+      "
+    expected_output_contains: "Template brain found"
+
+  - name: LINDA template mask available
+    description: Verify LINDA template brain mask is installed
+    command: |
+      R --quiet -e "
+        template_mask <- system.file('extdata', 'pennTemplate', 'templateBrainMask.nii.gz', package='LINDA')
+        if (file.exists(template_mask)) {
+          cat('Template mask found:', template_mask, '\n')
+        } else {
+          stop('Template mask not found')
+        }
+      "
+    expected_output_contains: "Template mask found"
+
+  - name: LINDA RF models available
+    description: Verify random forest models are loaded
+    command: |
+      R --quiet -e "
+        library(LINDA)
+        cat('rf_model1 class:', class(rf_model1), '\n')
+        cat('rf_model2 class:', class(rf_model2), '\n')
+        cat('rf_model3 class:', class(rf_model3), '\n')
+      "
+    expected_output_contains: "randomForest"
+
+  # ==========================================================================
+  # ANTSR IMAGE I/O TESTS
+  # ==========================================================================
+  - name: Read NIfTI with ANTsR
+    description: Test reading NIfTI file using ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        cat('Image dimensions:', paste(dim(img), collapse='x'), '\n')
+        cat('Image spacing:', paste(antsGetSpacing(img), collapse='x'), '\n')
+      "
+    expected_output_contains: "Image dimensions:"
+
+  - name: Get image info with ANTsR
+    description: Get detailed image information
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        cat('Pixel type:', img@pixeltype, '\n')
+        cat('Components:', img@components, '\n')
+        cat('Dimensions:', img@dimension, '\n')
+      "
+    expected_output_contains: "Pixel type:"
+
+  - name: Write NIfTI with ANTsR
+    description: Test writing NIfTI file using ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        antsImageWrite(img, 'test_output/linda/t1w_copy.nii.gz')
+        cat('Image written successfully\n')
+      "
+    expected_output_contains: "Image written successfully"
+    validate:
+      - output_exists: ${output_dir}/linda/t1w_copy.nii.gz
+
+  # ==========================================================================
+  # ANTSR IMAGE OPERATIONS
+  # ==========================================================================
+  - name: Image arithmetic - multiply
+    description: Test image multiplication with ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        img_scaled <- img * 2
+        antsImageWrite(img_scaled, 'test_output/linda/t1w_scaled.nii.gz')
+        cat('Multiplication successful\n')
+      "
+    expected_output_contains: "Multiplication successful"
+    validate:
+      - output_exists: ${output_dir}/linda/t1w_scaled.nii.gz
+
+  - name: Image arithmetic - threshold
+    description: Test image thresholding with ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        img_thr <- img > 100
+        antsImageWrite(img_thr, 'test_output/linda/t1w_threshold.nii.gz')
+        cat('Thresholding successful\n')
+      "
+    expected_output_contains: "Thresholding successful"
+    validate:
+      - output_exists: ${output_dir}/linda/t1w_threshold.nii.gz
+
+  - name: Image smoothing
+    description: Test Gaussian smoothing with ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        img_smooth <- smoothImage(img, sigma=2)
+        antsImageWrite(img_smooth, 'test_output/linda/t1w_smooth.nii.gz')
+        cat('Smoothing successful\n')
+      "
+    expected_output_contains: "Smoothing successful"
+    validate:
+      - output_exists: ${output_dir}/linda/t1w_smooth.nii.gz
+
+  - name: Image resampling
+    description: Test image resampling with ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        img_resamp <- resampleImage(img, c(2,2,2), useVoxels=FALSE)
+        antsImageWrite(img_resamp, 'test_output/linda/t1w_resampled.nii.gz')
+        cat('Resampling successful, new dims:', paste(dim(img_resamp), collapse='x'), '\n')
+      "
+    expected_output_contains: "Resampling successful"
+    validate:
+      - output_exists: ${output_dir}/linda/t1w_resampled.nii.gz
+
+  # ==========================================================================
+  # N4 BIAS FIELD CORRECTION
+  # ==========================================================================
+  - name: N4 bias correction
+    description: Test N4 bias field correction with ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        img_n4 <- n4BiasFieldCorrection(img)
+        antsImageWrite(img_n4, 'test_output/linda/t1w_n4.nii.gz')
+        cat('N4 correction successful\n')
+      "
+    expected_output_contains: "N4 correction successful"
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/linda/t1w_n4.nii.gz
+
+  # ==========================================================================
+  # MASK OPERATIONS
+  # ==========================================================================
+  - name: Create simple mask
+    description: Create a simple intensity-based mask
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        mask <- getMask(img, lowThresh=mean(img), cleanup=2)
+        antsImageWrite(mask, 'test_output/linda/t1w_simple_mask.nii.gz')
+        cat('Mask created, non-zero voxels:', sum(mask), '\n')
+      "
+    expected_output_contains: "Mask created"
+    validate:
+      - output_exists: ${output_dir}/linda/t1w_simple_mask.nii.gz
+
+  - name: Apply mask to image
+    description: Apply mask to image using ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        mask <- antsImageRead('test_output/linda/t1w_simple_mask.nii.gz')
+        img_masked <- img * mask
+        antsImageWrite(img_masked, 'test_output/linda/t1w_masked.nii.gz')
+        cat('Masking successful\n')
+      "
+    depends_on: Create simple mask
+    expected_output_contains: "Masking successful"
+    validate:
+      - output_exists: ${output_dir}/linda/t1w_masked.nii.gz
+
+  # ==========================================================================
+  # MORPHOLOGICAL OPERATIONS
+  # ==========================================================================
+  - name: Morphological erosion
+    description: Test morphological erosion
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        mask <- antsImageRead('test_output/linda/t1w_simple_mask.nii.gz')
+        mask_erode <- iMath(mask, 'ME', 1)
+        antsImageWrite(mask_erode, 'test_output/linda/mask_eroded.nii.gz')
+        cat('Erosion successful\n')
+      "
+    depends_on: Create simple mask
+    expected_output_contains: "Erosion successful"
+    validate:
+      - output_exists: ${output_dir}/linda/mask_eroded.nii.gz
+
+  - name: Morphological dilation
+    description: Test morphological dilation
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        mask <- antsImageRead('test_output/linda/t1w_simple_mask.nii.gz')
+        mask_dilate <- iMath(mask, 'MD', 1)
+        antsImageWrite(mask_dilate, 'test_output/linda/mask_dilated.nii.gz')
+        cat('Dilation successful\n')
+      "
+    depends_on: Create simple mask
+    expected_output_contains: "Dilation successful"
+    validate:
+      - output_exists: ${output_dir}/linda/mask_dilated.nii.gz
+
+  - name: Fill holes
+    description: Test hole filling operation
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        mask <- antsImageRead('test_output/linda/t1w_simple_mask.nii.gz')
+        mask_filled <- iMath(mask, 'FillHoles')
+        antsImageWrite(mask_filled, 'test_output/linda/mask_filled.nii.gz')
+        cat('Fill holes successful\n')
+      "
+    depends_on: Create simple mask
+    expected_output_contains: "Fill holes successful"
+    validate:
+      - output_exists: ${output_dir}/linda/mask_filled.nii.gz
+
+  # ==========================================================================
+  # REGISTRATION TESTS
+  # ==========================================================================
+  - name: Affine registration
+    description: Test affine registration between images
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        fixed <- antsImageRead('${t1w}')
+        moving <- antsImageRead('${t1w}')  # Self-registration for testing
+        reg <- antsRegistration(fixed, moving, typeofTransform='Affine')
+        antsImageWrite(reg\$warpedmovout, 'test_output/linda/t1w_affine_reg.nii.gz')
+        cat('Affine registration successful\n')
+      "
+    expected_output_contains: "Affine registration successful"
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/linda/t1w_affine_reg.nii.gz
+
+  # ==========================================================================
+  # LINDA FUNCTION TESTS
+  # ==========================================================================
+  - name: LINDA n4_skull_strip function signature
+    description: Verify n4_skull_strip function exists and has correct signature
+    command: |
+      R --quiet -e "
+        library(LINDA)
+        args <- formals(n4_skull_strip)
+        cat('n4_skull_strip arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "file"
+
+  - name: LINDA linda_predict function signature
+    description: Verify linda_predict function exists and has correct signature
+    command: |
+      R --quiet -e "
+        library(LINDA)
+        args <- formals(linda_predict)
+        cat('linda_predict arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "file"
+
+  - name: LINDA asymmetry_mask function signature
+    description: Verify asymmetry_mask function exists and has correct signature
+    command: |
+      R --quiet -e "
+        library(LINDA)
+        args <- formals(asymmetry_mask)
+        cat('asymmetry_mask arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "img"
+
+  - name: LINDA getLesionFeatures function signature
+    description: Verify getLesionFeatures function exists and has correct signature
+    command: |
+      R --quiet -e "
+        library(LINDA)
+        args <- formals(getLesionFeatures)
+        cat('getLesionFeatures arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "img"
+
+  - name: LINDA run_prediction function signature
+    description: Verify run_prediction function exists and has correct signature
+    command: |
+      R --quiet -e "
+        library(LINDA)
+        args <- formals(run_prediction)
+        cat('run_prediction arguments:', paste(names(args), collapse=', '), '\n')
+      "
+    expected_output_contains: "brain_mask"
+
+  # ==========================================================================
+  # STATISTICAL OPERATIONS
+  # ==========================================================================
+  - name: Image statistics
+    description: Calculate basic image statistics
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        cat('Min:', min(img), '\n')
+        cat('Max:', max(img), '\n')
+        cat('Mean:', mean(img), '\n')
+        cat('SD:', sd(img), '\n')
+      "
+    expected_output_contains: "Mean:"
+
+  - name: Histogram computation
+    description: Compute image histogram
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        h <- hist(as.array(img), breaks=50, plot=FALSE)
+        cat('Histogram bins:', length(h\$counts), '\n')
+        cat('Max count:', max(h\$counts), '\n')
+      "
+    expected_output_contains: "Histogram bins:"
+
+  # ==========================================================================
+  # LABEL OPERATIONS
+  # ==========================================================================
+  - name: Label geometry measures
+    description: Test label geometry measurements
+    command: |
+      R --quiet -e "
+        library(ANTsR)
+        mask <- antsImageRead('test_output/linda/t1w_simple_mask.nii.gz')
+        geom <- labelGeometryMeasures(mask)
+        cat('Geometry measures computed\n')
+        print(head(geom))
+      "
+    depends_on: Create simple mask
+    expected_output_contains: "Geometry measures computed"
+
+  # ==========================================================================
+  # RSCRIPT COMMAND LINE TESTS
+  # ==========================================================================
+  - name: Rscript inline execution
+    description: Test Rscript can execute inline R code
+    command: Rscript -e "cat('Rscript works\n')"
+    expected_output_contains: "Rscript works"
+
+  - name: Rscript with LINDA
+    description: Test Rscript can load and use LINDA
+    command: Rscript -e "library(LINDA); cat('LINDA version:', as.character(packageVersion('LINDA')), '\n')"
+    expected_output_contains: "LINDA version:"
+
+  - name: Rscript file execution
+    description: Test Rscript can execute R script files
+    command: |
+      cat > test_output/linda/test_script.R << 'RSCRIPT'
+      library(LINDA)
+      cat("Script executed successfully\n")
+      cat("LINDA is ready for lesion segmentation\n")
+      RSCRIPT
+      Rscript test_output/linda/test_script.R
+    expected_output_contains: "Script executed successfully"
+
+  # ==========================================================================
+  # IMAGE TRANSFORMATION TESTS
+  # ==========================================================================
+  - name: Image reflection
+    description: Test image reflection (used in asymmetry analysis)
+    command: |
+      R --quiet -e "
+        library(ANTsR)
+        img <- antsImageRead('${t1w}')
+        img_reflect <- reflectImage(img, axis=0)
+        antsImageWrite(img_reflect, 'test_output/linda/t1w_reflected.nii.gz')
+        cat('Reflection successful\n')
+      "
+    expected_output_contains: "Reflection successful"
+    validate:
+      - output_exists: ${output_dir}/linda/t1w_reflected.nii.gz
+
+  - name: Image cropping
+    description: Test image cropping with ANTsR
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        mask <- getMask(img, lowThresh=mean(img))
+        img_crop <- cropImage(img, mask)
+        antsImageWrite(img_crop, 'test_output/linda/t1w_cropped.nii.gz')
+        cat('Cropping successful, new dims:', paste(dim(img_crop), collapse='x'), '\n')
+      "
+    expected_output_contains: "Cropping successful"
+    validate:
+      - output_exists: ${output_dir}/linda/t1w_cropped.nii.gz
+
+  # ==========================================================================
+  # SEGMENTATION TESTS
+  # ==========================================================================
+  - name: Atropos segmentation
+    description: Test Atropos tissue segmentation
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        mask <- getMask(img, lowThresh=mean(img), cleanup=2)
+        seg <- atropos(a=img, x=mask, i='kmeans[3]', m='[0.1,1x1x1]')
+        antsImageWrite(seg\$segmentation, 'test_output/linda/t1w_atropos_seg.nii.gz')
+        cat('Atropos segmentation successful, classes:', max(seg\$segmentation), '\n')
+      "
+    expected_output_contains: "Atropos segmentation successful"
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/linda/t1w_atropos_seg.nii.gz
+
+  # ==========================================================================
+  # RANDOM FOREST MODEL TESTS
+  # ==========================================================================
+  - name: RF model structure - model1
+    description: Verify rf_model1 has correct structure
+    command: |
+      R --quiet -e "
+        library(LINDA)
+        cat('Model1 type:', class(rf_model1), '\n')
+        cat('Model1 ntree:', rf_model1\$ntree, '\n')
+        cat('Model1 importance available:', !is.null(rf_model1\$importance), '\n')
+      "
+    expected_output_contains: "Model1 ntree:"
+
+  - name: RF model structure - model2
+    description: Verify rf_model2 has correct structure
+    command: |
+      R --quiet -e "
+        library(LINDA)
+        cat('Model2 type:', class(rf_model2), '\n')
+        cat('Model2 ntree:', rf_model2\$ntree, '\n')
+      "
+    expected_output_contains: "Model2 ntree:"
+
+  - name: RF model structure - model3
+    description: Verify rf_model3 has correct structure
+    command: |
+      R --quiet -e "
+        library(LINDA)
+        cat('Model3 type:', class(rf_model3), '\n')
+        cat('Model3 ntree:', rf_model3\$ntree, '\n')
+      "
+    expected_output_contains: "Model3 ntree:"
+
+  # ==========================================================================
+  # FEATURE EXTRACTION SETUP
+  # ==========================================================================
+  - name: Feature extraction - intensity features
+    description: Test basic intensity feature extraction
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        mask <- getMask(img, lowThresh=mean(img), cleanup=2)
+
+        # Extract basic features
+        img_vals <- img[mask == 1]
+        cat('Feature count:', length(img_vals), '\n')
+        cat('Feature mean:', mean(img_vals), '\n')
+        cat('Feature sd:', sd(img_vals), '\n')
+      "
+    expected_output_contains: "Feature count:"
+
+  # ==========================================================================
+  # CONNECTED COMPONENT ANALYSIS
+  # ==========================================================================
+  - name: Connected components
+    description: Test connected component labeling
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        mask <- antsImageRead('test_output/linda/t1w_simple_mask.nii.gz')
+        labels <- labelClusters(mask, minClusterSize=100)
+        antsImageWrite(labels, 'test_output/linda/mask_components.nii.gz')
+        cat('Connected components:', max(labels), '\n')
+      "
+    depends_on: Create simple mask
+    expected_output_contains: "Connected components:"
+    validate:
+      - output_exists: ${output_dir}/linda/mask_components.nii.gz
+
+  # ==========================================================================
+  # UTILITY TESTS
+  # ==========================================================================
+  - name: Image dimension check
+    description: Test dimension checking utilities
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        cat('Is 3D:', img@dimension == 3, '\n')
+        cat('Dimensions:', paste(dim(img), collapse=' x '), '\n')
+        cat('Spacing:', paste(round(antsGetSpacing(img), 2), collapse=' x '), '\n')
+        cat('Origin:', paste(round(antsGetOrigin(img), 2), collapse=' x '), '\n')
+      "
+    expected_output_contains: "Is 3D:"
+
+  - name: Image orientation check
+    description: Check image orientation information
+    command: |
+      R --quiet -e "
+        library(ANTsRCore)
+        img <- antsImageRead('${t1w}')
+        dir_mat <- antsGetDirection(img)
+        cat('Direction matrix:\n')
+        print(dir_mat)
+      "
+    expected_output_contains: "Direction matrix:"
+
+  # ==========================================================================
+  # R BATCH MODE TESTS
+  # ==========================================================================
+  - name: R BATCH mode
+    description: Test R running in BATCH mode
+    command: |
+      cat > test_output/linda/batch_test.R << 'RSCRIPT'
+      library(LINDA)
+      cat("BATCH mode test successful\n")
+      q(save="no")
+      RSCRIPT
+      R CMD BATCH --vanilla test_output/linda/batch_test.R test_output/linda/batch_test.Rout 2>&1
+      cat test_output/linda/batch_test.Rout
+    expected_output_contains: "BATCH mode test successful"
+
+  # ==========================================================================
+  # PANDOC AVAILABILITY (for reports)
+  # ==========================================================================
+  - name: Pandoc available
+    description: Verify pandoc is available for report generation
+    command: pandoc --version 2>&1 | head -1
+    expected_output_contains: "pandoc"
+
+  # ==========================================================================
+  # LONG-RUNNING TESTS (commented out by default)
+  # These tests run the full LINDA pipeline and may take 30+ minutes
+  # ==========================================================================
+  # - name: Full LINDA prediction
+  #   description: Run complete LINDA lesion prediction pipeline
+  #   command: |
+  #     R --quiet -e "
+  #       library(LINDA)
+  #       outputs <- linda_predict(
+  #         file='${t1w}',
+  #         outdir='test_output/linda/linda_full',
+  #         verbose=TRUE
+  #       )
+  #       cat('LINDA prediction completed\n')
+  #       cat('Output components:', paste(names(outputs), collapse=', '), '\n')
+  #     "
+  #   expected_output_contains: "LINDA prediction completed"
+  #   timeout: 3600  # 60 minutes
+  #   validate:
+  #     - output_exists: ${output_dir}/linda/linda_full
+
+  # - name: LINDA predict via wrapper script
+  #   description: Run LINDA using the wrapper shell script
+  #   command: linda_predict.sh ${t1w} test_output/linda/linda_wrapper
+  #   expected_output_contains: "SUCCESS"
+  #   timeout: 3600  # 60 minutes
+  #   validate:
+  #     - output_exists: ${output_dir}/linda/linda_wrapper/linda_outputs.RData
+
+  # - name: LINDA skull stripping
+  #   description: Run LINDA skull stripping component
+  #   command: |
+  #     R --quiet -e "
+  #       library(LINDA)
+  #       result <- n4_skull_strip(
+  #         file='${t1w}',
+  #         verbose=TRUE,
+  #         n_iter=1
+  #       )
+  #       antsImageWrite(result\$brain, 'test_output/linda/t1w_brain.nii.gz')
+  #       antsImageWrite(result\$brain_mask, 'test_output/linda/t1w_brain_mask.nii.gz')
+  #       cat('Skull stripping completed\n')
+  #     "
+  #   expected_output_contains: "Skull stripping completed"
+  #   timeout: 1800  # 30 minutes
+  #   validate:
+  #     - output_exists: ${output_dir}/linda/t1w_brain.nii.gz
+  #     - output_exists: ${output_dir}/linda/t1w_brain_mask.nii.gz
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/linda
+    echo "Test outputs preserved in test_output/linda/"

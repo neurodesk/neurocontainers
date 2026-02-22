@@ -1,0 +1,64 @@
+name: ilastik
+version: 1.4.0
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - ca-certificates
+        - lbzip2
+        - libgl1
+        - wget
+        - libqt5gui5
+
+    - workdir: /opt
+
+    - run:
+        - wget https://files.ilastik.org/ilastik-1.4.0-Linux.tar.bz2
+        - tar -xf ilastik-1.4.0-Linux.tar.bz2
+        - rm -rf ilastik-1.4.0-Linux.tar.bz2
+
+    - environment:
+        PATH: $PATH:/opt/ilastik-{{ context.version }}-Linux/
+
+deploy:
+  path:
+    - /opt/ilastik-{{ context.version }}-Linux/
+
+categories:
+  - image segmentation
+
+gui_apps:
+  - name: ilastikGUI
+    exec: run_ilastik.sh
+
+readme: |
+  ----------------------------------
+  ## ilastik/{{ context.version }} ##
+  ilastik is a simple, user-friendly tool for interactive image classification, segmentation and analysis. It is built as a modular software framework, which currently has workflows for automated (supervised) pixel- and object-level classification, automated and semi-automated object tracking, semi-automated segmentation and object counting without detection.
+
+  Example:
+  ```
+  run_ilastik.sh
+  ```
+
+  More documentation can be found here: https://www.ilastik.org/documentation/index.html
+
+  To run container outside of this environment: ml ilastik/{{ context.version }}
+
+  Citation:
+  ```
+  ilastik: interactive machine learning for (bio)image analysis
+  Stuart Berg, Dominik Kutra, Thorben Kroeger, Christoph N. Straehle, Bernhard X. Kausler, Carsten Haubold, Martin Schiegg, Janez Ales, Thorsten Beier, Markus Rudy, Kemal Eren, Jaime I Cervantes, Buote Xu, Fynn Beuttenmueller, Adrian Wolny, Chong Zhang, Ullrich Koethe, Fred A. Hamprecht & Anna Kreshuk
+  in: Nature Methods, (2019)
+  ```
+  ----------------------------------

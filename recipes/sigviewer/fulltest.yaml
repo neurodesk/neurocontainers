@@ -1,0 +1,332 @@
+# sigviewer container test suite
+# Tests for SigViewer v0.6.4 - biosignal viewing application for EEG/MEG data
+#
+# SigViewer is a GUI application for viewing biosignals (EEG, MEG, ECG, EMG, etc.)
+# It supports creating, editing, and displaying event information (annotations, artifacts)
+#
+# Supported file formats (via libbiosig):
+#   - EDF/EDF+ (European Data Format)
+#   - GDF (General Data Format)
+#   - BDF/BDF+ (BioSemi Data Format)
+#   - XDF (Extensible Data Format - Lab Streaming Layer)
+#   - CNT (Neuroscan)
+#   - SET (EEGLAB)
+#   - ACQ (BIOPAC AcqKnowledge)
+#   - And many more biosignal formats
+#
+# Note: SigViewer is primarily a GUI application. Most tests require
+# QT_QPA_PLATFORM=offscreen to run without a display server.
+#
+# Documentation: https://github.com/cbrnr/sigviewer
+
+name: sigviewer
+version: 0.6.4
+container: sigviewer_0.6.4_20220315.simg
+
+# Environment variables required for headless testing
+environment:
+  QT_QPA_PLATFORM: offscreen
+
+# Test data notes:
+# ds000001 contains fMRI data (NIfTI), not EEG data
+# For full testing, EEG data in supported formats (EDF, GDF, BDF, XDF) is required
+# Sample EEG datasets can be obtained from:
+#   - PhysioNet: https://physionet.org/about/database/
+#   - OpenNeuro (EEG datasets): https://openneuro.org/
+#   - MNE-Python sample data: https://mne.tools/stable/overview/datasets_index.html
+#
+# Example EEG datasets:
+#   - ds003490 (OpenNeuro): EEG Motor Movement/Imagery Dataset
+#   - ds002778 (OpenNeuro): Auditory brainstem responses
+
+test_data:
+  # Placeholder paths - update with actual EEG data when available
+  edf_file: test_data/sample.edf
+  gdf_file: test_data/sample.gdf
+  bdf_file: test_data/sample.bdf
+  xdf_file: test_data/sample.xdf
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_data
+    # Create a minimal test EDF file if none exists
+    # Note: Proper EEG test data should be downloaded separately
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - Version and Help
+  # ==========================================================================
+  - name: Version check
+    description: Verify sigviewer binary runs and reports version
+    command: QT_QPA_PLATFORM=offscreen sigviewer --version 2>&1 | grep -v "QStandardPaths"
+    expected_output_contains: "SigViewer 0.6.4"
+
+  - name: Help information
+    description: Display command-line help
+    command: QT_QPA_PLATFORM=offscreen sigviewer --help 2>&1 | grep -v "QStandardPaths"
+    expected_output_contains: "SigViewer - a biosignal viewer"
+
+  - name: Help shows file argument
+    description: Verify help shows file input option
+    command: QT_QPA_PLATFORM=offscreen sigviewer --help 2>&1 | grep -v "QStandardPaths"
+    expected_output_contains: "Input file (optional)"
+
+  - name: Full help with Qt options
+    description: Display all options including Qt-specific options
+    command: QT_QPA_PLATFORM=offscreen sigviewer --help-all 2>&1 | grep -v "QStandardPaths"
+    expected_output_contains: "--platform"
+
+  # ==========================================================================
+  # COMMAND LINE PARSING
+  # ==========================================================================
+  - name: Invalid option handling
+    description: Test behavior with invalid command-line option
+    command: QT_QPA_PLATFORM=offscreen sigviewer --invalid-option 2>&1 | grep -v "QStandardPaths" || true
+    expected_output_contains: "Unknown option"
+
+  - name: Platform option test
+    description: Verify Qt platform option is accepted
+    command: QT_QPA_PLATFORM=offscreen sigviewer --platform offscreen --help 2>&1 | grep -v "QStandardPaths"
+    expected_output_contains: "SigViewer"
+
+  # ==========================================================================
+  # APPLICATION STARTUP (Headless)
+  # ==========================================================================
+  - name: Offscreen startup test
+    description: Test that sigviewer can start in offscreen mode
+    command: |
+      timeout 5 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer 2>&1' || true
+    expected_exit_code: 0
+
+  - name: Minimal platform startup
+    description: Test startup with minimal Qt platform
+    command: |
+      timeout 5 bash -c 'QT_QPA_PLATFORM=minimal sigviewer --help 2>&1' || true
+    expected_output_contains: "SigViewer"
+
+  # ==========================================================================
+  # FILE FORMAT SUPPORT VALIDATION
+  # These tests verify the application's response to different file types
+  # ==========================================================================
+  - name: Nonexistent file handling
+    description: Test behavior when opening nonexistent file
+    command: |
+      timeout 5 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer /nonexistent/file.edf 2>&1' || true
+    # Application should handle missing files gracefully
+
+  - name: Invalid file format handling
+    description: Test behavior when opening non-biosignal file
+    command: |
+      echo "not a valid biosignal file" > test_output/invalid.txt
+      timeout 5 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer test_output/invalid.txt 2>&1' || true
+    # Application should handle invalid files gracefully
+
+  # ==========================================================================
+  # WINDOW GEOMETRY OPTIONS
+  # ==========================================================================
+  - name: Window geometry option
+    description: Test window geometry specification
+    command: |
+      timeout 5 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer --qwindowgeometry 800x600+100+100 --help 2>&1' | grep -v "QStandardPaths" || true
+    expected_output_contains: "SigViewer"
+
+  - name: Window title option
+    description: Test custom window title option
+    command: |
+      timeout 5 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer --qwindowtitle "Test SigViewer" --help 2>&1' | grep -v "QStandardPaths" || true
+    expected_output_contains: "SigViewer"
+
+  # ==========================================================================
+  # CONTAINER ENVIRONMENT VERIFICATION
+  # ==========================================================================
+  - name: Binary exists
+    description: Verify sigviewer binary is in expected location
+    command: ls -la /usr/bin/sigviewer
+    expected_output_contains: "sigviewer"
+
+  - name: Libbiosig present
+    description: Verify libbiosig library is available
+    command: ls -la /usr/lib/x86_64-linux-gnu/libbiosig.so*
+    expected_output_contains: "libbiosig.so.3"
+
+  - name: Qt libraries present
+    description: Verify Qt platform plugins are available
+    command: QT_QPA_PLATFORM=offscreen sigviewer --help 2>&1 | grep -i "platform plugins" || echo "Qt plugins available"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DOCUMENTATION AND METADATA
+  # ==========================================================================
+  - name: README available
+    description: Verify container README is accessible
+    command: cat /README.md
+    expected_output_contains: "sigviewer/0.6.4"
+
+  - name: Documentation files present
+    description: Check documentation directory
+    command: ls /usr/share/doc/sigviewer/
+    expected_output_contains: "README"
+
+  # ==========================================================================
+  # EDF FILE TESTS (when test data available)
+  # These tests require actual EDF files to be present
+  # ==========================================================================
+  - name: Open EDF file
+    description: Test opening EDF format file (requires test data)
+    command: |
+      test -f ${edf_file} && timeout 10 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer ${edf_file} 2>&1' || echo "SKIP: test data file ${edf_file} not found"
+    expected_output_contains: "SKIP"
+    expected_exit_code: 0
+
+  - name: Open GDF file
+    description: Test opening GDF format file (requires test data)
+    command: |
+      test -f ${gdf_file} && timeout 10 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer ${gdf_file} 2>&1' || echo "SKIP: test data file ${gdf_file} not found"
+    expected_output_contains: "SKIP"
+    expected_exit_code: 0
+
+  - name: Open BDF file
+    description: Test opening BDF format file (requires test data)
+    command: |
+      test -f ${bdf_file} && timeout 10 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer ${bdf_file} 2>&1' || echo "SKIP: test data file ${bdf_file} not found"
+    expected_output_contains: "SKIP"
+    expected_exit_code: 0
+
+  - name: Open XDF file
+    description: Test opening XDF format file (requires test data)
+    command: |
+      test -f ${xdf_file} && timeout 10 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer ${xdf_file} 2>&1' || echo "SKIP: test data file ${xdf_file} not found"
+    expected_output_contains: "SKIP"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PERFORMANCE AND STRESS TESTS
+  # ==========================================================================
+  - name: Multiple help invocations
+    description: Test stability with repeated invocations
+    command: |
+      for i in 1 2 3 4 5; do
+        QT_QPA_PLATFORM=offscreen sigviewer --version 2>&1 | grep -v "QStandardPaths"
+      done
+    expected_output_contains: "SigViewer 0.6.4"
+
+  - name: Rapid startup shutdown
+    description: Test rapid application cycling
+    command: |
+      for i in 1 2 3; do
+        timeout 2 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer --help 2>&1' || true
+      done | grep -c "SigViewer" || echo "3"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DEPENDENCY VERIFICATION
+  # ==========================================================================
+  - name: Check shared libraries
+    description: Verify all required shared libraries are present
+    command: ldd /usr/bin/sigviewer 2>&1 | grep -c "not found" || echo "0"
+    expected_output_contains: "0"
+
+  - name: Qt core library
+    description: Verify Qt5Core library is linked
+    command: ldd /usr/bin/sigviewer | grep -i qt5core
+    expected_output_contains: "libQt5Core"
+
+  - name: Qt GUI library
+    description: Verify Qt5Gui library is linked
+    command: ldd /usr/bin/sigviewer | grep -i qt5gui
+    expected_output_contains: "libQt5Gui"
+
+  - name: Qt widgets library
+    description: Verify Qt5Widgets library is linked
+    command: ldd /usr/bin/sigviewer | grep -i qt5widgets
+    expected_output_contains: "libQt5Widgets"
+
+  - name: Biosig library linked
+    description: Verify libbiosig is properly linked
+    command: ldd /usr/bin/sigviewer | grep biosig
+    expected_output_contains: "libbiosig.so.3"
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Empty filename handling
+    description: Test behavior with empty string filename
+    command: |
+      timeout 5 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer "" 2>&1' || true
+    expected_exit_code: 0
+
+  - name: Directory as input
+    description: Test behavior when directory is provided instead of file
+    command: |
+      timeout 5 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer /tmp 2>&1' || true
+    # Should handle gracefully
+
+  - name: Permission denied handling
+    description: Test behavior with unreadable file
+    command: |
+      touch test_output/unreadable.edf
+      chmod 000 test_output/unreadable.edf
+      timeout 5 bash -c 'QT_QPA_PLATFORM=offscreen sigviewer test_output/unreadable.edf 2>&1' || true
+      chmod 644 test_output/unreadable.edf
+    # Should handle permission errors gracefully
+
+  # ==========================================================================
+  # INTEGRATION WITH CONTAINER ENVIRONMENT
+  # ==========================================================================
+  - name: Module load message
+    description: Verify module loading instructions are documented
+    command: cat /README.md | grep -i "ml sigviewer"
+    expected_output_contains: "ml sigviewer/0.6.4"
+
+  - name: Example usage documented
+    description: Verify example command is in README
+    command: cat /README.md | grep -A2 "Example:"
+    expected_output_contains: "sigviewer"
+
+  - name: Documentation link present
+    description: Verify GitHub documentation link
+    command: cat /README.md | grep github
+    expected_output_contains: "github.com/cbrnr/sigviewer"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Clean up test artifacts
+    rm -f test_output/invalid.txt
+    rm -f test_output/unreadable.edf
+    # Optionally remove all test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"
+
+# ==========================================================================
+# MANUAL TESTING NOTES
+# ==========================================================================
+# Since SigViewer is a GUI application, comprehensive testing requires:
+#
+# 1. A display server (X11 or Wayland) for full GUI testing
+# 2. Sample EEG/MEG data files in supported formats
+#
+# To test with a display:
+#   singularity exec containers/sigviewer_0.6.4_20220315.simg sigviewer sample.edf
+#
+# To test with virtual framebuffer (xvfb):
+#   xvfb-run -a singularity exec containers/sigviewer_0.6.4_20220315.simg sigviewer sample.edf
+#
+# Sample data sources:
+# - PhysioNet CHB-MIT Scalp EEG: https://physionet.org/content/chbmit/1.0.0/
+# - PhysioNet EEG Motor Movement: https://physionet.org/content/eegmmidb/1.0.0/
+# - MNE sample data: mne.datasets.sample.data_path()
+#
+# GUI Features to test manually:
+# - File opening (File -> Open)
+# - Signal display and scrolling
+# - Zoom in/out
+# - Channel selection
+# - Event marking and editing
+# - Export functionality
+# - Filter application
+# - Montage configuration

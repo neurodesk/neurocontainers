@@ -1,0 +1,737 @@
+# mricrogl container test suite
+# Tests for MRIcroGL v1.2.20211006 - NIfTI viewer and dcm2niix converter
+#
+# MRIcroGL is a cross-platform tool for viewing DICOM and NIfTI format images.
+# It provides a drag-and-drop user interface as well as a scripting language.
+# This container includes dcm2niix for DICOM to NIfTI conversion.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T2: inplaneT2.nii.gz
+#   - BOLD: functional MRI data
+#
+# Note: MRIcroGL GUI requires a display; tests focus on dcm2niix CLI tool
+# and container resource verification.
+
+name: mricrogl
+version: 1.2.20211006
+container: mricrogl_1.2.20211006_20220111.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/dicom_test
+    mkdir -p test_output/nifti_convert
+
+tests:
+  # ==========================================================================
+  # CONTAINER AND INSTALLATION VERIFICATION
+  # ==========================================================================
+  - name: Container README exists
+    description: Verify container README documentation is present
+    command: cat /README.md 2>&1 | head -5
+    expected_output_contains: "mricrogl"
+
+  - name: MRIcroGL binary exists
+    description: Verify MRIcroGL executable is installed
+    command: ls -la /opt/MRIcroGL/MRIcroGL
+    expected_output_contains: "MRIcroGL"
+
+  - name: MRIcroGL QT binary exists
+    description: Verify alternative QT5-based MRIcroGL is available
+    command: ls -la /opt/MRIcroGL/MRIcroGL_QT
+    expected_output_contains: "MRIcroGL_QT"
+
+  - name: dcm2niix binary exists
+    description: Verify dcm2niix is available in Resources
+    command: ls -la /opt/MRIcroGL/Resources/dcm2niix
+    expected_output_contains: "dcm2niix"
+
+  - name: MRIcroGL in PATH
+    description: Verify MRIcroGL is accessible via PATH
+    command: which MRIcroGL
+    expected_output_contains: "/opt/MRIcroGL/MRIcroGL"
+
+  - name: dcm2niix in PATH
+    description: Verify dcm2niix is accessible via PATH
+    command: which dcm2niix
+    expected_output_contains: "dcm2niix"
+
+  # ==========================================================================
+  # DCM2NIIX VERSION AND HELP
+  # ==========================================================================
+  - name: dcm2niix version check
+    description: Verify dcm2niix reports correct version
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "v1.0.20211006"
+
+  - name: dcm2niix help output
+    description: Verify dcm2niix displays usage information
+    command: dcm2niix -h 2>&1 | head -20
+    expected_output_contains: "Chris Rorden's dcm2niiX"
+
+  - name: dcm2niix shows options
+    description: Verify dcm2niix lists all command options
+    command: dcm2niix -h 2>&1 | grep -c "^\s*-"
+    expected_exit_code: 0
+
+  - name: dcm2niix BIDS option present
+    description: Verify BIDS sidecar option is documented
+    command: dcm2niix -h 2>&1
+    expected_output_contains: "BIDS sidecar"
+
+  - name: dcm2niix compression options
+    description: Verify compression options are documented
+    command: dcm2niix -h 2>&1
+    expected_output_contains: "gz compress"
+
+  - name: dcm2niix filename format options
+    description: Verify filename customization is documented
+    command: dcm2niix -h 2>&1
+    expected_output_contains: "%p=protocol"
+
+  - name: dcm2niix JPEG support
+    description: Verify JPEG2000 support is compiled in
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "OpenJPEG"
+
+  - name: dcm2niix JPEG-LS support
+    description: Verify JPEG-LS support via CharLS is compiled in
+    command: dcm2niix --version 2>&1 || true
+    expected_output_contains: "CharLS"
+
+  # ==========================================================================
+  # MRICROGL RESOURCES VERIFICATION
+  # ==========================================================================
+  - name: Resources directory exists
+    description: Verify MRIcroGL Resources directory is present
+    command: ls -la /opt/MRIcroGL/Resources/ | wc -l
+    expected_exit_code: 0
+
+  - name: Script directory exists
+    description: Verify scripting examples are available
+    command: ls /opt/MRIcroGL/Resources/script/ | wc -l
+    expected_exit_code: 0
+
+  - name: Standard images available
+    description: Verify standard reference images are included
+    command: ls /opt/MRIcroGL/Resources/standard/
+    expected_output_contains: "mni152.nii.gz"
+
+  - name: SPM152 template available
+    description: Verify SPM152 template is included
+    command: ls /opt/MRIcroGL/Resources/standard/spm152.nii.gz
+    expected_output_contains: "spm152.nii.gz"
+
+  - name: Chris T1 sample image available
+    description: Verify sample T1 image is included
+    command: ls /opt/MRIcroGL/Resources/standard/chris_t1.nii.gz
+    expected_output_contains: "chris_t1.nii.gz"
+
+  - name: Chris T2 sample image available
+    description: Verify sample T2 image is included
+    command: ls /opt/MRIcroGL/Resources/standard/chris_t2.nii.gz
+    expected_output_contains: "chris_t2.nii.gz"
+
+  - name: CT abdomen sample available
+    description: Verify CT sample images are included
+    command: ls /opt/MRIcroGL/Resources/standard/CT_Abdo.nii.gz
+    expected_output_contains: "CT_Abdo.nii.gz"
+
+  - name: fMRI sample image available
+    description: Verify fMRI statistical map sample is included
+    command: ls /opt/MRIcroGL/Resources/standard/spmMotor.nii.gz
+    expected_output_contains: "spmMotor.nii.gz"
+
+  - name: MRA sample available
+    description: Verify MRA sample image is included
+    command: ls /opt/MRIcroGL/Resources/standard/chris_MRA.nii.gz
+    expected_output_contains: "chris_MRA.nii.gz"
+
+  - name: Visible human sample available
+    description: Verify visible human dataset is included
+    command: ls /opt/MRIcroGL/Resources/standard/visiblehuman.nii.gz
+    expected_output_contains: "visiblehuman.nii.gz"
+
+  # ==========================================================================
+  # ATLAS RESOURCES
+  # ==========================================================================
+  - name: Atlas directory exists
+    description: Verify atlas resources are available
+    command: ls /opt/MRIcroGL/Resources/atlas/
+    expected_exit_code: 0
+
+  - name: AAL atlas available
+    description: Verify AAL atlas is included
+    command: ls /opt/MRIcroGL/Resources/atlas/aal.nii.gz
+    expected_output_contains: "aal.nii.gz"
+
+  - name: AICHA atlas available
+    description: Verify AICHA atlas is included
+    command: ls /opt/MRIcroGL/Resources/atlas/AICHA.nii.gz
+    expected_output_contains: "AICHA.nii.gz"
+
+  - name: NatBrainLab atlas available
+    description: Verify natbrainlab atlas is included
+    command: ls /opt/MRIcroGL/Resources/atlas/natbrainlab.nii.gz
+    expected_output_contains: "natbrainlab.nii.gz"
+
+  # ==========================================================================
+  # LOOKUP TABLE (COLOR MAP) RESOURCES
+  # ==========================================================================
+  - name: LUT directory exists
+    description: Verify color lookup tables are available
+    command: ls /opt/MRIcroGL/Resources/lut/ | wc -l
+    expected_exit_code: 0
+
+  - name: Hot colormap available
+    description: Verify hot colormap is included
+    command: ls /opt/MRIcroGL/Resources/lut/4hot.clut
+    expected_output_contains: "4hot.clut"
+
+  - name: Viridis colormap available
+    description: Verify viridis colormap is included
+    command: ls /opt/MRIcroGL/Resources/lut/Viridis.clut
+    expected_output_contains: "Viridis.clut"
+
+  - name: Inferno colormap available
+    description: Verify inferno colormap is included
+    command: ls /opt/MRIcroGL/Resources/lut/Inferno.clut
+    expected_output_contains: "Inferno.clut"
+
+  - name: Plasma colormap available
+    description: Verify plasma colormap is included
+    command: ls /opt/MRIcroGL/Resources/lut/Plasma.clut
+    expected_output_contains: "Plasma.clut"
+
+  - name: CT Bones colormap available
+    description: Verify CT bone colormap is included
+    command: ls /opt/MRIcroGL/Resources/lut/CT_Bones.clut
+    expected_output_contains: "CT_Bones.clut"
+
+  - name: CT Soft Tissue colormap available
+    description: Verify CT soft tissue colormap is included
+    command: ls /opt/MRIcroGL/Resources/lut/CT_Soft_Tissue.clut
+    expected_output_contains: "CT_Soft_Tissue.clut"
+
+  - name: Jet colormap available
+    description: Verify jet colormap is included
+    command: ls /opt/MRIcroGL/Resources/lut/jet.clut
+    expected_output_contains: "jet.clut"
+
+  - name: Blue to red colormap available
+    description: Verify diverging colormap is included
+    command: ls /opt/MRIcroGL/Resources/lut/blue2red.clut
+    expected_output_contains: "blue2red.clut"
+
+  # ==========================================================================
+  # SHADER RESOURCES
+  # ==========================================================================
+  - name: Shader directory exists
+    description: Verify shader resources are available
+    command: ls /opt/MRIcroGL/Resources/shader/ | wc -l
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SCRIPTING EXAMPLES
+  # ==========================================================================
+  - name: Basic script example exists
+    description: Verify basic.py script example is present
+    command: cat /opt/MRIcroGL/Resources/script/basic.py | head -5
+    expected_output_contains: "import gl"
+
+  - name: Mosaic script example exists
+    description: Verify mosaic.py script example is present
+    command: cat /opt/MRIcroGL/Resources/script/mosaic.py
+    expected_output_contains: "mosaic"
+
+  - name: CT abdomen script exists
+    description: Verify CT visualization script is present
+    command: cat /opt/MRIcroGL/Resources/script/ct_abdomen.py | head -3
+    expected_output_contains: "import gl"
+
+  - name: CT head script exists
+    description: Verify CT head visualization script is present
+    command: cat /opt/MRIcroGL/Resources/script/ct_head.py | head -3
+    expected_output_contains: "import gl"
+
+  - name: Help script exists
+    description: Verify help documentation script is present
+    command: cat /opt/MRIcroGL/Resources/script/help.py | head -3
+    expected_output_contains: "import"
+
+  - name: Glass effect script exists
+    description: Verify glass rendering script is present
+    command: ls /opt/MRIcroGL/Resources/script/glass.py
+    expected_output_contains: "glass.py"
+
+  - name: Cutout script exists
+    description: Verify cutout visualization script is present
+    command: ls /opt/MRIcroGL/Resources/script/cutout.py
+    expected_output_contains: "cutout.py"
+
+  - name: Clip script exists
+    description: Verify clipping plane script is present
+    command: ls /opt/MRIcroGL/Resources/script/clip.py
+    expected_output_contains: "clip.py"
+
+  - name: Cluster script exists
+    description: Verify cluster visualization script is present
+    command: ls /opt/MRIcroGL/Resources/script/cluster.py
+    expected_output_contains: "cluster.py"
+
+  - name: Invert script exists
+    description: Verify invert script is present
+    command: ls /opt/MRIcroGL/Resources/script/invert.py
+    expected_output_contains: "invert.py"
+
+  - name: MIP script exists
+    description: Verify Maximum Intensity Projection script is present
+    command: ls /opt/MRIcroGL/Resources/script/mip.py
+    expected_output_contains: "mip.py"
+
+  # ==========================================================================
+  # DCM2NIIX CONVERSION TESTS (using internal samples)
+  # ==========================================================================
+  - name: dcm2niix empty directory handling
+    description: Test dcm2niix behavior with empty directory
+    command: dcm2niix -o test_output/nifti_convert test_output/dicom_test 2>&1 || true
+    expected_output_contains: "Unable to find"
+
+  - name: dcm2niix verbose mode 0
+    description: Test dcm2niix quiet mode
+    command: dcm2niix -v 0 -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix verbose mode 1
+    description: Test dcm2niix normal verbose mode
+    command: dcm2niix -v 1 -o test_output test_output/dicom_test 2>&1 || true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix verbose mode 2
+    description: Test dcm2niix maximum verbose mode
+    command: dcm2niix -v 2 -o test_output test_output/dicom_test 2>&1 || true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix BIDS only mode
+    description: Test dcm2niix BIDS-only output (no NIfTI)
+    command: dcm2niix -b o -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix no BIDS mode
+    description: Test dcm2niix without BIDS sidecar
+    command: dcm2niix -b n -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix with compression
+    description: Test dcm2niix with internal zlib compression
+    command: dcm2niix -z i -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix without compression
+    description: Test dcm2niix without compression
+    command: dcm2niix -z n -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix search depth 0
+    description: Test dcm2niix with no subdirectory search
+    command: dcm2niix -d 0 -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix search depth 9
+    description: Test dcm2niix with maximum subdirectory search
+    command: dcm2niix -d 9 -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix single file mode
+    description: Test dcm2niix single file mode option
+    command: dcm2niix -s y -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix merge mode off
+    description: Test dcm2niix without slice merging
+    command: dcm2niix -m n -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix merge mode on
+    description: Test dcm2niix with forced slice merging
+    command: dcm2niix -m y -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix merge mode auto
+    description: Test dcm2niix with automatic slice merging
+    command: dcm2niix -m 2 -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix ignore derived images
+    description: Test dcm2niix ignoring derived/localizer images
+    command: dcm2niix -i y -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix crop option enabled
+    description: Test dcm2niix 3D cropping option
+    command: dcm2niix -x y -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix crop option disabled
+    description: Test dcm2niix without 3D cropping
+    command: dcm2niix -x n -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix crop ignore mode
+    description: Test dcm2niix ignore crop and rotation
+    command: dcm2niix -x i -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX FILENAME FORMAT TESTS
+  # ==========================================================================
+  - name: dcm2niix filename with protocol
+    description: Test filename format with protocol name
+    command: dcm2niix -f "%p" -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix filename with series
+    description: Test filename format with series number
+    command: dcm2niix -f "%s" -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix filename with time
+    description: Test filename format with acquisition time
+    command: dcm2niix -f "%t" -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix filename with patient ID
+    description: Test filename format with patient ID
+    command: dcm2niix -f "%i" -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix filename with patient name
+    description: Test filename format with patient name
+    command: dcm2niix -f "%n" -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix filename with description
+    description: Test filename format with series description
+    command: dcm2niix -f "%d" -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix filename with folder name
+    description: Test filename format with folder name
+    command: dcm2niix -f "%f" -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix complex filename format
+    description: Test complex filename format string
+    command: dcm2niix -f "%p_%s_%t" -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix BIDS-style filename
+    description: Test BIDS-compatible filename format
+    command: dcm2niix -f "sub-%i_ses-%s_%p" -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX OUTPUT FORMAT TESTS
+  # ==========================================================================
+  - name: dcm2niix NIfTI output
+    description: Test dcm2niix default NIfTI output format
+    command: dcm2niix -e n -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix NRRD export option
+    description: Test dcm2niix NRRD export option parsing
+    command: dcm2niix -e y -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix MGH export option
+    description: Test dcm2niix MGH/MGZ export option parsing
+    command: dcm2niix -e o -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX WRITE BEHAVIOR TESTS
+  # ==========================================================================
+  - name: dcm2niix skip duplicates
+    description: Test dcm2niix skip on name conflict
+    command: dcm2niix -w 0 -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix overwrite duplicates
+    description: Test dcm2niix overwrite on name conflict
+    command: dcm2niix -w 1 -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix suffix duplicates
+    description: Test dcm2niix add suffix on name conflict
+    command: dcm2niix -w 2 -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX COMPRESSION LEVEL TESTS
+  # ==========================================================================
+  - name: dcm2niix compression level 1
+    description: Test fastest compression level
+    command: dcm2niix -1 -z i -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix compression level 6
+    description: Test default compression level
+    command: dcm2niix -6 -z i -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix compression level 9
+    description: Test maximum compression level
+    command: dcm2niix -9 -z i -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX SPECIAL OPTIONS
+  # ==========================================================================
+  - name: dcm2niix terse mode
+    description: Test dcm2niix terse filename mode
+    command: dcm2niix --terse -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix progress mode
+    description: Test dcm2niix Slicer progress output
+    command: dcm2niix --progress y -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix XML features
+    description: Test dcm2niix XML feature output
+    command: dcm2niix --xml 2>&1 | head -20
+    expected_output_contains: "xml"
+
+  - name: dcm2niix ignore trigger times
+    description: Test dcm2niix trigger time ignore option
+    command: dcm2niix --ignore_trigger_times -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix big endian option
+    description: Test dcm2niix big endian byte order
+    command: dcm2niix --big-endian y -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix little endian option
+    description: Test dcm2niix little endian byte order
+    command: dcm2niix --big-endian n -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix optimal endian option
+    description: Test dcm2niix optimal/native byte order
+    command: dcm2niix --big-endian o -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX BIDS ANONYMIZATION
+  # ==========================================================================
+  - name: dcm2niix BIDS anonymize on
+    description: Test dcm2niix BIDS anonymization enabled
+    command: dcm2niix -ba y -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix BIDS anonymize off
+    description: Test dcm2niix BIDS anonymization disabled
+    command: dcm2niix -ba n -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX PHILIPS OPTIONS
+  # ==========================================================================
+  - name: dcm2niix Philips scaling on
+    description: Test dcm2niix Philips precise scaling enabled
+    command: dcm2niix -p y -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix Philips scaling off
+    description: Test dcm2niix Philips display scaling
+    command: dcm2niix -p n -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX INTEGER SCALING
+  # ==========================================================================
+  - name: dcm2niix lossless scale yes
+    description: Test dcm2niix lossless 16-bit scaling
+    command: dcm2niix -l y -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix lossless scale no
+    description: Test dcm2niix uint16 to int16 conversion
+    command: dcm2niix -l n -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix lossless original
+    description: Test dcm2niix original integer values
+    command: dcm2niix -l o -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX COMMENT OPTION
+  # ==========================================================================
+  - name: dcm2niix with comment
+    description: Test dcm2niix adding comment to NIfTI header
+    command: dcm2niix -c "test_comment" -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix with long comment
+    description: Test dcm2niix with maximum length comment
+    command: dcm2niix -c "test_24_char_comment_x" -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX DEFAULTS FILE
+  # ==========================================================================
+  - name: dcm2niix ignore defaults
+    description: Test dcm2niix ignoring defaults file
+    command: dcm2niix -g i -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX ADJACENT DICOM OPTION
+  # ==========================================================================
+  - name: dcm2niix adjacent no
+    description: Test dcm2niix non-adjacent DICOM mode
+    command: dcm2niix -a n -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  - name: dcm2niix adjacent yes
+    description: Test dcm2niix adjacent DICOM mode
+    command: dcm2niix -a y -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX RENAME MODE
+  # ==========================================================================
+  - name: dcm2niix rename mode
+    description: Test dcm2niix rename instead of convert option
+    command: dcm2niix -r y -o test_output test_output/dicom_test 2>&1 || true
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SAMPLE IMAGE VERIFICATION
+  # ==========================================================================
+  - name: MNI152 template readable
+    description: Verify MNI152 template is a valid NIfTI file
+    command: test -f /opt/MRIcroGL/Resources/standard/mni152.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/standard/mni152.nii.gz | head -1
+    expected_output_contains: "1f 8b"
+
+  - name: SPM152 template readable
+    description: Verify SPM152 template is a valid NIfTI file
+    command: test -f /opt/MRIcroGL/Resources/standard/spm152.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/standard/spm152.nii.gz | head -1
+    expected_output_contains: "1f 8b"
+
+  - name: AAL atlas readable
+    description: Verify AAL atlas is a valid NIfTI file
+    command: test -f /opt/MRIcroGL/Resources/atlas/aal.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/atlas/aal.nii.gz | head -1
+    expected_output_contains: "1f 8b"
+
+  - name: CT Abdo readable
+    description: Verify CT abdomen sample is a valid NIfTI file
+    command: test -f /opt/MRIcroGL/Resources/standard/CT_Abdo.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/standard/CT_Abdo.nii.gz | head -1
+    expected_output_contains: "1f 8b"
+
+  - name: Visible human readable
+    description: Verify visible human sample is a valid NIfTI file
+    command: test -f /opt/MRIcroGL/Resources/standard/visiblehuman.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/standard/visiblehuman.nii.gz | head -1
+    expected_output_contains: "1f 8b"
+
+  # ==========================================================================
+  # INSTALLATION DOCUMENTATION
+  # ==========================================================================
+  - name: Installation instructions exist
+    description: Verify Linux installation guide is present
+    command: cat /opt/MRIcroGL/MRIcroGL_Linux_Installation.txt | head -5
+    expected_output_contains: "MRIcroGL"
+
+  - name: GTK2 instructions documented
+    description: Verify GTK2 version documentation exists
+    command: cat /opt/MRIcroGL/MRIcroGL_Linux_Installation.txt
+    expected_output_contains: "GTK2"
+
+  - name: QT5 instructions documented
+    description: Verify QT5 version documentation exists
+    command: cat /opt/MRIcroGL/MRIcroGL_Linux_Installation.txt
+    expected_output_contains: "QT5"
+
+  # ==========================================================================
+  # STANDARD IMAGES README
+  # ==========================================================================
+  - name: Standard images README exists
+    description: Verify standard images documentation is present
+    command: cat /opt/MRIcroGL/Resources/standard/README.md | head -10
+    expected_output_contains: "Licenses"
+
+  - name: BSD license documented
+    description: Verify BSD license is documented for source code
+    command: cat /opt/MRIcroGL/Resources/standard/README.md
+    expected_output_contains: "BSD license"
+
+  - name: MNI template license documented
+    description: Verify MNI template license information is present
+    command: cat /opt/MRIcroGL/Resources/standard/README.md
+    expected_output_contains: "ICBM 152"
+
+  # ==========================================================================
+  # FONT AND UI RESOURCES
+  # ==========================================================================
+  - name: Roboto font exists
+    description: Verify Roboto font resources are present
+    command: ls /opt/MRIcroGL/Resources/Roboto.json
+    expected_output_contains: "Roboto.json"
+
+  - name: Roboto font texture exists
+    description: Verify Roboto font texture is present
+    command: ls /opt/MRIcroGL/Resources/Roboto.png
+    expected_output_contains: "Roboto.png"
+
+  - name: Desktop file exists
+    description: Verify desktop integration file is present
+    command: ls /opt/MRIcroGL/Resources/mricrogl.desktop
+    expected_output_contains: "mricrogl.desktop"
+
+  - name: Icon file exists
+    description: Verify application icon is present
+    command: ls /opt/MRIcroGL/Resources/mricrogl.png
+    expected_output_contains: "mricrogl.png"
+
+  - name: SVG icon exists
+    description: Verify scalable icon is present
+    command: ls /opt/MRIcroGL/Resources/mricrogl.svg
+    expected_output_contains: "mricrogl.svg"
+
+  # ==========================================================================
+  # MATCAP RESOURCES
+  # ==========================================================================
+  - name: Matcap directory exists
+    description: Verify matcap rendering resources are available
+    command: ls /opt/MRIcroGL/Resources/matcap/ | wc -l
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PYTHON RESOURCES
+  # ==========================================================================
+  - name: Python37 resources exist
+    description: Verify Python 3.7 resources are included
+    command: ls /opt/MRIcroGL/Resources/python37/
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

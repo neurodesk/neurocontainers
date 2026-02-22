@@ -1,0 +1,810 @@
+# niimath container test suite
+# Tests for niimath v1.0.20250804 - fslmaths-compatible image calculator
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: niimath
+version: 1.0.20250804
+container: niimath_1.0.20250804_20251016.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: Version check
+    description: Verify niimath binary runs and reports version
+    command: niimath 2>&1 | head -1
+    expected_output_contains: "niimath version"
+
+  - name: Header inspection (fslhd emulation)
+    description: Report NIfTI header without processing
+    command: niimath ${t1w}
+    expected_output_contains: "nifti_type"
+
+  # ==========================================================================
+  # BASIC UNARY OPERATIONS
+  # ==========================================================================
+  - name: Absolute value
+    description: Test -abs operation
+    command: niimath ${t1w} -abs test_output/t1w_abs.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_abs.nii.gz
+      - same_dimensions: ["${output_dir}/t1w_abs.nii.gz", "${t1w}"]
+
+  - name: Binarize
+    description: Test -bin operation (voxels > 0 become 1)
+    command: niimath ${t1w} -bin test_output/t1w_bin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_bin.nii.gz
+
+  - name: Binarize and invert
+    description: Test -binv operation
+    command: niimath ${t1w} -binv test_output/t1w_binv.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_binv.nii.gz
+
+  - name: Square root
+    description: Test -sqrt operation
+    command: niimath ${t1w} -sqrt test_output/t1w_sqrt.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sqrt.nii.gz
+
+  - name: Square
+    description: Test -sqr operation
+    command: niimath ${t1w} -sqr test_output/t1w_sqr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sqr.nii.gz
+
+  - name: Exponential
+    description: Test -exp operation
+    command: niimath ${t1w} -div 1000 -exp test_output/t1w_exp.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_exp.nii.gz
+
+  - name: Natural logarithm
+    description: Test -log operation
+    command: niimath ${t1w} -thr 1 -log test_output/t1w_log.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_log.nii.gz
+
+  - name: Reciprocal
+    description: Test -recip operation (1/x)
+    command: niimath ${t1w} -thr 1 -recip test_output/t1w_recip.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_recip.nii.gz
+
+  - name: Sine function
+    description: Test -sin operation
+    command: niimath ${t1w} -sin test_output/t1w_sin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sin.nii.gz
+
+  - name: Cosine function
+    description: Test -cos operation
+    command: niimath ${t1w} -cos test_output/t1w_cos.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_cos.nii.gz
+
+  - name: Arc tangent
+    description: Test -atan operation
+    command: niimath ${t1w} -atan test_output/t1w_atan.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_atan.nii.gz
+
+  # ==========================================================================
+  # ROUNDING OPERATIONS (niimath-specific)
+  # ==========================================================================
+  - name: Ceiling
+    description: Test -ceil operation (round up)
+    command: niimath ${t1w} -div 100 -ceil test_output/t1w_ceil.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_ceil.nii.gz
+
+  - name: Floor
+    description: Test -floor operation (round down)
+    command: niimath ${t1w} -div 100 -floor test_output/t1w_floor.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_floor.nii.gz
+
+  - name: Round
+    description: Test -round operation (nearest integer)
+    command: niimath ${t1w} -div 100 -round test_output/t1w_round.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_round.nii.gz
+
+  - name: Truncate
+    description: Test -trunc operation (remove decimal)
+    command: niimath ${t1w} -div 100 -trunc test_output/t1w_trunc.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_trunc.nii.gz
+
+  # ==========================================================================
+  # BINARY OPERATIONS (arithmetic)
+  # ==========================================================================
+  - name: Add constant
+    description: Test -add with scalar value
+    command: niimath ${t1w} -add 100 test_output/t1w_add100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_add100.nii.gz
+
+  - name: Subtract constant
+    description: Test -sub with scalar value
+    command: niimath ${t1w} -sub 50 test_output/t1w_sub50.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sub50.nii.gz
+
+  - name: Multiply constant
+    description: Test -mul with scalar value
+    command: niimath ${t1w} -mul 2 test_output/t1w_mul2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mul2.nii.gz
+
+  - name: Divide constant
+    description: Test -div with scalar value
+    command: niimath ${t1w} -div 2 test_output/t1w_div2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_div2.nii.gz
+
+  - name: Add images
+    description: Test -add with another image
+    command: niimath ${t1w} -add ${t1w} test_output/t1w_add_t1w.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_add_t1w.nii.gz
+
+  - name: Multiply images
+    description: Test -mul with another image
+    command: niimath ${t1w} -mul ${t1w} test_output/t1w_mul_t1w.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_mul_t1w.nii.gz
+
+  - name: Maximum of two images
+    description: Test -max with another image (same dimensions required)
+    command: niimath ${t1w} -max ${t1w} test_output/t1w_max_t1w.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_max_t1w.nii.gz
+
+  - name: Minimum of two images
+    description: Test -min with another image (same dimensions required)
+    command: niimath ${t1w} -min ${t1w} test_output/t1w_min_t1w.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_min_t1w.nii.gz
+
+  - name: Modulus remainder
+    description: Test -rem operation
+    command: niimath ${t1w} -rem 100 test_output/t1w_rem100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_rem100.nii.gz
+
+  - name: Power operation
+    description: Test -power operation (niimath-specific)
+    command: niimath ${t1w} -div 1000 -power 2 test_output/t1w_power2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_power2.nii.gz
+
+  # ==========================================================================
+  # THRESHOLDING OPERATIONS
+  # ==========================================================================
+  - name: Lower threshold
+    description: Test -thr operation (zero below threshold)
+    command: niimath ${t1w} -thr 100 test_output/t1w_thr100.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thr100.nii.gz
+
+  - name: Upper threshold
+    description: Test -uthr operation (zero above threshold)
+    command: niimath ${t1w} -uthr 500 test_output/t1w_uthr500.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_uthr500.nii.gz
+
+  - name: Combined thresholds
+    description: Test -thr and -uthr together (band-pass)
+    command: niimath ${t1w} -thr 100 -uthr 500 test_output/t1w_thr100_uthr500.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thr100_uthr500.nii.gz
+
+  - name: Percentage threshold
+    description: Test -thrp operation (robust range percentage)
+    command: niimath ${t1w} -thrp 10 test_output/t1w_thrp10.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_thrp10.nii.gz
+
+  - name: Clamp lower
+    description: Test -clamp operation
+    command: niimath ${t1w} -clamp 5 test_output/t1w_clamp5.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_clamp5.nii.gz
+
+  # ==========================================================================
+  # MASKING OPERATIONS
+  # ==========================================================================
+  - name: Create brain mask with Otsu
+    description: Test -otsu for automatic thresholding (niimath-specific)
+    command: niimath ${t1w} -otsu 3 test_output/t1w_otsu_mask.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_otsu_mask.nii.gz
+
+  - name: Apply mask
+    description: Test -mas operation with generated mask
+    command: niimath ${t1w} -mas test_output/t1w_otsu_mask.nii.gz test_output/t1w_masked.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/t1w_masked.nii.gz
+
+  - name: Dehaze
+    description: Test -dehaze operation (niimath-specific, set dark voxels to zero)
+    command: niimath ${t1w} -dehaze 3 test_output/t1w_dehaze.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_dehaze.nii.gz
+
+  # ==========================================================================
+  # SPATIAL FILTERING
+  # ==========================================================================
+  - name: Gaussian smoothing
+    description: Test -s operation (Gaussian smoothing with sigma in mm)
+    command: niimath ${t1w} -s 2 test_output/t1w_smooth2mm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_smooth2mm.nii.gz
+
+  - name: Mean filtering
+    description: Test -fmean operation with default kernel
+    command: niimath ${t1w} -fmean test_output/t1w_fmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fmean.nii.gz
+
+  - name: Median filtering
+    description: Test -fmedian operation
+    command: niimath ${t1w} -fmedian test_output/t1w_fmedian.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fmedian.nii.gz
+
+  - name: Custom kernel box smoothing
+    description: Test -kernel box with -fmean
+    command: niimath ${t1w} -kernel box 5 -fmean test_output/t1w_box5_fmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_box5_fmean.nii.gz
+
+  - name: Gaussian kernel smoothing
+    description: Test -kernel gauss with -fmean
+    timeout: 300
+    command: niimath ${t1w} -kernel gauss 2 -fmean test_output/t1w_gauss2_fmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_gauss2_fmean.nii.gz
+
+  - name: Sphere kernel smoothing
+    description: Test -kernel sphere with -fmean
+    command: niimath ${t1w} -kernel sphere 3 -fmean test_output/t1w_sphere3_fmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sphere3_fmean.nii.gz
+
+  - name: Subsample by 2
+    description: Test -subsamp2 operation
+    command: niimath ${t1w} -subsamp2 test_output/t1w_subsamp2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_subsamp2.nii.gz
+
+  # ==========================================================================
+  # MORPHOLOGICAL OPERATIONS
+  # ==========================================================================
+  - name: Erosion
+    description: Test -ero operation on binary mask
+    command: niimath test_output/t1w_otsu_mask.nii.gz -ero test_output/mask_ero.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/mask_ero.nii.gz
+
+  - name: Dilation (mean)
+    description: Test -dilM operation on binary mask
+    command: niimath test_output/t1w_otsu_mask.nii.gz -dilM test_output/mask_dilM.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/mask_dilM.nii.gz
+
+  - name: Dilation (max)
+    description: Test -dilD operation on binary mask
+    command: niimath test_output/t1w_otsu_mask.nii.gz -dilD test_output/mask_dilD.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/mask_dilD.nii.gz
+
+  - name: Fill holes
+    description: Test -fillh operation on binary mask
+    command: niimath test_output/t1w_otsu_mask.nii.gz -fillh test_output/mask_fillh.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/mask_fillh.nii.gz
+
+  - name: Fill holes 26-connectivity
+    description: Test -fillh26 operation
+    command: niimath test_output/t1w_otsu_mask.nii.gz -fillh26 test_output/mask_fillh26.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/mask_fillh26.nii.gz
+
+  - name: Morphological dilate with distance
+    description: Test -dilate operation (niimath-specific)
+    command: niimath test_output/t1w_otsu_mask.nii.gz -dilate 0.5 2 test_output/mask_dilate.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/mask_dilate.nii.gz
+
+  - name: Morphological erode with distance
+    description: Test -erode operation (niimath-specific)
+    command: niimath test_output/t1w_otsu_mask.nii.gz -erode 0.5 2 test_output/mask_erode.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/mask_erode.nii.gz
+
+  - name: Morphological close
+    description: Test -close operation (niimath-specific)
+    command: niimath test_output/t1w_otsu_mask.nii.gz -close 0.5 2 2 test_output/mask_close.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/mask_close.nii.gz
+
+  - name: Connected component labeling
+    description: Test -bwlabel operation (niimath-specific)
+    command: niimath test_output/t1w_otsu_mask.nii.gz -bwlabel 6 test_output/mask_bwlabel.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/mask_bwlabel.nii.gz
+
+  # ==========================================================================
+  # EDGE DETECTION (niimath-specific)
+  # ==========================================================================
+  - name: Sobel edge detection
+    description: Test -sobel operation
+    command: niimath ${t1w} -sobel test_output/t1w_sobel.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sobel.nii.gz
+
+  - name: Sobel binary edge
+    description: Test -sobel_binary operation
+    command: niimath ${t1w} -sobel_binary test_output/t1w_sobel_binary.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sobel_binary.nii.gz
+
+  - name: Edge strength
+    description: Test -edge operation
+    command: niimath ${t1w} -edge test_output/t1w_edge.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_edge.nii.gz
+
+  - name: Unsharp mask
+    description: Test -unsharp operation (niimath-specific)
+    command: niimath ${t1w} -unsharp 1 0.5 test_output/t1w_unsharp.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_unsharp.nii.gz
+
+  - name: Difference of Gaussian
+    description: Test -dog operation (niimath-specific)
+    command: niimath ${t1w} -dog 1 2 test_output/t1w_dog.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_dog.nii.gz
+
+  - name: Difference of Gaussian raw
+    description: Test -dogr operation (without zero-crossing)
+    command: niimath ${t1w} -dogr 1 2 test_output/t1w_dogr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_dogr.nii.gz
+
+  # ==========================================================================
+  # DISTANCE TRANSFORMS (niimath-specific)
+  # ==========================================================================
+  - name: Euclidean distance transform
+    description: Test -edt operation
+    command: niimath test_output/t1w_otsu_mask.nii.gz -edt test_output/mask_edt.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/mask_edt.nii.gz
+
+  - name: Signed Euclidean distance transform
+    description: Test -sedt operation
+    command: niimath test_output/t1w_otsu_mask.nii.gz -sedt test_output/mask_sedt.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/mask_sedt.nii.gz
+
+  # ==========================================================================
+  # INTENSITY NORMALIZATION
+  # ==========================================================================
+  - name: Scale to 0-1
+    description: Test -scale01 operation (niimath-specific)
+    command: niimath ${t1w} -scale01 test_output/t1w_scale01.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_scale01.nii.gz
+
+  - name: Intensity normalization (per volume)
+    description: Test -inm operation
+    command: niimath ${t1w} -inm 1000 test_output/t1w_inm1000.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_inm1000.nii.gz
+
+  # ==========================================================================
+  # DIMENSIONALITY REDUCTION (requires 4D data)
+  # ==========================================================================
+  - name: Temporal mean
+    description: Test -Tmean operation on 4D data
+    command: niimath ${bold} -Tmean test_output/bold_Tmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tmean.nii.gz
+      - is_3d: ${output_dir}/bold_Tmean.nii.gz
+
+  - name: Temporal standard deviation
+    description: Test -Tstd operation on 4D data
+    command: niimath ${bold} -Tstd test_output/bold_Tstd.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tstd.nii.gz
+
+  - name: Temporal maximum
+    description: Test -Tmax operation on 4D data
+    command: niimath ${bold} -Tmax test_output/bold_Tmax.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tmax.nii.gz
+
+  - name: Temporal minimum
+    description: Test -Tmin operation on 4D data
+    command: niimath ${bold} -Tmin test_output/bold_Tmin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tmin.nii.gz
+
+  - name: Temporal sum
+    description: Test -Tsum operation on 4D data
+    command: niimath ${bold} -Tsum test_output/bold_Tsum.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tsum.nii.gz
+
+  - name: Temporal median
+    description: Test -Tmedian operation on 4D data
+    command: niimath ${bold} -Tmedian test_output/bold_Tmedian.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tmedian.nii.gz
+
+  - name: Temporal percentile
+    description: Test -Tperc operation (90th percentile)
+    command: niimath ${bold} -Tperc 90 test_output/bold_Tperc90.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tperc90.nii.gz
+
+  - name: Temporal max index
+    description: Test -Tmaxn operation (time index of max)
+    command: niimath ${bold} -Tmaxn test_output/bold_Tmaxn.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tmaxn.nii.gz
+
+  - name: Temporal AR(1)
+    description: Test -Tar1 operation
+    command: niimath ${bold} -Tmean -mul -1 -add ${bold} -Tar1 test_output/bold_Tar1.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_Tar1.nii.gz
+
+  - name: X-dimension mean
+    description: Test -Xmean operation
+    command: niimath ${t1w} -Xmean test_output/t1w_Xmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_Xmean.nii.gz
+
+  - name: Y-dimension mean
+    description: Test -Ymean operation
+    command: niimath ${t1w} -Ymean test_output/t1w_Ymean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_Ymean.nii.gz
+
+  - name: Z-dimension mean
+    description: Test -Zmean operation
+    command: niimath ${t1w} -Zmean test_output/t1w_Zmean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_Zmean.nii.gz
+
+  # ==========================================================================
+  # TEMPORAL FILTERING (requires 4D data)
+  # ==========================================================================
+  - name: Demean
+    description: Test -demean operation (niimath-specific)
+    command: niimath ${bold} -demean test_output/bold_demean.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_demean.nii.gz
+      - same_dimensions: ["${output_dir}/bold_demean.nii.gz", "${bold}"]
+
+  - name: Detrend
+    description: Test -detrend operation (niimath-specific)
+    command: niimath ${bold} -detrend test_output/bold_detrend.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_detrend.nii.gz
+
+  - name: Bandpass temporal filter (bptf)
+    description: Test -bptf operation (highpass sigma=25, lowpass sigma=2)
+    command: niimath ${bold} -bptf 25 2 test_output/bold_bptf.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_bptf.nii.gz
+
+  - name: Bandpass filter Hz (niimath-specific)
+    description: Test -bandpass operation (0.01-0.1 Hz, TR=2s)
+    command: niimath ${bold} -bandpass 0.01 0.1 2 test_output/bold_bandpass.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_bandpass.nii.gz
+
+  - name: Bandpass without mean removal
+    description: Test -bptfm operation (niimath-specific)
+    command: niimath ${bold} -bptfm 25 2 test_output/bold_bptfm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_bptfm.nii.gz
+
+  # ==========================================================================
+  # ROI AND CROPPING
+  # ==========================================================================
+  - name: ROI extraction
+    description: Test -roi operation (extract subvolume)
+    command: niimath ${t1w} -roi 40 80 40 80 40 80 0 1 test_output/t1w_roi.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_roi.nii.gz
+
+  - name: Temporal crop
+    description: Test -crop operation on 4D data (niimath-specific)
+    command: niimath ${bold} -crop 10 50 test_output/bold_crop.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_crop.nii.gz
+
+  # ==========================================================================
+  # RESAMPLING AND CONFORMING (niimath-specific)
+  # ==========================================================================
+  - name: Resize image
+    description: Test -resize operation (shrink by 0.5)
+    command: niimath ${t1w} -resize 0.5 0.5 0.5 1 test_output/t1w_resize_half.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_resize_half.nii.gz
+
+  - name: Resize with Lanczos
+    description: Test -resize with Lanczos interpolation
+    command: niimath ${t1w} -resize 0.5 0.5 0.5 3 test_output/t1w_resize_lanczos.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_resize_lanczos.nii.gz
+
+  - name: Conform to 1mm isotropic
+    description: Test -conform operation (niimath-specific)
+    command: niimath ${t1w} -conform test_output/t1w_conform.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_conform.nii.gz
+
+  - name: RAS reorientation
+    description: Test -ras operation (niimath-specific)
+    command: niimath ${t1w} -ras test_output/t1w_ras.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_ras.nii.gz
+
+  - name: Reslice to target
+    description: Test -reslice operation (reslice T1w to match T2 space)
+    command: niimath ${t1w} -reslice ${t2} test_output/t1w_reslice_to_t2.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_reslice_to_t2.nii.gz
+
+  - name: Reslice nearest neighbor
+    description: Test -reslice_nn operation
+    command: niimath test_output/t1w_otsu_mask.nii.gz -reslice_nn ${t2} test_output/mask_reslice_nn.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/mask_reslice_nn.nii.gz
+
+  # ==========================================================================
+  # STATISTICAL OPERATIONS
+  # ==========================================================================
+  - name: Z to P conversion
+    description: Test -ztop operation
+    command: niimath ${t1w} -div 100 -ztop test_output/t1w_ztop.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_ztop.nii.gz
+
+  - name: P to Z conversion
+    description: Test -ptoz operation
+    command: niimath ${t1w} -scale01 -thr 0.001 -uthr 0.999 -ptoz test_output/t1w_ptoz.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_ptoz.nii.gz
+
+  - name: Rank transformation
+    description: Test -rank operation on 4D data
+    command: niimath ${bold} -rank test_output/bold_rank.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_rank.nii.gz
+
+  - name: Rank normalization
+    description: Test -ranknorm operation
+    command: niimath ${bold} -ranknorm test_output/bold_ranknorm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_ranknorm.nii.gz
+
+  # ==========================================================================
+  # SPECIAL OPERATIONS
+  # ==========================================================================
+  - name: NaN handling
+    description: Test -nan operation (replace NaN with 0)
+    command: niimath ${t1w} -nan test_output/t1w_nan.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_nan.nii.gz
+
+  - name: NaN mask
+    description: Test -nanm operation (create NaN mask)
+    command: niimath ${t1w} -nanm test_output/t1w_nanm.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_nanm.nii.gz
+
+  - name: Index voxels
+    description: Test -index operation (unique index per nonzero voxel)
+    command: niimath test_output/t1w_otsu_mask.nii.gz -index test_output/mask_index.nii.gz
+    depends_on: Create brain mask with Otsu
+    validate:
+      - output_exists: ${output_dir}/mask_index.nii.gz
+
+  - name: Add grid
+    description: Test -grid operation
+    command: niimath ${t1w} -grid 1000 10 test_output/t1w_grid.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_grid.nii.gz
+
+  - name: Add uniform noise
+    description: Test -rand operation
+    command: niimath ${t1w} -seed 42 -rand test_output/t1w_rand.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_rand.nii.gz
+
+  - name: Add Gaussian noise
+    description: Test -randn operation
+    command: niimath ${t1w} -seed 42 -randn test_output/t1w_randn.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_randn.nii.gz
+
+  # ==========================================================================
+  # TFCE (Threshold-Free Cluster Enhancement)
+  # ==========================================================================
+  - name: TFCE enhancement
+    description: Test -tfce operation
+    command: niimath ${t1w} -tfce 2 0.5 6 test_output/t1w_tfce.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_tfce.nii.gz
+
+  # ==========================================================================
+  # OUTPUT DATA TYPES
+  # ==========================================================================
+  - name: Output as char
+    description: Test output as char data type using mul 1 (identity) to force copy
+    command: niimath ${t1w} -bin test_output/t1w_odt_char.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_odt_char.nii.gz
+
+  - name: Output as short
+    description: Test output as short data type using mul 1 (identity) to force copy
+    command: niimath ${t1w} -mul 1 test_output/t1w_odt_short.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_odt_short.nii.gz
+
+  - name: Output as int
+    description: Test output as int data type using mul 1 (identity) to force copy
+    command: niimath ${t1w} -mul 1 test_output/t1w_odt_int.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_odt_int.nii.gz
+
+  - name: Output as float
+    description: Test output as float data type using div 1.0 to promote to float
+    command: niimath ${t1w} -div 1.0 test_output/t1w_odt_float.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_odt_float.nii.gz
+
+  - name: Output as double
+    description: Test output as double data type using add 0.0 to promote to float
+    command: niimath ${t1w} -add 0.0 test_output/t1w_odt_double.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_odt_double.nii.gz
+
+  - name: Output preserving input type
+    description: Test output preserving input data type
+    command: niimath ${t1w} -mul 1 test_output/t1w_odt_input.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_odt_input.nii.gz
+
+  # ==========================================================================
+  # COMPRESSION CONTROL (niimath-specific)
+  # ==========================================================================
+  - name: Output uncompressed
+    description: Test -gz 0 for uncompressed output
+    command: niimath ${t1w} -bin -gz 0 test_output/t1w_uncompressed.nii
+    validate:
+      - output_exists: ${output_dir}/t1w_uncompressed.nii
+
+  - name: Output compressed
+    description: Test -gz 1 for compressed output
+    command: niimath ${t1w} -bin -gz 1 test_output/t1w_compressed.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_compressed.nii.gz
+
+  # ==========================================================================
+  # CHAINED OPERATIONS (complex pipelines)
+  # ==========================================================================
+  - name: Brain extraction pipeline
+    description: Chain operations for simple brain extraction
+    command: niimath ${t1w} -otsu 3 -fillh -dilM -ero -mul ${t1w} test_output/t1w_brain.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_brain.nii.gz
+
+  - name: fMRI preprocessing chain
+    description: Chain temporal operations (demean + smooth + bandpass)
+    command: niimath ${bold} -Tmean -mul -1 -add ${bold} -s 4 -bptf 25 -1 test_output/bold_preproc.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_preproc.nii.gz
+
+  - name: SNR calculation
+    description: Calculate temporal SNR (mean/std)
+    command: |
+      niimath ${bold} -Tmean test_output/bold_mean_tmp.nii.gz && \
+      niimath ${bold} -Tstd test_output/bold_std_tmp.nii.gz && \
+      niimath test_output/bold_mean_tmp.nii.gz -div test_output/bold_std_tmp.nii.gz test_output/bold_tsnr.nii.gz
+    validate:
+      - output_exists: ${output_dir}/bold_tsnr.nii.gz
+
+  - name: Z-score normalization
+    description: Z-score normalize an image (subtract mean, divide by std)
+    command: |
+      niimath ${t1w} -Tmean -mul -1 -add ${t1w} test_output/t1w_demeaned.nii.gz && \
+      niimath ${t1w} -Tstd test_output/t1w_std.nii.gz && \
+      niimath test_output/t1w_demeaned.nii.gz -div test_output/t1w_std.nii.gz test_output/t1w_zscore.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_zscore.nii.gz
+
+  # ==========================================================================
+  # IMAGE COMPARISON (niimath-specific)
+  # ==========================================================================
+  - name: Compare identical images
+    description: Test --compare with identical images (exit 0 = identical)
+    command: niimath ${t1w} --compare ${t1w}
+    expected_exit_code: 0
+
+  - name: Compare with threshold
+    description: Test --compare with threshold tolerance
+    command: niimath ${t1w} --compare 0.001 ${t1w} 2>&1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # HEADER MANIPULATION (niimath-specific)
+  # ==========================================================================
+  - name: Set qform code
+    description: Test -qform operation
+    command: niimath ${t1w} -qform 1 test_output/t1w_qform.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_qform.nii.gz
+
+  - name: Set sform code
+    description: Test -sform operation
+    command: niimath ${t1w} -sform 1 test_output/t1w_sform.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_sform.nii.gz
+
+  - name: Set output range
+    description: Test -range operation (set calmin/calmax)
+    command: niimath ${t1w} -range test_output/t1w_range.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_range.nii.gz
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

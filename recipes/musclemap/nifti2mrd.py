@@ -105,20 +105,9 @@ def extract_orientation_from_affine(affine, shape):
     # Position is the translation (position of first voxel)
     position = translation.copy()
 
-    # Convert from RAS (NIfTI) to LPS (ISMRMRD/DICOM)
-    # Flip X and Y coordinates
-    print("🔄 Converting from RAS to LPS orientation (flipping X and Y)...")
-    position[0] = -position[0]
-    position[1] = -position[1]
-    
-    read_dir[0] = -read_dir[0]
-    read_dir[1] = -read_dir[1]
-    
-    phase_dir[0] = -phase_dir[0]
-    phase_dir[1] = -phase_dir[1]
-    
-    slice_dir[0] = -slice_dir[0]
-    slice_dir[1] = -slice_dir[1]
+    # Keep affine in scanner/DICOM convention directly (LPS-consistent).
+    # This matches enhanceddicom2mrd.py and musclemap.py geometry handling.
+    print("🔄 Using affine directions directly (LPS-consistent, no extra axis flips)...")
     
     print(f"   Position: [{position[0]:.4f}, {position[1]:.4f}, {position[2]:.4f}] mm")
     print(f"   Read direction:  [{read_dir[0]:.4f}, {read_dir[1]:.4f}, {read_dir[2]:.4f}]")
@@ -225,6 +214,11 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
     elif len(data.shape) == 4:
         data = data[:, :, :, 0]  # Take first volume
         print(f"📝 Reduced 4D to 3D: {data.shape}")
+
+    # Undo scanner-style NIfTI in-plane ordering so output matches
+    # the DICOM->MRD pixel convention used in enhanceddicom2mrd.py.
+    data = data[::-1, ::-1, :]
+    print(f"🔁 Applied X/Y unflip for MRD consistency: {data.shape}")
     
     # Create ISMRMRD Image object
     print("🏗️ Creating ISMRMRD Image object...")
@@ -239,15 +233,16 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
         ismrmrd_data = data.astype(np.float32)
     
     print(f"📊 ISMRMRD data type: {ismrmrd_data.dtype}")
-    print(f"📐 NIfTI data shape: {ismrmrd_data.shape}")
-    
-    # Create ISMRMRD image - no transpose, keep data as-is
-    # Let ISMRMRD handle storage format internally
+    print(f"📐 NIfTI data shape [x, y, z]: {ismrmrd_data.shape}")
+
+    # ISMRMRD from_array(..., transpose=False) expects 3D data as [z, y, x].
+    # Keep canonical volume as [x, y, z] and provide [z, y, x] only at creation.
+    ismrmrd_volume = ismrmrd_data.transpose((2, 1, 0))
     try:
-        ismrmrd_image = ismrmrd.Image.from_array(ismrmrd_data, transpose=False)
+        ismrmrd_image = ismrmrd.Image.from_array(ismrmrd_volume, transpose=False)
     except TypeError:
         # Older versions don't support transpose parameter
-        ismrmrd_image = ismrmrd.Image.from_array(ismrmrd_data)
+        ismrmrd_image = ismrmrd.Image.from_array(ismrmrd_volume)
     
     print(f"📐 ISMRMRD image data shape: {ismrmrd_image.data.shape}")
     
@@ -279,25 +274,22 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
     if hasattr(ismrmrd_image, 'matrix_size'):
         print(f"📏 ISMRMRD matrix_size attribute: {ismrmrd_image.matrix_size}")
     
-    # CRITICAL: ISMRMRD stores data in reversed/transposed order (column-major Fortran order)
-    # Original data: [624, 512, 416] but ISMRMRD reads it as [416, 512, 624]
-    # So we need to reverse the FOV array to match: [Z_fov, Y_fov, X_fov]
-    # Correction: Based on testing, the order should be [Y_fov, Z_fov, X_fov]
+    # Canonical FOV in physical [x, y, z] (same convention used by enhanceddicom2mrd.py).
     field_of_view = [
+        ismrmrd_data.shape[0] * voxel_size[0],  # X
         ismrmrd_data.shape[1] * voxel_size[1],  # Y
-        ismrmrd_data.shape[2] * voxel_size[2],  # Z
-        ismrmrd_data.shape[0] * voxel_size[0]   # X
+        ismrmrd_data.shape[2] * voxel_size[2]   # Z
     ]
     
-    metadata['PixelSpacing'] = [voxel_size[0], voxel_size[1]]
+    # DICOM-style PixelSpacing is [row_spacing(Y), col_spacing(X)]
+    metadata['PixelSpacing'] = [voxel_size[1], voxel_size[0]]
     metadata['SliceThickness'] = voxel_size[2]
     metadata['field_of_view'] = field_of_view
     
     print(f"📏 Voxel spacing: [{voxel_size[0]}, {voxel_size[1]}, {voxel_size[2]}] mm")
-    print(f"📏 Field of view (reversed for ISMRMRD): {field_of_view} mm")
+    print(f"📏 Field of view [x, y, z]: {field_of_view} mm")
     print(f"📏 Target matrix: {ismrmrd_data.shape[0]} x {ismrmrd_data.shape[1]} x {ismrmrd_data.shape[2]}")
-    # print(f"📏 ISMRMRD stores as: 416 x 512 x 624")
-    print(f"📏 Expected voxel: [{field_of_view[0]/ismrmrd_data.shape[1]:.8f}, {field_of_view[1]/ismrmrd_data.shape[2]:.8f}, {field_of_view[2]/ismrmrd_data.shape[0]:.8f}]")
+    print(f"📏 Expected voxel: [{field_of_view[0]/ismrmrd_data.shape[0]:.8f}, {field_of_view[1]/ismrmrd_data.shape[1]:.8f}, {field_of_view[2]/ismrmrd_data.shape[2]:.8f}]")
     
     # Set image metadata
     if hasattr(ismrmrd_image, 'meta'):
@@ -396,24 +388,24 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
                 encoding.encodedSpace.matrixSize = ismrmrd.xsd.matrixSizeType()
                 encoding.encodedSpace.matrixSize.x = int(ismrmrd_data.shape[0])
                 encoding.encodedSpace.matrixSize.y = int(ismrmrd_data.shape[1])
-                encoding.encodedSpace.matrixSize.z = int(ismrmrd_data.shape[2])
+                encoding.encodedSpace.matrixSize.z = 1
                 
                 encoding.encodedSpace.fieldOfView_mm = ismrmrd.xsd.fieldOfViewMm()
                 encoding.encodedSpace.fieldOfView_mm.x = float(ismrmrd_data.shape[0] * voxel_size[0])
                 encoding.encodedSpace.fieldOfView_mm.y = float(ismrmrd_data.shape[1] * voxel_size[1])
-                encoding.encodedSpace.fieldOfView_mm.z = float(ismrmrd_data.shape[2] * voxel_size[2])
+                encoding.encodedSpace.fieldOfView_mm.z = float(voxel_size[2])
                 
                 # Recon space (same as encoded for NIfTI conversion)
                 encoding.reconSpace = ismrmrd.xsd.encodingSpaceType()
                 encoding.reconSpace.matrixSize = ismrmrd.xsd.matrixSizeType()
                 encoding.reconSpace.matrixSize.x = int(ismrmrd_data.shape[0])
                 encoding.reconSpace.matrixSize.y = int(ismrmrd_data.shape[1])
-                encoding.reconSpace.matrixSize.z = int(ismrmrd_data.shape[2])
+                encoding.reconSpace.matrixSize.z = 1
                 
                 encoding.reconSpace.fieldOfView_mm = ismrmrd.xsd.fieldOfViewMm()
                 encoding.reconSpace.fieldOfView_mm.x = float(ismrmrd_data.shape[0] * voxel_size[0])
                 encoding.reconSpace.fieldOfView_mm.y = float(ismrmrd_data.shape[1] * voxel_size[1])
-                encoding.reconSpace.fieldOfView_mm.z = float(ismrmrd_data.shape[2] * voxel_size[2])
+                encoding.reconSpace.fieldOfView_mm.z = float(voxel_size[2])
                 
                 # Encoding limits
                 encoding.encodingLimits = ismrmrd.xsd.encodingLimitsType()
@@ -454,8 +446,8 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
                 print(f"💾 Writing {ismrmrd_data.shape[2]} slices as separate images...")
                 
                 for slice_idx in range(ismrmrd_data.shape[2]):
-                    # Extract 2D slice [X, Y]
-                    slice_data = ismrmrd_data[:, :, slice_idx].astype(np.float32)
+                    # Extract 2D slice as [rows(Y), cols(X)] to match enhanceddicom2mrd.py.
+                    slice_data = ismrmrd_data[:, :, slice_idx].T.astype(np.float32)
                     
                     # Create ISMRMRD image for this slice
                     try:
@@ -466,7 +458,7 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
                     # Set image properties
                     slice_image.image_type = IMTYPE_MAGNITUDE if 'IMTYPE_MAGNITUDE' in globals() else 1
                     slice_image.image_series_index = metadata.get('SeriesNumber', 1)
-                    slice_image.image_index = slice_idx
+                    slice_image.image_index = slice_idx + 1
                     
                     # Calculate position for this slice
                     # Position of slice = position of first slice + (slice_idx * slice_spacing * slice_direction)
@@ -488,12 +480,11 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
                     if hasattr(slice_image, 'slice_dir'):
                         slice_image.slice_dir[:] = orientation_info['slice_dir']
                     
-                    # Set field_of_view for 2D slice (only X and Y, Z is single slice)
-                    # Correction: Based on testing, the order should be [Y_fov, X_fov, Thickness]
+                    # 2D slice FOV in [x, y, z] with z being slice thickness.
                     slice_fov = [
-                        ismrmrd_data.shape[1] * voxel_size[1],
                         ismrmrd_data.shape[0] * voxel_size[0],
-                        voxel_size[2]  # Single slice thickness
+                        ismrmrd_data.shape[1] * voxel_size[1],
+                        voxel_size[2]
                     ]
                     
                     if hasattr(slice_image, 'field_of_view'):

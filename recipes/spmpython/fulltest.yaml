@@ -1,0 +1,691 @@
+# spmpython container test suite
+# Tests for SPM-Python v25.1.2.post1 - Python interface to SPM (Statistical Parametric Mapping)
+#
+# SPM-Python provides full access to all SPM functions via MATLAB Runtime.
+# This test suite verifies:
+#   - Python environment and core packages
+#   - SPM data structures (Cell, Array, Struct) - pure Python
+#   - SPM submodule imports
+#   - SPM function availability
+#   - SPM computational functions (require MATLAB Runtime R2025a)
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+
+name: spmpython
+version: 25.1.2.post1
+container: spmpython_25.1.2.post1_20250905.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # PYTHON ENVIRONMENT TESTS
+  # ==========================================================================
+  - name: Python version check
+    description: Verify Python 3.12 is available
+    command: python --version
+    expected_output_contains: "Python 3.12"
+
+  - name: Python executable path
+    description: Check Python is from miniconda
+    command: which python
+    expected_output_contains: "/opt/miniconda/bin/python"
+
+  - name: Pip version check
+    description: Verify pip is available
+    command: pip --version
+    expected_output_contains: "pip"
+
+  # ==========================================================================
+  # CORE PACKAGE IMPORTS
+  # ==========================================================================
+  - name: Import spm package
+    description: Test basic spm module import
+    command: python -c "import spm; print('SPM imported successfully')"
+    expected_output_contains: "SPM imported successfully"
+
+  - name: SPM version check
+    description: Verify SPM-Python version
+    command: python -c "import spm; print(spm.__version__)"
+    expected_output_contains: "25.1.2.post1"
+
+  - name: Import numpy
+    description: Test numpy import and version
+    command: python -c "import numpy as np; print('NumPy version:', np.__version__)"
+    expected_output_contains: "NumPy version:"
+
+  - name: Import mpython-core
+    description: Test mpython core module import
+    command: python -c "import mpython; print('mpython imported')"
+    expected_output_contains: "mpython imported"
+
+  - name: Import matlab_runtime
+    description: Test matlab_runtime module import
+    command: python -c "import matlab_runtime; print('matlab_runtime version:', matlab_runtime.__version__)"
+    expected_output_contains: "matlab_runtime version:"
+
+  - name: Import spm_runtime
+    description: Test spm_runtime module import
+    command: python -c "import spm_runtime; print('spm_runtime imported')"
+    expected_output_contains: "spm_runtime imported"
+
+  # ==========================================================================
+  # SPM DATA STRUCTURES - PURE PYTHON (No MATLAB Runtime needed)
+  # ==========================================================================
+  - name: Cell class creation
+    description: Create empty Cell array
+    command: python -c "import spm; c = spm.Cell(3); print('Cell created with length:', len(c))"
+    expected_output_contains: "Cell created with length:"
+
+  - name: Cell class with data
+    description: Create and populate Cell array
+    command: |
+      python -c "
+      import spm
+      c = spm.Cell(3)
+      c[0] = 'hello'
+      c[1] = 'world'
+      c[2] = 42
+      print('Cell contents:', c.tolist())
+      "
+    expected_output_contains: "['hello', 'world', 42]"
+
+  - name: Cell class indexing
+    description: Test Cell array indexing and modification
+    command: |
+      python -c "
+      import spm
+      c = spm.Cell(5)
+      c[0] = 1
+      c[4] = 'end'
+      print('First:', c[0], 'Last:', c[4])
+      "
+    expected_output_contains: "First:"
+
+  - name: Array class creation
+    description: Create Array from list
+    command: python -c "import spm; a = spm.Array([[1,2],[3,4]]); print('Array created')"
+    expected_output_contains: "Array created"
+
+  - name: Struct class creation
+    description: Create empty Struct
+    command: python -c "import spm; s = spm.Struct(); print('Struct created')"
+    expected_output_contains: "Struct created"
+
+  - name: Struct class with fields
+    description: Create Struct with field assignment
+    command: |
+      python -c "
+      import spm
+      s = spm.Struct()
+      s.name = 'test'
+      s.value = 123
+      s.data = [1, 2, 3]
+      print('Struct fields set: name =', s.name)
+      "
+    expected_output_contains: "Struct fields set: name = test"
+
+  - name: MatlabClass availability
+    description: Check MatlabClass is available
+    command: python -c "import spm; print('MatlabClass:', type(spm.MatlabClass))"
+    expected_output_contains: "MatlabClass:"
+
+  - name: MatlabFunction availability
+    description: Check MatlabFunction class is available
+    command: python -c "import spm; print('MatlabFunction:', type(spm.MatlabFunction))"
+    expected_output_contains: "MatlabFunction:"
+
+  - name: Runtime class availability
+    description: Check Runtime class is available
+    command: python -c "import spm; print('Runtime:', type(spm.Runtime))"
+    expected_output_contains: "Runtime:"
+
+  - name: SparseArray availability
+    description: Check SparseArray class is available
+    command: python -c "import spm; print('SparseArray:', type(spm.SparseArray))"
+    expected_output_contains: "SparseArray:"
+
+  # ==========================================================================
+  # SPM SUBMODULE IMPORTS
+  # ==========================================================================
+  - name: Import spm.nifti submodule
+    description: Test nifti submodule import
+    command: python -c "import spm.nifti; print('spm.nifti imported')"
+    expected_output_contains: "spm.nifti imported"
+
+  - name: Import spm.gifti submodule
+    description: Test gifti submodule import
+    command: python -c "import spm.gifti; print('spm.gifti imported')"
+    expected_output_contains: "spm.gifti imported"
+
+  - name: Import spm.file_array submodule
+    description: Test file_array submodule import
+    command: python -c "import spm.file_array; print('spm.file_array imported')"
+    expected_output_contains: "spm.file_array imported"
+
+  - name: Import spm.meeg submodule
+    description: Test meeg submodule import (M/EEG data handling)
+    command: python -c "import spm.meeg; print('spm.meeg imported')"
+    expected_output_contains: "spm.meeg imported"
+
+  - name: Import spm.slover submodule
+    description: Test slover submodule import (slice overlay)
+    command: python -c "import spm.slover; print('spm.slover imported')"
+    expected_output_contains: "spm.slover imported"
+
+  # ==========================================================================
+  # SPM FUNCTION AVAILABILITY CHECKS
+  # ==========================================================================
+  - name: Check spm_vol function exists
+    description: Verify spm_vol (volume reader) is available
+    command: python -c "import spm; print('spm_vol:', hasattr(spm, 'spm_vol'))"
+    expected_output_contains: "spm_vol: True"
+
+  - name: Check spm_read_vols function exists
+    description: Verify spm_read_vols is available
+    command: python -c "import spm; print('spm_read_vols:', hasattr(spm, 'spm_read_vols'))"
+    expected_output_contains: "spm_read_vols: True"
+
+  - name: Check spm_write_vol function exists
+    description: Verify spm_write_vol is available
+    command: python -c "import spm; print('spm_write_vol:', hasattr(spm, 'spm_write_vol'))"
+    expected_output_contains: "spm_write_vol: True"
+
+  - name: Check spm_create_vol function exists
+    description: Verify spm_create_vol is available
+    command: python -c "import spm; print('spm_create_vol:', hasattr(spm, 'spm_create_vol'))"
+    expected_output_contains: "spm_create_vol: True"
+
+  - name: Check spm_smooth function exists
+    description: Verify spm_smooth is available
+    command: python -c "import spm; print('spm_smooth:', hasattr(spm, 'spm_smooth'))"
+    expected_output_contains: "spm_smooth: True"
+
+  - name: Check spm_realign function exists
+    description: Verify spm_realign (motion correction) is available
+    command: python -c "import spm; print('spm_realign:', hasattr(spm, 'spm_realign'))"
+    expected_output_contains: "spm_realign: True"
+
+  - name: Check spm_coreg function exists
+    description: Verify spm_coreg (coregistration) is available
+    command: python -c "import spm; print('spm_coreg:', hasattr(spm, 'spm_coreg'))"
+    expected_output_contains: "spm_coreg: True"
+
+  - name: Check spm_reslice function exists
+    description: Verify spm_reslice is available
+    command: python -c "import spm; print('spm_reslice:', hasattr(spm, 'spm_reslice'))"
+    expected_output_contains: "spm_reslice: True"
+
+  - name: Check spm_normalise function exists
+    description: Verify spm_normalise (spatial normalization) is available
+    command: python -c "import spm; print('spm_normalise:', hasattr(spm, 'spm_normalise'))"
+    expected_output_contains: "spm_normalise: True"
+
+  - name: Check spm_preproc8 function exists
+    description: Verify spm_preproc8 (unified segmentation) is available
+    command: python -c "import spm; print('spm_preproc8:', hasattr(spm, 'spm_preproc8'))"
+    expected_output_contains: "spm_preproc8: True"
+
+  - name: Check spm_deformations function exists
+    description: Verify spm_deformations is available
+    command: python -c "import spm; print('spm_deformations:', hasattr(spm, 'spm_deformations'))"
+    expected_output_contains: "spm_deformations: True"
+
+  - name: Check spm_hrf function exists
+    description: Verify spm_hrf (hemodynamic response function) is available
+    command: python -c "import spm; print('spm_hrf:', hasattr(spm, 'spm_hrf'))"
+    expected_output_contains: "spm_hrf: True"
+
+  - name: Check spm_spm function exists
+    description: Verify spm_spm (GLM estimation) is available
+    command: python -c "import spm; print('spm_spm:', hasattr(spm, 'spm_spm'))"
+    expected_output_contains: "spm_spm: True"
+
+  - name: Check spm_contrasts function exists
+    description: Verify spm_contrasts is available
+    command: python -c "import spm; print('spm_contrasts:', hasattr(spm, 'spm_contrasts'))"
+    expected_output_contains: "spm_contrasts: True"
+
+  - name: Check spm_matrix function exists
+    description: Verify spm_matrix (affine matrix construction) is available
+    command: python -c "import spm; print('spm_matrix:', hasattr(spm, 'spm_matrix'))"
+    expected_output_contains: "spm_matrix: True"
+
+  - name: Check spm_imatrix function exists
+    description: Verify spm_imatrix (affine matrix decomposition) is available
+    command: python -c "import spm; print('spm_imatrix:', hasattr(spm, 'spm_imatrix'))"
+    expected_output_contains: "spm_imatrix: True"
+
+  # ==========================================================================
+  # STATISTICAL DISTRIBUTION FUNCTIONS
+  # ==========================================================================
+  - name: Check spm_Ncdf function exists
+    description: Verify normal CDF function is available
+    command: python -c "import spm; print('spm_Ncdf:', hasattr(spm, 'spm_Ncdf'))"
+    expected_output_contains: "spm_Ncdf: True"
+
+  - name: Check spm_Npdf function exists
+    description: Verify normal PDF function is available
+    command: python -c "import spm; print('spm_Npdf:', hasattr(spm, 'spm_Npdf'))"
+    expected_output_contains: "spm_Npdf: True"
+
+  - name: Check spm_Tcdf function exists
+    description: Verify t-distribution CDF is available
+    command: python -c "import spm; print('spm_Tcdf:', hasattr(spm, 'spm_Tcdf'))"
+    expected_output_contains: "spm_Tcdf: True"
+
+  - name: Check spm_Fcdf function exists
+    description: Verify F-distribution CDF is available
+    command: python -c "import spm; print('spm_Fcdf:', hasattr(spm, 'spm_Fcdf'))"
+    expected_output_contains: "spm_Fcdf: True"
+
+  - name: Check spm_invNcdf function exists
+    description: Verify inverse normal CDF is available
+    command: python -c "import spm; print('spm_invNcdf:', hasattr(spm, 'spm_invNcdf'))"
+    expected_output_contains: "spm_invNcdf: True"
+
+  - name: Check spm_P_FDR function exists
+    description: Verify FDR correction function is available
+    command: python -c "import spm; print('spm_P_FDR:', hasattr(spm, 'spm_P_FDR'))"
+    expected_output_contains: "spm_P_FDR: True"
+
+  - name: Check spm_P_Bonf function exists
+    description: Verify Bonferroni correction function is available
+    command: python -c "import spm; print('spm_P_Bonf:', hasattr(spm, 'spm_P_Bonf'))"
+    expected_output_contains: "spm_P_Bonf: True"
+
+  # ==========================================================================
+  # DCM FUNCTION AVAILABILITY
+  # ==========================================================================
+  - name: Check DCM functions exist
+    description: Verify Dynamic Causal Modeling functions are available
+    command: |
+      python -c "
+      import spm
+      dcm_funcs = ['spm_dcm_estimate', 'spm_dcm_fmri_check', 'spm_dcm_bmc', 'spm_dcm_peb']
+      for f in dcm_funcs:
+          print(f'{f}:', hasattr(spm, f))
+      "
+    expected_exit_code: 0
+    expected_output_contains: "spm_dcm_estimate: True"
+
+  - name: Count DCM functions
+    description: Count available DCM-related functions
+    command: |
+      python -c "
+      import spm
+      dcm_funcs = [f for f in dir(spm) if f.startswith('spm_dcm_')]
+      print('DCM functions available:', len(dcm_funcs))
+      "
+    expected_output_contains: "DCM functions available:"
+
+  # ==========================================================================
+  # LINEAR ALGEBRA UTILITIES
+  # ==========================================================================
+  - name: Check spm_inv function exists
+    description: Verify matrix inversion function is available
+    command: python -c "import spm; print('spm_inv:', hasattr(spm, 'spm_inv'))"
+    expected_output_contains: "spm_inv: True"
+
+  - name: Check spm_pinv function exists
+    description: Verify pseudo-inverse function is available
+    command: python -c "import spm; print('spm_pinv:', hasattr(spm, 'spm_pinv'))"
+    expected_output_contains: "spm_pinv: True"
+
+  - name: Check spm_svd function exists
+    description: Verify SVD function is available
+    command: python -c "import spm; print('spm_svd:', hasattr(spm, 'spm_svd'))"
+    expected_output_contains: "spm_svd: True"
+
+  - name: Check spm_expm function exists
+    description: Verify matrix exponential function is available
+    command: python -c "import spm; print('spm_expm:', hasattr(spm, 'spm_expm'))"
+    expected_output_contains: "spm_expm: True"
+
+  - name: Check spm_logdet function exists
+    description: Verify log-determinant function is available
+    command: python -c "import spm; print('spm_logdet:', hasattr(spm, 'spm_logdet'))"
+    expected_output_contains: "spm_logdet: True"
+
+  # ==========================================================================
+  # FILE HANDLING FUNCTIONS
+  # ==========================================================================
+  - name: Check spm_file function exists
+    description: Verify spm_file (filename handling) is available
+    command: python -c "import spm; print('spm_file:', hasattr(spm, 'spm_file'))"
+    expected_output_contains: "spm_file: True"
+
+  - name: Check spm_fileparts function exists
+    description: Verify spm_fileparts is available
+    command: python -c "import spm; print('spm_fileparts:', hasattr(spm, 'spm_fileparts'))"
+    expected_output_contains: "spm_fileparts: True"
+
+  - name: Check spm_select function exists
+    description: Verify spm_select (file selection) is available
+    command: python -c "import spm; print('spm_select:', hasattr(spm, 'spm_select'))"
+    expected_output_contains: "spm_select: True"
+
+  # ==========================================================================
+  # FUNCTION COUNT VERIFICATION
+  # ==========================================================================
+  - name: Count total SPM functions
+    description: Verify large number of SPM functions are available
+    command: |
+      python -c "
+      import spm
+      all_funcs = [f for f in dir(spm) if not f.startswith('_')]
+      spm_funcs = [f for f in all_funcs if f.startswith('spm_')]
+      print('Total public items:', len(all_funcs))
+      print('SPM functions (spm_*):', len(spm_funcs))
+      assert len(spm_funcs) > 1500, 'Expected >1500 spm_ functions'
+      print('Function count verification passed')
+      "
+    expected_output_contains: "Function count verification passed"
+
+  - name: List EEG/MEG function categories
+    description: Check EEG/MEG related functions are available
+    command: |
+      python -c "
+      import spm
+      eeg_funcs = [f for f in dir(spm) if 'eeg' in f.lower() or 'meeg' in f.lower()]
+      print('EEG/MEEG functions available:', len(eeg_funcs))
+      "
+    expected_output_contains: "EEG/MEEG functions available:"
+
+  - name: List fMRI function categories
+    description: Check fMRI related functions are available
+    command: |
+      python -c "
+      import spm
+      fmri_funcs = [f for f in dir(spm) if 'fmri' in f.lower()]
+      print('fMRI functions available:', len(fmri_funcs))
+      "
+    expected_output_contains: "fMRI functions available:"
+
+  # ==========================================================================
+  # NUMPY INTEGRATION
+  # ==========================================================================
+  - name: NumPy array operations
+    description: Test NumPy array operations work correctly
+    command: |
+      python -c "
+      import numpy as np
+      a = np.array([[1, 2], [3, 4]])
+      b = np.array([[5, 6], [7, 8]])
+      c = np.dot(a, b)
+      print('Matrix multiplication result:', c[0, 0], c[1, 1])
+      "
+    expected_output_contains: "Matrix multiplication result: 19 50"
+
+  - name: NumPy random generation
+    description: Test NumPy random number generation
+    command: |
+      python -c "
+      import numpy as np
+      np.random.seed(42)
+      arr = np.random.randn(10)
+      print('Random array generated, mean:', np.mean(arr).round(4))
+      "
+    expected_output_contains: "Random array generated"
+
+  - name: NumPy linear algebra
+    description: Test NumPy linear algebra functions
+    command: |
+      python -c "
+      import numpy as np
+      A = np.array([[1, 2], [3, 4]])
+      det = np.linalg.det(A)
+      inv = np.linalg.inv(A)
+      print('Determinant:', det.round(4))
+      print('Inverse computed successfully')
+      "
+    expected_output_contains: "Determinant: -2.0"
+
+  # ==========================================================================
+  # DEMO/TEST FUNCTION AVAILABILITY
+  # ==========================================================================
+  - name: Check DEM demo functions
+    description: Verify DEM (Dynamic Expectation Maximization) demos exist
+    command: |
+      python -c "
+      import spm
+      dem_funcs = [f for f in dir(spm) if f.startswith('DEM_')]
+      print('DEM demo functions:', len(dem_funcs))
+      "
+    expected_output_contains: "DEM demo functions:"
+
+  - name: Check DEMO functions
+    description: Verify DEMO functions exist
+    command: |
+      python -c "
+      import spm
+      demo_funcs = [f for f in dir(spm) if f.startswith('DEMO_')]
+      print('DEMO functions:', len(demo_funcs))
+      "
+    expected_output_contains: "DEMO functions:"
+
+  - name: Check test functions
+    description: Verify test functions are available
+    command: |
+      python -c "
+      import spm
+      test_funcs = [f for f in dir(spm) if f.startswith('test_')]
+      print('Test functions:', len(test_funcs))
+      "
+    expected_output_contains: "Test functions:"
+
+  # ==========================================================================
+  # MATLAB RUNTIME CONFIGURATION
+  # ==========================================================================
+  - name: Check MATLAB runtime version requirement
+    description: Verify MATLAB runtime version is R2025a
+    command: |
+      python -c "
+      from spm_runtime._version import __matlab_release__
+      print('Required MATLAB Runtime:', __matlab_release__)
+      "
+    expected_output_contains: "Required MATLAB Runtime: R2025a"
+
+  - name: Check matlab_runtime module functions
+    description: Verify matlab_runtime helper functions exist
+    command: |
+      python -c "
+      import matlab_runtime
+      funcs = ['init', 'install', 'import_deployed', 'guess_prefix']
+      for f in funcs:
+          print(f'{f}:', hasattr(matlab_runtime, f))
+      "
+    expected_exit_code: 0
+    expected_output_contains: "init: True"
+
+  # ==========================================================================
+  # SPM CONFIGURATION FUNCTIONS
+  # ==========================================================================
+  - name: Check spm_defaults function exists
+    description: Verify spm_defaults is available
+    command: python -c "import spm; print('spm_defaults:', hasattr(spm, 'spm_defaults'))"
+    expected_output_contains: "spm_defaults: True"
+
+  - name: Check spm_get_defaults function exists
+    description: Verify spm_get_defaults is available
+    command: python -c "import spm; print('spm_get_defaults:', hasattr(spm, 'spm_get_defaults'))"
+    expected_output_contains: "spm_get_defaults: True"
+
+  - name: Check spm_cfg functions exist
+    description: Verify SPM configuration functions are available
+    command: |
+      python -c "
+      import spm
+      cfg_funcs = [f for f in dir(spm) if f.startswith('spm_cfg_')]
+      print('Configuration functions:', len(cfg_funcs))
+      assert len(cfg_funcs) > 50, 'Expected >50 cfg functions'
+      print('Configuration check passed')
+      "
+    expected_output_contains: "Configuration check passed"
+
+  # ==========================================================================
+  # BATCH/JOB HANDLING
+  # ==========================================================================
+  - name: Check batch processing functions
+    description: Verify batch/job processing functions exist
+    command: |
+      python -c "
+      import spm
+      batch_funcs = ['spm_jobman', 'spm_run_fmri_spec', 'spm_run_fmri_est']
+      for f in batch_funcs:
+          print(f'{f}:', hasattr(spm, f))
+      "
+    expected_exit_code: 0
+    expected_output_contains: "spm_jobman: True"
+
+  # ==========================================================================
+  # VBM/PREPROCESSING FUNCTIONS
+  # ==========================================================================
+  - name: Check preprocessing functions
+    description: Verify preprocessing functions are available
+    command: |
+      python -c "
+      import spm
+      preproc_funcs = ['spm_preproc', 'spm_preproc8', 'spm_preproc_run', 'spm_preproc_write8']
+      for f in preproc_funcs:
+          print(f'{f}:', hasattr(spm, f))
+      "
+    expected_exit_code: 0
+    expected_output_contains: "spm_preproc8: True"
+
+  # ==========================================================================
+  # SIGNAL PROCESSING FUNCTIONS
+  # ==========================================================================
+  - name: Check convolution functions
+    description: Verify convolution functions are available
+    command: |
+      python -c "
+      import spm
+      conv_funcs = ['spm_conv', 'spm_conv_vol', 'spm_convmtx']
+      for f in conv_funcs:
+          print(f'{f}:', hasattr(spm, f))
+      "
+    expected_exit_code: 0
+    expected_output_contains: "spm_conv: True"
+
+  - name: Check spectral analysis functions
+    description: Verify CSD/spectral functions are available
+    command: |
+      python -c "
+      import spm
+      csd_funcs = ['spm_csd', 'spm_csd2ccf', 'spm_csd2coh', 'spm_csd_mtf']
+      for f in csd_funcs:
+          print(f'{f}:', hasattr(spm, f))
+      "
+    expected_exit_code: 0
+    expected_output_contains: "spm_csd: True"
+
+  # ==========================================================================
+  # VISUALIZATION FUNCTIONS
+  # ==========================================================================
+  - name: Check visualization functions
+    description: Verify display/visualization functions are available
+    command: |
+      python -c "
+      import spm
+      viz_funcs = ['spm_orthviews', 'spm_check_registration', 'spm_figure', 'spm_print']
+      for f in viz_funcs:
+          print(f'{f}:', hasattr(spm, f))
+      "
+    expected_exit_code: 0
+    expected_output_contains: "spm_orthviews: True"
+
+  # ==========================================================================
+  # FIELDMAP AND DISTORTION CORRECTION
+  # ==========================================================================
+  - name: Check FieldMap functions
+    description: Verify FieldMap functions are available
+    command: |
+      python -c "
+      import spm
+      fm_funcs = [f for f in dir(spm) if f.startswith('FieldMap')]
+      print('FieldMap functions:', len(fm_funcs))
+      for f in fm_funcs[:5]:
+          print(f' - {f}')
+      "
+    expected_output_contains: "FieldMap functions:"
+
+  # ==========================================================================
+  # DARTEL FUNCTIONS
+  # ==========================================================================
+  - name: Check DARTEL functions
+    description: Verify DARTEL (diffeomorphic registration) functions exist
+    command: |
+      python -c "
+      import spm
+      dartel_funcs = [f for f in dir(spm) if 'dartel' in f.lower()]
+      print('DARTEL functions:', len(dartel_funcs))
+      "
+    expected_output_contains: "DARTEL functions:"
+
+  # ==========================================================================
+  # ATLAS AND ROI FUNCTIONS
+  # ==========================================================================
+  - name: Check atlas functions
+    description: Verify atlas-related functions are available
+    command: |
+      python -c "
+      import spm
+      atlas_funcs = ['spm_atlas', 'spm_ROI', 'spm_VOI']
+      for f in atlas_funcs:
+          print(f'{f}:', hasattr(spm, f))
+      "
+    expected_exit_code: 0
+    expected_output_contains: "spm_atlas: True"
+
+  # ==========================================================================
+  # BEAMFORMER FUNCTIONS
+  # ==========================================================================
+  - name: Check beamformer functions
+    description: Verify beamformer (source localization) functions exist
+    command: |
+      python -c "
+      import spm
+      bf_funcs = [f for f in dir(spm) if f.startswith('bf_')]
+      print('Beamformer functions:', len(bf_funcs))
+      "
+    expected_output_contains: "Beamformer functions:"
+
+  # ==========================================================================
+  # FIELDTRIP INTEGRATION
+  # ==========================================================================
+  - name: Check FieldTrip integration
+    description: Verify FieldTrip-related functions exist
+    command: |
+      python -c "
+      import spm
+      ft_funcs = [f for f in dir(spm) if f.startswith('ft_')]
+      print('FieldTrip functions:', len(ft_funcs))
+      "
+    expected_output_contains: "FieldTrip functions:"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

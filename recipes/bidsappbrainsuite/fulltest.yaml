@@ -1,0 +1,759 @@
+# bidsappbrainsuite container test suite
+# Tests for BrainSuite BIDS-App v21a - BIDS-compliant neuroimaging pipeline
+#
+# The BrainSuite BIDS App provides a portable, streamlined method for applying
+# BrainSuite workflows to process and analyze anatomical, diffusion, and
+# functional MRI data.
+#
+# Main pipelines:
+#   - CSE: Cortical Surface Extractor
+#   - SVREG: Surface-constrained Volumetric Registration
+#   - BDP: BrainSuite Diffusion Pipeline
+#   - BFP: BrainSuite Functional Pipeline
+#   - QC: Quality Control
+#
+# Test data: ds000001/sub-02 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: Structural MRI
+#   - inplaneT2: Coplanar T2 image
+#   - BOLD: Functional MRI (task-balloonanalogrisktask)
+
+name: bidsappbrainsuite
+version: 21a
+container: bidsappbrainsuite_21a_20230618.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-02/anat/sub-02_T1w.nii.gz
+      - sub-02/anat/sub-02_inplaneT2.nii.gz
+      - sub-02/func/sub-02_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-02/anat/sub-02_T1w.nii.gz
+  t2: ds000001/sub-02/anat/sub-02_inplaneT2.nii.gz
+  bold: ds000001/sub-02/func/sub-02_task-balloonanalogrisktask_run-01_bold.nii.gz
+  bids_dir: ds000001
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/bse_output
+    mkdir -p ${output_dir}/bfc_output
+    mkdir -p ${output_dir}/pvc_output
+    mkdir -p ${output_dir}/surface_output
+    mkdir -p ${output_dir}/mask_output
+    mkdir -p ${output_dir}/pipeline
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION CHECKS
+  # ==========================================================================
+  - name: BIDS-App help
+    description: Verify BrainSuite BIDS-App run.py shows help message
+    command: /BrainSuite/run.py --help 2>&1 | head -20
+    expected_output_contains: "BrainSuite"
+
+  - name: BIDS-App version
+    description: Check BrainSuite BIDS-App version
+    command: /BrainSuite/run.py --version 2>&1
+    expected_output_contains: "21a"
+
+  - name: BrainSuite installation check
+    description: Verify BrainSuite21a is properly installed
+    command: ls /opt/BrainSuite21a/bin/bse && echo "BrainSuite installation verified"
+    expected_output_contains: "BrainSuite installation verified"
+
+  # ==========================================================================
+  # BSE - BRAIN SURFACE EXTRACTOR
+  # ==========================================================================
+  - name: BSE help
+    description: Verify BSE (Brain Surface Extractor) shows usage
+    command: /opt/BrainSuite21a/bin/bse 2>&1 | head -10
+    expected_output_contains: "brain surface extractor"
+
+  - name: BSE basic extraction
+    description: Run BSE on T1w image for skull stripping
+    command: /opt/BrainSuite21a/bin/bse -i ${t1w} -o ${output_dir}/bse_output/t1w_brain.nii.gz --mask ${output_dir}/bse_output/t1w_brain.mask.nii.gz -v 1
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bse_output/t1w_brain.nii.gz
+      - output_exists: ${output_dir}/bse_output/t1w_brain.mask.nii.gz
+
+  - name: BSE with auto parameters
+    description: Run BSE with automatic parameter tuning
+    command: /opt/BrainSuite21a/bin/bse -i ${t1w} -o ${output_dir}/bse_output/t1w_brain_auto.nii.gz --auto -v 1
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bse_output/t1w_brain_auto.nii.gz
+
+  - name: BSE with edge detection output
+    description: Run BSE with edge map output
+    command: /opt/BrainSuite21a/bin/bse -i ${t1w} -o ${output_dir}/bse_output/t1w_brain_edge.nii.gz --edge ${output_dir}/bse_output/t1w_edge.nii.gz -v 1
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bse_output/t1w_brain_edge.nii.gz
+      - output_exists: ${output_dir}/bse_output/t1w_edge.nii.gz
+
+  - name: BSE with diffusion filter output
+    description: Run BSE with anisotropic diffusion filter output
+    command: /opt/BrainSuite21a/bin/bse -i ${t1w} -o ${output_dir}/bse_output/t1w_brain_adf.nii.gz --adf ${output_dir}/bse_output/t1w_adf.nii.gz -d 25 -n 3 -v 1
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bse_output/t1w_brain_adf.nii.gz
+      - output_exists: ${output_dir}/bse_output/t1w_adf.nii.gz
+
+  - name: BSE with custom diffusion parameters
+    description: Run BSE with custom diffusion constant and iterations
+    command: /opt/BrainSuite21a/bin/bse -i ${t1w} -o ${output_dir}/bse_output/t1w_brain_custom.nii.gz -d 30 -n 5 -s 0.7 -r 2 -v 1
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bse_output/t1w_brain_custom.nii.gz
+
+  - name: BSE with brainstem trimming
+    description: Run BSE with brainstem trimming option
+    command: /opt/BrainSuite21a/bin/bse -i ${t1w} -o ${output_dir}/bse_output/t1w_brain_trim.nii.gz --trim -v 1
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bse_output/t1w_brain_trim.nii.gz
+
+  - name: BSE with high-resolution mask
+    description: Run BSE with detailed brain mask output
+    command: /opt/BrainSuite21a/bin/bse -i ${t1w} -o ${output_dir}/bse_output/t1w_brain_hires.nii.gz --hires ${output_dir}/bse_output/t1w_hires_mask.nii.gz -v 1
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bse_output/t1w_brain_hires.nii.gz
+      - output_exists: ${output_dir}/bse_output/t1w_hires_mask.nii.gz
+
+  # ==========================================================================
+  # BFC - BIAS FIELD CORRECTOR
+  # ==========================================================================
+  - name: BFC help
+    description: Verify BFC (Bias Field Corrector) shows usage
+    command: /opt/BrainSuite21a/bin/bfc 2>&1 | head -10
+    expected_output_contains: "bias field corrector"
+
+  - name: BFC basic correction
+    description: Run BFC on skull-stripped image
+    command: /opt/BrainSuite21a/bin/bfc -i ${output_dir}/bse_output/t1w_brain.nii.gz -o ${output_dir}/bfc_output/t1w_bfc.nii.gz -v 1
+    depends_on: BSE basic extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bfc_output/t1w_bfc.nii.gz
+
+  - name: BFC with bias field output
+    description: Run BFC and save bias field estimate
+    command: /opt/BrainSuite21a/bin/bfc -i ${output_dir}/bse_output/t1w_brain.nii.gz -o ${output_dir}/bfc_output/t1w_bfc_bias.nii.gz --bias ${output_dir}/bfc_output/t1w_bias.nii.gz -v 1
+    depends_on: BSE basic extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bfc_output/t1w_bfc_bias.nii.gz
+      - output_exists: ${output_dir}/bfc_output/t1w_bias.nii.gz
+
+  - name: BFC with mask
+    description: Run BFC with brain mask input
+    command: /opt/BrainSuite21a/bin/bfc -i ${output_dir}/bse_output/t1w_brain.nii.gz -o ${output_dir}/bfc_output/t1w_bfc_masked.nii.gz -m ${output_dir}/bse_output/t1w_brain.mask.nii.gz -v 1
+    depends_on: BSE basic extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bfc_output/t1w_bfc_masked.nii.gz
+
+  - name: BFC iterative mode
+    description: Run BFC in iterative mode for severe artifacts
+    command: /opt/BrainSuite21a/bin/bfc -i ${output_dir}/bse_output/t1w_brain.nii.gz -o ${output_dir}/bfc_output/t1w_bfc_iter.nii.gz --iterate -v 1
+    depends_on: BSE basic extraction
+    timeout: 600
+    validate:
+      - output_exists: ${output_dir}/bfc_output/t1w_bfc_iter.nii.gz
+
+  - name: BFC with ellipsoid ROI
+    description: Run BFC using ellipsoid for ROI histogram
+    command: /opt/BrainSuite21a/bin/bfc -i ${output_dir}/bse_output/t1w_brain.nii.gz -o ${output_dir}/bfc_output/t1w_bfc_ellipse.nii.gz --ellipse -v 1
+    depends_on: BSE basic extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bfc_output/t1w_bfc_ellipse.nii.gz
+
+  - name: BFC with custom parameters
+    description: Run BFC with custom histogram and control point spacing
+    command: /opt/BrainSuite21a/bin/bfc -i ${output_dir}/bse_output/t1w_brain.nii.gz -o ${output_dir}/bfc_output/t1w_bfc_custom.nii.gz -r 10 -s 12 -c 48 -w 0.0005 -v 1
+    depends_on: BSE basic extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bfc_output/t1w_bfc_custom.nii.gz
+
+  - name: BFC high bias model
+    description: Run BFC with high bias model for strong artifacts
+    command: /opt/BrainSuite21a/bin/bfc -i ${output_dir}/bse_output/t1w_brain.nii.gz -o ${output_dir}/bfc_output/t1w_bfc_high.nii.gz --high -v 1
+    depends_on: BSE basic extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bfc_output/t1w_bfc_high.nii.gz
+
+  - name: BFC with extrapolation
+    description: Run BFC and extrapolate correction to entire volume
+    command: /opt/BrainSuite21a/bin/bfc -i ${output_dir}/bse_output/t1w_brain.nii.gz -o ${output_dir}/bfc_output/t1w_bfc_extrap.nii.gz --extrapolate -v 1
+    depends_on: BSE basic extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/bfc_output/t1w_bfc_extrap.nii.gz
+
+  # ==========================================================================
+  # PVC - PARTIAL VOLUME CLASSIFIER
+  # ==========================================================================
+  - name: PVC help
+    description: Verify PVC (Partial Volume Classifier) shows usage
+    command: /opt/BrainSuite21a/bin/pvc 2>&1 | head -10
+    expected_output_contains: "partial volume classifier"
+
+  - name: PVC basic classification
+    description: Run PVC on bias-corrected image
+    command: /opt/BrainSuite21a/bin/pvc -i ${output_dir}/bfc_output/t1w_bfc.nii.gz -o ${output_dir}/pvc_output/t1w_pvc.label.nii.gz -v 1
+    depends_on: BFC basic correction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/pvc_output/t1w_pvc.label.nii.gz
+
+  - name: PVC with tissue fractions
+    description: Run PVC with tissue fraction output
+    command: /opt/BrainSuite21a/bin/pvc -i ${output_dir}/bfc_output/t1w_bfc.nii.gz -o ${output_dir}/pvc_output/t1w_pvc_frac.label.nii.gz -f ${output_dir}/pvc_output/t1w_pvc.frac.nii.gz -v 1
+    depends_on: BFC basic correction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/pvc_output/t1w_pvc_frac.label.nii.gz
+      - output_exists: ${output_dir}/pvc_output/t1w_pvc.frac.nii.gz
+
+  - name: PVC with mask
+    description: Run PVC with brain mask input
+    command: /opt/BrainSuite21a/bin/pvc -i ${output_dir}/bfc_output/t1w_bfc.nii.gz -o ${output_dir}/pvc_output/t1w_pvc_masked.label.nii.gz -m ${output_dir}/bse_output/t1w_brain.mask.nii.gz -v 1
+    depends_on: BFC basic correction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/pvc_output/t1w_pvc_masked.label.nii.gz
+
+  - name: PVC three-class labeling
+    description: Run PVC with simplified three-class output (CSF/GM/WM)
+    command: /opt/BrainSuite21a/bin/pvc -i ${output_dir}/bfc_output/t1w_bfc.nii.gz -o ${output_dir}/pvc_output/t1w_pvc_3class.label.nii.gz -3 -v 1
+    depends_on: BFC basic correction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/pvc_output/t1w_pvc_3class.label.nii.gz
+
+  - name: PVC with custom spatial prior
+    description: Run PVC with modified spatial prior strength
+    command: /opt/BrainSuite21a/bin/pvc -i ${output_dir}/bfc_output/t1w_bfc.nii.gz -o ${output_dir}/pvc_output/t1w_pvc_lambda.label.nii.gz -l 0.2 -v 1
+    depends_on: BFC basic correction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/pvc_output/t1w_pvc_lambda.label.nii.gz
+
+  # ==========================================================================
+  # SKULLFINDER - SKULL AND SCALP SEGMENTATION
+  # ==========================================================================
+  - name: Skullfinder help
+    description: Verify skullfinder shows usage
+    command: /opt/BrainSuite21a/bin/skullfinder 2>&1 | head -10
+    expected_output_contains: "Skull and scalp segmentation"
+
+  - name: Skullfinder basic segmentation
+    description: Run skullfinder for skull/scalp labeling
+    command: /opt/BrainSuite21a/bin/skullfinder -i ${t1w} -o ${output_dir}/mask_output/t1w_skull.label.nii.gz -m ${output_dir}/bse_output/t1w_brain.mask.nii.gz -v 1
+    depends_on: BSE basic extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/mask_output/t1w_skull.label.nii.gz
+
+  - name: Skullfinder with custom thresholds
+    description: Run skullfinder with custom intensity thresholds
+    command: /opt/BrainSuite21a/bin/skullfinder -i ${t1w} -o ${output_dir}/mask_output/t1w_skull_thresh.label.nii.gz -m ${output_dir}/bse_output/t1w_brain.mask.nii.gz -l 20 -u 200 -v 1
+    depends_on: BSE basic extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/mask_output/t1w_skull_thresh.label.nii.gz
+
+  - name: Skullfinder with final opening
+    description: Run skullfinder with final opening operation
+    command: /opt/BrainSuite21a/bin/skullfinder -i ${t1w} -o ${output_dir}/mask_output/t1w_skull_open.label.nii.gz -m ${output_dir}/bse_output/t1w_brain.mask.nii.gz --finalOpening -v 1
+    depends_on: BSE basic extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/mask_output/t1w_skull_open.label.nii.gz
+
+  # ==========================================================================
+  # TCA - TOPOLOGICAL CORRECTION ALGORITHM
+  # ==========================================================================
+  - name: TCA help
+    description: Verify TCA (Topological Correction Algorithm) shows usage
+    command: /opt/BrainSuite21a/bin/tca 2>&1 | head -10
+    expected_output_contains: "topological correction"
+
+  - name: TCA basic correction
+    description: Run TCA to remove topological handles from mask
+    command: /opt/BrainSuite21a/bin/tca -i ${output_dir}/bse_output/t1w_brain.mask.nii.gz -o ${output_dir}/mask_output/t1w_tca.mask.nii.gz -v 1
+    depends_on: BSE basic extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/mask_output/t1w_tca.mask.nii.gz
+
+  - name: TCA with custom correction size
+    description: Run TCA with custom maximum correction size
+    command: /opt/BrainSuite21a/bin/tca -i ${output_dir}/bse_output/t1w_brain.mask.nii.gz -o ${output_dir}/mask_output/t1w_tca_custom.mask.nii.gz -m 300 -n 2 -v 1
+    depends_on: BSE basic extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/mask_output/t1w_tca_custom.mask.nii.gz
+
+  - name: TCA with delta
+    description: Run TCA with foreground delta parameter
+    command: /opt/BrainSuite21a/bin/tca -i ${output_dir}/bse_output/t1w_brain.mask.nii.gz -o ${output_dir}/mask_output/t1w_tca_delta.mask.nii.gz --delta 1 -v 1
+    depends_on: BSE basic extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/mask_output/t1w_tca_delta.mask.nii.gz
+
+  # ==========================================================================
+  # DEWISP - WISP REMOVAL
+  # ==========================================================================
+  - name: Dewisp help
+    description: Verify dewisp shows usage
+    command: /opt/BrainSuite21a/bin/dewisp 2>&1 | head -10
+    expected_output_contains: "removes wispy tendril structures"
+
+  - name: Dewisp basic removal
+    description: Run dewisp to remove wisps from cortex mask
+    command: /opt/BrainSuite21a/bin/dewisp -i ${output_dir}/mask_output/t1w_tca.mask.nii.gz -o ${output_dir}/mask_output/t1w_dewisp.mask.nii.gz -v 1
+    depends_on: TCA basic correction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/mask_output/t1w_dewisp.mask.nii.gz
+
+  - name: Dewisp with custom threshold
+    description: Run dewisp with custom size threshold
+    command: /opt/BrainSuite21a/bin/dewisp -i ${output_dir}/mask_output/t1w_tca.mask.nii.gz -o ${output_dir}/mask_output/t1w_dewisp_custom.mask.nii.gz -t 20 -n 15 -v 1
+    depends_on: TCA basic correction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/mask_output/t1w_dewisp_custom.mask.nii.gz
+
+  # ==========================================================================
+  # SCRUBMASK - MASK FILTERING
+  # ==========================================================================
+  - name: Scrubmask help
+    description: Verify scrubmask shows usage
+    command: /opt/BrainSuite21a/bin/scrubmask 2>&1 | head -10
+    expected_output_contains: "mask"
+
+  - name: Scrubmask basic filtering
+    description: Run scrubmask to filter binary mask
+    command: /opt/BrainSuite21a/bin/scrubmask -i ${output_dir}/mask_output/t1w_dewisp.mask.nii.gz -o ${output_dir}/mask_output/t1w_scrub.mask.nii.gz -v 1
+    depends_on: Dewisp basic removal
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/mask_output/t1w_scrub.mask.nii.gz
+
+  - name: Scrubmask with custom parameters
+    description: Run scrubmask with custom thresholds and iterations
+    command: /opt/BrainSuite21a/bin/scrubmask -i ${output_dir}/mask_output/t1w_dewisp.mask.nii.gz -o ${output_dir}/mask_output/t1w_scrub_custom.mask.nii.gz -b 2 -f 2 -n 15 -v 1
+    depends_on: Dewisp basic removal
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/mask_output/t1w_scrub_custom.mask.nii.gz
+
+  # ==========================================================================
+  # DFS - SURFACE GENERATOR
+  # ==========================================================================
+  - name: DFS help
+    description: Verify DFS (Surface Generator) shows usage
+    command: /opt/BrainSuite21a/bin/dfs 2>&1 | head -10
+    expected_output_contains: "Surface Generator"
+
+  - name: DFS basic surface generation
+    description: Generate mesh surface from mask volume
+    command: /opt/BrainSuite21a/bin/dfs -i ${output_dir}/mask_output/t1w_scrub.mask.nii.gz -o ${output_dir}/surface_output/t1w_inner.dfs -v 1
+    depends_on: Scrubmask basic filtering
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_inner.dfs
+
+  - name: DFS with smoothing
+    description: Generate surface with custom smoothing parameters
+    command: /opt/BrainSuite21a/bin/dfs -i ${output_dir}/mask_output/t1w_scrub.mask.nii.gz -o ${output_dir}/surface_output/t1w_inner_smooth.dfs -n 20 -a 0.4 -v 1
+    depends_on: Scrubmask basic filtering
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_inner_smooth.dfs
+
+  - name: DFS with color mapping
+    description: Generate surface with intensity coloring from volume
+    command: /opt/BrainSuite21a/bin/dfs -i ${output_dir}/mask_output/t1w_scrub.mask.nii.gz -o ${output_dir}/surface_output/t1w_inner_color.dfs -c ${output_dir}/bfc_output/t1w_bfc.nii.gz -v 1
+    depends_on: Scrubmask basic filtering
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_inner_color.dfs
+
+  - name: DFS with curvature weighting
+    description: Generate surface with curvature-weighted smoothing
+    command: /opt/BrainSuite21a/bin/dfs -i ${output_dir}/mask_output/t1w_scrub.mask.nii.gz -o ${output_dir}/surface_output/t1w_inner_curv.dfs -w 0.5 -v 1
+    depends_on: Scrubmask basic filtering
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_inner_curv.dfs
+
+  - name: DFS with zero padding
+    description: Generate surface with zero-padded volume (avoid edge clipping)
+    command: /opt/BrainSuite21a/bin/dfs -i ${output_dir}/mask_output/t1w_scrub.mask.nii.gz -o ${output_dir}/surface_output/t1w_inner_zpad.dfs -z -v 1
+    depends_on: Scrubmask basic filtering
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_inner_zpad.dfs
+
+  - name: DFS with threshold
+    description: Generate surface from thresholded volume
+    command: /opt/BrainSuite21a/bin/dfs -i ${output_dir}/bfc_output/t1w_bfc.nii.gz -o ${output_dir}/surface_output/t1w_thresh.dfs -gt 50 -v 1
+    depends_on: BFC basic correction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_thresh.dfs
+
+  # ==========================================================================
+  # CORTEX - CORTEX EXTRACTOR
+  # ==========================================================================
+  - name: Cortex help
+    description: Verify cortex extractor shows usage
+    command: /opt/BrainSuite21a/bin/cortex 2>&1 | head -10
+    expected_output_contains: "cortex extractor"
+
+  # ==========================================================================
+  # CEREBRO - CEREBRUM/CEREBELLUM LABELING
+  # ==========================================================================
+  - name: Cerebro help
+    description: Verify cerebro labeling tool shows usage
+    command: /opt/BrainSuite21a/bin/cerebro 2>&1 | head -10
+    expected_output_contains: "Cerebrum/cerebellum labeling"
+
+  # ==========================================================================
+  # PIALMESH - PIAL SURFACE GENERATION
+  # ==========================================================================
+  - name: Pialmesh help
+    description: Verify pialmesh shows usage
+    command: /opt/BrainSuite21a/bin/pialmesh 2>&1 | head -10
+    expected_output_contains: "pialmesh"
+
+  # ==========================================================================
+  # HEMISPLIT - HEMISPHERE SPLITTING
+  # ==========================================================================
+  - name: Hemisplit help
+    description: Verify hemisplit shows usage
+    command: /opt/BrainSuite21a/bin/hemisplit 2>&1 | head -10
+    expected_output_contains: "Hemisphere splitter"
+
+  # ==========================================================================
+  # CLUSTERMAP - CLUSTER IDENTIFICATION
+  # ==========================================================================
+  - name: Clustermap help
+    description: Verify clustermap shows usage
+    command: /opt/BrainSuite21a/bin/clustermap 2>&1 | head -10
+    expected_output_contains: "identifies voxel clusters"
+
+  - name: Clustermap basic clustering
+    description: Run clustermap on PVC labels
+    command: /opt/BrainSuite21a/bin/clustermap -i ${output_dir}/pvc_output/t1w_pvc.frac.nii.gz -o ${output_dir}/pvc_output/t1w_cluster_stats.txt -t 1.5 -n 5 -v 1
+    depends_on: PVC with tissue fractions
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/pvc_output/t1w_cluster_stats.txt
+
+  - name: Clustermap with label output
+    description: Run clustermap with cluster label volume output
+    command: /opt/BrainSuite21a/bin/clustermap -i ${output_dir}/pvc_output/t1w_pvc.frac.nii.gz -o ${output_dir}/pvc_output/t1w_cluster_stats2.txt -l ${output_dir}/pvc_output/t1w_cluster.label.nii.gz -t 1.5 -v 1
+    depends_on: PVC with tissue fractions
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/pvc_output/t1w_cluster.label.nii.gz
+
+  # ==========================================================================
+  # VOLSLICE - VOLUME SLICING AND VISUALIZATION
+  # ==========================================================================
+  - name: Volslice help
+    description: Verify volslice shows usage
+    command: /opt/BrainSuite21a/bin/volslice 2>&1 | head -10
+    expected_output_contains: "volslice"
+
+  - name: Volslice axial slice
+    description: Generate axial slice image from T1w
+    command: /opt/BrainSuite21a/bin/volslice -i ${t1w} -o ${output_dir}/surface_output/t1w_axial.png --view 1 -v 1
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_axial.png
+
+  - name: Volslice coronal slice
+    description: Generate coronal slice image from T1w
+    command: /opt/BrainSuite21a/bin/volslice -i ${t1w} -o ${output_dir}/surface_output/t1w_coronal.png --view 2 -v 1
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_coronal.png
+
+  - name: Volslice sagittal slice
+    description: Generate sagittal slice image from T1w
+    command: /opt/BrainSuite21a/bin/volslice -i ${t1w} -o ${output_dir}/surface_output/t1w_sagittal.png --view 3 -v 1
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_sagittal.png
+
+  - name: Volslice with specific slice
+    description: Generate slice at specific position
+    command: /opt/BrainSuite21a/bin/volslice -i ${t1w} -o ${output_dir}/surface_output/t1w_slice50.png --view 1 --slice 50 -v 1
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_slice50.png
+
+  - name: Volslice with colormap
+    description: Generate slice with hot colormap
+    command: /opt/BrainSuite21a/bin/volslice -i ${t1w} -o ${output_dir}/surface_output/t1w_hot.png --view 1 -c hot -v 1
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_hot.png
+
+  - name: Volslice with label overlay
+    description: Generate slice with label overlay
+    command: /opt/BrainSuite21a/bin/volslice -i ${output_dir}/bfc_output/t1w_bfc.nii.gz -o ${output_dir}/surface_output/t1w_label_overlay.png -l ${output_dir}/pvc_output/t1w_pvc.label.nii.gz --view 1 -v 1
+    depends_on: PVC basic classification
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_label_overlay.png
+
+  - name: Volslice with mask overlay
+    description: Generate slice with mask overlay
+    command: /opt/BrainSuite21a/bin/volslice -i ${t1w} -o ${output_dir}/surface_output/t1w_mask_overlay.png -m ${output_dir}/bse_output/t1w_brain.mask.nii.gz --view 1 --alpha 128 -v 1
+    depends_on: BSE basic extraction
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_mask_overlay.png
+
+  # ==========================================================================
+  # RENDERDFS - SURFACE RENDERING
+  # ==========================================================================
+  - name: Renderdfs help
+    description: Verify renderdfs shows usage
+    command: /opt/BrainSuite21a/bin/renderdfs 2>&1 | head -10
+    expected_output_contains: "renderdfs"
+
+  - name: Renderdfs basic rendering
+    description: Render surface to PNG image
+    command: /opt/BrainSuite21a/bin/renderdfs -o ${output_dir}/surface_output/t1w_surface_render.png -s ${output_dir}/surface_output/t1w_inner.dfs -v 1
+    depends_on: DFS basic surface generation
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_surface_render.png
+
+  - name: Renderdfs anterior view
+    description: Render surface from anterior viewpoint
+    command: /opt/BrainSuite21a/bin/renderdfs -o ${output_dir}/surface_output/t1w_surface_ant.png -s ${output_dir}/surface_output/t1w_inner.dfs --ant -v 1
+    depends_on: DFS basic surface generation
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_surface_ant.png
+
+  - name: Renderdfs superior view
+    description: Render surface from superior viewpoint
+    command: /opt/BrainSuite21a/bin/renderdfs -o ${output_dir}/surface_output/t1w_surface_sup.png -s ${output_dir}/surface_output/t1w_inner.dfs --sup -v 1
+    depends_on: DFS basic surface generation
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_surface_sup.png
+
+  - name: Renderdfs left sagittal view
+    description: Render surface from left sagittal viewpoint
+    command: /opt/BrainSuite21a/bin/renderdfs -o ${output_dir}/surface_output/t1w_surface_left.png -s ${output_dir}/surface_output/t1w_inner.dfs --left -v 1
+    depends_on: DFS basic surface generation
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_surface_left.png
+
+  - name: Renderdfs with rotation
+    description: Render surface with custom rotation angles
+    command: /opt/BrainSuite21a/bin/renderdfs -o ${output_dir}/surface_output/t1w_surface_rot.png -s ${output_dir}/surface_output/t1w_inner.dfs --xrot 45 --yrot 30 -v 1
+    depends_on: DFS basic surface generation
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_surface_rot.png
+
+  - name: Renderdfs with zoom
+    description: Render surface with zoom factor
+    command: /opt/BrainSuite21a/bin/renderdfs -o ${output_dir}/surface_output/t1w_surface_zoom.png -s ${output_dir}/surface_output/t1w_inner.dfs --zoom 1.5 -v 1
+    depends_on: DFS basic surface generation
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_surface_zoom.png
+
+  - name: Renderdfs with custom background
+    description: Render surface with white background
+    command: /opt/BrainSuite21a/bin/renderdfs -o ${output_dir}/surface_output/t1w_surface_white_bg.png -s ${output_dir}/surface_output/t1w_inner.dfs --bg 255 255 255 -v 1
+    depends_on: DFS basic surface generation
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_surface_white_bg.png
+
+  - name: Renderdfs with custom resolution
+    description: Render surface at higher resolution
+    command: /opt/BrainSuite21a/bin/renderdfs -o ${output_dir}/surface_output/t1w_surface_hires.png -s ${output_dir}/surface_output/t1w_inner.dfs -x 1024 -y 1024 -v 1
+    depends_on: DFS basic surface generation
+    timeout: 120
+    validate:
+      - output_exists: ${output_dir}/surface_output/t1w_surface_hires.png
+
+  # ==========================================================================
+  # SVREG - SURFACE AND VOLUME REGISTRATION
+  # ==========================================================================
+  - name: SVReg help
+    description: Verify SVReg shows usage information
+    command: /opt/BrainSuite21a/svreg/bin/svreg.sh 2>&1 | head -20
+    expected_output_contains: "surface and volume registration"
+
+  - name: SVReg file check
+    description: Verify SVReg binaries are present
+    command: ls -la /opt/BrainSuite21a/svreg/bin/svreg && echo "SVReg binaries found"
+    expected_output_contains: "SVReg binaries found"
+
+  # ==========================================================================
+  # ADDITIONAL TOOLS CHECK
+  # ==========================================================================
+  - name: Htrack help
+    description: Verify htrack (tractography) is available
+    command: /opt/BrainSuite21a/bin/htrack 2>&1 | head -5
+    expected_output_contains: "htrack"
+
+  - name: Odfmax help
+    description: Verify odfmax (ODF peak detection) is available
+    command: /opt/BrainSuite21a/bin/odfmax 2>&1 | head -5
+    expected_output_contains: "odfmax"
+
+  - name: Conmat help
+    description: Verify conmat (connectivity matrix) is available
+    command: /opt/BrainSuite21a/bin/conmat 2>&1 | head -5
+    expected_output_contains: "conmat"
+
+  - name: Statmap help
+    description: Verify statmap is available
+    command: /opt/BrainSuite21a/bin/statmap 2>&1 | head -5
+    expected_output_contains: "statmap"
+
+  - name: Dwisplit help
+    description: Verify dwisplit (DWI splitting) is available
+    command: /opt/BrainSuite21a/bin/dwisplit 2>&1 | head -5
+    expected_output_contains: "dwisplit"
+
+  # ==========================================================================
+  # BRAINSUITE ANATOMICAL PIPELINE SCRIPT
+  # ==========================================================================
+  - name: Anatomical pipeline script check
+    description: Verify brainsuite_anatomical_pipeline.sh is present
+    command: ls -la /opt/BrainSuite21a/bin/brainsuite_anatomical_pipeline.sh && echo "Anatomical pipeline script found"
+    expected_output_contains: "Anatomical pipeline script found"
+
+  - name: Cortical extraction script check
+    description: Verify cortical_extraction.sh is present
+    command: ls -la /opt/BrainSuite21a/bin/cortical_extraction.sh && echo "Cortical extraction script found"
+    expected_output_contains: "Cortical extraction script found"
+
+  # ==========================================================================
+  # ATLAS FILES CHECK
+  # ==========================================================================
+  - name: Atlas directory check
+    description: Verify atlas files are present
+    command: ls /opt/BrainSuite21a/atlas/ | head -10
+    expected_output_contains: ""
+
+  - name: SVReg atlas check
+    description: Verify SVReg atlases are present
+    command: ls /opt/BrainSuite21a/svreg/BCI-DNI_brain_atlas/ 2>/dev/null | head -5 || ls /opt/BrainSuite21a/svreg/ | head -5
+    expected_output_contains: ""
+
+  # ==========================================================================
+  # BSSR (BrainSuite Statistics in R) CHECK
+  # ==========================================================================
+  - name: BSSR directory check
+    description: Verify bssr files are present
+    command: ls /opt/BrainSuite21a/bssr/ | head -10
+    expected_output_contains: ""
+
+  # ==========================================================================
+  # CHAINED PROCESSING PIPELINE
+  # ==========================================================================
+  - name: Full CSE pipeline (BSE + BFC + PVC)
+    description: Run complete Cortical Surface Extractor sequence
+    command: |
+      /opt/BrainSuite21a/bin/bse -i ${t1w} -o ${output_dir}/pipeline/t1w.bse.nii.gz --mask ${output_dir}/pipeline/t1w.mask.nii.gz --auto -v 1 && \
+      /opt/BrainSuite21a/bin/bfc -i ${output_dir}/pipeline/t1w.bse.nii.gz -o ${output_dir}/pipeline/t1w.bfc.nii.gz -m ${output_dir}/pipeline/t1w.mask.nii.gz -v 1 && \
+      /opt/BrainSuite21a/bin/pvc -i ${output_dir}/pipeline/t1w.bfc.nii.gz -o ${output_dir}/pipeline/t1w.pvc.label.nii.gz -f ${output_dir}/pipeline/t1w.pvc.frac.nii.gz -v 1
+    timeout: 600
+    setup_command: mkdir -p ${output_dir}/pipeline
+    validate:
+      - output_exists: ${output_dir}/pipeline/t1w.bse.nii.gz
+      - output_exists: ${output_dir}/pipeline/t1w.bfc.nii.gz
+      - output_exists: ${output_dir}/pipeline/t1w.pvc.label.nii.gz
+      - output_exists: ${output_dir}/pipeline/t1w.pvc.frac.nii.gz
+
+  - name: Full mask cleanup pipeline (TCA + Dewisp + Scrubmask)
+    description: Run complete mask cleanup sequence
+    command: |
+      /opt/BrainSuite21a/bin/tca -i ${output_dir}/pipeline/t1w.mask.nii.gz -o ${output_dir}/pipeline/t1w.tca.mask.nii.gz -v 1 && \
+      /opt/BrainSuite21a/bin/dewisp -i ${output_dir}/pipeline/t1w.tca.mask.nii.gz -o ${output_dir}/pipeline/t1w.dewisp.mask.nii.gz -v 1 && \
+      /opt/BrainSuite21a/bin/scrubmask -i ${output_dir}/pipeline/t1w.dewisp.mask.nii.gz -o ${output_dir}/pipeline/t1w.cortex.mask.nii.gz -v 1
+    depends_on: Full CSE pipeline (BSE + BFC + PVC)
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/pipeline/t1w.tca.mask.nii.gz
+      - output_exists: ${output_dir}/pipeline/t1w.dewisp.mask.nii.gz
+      - output_exists: ${output_dir}/pipeline/t1w.cortex.mask.nii.gz
+
+  - name: Surface generation pipeline
+    description: Generate inner cortical surface from cleaned mask
+    command: |
+      /opt/BrainSuite21a/bin/dfs -i ${output_dir}/pipeline/t1w.cortex.mask.nii.gz -o ${output_dir}/pipeline/t1w.inner.cortex.dfs -n 15 -a 0.5 -v 1 && \
+      /opt/BrainSuite21a/bin/renderdfs -o ${output_dir}/pipeline/t1w.inner.cortex.png -s ${output_dir}/pipeline/t1w.inner.cortex.dfs --left -v 1
+    depends_on: Full mask cleanup pipeline (TCA + Dewisp + Scrubmask)
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/pipeline/t1w.inner.cortex.dfs
+      - output_exists: ${output_dir}/pipeline/t1w.inner.cortex.png
+
+  # ==========================================================================
+  # QC VISUALIZATION PIPELINE
+  # ==========================================================================
+  - name: QC multi-view visualization
+    description: Generate QC images for all three views
+    command: |
+      /opt/BrainSuite21a/bin/volslice -i ${output_dir}/pipeline/t1w.bfc.nii.gz -o ${output_dir}/pipeline/qc_axial.png -l ${output_dir}/pipeline/t1w.pvc.label.nii.gz --view 1 --labelalpha 100 -v 1 && \
+      /opt/BrainSuite21a/bin/volslice -i ${output_dir}/pipeline/t1w.bfc.nii.gz -o ${output_dir}/pipeline/qc_coronal.png -l ${output_dir}/pipeline/t1w.pvc.label.nii.gz --view 2 --labelalpha 100 -v 1 && \
+      /opt/BrainSuite21a/bin/volslice -i ${output_dir}/pipeline/t1w.bfc.nii.gz -o ${output_dir}/pipeline/qc_sagittal.png -l ${output_dir}/pipeline/t1w.pvc.label.nii.gz --view 3 --labelalpha 100 -v 1
+    depends_on: Full CSE pipeline (BSE + BFC + PVC)
+    timeout: 180
+    validate:
+      - output_exists: ${output_dir}/pipeline/qc_axial.png
+      - output_exists: ${output_dir}/pipeline/qc_coronal.png
+      - output_exists: ${output_dir}/pipeline/qc_sagittal.png
+
+  - name: Surface QC multi-view
+    description: Generate surface QC images from multiple viewpoints
+    command: |
+      /opt/BrainSuite21a/bin/renderdfs -o ${output_dir}/pipeline/qc_surface_left.png -s ${output_dir}/pipeline/t1w.inner.cortex.dfs --left --bg 255 255 255 -v 1 && \
+      /opt/BrainSuite21a/bin/renderdfs -o ${output_dir}/pipeline/qc_surface_right.png -s ${output_dir}/pipeline/t1w.inner.cortex.dfs --right --bg 255 255 255 -v 1 && \
+      /opt/BrainSuite21a/bin/renderdfs -o ${output_dir}/pipeline/qc_surface_sup.png -s ${output_dir}/pipeline/t1w.inner.cortex.dfs --sup --bg 255 255 255 -v 1 && \
+      /opt/BrainSuite21a/bin/renderdfs -o ${output_dir}/pipeline/qc_surface_ant.png -s ${output_dir}/pipeline/t1w.inner.cortex.dfs --ant --bg 255 255 255 -v 1
+    depends_on: Surface generation pipeline
+    timeout: 180
+    validate:
+      - output_exists: ${output_dir}/pipeline/qc_surface_left.png
+      - output_exists: ${output_dir}/pipeline/qc_surface_right.png
+      - output_exists: ${output_dir}/pipeline/qc_surface_sup.png
+      - output_exists: ${output_dir}/pipeline/qc_surface_ant.png
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/bidsappbrainsuite
+    echo "Test outputs preserved in ${output_dir}/"

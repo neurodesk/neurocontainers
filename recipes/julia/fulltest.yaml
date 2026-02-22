@@ -1,0 +1,935 @@
+# Julia container test suite
+# Tests for Julia v1.9.4 - The Julia Programming Language
+#
+# Installed packages:
+#   - ArgParse v1.1.5 (command-line argument parsing)
+#   - FFTW v1.8.0 (Fast Fourier Transform)
+#   - IJulia v1.24.2 (Jupyter kernel for Julia)
+#
+# Standard library modules tested:
+#   LinearAlgebra, Statistics, Random, Dates, Test, Distributed,
+#   SparseArrays, DelimitedFiles, Printf, Serialization, InteractiveUtils
+
+name: julia
+version: 1.9.4
+container: julia_1.9.4_20240405.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION INFO
+  # ==========================================================================
+  - name: Version check
+    description: Verify Julia binary runs and reports version
+    command: julia --version
+    expected_output_contains: "julia version 1.9.4"
+    expected_exit_code: 0
+
+  - name: Help output
+    description: Check help message displays correctly
+    command: julia --help
+    expected_output_contains: "julia [switches]"
+    expected_exit_code: 0
+
+  - name: Hidden help options
+    description: Check hidden help options are available
+    command: julia --help-hidden
+    expected_output_contains: "--compile"
+    expected_exit_code: 0
+
+  - name: Version constant
+    description: Test VERSION constant access
+    command: julia -e 'println(VERSION)'
+    expected_output_contains: "1.9.4"
+    expected_exit_code: 0
+
+  - name: System kernel info
+    description: Test Sys.KERNEL access
+    command: julia -e 'println(Sys.KERNEL)'
+    expected_output_contains: "Linux"
+    expected_exit_code: 0
+
+  - name: Word size check
+    description: Verify 64-bit Julia installation
+    command: julia -E 'Sys.WORD_SIZE'
+    expected_output_contains: "64"
+    expected_exit_code: 0
+
+  - name: Julia home directory
+    description: Check JULIA_HOME environment
+    command: julia -e 'println(Sys.BINDIR)'
+    expected_output_contains: "julia"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # BASIC ARITHMETIC AND EXPRESSIONS
+  # ==========================================================================
+  - name: Basic addition
+    description: Test simple integer addition
+    command: julia -E '1 + 1'
+    expected_output_contains: "2"
+    expected_exit_code: 0
+
+  - name: Basic subtraction
+    description: Test simple integer subtraction
+    command: julia -E '10 - 3'
+    expected_output_contains: "7"
+    expected_exit_code: 0
+
+  - name: Basic multiplication
+    description: Test simple integer multiplication
+    command: julia -E "6 * 7"
+    expected_output_contains: "42"
+    expected_exit_code: 0
+
+  - name: Basic division
+    description: Test simple division
+    command: julia -E '20 / 4'
+    expected_output_contains: "5.0"
+    expected_exit_code: 0
+
+  - name: Integer division
+    description: Test integer division operator
+    command: julia -E '17 ÷ 5'
+    expected_output_contains: "3"
+    expected_exit_code: 0
+
+  - name: Modulo operation
+    description: Test modulo operator
+    command: julia -E '17 % 5'
+    expected_output_contains: "2"
+    expected_exit_code: 0
+
+  - name: Power operation
+    description: Test exponentiation
+    command: julia -E '2^10'
+    expected_output_contains: "1024"
+    expected_exit_code: 0
+
+  - name: Float arithmetic
+    description: Test floating point arithmetic
+    command: julia -E "3.14159 * 2.0"
+    expected_output_contains: "6.28318"
+    expected_exit_code: 0
+
+  - name: Complex numbers
+    description: Test complex number arithmetic
+    command: julia -E "(1 + 2im) * (3 - 4im)"
+    expected_output_contains: "11 + 2im"
+    expected_exit_code: 0
+
+  - name: Square root
+    description: Test sqrt function
+    command: julia -E 'sqrt(144)'
+    expected_output_contains: "12.0"
+    expected_exit_code: 0
+
+  - name: Absolute value
+    description: Test abs function
+    command: julia -E 'abs(-42)'
+    expected_output_contains: "42"
+    expected_exit_code: 0
+
+  - name: Trigonometric functions
+    description: Test sin and cos functions
+    command: julia -e 'println(round(sin(pi/2), digits=1), " ", round(cos(0), digits=1))'
+    expected_output_contains: "1.0 1.0"
+    expected_exit_code: 0
+
+  - name: Logarithm functions
+    description: Test log and exp functions
+    command: julia -e 'println(round(log(exp(1)), digits=1))'
+    expected_output_contains: "1.0"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DATA TYPES AND STRUCTURES
+  # ==========================================================================
+  - name: Integer types
+    description: Test integer type system
+    command: julia -e 'println(typeof(42), " ", typeof(Int64(42)))'
+    expected_output_contains: "Int64"
+    expected_exit_code: 0
+
+  - name: Float types
+    description: Test float type system
+    command: julia -e 'println(typeof(3.14), " ", typeof(Float32(3.14)))'
+    expected_output_contains: "Float64"
+    expected_exit_code: 0
+
+  - name: String type
+    description: Test string creation and type
+    command: julia -e 'println(typeof("Hello Julia"))'
+    expected_output_contains: "String"
+    expected_exit_code: 0
+
+  - name: String concatenation
+    description: Test string concatenation
+    command: julia -e "println(\"Hello\" * \" \" * \"Julia\")"
+    expected_output_contains: "Hello Julia"
+    expected_exit_code: 0
+
+  - name: String interpolation
+    description: Test string interpolation
+    command: julia -e 'x = 42; println("The answer is $x")'
+    expected_output_contains: "The answer is 42"
+    expected_exit_code: 0
+
+  - name: Boolean type
+    description: Test boolean operations
+    command: julia -E 'true && false || true'
+    expected_output_contains: "true"
+    expected_exit_code: 0
+
+  - name: Array creation
+    description: Test 1D array creation
+    command: julia -E "[1, 2, 3, 4, 5]"
+    expected_output_contains: "[1, 2, 3, 4, 5]"
+    expected_exit_code: 0
+
+  - name: Array range
+    description: Test range-based array creation
+    command: julia -E 'collect(1:5)'
+    expected_output_contains: "[1, 2, 3, 4, 5]"
+    expected_exit_code: 0
+
+  - name: Array comprehension
+    description: Test array comprehension
+    command: julia -E "[x^2 for x in 1:5]"
+    expected_output_contains: "[1, 4, 9, 16, 25]"
+    expected_exit_code: 0
+
+  - name: Matrix creation
+    description: Test 2D matrix creation
+    command: julia -E "[1 2; 3 4]"
+    expected_output_contains: "[1 2; 3 4]"
+    expected_exit_code: 0
+
+  - name: Tuple creation
+    description: Test tuple creation
+    command: julia -E '(1, "hello", 3.14)'
+    expected_output_contains: '(1, "hello", 3.14)'
+    expected_exit_code: 0
+
+  - name: Named tuple
+    description: Test named tuple creation
+    command: julia -E '(a=1, b=2, c=3)'
+    expected_output_contains: "(a = 1, b = 2, c = 3)"
+    expected_exit_code: 0
+
+  - name: Dictionary creation
+    description: Test dictionary creation
+    command: julia -e 'd = Dict("a" => 1, "b" => 2); println(d["a"])'
+    expected_output_contains: "1"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # CONTROL FLOW AND FUNCTIONS
+  # ==========================================================================
+  - name: If-else statement
+    description: Test conditional expression
+    command: "julia -e 'x = 5; println(x > 3 ? \"greater\" : \"smaller\")'"
+    expected_output_contains: "greater"
+    expected_exit_code: 0
+
+  - name: For loop
+    description: Test for loop iteration
+    command: julia -e 'for i in 1:3; println(i); end'
+    expected_output_contains: "1"
+    expected_exit_code: 0
+
+  - name: While loop
+    description: Test while loop
+    command: julia -e 'let i = 0; while i < 3; i += 1; end; println(i); end'
+    expected_output_contains: "3"
+    expected_exit_code: 0
+
+  - name: Function definition
+    description: Test function definition and call
+    command: julia -e 'f(x) = x^2; println(f(5))'
+    expected_output_contains: "25"
+    expected_exit_code: 0
+
+  - name: Anonymous function
+    description: Test anonymous function
+    command: julia -e 'f = x -> x + 1; println(f(41))'
+    expected_output_contains: "42"
+    expected_exit_code: 0
+
+  - name: Multiple dispatch
+    description: Test multiple dispatch with different types
+    command: julia -e 'g(x::Int) = "int"; g(x::Float64) = "float"; println(g(1), " ", g(1.0))'
+    expected_output_contains: "int float"
+    expected_exit_code: 0
+
+  - name: Map function
+    description: Test map over collection
+    command: julia -E 'map(x -> x^2, [1, 2, 3])'
+    expected_output_contains: "[1, 4, 9]"
+    expected_exit_code: 0
+
+  - name: Filter function
+    description: Test filter over collection
+    command: julia -E "filter(x -> x > 2, [1, 2, 3, 4, 5])"
+    expected_output_contains: "[3, 4, 5]"
+    expected_exit_code: 0
+
+  - name: Reduce function
+    description: Test reduce/fold operation
+    command: julia -E 'reduce(+, [1, 2, 3, 4, 5])'
+    expected_output_contains: "15"
+    expected_exit_code: 0
+
+  - name: Broadcasting
+    description: Test dot broadcasting
+    command: julia -E '[1, 2, 3] .^ 2'
+    expected_output_contains: "[1, 4, 9]"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STANDARD LIBRARY - STATISTICS
+  # ==========================================================================
+  - name: Load Statistics module
+    description: Test Statistics module loading
+    command: julia -e 'using Statistics; println("Statistics loaded")'
+    expected_output_contains: "Statistics loaded"
+    expected_exit_code: 0
+
+  - name: Mean calculation
+    description: Test mean function
+    command: julia -e 'using Statistics; println(mean([1, 2, 3, 4, 5]))'
+    expected_output_contains: "3.0"
+    expected_exit_code: 0
+
+  - name: Median calculation
+    description: Test median function
+    command: julia -e 'using Statistics; println(median([1, 2, 3, 4, 5]))'
+    expected_output_contains: "3.0"
+    expected_exit_code: 0
+
+  - name: Standard deviation
+    description: Test std function
+    command: julia -e 'using Statistics; println(round(std([1, 2, 3, 4, 5]), digits=4))'
+    expected_output_contains: "1.5811"
+    expected_exit_code: 0
+
+  - name: Variance calculation
+    description: Test var function
+    command: julia -e 'using Statistics; println(var([1, 2, 3, 4, 5]))'
+    expected_output_contains: "2.5"
+    expected_exit_code: 0
+
+  - name: Quantile calculation
+    description: Test quantile function
+    command: julia -e 'using Statistics; println(quantile([1, 2, 3, 4, 5], 0.5))'
+    expected_output_contains: "3.0"
+    expected_exit_code: 0
+
+  - name: Correlation coefficient
+    description: Test cor function
+    command: julia -e 'using Statistics; println(cor([1, 2, 3], [1, 2, 3]))'
+    expected_output_contains: "1.0"
+    expected_exit_code: 0
+
+  - name: Covariance
+    description: Test cov function
+    command: julia -e 'using Statistics; println(cov([1, 2, 3], [1, 2, 3]))'
+    expected_output_contains: "1.0"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STANDARD LIBRARY - LINEAR ALGEBRA
+  # ==========================================================================
+  - name: Load LinearAlgebra module
+    description: Test LinearAlgebra module loading
+    command: julia -e 'using LinearAlgebra; println("LinearAlgebra loaded")'
+    expected_output_contains: "LinearAlgebra loaded"
+    expected_exit_code: 0
+
+  - name: Matrix determinant
+    description: Test det function
+    command: julia -e 'using LinearAlgebra; println(det([1 2; 3 4]))'
+    expected_output_contains: "-2.0"
+    expected_exit_code: 0
+
+  - name: Matrix trace
+    description: Test tr function
+    command: julia -e 'using LinearAlgebra; println(tr([1 2; 3 4]))'
+    expected_output_contains: "5"
+    expected_exit_code: 0
+
+  - name: Matrix inverse
+    description: Test inv function
+    command: julia -e 'using LinearAlgebra; A = [1.0 2.0; 3.0 4.0]; println(round.(inv(A), digits=2))'
+    expected_output_contains: "-2.0"
+    expected_exit_code: 0
+
+  - name: Matrix transpose
+    description: Test transpose operation
+    command: julia -e 'using LinearAlgebra; println(transpose([1 2; 3 4]))'
+    expected_output_contains: "[1 3; 2 4]"
+    expected_exit_code: 0
+
+  - name: Eigenvalues
+    description: Test eigvals function
+    command: julia -e 'using LinearAlgebra; vals = eigvals([1.0 2.0; 3.0 4.0]); println(round.(vals, digits=2))'
+    expected_output_contains: "-0.37"
+    expected_exit_code: 0
+
+  - name: Singular values
+    description: Test svdvals function
+    command: julia -e 'using LinearAlgebra; println(round.(svdvals([1.0 2.0; 3.0 4.0]), digits=2))'
+    expected_output_contains: "5.46"
+    expected_exit_code: 0
+
+  - name: Matrix norm
+    description: Test norm function
+    command: julia -e 'using LinearAlgebra; println(round(norm([3, 4]), digits=1))'
+    expected_output_contains: "5.0"
+    expected_exit_code: 0
+
+  - name: Dot product
+    description: Test dot function
+    command: julia -e 'using LinearAlgebra; println(dot([1, 2, 3], [4, 5, 6]))'
+    expected_output_contains: "32"
+    expected_exit_code: 0
+
+  - name: Cross product
+    description: Test cross function
+    command: julia -e 'using LinearAlgebra; println(cross([1, 0, 0], [0, 1, 0]))'
+    expected_output_contains: "[0, 0, 1]"
+    expected_exit_code: 0
+
+  - name: Identity matrix
+    description: Test I (identity) operator
+    command: julia -e 'using LinearAlgebra; println(Matrix(I, 3, 3))'
+    expected_output_contains: "Bool[1 0 0; 0 1 0; 0 0 1]"
+    expected_exit_code: 0
+
+  - name: Diagonal matrix
+    description: Test Diagonal constructor
+    command: julia -e 'using LinearAlgebra; println(Diagonal([1, 2, 3]))'
+    expected_output_contains: "1"
+    expected_exit_code: 0
+
+  - name: LU factorization
+    description: Test lu factorization
+    command: julia -e 'using LinearAlgebra; F = lu([1.0 2.0; 3.0 4.0]); println("LU done")'
+    expected_output_contains: "LU done"
+    expected_exit_code: 0
+
+  - name: QR factorization
+    description: Test qr factorization
+    command: julia -e 'using LinearAlgebra; F = qr([1.0 2.0; 3.0 4.0]); println("QR done")'
+    expected_output_contains: "QR done"
+    expected_exit_code: 0
+
+  - name: Cholesky factorization
+    description: Test cholesky factorization
+    command: julia -e 'using LinearAlgebra; A = [4.0 2.0; 2.0 5.0]; F = cholesky(A); println("Cholesky done")'
+    expected_output_contains: "Cholesky done"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STANDARD LIBRARY - RANDOM
+  # ==========================================================================
+  - name: Load Random module
+    description: Test Random module loading
+    command: julia -e 'using Random; println("Random loaded")'
+    expected_output_contains: "Random loaded"
+    expected_exit_code: 0
+
+  - name: Set random seed
+    description: Test seed! function for reproducibility
+    command: julia -e 'using Random; Random.seed!(42); println(rand())'
+    expected_output_contains: "0."
+    expected_exit_code: 0
+
+  - name: Random uniform
+    description: Test rand function
+    command: julia -e "using Random; Random.seed!(42); x = rand(); println(0.0 <= x <= 1.0)"
+    expected_output_contains: "true"
+    expected_exit_code: 0
+
+  - name: Random normal
+    description: Test randn function
+    command: julia -e 'using Random; Random.seed!(42); x = randn(); println(typeof(x))'
+    expected_output_contains: "Float64"
+    expected_exit_code: 0
+
+  - name: Random integer
+    description: Test rand with range
+    command: julia -e "using Random; Random.seed!(42); x = rand(1:100); println(1 <= x <= 100)"
+    expected_output_contains: "true"
+    expected_exit_code: 0
+
+  - name: Random array
+    description: Test rand array generation
+    command: julia -e 'using Random; Random.seed!(42); println(length(rand(5)))'
+    expected_output_contains: "5"
+    expected_exit_code: 0
+
+  - name: Shuffle array
+    description: Test shuffle function
+    command: julia -e 'using Random; Random.seed!(42); println(length(shuffle([1, 2, 3, 4, 5])))'
+    expected_output_contains: "5"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STANDARD LIBRARY - DATES
+  # ==========================================================================
+  - name: Load Dates module
+    description: Test Dates module loading
+    command: julia -e 'using Dates; println("Dates loaded")'
+    expected_output_contains: "Dates loaded"
+    expected_exit_code: 0
+
+  - name: Current date
+    description: Test today function
+    command: julia -e 'using Dates; println(typeof(today()))'
+    expected_output_contains: "Date"
+    expected_exit_code: 0
+
+  - name: Current datetime
+    description: Test now function
+    command: julia -e 'using Dates; println(typeof(now()))'
+    expected_output_contains: "DateTime"
+    expected_exit_code: 0
+
+  - name: Date creation
+    description: Test Date constructor
+    command: julia -e 'using Dates; println(Date(2024, 4, 5))'
+    expected_output_contains: "2024-04-05"
+    expected_exit_code: 0
+
+  - name: Date arithmetic
+    description: Test date addition
+    command: julia -e 'using Dates; println(Date(2024, 1, 1) + Day(100))'
+    expected_output_contains: "2024-04-10"
+    expected_exit_code: 0
+
+  - name: Date formatting
+    description: Test Dates.format function
+    command: julia -e 'using Dates; println(Dates.format(Date(2024, 4, 5), "yyyy-mm-dd"))'
+    expected_output_contains: "2024-04-05"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STANDARD LIBRARY - SPARSE ARRAYS
+  # ==========================================================================
+  - name: Load SparseArrays module
+    description: Test SparseArrays module loading
+    command: julia -e 'using SparseArrays; println("SparseArrays loaded")'
+    expected_output_contains: "SparseArrays loaded"
+    expected_exit_code: 0
+
+  - name: Sparse matrix creation
+    description: Test sparse matrix from dense
+    command: julia -e 'using SparseArrays; S = sparse([1 0; 0 2]); println(nnz(S))'
+    expected_output_contains: "2"
+    expected_exit_code: 0
+
+  - name: Sparse identity
+    description: Test spdiagm function
+    command: julia -e 'using SparseArrays; println(nnz(spdiagm(0 => ones(3))))'
+    expected_output_contains: "3"
+    expected_exit_code: 0
+
+  - name: Sparse zeros
+    description: Test spzeros function
+    command: julia -e 'using SparseArrays; println(nnz(spzeros(3, 3)))'
+    expected_output_contains: "0"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STANDARD LIBRARY - DELIMITED FILES
+  # ==========================================================================
+  - name: Load DelimitedFiles module
+    description: Test DelimitedFiles module loading
+    command: julia -e 'using DelimitedFiles; println("DelimitedFiles loaded")'
+    expected_output_contains: "DelimitedFiles loaded"
+    expected_exit_code: 0
+
+  - name: Write delimited file
+    description: Test writedlm function
+    command: julia -e 'using DelimitedFiles; writedlm("${output_dir}/test_data.csv", [1 2 3; 4 5 6], ","); println("written")'
+    validate:
+      - output_exists: ${output_dir}/test_data.csv
+    expected_exit_code: 0
+
+  - name: Read delimited file
+    description: Test readdlm function (delimiter must be Char not String)
+    command: |
+      julia -e "using DelimitedFiles; data = readdlm(\"${output_dir}/test_data.csv\", ','); println(sum(data))"
+    depends_on: Write delimited file
+    expected_output_contains: "21"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STANDARD LIBRARY - TEST
+  # ==========================================================================
+  - name: Load Test module
+    description: Test Test module loading
+    command: julia -e 'using Test; println("Test loaded")'
+    expected_output_contains: "Test loaded"
+    expected_exit_code: 0
+
+  - name: Test assertion pass
+    description: Test @test macro with passing assertion
+    command: julia -e 'using Test; @test 1 + 1 == 2; println("Test passed")'
+    expected_output_contains: "Test passed"
+    expected_exit_code: 0
+
+  - name: Test approximate equality
+    description: Test approximate comparison
+    command: julia -e 'using Test; @test 0.1 + 0.2 ≈ 0.3; println("Approx test passed")'
+    expected_output_contains: "Approx test passed"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STANDARD LIBRARY - PRINTF
+  # ==========================================================================
+  - name: Load Printf module
+    description: Test Printf module loading
+    command: julia -e 'using Printf; println("Printf loaded")'
+    expected_output_contains: "Printf loaded"
+    expected_exit_code: 0
+
+  - name: Printf formatting
+    description: Test @printf macro
+    command: "julia -e 'using Printf; @printf(\"Value: %.2f\\n\", 3.14159)'"
+    expected_output_contains: "Value: 3.14"
+    expected_exit_code: 0
+
+  - name: Sprintf formatting
+    description: Test @sprintf macro
+    command: julia -e 'using Printf; s = @sprintf("x = %d, y = %.1f", 42, 3.14); println(s)'
+    expected_output_contains: "x = 42, y = 3.1"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STANDARD LIBRARY - DISTRIBUTED
+  # ==========================================================================
+  - name: Load Distributed module
+    description: Test Distributed module loading
+    command: julia -e 'using Distributed; println("Distributed loaded")'
+    expected_output_contains: "Distributed loaded"
+    expected_exit_code: 0
+
+  - name: Number of workers
+    description: Test nworkers function
+    command: julia -e 'using Distributed; println(nworkers())'
+    expected_output_contains: "1"
+    expected_exit_code: 0
+
+  - name: Number of procs
+    description: Test nprocs function
+    command: julia -e 'using Distributed; println(nprocs())'
+    expected_output_contains: "1"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STANDARD LIBRARY - SERIALIZATION
+  # ==========================================================================
+  - name: Load Serialization module
+    description: Test Serialization module loading
+    command: julia -e 'using Serialization; println("Serialization loaded")'
+    expected_output_contains: "Serialization loaded"
+    expected_exit_code: 0
+
+  - name: Serialize data
+    description: Test serialize function
+    command: julia -e 'using Serialization; open("${output_dir}/data.jls", "w") do f; serialize(f, [1, 2, 3]); end; println("serialized")'
+    validate:
+      - output_exists: ${output_dir}/data.jls
+    expected_exit_code: 0
+
+  - name: Deserialize data
+    description: Test deserialize function
+    command: julia -e 'using Serialization; data = open(deserialize, "${output_dir}/data.jls"); println(data)'
+    depends_on: Serialize data
+    expected_output_contains: "[1, 2, 3]"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STANDARD LIBRARY - INTERACTIVE UTILS
+  # ==========================================================================
+  - name: Load InteractiveUtils module
+    description: Test InteractiveUtils module loading
+    command: julia -e 'using InteractiveUtils; println("InteractiveUtils loaded")'
+    expected_output_contains: "InteractiveUtils loaded"
+    expected_exit_code: 0
+
+  - name: Check subtypes
+    description: Test subtypes function
+    command: julia -e 'using InteractiveUtils; println(Integer in subtypes(Signed))'
+    expected_output_contains: "false"
+    expected_exit_code: 0
+
+  - name: Version info
+    description: Test versioninfo function
+    command: julia -e 'using InteractiveUtils; versioninfo()'
+    expected_output_contains: "Julia Version"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # INSTALLED PACKAGE - FFTW
+  # ==========================================================================
+  - name: Load FFTW package
+    description: Test FFTW package loading
+    command: julia -e 'using FFTW; println("FFTW loaded")'
+    expected_output_contains: "FFTW loaded"
+    expected_exit_code: 0
+
+  - name: FFT forward transform
+    description: Test fft function
+    command: julia -e 'using FFTW; x = [1.0, 2.0, 3.0, 4.0]; y = fft(x); println(round(real(y[1]), digits=1))'
+    expected_output_contains: "10.0"
+    expected_exit_code: 0
+
+  - name: FFT inverse transform
+    description: Test ifft function
+    command: julia -e 'using FFTW; x = [1.0, 2.0, 3.0, 4.0]; y = ifft(fft(x)); println(round.(real.(y), digits=1))'
+    expected_output_contains: "[1.0, 2.0, 3.0, 4.0]"
+    expected_exit_code: 0
+
+  - name: 2D FFT
+    description: Test fft on 2D array
+    command: julia -e 'using FFTW; A = [1.0 2.0; 3.0 4.0]; y = fft(A); println(round(real(y[1,1]), digits=1))'
+    expected_output_contains: "10.0"
+    expected_exit_code: 0
+
+  - name: Real FFT
+    description: Test rfft function
+    command: julia -e 'using FFTW; x = [1.0, 2.0, 3.0, 4.0]; y = rfft(x); println(length(y))'
+    expected_output_contains: "3"
+    expected_exit_code: 0
+
+  - name: FFT plan
+    description: Test plan_fft function
+    command: julia -e "using FFTW; x = rand(1024); p = plan_fft(x); y = p * x; println(length(y))"
+    expected_output_contains: "1024"
+    expected_exit_code: 0
+
+  - name: FFT shift
+    description: Test fftshift function
+    command: julia -e 'using FFTW; x = [1, 2, 3, 4]; println(fftshift(x))'
+    expected_output_contains: "[3, 4, 1, 2]"
+    expected_exit_code: 0
+
+  - name: FFT frequency
+    description: Test fftfreq function
+    command: julia -e 'using FFTW; println(length(fftfreq(8)))'
+    expected_output_contains: "8"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # INSTALLED PACKAGE - ARGPARSE
+  # ==========================================================================
+  - name: Load ArgParse package
+    description: Test ArgParse package loading
+    command: julia -e 'using ArgParse; println("ArgParse loaded")'
+    expected_output_contains: "ArgParse loaded"
+    expected_exit_code: 0
+
+  - name: ArgParse settings creation
+    description: Test ArgParseSettings constructor
+    command: julia -e 'using ArgParse; s = ArgParseSettings(); println(typeof(s))'
+    expected_output_contains: "ArgParseSettings"
+    expected_exit_code: 0
+
+  - name: ArgParse add argument
+    description: Test @add_arg_table! macro
+    command: julia -e 'using ArgParse; s = ArgParseSettings(); @add_arg_table! s begin "--opt"; arg_type = Int; end; println("arg added")'
+    expected_output_contains: "arg added"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # INSTALLED PACKAGE - IJULIA
+  # ==========================================================================
+  - name: Load IJulia package
+    description: Test IJulia package loading
+    command: julia -e 'using IJulia; println("IJulia loaded")'
+    expected_output_contains: "IJulia loaded"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MULTITHREADING
+  # ==========================================================================
+  - name: Single thread default
+    description: Test default thread count
+    command: julia -e 'println(Threads.nthreads())'
+    expected_output_contains: "1"
+    expected_exit_code: 0
+
+  - name: Multiple threads
+    description: Test setting multiple threads
+    command: julia -t 2 -e 'println(Threads.nthreads())'
+    expected_output_contains: "2"
+    expected_exit_code: 0
+
+  - name: Thread ID
+    description: Test threadid function
+    command: julia -e 'println(Threads.threadid())'
+    expected_output_contains: "1"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FILE I/O OPERATIONS
+  # ==========================================================================
+  - name: Write text file
+    description: Test basic file writing
+    command: julia -e 'open("${output_dir}/hello.txt", "w") do f; write(f, "Hello Julia"); end; println("written")'
+    validate:
+      - output_exists: ${output_dir}/hello.txt
+    expected_exit_code: 0
+
+  - name: Read text file
+    description: Test basic file reading
+    command: julia -e 'println(read("${output_dir}/hello.txt", String))'
+    depends_on: Write text file
+    expected_output_contains: "Hello Julia"
+    expected_exit_code: 0
+
+  - name: File exists check
+    description: Test isfile function
+    command: julia -e 'println(isfile("${output_dir}/hello.txt"))'
+    depends_on: Write text file
+    expected_output_contains: "true"
+    expected_exit_code: 0
+
+  - name: Directory check
+    description: Test isdir function
+    command: julia -e 'println(isdir("${output_dir}"))'
+    expected_output_contains: "true"
+    expected_exit_code: 0
+
+  - name: List directory
+    description: Test readdir function
+    command: julia -e "println(length(readdir(\"${output_dir}\")) > 0)"
+    depends_on: Write text file
+    expected_output_contains: "true"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ERROR HANDLING
+  # ==========================================================================
+  - name: Try-catch block
+    description: Test exception handling
+    command: julia -e 'try; error("test"); catch e; println("caught"); end'
+    expected_output_contains: "caught"
+    expected_exit_code: 0
+
+  - name: Finally block
+    description: Test try-finally construct
+    command: julia -e 'try; println("try"); finally; println("finally"); end'
+    expected_output_contains: "finally"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STRUCT AND TYPES
+  # ==========================================================================
+  - name: Struct definition
+    description: Test struct creation
+    command: julia -e 'struct Point; x::Float64; y::Float64; end; p = Point(1.0, 2.0); println(p.x)'
+    expected_output_contains: "1.0"
+    expected_exit_code: 0
+
+  - name: Mutable struct
+    description: Test mutable struct
+    command: julia -e 'mutable struct Counter; n::Int; end; c = Counter(0); c.n += 1; println(c.n)'
+    expected_output_contains: "1"
+    expected_exit_code: 0
+
+  - name: Parametric type
+    description: Test parametric struct
+    command: julia -e 'struct Container{T}; value::T; end; c = Container(42); println(typeof(c))'
+    expected_output_contains: "Container{Int64}"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MEMORY AND PERFORMANCE
+  # ==========================================================================
+  - name: Memory allocation check
+    description: Test sizeof function
+    command: julia -e 'println(sizeof(Float64))'
+    expected_output_contains: "8"
+    expected_exit_code: 0
+
+  - name: Array memory
+    description: Test array memory footprint
+    command: julia -e 'x = zeros(1000); println(sizeof(x))'
+    expected_output_contains: "8000"
+    expected_exit_code: 0
+
+  - name: GC run
+    description: Test garbage collection
+    command: julia -e 'GC.gc(); println("GC complete")'
+    expected_output_contains: "GC complete"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # QUIET MODE AND OUTPUT OPTIONS
+  # ==========================================================================
+  - name: Quiet mode
+    description: Test quiet startup flag
+    command: julia -q -e 'println("quiet mode works")'
+    expected_output_contains: "quiet mode works"
+    expected_exit_code: 0
+
+  - name: No startup file
+    description: Test --startup-file=no flag
+    command: julia --startup-file=no -e 'println("no startup")'
+    expected_output_contains: "no startup"
+    expected_exit_code: 0
+
+  - name: Optimization level
+    description: Test -O flag acceptance
+    command: julia -O3 -e 'println("O3 mode")'
+    expected_output_contains: "O3 mode"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NUMERICAL SIGNAL PROCESSING (using FFTW)
+  # ==========================================================================
+  - name: Convolution via FFT
+    description: Test convolution using FFT
+    command: julia -e "using FFTW; x = [1.0, 2.0, 3.0, 0.0]; h = [1.0, 1.0, 0.0, 0.0]; y = real.(ifft(fft(x) .* fft(h))); println(round.(y, digits=1))"
+    expected_output_contains: "[1.0, 3.0, 5.0, 3.0]"
+    expected_exit_code: 0
+
+  - name: Power spectrum
+    description: Test power spectrum calculation
+    command: julia -e "using FFTW; x = sin.(2*pi*0.1*(0:99)); Y = fft(x); P = abs.(Y).^2; println(round(maximum(P), digits=0))"
+    expected_output_contains: "2500"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MATRIX SOLVING AND NUMERICAL METHODS
+  # ==========================================================================
+  - name: Linear system solve
+    description: Test backslash operator for Ax=b
+    command: julia -e 'A = [1.0 2.0; 3.0 4.0]; b = [5.0, 11.0]; x = A \ b; println(round.(x, digits=1))'
+    expected_output_contains: "[1.0, 2.0]"
+    expected_exit_code: 0
+
+  - name: Least squares
+    description: Test overdetermined system
+    command: julia -e 'A = [1.0 1.0; 1.0 2.0; 1.0 3.0]; b = [1.0, 2.0, 3.0]; x = A \ b; println(round.(x, digits=1))'
+    expected_output_contains: "[0.0, 1.0]"
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

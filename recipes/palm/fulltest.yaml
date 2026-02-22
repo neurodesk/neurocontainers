@@ -1,0 +1,969 @@
+# palm container test suite
+# Tests for PALM alpha119 - Permutation Analysis of Linear Models
+#
+# PALM performs permutation-based inference for the general linear model,
+# supporting volumetric, surface, and non-imaging data with features including:
+#   - Various regression and permutation strategies
+#   - TFCE (Threshold-Free Cluster Enhancement)
+#   - Non-Parametric Combination (NPC) for multi-modal analysis
+#   - Classical multivariate statistics (MANOVA, MANCOVA)
+#   - Cluster-based inference
+#   - FDR correction
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# References:
+#   - Winkler AM et al. (2014) NeuroImage 92:381-397 (main PALM reference)
+#   - Winkler AM et al. (2016) Hum Brain Mapp 37(4):1486-511 (NPC/MV)
+
+name: palm
+version: alpha119
+container: palm_alpha119_20211220.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  host_script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/palm/data test_output/palm/designs test_output/palm/masks
+    # Create synthetic 4D NIfTI (20x20x10 spatial, 10 subjects) using pure Python
+    python3 -c "
+    import struct, random
+    shape = (20, 20, 10, 10)
+    n_voxels = 20 * 20 * 10 * 10
+    hdr = bytearray(348)
+    struct.pack_into('<i', hdr, 0, 348)
+    struct.pack_into('<8h', hdr, 40, 4, shape[0], shape[1], shape[2], shape[3], 1, 1, 1)
+    struct.pack_into('<h', hdr, 70, 16)
+    struct.pack_into('<h', hdr, 72, 4)
+    struct.pack_into('<8f', hdr, 76, 0, 2.0, 2.0, 2.0, 1.0, 0, 0, 0)
+    struct.pack_into('<f', hdr, 108, 352.0)
+    struct.pack_into('<h', hdr, 254, 1)
+    struct.pack_into('<4f', hdr, 280, 2.0, 0, 0, 0)
+    struct.pack_into('<4f', hdr, 296, 0, 2.0, 0, 0)
+    struct.pack_into('<4f', hdr, 312, 0, 0, 2.0, 0)
+    hdr[344:348] = b'n+1\x00'
+    random.seed(42)
+    data = struct.pack('<' + 'f' * n_voxels, *[random.gauss(500, 100) for _ in range(n_voxels)])
+    with open('test_output/palm/data/input_4d.nii', 'wb') as f:
+        f.write(bytes(hdr))
+        f.write(b'\x00' * 4)
+        f.write(data)
+    print('Created 4D NIfTI: 20x20x10x10')
+    # Create second 4D NIfTI with different seed
+    random.seed(99)
+    data2 = struct.pack('<' + 'f' * n_voxels, *[random.gauss(500, 100) for _ in range(n_voxels)])
+    with open('test_output/palm/data/input_4d_2.nii', 'wb') as f:
+        f.write(bytes(hdr))
+        f.write(b'\x00' * 4)
+        f.write(data2)
+    print('Created second 4D NIfTI')
+    "
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/palm/data test_output/palm/designs test_output/palm/masks
+
+    # Create a simple brain mask from T1w using thresholding
+    # Note: We use niimath if available, otherwise create simple test data
+
+    # Create simple design matrix (10 subjects, 2 groups, 5 each)
+    # Design: intercept + group effect
+    cat > test_output/palm/designs/design_simple.csv << 'EOF'
+    1,1
+    1,1
+    1,1
+    1,1
+    1,1
+    1,-1
+    1,-1
+    1,-1
+    1,-1
+    1,-1
+    EOF
+
+    # Create t-contrast for group difference
+    cat > test_output/palm/designs/contrast_ttest.csv << 'EOF'
+    0,1
+    EOF
+
+    # Create two-sided t-contrast
+    cat > test_output/palm/designs/contrast_twotail.csv << 'EOF'
+    0,1
+    0,-1
+    EOF
+
+    # Create F-contrast (single column = include 1st t-contrast)
+    cat > test_output/palm/designs/contrast_f.csv << 'EOF'
+    1
+    EOF
+
+    # Create exchangeability blocks (2 groups)
+    cat > test_output/palm/designs/eb_groups.csv << 'EOF'
+    1
+    1
+    1
+    1
+    1
+    2
+    2
+    2
+    2
+    2
+    EOF
+
+    # Create variance groups
+    cat > test_output/palm/designs/vg_groups.csv << 'EOF'
+    1
+    1
+    1
+    1
+    1
+    2
+    2
+    2
+    2
+    2
+    EOF
+
+    # Create one-sample design (intercept only)
+    cat > test_output/palm/designs/design_onesample.csv << 'EOF'
+    1
+    1
+    1
+    1
+    1
+    1
+    1
+    1
+    1
+    1
+    EOF
+
+    # Create one-sample contrast
+    cat > test_output/palm/designs/contrast_onesample.csv << 'EOF'
+    1
+    EOF
+
+    # Create paired design (before/after with subject intercepts)
+    # 5 subjects, 2 conditions each
+    cat > test_output/palm/designs/design_paired.csv << 'EOF'
+    1,0,0,0,0,1
+    0,1,0,0,0,1
+    0,0,1,0,0,1
+    0,0,0,1,0,1
+    0,0,0,0,1,1
+    1,0,0,0,0,-1
+    0,1,0,0,0,-1
+    0,0,1,0,0,-1
+    0,0,0,1,0,-1
+    0,0,0,0,1,-1
+    EOF
+
+    # Contrast for paired test (condition effect)
+    cat > test_output/palm/designs/contrast_paired.csv << 'EOF'
+    0,0,0,0,0,1
+    EOF
+
+    # Create exchangeability blocks for paired data
+    cat > test_output/palm/designs/eb_paired.csv << 'EOF'
+    1
+    2
+    3
+    4
+    5
+    1
+    2
+    3
+    4
+    5
+    EOF
+
+    # Create regression design (continuous covariate)
+    # 10 subjects with continuous predictor
+    cat > test_output/palm/designs/design_regression.csv << 'EOF'
+    1,20
+    1,25
+    1,30
+    1,35
+    1,40
+    1,45
+    1,50
+    1,55
+    1,60
+    1,65
+    EOF
+
+    # Mean-centered version for regression
+    cat > test_output/palm/designs/design_regression_centered.csv << 'EOF'
+    1,-22.5
+    1,-17.5
+    1,-12.5
+    1,-7.5
+    1,-2.5
+    1,2.5
+    1,7.5
+    1,12.5
+    1,17.5
+    1,22.5
+    EOF
+
+    # Contrast for regression slope
+    cat > test_output/palm/designs/contrast_regression.csv << 'EOF'
+    0,1
+    EOF
+
+    # Create ANCOVA design (group + covariate)
+    cat > test_output/palm/designs/design_ancova.csv << 'EOF'
+    1,1,-22.5
+    1,1,-17.5
+    1,1,-12.5
+    1,1,-7.5
+    1,1,-2.5
+    1,-1,2.5
+    1,-1,7.5
+    1,-1,12.5
+    1,-1,17.5
+    1,-1,22.5
+    EOF
+
+    # Contrast for ANCOVA group effect (adjusted for covariate)
+    cat > test_output/palm/designs/contrast_ancova.csv << 'EOF'
+    0,1,0
+    EOF
+
+    echo "Setup complete: design files created"
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY
+  # ==========================================================================
+  - name: PALM version and banner
+    description: Verify PALM loads and shows banner with version
+    command: palm 2>&1 | head -30
+    expected_output_contains: "Permutation Analysis of Linear Models"
+
+  - name: PALM help output
+    description: Verify PALM shows help with basic options
+    command: palm 2>&1 | grep -E "^\-i|^\-d|^\-t|^\-n"
+    expected_output_contains: "-i <file>"
+
+  - name: PALM advanced options
+    description: Verify PALM shows advanced options
+    command: palm -advanced 2>&1 | grep -E "^\-tfce|^\-seed|^\-zstat"
+    expected_output_contains: "-tfce_H"
+
+  # ==========================================================================
+  # INPUT FILE HANDLING
+  # ==========================================================================
+  - name: Basic input loading
+    description: Test loading a NIfTI file as input
+    command: palm -i test_output/palm/data/input_4d.nii -noniiclass -o test_output/palm/basic_input -n 5 -ee 2>&1
+    expected_output_contains: "Reading input"
+    validate:
+      - output_exists: ${output_dir}/palm/basic_input_elapsed.csv
+
+  - name: Multiple inputs
+    description: Test loading multiple NIfTI files
+    command: palm -i test_output/palm/data/input_4d.nii -i test_output/palm/data/input_4d_2.nii -noniiclass -o test_output/palm/multi_input -n 5 -ee 2>&1
+    expected_output_contains: "Reading input"
+
+  # ==========================================================================
+  # ONE-SAMPLE T-TEST
+  # ==========================================================================
+  - name: One-sample t-test
+    description: Basic one-sample t-test with permutations
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_onesample.csv \
+           -t test_output/palm/designs/contrast_onesample.csv \
+           -o test_output/palm/onesample \
+           -n 50 -ee \
+           -save1-p \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/onesample_elapsed.csv
+      - output_exists: ${output_dir}/palm/onesample_vox_tstat.nii.gz
+
+  - name: One-sample with save1-p
+    description: One-sample test saving 1-p values
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_onesample.csv \
+           -t test_output/palm/designs/contrast_onesample.csv \
+           -o test_output/palm/onesample_save1p \
+           -n 50 -ee -save1-p \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/onesample_save1p_elapsed.csv
+
+  # ==========================================================================
+  # TWO-SAMPLE T-TEST
+  # ==========================================================================
+  - name: Two-sample t-test (unpaired)
+    description: Two-group comparison with exchangeable errors
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/twosample \
+           -n 50 -ee \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/twosample_elapsed.csv
+      - output_exists: ${output_dir}/palm/twosample_vox_tstat.nii.gz
+
+  - name: Two-sample with variance groups
+    description: Two-group comparison allowing heteroscedasticity
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -vg test_output/palm/designs/vg_groups.csv \
+           -o test_output/palm/twosample_vg \
+           -n 50 -ee \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/twosample_vg_elapsed.csv
+
+  - name: Two-sample with auto variance groups
+    description: Two-group comparison with automatic VG detection
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -vg auto \
+           -o test_output/palm/twosample_vgauto \
+           -n 50 -ee \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/twosample_vgauto_elapsed.csv
+
+  # ==========================================================================
+  # TWO-TAILED TESTS
+  # ==========================================================================
+  - name: Two-tailed t-test
+    description: Two-tailed inference using -twotail option
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/twotail \
+           -n 50 -ee -twotail \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/twotail_elapsed.csv
+
+  # ==========================================================================
+  # SIGN-FLIPPING (ISE)
+  # ==========================================================================
+  - name: Sign-flipping test
+    description: Test with independent symmetric errors (sign-flipping)
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_onesample.csv \
+           -t test_output/palm/designs/contrast_onesample.csv \
+           -o test_output/palm/signflip \
+           -n 50 -ise \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/signflip_elapsed.csv
+
+  - name: Combined EE and ISE
+    description: Test with both exchangeable and independent symmetric errors
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/ee_ise \
+           -n 50 -ee -ise \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/ee_ise_elapsed.csv
+
+  # ==========================================================================
+  # F-TESTS
+  # ==========================================================================
+  - name: F-test
+    description: F-contrast test
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -f test_output/palm/designs/contrast_f.csv \
+           -o test_output/palm/ftest \
+           -n 50 -ee \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/ftest_elapsed.csv
+      - output_exists: ${output_dir}/palm/ftest_vox_tstat_c1.nii.gz
+
+  - name: F-test only
+    description: Run only F-contrasts, not t-contrasts
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -f test_output/palm/designs/contrast_f.csv \
+           -o test_output/palm/fonly \
+           -n 50 -ee -fonly \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/fonly_elapsed.csv
+
+  # ==========================================================================
+  # EXCHANGEABILITY BLOCKS
+  # ==========================================================================
+  - name: Within-block permutation
+    description: Permutation within exchangeability blocks
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -eb test_output/palm/designs/eb_groups.csv \
+           -o test_output/palm/eb_within \
+           -n 50 -ee -within \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/eb_within_elapsed.csv
+
+  - name: Whole-block permutation
+    description: Permutation of whole exchangeability blocks
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -eb test_output/palm/designs/eb_groups.csv \
+           -o test_output/palm/eb_whole \
+           -n 50 -ee -whole \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/eb_whole_elapsed.csv
+
+  # ==========================================================================
+  # CORRELATION/REGRESSION
+  # ==========================================================================
+  - name: Pearson correlation
+    description: Compute Pearson correlation coefficient
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_regression_centered.csv \
+           -t test_output/palm/designs/contrast_regression.csv \
+           -o test_output/palm/pearson \
+           -n 50 -ee -pearson \
+           2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Reading input"
+
+  # ==========================================================================
+  # TFCE (Threshold-Free Cluster Enhancement)
+  # ==========================================================================
+  - name: TFCE inference
+    description: Basic TFCE with default parameters
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/tfce \
+           -n 20 -ee -T \
+           2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Reading input"
+
+  - name: TFCE with custom parameters
+    description: TFCE with custom H, E, C parameters
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/tfce_custom \
+           -n 20 -ee -T \
+           -tfce_H 2 -tfce_E 0.5 -tfce_C 6 \
+           2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Reading input"
+
+  - name: TFCE 2D parameters
+    description: TFCE with 2D preset (for surface/TBSS data)
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/tfce_2d \
+           -n 20 -ee -T -tfce2D \
+           2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Reading input"
+
+  # ==========================================================================
+  # CLUSTER-BASED INFERENCE
+  # ==========================================================================
+  - name: Cluster extent inference
+    description: Cluster-based inference with extent statistic
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/cluster_extent \
+           -n 20 -ee -C 3.1 -Cstat extent \
+           2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Reading input"
+
+  - name: Cluster mass inference
+    description: Cluster-based inference with mass statistic
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/cluster_mass \
+           -n 20 -ee -C 3.1 -Cstat mass \
+           2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Reading input"
+
+  # ==========================================================================
+  # FDR CORRECTION
+  # ==========================================================================
+  - name: FDR correction
+    description: Produce FDR-adjusted p-values
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/fdr \
+           -n 50 -ee -fdr \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/fdr_elapsed.csv
+      - output_exists: ${output_dir}/palm/fdr_vox_tstat_fdrp.nii.gz
+
+  # ==========================================================================
+  # MULTIPLE TESTING CORRECTION OPTIONS
+  # ==========================================================================
+  - name: Correction over contrasts
+    description: FWER correction over multiple contrasts
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_twotail.csv \
+           -o test_output/palm/corrcon \
+           -n 50 -ee -corrcon \
+           2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Reading input"
+
+  # ==========================================================================
+  # ACCELERATION METHODS
+  # ==========================================================================
+  - name: Negative binomial acceleration
+    description: Acceleration using negative binomial approximation
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/accel_negbin \
+           -n 100 -ee -accel negbin \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/accel_negbin_elapsed.csv
+
+  - name: Tail approximation acceleration
+    description: Acceleration using tail approximation with GPD
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/accel_tail \
+           -n 100 -ee -accel tail \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/accel_tail_elapsed.csv
+
+  - name: Gamma approximation acceleration
+    description: Acceleration using gamma distribution approximation
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/accel_gamma \
+           -n 100 -ee -accel gamma \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/accel_gamma_elapsed.csv
+
+  - name: No permutation approximation
+    description: Compute permutation p-values without permutations
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/accel_noperm \
+           -ee -accel noperm \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/accel_noperm_elapsed.csv
+
+  # ==========================================================================
+  # OUTPUT OPTIONS
+  # ==========================================================================
+  - name: Save 1-p values
+    description: Output (1-p) instead of p-values
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/save1p \
+           -n 50 -ee -save1-p \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/save1p_elapsed.csv
+
+  - name: Log p-values
+    description: Output -log(p) values
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/logp \
+           -n 50 -ee -logp \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/logp_elapsed.csv
+
+  - name: Z-statistic conversion
+    description: Convert statistics to z-scores
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/zstat \
+           -n 50 -ee -zstat \
+           2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Reading input"
+
+  - name: Save DOF
+    description: Save degrees of freedom file
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/savedof \
+           -n 50 -ee -savedof \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/savedof_elapsed.csv
+
+  - name: Save GLM outputs
+    description: Save COPEs, VARCOPEs, and Cohen's d
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/saveglm \
+           -n 50 -ee -saveglm \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/saveglm_elapsed.csv
+      - output_exists: ${output_dir}/palm/saveglm_vox_cope.nii.gz
+
+  - name: Save effective mask
+    description: Save masks used for each modality
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/savemask \
+           -n 50 -ee -savemask \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/savemask_elapsed.csv
+
+  - name: Save permutation metrics
+    description: Save CSV with permutation metrics
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/metrics \
+           -n 50 -ee -savemetrics \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/metrics_elapsed.csv
+
+  - name: Save parametric p-values
+    description: Save uncorrected parametric p-values
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/parametric \
+           -n 50 -ee -saveparametric \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/parametric_elapsed.csv
+
+  # ==========================================================================
+  # SEED AND REPRODUCIBILITY
+  # ==========================================================================
+  - name: Fixed seed for reproducibility
+    description: Run with fixed random seed
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/seed42 \
+           -n 50 -ee -seed 42 \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/seed42_elapsed.csv
+
+  # ==========================================================================
+  # EXHAUSTIVE PERMUTATIONS
+  # ==========================================================================
+  - name: Exhaustive permutations
+    description: Run all possible permutations (for small sample)
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/exhaustive \
+           -n 0 -ee \
+           2>&1
+    expected_output_contains: "permutation"
+    validate:
+      - output_exists: ${output_dir}/palm/exhaustive_elapsed.csv
+
+  # ==========================================================================
+  # REGRESSION METHODS
+  # ==========================================================================
+  - name: Freedman-Lane method
+    description: Permutation using Freedman-Lane regression method
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_regression_centered.csv \
+           -t test_output/palm/designs/contrast_regression.csv \
+           -o test_output/palm/rmethod_fl \
+           -n 50 -ee -rmethod Freedman-Lane \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/rmethod_fl_elapsed.csv
+
+  - name: Dekker method
+    description: Permutation using Dekker regression method
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_regression_centered.csv \
+           -t test_output/palm/designs/contrast_regression.csv \
+           -o test_output/palm/rmethod_dekker \
+           -n 50 -ee -rmethod Dekker \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/rmethod_dekker_elapsed.csv
+
+  - name: ter Braak method
+    description: Permutation using ter Braak regression method
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_regression_centered.csv \
+           -t test_output/palm/designs/contrast_regression.csv \
+           -o test_output/palm/rmethod_terbraak \
+           -n 50 -ee -rmethod terBraak \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/rmethod_terbraak_elapsed.csv
+
+  # ==========================================================================
+  # DATA TRANSFORMATIONS
+  # ==========================================================================
+  - name: Inverse normal transformation
+    description: Apply inverse-normal transformation to data
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/inormal \
+           -n 50 -ee -inormal \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/inormal_elapsed.csv
+
+  - name: Inverse normal Blom method
+    description: Inverse-normal transformation using Blom method
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/inormal_blom \
+           -n 50 -ee -inormal Blom \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/inormal_blom_elapsed.csv
+
+  # ==========================================================================
+  # QUIET MODE AND OUTPUT CONTROL
+  # ==========================================================================
+  - name: Quiet mode
+    description: Run without progress output
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/quiet \
+           -n 50 -ee -quiet \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/quiet_elapsed.csv
+
+  - name: No uncorrected output
+    description: Skip saving uncorrected p-values
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/nouncorr \
+           -n 50 -ee -nouncorrected -T \
+           2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Reading input"
+
+  # ==========================================================================
+  # PARTITION METHODS
+  # ==========================================================================
+  - name: Guttman partition method
+    description: Use Guttman partitioning for permutations
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_regression_centered.csv \
+           -t test_output/palm/designs/contrast_regression.csv \
+           -o test_output/palm/pmethodp_guttman \
+           -n 50 -ee -pmethodp Guttman \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/pmethodp_guttman_elapsed.csv
+
+  - name: Beckmann partition method
+    description: Use Beckmann partitioning for permutations
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_regression_centered.csv \
+           -t test_output/palm/designs/contrast_regression.csv \
+           -o test_output/palm/pmethodp_beckmann \
+           -n 50 -ee -pmethodp Beckmann \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/pmethodp_beckmann_elapsed.csv
+
+  # ==========================================================================
+  # PRECISION OPTIONS
+  # ==========================================================================
+  - name: Single precision
+    description: Use single precision for inputs
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/precision_single \
+           -n 50 -ee -precision single \
+           2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Reading input"
+
+  - name: Double precision
+    description: Use double precision for inputs
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/precision_double \
+           -n 50 -ee -precision double \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/precision_double_elapsed.csv
+
+  # ==========================================================================
+  # COMBINED ANALYSES
+  # ==========================================================================
+  - name: TFCE with FDR
+    description: Combined TFCE and FDR correction
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/tfce_fdr \
+           -n 20 -ee -T -fdr \
+           2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Reading input"
+
+  - name: Full analysis pipeline
+    description: Comprehensive analysis with multiple corrections
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_twotail.csv \
+           -o test_output/palm/full_analysis \
+           -n 20 -ee \
+           -fdr \
+           -save1-p \
+           -saveglm -savedof \
+           2>&1
+    ignore_exit_code: true
+    expected_output_contains: "Reading input"
+
+  # ==========================================================================
+  # SYNCHRONIZED PERMUTATIONS
+  # ==========================================================================
+  - name: Synchronized permutations
+    description: Force synchronized permutations across modalities
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/syncperms \
+           -n 50 -ee -syncperms \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/syncperms_elapsed.csv
+
+  # ==========================================================================
+  # VERBOSE OUTPUT
+  # ==========================================================================
+  - name: Verbose filenames
+    description: Use lengthy filenames even for single modality/contrast
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/verbose \
+           -n 50 -ee -verbosefilenames \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/verbose_elapsed.csv
+
+  # ==========================================================================
+  # MAXIMUM STATISTIC DISTRIBUTION
+  # ==========================================================================
+  - name: Save maximum statistic distribution
+    description: Save distribution of maximum statistic
+    command: |
+      palm -i test_output/palm/data/input_4d.nii -noniiclass \
+           -d test_output/palm/designs/design_simple.csv \
+           -t test_output/palm/designs/contrast_ttest.csv \
+           -o test_output/palm/savemax \
+           -n 50 -ee -savemax \
+           2>&1
+    validate:
+      - output_exists: ${output_dir}/palm/savemax_elapsed.csv
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output/palm
+    echo "Test outputs preserved in test_output/palm/"

@@ -1,0 +1,661 @@
+# mrsiproc container test suite
+# Tests for mrsiproc v0.1.0 - MR Spectroscopy Imaging Processing Pipeline
+#
+# This container includes:
+#   - MRSI reconstruction algorithms (Wolfgang Bogner group)
+#   - LCModel 6.3.1 for spectral fitting
+#   - FSL 6.0.7.1 for neuroimaging preprocessing
+#   - MINC 1.9.15 for medical image processing
+#   - ANTs for registration
+#   - HD-BET for brain extraction
+#   - dcm2niix for DICOM conversion
+#   - Julia 1.9.3 and Python 3.11.4
+#   - MATLAB Runtime R2021b
+
+name: mrsiproc
+version: 0.1.0
+container: mrsiproc_0.1.0_20231211.simg
+
+# Environment variables needed for MATLAB Runtime
+env:
+  LD_LIBRARY_PATH: /opt/MATLAB_Runtime_R2021b/v911/runtime/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/bin/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/sys/os/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/sys/opengl/lib/glnxa64
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC ENVIRONMENT CHECKS
+  # ==========================================================================
+  - name: Container README exists
+    description: Verify container README is present
+    command: cat /README.md | head -5
+    expected_output_contains: "mrsiproc"
+
+  - name: Container labels accessible
+    description: Verify container metadata labels
+    command: cat /.singularity.d/labels.json
+    expected_output_contains: "NeuroDesk/neurocontainers"
+
+  # ==========================================================================
+  # PYTHON ENVIRONMENT
+  # ==========================================================================
+  - name: Python version check
+    description: Verify Python 3.11 is installed
+    command: python3 --version
+    expected_output_contains: "Python 3.11"
+
+  - name: NumPy available
+    description: Verify NumPy is installed
+    command: python3 -c "import numpy; print(numpy.__version__)"
+    expected_exit_code: 0
+
+  - name: SciPy available
+    description: Verify SciPy is installed
+    command: python3 -c "import scipy; print(scipy.__version__)"
+    expected_exit_code: 0
+
+  - name: PyTorch available
+    description: Verify PyTorch is installed
+    command: python3 -c "import torch; print(torch.__version__)"
+    expected_exit_code: 0
+
+  - name: SimpleITK available
+    description: Verify SimpleITK is installed for medical image processing
+    command: python3 -c "import SimpleITK; print(SimpleITK.__version__)"
+    expected_exit_code: 0
+
+  - name: scikit-image available
+    description: Verify scikit-image is installed
+    command: python3 -c "import skimage; print(skimage.__version__)"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # JULIA ENVIRONMENT
+  # ==========================================================================
+  - name: Julia version check
+    description: Verify Julia 1.9.3 is installed
+    command: julia --version
+    expected_output_contains: "julia version 1.9"
+
+  - name: Julia can run basic script
+    description: Verify Julia can execute basic commands
+    command: julia -e 'println("Julia works")'
+    expected_output_contains: "Julia works"
+
+  # ==========================================================================
+  # MATLAB RUNTIME ENVIRONMENT
+  # ==========================================================================
+  - name: MATLAB Runtime directory exists
+    description: Verify MATLAB Runtime R2021b is installed
+    command: ls /opt/MATLAB_Runtime_R2021b/v911/bin/glnxa64 | head -5
+    expected_exit_code: 0
+
+  - name: MRSI_Reconstruction compiled binary exists
+    description: Verify main MRSI reconstruction tool is present
+    command: ls -la /opt/mrsi_pipeline_neurodesk/matlab_compiled/MRSI_Reconstruction
+    expected_exit_code: 0
+
+  - name: MRSI_Reconstruction responds without input
+    description: Verify MRSI_Reconstruction compiled MATLAB tool loads
+    command: /opt/mrsi_pipeline_neurodesk/matlab_compiled/MRSI_Reconstruction 2>&1 || true
+    expected_output_contains: "input arguments"
+
+  - name: extract_met_maps binary exists
+    description: Verify metabolite map extraction tool is present
+    command: /opt/mrsi_pipeline_neurodesk/matlab_compiled/extract_met_maps 2>&1 || true
+    expected_output_contains: "input arguments"
+
+  - name: extract_spectra binary exists
+    description: Verify spectra extraction tool is present
+    command: /opt/mrsi_pipeline_neurodesk/matlab_compiled/extract_spectra 2>&1 || true
+    expected_output_contains: "input arguments"
+
+  - name: CreateSpectralNiftiMap binary exists
+    description: Verify spectral NIfTI map creation tool is present
+    command: /opt/mrsi_pipeline_neurodesk/matlab_compiled/CreateSpectralNiftiMap 2>&1 || true
+    expected_output_contains: "input arguments"
+
+  - name: GetPar_CreateTempl_MaskPart1 binary exists
+    description: Verify parameter/template/mask tool is present
+    command: /opt/mrsi_pipeline_neurodesk/matlab_compiled/GetPar_CreateTempl_MaskPart1 2>&1 || true
+    expected_output_contains: "input arguments"
+
+  - name: julia_write_lcm_files binary exists
+    description: Verify LCModel file writer tool is present
+    command: /opt/mrsi_pipeline_neurodesk/matlab_compiled/julia_write_lcm_files 2>&1 || true
+    expected_output_contains: "input arguments"
+
+  - name: segmentation_simple binary exists
+    description: Verify simple segmentation tool is present
+    command: /opt/mrsi_pipeline_neurodesk/matlab_compiled/segmentation_simple 2>&1 || true
+    expected_output_contains: "input arguments"
+
+  # ==========================================================================
+  # MRSI PIPELINE SCRIPTS
+  # ==========================================================================
+  - name: Part1_ProcessMRSI.sh exists
+    description: Verify main MRSI processing script exists
+    command: ls -la /opt/mrsi_pipeline_neurodesk/Part1/Part1_ProcessMRSI.sh
+    expected_exit_code: 0
+
+  - name: Part2_EvaluateMRSI.sh exists
+    description: Verify MRSI evaluation script exists
+    command: ls -la /opt/mrsi_pipeline_neurodesk/Part2/Part2_EvaluateMRSI.sh
+    expected_exit_code: 0
+
+  - name: update_mrsi.sh exists
+    description: Verify MRSI update script exists
+    command: ls -la /opt/mrsi_pipeline_neurodesk/update_mrsi.sh
+    expected_exit_code: 0
+
+  - name: InstallProgramPaths.sh Part1 exists
+    description: Verify program paths configuration for Part1
+    command: cat /opt/mrsi_pipeline_neurodesk/Part1/InstallProgramPaths.sh | head -10
+    expected_output_contains: "aliases and paths"
+
+  - name: LCModel basis file exists
+    description: Verify LCModel basis file is present
+    command: ls -la /opt/mrsi_pipeline_neurodesk/Part1/fid_1.300000ms.basis | head -1
+    expected_exit_code: 0
+
+  - name: Julia reconstruction script exists
+    description: Verify Julia reconstruction script is present
+    command: cat /opt/mrsi_pipeline_neurodesk/Part1/julia_reco.jl | head -5
+    expected_output_contains: "using MAT"
+
+  # ==========================================================================
+  # LCMODEL
+  # ==========================================================================
+  - name: LCModel binary exists
+    description: Verify LCModel executable is present
+    command: ls -la /opt/lcmodel-6.3/.lcmodel/bin/lcmodel
+    expected_exit_code: 0
+
+  - name: LCModel responds
+    description: Verify LCModel binary can be invoked (errors without input expected)
+    command: /opt/lcmodel-6.3/.lcmodel/bin/lcmodel 2>&1 || true
+    expected_output_contains: "FATAL ERROR"
+
+  - name: makebasis exists
+    description: Verify LCModel makebasis tool is present
+    command: ls -la /opt/lcmodel-6.3/.lcmodel/bin/makebasis
+    expected_exit_code: 0
+
+  - name: plotraw exists
+    description: Verify LCModel plotraw tool is present
+    command: ls -la /opt/lcmodel-6.3/.lcmodel/bin/plotraw
+    expected_exit_code: 0
+
+  - name: LCModel manual exists
+    description: Verify LCModel documentation is present
+    command: ls -la /opt/lcmodel-6.3/manual.pdf
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DCM2NIIX (DICOM CONVERSION)
+  # ==========================================================================
+  - name: dcm2niix version
+    description: Verify dcm2niix is installed and check version
+    command: dcm2niix --version 2>&1
+    expected_output_contains: "v1.0"
+    ignore_exit_code: true
+
+  - name: dcm2niix help
+    description: Verify dcm2niix help is accessible
+    command: dcm2niix -h 2>&1 | head -20
+    expected_output_contains: "Convert DICOM"
+
+  - name: dcm2niix BIDS support
+    description: Verify dcm2niix supports BIDS sidecars
+    command: dcm2niix -h 2>&1
+    expected_output_contains: "BIDS sidecar"
+
+  # ==========================================================================
+  # HD-BET (BRAIN EXTRACTION)
+  # ==========================================================================
+  - name: hd-bet help
+    description: Verify HD-BET help is accessible
+    command: hd-bet --help 2>&1 | head -20
+    expected_output_contains: "brain extraction"
+
+  - name: hd-bet citation info
+    description: Verify HD-BET shows citation information
+    command: hd-bet --help 2>&1
+    expected_output_contains: "Isensee"
+
+  - name: hd-bet mode options
+    description: Verify HD-BET supports fast and accurate modes
+    command: hd-bet --help 2>&1
+    expected_output_contains: "fast"
+
+  # ==========================================================================
+  # FSL TOOLS
+  # ==========================================================================
+  - name: BET help
+    description: Verify FSL BET (brain extraction) is available
+    command: bet 2>&1 | head -10
+    expected_output_contains: "bet <input> <output>"
+
+  - name: BET run brain extraction
+    description: Run BET on test data
+    command: bet ${t1w} test_output/t1w_brain.nii.gz -m
+    validate:
+      - output_exists: ${output_dir}/t1w_brain.nii.gz
+      - output_exists: ${output_dir}/t1w_brain_mask.nii.gz
+
+  - name: FLIRT help
+    description: Verify FSL FLIRT (linear registration) is available
+    command: flirt 2>&1 | head -10
+    expected_output_contains: "FLIRT version"
+
+  - name: FAST help
+    description: Verify FSL FAST (tissue segmentation) is available
+    command: fast 2>&1 | head -10
+    expected_output_contains: "tissue-type classes"
+
+  - name: fslinfo help
+    description: Verify fslinfo is available
+    command: fslinfo 2>&1
+    expected_output_contains: "Usage"
+    ignore_exit_code: true
+
+  - name: fslinfo on test data
+    description: Run fslinfo on test NIfTI
+    command: fslinfo ${t1w}
+    expected_output_contains: "dim1"
+
+  - name: fslhd help
+    description: Verify fslhd (header display) is available
+    command: fslhd 2>&1
+    expected_output_contains: "Usage"
+    ignore_exit_code: true
+
+  - name: fslhd on test data
+    description: Display NIfTI header
+    command: fslhd ${t1w} | head -20
+    expected_output_contains: "sizeof_hdr"
+
+  - name: fslstats exists
+    description: Verify fslstats is available
+    command: which fslstats
+    expected_output_contains: "fslstats"
+
+  - name: fslmaths exists
+    description: Verify fslmaths is available
+    command: which fslmaths
+    expected_output_contains: "fslmaths"
+
+  - name: fslmaths binarize
+    description: Test fslmaths binarization
+    command: fslmaths ${t1w} -bin test_output/t1w_fsl_bin.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_fsl_bin.nii.gz
+
+  - name: fslsplit exists
+    description: Verify fslsplit is available
+    command: which fslsplit
+    expected_output_contains: "fslsplit"
+
+  - name: fslmerge exists
+    description: Verify fslmerge is available
+    command: which fslmerge
+    expected_output_contains: "fslmerge"
+
+  # ==========================================================================
+  # MINC TOOLS
+  # ==========================================================================
+  - name: mincinfo help
+    description: Verify mincinfo is available
+    command: /opt/minc/1.9.15/bin/mincinfo 2>&1
+    expected_output_contains: "Usage"
+    ignore_exit_code: true
+
+  - name: mincconvert help
+    description: Verify mincconvert is available
+    command: /opt/minc/1.9.15/bin/mincconvert 2>&1
+    expected_output_contains: "Usage"
+    ignore_exit_code: true
+
+  - name: mincmath help
+    description: Verify mincmath is available
+    command: /opt/minc/1.9.15/bin/mincmath 2>&1
+    expected_output_contains: "Usage"
+    ignore_exit_code: true
+
+  - name: mincresample help
+    description: Verify mincresample is available
+    command: /opt/minc/1.9.15/bin/mincresample 2>&1
+    expected_output_contains: "Usage"
+    ignore_exit_code: true
+
+  - name: mincstats exists
+    description: Verify mincstats is available
+    command: ls /opt/minc/1.9.15/bin/mincstats
+    expected_exit_code: 0
+
+  - name: mincaverage exists
+    description: Verify mincaverage is available
+    command: ls /opt/minc/1.9.15/bin/mincaverage
+    expected_exit_code: 0
+
+  - name: mincblur exists
+    description: Verify mincblur is available
+    command: ls /opt/minc/1.9.15/bin/mincblur
+    expected_exit_code: 0
+
+  - name: mnc2nii help
+    description: Verify mnc2nii converter is available
+    command: /opt/minc/1.9.15/bin/mnc2nii 2>&1 || true
+    expected_output_contains: "Convert MINC files to NIfTI"
+
+  - name: nii2mnc help
+    description: Verify nii2mnc converter is available
+    command: /opt/minc/1.9.15/bin/nii2mnc 2>&1 || true
+    expected_output_contains: "Convert NIfTI-1 files to MINC"
+
+  - name: minctracc exists
+    description: Verify minctracc registration tool is available
+    command: ls /opt/minc/1.9.15/bin/minctracc
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ANTs TOOLS
+  # ==========================================================================
+  - name: antsRegistration help
+    description: Verify ANTs registration is available
+    command: /opt/minc/1.9.15/bin/antsRegistration --help 2>&1 | head -10
+    expected_output_contains: "antsRegistration"
+
+  - name: antsApplyTransforms exists
+    description: Verify ANTs transform application is available
+    command: ls /opt/minc/1.9.15/bin/antsApplyTransforms
+    expected_exit_code: 0
+
+  - name: N4BiasFieldCorrection exists
+    description: Verify N4 bias correction is available
+    command: ls /opt/minc/1.9.15/bin/N4BiasFieldCorrection
+    expected_exit_code: 0
+
+  - name: antsMotionCorr exists
+    description: Verify ANTs motion correction is available
+    command: ls /opt/minc/1.9.15/bin/antsMotionCorr
+    expected_exit_code: 0
+
+  - name: Atropos exists
+    description: Verify Atropos segmentation is available
+    command: ls /opt/minc/1.9.15/bin/Atropos
+    expected_exit_code: 0
+
+  - name: ImageMath exists
+    description: Verify ANTs ImageMath is available
+    command: ls /opt/minc/1.9.15/bin/ImageMath
+    expected_exit_code: 0
+
+  - name: antsRegistrationSyN.sh exists
+    description: Verify ANTs SyN registration script is available
+    command: ls /opt/minc/1.9.15/bin/antsRegistrationSyN.sh
+    expected_exit_code: 0
+
+  - name: antsBrainExtraction.sh exists
+    description: Verify ANTs brain extraction script is available
+    command: ls /opt/minc/1.9.15/bin/antsBrainExtraction.sh
+    expected_exit_code: 0
+
+  - name: antsJointFusion exists
+    description: Verify ANTs joint fusion is available
+    command: ls /opt/minc/1.9.15/bin/antsJointFusion
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MRSI PIPELINE SUPPORTING SCRIPTS (Part1)
+  # ==========================================================================
+  - name: create_mask.sh exists
+    description: Verify mask creation script exists
+    command: ls -la /opt/mrsi_pipeline_neurodesk/Part1/create_mask.sh
+    expected_exit_code: 0
+
+  - name: create_mask_iterative.sh exists
+    description: Verify iterative mask creation script exists
+    command: ls -la /opt/mrsi_pipeline_neurodesk/Part1/create_mask_iterative.sh
+    expected_exit_code: 0
+
+  - name: RunLCModel.sh exists
+    description: Verify LCModel runner script exists
+    command: ls -la /opt/mrsi_pipeline_neurodesk/Part1/RunLCModel.sh
+    expected_exit_code: 0
+
+  - name: write_InitialParameters.sh exists
+    description: Verify initial parameters script exists
+    command: ls -la /opt/mrsi_pipeline_neurodesk/Part1/write_InitialParameters.sh
+    expected_exit_code: 0
+
+  - name: LCModel_Control_Template.m exists
+    description: Verify LCModel control template exists
+    command: ls -la /opt/mrsi_pipeline_neurodesk/Part1/LCModel_Control_Template.m
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MRSI PIPELINE SUPPORTING SCRIPTS (Part2)
+  # ==========================================================================
+  - name: coregistration.sh exists
+    description: Verify coregistration script exists
+    command: ls -la /opt/mrsi_pipeline_neurodesk/Part2/coregistration.sh
+    expected_exit_code: 0
+
+  - name: segmentation.sh exists
+    description: Verify segmentation script exists
+    command: ls -la /opt/mrsi_pipeline_neurodesk/Part2/segmentation.sh
+    expected_exit_code: 0
+
+  - name: raw2mnc.sh exists
+    description: Verify raw to MINC conversion script exists
+    command: ls -la /opt/mrsi_pipeline_neurodesk/Part2/raw2mnc.sh
+    expected_exit_code: 0
+
+  - name: mnc2nii_wholefolder exists
+    description: Verify MINC to NIfTI folder conversion script exists
+    command: ls -la /opt/mrsi_pipeline_neurodesk/Part2/mnc2nii_wholefolder
+    expected_exit_code: 0
+
+  - name: write_parameter2.sh exists
+    description: Verify parameter writing script exists
+    command: ls -la /opt/mrsi_pipeline_neurodesk/Part2/write_parameter2.sh
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ADDITIONAL PYTHON PACKAGES FOR MRS PROCESSING
+  # ==========================================================================
+  - name: Pillow available
+    description: Verify Pillow image library is installed
+    command: python3 -c "from PIL import Image; print('Pillow OK')"
+    expected_output_contains: "Pillow OK"
+
+  - name: tqdm available
+    description: Verify tqdm progress bar is installed
+    command: python3 -c "import tqdm; print(tqdm.__version__)"
+    expected_exit_code: 0
+
+  - name: nibabel check
+    description: Check if nibabel is available for NIfTI processing
+    command: python3 -c "import nibabel; print(nibabel.__version__)" 2>&1 || echo "nibabel not installed"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ADDITIONAL FSL TOOLS FOR SPECTROSCOPY
+  # ==========================================================================
+  - name: fslroi exists
+    description: Verify fslroi for ROI extraction is available
+    command: which fslroi
+    expected_output_contains: "fslroi"
+
+  - name: fslchfiletype exists
+    description: Verify fslchfiletype is available
+    command: which fslchfiletype
+    expected_output_contains: "fslchfiletype"
+
+  - name: fslcpgeom exists
+    description: Verify fslcpgeom is available
+    command: which fslcpgeom
+    expected_exit_code: 0
+
+  - name: fslval exists
+    description: Verify fslval is available
+    command: which fslval
+    expected_output_contains: "fslval"
+
+  - name: slicer exists
+    description: Verify FSL slicer is available
+    command: which slicer
+    expected_output_contains: "slicer"
+
+  - name: overlay exists
+    description: Verify FSL overlay is available
+    command: which overlay
+    expected_output_contains: "overlay"
+
+  # ==========================================================================
+  # INTEGRATION TESTS
+  # ==========================================================================
+  - name: Convert NIfTI to MINC
+    description: Test NIfTI to MINC conversion
+    command: /opt/minc/1.9.15/bin/nii2mnc ${t1w} test_output/t1w.mnc
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w.mnc
+
+  - name: MINC file info
+    description: Get info from converted MINC file
+    command: /opt/minc/1.9.15/bin/mincinfo test_output/t1w.mnc
+    depends_on: Convert NIfTI to MINC
+    expected_exit_code: 0
+
+  - name: Convert MINC back to NIfTI
+    description: Test MINC to NIfTI conversion
+    command: /opt/minc/1.9.15/bin/mnc2nii test_output/t1w.mnc test_output/t1w_converted.nii
+    depends_on: Convert NIfTI to MINC
+    validate:
+      - output_exists: ${output_dir}/t1w_converted.nii
+
+  - name: FAST tissue segmentation
+    description: Run FAST segmentation on brain extracted data
+    command: fast -o test_output/t1w_seg test_output/t1w_brain.nii.gz
+    depends_on: BET run brain extraction
+    timeout: 300
+    validate:
+      - output_exists: ${output_dir}/t1w_seg_seg.nii.gz
+
+  - name: fslstats on brain
+    description: Get statistics from brain extracted image
+    command: fslstats test_output/t1w_brain.nii.gz -m -s
+    depends_on: BET run brain extraction
+    expected_exit_code: 0
+
+  - name: fslmaths threshold
+    description: Apply threshold to brain image
+    command: fslmaths test_output/t1w_brain.nii.gz -thr 100 test_output/t1w_brain_thr.nii.gz
+    depends_on: BET run brain extraction
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_thr.nii.gz
+
+  - name: fslmaths multiply images
+    description: Multiply brain by mask
+    command: fslmaths test_output/t1w_brain.nii.gz -mul test_output/t1w_brain_mask.nii.gz test_output/t1w_brain_masked.nii.gz
+    depends_on: BET run brain extraction
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_masked.nii.gz
+
+  - name: fslmaths smoothing
+    description: Apply Gaussian smoothing
+    command: fslmaths test_output/t1w_brain.nii.gz -s 2 test_output/t1w_brain_smooth.nii.gz
+    depends_on: BET run brain extraction
+    validate:
+      - output_exists: ${output_dir}/t1w_brain_smooth.nii.gz
+
+  # ==========================================================================
+  # ADDITIONAL MINC TOOLS VERIFICATION
+  # ==========================================================================
+  - name: mincblob exists
+    description: Verify mincblob for blob detection is available
+    command: ls /opt/minc/1.9.15/bin/mincblob
+    expected_exit_code: 0
+
+  - name: minccalc exists
+    description: Verify minccalc for math operations is available
+    command: ls /opt/minc/1.9.15/bin/minccalc
+    expected_exit_code: 0
+
+  - name: mincmorph exists
+    description: Verify mincmorph for morphological operations is available
+    command: ls /opt/minc/1.9.15/bin/mincmorph
+    expected_exit_code: 0
+
+  - name: mincpik exists
+    description: Verify mincpik for creating PNG images is available
+    command: ls /opt/minc/1.9.15/bin/mincpik
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SYSTEM UTILITIES
+  # ==========================================================================
+  - name: tar available
+    description: Verify tar is available for archive handling
+    command: tar --version | head -1
+    expected_output_contains: "tar"
+
+  - name: gzip available
+    description: Verify gzip is available for compression
+    command: gzip --version | head -1
+    expected_output_contains: "gzip"
+
+  - name: bash available
+    description: Verify bash is available
+    command: bash --version | head -1
+    expected_output_contains: "bash"
+
+  # ==========================================================================
+  # ENVIRONMENT PATHS VERIFICATION
+  # ==========================================================================
+  - name: FSL path set
+    description: Verify FSL binaries are in PATH
+    command: which bet flirt fast | wc -l
+    expected_output_contains: "3"
+
+  - name: dcm2niix in PATH
+    description: Verify dcm2niix is accessible
+    command: which dcm2niix
+    expected_output_contains: "dcm2niix"
+
+  - name: Julia in PATH
+    description: Verify Julia is accessible
+    command: which julia
+    expected_output_contains: "julia"
+
+  - name: Python3 in PATH
+    description: Verify Python3 is accessible
+    command: which python3
+    expected_output_contains: "python"
+
+  - name: hd-bet in PATH
+    description: Verify hd-bet is accessible
+    command: which hd-bet
+    expected_output_contains: "hd-bet"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

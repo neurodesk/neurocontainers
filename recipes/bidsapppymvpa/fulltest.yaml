@@ -1,0 +1,852 @@
+# bidsapppymvpa container test suite
+# Tests for PyMVPA BIDS-App v4.0.3 (container version 2.0.2)
+# MultiVariate Pattern Analysis (MVPA) and Representational Similarity Analysis (RSA)
+#
+# This BIDS-App performs ROI-based and searchlight MVPA/RSA analyses.
+# It requires fMRIPrep-preprocessed data as input.
+#
+# Container components:
+#   - PyMVPA 2.6.4 (Python 2.7)
+#   - FSL 6.0.5.1
+#   - nibabel 2.2.1
+#   - scikit-learn 0.19.1
+#   - numpy 1.13.3
+#   - scipy 0.19.1
+#
+# Test data: ds000001 (Balloon Analog Risk-taking Task)
+#   - BOLD fMRI: 64x64x33x300 voxels, 3.125x3.125x4mm, TR=2s
+#   - Events: cash_demean, control_pumps_demean, explode_demean, pumps_demean
+
+name: bidsapppymvpa
+version: 2.0.2
+container: bidsapppymvpa_2.0.2_20230629.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - dataset_description.json
+      - participants.tsv
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_events.tsv
+
+test_data:
+  bids_dir: ds000001
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  events: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_events.tsv
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}/pymvpa_output
+    mkdir -p ${output_dir}/pymvpa_derivatives
+
+tests:
+  # ==========================================================================
+  # CONTAINER VERIFICATION
+  # ==========================================================================
+  - name: Version check
+    description: Verify PyMVPA BIDS-App version
+    command: /code/run.py -v 2>&1 | tail -1
+    expected_output_contains: "PyMVPA BIDS-App Version v4.0.3"
+
+  - name: Help message
+    description: Verify help documentation is accessible
+    command: /code/run.py --help 2>&1 | head -20
+    expected_output_contains: "PyMVPA BIDS-App"
+
+  - name: Argument parser verification
+    description: Check that required arguments are documented
+    command: /code/run.py --help 2>&1
+    expected_output_contains: "bids_dir"
+
+  # ==========================================================================
+  # PYTHON ENVIRONMENT VERIFICATION
+  # ==========================================================================
+  - name: Python version check
+    description: Verify Python 2.7 is available
+    command: python --version 2>&1
+    expected_output_contains: "Python 2.7"
+
+  - name: PyMVPA import test
+    description: Verify PyMVPA (mvpa2) module is importable
+    command: python -c "import mvpa2; print 'mvpa2 version:', mvpa2.__version__" 2>&1 | grep -v Warning
+    expected_output_contains: "mvpa2 version: 2.6.4"
+
+  - name: PyMVPA suite import
+    description: Verify full PyMVPA suite loads correctly
+    command: python -c "from mvpa2.suite import *; print(\"PyMVPA suite loaded successfully\")" 2>&1 | tail -1
+    expected_output_contains: "PyMVPA suite loaded successfully"
+
+  - name: nibabel verification
+    description: Verify nibabel is available for NIfTI handling
+    command: python -c "import nibabel; print(\"nibabel:\", nibabel.__version__)" 2>&1
+    expected_output_contains: "nibabel:"
+
+  - name: sklearn verification
+    description: Verify scikit-learn is available for classification
+    command: python -c "import sklearn; print(\"sklearn:\", sklearn.__version__)" 2>&1 | tail -1
+    expected_output_contains: "sklearn:"
+
+  - name: numpy verification
+    description: Verify numpy is available
+    command: python -c "import numpy; print(\"numpy:\", numpy.__version__)" 2>&1
+    expected_output_contains: "numpy:"
+
+  - name: scipy verification
+    description: Verify scipy is available
+    command: python -c "import scipy; print(\"scipy:\", scipy.__version__)" 2>&1
+    expected_output_contains: "scipy:"
+
+  - name: matplotlib verification
+    description: Verify matplotlib is available for visualization
+    command: python -c "import matplotlib; print(\"matplotlib:\", matplotlib.__version__)" 2>&1
+    expected_output_contains: "matplotlib:"
+
+  - name: statsmodels verification
+    description: Verify statsmodels is available for statistical analysis
+    command: python -c "import statsmodels; print(\"statsmodels available\")" 2>&1 | tail -1
+    expected_output_contains: "statsmodels available"
+
+  # ==========================================================================
+  # PYMVPA CLASSIFIER TESTS
+  # ==========================================================================
+  - name: Linear SVM classifier import
+    description: Verify LinearCSVMC classifier is available
+    command: python -c "from mvpa2.clfs.svm import LinearCSVMC; print('LinearCSVMC available')" 2>&1 | tail -1
+    expected_output_contains: "LinearCSVMC available"
+
+  - name: Cross-validation import
+    description: Verify cross-validation framework is available
+    command: python -c "from mvpa2.measures.base import CrossValidation; print('CrossValidation available')" 2>&1 | tail -1
+    expected_output_contains: "CrossValidation available"
+
+  - name: Partitioner import
+    description: Verify NFoldPartitioner is available
+    command: python -c "from mvpa2.generators.partition import NFoldPartitioner; print('NFoldPartitioner available')" 2>&1 | tail -1
+    expected_output_contains: "NFoldPartitioner available"
+
+  - name: Feature selection import
+    description: Verify ANOVA-based feature selection is available
+    command: python -c "from mvpa2.featsel.base import SensitivityBasedFeatureSelection; print('Feature selection available')" 2>&1 | tail -1
+    expected_output_contains: "Feature selection available"
+
+  - name: Searchlight import
+    description: Verify searchlight analysis framework is available
+    command: python -c "from mvpa2.measures.searchlight import sphere_searchlight; print('Searchlight available')" 2>&1 | tail -1
+    expected_output_contains: "Searchlight available"
+
+  # ==========================================================================
+  # PYMVPA RSA TESTS
+  # ==========================================================================
+  - name: RSA module import
+    description: Verify RSA module is available
+    command: python -c "from mvpa2.measures import rsa; print('RSA module available')" 2>&1 | tail -1
+    expected_output_contains: "RSA module available"
+
+  - name: Dissimilarity matrix computation
+    description: Verify PDist measure is available for RDM computation
+    command: python -c "from mvpa2.measures.rsa import PDist; print('PDist available')" 2>&1 | tail -1
+    expected_output_contains: "PDist available"
+
+  - name: Correlation distance metric
+    description: Verify correlation distance is available
+    command: python -c "from scipy.spatial.distance import correlation; print('correlation distance available')" 2>&1
+    expected_output_contains: "correlation distance available"
+
+  - name: Euclidean distance metric
+    description: Verify euclidean distance is available
+    command: python -c "from scipy.spatial.distance import euclidean; print('euclidean distance available')" 2>&1
+    expected_output_contains: "euclidean distance available"
+
+  - name: Mahalanobis distance metric
+    description: Verify mahalanobis distance is available
+    command: python -c "from scipy.spatial.distance import mahalanobis; print('mahalanobis distance available')" 2>&1
+    expected_output_contains: "mahalanobis distance available"
+
+  # ==========================================================================
+  # PYMVPA DATASET HANDLING
+  # ==========================================================================
+  - name: NIfTI dataset loading
+    description: Verify NIfTI dataset loading capability
+    command: python -c "from mvpa2.datasets.mri import fmri_dataset; print('fmri_dataset available')" 2>&1 | tail -1
+    expected_output_contains: "fmri_dataset available"
+
+  - name: GIFTI dataset loading
+    description: Verify GIFTI surface dataset loading
+    command: python -c "from mvpa2.datasets.gifti import gifti_dataset; print('gifti_dataset available')" 2>&1 | tail -1
+    expected_output_contains: "gifti_dataset available"
+
+  - name: Surface reading support
+    description: Verify surface file reading capability
+    command: python -c "from mvpa2.support.nibabel.surf import read; print('surface read available')" 2>&1 | tail -1
+    expected_output_contains: "surface read available"
+
+  - name: Event list handling
+    description: Verify events2sample_attr for event file processing
+    command: python -c "from mvpa2.datasets.eventrelated import events2sample_attr; print('events2sample_attr available')" 2>&1 | tail -1
+    expected_output_contains: "events2sample_attr available"
+
+  # ==========================================================================
+  # PYMVPA PREPROCESSING
+  # ==========================================================================
+  - name: Polynomial detrending
+    description: Verify poly_detrend mapper is available
+    command: python -c "from mvpa2.mappers.detrend import poly_detrend; print('poly_detrend available')" 2>&1 | tail -1
+    expected_output_contains: "poly_detrend available"
+
+  - name: Z-score normalization
+    description: Verify zscore mapper is available
+    command: python -c "from mvpa2.mappers.zscore import zscore; print('zscore available')" 2>&1 | tail -1
+    expected_output_contains: "zscore available"
+
+  # ==========================================================================
+  # FSL INTEGRATION TESTS
+  # ==========================================================================
+  - name: FSL directory check
+    description: Verify FSL is installed
+    command: ls /opt/fsl-6.0.5.1/bin/ | head -5
+    expected_exit_code: 0
+
+  - name: FSLDIR environment
+    description: Verify FSLDIR environment can be set
+    command: export FSLDIR=/opt/fsl-6.0.5.1 && echo $FSLDIR
+    expected_output_contains: "/opt/fsl-6.0.5.1"
+
+  - name: FSL flirt available
+    description: Verify FLIRT registration tool is available
+    command: ls -la /opt/fsl-6.0.5.1/bin/flirt
+    expected_exit_code: 0
+
+  - name: FSL bet available
+    description: Verify BET brain extraction is available
+    command: ls -la /opt/fsl-6.0.5.1/bin/bet
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # RUN.PY SCRIPT VERIFICATION
+  # ==========================================================================
+  - name: Run script exists
+    description: Verify main run.py script exists
+    command: ls -la /code/run.py
+    expected_output_contains: "run.py"
+
+  - name: Run script is executable
+    description: Verify run.py has execute permissions
+    command: test -x /code/run.py && echo "executable"
+    expected_output_contains: "executable"
+
+  - name: Version file exists
+    description: Verify version file is present
+    command: cat /code/version
+    expected_output_contains: "v4.0.3"
+
+  # ==========================================================================
+  # ARGUMENT PARSING TESTS
+  # ==========================================================================
+  - name: Analysis levels available
+    description: Verify analysis levels are documented
+    command: /code/run.py --help 2>&1 | grep "participant_prep"
+    expected_output_contains: "participant_prep"
+
+  - name: Participant ID argument
+    description: Verify participant_id argument is documented
+    command: /code/run.py --help 2>&1 | grep "participant_id"
+    expected_output_contains: "participant_id"
+
+  - name: Session argument
+    description: Verify session argument is available
+    command: /code/run.py --help 2>&1 | grep "session"
+    expected_output_contains: "session"
+
+  - name: Task argument
+    description: Verify task argument is documented
+    command: /code/run.py --help 2>&1 | grep "task"
+    expected_output_contains: "task"
+
+  - name: Searchlight argument
+    description: Verify searchlight argument is available
+    command: /code/run.py --help 2>&1 | grep "searchlight"
+    expected_output_contains: "searchlight"
+
+  - name: Conditions argument
+    description: Verify conditions_to_classify argument is available
+    command: /code/run.py --help 2>&1 | grep "conditions_to_classify"
+    expected_output_contains: "conditions"
+
+  - name: RSA argument
+    description: Verify RSA mode argument is available
+    command: /code/run.py --help 2>&1 | grep "\-\-rsa"
+    expected_output_contains: "rsa"
+
+  - name: Surface mode argument
+    description: Verify surface analysis argument is available
+    command: /code/run.py --help 2>&1 | grep "\-\-surf"
+    expected_output_contains: "surf"
+
+  - name: Mask argument
+    description: Verify mask argument is available
+    command: /code/run.py --help 2>&1 | grep "\-\-mask"
+    expected_output_contains: "mask"
+
+  - name: Polynomial detrending argument
+    description: Verify poly_detrend argument is available
+    command: /code/run.py --help 2>&1 | grep "poly_detrend"
+    expected_output_contains: "poly_detrend"
+
+  - name: Time-series zscore argument
+    description: Verify tzscore argument is available
+    command: /code/run.py --help 2>&1 | grep "tzscore"
+    expected_output_contains: "tzscore"
+
+  - name: Beta zscore argument
+    description: Verify bzscore argument is available
+    command: /code/run.py --help 2>&1 | grep "bzscore"
+    expected_output_contains: "bzscore"
+
+  - name: Feature selection argument
+    description: Verify feature_select argument is available
+    command: /code/run.py --help 2>&1 | grep "feature_select"
+    expected_output_contains: "feature_select"
+
+  - name: Cross-validation type argument
+    description: Verify cvtype argument is available
+    command: /code/run.py --help 2>&1 | grep "cvtype"
+    expected_output_contains: "cvtype"
+
+  - name: LSS argument
+    description: Verify LSS (Least Squares Single) argument is available
+    command: /code/run.py --help 2>&1 | grep "\-\-lss"
+    expected_output_contains: "lss"
+
+  - name: Individual trials argument
+    description: Verify indiv_trials argument is available
+    command: /code/run.py --help 2>&1 | grep "indiv_trials"
+    expected_output_contains: "indiv_trials"
+
+  - name: No info label argument
+    description: Verify noinfolabel argument is available
+    command: /code/run.py --help 2>&1 | grep "noinfolabel"
+    expected_output_contains: "noinfolabel"
+
+  - name: Distance metric argument
+    description: Verify distance metric argument is available
+    command: /code/run.py --help 2>&1 | grep "\-\-dist"
+    expected_output_contains: "dist"
+
+  - name: Number of processors argument
+    description: Verify nproc argument is available
+    command: /code/run.py --help 2>&1 | grep "nproc"
+    expected_output_contains: "nproc"
+
+  - name: Skip BIDS validator argument
+    description: Verify skip_bids_validator argument is available
+    command: /code/run.py --help 2>&1 | grep "skip_bids_validator"
+    expected_output_contains: "skip_bids_validator"
+
+  - name: Space argument for surface
+    description: Verify space argument for surface mode is available
+    command: /code/run.py --help 2>&1 | grep "\-\-space"
+    expected_output_contains: "fsnative"
+
+  - name: Hemisphere argument
+    description: Verify hemisphere argument is available
+    command: /code/run.py --help 2>&1 | grep "\-\-hemi"
+    expected_output_contains: "hemi"
+
+  # ==========================================================================
+  # INPUT VALIDATION TESTS
+  # ==========================================================================
+  - name: Missing required arguments error
+    description: Verify error when required arguments are missing
+    command: /code/run.py 2>&1 | head -20
+    expected_output_contains: "usage"
+
+  - name: Invalid analysis level error
+    description: Verify error for invalid analysis level
+    command: /code/run.py /tmp /tmp invalid_level 2>&1 | tail -5
+    expected_output_contains: "invalid choice"
+
+  # ==========================================================================
+  # NIBABEL FILE READING TESTS
+  # ==========================================================================
+  - name: Read NIfTI header
+    description: Test nibabel can read NIfTI header from BOLD file
+    command: |
+      python -c "
+      import nibabel as nib
+      img = nib.load('${bold}')
+      print('Shape:', img.shape)
+      print('Affine shape:', img.affine.shape)
+      " 2>&1
+    expected_output_contains: "Shape:"
+
+  - name: Read NIfTI data shape
+    description: Verify 4D BOLD data dimensions
+    command: |
+      python -c "
+      import nibabel as nib
+      img = nib.load('${bold}')
+      print('4D shape:', img.shape)
+      assert len(img.shape) == 4, '4D expected'
+      print('Verified 4D data')
+      " 2>&1
+    expected_output_contains: "Verified 4D data"
+
+  - name: Get TR from NIfTI
+    description: Verify TR can be extracted from NIfTI header
+    command: |
+      python -c "
+      import nibabel as nib
+      img = nib.load('${bold}')
+      tr = img.header.get_zooms()[3]
+      print('TR:', tr, 'seconds')
+      " 2>&1
+    expected_output_contains: "TR:"
+
+  # ==========================================================================
+  # PYMVPA DATASET CREATION TESTS
+  # ==========================================================================
+  - name: Create minimal fmri dataset
+    description: Test basic fmri_dataset creation
+    command: |
+      python -c "
+      from mvpa2.datasets.mri import fmri_dataset
+      import nibabel as nib
+
+      # Load just first few volumes to test
+      ds = fmri_dataset('${bold}')
+      print('Dataset samples:', ds.nsamples)
+      print('Dataset features:', ds.nfeatures)
+      print('Dataset shape:', ds.shape)
+      " 2>&1 | tail -3
+    expected_output_contains: "Dataset samples:"
+
+  - name: Sample attributes in dataset
+    description: Verify dataset has time_indices sample attribute
+    command: |
+      python -c "
+      from mvpa2.datasets.mri import fmri_dataset
+      ds = fmri_dataset('${bold}')
+      print('Sample attributes:', ds.sa.keys())
+      print('Has time_indices:', 'time_indices' in ds.sa)
+      " 2>&1 | tail -2
+    expected_output_contains: "time_indices"
+
+  - name: Feature attributes in dataset
+    description: Verify dataset has voxel_indices feature attribute
+    command: |
+      python -c "
+      from mvpa2.datasets.mri import fmri_dataset
+      ds = fmri_dataset('${bold}')
+      print('Feature attributes:', ds.fa.keys())
+      print('Has voxel_indices:', 'voxel_indices' in ds.fa)
+      " 2>&1 | tail -2
+    expected_output_contains: "voxel_indices"
+
+  # ==========================================================================
+  # EVENTS FILE PARSING TESTS
+  # ==========================================================================
+  - name: Read events TSV file
+    description: Test reading BIDS events file with Python csv module
+    command: |
+      python -c "
+      import csv
+      with open('${events}', 'r') as f:
+          reader = csv.DictReader(f, delimiter='\t')
+          events = list(reader)
+      print('Number of events:', len(events))
+      print('Event columns:', events[0].keys() if events else 'None')
+      " 2>&1
+    expected_output_contains: "Number of events:"
+
+  - name: Extract unique trial types
+    description: Verify event file contains expected trial types
+    command: |
+      python -c "
+      import csv
+      with open('${events}', 'r') as f:
+          reader = csv.DictReader(f, delimiter='\t')
+          trial_types = set(row['trial_type'] for row in reader)
+      print('Trial types:', sorted(trial_types))
+      " 2>&1
+    expected_output_contains: "Trial types:"
+
+  - name: Event onsets are numeric
+    description: Verify event onset times can be parsed
+    command: |
+      python -c "
+      import csv
+      with open('${events}', 'r') as f:
+          reader = csv.DictReader(f, delimiter='\t')
+          onsets = [float(row['onset']) for row in reader]
+      print('First onset:', onsets[0])
+      print('Last onset:', onsets[-1])
+      print('Total events:', len(onsets))
+      " 2>&1
+    expected_output_contains: "First onset:"
+
+  - name: Event durations are present
+    description: Verify event durations are available
+    command: |
+      python -c "
+      import csv
+      with open('${events}', 'r') as f:
+          reader = csv.DictReader(f, delimiter='\t')
+          durations = [float(row['duration']) for row in reader]
+      print('Duration values:', set(durations))
+      " 2>&1
+    expected_output_contains: "Duration values:"
+
+  # ==========================================================================
+  # CLASSIFIER FUNCTIONALITY TESTS
+  # ==========================================================================
+  - name: Create LinearCSVMC classifier
+    description: Test creating a linear SVM classifier
+    command: |
+      python -c "
+      from mvpa2.clfs.svm import LinearCSVMC
+      clf = LinearCSVMC()
+      print('Classifier:', clf)
+      print('Classifier type:', type(clf).__name__)
+      " 2>&1 | tail -2
+    expected_output_contains: "LinearCSVMC"
+
+  - name: Create cross-validation procedure
+    description: Test creating cross-validation with partitioner
+    command: |
+      python -c "
+      from mvpa2.clfs.svm import LinearCSVMC
+      from mvpa2.measures.base import CrossValidation
+      from mvpa2.generators.partition import NFoldPartitioner
+
+      clf = LinearCSVMC()
+      partitioner = NFoldPartitioner()
+      cv = CrossValidation(clf, partitioner)
+      print('CrossValidation created successfully')
+      print('Classifier:', cv.learner)
+      " 2>&1 | tail -2
+    expected_output_contains: "CrossValidation created successfully"
+
+  - name: Create error function
+    description: Test creating error rate measure
+    command: |
+      python -c "
+      from mvpa2.misc.errorfx import mean_mismatch_error
+      print('Error function:', mean_mismatch_error)
+      print('Type:', type(mean_mismatch_error).__name__)
+      " 2>&1 | tail -2
+    expected_output_contains: "mean_mismatch_error"
+
+  # ==========================================================================
+  # SEARCHLIGHT FUNCTIONALITY TESTS
+  # ==========================================================================
+  - name: Create sphere searchlight
+    description: Test creating searchlight with sphere neighborhood
+    command: |
+      python -c "
+      from mvpa2.measures.searchlight import sphere_searchlight
+      from mvpa2.clfs.svm import LinearCSVMC
+      from mvpa2.measures.base import CrossValidation
+      from mvpa2.generators.partition import NFoldPartitioner
+
+      clf = LinearCSVMC()
+      cv = CrossValidation(clf, NFoldPartitioner())
+
+      # Create searchlight with radius 3
+      sl = sphere_searchlight(cv, radius=3)
+      print('Searchlight created:', sl)
+      print('Radius specified successfully')
+      " 2>&1 | tail -2
+    expected_output_contains: "Searchlight created:"
+
+  - name: Queryengine for searchlight
+    description: Test searchlight queryengine creation
+    command: |
+      python -c "
+      from mvpa2.misc.neighborhood import IndexQueryEngine, Sphere
+      sphere = Sphere(3)
+      print('Sphere created with radius 3')
+      print('Sphere:', sphere)
+      " 2>&1 | tail -2
+    expected_output_contains: "Sphere created"
+
+  # ==========================================================================
+  # RSA FUNCTIONALITY TESTS
+  # ==========================================================================
+  - name: Create PDist measure
+    description: Test creating pairwise distance measure for RSA
+    command: |
+      python -c "
+      from mvpa2.measures.rsa import PDist
+      pdist = PDist()
+      print('PDist measure created')
+      print('Type:', type(pdist).__name__)
+      " 2>&1 | tail -2
+    expected_output_contains: "PDist measure created"
+
+  - name: Create RDM with correlation distance
+    description: Test RSA with correlation distance
+    command: |
+      python -c "
+      from mvpa2.measures.rsa import PDist
+      pdist = PDist(pairwise_metric='correlation')
+      print('PDist with correlation distance created')
+      " 2>&1 | tail -1
+    expected_output_contains: "PDist with correlation distance created"
+
+  - name: Create RDM with euclidean distance
+    description: Test RSA with euclidean distance
+    command: |
+      python -c "
+      from mvpa2.measures.rsa import PDist
+      pdist = PDist(pairwise_metric='euclidean')
+      print('PDist with euclidean distance created')
+      " 2>&1 | tail -1
+    expected_output_contains: "PDist with euclidean distance created"
+
+  # ==========================================================================
+  # PREPROCESSING MAPPER TESTS
+  # ==========================================================================
+  - name: Create zscore mapper
+    description: Test z-score normalization mapper
+    command: |
+      python -c "
+      from mvpa2.mappers.zscore import ZScoreMapper
+      mapper = ZScoreMapper()
+      print('ZScoreMapper created')
+      print('Type:', type(mapper).__name__)
+      " 2>&1 | tail -2
+    expected_output_contains: "ZScoreMapper created"
+
+  - name: Create detrend mapper
+    description: Test polynomial detrending mapper
+    command: |
+      python -c "
+      from mvpa2.mappers.detrend import PolyDetrendMapper
+      mapper = PolyDetrendMapper(polyord=1)
+      print('PolyDetrendMapper created with order 1')
+      " 2>&1 | tail -1
+    expected_output_contains: "PolyDetrendMapper created"
+
+  - name: Create feature selection mapper
+    description: Test ANOVA feature selection
+    command: |
+      python -c "
+      from mvpa2.featsel.base import SensitivityBasedFeatureSelection
+      from mvpa2.measures.anova import OneWayAnova
+      from mvpa2.featsel.helpers import FixedNElementTailSelector
+
+      anova = OneWayAnova()
+      selector = FixedNElementTailSelector(500, mode='select', tail='upper')
+      fsel = SensitivityBasedFeatureSelection(anova, selector)
+      print('Feature selection mapper created')
+      " 2>&1 | tail -1
+    expected_output_contains: "Feature selection mapper created"
+
+  # ==========================================================================
+  # GLM FUNCTIONALITY TESTS
+  # ==========================================================================
+  - name: HRF model availability
+    description: Test HRF modeling tools are available
+    command: |
+      python -c "
+      from mvpa2.datasets.eventrelated import fit_event_hrf_model
+      print('fit_event_hrf_model available')
+      " 2>&1 | tail -1
+    expected_output_contains: "fit_event_hrf_model available"
+
+  - name: GLM mapper availability
+    description: Test GLM mapper is available
+    command: |
+      python -c "
+      from mvpa2.mappers.glm import GLMMapper
+      print('GLMMapper available')
+      " 2>&1 | tail -1
+    expected_output_contains: "GLMMapper available"
+
+  # ==========================================================================
+  # SYNTHETIC DATA CLASSIFICATION TEST
+  # ==========================================================================
+  - name: Synthetic classification test
+    description: Run a complete classification on synthetic data
+    command: |
+      python -c "
+      import numpy as np
+      from mvpa2.datasets import Dataset
+      from mvpa2.clfs.svm import LinearCSVMC
+      from mvpa2.measures.base import CrossValidation
+      from mvpa2.generators.partition import NFoldPartitioner
+      from mvpa2.misc.errorfx import mean_mismatch_error
+
+      # Create synthetic data: 40 samples, 100 features, 2 classes
+      np.random.seed(42)
+      data = np.vstack([
+          np.random.randn(20, 100) + 1,  # Class A
+          np.random.randn(20, 100) - 1   # Class B
+      ])
+      labels = ['A'] * 20 + ['B'] * 20
+      chunks = list(range(4)) * 10  # 4 chunks for cross-validation
+
+      ds = Dataset(data, sa={'targets': labels, 'chunks': chunks})
+
+      # Run cross-validation
+      clf = LinearCSVMC()
+      cv = CrossValidation(clf, NFoldPartitioner(), errorfx=mean_mismatch_error)
+      results = cv(ds)
+
+      mean_error = np.mean(results)
+      print 'Classification error:', mean_error
+      print 'Classification successful:', mean_error < 0.5
+      " 2>&1 | tail -2
+    expected_output_contains: "Classification successful: True"
+
+  - name: Synthetic RSA test
+    description: Run RSA on synthetic data
+    command: |
+      python -c "
+      import numpy as np
+      from mvpa2.datasets import Dataset
+      from mvpa2.measures.rsa import PDist
+
+      # Create synthetic data: 6 conditions, 100 features
+      np.random.seed(42)
+      data = np.random.randn(6, 100)
+      labels = ['cond_%d' % i for i in range(6)]
+
+      ds = Dataset(data, sa={'targets': labels})
+
+      # Compute RDM
+      pdist = PDist()
+      rdm = pdist(ds)
+
+      print('RDM shape:', rdm.shape)
+      print('RDM computed successfully')
+      " 2>&1 | tail -2
+    expected_output_contains: "RDM computed successfully"
+
+  # ==========================================================================
+  # BIDS STRUCTURE VALIDATION
+  # ==========================================================================
+  - name: BIDS directory structure check
+    description: Verify BIDS dataset structure is accessible
+    command: ls -la ${bids_dir}/
+    expected_output_contains: "sub-01"
+
+  - name: BIDS dataset_description check
+    description: Verify dataset_description.json exists
+    command: cat ${bids_dir}/dataset_description.json
+    expected_output_contains: "Name"
+
+  - name: BIDS subject directory check
+    description: Verify subject directory structure
+    command: ls -la ${bids_dir}/sub-01/
+    expected_output_contains: "func"
+
+  - name: BIDS functional data check
+    description: Verify functional data directory has expected files
+    command: ls ${bids_dir}/sub-01/func/*.nii.gz
+    expected_output_contains: "bold.nii.gz"
+
+  - name: BIDS events files check
+    description: Verify events files exist for each run
+    command: ls ${bids_dir}/sub-01/func/*_events.tsv
+    expected_output_contains: "events.tsv"
+
+  # ==========================================================================
+  # OUTPUT DIRECTORY HANDLING
+  # ==========================================================================
+  - name: Output directory creation
+    description: Verify output directory can be created
+    command: mkdir -p ${output_dir}/pymvpa_test && ls -la ${output_dir}/pymvpa_test
+    expected_exit_code: 0
+
+  - name: Output directory write permission
+    description: Verify write permissions to output directory
+    command: touch ${output_dir}/pymvpa_test/test_file && rm ${output_dir}/pymvpa_test/test_file && echo "Write OK"
+    expected_output_contains: "Write OK"
+
+  # ==========================================================================
+  # MULTIPROCESSING TESTS
+  # ==========================================================================
+  - name: Multiprocessing availability
+    description: Verify multiprocessing module is available
+    command: |
+      python -c "
+      import multiprocessing
+      ncpu = multiprocessing.cpu_count()
+      print('CPU count:', ncpu)
+      print('Multiprocessing available')
+      " 2>&1 | tail -2
+    expected_output_contains: "Multiprocessing available"
+
+  - name: Joblib availability
+    description: Check if joblib is available for parallel processing
+    command: |
+      python -c "
+      try:
+          import joblib
+          print('joblib available')
+      except ImportError:
+          print('joblib not installed, using multiprocessing')
+      " 2>&1 | tail -1
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # VISUALIZATION TESTS
+  # ==========================================================================
+  - name: Matplotlib backend check
+    description: Verify matplotlib uses Agg backend (non-interactive)
+    command: |
+      python -c "
+      import matplotlib
+      matplotlib.use('Agg')
+      import matplotlib.pyplot as plt
+      print 'Backend:', matplotlib.get_backend()
+      " 2>&1 | tail -1
+    expected_output_contains: "agg"
+
+  - name: Figure creation test
+    description: Test matplotlib figure creation
+    command: |
+      python -c "
+      import matplotlib
+      matplotlib.use('Agg')
+      import matplotlib.pyplot as plt
+      fig, ax = plt.subplots()
+      ax.plot([1, 2, 3], [1, 2, 3])
+      print('Figure created successfully')
+      plt.close()
+      " 2>&1 | tail -1
+    expected_output_contains: "Figure created successfully"
+
+  - name: Save figure to file
+    description: Test saving figure to output directory
+    command: |
+      python -c "
+      import matplotlib
+      matplotlib.use('Agg')
+      import matplotlib.pyplot as plt
+      import numpy as np
+
+      fig, ax = plt.subplots()
+      ax.imshow(np.random.randn(10, 10))
+      ax.set_title('Test RDM')
+      fig.savefig('${output_dir}/test_rdm.png', dpi=100)
+      plt.close()
+      print('Figure saved successfully')
+      " 2>&1
+    validate:
+      - output_exists: ${output_dir}/test_rdm.png
+    expected_output_contains: "Figure saved successfully"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally clean up test outputs
+    rm -f ${output_dir}/test_rdm.png
+    rm -rf ${output_dir}/pymvpa_test
+    echo "Test outputs cleaned"

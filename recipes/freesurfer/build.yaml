@@ -1,5 +1,6 @@
 name: freesurfer
-version: 6.0.1
+version: 8.1.0
+# https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/
 
 copyright:
   - name: freesurfer license
@@ -31,8 +32,10 @@ build:
         - make
         - csh
         - tcsh
+        - tcl
         - file
         - bc
+        - python-is-python3
         - xorg
         - xorg-dev
         - xserver-xorg-video-intel
@@ -93,16 +96,17 @@ build:
         - xvfb
         - xauth
 
-    # - run:
-    #     - wget --quiet https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}/freesurfer_ubuntu22-{{ context.version }}_amd64.deb
-    #     - dpkg -i freesurfer_ubuntu22-{{ context.version }}_amd64.deb
-    #     - rm -rf freesurfer_ubuntu22-{{ context.version }}_amd64.deb
+    - run:
+        - dpkg -i {{ get_file("freesurfer_deb") }}
 
-    - template:
-        name: freesurfer
-        version: 6.0.1
+    # - template:
+    #     name: freesurfer
+    #     version: 8.1.0
 
     - workdir: /opt/freesurfer-{{ context.version }}
+
+    - environment:
+        LD_LIBRARY_PATH: ""
 
     - template:
         name: matlabmcr
@@ -112,8 +116,13 @@ build:
     - run:
         - ln -s /opt/MCR2014b/v84/ /opt/freesurfer-{{ context.version }}/MCRv84
 
-    - environment:
-        LD_LIBRARY_PATH: ""
+    - template:
+        name: matlabmcr
+        install_path: /opt/MCR2014a
+        version: 2014a
+
+    - run:
+        - ln -s /opt/MCR2014a/v83/ /opt/freesurfer-{{ context.version }}/MCRv83
 
     - template:
         name: matlabmcr
@@ -155,27 +164,28 @@ build:
         - rm -rf workbench.zip
 
     - environment:
+        DEPLOY_TEST_MAX_PATH_FILES: "60"
         FREESURFER: /opt/freesurfer-{{ context.version }}
-        LD_LIBRARY_PATH: $LD_LIBRARY_PATH:/usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib/:/usr/lib64/:/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/opengl/lib/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64
+        LD_LIBRARY_PATH: /usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib/:/usr/lib64/:/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/opengl/lib/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv83/runtime/glnxa64
         PATH: $PATH:/opt/workbench/:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/tktools:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/mni/bin
 
-    # - run:
-    #     - ln -s /usr/local/freesurfer/{{ context.version }}/* /usr/local/freesurfer/
-    #     - ln -s /usr/local/freesurfer/{{ context.version }}/* /opt/freesurfer-{{ context.version }}
+    - run:
+        - ln -s /usr/local/freesurfer/{{ context.version }}/* /usr/local/freesurfer/
+        - ln -s /usr/local/freesurfer/{{ context.version }}/* /opt/freesurfer-{{ context.version }}
 
-    # - workdir: /opt/freesurfer-{{ context.version }}/bin/
+    - workdir: /opt/freesurfer-{{ context.version }}/bin/
 
-    # - run:
-    #     - wget https://raw.githubusercontent.com/freesurfer/freesurfer/refs/heads/dev/AANsegment/linux_x86_64/segmentNuclei
-    #     - mv segmentNuclei segmentNuclei_mcr84
-    #     - chmod a+rwx segmentNuclei_mcr84
+    - run:
+        - wget https://raw.githubusercontent.com/freesurfer/freesurfer/refs/heads/dev/AANsegment/linux_x86_64/segmentNuclei
+        - mv segmentNuclei segmentNuclei_mcr97
+        - chmod a+rwx segmentNuclei_mcr97
 
-    # - copy:
-    #     - segmentNuclei
-    #     - /opt/freesurfer-{{ context.version }}/bin/segmentNuclei
+    - copy:
+        - segmentNuclei
+        - /opt/freesurfer-{{ context.version }}/bin/segmentNuclei
 
-    # - run:
-    #     - chmod a+rwx /opt/freesurfer-{{ context.version }}/bin/segmentNuclei
+    - run:
+        - chmod a+rwx /opt/freesurfer-{{ context.version }}/bin/segmentNuclei
 
     - copy:
         - license.txt
@@ -213,10 +223,13 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: freesurfer_deb
+    url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}/freesurfer_ubuntu22-{{ context.version }}_amd64.deb
+
   - name: segmentNuclei
     contents: |-
       #!/usr/bin/env bash
-      LD_LIBRARY_PATH=/opt/MCR2014b/v84/runtime/glnxa64:/opt/MCR2014b/v84/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv84/bin segmentNuclei_mcr84 $@
+      LD_LIBRARY_PATH=/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64 segmentNuclei_mcr97 "$@"
 
   - name: license.txt
     contents: |-

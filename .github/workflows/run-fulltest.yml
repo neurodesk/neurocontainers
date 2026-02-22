@@ -1,0 +1,155 @@
+name: run-fulltest
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      container:
+        description: "Recipe container to test (e.g. fmriprep)"
+        required: true
+        type: string
+      version:
+        description: "Optional release version (for example 25.2.3). Leave blank to use latest."
+        required: false
+        default: ""
+        type: string
+      containers_dir:
+        description: "Directory for downloaded .simg files"
+        required: false
+        default: "/tmp/containers"
+        type: string
+
+jobs:
+  run-fulltest:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Apptainer
+        uses: eWaterCycle/setup-apptainer@v2
+        with:
+          apptainer-version: 1.4.3
+
+      - name: Install test dependencies
+        run: |
+          uv pip install --system datalad datalad-installer
+          datalad-installer --sudo ok git-annex -m datalad/packages
+          git-annex version
+          datalad --version
+
+      - name: Configure git for DataLad
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Pull container and run fulltest
+        env:
+          CONTAINER: ${{ github.event.inputs.container }}
+          VERSION: ${{ github.event.inputs.version }}
+          CONTAINERS_DIR: ${{ github.event.inputs.containers_dir }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          mkdir -p "$CONTAINERS_DIR"
+          uv run python -u - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          from workflows.container_tester import ReleaseContainerDownloader
+          from workflows.test_utils import find_latest_release_file
+
+          container = os.environ["CONTAINER"].strip()
+          requested_version = os.environ.get("VERSION", "").strip()
+          containers_dir = Path(os.environ["CONTAINERS_DIR"]).resolve()
+
+          suite_path = Path("recipes") / container / "fulltest.yaml"
+          if not suite_path.is_file():
+              print(f"Suite file not found: {suite_path}", file=sys.stderr)
+              sys.exit(1)
+
+          releases_dir = Path("releases") / container
+          if not releases_dir.is_dir():
+              print(f"Release directory not found: {releases_dir}", file=sys.stderr)
+              sys.exit(1)
+
+          if requested_version:
+              release_file = releases_dir / f"{requested_version}.json"
+              release_version = requested_version
+              if not release_file.is_file():
+                  print(f"Release file not found: {release_file}", file=sys.stderr)
+                  sys.exit(1)
+          else:
+              release_file, release_version, _ = find_latest_release_file(releases_dir)
+              if not release_file:
+                  print(f"No release file found for {container}", file=sys.stderr)
+                  sys.exit(1)
+
+          try:
+              release = json.loads(release_file.read_text(encoding="utf-8"))
+              apps = release.get("apps", {})
+              app_entry = next(iter(apps.values()), None) if isinstance(apps, dict) else None
+              if not app_entry:
+                  print(f"No app entry in release file: {release_file}", file=sys.stderr)
+                  sys.exit(1)
+              build_date = str(app_entry.get("version", "")).strip()
+          except Exception as exc:
+              print(f"Failed to parse release file {release_file}: {exc}", file=sys.stderr)
+              sys.exit(1)
+
+          if not build_date:
+              print(f"Build date missing in release file: {release_file}", file=sys.stderr)
+              sys.exit(1)
+
+          downloader = ReleaseContainerDownloader(cache_dir=str(containers_dir))
+          container_file = downloader.download_from_release(container, release_version, build_date)
+          if not container_file:
+              print(
+                  f"Failed to download container {container}:{release_version} "
+                  f"with build date {build_date}",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+
+          workdir = Path("results")
+          workdir.mkdir(exist_ok=True)
+          output_json = workdir / f"{container}-fulltest.json"
+          output_log = workdir / f"{container}-fulltest.log"
+
+          cmd = [
+              "uv",
+              "run",
+              "builder/run_tests.py",
+              str(suite_path),
+              "-c",
+              str(containers_dir),
+              "-o",
+              str(output_json),
+              "--log",
+              str(output_log),
+          ]
+          print(f"Running: {' '.join(cmd)}")
+          result = subprocess.run(cmd, check=False, text=True)
+          if result.returncode != 0:
+              print("run_tests.py returned non-zero exit status", file=sys.stderr)
+              sys.exit(result.returncode)
+          PY
+
+      - name: Upload fulltest outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fulltest-results-${{ github.event.inputs.container }}
+          path: results/

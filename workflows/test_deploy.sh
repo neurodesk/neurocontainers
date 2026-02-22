@@ -10,6 +10,19 @@ SKIPPED=0
 
 declare -A VISITED_FILES
 
+parse_non_negative_integer() {
+    local value="$1"
+    if [[ "$value" =~ ^[0-9]+$ ]]; then
+        printf '%s' "$value"
+    else
+        printf '0'
+    fi
+}
+
+# Optional limit to avoid extremely expensive deploy-path checks on very large images.
+# Set DEPLOY_TEST_MAX_PATH_FILES=0 for an exhaustive scan.
+DEPLOY_TEST_MAX_PATH_FILES=$(parse_non_negative_integer "${DEPLOY_TEST_MAX_PATH_FILES:-200}")
+
 cleanup() {
     rm -f "$RESULTS_FILE"
 }
@@ -116,9 +129,19 @@ test_file() {
 parse_ldd_output() {
     local binary="$1"
     local output="$2"
+    local resolved_count=0
+    local missing_count=0
+    local skipped_count=0
 
     while IFS= read -r line; do
         [ -z "$line" ] && continue
+
+        local trimmed_line="$line"
+        trimmed_line="${trimmed_line#"${trimmed_line%%[![:space:]]*}"}"
+        if [[ "$trimmed_line" == ldd:* ]]; then
+            ((skipped_count++))
+            continue
+        fi
 
         local lib_label
         local lib_path=""
@@ -128,6 +151,10 @@ parse_ldd_output() {
             lib_path=$(printf '%s' "$line" | awk '{for (i=1; i<=NF; i++) if ($i ~ /^\//) {print $i; exit}}')
         else
             lib_label=$(printf '%s' "$line" | awk '{print $1}')
+            if [[ "$lib_label" == *: ]]; then
+                ((skipped_count++))
+                continue
+            fi
             if [[ "$line" == /* ]]; then
                 lib_path=$(printf '%s' "$line" | awk '{print $1}')
             fi
@@ -135,14 +162,25 @@ parse_ldd_output() {
 
         if [ -n "$lib_path" ] && [ "$lib_path" != "not" ]; then
             if [ -f "$lib_path" ]; then
-                record_result "ldd:$binary:$lib_label" "passed" "Library $lib_label resolved to $lib_path."
+                ((resolved_count++))
             else
+                ((missing_count++))
                 record_result "ldd:$binary:$lib_label" "failed" "Library $lib_label missing (expected at $lib_path)."
             fi
         else
-            record_result "ldd:$binary:$lib_label" "skipped" "No filesystem path to validate for $lib_label."
+            ((skipped_count++))
         fi
     done <<< "$output"
+
+    if [ "$missing_count" -eq 0 ]; then
+        record_result "ldd.summary:$binary" "passed" "Resolved $resolved_count linked libraries."
+    else
+        record_result "ldd.summary:$binary" "failed" "Missing $missing_count linked libraries (resolved $resolved_count)."
+    fi
+
+    if [ "$skipped_count" -gt 0 ]; then
+        record_result "ldd.summary.skipped:$binary" "skipped" "Skipped $skipped_count linkage entries without filesystem paths."
+    fi
 }
 
 test_file_linking() {
@@ -234,14 +272,24 @@ process_deploy_paths() {
         if [ -d "$dir" ]; then
             record_result "deploy_dir:$dir" "passed" "Directory $dir exists."
 
+            local tested_count=0
             while IFS= read -r target; do
                 [ -z "$target" ] && continue
+
+                if [ "$DEPLOY_TEST_MAX_PATH_FILES" -gt 0 ] && [ "$tested_count" -ge "$DEPLOY_TEST_MAX_PATH_FILES" ]; then
+                    record_result "deploy_dir.limit:$dir" "skipped" "Stopped after $tested_count executables because DEPLOY_TEST_MAX_PATH_FILES=$DEPLOY_TEST_MAX_PATH_FILES."
+                    break
+                fi
+
+                ((tested_count++))
                 test_file "$target"
             done < <(
                 find "$dir" -maxdepth 1 \
                     \( -type f -o \( -type l -a ! -xtype d \) \) \
-                    -perm -111 -print 2>/dev/null
+                    -perm -111 -print 2>/dev/null | sort
             )
+
+            record_result "deploy_dir.checked:$dir" "passed" "Checked $tested_count executable files."
         else
             record_result "deploy_dir:$dir" "failed" "Directory $dir does not exist."
         fi

@@ -1,0 +1,94 @@
+name: slicer
+version: 5.0.3
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - python3-dev
+        - gcc
+        - libopenslide0
+        - curl
+        - ca-certificates
+        - libxdamage1
+        - libpulse-dev
+        - libnss3
+        - libglu1-mesa
+        - libsm6
+        - libxrender1
+        - libxt6
+        - libxcomposite1
+        - libfreetype6
+        - libasound2
+        - libfontconfig1
+        - libxkbcommon0
+        - libxcursor1
+        - libxi6
+        - libxrandr2
+        - libxtst6
+        - libqt5svg5-dev
+        - wget
+        - libqt5opengl5-dev
+        - libqt5opengl5
+        - libqt5gui5
+        - libqt5core5a
+
+    - template:
+        name: miniconda
+        version: latest
+        conda_install: pytorch torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia
+
+    - run:
+        - pip install h11==0.11 monailabel
+
+    - run:
+        - curl -fsSL --retry 5 https://download.slicer.org/bitstream/62cc52d2aa08d161a31c1af0 | tar -xz -C /opt/
+
+    - workdir: /opt/Slicer-{{ context.version }}-linux-amd64/NA-MIC/
+
+    - run:
+        - curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/MONAILabel30893.tar.gz | tar -xz -C /opt/Slicer-{{ context.version }}-linux-amd64/NA-MIC/ --strip-components 1
+
+    - install:
+        - nvidia-cuda-toolkit
+
+    - environment:
+        PATH: /miniconda3/bin:/usr/bin:/opt/Slicer-{{ context.version }}-linux-amd64/bin:/opt/Slicer-{{ context.version }}-linux-amd64
+
+deploy:
+  path:
+    - /opt/Slicer-{{ context.version }}-linux-amd64/bin
+  bins:
+    - Slicer
+
+categories:
+  - visualization
+  - image segmentation
+
+gui_apps:
+  - name: slicerGUI
+    exec: Slicer
+
+readme: |
+  ----------------------------------
+  ## slicer/{{ context.version }} ##
+  3D Slicer is a software application for visualization and analysis of medical image computing data sets. Supports images, segmentations, surfaces, annotations, transformations in 2D, 3D, and 4D.
+
+  Example:
+  ```
+  Slicer
+  ```
+
+  More documentation can be found here: https://slicer.readthedocs.io/en/latest/user_guide/getting_started.html
+
+  To run container outside of this environment: ml slicer/{{ context.version }}
+  ----------------------------------

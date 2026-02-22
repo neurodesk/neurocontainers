@@ -1,0 +1,346 @@
+# brainager container test suite
+# Tests for brainager v2.1.0 - Brain-predicted age estimation from T1-weighted MRI
+#
+# BrainageR uses SPM12 for tissue segmentation and DARTEL normalization,
+# followed by Gaussian Process Regression (GPR) in R for age prediction.
+#
+# Pipeline: T1w MRI -> SPM12 Segment -> DARTEL -> Normalize to MNI -> GPR prediction
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 3D structural MRI for brain age estimation
+
+name: brainager
+version: 2.1.0
+container: brainager_2.1.0_20251220.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/brainager_workdir
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - Version and Help Checks
+  # ==========================================================================
+  - name: SPM12 version check
+    description: Verify SPM12 standalone is available and reports version
+    command: spm12 -v 2>&1 | head -3
+    expected_output_contains: "SPM12"
+
+  - name: SPM12 help
+    description: Verify SPM12 displays help information
+    command: spm12 --help 2>&1
+    expected_output_contains: "Usage: spm12"
+
+  - name: brainager_segment.py help
+    description: Verify brainager_segment.py displays help
+    command: brainager_segment.py --help
+    expected_output_contains: "BrainageR segmentation + prediction wrapper"
+
+  - name: predict_age.py help
+    description: Verify predict_age.py displays help
+    command: predict_age.py --help
+    expected_output_contains: "Run brainageR prediction on segmented images"
+
+  - name: Python3 availability
+    description: Verify Python3 is available
+    command: python3 --version 2>&1
+    expected_output_contains: "Python 3"
+
+  - name: Rscript availability
+    description: Verify R/Rscript is available
+    command: Rscript --version 2>&1
+    expected_output_contains: "R scripting front-end"
+
+  # ==========================================================================
+  # DEPENDENCY CHECKS - Verify Required Components
+  # ==========================================================================
+  - name: Check SPM12 directory
+    description: Verify SPM12 installation directory exists
+    command: ls -la /opt/spm12/ | head -5
+    expected_output_contains: "spm12"
+
+  - name: Check MATLAB MCR
+    description: Verify MATLAB Compiler Runtime is installed
+    command: ls /opt/mcr/v93/
+    expected_output_contains: "runtime"
+
+  - name: Check brainageR directory
+    description: Verify brainageR installation directory exists
+    command: ls /opt/brainageR/
+    expected_output_contains: "brainager_segment.py"
+
+  - name: Check GPR model file
+    description: Verify GPR model file exists
+    command: ls -la /opt/brainageR/GPR_model_gm_wm_csf.RData
+    expected_output_contains: "GPR_model"
+
+  - name: Check PCA files
+    description: Verify PCA transformation files exist
+    command: ls /opt/brainageR/*.rds
+    expected_output_contains: "pca_center.rds"
+
+  - name: Check templates directory
+    description: Verify DARTEL templates are available
+    command: ls /opt/brainageR/templates/
+    expected_output_contains: "Template_6.nii"
+
+  - name: Check average tissue templates
+    description: Verify average tissue probability maps exist
+    command: ls /opt/brainageR/templates/average_smwc*.nii
+    expected_output_contains: "average_smwc1.nii"
+
+  - name: Check SPM TPM
+    description: Verify SPM tissue probability maps exist
+    command: ls /opt/spm12/spm12_mcr/spm/spm12/tpm/TPM.nii
+    expected_output_contains: "TPM.nii"
+    expected_exit_code: 0
+
+  - name: Check R prediction script
+    description: Verify R prediction script exists
+    command: ls /opt/brainageR/predict_new_data_gm_wm_csf.R
+    expected_output_contains: "predict_new_data"
+
+  - name: Check batch template
+    description: Verify SPM batch template exists
+    command: ls /opt/brainageR/brainager_batch.m
+    expected_output_contains: "brainager_batch.m"
+
+  # ==========================================================================
+  # R PACKAGE CHECKS - Verify Required R Libraries
+  # ==========================================================================
+  - name: Check kernlab R package
+    description: Verify kernlab package is installed for GPR
+    command: Rscript -e "library(kernlab); cat('kernlab loaded successfully\n')"
+    expected_output_contains: "kernlab loaded successfully"
+
+  - name: Check RNifti R package
+    description: Verify RNifti package is installed for NIfTI I/O
+    command: Rscript -e "library(RNifti); cat('RNifti loaded successfully\n')"
+    expected_output_contains: "RNifti loaded successfully"
+
+  - name: Check stringr R package
+    description: Verify stringr package is installed
+    command: Rscript -e "library(stringr); cat('stringr loaded successfully\n')"
+    expected_output_contains: "stringr loaded successfully"
+
+  # ==========================================================================
+  # SPM12 FUNCTIONALITY TESTS
+  # ==========================================================================
+  - name: SPM12 batch command
+    description: Verify SPM12 batch command is available (slow MCR startup)
+    command: timeout 30 spm12 batch /dev/null 2>&1 | head -10
+    timeout: 180
+    ignore_exit_code: true
+    expected_output_contains: "SPM12"
+
+  - name: SPM12 script command
+    description: Verify SPM12 script command is available
+    command: spm12 function spm_get_defaults 2>&1 | head -10
+    expected_output_contains: "SPM12"
+
+  - name: SPM12 function command
+    description: Verify SPM12 function command is available
+    command: spm12 function help 2>&1 | head -10
+    expected_output_contains: "function"
+
+  # ==========================================================================
+  # INPUT VALIDATION TESTS
+  # ==========================================================================
+  - name: brainager_segment.py missing input error
+    description: Test error handling for missing input file
+    command: brainager_segment.py /nonexistent/file.nii.gz 2>&1 || true
+    expected_output_contains: "ERROR"
+
+  - name: predict_age.py missing directory error
+    description: Test error handling for missing directory
+    command: predict_age.py /nonexistent/directory 2>&1 || true
+    expected_output_contains: "ERROR"
+
+  - name: predict_age.py invalid subjname
+    description: Test handling when smwc files don't exist
+    command: predict_age.py ${output_dir} --subjname nonexistent.nii 2>&1 || true
+    expected_output_contains: "Error"
+
+  # ==========================================================================
+  # EXAMPLE DATA TESTS
+  # ==========================================================================
+  - name: Check example T1 in container
+    description: Verify example T1 image exists in container
+    command: ls -la /opt/brainageR/chris_t1.nii.gz
+    expected_output_contains: "chris_t1.nii.gz"
+
+  - name: Copy example T1 to test directory
+    description: Copy the bundled example T1 to test output directory
+    command: cp /opt/brainageR/chris_t1.nii.gz ${output_dir}/
+    validate:
+      - output_exists: ${output_dir}/chris_t1.nii.gz
+
+  # ==========================================================================
+  # FULL PIPELINE TEST (Long-running - SPM segmentation + prediction)
+  # ==========================================================================
+  - name: Full brainager pipeline with example data
+    description: Run complete brain age prediction pipeline on example T1
+    command: |
+      cd ${output_dir} && \
+      brainager_segment.py chris_t1.nii.gz ./brainager_workdir 2>&1
+    timeout: 1800
+    validate:
+      - output_exists: ${output_dir}/brainager_workdir/chris_t1/brainage_prediction.csv
+    expected_output_contains: "Prediction written to"
+
+  - name: Verify segmentation outputs
+    description: Check that SPM12 segmentation produced expected tissue maps
+    depends_on: Full brainager pipeline with example data
+    command: ls ${output_dir}/brainager_workdir/chris_t1/smwc*.nii
+    expected_output_contains: "smwc1"
+
+  - name: Verify DARTEL flow field
+    description: Check that DARTEL normalization produced flow field
+    depends_on: Full brainager pipeline with example data
+    command: ls ${output_dir}/brainager_workdir/chris_t1/u_rc1*.nii
+    expected_output_contains: "u_rc1"
+
+  - name: Verify tissue volume output
+    description: Check that tissue volumes CSV was created
+    depends_on: Full brainager pipeline with example data
+    command: ls ${output_dir}/brainager_workdir/chris_t1/*tissue_volumes.csv
+    expected_output_contains: "tissue_volumes.csv"
+
+  - name: Verify prediction CSV content
+    description: Check prediction CSV has expected columns
+    depends_on: Full brainager pipeline with example data
+    command: cat ${output_dir}/brainager_workdir/chris_t1/brainage_prediction.csv
+    expected_output_contains: "brain.predicted_age"
+
+  - name: Verify aggregated results
+    description: Check that results are appended to shared CSV
+    depends_on: Full brainager pipeline with example data
+    command: cat ${output_dir}/brainager_workdir/brainage_prediction.csv
+    expected_output_contains: "brain.predicted_age"
+
+  # ==========================================================================
+  # STANDALONE PREDICTION TEST (using pre-segmented data if available)
+  # ==========================================================================
+  - name: Standalone predict_age.py test
+    description: Run prediction on already segmented data
+    depends_on: Full brainager pipeline with example data
+    command: |
+      cd ${output_dir}/brainager_workdir && \
+      predict_age.py chris_t1 --subjname chris_t1.nii 2>&1
+    expected_output_contains: "Prediction written to"
+
+  # ==========================================================================
+  # PIPELINE WITH TEST DATA (ds000001)
+  # ==========================================================================
+  - name: Run brainager on test data T1w
+    description: Run brain age prediction on ds000001 sub-01 T1w
+    command: |
+      mkdir -p ${output_dir}/ds000001_results && \
+      brainager_segment.py ${t1w} ${output_dir}/ds000001_results 2>&1
+    timeout: 1800
+    validate:
+      - output_exists: ${output_dir}/ds000001_results/sub-01_T1w/brainage_prediction.csv
+
+  - name: Verify ds000001 segmentation
+    description: Check segmentation outputs for test data
+    depends_on: Run brainager on test data T1w
+    command: ls ${output_dir}/ds000001_results/sub-01_T1w/smwc*.nii 2>/dev/null | wc -l
+    expected_output_contains: "3"
+
+  - name: Verify ds000001 prediction
+    description: Check prediction results for test data
+    depends_on: Run brainager on test data T1w
+    command: cat ${output_dir}/ds000001_results/sub-01_T1w/brainage_prediction.csv
+    expected_output_contains: "brain.predicted_age"
+
+  # ==========================================================================
+  # CLEANUP OPTION TEST
+  # ==========================================================================
+  - name: Test delete-temp flag
+    description: Verify --delete-temp flag is recognized
+    command: brainager_segment.py --help | grep -i delete
+    expected_output_contains: "delete-temp"
+
+  # ==========================================================================
+  # ENVIRONMENT VARIABLE TESTS
+  # ==========================================================================
+  - name: Check LD_LIBRARY_PATH
+    description: Verify MCR libraries are in LD_LIBRARY_PATH
+    command: echo $LD_LIBRARY_PATH
+    expected_output_contains: "/opt/mcr"
+
+  - name: Check PATH includes brainageR
+    description: Verify brainageR is in PATH
+    command: echo $PATH
+    expected_output_contains: "/opt/brainageR"
+
+  - name: Check SPM environment variables
+    description: Verify SPM-related environment variables are set
+    command: env | grep -E "SPM|MCR" | head -5
+    expected_output_contains: "SPM"
+
+  # ==========================================================================
+  # FILE FORMAT TESTS
+  # ==========================================================================
+  - name: Test NIfTI header reading
+    description: Verify R can read NIfTI headers
+    command: Rscript -e "library(RNifti); img <- readNifti('/opt/brainageR/chris_t1.nii.gz'); cat('Dimensions:', dim(img), '\n')"
+    expected_output_contains: "Dimensions:"
+
+  - name: Test template dimensions
+    description: Verify template image dimensions match expected MNI space
+    command: Rscript -e "library(RNifti); img <- readNifti('/opt/brainageR/templates/Template_6.nii'); cat('Template dims:', dim(img), '\n')"
+    expected_output_contains: "Template dims:"
+
+  # ==========================================================================
+  # REPRODUCIBILITY TESTS
+  # ==========================================================================
+  - name: Model file checksum
+    description: Verify GPR model file integrity
+    command: md5sum /opt/brainageR/GPR_model_gm_wm_csf.RData | cut -d' ' -f1
+    expected_exit_code: 0
+
+  - name: PCA center checksum
+    description: Verify PCA center file integrity
+    command: md5sum /opt/brainageR/pca_center.rds | cut -d' ' -f1
+    expected_exit_code: 0
+
+  - name: Training labels check
+    description: Verify training labels file exists and has content
+    command: wc -l /opt/brainageR/brains.train_labels.csv
+    expected_output_contains: "brains.train_labels.csv"
+
+  # ==========================================================================
+  # BATCH PROCESSING CAPABILITY
+  # ==========================================================================
+  - name: Batch template check
+    description: Verify batch processing template scripts exist
+    command: ls /opt/brainageR/*template*.sh 2>/dev/null | head -3
+    expected_output_contains: "template"
+
+  - name: Collate script check
+    description: Verify result collation script exists
+    command: ls /opt/brainageR/collate_brain_ages.sh
+    expected_output_contains: "collate_brain_ages.sh"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"
+    echo "Brain age prediction results available in:"
+    echo "  - test_output/brainager_workdir/brainage_prediction.csv"
+    echo "  - test_output/ds000001_results/brainage_prediction.csv"

@@ -1,0 +1,718 @@
+# CONN container test suite
+# Tests for CONN Toolbox v22.a - fMRI functional connectivity analysis
+#
+# CONN is a MATLAB-based cross-platform software for the computation, display,
+# and analysis of functional connectivity in fMRI data (fcMRI). It includes
+# SPM12 for preprocessing and supports seed-based correlation, ROI-to-ROI,
+# graph theory, and ICA-based analyses.
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - inplaneT2: 128x128x33, structural reference
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# Note: CONN runs as compiled MATLAB requiring MCR initialization (~15-30s per call)
+
+name: conn
+version: 22a
+container: conn_22a_20231115.simg
+default_timeout: 300
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_events.tsv
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-02_bold.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-03_bold.nii.gz
+
+test_data:
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold_run1: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  bold_run2: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-02_bold.nii.gz
+  bold_run3: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-03_bold.nii.gz
+  events_run1: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_events.tsv
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    # Uncompress NIfTI files for SPM compatibility (SPM doesn't read .nii.gz directly)
+    if [ ! -f test_output/sub-01_inplaneT2.nii ]; then
+      gunzip -c ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz > test_output/sub-01_inplaneT2.nii
+    fi
+    if [ ! -f test_output/sub-01_bold_run01.nii ]; then
+      gunzip -c ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz > test_output/sub-01_bold_run01.nii
+    fi
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY AND VERSION CHECKS
+  # ==========================================================================
+  - name: CONN version check
+    description: Verify CONN returns version string
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"disp(conn('ver'))\""
+    expected_output_contains: "22.a"
+
+  - name: SPM version check
+    description: Verify SPM12 is available in CONN
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"disp(spm('ver'))\""
+    expected_output_contains: "SPM12"
+
+  - name: MATLAB platform check
+    description: Verify MATLAB runtime platform
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"disp(computer)\""
+    expected_output_contains: "GLNXA64"
+
+  - name: CONN cache initialization
+    description: Initialize CONN cache directory
+    command: /opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 cache
+    expected_output_contains: "cache"
+
+  - name: Display test message
+    description: Verify basic disp functionality
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 disp \"'CONN test suite initialized'\""
+    expected_output_contains: "CONN test suite"
+
+  # ==========================================================================
+  # BATCH PROCESSING - Core CONN batch functionality
+  # ==========================================================================
+  - name: Batch command recognition
+    description: Test conn_batch function exists
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_batch\""
+    expected_output_contains: "conn_batch"
+
+  - name: Run MATLAB command pwd
+    description: Test run command with pwd
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"pwd\""
+    expected_output_contains: "ans"
+
+  - name: Run MATLAB date command
+    description: Test run command with date
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"disp(date)\""
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SPM VOLUME FUNCTIONS (via CONN)
+  # ==========================================================================
+  - name: SPM vol read header
+    description: Read NIfTI header using spm_vol
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"V=spm_vol('test_output/sub-01_inplaneT2.nii');disp(V.dim)\""
+    expected_output_contains: "128"
+
+  - name: SPM vol dimensions
+    description: Verify T2 image dimensions
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"V=spm_vol('test_output/sub-01_inplaneT2.nii');disp(['Dims ' num2str(V.dim)])\""
+    expected_output_contains: "128"
+
+  - name: SPM vol datatype
+    description: Check image datatype via spm_vol
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"V=spm_vol('test_output/sub-01_inplaneT2.nii');disp(V.dt)\""
+    expected_exit_code: 0
+
+  - name: SPM read voxels
+    description: Read voxel data using spm_read_vols
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"V=spm_vol('test_output/sub-01_inplaneT2.nii');Y=spm_read_vols(V);disp(['Size ' num2str(size(Y))])\""
+    expected_output_contains: "128"
+
+  - name: SPM vol voxel size
+    description: Get voxel dimensions from header
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"V=spm_vol('test_output/sub-01_inplaneT2.nii');vox=sqrt(sum(V.mat(1:3,1:3).^2));disp(['Voxel size ' num2str(vox)])\""
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # CONN FILE UTILITIES
+  # ==========================================================================
+  - name: CONN existfile function
+    description: Test conn_existfile with existing file
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"disp(conn_existfile('test_output/sub-01_inplaneT2.nii'))\""
+    expected_output_contains: "1"
+
+  - name: CONN existfile nonexistent
+    description: Test conn_existfile with nonexistent file
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"disp(conn_existfile('nonexistent_file.nii'))\""
+    expected_output_contains: "0"
+
+  - name: CONN fullfile function
+    description: Test conn_fullfile path construction
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"disp(conn_fullfile('/path','to','file.nii'))\""
+    expected_output_contains: "file.nii"
+
+  - name: CONN dir function
+    description: Test conn_dir directory listing
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"files=conn_dir('test_output/*.nii');disp(length(files))\""
+    expected_exit_code: 0
+
+  - name: CONN prepend function
+    description: Test conn_prepend filename prepending
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"disp(conn_prepend('r','test_output/sub-01_inplaneT2.nii'))\""
+    expected_output_contains: "rsub-01"
+
+  # ==========================================================================
+  # CONN VOLUME READ/WRITE FUNCTIONS
+  # ==========================================================================
+  - name: CONN vol_read function exists
+    description: Verify conn_vol_read is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_vol_read\""
+    expected_output_contains: "conn_vol_read"
+
+  - name: CONN vol_write function exists
+    description: Verify conn_vol_write is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_vol_write\""
+    expected_output_contains: "conn_vol_write"
+
+  - name: CONN file function exists
+    description: Verify conn_file is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_file\""
+    expected_output_contains: "conn_file"
+
+  # ==========================================================================
+  # SPM PREPROCESSING FUNCTIONS
+  # ==========================================================================
+  - name: SPM smooth function available
+    description: Verify spm_smooth is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which spm_smooth\""
+    expected_output_contains: "spm_smooth"
+
+  - name: SPM realign function available
+    description: Verify spm_realign is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which spm_realign\""
+    expected_output_contains: "spm_realign"
+
+  - name: SPM coregister function available
+    description: Verify spm_coreg is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which spm_coreg\""
+    expected_output_contains: "spm_coreg"
+
+  - name: SPM reslice function available
+    description: Verify spm_reslice is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which spm_reslice\""
+    expected_output_contains: "spm_reslice"
+
+  - name: SPM preproc8 (segmentation) available
+    description: Verify spm_preproc8 is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which spm_preproc8\""
+    expected_output_contains: "spm_preproc8"
+
+  # ==========================================================================
+  # CONN GLM AND STATISTICAL FUNCTIONS
+  # ==========================================================================
+  - name: CONN GLM function available
+    description: Verify conn_glm is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_glm\""
+    expected_output_contains: "conn_glm"
+
+  - name: CONN FDR correction available
+    description: Verify conn_fdr is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_fdr\""
+    expected_output_contains: "conn_fdr"
+
+  - name: CONN FDR calculation
+    description: Test FDR correction on p-values
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"p=[0.001 0.01 0.05 0.1];q=conn_fdr(p);disp(q)\""
+    expected_exit_code: 0
+
+  - name: CONN TFCE available
+    description: Verify conn_tfce is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_tfce\""
+    expected_output_contains: "conn_tfce"
+
+  - name: CONN clusters available
+    description: Verify conn_clusters is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_clusters\""
+    expected_output_contains: "conn_clusters"
+
+  # ==========================================================================
+  # CONN FILTERING AND TEMPORAL PROCESSING
+  # ==========================================================================
+  - name: CONN filter function available
+    description: Verify conn_filter is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_filter\""
+    expected_output_contains: "conn_filter"
+
+  - name: CONN bandpass filter test
+    description: Test bandpass filtering on simulated data
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"x=randn(100,1);y=conn_filter(2,[0.01 0.1],x);disp(['Filtered size ' num2str(length(y))])\""
+    expected_output_contains: "100"
+
+  - name: CONN despike function available
+    description: Verify conn_despike is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_despike\""
+    expected_output_contains: "conn_despike"
+
+  - name: CONN detrend function (wdemean)
+    description: Verify conn_wdemean is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_wdemean\""
+    expected_output_contains: "conn_wdemean"
+
+  - name: CONN derivative function
+    description: Verify conn_deriv is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_deriv\""
+    expected_output_contains: "conn_deriv"
+
+  # ==========================================================================
+  # CONN SURFACE FUNCTIONS
+  # ==========================================================================
+  - name: CONN surf_read function available
+    description: Verify conn_surf_read is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_surf_read\""
+    expected_output_contains: "conn_surf_read"
+
+  - name: CONN surf_write function available
+    description: Verify conn_surf_write is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_surf_write\""
+    expected_output_contains: "conn_surf_write"
+
+  - name: CONN surf_vol2surf available
+    description: Verify conn_surf_vol2surf is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_surf_vol2surf\""
+    expected_output_contains: "conn_surf_vol2surf"
+
+  - name: CONN surf_surf2vol available
+    description: Verify conn_surf_surf2vol is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_surf_surf2vol\""
+    expected_output_contains: "conn_surf_surf2vol"
+
+  - name: CONN surf_smooth available
+    description: Verify conn_surf_smooth is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_surf_smooth\""
+    expected_output_contains: "conn_surf_smooth"
+
+  - name: CONN surf_resample available
+    description: Verify conn_surf_resample is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_surf_resample\""
+    expected_output_contains: "conn_surf_resample"
+
+  # ==========================================================================
+  # CONN NETWORK AND GRAPH THEORY
+  # ==========================================================================
+  - name: CONN network_measures available
+    description: Verify conn_network_measures is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_network_measures\""
+    expected_output_contains: "conn_network_measures"
+
+  - name: CONN randomise available
+    description: Verify conn_randomise is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_randomise\""
+    expected_output_contains: "conn_randomise"
+
+  - name: CONN statscluster available
+    description: Verify conn_statscluster is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_statscluster\""
+    expected_output_contains: "conn_statscluster"
+
+  - name: CONN statslinkage available
+    description: Verify conn_statslinkage is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_statslinkage\""
+    expected_output_contains: "conn_statslinkage"
+
+  - name: CONN statsdendrogram available
+    description: Verify conn_statsdendrogram is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_statsdendrogram\""
+    expected_output_contains: "conn_statsdendrogram"
+
+  # ==========================================================================
+  # CONN ROI FUNCTIONS
+  # ==========================================================================
+  - name: CONN rex function available
+    description: Verify conn_rex is available (ROI extraction)
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_rex\""
+    expected_output_contains: "conn_rex"
+
+  - name: CONN roicenters available
+    description: Verify conn_roicenters is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_roicenters\""
+    expected_output_contains: "conn_roicenters"
+
+  - name: CONN roilabels available
+    description: Verify conn_roilabels is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_roilabels\""
+    expected_output_contains: "conn_roilabels"
+
+  - name: CONN createmniroi available
+    description: Verify conn_createmniroi is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_createmniroi\""
+    expected_output_contains: "conn_createmniroi"
+
+  - name: CONN createvoxelroi available
+    description: Verify conn_createvoxelroi is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_createvoxelroi\""
+    expected_output_contains: "conn_createvoxelroi"
+
+  # ==========================================================================
+  # CONN DISPLAY FUNCTIONS
+  # ==========================================================================
+  - name: CONN slice_display available
+    description: Verify conn_slice_display is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_slice_display\""
+    expected_output_contains: "conn_slice_display"
+
+  - name: CONN displayroi available
+    description: Verify conn_displayroi is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_displayroi\""
+    expected_output_contains: "conn_displayroi"
+
+  - name: CONN displaynetwork available
+    description: Verify conn_displaynetwork is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_displaynetwork\""
+    expected_output_contains: "conn_displaynetwork"
+
+  - name: CONN disp function available
+    description: Verify conn_disp is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_disp\""
+    expected_output_contains: "conn_disp"
+
+  # ==========================================================================
+  # CONN DATA CONVERSION FUNCTIONS
+  # ==========================================================================
+  - name: CONN dcm2nii available
+    description: Verify conn_dcm2nii is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_dcm2nii\""
+    expected_output_contains: "conn_dcm2nii"
+
+  - name: CONN annot2nii available
+    description: Verify conn_annot2nii is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_annot2nii\""
+    expected_output_contains: "conn_annot2nii"
+
+  - name: CONN cat2mgh available
+    description: Verify conn_cat2mgh is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_cat2mgh\""
+    expected_output_contains: "conn_cat2mgh"
+
+  # ==========================================================================
+  # CONN FREESURFER COMPATIBILITY
+  # ==========================================================================
+  - name: CONN FreeSurfer read_surf available
+    description: Verify conn_freesurfer_read_surf is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_freesurfer_read_surf\""
+    expected_output_contains: "conn_freesurfer_read_surf"
+
+  - name: CONN FreeSurfer write_surf available
+    description: Verify conn_freesurfer_write_surf is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_freesurfer_write_surf\""
+    expected_output_contains: "conn_freesurfer_write_surf"
+
+  - name: CONN FreeSurfer read_annotation available
+    description: Verify conn_freesurfer_read_annotation is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_freesurfer_read_annotation\""
+    expected_output_contains: "conn_freesurfer_read_annotation"
+
+  - name: CONN FreeSurfer load_mgh available
+    description: Verify conn_freesurfer_load_mgh is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_freesurfer_load_mgh\""
+    expected_output_contains: "conn_freesurfer_load_mgh"
+
+  # ==========================================================================
+  # CONN ARTIFACT DETECTION (ART)
+  # ==========================================================================
+  - name: ART function available
+    description: Verify art function is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which art\""
+    expected_output_contains: "art"
+
+  - name: CONN art wrapper available
+    description: Verify conn_art is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_art\""
+    expected_output_contains: "conn_art"
+
+  # ==========================================================================
+  # CONN DESIGN MATRIX AND CONDITIONS
+  # ==========================================================================
+  - name: CONN designmatrix available
+    description: Verify conn_designmatrix is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_designmatrix\""
+    expected_output_contains: "conn_designmatrix"
+
+  - name: CONN conditionnames available
+    description: Verify conn_conditionnames is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_conditionnames\""
+    expected_output_contains: "conn_conditionnames"
+
+  - name: CONN convertcondition2covariate available
+    description: Verify conn_convertcondition2covariate is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_convertcondition2covariate\""
+    expected_output_contains: "conn_convertcondition2covariate"
+
+  # ==========================================================================
+  # CONN CONVOLUTION AND HRF
+  # ==========================================================================
+  - name: CONN convolution available
+    description: Verify conn_conv is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_conv\""
+    expected_output_contains: "conn_conv"
+
+  - name: SPM HRF function available
+    description: Verify spm_hrf is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which spm_hrf\""
+    expected_output_contains: "spm_hrf"
+
+  - name: Create canonical HRF
+    description: Generate canonical HRF with SPM
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"h=spm_hrf(2);disp(['HRF length ' num2str(length(h))])\""
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # NUMERICAL COMPUTATIONS
+  # ==========================================================================
+  - name: CONN bsxfun available
+    description: Verify conn_bsxfun is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_bsxfun\""
+    expected_output_contains: "conn_bsxfun"
+
+  - name: Matrix operations test
+    description: Test basic matrix operations
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"A=randn(10,10);B=A*A';disp(['Size ' num2str(size(B))])\""
+    expected_output_contains: "10"
+    expected_exit_code: 0
+
+  - name: Correlation computation
+    description: Test correlation matrix computation
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"X=randn(100,5);C=corrcoef(X);disp(['Corr size ' num2str(size(C))])\""
+    expected_output_contains: "5"
+
+  - name: Fisher z-transform
+    description: Test Fisher z-transformation
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"r=0.5;z=atanh(r);disp(['Z = ' num2str(z)])\""
+    expected_output_contains: "0.5"
+
+  # ==========================================================================
+  # CONN WATERSHED AND MORPHOLOGICAL OPERATIONS
+  # ==========================================================================
+  - name: CONN watershed available
+    description: Verify conn_watershed is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_watershed\""
+    expected_output_contains: "conn_watershed"
+
+  - name: CONN est_smoothness available
+    description: Verify conn_est_smoothness is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_est_smoothness\""
+    expected_output_contains: "conn_est_smoothness"
+
+  # ==========================================================================
+  # CONN DATA PROCESSING PIPELINE FUNCTIONS
+  # ==========================================================================
+  - name: CONN setup_preproc available
+    description: Verify conn_setup_preproc is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_setup_preproc\""
+    expected_output_contains: "conn_setup_preproc"
+
+  - name: CONN process available
+    description: Verify conn_process is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_process\""
+    expected_output_contains: "conn_process"
+
+  - name: CONN module available
+    description: Verify conn_module is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_module\""
+    expected_output_contains: "conn_module"
+
+  # ==========================================================================
+  # CONN QA PLOTS AND DIAGNOSTICS
+  # ==========================================================================
+  - name: CONN qaplots available
+    description: Verify conn_qaplots is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_qaplots\""
+    expected_output_contains: "conn_qaplots"
+
+  - name: CONN qaplotsexplore available
+    description: Verify conn_qaplotsexplore is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_qaplotsexplore\""
+    expected_output_contains: "conn_qaplotsexplore"
+
+  # ==========================================================================
+  # CONN IMPORT FUNCTIONS
+  # ==========================================================================
+  - name: CONN importbids available
+    description: Verify conn_importbids is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_importbids\""
+    expected_output_contains: "conn_importbids"
+
+  - name: CONN importspm available
+    description: Verify conn_importspm is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_importspm\""
+    expected_output_contains: "conn_importspm"
+
+  - name: CONN bidsdir available
+    description: Verify conn_bidsdir is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_bidsdir\""
+    expected_output_contains: "conn_bidsdir"
+
+  # ==========================================================================
+  # CONN COORDINATE AND LABEL FUNCTIONS
+  # ==========================================================================
+  - name: CONN coords2labels available
+    description: Verify conn_coords2labels is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_coords2labels\""
+    expected_output_contains: "conn_coords2labels"
+
+  - name: CONN convertcoordinates available
+    description: Verify conn_convertcoordinates is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_convertcoordinates\""
+    expected_output_contains: "conn_convertcoordinates"
+
+  - name: CONN definelabels available
+    description: Verify conn_definelabels is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_definelabels\""
+    expected_output_contains: "conn_definelabels"
+
+  # ==========================================================================
+  # CONN SLICE TIMING AND MOTION
+  # ==========================================================================
+  - name: CONN checksliceorder available
+    description: Verify conn_checksliceorder is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_checksliceorder\""
+    expected_output_contains: "conn_checksliceorder"
+
+  - name: CONN computeMaskMovement available
+    description: Verify conn_computeMaskMovement is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_computeMaskMovement\""
+    expected_output_contains: "conn_computeMaskMovement"
+
+  - name: CONN sliceintensitycorrection available
+    description: Verify conn_sliceintensitycorrection is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_sliceintensitycorrection\""
+    expected_output_contains: "conn_sliceintensitycorrection"
+
+  # ==========================================================================
+  # SPM STATISTICAL FUNCTIONS
+  # ==========================================================================
+  - name: SPM tcdf function available
+    description: Verify spm t-distribution CDF is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_tcdf\""
+    expected_output_contains: "conn_tcdf"
+
+  - name: Calculate t-statistic CDF
+    description: Test t-distribution CDF calculation
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"p=conn_tcdf(2,100);disp(['P = ' num2str(p)])\""
+    expected_output_contains: "0.9"
+
+  # ==========================================================================
+  # BASIC IMAGE PROCESSING OPERATIONS
+  # ==========================================================================
+  - name: Read 3D image and compute mean
+    description: Load T2 image and compute mean intensity
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"V=spm_vol('test_output/sub-01_inplaneT2.nii');Y=spm_read_vols(V);disp(['Mean ' num2str(mean(Y(:)))])\""
+    expected_exit_code: 0
+
+  - name: Read 3D image and compute std
+    description: Load T2 image and compute standard deviation
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"V=spm_vol('test_output/sub-01_inplaneT2.nii');Y=spm_read_vols(V);disp(['Std ' num2str(std(Y(:)))])\""
+    expected_exit_code: 0
+
+  - name: Read 3D image and compute max
+    description: Load T2 image and compute maximum intensity
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"V=spm_vol('test_output/sub-01_inplaneT2.nii');Y=spm_read_vols(V);disp(['Max ' num2str(max(Y(:)))])\""
+    expected_exit_code: 0
+
+  - name: Read 3D image and compute min
+    description: Load T2 image and compute minimum intensity
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"V=spm_vol('test_output/sub-01_inplaneT2.nii');Y=spm_read_vols(V);disp(['Min ' num2str(min(Y(:)))])\""
+    expected_exit_code: 0
+
+  - name: Count nonzero voxels
+    description: Count number of nonzero voxels in T2 image
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"V=spm_vol('test_output/sub-01_inplaneT2.nii');Y=spm_read_vols(V);disp(['Nonzero ' num2str(nnz(Y))])\""
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # CONNECTIVITY MATRIX OPERATIONS
+  # ==========================================================================
+  - name: Create random connectivity matrix
+    description: Generate and threshold random connectivity matrix
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"C=randn(10,10);C=(C+C')/2;C=C.*(abs(C)>1);disp(['Nonzero ' num2str(nnz(C))])\""
+    expected_exit_code: 0
+
+  - name: Fisher z-transform matrix
+    description: Apply Fisher z-transform to correlation matrix
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"C=rand(5,5)*0.8;C=(C+C')/2;Z=atanh(C);disp(['Z range ' num2str(min(Z(:))) ' to ' num2str(max(Z(:)))])\""
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FILE PATH AND STRING OPERATIONS
+  # ==========================================================================
+  - name: CONN sortfilenames available
+    description: Verify conn_sortfilenames is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_sortfilenames\""
+    expected_output_contains: "conn_sortfilenames"
+
+  - name: CONN rulebasedfilename available
+    description: Verify conn_rulebasedfilename is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_rulebasedfilename\""
+    expected_output_contains: "conn_rulebasedfilename"
+
+  # ==========================================================================
+  # CONN TCPIP AND SERVER FUNCTIONS
+  # ==========================================================================
+  - name: CONN tcpip available
+    description: Verify conn_tcpip is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_tcpip\""
+    expected_output_contains: "conn_tcpip"
+
+  - name: CONN server available
+    description: Verify conn_server is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_server\""
+    expected_output_contains: "conn_server"
+
+  - name: CONN server_ssh available
+    description: Verify conn_server_ssh is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_server_ssh\""
+    expected_output_contains: "conn_server_ssh"
+
+  # ==========================================================================
+  # CONN UPDATE AND VERSION FUNCTIONS
+  # ==========================================================================
+  - name: CONN update available
+    description: Verify conn_update is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_update\""
+    expected_output_contains: "conn_update"
+
+  - name: CONN updatefilepaths available
+    description: Verify conn_updatefilepaths is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_updatefilepaths\""
+    expected_output_contains: "conn_updatefilepaths"
+
+  # ==========================================================================
+  # CONN DATA EXPORT FUNCTIONS
+  # ==========================================================================
+  - name: CONN export2cov available
+    description: Verify conn_export2cov is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_export2cov\""
+    expected_output_contains: "conn_export2cov"
+
+  - name: CONN exportlist available
+    description: Verify conn_exportlist is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_exportlist\""
+    expected_output_contains: "conn_exportlist"
+
+  - name: CONN exporttable available
+    description: Verify conn_exporttable is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_exporttable\""
+    expected_output_contains: "conn_exporttable"
+
+  # ==========================================================================
+  # CONN WITHIN/BETWEEN ROI ANALYSIS
+  # ==========================================================================
+  - name: CONN withinbetweenROItest available
+    description: Verify conn_withinbetweenROItest is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_withinbetweenROItest\""
+    expected_output_contains: "conn_withinbetweenROItest"
+
+  - name: CONN roioverlaps available
+    description: Verify conn_roioverlaps is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_roioverlaps\""
+    expected_output_contains: "conn_roioverlaps"
+
+  - name: CONN roiclusters available
+    description: Verify conn_roiclusters is available
+    command: "/opt/conn-22a/run_conn.sh /opt/MCR-2022a/v912 run \"which conn_roiclusters\""
+    expected_output_contains: "conn_roiclusters"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

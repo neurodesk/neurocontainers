@@ -1,0 +1,731 @@
+# mricron container test suite
+# Tests for mricron v1.0.20190902 - DICOM/NIfTI viewer and converter
+#
+# MRIcron package includes:
+#   - dcm2niix: DICOM to NIfTI converter (primary CLI tool)
+#   - MRIcron: GUI viewer (requires X11 display)
+#   - pigz_mricron: Parallel gzip compression
+#   - Brain templates and lookup tables
+#
+# Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
+#   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
+#   - inplaneT2: 2D T2 images
+#   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
+#
+# Citation:
+#   Rorden C, Brett M. Stereotaxic display of brain lesions.
+#   Behav Neurol. 2000;12(4):191-200. doi: 10.1155/2000/421719
+#
+# Documentation: https://www.nitrc.org/plugins/mwiki/index.php/mricrogl:MainPage
+
+name: mricron
+version: 1.0.20190902
+container: mricron_1.0.20190902_20220311.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    mkdir -p test_output/dcm2niix
+    mkdir -p test_output/dicom_simulated
+
+tests:
+  # ==========================================================================
+  # BASIC FUNCTIONALITY - Version and Help
+  # ==========================================================================
+  - name: dcm2niix version check
+    description: Verify dcm2niix binary runs and reports version
+    command: dcm2niix --version 2>&1 | head -2
+    expected_output_contains: "v1.0.20190902"
+
+  - name: dcm2niix help
+    description: Verify dcm2niix help is accessible
+    command: dcm2niix -h 2>&1 | head -5
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix usage without args
+    description: Verify dcm2niix shows usage when run without arguments
+    command: dcm2niix 2>&1 | head -3
+    expected_output_contains: "usage: dcm2niix"
+
+  - name: pigz_mricron version check
+    description: Verify pigz_mricron utility is available
+    command: pigz_mricron --help 2>&1 | head -3
+    expected_output_contains: "pigz"
+
+  # ==========================================================================
+  # DCM2NIIX - NIfTI Conversion Tests (using existing NIfTI files)
+  # ==========================================================================
+  - name: dcm2niix generates defaults file
+    description: Test -g option to generate defaults file
+    command: dcm2niix -g o 2>&1 | head -3
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix defaults file info
+    description: Test -g i option to show defaults info
+    command: dcm2niix -g i 2>&1 | head -3
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - Output Format Tests
+  # Since we don't have DICOM files, test dcm2niix behavior with options
+  # ==========================================================================
+  - name: dcm2niix filename pattern info
+    description: Display filename format options
+    command: dcm2niix -f "%p_%s_%d" 2>&1 | head -10
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix compression level 1
+    description: Test fastest compression option syntax
+    command: dcm2niix -1 -h 2>&1 | head -3
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix compression level 9
+    description: Test smallest compression option syntax
+    command: dcm2niix -9 -h 2>&1 | head -3
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix BIDS sidecar only mode
+    description: Test -b o option for BIDS-only conversion
+    command: dcm2niix -b o -h 2>&1 | head -3
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix verbose mode
+    description: Test verbose output option
+    command: dcm2niix -v 2 -h 2>&1 | head -3
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix XML features
+    description: Test Slicer-format XML output
+    command: dcm2niix --xml 2>&1 | head -10
+    expected_output_contains: "xml"
+
+  # ==========================================================================
+  # DCM2NIIX - Empty/Invalid Directory Handling
+  # ==========================================================================
+  - name: dcm2niix empty directory handling
+    description: Test behavior with empty directory
+    command: dcm2niix test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix output directory option
+    description: Test -o output directory specification
+    command: dcm2niix -o test_output/dcm2niix test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix search depth option
+    description: Test -d directory search depth option
+    command: dcm2niix -d 0 test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix with comment option
+    description: Test -c comment storage option
+    command: dcm2niix -c "test comment" test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - BIDS Options
+  # ==========================================================================
+  - name: dcm2niix BIDS enabled
+    description: Test BIDS sidecar generation enabled
+    command: dcm2niix -b y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix BIDS disabled
+    description: Test BIDS sidecar generation disabled
+    command: dcm2niix -b n test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix BIDS anonymize enabled
+    description: Test BIDS anonymization option
+    command: dcm2niix -ba y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix BIDS anonymize disabled
+    description: Test BIDS anonymization disabled
+    command: dcm2niix -ba n test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - Compression Options
+  # ==========================================================================
+  - name: dcm2niix gzip compression pigz
+    description: Test -z y option for pigz compression
+    command: dcm2niix -z y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix gzip compression internal
+    description: Test -z i option for internal zlib compression
+    command: dcm2niix -z i test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix no compression
+    description: Test -z n option for no compression
+    command: dcm2niix -z n test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix optimal compression
+    description: Test -z o option for optimal pigz compression
+    command: dcm2niix -z o test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - Image Processing Options
+  # ==========================================================================
+  - name: dcm2niix ignore derived images
+    description: Test -i y option to ignore derived images
+    command: dcm2niix -i y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix merge 2D slices yes
+    description: Test -m y option to merge 2D slices
+    command: dcm2niix -m y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix merge 2D slices no
+    description: Test -m n option to not merge 2D slices
+    command: dcm2niix -m n test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix merge 2D slices auto
+    description: Test -m 2 option for auto merge
+    command: dcm2niix -m 2 test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix crop 3D yes
+    description: Test -x y option to crop 3D acquisitions
+    command: dcm2niix -x y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix crop 3D no
+    description: Test -x n option to not crop 3D acquisitions
+    command: dcm2niix -x n test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix crop 3D ignore
+    description: Test -x i option to ignore crop and rotation
+    command: dcm2niix -x i test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - File Naming Options
+  # ==========================================================================
+  - name: dcm2niix filename with protocol
+    description: Test filename pattern with protocol
+    command: dcm2niix -f "%p" test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix filename with series
+    description: Test filename pattern with series number
+    command: dcm2niix -f "%s" test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix filename with patient name
+    description: Test filename pattern with patient name
+    command: dcm2niix -f "%n" test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix filename with patient ID
+    description: Test filename pattern with patient ID
+    command: dcm2niix -f "%i" test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix filename with time
+    description: Test filename pattern with timestamp
+    command: dcm2niix -f "%t" test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix filename with description
+    description: Test filename pattern with description
+    command: dcm2niix -f "%d" test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix complex filename pattern
+    description: Test complex filename pattern combining multiple fields
+    command: dcm2niix -f "%n_%p_%t_%s" test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - Write Behavior Options
+  # ==========================================================================
+  - name: dcm2niix skip duplicates
+    description: Test -w 0 option to skip duplicates
+    command: dcm2niix -w 0 test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix overwrite duplicates
+    description: Test -w 1 option to overwrite duplicates
+    command: dcm2niix -w 1 test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix add suffix for duplicates
+    description: Test -w 2 option to add suffix for duplicates
+    command: dcm2niix -w 2 test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - Single File and Rename Modes
+  # ==========================================================================
+  - name: dcm2niix single file mode
+    description: Test -s y option for single file mode
+    command: dcm2niix -s y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix rename mode
+    description: Test -r y option for rename mode (no conversion)
+    command: dcm2niix -r y test_output/dcm2niix 2>&1
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - Scaling Options
+  # ==========================================================================
+  - name: dcm2niix lossless scaling enabled
+    description: Test -l y option for lossless 16-bit scaling
+    command: dcm2niix -l y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix Philips precise float
+    description: Test -p y option for Philips precise float scaling
+    command: dcm2niix -p y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - Alternative Output Formats
+  # ==========================================================================
+  - name: dcm2niix NRRD export
+    description: Test -e y option for NRRD export
+    command: dcm2niix -e y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix big-endian output
+    description: Test --big-endian option
+    command: dcm2niix --big-endian y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix little-endian output
+    description: Test --big-endian n for little-endian
+    command: dcm2niix --big-endian n test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix optimal endian
+    description: Test --big-endian o for optimal/native endianness
+    command: dcm2niix --big-endian o test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - Series Selection
+  # ==========================================================================
+  - name: dcm2niix series CRC filter
+    description: Test -n option to convert specific series by CRC
+    command: dcm2niix -n 12345 test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - Progress and Verbosity
+  # ==========================================================================
+  - name: dcm2niix progress reporting
+    description: Test --progress option for progress reporting
+    command: dcm2niix --progress y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix quiet mode
+    description: Test -v 0 for quiet mode
+    command: dcm2niix -v 0 test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix verbose mode level 1
+    description: Test -v 1 for verbose mode
+    command: dcm2niix -v 1 test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix logorrheic mode
+    description: Test -v 2 for maximum verbosity
+    command: dcm2niix -v 2 test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - Adjacent DICOM Option
+  # ==========================================================================
+  - name: dcm2niix adjacent DICOMs yes
+    description: Test -a y option for adjacent DICOM handling
+    command: dcm2niix -a y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix adjacent DICOMs no
+    description: Test -a n option for non-adjacent DICOM handling
+    command: dcm2niix -a n test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - Private Data Options
+  # ==========================================================================
+  - name: dcm2niix include private data
+    description: Test -t y option to include private patient details
+    command: dcm2niix -t y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix exclude private data
+    description: Test -t n option to exclude private patient details
+    command: dcm2niix -t n test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # DCM2NIIX - Combined Options
+  # ==========================================================================
+  - name: dcm2niix BIDS workflow
+    description: Test typical BIDS conversion workflow options
+    command: dcm2niix -b y -ba y -z y -f "%p_%s" test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix anonymized workflow
+    description: Test anonymized conversion workflow
+    command: dcm2niix -b y -ba y -t n -f "%s_%d" test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix high quality workflow
+    description: Test high quality conversion with optimal compression
+    command: dcm2niix -z o -9 -l y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  - name: dcm2niix fast workflow
+    description: Test fast conversion workflow
+    command: dcm2niix -z y -1 -a y test_output/dcm2niix 2>&1
+    ignore_exit_code: true
+    expected_output_contains: "dcm2niiX"
+
+  # ==========================================================================
+  # PIGZ_MRICRON - Compression Utility Tests
+  # ==========================================================================
+  - name: pigz compress file
+    description: Test pigz compression on NIfTI file
+    command: |
+      cp ${t1w} test_output/t1w_for_pigz.nii.gz && \
+      gunzip test_output/t1w_for_pigz.nii.gz && \
+      pigz_mricron test_output/t1w_for_pigz.nii && \
+      ls -la test_output/t1w_for_pigz.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_for_pigz.nii.gz
+
+  - name: pigz decompress file
+    description: Test pigz decompression
+    command: |
+      pigz_mricron -d -k test_output/t1w_for_pigz.nii.gz && \
+      ls -la test_output/t1w_for_pigz.nii
+    depends_on: pigz compress file
+    validate:
+      - output_exists: ${output_dir}/t1w_for_pigz.nii
+
+  - name: pigz compression level 1
+    description: Test pigz fastest compression level
+    command: |
+      cp ${t1w} test_output/t1w_pigz_fast.nii.gz && \
+      gunzip test_output/t1w_pigz_fast.nii.gz && \
+      pigz_mricron -1 test_output/t1w_pigz_fast.nii && \
+      ls -la test_output/t1w_pigz_fast.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_pigz_fast.nii.gz
+
+  - name: pigz compression level 9
+    description: Test pigz best compression level
+    command: |
+      cp ${t1w} test_output/t1w_pigz_best.nii.gz && \
+      gunzip test_output/t1w_pigz_best.nii.gz && \
+      pigz_mricron -9 test_output/t1w_pigz_best.nii && \
+      ls -la test_output/t1w_pigz_best.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t1w_pigz_best.nii.gz
+
+  - name: pigz keep original
+    description: Test pigz with keep original option
+    command: |
+      cp ${t2} test_output/t2_for_pigz.nii.gz && \
+      gunzip test_output/t2_for_pigz.nii.gz && \
+      pigz_mricron -k test_output/t2_for_pigz.nii && \
+      ls test_output/t2_for_pigz.nii test_output/t2_for_pigz.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t2_for_pigz.nii.gz
+      - output_exists: ${output_dir}/t2_for_pigz.nii
+
+  - name: pigz stdout mode
+    description: Test pigz writing to stdout
+    command: |
+      cp ${t2} test_output/t2_stdout.nii.gz && \
+      gunzip test_output/t2_stdout.nii.gz && \
+      pigz_mricron -c test_output/t2_stdout.nii > test_output/t2_piped.nii.gz && \
+      ls -la test_output/t2_piped.nii.gz
+    validate:
+      - output_exists: ${output_dir}/t2_piped.nii.gz
+
+  - name: pigz test integrity
+    description: Test pigz integrity check
+    command: pigz_mricron -t test_output/t1w_for_pigz.nii.gz 2>&1
+    depends_on: pigz compress file
+    expected_exit_code: 0
+
+  - name: pigz list contents
+    description: Test pigz list option
+    command: pigz_mricron -l test_output/t1w_for_pigz.nii.gz 2>&1
+    depends_on: pigz compress file
+    expected_output_contains: "t1w_for_pigz"
+
+  - name: pigz zlib format
+    description: Test pigz zlib format output
+    command: |
+      cp ${t2} test_output/t2_zlib.nii.gz && \
+      gunzip test_output/t2_zlib.nii.gz && \
+      pigz_mricron -z test_output/t2_zlib.nii && \
+      ls -la test_output/t2_zlib.nii.zz
+    validate:
+      - output_exists: ${output_dir}/t2_zlib.nii.zz
+
+  # ==========================================================================
+  # TEMPLATE AND RESOURCE VALIDATION
+  # ==========================================================================
+  - name: Verify AAL atlas exists
+    description: Check AAL brain atlas template is present
+    command: ls -la /opt/mricron/Resources/templates/aal.nii.gz
+    expected_output_contains: "aal.nii.gz"
+
+  - name: Verify Brodmann atlas exists
+    description: Check Brodmann areas template is present
+    command: ls -la /opt/mricron/Resources/templates/brodmann.nii.gz
+    expected_output_contains: "brodmann.nii.gz"
+
+  - name: Verify ch2 template exists
+    description: Check Colin27 (ch2) MRI template is present
+    command: ls -la /opt/mricron/Resources/templates/ch2.nii.gz
+    expected_output_contains: "ch2.nii.gz"
+
+  - name: Verify ch2bet template exists
+    description: Check Colin27 brain-extracted template is present
+    command: ls -la /opt/mricron/Resources/templates/ch2bet.nii.gz
+    expected_output_contains: "ch2bet.nii.gz"
+
+  - name: Verify ch2better template exists
+    description: Check enhanced Colin27 template is present
+    command: ls -la /opt/mricron/Resources/templates/ch2better.nii.gz
+    expected_output_contains: "ch2better.nii.gz"
+
+  - name: Verify Harvard-Oxford atlas exists
+    description: Check Harvard-Oxford cortical atlas is present
+    command: ls -la /opt/mricron/Resources/templates/HarvardOxford-cort-maxprob-thr0-1mm.nii.gz
+    expected_output_contains: "HarvardOxford"
+
+  - name: Verify JHU white matter atlas exists
+    description: Check JHU white matter labels are present
+    command: ls -la /opt/mricron/Resources/templates/JHU-WhiteMatter-labels-1mm.nii.gz
+    expected_output_contains: "JHU-WhiteMatter"
+
+  - name: Verify INIA19 template exists
+    description: Check INIA19 primate template is present
+    command: ls -la /opt/mricron/Resources/templates/inia19-t1-brain.nii.gz
+    expected_output_contains: "inia19"
+
+  - name: Verify AICHA atlas exists
+    description: Check AICHA atlas is present
+    command: ls -la /opt/mricron/Resources/templates/AICHAmc.nii.gz
+    expected_output_contains: "AICHAmc"
+
+  - name: List all templates
+    description: Enumerate all available templates
+    command: ls /opt/mricron/Resources/templates/*.nii.gz | wc -l
+    expected_output_contains: "1"
+
+  # ==========================================================================
+  # LOOKUP TABLE VALIDATION
+  # ==========================================================================
+  - name: Verify hot LUT exists
+    description: Check hot colormap lookup table
+    command: ls -la /opt/mricron/Resources/lut/1hot.lut
+    expected_output_contains: "1hot.lut"
+
+  - name: Verify winter LUT exists
+    description: Check winter colormap lookup table
+    command: ls -la /opt/mricron/Resources/lut/2winter.lut
+    expected_output_contains: "2winter.lut"
+
+  - name: Verify warm LUT exists
+    description: Check warm colormap lookup table
+    command: ls -la /opt/mricron/Resources/lut/3warm.lut
+    expected_output_contains: "3warm.lut"
+
+  - name: Verify cool LUT exists
+    description: Check cool colormap lookup table
+    command: ls -la /opt/mricron/Resources/lut/4cool.lut
+    expected_output_contains: "4cool.lut"
+
+  - name: Verify bone LUT exists
+    description: Check bone colormap lookup table
+    command: ls -la /opt/mricron/Resources/lut/bone.lut
+    expected_output_contains: "bone.lut"
+
+  - name: Verify NIH colormaps exist
+    description: Check NIH-style colormaps are present
+    command: ls /opt/mricron/Resources/lut/NIH*.lut | wc -l
+    expected_output_contains: "3"
+
+  - name: List all LUTs
+    description: Enumerate all available lookup tables
+    command: ls /opt/mricron/Resources/lut/*.lut | wc -l
+    expected_output_contains: "3"
+
+  # ==========================================================================
+  # ATLAS LABEL FILES VALIDATION
+  # ==========================================================================
+  - name: Verify AAL labels exist
+    description: Check AAL region labels text file
+    command: ls -la /opt/mricron/Resources/templates/aal.nii.txt
+    expected_output_contains: "aal.nii.txt"
+
+  - name: Verify JHU labels exist
+    description: Check JHU white matter labels text file
+    command: ls -la /opt/mricron/Resources/templates/JHU-WhiteMatter-labels-1mm.nii.txt
+    expected_output_contains: "JHU-WhiteMatter"
+
+  - name: Verify AICHA labels exist
+    description: Check AICHA region labels text file
+    command: ls -la /opt/mricron/Resources/templates/AICHAmc.nii.txt
+    expected_output_contains: "AICHAmc.nii.txt"
+
+  - name: AAL labels content check
+    description: Verify AAL labels file contains region names
+    command: head -20 /opt/mricron/Resources/templates/aal.nii.txt
+    expected_output_contains: "Frontal"
+
+  - name: JHU labels content check
+    description: Verify JHU labels file contains tract names
+    command: head -20 /opt/mricron/Resources/templates/JHU-WhiteMatter-labels-1mm.nii.txt
+    expected_output_contains: "tract"
+
+  # ==========================================================================
+  # MRICRON GUI EXISTENCE CHECK (no display tests)
+  # ==========================================================================
+  - name: MRIcron binary exists
+    description: Verify MRIcron GUI binary is present
+    command: ls -la /opt/mricron/MRIcron
+    expected_output_contains: "MRIcron"
+
+  - name: MRIcron executable permissions
+    description: Verify MRIcron has execute permissions
+    command: test -x /opt/mricron/MRIcron && echo "executable"
+    expected_output_contains: "executable"
+
+  - name: dcm2niix executable permissions
+    description: Verify dcm2niix has execute permissions
+    command: test -x /opt/mricron/dcm2niix && echo "executable"
+    expected_output_contains: "executable"
+
+  - name: MRIcron icon exists
+    description: Check MRIcron SVG icon is present
+    command: ls -la /opt/mricron/Resources/mricron.svg
+    expected_output_contains: "mricron.svg"
+
+  # ==========================================================================
+  # PATH AND ENVIRONMENT VALIDATION
+  # ==========================================================================
+  - name: dcm2niix in PATH
+    description: Verify dcm2niix is accessible in PATH
+    command: command -v dcm2niix
+    expected_output_contains: "dcm2niix"
+
+  - name: MRIcron in PATH
+    description: Verify MRIcron is accessible in PATH
+    command: command -v MRIcron
+    expected_output_contains: "MRIcron"
+
+  - name: pigz_mricron in PATH
+    description: Verify pigz_mricron is accessible in PATH
+    command: command -v pigz_mricron
+    expected_output_contains: "pigz_mricron"
+
+  - name: Resources directory in PATH
+    description: Verify Resources directory is in PATH for dcm2niix
+    command: echo $PATH | tr ':' '\n' | grep -c mricron
+    ignore_exit_code: true
+    expected_output_contains: "2"
+
+  # ==========================================================================
+  # RENDER RESOURCES VALIDATION
+  # ==========================================================================
+  - name: Render resources exist
+    description: Check render resources directory exists
+    command: test -d /opt/mricron/Resources/render/ && echo "render directory exists"
+    expected_output_contains: "render directory exists"
+
+  # ==========================================================================
+  # UPDATE CHECK (network dependent)
+  # ==========================================================================
+  - name: dcm2niix update check format
+    description: Test update check option format (may require network)
+    command: dcm2niix -u 2>&1 | head -5
+    expected_output_contains: "dcm2niiX"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

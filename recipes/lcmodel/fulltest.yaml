@@ -1,0 +1,626 @@
+# LCModel container test suite
+# Tests for LCModel v6.3 - Automatic quantification of in vivo proton MR spectra
+#
+# LCModel is the standard for MRS (Magnetic Resonance Spectroscopy) analysis.
+# It provides automatic quantification of metabolites from proton MR spectra.
+#
+# Main executables:
+#   - lcmodel: Main spectroscopy fitting program
+#   - makebasis: Create custom basis sets from raw metabolite spectra
+#   - plotraw: Plot raw spectroscopy data
+#   - kecc: Eddy current correction
+#   - lcmgui: Graphical user interface (requires display)
+#
+# Vendor-specific converters (bin2raw, bin2asc) for:
+#   - Siemens, Philips, Bruker, GE, Varian, Marconi, Toshiba
+
+name: lcmodel
+version: 6.3
+container: lcmodel_6.3_20220222.simg
+
+test_data:
+  lcmodel_dir: /opt/lcmodel-6.3/.lcmodel
+  test_raw: /opt/lcmodel-6.3/.lcmodel/test/raw/test.RAW
+  test_control: /opt/lcmodel-6.3/.lcmodel/test/control/test.control
+  basis_3t: /opt/lcmodel-6.3/.lcmodel/basis-sets/3t
+  basis_1_5t: /opt/lcmodel-6.3/.lcmodel/basis-sets/1.5t
+  basis_7t: /opt/lcmodel-6.3/.lcmodel/basis-sets/7t
+  basis_9_4t: /opt/lcmodel-6.3/.lcmodel/basis-sets/9.4t
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # CORE EXECUTABLE VERIFICATION
+  # ==========================================================================
+  - name: LCModel binary exists
+    description: Verify main lcmodel binary is present and executable
+    command: test -x /opt/lcmodel-6.3/.lcmodel/bin/lcmodel && echo "lcmodel executable found"
+    expected_output_contains: "lcmodel executable found"
+
+  - name: LCModel responds to input
+    description: Verify lcmodel runs (expects control file input)
+    command: echo "" | lcmodel 2>&1 | head -5
+    expected_output_contains: "FATAL ERROR"
+
+  - name: Makebasis binary exists
+    description: Verify makebasis binary is present and executable
+    command: test -x /opt/lcmodel-6.3/.lcmodel/bin/makebasis && echo "makebasis executable found"
+    expected_output_contains: "makebasis executable found"
+
+  - name: Makebasis responds to input
+    description: Verify makebasis runs (expects input file)
+    command: echo "" | makebasis 2>&1 | head -5
+    expected_output_contains: "runtime error"
+
+  - name: Plotraw binary exists
+    description: Verify plotraw binary is present and executable
+    command: test -x /opt/lcmodel-6.3/.lcmodel/bin/plotraw && echo "plotraw executable found"
+    expected_output_contains: "plotraw executable found"
+
+  - name: Plotraw responds to input
+    description: Verify plotraw runs (expects input file)
+    command: echo "" | plotraw 2>&1 | head -5
+    expected_output_contains: "Trailer"
+
+  - name: KECC binary exists
+    description: Verify kecc (eddy current correction) binary is present
+    command: test -x /opt/lcmodel-6.3/.lcmodel/bin/kecc && echo "kecc executable found"
+    expected_output_contains: "kecc executable found"
+
+  - name: KECC responds to input
+    description: Verify kecc runs (expects input file)
+    command: echo "" | kecc 2>&1 | head -5
+    expected_output_contains: "runtime error"
+
+  - name: LCMgui binary exists
+    description: Verify lcmgui (GUI) binary is present
+    command: test -x /opt/lcmodel-6.3/.lcmodel/lcmgui && echo "lcmgui executable found"
+    expected_output_contains: "lcmgui executable found"
+
+  # ==========================================================================
+  # SETUP AND UTILITY SCRIPTS
+  # ==========================================================================
+  - name: Setup script exists
+    description: Verify setup_lcmodel.sh is present
+    command: test -f /opt/lcmodel-6.3/.lcmodel/bin/setup_lcmodel.sh && echo "setup script found"
+    expected_output_contains: "setup script found"
+
+  - name: Testrun script exists
+    description: Verify testrun script for running test analysis
+    command: test -f /opt/lcmodel-6.3/.lcmodel/bin/testrun && echo "testrun script found"
+    expected_output_contains: "testrun script found"
+
+  - name: Run-batch script exists
+    description: Verify run-batch script for batch processing
+    command: test -f /opt/lcmodel-6.3/.lcmodel/bin/run-batch && echo "run-batch script found"
+    expected_output_contains: "run-batch script found"
+
+  - name: Cat-paged-ps script exists
+    description: Verify PostScript output utility
+    command: test -f /opt/lcmodel-6.3/.lcmodel/bin/cat-paged-ps && echo "cat-paged-ps found"
+    expected_output_contains: "cat-paged-ps found"
+
+  - name: Time-testrun script exists
+    description: Verify timing script for test runs
+    command: test -f /opt/lcmodel-6.3/.lcmodel/bin/time-testrun && echo "time-testrun found"
+    expected_output_contains: "time-testrun found"
+
+  # ==========================================================================
+  # EXECUTION SCRIPTS
+  # ==========================================================================
+  - name: Standard execution script exists
+    description: Verify standard execution script for LCMgui
+    command: test -f /opt/lcmodel-6.3/.lcmodel/execution-scripts/standard && echo "standard script found"
+    expected_output_contains: "standard script found"
+
+  - name: Nice execution script exists
+    description: Verify nice execution script
+    command: test -f /opt/lcmodel-6.3/.lcmodel/execution-scripts/nice && echo "nice script found"
+    expected_output_contains: "nice script found"
+
+  - name: ECC execution script exists
+    description: Verify eddy current correction execution script
+    command: test -f /opt/lcmodel-6.3/.lcmodel/execution-scripts/ecc && echo "ecc script found"
+    expected_output_contains: "ecc script found"
+
+  - name: Make-batch execution script exists
+    description: Verify make-batch script for batch processing
+    command: test -f /opt/lcmodel-6.3/.lcmodel/execution-scripts/make-batch && echo "make-batch script found"
+    expected_output_contains: "make-batch script found"
+
+  # ==========================================================================
+  # TEST DATA FILES
+  # ==========================================================================
+  - name: Test RAW data file exists
+    description: Verify test spectroscopy data is present
+    command: test -f /opt/lcmodel-6.3/.lcmodel/test/raw/test.RAW && echo "test.RAW found"
+    expected_output_contains: "test.RAW found"
+
+  - name: Test control file exists
+    description: Verify test control parameter file is present
+    command: test -f /opt/lcmodel-6.3/.lcmodel/test/control/test.control && echo "test.control found"
+    expected_output_contains: "test.control found"
+
+  - name: Makebasis input file exists
+    description: Verify makebasis test input file is present
+    command: test -f /opt/lcmodel-6.3/.lcmodel/test/control/makebasis.in && echo "makebasis.in found"
+    expected_output_contains: "makebasis.in found"
+
+  - name: Plotraw input file exists
+    description: Verify plotraw test input file is present
+    command: test -f /opt/lcmodel-6.3/.lcmodel/test/control/plotraw.in && echo "plotraw.in found"
+    expected_output_contains: "plotraw.in found"
+
+  - name: Test output directory exists
+    description: Verify test output directory structure
+    command: test -d /opt/lcmodel-6.3/.lcmodel/test/output && echo "output directory found"
+    expected_output_contains: "output directory found"
+
+  # ==========================================================================
+  # RAW METABOLITE TEST FILES
+  # ==========================================================================
+  - name: NAA test RAW file exists
+    description: Verify N-acetylaspartate test spectrum
+    command: test -f /opt/lcmodel-6.3/.lcmodel/test/raw/NAA_3.RAW && echo "NAA_3.RAW found"
+    expected_output_contains: "NAA_3.RAW found"
+
+  - name: Creatine test RAW file exists
+    description: Verify Creatine test spectrum
+    command: test -f /opt/lcmodel-6.3/.lcmodel/test/raw/Cr_3.RAW && echo "Cr_3.RAW found"
+    expected_output_contains: "Cr_3.RAW found"
+
+  - name: Choline test RAW file exists
+    description: Verify Choline test spectrum
+    command: test -f /opt/lcmodel-6.3/.lcmodel/test/raw/Cho_bruker_1.RAW && echo "Cho_bruker_1.RAW found"
+    expected_output_contains: "Cho_bruker_1.RAW found"
+
+  - name: Glutamate test RAW file exists
+    description: Verify Glutamate test spectrum
+    command: test -f /opt/lcmodel-6.3/.lcmodel/test/raw/Glu_3.RAW && echo "Glu_3.RAW found"
+    expected_output_contains: "Glu_3.RAW found"
+
+  - name: GABA test RAW file exists
+    description: Verify GABA test spectrum
+    command: test -f /opt/lcmodel-6.3/.lcmodel/test/raw/GABA_3.RAW && echo "GABA_3.RAW found"
+    expected_output_contains: "GABA_3.RAW found"
+
+  - name: Lactate test RAW file exists
+    description: Verify Lactate test spectrum
+    command: test -f /opt/lcmodel-6.3/.lcmodel/test/raw/Lac_3.RAW && echo "Lac_3.RAW found"
+    expected_output_contains: "Lac_3.RAW found"
+
+  - name: Myo-inositol test RAW file exists
+    description: Verify Myo-inositol test spectrum
+    command: test -f /opt/lcmodel-6.3/.lcmodel/test/raw/Ins_3.RAW && echo "Ins_3.RAW found"
+    expected_output_contains: "Ins_3.RAW found"
+
+  - name: Count test RAW files
+    description: Verify all expected test RAW files are present
+    command: ls -1 /opt/lcmodel-6.3/.lcmodel/test/raw/*.RAW 2>/dev/null | wc -l
+    expected_output_contains: "19"
+
+  # ==========================================================================
+  # BASIS SETS - 1.5T
+  # ==========================================================================
+  - name: 1.5T basis sets directory exists
+    description: Verify 1.5T basis sets are available
+    command: test -d /opt/lcmodel-6.3/.lcmodel/basis-sets/1.5t && echo "1.5t basis sets found"
+    expected_output_contains: "1.5t basis sets found"
+
+  - name: 1.5T PRESS TE30 basis set exists
+    description: Verify PRESS TE30 basis set at 1.5T
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/1.5t/press_te30_1.5t_v3.basis && echo "basis found"
+    expected_output_contains: "basis found"
+
+  - name: 1.5T PRESS TE35 basis set exists
+    description: Verify PRESS TE35 basis set at 1.5T
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/1.5t/press_te35_1.5t_v3.basis && echo "basis found"
+    expected_output_contains: "basis found"
+
+  - name: 1.5T STEAM TE20 basis set exists
+    description: Verify STEAM TE20 basis set at 1.5T
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/1.5t/steam_te20_1.5t_99c.basis && echo "basis found"
+    expected_output_contains: "basis found"
+
+  - name: 1.5T gamma PRESS TE20 basis set exists
+    description: Verify gamma-simulated PRESS TE20 at 1.5T
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/1.5t/gamma_press_te20_1.5t_v1.basis && echo "basis found"
+    expected_output_contains: "basis found"
+
+  - name: 1.5T README exists
+    description: Verify 1.5T basis set documentation
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/1.5t/README-1.5t.txt && echo "README found"
+    expected_output_contains: "README found"
+
+  # ==========================================================================
+  # BASIS SETS - 3T
+  # ==========================================================================
+  - name: 3T basis sets directory exists
+    description: Verify 3T basis sets are available
+    command: test -d /opt/lcmodel-6.3/.lcmodel/basis-sets/3t && echo "3t basis sets found"
+    expected_output_contains: "3t basis sets found"
+
+  - name: 3T PRESS TE30 basis set exists
+    description: Verify PRESS TE30 basis set at 3T
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/3t/press_te30_3t_v3.basis && echo "basis found"
+    expected_output_contains: "basis found"
+
+  - name: 3T PRESS TE25 basis set exists
+    description: Verify PRESS TE25 basis set at 3T
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/3t/press_te25_3t_v3.basis && echo "basis found"
+    expected_output_contains: "basis found"
+
+  - name: 3T PRESS TE135 basis set exists
+    description: Verify PRESS TE135 (long TE) basis set at 3T
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/3t/press_te135_3t_v3.basis && echo "basis found"
+    expected_output_contains: "basis found"
+
+  - name: 3T STEAM TE20 basis set exists
+    description: Verify STEAM TE20 basis set at 3T
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/3t/steam_te20_3t_01a.basis && echo "basis found"
+    expected_output_contains: "basis found"
+
+  - name: 3T gamma PRESS TE20 basis set exists
+    description: Verify gamma-simulated PRESS TE20 at 3T
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/3t/gamma_press_te20_3t_v1.basis && echo "basis found"
+    expected_output_contains: "basis found"
+
+  - name: 3T gamma TE0 basis set exists
+    description: Verify gamma-simulated TE0 (ideal) at 3T
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/3t/gamma_te0_3t_v1.basis && echo "basis found"
+    expected_output_contains: "basis found"
+
+  - name: 3T all metabolites basis set directory exists
+    description: Verify extended basis sets with all metabolites at 3T
+    command: test -d /opt/lcmodel-6.3/.lcmodel/basis-sets/3t/all && echo "all directory found"
+    expected_output_contains: "all directory found"
+
+  - name: 3T README exists
+    description: Verify 3T basis set documentation
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/3t/README-3t.txt && echo "README found"
+    expected_output_contains: "README found"
+
+  # ==========================================================================
+  # BASIS SETS - 7T
+  # ==========================================================================
+  - name: 7T basis sets directory exists
+    description: Verify 7T (ultra-high field) basis sets are available
+    command: test -d /opt/lcmodel-6.3/.lcmodel/basis-sets/7t && echo "7t basis sets found"
+    expected_output_contains: "7t basis sets found"
+
+  - name: 7T gamma PRESS TE20 basis set exists
+    description: Verify gamma-simulated PRESS TE20 at 7T
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/7t/gamma_press_te20_7t_v1.basis && echo "basis found"
+    expected_output_contains: "basis found"
+
+  - name: 7T gamma PRESS TE10 basis set exists
+    description: Verify gamma-simulated PRESS TE10 (short TE) at 7T
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/7t/gamma_press_te10_7t_v1.basis && echo "basis found"
+    expected_output_contains: "basis found"
+
+  - name: 7T README exists
+    description: Verify 7T basis set documentation
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/7t/README-7t.txt && echo "README found"
+    expected_output_contains: "README found"
+
+  # ==========================================================================
+  # BASIS SETS - 9.4T
+  # ==========================================================================
+  - name: 9.4T basis sets directory exists
+    description: Verify 9.4T (ultra-high field) basis sets are available
+    command: test -d /opt/lcmodel-6.3/.lcmodel/basis-sets/9.4t && echo "9.4t basis sets found"
+    expected_output_contains: "9.4t basis sets found"
+
+  - name: 9.4T gamma PRESS TE20 basis set exists
+    description: Verify gamma-simulated PRESS TE20 at 9.4T
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/9.4t/gamma_press_te20_9.4t_v1.basis && echo "basis found"
+    expected_output_contains: "basis found"
+
+  - name: 9.4T README exists
+    description: Verify 9.4T basis set documentation
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/9.4t/README-9.4t.txt && echo "README found"
+    expected_output_contains: "README found"
+
+  # ==========================================================================
+  # BASIS SETS - sLASER (Semi-LASER sequence)
+  # ==========================================================================
+  - name: sLASER basis set directory exists
+    description: Verify sLASER Siemens TE20 BW2500 raw basis files
+    command: test -d /opt/lcmodel-6.3/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024 && echo "sLASER basis found"
+    expected_output_contains: "sLASER basis found"
+
+  - name: sLASER NAA raw file exists
+    description: Verify NAA raw spectrum for sLASER
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024/NAA.raw && echo "NAA.raw found"
+    expected_output_contains: "NAA.raw found"
+
+  - name: sLASER GABA raw file exists
+    description: Verify GABA raw spectrum for sLASER
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024/GABA.raw && echo "GABA.raw found"
+    expected_output_contains: "GABA.raw found"
+
+  - name: sLASER metabolite count
+    description: Verify number of metabolite raw files in sLASER basis
+    command: ls -1 /opt/lcmodel-6.3/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024/*.raw 2>/dev/null | wc -l
+    expected_output_contains: "34"
+
+  # ==========================================================================
+  # BASIS SETS - Generic LCModel basis set
+  # ==========================================================================
+  - name: Generic LCModel basis set directory exists
+    description: Verify basisset_LCModel directory with example files
+    command: test -d /opt/lcmodel-6.3/.lcmodel/basis-sets/basisset_LCModel && echo "basisset_LCModel found"
+    expected_output_contains: "basisset_LCModel found"
+
+  - name: Generic PRESS 3T 30ms basis file exists
+    description: Verify compiled PRESS 3T TE30 basis file
+    command: test -f /opt/lcmodel-6.3/.lcmodel/basis-sets/basisset_LCModel/press3T_30ms.BASIS && echo "press3T_30ms.BASIS found"
+    expected_output_contains: "press3T_30ms.BASIS found"
+
+  # ==========================================================================
+  # VENDOR-SPECIFIC TOOLS - SIEMENS
+  # ==========================================================================
+  - name: Siemens bin2raw converter exists
+    description: Verify Siemens raw data converter
+    command: test -x /opt/lcmodel-6.3/.lcmodel/siemens/bin2raw && echo "siemens bin2raw found"
+    expected_output_contains: "siemens bin2raw found"
+
+  # ==========================================================================
+  # VENDOR-SPECIFIC TOOLS - PHILIPS
+  # ==========================================================================
+  - name: Philips bin2raw converter exists
+    description: Verify Philips raw data converter
+    command: test -x /opt/lcmodel-6.3/.lcmodel/philips/bin2raw && echo "philips bin2raw found"
+    expected_output_contains: "philips bin2raw found"
+
+  - name: Philips bin2asc converter exists
+    description: Verify Philips binary to ASCII converter
+    command: test -x /opt/lcmodel-6.3/.lcmodel/philips/bin2asc && echo "philips bin2asc found"
+    expected_output_contains: "philips bin2asc found"
+
+  - name: Philips DICOM converter exists
+    description: Verify Philips DICOM to raw converter
+    command: test -x /opt/lcmodel-6.3/.lcmodel/philips/bin2raw-dicom && echo "philips bin2raw-dicom found"
+    expected_output_contains: "philips bin2raw-dicom found"
+
+  # ==========================================================================
+  # VENDOR-SPECIFIC TOOLS - BRUKER
+  # ==========================================================================
+  - name: Bruker bin2raw converter exists
+    description: Verify Bruker raw data converter
+    command: test -x /opt/lcmodel-6.3/.lcmodel/bruker/bin2raw && echo "bruker bin2raw found"
+    expected_output_contains: "bruker bin2raw found"
+
+  - name: Bruker bin2asc converter exists
+    description: Verify Bruker binary to ASCII converter
+    command: test -x /opt/lcmodel-6.3/.lcmodel/bruker/bin2asc && echo "bruker bin2asc found"
+    expected_output_contains: "bruker bin2asc found"
+
+  - name: Bruker truncate preprocessor exists
+    description: Verify Bruker truncate preprocessor script
+    command: test -f /opt/lcmodel-6.3/.lcmodel/bruker/preprocessors/truncate && echo "bruker truncate found"
+    expected_output_contains: "bruker truncate found"
+
+  # ==========================================================================
+  # VENDOR-SPECIFIC TOOLS - GE (P-files)
+  # ==========================================================================
+  - name: GE5 bin2raw converter exists
+    description: Verify GE5 (older) P-file converter
+    command: test -x /opt/lcmodel-6.3/.lcmodel/ge5/bin2raw && echo "ge5 bin2raw found"
+    expected_output_contains: "ge5 bin2raw found"
+
+  - name: GE LX bin2raw converter exists
+    description: Verify GE LX (newer) P-file converter
+    command: test -x /opt/lcmodel-6.3/.lcmodel/gelx/bin2raw && echo "gelx bin2raw found"
+    expected_output_contains: "gelx bin2raw found"
+
+  - name: GE LX select-frames preprocessor exists
+    description: Verify GE LX frame selection preprocessor
+    command: test -f /opt/lcmodel-6.3/.lcmodel/gelx/preprocessors/select-frames && echo "select-frames found"
+    expected_output_contains: "select-frames found"
+
+  - name: GE use-unsuppressed preprocessor exists
+    description: Verify GE unsuppressed water reference preprocessor
+    command: test -f /opt/lcmodel-6.3/.lcmodel/gelx/preprocessors/use-unsuppressed && echo "use-unsuppressed found"
+    expected_output_contains: "use-unsuppressed found"
+
+  # ==========================================================================
+  # VENDOR-SPECIFIC TOOLS - VARIAN
+  # ==========================================================================
+  - name: Varian bin2raw converter exists
+    description: Verify Varian raw data converter
+    command: test -x /opt/lcmodel-6.3/.lcmodel/varian/bin2raw && echo "varian bin2raw found"
+    expected_output_contains: "varian bin2raw found"
+
+  - name: Varian bin2asc converter exists
+    description: Verify Varian binary to ASCII converter
+    command: test -x /opt/lcmodel-6.3/.lcmodel/varian/bin2asc && echo "varian bin2asc found"
+    expected_output_contains: "varian bin2asc found"
+
+  # ==========================================================================
+  # VENDOR-SPECIFIC TOOLS - MARCONI
+  # ==========================================================================
+  - name: Marconi bin2raw converter exists
+    description: Verify Marconi raw data converter
+    command: test -x /opt/lcmodel-6.3/.lcmodel/marconi/bin2raw && echo "marconi bin2raw found"
+    expected_output_contains: "marconi bin2raw found"
+
+  - name: Marconi bin2asc converter exists
+    description: Verify Marconi binary to ASCII converter
+    command: test -x /opt/lcmodel-6.3/.lcmodel/marconi/bin2asc && echo "marconi bin2asc found"
+    expected_output_contains: "marconi bin2asc found"
+
+  # ==========================================================================
+  # VENDOR-SPECIFIC TOOLS - TOSHIBA
+  # ==========================================================================
+  - name: Toshiba bin2raw converter exists
+    description: Verify Toshiba raw data converter
+    command: test -x /opt/lcmodel-6.3/.lcmodel/toshiba/bin2raw && echo "toshiba bin2raw found"
+    expected_output_contains: "toshiba bin2raw found"
+
+  # ==========================================================================
+  # VENDOR-SPECIFIC TOOLS - OTHER
+  # ==========================================================================
+  - name: Other/generic bin2raw converter exists
+    description: Verify generic bin2raw converter
+    command: test -f /opt/lcmodel-6.3/.lcmodel/other/bin2raw && echo "other bin2raw found"
+    expected_output_contains: "other bin2raw found"
+
+  # ==========================================================================
+  # DOCUMENTATION
+  # ==========================================================================
+  - name: LCModel manual PDF exists
+    description: Verify LCModel manual is present
+    command: test -f /opt/lcmodel-6.3/.lcmodel/doc/manual.pdf && echo "manual.pdf found"
+    expected_output_contains: "manual.pdf found"
+
+  - name: LCModel figures PDF exists
+    description: Verify LCModel figures documentation
+    command: test -f /opt/lcmodel-6.3/.lcmodel/doc/figures.pdf && echo "figures.pdf found"
+    expected_output_contains: "figures.pdf found"
+
+  - name: Root manual PDF exists
+    description: Verify manual at root installation level
+    command: test -f /opt/lcmodel-6.3/manual.pdf && echo "root manual.pdf found"
+    expected_output_contains: "root manual.pdf found"
+
+  - name: Doc preprocessors README exists
+    description: Verify preprocessors documentation
+    command: test -f /opt/lcmodel-6.3/.lcmodel/doc/preprocessors/README.txt && echo "preprocessors README found"
+    expected_output_contains: "preprocessors README found"
+
+  # ==========================================================================
+  # DIRECTORY STRUCTURE VERIFICATION
+  # ==========================================================================
+  - name: Profiles directory exists
+    description: Verify profiles directory for user configurations
+    command: test -d /opt/lcmodel-6.3/.lcmodel/profiles && echo "profiles directory found"
+    expected_output_contains: "profiles directory found"
+
+  - name: License file location exists
+    description: Verify license file placeholder exists
+    command: test -f /opt/lcmodel-6.3/.lcmodel/license && echo "license file found"
+    expected_output_contains: "license file found"
+
+  - name: Queries file exists
+    description: Verify queries configuration file
+    command: test -f /opt/lcmodel-6.3/.lcmodel/.queries && echo ".queries file found"
+    expected_output_contains: ".queries file found"
+
+  # ==========================================================================
+  # CONTROL FILE VALIDATION
+  # ==========================================================================
+  - name: Test control file has LCMODL section
+    description: Verify test control file format
+    command: grep -c "LCMODL" /opt/lcmodel-6.3/.lcmodel/test/control/test.control
+    expected_output_contains: "1"
+
+  - name: Test control file has FILRAW parameter
+    description: Verify input file specification in control
+    command: grep -c "FILRAW" /opt/lcmodel-6.3/.lcmodel/test/control/test.control
+    expected_output_contains: "1"
+
+  - name: Test control file has FILBAS parameter
+    description: Verify basis file specification in control
+    command: grep -c "FILBAS" /opt/lcmodel-6.3/.lcmodel/test/control/test.control
+    expected_output_contains: "1"
+
+  - name: Test control file has NUNFIL parameter
+    description: Verify number of points parameter
+    command: grep -c "NUNFIL" /opt/lcmodel-6.3/.lcmodel/test/control/test.control
+    expected_output_contains: "1"
+
+  - name: Test control file has HZPPPM parameter
+    description: Verify Hz per ppm (field strength) parameter
+    command: grep -c "HZPPPM" /opt/lcmodel-6.3/.lcmodel/test/control/test.control
+    expected_output_contains: "1"
+
+  # ==========================================================================
+  # MAKEBASIS INPUT VALIDATION
+  # ==========================================================================
+  - name: Makebasis input has seqpar section
+    description: Verify sequence parameters in makebasis input
+    command: grep -c "seqpar" /opt/lcmodel-6.3/.lcmodel/test/control/makebasis.in
+    expected_output_contains: "1"
+
+  - name: Makebasis input has nmall section
+    description: Verify nmall parameters in makebasis input
+    command: grep -c "nmall" /opt/lcmodel-6.3/.lcmodel/test/control/makebasis.in
+    expected_output_contains: "1"
+
+  - name: Makebasis input has nmeach sections
+    description: Verify individual metabolite sections exist
+    command: grep -c "nmeach" /opt/lcmodel-6.3/.lcmodel/test/control/makebasis.in
+    expected_output_contains: "15"
+
+  # ==========================================================================
+  # INSTALLATION SCRIPTS
+  # ==========================================================================
+  - name: Install script exists
+    description: Verify LCModel installation script
+    command: test -f /opt/lcmodel-6.3/install-lcmodel && echo "install-lcmodel found"
+    expected_output_contains: "install-lcmodel found"
+
+  - name: Uninstall script exists
+    description: Verify LCModel uninstall script
+    command: test -f /opt/lcmodel-6.3/.uninstall-lcmodel && echo ".uninstall-lcmodel found"
+    expected_output_contains: ".uninstall-lcmodel found"
+
+  # ==========================================================================
+  # FILE SIZE VERIFICATION (ensure files are not corrupt/empty)
+  # ==========================================================================
+  - name: LCModel binary size check
+    description: Verify lcmodel binary has expected size (>100MB)
+    command: test $(stat -c%s /opt/lcmodel-6.3/.lcmodel/bin/lcmodel) -gt 100000000 && echo "lcmodel size OK"
+    expected_output_contains: "lcmodel size OK"
+
+  - name: Makebasis binary size check
+    description: Verify makebasis binary has expected size (>1MB)
+    command: test $(stat -c%s /opt/lcmodel-6.3/.lcmodel/bin/makebasis) -gt 1000000 && echo "makebasis size OK"
+    expected_output_contains: "makebasis size OK"
+
+  - name: LCMgui binary size check
+    description: Verify lcmgui binary has expected size (>3MB)
+    command: test $(stat -c%s /opt/lcmodel-6.3/.lcmodel/lcmgui) -gt 3000000 && echo "lcmgui size OK"
+    expected_output_contains: "lcmgui size OK"
+
+  - name: Test RAW file size check
+    description: Verify test.RAW has expected size (>50KB)
+    command: test $(stat -c%s /opt/lcmodel-6.3/.lcmodel/test/raw/test.RAW) -gt 50000 && echo "test.RAW size OK"
+    expected_output_contains: "test.RAW size OK"
+
+  - name: 3T basis set size check
+    description: Verify 3T basis set has expected size (>1MB)
+    command: test $(stat -c%s /opt/lcmodel-6.3/.lcmodel/basis-sets/3t/press_te30_3t_v3.basis) -gt 1000000 && echo "3T basis size OK"
+    expected_output_contains: "3T basis size OK"
+
+  # ==========================================================================
+  # CONTAINER METADATA
+  # ==========================================================================
+  - name: Container README exists
+    description: Verify container README with usage instructions
+    command: cat /README.md | head -3
+    expected_output_contains: "lcmodel/6.3"
+
+  - name: Container labels exist
+    description: Verify Singularity container labels
+    command: cat /.singularity.d/labels.json
+    expected_output_contains: "NeuroDesk"
+
+  - name: Singularity runscript exists
+    description: Verify container runscript
+    command: test -f /.singularity.d/runscript && echo "runscript found"
+    expected_output_contains: "runscript found"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

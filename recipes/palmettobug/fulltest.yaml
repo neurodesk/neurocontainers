@@ -1,0 +1,714 @@
+# palmettobug container test suite
+# Tests for palmettobug v0.0.3 - HARMONI: Python GUI for mass cytometry / imaging mass cytometry analysis
+#
+# Palmettobug (HARMONI) is designed for preprocessing, segmentation, and analysis of
+# high-dimensional image or flow cytometry data, especially mass cytometry / imaging mass cytometry.
+#
+# The container provides a rich Python environment for spatial omics analysis including:
+#   - scanpy: Single-cell analysis
+#   - squidpy: Spatial omics analysis
+#   - anndata: Annotated data structures
+#   - scikit-learn: Machine learning
+#   - spatialdata: Spatial data analysis
+#   - And many more scientific Python packages
+
+name: palmettobug
+version: 0.0.3
+container: palmettobug_0.0.3_20250424.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+
+tests:
+  # ==========================================================================
+  # BASIC ENVIRONMENT CHECKS
+  # ==========================================================================
+  - name: Python version check
+    description: Verify Python 3.9 is available
+    command: python3 --version
+    expected_output_contains: "Python 3.9"
+    expected_exit_code: 0
+
+  - name: Python executable path
+    description: Check Python executable location
+    command: which python3
+    expected_output_contains: "/opt/miniconda-latest/bin/python"
+    expected_exit_code: 0
+
+  - name: Pip version check
+    description: Verify pip is available
+    command: pip --version
+    expected_output_contains: "pip"
+    expected_exit_code: 0
+
+  - name: Conda version check
+    description: Verify conda is available
+    command: conda --version
+    expected_output_contains: "conda"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # CORE SCIENTIFIC PYTHON PACKAGES
+  # ==========================================================================
+  - name: NumPy import and version
+    description: Test NumPy library import
+    command: python3 -c "import numpy; print('numpy:', numpy.__version__)"
+    expected_output_contains: "numpy:"
+    expected_exit_code: 0
+
+  - name: NumPy basic operations
+    description: Test NumPy array operations
+    command: python3 -c "import numpy as np; a = np.array([1,2,3]); print('sum:', np.sum(a), 'mean:', np.mean(a))"
+    expected_output_contains: "sum: 6 mean: 2.0"
+    expected_exit_code: 0
+
+  - name: SciPy import and version
+    description: Test SciPy library import
+    command: python3 -c "import scipy; print('scipy:', scipy.__version__)"
+    expected_output_contains: "scipy:"
+    expected_exit_code: 0
+
+  - name: SciPy sparse matrices
+    description: Test SciPy sparse matrix functionality
+    command: python3 -c "from scipy import sparse; m = sparse.eye(3); print('nnz:', m.nnz)"
+    expected_output_contains: "nnz: 3"
+    expected_exit_code: 0
+
+  - name: Pandas import and version
+    description: Test Pandas library import
+    command: python3 -c "import pandas; print('pandas:', pandas.__version__)"
+    expected_output_contains: "pandas:"
+    expected_exit_code: 0
+
+  - name: Pandas DataFrame operations
+    description: Test Pandas DataFrame functionality
+    command: python3 -c "import pandas as pd; df = pd.DataFrame(dict(a=[1,2,3])); print('shape:', df.shape)"
+    expected_output_contains: "shape: (3, 1)"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # MACHINE LEARNING PACKAGES
+  # ==========================================================================
+  - name: Scikit-learn import and version
+    description: Test scikit-learn library import
+    command: python3 -c "import sklearn; print('sklearn:', sklearn.__version__)"
+    expected_output_contains: "sklearn:"
+    expected_exit_code: 0
+
+  - name: Scikit-learn KMeans clustering
+    description: Test sklearn clustering functionality
+    command: python3 -c "from sklearn.cluster import KMeans; import numpy as np; X = np.random.rand(10,2); km = KMeans(n_clusters=2, random_state=42, n_init=10).fit(X); print('labels:', len(km.labels_))"
+    expected_output_contains: "labels: 10"
+    expected_exit_code: 0
+
+  - name: Scikit-learn PCA
+    description: Test sklearn PCA functionality
+    command: python3 -c "from sklearn.decomposition import PCA; import numpy as np; X = np.random.rand(10,5); pca = PCA(n_components=2).fit(X); print('components:', pca.n_components_)"
+    expected_output_contains: "components: 2"
+    expected_exit_code: 0
+
+  - name: Scikit-learn StandardScaler
+    description: Test sklearn preprocessing
+    command: python3 -c "from sklearn.preprocessing import StandardScaler; import numpy as np; X = np.random.rand(10,3); scaler = StandardScaler().fit(X); print('mean shape:', scaler.mean_.shape)"
+    expected_output_contains: "mean shape: (3,)"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SINGLE-CELL ANALYSIS PACKAGES
+  # ==========================================================================
+  - name: Scanpy import and version
+    description: Test scanpy library import
+    command: python3 -c "import scanpy as sc; print('scanpy:', sc.__version__)"
+    expected_output_contains: "scanpy:"
+    expected_exit_code: 0
+
+  - name: AnnData import and version
+    description: Test anndata library import
+    command: python3 -c "import anndata; print('anndata:', anndata.__version__)"
+    expected_output_contains: "anndata:"
+    expected_exit_code: 0
+
+  - name: AnnData create object
+    description: Test AnnData object creation
+    command: python3 -c "import anndata as ad; import numpy as np; adata = ad.AnnData(np.random.rand(100, 50)); print('shape:', adata.shape)"
+    expected_output_contains: "shape: (100, 50)"
+    expected_exit_code: 0
+
+  - name: Scanpy preprocessing log1p
+    description: Test scanpy log1p transformation
+    command: python3 -c "import scanpy as sc; import numpy as np; import anndata as ad; adata = ad.AnnData(np.random.rand(10, 5)+1); sc.pp.log1p(adata); print('log1p applied')"
+    expected_output_contains: "log1p applied"
+    expected_exit_code: 0
+
+  - name: Scanpy preprocessing normalize_total
+    description: Test scanpy total normalization
+    command: python3 -c "import scanpy as sc; import numpy as np; import anndata as ad; adata = ad.AnnData(np.random.rand(10, 5)); sc.pp.normalize_total(adata); print('normalized')"
+    expected_output_contains: "normalized"
+    expected_exit_code: 0
+
+  - name: Scanpy preprocessing scale
+    description: Test scanpy scaling
+    command: python3 -c "import scanpy as sc; import numpy as np; import anndata as ad; adata = ad.AnnData(np.random.rand(10, 5)); sc.pp.scale(adata); print('scaled')"
+    expected_output_contains: "scaled"
+    expected_exit_code: 0
+
+  - name: Scanpy PCA
+    description: Test scanpy PCA computation
+    command: python3 -c "import scanpy as sc; import numpy as np; import anndata as ad; adata = ad.AnnData(np.random.rand(50, 20)); sc.pp.pca(adata, n_comps=5); print('pca shape:', adata.obsm['X_pca'].shape)"
+    expected_output_contains: "pca shape: (50, 5)"
+    expected_exit_code: 0
+
+  - name: Scanpy neighbors
+    description: Test scanpy neighbor graph computation
+    command: python3 -c "import scanpy as sc; import numpy as np; import anndata as ad; adata = ad.AnnData(np.random.rand(50, 10)); sc.pp.pca(adata, n_comps=5); sc.pp.neighbors(adata, n_neighbors=10); print('neighbors computed')"
+    expected_output_contains: "neighbors computed"
+    expected_exit_code: 0
+
+  - name: Scanpy Leiden clustering
+    description: Test scanpy Leiden clustering
+    command: python3 -c "import scanpy as sc; import numpy as np; import anndata as ad; adata = ad.AnnData(np.random.rand(50, 10)); sc.pp.pca(adata, n_comps=5); sc.pp.neighbors(adata); sc.tl.leiden(adata); print('n_clusters:', len(adata.obs['leiden'].unique()))"
+    expected_output_contains: "n_clusters:"
+    expected_exit_code: 0
+
+  - name: Scanpy UMAP
+    description: Test scanpy UMAP computation
+    command: python3 -c "import scanpy as sc; import numpy as np; import anndata as ad; adata = ad.AnnData(np.random.rand(50, 10)); sc.pp.pca(adata, n_comps=5); sc.pp.neighbors(adata); sc.tl.umap(adata); print('umap shape:', adata.obsm['X_umap'].shape)"
+    expected_output_contains: "umap shape: (50, 2)"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SPATIAL OMICS PACKAGES
+  # ==========================================================================
+  - name: Squidpy import and version
+    description: Test squidpy library import
+    command: python3 -c "import squidpy as sq; print('squidpy:', sq.__version__)"
+    expected_output_contains: "squidpy:"
+    expected_exit_code: 0
+
+  - name: Squidpy spatial neighbors
+    description: Test squidpy spatial neighbor graph
+    command: python3 -c "import squidpy as sq; import anndata as ad; import numpy as np; adata = ad.AnnData(np.random.rand(100, 10)); adata.obsm['spatial'] = np.random.rand(100, 2) * 100; sq.gr.spatial_neighbors(adata); print('spatial graph computed')"
+    expected_output_contains: "spatial graph computed"
+    expected_exit_code: 0
+
+  - name: SpatialData import and version
+    description: Test spatialdata library import
+    command: python3 -c "import spatialdata; print('spatialdata:', spatialdata.__version__)"
+    expected_output_contains: "spatialdata:"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DIMENSIONALITY REDUCTION PACKAGES
+  # ==========================================================================
+  - name: UMAP import and version
+    description: Test umap-learn library import
+    command: python3 -c "import umap; print('umap:', umap.__version__)"
+    expected_output_contains: "umap:"
+    expected_exit_code: 0
+
+  - name: UMAP embedding
+    description: Test UMAP dimensionality reduction
+    command: python3 -c "import umap; import numpy as np; X = np.random.rand(50, 10); reducer = umap.UMAP(n_components=2, random_state=42, n_neighbors=5, min_dist=0.1); embedding = reducer.fit_transform(X); print('embedding shape:', embedding.shape)"
+    expected_output_contains: "embedding shape: (50, 2)"
+    expected_exit_code: 0
+
+  - name: PyNNDescent import and version
+    description: Test pynndescent library import
+    command: python3 -c "import pynndescent; print('pynndescent:', pynndescent.__version__)"
+    expected_output_contains: "pynndescent:"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # GRAPH AND CLUSTERING PACKAGES
+  # ==========================================================================
+  - name: NetworkX import and version
+    description: Test networkx library import
+    command: python3 -c "import networkx as nx; print('networkx:', nx.__version__)"
+    expected_output_contains: "networkx:"
+    expected_exit_code: 0
+
+  - name: NetworkX graph operations
+    description: Test networkx graph functionality
+    command: python3 -c "import networkx as nx; G = nx.complete_graph(5); print('nodes:', G.number_of_nodes(), 'edges:', G.number_of_edges())"
+    expected_output_contains: "nodes: 5 edges: 10"
+    expected_exit_code: 0
+
+  - name: iGraph import and version
+    description: Test igraph library import
+    command: python3 -c "import igraph as ig; print('igraph:', ig.__version__)"
+    expected_output_contains: "igraph:"
+    expected_exit_code: 0
+
+  - name: iGraph graph operations
+    description: Test igraph graph functionality
+    command: python3 -c "import igraph as ig; g = ig.Graph.Full(5); print('vertices:', g.vcount(), 'edges:', g.ecount())"
+    expected_output_contains: "vertices: 5 edges: 10"
+    expected_exit_code: 0
+
+  - name: Leidenalg import
+    description: Test leidenalg library import
+    command: python3 -c "import leidenalg; print('leidenalg imported successfully')"
+    expected_output_contains: "leidenalg imported"
+    expected_exit_code: 0
+
+  - name: Leidenalg clustering
+    description: Test Leiden community detection
+    command: python3 -c "import igraph as ig; import leidenalg; g = ig.Graph.Erdos_Renyi(50, 0.3); partition = leidenalg.find_partition(g, leidenalg.ModularityVertexPartition); print('communities:', len(partition))"
+    expected_output_contains: "communities:"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # IMAGE PROCESSING PACKAGES
+  # ==========================================================================
+  - name: Scikit-image import and version
+    description: Test scikit-image library import
+    command: python3 -c "import skimage; print('skimage:', skimage.__version__)"
+    expected_output_contains: "skimage:"
+    expected_exit_code: 0
+
+  - name: Scikit-image filters
+    description: Test skimage filtering functionality
+    command: python3 -c "from skimage import filters; import numpy as np; img = np.random.rand(10,10); result = filters.gaussian(img, sigma=1); print('filtered shape:', result.shape)"
+    expected_output_contains: "filtered shape: (10, 10)"
+    expected_exit_code: 0
+
+  - name: Scikit-image segmentation
+    description: Test skimage segmentation functionality
+    command: python3 -c "from skimage import segmentation; import numpy as np; img = np.random.rand(10,10); labels = segmentation.slic(img, n_segments=5, channel_axis=None); print('labels unique:', len(np.unique(labels)))"
+    expected_output_contains: "labels unique:"
+    expected_exit_code: 0
+
+  - name: OpenCV import and version
+    description: Test OpenCV library import
+    command: python3 -c "import cv2; print('cv2:', cv2.__version__)"
+    expected_output_contains: "cv2:"
+    expected_exit_code: 0
+
+  - name: OpenCV image operations
+    description: Test OpenCV image processing
+    command: python3 -c "import cv2; import numpy as np; img = np.random.randint(0, 255, (10,10), dtype=np.uint8); blurred = cv2.GaussianBlur(img, (3,3), 0); print('blurred shape:', blurred.shape)"
+    expected_output_contains: "blurred shape: (10, 10)"
+    expected_exit_code: 0
+
+  - name: PIL/Pillow import and version
+    description: Test Pillow library import
+    command: python3 -c "import PIL; print('PIL:', PIL.__version__)"
+    expected_output_contains: "PIL:"
+    expected_exit_code: 0
+
+  - name: PIL image operations
+    description: Test Pillow image functionality
+    command: python3 -c "from PIL import Image; import numpy as np; arr = np.random.randint(0, 255, (10, 10, 3), dtype=np.uint8); img = Image.fromarray(arr); print('size:', img.size)"
+    expected_output_contains: "size: (10, 10)"
+    expected_exit_code: 0
+
+  - name: ImageIO import and version
+    description: Test imageio library import
+    command: python3 -c "import imageio; print('imageio:', imageio.__version__)"
+    expected_output_contains: "imageio:"
+    expected_exit_code: 0
+
+  - name: Tifffile import and version
+    description: Test tifffile library import
+    command: python3 -c "import tifffile; print('tifffile:', tifffile.__version__)"
+    expected_output_contains: "tifffile:"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DATA STORAGE AND IO PACKAGES
+  # ==========================================================================
+  - name: H5py import and version
+    description: Test h5py library import
+    command: python3 -c "import h5py; print('h5py:', h5py.__version__)"
+    expected_output_contains: "h5py:"
+    expected_exit_code: 0
+
+  - name: H5py file operations
+    description: Test h5py file functionality
+    command: python3 -c "import h5py; import numpy as np; import tempfile; f = tempfile.NamedTemporaryFile(suffix='.h5'); hf = h5py.File(f.name, 'w'); hf.create_dataset('data', data=np.array([1,2,3])); print('dataset created:', 'data' in hf)"
+    expected_output_contains: "dataset created: True"
+    expected_exit_code: 0
+
+  - name: Zarr import and version
+    description: Test zarr library import
+    command: python3 -c "import zarr; print('zarr:', zarr.__version__)"
+    expected_output_contains: "zarr:"
+    expected_exit_code: 0
+
+  - name: Zarr array operations
+    description: Test zarr array functionality
+    command: python3 -c "import zarr; import numpy as np; z = zarr.zeros((10, 10)); z[:] = np.random.rand(10, 10); print('shape:', z.shape)"
+    expected_output_contains: "shape: (10, 10)"
+    expected_exit_code: 0
+
+  - name: PyArrow import and version
+    description: Test pyarrow library import
+    command: python3 -c "import pyarrow; print('pyarrow:', pyarrow.__version__)"
+    expected_output_contains: "pyarrow:"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # FLOW CYTOMETRY PACKAGES
+  # ==========================================================================
+  - name: FlowIO import and version
+    description: Test FlowIO library import
+    command: python3 -c "import flowio; print('flowio:', flowio.__version__)"
+    expected_output_contains: "flowio:"
+    expected_exit_code: 0
+
+  - name: ReadFCS import and version
+    description: Test readfcs library import
+    command: python3 -c "import readfcs; print('readfcs:', readfcs.__version__)"
+    expected_output_contains: "readfcs:"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # STATISTICAL PACKAGES
+  # ==========================================================================
+  - name: Statsmodels import and version
+    description: Test statsmodels library import
+    command: python3 -c "import statsmodels; print('statsmodels:', statsmodels.__version__)"
+    expected_output_contains: "statsmodels:"
+    expected_exit_code: 0
+
+  - name: Statsmodels OLS regression
+    description: Test statsmodels regression functionality
+    command: python3 -c "import statsmodels.api as sm; import numpy as np; X = np.random.rand(20, 2); y = np.random.rand(20); X = sm.add_constant(X); model = sm.OLS(y, X).fit(); print('rsquared:', round(model.rsquared, 2) >= 0)"
+    expected_output_contains: "rsquared: True"
+    expected_exit_code: 0
+
+  - name: Dcor import and version
+    description: Test dcor library import
+    command: python3 -c "import dcor; print('dcor:', dcor.__version__)"
+    expected_output_contains: "dcor:"
+    expected_exit_code: 0
+
+  - name: Patsy import and version
+    description: Test patsy library import
+    command: python3 -c "import patsy; print('patsy:', patsy.__version__)"
+    expected_output_contains: "patsy:"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # VISUALIZATION PACKAGES
+  # ==========================================================================
+  - name: Matplotlib import and version
+    description: Test matplotlib library import
+    command: python3 -c "import matplotlib; print('matplotlib:', matplotlib.__version__)"
+    expected_output_contains: "matplotlib:"
+    expected_exit_code: 0
+
+  - name: Matplotlib figure creation
+    description: Test matplotlib figure functionality
+    command: python3 -c "import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt; fig, ax = plt.subplots(); print('figure created')"
+    expected_output_contains: "figure created"
+    expected_exit_code: 0
+
+  - name: Seaborn import and version
+    description: Test seaborn library import
+    command: python3 -c "import seaborn; print('seaborn:', seaborn.__version__)"
+    expected_output_contains: "seaborn:"
+    expected_exit_code: 0
+
+  - name: Datashader import and version
+    description: Test datashader library import
+    command: python3 -c "import datashader; print('datashader:', datashader.__version__)"
+    expected_output_contains: "datashader:"
+    expected_exit_code: 0
+
+  - name: Colorcet import
+    description: Test colorcet library import
+    command: python3 -c "import colorcet; print('colorcet imported, palettes:', len(colorcet.palette))"
+    expected_output_contains: "colorcet imported"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PARALLEL COMPUTING PACKAGES
+  # ==========================================================================
+  - name: Dask import and version
+    description: Test dask library import
+    command: python3 -c "import dask; print('dask:', dask.__version__)"
+    expected_output_contains: "dask:"
+    expected_exit_code: 0
+
+  - name: Dask array operations
+    description: Test dask array functionality
+    command: python3 -c "import dask.array as da; import numpy as np; x = da.from_array(np.random.rand(100, 100), chunks=(50, 50)); result = x.mean().compute(); print('mean computed:', type(result).__name__)"
+    expected_output_contains: "mean computed:"
+    expected_exit_code: 0
+
+  - name: Numba import and version
+    description: Test numba library import
+    command: python3 -c "import numba; print('numba:', numba.__version__)"
+    expected_output_contains: "numba:"
+    expected_exit_code: 0
+
+  - name: Numba JIT compilation
+    description: Test numba JIT functionality
+    command: |
+      python3 -c "
+      from numba import jit
+      import numpy as np
+      @jit(nopython=True)
+      def f(x):
+          return x.sum()
+      result = f(np.array([1,2,3]))
+      print('jit result:', result)
+      "
+    expected_output_contains: "jit result: 6"
+    expected_exit_code: 0
+
+  - name: Joblib import and version
+    description: Test joblib library import
+    command: python3 -c "import joblib; print('joblib:', joblib.__version__)"
+    expected_output_contains: "joblib:"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # GEOSPATIAL PACKAGES
+  # ==========================================================================
+  - name: GeoPandas import and version
+    description: Test geopandas library import
+    command: python3 -c "import geopandas; print('geopandas:', geopandas.__version__)"
+    expected_output_contains: "geopandas:"
+    expected_exit_code: 0
+
+  - name: Shapely import and version
+    description: Test shapely library import
+    command: python3 -c "import shapely; print('shapely:', shapely.__version__)"
+    expected_output_contains: "shapely:"
+    expected_exit_code: 0
+
+  - name: Shapely geometry operations
+    description: Test shapely geometry functionality
+    command: python3 -c "from shapely.geometry import Point, Polygon; p = Point(0.5, 0.5); poly = Polygon([(0,0), (1,0), (1,1), (0,1)]); print('contains:', poly.contains(p))"
+    expected_output_contains: "contains: True"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # ARRAY AND DATA PACKAGES
+  # ==========================================================================
+  - name: Xarray import and version
+    description: Test xarray library import
+    command: python3 -c "import xarray; print('xarray:', xarray.__version__)"
+    expected_output_contains: "xarray:"
+    expected_exit_code: 0
+
+  - name: Xarray DataArray operations
+    description: Test xarray DataArray functionality
+    command: python3 -c "import xarray as xr; import numpy as np; da = xr.DataArray(np.random.rand(3,4), dims=['x','y']); print('dims:', da.dims)"
+    expected_output_contains: "dims: ('x', 'y')"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SYMBOLIC MATH
+  # ==========================================================================
+  - name: SymPy import and version
+    description: Test sympy library import
+    command: python3 -c "import sympy; print('sympy:', sympy.__version__)"
+    expected_output_contains: "sympy:"
+    expected_exit_code: 0
+
+  - name: SymPy symbolic computation
+    description: Test sympy symbolic math
+    command: python3 -c "import sympy as sp; x = sp.Symbol('x'); expr = x**2 + 2*x + 1; factored = sp.factor(expr); print('factored:', factored)"
+    expected_output_contains: "factored: (x + 1)**2"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # GUI AND VISUALIZATION PACKAGES
+  # ==========================================================================
+  - name: CustomTkinter import
+    description: Test customtkinter library import
+    command: python3 -c "import customtkinter; print('customtkinter imported')"
+    expected_output_contains: "customtkinter imported"
+    expected_exit_code: 0
+
+  - name: Napari import
+    description: Test napari library import (headless)
+    command: python3 -c "import napari; print('napari imported')"
+    expected_output_contains: "napari imported"
+    expected_exit_code: 0
+
+  - name: Vispy import and version
+    description: Test vispy library import
+    command: python3 -c "import vispy; print('vispy:', vispy.__version__)"
+    expected_output_contains: "vispy:"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # UTILITY PACKAGES
+  # ==========================================================================
+  - name: YAML import
+    description: Test PyYAML library import
+    command: python3 -c "import yaml; print('yaml imported')"
+    expected_output_contains: "yaml imported"
+    expected_exit_code: 0
+
+  - name: YAML parsing
+    description: Test YAML parsing functionality
+    command: python3 -c "import yaml; data = yaml.safe_load('key_test=value'); print('parsed', data)"
+    expected_output_contains: "parsed"
+    expected_exit_code: 0
+
+  - name: JSON import and operations
+    description: Test JSON module functionality
+    command: python3 -c "import json; data = json.dumps(dict(a=1)); print('json output', data)"
+    expected_output_contains: "json output"
+    expected_exit_code: 0
+
+  - name: LXML import
+    description: Test lxml library import
+    command: python3 -c "import lxml; print('lxml imported')"
+    expected_output_contains: "lxml imported"
+    expected_exit_code: 0
+
+  - name: Tqdm import and version
+    description: Test tqdm library import
+    command: python3 -c "import tqdm; print('tqdm:', tqdm.__version__)"
+    expected_output_contains: "tqdm:"
+    expected_exit_code: 0
+
+  - name: Click import and version
+    description: Test click library import
+    command: python3 -c "import click; print('click:', click.__version__)"
+    expected_output_contains: "click:"
+    expected_exit_code: 0
+
+  - name: Rich import and version
+    description: Test rich library import
+    command: 'python3 -c "import rich; print(''rich: imported'')"'
+    expected_output_contains: "rich: imported"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # INTEGRATION TESTS - SINGLE-CELL WORKFLOW
+  # ==========================================================================
+  - name: Single-cell analysis pipeline
+    description: Test complete single-cell workflow (normalize, scale, PCA, neighbors, clustering)
+    command: |
+      python3 -c "
+      import scanpy as sc
+      import numpy as np
+      import anndata as ad
+      # Create synthetic data
+      adata = ad.AnnData(np.random.rand(200, 50))
+      adata.obs['batch'] = ['A' if i < 100 else 'B' for i in range(200)]
+      # Preprocessing
+      sc.pp.normalize_total(adata)
+      sc.pp.log1p(adata)
+      sc.pp.scale(adata)
+      # Dimensionality reduction
+      sc.pp.pca(adata, n_comps=20)
+      sc.pp.neighbors(adata)
+      # Clustering
+      sc.tl.leiden(adata, resolution=0.5)
+      # UMAP
+      sc.tl.umap(adata)
+      print('Pipeline complete. Clusters:', len(adata.obs['leiden'].unique()))
+      "
+    expected_output_contains: "Pipeline complete. Clusters:"
+    expected_exit_code: 0
+
+  - name: Spatial analysis pipeline
+    description: Test spatial analysis workflow with squidpy
+    command: |
+      python3 -c "
+      import squidpy as sq
+      import scanpy as sc
+      import numpy as np
+      import anndata as ad
+      # Create synthetic spatial data
+      adata = ad.AnnData(np.random.rand(100, 20))
+      adata.obsm['spatial'] = np.random.rand(100, 2) * 1000
+      # Compute spatial neighbors
+      sq.gr.spatial_neighbors(adata, coord_type='generic', n_neighs=10)
+      # Compute spatial autocorrelation
+      adata.var_names = [f'gene_{i}' for i in range(20)]
+      sq.gr.spatial_autocorr(adata, mode='moran', n_jobs=1, genes=adata.var_names[:5].tolist())
+      print('Spatial analysis complete')
+      "
+    expected_output_contains: "Spatial analysis complete"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # DATA EXPORT TESTS
+  # ==========================================================================
+  - name: AnnData H5AD export
+    description: Test saving AnnData to h5ad format
+    command: |
+      python3 -c "
+      import anndata as ad
+      import numpy as np
+      import tempfile
+      adata = ad.AnnData(np.random.rand(50, 20))
+      with tempfile.NamedTemporaryFile(suffix='.h5ad', delete=False) as f:
+          adata.write(f.name)
+          print('Saved to h5ad:', f.name)
+      "
+    expected_output_contains: "Saved to h5ad:"
+    expected_exit_code: 0
+
+  - name: NumPy array export
+    description: Test saving numpy arrays
+    command: |
+      python3 -c "
+      import numpy as np
+      import tempfile
+      arr = np.random.rand(10, 10)
+      with tempfile.NamedTemporaryFile(suffix='.npy', delete=False) as f:
+          np.save(f.name, arr)
+          loaded = np.load(f.name + '.npy' if not f.name.endswith('.npy') else f.name)
+          print('Array saved and loaded, shape:', loaded.shape)
+      "
+    expected_output_contains: "Array saved and loaded"
+    expected_exit_code: 0
+
+  - name: Pandas CSV export
+    description: Test saving pandas DataFrame to CSV
+    command: |
+      python3 -c "
+      import pandas as pd
+      import tempfile
+      df = pd.DataFrame({'a': [1,2,3], 'b': [4,5,6]})
+      with tempfile.NamedTemporaryFile(suffix='.csv', delete=False, mode='w') as f:
+          df.to_csv(f.name, index=False)
+          loaded = pd.read_csv(f.name)
+          print('CSV saved and loaded, shape:', loaded.shape)
+      "
+    expected_output_contains: "CSV saved and loaded, shape: (3, 2)"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # PALMETTOBUG PACKAGE STRUCTURE
+  # ==========================================================================
+  - name: Palmettobug package exists
+    description: Verify palmettobug package is installed
+    command: pip show palmettobug
+    expected_output_contains: "Name: palmettobug"
+    expected_exit_code: 0
+
+  - name: Palmettobug version
+    description: Check palmettobug package version
+    command: pip show palmettobug | grep Version
+    expected_output_contains: "Version:"
+    expected_exit_code: 0
+
+  - name: Palmettobug package files
+    description: List palmettobug package contents
+    command: ls /opt/miniconda-latest/lib/python3.9/site-packages/palmettobug/
+    expected_output_contains: "Executable.py"
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Optionally remove test outputs
+    # rm -rf test_output
+    echo "Test outputs preserved in test_output/"

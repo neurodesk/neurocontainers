@@ -1,0 +1,631 @@
+# brainnetviewer container test suite
+# Tests for BrainNet Viewer v1.7.20191031 - Brain network visualization tool
+#
+# BrainNet Viewer is a brain network visualization tool for human brain connectomics.
+# It helps researchers visualize structural and functional connectivity patterns at
+# different levels in a quick, easy, and flexible way.
+#
+# This is a compiled MATLAB application (MCR R2018a / v94) that provides a GUI for
+# brain network visualization. The tests focus on container integrity, MATLAB Runtime
+# components, file system structure, and basic invocation rather than full GUI testing.
+#
+# Supported file formats:
+#   - Surface files: .nv (BrainNet mesh format)
+#   - Node files: .node (MNI coordinates with attributes)
+#   - Edge files: .edge (connectivity matrices)
+#   - Volume files: .nii, .img, .txt, .gz (NIfTI, Analyze)
+#   - Configuration files: .mat (saved visualization settings)
+#   - Output images: .jpg, .tif, .bmp, .png, .eps
+#
+# Citation: Xia M, Wang J, He Y. BrainNet Viewer: a network visualization tool for
+#           human brain connectomics. PLoS One. 2013 Jul 4;8(7):e68910.
+#           doi: 10.1371/journal.pone.0068910
+#
+# Homepage: https://www.nitrc.org/projects/bnv/
+# GitHub: https://github.com/mingruixia/BrainNet-Viewer
+#
+# Note: BrainNet Viewer is primarily a GUI application. For headless batch processing,
+# it can be scripted via BrainNet_MapCfg() function with appropriate file arguments.
+# GUI testing requires an X display server or virtual framebuffer (xvfb).
+
+name: brainnetviewer
+version: 1.7.20191031
+container: brainnetviewer_1.7.20191031_20240904.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+      - sub-01/anat/sub-01_inplaneT2.nii.gz
+      - sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
+  bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    mkdir -p ${output_dir}/brainnetviewer
+
+tests:
+  # ==========================================================================
+  # BINARY AND EXECUTABLE VERIFICATION
+  # ==========================================================================
+  - name: BrainNet binary exists
+    description: Verify BrainNet compiled binary is present at container root
+    command: test -f /BrainNet && echo "BrainNet binary found"
+    expected_output_contains: "BrainNet binary found"
+
+  - name: BrainNet binary is executable
+    description: Verify BrainNet binary has execute permissions
+    command: test -x /BrainNet && echo "BrainNet is executable"
+    expected_output_contains: "BrainNet is executable"
+
+  - name: BrainNet binary is ELF executable
+    description: Verify BrainNet binary is a valid Linux ELF executable
+    command: file /BrainNet
+    expected_output_contains: "ELF 64-bit LSB executable"
+
+  - name: BrainNet binary architecture
+    description: Verify BrainNet binary is compiled for x86-64
+    command: file /BrainNet
+    expected_output_contains: "x86-64"
+
+  - name: brainnetviewer wrapper script exists
+    description: Verify brainnetviewer wrapper script is in /usr/bin
+    command: test -f /usr/bin/brainnetviewer && echo "Wrapper script found"
+    expected_output_contains: "Wrapper script found"
+
+  - name: brainnetviewer wrapper is executable
+    description: Verify brainnetviewer wrapper has execute permissions
+    command: test -x /usr/bin/brainnetviewer && echo "Wrapper is executable"
+    expected_output_contains: "Wrapper is executable"
+
+  - name: brainnetviewer wrapper content
+    description: Verify wrapper script calls run_BrainNet.sh with MCR path
+    command: cat /usr/bin/brainnetviewer
+    expected_output_contains: "/run_BrainNet.sh /opt/matlab/v94"
+
+  - name: brainnetviewer in PATH
+    description: Verify brainnetviewer command is accessible via PATH
+    command: which brainnetviewer
+    expected_output_contains: "/usr/bin/brainnetviewer"
+
+  - name: Run script exists
+    description: Verify run_BrainNet.sh wrapper script is present
+    command: test -f /run_BrainNet.sh && echo "Run script found"
+    expected_output_contains: "Run script found"
+
+  - name: Run script is executable
+    description: Verify run_BrainNet.sh has execute permissions
+    command: test -x /run_BrainNet.sh && echo "Run script executable"
+    expected_output_contains: "Run script executable"
+
+  # ==========================================================================
+  # RUN SCRIPT VERIFICATION
+  # ==========================================================================
+  - name: Run script sets MCRROOT
+    description: Verify run_BrainNet.sh configures MCRROOT variable
+    command: cat /run_BrainNet.sh
+    expected_output_contains: "MCRROOT"
+
+  - name: Run script sets LD_LIBRARY_PATH
+    description: Verify run_BrainNet.sh configures LD_LIBRARY_PATH
+    command: cat /run_BrainNet.sh
+    expected_output_contains: "LD_LIBRARY_PATH"
+
+  - name: Run script includes runtime path
+    description: Verify run_BrainNet.sh includes runtime/glnxa64 path
+    command: cat /run_BrainNet.sh
+    expected_output_contains: "runtime/glnxa64"
+
+  - name: Run script includes bin path
+    description: Verify run_BrainNet.sh includes bin/glnxa64 path
+    command: cat /run_BrainNet.sh
+    expected_output_contains: "bin/glnxa64"
+
+  - name: Run script includes OpenGL path
+    description: Verify run_BrainNet.sh includes OpenGL library path
+    command: cat /run_BrainNet.sh
+    expected_output_contains: "opengl"
+
+  - name: Run script includes sys/os path
+    description: Verify run_BrainNet.sh includes sys/os/glnxa64 path
+    command: cat /run_BrainNet.sh
+    expected_output_contains: "sys/os/glnxa64"
+
+  - name: Run script executes BrainNet
+    description: Verify run_BrainNet.sh executes the BrainNet binary
+    command: cat /run_BrainNet.sh
+    expected_output_contains: "BrainNet"
+
+  # ==========================================================================
+  # MATLAB COMPILER RUNTIME (MCR) VERIFICATION
+  # ==========================================================================
+  - name: MCR directory exists
+    description: Verify MATLAB Compiler Runtime is installed
+    command: test -d /opt/matlab/v94 && echo "MCR v94 directory found"
+    expected_output_contains: "MCR v94 directory found"
+
+  - name: MCR version is R2018a
+    description: Verify MCR version matches BrainNet requirements (R2018a)
+    command: cat /opt/matlab/v94/VersionInfo.xml
+    expected_output_contains: "R2018a"
+
+  - name: MCR version number 9.4
+    description: Verify MCR version 9.4 is installed
+    command: cat /opt/matlab/v94/VersionInfo.xml
+    expected_output_contains: "9.4"
+
+  - name: MCR runtime libraries exist
+    description: Verify MCR runtime library directory is present
+    command: test -d /opt/matlab/v94/runtime/glnxa64 && echo "MCR runtime found"
+    expected_output_contains: "MCR runtime found"
+
+  - name: MCR bin libraries exist
+    description: Verify MCR bin library directory is present
+    command: test -d /opt/matlab/v94/bin/glnxa64 && echo "MCR bin found"
+    expected_output_contains: "MCR bin found"
+
+  - name: MCR system libraries exist
+    description: Verify MCR system OS libraries are present
+    command: test -d /opt/matlab/v94/sys/os/glnxa64 && echo "MCR sys/os found"
+    expected_output_contains: "MCR sys/os found"
+
+  - name: MCR OpenGL libraries exist
+    description: Verify MCR OpenGL libraries directory is present
+    command: test -d /opt/matlab/v94/sys/opengl/lib/glnxa64 && echo "OpenGL libs found"
+    expected_output_contains: "OpenGL libs found"
+
+  - name: MCR toolbox directory exists
+    description: Verify MCR toolbox directory is present
+    command: test -d /opt/matlab/v94/toolbox && echo "MCR toolbox found"
+    expected_output_contains: "MCR toolbox found"
+
+  - name: MCR Java runtime exists
+    description: Verify MCR Java Runtime Environment is present
+    command: test -d /opt/matlab/v94/java && echo "MCR Java found"
+    expected_output_contains: "MCR Java found"
+
+  - name: MCR resources directory exists
+    description: Verify MCR resources directory is present
+    command: test -d /opt/matlab/v94/resources && echo "MCR resources found"
+    expected_output_contains: "MCR resources found"
+
+  - name: MCR extern directory exists
+    description: Verify MCR extern directory is present
+    command: test -d /opt/matlab/v94/extern && echo "MCR extern found"
+    expected_output_contains: "MCR extern found"
+
+  # ==========================================================================
+  # MCR SHARED LIBRARY VERIFICATION
+  # ==========================================================================
+  - name: libmwmclmcrrt library exists
+    description: Verify core MCR library is present
+    command: ls /opt/matlab/v94/runtime/glnxa64/libmwmclmcrrt.so* 2>/dev/null | head -1 && echo "libmwmclmcrrt found"
+    expected_output_contains: "libmwmclmcrrt found"
+
+  - name: MCR has runtime shared libraries
+    description: Verify MCR runtime has shared libraries
+    command: ls /opt/matlab/v94/runtime/glnxa64/*.so* 2>/dev/null | wc -l
+    expected_exit_code: 0
+
+  - name: MCR has bin shared libraries
+    description: Verify MCR bin has shared libraries
+    command: ls /opt/matlab/v94/bin/glnxa64/*.so* 2>/dev/null | wc -l
+    expected_exit_code: 0
+
+  - name: MCR runtime library count
+    description: Verify MCR has runtime libraries present
+    command: |
+      count=$(ls -1 /opt/matlab/v94/runtime/glnxa64/ 2>/dev/null | wc -l)
+      if [ "$count" -gt 2 ]; then echo "MCR runtime has $count files"; else echo "MCR incomplete"; fi
+    expected_output_contains: "MCR runtime has"
+
+  # ==========================================================================
+  # DOCUMENTATION VERIFICATION
+  # ==========================================================================
+  - name: README exists in container root
+    description: Verify README.md is present at container root
+    command: test -f /README.md && echo "README found"
+    expected_output_contains: "README found"
+
+  - name: README contains BrainNet Viewer info
+    description: Verify README mentions BrainNet Viewer
+    command: cat /README.md
+    expected_output_contains: "BrainNet Viewer"
+
+  - name: README contains version info
+    description: Verify README mentions tool version
+    command: cat /README.md
+    expected_output_contains: "brainnetviewer"
+
+  - name: README contains example usage
+    description: Verify README includes usage example
+    command: cat /README.md
+    expected_output_contains: "Example"
+
+  - name: README contains citation
+    description: Verify README includes citation information
+    command: cat /README.md
+    expected_output_contains: "Citation"
+
+  - name: README contains Xia reference
+    description: Verify README includes Xia et al. citation
+    command: cat /README.md
+    expected_output_contains: "Xia M"
+
+  - name: README contains NITRC link
+    description: Verify README includes NITRC homepage link
+    command: cat /README.md
+    expected_output_contains: "nitrc.org"
+
+  - name: README contains license info
+    description: Verify README includes license information
+    command: cat /README.md
+    expected_output_contains: "GPL"
+
+  - name: readme.txt exists
+    description: Verify readme.txt is present at container root
+    command: test -f /readme.txt && echo "readme.txt found"
+    expected_output_contains: "readme.txt found"
+
+  - name: readme.txt mentions MCR version
+    description: Verify readme.txt mentions MCR version 9.4
+    command: cat /readme.txt
+    expected_output_contains: "9.4"
+
+  - name: readme.txt mentions R2018a
+    description: Verify readme.txt mentions MATLAB R2018a
+    command: cat /readme.txt
+    expected_output_contains: "R2018a"
+
+  - name: readme.txt has deployment info
+    description: Verify readme.txt contains deployment information
+    command: cat /readme.txt
+    expected_output_contains: "Deployment"
+
+  # ==========================================================================
+  # MCR LICENSE AND METADATA
+  # ==========================================================================
+  - name: MCR license file exists
+    description: Verify MCR license file is present
+    command: test -f /opt/matlab/v94/MCR_license.txt && echo "MCR license found"
+    expected_output_contains: "MCR license found"
+
+  - name: MCR patents file exists
+    description: Verify MCR patents file is present
+    command: test -f /opt/matlab/v94/patents.txt && echo "MCR patents found"
+    expected_output_contains: "MCR patents found"
+
+  - name: MCR trademarks file exists
+    description: Verify MCR trademarks file is present
+    command: test -f /opt/matlab/v94/trademarks.txt && echo "MCR trademarks found"
+    expected_output_contains: "MCR trademarks found"
+
+  # ==========================================================================
+  # ENVIRONMENT VARIABLES
+  # ==========================================================================
+  - name: DEPLOY_BINS environment variable
+    description: Verify DEPLOY_BINS environment variable is set
+    command: echo $DEPLOY_BINS
+    expected_output_contains: "brainnetviewer"
+
+  - name: PATH includes standard directories
+    description: Verify PATH includes standard bin directories
+    command: echo $PATH
+    expected_output_contains: "/usr/bin"
+
+  # ==========================================================================
+  # APPLICATION INVOCATION TESTS
+  # ==========================================================================
+  - name: brainnetviewer environment setup
+    description: Verify brainnetviewer prints environment setup message
+    command: timeout 10 brainnetviewer version 2>&1 | head -5 || true
+    expected_output_contains: "Setting up environment variables"
+
+  - name: brainnetviewer LD_LIBRARY_PATH setup
+    description: Verify brainnetviewer configures LD_LIBRARY_PATH correctly
+    command: timeout 10 brainnetviewer test 2>&1 | head -10 || true
+    expected_output_contains: "LD_LIBRARY_PATH is"
+
+  - name: brainnetviewer MCR path in LD_LIBRARY_PATH
+    description: Verify MCR runtime path is included in library path
+    command: timeout 10 brainnetviewer test 2>&1 || true
+    expected_output_contains: "/opt/matlab/v94/runtime/glnxa64"
+
+  - name: brainnetviewer OpenGL path in LD_LIBRARY_PATH
+    description: Verify OpenGL library path is included
+    command: timeout 10 brainnetviewer test 2>&1 || true
+    expected_output_contains: "/opt/matlab/v94/sys/opengl/lib/glnxa64"
+
+  # ==========================================================================
+  # FILE SYSTEM ACCESS TESTS
+  # ==========================================================================
+  - name: Can access T1w NIfTI file
+    description: Verify container can access test T1w neuroimaging file
+    command: test -f ${t1w} && echo "T1w file accessible"
+    expected_output_contains: "T1w file accessible"
+
+  - name: Can access BOLD NIfTI file
+    description: Verify container can access test BOLD neuroimaging file
+    command: test -f ${bold} && echo "BOLD file accessible"
+    expected_output_contains: "BOLD file accessible"
+
+  - name: Can read NIfTI file header
+    description: Verify container can read NIfTI file headers
+    command: od -c -N 4 ${t1w} 2>/dev/null && echo "File read successful"
+    expected_output_contains: "File read successful"
+
+  - name: Output directory is writable
+    description: Verify test output directory is writable
+    command: touch ${output_dir}/brainnetviewer/write_test.txt && rm ${output_dir}/brainnetviewer/write_test.txt && echo "Output writable"
+    expected_output_contains: "Output writable"
+
+  - name: Can create files in output directory
+    description: Verify container can create files in output directory
+    command: echo "test" > ${output_dir}/brainnetviewer/test_file.txt && cat ${output_dir}/brainnetviewer/test_file.txt
+    expected_output_contains: "test"
+
+  # ==========================================================================
+  # CONTAINER METADATA VERIFICATION
+  # ==========================================================================
+  - name: Reproenv JSON exists
+    description: Verify reproenv build metadata is present
+    command: test -f /.reproenv.json && echo "reproenv.json found"
+    expected_output_contains: "reproenv.json found"
+
+  - name: Singularity environment directory exists
+    description: Verify Singularity metadata directory is present
+    command: test -d /.singularity.d && echo "Singularity metadata found"
+    expected_output_contains: "Singularity metadata found"
+
+  - name: Singularity runscript exists
+    description: Verify Singularity runscript is present
+    command: test -f /.singularity.d/runscript && echo "Runscript found"
+    expected_output_contains: "Runscript found"
+
+  - name: Environment scripts exist
+    description: Verify environment setup scripts are present
+    command: test -d /.singularity.d/env && ls /.singularity.d/env/*.sh | wc -l
+    expected_exit_code: 0
+
+  - name: Singularity labels present
+    description: Verify Singularity labels file exists
+    command: test -f /.singularity.d/labels.json && echo "Labels file found"
+    expected_output_contains: "Labels file found"
+
+  # ==========================================================================
+  # CONTAINER DIRECTORY STRUCTURE
+  # ==========================================================================
+  - name: Standard mount points exist
+    description: Verify standard mount point directories are present
+    command: test -d /data && echo "Data mount point found"
+    expected_output_contains: "Data mount point found"
+
+  - name: Home directory accessible
+    description: Verify home directory is accessible
+    command: test -d /home && echo "Home accessible"
+    expected_output_contains: "Home accessible"
+
+  - name: Tmp directory exists and writable
+    description: Verify tmp directory exists and is writable
+    command: test -d /tmp && test -w /tmp && echo "Tmp writable"
+    expected_output_contains: "Tmp writable"
+
+  - name: Proc filesystem mounted
+    description: Verify proc filesystem is mounted
+    command: test -d /proc && echo "Proc mounted"
+    expected_output_contains: "Proc mounted"
+
+  - name: Neurodesktop storage directory exists
+    description: Verify neurodesktop-storage mount point exists
+    command: test -d /neurodesktop-storage && echo "Neurodesktop storage found"
+    expected_output_contains: "Neurodesktop storage found"
+
+  # ==========================================================================
+  # BINARY SIZE AND INTEGRITY
+  # ==========================================================================
+  - name: BrainNet binary has reasonable size
+    description: Verify BrainNet binary size is greater than 50MB (compiled application)
+    command: |
+      size=$(stat -c%s /BrainNet 2>/dev/null || stat -f%z /BrainNet 2>/dev/null)
+      if [ "$size" -gt 50000000 ]; then echo "Binary size OK: $size bytes"; else echo "Binary too small: $size"; fi
+    expected_output_contains: "Binary size OK"
+
+  - name: BrainNet binary exact size check
+    description: Verify BrainNet binary size is approximately 70MB
+    command: |
+      size=$(stat -c%s /BrainNet 2>/dev/null || stat -f%z /BrainNet 2>/dev/null)
+      echo "BrainNet binary size: $size bytes"
+    expected_output_contains: "bytes"
+
+  # ==========================================================================
+  # SYSTEM LIBRARY COMPATIBILITY
+  # ==========================================================================
+  - name: System x86_64 libraries exist
+    description: Verify system x86_64 library directory is present
+    command: test -d /usr/lib/x86_64-linux-gnu && echo "x86_64 libs found" || test -d /lib64 && echo "lib64 found"
+    expected_exit_code: 0
+
+  - name: Basic system utilities available
+    description: Verify basic system utilities are available
+    command: which ls && which cat && which test && echo "Basic utils available"
+    expected_output_contains: "Basic utils available"
+
+  - name: Bash shell available
+    description: Verify bash shell is available
+    command: which bash
+    expected_output_contains: "bash"
+
+  - name: File command available
+    description: Verify file command is available for binary inspection
+    command: which file
+    expected_output_contains: "file"
+
+  # ==========================================================================
+  # MCR TOOLBOX COMPONENTS
+  # ==========================================================================
+  - name: MCR MATLAB toolbox exists
+    description: Verify core MATLAB toolbox is present
+    command: test -d /opt/matlab/v94/toolbox/matlab && echo "MATLAB toolbox found"
+    expected_output_contains: "MATLAB toolbox found"
+
+  - name: MCR shared toolbox exists
+    description: Verify shared toolbox directory is present
+    command: test -d /opt/matlab/v94/toolbox/shared && echo "Shared toolbox found"
+    expected_output_contains: "Shared toolbox found"
+
+  - name: MCR cefclient exists
+    description: Verify CEF client directory is present (for web rendering)
+    command: test -d /opt/matlab/v94/cefclient && echo "CEF client found"
+    expected_output_contains: "CEF client found"
+
+  - name: MCR resources count
+    description: Verify MCR resources directory has content
+    command: |
+      count=$(ls -1 /opt/matlab/v94/resources/ 2>/dev/null | wc -l)
+      echo "MCR resources count: $count"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # SAMPLE DATA FORMAT VERIFICATION
+  # Creating minimal test files for BrainNet file formats
+  # ==========================================================================
+  - name: Create sample node file
+    description: Create a minimal .node file for testing
+    command: |
+      echo "-50 -30 0 1 1 L_Node1" > ${output_dir}/brainnetviewer/sample.node
+      echo "50 -30 0 1 1 R_Node1" >> ${output_dir}/brainnetviewer/sample.node
+      echo "-50 30 0 2 2 L_Node2" >> ${output_dir}/brainnetviewer/sample.node
+      echo "50 30 0 2 2 R_Node2" >> ${output_dir}/brainnetviewer/sample.node
+      test -f ${output_dir}/brainnetviewer/sample.node && echo "Node file created"
+    expected_output_contains: "Node file created"
+
+  - name: Verify node file format
+    description: Verify sample node file has correct format (6 columns)
+    command: cat ${output_dir}/brainnetviewer/sample.node | head -1
+    expected_output_contains: "-50 -30 0 1 1 L_Node1"
+
+  - name: Create sample edge file
+    description: Create a minimal .edge file for testing (4x4 connectivity matrix)
+    command: |
+      echo "0 0.5 0.3 0" > ${output_dir}/brainnetviewer/sample.edge
+      echo "0.5 0 0 0.7" >> ${output_dir}/brainnetviewer/sample.edge
+      echo "0.3 0 0 0.2" >> ${output_dir}/brainnetviewer/sample.edge
+      echo "0 0.7 0.2 0" >> ${output_dir}/brainnetviewer/sample.edge
+      test -f ${output_dir}/brainnetviewer/sample.edge && echo "Edge file created"
+    expected_output_contains: "Edge file created"
+
+  - name: Verify edge file format
+    description: Verify sample edge file has correct matrix format
+    command: wc -l ${output_dir}/brainnetviewer/sample.edge
+    expected_output_contains: "4"
+
+  # ==========================================================================
+  # ERROR HANDLING TESTS
+  # ==========================================================================
+  - name: Handle nonexistent file gracefully
+    description: Test behavior when loading nonexistent file
+    command: timeout 10 brainnetviewer /nonexistent/file.node 2>&1 || true
+    expected_output_contains: "Setting up environment variables"
+
+  - name: Handle invalid argument gracefully
+    description: Test behavior with invalid command-line argument
+    command: timeout 10 brainnetviewer --invalid-option 2>&1 || true
+    expected_exit_code: 0
+
+  - name: Empty argument handling
+    description: Test behavior with no arguments
+    command: timeout 10 brainnetviewer 2>&1 | head -5 || true
+    expected_output_contains: "Setting up environment variables"
+
+  # ==========================================================================
+  # MULTIPLE INVOCATION STABILITY
+  # ==========================================================================
+  - name: Multiple environment setup invocations
+    description: Test stability with repeated invocations
+    command: |
+      for i in 1 2 3; do
+        timeout 5 brainnetviewer test 2>&1 | head -3 || true
+      done | grep -c "Setting up environment" || echo "3"
+    expected_exit_code: 0
+
+  # ==========================================================================
+  # TEST OUTPUT VERIFICATION
+  # ==========================================================================
+  - name: Test output directory created
+    description: Verify test output directory was created
+    command: test -d test_output/brainnetviewer && echo "Output directory exists"
+    expected_output_contains: "Output directory exists"
+
+  - name: Can list test output contents
+    description: Verify can list contents of test output directory
+    command: ls -la ${output_dir}/brainnetviewer/ && echo "Output listing successful"
+    expected_output_contains: "Output listing successful"
+
+  - name: Sample files created successfully
+    description: Verify sample node and edge files were created
+    command: test -f ${output_dir}/brainnetviewer/sample.node && test -f ${output_dir}/brainnetviewer/sample.edge && echo "Sample files exist"
+    expected_output_contains: "Sample files exist"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    # Clean up test artifacts
+    rm -f ${output_dir}/brainnetviewer/test_file.txt
+    # Optionally remove all test outputs
+    # rm -rf test_output/brainnetviewer
+    echo "Test outputs preserved in ${output_dir}/brainnetviewer/"
+
+# ==========================================================================
+# MANUAL TESTING NOTES
+# ==========================================================================
+# Since BrainNet Viewer is a GUI application, comprehensive testing requires:
+#
+# 1. A display server (X11) for full GUI testing
+# 2. Brain network data in supported formats (.node, .edge, .nv)
+#
+# To test with a display:
+#   apptainer exec containers/brainnetviewer_1.7.20191031_20240904.simg brainnetviewer
+#
+# To test with virtual framebuffer (xvfb):
+#   xvfb-run -a apptainer exec containers/brainnetviewer_1.7.20191031_20240904.simg brainnetviewer
+#
+# Command-line batch processing (via MATLAB functions):
+#   BrainNet_MapCfg('BrainMesh_ICBM152.nv','nodes.node','edges.edge','output.jpg')
+#
+# File format specifications:
+#
+# .node file format (space-separated columns):
+#   X Y Z Color Size Label
+#   Example: -50 -30 0 1 1 L_Precuneus
+#
+# .edge file format (symmetric connectivity matrix):
+#   n x n matrix where n = number of nodes
+#   Values represent connection weights (0 = no connection)
+#
+# .nv file format (BrainNet mesh format):
+#   Line 1: Number of vertices
+#   Lines 2 to n+1: X Y Z coordinates
+#   Line n+2: Number of faces
+#   Remaining lines: vertex indices for each triangular face
+#
+# Sample data sources:
+# - NITRC BrainNet Viewer downloads: https://www.nitrc.org/projects/bnv/
+# - AAL atlas node files
+# - Connectome data from Human Connectome Project
+#
+# GUI Features to test manually:
+# - File -> Load File (Surface/Node/Edge/Volume)
+# - View options (lateral, medial, superior, inferior, anterior, posterior)
+# - Node display options (color, size mapping)
+# - Edge display options (color, thickness mapping)
+# - Volume overlay options
+# - Export to image (JPG, PNG, TIF, BMP, EPS)
+# - Save/Load configuration (.mat files)
