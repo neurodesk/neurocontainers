@@ -1,12 +1,14 @@
 {
   "apps": {
-    "gimpGUI-gimp 2.10.18": {
-      "version": "20210104",
-      "exec": "gimp"
-    },
     "gimp 2.10.18": {
-      "version": "20210104",
-      "exec": ""
+      "version": "20260222",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "gimpGUI-gimp 2.10.18": {
+      "version": "20260222",
+      "exec": "gimp",
+      "apptainer_args": []
     }
   },
   "categories": [
