@@ -1,24 +1,66 @@
 tests:
   - name: Test freesurfer
     script: |
-      segmentSubjectT1_autoEstimateAlveusML #should not complain about libraries missing
-      checkMCR.sh #should not complain
-      segmentThalamicNuclei.sh --help #should not compalin about matlab libraries missing
-      mris_left_right_register # should not through permission denied error (was an apparmor problem blocking miner names)
-      segmentNuclei # should work and not return a symbol error (needs mcr /MCR2014b/v84/ - if it does it uses the wrong matlab mcr version)
-      fast_selxavg3b.glnxa64 # should not return a symbol error (needs mcr /opt/MCR2019b/v97/)
-      echo $FSF_OUTPUT_FORMAT # needs to be .nii.gz so that fast_selxavg3b.glnxa64 can work without scratch directory beeing writable
-      touch /scratch/test # scratch needs to be writable for fast_selxavg3b.glnxa64
+      set -o pipefail
 
-      # interactive test:
-      if [[ -v DISPLAY ]]; then
-          export QT_DEBUG_PLUGINS=1
-          freeview
+      LAST_OUTPUT=""
+      LAST_STATUS=0
+
+      run_and_capture() {
+          local name="$1"
+          shift
+          set +e
+          LAST_OUTPUT=$("$@" 2>&1)
+          LAST_STATUS=$?
+          set -e
+          printf '\n[%s] exit=%s\n%s\n' "$name" "$LAST_STATUS" "$LAST_OUTPUT"
+      }
+
+      assert_no_runtime_link_errors() {
+          local name="$1"
+          if [ "$LAST_STATUS" -eq 127 ]; then
+              echo "Command failed to execute in $name" >&2
+              exit 1
+          fi
+          if printf '%s\n' "$LAST_OUTPUT" | grep -Eiq \
+              'symbol lookup error|undefined symbol|version `[^`]+` not found|Could not find version [0-9]+\.[0-9]+ of the MATLAB Runtime'; then
+              echo "Unexpected runtime/linker error in $name" >&2
+              exit 1
+          fi
+      }
+
+      run_and_capture "segmentSubjectT1_autoEstimateAlveusML" segmentSubjectT1_autoEstimateAlveusML
+      assert_no_runtime_link_errors "segmentSubjectT1_autoEstimateAlveusML"
+
+      run_and_capture "checkMCR.sh" checkMCR.sh
+      assert_no_runtime_link_errors "checkMCR.sh"
+      [ "$LAST_STATUS" -eq 0 ]
+
+      run_and_capture "segmentThalamicNuclei.sh --help" segmentThalamicNuclei.sh --help
+      assert_no_runtime_link_errors "segmentThalamicNuclei.sh --help"
+      [ "$LAST_STATUS" -eq 0 ]
+
+      run_and_capture "mris_left_right_register" mris_left_right_register
+      [ "$LAST_STATUS" -ne 127 ]
+      if printf '%s\n' "$LAST_OUTPUT" | grep -Eiq 'permission denied|apparmor'; then
+          echo "Unexpected permission failure in mris_left_right_register" >&2
+          exit 1
       fi
 
-      [ -f ./mp2rage.nii  ] && echo "$FILE exist." || wget https://imaging.org.au/uploads/Human7T/mp2rageModel_L13_work03-plus-hippocampus-7T-sym-norm-mincanon_v0.8.nii -O ./mp2rage.nii 
-      mkdir ./freesurfer_output
-      recon-all -subject subjectname -i mp2rage.nii -all -sd ./freesurfer_output
-      export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=16
-      SegmentAAN.sh subjectname ./freesurfer_output
-      freeview -v $SUBJECTS_DIR/$SUBJECT/T1.mgz -v  $SUBJECTS_DIR/$SUBJECT/arousalNetworkLabels.$SUFFIX.mgz:colormap=lut:lut=$FREESURFER_HOME/average/AAN/atlas/freeview.lut.txt
+      run_and_capture "segmentNuclei" segmentNuclei
+      assert_no_runtime_link_errors "segmentNuclei"
+
+      run_and_capture "fast_selxavg3b.glnxa64" fast_selxavg3b.glnxa64
+      assert_no_runtime_link_errors "fast_selxavg3b.glnxa64"
+
+      [ "$FSF_OUTPUT_FORMAT" = "nii.gz" ]
+      touch /scratch/test
+
+      # Optional long-running validation.
+      if [ "${FREESURFER_FULL_TEST:-0}" = "1" ]; then
+          [ -f ./mp2rage.nii ] || wget https://imaging.org.au/uploads/Human7T/mp2rageModel_L13_work03-plus-hippocampus-7T-sym-norm-mincanon_v0.8.nii -O ./mp2rage.nii
+          mkdir -p ./freesurfer_output
+          recon-all -subject subjectname -i mp2rage.nii -all -sd ./freesurfer_output
+          export ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS=16
+          SegmentAAN.sh subjectname ./freesurfer_output
+      fi

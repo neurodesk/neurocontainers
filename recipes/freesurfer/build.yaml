@@ -164,8 +164,9 @@ build:
         - rm -rf workbench.zip
 
     - environment:
+        DEPLOY_TEST_MAX_PATH_FILES: "60"
         FREESURFER: /opt/freesurfer-{{ context.version }}
-        LD_LIBRARY_PATH: $LD_LIBRARY_PATH:/usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib/:/usr/lib64/:/opt/freesurfer-{{ context.version }}/MCRv83/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv83/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv83/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv83/sys/opengl/lib/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv83/extern/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv84/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv84/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv84/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv84/sys/opengl/lib/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv84/extern/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/opengl/lib/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64
+        LD_LIBRARY_PATH: /usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib/:/usr/lib64/:/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/opengl/lib/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv83/runtime/glnxa64
         PATH: $PATH:/opt/workbench/:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/tktools:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/mni/bin
 
     - run:
@@ -176,8 +177,8 @@ build:
 
     - run:
         - wget https://raw.githubusercontent.com/freesurfer/freesurfer/refs/heads/dev/AANsegment/linux_x86_64/segmentNuclei
-        - mv segmentNuclei segmentNuclei_mcr84
-        - chmod a+rwx segmentNuclei_mcr84
+        - mv segmentNuclei segmentNuclei_mcr97
+        - chmod a+rwx segmentNuclei_mcr97
 
     - copy:
         - segmentNuclei
@@ -228,7 +229,7 @@ files:
   - name: segmentNuclei
     contents: |-
       #!/usr/bin/env bash
-      LD_LIBRARY_PATH=/opt/MCR2014b/v84/runtime/glnxa64:/opt/MCR2014b/v84/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv84/bin segmentNuclei_mcr84 $@
+      LD_LIBRARY_PATH=/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64 segmentNuclei_mcr97 "$@"
 
   - name: license.txt
     contents: |-
