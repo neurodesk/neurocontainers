@@ -2292,12 +2292,46 @@ def build_and_run_container(
     # Shell out to Docker/Podman.
     # docker-py does not support using BuildKit.
     build_cmd = docker_args + ["."]
+    docker_build_retries_raw = os.environ.get("DOCKER_BUILD_RETRIES", "2")
+    docker_build_retry_delay_raw = os.environ.get("DOCKER_BUILD_RETRY_DELAY", "15")
+
     try:
-        subprocess.check_call(
-            build_cmd,
-            cwd=build_directory,
-        )
-    except subprocess.CalledProcessError as original_error:
+        docker_build_retries = max(1, int(docker_build_retries_raw))
+    except ValueError:
+        docker_build_retries = 2
+
+    try:
+        docker_build_retry_delay = max(1, int(docker_build_retry_delay_raw))
+    except ValueError:
+        docker_build_retry_delay = 15
+
+    build_error: subprocess.CalledProcessError | None = None
+    for attempt in range(1, docker_build_retries + 1):
+        try:
+            subprocess.check_call(
+                build_cmd,
+                cwd=build_directory,
+            )
+            build_error = None
+            break
+        except subprocess.CalledProcessError as exc:
+            build_error = exc
+            if attempt >= docker_build_retries:
+                break
+
+            # Retry full image builds to tolerate transient registry/network outages.
+            # Wait linearly longer between attempts.
+            wait_seconds = docker_build_retry_delay * attempt
+            print(
+                f"Docker build attempt {attempt}/{docker_build_retries} failed "
+                f"(exit code {exc.returncode}). Retrying in {wait_seconds}s..."
+            )
+            import time
+
+            time.sleep(wait_seconds)
+
+    if build_error is not None:
+        original_error = build_error
         # Docker BuildKit can intermittently fail with daemon EOF/unavailable
         # errors. Retry once with the legacy builder unless disabled.
         allow_legacy_fallback = _env_truthy(
