@@ -170,9 +170,14 @@ func (ct *containerTester) testExecutable(name string, top bool) (ExecutableResu
 			if line == "" {
 				continue
 			}
-			// ldd may emit "<absolute/path>:" as a header line when reporting results.
-			// This is not a dependency path and should be skipped.
-			if strings.HasPrefix(line, "/") && strings.HasSuffix(line, ":") && !strings.Contains(line, "=>") {
+			fields := strings.Fields(line)
+			// ldd may emit warning/header lines with the form:
+			//   "<absolute/path>: ..."
+			// These are not dependency entries and should be skipped.
+			if len(fields) > 0 &&
+				strings.HasPrefix(fields[0], "/") &&
+				strings.HasSuffix(fields[0], ":") &&
+				!strings.Contains(line, "=>") {
 				continue
 			}
 			if strings.HasPrefix(line, "ldd:") {
@@ -193,18 +198,19 @@ func (ct *containerTester) testExecutable(name string, top bool) (ExecutableResu
 				} else {
 					fields := strings.Fields(right)
 					if len(fields) > 0 && strings.HasPrefix(fields[0], "/") {
-						dep.FullPath = fields[0]
-						if _, err := os.Stat(fields[0]); err != nil {
-							dep.Error = fmt.Sprintf("stat %q: %v", fields[0], err)
+						path := strings.TrimSuffix(fields[0], ":")
+						dep.FullPath = path
+						if _, err := os.Stat(path); err != nil {
+							dep.Error = fmt.Sprintf("stat %q: %v", path, err)
 						}
 					}
 				}
 			} else {
-				fields := strings.Fields(line)
 				if len(fields) > 0 && strings.HasPrefix(fields[0], "/") {
-					dep.FullPath = fields[0]
-					if _, err := os.Stat(fields[0]); err != nil {
-						dep.Error = fmt.Sprintf("stat %q: %v", fields[0], err)
+					path := strings.TrimSuffix(fields[0], ":")
+					dep.FullPath = path
+					if _, err := os.Stat(path); err != nil {
+						dep.Error = fmt.Sprintf("stat %q: %v", path, err)
 					}
 				} else {
 					continue
