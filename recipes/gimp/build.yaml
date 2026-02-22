@@ -7,19 +7,17 @@ architectures:
 build:
   kind: neurodocker
 
-  base-image: ubuntu:20.10
+  base-image: ubuntu:20.04
   pkg-manager: apt
 
   directives:
     - install:
-        opts: --quiet
-        packages:
-          - gtk2-engines-pixbuf
-          - gimp
-          - gimp-data-extras
-          - gimp-dcraw
-          - gimp-dds
-          - gimp-gap
+        - gtk2-engines-pixbuf
+        - gimp
+        - gimp-data-extras
+        - gimp-dcraw
+        - gimp-dds
+        - gimp-gap
 
 deploy:
   bins:
