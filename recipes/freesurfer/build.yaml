@@ -179,8 +179,7 @@ build:
     - workdir: /opt/freesurfer-{{ context.version }}/bin/
 
     - run:
-        - wget https://raw.githubusercontent.com/freesurfer/freesurfer/refs/heads/dev/AANsegment/linux_x86_64/segmentNuclei
-        - mv segmentNuclei segmentNuclei_mcr97
+        - wget -O segmentNuclei_mcr97 https://raw.githubusercontent.com/freesurfer/freesurfer/refs/heads/dev/AANsegment/linux_x86_64/segmentNuclei
         - chmod a+rwx segmentNuclei_mcr97
 
     - copy:
