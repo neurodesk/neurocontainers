@@ -290,7 +290,7 @@ def process_image(images, connection, config, metadata):
     subprocess.run(["mkdir", "tof_output"])
     subprocess.run(["mv", "tof.nii", "tof_input"])
 
-    subprocess.run(["prediction.py", "--ds_path", "tof_input", "--out_path", "tof_output", "--pretrained", "/opt/VesselBoost/saved_models/manual_0429", "--prep_mode", "4"])
+    subprocess.run(["prediction.py", "--image_path", "tof_input", "--output_path", "tof_output", "--pretrained", "/opt/VesselBoost/saved_models/manual_0429", "--prep_mode", "4"])
 
     logging.info("Config: \n%s", config)
 
@@ -304,12 +304,12 @@ def process_image(images, connection, config, metadata):
             else:
                 logging.info("paramters[double] not found")
 
-            subprocess.run(["test_time_adaptation.py", "--ds_path", "tof_input", "--out_path", "tof_output", "--pretrained", "/opt/VesselBoost/saved_models/manual_0429", "--ep", "100", "--prep_mode", "4"])
+            subprocess.run(["test_time_adaptation.py", "--image_path", "tof_input", "--output_path", "tof_output", "--pretrained", "/opt/VesselBoost/saved_models/manual_0429", "--epochs", "100", "--learning_rate", "0.001", "--prep_mode", "4"])
 
         if config['parameters']['options'] == 'booster':
             logging.info("Running boost")
             subprocess.run(["mkdir", "init_label"])
-            subprocess.run(["angiboost.py", "--ds_path", "tof_input", "--out_path", "tof_output", "--lb_path", "init_label", "--pretrained", "/opt/VesselBoost/saved_models/manual_0429", "--outmo", "tof_output/outmo", "--ep", "100", "--lr", "0.05", "--prep_mode", "4"])
+            subprocess.run(["angiboost.py", "--image_path", "tof_input", "--output_path", "tof_output", "--label_path", "init_label", "--pretrained", "/opt/VesselBoost/saved_models/manual_0429", "--output_model", "tof_output/outmo", "--epochs", "100", "--learning_rate", "0.05", "--prep_mode", "4"])
 
 
     print('Processing done')
