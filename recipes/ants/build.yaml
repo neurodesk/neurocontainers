@@ -18,7 +18,7 @@ build:
         LD_LIBRARY_PATH: ""
     - template:
         name: ants
-        make_opts: -j8
+        make_opts: -j2
         method: source
         version: "{{ context.version }}"
     - install:
