@@ -84,6 +84,12 @@ build:
         - libxi6
         - libxkbcommon-x11-0
         - libxkbcommon0
+        - libqt5core5a
+        - libqt5dbus5
+        - libqt5gui5
+        - libqt5network5
+        - libqt5widgets5
+        - libqt5xml5
         - libqt5x11extras5
         - libxmu6
         - libxrender1
@@ -159,7 +165,7 @@ build:
     - environment:
         DEPLOY_TEST_MAX_PATH_FILES: "60"
         FREESURFER: /opt/freesurfer-{{ context.version }}
-        LD_LIBRARY_PATH: /usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib/:/usr/lib64/:/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/opengl/lib/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv83/runtime/glnxa64
+        LD_LIBRARY_PATH: /usr/local/freesurfer/{{ context.version }}/lib/qt/lib:/usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib:/usr/local/freesurfer/lib/qt/lib:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/opengl/lib/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv83/runtime/glnxa64
         PATH: $PATH:/opt/workbench/:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/tktools:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/mni/bin
 
     - run:
@@ -236,7 +242,51 @@ files:
   - name: freeview
     contents: |-
       #!/usr/bin/env bash
-      LD_LIBRARY_PATH=/usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib:/usr/lib/x86_64-linux-gnu exec /opt/freesurfer-{{ context.version }}/bin/freeview_bin "$@"
+      set -e
+
+      FREEVIEW_BIN=""
+      for candidate in \
+        "/opt/freesurfer-{{ context.version }}/bin/freeview_bin" \
+        "/usr/local/freesurfer/{{ context.version }}/bin/freeview_bin" \
+        "/usr/local/freesurfer/{{ context.version }}-1/bin/freeview_bin" \
+        "/usr/local/freesurfer/bin/freeview_bin"; do
+        if [ -x "$candidate" ]; then
+          FREEVIEW_BIN="$candidate"
+          break
+        fi
+      done
+
+      if [ -z "$FREEVIEW_BIN" ]; then
+        echo "freeview wrapper: unable to locate freeview_bin executable." >&2
+        exit 127
+      fi
+
+      RESOLVED_LD=""
+      for libdir in \
+        "/usr/local/freesurfer/{{ context.version }}/lib/qt/lib" \
+        "/usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib" \
+        "/usr/local/freesurfer/lib/qt/lib" \
+        "/opt/freesurfer-{{ context.version }}/lib/qt/lib" \
+        "/usr/lib/x86_64-linux-gnu" \
+        "/lib/x86_64-linux-gnu"; do
+        if [ -d "$libdir" ]; then
+          if [ -z "$RESOLVED_LD" ]; then
+            RESOLVED_LD="$libdir"
+          else
+            RESOLVED_LD="${RESOLVED_LD}:$libdir"
+          fi
+        fi
+      done
+
+      if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+        if [ -n "$RESOLVED_LD" ]; then
+          RESOLVED_LD="${RESOLVED_LD}:${LD_LIBRARY_PATH}"
+        else
+          RESOLVED_LD="${LD_LIBRARY_PATH}"
+        fi
+      fi
+
+      LD_LIBRARY_PATH="$RESOLVED_LD" exec "$FREEVIEW_BIN" "$@"
 
   - name: license.txt
     contents: |-
