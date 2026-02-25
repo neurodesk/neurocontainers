@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "ants 2.6.5": {
+      "version": "20260225",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image registration",
+    "structural imaging",
+    "image segmentation"
+  ]
+}
