@@ -49,10 +49,12 @@ build:
     - template:
         name: miniconda
         version: latest
-        conda_install: pytorch torchvision torchaudio pytorch-cuda=11.6 -c pytorch -c nvidia
+        mamba: "true"
+        conda_opts: "--override-channels -c pytorch -c nvidia -c defaults"
+        conda_install: python=3.10 pytorch torchvision torchaudio pytorch-cuda=11.6
 
     - run:
-        - pip install h11==0.11 monailabel
+        - pip install --no-cache-dir monailabel==0.8.5
 
     - run:
         - curl -fsSL --retry 5 "https://download.slicer.org/download?os=linux&stability=release&version={{ context.version }}" | tar -xz -C /opt/
@@ -76,7 +78,7 @@ build:
 
 deploy:
   path:
-    - /opt/Slicer-{{ context.version }}-linux-amd64/bin
+    - /usr/local/bin
   bins:
     - Slicer
 
