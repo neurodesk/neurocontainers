@@ -45,6 +45,8 @@ tests:
           fi
       }
 
+      FREEVIEW_POLLUTED_LD="${FREESURFER_HOME}/MCRv97/bin/glnxa64:${FREESURFER_HOME}/MCRv97/runtime/glnxa64:${LD_LIBRARY_PATH:-}"
+
       run_and_capture "segmentSubjectT1_autoEstimateAlveusML" segmentSubjectT1_autoEstimateAlveusML
       assert_no_runtime_link_errors "segmentSubjectT1_autoEstimateAlveusML"
 
@@ -74,23 +76,31 @@ tests:
       run_and_capture "fast_selxavg3b.glnxa64" fast_selxavg3b.glnxa64
       assert_no_runtime_link_errors "fast_selxavg3b.glnxa64"
 
-      run_and_capture "ldd freeview_bin" ldd "${FREESURFER_HOME}/bin/freeview_bin"
+      run_and_capture "ldd freeview_bin_real" ldd "${FREESURFER_HOME}/bin/freeview_bin_real"
       if printf '%s\n' "$LAST_OUTPUT" | grep -Eiq '=>[[:space:]]+not found'; then
-          fail_with_last_output "ldd freeview_bin" "freeview_bin has unresolved runtime libraries."
+          fail_with_last_output "ldd freeview_bin_real" "freeview_bin_real has unresolved runtime libraries."
+      fi
+
+      # Force MCR paths to the front to replicate common runtime contamination
+      # and ensure freeview wrappers still resolve Qt libraries correctly.
+      run_and_capture "freeview_bin startup probe (xvfb, timeout, polluted LD)" env LD_LIBRARY_PATH="${FREEVIEW_POLLUTED_LD}" timeout 20s xvfb-run -a "${FREESURFER_HOME}/bin/freeview_bin"
+      assert_no_runtime_link_errors "freeview_bin startup probe (xvfb, timeout, polluted LD)"
+      if [ "$LAST_STATUS" -ne 0 ] && [ "$LAST_STATUS" -ne 124 ]; then
+          fail_with_last_output "freeview_bin startup probe (xvfb, timeout, polluted LD)" "freeview_bin startup probe exited unexpectedly."
       fi
 
       # Probe real startup path (same as users running `freeview`) and tolerate timeout
       # because a healthy GUI process may keep running.
-      run_and_capture "freeview startup probe (xvfb, timeout)" timeout 20s xvfb-run -a freeview
-      assert_no_runtime_link_errors "freeview startup probe (xvfb, timeout)"
+      run_and_capture "freeview startup probe (xvfb, timeout, polluted LD)" env LD_LIBRARY_PATH="${FREEVIEW_POLLUTED_LD}" timeout 20s xvfb-run -a freeview
+      assert_no_runtime_link_errors "freeview startup probe (xvfb, timeout, polluted LD)"
       if [ "$LAST_STATUS" -ne 0 ] && [ "$LAST_STATUS" -ne 124 ]; then
-          fail_with_last_output "freeview startup probe (xvfb, timeout)" "freeview startup probe exited unexpectedly."
+          fail_with_last_output "freeview startup probe (xvfb, timeout, polluted LD)" "freeview startup probe exited unexpectedly."
       fi
 
-      run_and_capture "freeview -h (xvfb)" xvfb-run -a freeview -h
-      assert_no_runtime_link_errors "freeview -h (xvfb)"
+      run_and_capture "freeview -h (xvfb, polluted LD)" env LD_LIBRARY_PATH="${FREEVIEW_POLLUTED_LD}" xvfb-run -a freeview -h
+      assert_no_runtime_link_errors "freeview -h (xvfb, polluted LD)"
       if ! printf '%s\n' "$LAST_OUTPUT" | grep -Eiq 'Usage:[[:space:]]*freeview'; then
-          fail_with_last_output "freeview -h (xvfb)" "freeview help output did not contain expected marker."
+          fail_with_last_output "freeview -h (xvfb, polluted LD)" "freeview help output did not contain expected marker."
       fi
 
       [ "$FSF_OUTPUT_FORMAT" = "nii.gz" ]

@@ -3588,6 +3588,9 @@ def main(args):
                 use_podman=args.use_podman,
                 load_into_docker=args.load_into_docker,
             )
+
+            if args.test:
+                run_tests(recipe_path, gpu=args.gpu)
     else:
         root.print_help()
         sys.exit(1)

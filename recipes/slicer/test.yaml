@@ -1,0 +1,6 @@
+tests:
+  # test if slicer launcher works correctly. This should not give an error:
+  - name: Test slicer
+    script: |
+      Slicer --launcher-help
+      Slicer --launch /opt/Slicer-5.10.0-linux-amd64/lib/Slicer-5.10/cli-modules/GaussianBlurImageFilter --xml

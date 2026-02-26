@@ -173,14 +173,18 @@ build:
         - ln -s /usr/local/freesurfer/{{ context.version }}/* /opt/freesurfer-{{ context.version }}
 
     - run:
-        - mv /opt/freesurfer-{{ context.version }}/bin/freeview /opt/freesurfer-{{ context.version }}/bin/freeview_bin
+        - mv /opt/freesurfer-{{ context.version }}/bin/freeview /opt/freesurfer-{{ context.version }}/bin/freeview_bin_real
 
     - copy:
         - freeview
         - /opt/freesurfer-{{ context.version }}/bin/freeview
 
+    - copy:
+        - freeview_bin
+        - /opt/freesurfer-{{ context.version }}/bin/freeview_bin
+
     - run:
-        - chmod a+rwx /opt/freesurfer-{{ context.version }}/bin/freeview
+        - chmod a+rwx /opt/freesurfer-{{ context.version }}/bin/freeview /opt/freesurfer-{{ context.version }}/bin/freeview_bin
 
     - workdir: /opt/freesurfer-{{ context.version }}/bin/
 
@@ -261,6 +265,30 @@ files:
         exit 127
       fi
 
+      exec "$FREEVIEW_BIN" "$@"
+
+  - name: freeview_bin
+    contents: |-
+      #!/usr/bin/env bash
+      set -e
+
+      FREEVIEW_BIN_REAL=""
+      for candidate in \
+        "/opt/freesurfer-{{ context.version }}/bin/freeview_bin_real" \
+        "/usr/local/freesurfer/{{ context.version }}/bin/freeview_bin_real" \
+        "/usr/local/freesurfer/{{ context.version }}-1/bin/freeview_bin_real" \
+        "/usr/local/freesurfer/bin/freeview_bin_real"; do
+        if [ -x "$candidate" ]; then
+          FREEVIEW_BIN_REAL="$candidate"
+          break
+        fi
+      done
+
+      if [ -z "$FREEVIEW_BIN_REAL" ]; then
+        echo "freeview_bin wrapper: unable to locate freeview_bin_real executable." >&2
+        exit 127
+      fi
+
       RESOLVED_LD=""
       for libdir in \
         "/usr/local/freesurfer/{{ context.version }}/lib/qt/lib" \
@@ -279,14 +307,27 @@ files:
       done
 
       if [ -n "${LD_LIBRARY_PATH:-}" ]; then
-        if [ -n "$RESOLVED_LD" ]; then
-          RESOLVED_LD="${RESOLVED_LD}:${LD_LIBRARY_PATH}"
-        else
-          RESOLVED_LD="${LD_LIBRARY_PATH}"
-        fi
+        OLD_IFS="$IFS"
+        IFS=':'
+        for libdir in $LD_LIBRARY_PATH; do
+          if [ -z "$libdir" ]; then
+            continue
+          fi
+          case "$libdir" in
+            *"/MCRv83/"*|*"/MCRv97/"*)
+              continue
+              ;;
+          esac
+          if [ -z "$RESOLVED_LD" ]; then
+            RESOLVED_LD="$libdir"
+          else
+            RESOLVED_LD="${RESOLVED_LD}:$libdir"
+          fi
+        done
+        IFS="$OLD_IFS"
       fi
 
-      LD_LIBRARY_PATH="$RESOLVED_LD" exec "$FREEVIEW_BIN" "$@"
+      LD_LIBRARY_PATH="$RESOLVED_LD" exec "$FREEVIEW_BIN_REAL" "$@"
 
   - name: license.txt
     contents: |-

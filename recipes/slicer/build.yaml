@@ -1,8 +1,12 @@
 name: slicer
-version: 5.0.3
+version: 5.10.0
 
 architectures:
   - x86_64
+
+variables:
+  slicer_revision: 34045
+  monailabel_extension_item: 6912128dac7b1c95e7938b38
 
 build:
   kind: neurodocker
@@ -51,18 +55,24 @@ build:
         - pip install h11==0.11 monailabel
 
     - run:
-        - curl -fsSL --retry 5 https://download.slicer.org/bitstream/62cc52d2aa08d161a31c1af0 | tar -xz -C /opt/
-
-    - workdir: /opt/Slicer-{{ context.version }}-linux-amd64/NA-MIC/
+        - curl -fsSL --retry 5 "https://download.slicer.org/download?os=linux&stability=release&version={{ context.version }}" | tar -xz -C /opt/
 
     - run:
-        - curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/MONAILabel30893.tar.gz | tar -xz -C /opt/Slicer-{{ context.version }}-linux-amd64/NA-MIC/ --strip-components 1
+        - mkdir -p /opt/slicer-extensions/MONAILabel
+        - curl -fsSL --retry 5 "https://slicer-packages.kitware.com/api/v1/item/{{ context.monailabel_extension_item }}/download" | tar -xz -C /opt/slicer-extensions/MONAILabel --strip-components 1
+
+    - copy:
+        - slicer-entrypoint.sh
+        - /usr/local/bin/Slicer
+
+    - run:
+        - chmod +x /usr/local/bin/Slicer
 
     - install:
         - nvidia-cuda-toolkit
 
     - environment:
-        PATH: /miniconda3/bin:/usr/bin:/opt/Slicer-{{ context.version }}-linux-amd64/bin:/opt/Slicer-{{ context.version }}-linux-amd64
+        PATH: /miniconda3/bin:/usr/local/bin:/usr/bin:/opt/Slicer-{{ context.version }}-linux-amd64/bin:/opt/Slicer-{{ context.version }}-linux-amd64
 
 deploy:
   path:
@@ -77,6 +87,60 @@ categories:
 gui_apps:
   - name: slicerGUI
     exec: Slicer
+
+files:
+  - name: slicer-entrypoint.sh
+    contents: |
+      #!/usr/bin/env bash
+      set -u
+
+      SLICER_HOME="/opt/Slicer-{{ context.version }}-linux-amd64"
+      SLICER_CMD="${SLICER_HOME}/Slicer"
+      EXTENSION_REVISION="{{ context.slicer_revision }}"
+      EXTENSION_SOURCE="/opt/slicer-extensions/MONAILabel"
+      SLICER_MODULE_PATH_SUFFIX="lib/Slicer-5.10/qt-scripted-modules"
+
+      if [ -n "${HOME:-}" ] && [ -d "${HOME}" ] && [ -d "${EXTENSION_SOURCE}" ]; then
+        EXTENSION_PARENT="${HOME}/.config/NA-MIC/Extensions-${EXTENSION_REVISION}"
+        EXTENSION_TARGET="${EXTENSION_PARENT}/MONAILabel"
+        SETTINGS_FILE="${HOME}/.config/NA-MIC/Slicer-${EXTENSION_REVISION}.ini"
+
+        if [ ! -d "${EXTENSION_TARGET}" ] && mkdir -p "${EXTENSION_PARENT}" 2>/dev/null; then
+          cp -a "${EXTENSION_SOURCE}" "${EXTENSION_TARGET}" 2>/dev/null || true
+        fi
+
+        if [ -d "${EXTENSION_TARGET}" ] && [ ! -f "${SETTINGS_FILE}" ] && mkdir -p "$(dirname "${SETTINGS_FILE}")" 2>/dev/null; then
+          cat > "${SETTINGS_FILE}" <<EOF
+      [Extensions]
+      FrontendServerUrl=https://extensions.slicer.org
+      InstallPath=${HOME}/.config/NA-MIC/Extensions-${EXTENSION_REVISION}
+      LastServerAPI=Girder_v1
+      ManagerEnabled=true
+      MetadataFromServerUrl=https://slicer-packages.kitware.com
+      ServerUrl=https://slicer-packages.kitware.com
+
+      [LibraryPaths]
+      1\path=${EXTENSION_TARGET}/lib/Slicer-5.10
+      size=1
+
+      [Modules]
+      AdditionalPaths=${EXTENSION_TARGET}/${SLICER_MODULE_PATH_SUFFIX}
+      IgnoreModules=@Invalid()
+
+      [PYTHONPATH]
+      1\path=${EXTENSION_TARGET}/${SLICER_MODULE_PATH_SUFFIX}
+      size=1
+
+      [Paths]
+      size=0
+
+      [QT_PLUGIN_PATH]
+      size=0
+      EOF
+        fi
+      fi
+
+      exec "${SLICER_CMD}" "$@"
 
 readme: |
   ----------------------------------

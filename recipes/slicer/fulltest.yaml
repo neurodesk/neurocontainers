@@ -1,5 +1,5 @@
 # 3D Slicer container test suite
-# Tests for 3D Slicer v5.0.3 - Medical image visualization and analysis platform
+# Tests for 3D Slicer v5.10.0 - Medical image visualization and analysis platform
 #
 # 3D Slicer is a free, open source software for visualization, processing,
 # segmentation, registration, and analysis of medical, biomedical, and other 3D
@@ -11,11 +11,11 @@
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
 #
 # Note: Slicer CLI modules are invoked via: Slicer --launch <CLI_MODULE> [args]
-# CLI modules are located at: /opt/Slicer-5.0.3-linux-amd64/lib/Slicer-5.0/cli-modules/
+# CLI modules are located at: /opt/Slicer-5.10.0-linux-amd64/lib/Slicer-5.10/cli-modules/
 
 name: slicer
-version: 5.0.3
-container: slicer_5.0.3_20221025.simg
+version: 5.10.0
+container: slicer_5.10.0_20251110.simg
 
 required_files:
   - dataset: ds000001
@@ -29,7 +29,7 @@ test_data:
   t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
   bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
   output_dir: test_output
-  cli_path: /opt/Slicer-5.0.3-linux-amd64/lib/Slicer-5.0/cli-modules
+  cli_path: /opt/Slicer-5.10.0-linux-amd64/lib/Slicer-5.10/cli-modules
 
 setup:
   script: |
