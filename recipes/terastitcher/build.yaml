@@ -7,7 +7,7 @@ architectures:
 build:
   kind: neurodocker
   base-image: fedora:35
-  pkg-manager: dnf
+  pkg-manager: yum
 
   directives:
     - environment:
