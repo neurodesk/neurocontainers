@@ -444,12 +444,14 @@ class ContainerRecipe:
 
     @categories.validator
     def _validate_categories(self, attribute, value):
-        if value:
-            for category in value:
-                if category not in CATEGORIES:
-                    raise ValueError(
-                        f"Category '{category}' not supported. Must be one of: {CATEGORIES}"
-                    )
+        if not value:
+            raise ValueError("categories is required and must be a non-empty list")
+
+        for category in value:
+            if category not in CATEGORIES:
+                raise ValueError(
+                    f"Category '{category}' not supported. Must be one of: {CATEGORIES}"
+                )
 
 
 # ============================================================================

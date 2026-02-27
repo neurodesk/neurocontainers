@@ -27,6 +27,7 @@ def test_valid_minimal_recipe():
         "name": "test-app",
         "version": "1.0.0",
         "architectures": ["x86_64"],
+        "categories": ["other"],
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -135,6 +136,25 @@ def test_invalid_architecture():
     assert any("architecture" in error.lower() for error in errors)
 
 
+def test_invalid_recipe_missing_categories():
+    """Test validation fails when categories are missing"""
+    recipe = {
+        "name": "test-app",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": []
+        }
+    }
+
+    errors = get_validation_errors(recipe)
+    assert len(errors) > 0
+    assert any("categories" in error.lower() for error in errors)
+
+
 def test_invalid_category():
     """Test validation fails for unsupported category"""
     recipe = {
@@ -161,6 +181,7 @@ def test_validate_recipe_file():
         "name": "file-test-app",
         "version": "1.0.0",
         "architectures": ["x86_64"],
+        "categories": ["other"],
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -196,6 +217,7 @@ def test_directive_validation():
         "name": "directive-test",
         "version": "1.0.0",
         "architectures": ["x86_64"],
+        "categories": ["other"],
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -227,6 +249,7 @@ def test_two_digit_version_yaml_parsing():
         "name": "version-test",
         "version": "1.1",  # This will be parsed as float by YAML
         "architectures": ["x86_64"],
+        "categories": ["other"],
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -268,6 +291,7 @@ if __name__ == "__main__":
     test_invalid_recipe_missing_required_fields()
     test_invalid_recipe_empty_name()
     test_invalid_architecture()
+    test_invalid_recipe_missing_categories()
     test_invalid_category()
     test_validate_recipe_file()
     test_validate_nonexistent_file()

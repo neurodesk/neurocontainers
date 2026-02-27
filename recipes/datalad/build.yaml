@@ -7,6 +7,10 @@ copyright:
 
 architectures:
 - x86_64
+
+categories:
+  - data management
+
 build:
   kind: neurodocker
   base-image: neurodebian:bookworm-non-free

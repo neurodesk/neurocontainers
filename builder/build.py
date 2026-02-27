@@ -184,18 +184,15 @@ def load_description_file(recipe_dir: str) -> typing.Any:
     if "version" in recipe_dict and recipe_dict["version"] is not None:
         recipe_dict["version"] = str(recipe_dict["version"])
 
-    # Validate the recipe using attrs schema
+    # Validate the recipe using attrs schema and fail fast on errors.
     try:
         import builder.validation as validation
+    except ImportError as e:
+        raise ImportError(
+            "Recipe validation module is not available. Cannot continue build."
+        ) from e
 
-        validation.validate_recipe_dict(recipe_dict)
-    except ImportError:
-        # If validation module is not available, skip validation
-        print("Warning: Recipe validation module not available, skipping validation")
-    except Exception as e:
-        print(f"Warning: Recipe validation failed: {e}")
-        # For now, continue with build but print warning
-        # In the future, this could be made into a hard error
+    validation.validate_recipe_dict(recipe_dict)
 
     return recipe_dict
 
