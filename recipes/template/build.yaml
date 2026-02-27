@@ -24,6 +24,9 @@ deploy:
   bins: 
     - datalad
 
+categories:
+  - data management
+
 readme: |
   ## datalad/{{context.version}} ##
   DataLad is a data management and distribution platform providing access to a wide range of data resources. Git for data using git-annex as backend.

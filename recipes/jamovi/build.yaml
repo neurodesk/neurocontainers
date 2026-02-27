@@ -27,6 +27,9 @@ deploy:
   path:
     - /usr/bin
 
+categories:
+  - statistical analysis
+
 readme: |
   ----------------------------------
   ## jamovi/{{ context.version }} ##

@@ -149,3 +149,6 @@ build:
 deploy:
     bins:
         - /opt/code/afni_processing.sh
+
+categories:
+    - functional imaging

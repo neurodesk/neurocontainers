@@ -41,6 +41,9 @@ deploy:
     path:
         - /opt/code/FSL-BET2/bin
 
+categories:
+    - image reconstruction
+
 readme: |-
     ----------------------------------
     ## openreconexample/{{ context.version }} ##

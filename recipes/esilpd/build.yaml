@@ -138,6 +138,9 @@ deploy:
   bins:
     - code
 
+categories:
+  - electrophysiology
+
 readme: |
   ----------------------------------
   ## esilpd/{{ context.version }} ##

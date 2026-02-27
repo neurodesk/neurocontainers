@@ -42,6 +42,9 @@ deploy:
   bins:
     - dafne
 
+categories:
+  - image segmentation
+
 readme: |-
   ----------------------------------
   ## dafne/{{ context.version }} ##

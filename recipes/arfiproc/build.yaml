@@ -27,6 +27,9 @@ deploy:
     bins:
         - python3
 
+categories:
+    - image reconstruction
+
 readme: |-
     ----------------------------------
     ## arfiproc/{{ context.version }} ##

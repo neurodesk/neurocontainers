@@ -23,6 +23,9 @@ deploy:
   bins:
     - cpac
 
+categories:
+  - functional imaging
+
 readme: |
   ## cpac/{{ context.version }} ##
 

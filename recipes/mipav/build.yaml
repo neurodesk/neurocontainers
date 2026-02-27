@@ -25,6 +25,10 @@ build:
 copyright:
   - name: Medical Image Processing, Analysis and Visualization
     url: https://mipav.cit.nih.gov/clickwrap.php
+
+categories:
+  - visualization
+
 readme: |-
   ----------------------------------
   ## mipav/{{ context.version }} ##

@@ -62,6 +62,10 @@ build:
   base-image: bids/giga_connectome:0.6.0
   pkg-manager: apt
   directives: []
+
+categories:
+  - connectomics
+
 readme: >-
   ----------------------------------
 

@@ -46,6 +46,9 @@ deploy:
   bins:
     - process_hcp_asl
 
+categories:
+  - functional imaging
+
 readme: |
   ## hcpasl/{{ context.version }} ##
   HCP-ASL is a tool for processing ASL (Arterial Spin Labeling) data following the Human Connectome Project (HCP) minimal preprocessing pipelines. It provides a complete pipeline for processing ASL data, including motion correction, distortion correction, and calibration.

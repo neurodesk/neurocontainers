@@ -43,6 +43,9 @@ deploy:
     path:
         - /opt/code/FSL-BET2/bin
 
+categories:
+    - image reconstruction
+
 readme: |-
     ----------------------------------
     ## afib1/{{ context.version }} ##

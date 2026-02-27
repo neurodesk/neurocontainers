@@ -31,6 +31,9 @@ deploy:
   path:
     - /opt/mgltools/bin
 
+categories:
+  - molecular biology
+
 readme: |
   ----------------------------------
   ## mgltools/{{ context.version }} ##

@@ -95,5 +95,8 @@ build:
               R_LIBS: /CIVET_Full_Project/Linux-x86_64/R_LIBS
               VOLUME_CACHE_THRESHOLD: "-1"
 
+categories:
+    - structural imaging
+
 readme: |
     civet/{{ context.version }}

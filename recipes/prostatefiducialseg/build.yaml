@@ -82,3 +82,7 @@ build:
 deploy:
     bins:
         - predict3.py
+
+categories:
+    - image segmentation
+    - body

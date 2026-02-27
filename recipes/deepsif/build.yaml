@@ -122,6 +122,9 @@ deploy:
   bins:
     - generate_tvb_data
 
+categories:
+  - electrophysiology
+
 readme: |-
   ----------------------------------
   ## deepsif/{{ context.version }} ##
