@@ -690,6 +690,118 @@ jobs:
           --label "release"
 
         echo "✅ Pull request created for ${CONTAINER_NAME} ${CONTAINER_VERSION}"
+    - name: Detect OpenReconLabel.json
+      id: detect_openrecon
+      if: steps.generate.outputs.container_name
+      env:
+        CONTAINER_NAME: ${{ steps.generate.outputs.container_name }}
+      run: |
+        SOURCE_LABEL_FILE="recipes/${CONTAINER_NAME}/OpenReconLabel.json"
+        if [ -f "$SOURCE_LABEL_FILE" ]; then
+          echo "has_openrecon_label=true" >> "$GITHUB_OUTPUT"
+          echo "Found OpenRecon label: $SOURCE_LABEL_FILE"
+        else
+          echo "has_openrecon_label=false" >> "$GITHUB_OUTPUT"
+          echo "No OpenRecon label found for ${CONTAINER_NAME}; skipping OpenRecon PR."
+        fi
+
+    - name: Create OpenRecon Pull Request
+      if: steps.detect_openrecon.outputs.has_openrecon_label == 'true'
+      env:
+        GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+        CONTAINER_NAME: ${{ steps.generate.outputs.container_name }}
+        CONTAINER_VERSION: ${{ steps.generate.outputs.container_version }}
+      run: |
+        set -euo pipefail
+
+        gh auth setup-git
+
+        # Configure git
+        git config --global user.name "neurocontainers-bot"
+        git config --global user.email "neurocontainers-bot@neurodesk.github.io"
+
+        WORKDIR="$(mktemp -d)"
+        trap 'rm -rf "$WORKDIR"' EXIT
+        OPENRECON_DIR="${WORKDIR}/openrecon"
+
+        gh repo clone neurodesk/openrecon "$OPENRECON_DIR"
+
+        SOURCE_LABEL_FILE="${GITHUB_WORKSPACE}/recipes/${CONTAINER_NAME}/OpenReconLabel.json"
+        TARGET_RECIPE_DIR="${OPENRECON_DIR}/recipes/${CONTAINER_NAME}"
+        TARGET_LABEL_FILE="${TARGET_RECIPE_DIR}/OpenReconLabel.json"
+        TARGET_PARAMS_FILE="${TARGET_RECIPE_DIR}/params.sh"
+
+        if [ ! -d "$TARGET_RECIPE_DIR" ]; then
+          echo "::warning::OpenRecon recipe directory not found: ${TARGET_RECIPE_DIR}. Skipping OpenRecon PR."
+          exit 0
+        fi
+
+        if [ ! -f "$TARGET_PARAMS_FILE" ]; then
+          echo "::warning::OpenRecon params.sh not found: ${TARGET_PARAMS_FILE}. Skipping OpenRecon PR."
+          exit 0
+        fi
+
+        cp "$SOURCE_LABEL_FILE" "$TARGET_LABEL_FILE"
+
+        ESCAPED_CONTAINER_VERSION="$(printf '%s\n' "$CONTAINER_VERSION" | sed 's/[&|]/\\&/g')"
+
+        if grep -qE '^[[:space:]]*export[[:space:]]+version=' "$TARGET_PARAMS_FILE"; then
+          sed -Ei "s|^[[:space:]]*export[[:space:]]+version=.*$|export version=${ESCAPED_CONTAINER_VERSION}|" "$TARGET_PARAMS_FILE"
+        elif grep -qE '^[[:space:]]*version=' "$TARGET_PARAMS_FILE"; then
+          sed -Ei "s|^[[:space:]]*version=.*$|version=${ESCAPED_CONTAINER_VERSION}|" "$TARGET_PARAMS_FILE"
+        elif grep -qE '^[[:space:]]*export[[:space:]]+VERSION=' "$TARGET_PARAMS_FILE"; then
+          sed -Ei "s|^[[:space:]]*export[[:space:]]+VERSION=.*$|export VERSION=${ESCAPED_CONTAINER_VERSION}|" "$TARGET_PARAMS_FILE"
+        elif grep -qE '^[[:space:]]*VERSION=' "$TARGET_PARAMS_FILE"; then
+          sed -Ei "s|^[[:space:]]*VERSION=.*$|VERSION=${ESCAPED_CONTAINER_VERSION}|" "$TARGET_PARAMS_FILE"
+        else
+          echo "::warning::No supported version assignment found in ${TARGET_PARAMS_FILE}. Skipping OpenRecon PR."
+          exit 0
+        fi
+
+        cd "$OPENRECON_DIR"
+
+        if [ -z "$(git status --porcelain -- "recipes/${CONTAINER_NAME}/OpenReconLabel.json" "recipes/${CONTAINER_NAME}/params.sh")" ]; then
+          echo "No OpenRecon changes detected for ${CONTAINER_NAME}; skipping OpenRecon PR."
+          exit 0
+        fi
+
+        EXISTING_PR_URL="$(gh pr list \
+          --repo neurodesk/openrecon \
+          --state open \
+          --search "in:title Update ${CONTAINER_NAME} OpenRecon metadata to ${CONTAINER_VERSION}" \
+          --json url \
+          --jq '.[0].url')"
+
+        if [ -n "$EXISTING_PR_URL" ] && [ "$EXISTING_PR_URL" != "null" ]; then
+          echo "Open OpenRecon PR already exists for ${CONTAINER_NAME} ${CONTAINER_VERSION}: ${EXISTING_PR_URL}"
+          exit 0
+        fi
+
+        BRANCH_NAME="sync-openrecon/${CONTAINER_NAME}-${CONTAINER_VERSION}-$(date +%Y%m%d-%H%M%S)"
+        git checkout -b "$BRANCH_NAME"
+        git add "recipes/${CONTAINER_NAME}/OpenReconLabel.json" "recipes/${CONTAINER_NAME}/params.sh"
+        git commit -m "Update ${CONTAINER_NAME} OpenRecon metadata to ${CONTAINER_VERSION}
+
+        Auto-generated from neurocontainers CI."
+        git push origin "$BRANCH_NAME"
+
+        gh pr create \
+          --repo neurodesk/openrecon \
+          --title "Update ${CONTAINER_NAME} OpenRecon metadata to ${CONTAINER_VERSION}" \
+          --body "## Summary
+
+        This PR updates OpenRecon metadata for **${CONTAINER_NAME}** from the latest successful neurocontainers build.
+
+        ## Changes
+
+        - Update \`recipes/${CONTAINER_NAME}/OpenReconLabel.json\` from neurocontainers
+        - Set \`recipes/${CONTAINER_NAME}/params.sh\` version to \`${CONTAINER_VERSION}\`
+
+        🤖 Generated by neurocontainers CI | Created by @${GITHUB_ACTOR}" \
+          --head "$BRANCH_NAME" \
+          --base main
+
+        echo "✅ OpenRecon pull request created for ${CONTAINER_NAME} ${CONTAINER_VERSION}"
     - name: Generate job output
       run: |
         echo "The container has been successfully build. To test the container, run this:" >> $GITHUB_STEP_SUMMARY
