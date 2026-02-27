@@ -20,7 +20,7 @@ build:
     - workdir: /opt/terastitcher-{{ context.version }}
 
     - run:
-        - curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/TeraStitcher-portable-1.11.10-Linux.tar.gz | tar -xz -C /opt/terastitcher-{{ context.version }} --strip-components 1
+        - tar -xz -C /opt/terastitcher-{{ context.version }} --strip-components 1 -f {{ get_file("TeraStitcher_portable_1_11_10_Linux_tar_gz") }}
 
     - environment:
         PATH: $PATH:/opt/terastitcher-{{ context.version }}
@@ -46,3 +46,7 @@ readme: |
 
   To run container outside of this environment: ml terastitcher/{{ context.version }}
   ----------------------------------
+
+files:
+  - name: TeraStitcher_portable_1_11_10_Linux_tar_gz
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/TeraStitcher-portable-1.11.10-Linux.tar.gz

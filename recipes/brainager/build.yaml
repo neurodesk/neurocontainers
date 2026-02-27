@@ -50,7 +50,7 @@ build:
         SPM_VERSION: "12"
 
     - run:
-        - wget --no-check-certificate --progress=bar:force -P /opt https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/spm12_r7219_Linux_R2017b.zip
+        - cp {{ get_file("spm12_r7219_Linux_R2017b_zip") }} /opt/spm12_r7219_Linux_R2017b.zip
         - unzip -q /opt/spm12_r7219_Linux_R2017b.zip -d /opt
         - rm -f /opt/spm12_r7219_Linux_R2017b.zip
 
@@ -70,7 +70,7 @@ build:
         - git clone https://github.com/james-cole/brainageR
         - rm -rf /opt/brainageR/.git
         - rm -rf /opt/brainageR/templates
-        - curl https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/brainager_neurodesk.zip -o brainager_neurodesk.zip
+        - cp {{ get_file("brainager_neurodesk_zip") }} brainager_neurodesk.zip
         - unzip brainager_neurodesk.zip -d /opt/brainageR_chris
         - mv /opt/brainageR_chris/* /opt/brainageR/ 
         - rm -f brainager_neurodesk.zip
@@ -121,3 +121,10 @@ readme: |-
 
 categories:
   - "structural imaging"
+
+files:
+  - name: spm12_r7219_Linux_R2017b_zip
+    url: https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/spm12_r7219_Linux_R2017b.zip
+
+  - name: brainager_neurodesk_zip
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/brainager_neurodesk.zip

@@ -18,7 +18,7 @@ build:
     - install: wget python3-pip git python3 unzip
     - workdir: /opt
     - run: # INSTALL MINIFORGE
-        - wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+        - cp {{ get_file("Miniforge3_Linux_x86_64_sh") }} Miniforge3-Linux-x86_64.sh
         - bash Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge3
     - run: # CREATE LST-AI CONDA ENVIRONMENT AND CLONE LST-AI REPO
         - /opt/miniforge3/bin/conda create -n lstai python=3.8
@@ -33,23 +33,23 @@ build:
         - git checkout ae160681324d524db3578e4135bf781f8206e146
         - pip install SimpleITK --only-binary ":all:"
         - mkdir -p /opt/hd-bet_params
-        - wget -O /opt/hd-bet_params/0.model "https://zenodo.org/record/2540695/files/0.model?download=1"
-        - wget -O /opt/hd-bet_params/1.model "https://zenodo.org/record/2540695/files/1.model?download=1"
-        - wget -O /opt/hd-bet_params/2.model "https://zenodo.org/record/2540695/files/2.model?download=1"
-        - wget -O /opt/hd-bet_params/3.model "https://zenodo.org/record/2540695/files/3.model?download=1"
-        - wget -O /opt/hd-bet_params/4.model "https://zenodo.org/record/2540695/files/4.model?download=1"
+        - cp {{ get_file("0_model") }} /opt/hd-bet_params/0.model
+        - cp {{ get_file("1_model") }} /opt/hd-bet_params/1.model
+        - cp {{ get_file("2_model") }} /opt/hd-bet_params/2.model
+        - cp {{ get_file("3_model") }} /opt/hd-bet_params/3.model
+        - cp {{ get_file("4_model") }} /opt/hd-bet_params/4.model
         - sed -i "s|os.path.join(os.path.expanduser('~'), 'hd-bet_params')|'/opt/hd-bet_params'|" /opt/hdbet/HD_BET/paths.py
         - pip install -e /opt/hdbet
     - run: # DOWNLOAD LST-AI GREEDY BINARY AND DATA
-        - wget "https://github.com/CompImg/LST-AI/releases/download/v1.0.0/greedy"
+        - cp {{ get_file("greedy") }} greedy
         - chmod +x greedy
         - mkdir -p /opt/lstai/bin
         - mv greedy /opt/lstai/bin
     - run: # DOWNLOAD LST-AI MODEL DATA
-        - wget https://github.com/CompImg/LST-AI/releases/download/v1.0.0/lst_data.zip
+        - cp {{ get_file("lst_data_zip") }} lst_data.zip
         - unzip lst_data.zip -d /opt/lstai/LST_AI
     - run: # INSTALL DCM2NIIX
-        - curl -fLO https://github.com/rordenlab/dcm2niix/releases/download/v1.0.20240202/dcm2niix_lnx.zip
+        - cp {{ get_file("dcm2niix_lnx_zip") }} dcm2niix_lnx.zip
         - unzip dcm2niix_lnx.zip -d /opt/dcm2niix
         - chmod a+x /opt/dcm2niix/dcm2niix
         - rm dcm2niix_lnx.zip
@@ -146,3 +146,31 @@ structured_readme:
     Wiltgen T, McGinnis J, Schlaeger S, Kofler F, Voon C, Berthele A, Bischl D, Grundl L, Will N, Metz M, et al. (2024) LST-AI: A deep learning ensemble for accurate MS lesion segmentation. NeuroImage: Clinical. doi:10.1016/j.nicl.2024.103611
 
     Isensee F, Schell M, Tursunova I, Brugnara G, Bonekamp D, Neuberger U, Wick A, Schlemmer HP, Heiland S, Wick W, Bendszus M, Maier-Hein KH, Kickingereder P. (2019) Automated brain extraction of multi-sequence MRI using artificial neural networks. Hum Brain Mapp. 1-13. doi:10.1002/hbm.24750
+
+files:
+  - name: Miniforge3_Linux_x86_64_sh
+    url: https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+
+  - name: 0_model
+    url: https://zenodo.org/record/2540695/files/0.model?download=1
+
+  - name: 1_model
+    url: https://zenodo.org/record/2540695/files/1.model?download=1
+
+  - name: 2_model
+    url: https://zenodo.org/record/2540695/files/2.model?download=1
+
+  - name: 3_model
+    url: https://zenodo.org/record/2540695/files/3.model?download=1
+
+  - name: 4_model
+    url: https://zenodo.org/record/2540695/files/4.model?download=1
+
+  - name: greedy
+    url: https://github.com/CompImg/LST-AI/releases/download/v1.0.0/greedy
+
+  - name: lst_data_zip
+    url: https://github.com/CompImg/LST-AI/releases/download/v1.0.0/lst_data.zip
+
+  - name: dcm2niix_lnx_zip
+    url: https://github.com/rordenlab/dcm2niix/releases/download/v1.0.20240202/dcm2niix_lnx.zip

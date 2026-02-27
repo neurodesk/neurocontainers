@@ -18,10 +18,10 @@ build:
     - install: curl ca-certificates unzip binutils libqt5gui5 libopengl0 libxcb-cursor0 libxcb-cursor-dev
     - workdir: /opt/itksnap-{{ context.version }}
     - run:
-        - curl -fsSL -o /example_data.zip https://www.nitrc.org/frs/download.php/750/MRI-crop.zip
+        - cp {{ get_file("MRI_crop_zip") }} /example_data.zip
         - unzip /example_data.zip
         - rm /example_data.zip
-        - curl -fsSL --retry 5 https://sourceforge.net/projects/itk-snap/files/itk-snap/{{ context.version }}/itksnap-{{ context.version }}-20250909-Linux-x86_64.tar.gz | tar -xz --strip-components=1 -C /opt/itksnap-{{ context.version }}
+        - tar -xz --strip-components=1 -C /opt/itksnap-{{ context.version }} -f {{ get_file("downloaded_tar_file") }}
     - environment:
         QT_QPA_PLATFORM: xcb
         PATH: $PATH:/opt/itksnap-{{ context.version }}/bin
@@ -71,3 +71,8 @@ copyright:
 # apt install -y mlocate
 # updatedb
 # locate libQt6Core.so.6
+files:
+  - name: downloaded_tar_file
+    url: https://sourceforge.net/projects/itk-snap/files/itk-snap/{{
+  - name: MRI_crop_zip
+    url: https://www.nitrc.org/frs/download.php/750/MRI-crop.zip

@@ -28,12 +28,12 @@ build:
 
     - run: 
         - pip install scipy antspyx
-        - curl https://git.fmrib.ox.ac.uk/fsl/data_standard/-/raw/f6db877e56047a1ad91fd9b28d38654376087029/MNI152_T1_1mm_brain.nii.gz -o MNI152_T1_1mm_brain.nii.gz
+        - cp {{ get_file("MNI152_T1_1mm_brain_nii_gz") }} MNI152_T1_1mm_brain.nii.gz
         
     - run:
         - git clone https://github.com/neurolabusc/py_synthsr
         - cd py_synthsr
-        - curl -L https://osf.io/download/jqdcm/ -o models.zip
+        - cp {{ get_file("downloaded_file") }} models.zip
         - unzip -jo models.zip -d py_synthsr/models
         - mv py_synthsr/models/* /freesurfer/models
         - rm models.zip
@@ -63,3 +63,10 @@ readme: |-
 
 categories:
   - "structural imaging"
+
+files:
+  - name: MNI152_T1_1mm_brain_nii_gz
+    url: https://git.fmrib.ox.ac.uk/fsl/data_standard/-/raw/f6db877e56047a1ad91fd9b28d38654376087029/MNI152_T1_1mm_brain.nii.gz
+
+  - name: downloaded_file
+    url: https://osf.io/download/jqdcm/

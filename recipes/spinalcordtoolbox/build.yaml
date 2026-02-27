@@ -24,7 +24,7 @@ build:
         - rsync
     - include: macros/openrecon/neurodocker.yaml
     - run:
-        - curl -fsSL --retry 5 https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/{{ context.version }}.tar.gz | tar -xz -C /opt/
+        - tar -xz -C /opt/ -f {{ get_file("downloaded_tar_file") }}
     - workdir: /opt/spinalcordtoolbox-{{ context.version }}
     - run:
         - chmod a+rwx /opt/spinalcordtoolbox-{{ context.version }}/ -R
@@ -93,3 +93,7 @@ readme: |-
 categories:
   - spine
 icon: data:image/png;base64,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
+
+files:
+  - name: downloaded_tar_file
+    url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/{{

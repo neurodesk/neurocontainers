@@ -23,7 +23,7 @@ build:
     - workdir: /opt
 
     - run:
-        - wget https://files.ilastik.org/ilastik-1.4.0-Linux.tar.bz2
+        - cp {{ get_file("ilastik_1_4_0_Linux_tar_bz2") }} ilastik-1.4.0-Linux.tar.bz2
         - tar -xf ilastik-1.4.0-Linux.tar.bz2
         - rm -rf ilastik-1.4.0-Linux.tar.bz2
 
@@ -62,3 +62,7 @@ readme: |
   in: Nature Methods, (2019)
   ```
   ----------------------------------
+
+files:
+  - name: ilastik_1_4_0_Linux_tar_bz2
+    url: https://files.ilastik.org/ilastik-1.4.0-Linux.tar.bz2

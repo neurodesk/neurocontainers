@@ -187,7 +187,7 @@ build:
     - workdir: /opt/freesurfer-{{ context.version }}/bin/
 
     - run:
-        - wget -O segmentNuclei_mcr97 https://raw.githubusercontent.com/freesurfer/freesurfer/refs/heads/dev/AANsegment/linux_x86_64/segmentNuclei
+        - cp {{ get_file("segmentNuclei_1") }} segmentNuclei_mcr97
         - chmod a+rwx segmentNuclei_mcr97
 
     - copy:
@@ -233,6 +233,8 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: segmentNuclei_1
+    url: https://raw.githubusercontent.com/freesurfer/freesurfer/refs/heads/dev/AANsegment/linux_x86_64/segmentNuclei
   - name: freesurfer_deb
     url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}/freesurfer_ubuntu22-{{ context.version }}_amd64.deb
 

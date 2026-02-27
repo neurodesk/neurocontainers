@@ -26,7 +26,7 @@ build:
     - workdir: /opt/palm-alpha119/
 
     - run:
-        - curl -fsSL --retry 5 https://s3-us-west-2.amazonaws.com/andersonwinkler/palm/palm-alpha119.tar.gz | tar -xz -C /opt/palm-alpha119/ --strip-components 1
+        - tar -xz -C /opt/palm-alpha119/ --strip-components 1 -f {{ get_file("palm_alpha119_tar_gz") }}
 
     - environment:
         PATH: $PATH:/opt/palm-alpha119
@@ -99,3 +99,7 @@ readme: |
 
 categories:
   - "functional imaging"
+
+files:
+  - name: palm_alpha119_tar_gz
+    url: https://s3-us-west-2.amazonaws.com/andersonwinkler/palm/palm-alpha119.tar.gz

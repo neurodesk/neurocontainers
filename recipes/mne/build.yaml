@@ -56,7 +56,7 @@ build:
         - mamba create --override-channels --channel=conda-forge --name=mne-1.7.1 urllib3=2.2.1 mne=1.7.1
 
     - run:
-        - wget -O vscode.deb 'https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64'
+        - cp {{ get_file("download") }} vscode.deb
         - apt install ./vscode.deb
         - rm -rf ./vscode.deb
 
@@ -73,7 +73,7 @@ build:
     - workdir: /opt/
 
     - run:
-        - curl -fsSL https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz | tar xz
+        - tar xz -f {{ get_file("main_tar_gz") }}
 
     - run:
         - chmod a+rwx /opt/mne-bids-pipeline-main -R
@@ -118,6 +118,10 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: main_tar_gz
+    url: https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz
+  - name: download
+    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
   - name: code
     contents: |-
       #!/usr/bin/env sh

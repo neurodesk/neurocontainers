@@ -87,7 +87,7 @@ build:
     - group:
         - workdir: /opt
         - run:
-            - curl -fsSL -o hdf5-1.14.5.tar.gz https://support.hdfgroup.org/releases/hdf5/v1_14/v1_14_5/downloads/hdf5-1.14.5.tar.gz
+            - cp {{ get_file("hdf5_1_14_5_tar_gz") }} hdf5-1.14.5.tar.gz
             - tar -xzf hdf5-1.14.5.tar.gz
             - cd hdf5-1.14.5
             - ./configure --prefix=/usr
@@ -141,14 +141,14 @@ build:
     - group:
         - workdir: /opt/bru2
         - run:
-            - wget https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip
+            - cp {{ get_file("Bru2_Linux_zip") }} Bru2_Linux.zip
             - unzip Bru2_Linux.zip
             - rm Bru2_Linux.zip
           condition: arch=="x86_64"
         - run:
-            - curl -fsSL -o fpc-laz_3.2.3-240813_arm64.deb https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20arm64%20DEB/Lazarus%204.0RC2/fpc-laz_3.2.3-240813_arm64.deb/download
-            - curl -fsSL -o fpc-src_3.2.3-240813_arm64.deb https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20arm64%20DEB/Lazarus%204.0RC2/fpc-src_3.2.3-240813_arm64.deb/download
-            - curl -fsSL -o lazarus-project_4.0.0-0_arm64.deb https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20arm64%20DEB/Lazarus%204.0RC2/lazarus-project_4.0.0-0_arm64.deb/download
+            - cp {{ get_file("download") }} fpc-laz_3.2.3-240813_arm64.deb
+            - cp {{ get_file("download_1") }} fpc-src_3.2.3-240813_arm64.deb
+            - cp {{ get_file("download_2") }} lazarus-project_4.0.0-0_arm64.deb
             - apt-get update
             - apt-get install -y ./fpc-laz_3.2.3-240813_arm64.deb ./fpc-src_3.2.3-240813_arm64.deb ./lazarus-project_4.0.0-0_arm64.deb
             - rm *.deb
@@ -172,12 +172,12 @@ build:
     - group:
         - workdir: /opt
         - run:
-            - wget https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.3-linux-x86_64.tar.gz
+            - cp {{ get_file("julia_1_9_3_linux_x86_64_tar_gz") }} julia-1.9.3-linux-x86_64.tar.gz
             - tar zxvf julia-1.9.3-linux-x86_64.tar.gz
             - rm -rf julia-1.9.3-linux-x86_64.tar.gz
           condition: arch=="x86_64"
         - run:
-            - wget https://julialang-s3.julialang.org/bin/linux/aarch64/1.9/julia-1.9.3-linux-aarch64.tar.gz
+            - cp {{ get_file("julia_1_9_3_linux_aarch64_tar_gz") }} julia-1.9.3-linux-aarch64.tar.gz
             - tar zxvf julia-1.9.3-linux-aarch64.tar.gz
             - rm -rf julia-1.9.3-linux-aarch64.tar.gz
           condition: arch=="aarch64"
@@ -207,12 +207,12 @@ build:
         - run:
             - git clone --depth 1 --branch v0.51 https://github.com/astewartau/QSMxT-UI-2 QSMxT-UI
         - run:
-            - wget https://nodejs.org/dist/v14.17.0/node-v14.17.0-linux-x64.tar.xz
+            - cp {{ get_file("node_v14_17_0_linux_x64_tar_xz") }} node-v14.17.0-linux-x64.tar.xz
             - tar xf node-v14.17.0-linux-x64.tar.xz
             - rm node-v14.17.0-linux-x64.tar.xz
           condition: arch=="x86_64"
         - run:
-            - wget https://nodejs.org/dist/v14.17.0/node-v14.17.0-linux-arm64.tar.xz
+            - cp {{ get_file("node_v14_17_0_linux_arm64_tar_xz") }} node-v14.17.0-linux-arm64.tar.xz
             - tar xf node-v14.17.0-linux-arm64.tar.xz
             - rm node-v14.17.0-linux-arm64.tar.xz
           condition: arch=="aarch64"
@@ -697,3 +697,31 @@ readme: |-
 
   ----------------------------------
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADzUlEQVRIS+2WbUxbZRTHf+Wl0BVBNssKwWyZQBiic2wRjMwo4mLIRBxxuCiMl4QXI8QSWMAgJpIOp58GsiUkBBgZYEwMRLYhGEfc1mbyokF5iwYmiqvAgHYgg9J7vb06oHZMol93Pz7neZ7fOf/zf06uIiPTLLLJz8MDXlhUsmTe5AFpm+I+4N/E2lCipaVZTDeMzM2NoFJp0PjtR6sNdejBhGWEwamvEcQVwjTP8LDPo048J4AoChgNxxkerEWUDq7/tP6R6J9rwnpLwSljMkPTVxziD3pqeXZnCofDilC6quSYE+Dq5bcZHqolMzOT3NxcgoKCmJ2dpaWlhaKiIlTiNnyU2zFZB6mqqiIhIQGr1Up/fz+pqamYTcucPvQTCoXCGXBzup+Wzw6g0+koKCiQIQaDQZJGS1lZGQEBAURHRyMIAnV1dajVanJycuTLoqKi6OjoIHZHFsl7Tq5W5lBB97X3GBz4mMnJSVJSUujsNPBI8BEmf/8G89z3jI2NkZ2dTVtbmxTrpLGxkdraWjRbdsiQyYXrnIi9yi7fiLsDOr84io/3L/T19eEhvao9e48Tsa8Yi2WMT5ufoKamhpmZGQoLC8nKypIlS0tLo6urC7W7L1tVAXx4sHtVHqceXPj8ECEhLjQ3N+Pv78/TB04RujsVm22Juho/ysvL8fPzIyMjQ84wKSmJ0tJSFhcXKSkpob29Hd1TjUQGvrJWwZu5a6Pi4vk38FJfp7e3F09PTyL2F/Jk5DuSPKOca9grV2CXr7i4mOdDjnHpxwbJogJxcXE0NDSQmJjIrwPzfPTy5TVA4JdDq7PIcraKhXNn5EuSk5NpN1zDK/41lga+RejvlnuQnp4uN9Mt0B/Px8NY+OoK4m2pQqnpo6OjvH9Cz46LTWsA5YUfVgHC6AgrbyXKLsrPz5elMBqNslx6vR6NRkNMTIzsInu2PT09mEwmQkNDaW1tlR3VMTyA75kP7g6wr66c1iO0NckWzcvLIzg4GKVSKbvFDp13c2Fleob6+npZGm9vb8bHx6moqKCyshJ1dgqqhBc3BohSdrbqkwjnPwHbXy+5urqa8PBwYmNjsQVsZ3niBuLibcex4OaK6tWXUB874rCuWC/R+oh4y4w40Iet5SxuQ9/Jvre7JT4+HjFkF1teP4xgtiBM3cTloa24P7YbV80251m0EeDOTnHeglV3FCZ+djisjNrHA+/qULi63HOgbliBQzW/jSNcasNdeq1ertP88bd0dohb0M7/D7hzg1rKVus+zNTyP/S/B2JTFdwHbPq35b/04E9NtswA67fKiwAAAABJRU5ErkJggg==
+
+files:
+  - name: hdf5_1_14_5_tar_gz
+    url: https://support.hdfgroup.org/releases/hdf5/v1_14/v1_14_5/downloads/hdf5-1.14.5.tar.gz
+
+  - name: Bru2_Linux_zip
+    url: https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip
+
+  - name: download
+    url: https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20arm64%20DEB/Lazarus%204.0RC2/fpc-laz_3.2.3-240813_arm64.deb/download
+
+  - name: download_1
+    url: https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20arm64%20DEB/Lazarus%204.0RC2/fpc-src_3.2.3-240813_arm64.deb/download
+
+  - name: download_2
+    url: https://sourceforge.net/projects/lazarus/files/Lazarus%20Linux%20arm64%20DEB/Lazarus%204.0RC2/lazarus-project_4.0.0-0_arm64.deb/download
+
+  - name: julia_1_9_3_linux_x86_64_tar_gz
+    url: https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.3-linux-x86_64.tar.gz
+
+  - name: julia_1_9_3_linux_aarch64_tar_gz
+    url: https://julialang-s3.julialang.org/bin/linux/aarch64/1.9/julia-1.9.3-linux-aarch64.tar.gz
+
+  - name: node_v14_17_0_linux_x64_tar_xz
+    url: https://nodejs.org/dist/v14.17.0/node-v14.17.0-linux-x64.tar.xz
+
+  - name: node_v14_17_0_linux_arm64_tar_xz
+    url: https://nodejs.org/dist/v14.17.0/node-v14.17.0-linux-arm64.tar.xz

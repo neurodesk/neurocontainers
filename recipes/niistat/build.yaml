@@ -27,7 +27,7 @@ build:
     - workdir: /opt/niistat-{{ context.version }}
 
     - run:
-        - curl -fsSL --retry 5 https://github.com/neurolabusc/NiiStat/archive/refs/tags/v{{ context.version }}.tar.gz | tar -xz -C /opt/niistat-{{ context.version }}/ --strip-components 1
+        - tar -xz -C /opt/niistat-{{ context.version }}/ --strip-components 1 -f {{ get_file("v") }}
 
     - workdir: /opt
 
@@ -46,6 +46,8 @@ deploy:
     - octave
 
 files:
+  - name: v
+    url: https://github.com/neurolabusc/NiiStat/archive/refs/tags/v{{
   - name: SPMinOctave.m
     contents: |
       %% Store current working directory

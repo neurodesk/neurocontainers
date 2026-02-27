@@ -30,12 +30,12 @@ build:
     - workdir: /opt
 
     - run:
-        - wget --quiet -O MRIcroGL_linux_includes_Python.zip 'https://github.com/rordenlab/MRIcroGL/releases/download/v{{ context.version }}/MRIcroGL_linux_includes_Python.zip'
+        - cp {{ get_file("v") }} MRIcroGL_linux_includes_Python.zip
         - unzip MRIcroGL_linux_includes_Python.zip
         - rm -rf MRIcroGL_linux_includes_Python.zip
 
     - run:
-        - wget --quiet -O libqt5pas1_2.9-0_amd64.deb 'https://github.com/davidbannon/libqt5pas/releases/download/v1.2.9/libqt5pas1_2.9-0_amd64.deb'
+        - cp {{ get_file("libqt5pas1_2_9_0_amd64_deb") }} libqt5pas1_2.9-0_amd64.deb
         - apt install ./libqt5pas1_2.9-0_amd64.deb
         - rm -rf libqt5pas1_2.9-0_amd64.deb
 
@@ -74,3 +74,10 @@ categories:
 gui_apps:
   - name: "mricroglGUI"
     exec: "MRIcroGL"
+
+files:
+  - name: v
+    url: https://github.com/rordenlab/MRIcroGL/releases/download/v{{
+
+  - name: libqt5pas1_2_9_0_amd64_deb
+    url: https://github.com/davidbannon/libqt5pas/releases/download/v1.2.9/libqt5pas1_2.9-0_amd64.deb

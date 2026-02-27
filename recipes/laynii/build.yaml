@@ -26,7 +26,7 @@ build:
     - workdir: /opt/laynii-2.2.1/
 
     - run:
-        - wget https://github.com/layerfMRI/LAYNII/releases/download/v2.2.1/LayNii_v2.2.1_Linux64.zip
+        - cp {{ get_file("LayNii_v2_2_1_Linux64_zip") }} LayNii_v2.2.1_Linux64.zip
         - unzip LayNii_v2.2.1_Linux64.zip
         - rm LayNii_v2.2.1_Linux64.zip
 
@@ -76,3 +76,7 @@ readme: |-
 
 categories:
   - "functional imaging"
+
+files:
+  - name: LayNii_v2_2_1_Linux64_zip
+    url: https://github.com/layerfMRI/LAYNII/releases/download/v2.2.1/LayNii_v2.2.1_Linux64.zip

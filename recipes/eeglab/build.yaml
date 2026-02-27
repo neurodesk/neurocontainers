@@ -30,7 +30,7 @@ build:
     - workdir: /opt/eeglab-2020.0/
 
     - run:
-        - curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/eeglab2020.0_mcr2020a.tar.gz | tar -xz -C /opt/eeglab-2020.0/ --strip-components 1
+        - tar -xz -C /opt/eeglab-2020.0/ --strip-components 1 -f {{ get_file("eeglab2020_0_mcr2020a_tar_gz") }}
 
     - environment:
         PATH: /opt/eeglab-2020.0/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -70,3 +70,7 @@ categories:
 gui_apps:
   - name: "eeglabGUI"
     exec: "EEGLAB"
+
+files:
+  - name: eeglab2020_0_mcr2020a_tar_gz
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/eeglab2020.0_mcr2020a.tar.gz

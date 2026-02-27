@@ -17,7 +17,7 @@ build:
           conda_install: -c conda-forge python=3.9
           version: latest
     - run:
-        - wget https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/HARMONI-main-250424.zip
+        - cp {{ get_file("HARMONI_main_250424_zip") }} HARMONI-main-250424.zip
         - unzip HARMONI-main-250424.zip
         - rm -rf HARMONI-main-250424.zip
         - cd HARMONI-main
@@ -59,3 +59,7 @@ categories:
 gui_apps:
   - name: "palmettobugGUI"
     exec: "palmettobug"
+
+files:
+  - name: HARMONI_main_250424_zip
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/HARMONI-main-250424.zip

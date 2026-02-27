@@ -22,7 +22,7 @@ build:
         pip_install: compoda=0.3.5
         mamba: true
     - run:
-        - curl -fsSL -o /tmp/segmentator.tar.gz https://github.com/ofgulban/segmentator/archive/refs/tags/v1.6.1.tar.gz
+        - cp {{ get_file("v1_6_1_tar_gz") }} /tmp/segmentator.tar.gz
         - mkdir -p /opt
         - tar -xzf /tmp/segmentator.tar.gz -C /opt
         - mv /opt/segmentator-1.6.1 /opt/segmentator
@@ -90,3 +90,7 @@ categories:
 copyright:
   - license: BSD-3-Clause
     url: https://github.com/ofgulban/segmentator?tab=BSD-3-Clause-1-ov-file
+
+files:
+  - name: v1_6_1_tar_gz
+    url: https://github.com/ofgulban/segmentator/archive/refs/tags/v1.6.1.tar.gz

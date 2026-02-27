@@ -25,7 +25,7 @@ build:
     - workdir: /opt/samsrfx-v10.004/
 
     - run:
-        - wget --no-check-certificate --progress=bar:force -P /opt/samsrfx-v10.004/ https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/samsrf_v10.004.zip
+        - cp {{ get_file("samsrf_v10_004_zip") }} /opt/samsrfx-v10.004//samsrf_v10.004.zip
         - unzip -q samsrf_v10.004.zip -d /opt/samsrfx-v10.004/
         - chmod a+x /opt/samsrfx-v10.004/samsrf/SamSrfX
         - rm -f samsrf_v10.004.zip
@@ -64,3 +64,7 @@ categories:
 gui_apps:
   - name: "samsrfxGUI"
     exec: "samsrfx"
+
+files:
+  - name: samsrf_v10_004_zip
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/samsrf_v10.004.zip

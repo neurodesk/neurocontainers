@@ -23,7 +23,7 @@ build:
     - workdir: /opt/dcm2niix-{{ context.version }}
 
     - run:
-        - curl -fLO https://github.com/rordenlab/dcm2niix/releases/download/{{ context.version }}/dcm2niix_lnx.zip
+        - cp {{ get_file("downloaded_file") }} {{
         - unzip dcm2niix_lnx.zip
         - chmod a+rwx /opt/dcm2niix-{{ context.version }}/dcm2niix
         - rm -rf dcm2niix_lnx.zip
@@ -61,3 +61,7 @@ readme: |-
 
 categories:
   - "data organisation"
+
+files:
+  - name: downloaded_file
+    url: https://github.com/rordenlab/dcm2niix/releases/download/{{

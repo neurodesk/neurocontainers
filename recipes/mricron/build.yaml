@@ -16,7 +16,7 @@ build:
     - group:
         - workdir: /opt
         - run:
-            - wget --quiet -O MRIcon_linux.zip  'https://github.com/neurolabusc/MRIcron/releases/download/v{{ context.version }}/MRIcron_linux.zip'
+            - cp {{ get_file("v") }} MRIcon_linux.zip
             - unzip MRIcon_linux.zip
             - rm -rf MRIcon_linux.zip
         - environment:
@@ -79,3 +79,7 @@ readme: |-
   To run container outside of this environment: ml mricron/1.0.20190902
 
   ----------------------------------
+
+files:
+  - name: v
+    url: https://github.com/neurolabusc/MRIcron/releases/download/v{{

@@ -40,7 +40,7 @@ build:
     - workdir: /opt/spm12/
 
     - run:
-        - curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/spm12r8224_physioR2021a_standalone_MCRv99_MatlabR2020b_Linux.tar.gz       | tar -xz -C /opt/spm12/ --strip-components 1
+        - tar -xz -C /opt/spm12/ --strip-components 1 -f {{ get_file("spm12r8224_physioR2021a_standalone_MCRv99_MatlabR2020b_Linux_tar_gz") }}
 
     - environment:
         LD_LIBRARY_PATH: /opt/mcr/v99/runtime/glnxa64:/opt/mcr/v99/bin/glnxa64:/opt/mcr/v99/sys/os/glnxa64:/opt/mcr/v99/sys/opengl/lib/glnxa64:/opt/mcr/v99/extern/bin/glnxa64
@@ -100,3 +100,7 @@ categories:
 gui_apps:
   - name: "physioGUI"
     exec: "bash run_spm12.sh /opt/mcr/v99/ fmri"
+
+files:
+  - name: spm12r8224_physioR2021a_standalone_MCRv99_MatlabR2020b_Linux_tar_gz
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/spm12r8224_physioR2021a_standalone_MCRv99_MatlabR2020b_Linux.tar.gz

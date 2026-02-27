@@ -24,7 +24,7 @@ build:
     - workdir: /opt
 
     - run:
-        - curl -SL https://ccsb.scripps.edu/mgltools/download/491 | tar -zx
+        - tar -zx -f {{ get_file("491") }}
         - cd mgltools_x86_64Linux2_{{ context.version }} && ./install.sh -d /opt/mgltools -c 1
 
 deploy:
@@ -54,3 +54,7 @@ readme: |
   To run container outside of this environment: ml mgltools/{{ context.version }}
 
   ----------------------------------
+
+files:
+  - name: 491
+    url: https://ccsb.scripps.edu/mgltools/download/491

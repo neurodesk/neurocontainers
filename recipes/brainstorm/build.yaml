@@ -30,7 +30,7 @@ build:
     - workdir: /opt/brainstorm-3.211130/
 
     - run:
-        - curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/brainstorm3.211130_mcr2020a.tar.gz       | tar -xz -C /opt/brainstorm-3.211130/ --strip-components 1
+        - tar -xz -C /opt/brainstorm-3.211130/ --strip-components 1 -f {{ get_file("brainstorm3_211130_mcr2020a_tar_gz") }}
 
     - environment:
         PATH: /opt/brainstorm-3.211130/:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
@@ -63,3 +63,7 @@ categories:
 gui_apps:
   - name: "brainstormGUI"
     exec: "brainstorm3.command /opt/MCR/v98/"
+
+files:
+  - name: brainstorm3_211130_mcr2020a_tar_gz
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/brainstorm3.211130_mcr2020a.tar.gz

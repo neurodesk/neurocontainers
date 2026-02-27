@@ -56,14 +56,14 @@ build:
         - pkg-config
 
     - run:
-        - wget -O vscode.deb 'https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64'
+        - cp {{ get_file("download") }} vscode.deb
         - apt install ./vscode.deb
         - rm -rf ./vscode.deb
 
     - workdir: /opt
 
     - run:
-        - wget https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.4-linux-x86_64.tar.gz
+        - cp {{ get_file("julia_1_9_4_linux_x86_64_tar_gz") }} julia-1.9.4-linux-x86_64.tar.gz
         - tar zxvf julia-1.9.4-linux-x86_64.tar.gz
         - rm -rf julia-1.9.4-linux-x86_64.tar.gz
         - ln -s /opt/julia-1.9.4 /opt/julia-latest
@@ -122,6 +122,11 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: download
+    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
+
+  - name: julia_1_9_4_linux_x86_64_tar_gz
+    url: https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.4-linux-x86_64.tar.gz
   - name: install_packages.jl
     contents: |-
       using Pkg

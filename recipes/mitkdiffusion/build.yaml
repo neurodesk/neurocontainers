@@ -29,7 +29,7 @@ build:
     - workdir: /opt
 
     - run:
-        - wget https://www.mitk.org/download/diffusion/nightly/MITK-Diffusion_ubuntu-20.04_2023.07.20_a754b053_32d7d08a_NoPython.tar.gz
+        - cp {{ get_file("MITK_Diffusion_ubuntu_20_04_2023_07_20_a754b053_32d7d08a_NoPython_tar_gz") }} MITK-Diffusion_ubuntu-20.04_2023.07.20_a754b053_32d7d08a_NoPython.tar.gz
         - tar xfz MITK-Diffusion_ubuntu-20.04_2023.07.20_a754b053_32d7d08a_NoPython.tar.gz
         - rm -rf MITK-Diffusion_ubuntu-20.04_2023.07.20_a754b053_32d7d08a_NoPython.tar.gz
 
@@ -61,3 +61,7 @@ readme: |
 
   To run container outside of this environment: ml mitkdiffusion/{{ context.version }}
   ----------------------------------
+
+files:
+  - name: MITK_Diffusion_ubuntu_20_04_2023_07_20_a754b053_32d7d08a_NoPython_tar_gz
+    url: https://www.mitk.org/download/diffusion/nightly/MITK-Diffusion_ubuntu-20.04_2023.07.20_a754b053_32d7d08a_NoPython.tar.gz

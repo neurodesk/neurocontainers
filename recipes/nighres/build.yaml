@@ -30,7 +30,7 @@ build:
         - build-essential
 
     - run:
-        - curl https://download.java.net/java/GA/jdk20.0.1/b4887098932d415489976708ad6d1a4b/9/GPL/openjdk-20.0.1_linux-x64_bin.tar.gz | tar -zx -C /opt --transform=s/jdk-20.0.1/jdk-temurin-20.0.1/
+        - tar -zx -C /opt --transform=s/jdk-20.0.1/jdk-temurin-20.0.1/ -f {{ get_file("openjdk_20_0_1_linux_x64_bin_tar_gz") }}
 
     - environment:
         JAVAHOME: /opt/jdk-temurin-20.0.1
@@ -109,3 +109,7 @@ readme: |-
 
 categories:
   - "structural imaging"
+
+files:
+  - name: openjdk_20_0_1_linux_x64_bin_tar_gz
+    url: https://download.java.net/java/GA/jdk20.0.1/b4887098932d415489976708ad6d1a4b/9/GPL/openjdk-20.0.1_linux-x64_bin.tar.gz

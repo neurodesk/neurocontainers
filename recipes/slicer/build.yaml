@@ -57,11 +57,11 @@ build:
         - pip install --no-cache-dir monailabel==0.8.5
 
     - run:
-        - curl -fsSL --retry 5 "https://download.slicer.org/download?os=linux&stability=release&version={{ context.version }}" | tar -xz -C /opt/
+        - tar -xz -C /opt/ -f {{ get_file("download") }}
 
     - run:
         - mkdir -p /opt/slicer-extensions/MONAILabel
-        - curl -fsSL --retry 5 "https://slicer-packages.kitware.com/api/v1/item/{{ context.monailabel_extension_item }}/download" | tar -xz -C /opt/slicer-extensions/MONAILabel --strip-components 1
+        - tar -xz -C /opt/slicer-extensions/MONAILabel --strip-components 1 -f {{ get_file("download_1") }}
 
     - copy:
         - slicer-entrypoint.sh
@@ -91,6 +91,11 @@ gui_apps:
     exec: Slicer
 
 files:
+  - name: download
+    url: https://download.slicer.org/download?os=linux&stability=release&version={{ context.version }}
+
+  - name: download_1
+    url: https://slicer-packages.kitware.com/api/v1/item/{{ context.monailabel_extension_item }}/download
   - name: slicer-entrypoint.sh
     contents: |
       #!/usr/bin/env bash

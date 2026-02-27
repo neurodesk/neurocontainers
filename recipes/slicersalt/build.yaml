@@ -43,7 +43,7 @@ build:
         - ca-certificates
 
     - run:
-        - curl -fsSL --retry 5 https://data.kitware.com/api/v1/item/5f18b8fa9014a6d84e32ab6e/download | tar -xz -C /opt/
+        - tar -xz -C /opt/ -f {{ get_file("download") }}
 
     - run:
         - ln -s /opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/SlicerSALT-4.11/libgfortran.so /opt/SlicerSALT-{{ context.version }}-linux-amd64/lib/SlicerSALT-4.11/libgfortran.so.3
@@ -77,3 +77,7 @@ readme: |
 categories:
   - "quantitative imaging"
   - "structural imaging"
+
+files:
+  - name: download
+    url: https://data.kitware.com/api/v1/item/5f18b8fa9014a6d84e32ab6e/download

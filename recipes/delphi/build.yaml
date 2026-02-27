@@ -36,7 +36,7 @@ build:
         - dpkg
 
     - run:
-        - curl -fsSL --retry 5 https://github.com/Kitware/CMake/releases/download/v3.22.2/cmake-3.22.2-linux-x86_64.tar.gz | tar -xz --strip-components=1 -C /usr/local/
+        - tar -xz --strip-components=1 -C /usr/local/ -f {{ get_file("cmake_3_22_2_linux_x86_64_tar_gz") }}
 
     - run:
         - mkdir -m777 /usr/local/rustup /usr/local/cargo
@@ -47,7 +47,7 @@ build:
         PATH: \$PATH:/usr/local/cargo/bin
 
     - run:
-        - curl --proto =https --tlsv1.2 -sSf https://sh.rustup.rs -o rustup-init.sh
+        - cp {{ get_file("sh_rustup_rs") }} rustup-init.sh
 
     - run:
         - bash ./rustup-init.sh -y
@@ -103,3 +103,9 @@ readme: |
   \`\`\`
 
   ----------------------------------
+
+files:
+  - name: cmake_3_22_2_linux_x86_64_tar_gz
+    url: https://github.com/Kitware/CMake/releases/download/v3.22.2/cmake-3.22.2-linux-x86_64.tar.gz
+  - name: sh_rustup_rs
+    url: https://sh.rustup.rs

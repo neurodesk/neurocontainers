@@ -58,7 +58,7 @@ build:
     - workdir: /opt/ICA-AROMA
 
     - run:
-        - curl -sSL "https://github.com/rhr-pruim/ICA-AROMA/archive/v0.4.3-beta.tar.gz" | tar -xzC /opt/ICA-AROMA --strip-components 1
+        - tar -xzC /opt/ICA-AROMA --strip-components 1 -f {{ get_file("v0_4_3_beta_tar_gz") }}
         - chmod +x /opt/ICA-AROMA/ICA_AROMA.py
 
     - environment:
@@ -72,18 +72,18 @@ build:
     - condition: context.options.workshop
       run:
         - mkdir -p /opt/fsl_course_data/UnixIntro /opt/fsl_course_data/preCourse /opt/fsl_course_data/registration /opt/fsl_course_data/structural /opt/fsl_course_data/fmri1 /opt/fsl_course_data/fmri2 /opt/fsl_course_data/fmri3 /opt/fsl_course_data/fmri_extras /opt/fsl_course_data/rest /opt/fsl_course_data/fdt /opt/fsl_course_data/mrs /opt/fsl_course_data/asl
-        - wget -c http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/UnixIntro.tar.gz -P /opt/fsl_course_data/UnixIntro
-        - wget -c http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/preCourse.tar.gz -P /opt/fsl_course_data/preCourse
-        - wget -c http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/registration.tar.gz -P /opt/fsl_course_data/
-        - wget -c http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/structural.tar.gz -P /opt/fsl_course_data/structural
-        - wget -c http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fmri1.tar.gz -P /opt/fsl_course_data/fmri1
-        - wget -c http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fmri2.tar.gz -P /opt/fsl_course_data/fmri2
-        - wget -c http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fmri3.tar.gz -P /opt/fsl_course_data/fmri3
-        - wget -c http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fmri_extras.tar.gz -P /opt/fsl_course_data/fmri_extras
-        - wget -c http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/rest.tar.gz -P /opt/fsl_course_data/rest
-        - wget -c http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fdt.tar.gz -P /opt/fsl_course_data/fdt
-        - wget -c http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/mrs.tar.gz -P /opt/fsl_course_data/mrs
-        - wget -c http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/asl.tar.gz -P /opt/fsl_course_data/asl
+        - cp {{ get_file("UnixIntro_tar_gz") }} /opt/fsl_course_data/UnixIntro/UnixIntro.tar.gz
+        - cp {{ get_file("preCourse_tar_gz") }} /opt/fsl_course_data/preCourse/preCourse.tar.gz
+        - cp {{ get_file("registration_tar_gz") }} /opt/fsl_course_data//registration.tar.gz
+        - cp {{ get_file("structural_tar_gz") }} /opt/fsl_course_data/structural/structural.tar.gz
+        - cp {{ get_file("fmri1_tar_gz") }} /opt/fsl_course_data/fmri1/fmri1.tar.gz
+        - cp {{ get_file("fmri2_tar_gz") }} /opt/fsl_course_data/fmri2/fmri2.tar.gz
+        - cp {{ get_file("fmri3_tar_gz") }} /opt/fsl_course_data/fmri3/fmri3.tar.gz
+        - cp {{ get_file("fmri_extras_tar_gz") }} /opt/fsl_course_data/fmri_extras/fmri_extras.tar.gz
+        - cp {{ get_file("rest_tar_gz") }} /opt/fsl_course_data/rest/rest.tar.gz
+        - cp {{ get_file("fdt_tar_gz") }} /opt/fsl_course_data/fdt/fdt.tar.gz
+        - cp {{ get_file("mrs_tar_gz") }} /opt/fsl_course_data/mrs/mrs.tar.gz
+        - cp {{ get_file("asl_tar_gz") }} /opt/fsl_course_data/asl/asl.tar.gz
         - for dir in /opt/fsl_course_data/*; do [ -f \"$dir/*.tar.gz\" ] && tar -xzf $dir/*.tar.gz -C $dir --strip-components=1; done
         - rm /opt/fsl_course_data/*/*.tar.gz
 
@@ -119,6 +119,43 @@ deploy:
     - /opt/ICA-AROMA/
 
 files:
+  - name: v0_4_3_beta_tar_gz
+    url: https://github.com/rhr-pruim/ICA-AROMA/archive/v0.4.3-beta.tar.gz
+  - name: UnixIntro_tar_gz
+    url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/UnixIntro.tar.gz
+
+  - name: preCourse_tar_gz
+    url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/preCourse.tar.gz
+
+  - name: registration_tar_gz
+    url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/registration.tar.gz
+
+  - name: structural_tar_gz
+    url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/structural.tar.gz
+
+  - name: fmri1_tar_gz
+    url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fmri1.tar.gz
+
+  - name: fmri2_tar_gz
+    url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fmri2.tar.gz
+
+  - name: fmri3_tar_gz
+    url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fmri3.tar.gz
+
+  - name: fmri_extras_tar_gz
+    url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fmri_extras.tar.gz
+
+  - name: rest_tar_gz
+    url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/rest.tar.gz
+
+  - name: fdt_tar_gz
+    url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fdt.tar.gz
+
+  - name: mrs_tar_gz
+    url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/mrs.tar.gz
+
+  - name: asl_tar_gz
+    url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/asl.tar.gz
   - name: eddy
     filename: eddy
 

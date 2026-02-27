@@ -22,7 +22,7 @@ build:
         - wget
 
     - run:
-        - wget --no-check-certificate --progress=bar:force -P /opt/conn-22a/ https://www.nitrc.org/frs/download.php/13733/conn22a_glnxa64.zip
+        - cp {{ get_file("conn22a_glnxa64_zip") }} /opt/conn-22a//conn22a_glnxa64.zip
         - unzip -q conn22a_glnxa64.zip -d /opt/conn-22a/
         - rm -f conn22a_glnxa64.zip
 
@@ -58,3 +58,7 @@ categories:
 gui_apps:
   - name: "connGUI"
     exec: "conn"
+
+files:
+  - name: conn22a_glnxa64_zip
+    url: https://www.nitrc.org/frs/download.php/13733/conn22a_glnxa64.zip

@@ -54,7 +54,7 @@ build:
 
     # Install CVMFS from official repository
     - run:
-        - wget https://ecsft.cern.ch/dist/cvmfs/cvmfs-release/cvmfs-release-latest_all.deb
+        - cp {{ get_file("cvmfs_release_latest_all_deb") }} cvmfs-release-latest_all.deb
         - dpkg -i cvmfs-release-latest_all.deb
         - rm cvmfs-release-latest_all.deb
         - apt-get update
@@ -173,6 +173,8 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: cvmfs_release_latest_all_deb
+    url: https://ecsft.cern.ch/dist/cvmfs/cvmfs-release/cvmfs-release-latest_all.deb
   - name: neurodesk.ardc.edu.au.pub
     contents: |-
       -----BEGIN PUBLIC KEY-----

@@ -26,7 +26,7 @@ build:
     - workdir: /opt/bart-0.9.00/
 
     - run:
-        - curl -fsSL --retry 5 https://github.com/mrirecon/bart/archive/v0.9.00.tar.gz | tar -xz -C /opt/bart-0.9.00/ --strip-components 1
+        - tar -xz -C /opt/bart-0.9.00/ --strip-components 1 -f {{ get_file("v0_9_00_tar_gz") }}
 
     - run:
         - CUDA_BASE=/usr/local/cuda/ CUDA_LIB=lib64 CUDA=1 make -j 8
@@ -67,3 +67,7 @@ readme: |-
 
 categories:
   - "image reconstruction"
+
+files:
+  - name: v0_9_00_tar_gz
+    url: https://github.com/mrirecon/bart/archive/v0.9.00.tar.gz

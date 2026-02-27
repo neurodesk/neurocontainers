@@ -24,7 +24,7 @@ build:
     - workdir: /opt/trackvis-{{ context.version }}
 
     - run:
-        - curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/TrackVis_v{{ context.version }}_x86_64.tar.gz | tar -xz -C /opt/trackvis-{{ context.version }}/
+        - tar -xz -C /opt/trackvis-{{ context.version }}/ -f {{ get_file("TrackVis_v") }}
 
     - environment:
         PATH: $PATH:/opt/trackvis-{{ context.version }}
@@ -61,3 +61,7 @@ readme: |
   You may use acknowledgement like "Ruopeng Wang, Van J. Wedeen, TrackVis.org, Martinos Center for Biomedical Imaging, Massachusetts General Hospital" or cite the related ISMRM abstract Proc. Intl. Soc. Mag. Reason. Med. 15 (2007) 3720
   ```
   ----------------------------------
+
+files:
+  - name: TrackVis_v
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/TrackVis_v{{

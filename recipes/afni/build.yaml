@@ -105,7 +105,7 @@ build:
     - workdir: /opt
 
     - run:
-        - curl -O https://afni.nimh.nih.gov/pub/dist/bin/misc/@update.afni.binaries
+        - cp {{ get_file("update_afni_binaries") }} @update.afni.binaries
         - tcsh @update.afni.binaries -package linux_ubuntu_24_64 -do_extras
         - mv /root/abin /usr/local/abin
 
@@ -114,7 +114,7 @@ build:
         R_LIBS: /usr/local/share/R-4.3
 
     - run:
-        - curl -O https://afni.nimh.nih.gov/pub/dist/tgz/package_libs/linux_ubuntu_24_R-4.3_libs.tgz
+        - cp {{ get_file("linux_ubuntu_24_R_4_3_libs_tgz") }} linux_ubuntu_24_R-4.3_libs.tgz
         - tar -xf linux_ubuntu_24_R-4.3_libs.tgz
         - mv linux_ubuntu_24_R-4.3_libs /usr/local/share/R-4.3
         - rm -f linux_ubuntu_24_R-4.3_libs.tgz
@@ -192,3 +192,9 @@ categories:
 gui_apps:
   - name: "sumaGUI"
     exec: "suma"
+files:
+  - name: update_afni_binaries
+    url: https://afni.nimh.nih.gov/pub/dist/bin/misc/@update.afni.binaries
+
+  - name: linux_ubuntu_24_R_4_3_libs_tgz
+    url: https://afni.nimh.nih.gov/pub/dist/tgz/package_libs/linux_ubuntu_24_R-4.3_libs.tgz

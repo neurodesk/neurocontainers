@@ -22,7 +22,7 @@ build:
     - workdir: /opt/mritools-{{ context.version }}/
 
     - run:
-        - curl -fsSL --retry 5 https://github.com/korbinian90/CompileMRI.jl/releases/download/v{{ context.version }}/mritools_linux_{{ context.version }}.tar.gz | tar -xz -C /opt/mritools-{{ context.version }}/ --strip-components 1
+        - tar -xz -C /opt/mritools-{{ context.version }}/ --strip-components 1 -f {{ get_file("v") }}
 
     - environment:
         PATH: /opt/mritools-{{ context.version }}/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
@@ -68,3 +68,7 @@ readme: |
 
 categories:
   - "phase processing"
+
+files:
+  - name: v
+    url: https://github.com/korbinian90/CompileMRI.jl/releases/download/v{{

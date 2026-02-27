@@ -30,7 +30,7 @@ build:
     - workdir: /opt/niftyreg-1.4.0
 
     - run:
-        - curl -fsSL --retry 5 https://github.com/KCL-BMEIS/niftyreg/archive/{{ local.revision }}.tar.gz | tar -xz -C ./
+        - tar -xz -C ./ -f {{ get_file("downloaded_tar_file") }}
 
     - run:
         - mv niftyreg-{{ local.revision }} src
@@ -198,3 +198,7 @@ readme: |
 
 categories:
   - "image registration"
+
+files:
+  - name: downloaded_tar_file
+    url: https://github.com/KCL-BMEIS/niftyreg/archive/{{

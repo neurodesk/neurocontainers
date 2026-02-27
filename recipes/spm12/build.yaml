@@ -39,7 +39,7 @@ build:
         SPM_VERSION: "12"
 
     - run:
-        - wget --no-check-certificate --progress=bar:force -P /opt https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/spm12_r7771_Linux_R2019b.zip
+        - cp {{ get_file("spm12_r7771_Linux_R2019b_zip") }} /opt/spm12_r7771_Linux_R2019b.zip
         - unzip -q /opt/spm12_r7771_Linux_R2019b.zip -d /opt
         - rm -f /opt/spm12_r7771_Linux_R2019b.zip
 
@@ -111,3 +111,7 @@ categories:
 gui_apps:
   - name: "spm12GUI"
     exec: "bash run_spm12.sh /opt/mcr/v97/"
+
+files:
+  - name: spm12_r7771_Linux_R2019b_zip
+    url: https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/spm12_r7771_Linux_R2019b.zip

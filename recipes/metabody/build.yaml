@@ -4,6 +4,11 @@ architectures:
     - x86_64
 
 files:
+    - name: update_afni_binaries
+      url: https://afni.nimh.nih.gov/pub/dist/bin/misc/@update.afni.binaries
+
+    - name: linux_ubuntu_24_R_4_3_libs_tgz
+      url: https://afni.nimh.nih.gov/pub/dist/tgz/package_libs/linux_ubuntu_24_R-4.3_libs.tgz
     - name: metabody.py
       filename: metabody.py
 
@@ -27,86 +32,86 @@ build:
         - install: bzip2 ca-certificates git wget build-essential software-properties-common
 
         - run:
-            - add-apt-repository universe -y
-        
+              - add-apt-repository universe -y
+
         - install:
-            - libgdal-dev
-            - libopenblas-dev
-            - libnode-dev
-            - libudunits2-dev
-            - r-base
-            - r-base-dev
-            - tcsh
-            - xfonts-base
-            - libssl-dev
-            - python-is-python3
-            - python3-matplotlib
-            - python3-numpy
-            - python3-flask
-            - python3-flask-cors
-            - python3-pil
-            - gsl-bin
-            - netpbm
-            - gnome-tweaks
-            - libjpeg62
-            - xvfb
-            - xterm
-            - vim
-            - curl
-            - gedit
-            - evince
-            - eog
-            - libglu1-mesa-dev
-            - libglw1-mesa-dev
-            - libxm4
-            - build-essential
-            - libcurl4-openssl-dev
-            - libxml2-dev
-            - libgfortran-14-dev
-            - libgomp1
-            - gnome-terminal
-            - nautilus
-            - firefox
-            - xfonts-100dpi
-            - r-base-dev
-            - cmake
-            - bc
-            - git
-            - libxext-dev
-            - libxmu-dev
-            - libxpm-dev
-            - libgsl-dev
-            - libglut-dev
-            - libxi-dev
-            - libglib2.0-dev
+              - libgdal-dev
+              - libopenblas-dev
+              - libnode-dev
+              - libudunits2-dev
+              - r-base
+              - r-base-dev
+              - tcsh
+              - xfonts-base
+              - libssl-dev
+              - python-is-python3
+              - python3-matplotlib
+              - python3-numpy
+              - python3-flask
+              - python3-flask-cors
+              - python3-pil
+              - gsl-bin
+              - netpbm
+              - gnome-tweaks
+              - libjpeg62
+              - xvfb
+              - xterm
+              - vim
+              - curl
+              - gedit
+              - evince
+              - eog
+              - libglu1-mesa-dev
+              - libglw1-mesa-dev
+              - libxm4
+              - build-essential
+              - libcurl4-openssl-dev
+              - libxml2-dev
+              - libgfortran-14-dev
+              - libgomp1
+              - gnome-terminal
+              - nautilus
+              - firefox
+              - xfonts-100dpi
+              - r-base-dev
+              - cmake
+              - bc
+              - git
+              - libxext-dev
+              - libxmu-dev
+              - libxpm-dev
+              - libgsl-dev
+              - libglut-dev
+              - libxi-dev
+              - libglib2.0-dev
 
         - run:
-            - cd /usr/include/GL
-            - mv GLwDrawA.h GLwDrawA.h.orig
-            - sed 's/GLAPI WidgetClass/extern GLAPI WidgetClass/' GLwDrawA.h.orig > /tmp/GLwDrawA.h
-            - mv /tmp/GLwDrawA.h GLwDrawA.h
+              - cd /usr/include/GL
+              - mv GLwDrawA.h GLwDrawA.h.orig
+              - sed 's/GLAPI WidgetClass/extern GLAPI WidgetClass/' GLwDrawA.h.orig > /tmp/GLwDrawA.h
+              - mv /tmp/GLwDrawA.h GLwDrawA.h
 
         - workdir: /opt
 
         - run:
-            - curl -O https://afni.nimh.nih.gov/pub/dist/bin/misc/@update.afni.binaries
-            - tcsh @update.afni.binaries -package linux_ubuntu_24_64 -do_extras
-            - mv /root/abin /usr/local/abin
+              - cp {{ get_file("update_afni_binaries") }} @update.afni.binaries
+              - tcsh @update.afni.binaries -package linux_ubuntu_24_64 -do_extras
+              - mv /root/abin /usr/local/abin
 
         - environment:
-            PATH: /usr/local/abin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
-            R_LIBS: /usr/local/share/R-4.3
+              PATH: /usr/local/abin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
+              R_LIBS: /usr/local/share/R-4.3
 
         - run:
-            - curl -O https://afni.nimh.nih.gov/pub/dist/tgz/package_libs/linux_ubuntu_24_R-4.3_libs.tgz
-            - tar -xf linux_ubuntu_24_R-4.3_libs.tgz
-            - mv linux_ubuntu_24_R-4.3_libs /usr/local/share/R-4.3
-            - rm -f linux_ubuntu_24_R-4.3_libs.tgz
+              - cp {{ get_file("linux_ubuntu_24_R_4_3_libs_tgz") }} linux_ubuntu_24_R-4.3_libs.tgz
+              - tar -xf linux_ubuntu_24_R-4.3_libs.tgz
+              - mv linux_ubuntu_24_R-4.3_libs /usr/local/share/R-4.3
+              - rm -f linux_ubuntu_24_R-4.3_libs.tgz
 
         - run:
-            - rPkgsInstall -pkgs ALL
+              - rPkgsInstall -pkgs ALL
 
-       # Miniconda installer
+        # Miniconda installer
         - workdir: /tmp
         - run:
               - curl -fsSL -o miniconda.sh {{ context.conda_download_url }}
@@ -143,9 +148,9 @@ build:
               - pip install SimpleITK nibabel pandas scikit-learn dcm2niix
 
         - run:
-            - chmod +x /opt/code/python-ismrmrd-server/nifti2mrd.py
-            - chmod +x /opt/code/python-ismrmrd-server/mrd2dicom.py
-            - chmod +x /opt/code/afni_processing.sh
+              - chmod +x /opt/code/python-ismrmrd-server/nifti2mrd.py
+              - chmod +x /opt/code/python-ismrmrd-server/mrd2dicom.py
+              - chmod +x /opt/code/afni_processing.sh
 deploy:
     bins:
         - /opt/code/afni_processing.sh

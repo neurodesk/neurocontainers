@@ -67,14 +67,14 @@ build:
         - pkg-config
 
     - run:
-        - wget -O vscode.deb "https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64"
+        - cp {{ get_file("download") }} vscode.deb
         - apt install ./vscode.deb
         - rm -rf ./vscode.deb
 
     - workdir: /opt
 
     - run:
-        - wget https://julialang-s3.julialang.org/bin/linux/x64/1.6/julia-1.6.3-linux-x86_64.tar.gz
+        - cp {{ get_file("julia_1_6_3_linux_x86_64_tar_gz") }} julia-1.6.3-linux-x86_64.tar.gz
         - tar zxvf julia-1.6.3-linux-x86_64.tar.gz
         - rm -rf julia-1.6.3-linux-x86_64.tar.gz
         - ln -s /opt/julia-1.6.3 /opt/julia-latest
@@ -94,7 +94,7 @@ build:
         GOPATH: \$HOME/go
 
     - run:
-        - wget https://dl.google.com/go/go1.17.2.linux-amd64.tar.gz
+        - cp {{ get_file("go1_17_2_linux_amd64_tar_gz") }} go1.17.2.linux-amd64.tar.gz
         - tar -C /usr/local -xzvf go1.17.2.linux-amd64.tar.gz
         - rm go1.17.2.linux-amd64.tar.gz
 
@@ -151,6 +151,14 @@ readme: |
   ----------------------------------
 
 files:
+  - name: download
+    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
+
+  - name: julia_1_6_3_linux_x86_64_tar_gz
+    url: https://julialang-s3.julialang.org/bin/linux/x64/1.6/julia-1.6.3-linux-x86_64.tar.gz
+
+  - name: go1_17_2_linux_amd64_tar_gz
+    url: https://dl.google.com/go/go1.17.2.linux-amd64.tar.gz
   - name: code
     contents: |
       #\!/usr/bin/env sh

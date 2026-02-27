@@ -30,11 +30,11 @@ build:
         - echo 'import os' > /opt/HD-BET/HD_BET/paths.py
         - echo 'folder_with_parameter_files = "/opt/HD-BET/hd-bet_params"' >> /opt/HD-BET/HD_BET/paths.py
         - mkdir -p /opt/HD-BET/hd-bet_params
-        - curl -o /opt/HD-BET/hd-bet_params/0.model https://zenodo.org/record/2540695/files/0.model?download=1
-        - curl -o /opt/HD-BET/hd-bet_params/1.model https://zenodo.org/record/2540695/files/1.model?download=1
-        - curl -o /opt/HD-BET/hd-bet_params/2.model https://zenodo.org/record/2540695/files/2.model?download=1
-        - curl -o /opt/HD-BET/hd-bet_params/3.model https://zenodo.org/record/2540695/files/3.model?download=1
-        - curl -o /opt/HD-BET/hd-bet_params/4.model https://zenodo.org/record/2540695/files/4.model?download=1
+        - cp {{ get_file("0_model") }} /opt/HD-BET/hd-bet_params/0.model
+        - cp {{ get_file("1_model") }} /opt/HD-BET/hd-bet_params/1.model
+        - cp {{ get_file("2_model") }} /opt/HD-BET/hd-bet_params/2.model
+        - cp {{ get_file("3_model") }} /opt/HD-BET/hd-bet_params/3.model
+        - cp {{ get_file("4_model") }} /opt/HD-BET/hd-bet_params/4.model
         - pip install -e .
 
 deploy:
@@ -65,3 +65,19 @@ readme: |
 
   To run container outside of this environment: ml hdbet/{{ context.version }}
   ----------------------------------
+
+files:
+  - name: 0_model
+    url: https://zenodo.org/record/2540695/files/0.model?download=1
+
+  - name: 1_model
+    url: https://zenodo.org/record/2540695/files/1.model?download=1
+
+  - name: 2_model
+    url: https://zenodo.org/record/2540695/files/2.model?download=1
+
+  - name: 3_model
+    url: https://zenodo.org/record/2540695/files/3.model?download=1
+
+  - name: 4_model
+    url: https://zenodo.org/record/2540695/files/4.model?download=1

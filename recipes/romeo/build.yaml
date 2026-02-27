@@ -22,7 +22,7 @@ build:
     - workdir: /opt/romeo-3.2.8/
 
     - run:
-        - curl -fsSL --retry 5 https://github.com/korbinian90/ROMEO/releases/download/v3.2.8/romeo_linux_3.2.8.tar.gz | tar -xz -C /opt/romeo-3.2.8/ --strip-components 1
+        - tar -xz -C /opt/romeo-3.2.8/ --strip-components 1 -f {{ get_file("romeo_linux_3_2_8_tar_gz") }}
 
     - environment:
         PATH: /opt/romeo-3.2.8/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin:~/.local/bin
@@ -66,3 +66,7 @@ readme: |
 
 categories:
   - "phase processing"
+
+files:
+  - name: romeo_linux_3_2_8_tar_gz
+    url: https://github.com/korbinian90/ROMEO/releases/download/v3.2.8/romeo_linux_3.2.8.tar.gz

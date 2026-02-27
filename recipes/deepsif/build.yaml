@@ -9,6 +9,13 @@ architectures:
   - x86_64
 
 files:
+  - name: main_tar_gz
+    url: https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz
+  - name: cuda_keyring_1_0_1_all_deb
+    url: https://developer.download.nvidia.com/compute/cuda/repos/debian11/x86_64/cuda-keyring_1.0-1_all.deb
+
+  - name: cudnn_11_5_linux_x64_v8_3_0_98_tgz
+    url: https://developer.download.nvidia.com/compute/redist/cudnn/v8.3.0/cudnn-11.5-linux-x64-v8.3.0.98.tgz
   - name: generate_tvb_data
     executable: true
     contents: |
@@ -60,7 +67,7 @@ build:
         - binutils
 
     - run:
-        - wget -q https://developer.download.nvidia.com/compute/cuda/repos/debian11/x86_64/cuda-keyring_1.0-1_all.deb
+        - cp {{ get_file("cuda_keyring_1_0_1_all_deb") }} cuda-keyring_1.0-1_all.deb
         - dpkg -i cuda-keyring_1.0-1_all.deb
         - rm cuda-keyring_1.0-1_all.deb
 
@@ -74,7 +81,7 @@ build:
         - nsight-compute-2022.2.0
 
     - run:
-        - wget -q https://developer.download.nvidia.com/compute/redist/cudnn/v8.3.0/cudnn-11.5-linux-x64-v8.3.0.98.tgz
+        - cp {{ get_file("cudnn_11_5_linux_x64_v8_3_0_98_tgz") }} cudnn-11.5-linux-x64-v8.3.0.98.tgz
         - tar -xvf cudnn-11.5-linux-x64-v8.3.0.98.tgz
         - rm cudnn-11.5-linux-x64-v8.3.0.98.tgz
         - chmod a+r cuda/include/cudnn*.h cuda/lib64/libcudnn*
@@ -108,7 +115,7 @@ build:
     - workdir: /opt/
 
     - run:
-        - curl -fsSL https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz | tar xz
+        - tar xz -f {{ get_file("main_tar_gz") }}
         - chmod a+rwx /opt/mne-bids-pipeline-main -R
 
     - environment:

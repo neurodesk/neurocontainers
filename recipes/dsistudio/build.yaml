@@ -29,7 +29,7 @@ build:
     - workdir: /opt
 
     - run:
-        - wget https://github.com/frankyeh/DSI-Studio/releases/download/2024.06.12/dsi_studio_ubuntu2204.zip
+        - cp {{ get_file("dsi_studio_ubuntu2204_zip") }} dsi_studio_ubuntu2204.zip
         - unzip dsi_studio_ubuntu2204.zip
         - chmod a+rwx dsi-studio -R
         - rm dsi_studio_ubuntu2204.zip
@@ -67,3 +67,7 @@ categories:
 gui_apps:
   - name: "dsistudioGUI"
     exec: "dsi_studio"
+
+files:
+  - name: dsi_studio_ubuntu2204_zip
+    url: https://github.com/frankyeh/DSI-Studio/releases/download/2024.06.12/dsi_studio_ubuntu2204.zip

@@ -41,7 +41,7 @@ build:
         XAPPLRESDIR: /opt/mcr/R2023a/x11/app-defaults
 
     - run:
-        - wget --no-check-certificate --progress=bar:force -P /opt https://github.com/hMRI-group/hMRI-toolbox/releases/download/v0.6.1/standalone-hMRItoolboxv0.6.1.zip
+        - cp {{ get_file("standalone_hMRItoolboxv0_6_1_zip") }} /opt/standalone-hMRItoolboxv0.6.1.zip
         - unzip -q /opt/standalone-hMRItoolboxv0.6.1.zip -d /opt
         - rm -f /opt/standalone-hMRItoolboxv0.6.1.zip
         - /opt/standalone-hMRItoolboxv0.6.1/spm12 function exit
@@ -74,3 +74,7 @@ categories:
 gui_apps:
   - name: "hmriGUI"
     exec: "bash run_spm12.sh /opt/mcr/R2023a fmri"
+
+files:
+  - name: standalone_hMRItoolboxv0_6_1_zip
+    url: https://github.com/hMRI-group/hMRI-toolbox/releases/download/v0.6.1/standalone-hMRItoolboxv0.6.1.zip

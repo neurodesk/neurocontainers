@@ -30,7 +30,7 @@ build:
     - workdir: /opt/fieldtrip-{{ context.version }}/
 
     - run:
-        - curl -fsSL --retry 5 https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/fieldtrip{{ context.version }}_mcr2020b.tar.gz | tar -xz -C /opt/fieldtrip-{{ context.version }}/ --strip-components 1
+        - tar -xz -C /opt/fieldtrip-{{ context.version }}/ --strip-components 1 -f {{ get_file("fieldtrip_1") }}
         - chmod +x /opt/fieldtrip-{{ context.version }}/*
 
     - environment:
@@ -60,3 +60,7 @@ readme: |-
 
 categories:
   - "electrophysiology"
+
+files:
+  - name: fieldtrip_1
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/fieldtrip{{

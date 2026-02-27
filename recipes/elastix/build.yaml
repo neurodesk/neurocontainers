@@ -24,7 +24,7 @@ build:
     - workdir: /opt/{{ context.name }}-{{ context.version }}
 
     - run:
-        - wget https://github.com/SuperElastix/elastix/releases/download/{{ context.version }}/elastix-{{ context.version }}-linux.zip
+        - cp {{ get_file("downloaded_file") }} {{
         - unzip elastix-{{ context.version }}-linux.zip
         - chmod a+x /opt/{{ context.name }}-{{ context.version }}/bin/*
         - rm elastix-{{ context.version }}-linux.zip
@@ -68,3 +68,7 @@ readme: |
 
 categories:
   - "image registration"
+
+files:
+  - name: downloaded_file
+    url: https://github.com/SuperElastix/elastix/releases/download/{{

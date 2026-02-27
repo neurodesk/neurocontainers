@@ -34,7 +34,7 @@ build:
     - workdir: /opt/bru2
 
     - run:
-        - wget https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip
+        - cp {{ get_file("Bru2_Linux_zip") }} Bru2_Linux.zip
         - unzip Bru2_Linux.zip
 
     - template:
@@ -82,3 +82,7 @@ readme: |-
 
 categories:
   - "data organisation"
+
+files:
+  - name: Bru2_Linux_zip
+    url: https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip

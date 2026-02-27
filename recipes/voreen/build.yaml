@@ -26,7 +26,7 @@ build:
     - workdir: /root
 
     - run:
-        - wget https://www.uni-muenster.de/imperia/md/content/voreen/release/voreen-src-{{ context.version }}-unix.tar.gz
+        - cp {{ get_file("voreen_src") }} voreen-src-{{
         - tar -xf voreen-src-{{ context.version }}-unix.tar.gz
 
     - run:
@@ -66,3 +66,7 @@ readme: |
 
   License: GNU General Public License
   ----------------------------------
+
+files:
+  - name: voreen_src
+    url: https://www.uni-muenster.de/imperia/md/content/voreen/release/voreen-src-{{

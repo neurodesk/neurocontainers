@@ -39,12 +39,12 @@ build:
         - cryptsetup
 
     - run:
-        - wget https://dl.google.com/go/go1.19.linux-amd64.tar.gz
+        - cp {{ get_file("go1_19_linux_amd64_tar_gz") }} go1.19.linux-amd64.tar.gz
         - tar -C /usr/local -xzvf go1.19.linux-amd64.tar.gz
         - rm go1.19.linux-amd64.tar.gz
         - mkdir -p /src/github.com/sylabs
         - cd /src/github.com/sylabs
-        - wget https://github.com/sylabs/singularity/releases/download/v3.10.2/singularity-ce-3.10.2.tar.gz
+        - cp {{ get_file("singularity_ce_3_10_2_tar_gz") }} singularity-ce-3.10.2.tar.gz
         - tar -xzvf singularity-ce-3.10.2.tar.gz
         - cd singularity-ce-3.10.2
         - ./mconfig --without-suid --prefix=/usr/local/singularity
@@ -119,7 +119,7 @@ build:
         SPM_VERSION: "12"
 
     - run:
-        - wget -O vscode.deb 'https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64'
+        - cp {{ get_file("download") }} vscode.deb
         - apt install ./vscode.deb
         - rm -rf ./vscode.deb
 
@@ -141,7 +141,7 @@ build:
         - chmod a+x /usr/local/sbin/code
 
     - run:
-        - wget --no-check-certificate --progress=bar:force -P /opt https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/spm12_r7771_Linux_R2019b.zip
+        - cp {{ get_file("spm12_r7771_Linux_R2019b_zip") }} /opt/spm12_r7771_Linux_R2019b.zip
         - unzip -q /opt/spm12_r7771_Linux_R2019b.zip -d /opt
         - rm -f /opt/spm12_r7771_Linux_R2019b.zip
 
@@ -221,6 +221,17 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: go1_19_linux_amd64_tar_gz
+    url: https://dl.google.com/go/go1.19.linux-amd64.tar.gz
+
+  - name: singularity_ce_3_10_2_tar_gz
+    url: https://github.com/sylabs/singularity/releases/download/v3.10.2/singularity-ce-3.10.2.tar.gz
+
+  - name: download
+    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
+
+  - name: spm12_r7771_Linux_R2019b_zip
+    url: https://www.fil.ion.ucl.ac.uk/spm/download/restricted/bids/spm12_r7771_Linux_R2019b.zip
   - name: code
     contents: |-
       #!/usr/bin/env sh
