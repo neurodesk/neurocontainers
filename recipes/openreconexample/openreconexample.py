@@ -7,6 +7,7 @@ import numpy as np
 import numpy.fft as fft
 import xml.dom.minidom
 import base64
+import json
 import ctypes
 import re
 import mrdhelper
@@ -140,6 +141,78 @@ def compute_nifti_affine(image_header, voxel_size):
     return affine
 
 
+def compute_nifti_affine_expected_order(image_header, voxel_size):
+    """
+    Build affine for NIfTI data arranged as [z, x, y], matching scanner-like
+    header orientation expected by downstream consumers.
+    """
+    lps_to_ras = np.array([-1, -1, 1], dtype=float)
+
+    position = np.array(image_header.position) * lps_to_ras
+    read_dir = np.array(image_header.read_dir) * lps_to_ras
+    phase_dir = np.array(image_header.phase_dir) * lps_to_ras
+    slice_dir = np.array(image_header.slice_dir) * lps_to_ras
+
+    affine = np.eye(4)
+    affine[:3, :3] = np.column_stack([
+        voxel_size[2] * slice_dir,   # NIfTI axis-0
+        -voxel_size[0] * read_dir,   # NIfTI axis-1
+        -voxel_size[1] * phase_dir,  # NIfTI axis-2
+    ])
+    affine[:3, 3] = position
+    return affine
+
+
+def _meta_get_first(meta_obj, key):
+    value = meta_obj.get(key)
+    if isinstance(value, (list, tuple)):
+        if len(value) == 0:
+            return None
+        return value[0]
+    return value
+
+
+def _meta_dicom_json(meta_obj):
+    b64 = _meta_get_first(meta_obj, 'DicomJson')
+    if not b64:
+        return {}
+    try:
+        return json.loads(base64.b64decode(str(b64)).decode('utf-8'))
+    except Exception:
+        return {}
+
+
+def _dicom_tag_value(dicom_json, tag):
+    item = dicom_json.get(tag, {})
+    vals = item.get('Value', [])
+    if isinstance(vals, list) and len(vals) > 0:
+        return vals[0]
+    return None
+
+
+def _to_float_or_none(value):
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _format_dicom_time_hhmmss_msec(value):
+    if value is None:
+        return None
+    value = str(value).strip()
+    if len(value) < 6:
+        return None
+
+    hhmmss = value[:6]
+    if '.' not in value:
+        return hhmmss
+
+    frac = value.split('.', 1)[1]
+    frac = (frac + "000")[:3]
+    return f"{hhmmss}.{frac}"
+
+
 def process_image(images, connection, config, metadata):
     if len(images) == 0:
         return []
@@ -174,16 +247,16 @@ def process_image(images, connection, config, metadata):
 
     logging.debug("Original image data after transposing is %s" % (data.shape,))
 
-    # write data to nifti using nibabel
-    affine = compute_nifti_affine(head[0], voxelsize)
+    # Write data to NIfTI in expected scanner-like axis order [z, x, y].
+    affine = compute_nifti_affine_expected_order(head[0], voxelsize)
     data = np.squeeze(data)
     logging.debug("Squeezed to 3D: %s" % (data.shape,))
 
-    # Transpose from [y, x, z] to NIfTI [x, y, z].
+    # Transpose from [y, x, z] to NIfTI [z, x, y].
     if data.ndim == 2:
-        data_nifti = np.asarray(data.T[:, :, None], dtype=np.int16)
+        data_nifti = np.asarray(data[None, :, :], dtype=np.int16)
     else:
-        data_nifti = np.asarray(data.transpose((1, 0, 2)), dtype=np.int16)
+        data_nifti = np.asarray(data.transpose((2, 1, 0)), dtype=np.int16)
 
     new_img = nib.nifti1.Nifti1Image(data_nifti, affine)
     new_img.set_qform(affine, code=1)
@@ -193,6 +266,38 @@ def process_image(images, connection, config, metadata):
     header.set_data_dtype(np.int16)
     header.set_dim_info(freq=1, phase=0, slice=2)
     header.set_xyzt_units(xyz='mm', t='sec')
+    header["pixdim"][1] = float(voxelsize[2])
+    header["pixdim"][2] = float(voxelsize[0])
+    header["pixdim"][3] = float(voxelsize[1])
+    header["pixdim"][5] = 0.0
+    header["pixdim"][6] = 0.0
+    header["pixdim"][7] = 0.0
+
+    # Populate scanner-style descriptive fields from DICOM metadata.
+    djson = _meta_dicom_json(meta[0]) if len(meta) > 0 else {}
+    te = _to_float_or_none(_dicom_tag_value(djson, "00180081"))  # EchoTime
+    tr = _to_float_or_none(_dicom_tag_value(djson, "00180080"))  # RepetitionTime
+    acq_time = _format_dicom_time_hhmmss_msec(_dicom_tag_value(djson, "00080032"))  # AcquisitionTime
+    aux_text = _dicom_tag_value(djson, "00204000")  # ImageComments
+    if aux_text is None and len(meta) > 0:
+        aux_text = _meta_get_first(meta[0], 'ImageComments')
+
+    # TE in many DICOMs is seconds for derived/converted datasets; convert to ms.
+    if te is not None and te < 1.0:
+        te = te * 1000.0
+    # NIfTI time units are seconds.
+    if tr is not None and tr > 100.0:
+        tr = tr / 1000.0
+    if tr is not None:
+        header["pixdim"][4] = float(tr)
+
+    desc_parts = []
+    if te is not None:
+        desc_parts.append(f"TE={te:g}")
+    if acq_time:
+        desc_parts.append(f"Time={acq_time}")
+    header["descrip"] = ";".join(desc_parts)
+    header["aux_file"] = str(aux_text or "")
     header.set_slope_inter(1.0, 0.0)
 
     nib.save(new_img, 't1_from_h5.nii')
@@ -219,9 +324,9 @@ def process_image(images, connection, config, metadata):
     data = data_img.get_fdata()
     if data.ndim == 2:
         data = data[:, :, None]
-    # Bring [x, y, z] from NIfTI back to [y, x, z].
+    # Bring [z, x, y] from NIfTI back to [y, x, z].
     if data.ndim >= 3:
-        data = data.transpose((1, 0, 2))
+        data = data.transpose((2, 1, 0))
     data = data[:, :, :, None, None]
     data = data.transpose((0, 1, 3, 4, 2))
 
