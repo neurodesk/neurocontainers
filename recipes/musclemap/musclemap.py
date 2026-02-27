@@ -147,18 +147,21 @@ def process(connection, config, metadata):
 
 # from https://github.com/benoitberanger/openrecon-template/blob/main/app/i2i-save-original-images.py
 def compute_nifti_affine(image_header, voxel_size):
+    # MRD stores geometry in DICOM/LPS (x=Left, y=Posterior, z=Superior).
+    # NIfTI uses RAS (x=Right, y=Anterior, z=Superior).
+    # Convert by negating x and y components.
+    lps_to_ras = np.array([-1, -1, 1], dtype=float)
 
-    # Extract necessary fields
-    position      = image_header.position
-    read_dir      = image_header.read_dir
-    phase_dir     = image_header.phase_dir
-    slice_dir     = image_header.slice_dir
+    position  = np.array(image_header.position)  * lps_to_ras
+    read_dir  = np.array(image_header.read_dir)   * lps_to_ras
+    phase_dir = np.array(image_header.phase_dir)  * lps_to_ras
+    slice_dir = np.array(image_header.slice_dir)  * lps_to_ras
 
     # Construct rotation-scaling matrix
     rotation_scaling_matrix = np.column_stack([
-        voxel_size[0] * np.array(read_dir),
-        voxel_size[1] * np.array(phase_dir),
-        voxel_size[2] * np.array(slice_dir)
+        voxel_size[0] * read_dir,
+        voxel_size[1] * phase_dir,
+        voxel_size[2] * slice_dir,
     ])
 
     # Construct affine matrix
@@ -273,12 +276,11 @@ def process_image(imgGroup, connection, config, metadata):
     print("shape before saving nifti and running mm_segment:")
     print(data.shape)
 
-    # NIfTI is written as [x, y, z] for scanner-compatible geometry metadata.
-    # A row-order flip on Y is required to match scanner NIfTI voxel ordering.
+    # Transpose from [y, x, z] to NIfTI [x, y, z].
     if data.ndim == 2:
-        data_nifti = np.asarray(data.T[:, ::-1, None], dtype=np.int16)
+        data_nifti = np.asarray(data.T[:, :, None], dtype=np.int16)
     else:
-        data_nifti = np.asarray(data.transpose((1, 0, 2))[:, ::-1, :], dtype=np.int16)
+        data_nifti = np.asarray(data.transpose((1, 0, 2)), dtype=np.int16)
     new_img = nib.nifti1.Nifti1Image(data_nifti, affine)
 
     # Set scanner-like header fields explicitly (nib defaults are not suitable here).
@@ -366,9 +368,8 @@ def process_image(imgGroup, connection, config, metadata):
     if data.ndim == 2:
         data = data[:, :, None]
 
-    # Undo the scanner-style Y flip, then bring [x, y, z] back to [y, x, z].
+    # Bring [x, y, z] back to [y, x, z].
     if data.ndim >= 3:
-        data = data[:, ::-1, :]
         data = data.transpose((1, 0, 2))
 
     data = data[..., None, None]

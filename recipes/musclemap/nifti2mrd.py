@@ -105,9 +105,14 @@ def extract_orientation_from_affine(affine, shape):
     # Position is the translation (position of first voxel)
     position = translation.copy()
 
-    # Keep affine in scanner/DICOM convention directly (LPS-consistent).
-    # This matches enhanceddicom2mrd.py and musclemap.py geometry handling.
-    print("🔄 Using affine directions directly (LPS-consistent, no extra axis flips)...")
+    # NIfTI affine is in RAS; MRD/DICOM uses LPS. Convert by negating x and y.
+    ras_to_lps = np.array([-1, -1, 1], dtype=float)
+    read_dir  = read_dir  * ras_to_lps
+    phase_dir = phase_dir * ras_to_lps
+    slice_dir = slice_dir * ras_to_lps
+    position  = position  * ras_to_lps
+
+    print("🔄 Converted from RAS to LPS...")
     
     print(f"   Position: [{position[0]:.4f}, {position[1]:.4f}, {position[2]:.4f}] mm")
     print(f"   Read direction:  [{read_dir[0]:.4f}, {read_dir[1]:.4f}, {read_dir[2]:.4f}]")
@@ -215,10 +220,8 @@ def convert_nifti_to_ismrmrd(nifti_path, output_path=None):
         data = data[:, :, :, 0]  # Take first volume
         print(f"📝 Reduced 4D to 3D: {data.shape}")
 
-    # Undo scanner-style NIfTI in-plane ordering so output matches
-    # the DICOM->MRD pixel convention used in enhanceddicom2mrd.py.
-    data = data[::-1, ::-1, :]
-    print(f"🔁 Applied X/Y unflip for MRD consistency: {data.shape}")
+    # No pixel-data flip needed: the direction vectors now correctly
+    # describe the voxel ordering after RAS-to-LPS conversion above.
     
     # Create ISMRMRD Image object
     print("🏗️ Creating ISMRMRD Image object...")

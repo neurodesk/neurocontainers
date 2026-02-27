@@ -8,6 +8,9 @@ import ctypes
 import re
 import base64
 
+# Direction vectors (read_dir, phase_dir, slice_dir) and position are stored
+# in DICOM's LPS patient coordinate system (x=Left, y=Posterior, z=Superior).
+
 # Defaults for input arguments
 defaults = {
     'outGroup':       'dataset',
@@ -90,6 +93,7 @@ class DicomImage:
             orient = self.get_group('PlaneOrientationSequence')
             if orient:
                 return orient.ImageOrientationPatient
+            print("WARNING: PlaneOrientationSequence missing from DICOM, using default orientation [1,0,0,0,1,0]")
             return [1, 0, 0, 0, 1, 0]
         else:
             return self.dset.ImageOrientationPatient
@@ -103,7 +107,7 @@ class DicomImage:
             orient = np.array(self.ImageOrientationPatient, dtype=float)
             normal = np.cross(orient[0:3], orient[3:6])
             return np.dot(pos, normal)
-        except:
+        except Exception:
             if not self.is_enhanced and 'SliceLocation' in self.dset:
                 return self.dset.SliceLocation
             return 0.0
@@ -202,7 +206,7 @@ class DicomImage:
     def get_private_item(self, group, element, creator):
         try:
             return self.dset.get_private_item(group, element, creator)
-        except:
+        except Exception:
             return None
 
     def to_json(self):
@@ -233,22 +237,22 @@ def CreateMrdHeader(dset):
     mrdHead.acquisitionSystemInformation.systemModel           = dset.ManufacturerModelName
     try:
         mrdHead.acquisitionSystemInformation.systemFieldStrength_T = float(dset.MagneticFieldStrength)
-    except:
+    except Exception:
         pass
-        
+
     try:
         mrdHead.acquisitionSystemInformation.institutionName       = dset.InstitutionName
-    except:
+    except Exception:
         mrdHead.acquisitionSystemInformation.institutionName       = 'Virtual'
     try:
         mrdHead.acquisitionSystemInformation.stationName       = dset.StationName
-    except:
+    except Exception:
         pass
 
     mrdHead.experimentalConditions                             = ismrmrd.xsd.experimentalConditionsType()
     try:
         mrdHead.experimentalConditions.H1resonanceFrequency_Hz     = int(dset.MagneticFieldStrength*4258e4)
-    except:
+    except Exception:
         pass
 
     enc = ismrmrd.xsd.encodingType()
@@ -418,11 +422,8 @@ def main(args):
             if not phase_imgs:
                 continue
             
-            # Calculate total FOV for the volume
             refImg = phase_imgs[0]
-            num_slices = len(phase_imgs)
-            total_fov_z = float(refImg.SliceThickness * num_slices)
-            
+
             # Create separate MRD Image for each slice
             for iSlice, sliceImg in enumerate(phase_imgs):
                 # Create MRD Image from single slice.
@@ -441,7 +442,7 @@ def main(args):
                          tmpMrdImg.image_type = imtype_map.get(itype[0][0], ismrmrd.IMTYPE_MAGNITUDE)
                     else:
                         tmpMrdImg.image_type = ismrmrd.IMTYPE_MAGNITUDE
-                except:
+                except Exception:
                     print("Unsupported ImageType %s -- defaulting to IMTYPE_MAGNITUDE" % sliceImg.ImageType)
                     tmpMrdImg.image_type = ismrmrd.IMTYPE_MAGNITUDE
 
@@ -455,8 +456,8 @@ def main(args):
                 # Note: matrix_size is read-only and derived from data shape (cols, rows, 1 for 2D slices)
                 # The slice index indicates position within the volume
                 
-                row_dir = _normalize(sliceImg.ImageOrientationPatient[0:3])
-                col_dir = _normalize(sliceImg.ImageOrientationPatient[3:6])
+                row_dir = _normalize(sliceImg.ImageOrientationPatient[0:3])   # DICOM "row direction cosines" = direction along image columns (x-axis)
+                col_dir = _normalize(sliceImg.ImageOrientationPatient[3:6])  # DICOM "column direction cosines" = direction along image rows (y-axis)
                 slice_dir = _normalize(np.cross(row_dir, col_dir))
 
                 tmpMrdImg.position = tuple(np.asarray(sliceImg.ImagePositionPatient, dtype=float))
@@ -476,12 +477,12 @@ def main(args):
                         tmpMrdImg.acquisition_time_stamp = round((h*3600 + m*60 + s + f)*1000/2.5)
                     else:
                         tmpMrdImg.acquisition_time_stamp = 0
-                except:
+                except Exception:
                     tmpMrdImg.acquisition_time_stamp = 0
 
                 try:
                     tmpMrdImg.physiology_time_stamp[0] = int(round(sliceImg.TriggerTime / 2.5))
-                except:
+                except Exception:
                     pass
 
                 try:
@@ -489,7 +490,7 @@ def main(args):
                     if item:
                         ImaAbsTablePosition = item.value
                         tmpMrdImg.patient_table_position = (ctypes.c_float(ImaAbsTablePosition[0]), ctypes.c_float(ImaAbsTablePosition[1]), ctypes.c_float(ImaAbsTablePosition[2]))
-                except:
+                except Exception:
                     pass
 
                 tmpMrdImg.image_series_index     = uSeriesNum.tolist().index(sliceImg.SeriesNumber)
@@ -503,7 +504,7 @@ def main(args):
                     itype = sliceImg.ImageType
                     if itype:
                         tmpMeta['ImageType'] = '\\'.join(str(x) for x in itype)
-                except:
+                except Exception:
                     tmpMeta['ImageType'] = ''
 
                 try:
@@ -515,12 +516,12 @@ def main(args):
                         if venc and dir:
                             tmpMeta['FlowVelocity']   = float(venc.group(0))
                             tmpMeta['FlowDirDisplay'] = venc_dir_map.get(dir.group(0), '')
-                except:
+                except Exception:
                     pass
 
                 try:
                     tmpMeta['ImageComments'] = sliceImg.ImageComments
-                except:
+                except Exception:
                     pass
 
                 tmpMeta['SeriesDescription'] = sliceImg.SeriesDescription
