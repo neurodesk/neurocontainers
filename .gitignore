@@ -26,7 +26,7 @@ recipes/fsl/fslinstaller.py
 *.IMA
 *.dcm
 .cache
-dicom_data
+dicom_data*
 *.utr
 t1_dcm
 build/
