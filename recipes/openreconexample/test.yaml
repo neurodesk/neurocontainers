@@ -1,14 +1,20 @@
 tests:
   - name: Test openreconexample
+    manual: true
     script: |
+      # build:
+      source .venv/bin/activate
+      ./builder/build.py generate openreconexample --recreate --build --login --architecture x86_64
+
       # Convert input DICOMs to ISMRMRD format
+      rm /buildhostdirectory/t1.h5
       python /opt/code/python-ismrmrd-server/dicom2mrd.py \
         -o /buildhostdirectory/t1.h5 \
         /buildhostdirectory/dicom_data
 
       # Start OpenRecon server
       python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
-      sleep 5
+      sleep 2
 
       rm /buildhostdirectory/output.h5
       python3 /opt/code/python-ismrmrd-server/client.py \

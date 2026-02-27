@@ -120,6 +120,26 @@ def process(connection, config, metadata):
         connection.send_close()
 
 
+def compute_nifti_affine(image_header, voxel_size):
+    # MRD stores geometry in DICOM/LPS (x=Left, y=Posterior, z=Superior).
+    # NIfTI uses RAS (x=Right, y=Anterior, z=Superior), so negate x/y.
+    lps_to_ras = np.array([-1, -1, 1], dtype=float)
+
+    position = np.array(image_header.position) * lps_to_ras
+    read_dir = np.array(image_header.read_dir) * lps_to_ras
+    phase_dir = np.array(image_header.phase_dir) * lps_to_ras
+    slice_dir = np.array(image_header.slice_dir) * lps_to_ras
+
+    affine = np.eye(4)
+    affine[:3, :3] = np.column_stack([
+        voxel_size[0] * read_dir,
+        voxel_size[1] * phase_dir,
+        voxel_size[2] * slice_dir,
+    ])
+    affine[:3, 3] = position
+    return affine
+
+
 def process_image(images, connection, config, metadata):
     if len(images) == 0:
         return []
@@ -132,6 +152,10 @@ def process_image(images, connection, config, metadata):
     # Diagnostic info
     matrix    = np.array(head[0].matrix_size  [:]) 
     fov       = np.array(head[0].field_of_view[:])
+    if matrix[2] != len(images):
+        matrix[2] = len(images)
+    slice_thickness = fov[2]
+    fov[2] = slice_thickness * len(images)
     voxelsize = fov/matrix
     read_dir  = np.array(images[0].read_dir )
     phase_dir = np.array(images[0].phase_dir)
@@ -145,18 +169,32 @@ def process_image(images, connection, config, metadata):
 
     logging.debug("Original image data before transposing is %s" % (data.shape,))
 
-    # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions
-    data = data.transpose((3, 4, 2, 1, 0))
+    # Reformat data to [y x img cha z], i.e. [row col slice ...]
+    data = data.transpose((3, 4, 0, 1, 2))
 
     logging.debug("Original image data after transposing is %s" % (data.shape,))
 
     # write data to nifti using nibabel
-    # data = np.squeeze(data)
-    data = data[:,:,0,0,:]
+    affine = compute_nifti_affine(head[0], voxelsize)
+    data = np.squeeze(data)
     logging.debug("Squeezed to 3D: %s" % (data.shape,))
 
-    xform = np.eye(4)
-    new_img = nib.nifti1.Nifti1Image(data, xform)
+    # Transpose from [y, x, z] to NIfTI [x, y, z].
+    if data.ndim == 2:
+        data_nifti = np.asarray(data.T[:, :, None], dtype=np.int16)
+    else:
+        data_nifti = np.asarray(data.transpose((1, 0, 2)), dtype=np.int16)
+
+    new_img = nib.nifti1.Nifti1Image(data_nifti, affine)
+    new_img.set_qform(affine, code=1)
+    new_img.set_sform(affine, code=1)
+
+    header = new_img.header
+    header.set_data_dtype(np.int16)
+    header.set_dim_info(freq=1, phase=0, slice=2)
+    header.set_xyzt_units(xyz='mm', t='sec')
+    header.set_slope_inter(1.0, 0.0)
+
     nib.save(new_img, 't1_from_h5.nii')
 
     # bet2 Usage: 
@@ -179,6 +217,11 @@ def process_image(images, connection, config, metadata):
 
     data_img = nib.load('t1_from_h5_bet2.nii.gz')
     data = data_img.get_fdata()
+    if data.ndim == 2:
+        data = data[:, :, None]
+    # Bring [x, y, z] from NIfTI back to [y, x, z].
+    if data.ndim >= 3:
+        data = data.transpose((1, 0, 2))
     data = data[:, :, :, None, None]
     data = data.transpose((0, 1, 3, 4, 2))
 
@@ -265,6 +308,29 @@ def process_image(images, connection, config, metadata):
         logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
 
         imagesOut[iImg].attribute_string = metaXml
+
+    # Send a copy of original (unmodified) images back too if selected
+    opre_sendoriginal = mrdhelper.get_json_config_param(config, 'sendoriginal', default=True, type='bool')
+    if opre_sendoriginal:
+        stack = traceback.extract_stack()
+        if stack[-2].name == 'process_raw':
+            logging.warning('sendOriginal is true, but input was raw data, so no original images to return!')
+        else:
+            logging.info('Sending a copy of original unmodified images due to sendOriginal set to True')
+            # In reverse order so that they'll be in correct order as we insert them to the front of the list
+            for image in reversed(images):
+                # Create a copy to not modify the original inputs
+                tmpImg = image
+
+                # Change the series_index to have a different series
+                tmpImg.image_series_index = 99
+
+                # Ensure Keep_image_geometry is set to not reverse image orientation
+                tmpMeta = ismrmrd.Meta.deserialize(tmpImg.attribute_string)
+                tmpMeta['Keep_image_geometry'] = 1
+                tmpImg.attribute_string = tmpMeta.serialize()
+
+                imagesOut.insert(0, tmpImg)
 
     return imagesOut
 
