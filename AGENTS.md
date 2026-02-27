@@ -226,7 +226,7 @@ Built containers are distributed to:
 ### YAML Recipes
 - 2-space indentation
 - Use Jinja2 `{{ context.version }}` and `{{ context.variable_name }}` for templating
-- Use `{{ get_file("filename") }}` to reference declared files in run directives
+- Use `{{ get_file("filename") }}` to reference declared files in run directives. **This is the preferred method for downloading files (over `wget` or `curl`) because it utilizes the builder's local caching.**
 - Combine run directives where possible (each becomes a single Docker layer)
 - Clean up temporary files in the same layer they are created
 - Pin exact versions for reproducibility

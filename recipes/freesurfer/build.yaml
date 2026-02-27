@@ -5,7 +5,7 @@ version: 8.0.0
 copyright:
   - name: freesurfer license
     url: https://github.com/freesurfer/freesurfer/blob/dev/LICENSE.txt
-    
+
 architectures:
   - x86_64
 
@@ -158,9 +158,7 @@ build:
     - workdir: /opt/workbench/
 
     - run:
-        - wget --quiet -O workbench.zip 'https://humanconnectome.org/storage/app/media/workbench/workbench-linux64-v2.0.1.zip'
-        - unzip workbench.zip
-        - rm -rf workbench.zip
+        - unzip {{ get_file("workbench_zip") }}
 
     - environment:
         DEPLOY_TEST_MAX_PATH_FILES: "60"
@@ -207,7 +205,7 @@ deploy:
   path:
     - /opt/freesurfer-{{ context.version }}/bin/
     - /opt/freesurfer-{{ context.version }}/fsfast/bin/
-  bins:   
+  bins:
     - recon-all
     - freeview
 
@@ -237,6 +235,9 @@ readme: |-
 files:
   - name: freesurfer_deb
     url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.version }}/freesurfer_ubuntu22-{{ context.version }}_amd64.deb
+
+  - name: workbench_zip
+    url: https://humanconnectome.org/storage/app/media/workbench/workbench-linux64-v2.0.1.zip
 
   - name: segmentNuclei
     contents: |-
