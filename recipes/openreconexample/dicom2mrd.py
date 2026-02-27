@@ -28,6 +28,128 @@ venc_dir_map = {'rl'  : 'FLOW_DIR_R_TO_L',
                 'in'  : 'FLOW_DIR_TP_IN',
                 'out' : 'FLOW_DIR_TP_OUT'}
 
+
+def _is_enhanced_mr(dset):
+    return dset.SOPClassUID.name == 'Enhanced MR Image Storage'
+
+
+def _normalize(vec):
+    arr = np.asarray(vec, dtype=float)
+    norm = np.linalg.norm(arr)
+    if norm == 0:
+        return arr
+    return arr / norm
+
+
+def _get_enhanced_group_item(dset, group_name):
+    if not _is_enhanced_mr(dset):
+        return None
+
+    try:
+        if group_name in dset.PerFrameFunctionalGroupsSequence[0]:
+            return dset.PerFrameFunctionalGroupsSequence[0][group_name][0]
+    except Exception:
+        pass
+
+    try:
+        if group_name in dset.SharedFunctionalGroupsSequence[0]:
+            return dset.SharedFunctionalGroupsSequence[0][group_name][0]
+    except Exception:
+        pass
+
+    return None
+
+
+def _get_pixel_spacing_and_thickness(dset):
+    pixel_spacing = None
+    slice_thickness = None
+
+    if _is_enhanced_mr(dset):
+        measures = _get_enhanced_group_item(dset, 'PixelMeasuresSequence')
+        if measures is not None:
+            pixel_spacing = getattr(measures, 'PixelSpacing', None)
+            slice_thickness = getattr(measures, 'SliceThickness', None)
+
+    if pixel_spacing is None:
+        pixel_spacing = dset.get('PixelSpacing', [1.0, 1.0])
+    if slice_thickness is None:
+        slice_thickness = dset.get('SliceThickness', 1.0)
+
+    row_spacing = float(pixel_spacing[0])
+    col_spacing = float(pixel_spacing[1])
+    return row_spacing, col_spacing, float(slice_thickness)
+
+
+def _get_image_orientation(dset):
+    iop = None
+
+    if _is_enhanced_mr(dset):
+        orient = _get_enhanced_group_item(dset, 'PlaneOrientationSequence')
+        if orient is not None:
+            iop = getattr(orient, 'ImageOrientationPatient', None)
+
+    if iop is None:
+        iop = dset.get('ImageOrientationPatient', [1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
+
+    iop = np.asarray(iop, dtype=float)
+    if iop.size != 6:
+        iop = np.asarray([1.0, 0.0, 0.0, 0.0, 1.0, 0.0], dtype=float)
+
+    row_dir = _normalize(iop[0:3])
+    col_dir = _normalize(iop[3:6])
+    return row_dir, col_dir
+
+
+def _get_image_position(dset):
+    ipp = None
+
+    if _is_enhanced_mr(dset):
+        position = _get_enhanced_group_item(dset, 'PlanePositionSequence')
+        if position is not None:
+            ipp = getattr(position, 'ImagePositionPatient', None)
+
+    if ipp is None:
+        ipp = dset.get('ImagePositionPatient', [0.0, 0.0, 0.0])
+
+    ipp = np.asarray(ipp, dtype=float)
+    if ipp.size != 3:
+        ipp = np.asarray([0.0, 0.0, 0.0], dtype=float)
+
+    return ipp
+
+
+def _get_slice_location(dset):
+    row_dir, col_dir = _get_image_orientation(dset)
+    slice_dir = _normalize(np.cross(row_dir, col_dir))
+    if np.linalg.norm(slice_dir) == 0:
+        return float(dset.get('SliceLocation', 0.0))
+
+    position = _get_image_position(dset)
+    return float(np.dot(position, slice_dir))
+
+
+def _closest_index(values, value):
+    arr = np.asarray(values, dtype=float)
+    if arr.size == 0:
+        return 0
+    return int(np.argmin(np.abs(arr - float(value))))
+
+
+def _parse_acquisition_time_ms(acq_time):
+    acq_time = str(acq_time).strip()
+    if len(acq_time) < 6:
+        return 0
+
+    try:
+        h = int(acq_time[0:2])
+        m = int(acq_time[2:4])
+        s = int(acq_time[4:6])
+        frac = float(acq_time[6:]) if len(acq_time) > 6 else 0.0
+        return round((h*3600 + m*60 + s + frac) * 1000 / 2.5)
+    except Exception:
+        return 0
+
+
 def CreateMrdHeader(dset):
     """Create MRD XML header from a DICOM file"""
 
@@ -63,23 +185,25 @@ def CreateMrdHeader(dset):
     encSpace.matrixSize.y                                       = dset.Rows
     encSpace.matrixSize.z                                       = 1
     encSpace.fieldOfView_mm                                     = ismrmrd.xsd.fieldOfViewMm()
-    if dset.SOPClassUID.name == 'Enhanced MR Image Storage':
-        encSpace.fieldOfView_mm.x                               =       dset.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing[0]*dset.Rows
-        encSpace.fieldOfView_mm.y                               =       dset.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].PixelSpacing[1]*dset.Columns
-        encSpace.fieldOfView_mm.z                               = float(dset.PerFrameFunctionalGroupsSequence[0].PixelMeasuresSequence[0].SliceThickness)
-    else:
-        encSpace.fieldOfView_mm.x                               =       dset.PixelSpacing[0]*dset.Rows
-        encSpace.fieldOfView_mm.y                               =       dset.PixelSpacing[1]*dset.Columns
-        encSpace.fieldOfView_mm.z                               = float(dset.SliceThickness)
+    row_spacing, col_spacing, slice_thickness                   = _get_pixel_spacing_and_thickness(dset)
+    # DICOM PixelSpacing is [row_spacing, col_spacing] => [y, x]
+    encSpace.fieldOfView_mm.x                                   = col_spacing * dset.Columns
+    encSpace.fieldOfView_mm.y                                   = row_spacing * dset.Rows
+    encSpace.fieldOfView_mm.z                                   = slice_thickness
     enc.encodedSpace                                            = encSpace
     enc.reconSpace                                              = encSpace
     enc.encodingLimits                                          = ismrmrd.xsd.encodingLimitsType()
     enc.parallelImaging                                         = ismrmrd.xsd.parallelImagingType()
 
     enc.parallelImaging.accelerationFactor                      = ismrmrd.xsd.accelerationFactorType()
-    if dset.SOPClassUID.name == 'Enhanced MR Image Storage':
-        enc.parallelImaging.accelerationFactor.kspace_encoding_step_1 = dset.SharedFunctionalGroupsSequence[0].MRModifierSequence[0].ParallelReductionFactorInPlane
-        enc.parallelImaging.accelerationFactor.kspace_encoding_step_2 = dset.SharedFunctionalGroupsSequence[0].MRModifierSequence[0].ParallelReductionFactorOutOfPlane
+    if _is_enhanced_mr(dset):
+        try:
+            mod = dset.SharedFunctionalGroupsSequence[0].MRModifierSequence[0]
+            enc.parallelImaging.accelerationFactor.kspace_encoding_step_1 = mod.ParallelReductionFactorInPlane
+            enc.parallelImaging.accelerationFactor.kspace_encoding_step_2 = mod.ParallelReductionFactorOutOfPlane
+        except Exception:
+            enc.parallelImaging.accelerationFactor.kspace_encoding_step_1 = 1
+            enc.parallelImaging.accelerationFactor.kspace_encoding_step_2 = 1
     else:
         enc.parallelImaging.accelerationFactor.kspace_encoding_step_1 = 1
         enc.parallelImaging.accelerationFactor.kspace_encoding_step_2 = 1
@@ -131,19 +255,22 @@ def main(args):
             return item.InstanceNumber
         dsets = sorted(dsets, key=get_instance_number)
 
-        # Build a list of unique SliceLocation and TriggerTimes, as the MRD
-        # slice and phase counters index into these
-        uSliceLoc = np.unique([dset.SliceLocation for dset in dsets])
-        if dsets[0].SliceLocation != uSliceLoc[0]:
+        # Build a list of unique geometric slice locations and trigger times.
+        # SliceLocation can be absent/inconsistent; project ImagePositionPatient onto slice normal.
+        slice_locs = np.asarray([_get_slice_location(dset) for dset in dsets], dtype=float)
+        uSliceLoc = np.unique(slice_locs)
+        if (uSliceLoc.size > 1) and (not np.isclose(slice_locs[0], uSliceLoc[0])):
             uSliceLoc = uSliceLoc[::-1]
 
         try:
             # This field may not exist for non-gated sequences
-            uTrigTime = np.unique([dset.TriggerTime for dset in dsets])
-            if dsets[0].TriggerTime != uTrigTime[0]:
+            trig_times = np.asarray([float(dset.TriggerTime) for dset in dsets], dtype=float)
+            uTrigTime = np.unique(trig_times)
+            if (uTrigTime.size > 1) and (not np.isclose(trig_times[0], uTrigTime[0])):
                 uTrigTime = uTrigTime[::-1]
-        except:
-            uTrigTime = np.zeros_like(uSliceLoc)
+        except Exception:
+            trig_times = np.zeros(len(dsets), dtype=float)
+            uTrigTime = np.asarray([0.0], dtype=float)
 
         print("Series %d has %d images with %d slices and %d phases" % (uSeriesNum[iSer], len(dsets), len(uSliceLoc), len(uTrigTime)))
 
@@ -163,12 +290,17 @@ def main(args):
                 print("Unsupported ImageType %s -- defaulting to IMTYPE_MAGNITUDE" % tmpDset.ImageType[2])
                 tmpMrdImg.image_type                = ismrmrd.IMTYPE_MAGNITUDE
 
-            tmpMrdImg.field_of_view            = (tmpDset.PixelSpacing[0]*tmpDset.Rows, tmpDset.PixelSpacing[1]*tmpDset.Columns, tmpDset.SliceThickness)
-            tmpMrdImg.position                 = tuple(np.stack(tmpDset.ImagePositionPatient))
-            tmpMrdImg.read_dir                 = tuple(np.stack(tmpDset.ImageOrientationPatient[0:3]))
-            tmpMrdImg.phase_dir                = tuple(np.stack(tmpDset.ImageOrientationPatient[3:7]))
-            tmpMrdImg.slice_dir                = tuple(np.cross(np.stack(tmpDset.ImageOrientationPatient[0:3]), np.stack(tmpDset.ImageOrientationPatient[3:7])))
-            tmpMrdImg.acquisition_time_stamp   = round((int(tmpDset.AcquisitionTime[0:2])*3600 + int(tmpDset.AcquisitionTime[2:4])*60 + int(tmpDset.AcquisitionTime[4:6]) + float(tmpDset.AcquisitionTime[6:]))*1000/2.5)
+            row_spacing, col_spacing, slice_thickness = _get_pixel_spacing_and_thickness(tmpDset)
+            row_dir, col_dir = _get_image_orientation(tmpDset)
+            slice_dir = _normalize(np.cross(row_dir, col_dir))
+            image_position = _get_image_position(tmpDset)
+
+            tmpMrdImg.field_of_view            = (col_spacing*tmpDset.Columns, row_spacing*tmpDset.Rows, slice_thickness)
+            tmpMrdImg.position                 = tuple(image_position)
+            tmpMrdImg.read_dir                 = tuple(row_dir)
+            tmpMrdImg.phase_dir                = tuple(col_dir)
+            tmpMrdImg.slice_dir                = tuple(slice_dir)
+            tmpMrdImg.acquisition_time_stamp   = _parse_acquisition_time_ms(tmpDset.get('AcquisitionTime', '000000.0'))
             try:
                 tmpMrdImg.physiology_time_stamp[0] = round(int(tmpDset.TriggerTime/2.5))
             except:
@@ -182,11 +314,11 @@ def main(args):
 
             tmpMrdImg.image_series_index     = uSeriesNum.tolist().index(tmpDset.SeriesNumber)
             tmpMrdImg.image_index            = tmpDset.get('InstanceNumber', 0)
-            tmpMrdImg.slice                  = uSliceLoc.tolist().index(tmpDset.SliceLocation)
+            tmpMrdImg.slice                  = _closest_index(uSliceLoc, slice_locs[iImg])
             try:
-                tmpMrdImg.phase                  = uTrigTime.tolist().index(tmpDset.TriggerTime)
-            except:
-                pass
+                tmpMrdImg.phase              = _closest_index(uTrigTime, trig_times[iImg])
+            except Exception:
+                tmpMrdImg.phase              = 0
 
             try:
                 res  = re.search(r'(?<=_v).*$',     tmpDset.SequenceName)

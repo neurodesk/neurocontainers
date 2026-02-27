@@ -6,6 +6,8 @@ architectures:
 files:
     - name: openreconexample.py
       filename: openreconexample.py
+    - name: dicom2mrd.py
+      filename: dicom2mrd.py
 
 build:
     kind: neurodocker
@@ -36,6 +38,7 @@ build:
 
         #openrecon application
         - copy: openreconexample.py /opt/code/python-ismrmrd-server/openreconexample.py
+        - copy: dicom2mrd.py /opt/code/python-ismrmrd-server/dicom2mrd.py
 
 deploy:
     path:
