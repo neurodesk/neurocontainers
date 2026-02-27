@@ -1,0 +1,18 @@
+{
+  "apps": {
+    "slicer 5.10.0": {
+      "version": "20260226",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "slicerGUI-slicer 5.10.0": {
+      "version": "20260226",
+      "exec": "Slicer",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization",
+    "image segmentation"
+  ]
+}
