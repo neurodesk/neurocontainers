@@ -1,0 +1,53 @@
+{
+  "general": {
+    "name": { "en": "metabody" },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": { "en": "metabody" },
+    "id": "metabody",
+    "regulatory_information": {
+      "device_trade_name":"metabody",
+      "production_identifier":"VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address":"Erlangen, Germany",
+      "made_in":"DE",
+      "manufacture_date":"2023/02/14",
+      "material_number":"metabody_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin":"00860000171212",
+      "udi":"(01)00860000171212(21)1.3.0",
+      "safety_advices":"",
+      "special_operating_instructions":"Open Recon example",
+      "additional_relevant_information":""
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "image",
+    "injector": "image",
+    "can_process_adjustment_data": false,
+    "can_use_gpu": false,
+    "min_count_required_gpus": 0,
+    "min_required_gpu_memory": 2048,
+    "min_required_memory": 4096,
+    "min_count_required_cpu_cores": 1,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": { "en": "config" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "metabody",
+          "name": { "en": "metabody" }
+        }
+      ],
+      "default": "metabody",
+      "information": { "en": "Define the config to be executed by MRD server" }
+    }
+  ]
+}

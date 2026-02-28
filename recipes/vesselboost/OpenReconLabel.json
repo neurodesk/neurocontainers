@@ -1,0 +1,74 @@
+{
+  "general": {
+    "name": { "en": "vesselboost" },
+    "version": "1.0.3",
+    "vendor": "neurodesk",
+    "information": { "en": "Vesselboost pipeline." },
+    "id": "vesselboost",
+    "regulatory_information": {
+      "device_trade_name":"vesselboost",
+      "production_identifier":"1.0.3",
+      "manufacturer_address":"Erlangen, Germany",
+      "made_in":"DE",
+      "manufacture_date":"2023/02/14",
+      "material_number":"vesselboost_1.0.3",
+      "gtin":"00860000171212",
+      "udi":"(01)00860000171212(21)1.3.0",
+      "safety_advices":"",
+      "special_operating_instructions":"Open Recon vesselboost pipeline",
+      "additional_relevant_information":""
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "image",
+    "injector": "image",
+    "can_process_adjustment_data": false,
+    "can_use_gpu": false,
+    "min_count_required_gpus": 0,
+    "min_required_gpu_memory": 2048,
+    "min_required_memory": 4096,
+    "min_count_required_cpu_cores": 1,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": { "en": "config" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "vesselboost",
+          "name": { "en": "vesselboost" }
+        }
+      ],
+      "default": "vesselboost",
+      "information": { "en": "Define the config to be executed by MRD server" }
+    },
+    {
+      "id": "options",
+      "label": { "en": "options" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "none",
+          "name": { "en": "none" }
+        },
+        {
+          "id": "tta",
+          "name": { "en": "tta" }
+        },
+        {
+          "id": "booster",
+          "name": { "en": "booster" }
+        }
+      ],
+      "default": "none",
+      "information": { "en": "Additional Vesselboost options" }
+    }
+  ]
+}

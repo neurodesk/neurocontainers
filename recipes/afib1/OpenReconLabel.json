@@ -1,0 +1,159 @@
+{
+  "general": {
+    "name": { "en": "afib1" },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": { "en": "afib1 pipeline." },
+    "id": "afib1",
+    "regulatory_information": {
+      "device_trade_name":"afib1",
+      "production_identifier":"VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address":"Erlangen, Germany",
+      "made_in":"DE",
+      "manufacture_date":"2023/02/14",
+      "material_number":"afib1_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin":"00860000171212",
+      "udi":"(01)00860000171212(21)1.3.0",
+      "safety_advices":"",
+      "special_operating_instructions":"Open Recon afib1 pipeline",
+      "additional_relevant_information":""
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "image",
+    "injector": "image",
+    "can_process_adjustment_data": false,
+    "can_use_gpu": false,
+    "min_count_required_gpus": 0,
+    "min_required_gpu_memory": 2048,
+    "min_required_memory": 4096,
+    "min_count_required_cpu_cores": 1,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": { "en": "config" },
+      "type": "choice",
+      "values": [
+        { "id": "afib1", "name": { "en": "afib1" } }
+      ],
+      "default": "afib1",
+      "information": { "en": "Define the config to be executed by MRD server" }
+    },
+    {
+      "id": "sendoriginal",
+      "label": { "en": "Send original images" },
+      "type": "boolean",
+      "information": { "en": "Send a copy of original unmodified images back too" },
+      "default": false
+    },
+    {
+      "id": "interleaved",
+      "label": { "en": "Interleaved data" },
+      "type": "boolean",
+      "information": { "en": "Checked if images are passed with the two TRs interleaved" },
+      "default": false
+    },
+    {
+      "id": "b1output",
+      "label": { "en": "B1+ map style" },
+      "type": "choice",
+      "values": [
+        { "id": "afa", "name": { "en": "Actual Flip Angle" } },
+        { "id": "pu", "name": { "en": "Percent Units" } }
+      ],
+      "default": "afa",
+      "information": { "en": "Choose between flip angle in degrees or B1 map in p.u." }
+    },
+    {
+      "id": "brainmask",
+      "label": { "en": "Brain mask?" },
+      "type": "boolean",
+      "information": { "en": "Checked will apply a processed bet2 mask" },
+      "default": false
+    },
+    {
+      "id": "maskfwhm",
+      "label": { "en": "FWHM for mask smoothing" },
+      "type": "double",
+      "information": { "en": "FWHM in mm to smooth brain mask by" },
+      "minimum": 1.0,
+      "maximum": 10.0,
+      "default": 5.0,
+      "unit": { "en": "mm" }
+    },
+    {
+      "id": "masknerode",
+      "label": { "en": "Mask erodes" },
+      "type": "int",
+      "information": { "en": "Number of erosion operations applied to mask" },
+      "minimum": 0,
+      "maximum": 20,
+      "default": 2
+    },
+    {
+      "id": "maskndilate",
+      "label": { "en": "Mask dilates" },
+      "type": "int",
+      "information": { "en": "Number of dilation operations applied to mask" },
+      "minimum": 0,
+      "maximum": 20,
+      "default": 4
+    },
+    {
+      "id": "maskthresh",
+      "label": { "en": "Mask threshold" },
+      "type": "double",
+      "information": { "en": "Threshold applied to brain mask" },
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "default": 0.5
+    },
+    {
+      "id": "signalthresh",
+      "label": { "en": "Signal threshold" },
+      "type": "double",
+      "information": { "en": "Signal value below which map is invalid" },
+      "minimum": 0.1,
+      "maximum": 4096.0,
+      "default": 60.0,
+      "unit": { "en": "au" }
+    },
+    {
+      "id": "b1fwhm",
+      "label": { "en": "FWHM for map smoothing" },
+      "type": "double",
+      "information": { "en": "FWHM in mm to smooth b1 map by, 0 to disable" },
+      "minimum": 0.0,
+      "maximum": 10.0,
+      "default": 8.0,
+      "unit": { "en": "mm" }
+    },
+    {
+      "id": "trratio",
+      "label": { "en": "TR Ratio" },
+      "type": "double",
+      "information": { "en": "Ratio of TR2 to TR1" },
+      "minimum": 0.1,
+      "maximum": 100.0,
+      "default": 5.0,
+      "unit": { "en": "mm" }
+    },
+    {
+      "id": "nominalfa",
+      "label": { "en": "Nominal Flip Angle" },
+      "type": "double",
+      "information": { "en": "AFI sequence nominal excitation angle (FA)" },
+      "minimum": 1.0,
+      "maximum": 180.0,
+      "default": 60.0,
+      "unit": { "en": "deg" }
+    }
+  ]
+}
