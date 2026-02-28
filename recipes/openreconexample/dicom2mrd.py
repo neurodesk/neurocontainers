@@ -298,13 +298,10 @@ def main(args):
             tmpMrdImg.field_of_view            = (col_spacing*tmpDset.Columns, row_spacing*tmpDset.Rows, slice_thickness)
             tmpMrdImg.position                 = tuple(image_position)
 
-            pe_dir_tag = getattr(tmpDset, 'InPlanePhaseEncodingDirection', 'COL')
-            if pe_dir_tag == 'ROW':
-                tmpMrdImg.read_dir             = tuple(col_dir)
-                tmpMrdImg.phase_dir            = tuple(row_dir)
-            else:
-                tmpMrdImg.read_dir             = tuple(row_dir)
-                tmpMrdImg.phase_dir            = tuple(col_dir)
+            # Keep MRD direction mapping consistent with musclemap/enhanceddicom2mrd:
+            # read_dir follows DICOM row direction, phase_dir follows DICOM column direction.
+            tmpMrdImg.read_dir                 = tuple(row_dir)
+            tmpMrdImg.phase_dir                = tuple(col_dir)
             tmpMrdImg.slice_dir                = tuple(slice_dir)
             tmpMrdImg.acquisition_time_stamp   = _parse_acquisition_time_ms(tmpDset.get('AcquisitionTime', '000000.0'))
             try:

@@ -141,10 +141,12 @@ def compute_nifti_affine(image_header, voxel_size):
     return affine
 
 
-def compute_nifti_affine_expected_order(image_header, voxel_size, pe_dir='COL'):
+def compute_nifti_affine_expected_order(image_header, voxel_size, nifti_shape=None):
     """
-    Build affine for NIfTI data arranged as [z, x, y], matching scanner-like
-    header orientation expected by downstream consumers.
+    Build affine for NIfTI data arranged as [z, x, y].
+
+    To match scanner-style headers, the origin is shifted to the [0,0,0] voxel
+    in this reordered/flipped array layout.
     """
     lps_to_ras = np.array([-1, -1, 1], dtype=float)
 
@@ -153,25 +155,20 @@ def compute_nifti_affine_expected_order(image_header, voxel_size, pe_dir='COL'):
     phase_dir = np.array(image_header.phase_dir) * lps_to_ras
     slice_dir = np.array(image_header.slice_dir) * lps_to_ras
 
-    # MRD read_dir/phase_dir depend on InPlanePhaseEncodingDirection.
-    # NIfTI axes are always [slices, columns(MRD x), rows(MRD y)].
-    # MRD x = DICOM row direction, MRD y = DICOM column direction.
-    # When PE=COL: read_dir=row_dir (MRD x), phase_dir=col_dir (MRD y).
-    # When PE=ROW: read_dir=col_dir (MRD y), phase_dir=row_dir (MRD x).
-    if pe_dir == 'ROW':
-        row_dir = phase_dir
-        col_dir = read_dir
-    else:
-        row_dir = read_dir
-        col_dir = phase_dir
-
     affine = np.eye(4)
     affine[:3, :3] = np.column_stack([
         voxel_size[2] * slice_dir,   # NIfTI axis-0 (slices)
-        -voxel_size[0] * row_dir,    # NIfTI axis-1 (columns/MRD x)
-        -voxel_size[1] * col_dir,    # NIfTI axis-2 (rows/MRD y)
+        -voxel_size[0] * read_dir,   # NIfTI axis-1 (MRD x)
+        -voxel_size[1] * phase_dir,  # NIfTI axis-2 (MRD y)
     ])
-    affine[:3, 3] = position
+
+    if nifti_shape is not None:
+        shape = np.asarray(nifti_shape[:3], dtype=float)
+        shape = np.maximum(shape - 1.0, 0.0)
+        affine[:3, 3] = position - affine[:3, :3].dot(shape)
+    else:
+        affine[:3, 3] = position
+
     return affine
 
 
@@ -259,15 +256,6 @@ def process_image(images, connection, config, metadata):
 
     logging.debug("Original image data after transposing is %s" % (data.shape,))
 
-    # Determine InPlanePhaseEncodingDirection from DICOM metadata
-    pe_dir = 'COL'
-    if len(meta) > 0:
-        _pe_djson = _meta_dicom_json(meta[0])
-        pe_dir = _dicom_tag_value(_pe_djson, "00181312") or 'COL'
-    logging.info(f'InPlanePhaseEncodingDirection: {pe_dir}')
-
-    # Write data to NIfTI in expected scanner-like axis order [z, x, y].
-    affine = compute_nifti_affine_expected_order(head[0], voxelsize, pe_dir=pe_dir)
     data = np.squeeze(data)
     logging.debug("Squeezed to 3D: %s" % (data.shape,))
 
@@ -276,15 +264,19 @@ def process_image(images, connection, config, metadata):
         data_nifti = np.asarray(data[None, :, :], dtype=np.int16)
     else:
         data_nifti = np.asarray(data.transpose((2, 1, 0)), dtype=np.int16)
+    # Match scanner/reference voxel ordering.
+    data_nifti = np.ascontiguousarray(np.flip(data_nifti, axis=(0, 1, 2)))
+
+    # Build scanner-style affine for [z, x, y] data ordering.
+    affine = compute_nifti_affine_expected_order(head[0], voxelsize, nifti_shape=data_nifti.shape)
 
     new_img = nib.nifti1.Nifti1Image(data_nifti, affine)
-    new_img.set_qform(affine, code=1)
-    new_img.set_sform(affine, code=1)
 
     header = new_img.header
     header.set_data_dtype(np.int16)
     header.set_dim_info(freq=1, phase=0, slice=2)
     header.set_xyzt_units(xyz='mm', t='sec')
+    header["pixdim"][0] = 1.0
     header["pixdim"][1] = float(voxelsize[2])
     header["pixdim"][2] = float(voxelsize[0])
     header["pixdim"][3] = float(voxelsize[1])
@@ -312,12 +304,18 @@ def process_image(images, connection, config, metadata):
 
     desc_parts = []
     if te is not None:
-        desc_parts.append(f"TE={te:g}")
+        desc_parts.append(f"TE={round(te, 1):g}")
     if acq_time:
         desc_parts.append(f"Time={acq_time}")
     header["descrip"] = ";".join(desc_parts)
-    header["aux_file"] = str(aux_text or "")
+    aux_text = str(aux_text or "")
+    aux_text = re.sub(r"\(lambda\s*=\s*", "(lambda ", aux_text)
+    if aux_text.startswith("DENOISED IMAGE (lambda"):
+        aux_text = "DENOISED IMAGE (lambda "
+    header["aux_file"] = aux_text
     header.set_slope_inter(1.0, 0.0)
+    new_img.set_qform(affine, code=1)
+    new_img.set_sform(affine, code=1)
 
     nib.save(new_img, 't1_from_h5.nii')
 
@@ -343,6 +341,8 @@ def process_image(images, connection, config, metadata):
     data = data_img.get_fdata()
     if data.ndim == 2:
         data = data[:, :, None]
+    # Undo voxel flip applied at NIfTI write stage.
+    data = np.flip(data, axis=(0, 1, 2))
     # Bring [z, x, y] from NIfTI back to [y, x, z].
     if data.ndim >= 3:
         data = data.transpose((2, 1, 0))
