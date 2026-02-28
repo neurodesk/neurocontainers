@@ -22,5 +22,9 @@ tests:
         -o /buildhostdirectory/output.h5 \
         /buildhostdirectory/t1.h5 \
         -c openreconexample
+      
+      # inspect files
+      cp t1_from_h5.nii /buildhostdirectory/
+      cp t1_from_h5_bet2.nii.gz /buildhostdirectory/
 
       # Check output h5 data in "H5Web" VS code plugin viewer

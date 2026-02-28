@@ -141,7 +141,7 @@ def compute_nifti_affine(image_header, voxel_size):
     return affine
 
 
-def compute_nifti_affine_expected_order(image_header, voxel_size):
+def compute_nifti_affine_expected_order(image_header, voxel_size, pe_dir='COL'):
     """
     Build affine for NIfTI data arranged as [z, x, y], matching scanner-like
     header orientation expected by downstream consumers.
@@ -153,11 +153,23 @@ def compute_nifti_affine_expected_order(image_header, voxel_size):
     phase_dir = np.array(image_header.phase_dir) * lps_to_ras
     slice_dir = np.array(image_header.slice_dir) * lps_to_ras
 
+    # MRD read_dir/phase_dir depend on InPlanePhaseEncodingDirection.
+    # NIfTI axes are always [slices, columns(MRD x), rows(MRD y)].
+    # MRD x = DICOM row direction, MRD y = DICOM column direction.
+    # When PE=COL: read_dir=row_dir (MRD x), phase_dir=col_dir (MRD y).
+    # When PE=ROW: read_dir=col_dir (MRD y), phase_dir=row_dir (MRD x).
+    if pe_dir == 'ROW':
+        row_dir = phase_dir
+        col_dir = read_dir
+    else:
+        row_dir = read_dir
+        col_dir = phase_dir
+
     affine = np.eye(4)
     affine[:3, :3] = np.column_stack([
-        voxel_size[2] * slice_dir,   # NIfTI axis-0
-        -voxel_size[0] * read_dir,   # NIfTI axis-1
-        -voxel_size[1] * phase_dir,  # NIfTI axis-2
+        voxel_size[2] * slice_dir,   # NIfTI axis-0 (slices)
+        -voxel_size[0] * row_dir,    # NIfTI axis-1 (columns/MRD x)
+        -voxel_size[1] * col_dir,    # NIfTI axis-2 (rows/MRD y)
     ])
     affine[:3, 3] = position
     return affine
@@ -247,8 +259,15 @@ def process_image(images, connection, config, metadata):
 
     logging.debug("Original image data after transposing is %s" % (data.shape,))
 
+    # Determine InPlanePhaseEncodingDirection from DICOM metadata
+    pe_dir = 'COL'
+    if len(meta) > 0:
+        _pe_djson = _meta_dicom_json(meta[0])
+        pe_dir = _dicom_tag_value(_pe_djson, "00181312") or 'COL'
+    logging.info(f'InPlanePhaseEncodingDirection: {pe_dir}')
+
     # Write data to NIfTI in expected scanner-like axis order [z, x, y].
-    affine = compute_nifti_affine_expected_order(head[0], voxelsize)
+    affine = compute_nifti_affine_expected_order(head[0], voxelsize, pe_dir=pe_dir)
     data = np.squeeze(data)
     logging.debug("Squeezed to 3D: %s" % (data.shape,))
 
