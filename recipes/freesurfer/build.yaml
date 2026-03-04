@@ -131,6 +131,13 @@ build:
     - run:
         - ln -s /opt/MCR2019b/v97/ /opt/freesurfer-{{ context.version }}/MCRv97
 
+    # Remove MCR's bundled Qt5 libraries that conflict with the system Qt5
+    # needed by freeview_bin_real. Without this, any LD_LIBRARY_PATH that
+    # includes MCRv97/bin/glnxa64 (e.g. for MATLAB-compiled tools) will
+    # cause freeview to pick up the wrong, version-less Qt5 and crash.
+    - run:
+        - rm -f /opt/MCR2019b/v97/bin/glnxa64/libQt5*.so*
+
     - environment:
         FIX_VERTEX_AREA: ""
         FMRI_ANALYSIS_DIR: /opt/freesurfer-{{ context.version }}/fsfast
