@@ -570,7 +570,7 @@ jobs:
           fi
 
   create-pr:
-    needs: [config, build-image, push-dockerhub, upload-s3]
+    needs: [config, build-image, push-dockerhub, upload-s3, upload-nectar]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true'}}
     runs-on: ubuntu-22.04
     permissions:
