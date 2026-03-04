@@ -12,6 +12,7 @@ build:
     base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime
     # This needs to be same version as what MuscleMap requires later for pytorch 
     # - otherwise Muscle map installs a new version of pytorch with CUDA 12.1 which breaks on the scanner!!!!!
+    # - that why we need to remove the torch version requirement in the musclemap requirements.txt file before installing musclemap later in this recipe
     pkg-manager: apt
 
     directives:
@@ -27,6 +28,7 @@ build:
             - unzip 1.2.zip
             - rm 1.2.zip
             - cd MuscleMap-1.2
+            - sed -i '/^torch[[:space:]]*==/d' requirements.txt
             - pip install .
         
         - environment:
