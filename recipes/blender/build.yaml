@@ -1,0 +1,92 @@
+name: blender
+version: 5.0.1
+
+copyright:
+  - license: GPL-3.0-or-later
+    url: https://www.blender.org/about/license/
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - ca-certificates
+        - libdbus-1-3
+        - libegl1
+        - libfontconfig1
+        - libfreetype6
+        - libgl1
+        - libglu1-mesa
+        - libsm6
+        - libwayland-client0
+        - libwayland-egl1
+        - libx11-6
+        - libxcomposite1
+        - libxcursor1
+        - libxdamage1
+        - libxext6
+        - libxfixes3
+        - libxinerama1
+        - libxi6
+        - libxkbcommon0
+        - libxrandr2
+        - libxrender1
+        - libxss1
+        - libxxf86vm1
+        - xz-utils
+
+    - workdir: /opt/blender-{{ context.version }}
+
+    - run:
+        - tar -xJ --strip-components=1 -C /opt/blender-{{ context.version }} -f {{ get_file("blender_archive") }}
+        - ln -sfn /opt/blender-{{ context.version }}/blender /usr/local/bin/blender
+
+    - environment:
+        PATH: $PATH:/opt/blender-{{ context.version }}
+
+deploy:
+  bins:
+    - blender
+
+gui_apps:
+  - name: blenderGUI
+    exec: blender
+
+categories:
+  - visualization
+  - modeling
+
+readme: |-
+  ----------------------------------
+  ## blender/{{ context.version }} ##
+
+  Blender is an open-source 3D creation suite for modeling, animation, rendering, compositing, simulation, and scripting.
+
+  Example:
+  ```
+  blender --version
+  blender --background --factory-startup --python-expr "import bpy; print(bpy.app.version_string)"
+
+  # for use on a CUDA GPU:
+  ./blender --background ~/cube.blend --engine CYCLES \
+    --render-output ./render/frame_####.png --render-anim \
+    -- --cycles-device CUDA
+  ```
+
+  More documentation can be found here: https://docs.blender.org/manual/en/latest/
+
+  To run container outside of this environment: ml blender/{{ context.version }}
+
+  ----------------------------------
+
+files:
+  - name: blender_archive
+    url: "https://mirrors.iu13.net/blender/release/Blender{{ context.version.split('.')[0] }}.{{ context.version.split('.')[1] }}/blender-{{ context.version }}-linux-x64.tar.xz"

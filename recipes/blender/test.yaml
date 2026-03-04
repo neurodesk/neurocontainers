@@ -1,0 +1,8 @@
+tests:
+  - name: Check blender version
+    script: |
+      blender --version
+
+  - name: Run blender in background
+    script: |
+      blender --background --factory-startup --python-expr "import bpy; print(bpy.app.version_string)"
