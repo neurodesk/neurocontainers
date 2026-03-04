@@ -1,17 +1,17 @@
 {
   "general": {
     "name": { "en": "vesselboost" },
-    "version": "1.0.3",
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
     "information": { "en": "Vesselboost pipeline." },
     "id": "vesselboost",
     "regulatory_information": {
       "device_trade_name":"vesselboost",
-      "production_identifier":"1.0.3",
+      "production_identifier":"VERSION_WILL_BE_REPLACED_BY_SCRIPT",
       "manufacturer_address":"Erlangen, Germany",
       "made_in":"DE",
       "manufacture_date":"2023/02/14",
-      "material_number":"vesselboost_1.0.3",
+      "material_number":"vesselboost_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
       "gtin":"00860000171212",
       "udi":"(01)00860000171212(21)1.3.0",
       "safety_advices":"",

@@ -7,7 +7,7 @@ architectures:
   - x86_64
 build:
   kind: neurodocker
-  base-image: pytorch/pytorch:2.4.1-cuda12.4-cudnn9-runtime
+  base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime
   pkg-manager: apt
   directives:
     - deploy:
@@ -24,6 +24,8 @@ build:
     - workdir: /opt/VesselBoost/
     - run:
         - sed -i "s/scikit-learn==1.1.1/scikit-learn==1.2.2/" requirements.txt || true
+        - sed -i -E '/^[[:space:]]*(torch|torchvision|torchaudio)[[:space:]]*==/d' requirements.txt
+        - sed -i '/^[[:space:]]*--extra-index-url[[:space:]]\+https:\/\/download\.pytorch\.org\/whl\/cu124[[:space:]]*$/d' requirements.txt
         - pip install --prefer-binary --no-cache-dir -r requirements.txt
     - workdir: /opt/VesselBoost/saved_models
     - run:

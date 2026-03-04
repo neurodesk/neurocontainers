@@ -14,6 +14,8 @@ tests:
       angiboost.py --ds_path tof_input --out_path tof_output --lb_path init_label --pretrained /opt/VesselBoost/saved_models/manual_0429 --outmo tof_output/outmo --ep 100 --lr 0.05 --prep_mode 4
 
 
+
+
       # Test openrecon side:
       source .venv/bin/activate
       ./builder/build.py generate vesselboost --recreate --build --login --architecture x86_64
@@ -22,13 +24,23 @@ tests:
       python -c "import torch; print(torch.version.cuda)"
 
 
+      # Start OpenRecon server
       python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
+      sleep 2
+
       #remove previous output
       rm /data/tof_openrecon_output.h5
       # remove old nifti output data
       rm /data/tof_openrecon_output.nii
-      python /opt/code/python-ismrmrd-server/client.py -G dataset -o /data/tof_openrecon_output.h5 /data/tof.h5 -c vesselboost
-      cp tof_output/tof.nii /data/tof_openrecon_output.nii
+      
+      rm /buildhostdirectory/output.h5
+      python3 /opt/code/python-ismrmrd-server/client.py \
+        -G dataset \
+        -o /buildhostdirectory/output.h5 \
+        /buildhostdirectory/tof.h5 \
+        -c vesselboost
+      
+      cp tof_output/tof.nii /buildhostdirectory/tof_openrecon_output.nii
 
       #TEST GPU capability.
 
