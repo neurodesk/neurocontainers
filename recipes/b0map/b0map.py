@@ -160,7 +160,13 @@ def process_image(imgGroup, connection, config, mrdHeader):
         os.makedirs(debugFolder)
         logging.debug("Created folder " + debugFolder + " for debug output files")
 
-    logging.debug("Processing data with %d images of type %s", len(imgGroup), ismrmrd.get_dtype_from_data_type(imgGroup[0].data_type))
+    if hasattr(ismrmrd, "get_dtype_from_data_type"):
+        data_type = ismrmrd.get_dtype_from_data_type(imgGroup[0].data_type)
+    else:
+        # Fallback for pyismrmrd versions that removed get_dtype_from_data_type
+        data_type = imgGroup[0].data.dtype
+
+    logging.debug("Processing data with %d images of type %s", len(imgGroup), data_type)
 
     # Note: The MRD Image class stores data as [cha z y x]
 
