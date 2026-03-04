@@ -499,7 +499,7 @@ jobs:
     steps:
       - name: Configure runner
         run: |
-          sudo swapoff -a && sudo rm -rf /mnt/*
+          sudo swapoff -a
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
           # Install rclone
