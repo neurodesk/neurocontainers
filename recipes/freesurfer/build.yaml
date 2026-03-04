@@ -171,6 +171,10 @@ build:
         - ln -s /usr/local/freesurfer/{{ context.version }}/* /opt/freesurfer-{{ context.version }}
 
     - run:
+        - echo "/usr/local/freesurfer/{{ context.version }}/lib/qt/lib" > /etc/ld.so.conf.d/freesurfer-qt.conf
+        - ldconfig
+
+    - run:
         - mv /opt/freesurfer-{{ context.version }}/bin/freeview /opt/freesurfer-{{ context.version }}/bin/freeview_bin_real
 
     - copy:

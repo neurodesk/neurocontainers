@@ -1,5 +1,9 @@
 # CLAUDE.md - NeuroContainers Development Guide
 
+## Does and Don't
+- always use {{ context.version }} instead of the hardcoded version number
+- always use `{{ get_file("filename") }}` to reference declared files in run directives instead of using `wget` or `curl` directly
+
 ## Project Overview
 
 NeuroContainers is a Python-based automated system for building, testing, and distributing Docker and Singularity/Apptainer containers for neuroscience applications through [NeuroDesk](https://neurodesk.org). It uses declarative YAML recipes processed by [NeuroDocker](https://github.com/ReproNim/neurodocker) to generate Dockerfiles.
