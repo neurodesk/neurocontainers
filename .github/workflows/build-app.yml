@@ -395,7 +395,7 @@ jobs:
           docker push --all-tags ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}
 
   build-simg:
-    needs: [config, build-image, push-dockerhub]
+    needs: [config, build-image]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false' }}
     runs-on: ubuntu-22.04
     permissions:
@@ -570,7 +570,7 @@ jobs:
           fi
 
   create-pr:
-    needs: [config, build-image, push-dockerhub, build-simg, upload-s3]
+    needs: [config, build-image, push-dockerhub, upload-s3]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true'}}
     runs-on: ubuntu-22.04
     permissions:
