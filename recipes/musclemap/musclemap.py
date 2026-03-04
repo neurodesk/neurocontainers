@@ -278,9 +278,17 @@ def process_image(imgGroup, connection, config, metadata):
 
     # Transpose from [y, x, z] to NIfTI [x, y, z].
     if data.ndim == 2:
-        data_nifti = np.asarray(data.T[:, :, None], dtype=np.int16)
+        data_nifti = np.asarray(data.T[:, :, None])
     else:
-        data_nifti = np.asarray(data.transpose((1, 0, 2)), dtype=np.int16)
+        data_nifti = np.asarray(data.transpose((1, 0, 2)))
+
+    # Store segmentation input as int16 for mm_segment compatibility.
+    i16 = np.iinfo(np.int16)
+    data_min = np.min(data_nifti)
+    data_max = np.max(data_nifti)
+    if data_min < i16.min or data_max > i16.max:
+        raise ValueError(f"Input image values [{data_min}, {data_max}] exceed int16 range")
+    data_nifti = data_nifti.astype(np.int16, copy=False)
     new_img = nib.nifti1.Nifti1Image(data_nifti, affine)
 
     # Set scanner-like header fields explicitly (nib defaults are not suitable here).
@@ -323,11 +331,10 @@ def process_image(imgGroup, connection, config, metadata):
 
     # Extract UI parameters from JSON config
     bodyregion = mrdhelper.get_json_config_param(config, 'bodyregion', default='wholebody', type='str')
-    chunksize = mrdhelper.get_json_config_param(config, 'chunksize', default='auto', type='str')
+    chunksize = mrdhelper.get_json_config_param(config, 'chunksize', default=10, type='str')
     spatialoverlap = mrdhelper.get_json_config_param(config, 'spatialoverlap', default=50, type='int')
-    fastmodel = mrdhelper.get_json_config_param(config, 'fastmodel', default=True, type='bool')
     
-    logging.info(f"mm_segment parameters: bodyregion={bodyregion}, chunksize={chunksize}, spatialoverlap={spatialoverlap}, fastmodel={fastmodel}")
+    logging.info(f"mm_segment parameters: bodyregion={bodyregion}, chunksize={chunksize}, spatialoverlap={spatialoverlap}")
     
     # Build mm_segment command with parameters
     mm_segment_cmd = [
@@ -339,16 +346,10 @@ def process_image(imgGroup, connection, config, metadata):
         "-g", "Y"
     ]
     
-    if fastmodel:
-        mm_segment_cmd.append("--fast")
-    
-    mm_segment_cmd.append("-v")
-    
     # Run mm_segment
     logging.info(f"Running command: {' '.join(mm_segment_cmd)}")
 
     DEBUG=False
-
     if DEBUG:
         logging.info("DEBUG mode: Skipping actual mm_segment execution and creating dummy output.")
         subprocess.run("cp /buildhostdirectory/input_dseg.nii.gz /opt/input_dseg.nii.gz", shell=True, check=True)
@@ -356,7 +357,32 @@ def process_image(imgGroup, connection, config, metadata):
         mm_segment_result = subprocess.run(mm_segment_cmd, check=True)
 
     img = nib.load("/opt/input_dseg.nii.gz")
-    data = img.get_fdata()
+
+    # Keep on-disk label values to avoid float conversion/rescaling artifacts.
+    data = np.asarray(img.dataobj)
+
+    unique_preview = np.unique(data)
+    logging.info(
+        "Loaded segmented labels: dtype=%s, range=[%s, %s], unique_count=%d",
+        data.dtype,
+        np.min(data),
+        np.max(data),
+        unique_preview.size,
+    )
+    logging.info("Segmented labels preview (first 50): %s", unique_preview[:50])
+
+    if np.issubdtype(data.dtype, np.floating):
+        rounded = np.rint(data)
+        if not np.allclose(data, rounded, atol=1e-3):
+            raise ValueError("Segmented labels are not integer-valued; refusing to cast.")
+        data = rounded
+
+    data = data.astype(np.int64, copy=False)
+
+    # Expected label coding ends in 0/1/2 (except background 0).
+    bad_labels = np.unique(data[(data != 0) & ((data % 10) > 2)])
+    if bad_labels.size > 0:
+        raise ValueError(f"Unexpected labels detected (first 20): {bad_labels[:20].tolist()}")
 
     print("maximum value in segmented data:")
     print(np.max(data))
@@ -395,8 +421,14 @@ def process_image(imgGroup, connection, config, metadata):
     print("data shape after crop:")
     print(data.shape)
 
-    label_transform = mrdhelper.get_json_config_param(config, 'labeltransform', default=False, type='str')
-    if label_transform is not None:  
+    label_transform = mrdhelper.get_json_config_param(config, 'labeltransform', default=True, type='bool')
+    if isinstance(label_transform, str):
+        label_transform = label_transform.strip().lower() in ("1", "true", "yes", "on")
+    else:
+        label_transform = bool(label_transform)
+    logging.info("labeltransform resolved to %s", label_transform)
+
+    if label_transform:
         logging.info("Applying label transformation: 3 * (label_in // 10) + (label_in % 10)")
         data = 3 * (data // 10) + (data % 10)
         logging.info(f"Label transformation complete. New data range: [{data.min()}, {data.max()}]")
@@ -419,8 +451,13 @@ def process_image(imgGroup, connection, config, metadata):
 
     # check if data type is int16_t and if not convert it
     if data.dtype != np.int16:
+        i16 = np.iinfo(np.int16)
+        data_min = int(np.min(data))
+        data_max = int(np.max(data))
+        if data_min < i16.min or data_max > i16.max:
+            raise ValueError(f"Segmented labels [{data_min}, {data_max}] exceed int16 range")
         logging.info(f"Converting segmented data from {data.dtype} to int16")
-        data = data.astype(np.int16)
+        data = data.astype(np.int16, copy=False)
 
     print("checking data type of final data:")
     print(data.dtype)

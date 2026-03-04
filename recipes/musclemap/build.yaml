@@ -1,5 +1,5 @@
 name: musclemap
-version: 1.2.6
+version: 1.2.0
 architectures:
     - x86_64
 
@@ -12,7 +12,6 @@ build:
     base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime
     # This needs to be same version as what MuscleMap requires later for pytorch 
     # - otherwise Muscle map installs a new version of pytorch with CUDA 12.1 which breaks on the scanner!!!!!
-    # base-image: ubuntu:22.04
     pkg-manager: apt
 
     directives:
@@ -22,27 +21,12 @@ build:
 
         - include: macros/openrecon/neurodocker.yaml
 
-        #openrecon application
-        - run:
-            - cd /opt/code/python-ismrmrd-server
-            - git stash
-            - git remote add stebo85 https://github.com/stebo85/python-ismrmrd-server.git
-            - git fetch stebo85
-            - git checkout -b stebo85-enhanced-dicom-support stebo85/add_enhanced_dicom_support
-            - git remote set-url origin https://github.com/kspaceKelvin/python-ismrmrd-server.git
-            - git fetch origin pull/13/head:pr-13
-            - git checkout pr-13
-            - git checkout stebo85-enhanced-dicom-support
-            - git config --global user.email "me@docker.com"
-            - git config --global user.name "My Name"
-            - git merge pr-13
-
         - workdir: /opt/
         - run: 
-            - git clone https://github.com/MuscleMap/MuscleMap
-            - cd MuscleMap 
-            - echo "test"
-            - git checkout origin/improve_efficiency_v2
+            - wget https://github.com/MuscleMap/MuscleMap/archive/refs/tags/1.2.zip
+            - unzip 1.2.zip
+            - rm 1.2.zip
+            - cd MuscleMap-1.2
             - pip install .
         
         - environment:
@@ -69,6 +53,15 @@ readme: |-
   When citing MuscleMap, please cite the following publication:
 
   McKay MJ, Weber KA 2nd, Wesselink EO, Smith ZA, Abbott R, Anderson DB, Ashton-James CE, Atyeo J, Beach AJ, Burns J, Clarke S, Collins NJ, Coppieters MW, Cornwall J, Crawford RJ, De Martino E, Dunn AG, Eyles JP, Feng HJ, Fortin M, Franettovich Smith MM, Galloway G, Gandomkar Z, Glastras S, Henderson LA, Hides JA, Hiller CE, Hilmer SN, Hoggarth MA, Kim B, Lal N, LaPorta L, Magnussen JS, Maloney S, March L, Nackley AG, O'Leary SP, Peolsson A, Perraton Z, Pool-Goudzwaard AL, Schnitzler M, Seitz AL, Semciw AI, Sheard PW, Smith AC, Snodgrass SJ, Sullivan J, Tran V, Valentin S, Walton DM, Wishart LR, Elliott JM. MuscleMap: An Open-Source, Community-Supported Consortium for Whole-Body Quantitative MRI of Muscle. J Imaging. 2024;10(11):262. https://doi.org/10.3390/jimaging10110262
+  
+  label values can be found here:
+  wholebody: https://github.com/MuscleMap/MuscleMap/blob/main/scripts/models/wholebody/contrast_agnostic_wholebody_model.json
+  abdomen: https://github.com/MuscleMap/MuscleMap/blob/main/scripts/models/abdomen/contrast_agnostic_abdomen_model.json
+  forearm: https://github.com/MuscleMap/MuscleMap/blob/main/scripts/models/forearm/contrast_agnostic_forearm_model.json
+  leg: https://github.com/MuscleMap/MuscleMap/blob/main/scripts/models/leg/contrast_agnostic_leg_model.json
+  pelvis: https://github.com/MuscleMap/MuscleMap/blob/main/scripts/models/pelvis/contrast_agnostic_pelvis_model.json
+  thigh: https://github.com/MuscleMap/MuscleMap/blob/main/scripts/models/thigh/contrast_agnostic_thigh_model.json
+  
 
   ----------------------------------
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAB/ElEQVR4AbSUS8tpURzGn+1e5BYGKIpiZqbMTQyUAV/WJ5CJZOSSJHIXueTueNab98z81+m8r/ayN2uv57ee9b+YADx1RzgcfkajUe33qUvA6653FYtFVCoVmEz6y/TffO1hv99jNBrh+aSJ1x8alzYgEAjgfr/DbDbD6/VqSH+9IgKsVitKpRLK5TLm8zlmsxny+TwKhcKXgvAtAoLBoDqSbreLzWaD3W6H4/GoQDpORADPnS4sFgt8Ph8SiYQ6osfjAcMwIH1EAMUZWIrTDWOQyWRgt9txOp0kfYgA7jQUCiGVSiGdTsPtdmO1WuFVE7jdbv8PYEput1uVQc1mE3zu9XoYDoegO4kgOqDA9XrFeDxWDpLJJKbTKc7n8884YNXmcjlEIhG1ezrIZrPq9+VyIf/jEB0wqNxxtVpFp9NBq9VCvV6HzWaD0+n8KM5JEcDqZd5z58wcj8ejgrxYLFTaUuTTEAEsrFqtBr/fr9oEz54F1mg0VF/6JM45EcAATyYTxGIxrNdrsPBeLVsFmQLSEAFvATqIx+NgFhmGXMHvddoAxoKpOhgMtNLznwHsoqxg3tlV3wLSXdvBcrkE48H+czgcJN3veW0Ai4riPCr2p28F4UEbYBiG6j0OhwMul0uQ/TutDWA9cBkBvxKDdrsNdlG2in6/T5bW+AMAAP//wtg5bQAAAAZJREFUAwAZcfw0V/0rGAAAAABJRU5ErkJggg==

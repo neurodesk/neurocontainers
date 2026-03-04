@@ -57,17 +57,10 @@
       "default": true
     },
     {
-      "id": "fastmodel",
-      "label": { "en": "Fast Model" },
-      "type": "boolean",
-      "information": { "en": "Use a faster model for processing (less accurate)" },
-      "default": true
-    },
-    {
       "id": "labeltransform",
       "label": { "en": "Label Transform" },
       "type": "boolean",
-      "information": { "en": "3 * (label_in // 10) + (label_in % 10) " },
+      "information": { "en": "To invert: original = 10 * (mapped // 3) + (mapped % 3) " },
       "default": true
     },
     {
@@ -103,8 +96,8 @@
       "id": "chunksize",
       "label": { "en": "Chunk Size" },
       "type": "string",
-      "default": "auto",
-      "information": { "en": "Chunk size between 5 and 200 (or 'auto')" }
+      "default": "100",
+      "information": { "en": "Chunk size between 5 and 200" }
     },
     {
       "id": "spatialoverlap",
