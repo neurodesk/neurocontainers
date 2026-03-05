@@ -569,12 +569,6 @@ jobs:
             echo "[DEBUG] File upload verified. The file exists in S3."
           fi
 
-  cleanup-neurocontainers:
-    needs: [upload-nectar, upload-s3]
-    if: ${{ needs.upload-nectar.result == 'success' && needs.upload-s3.result == 'success' }}
-    uses: ./.github/workflows/cleanup_neurocontainers.yml
-    secrets: inherit
-
   create-pr:
     needs: [config, build-image, push-dockerhub, upload-s3, upload-nectar]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true'}}
