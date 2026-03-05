@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "musclemap 1.2.1": {
+      "version": "20260305",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "body"
+  ]
+}
