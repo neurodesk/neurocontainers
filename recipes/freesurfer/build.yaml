@@ -350,19 +350,6 @@ files:
        *CgH0liqb0e9g
        FSVt2Z862iDJk
 
-# debug segmentSubjectT1_autoEstimateAlveusML:
-# dnf install strace -y
-# strace segmentSubjectT1_autoEstimateAlveusML
-# this failed because java-1.8.0-openjdk wasn't installed!
-# solution found here: https://github.com/baxpr/freesurfer720/blob/master/Dockerfile
-# for this we needed centos 8 and that's why we can't use the neurodocker version right now
-
-# debug qt and freeview library errors:
-# yum update -y
-# yum install mlocate
-# updatedb
-# locate libQt5XcbQpa.so.5
-
 categories:
   - "image segmentation"
   - "structural imaging"
