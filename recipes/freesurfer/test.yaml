@@ -90,10 +90,32 @@ tests:
 
       # Verify Qt5 resolves when LD_LIBRARY_PATH contains only MCR paths.
       # In NeuroDesk the module system may set LD to MCR-only, dropping system paths.
+      # This catches MCR's bundled Qt5 (5.5) shadowing FreeSurfer's Qt5 (5.12).
       FREEVIEW_MCR_ONLY_LD="${FREESURFER_HOME}/MCRv97/bin/glnxa64:${FREESURFER_HOME}/MCRv97/runtime/glnxa64:${FREESURFER_HOME}/MCRv97/sys/os/glnxa64"
       run_and_capture "ldd freeview_bin_real (MCR-only LD)" env LD_LIBRARY_PATH="${FREEVIEW_MCR_ONLY_LD}" ldd "${FREESURFER_HOME}/bin/freeview_bin_real"
       if printf '%s\n' "$LAST_OUTPUT" | grep -Eiq '=>[[:space:]]+not found'; then
           fail_with_last_output "ldd freeview_bin_real (MCR-only LD)" "freeview_bin_real has unresolved libraries with MCR-only LD_LIBRARY_PATH."
+      fi
+      if printf '%s\n' "$LAST_OUTPUT" | grep -Eiq 'no version information available'; then
+          fail_with_last_output "ldd freeview_bin_real (MCR-only LD)" "freeview_bin_real resolved Qt5 from MCR (version mismatch). MCR Qt5 libs must be removed."
+      fi
+
+      # Run freeview wrappers with MCR-only LD_LIBRARY_PATH.
+      # This replicates the Apptainer/NeuroDesk scenario where the module system
+      # sets LD_LIBRARY_PATH to only MCR paths. The wrappers must strip MCR paths
+      # to avoid MCR's bundled libstdc++/Qt5 shadowing system/FreeSurfer libraries.
+      # Note: xvfb-run runs with clean LD (only the wrapper gets MCR LD) because
+      # in practice Xvfb is a system service unaffected by module-system LD changes.
+      run_and_capture "freeview_bin wrapper (xvfb, MCR-only LD)" timeout 20s xvfb-run -a env LD_LIBRARY_PATH="${FREEVIEW_MCR_ONLY_LD}" "${FREESURFER_HOME}/bin/freeview_bin"
+      assert_no_runtime_link_errors "freeview_bin wrapper (xvfb, MCR-only LD)"
+      if [ "$LAST_STATUS" -ne 0 ] && [ "$LAST_STATUS" -ne 124 ]; then
+          fail_with_last_output "freeview_bin wrapper (xvfb, MCR-only LD)" "freeview_bin wrapper failed with MCR-only LD_LIBRARY_PATH (Apptainer scenario)."
+      fi
+
+      run_and_capture "freeview wrapper (xvfb, MCR-only LD)" timeout 20s xvfb-run -a env LD_LIBRARY_PATH="${FREEVIEW_MCR_ONLY_LD}" freeview
+      assert_no_runtime_link_errors "freeview wrapper (xvfb, MCR-only LD)"
+      if [ "$LAST_STATUS" -ne 0 ] && [ "$LAST_STATUS" -ne 124 ]; then
+          fail_with_last_output "freeview wrapper (xvfb, MCR-only LD)" "freeview wrapper failed with MCR-only LD_LIBRARY_PATH (Apptainer scenario)."
       fi
 
       # Run freeview_bin_real directly (bypassing wrappers) with polluted LD.
