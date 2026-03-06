@@ -57,6 +57,13 @@
       "default": true
     },
     {
+      "id": "onlysaveoriginal",
+      "label": { "en": "Only save original" },
+      "type": "boolean",
+      "information": { "en": "Skip segmentation and send only the original scan" },
+      "default": false
+    },
+    {
       "id": "labeltransform",
       "label": { "en": "Label Transform" },
       "type": "boolean",

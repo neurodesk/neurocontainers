@@ -218,9 +218,63 @@ def _get_first_meta_float(meta_obj, keys):
     return None
 
 
+def _header_to_log_dict(image_header):
+    return {
+        "version": getattr(image_header, "version", None),
+        "flags": getattr(image_header, "flags", None),
+        "measurement_uid": getattr(image_header, "measurement_uid", None),
+        "matrix_size": list(getattr(image_header, "matrix_size", [])),
+        "field_of_view": list(getattr(image_header, "field_of_view", [])),
+        "channels": getattr(image_header, "channels", None),
+        "position": list(getattr(image_header, "position", [])),
+        "read_dir": list(getattr(image_header, "read_dir", [])),
+        "phase_dir": list(getattr(image_header, "phase_dir", [])),
+        "slice_dir": list(getattr(image_header, "slice_dir", [])),
+        "patient_table_position": list(getattr(image_header, "patient_table_position", [])),
+        "average": getattr(image_header, "average", None),
+        "slice": getattr(image_header, "slice", None),
+        "contrast": getattr(image_header, "contrast", None),
+        "phase": getattr(image_header, "phase", None),
+        "repetition": getattr(image_header, "repetition", None),
+        "set": getattr(image_header, "set", None),
+        "acquisition_time_stamp": getattr(image_header, "acquisition_time_stamp", None),
+        "physiology_time_stamp": list(getattr(image_header, "physiology_time_stamp", [])),
+        "image_type": getattr(image_header, "image_type", None),
+        "image_index": getattr(image_header, "image_index", None),
+        "image_series_index": getattr(image_header, "image_series_index", None),
+        "user_int": list(getattr(image_header, "user_int", [])),
+        "user_float": list(getattr(image_header, "user_float", [])),
+        "data_type": getattr(image_header, "data_type", None),
+    }
+
+
 def process_image(imgGroup, connection, config, metadata):
     if len(imgGroup) == 0:
         return []
+
+    only_save_original = mrdhelper.get_json_config_param(config, 'onlysaveoriginal', default=False, type='bool')
+    if isinstance(only_save_original, str):
+        only_save_original = only_save_original.strip().lower() in ("1", "true", "yes", "on")
+    else:
+        only_save_original = bool(only_save_original)
+    logging.info("onlysaveoriginal resolved to %s", only_save_original)
+
+    if only_save_original:
+        logging.info("Skipping segmentation and forwarding only original images due to onlysaveoriginal=True")
+        imagesOut = []
+        for idx, image in enumerate(imgGroup):
+            tmpImg = image
+            tmpMeta = ismrmrd.Meta.deserialize(tmpImg.attribute_string)
+            tmpMeta["Keep_image_geometry"] = 1
+            tmpImg.attribute_string = tmpMeta.serialize()
+            logging.info(
+                "Original-only header [%d/%d]: %s",
+                idx + 1,
+                len(imgGroup),
+                _header_to_log_dict(tmpImg.getHead()),
+            )
+            imagesOut.append(tmpImg)
+        return imagesOut
 
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
@@ -553,17 +607,27 @@ def process_image(imgGroup, connection, config, metadata):
         else:
             logging.info('Sending a copy of original unmodified images due to sendOriginal set to True')
             # In reverse order so that they'll be in correct order as we insert them to the front of the list
-            for image in reversed(imgGroup):
+            for i, image in enumerate(reversed(imgGroup)):
                 # Create a copy to not modify the original inputs
                 tmpImg = image
 
                 # Change the series_index to have a different series
+                old_series_index = tmpImg.image_series_index
                 tmpImg.image_series_index = 99
 
                 # Ensure Keep_image_geometry is set to not reverse image orientation
                 tmpMeta = ismrmrd.Meta.deserialize(tmpImg.attribute_string)
                 tmpMeta['Keep_image_geometry'] = 1
                 tmpImg.attribute_string = tmpMeta.serialize()
+
+                logging.info(
+                    "Send-original header [%d/%d] (series %s -> %s): %s",
+                    i + 1,
+                    len(imgGroup),
+                    old_series_index,
+                    tmpImg.image_series_index,
+                    _header_to_log_dict(tmpImg.getHead()),
+                )
 
                 imagesOut.insert(0, tmpImg)
 
