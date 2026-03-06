@@ -81,6 +81,15 @@ tests:
           fail_with_last_output "ldd freeview_bin_real" "freeview_bin_real has unresolved runtime libraries."
       fi
 
+      # Verify libQt5Core.so.5 does not carry PT_INTERP. Qt 5.12 builds
+      # libQt5Core as a PIE-capable library (executable + shared object) which
+      # causes glibc 2.37+ to refuse dlopen, breaking freeview in Apptainer
+      # on hosts with newer glibc.
+      run_and_capture "readelf Qt5Core PT_INTERP" readelf -l "${FREESURFER_HOME}/lib/qt/lib/libQt5Core.so.5"
+      if printf '%s\n' "$LAST_OUTPUT" | grep -q 'INTERP'; then
+          fail_with_last_output "readelf Qt5Core PT_INTERP" "libQt5Core.so.5 still has PT_INTERP segment (breaks glibc 2.37+ dlopen in Apptainer)."
+      fi
+
       # Verify Qt5 resolves without any LD_LIBRARY_PATH (relies on ldconfig cache).
       # This catches missing ldconfig entries that cause failures in Singularity.
       run_and_capture "ldd freeview_bin_real (empty LD)" env LD_LIBRARY_PATH="" ldd "${FREESURFER_HOME}/bin/freeview_bin_real"

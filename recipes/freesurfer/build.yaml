@@ -181,6 +181,18 @@ build:
         - echo "/usr/local/freesurfer/{{ context.version }}/lib/qt/lib" > /etc/ld.so.conf.d/freesurfer-qt.conf
         - ldconfig
 
+    # Fix libQt5Core.so.5 for compatibility with glibc 2.37+.
+    # Qt 5.12 builds libQt5Core as both a shared library and an executable
+    # (with PT_INTERP and NEEDED ld-linux-x86-64.so.2). Newer glibc refuses
+    # to dlopen shared objects that carry PT_INTERP, breaking freeview inside
+    # Apptainer containers where the host glibc is bind-mounted.
+    # Patch: change PT_INTERP → PT_NULL and remove NEEDED ld-linux.
+    - run:
+        - apt-get update -qq && apt-get install -y -q --no-install-recommends patchelf && rm -rf /var/lib/apt/lists/*
+        - patchelf --remove-needed ld-linux-x86-64.so.2 /usr/local/freesurfer/{{ context.version }}/lib/qt/lib/libQt5Core.so.5.12.11
+        - python3 {{ get_file("fix_qt5core_pie") }} /usr/local/freesurfer/{{ context.version }}/lib/qt/lib/libQt5Core.so.5.12.11
+        - ldconfig
+
     - run:
         - mv /opt/freesurfer-{{ context.version }}/bin/freeview /opt/freesurfer-{{ context.version }}/bin/freeview_bin_real
 
@@ -244,6 +256,33 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: fix_qt5core_pie
+    contents: |-
+      #!/usr/bin/env python3
+      """Clear PT_INTERP from libQt5Core so glibc 2.37+ will dlopen it."""
+      import struct, sys
+      path = sys.argv[1]
+      with open(path, 'r+b') as f:
+          f.seek(0)
+          assert f.read(4) == b'\x7fELF', f'{path}: not an ELF file'
+          assert f.read(1) == b'\x02', f'{path}: not 64-bit ELF'
+          f.seek(32)
+          e_phoff = struct.unpack('<Q', f.read(8))[0]
+          f.seek(54)
+          e_phentsize = struct.unpack('<H', f.read(2))[0]
+          e_phnum = struct.unpack('<H', f.read(2))[0]
+          for i in range(e_phnum):
+              off = e_phoff + i * e_phentsize
+              f.seek(off)
+              p_type = struct.unpack('<I', f.read(4))[0]
+              if p_type == 3:  # PT_INTERP
+                  f.seek(off)
+                  f.write(struct.pack('<I', 0))  # PT_NULL
+                  print(f'Cleared PT_INTERP (phdr[{i}]) in {path}')
+                  break
+          else:
+              print(f'No PT_INTERP found in {path} (already clean)')
+
   - name: segmentNuclei_1
     url: https://raw.githubusercontent.com/freesurfer/freesurfer/refs/heads/dev/AANsegment/linux_x86_64/segmentNuclei
   - name: freesurfer_deb
