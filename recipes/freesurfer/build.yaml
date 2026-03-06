@@ -182,14 +182,14 @@ build:
         - ldconfig
 
     # Fix libQt5Core.so.5 for compatibility with glibc 2.37+.
-    # Qt 5.12 builds libQt5Core as both a shared library and an executable
-    # (with PT_INTERP and NEEDED ld-linux-x86-64.so.2). Newer glibc refuses
-    # to dlopen shared objects that carry PT_INTERP, breaking freeview inside
-    # Apptainer containers where the host glibc is bind-mounted.
-    # Patch: change PT_INTERP → PT_NULL and remove NEEDED ld-linux.
+    # Qt 5.12 builds libQt5Core as PIE (with PT_INTERP and .interp section).
+    # Newer glibc (2.37+) refuses to dlopen shared objects that carry
+    # PT_INTERP, breaking freeview inside Apptainer containers where the
+    # host glibc is bind-mounted.
+    # Fix: patch PT_INTERP -> PT_NULL and .interp section -> SHT_NULL
+    # directly in the ELF binary. NEEDED ld-linux is left intact (harmless).
+    # We do NOT use patchelf --remove-needed as it can corrupt the binary.
     - run:
-        - apt-get update -qq && apt-get install -y -q --no-install-recommends patchelf && rm -rf /var/lib/apt/lists/*
-        - patchelf --remove-needed ld-linux-x86-64.so.2 /usr/local/freesurfer/{{ context.version }}/lib/qt/lib/libQt5Core.so.5.12.11
         - python3 {{ get_file("fix_qt5core_pie") }} /usr/local/freesurfer/{{ context.version }}/lib/qt/lib/libQt5Core.so.5.12.11
         - ldconfig
 
@@ -259,29 +259,74 @@ files:
   - name: fix_qt5core_pie
     contents: |-
       #!/usr/bin/env python3
-      """Clear PT_INTERP from libQt5Core so glibc 2.37+ will dlopen it."""
+      """Strip PT_INTERP from libQt5Core so glibc 2.37+ will dlopen it.
+
+      Qt builds libQt5Core as both a shared library and an executable, adding a
+      PT_INTERP program header and .interp section. glibc 2.37+ refuses to
+      dlopen shared objects that carry PT_INTERP. This script patches:
+        1. PT_INTERP program header -> PT_NULL
+        2. .interp section header type -> SHT_NULL
+        3. .interp section data -> zeroed
+      The NEEDED ld-linux-x86-64.so.2 entry is left intact (harmless).
+      """
       import struct, sys
+
       path = sys.argv[1]
       with open(path, 'r+b') as f:
           f.seek(0)
           assert f.read(4) == b'\x7fELF', f'{path}: not an ELF file'
           assert f.read(1) == b'\x02', f'{path}: not 64-bit ELF'
+
           f.seek(32)
           e_phoff = struct.unpack('<Q', f.read(8))[0]
+          f.seek(40)
+          e_shoff = struct.unpack('<Q', f.read(8))[0]
           f.seek(54)
           e_phentsize = struct.unpack('<H', f.read(2))[0]
           e_phnum = struct.unpack('<H', f.read(2))[0]
+          f.seek(58)
+          e_shentsize = struct.unpack('<H', f.read(2))[0]
+          e_shnum = struct.unpack('<H', f.read(2))[0]
+          e_shstrndx = struct.unpack('<H', f.read(2))[0]
+
+          # 1. PT_INTERP -> PT_NULL and zero .interp data
           for i in range(e_phnum):
               off = e_phoff + i * e_phentsize
               f.seek(off)
               p_type = struct.unpack('<I', f.read(4))[0]
               if p_type == 3:  # PT_INTERP
+                  f.seek(off + 8)
+                  p_offset = struct.unpack('<Q', f.read(8))[0]
+                  f.seek(off + 32)
+                  p_filesz = struct.unpack('<Q', f.read(8))[0]
+                  f.seek(p_offset)
+                  f.write(b'\x00' * p_filesz)
                   f.seek(off)
                   f.write(struct.pack('<I', 0))  # PT_NULL
-                  print(f'Cleared PT_INTERP (phdr[{i}]) in {path}')
+                  print(f'Cleared PT_INTERP phdr[{i}], zeroed {p_filesz}B at offset {p_offset}')
                   break
           else:
-              print(f'No PT_INTERP found in {path} (already clean)')
+              print(f'No PT_INTERP in {path}')
+
+          # 2. .interp section header -> SHT_NULL
+          sh_strtab_off = e_shoff + e_shstrndx * e_shentsize + 24
+          f.seek(sh_strtab_off)
+          strtab_offset = struct.unpack('<Q', f.read(8))[0]
+          strtab_size = struct.unpack('<Q', f.read(8))[0]
+          f.seek(strtab_offset)
+          strtab = f.read(strtab_size)
+          for i in range(e_shnum):
+              sh_off = e_shoff + i * e_shentsize
+              f.seek(sh_off)
+              nm_idx = struct.unpack('<I', f.read(4))[0]
+              nm_end = strtab.index(b'\x00', nm_idx)
+              if strtab[nm_idx:nm_end] == b'.interp':
+                  f.seek(sh_off + 4)
+                  f.write(struct.pack('<I', 0))  # SHT_NULL
+                  print(f'Changed .interp shdr[{i}] to SHT_NULL')
+                  break
+
+      print(f'Done: {path}')
 
   - name: segmentNuclei_1
     url: https://raw.githubusercontent.com/freesurfer/freesurfer/refs/heads/dev/AANsegment/linux_x86_64/segmentNuclei
