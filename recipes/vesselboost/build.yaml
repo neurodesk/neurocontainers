@@ -1,5 +1,5 @@
 name: vesselboost
-version: 2.0.0
+version: 2.0.1
 copyright:
   - license: MIT
     url: https://github.com/KMarshallX/VesselBoost/blob/master/LICENSE
@@ -15,19 +15,23 @@ build:
           - python
     - environment:
         DEBIAN_FRONTEND: noninteractive
+    - install: bzip2 ca-certificates git wget build-essential
     - include: macros/openrecon/neurodocker.yaml
     - workdir: /opt
     - run:
-        - git clone https://github.com/KMarshallX/VesselBoost.git
-        - cd VesselBoost
+        - wget https://github.com/KMarshallX/VesselBoost/archive/refs/tags/v2.0.1.zip
+        - unzip v2.0.1.zip
+        - rm v2.0.1.zip
+        - cd VesselBoost-2.0.1
         - chmod a+x train.py angiboost.py boost.py prediction.py test_time_adaptation.py
-    - workdir: /opt/VesselBoost/
+    - workdir: /opt/VesselBoost-2.0.1/
     - run:
+        - ls -a
         - sed -i "s/scikit-learn==1.1.1/scikit-learn==1.2.2/" requirements.txt || true
         - sed -i -E '/^[[:space:]]*(torch|torchvision|torchaudio)[[:space:]]*==/d' requirements.txt
         - sed -i '/^[[:space:]]*--extra-index-url[[:space:]]\+https:\/\/download\.pytorch\.org\/whl\/cu124[[:space:]]*$/d' requirements.txt
         - pip install --prefer-binary --no-cache-dir -r requirements.txt
-    - workdir: /opt/VesselBoost/saved_models
+    - workdir: /opt/VesselBoost-2.0.1/saved_models
     - run:
         - osf -p abk4p fetch osfstorage/pretrained_models/manual_0429
     - run:
@@ -36,9 +40,9 @@ build:
         - osf -p abk4p fetch osfstorage/pretrained_models/omelette2_0429
     - run:
         - osf -p abk4p fetch osfstorage/pretrained_models/t2s_mod_ep1k2_0728
-    - workdir: /opt/VesselBoost/
+    - workdir: /opt/VesselBoost-2.0.1/
     - environment:
-        PATH: $PATH:/opt/VesselBoost/
+        PATH: $PATH:/opt/VesselBoost-2.0.1/
     - copy: vesselboost.py /opt/code/python-ismrmrd-server/vesselboost.py
 readme: |2-
     ----------------------------------

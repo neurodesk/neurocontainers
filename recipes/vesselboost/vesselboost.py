@@ -138,6 +138,7 @@ def process(connection, config, metadata):
 
 
 def process_raw(group, connection, config, metadata):
+        
     if len(group) == 0:
         return []
 
@@ -249,6 +250,13 @@ def process_image(images, connection, config, metadata):
     if len(images) == 0:
         return []
 
+    def boolean_checker(id:str, default_val:bool=False):
+        option = mrdhelper.get_json_config_param(config, id, default_val, type='bool')
+        if isinstance(option, str):
+            return option.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            return bool(option)
+
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
         os.makedirs(debugFolder)
@@ -296,27 +304,76 @@ def process_image(images, connection, config, metadata):
     subprocess.run(["mkdir", "tof_output"])
     subprocess.run(["mv", "tof.nii", "tof_input"])
 
-    subprocess.run(["prediction.py", "--image_path", "tof_input", "--output_path", "tof_output", "--pretrained", "/opt/VesselBoost/saved_models/manual_0429", "--prep_mode", "4"])
+    # Read user's choice of vesselboost modules
+    module = mrdhelper.get_json_config_param(config, 'vbmodules', default='prediction', type='str')
+    prep_mode = int(mrdhelper.get_json_config_param(config, "prep_mode", default=1, type='int'))
+    brain_extraction = boolean_checker("vbbrainextraction", default_val=False)
+    epochs = mrdhelper.get_json_config_param(config, "vbepochs", default='200', type='str')
+    l_rate = mrdhelper.get_json_config_param(config, "vbrate", default='0.001', type='str')
+    
+    if module == 'prediction':
+        logging.info("Running prediction module")
 
-    logging.info("Config: \n%s", config)
+        vb_cmd = [
+            "prediction.py",
+            "--image_path", "tof_input",
+            "--output_path", "tof_output",
+            "--pretrained", "/opt/VesselBoost/saved_models/manual_0429",
+            "--prep_mode", str(prep_mode),
+            "--use_blending",
+            "--overlap_ratio", "0.5",
+        ]
+        if prep_mode != 4:
+            subprocess.run(["mkdir", "tof_preproc"])
+            vb_cmd.extend(["--preprocessed_path", "tof_preproc"])
+            if brain_extraction:
+                vb_cmd.append("--brain_extraction")
 
-    if ('parameters' in config) and ('options' in config['parameters']):
-        if config['parameters']['options'] == 'tta':
-            logging.info("Running tta")
+        subprocess.run(vb_cmd)
 
-            if config['parameters']['double']:
-                parameter = config['parameters']['double']
-                logging.info(parameter)
-            else:
-                logging.info("paramters[double] not found")
+    if module == 'tta':
+        logging.info("Running tta module")
 
-            subprocess.run(["test_time_adaptation.py", "--image_path", "tof_input", "--output_path", "tof_output", "--pretrained", "/opt/VesselBoost/saved_models/manual_0429", "--epochs", "100", "--learning_rate", "0.001", "--prep_mode", "4"])
+        vb_cmd = [
+            "test_time_adaptation.py",
+            "--image_path", "tof_input",
+            "--output_path", "tof_output",
+            "--pretrained", "/opt/VesselBoost/saved_models/manual_0429",
+            "--epochs", str(epochs),
+            "--learning_rate", str(l_rate),
+            "--prep_mode", str(prep_mode),
+            "--use_blending",
+            "--overlap_ratio", "0.5",
+        ]
+        if prep_mode != 4:
+            subprocess.run(["mkdir", "tof_preproc"])
+            vb_cmd.extend(["--preprocessed_path", "tof_preproc"])
+            if brain_extraction:
+                vb_cmd.append("--brain_extraction")
+        
+        subprocess.run(vb_cmd)
 
-        if config['parameters']['options'] == 'booster':
-            logging.info("Running boost")
-            subprocess.run(["mkdir", "init_label"])
-            subprocess.run(["angiboost.py", "--image_path", "tof_input", "--output_path", "tof_output", "--label_path", "init_label", "--pretrained", "/opt/VesselBoost/saved_models/manual_0429", "--output_model", "tof_output/outmo", "--epochs", "100", "--learning_rate", "0.05", "--prep_mode", "4"])
+    if module == 'booster':
+        logging.info("Running booster module")
+        subprocess.run(["mkdir", "init_label"])
 
+        vb_cmd = [
+            "angiboost.py",
+            "--image_path", "tof_input",
+            "--pretrained", "/opt/VesselBoost/saved_models/manual_0429",
+            "--label_path", "init_label",
+            "--output_path", "tof_output",
+            "--output_model", "tof_output/output_model",
+            "--prep_mode", str(prep_mode),
+            "--epochs", str(epochs),
+            "--learning_rate", str(l_rate),
+        ]
+        if prep_mode != 4:
+            subprocess.run(["mkdir", "tof_preproc"])
+            vb_cmd.extend(["--preprocessed_path", "tof_preproc"])
+            if brain_extraction:
+                vb_cmd.append("--brain_extraction")
+        subprocess.run(vb_cmd)
 
     print('Processing done')
     img = nib.load('tof_output/tof.nii')
@@ -328,6 +385,7 @@ def process_image(images, connection, config, metadata):
     data = data[:, :, :, None, None]
     data = data.transpose((0, 1, 4, 3, 2))
 
+    # NOTE: Can we delete the following if-else block? / or have a safe workaround when complex images are requested?
     if ('parameters' in config) and ('options' in config['parameters']) and (config['parameters']['options'] == 'complex'):
         # Complex images are requested
         data = data.astype(np.complex64)
@@ -385,6 +443,7 @@ def process_image(images, connection, config, metadata):
         tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon'
         tmpMeta['Keep_image_geometry']            = 1
 
+        # NOTE: This one as well, as 'options' are no longer available in config json file
         if ('parameters' in config) and ('options' in config['parameters']):
             # Example for sending ROIs
             if config['parameters']['options'] == 'roi':
