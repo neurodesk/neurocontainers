@@ -50,25 +50,55 @@
       "information": { "en": "Define the config to be executed by MRD server" }
     },
     {
-      "id": "options",
-      "label": { "en": "options" },
+      "id": "vbmodules",
+      "label": { "en": "Vessel Boost Modules" },
       "type": "choice",
       "values": [
         {
-          "id": "none",
-          "name": { "en": "none" }
+          "id": "prediction",
+          "name": { "en": "prediction module" }
         },
         {
           "id": "tta",
-          "name": { "en": "tta" }
+          "name": { "en": "test-time adaptation" }
         },
         {
           "id": "booster",
           "name": { "en": "booster" }
         }
       ],
-      "default": "none",
-      "information": { "en": "Additional Vesselboost options" }
+      "default": "prediction",
+      "information": { "en": "Select a Vessel Boost module to run" }
+    },
+    {
+      "id": "vbepochs",
+      "label": { "en": "Epoch number" },
+      "type": "string",
+      "default": "200",
+      "information": { "en": "Enter an epoch number (integer) for tta/booster module" }
+    },
+    {
+      "id": "vbrate",
+      "label": { "en": "Learning rate" },
+      "type": "string",
+      "default": "0.001",
+      "information": { "en": "Enter a learning rate (float) for tta/booster module" }
+    },
+    {
+      "id": "vbprepmode",
+      "label": { "en": "Preprocessing mode" },
+      "type": "int",
+      "minimum": 1,
+      "maximum": 4,
+      "default": 1,
+      "information": { "en": "Preprocessing mode options. prep_mode=1 : bias field correction only | prep_mode=2 : denoising only | prep_mode=3 : bfc + denoising | prep_mode=4 : no preprocessing applied" }
+    },
+    {
+      "id": "vbbrainextraction",
+      "label": { "en": "Brain extraction flag" },
+      "type": "boolean",
+      "information": { "en": "Set true to enable brain extraction" },
+      "default": false
     }
   ]
 }
