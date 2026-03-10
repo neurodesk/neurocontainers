@@ -614,16 +614,12 @@ jobs:
         git fetch origin main
         git checkout -B main origin/main
 
-        # Create a new branch for the release
-        BRANCH_NAME="release/${CONTAINER_NAME}-${CONTAINER_VERSION}-$(date +%Y%m%d-%H%M%S)"
-        git checkout -b "$BRANCH_NAME"
-
         # Create the release file
         RELEASE_DIR="releases/${CONTAINER_NAME}"
         RELEASE_FILE="${RELEASE_DIR}/${CONTAINER_VERSION}.json"
 
         mkdir -p "$RELEASE_DIR"
-        echo "$RELEASE_CONTENT" > "$RELEASE_FILE"
+        printf '%s\n' "$RELEASE_CONTENT" > "$RELEASE_FILE"
 
         # Check if this is a new file or an update
         if git ls-files --error-unmatch "$RELEASE_FILE" 2>/dev/null; then
@@ -631,6 +627,17 @@ jobs:
         else
           ACTION="Add"
         fi
+
+        # Skip PR creation when the generated release file is already current on main.
+        git add "$RELEASE_FILE"
+        if git diff --cached --quiet; then
+          echo "No changes detected in ${RELEASE_FILE}; skipping release PR creation."
+          exit 0
+        fi
+
+        # Create a new branch for the release
+        BRANCH_NAME="release/${CONTAINER_NAME}-${CONTAINER_VERSION}-$(date +%Y%m%d-%H%M%S)"
+        git checkout -b "$BRANCH_NAME"
 
         # Add and commit the release file
         git add "$RELEASE_FILE"
