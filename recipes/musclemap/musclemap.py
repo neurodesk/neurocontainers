@@ -570,10 +570,11 @@ def process_image(imgGroup, connection, config, metadata):
         # Create a copy of the original ISMRMRD Meta attributes and update
         tmpMeta = meta[iImg]
         tmpMeta["DataRole"] = "Image"
-        tmpMeta["ImageProcessingHistory"] = ["PYTHON", "MUSCLEMAP"]
+        tmpMeta["ImageProcessingHistory"] = ["OPENRECON", "MUSCLEMAP"]
         tmpMeta["WindowCenter"] = str((maxVal + 1) / 2)
         tmpMeta["WindowWidth"] = str((maxVal + 1))
-        tmpMeta["SequenceDescriptionAdditional"] = "OpenRecon"
+        tmpMeta["ImageType"] = "OTHER"
+        tmpMeta["SequenceDescriptionAdditional"] = "Musclemap segmentation"
         tmpMeta["Keep_image_geometry"] = 1
 
         # Add image orientation directions to MetaAttributes if not already present
