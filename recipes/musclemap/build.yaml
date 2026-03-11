@@ -3,6 +3,10 @@ version: 1.2.3
 architectures:
     - x86_64
 
+variables:
+    musclemap_branch: chunksize-auto
+    musclemap_archive_url: "https://github.com/stebo85/MuscleMap/archive/refs/heads/{{ context.musclemap_branch }}.zip"
+
 files:
     - name: musclemap.py
       filename: musclemap.py
@@ -18,16 +22,23 @@ build:
     directives:
         - environment:
               DEBIAN_FRONTEND: noninteractive
-        - install: bzip2 ca-certificates git wget build-essential python3-pip python-is-python3
+        - install: bzip2 ca-certificates git unzip build-essential python3-pip python-is-python3
 
         - include: macros/openrecon/neurodocker.yaml
 
+        - file:
+            name: musclemap.zip
+            url: "{{ context.musclemap_archive_url }}"
+            refresh: true
+
+        - copy: musclemap.zip /opt/musclemap.zip
+
         - workdir: /opt/
         - run: 
-            - wget https://github.com/MuscleMap/MuscleMap/archive/refs/tags/1.2.zip
-            - unzip 1.2.zip
-            - rm 1.2.zip
-            - cd MuscleMap-1.2
+            - unzip /opt/musclemap.zip
+            - rm /opt/musclemap.zip
+            - mv MuscleMap-* MuscleMap
+            - cd MuscleMap
             - sed -i '/^torch[[:space:]]*==/d' requirements.txt
             - pip install .
         

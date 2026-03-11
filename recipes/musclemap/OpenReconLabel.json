@@ -103,8 +103,8 @@
       "id": "chunksize",
       "label": { "en": "Chunk Size" },
       "type": "string",
-      "default": "100",
-      "information": { "en": "Chunk size between 5 and 200" }
+      "default": "auto",
+      "information": { "en": "Chunk size between 5 and 200 or 'auto'" }
     },
     {
       "id": "spatialoverlap",

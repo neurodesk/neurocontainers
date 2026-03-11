@@ -385,7 +385,7 @@ def process_image(imgGroup, connection, config, metadata):
 
     # Extract UI parameters from JSON config
     bodyregion = mrdhelper.get_json_config_param(config, 'bodyregion', default='wholebody', type='str')
-    chunksize = mrdhelper.get_json_config_param(config, 'chunksize', default=10, type='str')
+    chunksize = mrdhelper.get_json_config_param(config, 'chunksize', default='auto', type='str')
     spatialoverlap = mrdhelper.get_json_config_param(config, 'spatialoverlap', default=50, type='int')
     
     logging.info(f"mm_segment parameters: bodyregion={bodyregion}, chunksize={chunksize}, spatialoverlap={spatialoverlap}")
