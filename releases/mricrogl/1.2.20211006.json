@@ -1,12 +1,14 @@
 {
   "apps": {
     "mricrogl 1.2.20211006": {
-      "version": "20220111",
-      "exec": ""
+      "version": "20260311",
+      "exec": "",
+      "apptainer_args": []
     },
     "mricroglGUI-mricrogl 1.2.20211006": {
-      "version": "20220111",
-      "exec": "MRIcroGL"
+      "version": "20260311",
+      "exec": "MRIcroGL",
+      "apptainer_args": []
     }
   },
   "categories": [
