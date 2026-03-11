@@ -1,8 +1,9 @@
 {
   "apps": {
     "niftyreg 1.4.0": {
-      "version": "20220317",
-      "exec": ""
+      "version": "20260311",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
