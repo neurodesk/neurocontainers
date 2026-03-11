@@ -1,8 +1,9 @@
 {
   "apps": {
     "fieldtrip 20220617": {
-      "version": "20220627",
-      "exec": ""
+      "version": "20260311",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
