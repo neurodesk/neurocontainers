@@ -1,8 +1,9 @@
 {
   "apps": {
     "mritools 3.3.0": {
-      "version": "20220224",
-      "exec": ""
+      "version": "20260311",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
