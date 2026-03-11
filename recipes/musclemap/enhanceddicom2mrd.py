@@ -22,6 +22,13 @@ imtype_map = {'M': ismrmrd.IMTYPE_MAGNITUDE,
               'R': ismrmrd.IMTYPE_REAL,
               'I': ismrmrd.IMTYPE_IMAG}
 
+complex_component_map = {
+    'MAGNITUDE': ismrmrd.IMTYPE_MAGNITUDE,
+    'PHASE': ismrmrd.IMTYPE_PHASE,
+    'REAL': ismrmrd.IMTYPE_REAL,
+    'IMAGINARY': ismrmrd.IMTYPE_IMAG,
+}
+
 # Lookup table between DICOM and Siemens flow directions
 venc_dir_map = {'rl'  : 'FLOW_DIR_R_TO_L',
                 'lr'  : 'FLOW_DIR_L_TO_R',
@@ -188,6 +195,24 @@ class DicomImage:
             return self.dset.get('ImageType', ['','','MAGNITUDE'])
 
     @property
+    def ComplexImageComponent(self):
+        if self.is_enhanced:
+            content = self.get_group('MRImageFrameTypeSequence')
+            if content and 'ComplexImageComponent' in content:
+                return str(content.ComplexImageComponent).upper()
+            return 'MAGNITUDE'
+
+        image_type = self.ImageType
+        if len(image_type) > 2:
+            return {
+                'M': 'MAGNITUDE',
+                'P': 'PHASE',
+                'R': 'REAL',
+                'I': 'IMAGINARY',
+            }.get(str(image_type[2]).upper(), 'MAGNITUDE')
+        return 'MAGNITUDE'
+
+    @property
     def Rows(self):
         return self.dset.Rows
     
@@ -219,6 +244,23 @@ def _normalize(vec):
     if norm == 0:
         return vec
     return vec / norm
+
+
+def _coerce_image_type_values(value):
+    if value is None:
+        return []
+
+    if isinstance(value, str):
+        raw_values = value.split('\\')
+    else:
+        raw_values = list(value)
+
+    values = []
+    for raw_value in raw_values:
+        text = str(raw_value).strip()
+        if text:
+            values.append(text.upper())
+    return values
 
 
 def CreateMrdHeader(dset):
@@ -431,19 +473,13 @@ def main(args):
                 tmpMrdImg = ismrmrd.Image.from_array(sliceImg.pixel_array, transpose=False)
                 tmpMeta   = ismrmrd.Meta()
 
+                itype_values = _coerce_image_type_values(sliceImg.ImageType)
+
                 try:
-                    # ImageType is a list/tuple. Index 2 is usually M/P/R/I
-                    # Enhanced: FrameType
-                    itype = sliceImg.ImageType
-                    if len(itype) > 2:
-                        tmpMrdImg.image_type = imtype_map.get(itype[2], ismrmrd.IMTYPE_MAGNITUDE)
-                    elif len(itype) > 0:
-                         # Try to guess from first char of first element?
-                         tmpMrdImg.image_type = imtype_map.get(itype[0][0], ismrmrd.IMTYPE_MAGNITUDE)
-                    else:
-                        tmpMrdImg.image_type = ismrmrd.IMTYPE_MAGNITUDE
+                    complex_component = sliceImg.ComplexImageComponent
+                    tmpMrdImg.image_type = complex_component_map.get(complex_component, ismrmrd.IMTYPE_MAGNITUDE)
                 except Exception:
-                    print("Unsupported ImageType %s -- defaulting to IMTYPE_MAGNITUDE" % sliceImg.ImageType)
+                    print("Unsupported ComplexImageComponent/ImageType %s -- defaulting to IMTYPE_MAGNITUDE" % sliceImg.ImageType)
                     tmpMrdImg.image_type = ismrmrd.IMTYPE_MAGNITUDE
 
                 # DICOM PixelSpacing is [row_spacing, col_spacing] => [Y, X].
@@ -499,13 +535,18 @@ def main(args):
                 tmpMrdImg.slice = iSlice
                 tmpMrdImg.phase = iPhase
 
-                # Store original DICOM ImageType in metadata
-                try:
-                    itype = sliceImg.ImageType
-                    if itype:
-                        tmpMeta['ImageType'] = '\\'.join(str(x) for x in itype)
-                except Exception:
-                    tmpMeta['ImageType'] = ''
+                # Preserve the full original DICOM ImageType separately.
+                if itype_values:
+                    tmpMeta['DicomImageType'] = '\\'.join(itype_values)
+                    if len(itype_values) > 2:
+                        tmpMeta['ImageTypeValue3'] = itype_values[2]
+                    if len(itype_values) > 3:
+                        # Per the MRD MetaAttributes convention, ImageType corresponds
+                        # to DICOM ImageType values starting at position 4.
+                        image_type_tail = itype_values[3:]
+                        tmpMeta['ImageType'] = image_type_tail[0] if len(image_type_tail) == 1 else image_type_tail
+                        tmpMeta['ImageTypeValue4'] = itype_values[3]
+                tmpMeta['ComplexImageComponent'] = sliceImg.ComplexImageComponent
 
                 try:
                     seq_name = sliceImg.SequenceName

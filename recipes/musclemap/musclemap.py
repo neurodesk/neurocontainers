@@ -46,9 +46,9 @@ def process(connection, config, metadata):
         logging.info("Improperly formatted metadata: \n%s", metadata)
 
     # Continuously parse incoming data parsed from MRD messages
-    currentSeries = 0
     acqGroup = []
     imgGroup = []
+    currentImageVolumeKey = None
     waveformGroup = []
     try:
         for item in connection:
@@ -77,18 +77,23 @@ def process(connection, config, metadata):
             # Image data messages
             # ----------------------------------------------------------
             elif isinstance(item, ismrmrd.Image):
-                # When this criteria is met, run process_group() on the accumulated
-                # data, which returns images that are sent back to the client.
-                # e.g. when the series number changes:
-                if item.image_series_index != currentSeries:
-                    logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
-                    currentSeries = item.image_series_index
+                itemVolumeKey = _build_image_volume_key(item)
+                if imgGroup and currentImageVolumeKey is not None and itemVolumeKey != currentImageVolumeKey:
+                    logging.info(
+                        "Processing a group of images because volume key changed from %s to %s",
+                        currentImageVolumeKey,
+                        itemVolumeKey,
+                    )
                     image = process_image(imgGroup, connection, config, metadata)
                     connection.send_image(image)
                     imgGroup = []
+                    currentImageVolumeKey = None
 
                 # Only process magnitude Water images -- send phase images and non-Water images back without modification
                 tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
+                dicomImageType = _extract_dicom_image_type_values(tmpMeta)
+                imageTypeValue3 = _get_dicom_image_type_value(tmpMeta, 2)
+                imageTypeValue4 = _get_dicom_image_type_value(tmpMeta, 3)
                 
                 # Debug: Print various metadata fields to identify where Water information is stored
                 logging.info("=== Image Metadata Debug ===")
@@ -96,22 +101,41 @@ def process(connection, config, metadata):
                 logging.info(f"SeriesDescription: {tmpMeta.get('SeriesDescription', 'N/A')}")
                 logging.info(f"ImageComments: {tmpMeta.get('ImageComments', 'N/A')}")
                 logging.info(f"ImageType: {tmpMeta.get('ImageType', 'N/A')}")
+                logging.info(f"DicomImageType: {tmpMeta.get('DicomImageType', 'N/A')}")
+                logging.info(f"ImageTypeValue3: {tmpMeta.get('ImageTypeValue3', 'N/A')}")
+                logging.info(f"ImageTypeValue4: {tmpMeta.get('ImageTypeValue4', 'N/A')}")
                 logging.info(f"SequenceDescriptionAdditional: {tmpMeta.get('SequenceDescriptionAdditional', 'N/A')}")
                 logging.info(f"All metadata keys: {list(tmpMeta.keys())}")
                 logging.info("===========================")
                 
                 # Check metadata for Water/Fat and DIXON information
-                imageTypeMetadata = tmpMeta.get("ImageType", "")
-                isDixonScan = "DIXON" in imageTypeMetadata if imageTypeMetadata else False
-                isWaterImage = "WATER" in imageTypeMetadata if imageTypeMetadata else False
+                isDixonScan = (imageTypeValue3 == "DIXON") or (imageTypeValue4 in {"WATER", "FAT", "IN_PHASE", "OUT_PHASE"})
+                isWaterImage = imageTypeValue4 == "WATER"
                 
-                # Check ISMRMRD image type for magnitude vs phase/complex (data representation)
-                isMagnitude = (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0)
+                # Check ISMRMRD image type for magnitude vs phase/complex (data representation).
+                # image_type=0 is not standard, but some generators leave it unset.
+                isMagnitude = item.image_type == ismrmrd.IMTYPE_MAGNITUDE
+                if item.image_type == 0:
+                    logging.warning(
+                        "Received non-standard MRD image_type=0 for volume key %s; treating it as magnitude",
+                        itemVolumeKey,
+                    )
+                    isMagnitude = True
                 
                 # Process magnitude images, but for DIXON scans only process WATER images
                 shouldProcess = isMagnitude and (not isDixonScan or isWaterImage)
+                logging.info(
+                    "Resolved image typing: volume_key=%s, dicom_type=%s, value3=%s, value4=%s, image_type=%s, should_process=%s",
+                    itemVolumeKey,
+                    dicomImageType,
+                    imageTypeValue3 or "N/A",
+                    imageTypeValue4 or "N/A",
+                    item.image_type,
+                    shouldProcess,
+                )
                 
                 if shouldProcess:
+                    currentImageVolumeKey = itemVolumeKey
                     imgGroup.append(item)
                 else:
                     tmpMeta["Keep_image_geometry"] = 1
@@ -216,6 +240,55 @@ def _get_first_meta_float(meta_obj, keys):
         except Exception:
             continue
     return None
+
+
+def _meta_text_values(value):
+    if value is None:
+        return []
+
+    if isinstance(value, (list, tuple)):
+        raw_values = value
+    else:
+        raw_values = str(value).split("\\")
+
+    values = []
+    for raw_value in raw_values:
+        text = str(raw_value).strip()
+        if text:
+            values.append(text.upper())
+    return values
+
+
+def _extract_dicom_image_type_values(meta_obj):
+    dicom_values = _meta_text_values(meta_obj.get("DicomImageType"))
+    if dicom_values:
+        return dicom_values
+
+    image_type_values = _meta_text_values(meta_obj.get("ImageType"))
+    if not image_type_values:
+        return []
+
+    value3 = _meta_text_values(meta_obj.get("ImageTypeValue3"))
+    prefix = ["", "", value3[0] if value3 else ""]
+    return prefix + image_type_values
+
+
+def _get_dicom_image_type_value(meta_obj, index):
+    values = _extract_dicom_image_type_values(meta_obj)
+    if len(values) > index:
+        return values[index]
+    return ""
+
+
+def _build_image_volume_key(image):
+    return (
+        int(getattr(image, "image_series_index", 0)),
+        int(getattr(image, "average", 0)),
+        int(getattr(image, "contrast", 0)),
+        int(getattr(image, "phase", 0)),
+        int(getattr(image, "repetition", 0)),
+        int(getattr(image, "set", 0)),
+    )
 
 
 def _header_to_log_dict(image_header):
@@ -554,6 +627,8 @@ def process_image(imgGroup, connection, config, metadata):
         # Set the image_type to match the data_type for complex data
         if (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXFLOAT) or (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXDOUBLE):
             oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
+        else:
+            oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
 
         # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
         if mrdhelper.get_meta_value(meta[iImg], "IceMiniHead") is not None:
@@ -573,7 +648,10 @@ def process_image(imgGroup, connection, config, metadata):
         tmpMeta["ImageProcessingHistory"] = ["OPENRECON", "MUSCLEMAP"]
         tmpMeta["WindowCenter"] = str((maxVal + 1) / 2)
         tmpMeta["WindowWidth"] = str((maxVal + 1))
-        tmpMeta["ImageType"] = "OTHER"
+        tmpMeta["ImageType"] = "NONE"
+        tmpMeta["ImageTypeValue3"] = "M"
+        tmpMeta["ImageTypeValue4"] = "NONE"
+        tmpMeta["DicomImageType"] = "DERIVED\\PRIMARY\\M\\NONE"
         tmpMeta["SequenceDescriptionAdditional"] = "Musclemap segmentation"
         tmpMeta["Keep_image_geometry"] = 1
 
