@@ -9,6 +9,9 @@ architectures:
   - x86_64
   - aarch64
 
+variables:
+  revision: 8ad2f11507ddedb09ed74a9bd97377b70532ee75
+
 build:
   kind: neurodocker
 
@@ -16,9 +19,6 @@ build:
   pkg-manager: apt
 
   directives:
-    - variables:
-        revision: 8ad2f11507ddedb09ed74a9bd97377b70532ee75
-
     - install:
         - libgomp1
         - ca-certificates
@@ -33,7 +33,7 @@ build:
         - tar -xz -C ./ -f {{ get_file("downloaded_tar_file") }}
 
     - run:
-        - mv niftyreg-{{ local.revision }} src
+        - mv niftyreg-{{ context.revision }} src
         - mkdir build
 
     - run:
@@ -201,4 +201,4 @@ categories:
 
 files:
   - name: downloaded_tar_file
-    url: https://github.com/KCL-BMEIS/niftyreg/archive/{{
+    url: https://github.com/KCL-BMEIS/niftyreg/archive/{{ context.revision }}.tar.gz

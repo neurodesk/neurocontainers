@@ -21,12 +21,11 @@ build:
         - libdevil-dev
         - qtbase5-dev
         - libqt5svg5-dev
-        - wget
 
     - workdir: /root
 
     - run:
-        - cp {{ get_file("voreen_src") }} voreen-src-{{
+        - cp {{ get_file("voreen_src") }} voreen-src-{{ context.version }}-unix.tar.gz
         - tar -xf voreen-src-{{ context.version }}-unix.tar.gz
 
     - run:
@@ -69,4 +68,4 @@ readme: |
 
 files:
   - name: voreen_src
-    url: https://www.uni-muenster.de/imperia/md/content/voreen/release/voreen-src-{{
+    url: https://www.uni-muenster.de/imperia/md/content/voreen/release/voreen-src-{{ context.version }}-unix.tar.gz

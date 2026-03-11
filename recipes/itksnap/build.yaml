@@ -73,6 +73,6 @@ copyright:
 # locate libQt6Core.so.6
 files:
   - name: downloaded_tar_file
-    url: https://sourceforge.net/projects/itk-snap/files/itk-snap/{{
+    url: https://sourceforge.net/projects/itk-snap/files/itk-snap/{{ context.version }}/itksnap-{{ context.version }}-20250909-Linux-x86_64.tar.gz
   - name: MRI_crop_zip
     url: https://www.nitrc.org/frs/download.php/750/MRI-crop.zip

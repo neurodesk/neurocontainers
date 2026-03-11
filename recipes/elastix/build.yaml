@@ -16,7 +16,6 @@ build:
         DEBIAN_FRONTEND: noninteractive
 
     - install:
-        - wget
         - ca-certificates
         - unzip
         - libgomp1
@@ -24,7 +23,7 @@ build:
     - workdir: /opt/{{ context.name }}-{{ context.version }}
 
     - run:
-        - cp {{ get_file("downloaded_file") }} {{
+        - cp {{ get_file("downloaded_file") }} elastix-{{ context.version }}-linux.zip
         - unzip elastix-{{ context.version }}-linux.zip
         - chmod a+x /opt/{{ context.name }}-{{ context.version }}/bin/*
         - rm elastix-{{ context.version }}-linux.zip
@@ -71,4 +70,4 @@ categories:
 
 files:
   - name: downloaded_file
-    url: https://github.com/SuperElastix/elastix/releases/download/{{
+    url: https://github.com/SuperElastix/elastix/releases/download/{{ context.version }}/elastix-{{ context.version }}-linux.zip

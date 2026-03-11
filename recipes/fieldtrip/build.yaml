@@ -63,4 +63,4 @@ categories:
 
 files:
   - name: fieldtrip_1
-    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/fieldtrip{{
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/fieldtrip{{ context.version }}_mcr2020b.tar.gz

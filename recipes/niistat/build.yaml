@@ -47,7 +47,7 @@ deploy:
 
 files:
   - name: v
-    url: https://github.com/neurolabusc/NiiStat/archive/refs/tags/v{{
+    url: https://github.com/neurolabusc/NiiStat/archive/refs/tags/v{{ context.version }}.tar.gz
   - name: SPMinOctave.m
     contents: |
       %% Store current working directory

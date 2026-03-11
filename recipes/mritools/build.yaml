@@ -71,4 +71,4 @@ categories:
 
 files:
   - name: v
-    url: https://github.com/korbinian90/CompileMRI.jl/releases/download/v{{
+    url: https://github.com/korbinian90/CompileMRI.jl/releases/download/v{{ context.version }}/mritools_linux_{{ context.version }}.tar.gz

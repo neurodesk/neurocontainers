@@ -64,4 +64,4 @@ readme: |
 
 files:
   - name: TrackVis_v
-    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/TrackVis_v{{
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/TrackVis_v{{ context.version }}_x86_64.tar.gz

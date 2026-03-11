@@ -253,6 +253,61 @@ def test_file_info_accepts_refresh_flag():
     assert file_info.refresh is True
 
 
+def test_invalid_jinja_template_in_file_url():
+    """Test validation fails early for malformed Jinja2 in rendered file URLs."""
+    recipe = {
+        "name": "broken-template-app",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": ["other"],
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": [],
+        },
+        "files": [
+            {
+                "name": "downloaded_file",
+                "url": "https://example.com/releases/download/{{",
+            }
+        ],
+    }
+
+    errors = get_validation_errors(recipe)
+
+    assert len(errors) > 0
+    assert any("files[0].url" in error for error in errors)
+    assert any("template syntax error" in error.lower() for error in errors)
+
+
+def test_non_string_file_name_fails_validation():
+    """Test validation fails early for non-string file names used by the builder."""
+    recipe = {
+        "name": "typed-file-app",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": ["other"],
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": [],
+        },
+        "files": [
+            {
+                "name": 491,
+                "url": "https://example.com/download.tar.gz",
+            }
+        ],
+    }
+
+    errors = get_validation_errors(recipe)
+
+    assert len(errors) > 0
+    assert any("files[0].name must be a string" in error for error in errors)
+
+
 def test_two_digit_version_yaml_parsing():
     """Test that two-digit versions like '1.1' are handled correctly"""
     # Create a recipe with a two-digit version that YAML would parse as float
@@ -308,6 +363,8 @@ if __name__ == "__main__":
     test_validate_nonexistent_file()
     test_directive_validation()
     test_file_info_accepts_refresh_flag()
+    test_invalid_jinja_template_in_file_url()
+    test_non_string_file_name_fails_validation()
     test_two_digit_version_yaml_parsing()
     
     print("✅ All validation tests passed!")

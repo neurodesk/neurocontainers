@@ -96,4 +96,4 @@ icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNS
 
 files:
   - name: downloaded_tar_file
-    url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/{{
+    url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/{{ context.version }}.tar.gz

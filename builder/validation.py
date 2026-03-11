@@ -8,6 +8,7 @@ The schema matches the Zod schema from https://github.com/neurodesk/neurocontain
 
 import attrs
 from typing import List, Dict, Union, Optional, Any, Literal
+import jinja2
 import yaml
 
 
@@ -63,6 +64,8 @@ INCLUDE_MACROS = [
 
 ALLOWED_AUTO_UPDATE_METHODS = ["github_release"]
 
+_jinja_env = jinja2.Environment()
+
 
 # ============================================================================
 # Validation Functions
@@ -110,6 +113,171 @@ def validate_webapp_icon(instance, attribute, value):
             f"Webapp icon must be an SVG file (got '{value}'). "
             "JupyterLab requires SVG format for launcher icons."
         )
+
+
+def validate_template_syntax(template: str, path: str):
+    """Validate Jinja2 syntax for a rendered template string."""
+    if not isinstance(template, str):
+        return
+
+    if not any(marker in template for marker in ("{{", "{%", "{#")):
+        return
+
+    try:
+        _jinja_env.parse(template)
+    except jinja2.exceptions.TemplateSyntaxError as e:
+        raise ValueError(f"Jinja2 template syntax error at {path}: {e}")
+
+
+def validate_condition_syntax(condition: Any, path: str):
+    """Validate Jinja2 syntax for a condition expression."""
+    if not isinstance(condition, str) or condition.strip() == "":
+        return
+
+    try:
+        _jinja_env.parse("{{" + condition + "}}")
+    except jinja2.exceptions.TemplateSyntaxError as e:
+        raise ValueError(f"Jinja2 condition syntax error at {path}: {e}")
+
+
+def validate_executable_template(value: Any, path: str):
+    """
+    Validate syntax for values that builder/build.py passes through execute_template().
+    """
+    if isinstance(value, str):
+        validate_template_syntax(value, path)
+        return
+
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            validate_executable_template(item, f"{path}[{index}]")
+        return
+
+    if isinstance(value, dict):
+        if "try" in value and isinstance(value["try"], list):
+            for index, option in enumerate(value["try"]):
+                option_path = f"{path}.try[{index}]"
+                if isinstance(option, dict):
+                    if "condition" in option:
+                        validate_condition_syntax(
+                            option["condition"], f"{option_path}.condition"
+                        )
+                    if "value" in option:
+                        validate_executable_template(
+                            option["value"], f"{option_path}.value"
+                        )
+                    for key, item in option.items():
+                        if key in {"condition", "value"}:
+                            continue
+                        validate_executable_template(item, f"{option_path}.{key}")
+                else:
+                    validate_executable_template(option, option_path)
+            return
+
+        for key, item in value.items():
+            validate_executable_template(key, f"{path}.<key>")
+            validate_executable_template(item, f"{path}.{key}")
+        return
+
+    if value is None or isinstance(value, (int, float, bool)):
+        return
+
+
+def validate_file_template_syntax(file_dict: Dict[str, Any], path: str):
+    """Validate Jinja2 syntax for file definitions rendered by the builder."""
+    if "name" in file_dict:
+        if not isinstance(file_dict["name"], str):
+            raise ValueError(f"{path}.name must be a string")
+        validate_template_syntax(file_dict["name"], f"{path}.name")
+    if "url" in file_dict:
+        if not isinstance(file_dict["url"], str):
+            raise ValueError(f"{path}.url must be a string")
+        validate_template_syntax(file_dict["url"], f"{path}.url")
+    if "contents" in file_dict:
+        if not isinstance(file_dict["contents"], str):
+            raise ValueError(f"{path}.contents must be a string")
+        validate_template_syntax(file_dict["contents"], f"{path}.contents")
+
+
+def validate_directive_template_syntax(directive_dict: Dict[str, Any], path: str):
+    """Validate Jinja2 syntax for builder directives that are rendered at build time."""
+    if "condition" in directive_dict:
+        validate_condition_syntax(directive_dict["condition"], f"{path}.condition")
+
+    if "install" in directive_dict:
+        validate_executable_template(directive_dict["install"], f"{path}.install")
+    elif "run" in directive_dict:
+        validate_executable_template(directive_dict["run"], f"{path}.run")
+    elif "workdir" in directive_dict:
+        validate_template_syntax(directive_dict["workdir"], f"{path}.workdir")
+    elif "user" in directive_dict:
+        validate_template_syntax(directive_dict["user"], f"{path}.user")
+    elif "entrypoint" in directive_dict:
+        validate_template_syntax(directive_dict["entrypoint"], f"{path}.entrypoint")
+    elif "environment" in directive_dict and directive_dict["environment"] is not None:
+        for key, value in directive_dict["environment"].items():
+            validate_template_syntax(key, f"{path}.environment.<key>")
+            validate_executable_template(value, f"{path}.environment.{key}")
+    elif "template" in directive_dict and directive_dict["template"] is not None:
+        for key, value in directive_dict["template"].items():
+            validate_executable_template(value, f"{path}.template.{key}")
+    elif "copy" in directive_dict:
+        validate_executable_template(directive_dict["copy"], f"{path}.copy")
+    elif "group" in directive_dict:
+        if "with" in directive_dict and directive_dict["with"] is not None:
+            for key, value in directive_dict["with"].items():
+                validate_executable_template(value, f"{path}.with.{key}")
+        for index, group_item in enumerate(directive_dict["group"]):
+            if isinstance(group_item, dict):
+                validate_directive_template_syntax(group_item, f"{path}.group[{index}]")
+    elif "include" in directive_dict:
+        validate_template_syntax(directive_dict["include"], f"{path}.include")
+        if "with" in directive_dict and directive_dict["with"] is not None:
+            for key, value in directive_dict["with"].items():
+                validate_executable_template(value, f"{path}.with.{key}")
+    elif "file" in directive_dict and directive_dict["file"] is not None:
+        validate_file_template_syntax(directive_dict["file"], f"{path}.file")
+    elif "variables" in directive_dict:
+        validate_executable_template(directive_dict["variables"], f"{path}.variables")
+    elif "deploy" in directive_dict and directive_dict["deploy"] is not None:
+        if "bins" in directive_dict["deploy"]:
+            validate_executable_template(directive_dict["deploy"]["bins"], f"{path}.deploy.bins")
+        if "path" in directive_dict["deploy"]:
+            validate_executable_template(directive_dict["deploy"]["path"], f"{path}.deploy.path")
+
+
+def validate_recipe_template_syntax(recipe_dict: Dict[str, Any]):
+    """Validate Jinja2 syntax in recipe fields rendered by builder/build.py."""
+    if "readme" in recipe_dict:
+        validate_template_syntax(recipe_dict["readme"], "readme")
+
+    if "readme_url" in recipe_dict:
+        validate_template_syntax(recipe_dict["readme_url"], "readme_url")
+
+    if "variables" in recipe_dict:
+        validate_executable_template(recipe_dict["variables"], "variables")
+
+    if "deploy" in recipe_dict and recipe_dict["deploy"] is not None:
+        if "bins" in recipe_dict["deploy"]:
+            validate_executable_template(recipe_dict["deploy"]["bins"], "deploy.bins")
+        if "path" in recipe_dict["deploy"]:
+            validate_executable_template(recipe_dict["deploy"]["path"], "deploy.path")
+
+    for index, file_dict in enumerate(recipe_dict.get("files") or []):
+        if isinstance(file_dict, dict):
+            validate_file_template_syntax(file_dict, f"files[{index}]")
+
+    build_dict = recipe_dict.get("build") or {}
+    if "base-image" in build_dict:
+        validate_template_syntax(build_dict["base-image"], "build.base-image")
+    if "pkg-manager" in build_dict:
+        validate_template_syntax(build_dict["pkg-manager"], "build.pkg-manager")
+
+    for index, directive_dict in enumerate(build_dict.get("directives") or []):
+        if isinstance(directive_dict, dict):
+            validate_directive_template_syntax(
+                directive_dict, f"build.directives[{index}]"
+            )
 
 
 # ============================================================================
@@ -598,6 +766,8 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
     try:
         # Make a copy to avoid modifying the original
         recipe_copy = recipe_dict.copy()
+
+        validate_recipe_template_syntax(recipe_copy)
 
         # Parse copyright if present
         if "copyright" in recipe_copy and recipe_copy["copyright"]:

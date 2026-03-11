@@ -12,7 +12,7 @@ build:
   pkg-manager: yum
   directives:
     - group:
-        - install: wget unzip ca-certificates gtk2 pigz
+        - install: unzip ca-certificates gtk2 pigz
     - group:
         - workdir: /opt
         - run:
@@ -82,4 +82,4 @@ readme: |-
 
 files:
   - name: v
-    url: https://github.com/neurolabusc/MRIcron/releases/download/v{{
+    url: https://github.com/neurolabusc/MRIcron/releases/download/v{{ context.version }}/MRIcron_linux.zip

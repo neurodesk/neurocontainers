@@ -16,14 +16,14 @@ build:
   directives:
     - install:
         - git
-        - wget
         - ca-certificates
         - pigz
+        - unzip
 
     - workdir: /opt/dcm2niix-{{ context.version }}
 
     - run:
-        - cp {{ get_file("downloaded_file") }} {{
+        - cp {{ get_file("downloaded_file") }} dcm2niix_lnx.zip
         - unzip dcm2niix_lnx.zip
         - chmod a+rwx /opt/dcm2niix-{{ context.version }}/dcm2niix
         - rm -rf dcm2niix_lnx.zip
@@ -64,4 +64,4 @@ categories:
 
 files:
   - name: downloaded_file
-    url: https://github.com/rordenlab/dcm2niix/releases/download/{{
+    url: https://github.com/rordenlab/dcm2niix/releases/download/{{ context.version }}/dcm2niix_lnx.zip
