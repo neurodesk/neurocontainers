@@ -1,8 +1,14 @@
 {
   "apps": {
     "trackvis 0.6.1": {
-      "version": "20220303",
-      "exec": ""
+      "version": "20260311",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "trackvisGUI-trackvis 0.6.1": {
+      "version": "20260311",
+      "exec": "trackvis",
+      "apptainer_args": []
     }
   },
   "categories": [
