@@ -90,6 +90,14 @@ tests:
           fail_with_last_output "readelf Qt5Core PT_INTERP" "libQt5Core.so.5 still has PT_INTERP segment (breaks glibc 2.37+ dlopen in Apptainer)."
       fi
 
+      # Verify libQt5Core.so.5 does not carry .note.ABI-tag. Older kernels
+      # (for example 3.10) can reject the Qt library when this note advertises
+      # a newer minimum Linux ABI, surfacing as a loader "cannot open" error.
+      run_and_capture "readelf Qt5Core ABI-tag" readelf -n "${FREESURFER_HOME}/lib/qt/lib/libQt5Core.so.5"
+      if printf '%s\n' "$LAST_OUTPUT" | grep -q '\.note.ABI-tag'; then
+          fail_with_last_output "readelf Qt5Core ABI-tag" "libQt5Core.so.5 still has .note.ABI-tag (can break loading on older host kernels)."
+      fi
+
       # Verify libQt5Core.so.5 is truly dlopen-able via ctypes.
       run_and_capture "ctypes.CDLL Qt5Core" python3 -c "import ctypes; ctypes.CDLL('${FREESURFER_HOME}/lib/qt/lib/libQt5Core.so.5')"
       if [ "$LAST_STATUS" -ne 0 ]; then

@@ -181,16 +181,17 @@ build:
         - echo "/usr/local/freesurfer/{{ context.version }}/lib/qt/lib" > /etc/ld.so.conf.d/freesurfer-qt.conf
         - ldconfig
 
-    # Fix libQt5Core.so.5 for compatibility with glibc 2.37+.
-    # Qt 5.12 builds libQt5Core as PIE (with PT_INTERP and .interp section).
-    # Newer glibc (2.37+) refuses to dlopen shared objects that carry
-    # PT_INTERP, breaking freeview inside Apptainer containers where the
-    # host glibc is bind-mounted.
-    # Fix: patch PT_INTERP -> PT_NULL and .interp section -> SHT_NULL
-    # directly in the ELF binary. NEEDED ld-linux is left intact (harmless).
-    # We do NOT use patchelf --remove-needed as it can corrupt the binary.
+    # Fix libQt5Core.so.5 for runtime compatibility across host stacks:
+    # 1) glibc 2.37+ rejects dlopen on shared objects that carry PT_INTERP.
+    # 2) Older host kernels (for example 3.10) reject binaries that advertise
+    #    .note.ABI-tag Linux 3.17.0, surfacing as "cannot open shared object file".
+    # We patch PT_INTERP/.interp in the ELF binary and strip .note.ABI-tag.
+    # NEEDED ld-linux is left intact (harmless). We do NOT use patchelf
+    # --remove-needed as it can corrupt the binary.
     - run:
-        - python3 {{ get_file("fix_qt5core_pie") }} /usr/local/freesurfer/{{ context.version }}/lib/qt/lib/libQt5Core.so.5.12.11
+        - QT5CORE_LIB=/usr/local/freesurfer/{{ context.version }}/lib/qt/lib/libQt5Core.so.5.12.11
+        - python3 {{ get_file("fix_qt5core_pie") }} "$QT5CORE_LIB"
+        - if readelf -n "$QT5CORE_LIB" | grep -q '\.note.ABI-tag'; then strip --remove-section=.note.ABI-tag "$QT5CORE_LIB"; fi
         - ldconfig
 
     - run:
