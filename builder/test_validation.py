@@ -242,6 +242,17 @@ def test_directive_validation():
     assert result.name == "directive-test"
 
 
+def test_file_info_accepts_refresh_flag():
+    """Test validation accepts URL-backed files that force refresh."""
+    file_info = FileInfo(
+        name="upstream.zip",
+        url="https://example.com/upstream.zip",
+        refresh=True,
+    )
+
+    assert file_info.refresh is True
+
+
 def test_two_digit_version_yaml_parsing():
     """Test that two-digit versions like '1.1' are handled correctly"""
     # Create a recipe with a two-digit version that YAML would parse as float
@@ -296,6 +307,7 @@ if __name__ == "__main__":
     test_validate_recipe_file()
     test_validate_nonexistent_file()
     test_directive_validation()
+    test_file_info_accepts_refresh_flag()
     test_two_digit_version_yaml_parsing()
     
     print("✅ All validation tests passed!")

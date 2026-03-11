@@ -712,10 +712,11 @@ class BuildContext(object):
                     insecure=file.get("insecure", False),
                     retry=file.get("retry", 1),
                     curl_options=file.get("curl_options", ""),
+                    force_download=file.get("refresh", False),
                 )
 
                 if "executable" in file and file["executable"]:
-                    os.chmod(output_filename, 0o755)
+                    os.chmod(cached_file, 0o755)
 
                 self.files[name] = {
                     "cached_path": cached_file,
@@ -746,6 +747,9 @@ class BuildContext(object):
             }
 
     def file_exists(self, filename: str) -> bool:
+        if filename in self.files:
+            return True
+
         # First check in recipe directory, then in build directory
         if os.path.exists(os.path.join(self.recipe_path, filename)):
             return True
@@ -953,13 +957,16 @@ class BuildContext(object):
 
                     recipe_file_path = os_module.path.join(self.recipe_path, arg)
                     build_file_path = os_module.path.join(self.build_directory, arg)
+                    file_info = self.files.get(arg)
 
                     if (
                         not self.skip_file_population
-                        and os_module.path.exists(recipe_file_path)
                         and not os_module.path.exists(build_file_path)
                     ):
-                        shutil.copy2(recipe_file_path, build_file_path)
+                        if file_info is not None and "cached_path" in file_info:
+                            link_or_copy_file(file_info["cached_path"], build_file_path)
+                        elif os_module.path.exists(recipe_file_path):
+                            shutil.copy2(recipe_file_path, build_file_path)
 
                 builder.copy(*args)  # type: ignore
             elif "group" in directive:
@@ -1254,8 +1261,33 @@ def get_cached_download_path(url: str) -> str:
     return os.path.join(cache_dir, filename)
 
 
+def link_or_copy_file(source: str, destination: str) -> None:
+    import errno
+
+    if os.path.exists(destination):
+        try:
+            if os.path.samefile(source, destination):
+                return
+        except OSError:
+            pass
+        os.remove(destination)
+
+    try:
+        os.link(source, destination)
+    except OSError as e:
+        if e.errno == errno.EXDEV:
+            shutil.copy2(source, destination)
+        else:
+            raise
+
+
 def download_with_cache(
-    url, check_only=False, insecure=False, retry=1, curl_options=""
+    url,
+    check_only=False,
+    insecure=False,
+    retry=1,
+    curl_options="",
+    force_download=False,
 ):
     # download with curl to a temporary file
     if shutil.which("curl") is None:
@@ -1264,6 +1296,12 @@ def download_with_cache(
     # Make the output filename and check if it exists
     output_filename = get_cached_download_path(url)
     temp_filename = output_filename + ".tmp"
+
+    if force_download:
+        print(f"Refreshing cached download for {url}")
+        for filename in (output_filename, temp_filename):
+            if os.path.exists(filename):
+                os.remove(filename)
 
     if os.path.exists(output_filename):
         # Validate cached file is not corrupted

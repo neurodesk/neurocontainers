@@ -207,6 +207,7 @@ class FileInfo:
     executable: Optional[bool] = attrs.field(default=None)
     insecure: Optional[bool] = attrs.field(default=None)
     retry: Optional[int] = attrs.field(default=None)
+    refresh: Optional[bool] = attrs.field(default=None)
 
 
 # ============================================================================
