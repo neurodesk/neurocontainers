@@ -13,11 +13,44 @@ import mrdhelper
 import constants
 from time import perf_counter
 import nibabel as nib
+from pathlib import Path
 import subprocess
+import tempfile
 
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
+
+
+def _is_nifti_file(path: Path) -> bool:
+    return path.is_file() and path.name.endswith((".nii", ".nii.gz"))
+
+
+def _find_output_nifti(output_dir: Path, expected_name: str) -> Path:
+    if not output_dir.exists():
+        raise FileNotFoundError(f"VesselBoost output directory does not exist: {output_dir}")
+
+    preferred_names = (
+        expected_name,
+        f"{expected_name}.gz" if expected_name.endswith(".nii") else expected_name,
+    )
+    for name in preferred_names:
+        candidate = output_dir / name
+        if candidate.exists():
+            return candidate
+
+    candidates = [
+        path for path in sorted(output_dir.iterdir())
+        if _is_nifti_file(path) and not path.name.startswith("SIGMOID_")
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+
+    output_files = sorted(path.name for path in output_dir.iterdir())
+    raise FileNotFoundError(
+        f"Could not find a VesselBoost segmentation in {output_dir}. "
+        f"Files present: {output_files}"
+    )
 
 def process(connection, config, metadata):
     logging.info("Config: \n%s", config)
@@ -276,6 +309,11 @@ def process_image(images, connection, config, metadata):
     data = np.stack([img.data                              for img in images])
     head = [img.getHead()                                  for img in images]
     meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in images]
+    legacy_option = None
+    if isinstance(config, dict):
+        parameters = config.get("parameters")
+        if isinstance(parameters, dict):
+            legacy_option = parameters.get("options")
 
     # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions
     data = data.transpose((3, 4, 0, 1, 2))
@@ -295,49 +333,77 @@ def process_image(images, connection, config, metadata):
     # vesselboost needs 3D data:
     data = np.squeeze(data)
     logging.debug("Cropped to 3D from Original image data is size %s" % (data.shape,))
+    if np.iscomplexobj(data):
+        logging.warning(
+            "Complex-valued input received. VesselBoost expects real-valued data, "
+            "so the input will be converted to magnitude before inference."
+        )
+        data = np.abs(data)
+
+    work_dir = Path(tempfile.mkdtemp(prefix="vesselboost_", dir=debugFolder))
+    input_dir = work_dir / "tof_input"
+    output_dir = work_dir / "tof_output"
+    preproc_dir = work_dir / "tof_preproc"
+    init_label_dir = work_dir / "init_label"
+    input_name = "tof.nii"
+    input_path = input_dir / input_name
+
+    input_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     xform = np.eye(4)
     new_img = nib.nifti1.Nifti1Image(data, xform)
-    nib.save(new_img, 'tof.nii')
-    
-    subprocess.run(["mkdir", "tof_input"])
-    subprocess.run(["mkdir", "tof_output"])
-    subprocess.run(["mv", "tof.nii", "tof_input"])
+    nib.save(new_img, str(input_path))
+    logging.info("Saved OpenRecon input image to %s", input_path)
+    logging.info("Using VesselBoost workspace %s", work_dir)
 
     # Read user's choice of vesselboost modules
     module = mrdhelper.get_json_config_param(config, 'vbmodules', default='prediction', type='str')
-    prep_mode = int(mrdhelper.get_json_config_param(config, "prep_mode", default=1, type='int'))
+    prep_mode = int(
+        mrdhelper.get_json_config_param(
+            config,
+            "vbprepmode",
+            default=mrdhelper.get_json_config_param(config, "prep_mode", default=1, type='int'),
+            type='int',
+        )
+    )
     brain_extraction = boolean_checker("vbbrainextraction", default_val=False)
     epochs = mrdhelper.get_json_config_param(config, "vbepochs", default='200', type='str')
     l_rate = mrdhelper.get_json_config_param(config, "vbrate", default='0.001', type='str')
-    
+
+    def maybe_add_preprocessing_args(vb_cmd):
+        if prep_mode != 4:
+            preproc_dir.mkdir(parents=True, exist_ok=True)
+            vb_cmd.extend(["--preprocessed_path", str(preproc_dir)])
+            if brain_extraction:
+                vb_cmd.append("--enable_brain_extraction")
+
+    def run_vesselboost_command(vb_cmd):
+        logging.info("Running VesselBoost command: %s", " ".join(vb_cmd))
+        subprocess.run(vb_cmd, check=True)
+
     if module == 'prediction':
         logging.info("Running prediction module")
 
         vb_cmd = [
             "prediction.py",
-            "--image_path", "tof_input",
-            "--output_path", "tof_output",
+            "--image_path", str(input_dir),
+            "--output_path", str(output_dir),
             "--pretrained", "/opt/VesselBoost/saved_models/manual_0429",
             "--prep_mode", str(prep_mode),
             "--use_blending",
             "--overlap_ratio", "0.5",
         ]
-        if prep_mode != 4:
-            subprocess.run(["mkdir", "tof_preproc"])
-            vb_cmd.extend(["--preprocessed_path", "tof_preproc"])
-            if brain_extraction:
-                vb_cmd.append("--brain_extraction")
+        maybe_add_preprocessing_args(vb_cmd)
+        run_vesselboost_command(vb_cmd)
 
-        subprocess.run(vb_cmd)
-
-    if module == 'tta':
+    elif module == 'tta':
         logging.info("Running tta module")
 
         vb_cmd = [
             "test_time_adaptation.py",
-            "--image_path", "tof_input",
-            "--output_path", "tof_output",
+            "--image_path", str(input_dir),
+            "--output_path", str(output_dir),
             "--pretrained", "/opt/VesselBoost/saved_models/manual_0429",
             "--epochs", str(epochs),
             "--learning_rate", str(l_rate),
@@ -345,39 +411,35 @@ def process_image(images, connection, config, metadata):
             "--use_blending",
             "--overlap_ratio", "0.5",
         ]
-        if prep_mode != 4:
-            subprocess.run(["mkdir", "tof_preproc"])
-            vb_cmd.extend(["--preprocessed_path", "tof_preproc"])
-            if brain_extraction:
-                vb_cmd.append("--brain_extraction")
-        
-        subprocess.run(vb_cmd)
+        maybe_add_preprocessing_args(vb_cmd)
+        run_vesselboost_command(vb_cmd)
 
-    if module == 'booster':
+    elif module == 'booster':
         logging.info("Running booster module")
-        subprocess.run(["mkdir", "init_label"])
+        init_label_dir.mkdir(parents=True, exist_ok=True)
 
         vb_cmd = [
             "angiboost.py",
-            "--image_path", "tof_input",
+            "--image_path", str(input_dir),
             "--pretrained", "/opt/VesselBoost/saved_models/manual_0429",
-            "--label_path", "init_label",
-            "--output_path", "tof_output",
-            "--output_model", "tof_output/output_model",
+            "--label_path", str(init_label_dir),
+            "--output_path", str(output_dir),
+            "--output_model", str(output_dir / "output_model"),
             "--prep_mode", str(prep_mode),
             "--epochs", str(epochs),
             "--learning_rate", str(l_rate),
         ]
-        if prep_mode != 4:
-            subprocess.run(["mkdir", "tof_preproc"])
-            vb_cmd.extend(["--preprocessed_path", "tof_preproc"])
-            if brain_extraction:
-                vb_cmd.append("--brain_extraction")
-        subprocess.run(vb_cmd)
+        maybe_add_preprocessing_args(vb_cmd)
+        run_vesselboost_command(vb_cmd)
+
+    else:
+        raise ValueError(f"Unsupported VesselBoost module requested: {module}")
 
     print('Processing done')
-    img = nib.load('tof_output/tof.nii')
-    data = img.get_fdata()
+    output_image = _find_output_nifti(output_dir, input_name)
+    logging.info("Loading VesselBoost output image %s", output_image)
+    img = nib.load(str(output_image))
+    data = img.get_fdata(dtype=np.float32)
 
     # Reformat data
     print("shape after loading with nibabel")
@@ -385,23 +447,30 @@ def process_image(images, connection, config, metadata):
     data = data[:, :, :, None, None]
     data = data.transpose((0, 1, 4, 3, 2))
 
-    # NOTE: Can we delete the following if-else block? / or have a safe workaround when complex images are requested?
-    if ('parameters' in config) and ('options' in config['parameters']) and (config['parameters']['options'] == 'complex'):
-        # Complex images are requested
-        data = data.astype(np.complex64)
-        maxVal = data.max()
-    else:
-        # Determine max value (12 or 16 bit)
-        BitsStored = 12
-        # if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
-        #     BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
-        maxVal = 2**BitsStored - 1
+    if legacy_option == "complex":
+        logging.warning(
+            "Ignoring legacy complex output request because VesselBoost returns "
+            "real-valued segmentations."
+        )
 
-        # Normalize and convert to int16
-        data = data.astype(np.float64)
-        data *= maxVal/data.max()
-        data = np.around(data)
-        data = data.astype(np.int16)
+    # Determine max value (12 or 16 bit)
+    BitsStored = 12
+    # if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
+    #     BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
+    maxVal = 2**BitsStored - 1
+
+    # Normalize real-valued output and convert to int16 for MRD export.
+    data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+    if np.min(data) < 0:
+        logging.warning("Negative values detected in VesselBoost output; clipping to zero.")
+        data = np.clip(data, 0, None)
+
+    data_max = float(np.max(data))
+    if data_max > 0:
+        data = np.rint(data * (maxVal / data_max)).astype(np.int16)
+    else:
+        logging.warning("VesselBoost output is all zeros; returning a zero-valued image.")
+        data = np.zeros_like(data, dtype=np.int16)
 
     currentSeries = 0
 
@@ -423,6 +492,8 @@ def process_image(images, connection, config, metadata):
         # Set the image_type to match the data_type for complex data
         if (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXFLOAT) or (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXDOUBLE):
             oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
+        else:
+            oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
 
         # Unused example, as images are grouped by series before being passed into this function now
         # oldHeader.image_series_index = currentSeries
@@ -443,17 +514,6 @@ def process_image(images, connection, config, metadata):
         tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon'
         tmpMeta['Keep_image_geometry']            = 1
 
-        # NOTE: This one as well, as 'options' are no longer available in config json file
-        if ('parameters' in config) and ('options' in config['parameters']):
-            # Example for sending ROIs
-            if config['parameters']['options'] == 'roi':
-                logging.info("Creating ROI_example")
-                tmpMeta['ROI_example'] = create_example_roi(data.shape)
-
-            # Example for setting colormap
-            if config['parameters']['options'] == 'colormap':
-                tmpMeta['LUTFileName'] = 'MicroDeltaHotMetal.pal'
-
         # Add image orientation directions to MetaAttributes if not already present
         if tmpMeta.get('ImageRowDir') is None:
             tmpMeta['ImageRowDir'] = ["{:.18f}".format(oldHeader.read_dir[0]), "{:.18f}".format(oldHeader.read_dir[1]), "{:.18f}".format(oldHeader.read_dir[2])]
@@ -468,24 +528,3 @@ def process_image(images, connection, config, metadata):
         imagesOut[iImg].attribute_string = metaXml
 
     return imagesOut
-
-# Create an example ROI <3
-def create_example_roi(img_size):
-    t = np.linspace(0, 2*np.pi)
-    x = 16*np.power(np.sin(t), 3)
-    y = -13*np.cos(t) + 5*np.cos(2*t) + 2*np.cos(3*t) + np.cos(4*t)
-
-    # Place ROI in bottom right of image, offset and scaled to 10% of the image size
-    x = (x-np.min(x)) / (np.max(x) - np.min(x))
-    y = (y-np.min(y)) / (np.max(y) - np.min(y))
-    x = (x * 0.08*img_size[0]) + 0.82*img_size[0]
-    y = (y * 0.10*img_size[1]) + 0.80*img_size[1]
-
-    rgb = (1,0,0)  # Red, green, blue color -- normalized to 1
-    thickness  = 1 # Line thickness
-    style      = 0 # Line style (0 = solid, 1 = dashed)
-    visibility = 1 # Line visibility (0 = false, 1 = true)
-
-
-    roi = mrdhelper.create_roi(x, y, rgb, thickness, style, visibility)
-    return roi
