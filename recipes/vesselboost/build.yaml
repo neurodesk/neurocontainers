@@ -1,10 +1,16 @@
 name: vesselboost
-version: 2.0.2
+version: 2.0.3
 copyright:
   - license: MIT
     url: https://github.com/KMarshallX/VesselBoost/blob/master/LICENSE
 architectures:
   - x86_64
+variables:
+  vesselboost_version: 2.0.1
+  vesselboost_archive_url: "https://github.com/KMarshallX/VesselBoost/archive/refs/tags/v{{ context.vesselboost_version }}.zip"
+files:
+  - name: vesselboost_zip
+    url: "{{ context.vesselboost_archive_url }}"
 build:
   kind: neurodocker
   base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime
@@ -15,23 +21,22 @@ build:
           - python
     - environment:
         DEBIAN_FRONTEND: noninteractive
-    - install: bzip2 ca-certificates git wget build-essential
+    - install: bzip2 ca-certificates git unzip build-essential
     - include: macros/openrecon/neurodocker.yaml
     - workdir: /opt
     - run:
-        - wget https://github.com/KMarshallX/VesselBoost/archive/refs/tags/v2.0.1.zip
-        - unzip v2.0.1.zip
-        - rm v2.0.1.zip
-        - cd VesselBoost-2.0.1
+        - unzip -q {{ get_file("vesselboost_zip") }} -d /opt
+        - mv /opt/VesselBoost-{{ context.vesselboost_version }} /opt/VesselBoost
+        - cd /opt/VesselBoost
         - chmod a+x train.py angiboost.py boost.py prediction.py test_time_adaptation.py
-    - workdir: /opt/VesselBoost-2.0.1/
+    - workdir: /opt/VesselBoost/
     - run:
         - ls -a
         - sed -i "s/scikit-learn==1.1.1/scikit-learn==1.2.2/" requirements.txt || true
         - sed -i -E '/^[[:space:]]*(torch|torchvision|torchaudio)[[:space:]]*==/d' requirements.txt
         - sed -i '/^[[:space:]]*--extra-index-url[[:space:]]\+https:\/\/download\.pytorch\.org\/whl\/cu124[[:space:]]*$/d' requirements.txt
         - pip install --prefer-binary --no-cache-dir -r requirements.txt
-    - workdir: /opt/VesselBoost-2.0.1/saved_models
+    - workdir: /opt/VesselBoost/saved_models
     - run:
         - osf -p abk4p fetch osfstorage/pretrained_models/manual_0429
     - run:
@@ -40,14 +45,15 @@ build:
         - osf -p abk4p fetch osfstorage/pretrained_models/omelette2_0429
     - run:
         - osf -p abk4p fetch osfstorage/pretrained_models/t2s_mod_ep1k2_0728
-    - workdir: /opt/VesselBoost-2.0.1/
+    - workdir: /opt/VesselBoost/
     - environment:
-        PATH: $PATH:/opt/VesselBoost-2.0.1/
+        PATH: $PATH:/opt/VesselBoost/
+        VESSELBOOST_HOME: /opt/VesselBoost
     - copy: vesselboost.py /opt/code/python-ismrmrd-server/vesselboost.py
 readme: |2-
     ----------------------------------
     ## Vesselboost/{{ context.version }} ##
-    This containers provides an interactive deep learning vessel segmentation algorithm
+    This container provides VesselBoost {{ context.vesselboost_version }} in container version {{ context.version }}.
 
     Example:
     ```

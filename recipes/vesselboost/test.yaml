@@ -27,11 +27,6 @@ tests:
       # Start OpenRecon server
       python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
       sleep 2
-
-      #remove previous output
-      rm /data/tof_openrecon_output.h5
-      # remove old nifti output data
-      rm /data/tof_openrecon_output.nii
       
       rm /buildhostdirectory/output.h5
       python3 /opt/code/python-ismrmrd-server/client.py \

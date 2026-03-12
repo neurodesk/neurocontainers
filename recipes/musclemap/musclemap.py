@@ -18,6 +18,8 @@ import subprocess
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
+mmSegmentInputPath = "/opt/input.nii.gz"
+mmSegmentOutputPath = "/opt/input_dseg.nii.gz"
 
 
 def process(connection, config, metadata):
@@ -321,6 +323,165 @@ def _header_to_log_dict(image_header):
     }
 
 
+def _parse_mm_segment_chunksize(value):
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text == "auto":
+            return "auto"
+        try:
+            return int(text)
+        except ValueError:
+            return value
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return value
+
+
+def _extract_mm_segment_chunk_size(output_text):
+    if not output_text:
+        return None
+
+    patterns = (
+        r"Using chunk size:\s*(\d+)",
+        r"estimated=(\d+)\s*slice",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, output_text, flags=re.IGNORECASE)
+        if match:
+            try:
+                return int(match.group(1))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _log_mm_segment_output(output_text, log_fn=logging.info):
+    if not output_text:
+        return
+
+    for line in output_text.splitlines():
+        line = line.strip()
+        if line:
+            log_fn("mm_segment | %s", line)
+
+
+def _is_likely_mm_segment_oom(exc, output_text):
+    if exc.returncode in (-9, 9, 137):
+        return True
+
+    message = f"{exc}\n{output_text or ''}".lower()
+    oom_tokens = (
+        "out of memory",
+        "cuda error: out of memory",
+        "cannot allocate memory",
+        "can't allocate memory",
+        "bad alloc",
+        "sigkill",
+    )
+    return any(token in message for token in oom_tokens)
+
+
+def _build_mm_segment_retry_chunks(chunksize, image_depth, output_text):
+    if image_depth < 1:
+        return []
+
+    parsed_chunksize = _parse_mm_segment_chunksize(chunksize)
+    attempted_chunk = _extract_mm_segment_chunk_size(output_text)
+    if attempted_chunk is None and isinstance(parsed_chunksize, int):
+        attempted_chunk = parsed_chunksize
+    if attempted_chunk is None:
+        attempted_chunk = min(int(image_depth), 32)
+
+    attempted_chunk = max(1, min(int(image_depth), int(attempted_chunk)))
+    candidates = []
+    next_chunk = attempted_chunk
+    while next_chunk > 1:
+        next_chunk = max(1, next_chunk // 2)
+        if next_chunk not in candidates:
+            candidates.append(next_chunk)
+        if next_chunk == 1:
+            break
+    return candidates
+
+
+def _run_mm_segment(bodyregion, chunksize, spatialoverlap, image_depth):
+    attempt_chunks = [chunksize]
+    seen_chunks = set()
+
+    while attempt_chunks:
+        current_chunksize = attempt_chunks.pop(0)
+        chunk_label = str(current_chunksize)
+        if chunk_label in seen_chunks:
+            continue
+        seen_chunks.add(chunk_label)
+
+        mm_segment_cmd = [
+            "mm_segment",
+            "-i", mmSegmentInputPath,
+            "-r", bodyregion,
+            "-c", chunk_label,
+            "-s", str(spatialoverlap),
+            "-g", "Y",
+        ]
+
+        if os.path.exists(mmSegmentOutputPath):
+            os.remove(mmSegmentOutputPath)
+
+        logging.info("Running command: %s", " ".join(mm_segment_cmd))
+
+        try:
+            mm_segment_result = subprocess.run(
+                mm_segment_cmd,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            combined_output = "\n".join(
+                part for part in (exc.stdout, exc.stderr) if part
+            )
+            _log_mm_segment_output(combined_output, logging.warning)
+
+            if not _is_likely_mm_segment_oom(exc, combined_output):
+                raise
+
+            retry_chunks = [
+                candidate
+                for candidate in _build_mm_segment_retry_chunks(
+                    current_chunksize,
+                    image_depth,
+                    combined_output,
+                )
+                if str(candidate) not in seen_chunks
+            ]
+            if not retry_chunks:
+                raise
+
+            logging.warning(
+                "mm_segment exited with return code %s, likely due to memory pressure. "
+                "Retrying with smaller chunk size(s): %s",
+                exc.returncode,
+                ", ".join(str(candidate) for candidate in retry_chunks),
+            )
+            attempt_chunks = retry_chunks + attempt_chunks
+            continue
+
+        combined_output = "\n".join(
+            part for part in (mm_segment_result.stdout, mm_segment_result.stderr) if part
+        )
+        _log_mm_segment_output(combined_output)
+
+        if not os.path.exists(mmSegmentOutputPath):
+            raise FileNotFoundError(
+                f"mm_segment finished without creating the expected output: {mmSegmentOutputPath}"
+            )
+        return mmSegmentOutputPath
+
+    raise RuntimeError("mm_segment did not complete successfully")
+
+
 def process_image(imgGroup, connection, config, metadata):
     if len(imgGroup) == 0:
         return []
@@ -454,7 +615,7 @@ def process_image(imgGroup, connection, config, metadata):
     new_img.set_qform(affine, code=1)
     new_img.set_sform(affine, code=1)
 
-    nib.save(new_img, "/opt/input.nii.gz")
+    nib.save(new_img, mmSegmentInputPath)
 
     # Extract UI parameters from JSON config
     bodyregion = mrdhelper.get_json_config_param(config, 'bodyregion', default='wholebody', type='str')
@@ -463,27 +624,19 @@ def process_image(imgGroup, connection, config, metadata):
     
     logging.info(f"mm_segment parameters: bodyregion={bodyregion}, chunksize={chunksize}, spatialoverlap={spatialoverlap}")
     
-    # Build mm_segment command with parameters
-    mm_segment_cmd = [
-        "mm_segment",
-        "-i", "/opt/input.nii.gz",
-        "-r", bodyregion,
-        "-c", str(chunksize),
-        "-s", str(spatialoverlap),
-        "-g", "Y"
-    ]
-    
-    # Run mm_segment
-    logging.info(f"Running command: {' '.join(mm_segment_cmd)}")
-
     DEBUG=False
     if DEBUG:
         logging.info("DEBUG mode: Skipping actual mm_segment execution and creating dummy output.")
-        subprocess.run("cp /buildhostdirectory/input_dseg.nii.gz /opt/input_dseg.nii.gz", shell=True, check=True)
+        subprocess.run(f"cp /buildhostdirectory/input_dseg.nii.gz {mmSegmentOutputPath}", shell=True, check=True)
     else:
-        mm_segment_result = subprocess.run(mm_segment_cmd, check=True)
+        _run_mm_segment(
+            bodyregion=bodyregion,
+            chunksize=chunksize,
+            spatialoverlap=spatialoverlap,
+            image_depth=int(data_nifti.shape[2]),
+        )
 
-    img = nib.load("/opt/input_dseg.nii.gz")
+    img = nib.load(mmSegmentOutputPath)
 
     # Keep on-disk label values to avoid float conversion/rescaling artifacts.
     data = np.asarray(img.dataobj)

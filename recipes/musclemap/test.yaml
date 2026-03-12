@@ -1,5 +1,5 @@
 tests:
-  - name: Test openreconexample
+  - name: Test musclemap
     manual: true
     script: |
       # build:

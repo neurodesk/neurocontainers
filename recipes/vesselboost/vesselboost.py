@@ -16,6 +16,7 @@ import nibabel as nib
 from pathlib import Path
 import subprocess
 import tempfile
+import shutil
 
 
 # Folder for debug output files
@@ -50,6 +51,39 @@ def _find_output_nifti(output_dir: Path, expected_name: str) -> Path:
     raise FileNotFoundError(
         f"Could not find a VesselBoost segmentation in {output_dir}. "
         f"Files present: {output_files}"
+    )
+
+
+def _resolve_vesselboost_model(model_name: str) -> Path:
+    checked_paths = []
+    candidate_dirs = []
+    env_home = os.environ.get("VESSELBOOST_HOME")
+    if env_home:
+        candidate_dirs.append(Path(env_home))
+
+    for command in ("prediction.py", "test_time_adaptation.py", "angiboost.py"):
+        command_path = shutil.which(command)
+        if command_path:
+            candidate_dirs.append(Path(command_path).resolve().parent)
+
+    candidate_dirs.append(Path("/opt/VesselBoost"))
+
+    seen_dirs = set()
+    for candidate_dir in candidate_dirs:
+        candidate_dir = candidate_dir.resolve()
+        candidate_key = str(candidate_dir)
+        if candidate_key in seen_dirs:
+            continue
+        seen_dirs.add(candidate_key)
+
+        model_path = candidate_dir / "saved_models" / model_name
+        checked_paths.append(str(model_path))
+        if model_path.exists():
+            logging.info("Using VesselBoost pretrained model %s", model_path)
+            return model_path
+
+    raise FileNotFoundError(
+        f"Could not find VesselBoost model '{model_name}'. Checked: {checked_paths}"
     )
 
 def process(connection, config, metadata):
@@ -370,6 +404,7 @@ def process_image(images, connection, config, metadata):
     brain_extraction = boolean_checker("vbbrainextraction", default_val=False)
     epochs = mrdhelper.get_json_config_param(config, "vbepochs", default='200', type='str')
     l_rate = mrdhelper.get_json_config_param(config, "vbrate", default='0.001', type='str')
+    pretrained_model = _resolve_vesselboost_model("manual_0429")
 
     def maybe_add_preprocessing_args(vb_cmd):
         if prep_mode != 4:
@@ -389,7 +424,7 @@ def process_image(images, connection, config, metadata):
             "prediction.py",
             "--image_path", str(input_dir),
             "--output_path", str(output_dir),
-            "--pretrained", "/opt/VesselBoost/saved_models/manual_0429",
+            "--pretrained", str(pretrained_model),
             "--prep_mode", str(prep_mode),
             "--use_blending",
             "--overlap_ratio", "0.5",
@@ -404,7 +439,7 @@ def process_image(images, connection, config, metadata):
             "test_time_adaptation.py",
             "--image_path", str(input_dir),
             "--output_path", str(output_dir),
-            "--pretrained", "/opt/VesselBoost/saved_models/manual_0429",
+            "--pretrained", str(pretrained_model),
             "--epochs", str(epochs),
             "--learning_rate", str(l_rate),
             "--prep_mode", str(prep_mode),
@@ -421,7 +456,7 @@ def process_image(images, connection, config, metadata):
         vb_cmd = [
             "angiboost.py",
             "--image_path", str(input_dir),
-            "--pretrained", "/opt/VesselBoost/saved_models/manual_0429",
+            "--pretrained", str(pretrained_model),
             "--label_path", str(init_label_dir),
             "--output_path", str(output_dir),
             "--output_model", str(output_dir / "output_model"),
