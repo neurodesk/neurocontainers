@@ -106,10 +106,6 @@ build:
     - run:
         - dpkg -i {{ get_file("freesurfer_deb") }}
 
-    # - template:
-    #     name: freesurfer
-    #     version: 8.1.0
-
     - workdir: /opt/freesurfer-{{ context.version }}
 
     - environment:
