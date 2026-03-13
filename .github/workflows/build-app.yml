@@ -502,10 +502,10 @@ jobs:
           sudo swapoff -a
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
-          # Install rclone
-          if ! command -v rclone &>/dev/null; then
-            echo "[DEBUG] Installing rclone"
-            sudo -v ; curl https://rclone.org/install.sh | sudo bash
+          # Install python-swiftclient for parallel segmented uploads
+          if ! command -v swift &>/dev/null; then
+            echo "[DEBUG] Installing python-swiftclient"
+            pip install python-swiftclient python-keystoneclient
           fi
           
       - name: Download simg artifact
@@ -520,10 +520,15 @@ jobs:
           OS_AUTH_URL: ${{ secrets.SWIFT_OS_AUTH_URL }}
           OS_APPLICATION_CREDENTIAL_ID: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_ID }}
           OS_APPLICATION_CREDENTIAL_SECRET: ${{ secrets.SWIFT_OS_APPLICATION_CREDENTIAL_SECRET }}
+          OS_AUTH_TYPE: v3applicationcredential
+          OS_IDENTITY_API_VERSION: "3"
         run: |
           echo "[DEBUG] Attempting upload to Nectar Object Storage:"
-          rclone config create nectar swift env_auth true
-          rclone copy /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg nectar:/neurodesk/
+          swift upload neurodesk \
+            "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" \
+            --object-name "${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" \
+            --segment-size 1073741824 \
+            --segment-threads 10
           echo "[DEBUG] Done with uploading to Nectar Object Storage!"
   
   upload-s3:
