@@ -160,10 +160,11 @@ jobs:
     steps:
       - name: Configure runner
         run: |
-          sudo swapoff -a && sudo rm -rf /mnt/*
           BASE_PATH=/mnt
           if [ "${{ inputs.runner }}" = "self-hosted" ] && [ -d /storage ]; then
             BASE_PATH=/storage
+          else
+            sudo swapoff -a && sudo rm -rf /mnt/*
           fi
           echo "BASE_PATH=$BASE_PATH" >> $GITHUB_ENV
           sudo mkdir -p $BASE_PATH/tmp
@@ -499,7 +500,6 @@ jobs:
     steps:
       - name: Configure runner
         run: |
-          sudo swapoff -a
           sudo mkdir -p /mnt/tmp
           sudo chown $USER /mnt/tmp
           # Install python-swiftclient for parallel segmented uploads
