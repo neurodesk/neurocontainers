@@ -1,5 +1,5 @@
 name: cbsb0stats
-version: 1.1.0
+version: 1.2.0
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADsUlEQVRIS7WVbUjTWxzHv2erucc2VwaVvfCSuOl6cDW7BVsQinjBAs0SSzMiwZDswWp3XXsA71WsXgWhpZCvBMkwiN5UEA1rg0atpVOiKGfTclulW2mudXfO2j/nJAj1wJ/B2f///fwevud3yOZzge/hBbro7/Rntvtk01k/U58L8R9CMVoMMF/iVJf8eWYsDvC7Gc0UOQs6LEQ2nh6NAUwV/zb5BcHPH0AEUvAFkhnL+Cvx8AcgWbWfOAAVD4VC8Lss8D5rh9z/ECqVCjabDcEV+ZD9kYPX13cxQ0xdiZkHIFqug3ilAWSBkEVOxVmJdP985FwUCn3DsOUSMsWP0dHRAbFYzOnY7XZs1m/F5zEfC4IQwv0XDAZhNpuxveI8lmz5F3xhIpct2XDqA+eiMZcVsFajr68PPT09yMvLg8fjQVlZGZqamtDd3Q29Xs8Azc3NqK+vh1QqRW1tLYqLi1FZWYkbL1ZBllYQC4i66NWNcnRePgyDwQC5XA4kasJlycY783+oq6uDTqdDbm4uAzQ0NMBkMrEsNBoNHA4HjEYjmu+MQrmx5idgvcnHSkQbar+QjIGBAUxMTCA1NRXqgz3gi5Tw2K5i+P5priQU4HQ6YbFYIJPJkJ2dDYlEgqSkJAi0JshUOyIA6iLt314GmAyM4PklNbxeL1wuF3T6v5BWYWMvjr68A9fNvTEAGoTf7wePx4NCoWBZ5efn4/EXA6SqIq7RJNPoiWQQnIDjYjJ6e3uRkpICkUiE9Oo3AG8BvE+vYYP4IUpLS1mtp5dIKBSyoOij1Wqxcr8DPH5CxEXrTo5wLnpz6yCunN2JoqIiZGRkwLesFMIkDQZvVcD55AGoW9RqdRyApma1WllZlUolVuw2gy9eGgGsPfGec9Hoq3sIPKiG2+2Gz+dDYWEh+vv70djYiPLycpSUlKC9vZ0BOjs70dLSAoFAgKqqKuTk5KCrqwsFBQVI3mcHiWZAAVEXhYJf4bpdhW1Zi9Da2so+jq62tjYGiR7G6eeAHkbabEGmEZK0H02mGaw5/i5mVIz7XmLo7kmMuy2snrSB9BDRpio3nYDvUWPcSY5uKLJqIEnfw0XPXLS6Zjh22NFx8TWAwKAFk/4hhMLN54sWQ7BYBX6CHOMjzrBDwp9G747w+7yFEpAEBfjSZMaKWpTNIs2xoZ+AKTMkZoTPYp9kHHVHALMQ+VUwJP3I28iFOcN1ORf7EcA8ibNzoD48GA+Yw4yIqtoV56K5LBdJOzQwry76H0tMj7XJU3hkAAAAAElFTkSuQmCC
 architectures:
   - x86_64
@@ -8,14 +8,51 @@ files:
   - name: cbsb0stats.py
     filename: cbsb0stats.py
 
+
+build:
+    kind: neurodocker
+    base-image: python:3.12.0-slim
+    pkg-manager: apt
+
+    directives:
+        - environment:
+              DEBIAN_FRONTEND: noninteractive
+        - install: bzip2 ca-certificates git wget build-essential python3-pip python-is-python3
+
+        - include: macros/openrecon/neurodocker.yaml
+
+        #Install Bet2 with dependencies
+        - install:
+              - gcc-aarch64-linux-gnu cmake make build-essential
+
+        - run:
+              - git clone https://github.com/Bostrix/FSL-BET2
+              - cd FSL-BET2
+              - mkdir build
+              - cd build
+              - cmake ..
+              - make
+
+        - environment:
+              PATH: ${PATH}:/opt/code/FSL-BET2/bin
+
+        #Copy Over cbsb0stats.py program
+        - copy:
+            - cbsb0stats.py
+            - /opt/code/python-ismrmrd-server/cbsb0stats.py
+
+deploy:
+    path:
+        - /opt/code/FSL-BET2/bin
+
+categories:
+    - functional imaging
+
 readme: |-
   ----------------------------------
   ## cbsb0stats/{{ context.version }} ##
   This open recon tool will compute a b0 map based on two magnitude images 
   and one phasediff image from a gradien echo field mapping sequence.
-
-  # WARNING: This is an early version and as of this version no testing
-  # has been performed in a working environment (in a MRI as a Openrecon package).
 
   you can setup the builder environment with:
   ```bash
@@ -55,77 +92,3 @@ readme: |-
 
     # Check output h5 data in "H5Web" VS code plugin viewer
   ----------------------------------
-build:
-  kind: neurodocker
-  base-image: ubuntu:22.04
-  pkg-manager: apt
-  directives:
-    - install: bzip2 ca-certificates git wget build-essential python3-pip python-is-python3
-    - workdir: /opt/code
-    - install:
-        - build-essential
-        - libxslt1.1
-        - libboost-program-options1.74.0
-        - libpugixml1v5
-        - vim
-        - dos2unix
-        - git
-        - cmake
-        - g++
-        - libhdf5-dev
-        - libxml2-dev
-        - libxslt1-dev
-        - libboost-all-dev
-        - libfftw3-dev
-        - libpugixml-dev
-    - run:
-        - git clone https://github.com/ismrmrd/ismrmrd.git
-        - cd ./ismrmrd
-        - cmake .
-        - make -j {{ parallel_jobs }}
-        - make install
-    - run:
-        - git clone --branch  v1.2.13 https://github.com/ismrmrd/siemens_to_ismrmrd.git
-        - cd siemens_to_ismrmrd
-        - mkdir build
-        - cd build
-        - cmake ..
-        - make -j {{ parallel_jobs }}
-        - make install
-    - run:
-        - pip3 install h5py ismrmrd==1.14.1 matplotlib pydicom==3.0.1 pynetdicom nibabel scipy scikit-image
-        - pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-    - run:
-        - git clone https://github.com/ismrmrd/ismrmrd-python-tools.git
-        - cd ismrmrd-python-tools
-        - pip3 install --no-cache-dir .
-    - run:
-        - git clone https://github.com/kspaceKelvin/python-ismrmrd-server
-        - find /opt/code/python-ismrmrd-server -name "*.sh" -exec chmod +x {} \;
-        - find /opt/code/python-ismrmrd-server -name "*.sh" | xargs dos2unix
-        - sed -i 's/invertcontrast/default_replace_with_valid_name/g' /opt/code/python-ismrmrd-server/main.py
-    # - template:
-    #     name: fsl
-    #     version: 6.0.7.18
-    - environment:
-        DEBIAN_FRONTEND: noninteractive
-    - install:
-        - cmake make build-essential
-    - workdir: /opt/code
-    - run:
-        - git clone https://github.com/Bostrix/FSL-BET2
-        - cd FSL-BET2
-        - mkdir build
-        - cd build
-        - cmake ..
-        - make
-    - environment:
-        PATH: /usr/bin:/opt/code/FSL-BET2/bin:$PATH
-    - copy:
-        - cbsb0stats.py
-        - /opt/code/python-ismrmrd-server/cbsb0stats.py
-    - deploy:
-        path:
-          - /opt/code/FSL-BET2/bin
-categories:
-  - functional imaging
