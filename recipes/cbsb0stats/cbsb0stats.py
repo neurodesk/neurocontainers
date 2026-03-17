@@ -8,187 +8,899 @@ import base64
 import mrdhelper
 import constants
 import nibabel as nib
+from scipy.ndimage import binary_erosion, binary_dilation
 import subprocess
-import ast
-import json
-import torch
-
-# WARNING: This is an early version and as of this version no testing
-# has been performed in a working environment (in a MRI as a Openrecon package).
-
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
-isB0CollectionComplete = False
-isB0PhaseCollected = False
-isB0TEsCollected = False
+def log_array_info(arr, label):
+    """
+    Some verbose logging
+    """
+    logging.info("B0MAP_LOG: %s array info:", label)
+    logging.info("  type: %s", type(arr))
+    logging.info("  dtype: %s", arr.dtype)
+    logging.info("  ndim: %d", arr.ndim)
+    logging.info("  shape: %s", arr.shape)
+    logging.info("  size (total elements): %d", arr.size)
 
-# These variables are for dicom2mrd.py testing. 
-CONFIG_IS_TESTING = False
-CONFIG_BITSSTORED = 12
-CONFIG_RESCALESLOPE = 2
-CONFIG_RESCALEINTERCEPT = -4096
+    # Length of each dimension
+    for axis, dim in enumerate(arr.shape):
+        logging.info("  axis %d length: %d", axis, dim)
 
-
-def explore(obj, depth=0, max_depth=3):
-    #name = getattr(obj, "__name__", type(obj).__name__)
-    #logging.info(f"CBS_EXPLORER: Target -{name}")
-    indent = "  " * depth
-    if depth > max_depth:
-        return
-    for attr in dir(obj):
-        if attr.startswith("_"):
-            continue
-        try:
-            val = getattr(obj, attr)
-        except Exception:
-            continue
-        logging.info(f"CBS_EXPLORER: {indent}{attr}: {type(val).__name__}")
-        if not isinstance(val, (int, float, str, bool, bytes, list, tuple, dict)):
-            explore(val, depth + 1, max_depth)
-
-def findTE(meta,metadata=None):
-    logging.debug(f"CBS_DEBUG: looking for TE...")
-    if (metadata is not None):
-        logging.debug(f"CBS_DEBUG: looking for TE...  - searching metadata...")
-        if (mrdhelper.get_userParameterDouble_value(metadata, 'EchoTime') is not None):
-            logging.debug(f"CBS_DEBUG: looking for TE...  - found result for TE via mrdhelper.get_userParameterDouble_value: {mrdhelper.get_userParameterDouble_value(metadata, 'EchoTime')}")
-            return str(mrdhelper.get_userParameterDouble_value(metadata, 'EchoTime'))
-        else:
-            logging.debug(f"CBS_DEBUG: looking for TE...  - mrdhelper.get_userParameter for TE is empty, moving to next method")
-        if metadata.sequenceParameters.TE:
-            logging.debug(f"CBS_DEBUG: looking for TE...  - metadata.sequenceParameters is: {metadata.sequenceParameters.TE}")
-            if isinstance(collapseIfSoleyUnique(metadata.sequenceParameters.TE),float):
-                logging.debug(f"CBS_DEBUG: suitable TE found...  - metadata.sequenceParameters is unique using TE from metadata.sequenceParmeters.TE")
-                return str(collapseIfSoleyUnique(metadata.sequenceParameters.TE))
-            else:
-                logging.debug(f"CBS_DEBUG: looking for TE...  - metadata.sequenceParameters is not unique, moving to next method")
-        else: logging.debug(f"CBS_DEBUG: looking for TE...  - metadata.sequenceParameters is empty, moving to next method")       
-    else: logging.debug(f"CBS_DEBUG: looking for TE... - metadata was not provided or was not found, moving to next method")
-    if isDicomJsonData(meta):
-        logging.debug(f"CBS_DEBUG: looking for TE... - DicomJson was found extracting TEs")
-        TE = [getAcquisitionData(m, "te") for m in meta]
-        if all(te is None for te in TE):
-            logging.debug(f"CBS_DEBUG: looking for TE... - DicomJson does not contain TEs")
-        elif isinstance(collapseIfSoleyUnique(TE),list):
-            logging.debug(f"CBS_DEBUG: looking for TE... - TEs extracted but not soley unique logging result and defaulting to config TE Values.\n{collapseIfSoleyUnique(TE)}")
-        elif isinstance(collapseIfSoleyUnique(TE),float):
-            logging.debug(f"CBS_DEBUG: looking for TE... - Successfully extracted TEs and they are all the same.")
-            return str(collapseIfSoleyUnique(TE))
-        else:
-            logging.debug(f"CBS_DEBUG: looking for TE... - Cannot extract TEs via DicomJson")
-    logging.warning(f"CBS_WARNING: looking for TE... - Cannot find TE default to config TE Values.")
-    TE_Default = str("TE Not found")
-    return TE_Default
-
-
-def isDicomJsonData(meta):
-    if not meta: 
-        logging.warning("CBS_WARNING: failed to parse meta, meta may be empty.")
-        return False
-    meta = meta[0]
-    py_dict = ast.literal_eval(str(meta))
-    if "DicomJson" not in py_dict:
-        return False
+    # Safe reductions
+    if arr.size > 0:
+        logging.info("  min: %s", np.min(arr))
+        logging.info("  max: %s", np.max(arr))
+        logging.info("  mean: %s", np.mean(arr))
     else:
-        return True
+        logging.info("B0MAP_LOG:  array is empty; min/max/mean skipped")
 
-def LogDicomJsonData(meta):
-    if not meta: 
-        logging.warning("CBS_WARNING: failed to parse meta, meta may be empty.")
-        return False
-    try:
-        meta = meta[0]
-        py_dict = ast.literal_eval(str(meta))
-        if not isDicomJsonData(meta):
-            logging.debug("CBS_DEBUG: - No DicomJson key found in meta.")
-            return None
-        decoded64_utf8 = base64.b64decode("".join(py_dict["DicomJson"].split())).decode("utf-8")
-        dicom_json = json.loads(decoded64_utf8)
-        logging.debug(
-            "CBS_DEBUG: - DicomJson Detected:\n" +
-            json.dumps(dicom_json, indent=4, sort_keys=True)
-        )
-        return dicom_json
-    except (ValueError, SyntaxError, KeyError, json.JSONDecodeError, base64.binascii.Error) as e:
-        logging.error(f"CBS_ERROR: - Failed to parse DicomJson: {e}")
+def get_MiniHeader_fromItem(item):
+    """
+    Docstring for get_MiniHeader_fromItem
+    :param item: the incoming item coming in from connection.
+
+    A Wrapper for the base64.b64decode((ismrmrd.Meta.deserialize(item.attribute_string))['IceMiniHead']).decode('utf-8')
+    For easier comprehension.
+    """
+    meta = ismrmrd.Meta.deserialize(item.attribute_string)
+    return base64.b64decode(meta['IceMiniHead']).decode('utf-8')
+
+def get_TE_fromItem(item):
+    """
+    get_TE_fromItem(item):
+    :param item: the incoming item coming in from connection.
+    
+    Extracts the TE of a item/slice from the IceMiniHeader and returns the value as a float.
+    """
+    meta = ismrmrd.Meta.deserialize(item.attribute_string)
+    EchoTime = mrdhelper.extract_minihead_double_param(base64.b64decode(meta['IceMiniHead']).decode('utf-8'), 'TE')
+    return float(EchoTime)
+
+def get_PrimaryKey_fromItem(item):
+    """
+    get_PrimaryKey_fromItem(item)
+    :param item: the incoming item coming in from connection.
+
+    This function finds a suitable parameter to act as a primary key and returns the value of that key.
+    There is three ranked options for a Primary Key:
+        1. NumberInSeries from the IceMiniHeader
+        2. SliceNo from the IceMiniHeader
+        3. item.slice from the ImageHeader class of https://github.com/ismrmrd/ismrmrd-python > ismrmrd/image.py
+    NOTE: SliceNo runs opposite to NumberInSeries and item.slice, i.e. NumberInSeries = 0 then SliceNo = 63
+
+    COMMENTS:
+        In all testing performed this function has been sufficient and consistent for the complete series,
+        despite the possibility of two slices in a image having a different PrimaryKey i.e. 
+            first slice has a PrimaryKey value from NumberInSeries
+            second slice has a PrimaryKey value from SliceNo
+        This has not been seen in testing.
+    """
+    meta = ismrmrd.Meta.deserialize(item.attribute_string)
+    IceMiniHeader = base64.b64decode(meta['IceMiniHead']).decode('utf-8')
+    if mrdhelper.extract_minihead_long_param(IceMiniHeader, 'NumberInSeries') is not None:
+        return int(mrdhelper.extract_minihead_long_param(IceMiniHeader, 'NumberInSeries'))
+    elif mrdhelper.extract_minihead_long_param(IceMiniHeader, 'SliceNo') is not None:
+        return int(mrdhelper.extract_minihead_long_param(IceMiniHeader, 'SliceNo'))
+    else:
+        try:
+            S = item.slice
+            return int(S)
+        except Exception as e:
+            logging.info("B0MAP_ERROR: Failed to find a primary Key %s", e)
+        return None
+    
+def get_PrimaryKey_fromItem_LogOnly(item):
+    """
+    Almost the same as get_PrimaryKey_fromItem, but just logs.
+    """
+    meta = ismrmrd.Meta.deserialize(item.attribute_string)
+    IceMiniHeader = base64.b64decode(meta['IceMiniHead']).decode('utf-8')
+    if mrdhelper.extract_minihead_long_param(IceMiniHeader, 'NumberInSeries') is not None:
+        logging.info("B0MAP_LOG: PrimaryKey is NumberInSeries")
+        return None
+    elif mrdhelper.extract_minihead_long_param(IceMiniHeader, 'SliceNo') is not None:
+        logging.info("B0MAP_LOG: PrimaryKey is NumberInSeries")
+        return None
+    else:
+        try:
+            S = item.slice
+            logging.info("B0MAP_LOG: PrimaryKey is item.slice")
+            return int(S)
+        except Exception as e:
+            logging.info("B0MAP_ERROR: Failed to find a primary Key %s", e)
         return None
 
-def GPUEnvironmentLog():
-    # GPU Environment Testing
-    logging.debug(f"CBS_LOG: CUDA Environment Variables:")
-    logging.debug(f"CBS_LOG: torch.cuda.is_available: {torch.cuda.is_available()}")
-    if (torch.cuda.is_available()):
-        logging.debug(f"CBS_LOG: torch.cuda.device_count: {torch.cuda.device_count()}")
-        logging.debug(f"CBS_LOG: torch.cuda.current_device: {torch.cuda.current_device()}")
-        logging.debug(f"CBS_LOG: torch.cuda.device: {torch.cuda.device(torch.cuda.current_device())}")
-        logging.debug(f"CBS_LOG: torch.cuda.get_device_name: {torch.cuda.get_device_name(torch.cuda.current_device())}")
-    return None
+def get_IceMiniHeader_Double_fromItem(item,param):
+    """
+    Docstring for get_IceMiniHeader_Double_fromItem
+
+    :param item: the incoming item coming in from connection.
+    :param param: a str text of the double param you are looking for.
+        
+    This is a wrapper function to make the code more comprehendable.
+    
+    Extracts the double paramater from the IceMiniHeader and returns the param as a float
+    e.g.
+        get_IceMiniHeader_Double_fromItem(item,'RescaleIntercept')
+    
+    NOTE:
+    if you are unsure whether your desired parameter is a Double or Long or String, etc. it is recommended to 
+    log the complete IceMiniHeader in a test/logging container e.g.
+        for item in connection:
+            if isinstance(item, ismrmrd.Image):
+                logging.info("IceMiniHead: %s", base64.b64decode((ismrmrd.Meta.deserialize(item.attribute_string))['IceMiniHead']).decode('utf-8'))
+                or using get_MiniHeader_fromItem:
+                logging.info("IceMiniHead: %s", get_MiniHeader_fromItem(item))                
+    """
+    meta = ismrmrd.Meta.deserialize(item.attribute_string)
+    Double = mrdhelper.extract_minihead_double_param(base64.b64decode(meta['IceMiniHead']).decode('utf-8'), str(param))
+    return float(Double)
+
+def get_IceMiniHeader_Long_fromItem(item,param):
+    """
+    Docstring for get_IceMiniHeader_Long_fromItem
+
+    :param item: the incoming item coming in from connection.
+    :param param: a str text of the long param you are looking for.
+    
+    This is a wrapper function to make the code more comprehendable.
+    
+    Extracts the long paramater from the IceMiniHeader and returns the param as a float
+    e.g.
+        get_IceMiniHeader_Long_fromItem(item,'BitsStored')
+    
+    NOTE:
+    if you are unsure whether your desired parameter is a Double or Long or String, etc. it is recommended to 
+    log the complete IceMiniHeader in a test/logging container e.g.
+        for item in connection:
+            if isinstance(item, ismrmrd.Image):
+                logging.info("IceMiniHead: %s", base64.b64decode((ismrmrd.Meta.deserialize(item.attribute_string))['IceMiniHead']).decode('utf-8'))
+                or using get_MiniHeader_fromItem:
+                logging.info("IceMiniHead: %s", get_MiniHeader_fromItem(item))        
+    """
+    meta = ismrmrd.Meta.deserialize(item.attribute_string)
+    long = mrdhelper.extract_minihead_long_param(base64.b64decode(meta['IceMiniHead']).decode('utf-8'), str(param))
+    return float(long)
+
+def get_IceMiniHeader_String_fromItem(item,param):
+    """
+    Docstring for get_IceMiniHeader_String_fromItem
+    
+    :param item: the incoming item coming in from connection.
+    :param param: a str text of the long param you are looking for.
+    
+    This is a wrapper function to make the code more comprehendable.
+    
+    Extracts the string paramater from the IceMiniHeader and returns the param as a string
+    e.g.
+        get_IceMiniHeader_String_fromItem(item, "SequenceDescription")
+    
+    NOTE:
+    if you are unsure whether your desired parameter is a Double or Long or String, etc. it is recommended to 
+    log the complete IceMiniHeader in a test/logging container e.g.
+        for item in connection:
+            if isinstance(item, ismrmrd.Image):
+                logging.info("IceMiniHead: %s", base64.b64decode((ismrmrd.Meta.deserialize(item.attribute_string))['IceMiniHead']).decode('utf-8'))
+                or using get_MiniHeader_fromItem:
+                logging.info("IceMiniHead: %s", get_MiniHeader_fromItem(item))        
+    """
+    meta = ismrmrd.Meta.deserialize(item.attribute_string)
+    string = mrdhelper.extract_minihead_string_param(base64.b64decode(meta['IceMiniHead']).decode('utf-8'), str(param))
+    return str(string)
+
+def process_b0map(Te1Group, PhGroup,TEs, connection, config, metadata,currentSeries):
+    """
+    
+    :param Te1Group: A list of the TE1 or magnitude 1 slices
+    :param PhGroup: A list of the phase slices
+    :param TEs: [float(TE1),float(TE2)]
+    :param connection: the connection class to the MRD Server
+    :param config: JSON configs and user defined params as selected in the inline card.
+    :param metadata: metadata of the sequence
+    :param currentSeries: an int value from process.
+
+    Constructs a B0map from a list of TE1 and Phase items, a relevant params 
+    and returns a list B0map items with mean and std in the image comment, 
+    AND an int value of the currentSeries for - for item in connection: - consistency
+    
+    Steps to construct B0map:
+
+    Step 0. Determining Additional Parameters
+        B0map Series Number 
+        delta Echo Time
+        Number of Erosions
+        Number of Dilations
+        Rescale Intercept
+        Rescale Slope
+        BitsStored
+
+    Step 1. Sorting Groups
+        Sort Groups so Slices are in a suitable order for image-image operations:
+            - Sorting using a PrimaryKey based method (get_PrimaryKey_fromItem func)
+            - creates (key,item) pairs and sorts ascendingly based on key
+            - unpacks pairs back to groups that are now sorted ascendingly based on PrimaryKey
+
+    Step 2. Break Groups into head, data, img arrays
+        Unpacks Groups into relevant head, data and img arrays that are used
+        for calculating a B0map and its meta and header info.
 
 
- ### ---- Here for new functions
-def getDiagnosticInfo(images,data,head,meta,metadata,B0map_Dict):
-    LogDicomJsonData(meta)
-    # Diagnostic info
-    matrix    = np.array(head[0].matrix_size  [:])
-    fov       = np.array(head[0].field_of_view[:])
-    voxelsize = fov/matrix
-    read_dir  = np.array(images[0].read_dir )
-    phase_dir = np.array(images[0].phase_dir)
-    slice_dir = np.array(images[0].slice_dir)
-    logging.info(f'CBS_LOG: MRD computed matrix [x y z] : {matrix   }')
-    logging.info(f'CBS_LOG: MRD computed fov     [x y z] : {fov      }')
-    logging.info(f'CBS_LOG: MRD computed voxel   [x y z] : {voxelsize}')
-    logging.info(f'CBS_LOG: MRD read_dir         [x y z] : {read_dir }')
-    logging.info(f'CBS_LOG: MRD phase_dir        [x y z] : {phase_dir}')
-    logging.info(f'CBS_LOG: MRD slice_dir        [x y z] : {slice_dir}')
-    logging.debug(f"CBS_DEBUG: All Head Info for first slice: {head[0]}")
-    logging.debug(f"CBS_DEBUG: All Meta Info for first slice: {meta[0]}")
-    logging.info("CBS_LOG: %d Echo Time's found: %s" ,len(B0map_Dict),(list(B0map_Dict)))
-    logging.debug("CBS_DEBUG: Original image data before transposing is %s" % (data.shape,))
-    if (ismrmrd.Meta.serialize(meta[0]) is not None):
-        logging.debug(f"CBS_LOG: First meta header - \n {ismrmrd.Meta.serialize(meta[0])}")
+    Step 3. transpose Data arrays
+
+    Step 4. Make Frequency Map
+        4.0 Raw Phase Data
+        4.1 Rescaled Phase Data (PHdata_Rescale = PHdata*RescaleSlope + RescaleIntercept)
+        4.2 Convert to Radians (PHdata_inRad = PHdata_Rescale*(np.pi/np.abs(RescaleIntercept)) ) 
+        4.3 Convert to Frequency (Fdata = PHdata_inRad/(2*np.pi * delTE*1e-3) )
+
+    Step 5. Make BMask (bet2 and scipy.ndimage)
+
+    Step 6. Make B0Map 
+        6.0 Make B0Map (FData*BMask)
+        6.1 Compensate for machine rescaling (B0map_compensate = (B0map - RescaleIntercept)/RescaleSlope)
+        6.2 Machine output: (expected_machine_out = B0map_compensate*RescaleSlope + RescaleIntercept) ((Inverse of 6.1))
+
+    Step 7. Calculate STD, Mean
+
+    Step 8. Prepare B0map for MRD Server
+        0. Add char,img dims back. NOTE: Not necessary as they are removed again later
+        1. Copy Phase metadata to B0map metadata
+        2. Apply B0mapseries Number
+        3. add STDNoZero and MeanNoZero to Image Comments
+        4. Add ImageHistory
+    
+    Step 9. returns a list of B0map items with appropriate metadata 
+        AND the an updated int value of the currentSeries for the - for item in connection: - loop consistency 
+    """
+
+    # Check if Groups are empty
+    if (len(Te1Group) == 0) or (len(PhGroup) == 0):
+        return []
+    
+    # Indicate beginning of B0map Processing
+    logging.info("B0MAP_LOG: Processing B0map...")
+    
+    # Step 0. Determining Additional Parameters
+    b0mapSeries = max(item.image_series_index for item in (Te1Group + PhGroup)) + 30 # ensures no clashing of series numbers
+    delTE = TEs[1]-TEs[0]
+    xform = np.eye(4)
+    Num_ero = mrdhelper.get_json_config_param(config, 'NumEro', default=3, type='int')
+    Num_Dil = mrdhelper.get_json_config_param(config, 'NumDil', default=2, type='int')
+    Verbose = False
+    FracIntens = 0.4
+    FracIntens = float(mrdhelper.get_json_config_param(config, 'FracIntens', default=0.4, type='float'))
+    try:
+        Verbose = bool(mrdhelper.get_json_config_param(config, 'VerboseLogging', default=True, type='bool'))
+        if Verbose:
+            logging.info("B0MAP_LOG: READING JSON CONFIGS... Verbose Logging - Enabled")
+        else:
+            logging.info("B0MAP_LOG: READING JSON CONFIGS... Verbose Logging - Disabled")
+    except Exception as e:
+        logging.error(f"B0MAP_ERROR: READING JSON CONFIGS... Failed to config: Verbose Logging:\n{e}")
+        logging.info("B0MAP_LOG: READING JSON CONFIGS... Resorting to default value: Verbose Logging - Disabled")
+    
+    try:
+        FracIntens = round(float(mrdhelper.get_json_config_param(config, 'FracIntens', default=0.4, type='float')),1)
+        logging.info(f"B0MAP_LOG: READING JSON CONFIGS... Fractional Intensity: {FracIntens}")
+    except Exception as e:
+        logging.error(f"B0MAP_ERROR: READING JSON CONFIGS... Failed to config: Fractional Intensity:\n{e}")
+        logging.info("B0MAP_LOG: READING JSON CONFIGS... Resorting to default value: Fractional Intensity - 0.4")
+    
+    # Finding Scaling Params of Phase Image
+    
+    RescaleIntercept = -4096 # Fix this!!
+
+    if (get_IceMiniHeader_Double_fromItem(PhGroup[0],'RescaleIntercept') is not None):
+        RescaleIntercept = get_IceMiniHeader_Double_fromItem(PhGroup[0],'RescaleIntercept') # If works replace tmp3 with RescaleIntercept
+        logging.info("B0MAP_LOG: Rescale Intercept: %d found in PhGroup[0] IceHeader", RescaleIntercept)# If works replace tmp3 with RescaleIntercept
+    else:
+        logging.info("B0MAP_ERROR: Rescale Intercept - not found in PhGroup[0] IceHeader")
+    RescaleSlope = 2 # Fix This!!
+    if (get_IceMiniHeader_Double_fromItem(PhGroup[0],'RescaleSlope') is not None):
+        RescaleSlope = get_IceMiniHeader_Double_fromItem(PhGroup[0],'RescaleSlope')# If works replace tmp3 with RescaleSlope
+        logging.info("B0MAP_LOG: Rescale Slope: %d found in PhGroup[0] IceHeader", RescaleSlope)# If works replace tmp3 with RescaleSlope
+    else:
+        logging.info("B0MAP_ERROR: Rescale Slope - not found in PhGroup[0] IceHeader")
+
+    BitsStored = 12
+    if (get_IceMiniHeader_Long_fromItem(Te1Group[0],'BitsStored') is not None):
+        BitsStored = int(get_IceMiniHeader_Long_fromItem(Te1Group[0],'BitsStored'))
+        logging.info("B0MAP_LOG: BitsStored: %d found in IceHeader", BitsStored)
+    elif (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
+        BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
+        logging.info("B0MAP_LOG: BitsStored: %d found in metadata",BitsStored)
+    
+    logging.info(f"B0MAP_LOG: Params Collected:\n b0mapSeries: {b0mapSeries}\n delTE: {delTE}\n Num_ero: {Num_ero}\n Num_Dil: {Num_Dil} \nRescale Intercept: {RescaleIntercept} \nRescale Slope: {RescaleSlope}\nBitsStored: {BitsStored}")
+
+    # Step 1. Sorting Groups
+    
+    # Log the PrimaryKey list for each group.
+    if Verbose:
+        try:
+            logging.info("B0MAP_LOG: Determining Primary Keys from Slices...")
+            TE1Iorder = [get_PrimaryKey_fromItem(item) for item in Te1Group]
+            PHIorder = [get_PrimaryKey_fromItem(item) for item in PhGroup]
+
+            logging.info(f"B0MAP_LOG: Key List of Groups\nTE1: {TE1Iorder} \nPH:{PHIorder}")
+        except Exception as e:
+            logging.error("B0MAP_ERROR: Failed to bulk parse primary key from groups, Sorting Groups...")
+
+    def group_with_key(items, label):
+        """
+        Docstring for group_with_key
+    
+        :param items: a list of items from connection (from the process function)
+        :param label: an identifiable string for logging purposes.
+        
+        Extract primary keys from a list of items and pairs each item with its key, and returns
+        a list of (key,item) tuples.
+
+        NOTE: This complicated function that avoids an expensive O(nlog(n)) calculation.
+        """
+        keyed = []
+        for item in items:
+            try:
+                key = get_PrimaryKey_fromItem(item)
+                keyed.append((key, item))
+            except Exception as e:
+                logging.error("B0MAP_ERROR: Failed to extract primary key for %s image: %s",label, e)
+        return keyed
+
+    def validate_keys(keyed_items, label):
+        """
+        Docstring for validate_keys
+        
+        :param keyed_items: a list of (key,item) tuples generated from the group_with_key function
+        :param label: an identifiable string for logging purposes.
+        
+        This function does a simple check to see if there is any duplicated primary keys. 
+        NOTE: it does not check whether there is any missing 
+        """
+        keys = [k for k, _ in keyed_items]
+        if len(keys) != len(set(keys)):
+            logging.error("B0MAP_ERROR: Duplicate primary keys detected in %s group: %s",label, keys)
+        else:
+            logging.info("B0MAP_LOG: %s group is correctly keyed with keys %s", label, keys)
+    
+    # Extracts PrimaryKeys from items, and pairs each with its key
+    # in a list (key,item) tuples and call it {GROUP_NAME}_keyed
+    # Also check whether there is any duplicate keys.
+    Te1_keyed = group_with_key(Te1Group, "TE1")
+    validate_keys(Te1_keyed, "TE1")
+
+    Ph_keyed  = group_with_key(PhGroup,  "PH")
+    validate_keys(Ph_keyed,  "PH")
+
+    #Sort items ascendingly, and unpack tuples back into a sorted (ascendingly) list of items for each group.
+    Te1Group = [item for _, item in sorted(Te1_keyed, key=lambda x: x[0])]
+    PhGroup  = [item for _, item in sorted(Ph_keyed,  key=lambda x: x[0])]
+    
+    if Verbose:
+        logging.info("B0MAP_LOG: After Sorting Groups\nTE1: %s\nPH:%s",[get_PrimaryKey_fromItem(i) for i in Te1Group],[get_PrimaryKey_fromItem(i) for i in PhGroup],)
+
+    # Step 2. Break Groups into head, data, img arrays
+    logging.info(f"B0MAP_LOG: Unpacking Groups into head, data meta arrays...")
+    
+    # Note: The MRD Image class stores data as [cha z y x]
+    # Extract image data into a 5D array of size [img cha z y x]
+    T1data = np.stack([item.data                              for item in Te1Group])
+    #T1head = [item.getHead()                                  for item in Te1Group] #NOT USED
+    #T1meta = [ismrmrd.Meta.deserialize(item.attribute_string) for item in Te1Group] #NOT USED
+
+    PHdata = np.stack([item.data                              for item in PhGroup])
+    PHhead = [item.getHead()                                  for item in PhGroup]
+    PHmeta = [ismrmrd.Meta.deserialize(item.attribute_string) for item in PhGroup]
+
+
+    
+    # Step 3. transpose Data arrays
+    logging.info(f"B0MAP_LOG: Transposing data arrays...")
+    # Reformat data to [y x z cha img], i.e. [row col] for the first two dimensions
+    logging.info("Original shape: %s", T1data.shape)
+    tmp = T1data.transpose((3, 4, 2, 1, 0))
+    logging.info("After transpose: %s", tmp.shape)
+    T1data, PHdata = [data.transpose((3, 4, 2, 1, 0))[:, :, 0, 0, :] for data in [T1data, PHdata]]
+    cen_e = tuple(s//2 for s in T1data.shape) # center element
+    logging.info("After slice and transpose: %s", T1data.shape)
+    logging.info(f"B0MAP_LOG: center element; PHdata{cen_e}: {PHdata[cen_e]}")
+    logging.info(f"B0MAP_LOG: center element; T1data{cen_e}: {T1data[cen_e]}")
+    if Verbose:
+        log_array_info(T1data, "T1data")
+        log_array_info(PHdata, "PHdata")
+
+
+    # Some Early Processing
+    PHdata = PHdata.astype(np.float64)
+    T1data = T1data.astype(np.float64)
+    
+    #Step 4. Make Frequency Map
+    logging.info(f"B0MAP_LOG: Making Frequency map...")
+    logging.info(f"B0MAP_LOG: Values used for Frequency Map:: RescaleSlope: {RescaleSlope}, RescaleIntercept: {RescaleIntercept}, delTe: {delTE}")
+
+    # 0. Raw Data
+    try:
+        logging.info(f"B0MAP_LOG: center element; PHdata{cen_e}: {PHdata[cen_e]}")
+    except Exception as e:
+        logging.info(f"B0MAP_ERROR: could not log center element of PHdata\n{e}")
+    # 1. Rescale
+    PHdata_Rescale = PHdata*RescaleSlope + RescaleIntercept
+    try:
+        logging.info(f"B0MAP_LOG: center element; PHdata_Rescale{cen_e}: {PHdata_Rescale[cen_e]}")
+    except Exception as e:
+        logging.info(f"B0MAP_ERROR: could not log center element of PHdata_Rescale\n{e}")
+    # 2. Convert to radians
+    PHdata_inRad = PHdata_Rescale*(np.pi/np.abs(RescaleIntercept))
+    try:
+        logging.info(f"B0MAP_LOG: center element; PHdata_inRad{cen_e}: {PHdata_inRad[cen_e]}")
+    except Exception as e:
+        logging.info(f"B0MAP_ERROR: could not log center element of PHdata_inRad\n{e}")
+    # 3. Convert to Frequency
+    Fdata = PHdata_inRad/(2*np.pi * delTE*1e-3)
+    try:
+        logging.info(f"B0MAP_LOG: center element; Fdata{cen_e}: {Fdata[cen_e]}")
+    except Exception as e:
+        logging.info(f"B0MAP_ERROR: could not log center element of Fdata\n{e}")
+
+    # Step 5. Make BMask (Uses bet2 and scipy.ndimage)
+    logging.info(f"B0MAP_LOG: Making BrainMask...")
+    logging.info(f"B0MAP_LOG: T1data.shape: {T1data.shape}")
+    T1data = T1data.transpose(1,0,2) # to [x,y,z]
+    logging.info(f"T1data.transpose(1,0,2).shape: {T1data.shape}")
+    logging.info(f"B0MAP_LOG: Attempting to save T1data.transpose(1,0,2) as nifti...")
+    try:
+        nib.save(nib.nifti1.Nifti1Image(T1data,xform),'temp_t1.nii')
+        if os.path.isfile('temp_t1.nii'):
+            logging.info("B0MAP_LOG: successfully saved T1data.transpose(1,0,2) as nifti!")
+        else:
+            logging.error("B0MAP_ERROR: Cannot find T1data.transpose(1,0,2) as nifti!")
+    except Exception as e:
+        logging.error(f"B0MAP_ERROR: Failed to save T1data.transpose(1,0,2) as nifti.\n{e}")
+
+    
+    logging.info(f"B0MAP_LOG: Attempting to run: bet2 temp_t1.nii temp_bm -m -n -f {round(FracIntens,1)} ...")
+    try: 
+        subprocess.run(["bet2","temp_t1.nii","temp_bm","-m","-n","-f",f"{round(FracIntens,1)}"],check=True)
+        if os.path.isfile('-n.nii.gz'):
+            logging.info("B0MAP_LOG: successfully saved -n.nii-gz brain mask (weird bug)")
+        else:
+            logging.error("B0MAP_ERROR: Cannot find -n.nii.gz")
+    except Exception as e:
+        logging.error(f"B0MAP_ERROR: Failed to run: bet2 temp_t1.nii temp_bm -m -n -f 0.4 ... \n{e}")
+    
+    BMask = None
+    try:
+        logging.info(f"B0MAP_LOG: Importing Brain Mask...")
+        BMask_load = nib.load("-n.nii.gz")
+        BMask = BMask_load.get_fdata()
+        try:
+            logging.info(f"B0MAP_LOG: center element; BMask_Raw{cen_e}: {BMask[cen_e]}")
+        except Exception as e:
+            logging.log(f"B0MAP_LOG: could not log center element of BMask_Raw\n{e}")
+        logging.info(f"B0MAP_LOG: Applying {Num_ero} Erosions and {Num_Dil} Dilations...")
+        try: 
+                BMask = binary_erosion(BMask, iterations=Num_ero)
+        except Exception as e:
+            logging.info(f"B0MAP_ERROR: could not Erode B0Mask_Raw\n{e}")
+        try: 
+                BMask = binary_dilation(BMask,iterations=Num_Dil)
+        except Exception as e:
+            logging.info(f"B0MAP_ERROR: could not Dilate B0Mask_Raw\n{e}")
+        logging.info(f"B0MAP_LOG: BMask.shape: {BMask.shape}")
+        BMask = BMask.transpose((1,0,2)).astype(np.float64)
+        logging.info(f"B0MAP_LOG: After Transpose BMask.shape: {BMask.shape}")
+        try:
+            logging.info(f"B0MAP_LOG: center element; BMask{cen_e}: {BMask[cen_e]}")
+        except Exception as e:
+            logging.info(f"B0MAP_ERROR: could not log center element of BMask\n{e}")
+    except Exception as e:
+        logging.info(f"B0MAP_LOG: Failed to import Brain Mask\n{e}")
+
+
+    # Step 6. Make B0Map (FData*BMask)
+    logging.info(f"B0MAP_LOG: Making B0Map...")
+    logging.info("Original Fdata shape: %s", Fdata.shape)
+    tmp = Fdata[:,:,None,None,:]
+    logging.info("After Fdata Adding: %s", tmp.shape)
+    if BMask is None:
+        logging.info("B0MAP_ERROR: Failed to calculate BrainMask resorting to B0map with brain mask...")
+        B0map = (Fdata).astype(np.float64)
+    else:
+        logging.info("B0MAP_ERROR: Multiplying BMask with Fdata...")
+        B0map = ((BMask*Fdata)).astype(np.float64)
+    try:
+        logging.info(f"B0MAP_LOG: center element; B0map{cen_e}: {B0map[cen_e]}")
+    except Exception as e:
+        logging.info(f"B0MAP_ERROR: could not log center element of B0map\n{e}")
+    # 6.1 Compensate for Machine rescaling.
+    B0map_uncompensate = B0map
+    B0map_compensate = (B0map - RescaleIntercept)/RescaleSlope
+    try:
+        logging.info(f"B0MAP_LOG: center element; B0map_compensate{cen_e}: {B0map_compensate[cen_e]}")
+        # Optional. Predict value in MR Viewer
+        expected_machine_out = B0map_compensate[cen_e]*RescaleSlope + RescaleIntercept
+        logging.info(f"B0MAP_LOG: center element; expected_machine_out{cen_e}: {expected_machine_out}")
+    except Exception as e:
+        logging.info(f"B0MAP_ERROR: could not log center element of B0map_compensate\n{e}")
+    B0map = (B0map_compensate[:,:,None,None,:]).astype(np.float32)
+
+    # Step 7. Find STD, Mean, Also STDNoZero and MeanNoZero
+    logging.info(f"B0MAP_LOG: Calculating stats of B0Map...")
+    B0max = np.max(B0map_uncompensate[B0map_uncompensate != 0]) #Can fail if all zero Array, find a better way
+    B0min = np.min(B0map_uncompensate[B0map_uncompensate != 0]) #Can fail if all zero Array, find a better way
+    B0mean = np.mean(B0map_uncompensate)
+    B0std = np.std(B0map_uncompensate)
+    B0meanNoZero = np.mean(B0map_uncompensate[B0map_uncompensate != 0 ]) #Can fail if all zero Array, find a better way
+    B0stdNoZero = np.std(B0map_uncompensate[B0map_uncompensate != 0 ]) #Can fail if all zero Array, find a better way
+    B0meanMaskMethod = np.mean(Fdata[BMask.astype(bool)])
+    B0stdMaskMethod = np.std(Fdata[BMask.astype(bool)])
+    logging.info(f"B0MAP_LOG: Min(!0): {B0min}, Max: {B0max}")
+    logging.info(f"B0MAP_LOG: Mean: {B0mean:.5f}, STD: {B0std:.5f}")
+    logging.info(f"B0MAP_LOG:(No Zero) Mean: {B0meanNoZero:.5f}, STD: {B0stdNoZero:.5f}")
+    logging.info(f"B0MAP_LOG:(Mask Method) Mean: {B0meanMaskMethod:.5f}, STD: {B0stdMaskMethod:.5f}")
+
+    # Step 8. Prepare B0map for MRD Server
+    logging.info(f"B0MAP_LOG: Preparing B0map for injector...")
+    InitialItem = 0
+    B0mapOut = [None] * B0map.shape[-1]
+    logging.info(f"B0MAP_LOG: length B0map.shape[-1]: {B0map.shape[-1]}")
+    for item in range(B0map.shape[-1]):
+        # Create new MRD instance for the inverted image
+        # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
+        # from_array() should be called with 'transpose=False' to avoid warnings, and when called
+        # with this option, can take input as: [cha z y x], [z y x], or [y x]
+        tmp = B0map[...,item].transpose((3,2,0,1)) # Transpose from [y,x,char,z,(img)] to [z,char,y,x,(img)] (img) -> ..,item indicate this the (img^{th}) item 
+        logging.info("B0MAP_LOG: After transpose: %s", tmp.shape)
+        tmp2 = B0map[...,item].transpose((3,2,0,1))[0,0,:,:] # Crops from [z,char,y,x,(img)] to [y,x,(img)] -> ..,item indicate this the (img^{th}) item
+        B0mapOut[item] = ismrmrd.Image.from_array(tmp2,transpose = False)
+        tmp = tmp[0,0,:,:]
+        logging.info("B0MAP_LOG: After cut: %s", tmp.shape)
+
+        if item == InitialItem:
+            try:
+                logging.info("B0MAP_LOG: Assessing ismmrd mapping to np.astype...")
+                logging.info(f"B0MAP_LOG: B0mapOut[0].data_type is {B0mapOut[item].data_type}")
+                logging.info(f"B0MAP_LOG: B0map[...,item].dtype is {B0map[...,item].dtype}")
+                logging.info(f"B0MAP_LOG: logging tmpMeta: {PHmeta[item]}")
+                logging.info(f"B0MAP_LOG: logging B0Header: {PHhead[item]}")
+            except Exception as e:
+                logging.info(f"B0MAP_ERROR: Failed to assess imsmrd mapping to np.astype:\n{e}")
+        
+        B0Header = PHhead[item]
+        B0Header.data_type = B0mapOut[item].data_type
+        B0Header.image_series_index = b0mapSeries
+        tmpMeta = PHmeta[item]
+        
+        # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
+        try:
+            if mrdhelper.get_meta_value(tmpMeta, 'IceMiniHead') is not None:
+                if mrdhelper.extract_minihead_bool_param(base64.b64decode(tmpMeta['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
+                    currentSeries = b0mapSeries
+        except Exception as e:
+            logging.info(f"B0MAP_ERROR: Failed to update CurrentSeries to b0mapSeries:\n{e}")
+        B0mapOut[item].setHead(B0Header)
+        # Create a copy of the original ISMRMRD Meta attributes from TE1 and update where possible
+        tmpMeta['DataRole']                       = 'Image'
+        tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'B0MAP']
+        tmpMeta['WindowCenter']                   = str(np.round(((B0max - B0min)/2)))
+        tmpMeta['WindowWidth']                    = str((B0max)+1)
+        tmpMeta['SequenceDescriptionAdditional']  = 'OPENRECON_B0MAP'
+        tmpMeta['Keep_image_geometry']            = 1
+        tmpMeta['ImageComments']                  = f"Mean: {B0meanMaskMethod:.3f}, STD: {B0stdMaskMethod:.3f}" # Change the image comments to mean and SD
+        if tmpMeta.get('ImageRowDir') is None:
+            tmpMeta['ImageRowDir'] = ["{:.18f}".format(B0Header.read_dir[0]), "{:.18f}".format(B0Header.read_dir[1]), "{:.18f}".format(B0Header.read_dir[2])]
+                 
+        if tmpMeta.get('ImageColumnDir') is None:
+            tmpMeta['ImageColumnDir'] = ["{:.18f}".format(B0Header.phase_dir[0]), "{:.18f}".format(B0Header.phase_dir[1]), "{:.18f}".format(B0Header.phase_dir[2])]
+             
+        metaXml = tmpMeta.serialize()
+                 
+        B0mapOut[item].attribute_string = metaXml
+    logging.info(f"B0MAP_LOG: Returning B0Map...")
+    return B0mapOut, currentSeries
+
+def process(connection, config, metadata):
+    logging.info("B0MAP_LOG: Config: \n%s", config)
+
+    # Metadata should be MRD formatted header, but may be a string
+    # if it failed conversion earlier
+    try:
+        logging.info("B0MAP_LOG: Incoming dataset contains %d encodings", len(metadata.encoding))
+        logging.info("B0MAP_LOG: First encoding is of type '%s', with a matrix size of (%s x %s x %s) and a field of view of (%s x %s x %s)mm^3", 
+            metadata.encoding[0].trajectory, 
+            metadata.encoding[0].encodedSpace.matrixSize.x, 
+            metadata.encoding[0].encodedSpace.matrixSize.y, 
+            metadata.encoding[0].encodedSpace.matrixSize.z, 
+            metadata.encoding[0].encodedSpace.fieldOfView_mm.x, 
+            metadata.encoding[0].encodedSpace.fieldOfView_mm.y, 
+            metadata.encoding[0].encodedSpace.fieldOfView_mm.z)
+
+    except Exception as e:
+        logging.info("B0MAP_LOG: Improperly formatted metadata: \n%s", metadata, e)
+
+    # Continuously parse incoming data parsed from MRD messages
+    currentSeries = 0
+    imgGroup = []
+    Te1, Te2 = 3.06,4.08
+    SendOriginals = True
+    Verbose = False
+    try:
+        SendOriginals = bool(mrdhelper.get_json_config_param(config, 'SendOriginals', default=True, type='bool'))
+        if SendOriginals:
+            logging.info("B0MAP_LOG: READING JSON CONFIGS... Sending Original Images - Enabled")
+        else:
+            logging.info("B0MAP_LOG: READING JSON CONFIGS... Sending Original Images - Disabled")
+    except Exception as e:
+        logging.error(f"B0MAP_ERROR: READING JSON CONFIGS... Failed to config: Send Original Images:\n{e}")
+        logging.info("B0MAP_LOG: READING JSON CONFIGS... Resorting to default value: Send Original Image - Enabled")
+    try:
+        Verbose = bool(mrdhelper.get_json_config_param(config, 'VerboseLogging', default=True, type='bool'))
+        if Verbose:
+            logging.info("B0MAP_LOG: READING JSON CONFIGS... Verbose Logging - Enabled")
+        else:
+            logging.info("B0MAP_LOG: READING JSON CONFIGS... Verbose Logging - Disabled")
+    except Exception as e:
+        logging.error(f"B0MAP_ERROR: READING JSON CONFIGS... Failed to config: Verbose Logging:\n{e}")
+        logging.info("B0MAP_LOG: READING JSON CONFIGS... Resorting to default value: Verbose Logging - Disabled")
+    
+    logging.info("B0MAP_LOG:  READING JSON CONFIGS... Echo Time values...")
+    try:
+        Te1, Te2 = float(mrdhelper.get_json_config_param(config, 'TE1', type='str')), float(mrdhelper.get_json_config_param(config, 'TE2', type='str'))
+        logging.info(f"B0MAP_LOG: READING JSON CONFIGS... Echo Time values: TE1: {Te1}, TE2: {Te2}")
+    except Exception as e:
+        logging.info(f"B0MAP_ERROR: READING JSON CONFIGS... Failed to config: Echo Time values:\n{e}")
+        logging.info(f"B0MAP_LOG: READING JSON CONFIGS... Resorting to default values: TE1: {Te1}, TE2: {Te2}")
+
+    
+    sliceMaximum = metadata.encoding[0].encodingLimits.slice.maximum
+    logging.info("B0MAP_LOG: sliceMaximum found: %d",sliceMaximum)
+
+    # Finding TEs 
+    # ranked options:
+    # 1. metadata.sequenceParameters.TE
+    # 2. User defined parameters in Inline Card
+    # 3. Default values Te1 = 3.06, Te2 = 4.08
+    try:
+        if (metadata.sequenceParameters.TE is not None):
+            TEs = metadata.sequenceParameters.TE
+            logging.info(f"B0MAP_LOG: TE List collected: {TEs} from metadata.sequenceParameters.TE")
+        else: 
+            Te1, Te2 = mrdhelper.get_json_config_param(config, 'TE1', default=10.0, type='float'), mrdhelper.get_json_config_param(config, 'TE2', default=12.5, type='float') 
+            logging.info(f"B0MAP_LOG: Could not find TE List, Using User defined JSON Parameters TE1 = {Te1}, TE2 = {Te2}")
+        if len(TEs)==2:
+            Te1, Te2 = float(min(TEs)), float(max(TEs))
+            logging.info(f"B0MAP_LOG: TE List is length 2 assigned Te1={Te1} and Te2={Te2} based on metadata.sequenceParameters.TE")
+        else:
+            logging.info(f"B0MAP_ERROR: TE List collect is not equal to 2; len(TEs) == {len(TEs)}")
+            Te1, Te2 = mrdhelper.get_json_config_param(config, 'TE1', default=10.0, type='float'), mrdhelper.get_json_config_param(config, 'TE2', default=12.5, type='float')
+            logging.info(f"B0MAP_LOG: Using User defined JSON Parameters TE1 = {Te1}, TE2 = {Te2}")
+    except Exception as e:
+        logging.info("B0MAP_ERROR: Failed to find TE's from metadata: %s", e)
+    
+    Te1Group = [] # a list to keep with example convention
+    Te1Tally = set() # a set to keep track of items collected via a primary key,
+                  # These are separate to stay inline with i2i.py example in case of data structure mismatch.
+    
+    
+    PhGroup = []
+    PhTally = set()
+
+    b0mapProcessed = False
+    initial = True
+    try:
+        for item in connection:
+            # ----------------------------------------------------------
+            # Raw k-space data messages
+            # ----------------------------------------------------------
+            if isinstance(item, ismrmrd.Acquisition):
+                raise Exception("Raw k-space data is not supported by this module")
+
+            # ----------------------------------------------------------
+            # Image data messages
+            # ----------------------------------------------------------
+            elif isinstance(item, ismrmrd.Image):
+                if Verbose:
+                    if initial:
+                        get_PrimaryKey_fromItem_LogOnly(item)
+                        logging.info("B0MAP_LOG: Initial Search for SequenceDescription in item IceMiniHeader")
+                        try:
+                            seqdes = get_IceMiniHeader_String_fromItem(item, "SequenceDescription")
+                            logging.info(f"B0MAP_LOG SequenceDescription Search - logging get_IceMiniHeader_String_fromItem(item,SequenceDescription): \n {seqdes}")
+                        except Exception as e:
+                            logging.info(f"B0MAP_LOG SequenceDescription Search - Failed to collect get_IceMiniHeader_String_fromItem(item,SequenceDescription) \n {e}")
+
+                # When this criteria is met, run process_group() on the accumulated
+                # data, which returns images that are sent back to the client.
+                # e.g. when the series number changes:
+                if item.image_series_index != currentSeries:
+                    logging.info("B0MAP_LOG: Processing a group of images of size %d because series index changed to %d", len(imgGroup), item.image_series_index)
+                    currentSeries = item.image_series_index
+                    image = process_image(imgGroup, connection, config, metadata)
+                    connection.send_image(image)
+                    imgGroup = []
+
+
+
+
+                if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0) or (item.image_type is ismrmrd.IMTYPE_PHASE):
+                    if SendOriginals:
+                        imgGroup.append(item)
+                    if (not get_IceMiniHeader_String_fromItem(item,"SequenceDescription")):
+                        logging.info("B0MAP_LOG: cannot find sequencedescription to determine whether _ND or not")
+                    if ((item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0)) and (get_IceMiniHeader_String_fromItem(item,"SequenceDescription") and get_IceMiniHeader_String_fromItem(item,"SequenceDescription").endswith("_ND")): #06-01 changed and not endswith _ND to and endswith _ND
+                        te = get_TE_fromItem(item)
+                        key = get_PrimaryKey_fromItem(item)
+                        #added rounding to "encourage" process_b0map trigger
+                        te = np.around(te,1)
+                        if (te==np.around(Te1,1)) and not (key in Te1Tally):
+                            Te1Tally.add(key)
+                            Te1Group.append(item)
+                            if Verbose:
+                                logging.info(f"B0MAP_LOG: Collecting series index {key} for Te1Group")
+                    if (item.image_type is ismrmrd.IMTYPE_PHASE) and not (get_PrimaryKey_fromItem(item) in PhTally) and (get_IceMiniHeader_String_fromItem(item,"SequenceDescription") and get_IceMiniHeader_String_fromItem(item,"SequenceDescription").endswith("_ND")): #06-01 changed and not endswith _ND to and endswith _ND
+                        PhTally.add(get_PrimaryKey_fromItem(item))
+                        PhGroup.append(item)
+                        if Verbose:
+                            logging.info(f"B0MAP_LOG: Collecting series index {key} for PhGroup")
+                
+                else:
+                    logging.info("B0MAP_LOG: Unknown image slice, sending through unmodified...")
+                    tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
+                    tmpMeta['Keep_image_geometry']    = 1
+                    item.attribute_string = tmpMeta.serialize()
+
+                    connection.send_image(item)
+                    continue
+
+                if not b0mapProcessed and (len(Te1Tally) == (sliceMaximum+1) 
+                    and (len(PhTally) == (sliceMaximum+1))):
+                    logging.info("B0MAP_LOG: Processing b0map because size of Te1Group and PhGroup is %d", (sliceMaximum+1))
+                    logging.info(f"Te1Group Set: {Te1Tally}, len(Te1Group): {len(Te1Group)}")
+                    logging.info(f"PhGroup Set: {PhTally}, len(PhGroup): {len(PhGroup)}")
+                    TEs = [Te1,Te2]
+                    B0map, currentSeries = process_b0map(Te1Group, PhGroup,TEs, connection, config, metadata,currentSeries)
+                    connection.send_image(B0map)
+                    
+                    #Clean up
+                    Te1Group.clear()
+                    PhGroup.clear()
+                    Te1Tally.clear()
+                    PhTally.clear()
+
+                    b0mapProcessed = True
+
+            elif item is None:
+                break
+
+            else:
+                raise logging.exception("B0MAP_ERROR: Unsupported data type %s", type(item).__name__)
+
+        # Process any remaining groups of image data.  This can 
+        # happen if the trigger condition for these groups are not met.
+        # This is also a fallback for handling image data, as the last
+        # image in a series is typically not separately flagged.
+        if len(imgGroup) > 0:
+            logging.info("B0MAP_LOG: Processing a group of images (untriggered)")
+            image = process_image(imgGroup, connection, config, metadata)
+            connection.send_image(image)
+            imgGroup = []
+
+        if not b0mapProcessed and (len(Te1Tally) > 0 
+                    or (len(PhTally) > 0)):
+                    logging.info("B0MAP_LOG: Processing b0map (untriggered)")
+                    TEs = [Te1,Te2]
+                    B0map, currentSeries = process_b0map(Te1Group, PhGroup,TEs, connection, config, metadata,currentSeries)
+                    connection.send_image(B0map)
+
+                    #Clean up
+                    Te1Group.clear()
+                    PhGroup.clear()
+                    Te1Tally.clear()
+                    PhTally.clear()
+
+                    b0mapProcessed = True
+
+
+    except Exception as e:
+        logging.error(f"B0MAP_ERROR: shutting down connection... {traceback.format_exc()}")
+        connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
+        # Close connection without sending MRD_MESSAGE_CLOSE message to signal failure
+        connection.shutdown_close()
+
+    finally:
+        try:
+                logging.info("BOMAP_LOG: Closing Connection Without B0mapSent")
+                connection.send_close()
+        except Exception as e:
+            logging.error(f"B0MAP_ERROR: Failed to send close message! \n {e}")
+
+def process_image(images, connection, config, metadata):
+    """
+    The standard process_image funciton provided from the sdk.
+    """
+    if len(images) == 0:
+        return []
+
+    # Create folder, if necessary
+    if not os.path.exists(debugFolder):
+        os.makedirs(debugFolder)
+        logging.debug("Created folder " + debugFolder + " for debug output files")
+
+    logging.debug("Processing data with %d images of type %s", len(images), ismrmrd.get_dtype_from_data_type(images[0].data_type))
+
+    # Note: The MRD Image class stores data as [cha z y x]
+
+    # Extract image data into a 5D array of size [img cha z y x]
+    data = np.stack([img.data                              for img in images])
+    head = [img.getHead()                                  for img in images]
+    meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in images]
+
+    # Reformat data to [y x z cha img], i.e. [row col] for the first two dimensions
+    data = data.transpose((3, 4, 2, 1, 0))
+
+    # Display MetaAttributes for first image
+    logging.debug("MetaAttributes[0]: %s", ismrmrd.Meta.serialize(meta[0]))
+
+    # Optional serialization of ICE MiniHeader
     if 'IceMiniHead' in meta[0]:
-        logging.debug("CBS_LOG: IceMiniHeader detected, first IceMiniHeader is: %s", base64.b64decode(meta[0]['IceMiniHead']).decode('utf-8'))
-    logging.debug("CBS_LOG: Attempting get_userParameterXXX_value collection: ")
-    if (mrdhelper.get_userParameterLong_value(metadata, 'BitsStored') is not None):
-        logging.debug(f"CBS_LOG: BitsStored value of {mrdhelper.get_userParameterLong_value(metadata, 'BitsStored')} found via mrdhelper.getuserParam.")
-    if (mrdhelper.get_userParameterDouble_value(metadata, 'RescaleIntercept') is not None):
-        logging.debug(f"CBS_LOG: RescaleIntercept value of {mrdhelper.get_userParameterDouble_value(metadata, 'RescaleIntercept')} found via mrdhelper.getuserParam.")
-    if (mrdhelper.get_userParameterLong_value(metadata, 'RescaleSlope') is not None):
-        logging.debug(f"CBS_LOG: RescaleSlope value of {mrdhelper.get_userParameterLong_value(metadata, 'RescaleSlope')} found via mrdhelper.getuserParam.")
-    if (mrdhelper.get_userParameterDouble_value(metadata, 'EchoTime') is not None):
-        logging.debug(f"CBS_LOG: EchoTime value of {mrdhelper.get_userParameterDouble_value(metadata, 'EchoTime')} found via mrdhelper.getuserParam.")
-    if (mrdhelper.get_userParameterLong_value(metadata, 'InstanceNumber') is not None):
-        logging.debug(f"CBS_LOG: InstanceNumber value of {mrdhelper.get_userParameterLong_value(metadata, 'InstanceNumber')} found via mrdhelper.getuserParam.")
-    return None
+        logging.debug("IceMiniHead[0]: %s", base64.b64decode(meta[0]['IceMiniHead']).decode('utf-8'))
 
-def imageOutPreparation_basic(data,head,meta,currentSeries):
+    logging.debug("Original image data is size %s" % (data.shape,))
+    np.save(debugFolder + "/" + "imgOrig.npy", data)
+
+    if ('parameters' in config) and ('options' in config['parameters']) and (config['parameters']['options'] == 'complex'):
+        # Complex images are requested
+        data = data.astype(np.complex64)
+        maxVal = data.max()
+    else:
+        # Determine max value (12 or 16 bit)
+        BitsStored = 12
+        if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
+            BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
+        maxVal = 2**BitsStored - 1
+
+        # Normalize and convert to int16
+        data = data.astype(np.float64)
+        data *= maxVal/data.max()
+        data = np.around(data)
+        data = data.astype(np.int16)
+
+    currentSeries = 0
+
+    # Re-slice back into 2D images
     imagesOut = [None] * data.shape[-1]
     for iImg in range(data.shape[-1]):
-        # Create new MRD instance for the final image
+        # Create new MRD instance for the inverted image
         # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
         # from_array() should be called with 'transpose=False' to avoid warnings, and when called
         # with this option, can take input as: [cha z y x], [z y x], or [y x]
         imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
 
         # Create a copy of the original fixed header and update the data_type
+        # (we changed it to int16 from all other types)
         oldHeader = head[iImg]
         oldHeader.data_type = imagesOut[iImg].data_type
+
+        # Set the image_type to match the data_type for complex data
+        if (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXFLOAT) or (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXDOUBLE):
+            oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
 
         # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
         if mrdhelper.get_meta_value(meta[iImg], 'IceMiniHead') is not None:
             if mrdhelper.extract_minihead_bool_param(base64.b64decode(meta[iImg]['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
                 currentSeries += 1
 
-        imagesOut[iImg].setHead(oldHeader)      #Same
+        imagesOut[iImg].setHead(oldHeader)
 
         # Create a copy of the original ISMRMRD Meta attributes and update
         tmpMeta = meta[iImg]
         tmpMeta['DataRole']                       = 'Image'
-        tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'B0MAP']
-        tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon_cbsb0stats'
+        tmpMeta['ImageProcessingHistory']         = ['PYTHON']
+        tmpMeta['WindowCenter']                   = str((maxVal+1)/2)
+        tmpMeta['WindowWidth']                    = str((maxVal+1))
+        tmpMeta['SequenceDescriptionAdditional']  = 'OPENRECON'
         tmpMeta['Keep_image_geometry']            = 1
 
         # Add image orientation directions to MetaAttributes if not already present
@@ -199,434 +911,9 @@ def imageOutPreparation_basic(data,head,meta,currentSeries):
             tmpMeta['ImageColumnDir'] = ["{:.18f}".format(oldHeader.phase_dir[0]), "{:.18f}".format(oldHeader.phase_dir[1]), "{:.18f}".format(oldHeader.phase_dir[2])]
 
         metaXml = tmpMeta.serialize()
-        #logging.debug("CBS_DEBUG: Image data has %d elements", imagesOut[iImg].data.size)
+        logging.debug("Image MetaAttributes: %s", xml.dom.minidom.parseString(metaXml).toprettyxml())
+        logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
 
         imagesOut[iImg].attribute_string = metaXml
+
     return imagesOut
-
-# Returns a float if all elements in a lst are identical, else returns the lst
-def collapseIfSoleyUnique(lst):
-    return float(lst[0]) if lst and len(set(lst)) == 1 and lst[0] is not None else lst
-
-# Finds Dicom Standard Dictionary parameters, only does TE right now,
-# pretty sure this can be done with ismrmrd.Meta.deserialize(img.attribute_string)
-# but not sure how.
-
-def getAcquisitionData(meta, Parameter):
-    tag_keys = {"Echo Time": "00180081",
-                "Rescale Slope":"00281053", 
-                "Rescale Intercept":"00281052", 
-                "Instance Number":"00200013"}
-    
-    #logging.info(f"CBS_LOG: In getAcquisitonData Meta is classified as type: {type(meta)} \n")
-    if meta is None or not isinstance(meta, ismrmrd.meta.Meta):
-        logging.error("CBS_Error: Must include meta data of type: <class 'ismrmrd.meta.Meta'>")
-        return None
-    Parameter = str(Parameter).replace(" ","").lower()
-    if Parameter == "te" or Parameter == "echotime":
-        tag_key = tag_keys["Echo Time"] # Comes from Dicom Standard Dictionary
-    elif Parameter == "ri" or Parameter == "rescaleintercept":
-        tag_key = tag_keys["Rescale Intercept"] # Comes from Dicom Standard Dictionary
-    elif Parameter == "rs" or Parameter == "rescaleslope":
-        tag_key = tag_keys["Rescale Slope"] # Comes from Dicom Standard Dictionary
-    elif Parameter == "in" or Parameter == "instancenumber":
-        tag_key = tag_keys["Instance Number"] # Comes from Dicom Standard Dictionary
-    else:
-        logging.error("CBS_Error: Unrecognised parameter")
-        return None
-
-    if isinstance(meta, dict):
-        # meta is already a dictionary (from getInstanceNumber)
-        py_dict = meta
-    else:
-        # meta is a string representation (from other calls)
-        try:
-            py_dict = ast.literal_eval(str(meta))
-        except:
-            logging.error("CBS_ERROR: Failed to parse meta as dictionary")
-            return None
-
-    if "DicomJson" not in py_dict:
-        logging.warning("CBS_WARNING: No DicomJson in meta, cannot extract parameter.")
-        return None
-    
-    try:
-        if isinstance(py_dict["DicomJson"], str):
-            # String case - remove whitespace and decode
-            dicom_json_str = "".join(py_dict["DicomJson"].split())
-            decoded64_utf8 = base64.b64decode(dicom_json_str).decode("utf-8")
-        else:
-            # Already processed case or other format
-            logging.error("CBS_ERROR: DicomJson is not a string")
-            return None
-            
-        dicom_json = json.loads(decoded64_utf8)
-        
-        if tag_key in dicom_json and "Value" in dicom_json[tag_key]:
-            value = dicom_json[tag_key]["Value"]
-            value = value[0] if isinstance(value, list) and len(value) > 0 else value
-            return value
-        else:
-            logging.error(f"CBS_ERROR: {tag_key} not found or has no 'Value'")
-            return None
-    except (ValueError, SyntaxError, KeyError, json.JSONDecodeError, base64.binascii.Error) as e:
-        logging.error(f"CBS_ERROR: - Failed to parse DicomJson: {e}")
-        return None
-
-# Wanted to use getAcquisitionData before I define meta so use this linker function.
-def getInstanceNumber(img):
-    meta = ismrmrd.Meta.deserialize(img.attribute_string)
-    instance_number = getAcquisitionData(meta, "Instance Number")
-    if instance_number is None:
-        logging.warning("CBS_Warning: Image has no Instance Number, using 0")
-        return 0
-    return int(instance_number)
-
-# Unpacks big dictionary
-# doesn't deal with errors but you have bigger problems if your
-# image data has no data, head or metadata
-def UnpackInto(NewDict,ImageList):
-    # data unpacks to [img cha z y x]
-    NewDict["data"] = np.stack([img.data                              for img in ImageList])
-    NewDict["head"] = [img.getHead()                                  for img in ImageList]
-    NewDict["meta"] = [ismrmrd.Meta.deserialize(img.attribute_string) for img in ImageList]
-    return NewDict
-
-# Does some essential reindexing and also calculates delTE
-# does not deal with errors
-def OrderDict_delTE(Dict,config):
-    if all(Dict[k] == "TE Not found"for k in Dict.keys()if isinstance(k, str)):
-        TE1, TE2 = mrdhelper.get_json_config_param(config, 'TE1', default=10.0, type='float'), mrdhelper.get_json_config_param(config, 'TE2', default=12.46, type='float')
-    else:
-        Numbers = [float(k) for k in Dict.keys()]
-        TE1, TE2 = min(Numbers), max(Numbers)
-    NewDict = {
-        "TE1": Dict[str(TE1)],
-        "TE2": Dict[str(TE2)]
-    }
-    return NewDict, TE2, TE1
-
-def b0mapProcess(B0map_Dict,currentSeries,config):
-    logging.info("CBS_LOG: Beginning B0map processing...")
-    Phase = {}
-    Phase = UnpackInto(Phase,B0map_Dict["phase"])
-    B0map_Dict.pop("phase",None)
-    B0map_Dict, te2, te1 = OrderDict_delTE(B0map_Dict,config)
-    delTE = te2 - te1
-    TE1,TE2 = {},{}
-    TE1,TE2 = UnpackInto(TE1,B0map_Dict["TE1"]),UnpackInto(TE2,B0map_Dict["TE2"])
-    B0mapImageSeriesIndex = max(TE1["head"][0].image_series_index,TE2["head"][0].image_series_index,Phase["head"][0].image_series_index) + 1
-    del TE2, te2,te1
-    ## Making FrequencyMap 
-    
-    # Formatting Phasedata
-    # Extract image data into a 5D array of size [img cha z y x]
-    # -- 2: Reformat to [y,x,z,cha,img]
-    Phasedata = Phase["data"].transpose((3, 4, 2, 1, 0))
-    Phasedata = Phasedata[:,:,0,0,:].astype(np.float64).transpose(1,0,2)
-    if CONFIG_IS_TESTING:
-        Phasedata = Phasedata*CONFIG_RESCALESLOPE + CONFIG_RESCALEINTERCEPT
-    xform = np.eye(4)
-    nib.save(nib.nifti1.Nifti1Image(Phasedata, xform), 'temp_phase.nii')
-    Phasedata = nib.load('temp_phase.nii').get_fdata()
-    Phasedata = Phasedata[:, :, :, None, None]
-    # Reformat to [y x img cha z] from nifti
-    Phasedata = Phasedata.transpose((1, 0, 3, 4, 2)) # then try (1,0,4,3,2)
-    ### Math Operations Here
-    #Freqdata has array [x, y, char, img, z]
-    Freqdata = (Phasedata) / (2*4096 * delTE * 1e-3)
-        # Currently data*2 - 4096 is the conversion from the input.h5 values (which are not the true values)
-        # The true values can be calculated dynamically with dicom metadata entries
-        # Rescale Intercept (0028,1052) and Rescale Slope (0028,1053)
-        # for a true value equation of: true_value = value*rescale_slope - rescale_intercept
-    ###
-    ## Making BrainMask, reformat to [y,x,z,cha,img]
-    TE1data = TE1["data"].transpose((3, 4, 2, 1, 0))[:,:,0,0,:].astype(np.float64)
-    TE1data = TE1data.transpose(1,0,2)
-    if CONFIG_IS_TESTING:
-        TE1data = (TE1data*CONFIG_RESCALESLOPE + CONFIG_RESCALEINTERCEPT)
-    nib.save(nib.nifti1.Nifti1Image(TE1data, xform), 'temp_te1.nii')
-    if not os.path.exists('temp_te1.nii'):
-        logging.error("CBS_ERROR: temp_te1.nii not found")
-    logging.info("CBS_LOG: temp_te1.nii found proceeding...")
-    subprocess.run(["bet2", "temp_te1.nii", "temp_joj", "-m","-n", "-f","0.4"], check=True) # create brain mask
-    subprocess.run(["fslmaths","-n.nii.gz","-dilM","-dilM","-ero","-ero","-ero","bmask_dil2_ero3"], check=True) # 2*dilate 3*erode the brain mask
-
-    if not os.path.exists("bmask_dil2_ero3.nii.gz"):
-        logging.error("CBS_ERROR: Brain Mask not found!")
-
-    logging.info("CBS_LOG: Brain Mask success!, proceeding with math operations...")
-    BrainMask_load = nib.load("bmask_dil2_ero3.nii.gz")
-    #.get_fdata() gets array [x, y, z]
-    BrainMask = BrainMask_load.get_fdata()
-    BrainMask = BrainMask[:, :, :, None, None]
-    BrainMask = BrainMask.transpose((1, 0, 3, 4, 2))
-    #now array [x, y, char, img, z] same as freqdata
-    logging.info(f"CBS_LOG: BrainMask shape: {BrainMask.shape}")
-    logging.info(f"CBS_LOG: Freqdata shape before processing: {Freqdata.shape}")
-    if BrainMask.shape != Freqdata.shape:
-        logging.error(f"CBS_CRITICAL_ERROR: Shape mismatch - BrainMask {BrainMask.shape}, Freqdata {Freqdata.shape}")
-    B0Mask = (BrainMask * Freqdata).astype(np.float64)
-    logging.info(f"CBS_LOG: B0Map shape after processing: {B0Mask.shape}")
-
-    # Leaving for future debugging
-    B0Mask_img = nib.Nifti1Image(B0Mask[:,:,0,0,:], affine=BrainMask_load.affine)
-    outputfile = "/buildhostdirectory/tmp/niftis/B0Mask.nii"
-    nib.save(B0Mask_img, outputfile)
-    logging.info(f"CBS_LOG: Saved B0Mask to B0Mask.nii")
-    if os.path.exists(outputfile):
-       logging.info("CBS_LOG: B0Mask.nii exists!")
-    else:
-       logging.error("CBS_LOG: B0Mask.nii NOT found!")
-
-    B0MapOut = [None] * B0Mask.shape[-1]
-    logging.info("CBS_LOG: B0mapImageSeriesIndex is: %d",B0mapImageSeriesIndex)
-
-    B0MaxValue = np.max(B0Mask[B0Mask !=0])
-    B0MinValue = np.min(B0Mask[B0Mask != 0])
-    B0mean = np.mean(B0Mask)
-    B0meanNoZero = np.mean(B0Mask[B0Mask != 0])
-    B0SD = np.std(B0Mask)
-    B0SDNoZero = np.std(B0Mask[B0Mask != 0])
-    logging.info(f"CBS_LOG: Min(!0): {B0MinValue}, Max: {B0MaxValue}")
-    logging.info(f"CBS_LOG: Mean: {B0mean:.5f}, STD: {B0SD:.5f}")
-    logging.info(f"CBS_LOG:(No Zero) Mean: {B0meanNoZero:.5f}, STD: {B0SDNoZero:.5f}")
-    for iImg in range(B0Mask.shape[-1]):
-        B0MapOut[iImg] = ismrmrd.Image.from_array(B0Mask[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
-        # Create a copy of the original fixed header and update the data_type
-
-        oldHeader = TE1["head"][iImg]
-        oldHeader.data_type = B0MapOut[iImg].data_type
-        oldHeader.image_series_index = B0mapImageSeriesIndex
-        # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
-        if mrdhelper.get_meta_value(TE1["meta"][iImg], 'IceMiniHead') is not None:
-            if mrdhelper.extract_minihead_bool_param(base64.b64decode(TE1["meta"][iImg]['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
-                currentSeries += 1
-
-        B0MapOut[iImg].setHead(oldHeader)
-
-        # Create a copy of the original ISMRMRD Meta attributes from TE1 and update where possible
-        tmpMeta = TE1["meta"][iImg]
-        tmpMeta['DataRole']                       = 'Image'
-        tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'OpenRecon recipe: cbsb0stats']
-        tmpMeta['WindowCenter']                   = str(np.round(((B0MaxValue - B0MinValue)/2)))
-        tmpMeta['WindowWidth']                    = str((B0MaxValue))
-        tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon'
-        tmpMeta['Keep_image_geometry']            = 1
-        tmpMeta['ImageComments']                  = f"Mean: {B0meanNoZero:.4f}, STD: {B0SD:.4f}" # Change the image comments to mean and SD
-        if tmpMeta.get('ImageRowDir') is None:
-            tmpMeta['ImageRowDir'] = ["{:.18f}".format(oldHeader.read_dir[0]), "{:.18f}".format(oldHeader.read_dir[1]), "{:.18f}".format(oldHeader.read_dir[2])]
-
-        if tmpMeta.get('ImageColumnDir') is None:
-            tmpMeta['ImageColumnDir'] = ["{:.18f}".format(oldHeader.phase_dir[0]), "{:.18f}".format(oldHeader.phase_dir[1]), "{:.18f}".format(oldHeader.phase_dir[2])]
-
-        metaXml = tmpMeta.serialize()
-
-        B0MapOut[iImg].attribute_string = metaXml
-    B0map_Dict.clear()
-    return B0MapOut
-### -----
-def process(connection, config, metadata):
-    global CONFIG_IS_TESTING, CONFIG_BITSSTORED,CONFIG_RESCALEINTERCEPT,CONFIG_RESCALESLOPE,isB0CollectionComplete,isB0PhaseCollected,isB0TEsCollected
-    # Continuously parse incoming data parsed from MRD messages
-    currentSeries = 0
-    imgGroup = []
-
-    waveformGroup = []
-
-    B0map_Dict = {} # data collecting array for B0mask process
-
-    GPUEnvironmentLog()
-
-
-    if not os.path.exists(debugFolder):
-        os.makedirs(debugFolder)
-        logging.debug("CBS_LOG: Created folder " + debugFolder + " for debug output files")
-
-    logging.info("CBS_LOG: Config: %s", config)
-
-    # Metadata should be MRD formatted header, but may be a string
-    # if it failed conversion earlier
-    try:
-        # logging info, from openreconexample.py
-        logging.info("CBS_LOG: Incoming dataset contains %d encodings", len(metadata.encoding))
-        logging.info("CBS_LOG: First encoding is of type '%s', with a matrix size of (%s x %s x %s) and a field of view of (%s x %s x %s)mm^3", 
-            metadata.encoding[0].trajectory, 
-            metadata.encoding[0].encodedSpace.matrixSize.x, 
-            metadata.encoding[0].encodedSpace.matrixSize.y, 
-            metadata.encoding[0].encodedSpace.matrixSize.z, 
-            metadata.encoding[0].encodedSpace.fieldOfView_mm.x, 
-            metadata.encoding[0].encodedSpace.fieldOfView_mm.y, 
-            metadata.encoding[0].encodedSpace.fieldOfView_mm.z)
-        explore(metadata)
-
-
-
-    except:
-        logging.info("CBS_LOG: Improperly formatted metadata: \n%s", metadata)
-
-
-    try:
-        for item in connection:
-            # ----------------------------------------------------------
-            # Raw k-space data messages
-            # ----------------------------------------------------------
-            if isinstance(item, ismrmrd.Acquisition):
-                logging.error("CBS_ERROR: Raw k-space data is not supported by this module.")
-
-            # ----------------------------------------------------------
-            # Image data messages
-            # ----------------------------------------------------------
-            elif isinstance(item, ismrmrd.Image):
-                logging.info(f"CBS_LOG: image type {item.image_type} recieved")
-                logging.info(f"CBS_LOG: image seriex index is {item.image_series_index}")
-                try:
-                    logging.info(f"CBS_LOG: image comment - {ismrmrd.Meta.deserialize(item.attribute_string)['ImageComments']}")
-                except:
-                    logging.info(f"CBS_LOG: image comment not found")
-
-                # if (not isB0CollectionComplete) and isB0PhaseCollected and isB0TEsCollected:
-                #     logging.info(f"CBS_LOG: All B0 Images collected, setting flag to True")
-                #     isB0CollectionComplete = True
-                #     if (B0map_Dict["phase"] is not None):
-                #         logging.info("CBS_LOG: Processing B0map...")
-                #         image = b0mapProcess(B0map_Dict, currentSeries)
-                #         connection.send_image(image)
-                #         logging.info("CBS_LOG: B0map image sent through connection!")
-                #     else:
-                #         logging.info(f"CBS_WARNING: B0map data incomplete. Keys: {list(B0map_Dict)}")
-                #         logging.info(f"CBS_WARNING: Unable to B0map.")
-                #         B0map_Dict.clear()
-
-                if (not isB0CollectionComplete) and ((not isB0PhaseCollected) or (not isB0TEsCollected)):
-                    logging.info(f"CBS_LOG: Collecting image")
-                
-                    if item.image_series_index != currentSeries:
-                        logging.info("CBS_LOG: Processing a group of images because series index changed to %d", item.image_series_index)
-                        currentSeries = item.image_series_index
-                        image = process_image(imgGroup, connection, config, metadata, B0map_Dict)
-                        logging.debug(f"CBS_DEBUG: isB0CollectionComplete: {isB0CollectionComplete}")
-                        connection.send_image(image)
-                        imgGroup = []
-
-                    # Collect magnitude and phase images for processing
-                    if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0) or (item.image_type is ismrmrd.IMTYPE_PHASE) or (item.image_type == 2):
-                        imgGroup.append(item)
-                        if (mrdhelper.get_json_config_param(config, 'sendoriginal', default=False, type='bool')):
-                            connection.send_image(item)
-                        
-
-                else:
-                    tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
-                    tmpMeta['Keep_image_geometry']    = 1
-                    item.attribute_string = tmpMeta.serialize()
-
-                    connection.send_image(item)
-                    continue
-
-            # ----------------------------------------------------------
-            # Waveform data messages
-            # ----------------------------------------------------------
-            elif isinstance(item, ismrmrd.Waveform):
-                waveformGroup.append(item)
-
-            elif item is None:
-                break
-
-            else:
-                logging.error("CBS_ERROR: Unsupported data type %s", type(item).__name__)
-
-        # Extract raw ECG waveform data. Basic sorting to make sure that data 
-        # is time-ordered, but no additional checking for missing data.
-        # ecgData has shape (5 x timepoints)
-
-        if len(waveformGroup) > 0:
-            waveformGroup.sort(key = lambda item: item.time_stamp)
-            ecgData = [item.data for item in waveformGroup if item.waveform_id == 0]
-            ecgData = np.concatenate(ecgData,1)
-
-        if len(imgGroup) > 0:
-            logging.info("CBS_LOG: Processing a group of images (untriggered)")
-            image = process_image(imgGroup, connection, config, metadata,B0map_Dict)
-            connection.send_image(image)
-            imgGroup = []
-
-        logging.debug(f"CBS_DEBUG: isB0CollectionComplete: {isB0CollectionComplete},  isB0PhaseCollected: {isB0PhaseCollected}, isB0TEsCollected: {isB0TEsCollected}")
-        if (not isB0CollectionComplete) and isB0PhaseCollected and isB0TEsCollected:
-            logging.info(f"CBS_LOG: All B0 Images collected, setting flag to True")
-            isB0CollectionComplete = True
-            logging.debug(f"CBS_DEBUG: isB0CollectionComplete: {isB0CollectionComplete},  isB0PhaseCollected: {isB0PhaseCollected}, isB0TEsCollected: {isB0TEsCollected}")
-            if (B0map_Dict["phase"] is not None):
-                logging.info("CBS_LOG: Processing B0map...")
-                image = b0mapProcess(B0map_Dict, currentSeries,config)
-                connection.send_image(image)
-                logging.info("CBS_LOG: B0map image sent through connection!")
-            else:
-                logging.info(f"CBS_WARNING: B0map data incomplete. Keys: {list(B0map_Dict)}")
-                logging.info(f"CBS_WARNING: Unable to B0map.")
-                B0map_Dict.clear()
-
-
-    except Exception as e:
-        logging.error(traceback.format_exc())
-        connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
-
-    finally:
-        connection.send_close()
-
-def process_image(images, connection, config, metadata,B0map_Dict):
-    global isB0TEsCollected,isB0PhaseCollected
-    if len(images) == 0:
-        return []
-    images = sorted(images, key=getInstanceNumber) # Sorts images by Instance Number
-    logging.info(f"CBS_LOG: Images Instances is:")
-    [logging.info(f"{int(getInstanceNumber(i))}") for i in images]
-    if (images[0].image_type is ismrmrd.IMTYPE_MAGNITUDE) or (images[0].image_type == 1):
-        # Note: The MRD Image class stores data as [cha z y x]
-        # Extract image data into a 5D array of size [img cha z y x]
-        data = np.stack([img.data                              for img in images])
-        head = [img.getHead()                                  for img in images]
-        meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in images]
-        B0map_Dict[findTE(meta,metadata)] = images
-        if (len(B0map_Dict) == 2) and (B0map_Dict.get("phase") is None):
-            isB0TEsCollected = True
-        elif (len(B0map_Dict) == 3) and (B0map_Dict.get("phase") is not None):
-            isB0TEsCollected = True
-            
-        getDiagnosticInfo(images,data,head,meta,metadata,B0map_Dict)
-        
-        
-        
-        # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions from an initial [z char img x y]
-        data = data.transpose((3, 4, 2, 1, 0)).astype(np.float64)
-        if CONFIG_IS_TESTING:
-            data = data*CONFIG_RESCALESLOPE + CONFIG_RESCALEINTERCEPT
-        # rescaleIntercept = np.array([getAcquisitionData(m, "ri") for m in meta])
-        # rescaleSlope = np.array([getAcquisitionData(m, "rs") for m in meta])
-        #data = data*rescaleSlope - rescaleIntercept
-        logging.debug("CBS_DEBUG: Original image data after transposing is %s" % (data.shape,))
-        currentSeries = 0
-
-        imagesOut = imageOutPreparation_basic(data,head,meta,currentSeries)
-        return imagesOut
-    elif (images[0].image_type is ismrmrd.IMTYPE_PHASE) or (images[0].image_type == 2):
-        #logging.debug("CBS_DEBUG: PHASE DETECTED")
-        # Note: The MRD Image class stores data as [cha z y x]
-        # Extract image data into a 5D array of size [img cha z y x]
-        data = np.stack([img.data                              for img in images])
-        head = [img.getHead()                                  for img in images]
-        meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in images]
-        B0map_Dict["phase"] = images
-        isB0PhaseCollected = True
-        
-        getDiagnosticInfo(images,data,head,meta,metadata,B0map_Dict)
-
-        # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions
-        data = data.transpose((3, 4, 2, 1, 0)).astype(np.float64)
-        if CONFIG_IS_TESTING:
-            data = data*CONFIG_RESCALESLOPE + CONFIG_RESCALEINTERCEPT
-        logging.debug("CBS_DEBUG: Original image data after transposing is %s" % (data.shape,))
-        currentSeries = 0
-
-        imagesOut = imageOutPreparation_basic(data,head,meta,currentSeries)
-        return imagesOut
