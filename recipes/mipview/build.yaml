@@ -1,0 +1,77 @@
+name: mipview
+version: 0.1.2
+architectures:
+- x86_64
+copyright:
+- license: MIT
+  url: https://github.com/KMarshallX/MipView/blob/master/License.md
+variables:
+  mipview_version: 0.1.2
+  mipview_archive_url: "https://github.com/KMarshallX/MipView/archive/refs/tags/v{{ context.mipview_version }}.tar.gz"
+files:
+- name: MipView_tar
+  url: "{{ context.mipview_archive_url }}"
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+  - environment:
+      DEBIAN_FRONTEND: noninteractive
+  - install: build-essential git 
+  - install: 
+      - libegl1 
+      - libgl1 
+      - libglib2.0-0
+      - libfontconfig1
+      - libfreetype6
+      - libxkbcommon-x11-0
+      - libx11-xcb1 
+      - libdbus-1-3 
+      - libxcb-shm0
+      - libxcb-util1
+      - libxcb-cursor0
+      - libxcb-icccm4 
+      - libxcb-image0 
+      - libxcb-keysyms1 
+      - libxcb-randr0 
+      - libxcb-render-util0 
+      - libxcb-shape0 
+      - libxcb-xfixes0 
+      - libxcb-xinerama0
+      - libxrender1 
+      - libxi6 
+      - libsm6                               
+      - libxext6
+  - template:
+        name: miniconda
+        conda_install: python=3.12.8
+        version: latest
+  - workdir: /opt
+  - run:
+    - tar -xzf {{ get_file("MipView_tar") }} -C /opt
+    - mv /opt/MipView-{{ context.mipview_version }} /opt/MipView
+    - cd /opt/MipView
+    - chmod a+x setup.sh run.sh
+  - workdir: /opt/MipView
+  - run:
+    - bash setup.sh
+  - environment:
+      QT_QPA_PLATFORM: xcb
+      PATH: $PATH:/opt/MipView/.venv/bin
+      MIPVIEW_HOME: /opt/MipView
+readme: |2-
+    ----------------------------------
+    ## MipView/{{ context.version }} ##
+    This container provides MipView {{ context.mipview_version }} in container version {{ context.version }}.
+
+    Example:
+    ```
+    mipview
+    ```
+
+    To run container outside of this environment: ml mipview/{{ context.version }}
+
+    ----------------------------------
+categories:
+  - visualization
