@@ -310,8 +310,12 @@ class SPDXCopyrightInfo:
 class StructuredReadme:
     description: str = attrs.field()
     example: str = attrs.field()
-    documentation: str = attrs.field()
-    citation: str = attrs.field()
+    documentation: str = attrs.field(
+        default="", converter=lambda value: "" if value is None else value
+    )
+    citation: str = attrs.field(
+        default="", converter=lambda value: "" if value is None else value
+    )
 
 
 # ============================================================================
@@ -779,9 +783,10 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
 
         # Parse structured_readme if present
         if "structured_readme" in recipe_copy and recipe_copy["structured_readme"]:
-            recipe_copy["structured_readme"] = StructuredReadme(
-                **recipe_copy["structured_readme"]
-            )
+            structured_readme_dict = recipe_copy["structured_readme"].copy()
+            structured_readme_dict.setdefault("documentation", "")
+            structured_readme_dict.setdefault("citation", "")
+            recipe_copy["structured_readme"] = StructuredReadme(**structured_readme_dict)
 
         # parse auto_update if present
         if "auto_update" in recipe_copy and recipe_copy["auto_update"]:
