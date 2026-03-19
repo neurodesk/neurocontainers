@@ -1,0 +1,130 @@
+name: spant
+version: 3.7.0
+copyright:
+  - license: GPL-3.0-only
+    url: https://github.com/martin3141/spant?tab=GPL-3.0-1-ov-file
+architectures:
+  - x86_64
+structured_readme:
+  description: "spant provides a full suite of tools to build automated analysis pipelines for Magnetic Resonance Spectroscopy (MRS) data. "
+  example: |-
+    library(spant)
+    ws_path <- file.path("svs_slaser_example", "sub-01_svs.nii.gz")
+    fit_svs(ws_path)
+  documentation: https://spantdoc.wilsonlab.co.uk/
+  citation: |-
+    If you’re using the fit_svs function in your research please cite [1], [2], [3].
+    The following methods are used in fit_svs by default:
+    rats dynamic frequency and phase correction [4]
+    water reference concentration scaling [5]
+    When separate coil information is available the GLS method of combination is used [6].
+
+    The following methods are used in fit_svs depending on the input options:
+    Klose method for eddy current correction [7]
+    HSVD residual water removal [8]
+
+    References
+    [1] M. Wilson, “Chemical shift and relaxation regularization improve the accuracy of 1H MR spectroscopy analysis,” Magnetic Resonance in Medicine, vol. 93, no. 6, pp. 2287–2296, 2025, doi: 10.1002/mrm.30462.
+    [2] M. Wilson, “Adaptive baseline fitting for 1H MR spectroscopy analysis,” Magnetic Resonance in Medicine, vol. 85, no. 1, pp. 13–29, Jan. 2021, doi: 10.1002/mrm.28385.
+    [3] M. Wilson, “Spant: An R package for magnetic resonance spectroscopy analysis,” Journal of Open Source Software, vol. 6, no. 67, p. 3646, Nov. 2021, doi: 10.21105/joss.03646.
+    [4] M. Wilson, “Robust retrospective frequency and phase correction for single-voxel MR spectroscopy,” Magnetic Resonance in Medicine, vol. 81, no. 5, pp. 2878–2886, May 2019, doi: 10.1002/mrm.27605.
+    [5] C. Gasparovic et al., “Use of tissue water as a concentration reference for proton spectroscopic imaging,” Magnetic Resonance in Medicine, vol. 55, no. 6, pp. 1219–1226, Jun. 2006, doi: 10.1002/mrm.20901.
+    [6] L. An, J. W. van der Veen, S. Li, D. M. Thomasson, and J. Shen, “Combination of Multichannel Single-Voxel MRS Signals Using Generalized Least Squares,” Journal of magnetic resonance imaging : JMRI, vol. 37, no. 6, pp. 1445–1450, Jun. 2013, doi: 10.1002/jmri.23941.
+    [7] U. Klose, “In vivo proton spectroscopy in presence of eddy currents,” Magnetic Resonance in Medicine, vol. 14, no. 1, pp. 26–30, Apr. 1990, doi: 10.1002/mrm.1910140104.
+    [8] H. Barkhuijsen, R. de Beer, and D. van Ormondt, “Improved algorithm for noniterative time-domain model fitting to exponentially damped magnetic resonance signals,” Journal of Magnetic Resonance (1969), vol. 73, no. 3, pp. 553–557, Jul. 1987, doi: 10.1016/0022-2364(87)90023-0.
+readme: |-
+  ----------------------------------
+  ## spant/{{ context.version }} ##
+
+  spant provides a full suite of tools to build automated analysis pipelines for Magnetic Resonance Spectroscopy (MRS) data.
+
+  Example:
+  ```
+  library(spant)
+  ws_path <- file.path("svs_slaser_example", "sub-01_svs.nii.gz")
+  fit_svs(ws_path)
+  ```
+
+  More documentation can be found here: https://spantdoc.wilsonlab.co.uk/
+
+  Citation:
+  ```
+  If you’re using the fit_svs function in your research please cite [1], [2], [3].
+  The following methods are used in fit_svs by default:
+  rats dynamic frequency and phase correction [4]
+  water reference concentration scaling [5]
+  When separate coil information is available the GLS method of combination is used [6].
+
+  The following methods are used in fit_svs depending on the input options:
+  Klose method for eddy current correction [7]
+  HSVD residual water removal [8]
+
+  References
+  [1] M. Wilson, “Chemical shift and relaxation regularization improve the accuracy of 1H MR spectroscopy analysis,” Magnetic Resonance in Medicine, vol. 93, no. 6, pp. 2287–2296, 2025, doi: 10.1002/mrm.30462.
+  [2] M. Wilson, “Adaptive baseline fitting for 1H MR spectroscopy analysis,” Magnetic Resonance in Medicine, vol. 85, no. 1, pp. 13–29, Jan. 2021, doi: 10.1002/mrm.28385.
+  [3] M. Wilson, “Spant: An R package for magnetic resonance spectroscopy analysis,” Journal of Open Source Software, vol. 6, no. 67, p. 3646, Nov. 2021, doi: 10.21105/joss.03646.
+  [4] M. Wilson, “Robust retrospective frequency and phase correction for single-voxel MR spectroscopy,” Magnetic Resonance in Medicine, vol. 81, no. 5, pp. 2878–2886, May 2019, doi: 10.1002/mrm.27605.
+  [5] C. Gasparovic et al., “Use of tissue water as a concentration reference for proton spectroscopic imaging,” Magnetic Resonance in Medicine, vol. 55, no. 6, pp. 1219–1226, Jun. 2006, doi: 10.1002/mrm.20901.
+  [6] L. An, J. W. van der Veen, S. Li, D. M. Thomasson, and J. Shen, “Combination of Multichannel Single-Voxel MRS Signals Using Generalized Least Squares,” Journal of magnetic resonance imaging : JMRI, vol. 37, no. 6, pp. 1445–1450, Jun. 2013, doi: 10.1002/jmri.23941.
+  [7] U. Klose, “In vivo proton spectroscopy in presence of eddy currents,” Magnetic Resonance in Medicine, vol. 14, no. 1, pp. 26–30, Apr. 1990, doi: 10.1002/mrm.1910140104.
+  [8] H. Barkhuijsen, R. de Beer, and D. van Ormondt, “Improved algorithm for noniterative time-domain model fitting to exponentially damped magnetic resonance signals,” Journal of Magnetic Resonance (1969), vol. 73, no. 3, pp. 553–557, Jul. 1987, doi: 10.1016/0022-2364(87)90023-0.
+  ```
+
+  To run container outside of this environment: ml spant/{{ context.version }}
+
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - r-base
+        - r-base-dev
+    - run:
+        - R --slave -e " options(repos = c(CRAN = 'https://cloud.r-project.org')); pkgs <- c('spant'); mis <- setdiff(pkgs, rownames(installed.packages())); if (length(mis)) install.packages(mis, dependencies = TRUE); cat('Installed CRAN packages:\n'); if (length(pkgs)) cat(paste(pkgs, collapse = ', '), '\n') "
+        - R --slave -e " options(repos = c(CRAN = 'https://cloud.r-project.org')); if (!requireNamespace('remotes', quietly = TRUE))    install.packages('remotes'); remotes::install_github('martin3141/spant',    dependencies = NA, upgrade = 'never', build_vignettes = FALSE ); cat('Installed spant from GitHub (', 'martin3141/spant',  )\n') "
+    - test:
+        name: verify_r_installation
+        script: |-
+          # Test R installation
+          R --version
+          echo "Testing R package installation..."
+          R --slave -e "
+            # Check R version
+            cat('R version:', R.version.string, '\n')
+            
+            # Test main package
+            tryCatch({
+              library("spant")
+              cat('Successfully loaded spant\n')
+              
+              # Try to get package info
+              pkg_info <- packageDescription('spant')
+              if (!is.na(pkg_info)) {
+                cat('Package version:', pkg_info[['Version']], '\n')
+                cat('Package title:', pkg_info[['Title']], '\n')
+              }
+            }, error = function(e) {
+              cat('Warning: Could not load spant:', 
+                  e[['message']], '\n')
+              cat('Installed packages:\n')
+              print(installed.packages()[,c('Package', 'Version')])
+            })
+            
+            # List key installed packages
+            key_packages <- c('spant')
+            if (length(key_packages) > 0) {
+              cat('Checking additional packages:\n')
+              for (pkg in key_packages) {
+                if (require(pkg, character.only = TRUE, quietly = TRUE)) {
+                  cat('  ✓', pkg, '\n')
+                } else {
+                  cat('  ✗', pkg, '(not found)\n')
+                }
+              }
+            }
+          "
+categories:
+  - spectroscopy
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAElElEQVR4AWyUXUxcRRTH/3vvQruWpVC2SNvwYG0hAquQQEiIUqJUoOEBqm+EVKxRW9SKTyYkQgKJCQ+EoDE8qIAmfVDCEwEh8CBQSEj4MEE+xEJqKrTuUj4WyveO85/LLNulN/fHOfOfmXPOnLmLsf3FWbFVcVY8/dwlNu+4xMZnMQrfp2fE+idnxFp5tFi9HS1WbpEo8eTjKLH80Wnh/dDivw8iBXl80ykeve8US2URYvG9CPHvjVMKQwgce6iR0AlqROvapyVaD7YygYCQs8eB0v1+y1rz2tf2+F6//0ijbzCbjC+D0eNGy/IvddpQqBPq2ob6HBODWazqBLRPS4J1PdaWc9qnJdQIfUL/2AmYlewcAJ4tAa9kX7aJmq6WllALJVinH3QHbI+A56lA69QO3D+v4trgWbz9ezTS7vrw7R87+PWvXVxs9eHFH9YR96NPca55A8VdW2iZ2cPSph9+GZWVa2SCoxqebAt8M7GNhxnlmHnoxdzcHBYWFjCztAoUfIlf/t7D6ehoeV/iGfruryG+/HtU3NvF/TXOsVgrrkwgwH4dyNv/07uP3zxO1NXVYXh4GLGxscjMzMTU1BSqqqrw6GQ8YLOBT01NDZKTk5Geno6Ojg6Ulpbi1GtXMbh0gO19AZ6AcdUdcMOBH3gs23Mhwc0hent74fF4MDIygoKCAgwMDMARGQVZh5pfXFxUiUdHR1FSUqIClpWV4Z8NcZhALYP8ingcIUcC4TLd0NAQ9vb2UF9fj4mJCdTW1iIqKgrZ2dkYHx+X66zX6XQiJiYGCQkJaG5ulgezobW1FSdMAUMeUl6FSipDQj0UIsNtuHBiF6mpqejs7ERiYiIqKysxPz+PsbExmKYJuVetZxu9Xi9mZ2fVCbq7u9WeV88YOGmqJTIBELiDjV0/uh/swQsnlpeXUVhYCIfDAbfbjb6+PqSlpaG6uhrC2ovGxkbk5OQoeJr8/HzcTjKR4bLBJqtl/3kPMsHhDmlMG9DQ0AD2Vw7VOzk5idzcXOzv7yMlJUVVxYnp6WlsTg0gyXMPty7tovlKmExgx+lwzh4hEwi1KUwGj3XY0NbWBsMw0N7ejoiICNUWtslut6O/vz/QIoa4/pKJCreJcll5dpwBh2nFYuWE/8fUHcgTIdwEMmJNzAx2oaWlBcXFxfD5fKpytqanpwet3zXIuH7J0cu9ekSf6DGt/IqYVXZWziRFG6jOCMfXFTfhcrlQVFSErKwshIWFIS8vD+++bGJ9ZQU2mw1NTU3y5NZe9puwakKf0A+cQMZXp3gr3o67Vx346pUNXH7QhWsHo/jpzRMYvn4SpZftaHojHM05EtnzdJehPklWShiD0Cf0D+/AqoQZhfwlnXsBeOeiiTtuO24kmMg5b+C8A4g/BbweZ8MVSbbs+aVIyC/G+h2pvaoRjHWkyQQIPMwYGAQ51AklbUN9jjVcQziWCQTYL2JV8ew4VOcaaoQ+oU+0T0uoqTtgJo3OzLH2aQm1UIJ17dMSrg18RToj7fPRfdWWJ9W+tiLwZekYx07ArMxOtE9LqBH6wVAjwRp9av8DAAD//1OJSwsAAAAGSURBVAMAupKBfEERPRMAAAAASUVORK5CYII=
