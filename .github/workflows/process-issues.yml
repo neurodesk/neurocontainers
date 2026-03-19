@@ -81,12 +81,22 @@ jobs:
                 return;
               }
 
-              // Create recipe directory and write file directly
-              fs.mkdirSync(recipeDir, { recursive: true });
-              fs.writeFileSync(path.join(recipeDir, 'build.yaml'), yamlContent);
+              const recipeFile = path.join(recipeDir, 'build.yaml');
+              const fileExists = fs.existsSync(recipeFile);
+              const existingContent = fileExists ? fs.readFileSync(recipeFile, 'utf8') : null;
+              const hasChanges = !fileExists || existingContent !== yamlContent;
+              const action = fileExists ? 'update' : 'add';
 
-              // Expose sanitized name
+              if (hasChanges) {
+                fs.mkdirSync(recipeDir, { recursive: true });
+                fs.writeFileSync(recipeFile, yamlContent);
+              }
+
+              // Expose sanitized name and file state
               core.setOutput('name', normalized);
+              core.setOutput('file_path', `recipes/${normalized}/build.yaml`);
+              core.setOutput('action', action);
+              core.setOutput('has_changes', String(hasChanges));
               core.setOutput('parsed', JSON.stringify({ ...parsedYaml, name: normalized }));
             } catch (error) {
               core.setFailed(`Failed to process encoded content: ${error.message}`);
@@ -94,6 +104,7 @@ jobs:
 
       - name: Create branch name
         id: create-branch
+        if: steps.parse-yaml.outputs.has_changes == 'true'
         run: |
           set -euo pipefail
           BRANCH_NAME="contribution-${{ github.event.issue.number }}-${{ steps.parse-yaml.outputs.name }}"
@@ -105,56 +116,44 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Create new branch
+        if: steps.parse-yaml.outputs.has_changes == 'true'
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git checkout -b "${{ steps.create-branch.outputs.branch_name }}"
 
-      - name: Check if file exists
-        id: check-file
-        run: |
-          set -euo pipefail
-          FILE_PATH="recipes/${{ steps.parse-yaml.outputs.name }}/build.yaml"
-          if [ -f "$FILE_PATH" ]; then
-            echo "file_exists=true" >> "$GITHUB_OUTPUT"
-            { echo 'file_path<<EOF'; echo "$FILE_PATH"; echo 'EOF'; } >> "$GITHUB_OUTPUT"
-            echo "action=update" >> "$GITHUB_OUTPUT"
-          else
-            echo "file_exists=false" >> "$GITHUB_OUTPUT"
-            { echo 'file_path<<EOF'; echo "$FILE_PATH"; echo 'EOF'; } >> "$GITHUB_OUTPUT"
-            echo "action=add" >> "$GITHUB_OUTPUT"
-          fi
-
-
       - name: Commit changes
+        if: steps.parse-yaml.outputs.has_changes == 'true'
         run: |
           set -euo pipefail
           git add recipes/
           # Prepare commit message safely
           cat > commitmsg.txt <<'EOF'
-          ${{ steps.check-file.outputs.action == 'add' && 'Add' || 'Update' }} recipe for ${{ steps.parse-yaml.outputs.name }} from issue #${{ github.event.issue.number }}
+          ${{ steps.parse-yaml.outputs.action == 'add' && 'Add' || 'Update' }} recipe for ${{ steps.parse-yaml.outputs.name }} from issue #${{ github.event.issue.number }}
           EOF
           AUTHOR="${{ github.event.issue.user.login }} <${{ github.event.issue.user.id }}+${{ github.event.issue.user.login }}@users.noreply.github.com>"
           git commit --author="$AUTHOR" -F commitmsg.txt
       - name: Push branch
+        if: steps.parse-yaml.outputs.has_changes == 'true'
         run: |
           set -euo pipefail
           git push origin "${{ steps.create-branch.outputs.branch_name }}"
 
       - name: Create pull request
         id: create-pr
+        if: steps.parse-yaml.outputs.has_changes == 'true'
         uses: actions/github-script@v7
         with:
           script: |
             const { data: pr } = await github.rest.pulls.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `${{ steps.check-file.outputs.action == 'add' && 'Add' || 'Update' }} recipe for ${{ steps.parse-yaml.outputs.name }}`,
+              title: `${{ steps.parse-yaml.outputs.action == 'add' && 'Add' || 'Update' }} recipe for ${{ steps.parse-yaml.outputs.name }}`,
               body: `This PR was automatically generated from issue #${{ github.event.issue.number }}.
 
               ## Summary
-              - ${{ steps.check-file.outputs.action == 'add' && 'Adds new' || 'Updates existing' }} recipe for \`${{ steps.parse-yaml.outputs.name }}\`
-              - Recipe file: \`${{ steps.check-file.outputs.file_path }}\`
+              - ${{ steps.parse-yaml.outputs.action == 'add' && 'Adds new' || 'Updates existing' }} recipe for \`${{ steps.parse-yaml.outputs.name }}\`
+              - Recipe file: \`${{ steps.parse-yaml.outputs.file_path }}\`
 
               Closes #${{ github.event.issue.number }}`,
               head: '${{ steps.create-branch.outputs.branch_name }}',
@@ -165,6 +164,7 @@ jobs:
             core.setOutput('pr_url', pr.html_url);
 
       - name: Comment on issue with PR link
+        if: steps.parse-yaml.outputs.has_changes == 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -176,7 +176,19 @@ jobs:
 
               🔗 Pull Request: #${{ steps.create-pr.outputs.pr_number }}
               
-              The recipe for \`${{ steps.parse-yaml.outputs.name }}\` has been ${{ steps.check-file.outputs.action == 'add' && 'added' || 'updated' }} in the PR. A maintainer will review and merge it soon.
+              The recipe for \`${{ steps.parse-yaml.outputs.name }}\` has been ${{ steps.parse-yaml.outputs.action == 'add' && 'added' || 'updated' }} in the PR. A maintainer will review and merge it soon.
               
               Thank you for your contribution! 🎉`
+            });
+
+      - name: Comment on issue when no changes are detected
+        if: steps.parse-yaml.outputs.has_changes != 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `ℹ️ No pull request was created because the submitted recipe for \`${{ steps.parse-yaml.outputs.name }}\` matches the current contents of \`${{ steps.parse-yaml.outputs.file_path }}\` on \`main\`.`
             });
