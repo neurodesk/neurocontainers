@@ -80,7 +80,7 @@ build:
         name: miniconda
         version: latest
         conda_install: python=3.12
-        pip_install: TotalSegmentator==2.5.0 torch torchvision
+        pip_install: git+https://github.com/wasserth/TotalSegmentator torch torchvision setuptools
     - deploy:
         bins: []
     - test:
