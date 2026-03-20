@@ -27,7 +27,7 @@ build:
         version: 6.0.7.16
     - template:
         name: spm12
-        version: r7771
+        version: r7487
     - template:
         name: freesurfer
         version: 7.4.1
