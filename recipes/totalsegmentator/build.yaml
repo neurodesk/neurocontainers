@@ -80,7 +80,7 @@ build:
         name: miniconda
         version: latest
         conda_install: python=3.12
-        pip_install: git+https://github.com/wasserth/TotalSegmentator torch torchvision setuptools
+        pip_install: setuptools TotalSegmentator torch torchvision
     - deploy:
         bins: []
     - test:
@@ -122,7 +122,11 @@ build:
           "
     - deploy:
         path: []
-        bins: []
+        bins: 
+          - TotalSegmentator
+          - totalseg_combine_masks
+          - totalseg_download_weights
+          - crop_to_body
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
