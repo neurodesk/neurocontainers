@@ -21,9 +21,8 @@ build:
         name: miniconda
         version: py310_25.5.1-0
         install_path: /opt/miniconda
-        create_env: segmentator
-        conda_install: python=3.7 matplotlib=3.1.1 numpy=1.19.5 nibabel=2.5.1 scipy=1.3.1
-        pip_install: compoda==0.3.5
+        conda_install: matplotlib=3.1.1 numpy=1.22.0 nibabel=2.5.1 scipy=1.3.1 python=3.6
+        pip_install: compoda=0.3.5
         mamba: true
     - run:
         - cp {{ get_file("v1_6_1_tar_gz") }} /tmp/segmentator.tar.gz
@@ -32,6 +31,32 @@ build:
         - mv /opt/segmentator-1.6.1 /opt/segmentator
         - pip install -e /opt/segmentator
         - rm /tmp/segmentator.tar.gz
+    - group:
+        - file:
+            name: myscript
+            contents: |-
+              #!/bin/bash
+
+              echo 'Hello, World!'
+        - run:
+            - cp {{ get_file("myscript") }} /usr/local/bin/myscript
+            - chmod +x /usr/local/bin/myscript
+        - environment:
+            PATH: $PATH:/usr/local/bin
+        - deploy:
+            bins:
+              - myscript
+      custom: shellScript
+      customParams:
+        name: myscript
+        path: /usr/local/bin
+        content: |-
+          #!/bin/bash
+
+          echo 'Hello, World!'
+        executable: true
+        addToPath: true
+        makeDeployBin: true
     - deploy:
         path: []
         bins:
