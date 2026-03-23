@@ -11,14 +11,7 @@ structured_readme:
     # Example usage
 
     ```bash
-    # Run Python interactively (assuming you are already inside the container)
-    python
-
-    # Execute a Python script
-    python /path/to/your/script.py
-
-    # Test that the package is available
-    python -c "import totalsegmentator; print('totalsegmentator is available!')"
+    TotalSegmentator -i mri.nii.gz -o segmentations --task total_mr
 
     ```
   documentation: |-
@@ -42,14 +35,7 @@ readme: |-
   # Example usage
 
   ```bash
-  # Run Python interactively (assuming you are already inside the container)
-  python
-
-  # Execute a Python script
-  python /path/to/your/script.py
-
-  # Test that the package is available
-  python -c "import totalsegmentator; print('totalsegmentator is available!')"
+  TotalSegmentator -i mri.nii.gz -o segmentations --task total_mr
 
   ```
   ```
