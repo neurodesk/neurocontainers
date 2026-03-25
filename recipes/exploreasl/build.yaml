@@ -12,10 +12,16 @@ build:
   base-image: exploreasl/xasl:1.11.0
   pkg-manager: apt
   directives:
+    - run:
+        - echo '#!/bin/bash' > /usr/local/bin/ExploreASL &&
+        - echo '/opt/xasl/xASL_latest/run_xASL_latest.sh /opt/mcr/v97/ "$@"' >> /usr/local/bin/ExploreASL &&
+        - chmod +x /usr/local/bin/ExploreASL
     - deploy:
         path: []
         bins:
-          - ExploreASL
+          - /opt/xasl/xASL_latest/run_xASL_latest.sh
+          - /opt/run.sh
+          - /usr/local/bin/ExploreASL
 categories:
   - workflows
 readme: |-
