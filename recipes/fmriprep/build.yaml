@@ -1,5 +1,5 @@
 name: fmriprep
-version: 25.2.3
+version: 25.2.5
 copyright:
   - license: Apache-2.0
     url: https://github.com/nipreps/fmriprep/blob/master/LICENSE
