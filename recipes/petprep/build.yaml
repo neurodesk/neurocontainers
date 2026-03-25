@@ -1,0 +1,77 @@
+name: petprep
+version: 0.0.5
+copyright:
+  - license: Apache-2.0
+    url: https://github.com/nipreps/petprep/blob/main/LICENSE
+architectures:
+  - x86_64
+build:
+  kind: neurodocker
+  base-image: nipreps/petprep:0.0.5
+  pkg-manager: apt
+  directives:
+    - deploy:
+        path: []
+        bins:
+          - petprep
+categories:
+  - quantitative imaging
+  - structural imaging
+icon: data:image/png;base64,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
+structured_readme:
+  description: PETPrep is a positron emission tomography (PET) data preprocessing pipeline that is designed to provide an easily accessible, state-of-the-art interface that is robust to variations in scan acquisition protocols and that requires minimal user input, while providing easily interpretable and comprehensive error and output reporting. It performs comprehensive processing steps—such as motion correction, segmentation, registration, partial volume correction, and extraction of time activity curves, providing outputs that can be easily submitted to a variety of group level analyses, pharmacokinetic modelling, graph theory measures, and surface or volume-based statistics.
+  example: |-
+    |-
+      ----------------------------------
+      ## petprep/{{ context.version }} ##
+      PetPrep is a positron emission tomography (PET) data preprocessing pipeline designed to provide an accessible, state-of-the-art interface that is robust to variations in acquisition protocols and requires minimal user input, while offering clear and comprehensive reporting of outputs and errors. It performs essential preprocessing steps (coregistration, normalization, motion correction, partial volume correction, segmentation, skull stripping, etc.), producing outputs suitable for a wide range of downstream analyses, including kinetic modeling, regional uptake analysis, and multimodal integration with MRI data.
+
+      usage:
+      ```
+      petprep replace_with_bidsdirectory replace_with_outputdirecotry participant --fs-license-file ~/.license.txt
+
+      ```
+
+      More documentation can be found here: https://petprep.readthedocs.io/en/latest/
+
+      To run applications outside of this container: ml petprep/{{ context.version }}
+
+      ----------------------------------
+  documentation: https://petprep.readthedocs.io/en/latest/
+  citation: ""
+readme: |-
+  ----------------------------------
+  ## petprep/{{ context.version }} ##
+
+  PETPrep is a positron emission tomography (PET) data preprocessing pipeline that is designed to provide an easily accessible, state-of-the-art interface that is robust to variations in scan acquisition protocols and that requires minimal user input, while providing easily interpretable and comprehensive error and output reporting. It performs comprehensive processing steps—such as motion correction, segmentation, registration, partial volume correction, and extraction of time activity curves, providing outputs that can be easily submitted to a variety of group level analyses, pharmacokinetic modelling, graph theory measures, and surface or volume-based statistics.
+
+  Example:
+  ```
+  |-
+    ----------------------------------
+    ## petprep/{{ context.version }} ##
+    PetPrep is a positron emission tomography (PET) data preprocessing pipeline designed to provide an accessible, state-of-the-art interface that is robust to variations in acquisition protocols and requires minimal user input, while offering clear and comprehensive reporting of outputs and errors. It performs essential preprocessing steps (coregistration, normalization, motion correction, partial volume correction, segmentation, skull stripping, etc.), producing outputs suitable for a wide range of downstream analyses, including kinetic modeling, regional uptake analysis, and multimodal integration with MRI data.
+
+    usage:
+    ```
+    petprep replace_with_bidsdirectory replace_with_outputdirecotry participant --fs-license-file ~/.license.txt
+
+    ```
+
+    More documentation can be found here: https://petprep.readthedocs.io/en/latest/
+
+    To run applications outside of this container: ml petprep/{{ context.version }}
+
+    ----------------------------------
+  ```
+
+  More documentation can be found here: https://petprep.readthedocs.io/en/latest/
+
+  Citation:
+  ```
+
+  ```
+
+  To run container outside of this environment: ml petprep/{{ context.version }}
+
+  ----------------------------------
