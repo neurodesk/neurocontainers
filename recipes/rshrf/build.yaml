@@ -22,16 +22,23 @@ structured_readme:
 
 build:
   kind: neurodocker
-  base-image: bids/rshrf:v{{ context.version }}
+  base-image: bids/rshrf:{{ context.version }}
   pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
   directives:
-    - environment:
-        DEBIAN_FRONTEND: noninteractive
-    - entrypoint: bash
+    - run:
+        - apk add --no-cache bash
+        - mkdir -p /neurodocker
+        - echo '#!/usr/bin/env bash' > /neurodocker/startup.sh
+        - echo 'set -e' >> /neurodocker/startup.sh
+        - echo 'export USER="${USER:=`whoami`}"' >> /neurodocker/startup.sh
+        - echo 'if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi' >> /neurodocker/startup.sh
+        - chmod +x /neurodocker/startup.sh
+    - entrypoint: /neurodocker/startup.sh
     - test:
         name: Show rsHRF help
         script: |-
-          #!/bin/bash
           rsHRF --help
 
 deploy:
