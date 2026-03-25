@@ -3,16 +3,10 @@ version: 1.11.0
 architectures:
   - x86_64
 structured_readme:
-  description: >-
-    ExploreASL is a pipeline and toolbox for image processing and statistics of
-    arterial spin labeling perfusion MR images. It is designed as a multi-OS,
-    open-source, collaborative framework that facilitates cross-pollination
-    between image processing method developers and clinical investigators.
+  description: ExploreASL is a pipeline and toolbox for image processing and statistics of arterial spin labeling perfusion MR images. It is designed as a multi-OS, open-source, collaborative framework that facilitates cross-pollination between image processing method developers and clinical investigators. This container contains Matlab MCR
   example: ExploreASL
   documentation: https://exploreasl.github.io/Documentation/1.11.0/
-  citation: >-
-    Mutsaerts, H., & Petr, J. (2023). ExploreASL/ExploreASL: ExploreASL v1.10.1
-    (v1.11.0). Zenodo. https://doi.org/10.5281/zenodo.8326499
+  citation: "Mutsaerts, H., & Petr, J. (2023). ExploreASL/ExploreASL: ExploreASL v1.10.1 (v1.11.0). Zenodo. https://doi.org/10.5281/zenodo.8326499"
 build:
   kind: neurodocker
   base-image: exploreasl/xasl:1.11.0
@@ -24,45 +18,28 @@ build:
           - ExploreASL
 categories:
   - workflows
-readme: >-
+readme: |-
   ----------------------------------
+  ## exploreasl/{{ context.version }} ##
 
-  ## exploreasl/1.11.0 ##
-
-
-  ExploreASL is a pipeline and toolbox for image processing and statistics of
-  arterial spin labeling perfusion MR images. It is designed as a multi-OS,
-  open-source, collaborative framework that facilitates cross-pollination
-  between image processing method developers and clinical investigators.
-
+  ExploreASL is a pipeline and toolbox for image processing and statistics of arterial spin labeling perfusion MR images. It is designed as a multi-OS, open-source, collaborative framework that facilitates cross-pollination between image processing method developers and clinical investigators. This container contains Matlab MCR
 
   Example:
-
   ```
-
   ExploreASL
-
   ```
 
-
-  More documentation can be found here:
-  https://exploreasl.github.io/Documentation/1.11.0/
-
+  More documentation can be found here: https://exploreasl.github.io/Documentation/1.11.0/
 
   Citation:
-
+  ```
+  Mutsaerts, H., & Petr, J. (2023). ExploreASL/ExploreASL: ExploreASL v1.10.1 (v1.11.0). Zenodo. https://doi.org/10.5281/zenodo.8326499
   ```
 
-  Mutsaerts, H., & Petr, J. (2023). ExploreASL/ExploreASL: ExploreASL v1.10.1
-  (v1.11.0). Zenodo. https://doi.org/10.5281/zenodo.8326499
-
-  ```
-
-
-  To run container outside of this environment: ml exploreasl/1.11.0
-
+  To run container outside of this environment: ml exploreasl/{{ context.version }}
 
   ----------------------------------
 copyright:
   - name: Provisionary license ExploreASL
     url: https://github.com/ExploreASL/ExploreASL/blob/main/LICENSE-EXPLOREASL
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEMUlEQVR4AYyTa0ikVRjH/zNIznip1XZcddTxsmpJwuoW7qQm+GlRoc2xHXVXXXUX8sOSK4HQBxFExDBBpAwCIYq1NTNLMuyDBEkRBV2gNYR2NS/rrtfES+o6p/M/7pl9Z9zb8P7mec7/PO/zzHPOM+aaS2ui+uKquFC7IqpqlkVl9ZKi4sKiOF91R5yrvC3KKxZE2flbitJz88JdPifOls0qStz/COI6Oy2KX58Sr5XcFGdcN8SrxX8rzEII+H+okcfpOoaW+MdzrQpw82F4PB48bO9BujGevplVdKD2aQl1Wn+oE+ra+vtcEzOrMIhon5ZQI/SJ9mmJUdO+1vX6UAesaoQv6LX2aYnWjdao0/fegcezj/n579Dfl4SrH0ei75MoxbWrdpD+vhh89mksBq7F4fN+B375+S1sby1gZ2cN1/98F18OJimGh5Lx04+XsLExpe5OFfD+AjlRYWFH1Aar+9PR0YHOzk61X156HFNT/Zib/Rox0RNKGxwchMUaiYTESlitdpVWFeB5ESY0mdWpoa2tDbm5uT60t7ejoaEBMzMzaG1txX9bX+Cv6y0YGhrC+vo63G43EhKqcCQsQyY3gzkPssklH9kAjWJiYgLj4+M+LC4uIjz8BPLz81XM2NgYBgYGEBoaisLCQtiOnUZU9GmYzRbVEYN8pkjg/p+uuroa3d3dXrq6umCV7TsSyrC8EoKmpibEx8ejqKgIvb29+PW3WTgcZXgqMEIl52kQnw5YUZOTk4OamhovtbW1astqjUaco0QlZQKKLB4bW4Knn0mTS5Pk4OG+zx3I0tBNMGFwcDA0ISEh6q2d3RXcuf09RkdHsb+/j93dXYyMjGBp6Qdsbc7KFEKdPc/fW0C9Kb+MdyCXh57t7QXcmvsGruJkpKeno7m5GfX19bDb7Wi4UoS5ua+wt7fu857qgJU0ugWn0wmXy+VDSkoK7u79rkZ1enpaTVJPTw8mJyfR2NgIz91vsSw78Xj2vJ2oO7ifHKo9/oS6ujo1IZwSTUtLC4aHhxAQEICCggIkJtVKLqoJMplM6qimbn6EzY0bMsXBwPhOkfBgdXUNJpPpgXDOs7Ky5BiasbIah1hHKWLi3NjYTFJaWloa/l37A7MzA/Ifvqq68HYgSyIkNBFZzh44s3tx6h5Zzg+RkfkOUp+/gtTn3kTaC2/j5Es9SE69DIslChZLJJKSLyPzxQ+QcfJ9nMh8D0dteXIAtmUBDwx3AFjlCB61ZSPiWB4iIl6BzZYLW0Qe7LFncDz5DZmoDo74CqUFBcXL32SSSYCgIAfCn31Zkq0ICz+FwMBItacKyEj18C6U4/dFnVDW1t/nWsMYwrUqwJklFAl9on1aYtS0r3W91lbr6g5YScMNf58a0brRGnXt0xLG+UyRsToDHseTxB/qgFV1Yu3TEqPOteZR+v8AAAD//6dl9iQAAAAGSURBVAMAVyKef/QJBcIAAAAASUVORK5CYII=
