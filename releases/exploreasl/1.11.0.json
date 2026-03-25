@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "exploreasl 1.11.0": {
+      "version": "20260325",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "workflows"
+  ]
+}
