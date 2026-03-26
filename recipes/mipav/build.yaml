@@ -15,11 +15,11 @@ build:
         - libxtst6
         - libxi6
     - file:
-        name: mipav_unix_{{ context.version }}.sh
+        name: mipav_unix.sh
         url: >-
           https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/mipav_unix_11_3_3.sh
     - run:
-      - sh {{ get_file("mipav_unix_"+ context.version +".sh") }} -q
+      - sh {{ get_file("mipav_unix.sh") }} -q
     - environment:
         PATH: /usr/local/mipav:${PATH}
 copyright:
