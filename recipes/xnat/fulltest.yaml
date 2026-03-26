@@ -295,24 +295,24 @@ tests:
   # ==========================================================================
   # BUILD INFORMATION VERIFICATION
   # ==========================================================================
-  - name: Build YAML exists
-    description: Verify build.yaml exists in container
-    command: test -f /build.yaml && echo "build.yaml exists"
-    expected_output_contains: "build.yaml exists"
+  - name: XNAT manifest exists
+    description: Verify the packaged XNAT webapp manifest exists
+    command: test -f /opt/xnat-webapp/META-INF/MANIFEST.MF && echo "manifest exists"
+    expected_output_contains: "manifest exists"
 
-  - name: Build YAML version
-    description: Verify version in build.yaml
-    command: grep "version:" /build.yaml | head -1
+  - name: XNAT manifest version
+    description: Verify the packaged XNAT manifest reports the expected version
+    command: grep "^Implementation-Version:" /opt/xnat-webapp/META-INF/MANIFEST.MF
     expected_output_contains: "1.9.2.1"
 
-  - name: Build YAML name
-    description: Verify name in build.yaml
-    command: grep "name:" /build.yaml | head -1
+  - name: XNAT sample config exists
+    description: Verify the packaged XNAT sample configuration exists
+    command: test -f /opt/xnat-webapp/resources/samples/xnat-conf.properties && echo "xnat sample config exists"
     expected_output_contains: "xnat"
 
-  - name: README exists
-    description: Verify README.md exists
-    command: test -f /README.md && cat /README.md
+  - name: XNAT generated schema asset
+    description: Verify an XNAT-generated schema JavaScript asset is present
+    command: test -f /opt/xnat-webapp/scripts/generated/xnat_projectData.js && echo "xnat_projectData.js exists"
     expected_output_contains: "xnat"
 
   # ==========================================================================

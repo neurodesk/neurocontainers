@@ -244,12 +244,12 @@ build:
     # Download and extract the XNAT web application
     - group:
         - file:
-            name: xnat-web-{{ context.version }}.war
+            name: xnat-web.war
             url: https://api.bitbucket.org/2.0/repositories/xnatdev/xnat-web/downloads/xnat-web-{{ context.version }}.war
 
         - run:
             - mkdir -p /opt/xnat-webapp
-            - unzip -o -d /opt/xnat-webapp {{ get_file("xnat-web-" + context.version + ".war") }}
+            - unzip -o -d /opt/xnat-webapp {{ get_file("xnat-web.war") }}
 
     # Create PostgreSQL initialization script
     - group:
