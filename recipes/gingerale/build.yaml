@@ -20,7 +20,7 @@ build:
     - install: openjdk-21-jre
     - file:
         name: gingerale.jar
-        url: https://www.brainmap.org/ale/GingerALE.jar
+        url: http://www.brainmap.org/ale/GingerALE.jar
         insecure: true
     - run:
         - mkdir /opt/gingerale
