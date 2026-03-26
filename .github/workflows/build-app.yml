@@ -484,10 +484,11 @@ jobs:
   
       - name: Upload simg artifact
         if: inputs.skip_simg_build != 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
           path: /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          # Upload the single SIF/Singularity image as a raw file to avoid zip/unzip overhead.
+          archive: false
           retention-days: 7
 
   upload-nectar:
@@ -510,7 +511,7 @@ jobs:
           
       - name: Download simg artifact
         if: inputs.skip_simg_build != 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
           path: /mnt/tmp/
@@ -552,7 +553,7 @@ jobs:
           aws-region: us-east-2
       - name: Download simg artifact
         if: inputs.skip_simg_build != 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
           path: /mnt/tmp/
