@@ -21,6 +21,8 @@ setup:
   script: |
     #!/usr/bin/env bash
     set -e
+    # Fail fast if the launcher itself is not runnable in this image.
+    QuPath --version >/dev/null 2>&1
     mkdir -p test_output
     mkdir -p test_output/qupath_scripts
     mkdir -p test_output/qupath_projects
