@@ -5,6 +5,7 @@ copyright:
     url: https://www.apache.org/licenses/LICENSE-2.0
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: |-
     Brain Lesion Analysis and Segmentation Tool for Computed Tomography - Version 2.0.0
