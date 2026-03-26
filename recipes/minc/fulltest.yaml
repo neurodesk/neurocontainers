@@ -32,6 +32,11 @@ setup:
   script: |
     #!/usr/bin/env bash
     set -e
+    # Fail fast when the bundled MINC executables are not runnable.
+    mincinfo -version >/dev/null 2>&1 || {
+      echo "MINC bundled executables are not runnable on arm64"
+      exit 126
+    }
     mkdir -p test_output
 
 tests:
