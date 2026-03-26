@@ -19,6 +19,8 @@
 # NOTE: Full DSI Studio pipeline testing requires DWI (diffusion-weighted imaging) data.
 # These tests verify available CLI actions using structural data where applicable,
 # and test help/version output for diffusion-specific functions.
+# Keep DSI Studio command exit codes intact so architecture/runtime failures
+# are surfaced during ARM64 audits instead of being hidden by shell fallbacks.
 
 name: dsistudio
 version: 2024.06.12
@@ -63,7 +65,7 @@ tests:
 
   - name: DSI Studio version check
     description: Check DSI Studio version output
-    command: dsi_studio --version 2>&1 || true
+    command: dsi_studio --version 2>&1
     expected_output_contains: "DSI Studio"
 
   - name: DSI Studio atlas directory exists
@@ -81,7 +83,7 @@ tests:
   # ==========================================================================
   - name: src action help check
     description: Verify src action is recognized (generates SRC from NIFTI/DICOM)
-    command: timeout 10 dsi_studio --action=src --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    command: timeout 10 dsi_studio --action=src --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "action=src"
 
   # ==========================================================================
@@ -90,7 +92,7 @@ tests:
   # ==========================================================================
   - name: rec action help check
     description: Verify rec action help shows reconstruction parameters
-    command: timeout 10 dsi_studio --action=rec --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    command: timeout 10 dsi_studio --action=rec --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "action=rec"
 
   # ==========================================================================
@@ -99,7 +101,7 @@ tests:
   # ==========================================================================
   - name: trk action help check
     description: Verify trk action for fiber tracking is available
-    command: timeout 10 dsi_studio --action=trk --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    command: timeout 10 dsi_studio --action=trk --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "action=trk"
 
   # ==========================================================================
@@ -107,7 +109,7 @@ tests:
   # ==========================================================================
   - name: ana action help check
     description: Verify ana action for tract/region analysis is available
-    command: timeout 10 dsi_studio --action=ana --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    command: timeout 10 dsi_studio --action=ana --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "action=ana"
 
   # ==========================================================================
@@ -115,7 +117,7 @@ tests:
   # ==========================================================================
   - name: atk action help check
     description: Verify atk action for automatic bundle tracking is available
-    command: timeout 10 dsi_studio --action=atk --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    command: timeout 10 dsi_studio --action=atk --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "action=atk"
 
   # ==========================================================================
@@ -123,7 +125,7 @@ tests:
   # ==========================================================================
   - name: exp action help check
     description: Verify exp action for exporting data is available
-    command: timeout 10 dsi_studio --action=exp --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    command: timeout 10 dsi_studio --action=exp --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "action=exp"
 
   # ==========================================================================
@@ -132,7 +134,7 @@ tests:
   # ==========================================================================
   - name: reg action help check
     description: Verify reg action for image registration is available
-    command: timeout 10 dsi_studio --action=reg --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    command: timeout 10 dsi_studio --action=reg --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "action=reg"
 
   - name: reg action - linear registration T1w to template
@@ -141,7 +143,7 @@ tests:
       timeout 10 dsi_studio --action=reg \
         --from=${t1w} \
         --to=${template_t1w} \
-        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "linear registration"
 
   - name: reg action - apply mapping parameter check
@@ -150,7 +152,7 @@ tests:
       timeout 10 dsi_studio --action=reg \
         --from=${t1w} \
         --to=${template_t1w} \
-        --apply_warp=${t2} 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+        --apply_warp=${t2} 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "from="
 
   - name: reg action - nonlinear registration T1w to template
@@ -160,7 +162,7 @@ tests:
         --from=${t1w} \
         --to=${template_t1w} \
         --reg_type=1 \
-        --resolution=4 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+        --resolution=4 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "reg_type=1"
 
   - name: reg action - subject to template transformation
@@ -169,7 +171,7 @@ tests:
       timeout 10 dsi_studio --action=reg \
         --from=${t1w} \
         --to=${template_t1w} \
-        --s2t=${t2} 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+        --s2t=${t2} 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "from dim"
 
   - name: reg action - multi-modality registration
@@ -178,7 +180,7 @@ tests:
       timeout 10 dsi_studio --action=reg \
         --from=${t1w},${t2} \
         --to=${template_t1w},${template_t1w} \
-        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "from="
 
   # ==========================================================================
@@ -190,7 +192,7 @@ tests:
     command: |
       dsi_studio --action=exp \
         --source=${template_fib} \
-        --export=qa 2>&1 || true
+        --export=qa 2>&1
     expected_output_contains: "saving"
 
   - name: exp action - export ISO from template FIB
@@ -198,7 +200,7 @@ tests:
     command: |
       dsi_studio --action=exp \
         --source=${template_fib} \
-        --export=iso 2>&1 || true
+        --export=iso 2>&1
     expected_exit_code: 0
 
   - name: exp action - export multiple metrics
@@ -206,7 +208,7 @@ tests:
     command: |
       dsi_studio --action=exp \
         --source=${template_fib} \
-        --export=qa,iso,rd,ad 2>&1 || true
+        --export=qa,iso,rd,ad 2>&1
     expected_exit_code: 0
 
   # ==========================================================================
@@ -219,7 +221,7 @@ tests:
       dsi_studio --action=trk \
         --source=${template_fib} \
         --seed_count=100 \
-        --output=test_output/template_wb_tracks.tt.gz 2>&1 || true
+        --output=test_output/template_wb_tracks.tt.gz 2>&1
     validate:
       - output_exists: ${output_dir}/template_wb_tracks.tt.gz
 
@@ -234,7 +236,7 @@ tests:
         --step_size=1.0 \
         --min_length=20 \
         --max_length=200 \
-        --output=test_output/template_tracks_params.tt.gz 2>&1 || true
+        --output=test_output/template_tracks_params.tt.gz 2>&1
     validate:
       - output_exists: ${output_dir}/template_tracks_params.tt.gz
 
@@ -245,7 +247,7 @@ tests:
         --source=${template_fib} \
         --seed_count=100 \
         --roi=HCP-MMP:L_V1 \
-        --output=test_output/template_tracks_roi.tt.gz 2>&1 || true
+        --output=test_output/template_tracks_roi.tt.gz 2>&1
     validate:
       - output_exists: ${output_dir}/template_tracks_roi.tt.gz
 
@@ -256,7 +258,7 @@ tests:
         --source=${template_fib} \
         --seed_count=100 \
         --connectivity=Brodmann \
-        --output=test_output/template_tracks_conn.tt.gz 2>&1 || true
+        --output=test_output/template_tracks_conn.tt.gz 2>&1
     validate:
       - output_exists: ${output_dir}/template_tracks_conn.tt.gz
 
@@ -269,7 +271,7 @@ tests:
       dsi_studio --action=atk \
         --source=${template_fib} \
         --track_id=Arcuate \
-        --output=test_output/ 2>&1 || true
+        --output=test_output/ 2>&1
     expected_exit_code: 0
 
   - name: atk action - track corticospinal tract
@@ -278,7 +280,7 @@ tests:
       dsi_studio --action=atk \
         --source=${template_fib} \
         --track_id=Corticos \
-        --output=test_output/ 2>&1 || true
+        --output=test_output/ 2>&1
     expected_exit_code: 0
 
   - name: atk action - track multiple bundles
@@ -287,7 +289,7 @@ tests:
       dsi_studio --action=atk \
         --source=${template_fib} \
         --track_id=Arcuate,Cingulum,Fornix \
-        --output=test_output/ 2>&1 || true
+        --output=test_output/ 2>&1
     expected_exit_code: 0
     timeout: 300
 
@@ -298,7 +300,7 @@ tests:
         --source=${template_fib} \
         --track_id=Uncinate \
         --tolerance=22,26,30 \
-        --output=test_output/ 2>&1 || true
+        --output=test_output/ 2>&1
     expected_exit_code: 0
 
   # ==========================================================================
@@ -310,7 +312,7 @@ tests:
       dsi_studio --action=ana \
         --source=${template_fib} \
         --tract=test_output/template_wb_tracks.tt.gz \
-        --export=stat 2>&1 || true
+        --export=stat 2>&1
     depends_on: trk action - whole brain tracking (limited)
     expected_exit_code: 0
 
@@ -320,7 +322,7 @@ tests:
       dsi_studio --action=ana \
         --source=${template_fib} \
         --tract=test_output/template_wb_tracks.tt.gz \
-        --export=tdi 2>&1 || true
+        --export=tdi 2>&1
     depends_on: trk action - whole brain tracking (limited)
     expected_exit_code: 0
 
@@ -330,7 +332,7 @@ tests:
       dsi_studio --action=ana \
         --source=${template_fib} \
         --tract=test_output/template_wb_tracks.tt.gz \
-        --connectivity=Brodmann 2>&1 || true
+        --connectivity=Brodmann 2>&1
     depends_on: trk action - whole brain tracking (limited)
     expected_exit_code: 0
 
@@ -340,7 +342,7 @@ tests:
       dsi_studio --action=ana \
         --source=${template_fib} \
         --region=HCP-MMP:L_V1 \
-        --export=stat 2>&1 || true
+        --export=stat 2>&1
     expected_exit_code: 0
 
   - name: ana action - export tract endpoints
@@ -349,7 +351,7 @@ tests:
       dsi_studio --action=ana \
         --source=${template_fib} \
         --tract=test_output/template_wb_tracks.tt.gz \
-        --export=end_point 2>&1 || true
+        --export=end_point 2>&1
     depends_on: trk action - whole brain tracking (limited)
     expected_exit_code: 0
 
@@ -358,7 +360,7 @@ tests:
   # ==========================================================================
   - name: cnt action help check
     description: Verify cnt action for correlational tractography is available
-    command: timeout 10 dsi_studio --action=cnt --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    command: timeout 10 dsi_studio --action=cnt --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "action=cnt"
 
   # ==========================================================================
@@ -366,7 +368,7 @@ tests:
   # ==========================================================================
   - name: ren action help check
     description: Verify ren action for file renaming/conversion is available
-    command: timeout 10 dsi_studio --action=ren --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+    command: timeout 10 dsi_studio --action=ren --source=nonexistent 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "action=ren"
 
   # ==========================================================================
@@ -461,7 +463,7 @@ tests:
     command: |
       dsi_studio --action=trk \
         --source=${template_fib} \
-        --dt_threshold=0.1 2>&1 || true
+        --dt_threshold=0.1 2>&1
     expected_exit_code: 0
 
   - name: trk action - tracking with smoothing
@@ -471,7 +473,7 @@ tests:
         --source=${template_fib} \
         --seed_count=50 \
         --smoothing=0.5 \
-        --output=test_output/template_tracks_smooth.tt.gz 2>&1 || true
+        --output=test_output/template_tracks_smooth.tt.gz 2>&1
     validate:
       - output_exists: ${output_dir}/template_tracks_smooth.tt.gz
 
@@ -482,7 +484,7 @@ tests:
         --source=${template_fib} \
         --seed_count=100 \
         --delete_repeat=1 \
-        --output=test_output/template_tracks_unique.tt.gz 2>&1 || true
+        --output=test_output/template_tracks_unique.tt.gz 2>&1
     validate:
       - output_exists: ${output_dir}/template_tracks_unique.tt.gz
 
@@ -493,7 +495,7 @@ tests:
         --source=${template_fib} \
         --seed_count=50 \
         --export=stat \
-        --output=test_output/template_tracks_stat.tt.gz 2>&1 || true
+        --output=test_output/template_tracks_stat.tt.gz 2>&1
     validate:
       - output_exists: ${output_dir}/template_tracks_stat.tt.gz
 
@@ -508,7 +510,7 @@ tests:
         --seed_count=200 \
         --connectivity=HCP-MMP \
         --connectivity_type=pass \
-        --output=test_output/template_conn_hcpmmp.tt.gz 2>&1 || true
+        --output=test_output/template_conn_hcpmmp.tt.gz 2>&1
     validate:
       - output_exists: ${output_dir}/template_conn_hcpmmp.tt.gz
 
@@ -519,7 +521,7 @@ tests:
         --source=${template_fib} \
         --seed_count=100 \
         --connectivity=Brodmann,FreeSurferDKT_Cortical \
-        --output=test_output/template_conn_multi.tt.gz 2>&1 || true
+        --output=test_output/template_conn_multi.tt.gz 2>&1
     validate:
       - output_exists: ${output_dir}/template_conn_multi.tt.gz
 
@@ -531,7 +533,7 @@ tests:
         --seed_count=100 \
         --connectivity=Brodmann \
         --connectivity_type=end \
-        --output=test_output/template_conn_end.tt.gz 2>&1 || true
+        --output=test_output/template_conn_end.tt.gz 2>&1
     validate:
       - output_exists: ${output_dir}/template_conn_end.tt.gz
 
@@ -545,7 +547,7 @@ tests:
         --from=${t1w} \
         --to=${template_t1w} \
         --cost_function=mi \
-        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "cost_function=mi"
 
   - name: reg action - high resolution registration
@@ -555,7 +557,7 @@ tests:
         --from=${t1w} \
         --to=${template_t1w} \
         --resolution=2 \
-        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "linear registration"
 
   - name: reg action - smoothed registration
@@ -565,7 +567,7 @@ tests:
         --from=${t1w} \
         --to=${template_t1w} \
         --smoothing=0.5 \
-        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
     expected_output_contains: "linear registration"
 
   # ==========================================================================
@@ -577,7 +579,7 @@ tests:
       dsi_studio --action=atk \
         --source=${template_fib} \
         --track_id=InferiorLongitudinal \
-        --output=test_output/ 2>&1 || true
+        --output=test_output/ 2>&1
     expected_exit_code: 0
 
   - name: atk action - superior longitudinal fasciculus
@@ -586,7 +588,7 @@ tests:
       dsi_studio --action=atk \
         --source=${template_fib} \
         --track_id=SuperiorLongitudinal \
-        --output=test_output/ 2>&1 || true
+        --output=test_output/ 2>&1
     expected_exit_code: 0
 
   - name: atk action - optic radiation
@@ -595,7 +597,7 @@ tests:
       dsi_studio --action=atk \
         --source=${template_fib} \
         --track_id=Optic \
-        --output=test_output/ 2>&1 || true
+        --output=test_output/ 2>&1
     expected_exit_code: 0
 
   - name: atk action - corpus callosum
@@ -604,7 +606,7 @@ tests:
       dsi_studio --action=atk \
         --source=${template_fib} \
         --track_id=Corpus \
-        --output=test_output/ 2>&1 || true
+        --output=test_output/ 2>&1
     expected_exit_code: 0
 
   - name: atk action - thalamic radiation
@@ -613,7 +615,7 @@ tests:
       dsi_studio --action=atk \
         --source=${template_fib} \
         --track_id=ThalamicR \
-        --output=test_output/ 2>&1 || true
+        --output=test_output/ 2>&1
     expected_exit_code: 0
 
   # ==========================================================================
@@ -642,7 +644,7 @@ tests:
     command: |
       dsi_studio --action=exp \
         --source=${template_fib} \
-        --export=fa 2>&1 || true
+        --export=fa 2>&1
     expected_exit_code: 0
 
   - name: Template tract file exists
@@ -674,7 +676,7 @@ tests:
       dsi_studio --action=ana \
         --source=${template_fib} \
         --region=Brodmann:17 \
-        --export=stat 2>&1 || true
+        --export=stat 2>&1
     expected_exit_code: 0
 
   - name: ana action - FreeSurfer region analysis
@@ -683,7 +685,7 @@ tests:
       dsi_studio --action=ana \
         --source=${template_fib} \
         --region=FreeSurferDKT_Cortical:L_precentral \
-        --export=stat 2>&1 || true
+        --export=stat 2>&1
     expected_exit_code: 0
 
   - name: ana action - cerebellum region analysis
@@ -692,7 +694,7 @@ tests:
       dsi_studio --action=ana \
         --source=${template_fib} \
         --region=Cerebellum-SUIT:Left_I_IV \
-        --export=stat 2>&1 || true
+        --export=stat 2>&1
     expected_exit_code: 0
 
   # ==========================================================================
@@ -704,7 +706,7 @@ tests:
       dsi_studio --action=trk \
         --source=${template_fib} \
         --seed_count=50 \
-        --output=test_output/template_tracks.trk.gz 2>&1 || true
+        --output=test_output/template_tracks.trk.gz 2>&1
     validate:
       - output_exists: ${output_dir}/template_tracks.trk.gz
 
@@ -713,12 +715,12 @@ tests:
   # ==========================================================================
   - name: Missing source file error
     description: Verify proper error handling for missing source file
-    command: timeout 10 dsi_studio --action=rec --source=nonexistent_file.src.gz 2>&1 || true
+    command: timeout 10 dsi_studio --action=rec --source=nonexistent_file.src.gz 2>&1
     expected_output_contains: "does not exist"
 
   - name: Invalid action error
     description: Verify proper error handling for invalid action
-    command: timeout 10 dsi_studio --action=invalid_action --source=nonexistent 2>&1 || true
+    command: timeout 10 dsi_studio --action=invalid_action --source=nonexistent 2>&1
     expected_output_contains: "unknown action"
 
   # ==========================================================================
@@ -731,7 +733,7 @@ tests:
         --source=${template_fib} \
         --seed_count=50 \
         --thread_count=1 \
-        --output=test_output/template_tracks_1thread.tt.gz 2>&1 || true
+        --output=test_output/template_tracks_1thread.tt.gz 2>&1
     validate:
       - output_exists: ${output_dir}/template_tracks_1thread.tt.gz
 
@@ -742,7 +744,7 @@ tests:
         --source=${template_fib} \
         --seed_count=50 \
         --thread_count=4 \
-        --output=test_output/template_tracks_4thread.tt.gz 2>&1 || true
+        --output=test_output/template_tracks_4thread.tt.gz 2>&1
     validate:
       - output_exists: ${output_dir}/template_tracks_4thread.tt.gz
 
@@ -755,11 +757,11 @@ tests:
       timeout 10 dsi_studio --action=reg \
         --from=${t1w} \
         --to=${template_t1w} \
-        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g' || true
+        --reg_type=0 2>&1 | sed 's/\x1b\[[0-9;]*m//g'
       dsi_studio --action=trk \
         --source=${template_fib} \
         --seed_count=50 \
-        --output=test_output/pipeline_tracks.tt.gz 2>&1 || true
+        --output=test_output/pipeline_tracks.tt.gz 2>&1
     validate:
       - output_exists: ${output_dir}/pipeline_tracks.tt.gz
 
@@ -773,7 +775,7 @@ tests:
       dsi_studio --action=ana \
         --source=${template_fib} \
         --tract=test_output/pipeline_ana_tracks.tt.gz \
-        --connectivity=Brodmann 2>&1 || true
+        --connectivity=Brodmann 2>&1
     validate:
       - output_exists: ${output_dir}/pipeline_ana_tracks.tt.gz
 
@@ -784,7 +786,7 @@ tests:
         --source=${template_fib} \
         --track_id=Arcuate,Uncinate \
         --export=stat \
-        --output=test_output/ 2>&1 || true
+        --output=test_output/ 2>&1
     expected_exit_code: 0
 
 cleanup:
