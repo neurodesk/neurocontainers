@@ -42,3 +42,6 @@ dashboard/local/
 dashboard/apps.json
 /public
 actionlint
+
+/work
+/results
