@@ -69,6 +69,7 @@ build:
     - template:
         name: miniconda
         version: py311_25.5.1-0
+        env_exists: "true"
         conda_install: ""
         pip_install: scipy numpy pandas SimpleITK==1.2.4 "torch>=1.9"
         install_path: /opt/miniconda
