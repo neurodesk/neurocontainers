@@ -20,7 +20,7 @@ build:
     - run:
         - conda install --override-channels -c conda-forge numpy=1.21 scipy=1.8 networkx=2.7 scikit-learn=1.0 scikit-image matplotlib=3.5 seaborn=0.11 pytables=3.6 pandas pytest nbformat nb_conda traits=6.2
     - run:
-        - pip install fitlins=0.11.0
+        - pip install fitlins==0.11.0
     - run: 
         - conda install -c leej3 afni-minimal
   add-default-template: true
