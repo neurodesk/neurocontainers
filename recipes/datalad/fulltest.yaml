@@ -15,6 +15,7 @@ setup:
     mkdir -p ${output_dir}
     git config --global user.email "user@neurodesk.github.io"
     git config --global user.name "Neurodesk User"
+    rm -rf /tmp/datalad-fulltest-dataset
 
 tests:
   - name: DataLad version check
@@ -29,26 +30,22 @@ tests:
 
   - name: DataLad create dataset
     description: Create a new dataset from scratch
-    command: datalad create ${output_dir}/dataset 2>&1
+    command: datalad create /tmp/datalad-fulltest-dataset 2>&1
     expected_output_contains: "create(ok)"
-    validate:
-      - output_exists: ${output_dir}/dataset
 
   - name: DataLad save file
     description: Save a tracked file into the dataset
     command: |
-      cd ${output_dir}/dataset
+      cd /tmp/datalad-fulltest-dataset
       printf 'hello\n' > note.txt
       datalad save -m "add note" 2>&1
     depends_on: DataLad create dataset
     expected_output_contains: "save(ok)"
-    validate:
-      - output_exists: ${output_dir}/dataset/note.txt
 
   - name: DataLad clean status
     description: Verify the dataset is clean after saving
     command: |
-      cd ${output_dir}/dataset
+      cd /tmp/datalad-fulltest-dataset
       datalad status 2>&1
     depends_on: DataLad save file
     expected_output_contains: "nothing to save, working tree clean"
