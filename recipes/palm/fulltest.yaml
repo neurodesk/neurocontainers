@@ -20,7 +20,7 @@
 
 name: palm
 version: alpha119
-container: palm_alpha119_20211220.simg
+container: palm_alpha119.simg
 
 test_data:
   output_dir: test_output
