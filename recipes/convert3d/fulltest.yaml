@@ -12,7 +12,7 @@
 
 name: convert3d
 version: 1.1.0
-container: convert3d_1.1.0_20251212.simg
+container: convert3d_1.1.0.simg
 
 required_files:
   - dataset: ds000001
