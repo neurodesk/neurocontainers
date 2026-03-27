@@ -14,7 +14,7 @@
 
 name: mricrogl
 version: 1.2.20211006
-container: mricrogl_1.2.20211006_20220111.simg
+container: mricrogl_1.2.20211006.simg
 
 required_files:
   - dataset: ds000001
