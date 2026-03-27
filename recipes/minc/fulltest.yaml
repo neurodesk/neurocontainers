@@ -13,7 +13,7 @@
 
 name: minc
 version: 1.9.18
-container: minc_1.9.18_20230208.simg
+container: minc_1.9.18.simg
 
 required_files:
   - dataset: ds000001
