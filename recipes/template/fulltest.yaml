@@ -42,6 +42,6 @@ tests:
     expected_output_contains: "nothing to save, working tree clean"
 
   - name: Python runtime available
-    description: Verify Python 3 is installed in the image
+    description: Verify the Python runtime matches the shipped image
     command: python3 --version
-    expected_output_contains: "Python 3."
+    expected_output_contains: "Python 3.11.2"
