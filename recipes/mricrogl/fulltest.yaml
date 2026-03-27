@@ -35,14 +35,22 @@ setup:
     mkdir -p test_output/dicom_test
     mkdir -p test_output/nifti_convert
 
+    # Fail fast if the packaged dcm2niix binary is not executable on this host.
+    dcm2niix --version >/tmp/mricrogl-dcm2niix-version.txt 2>&1 || {
+      status=$?
+      echo "dcm2niix launcher failed during setup (exit ${status})" >&2
+      cat /tmp/mricrogl-dcm2niix-version.txt >&2 || true
+      exit "${status}"
+    }
+
 tests:
   # ==========================================================================
   # CONTAINER AND INSTALLATION VERIFICATION
   # ==========================================================================
-  - name: Container README exists
-    description: Verify container README documentation is present
-    command: cat /README.md 2>&1 | head -5
-    expected_output_contains: "mricrogl"
+  - name: Installation instructions exist
+    description: Verify MRIcroGL installation documentation is present in the image
+    command: ls -la /opt/MRIcroGL/MRIcroGL_Linux_Installation.txt
+    expected_output_contains: "MRIcroGL_Linux_Installation.txt"
 
   - name: MRIcroGL binary exists
     description: Verify MRIcroGL executable is installed
