@@ -52,10 +52,7 @@ build:
         version: latest
 
     - run:
-        - conda install -c conda-forge -n base mamba=0.24.0
-
-    - run:
-        - mamba create --override-channels --channel=conda-forge --name=mne-1.7.1 urllib3=2.2.1 mne=1.7.1
+        - conda create --override-channels --channel=conda-forge --name=mne-1.7.1 urllib3=2.2.1 mne=1.7.1
 
     - run:
         - cp {{ get_file("download") }} vscode.deb
