@@ -6,6 +6,7 @@ copyright:
     url: https://github.com/mne-tools/mne-bids-pipeline/blob/main/LICENSE.txt
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
@@ -47,7 +48,7 @@ build:
     - template:
         name: miniconda
         env_name: base
-        version: 4.7.12
+        version: latest
 
     - run:
         - conda install -c conda-forge -n base mamba=0.24.0
