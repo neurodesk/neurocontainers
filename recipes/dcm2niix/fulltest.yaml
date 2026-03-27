@@ -45,6 +45,11 @@ setup:
   script: |
     #!/usr/bin/env bash
     set -e
+    # Fail fast when the packaged dcm2niix binary is not runnable on this architecture.
+    dcm2niix --version >/dev/null 2>&1 || {
+      echo "dcm2niix bundled binary is not runnable on this architecture"
+      exit 126
+    }
     mkdir -p test_output
     mkdir -p test_output/dcm2niix
     mkdir -p test_output/dcm2niix/empty_dir
