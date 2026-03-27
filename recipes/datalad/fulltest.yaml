@@ -15,13 +15,17 @@ setup:
     mkdir -p ${output_dir}
     git config --global user.email "user@neurodesk.github.io"
     git config --global user.name "Neurodesk User"
-    rm -rf /tmp/datalad-fulltest-dataset
+    if [ -e /tmp/datalad-fulltest-dataset ] || [ -L /tmp/datalad-fulltest-dataset ]; then
+      mv /tmp/datalad-fulltest-dataset "/tmp/datalad-fulltest-dataset.stale.$$" || true
+    fi
+    fresh_dataset_dir="$(mktemp -d /tmp/datalad-fulltest-dataset.XXXXXX)"
+    ln -sfn "${fresh_dataset_dir}" /tmp/datalad-fulltest-dataset
 
 tests:
   - name: DataLad version check
-    description: Verify the datalad CLI is available
+    description: Verify the datalad CLI version matches the shipped runtime
     command: datalad --version
-    expected_output_contains: "datalad"
+    expected_output_contains: "datalad 1.1.5"
 
   - name: DataLad help output
     description: Verify the main help text renders
