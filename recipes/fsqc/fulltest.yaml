@@ -18,7 +18,7 @@ tests:
   - name: fsqc env Python runtime
     description: Verify the named fsqc Conda environment is usable
     command: bash -lc "source /opt/miniconda-latest/etc/profile.d/conda.sh && conda activate fsqc && python --version"
-    expected_output_contains: "Python 3.13"
+    expected_output_contains: "Python 3.13.12"
 
   - name: fsqc package metadata
     description: Verify the installed fsqc package metadata from the active env
