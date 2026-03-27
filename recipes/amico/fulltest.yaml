@@ -29,7 +29,7 @@
 
 name: amico
 version: 2.1.0
-container: amico_2.1.0_20250628.simg
+container: amico_2.1.0.simg
 
 required_files:
   - dataset: ds000001
