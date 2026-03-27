@@ -10,7 +10,7 @@
 
 name: bart
 version: 0.9.00
-container: bart_0.9.00_20240723.simg
+container: bart_0.9.00.simg
 
 test_data:
   # BART generates synthetic test data via phantom commands
