@@ -3,6 +3,7 @@ version: 0.2.5
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
@@ -23,7 +24,9 @@ build:
 
     - template:
         name: miniconda
-        version: 4.7.12.1
+        version: latest
+        env_name: topaz
+        env_exists: "false"
         conda_install: python=3.6 topaz=0.2.5 cudatoolkit=10.2 -c tbepler -c pytorch
 
 deploy:
