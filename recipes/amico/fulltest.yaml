@@ -60,9 +60,9 @@ tests:
     expected_output_contains: "python"
 
   - name: Python version check
-    description: Check Python version in container
+    description: Check the Python runtime matches the shipped image
     command: python --version
-    expected_output_contains: "Python"
+    expected_output_contains: "Python 3.13.12"
 
   - name: AMICO module import
     description: Verify AMICO module can be imported
