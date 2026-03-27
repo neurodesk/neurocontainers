@@ -77,7 +77,7 @@ tests:
   - name: AMICO package metadata check
     description: Verify the installed package metadata matches the deployed module
     command: python -m pip show dmri-amico
-    expected_output_contains: "Location: /opt/miniconda/lib/python3.13/site-packages"
+    expected_output_contains: "Version: 2.1.1"
 
   # ==========================================================================
   # SUBMODULE IMPORTS
