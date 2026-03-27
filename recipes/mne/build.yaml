@@ -47,7 +47,8 @@ build:
 
     - template:
         name: miniconda
-        env_name: base
+        env_name: mne
+        env_exists: "false"
         version: latest
 
     - run:
