@@ -58,7 +58,11 @@ build:
         name: miniconda
         version: latest
         install_path: /opt/miniconda
+        env_name: amico
+        env_exists: "false"
         pip_install: dmri-amico
+    - environment:
+        PATH: /opt/miniconda/envs/amico/bin:/opt/miniconda/bin:$PATH
     - deploy:
         path: []
         bins:
