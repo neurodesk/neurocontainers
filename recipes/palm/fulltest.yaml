@@ -242,6 +242,11 @@ tests:
   # ==========================================================================
   # BASIC FUNCTIONALITY
   # ==========================================================================
+  - name: Octave runtime version
+    description: Verify the shipped GNU Octave runtime version
+    command: octave --version 2>&1 | sed -n '1,4p'
+    expected_output_contains: "GNU Octave, version 6.4.0"
+
   - name: PALM version and banner
     description: Verify PALM loads and shows banner with version
     command: palm 2>&1 | head -30
