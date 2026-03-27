@@ -85,7 +85,10 @@ build:
         bins: []
     - install: git
     - run:
-        - pip install git+https://github.com/deep-mi/fsqc.git
+        - |
+          bash -c "source activate fsqc
+          python -m pip install git+https://github.com/deep-mi/fsqc.git
+          "
     - test:
         name: verify_installation
         script: |-
