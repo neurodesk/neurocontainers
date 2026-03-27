@@ -15,7 +15,7 @@
 
 name: xnat
 version: 1.9.2.1
-container: xnat_1.9.2.1_20250805.simg
+container: xnat_1.9.2.1.simg
 
 required_files:
   - dataset: ds000001
