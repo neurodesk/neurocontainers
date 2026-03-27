@@ -7,7 +7,7 @@
 
 name: niimath
 version: 1.0.20250804
-container: niimath_1.0.20250804_20251016.simg
+container: niimath_1.0.20250804.simg
 
 required_files:
   - dataset: ds000001
