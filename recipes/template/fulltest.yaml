@@ -19,9 +19,9 @@ setup:
 
 tests:
   - name: DataLad version check
-    description: Verify the datalad CLI is available
+    description: Verify the datalad CLI version matches the shipped runtime
     command: datalad --version
-    expected_output_contains: "datalad"
+    expected_output_contains: "datalad 1.1.5"
 
   - name: DataLad container help
     description: Verify datalad-container is installed and exposes its help
