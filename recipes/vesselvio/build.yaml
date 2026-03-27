@@ -4,6 +4,7 @@ version: 1.1.2
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
@@ -23,6 +24,8 @@ build:
     - template:
         name: miniconda
         version: latest
+        env_name: vesselvio
+        env_exists: "false"
         conda_install: python=3.8.8
 
     - run:
