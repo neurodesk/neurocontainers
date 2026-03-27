@@ -1,5 +1,5 @@
 # FSL container test suite
-# Tests for FSL v6.0.7.18 - FMRIB Software Library for brain imaging analysis
+# Tests for FSL v6.0.7.19 - FMRIB Software Library for brain imaging analysis
 #
 # Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
 #   - T1w: structural scan
@@ -7,8 +7,8 @@
 #   - BOLD: 4D functional data
 
 name: fsl
-version: 6.0.7.18
-container: fsl_6.0.7.18_20250928.simg
+version: 6.0.7.19
+container: fsl_6.0.7.19.simg
 
 required_files:
   - dataset: ds000001
