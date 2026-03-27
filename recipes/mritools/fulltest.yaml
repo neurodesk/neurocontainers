@@ -16,7 +16,7 @@
 
 name: mritools
 version: 3.3.0
-container: mritools_3.3.0_20220224.simg
+container: mritools_3.3.0.simg
 
 required_files:
   - dataset: ds000001
