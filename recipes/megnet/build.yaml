@@ -2,6 +2,7 @@ name: megnet
 version: 1.0.1
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: MEGNET pipelines for MEG (MEGIN and KIT) data analysis
   example: python xxx.py config_file
