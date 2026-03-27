@@ -1,0 +1,41 @@
+# fitlins container test suite
+# Minimal no-rebuild verification for the installed FitLins Python package.
+
+name: fitlins
+version: 0.11.0
+container: fitlins_0.11.0.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: Python runtime available
+    description: Verify Python is available in the image
+    command: python --version
+    expected_output_contains: "Python 3.9"
+
+  - name: FitLins package import
+    description: Verify the main fitlins module imports successfully
+    command: python -c "import fitlins; print(fitlins.__version__)"
+    expected_output_contains: "0.11.0"
+
+  - name: FitLins CLI on PATH
+    description: Verify the fitlins launcher is installed in the Miniconda environment
+    command: bash -lc "command -v fitlins"
+    expected_output_contains: "/opt/miniconda/bin/fitlins"
+
+  - name: FitLins package metadata
+    description: Verify pip metadata reports the installed fitlins package
+    command: python -m pip show fitlins 2>&1 | sed -n '1,12p'
+    expected_output_contains: "Version: 0.11.0"
+
+  - name: FitLins install location
+    description: Verify the module is installed under the Miniconda site-packages tree
+    command: python -c "import fitlins; print(fitlins.__file__)"
+    expected_output_contains: "/opt/miniconda/lib/python3.9/site-packages/fitlins/"
