@@ -22,7 +22,7 @@
 
 name: niftyreg
 version: 1.4.0
-container: niftyreg_1.4.0_20220317.simg
+container: niftyreg_1.4.0.simg
 
 required_files:
   - dataset: ds000001
