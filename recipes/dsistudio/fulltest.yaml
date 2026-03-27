@@ -24,7 +24,7 @@
 
 name: dsistudio
 version: 2024.06.12
-container: dsistudio_2024.06.12_20241010.simg
+container: dsistudio_2024.06.12.simg
 
 # Environment variable required for headless operation
 env:
