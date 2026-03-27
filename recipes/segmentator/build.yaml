@@ -28,11 +28,14 @@ build:
         pip_install: compoda==0.3.5
         mamba: true
     - run:
+        - apt-get -o Acquire::Retries=3 update
+        - DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential
+    - run:
         - cp {{ get_file("v1_6_1_tar_gz") }} /tmp/segmentator.tar.gz
         - mkdir -p /opt
         - tar -xzf /tmp/segmentator.tar.gz -C /opt
         - mv /opt/segmentator-1.6.1 /opt/segmentator
-        - bash -c "source activate segmentator && python -m pip install -e /opt/segmentator"
+        - bash -c "source activate segmentator && python -m pip install --no-build-isolation -e /opt/segmentator"
         - rm /tmp/segmentator.tar.gz
     - group:
         - file:
