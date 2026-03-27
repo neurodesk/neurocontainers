@@ -34,6 +34,12 @@ setup:
     #!/usr/bin/env bash
     set -e
     mkdir -p ${output_dir}
+    antsRegistration --version > /tmp/ants-launcher-check.log 2>&1 || {
+      status=$?
+      echo "antsRegistration launcher failed during setup (exit ${status})" >&2
+      cat /tmp/ants-launcher-check.log >&2
+      exit ${status}
+    }
 
 tests:
   # ==========================================================================
