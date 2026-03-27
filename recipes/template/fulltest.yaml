@@ -1,0 +1,47 @@
+# template container test suite
+# Minimal no-rebuild verification for the shipped DataLad template tools.
+
+name: template
+version: 1.1.5
+container: template_1.1.5.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    git config --global user.email "user@neurodesk.github.io"
+    git config --global user.name "Neurodesk User"
+    rm -rf /tmp/template-datalad-dataset
+
+tests:
+  - name: DataLad version check
+    description: Verify the datalad CLI is available
+    command: datalad --version
+    expected_output_contains: "datalad"
+
+  - name: DataLad container help
+    description: Verify datalad-container is installed and exposes its help
+    command: datalad containers-add --help 2>&1 | sed -n '1,20p'
+    expected_output_contains: "Add a container to a dataset"
+
+  - name: DataLad create dataset
+    description: Create a dataset in container-local temporary storage
+    command: datalad create /tmp/template-datalad-dataset 2>&1
+    expected_output_contains: "create(ok)"
+
+  - name: DataLad clean status
+    description: Verify the new dataset is clean
+    command: |
+      cd /tmp/template-datalad-dataset
+      datalad status 2>&1
+    depends_on: DataLad create dataset
+    expected_output_contains: "nothing to save, working tree clean"
+
+  - name: Python runtime available
+    description: Verify Python 3 is installed in the image
+    command: python3 --version
+    expected_output_contains: "Python 3."
