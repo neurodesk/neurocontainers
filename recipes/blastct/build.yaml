@@ -72,10 +72,10 @@ build:
         env_name: blastct
         env_exists: "false"
         conda_install: ""
-        pip_install: scipy numpy pandas SimpleITK==1.2.4 "torch>=1.9"
+        pip_install: scipy numpy pandas SimpleITK==2.4.1 "torch>=1.9" tensorboard
         install_path: /opt/miniconda
     - run:
-        - conda run -n blastct pip install git+https://github.com/biomedia-mira/blast-ct.git
+        - conda run -n blastct pip install --no-deps git+https://github.com/biomedia-mira/blast-ct.git
     - deploy:
         bins:
           - python3
