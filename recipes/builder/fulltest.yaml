@@ -1,0 +1,41 @@
+# builder container test suite
+# Minimal no-rebuild verification for the shipped NeuroContainers builder tools.
+
+name: builder
+version: "0.2"
+container: builder_0.2.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: sf-make binary in PATH
+    description: Verify the shipped builder CLI is on PATH
+    command: command -v sf-make
+    expected_output_contains: "/usr/bin/sf-make"
+
+  - name: sf-make help output
+    description: Verify the builder CLI renders its main help text
+    command: sf-make --help 2>&1 | sed -n '1,20p'
+    expected_output_contains: "Build a recipe directory into a SIF"
+
+  - name: Python runtime available
+    description: Verify Python 3 is installed for the builder workflow
+    command: python3 --version
+    expected_output_contains: "Python 3."
+
+  - name: Apptainer available
+    description: Verify Apptainer is installed in the image
+    command: apptainer --version
+    expected_output_contains: "apptainer version"
+
+  - name: Architecture option documented
+    description: Verify sf-make exposes the architecture flag
+    command: sf-make --help 2>&1
+    expected_output_contains: "--architecture"
