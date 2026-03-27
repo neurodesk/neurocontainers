@@ -27,7 +27,13 @@ build:
         version: latest
         env_name: topaz
         env_exists: "false"
-        conda_install: python=3.6 topaz=0.2.5 cudatoolkit=10.2 -c tbepler -c pytorch
+        conda_install: python=3.10
+
+    - run:
+        - |
+          bash -lc "source activate topaz
+          python -m pip install --no-cache-dir topaz-em==0.2.5
+          "
 
 deploy:
   bins:
