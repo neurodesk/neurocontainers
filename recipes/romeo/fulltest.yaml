@@ -22,7 +22,7 @@
 
 name: romeo
 version: 3.2.8
-container: romeo_3.2.8_20220224.simg
+container: romeo_3.2.8.simg
 
 required_files:
   - dataset: ds000001
