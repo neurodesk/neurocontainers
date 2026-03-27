@@ -31,6 +31,11 @@ setup:
   script: |
     #!/usr/bin/env bash
     set -e
+    # Fail fast when the bundled convert3d executables are not runnable.
+    c3d -version >/dev/null 2>&1 || {
+      echo "convert3d bundled executables are not runnable on arm64"
+      exit 126
+    }
     mkdir -p ${output_dir}
 
 tests:
