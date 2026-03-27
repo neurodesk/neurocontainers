@@ -24,7 +24,7 @@ build:
         install_path: /opt/miniconda
         env_name: segmentator
         env_exists: "false"
-        conda_install: matplotlib numpy nibabel scipy python=3.10
+        conda_install: matplotlib numpy=1.26 nibabel scipy python=3.10
         pip_install: compoda==0.3.5
         mamba: true
     - run:
