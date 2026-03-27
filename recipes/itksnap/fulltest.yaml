@@ -13,7 +13,7 @@
 
 name: itksnap
 version: 4.4.0
-container: itksnap_4.4.0_20260117.simg
+container: itksnap_4.4.0.simg
 
 required_files:
   - dataset: ds000001
