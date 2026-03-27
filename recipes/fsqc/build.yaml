@@ -5,6 +5,7 @@ copyright:
     url: https://github.com/Deep-MI/fsqc?tab=MIT-1-ov-file
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: |-
     This package provides quality assurance / quality control scripts for FastSurfer- or FreeSurfer-processed structural MRI data. It will check outputs of these two software packages by means of quantitative and visual summaries. Prior processing of data using either FastSurfer or FreeSurfer is required, i.e. the software cannot be used on raw images.
