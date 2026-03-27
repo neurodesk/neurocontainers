@@ -7,7 +7,7 @@ architectures:
 
 build:
   kind: neurodocker
-  base-image: ubuntu:16.04
+  base-image: ubuntu:20.04
   pkg-manager: apt
 
   directives:
@@ -19,6 +19,8 @@ build:
         name: miniconda
         version: latest
         conda_install: python=3.6
+        env_name: hdbet
+        env_exists: "false"
 
     - workdir: /opt
 
