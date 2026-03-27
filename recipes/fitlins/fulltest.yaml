@@ -16,9 +16,9 @@ setup:
 
 tests:
   - name: Python runtime available
-    description: Verify Python is available in the image
+    description: Verify the Python runtime matches the shipped image
     command: python --version
-    expected_output_contains: "Python 3.9"
+    expected_output_contains: "Python 3.9.18"
 
   - name: FitLins package import
     description: Verify the main fitlins module imports successfully
