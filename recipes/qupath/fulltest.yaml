@@ -12,7 +12,7 @@
 
 name: qupath
 version: 0.6.0
-container: qupath_0.6.0_20250805.simg
+container: qupath_0.6.0.simg
 
 test_data:
   output_dir: test_output
