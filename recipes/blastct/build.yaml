@@ -69,12 +69,13 @@ build:
     - template:
         name: miniconda
         version: py311_25.5.1-0
-        env_exists: "true"
+        env_name: blastct
+        env_exists: "false"
         conda_install: ""
         pip_install: scipy numpy pandas SimpleITK==1.2.4 "torch>=1.9"
         install_path: /opt/miniconda
     - run:
-        - pip install git+https://github.com/biomedia-mira/blast-ct.git
+        - conda run -n blastct pip install git+https://github.com/biomedia-mira/blast-ct.git
     - deploy:
         bins:
           - python3
