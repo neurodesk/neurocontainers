@@ -26,9 +26,9 @@ tests:
     expected_output_contains: "Build a recipe directory into a SIF"
 
   - name: Python runtime available
-    description: Verify Python 3 is installed for the builder workflow
+    description: Verify the Python runtime matches the shipped image
     command: python3 --version
-    expected_output_contains: "Python 3."
+    expected_output_contains: "Python 3.12.12"
 
   - name: Apptainer available
     description: Verify Apptainer is installed in the image
