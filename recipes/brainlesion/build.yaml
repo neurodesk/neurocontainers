@@ -2,6 +2,7 @@ name: brainlesion
 version: 1.0.0
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: |-
     BrainLesion Suite (BLS) is a modular and open-source framework for brain lesion image analysis in Python. Developed by an international consortium of researchers, BLS enables efficient, reproducible, and customizable pipelines for processing and analyzing multi-modal brain image data.
@@ -19,6 +20,8 @@ build:
         name: miniconda
         version: py310_25.5.1-0
         install_path: /opt/miniconda
+        env_name: brainlesion
+        env_exists: "false"
         pip_install: loguru==0.7.3 panoptica deep_quality_estimation petu gliomoda brainles-aurora brats brainles-preprocessing
     - deploy:
         bins:
