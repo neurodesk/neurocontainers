@@ -8,7 +8,7 @@
 
 name: connectomeworkbench
 version: 2.1.0
-container: connectomeworkbench_2.1.0_20251212.simg
+container: connectomeworkbench_2.1.0.simg
 
 required_files:
   - dataset: ds000001
