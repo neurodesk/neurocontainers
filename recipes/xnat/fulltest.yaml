@@ -42,9 +42,9 @@ tests:
   # JAVA RUNTIME VERIFICATION
   # ==========================================================================
   - name: Java version check
-    description: Verify Java 8 runtime is available
+    description: Verify the Java runtime matches the shipped image
     command: java -version 2>&1
-    expected_output_contains: "1.8.0"
+    expected_output_contains: "1.8.0_452"
 
   - name: Java OpenJDK verification
     description: Verify OpenJDK is the Java provider
