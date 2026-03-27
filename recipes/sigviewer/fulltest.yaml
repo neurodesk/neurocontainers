@@ -21,7 +21,7 @@
 
 name: sigviewer
 version: 0.6.4
-container: sigviewer_0.6.4_20220315.simg
+container: sigviewer_0.6.4.simg
 
 # Environment variables required for headless testing
 environment:
