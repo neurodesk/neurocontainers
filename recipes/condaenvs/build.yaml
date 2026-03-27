@@ -3,6 +3,7 @@ version: 1.0.1
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
@@ -16,6 +17,8 @@ build:
     - template:
         name: miniconda
         version: latest
+        env_name: condaenvs
+        env_exists: "false"
 
     - install:
         - git
