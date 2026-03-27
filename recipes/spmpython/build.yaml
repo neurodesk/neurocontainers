@@ -5,6 +5,7 @@ copyright:
     url: https://github.com/spm/spm-python/blob/main/LICENCE
 architectures:
   - x86_64
+  - aarch64
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -15,6 +16,8 @@ build:
         conda_install: python=3.12
         version: py312_25.5.1-0
         install_path: /opt/miniconda
+        env_name: spmpython
+        env_exists: "false"
         pip_install: spm-python
 readme: |-
   ----------------------------------
