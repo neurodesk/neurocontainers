@@ -3,6 +3,7 @@ version: 1.0.0
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
@@ -16,7 +17,7 @@ build:
 
     - template:
         name: miniconda
-        version: 4.7.12.1
+        version: latest
         conda_install: python=3.6
 
     - workdir: /opt
