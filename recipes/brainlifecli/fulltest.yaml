@@ -16,7 +16,7 @@
 
 name: brainlifecli
 version: 1.7.0
-container: brainlifecli_1.7.0_20241003.simg
+container: brainlifecli_1.7.0.simg
 
 required_files:
   - dataset: ds000001
