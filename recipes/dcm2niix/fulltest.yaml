@@ -25,7 +25,7 @@
 
 name: dcm2niix
 version: v1.0.20240202
-container: dcm2niix_v1.0.20240202_20241125.simg
+container: dcm2niix_v1.0.20240202.simg
 
 required_files:
   - dataset: ds000001
