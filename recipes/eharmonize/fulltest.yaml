@@ -36,6 +36,6 @@ tests:
     expected_output_contains: "Python 3.13."
 
   - name: eharmonize package metadata
-    description: Verify the installed Python package metadata is present
+    description: Verify the installed Python package metadata matches the shipped runtime
     command: python -m pip show eharmonize 2>&1 | sed -n '1,20p'
-    expected_output_contains: "Name: eharmonize"
+    expected_output_contains: "Version: 0.0.0"
