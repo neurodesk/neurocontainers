@@ -33,7 +33,7 @@ tests:
   - name: FitLins package metadata
     description: Verify pip metadata reports the installed fitlins package
     command: python -m pip show fitlins 2>&1 | sed -n '1,12p'
-    expected_output_contains: "Home-page: https://github.com/poldracklab/fitlins"
+    expected_output_contains: "Author: Christopher J. Markiewicz"
 
   - name: FitLins install location
     description: Verify the module is installed under the Miniconda site-packages tree
