@@ -1,0 +1,47 @@
+# OpenRecon example container test suite
+# Tests for openreconexample v1.0.0 on ARM64.
+#
+# This suite validates the built runtime surface that was already smoke-checked
+# during the ARM64 build: BET2, bundled OpenRecon scripts, and the Python
+# server/client entrypoints.
+
+name: openreconexample
+version: 1.0.0
+container: openreconexample_1.0.0.simg
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/openreconexample
+
+tests:
+  - name: bet2 on PATH
+    description: Verify the packaged BET2 binary is available on PATH
+    command: command -v bet2
+    expected_output_contains: "/opt/code/FSL-BET2/bin/bet2"
+
+  - name: bundled OpenRecon scripts exist
+    description: Verify the recipe-specific Python scripts were copied into the image
+    command: ls /opt/code/python-ismrmrd-server/openreconexample.py /opt/code/python-ismrmrd-server/dicom2mrd.py
+    expected_output_contains: "openreconexample.py"
+
+  - name: bundled scripts compile
+    description: Verify the bundled OpenRecon Python scripts compile successfully
+    command: python3 -m py_compile /opt/code/python-ismrmrd-server/openreconexample.py /opt/code/python-ismrmrd-server/dicom2mrd.py
+    expected_exit_code: 0
+
+  - name: main server help
+    description: Verify the server entrypoint starts and prints help output
+    command: python3 /opt/code/python-ismrmrd-server/main.py --help
+    expected_output_contains: "Example server for MRD streaming format"
+
+  - name: client help
+    description: Verify the client entrypoint starts and prints help output
+    command: python3 /opt/code/python-ismrmrd-server/client.py --help
+    expected_output_contains: "Example client for MRD streaming format"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    echo "Test outputs preserved in test_output/openreconexample/"
