@@ -30,6 +30,11 @@ tests:
     command: sf-make --help 2>&1 | sed -n '1,4p'
     expected_output_contains: "[--local LOCAL] [--mount MOUNT] [--use-docker]"
 
+  - name: Wrapped positional continuation documented
+    description: Verify sf-make help shows the wrapped positional continuation line
+    command: sf-make --help 2>&1 | sed -n '1,4p'
+    expected_output_contains: "[name]"
+
   - name: Help option documented
     description: Verify sf-make documents its standard help option
     command: sf-make --help 2>&1 | sed -n '10,14p'
