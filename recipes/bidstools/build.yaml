@@ -13,6 +13,7 @@ build:
 
   directives:
     - install:
+        - build-essential
         - gcc
 
     - template:
@@ -21,6 +22,8 @@ build:
         mamba: "true"
         pip_install: heudiconv traits
         version: latest
+        env_name: bidstools
+        env_exists: "false"
 
     - install:
         - wget
