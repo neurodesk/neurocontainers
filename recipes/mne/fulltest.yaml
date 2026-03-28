@@ -18,7 +18,7 @@ tests:
   - name: MNE env Python runtime
     description: Verify the named MNE Conda environment is usable
     command: bash -lc "source /opt/miniconda-latest/etc/profile.d/conda.sh && conda activate mne-1.7.1 && python --version"
-    expected_output_contains: "Python 3.11"
+    expected_output_contains: "Python 3.11.15"
 
   - name: MNE package import
     description: Verify the main MNE package imports successfully from the named env
