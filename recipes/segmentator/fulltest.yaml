@@ -28,7 +28,7 @@ tests:
   - name: Segmentator setup metadata version
     description: Verify the shipped source metadata still declares version 1.6.1
     command: grep -n "version='1.6.1'" /opt/segmentator/setup.py
-    expected_output_contains: "version='1.6.1'"
+    expected_output_contains: "version='1.6.1',"
 
   - name: Segmentator entrypoint metadata
     description: Verify the shipped setup metadata still declares the segmentator console entrypoint
