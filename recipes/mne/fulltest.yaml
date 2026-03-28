@@ -33,7 +33,7 @@ tests:
   - name: MNE install location
     description: Verify the module imports from the named Conda env site-packages tree
     command: bash -lc "source /opt/miniconda-latest/etc/profile.d/conda.sh && conda activate mne-1.7.1 && python -c 'import mne; print(mne.__file__)'"
-    expected_output_contains: "/opt/miniconda-latest/envs/mne-1.7.1/lib/python3.11/site-packages/mne/"
+    expected_output_contains: "/opt/miniconda-latest/envs/mne-1.7.1/lib/python3.11/site-packages/mne/__init__.py"
 
   - name: VS Code launcher available
     description: Verify the shipped VS Code launcher is present in the image
