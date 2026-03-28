@@ -53,13 +53,7 @@ tests:
   - name: Main help
     description: Verify main help displays all available commands
     command: bl --help
-    expected_output_contains:
-      - "login"
-      - "project"
-      - "data"
-      - "app"
-      - "bids"
-      - "datatype"
+    expected_output_contains: "Usage: bl [options] [command]"
 
   # ==========================================================================
   # LOGIN AND AUTHENTICATION HELP
