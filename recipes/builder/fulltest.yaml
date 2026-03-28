@@ -25,6 +25,11 @@ tests:
     command: sf-make --help 2>&1 | sed -n '1,20p'
     expected_output_contains: "usage: sf-make [-h] [--architecture ARCHITECTURE] [--ignore-architectures]"
 
+  - name: Wrapped usage continuation documented
+    description: Verify sf-make help shows the wrapped continuation line for optional arguments
+    command: sf-make --help 2>&1 | sed -n '1,4p'
+    expected_output_contains: "[--local LOCAL] [--mount MOUNT] [--use-docker]"
+
   - name: Help option documented
     description: Verify sf-make documents its standard help option
     command: sf-make --help 2>&1 | sed -n '10,14p'
