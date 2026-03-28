@@ -28,7 +28,7 @@ tests:
   - name: fsqc system info CLI
     description: Verify the fsqc console script works from the active env
     command: bash -lc "source /opt/miniconda-latest/etc/profile.d/conda.sh && conda activate fsqc && fsqc-sys_info | sed -n '1,12p'"
-    expected_output_contains: "fsqc:"
+    expected_output_contains: "fsqc:                     2.1.8.dev0"
 
   - name: run_fsqc help
     description: Verify the main run_fsqc entrypoint is installed and usable
