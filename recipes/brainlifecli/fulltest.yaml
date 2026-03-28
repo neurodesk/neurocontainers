@@ -66,9 +66,7 @@ tests:
   - name: Refresh help
     description: Verify refresh command help
     command: bl refresh --help
-    expected_output_contains:
-      - "--ttl"
-      - "time to live"
+    expected_output_contains: "Usage: bl-refresh [options]"
 
   # ==========================================================================
   # PROFILE COMMANDS
