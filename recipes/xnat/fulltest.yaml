@@ -307,8 +307,8 @@ tests:
 
   - name: XNAT sample config exists
     description: Verify the packaged XNAT sample configuration exists
-    command: test -f /opt/xnat-webapp/resources/samples/xnat-conf.properties && echo "xnat sample config exists"
-    expected_output_contains: "xnat"
+    command: sed -n '1,8p' /opt/xnat-webapp/resources/samples/xnat-conf.properties
+    expected_output_contains: "# web: xnat-conf.properties"
 
   - name: XNAT generated schema asset
     description: Verify an XNAT-generated schema JavaScript asset is present
