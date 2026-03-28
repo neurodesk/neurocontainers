@@ -37,5 +37,5 @@ tests:
 
   - name: Segmentator native extension payload
     description: Verify the built native deriche extension is present for python 3.10 aarch64
-    command: test -f /opt/segmentator/segmentator/deriche_3D.cpython-310-aarch64-linux-gnu.so && echo "deriche_3D.cpython-310-aarch64-linux-gnu.so"
-    expected_output_contains: "deriche_3D.cpython-310-aarch64-linux-gnu.so"
+    command: test -f /opt/segmentator/segmentator/deriche_3D.cpython-310-aarch64-linux-gnu.so && echo "/opt/segmentator/segmentator/deriche_3D.cpython-310-aarch64-linux-gnu.so"
+    expected_output_contains: "/opt/segmentator/segmentator/deriche_3D.cpython-310-aarch64-linux-gnu.so"
