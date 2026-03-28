@@ -2,6 +2,7 @@ name: afib1
 version: 1.6.0
 architectures:
     - x86_64
+    - aarch64
 
 files:
     - name: afib1.py
