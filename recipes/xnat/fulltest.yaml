@@ -303,7 +303,7 @@ tests:
   - name: XNAT manifest version
     description: Verify the packaged XNAT manifest reports the expected version
     command: grep "^Implementation-Version:" /opt/xnat-webapp/META-INF/MANIFEST.MF
-    expected_output_contains: "1.9.2.1"
+    expected_output_contains: "Implementation-Version: 1.9.2.1"
 
   - name: XNAT sample config exists
     description: Verify the packaged XNAT sample configuration exists
