@@ -45,6 +45,11 @@ tests:
     command: sf-make --help 2>&1
     expected_output_contains: "--architecture ARCHITECTURE"
 
+  - name: Ignore-architectures option documented
+    description: Verify sf-make exposes the ignore-architectures option detail
+    command: sf-make --help 2>&1 | sed -n '10,18p'
+    expected_output_contains: "Ignore architecture checks"
+
   - name: Local context option documented
     description: Verify sf-make exposes the local build-context option
     command: sf-make --help 2>&1 | sed -n '10,18p'
