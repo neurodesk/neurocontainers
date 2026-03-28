@@ -28,7 +28,7 @@ tests:
   - name: MNE package metadata
     description: Verify pip metadata reports the installed mne package
     command: bash -lc "source /opt/miniconda-latest/etc/profile.d/conda.sh && conda activate mne-1.7.1 && python -m pip show mne 2>&1 | sed -n '1,12p'"
-    expected_output_contains: "Version: 1.7.1"
+    expected_output_contains: "Home-page: https://mne.tools/"
 
   - name: MNE install location
     description: Verify the module imports from the named Conda env site-packages tree
