@@ -41,10 +41,30 @@ build:
         - cp {{ get_file("Bru2_Linux_zip") }} Bru2_Linux.zip
         - unzip Bru2_Linux.zip
 
-    - template:
-        name: dcm2niix
-        method: source
-        version: latest
+    - install:
+        - cmake
+        - git
+        - make
+        - zlib1g-dev
+
+    - run:
+        - git clone https://github.com/rordenlab/dcm2niix /tmp/dcm2niix
+
+    - workdir: /tmp/dcm2niix
+
+    - run:
+        - mkdir /tmp/dcm2niix/build
+
+    - workdir: /tmp/dcm2niix/build
+
+    - run:
+        - cmake -DCMAKE_INSTALL_PREFIX:PATH=/opt/dcm2niix-latest ..
+        - make -j1
+        - make install
+        - rm -rf /tmp/dcm2niix
+
+    - environment:
+        PATH: $PATH:/opt/dcm2niix-latest/bin
 
     - environment:
         PATH: $PATH:/opt/bru2
