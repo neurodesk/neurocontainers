@@ -42,13 +42,13 @@ tests:
   # ==========================================================================
   - name: Version check
     description: Verify brainlife CLI binary runs and reports version
-    command: bl --version | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+/VERSION/'
-    expected_output_contains: "VERSION"
+    command: bl --version
+    expected_output_contains: "1.8.2"
 
   - name: Version command
     description: Test bl version command
-    command: bl version | sed -E 's/[0-9]+\.[0-9]+\.[0-9]+/VERSION/'
-    expected_output_contains: "VERSION"
+    command: bl version
+    expected_output_contains: "1.8.2"
 
   - name: Main help
     description: Verify main help displays all available commands
