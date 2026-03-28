@@ -29,6 +29,9 @@ build:
         env_exists: "false"
         conda_install: python=3.10
 
+    - environment:
+        PATH: /opt/miniconda-latest/envs/topaz/bin:$PATH
+
     - run:
         - |
           bash -lc "source activate topaz
