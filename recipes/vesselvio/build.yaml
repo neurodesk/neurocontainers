@@ -20,6 +20,8 @@ build:
         - ca-certificates
         - curl
         - libqt5gui5
+        - qt5-qmake
+        - qtbase5-dev
 
     - template:
         name: miniconda
