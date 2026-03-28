@@ -312,8 +312,8 @@ tests:
 
   - name: XNAT generated schema asset
     description: Verify an XNAT-generated schema JavaScript asset is present
-    command: test -f /opt/xnat-webapp/scripts/generated/xnat_projectData.js && echo "xnat_projectData.js exists"
-    expected_output_contains: "xnat"
+    command: sed -n '1,8p' /opt/xnat-webapp/scripts/generated/xnat_projectData.js
+    expected_output_contains: "* web: xnat_projectData.js"
 
   # ==========================================================================
   # XNAT WEBAPP STRUCTURE VERIFICATION
