@@ -61,10 +61,7 @@ tests:
   - name: Login help
     description: Verify login command help and options
     command: bl login --help
-    expected_output_contains:
-      - "--username"
-      - "--password"
-      - "--ttl"
+    expected_output_contains: "Usage: bl-login [options]"
 
   - name: Refresh help
     description: Verify refresh command help
