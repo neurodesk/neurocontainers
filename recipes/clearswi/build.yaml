@@ -3,6 +3,21 @@ version: 1.0.0
 
 architectures:
   - x86_64
+  - aarch64
+
+variables:
+  julia_archive:
+    try:
+      - value: julia_1_9_3_linux_x86_64_tar_gz
+        condition: arch == "x86_64"
+      - value: julia_1_9_3_linux_aarch64_tar_gz
+        condition: arch == "aarch64"
+  julia_tarball:
+    try:
+      - value: julia-1.9.3-linux-x86_64.tar.gz
+        condition: arch == "x86_64"
+      - value: julia-1.9.3-linux-aarch64.tar.gz
+        condition: arch == "aarch64"
 
 build:
   kind: neurodocker
@@ -19,12 +34,12 @@ build:
     - workdir: /opt
 
     - run:
-        - cp {{ get_file("julia_1_6_3_linux_x86_64_tar_gz") }} julia-1.6.3-linux-x86_64.tar.gz
-        - tar zxvf julia-1.6.3-linux-x86_64.tar.gz
-        - rm -rf julia-1.6.3-linux-x86_64.tar.gz
+        - cp {{ get_file(context.julia_archive) }} {{ context.julia_tarball }}
+        - tar zxvf {{ context.julia_tarball }}
+        - rm -rf {{ context.julia_tarball }}
 
     - environment:
-        PATH: $PATH:/opt/julia-1.6.3/bin
+        PATH: $PATH:/opt/julia-1.9.3/bin
 
     - copy:
         - install_packages.jl
@@ -42,10 +57,13 @@ deploy:
     - julia
 
 files:
-  - name: julia_1_6_3_linux_x86_64_tar_gz
-    url: https://julialang-s3.julialang.org/bin/linux/x64/1.6/julia-1.6.3-linux-x86_64.tar.gz
+  - name: julia_1_9_3_linux_x86_64_tar_gz
+    url: https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.3-linux-x86_64.tar.gz
+  - name: julia_1_9_3_linux_aarch64_tar_gz
+    url: https://julialang-s3.julialang.org/bin/linux/aarch64/1.9/julia-1.9.3-linux-aarch64.tar.gz
   - name: install_packages.jl
     contents: |
+      ENV["JULIA_PKG_PRECOMPILE_AUTO"] = 0
       using Pkg
       Pkg.add(PackageSpec(url="https://github.com/korbinian90/CLEARSWI.jl"))
 
