@@ -38,4 +38,4 @@ tests:
   - name: FitLins install location
     description: Verify the module is installed under the Miniconda site-packages tree
     command: python -c "import fitlins; print(fitlins.__file__)"
-    expected_output_contains: "/opt/miniconda/lib/python3.9/site-packages/fitlins/"
+    expected_output_contains: "/opt/miniconda/lib/python3.9/site-packages/fitlins/__init__.py"
