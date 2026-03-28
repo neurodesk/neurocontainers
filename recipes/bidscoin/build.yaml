@@ -41,9 +41,14 @@ build:
 
     - template:
         name: miniconda
+        env_name: bidscoin
+        env_exists: "false"
         conda_install: -c conda-forge -c https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/ fsl-libvis fsl-avwutils fsl-flirt
         pip_install: bidscoin[spec2nii2bids,deface]=={{ context.version }}
         version: latest
+
+    - environment:
+        PATH: /opt/miniconda-latest/envs/bidscoin/bin:$PATH
 
     - deploy:
         bins:
