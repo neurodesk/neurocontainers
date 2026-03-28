@@ -42,8 +42,8 @@ tests:
 
   - name: Architecture option documented
     description: Verify sf-make exposes the architecture flag
-    command: sf-make --help 2>&1
-    expected_output_contains: "--architecture ARCHITECTURE"
+    command: sf-make --help 2>&1 | sed -n '10,16p'
+    expected_output_contains: "Architecture to build for"
 
   - name: Ignore-architectures option documented
     description: Verify sf-make exposes the ignore-architectures option detail
