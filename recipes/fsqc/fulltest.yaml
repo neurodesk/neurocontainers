@@ -38,4 +38,4 @@ tests:
   - name: fsqc module install location
     description: Verify the module imports from the named Conda env site-packages tree
     command: bash -lc "source /opt/miniconda-latest/etc/profile.d/conda.sh && conda activate fsqc && python -c 'import fsqc; print(fsqc.__file__)'"
-    expected_output_contains: "/opt/miniconda-latest/envs/fsqc/lib/python3.13/site-packages/fsqc/"
+    expected_output_contains: "/opt/miniconda-latest/envs/fsqc/lib/python3.13/site-packages/fsqc/__init__.py"
