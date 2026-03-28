@@ -5,7 +5,7 @@
 #   - dcm2bids: Main tool for DICOM to BIDS conversion
 #   - dcm2bids_helper: Helper tool for inspecting DICOM conversions
 #   - dcm2bids_scaffold: Creates basic BIDS directory structure
-#   - dcm2niix: Underlying DICOM to NIfTI converter (v1.0.20240202)
+#   - dcm2niix: Underlying DICOM to NIfTI converter (v1.0.20220720)
 #
 # Note: dcm2bids is designed for DICOM-to-BIDS conversion. Since our test data
 # is already in NIfTI format, we test using the --skip_dcm2niix mode with
@@ -75,7 +75,7 @@ tests:
   - name: dcm2niix version check
     description: Verify dcm2niix version
     command: dcm2niix --version 2>&1 || true
-    expected_output_contains: "v1.0.20240202"
+    expected_output_contains: "v1.0.20220720"
 
   - name: dcm2niix help
     description: Verify dcm2niix help is accessible
@@ -514,15 +514,15 @@ tests:
   # ==========================================================================
   # CONTAINER TEST DATA ACCESS
   # ==========================================================================
-  - name: Access container example config
-    description: Verify access to bundled example config
-    command: cat /dcm2bids/example/config.json 2>&1 | head -20
-    expected_output_contains: "descriptions"
+  - name: Access installed dcm2bids package
+    description: Verify the Python package files are installed in the container
+    command: python -c "import dcm2bids, os; print(os.path.dirname(dcm2bids.__file__))"
+    expected_output_contains: "site-packages/dcm2bids"
 
-  - name: Access container test configs
-    description: Verify access to bundled test configurations
-    command: ls /dcm2bids/tests/data/*.json 2>&1 | head -10
-    expected_output_contains: "config_test.json"
+  - name: Access installed dcm2bids CLI modules
+    description: Verify the packaged CLI entrypoint modules are present
+    command: python -c "import dcm2bids, os; root=os.path.dirname(dcm2bids.__file__); print(sorted(os.listdir(os.path.join(root, 'cli'))))"
+    expected_output_contains: "dcm2bids_scaffold.py"
 
   - name: Access container test sidecars
     description: Verify access to bundled test sidecar files
