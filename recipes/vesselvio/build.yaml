@@ -32,6 +32,7 @@ build:
         - git clone https://github.com/JacobBumgarner/VesselVio.git /opt/vesselvio-{{ context.version }}/
         - |
           bash -lc "source activate vesselvio
+          sed -i 's/^PyQt5==5.13.2$/PyQt5==5.15.11/' /opt/vesselvio-{{ context.version }}/requirements.txt
           python -m pip install -r /opt/vesselvio-{{ context.version }}/requirements.txt
           "
 
