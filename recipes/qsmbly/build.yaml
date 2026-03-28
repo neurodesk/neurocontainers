@@ -10,6 +10,7 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
@@ -72,10 +73,9 @@ build:
         - cp /opt/qsmbly-src/wasm/romeo_wasm* /opt/qsmbly/dist/wasm/ 2>/dev/null || true
         - cp /opt/qsmbly-src/wasm/package.json /opt/qsmbly/dist/wasm/ 2>/dev/null || true
 
-    # Clean up Rust toolchain and source to reduce image size
-    # This cleanup step currently doesn't do much because it needs to be in the same run command as the install
+    # Keep /root/.cargo so rustup's shell init does not break later login-shell RUN steps.
     - run:
-        - rm -rf /opt/qsmbly-src /root/.cargo /root/.rustup
+        - rm -rf /opt/qsmbly-src /root/.rustup
 
     # Create startup script
     - run:
