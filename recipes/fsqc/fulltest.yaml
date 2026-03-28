@@ -33,7 +33,7 @@ tests:
   - name: run_fsqc help
     description: Verify the main run_fsqc entrypoint is installed and usable
     command: bash -lc "source /opt/miniconda-latest/etc/profile.d/conda.sh && conda activate fsqc && run_fsqc --help | sed -n '1,20p'"
-    expected_output_contains: "--subjects_dir"
+    expected_output_contains: "usage: run_fsqc --subjects_dir <directory> --output_dir <directory>"
 
   - name: fsqc module install location
     description: Verify the module imports from the named Conda env site-packages tree
