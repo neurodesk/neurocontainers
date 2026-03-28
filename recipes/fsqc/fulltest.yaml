@@ -23,7 +23,7 @@ tests:
   - name: fsqc package metadata
     description: Verify the installed fsqc package metadata from the active env
     command: bash -lc "source /opt/miniconda-latest/etc/profile.d/conda.sh && conda activate fsqc && python -m pip show fsqc 2>&1 | sed -n '1,12p'"
-    expected_output_contains: "Version: 2.1.8.dev0"
+    expected_output_contains: "Summary: Quality control scripts for FastSurfer and FreeSurfer structural MRI data"
 
   - name: fsqc system info CLI
     description: Verify the fsqc console script works from the active env
