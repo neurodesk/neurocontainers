@@ -31,9 +31,9 @@ tests:
     expected_output_contains: "Python 3.12.12"
 
   - name: Apptainer available
-    description: Verify Apptainer is installed in the image
+    description: Verify Apptainer matches the shipped runtime version
     command: apptainer --version
-    expected_output_contains: "apptainer version"
+    expected_output_contains: "apptainer version 1.4.5"
 
   - name: Architecture option documented
     description: Verify sf-make exposes the architecture flag
