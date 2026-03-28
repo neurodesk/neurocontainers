@@ -37,5 +37,5 @@ tests:
 
   - name: HD-BET model bundle present
     description: Verify the bundled model payload is present in the image
-    command: test -f /opt/HD-BET/hd-bet_params/4.model && echo "/opt/HD-BET/hd-bet_params/4.model"
-    expected_output_contains: "/opt/HD-BET/hd-bet_params/4.model"
+    command: bash -lc "cd /opt/HD-BET/hd-bet_params && test -f 0.model && test -f 1.model && test -f 2.model && test -f 3.model && test -f 4.model && printf '0.model 1.model 2.model 3.model 4.model\n'"
+    expected_output_contains: "0.model 1.model 2.model 3.model 4.model"
