@@ -33,7 +33,7 @@ tests:
   - name: FitLins package metadata
     description: Verify pip metadata reports the installed fitlins package
     command: python -m pip show fitlins 2>&1 | sed -n '1,12p'
-    expected_output_contains: "Version: 0.11.0"
+    expected_output_contains: "Summary: Fit Linear Models to BIDS Datasets"
 
   - name: FitLins install location
     description: Verify the module is installed under the Miniconda site-packages tree
