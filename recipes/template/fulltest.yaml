@@ -26,7 +26,7 @@ tests:
   - name: DataLad container help
     description: Verify datalad-container is installed and exposes its help
     command: datalad containers-add --help 2>&1 | sed -n '1,20p'
-    expected_output_contains: "Usage: datalad containers-add"
+    expected_output_contains: "Usage: datalad containers-add [-h] [-u URL] [-d DATASET] [--call-fmt FORMAT]"
 
   - name: DataLad create dataset
     description: Create a dataset in container-local temporary storage
