@@ -22,7 +22,7 @@
 
 name: bidstools
 version: 1.0.4
-container: bidstools_1.0.4_20240221.simg
+container: bidstools_1.0.4.simg
 
 required_files:
   - dataset: ds000001
