@@ -31,7 +31,7 @@ tests:
   - name: DataLad create dataset
     description: Create a dataset in container-local temporary storage
     command: datalad create /tmp/template-datalad-dataset 2>&1
-    expected_output_contains: "create(ok)"
+    expected_output_contains: "create(ok): /tmp/template-datalad-dataset (dataset)"
 
   - name: DataLad clean status
     description: Verify the new dataset is clean
