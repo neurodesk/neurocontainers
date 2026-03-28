@@ -23,7 +23,7 @@ tests:
   - name: sf-make help output
     description: Verify the builder CLI renders its main help text
     command: sf-make --help 2>&1 | sed -n '1,20p'
-    expected_output_contains: "Build a recipe directory into a SIF"
+    expected_output_contains: "usage: sf-make [-h] [--architecture ARCHITECTURE] [--ignore-architectures]"
 
   - name: Python runtime available
     description: Verify the Python runtime matches the shipped image
