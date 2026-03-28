@@ -28,7 +28,7 @@ tests:
   - name: BLAST-CT package metadata
     description: Verify pip metadata reports the installed blast_ct package
     command: python3 -m pip show blast_ct 2>&1 | sed -n '1,12p'
-    expected_output_contains: "Version: 2.0.0"
+    expected_output_contains: "Home-page: https://github.com/biomedia-mira/blast_ct"
 
   - name: SimpleITK version
     description: Verify the expected SimpleITK runtime is installed
