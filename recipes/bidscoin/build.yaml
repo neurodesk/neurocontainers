@@ -25,15 +25,12 @@ build:
     - install:
         - python3-pyqt6     # Avoid GUI issues
         - build-essential   # Needed for pip (needs gcc)
+        - dcm2niix
         - libgl1
         - libxcb-cursor0
         - tk
         - dbus
         - qt6-wayland       # Make sure wayland is supported
-
-    - template:
-        name: dcm2niix
-        version: latest
 
     - template:
         name: bids_validator
@@ -44,7 +41,7 @@ build:
         env_name: bidscoin
         env_exists: "false"
         conda_install: -c conda-forge -c https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/ fsl-libvis fsl-avwutils fsl-flirt
-        pip_install: bidscoin[spec2nii2bids,deface]=={{ context.version }}
+        pip_install: setuptools==78.1.1 bidscoin[spec2nii2bids,deface]=={{ context.version }}
         version: latest
 
     - environment:
