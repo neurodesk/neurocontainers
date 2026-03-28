@@ -1,0 +1,102 @@
+# qsmbly container test suite
+# Tests for qsmbly v0.8.4 - Browser-based Quantitative Susceptibility Mapping
+#
+# Tests focus on the installed launcher, startup script, bundled static webapp,
+# and local static-file serving behavior.
+
+name: qsmbly
+version: 0.8.4
+container: qsmbly_0.8.4.simg
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/qsmbly
+
+tests:
+  - name: qsmbly launcher on PATH
+    description: Verify the qsmbly launcher is available
+    command: command -v qsmbly
+    expected_output_contains: "/usr/local/bin/qsmbly"
+
+  - name: qsmbly usage output
+    description: Verify the launcher prints the documented usage text
+    command: qsmbly
+    expected_output_contains: "Usage: qsmbly start"
+
+  - name: start.sh exists
+    description: Verify the startup script exists in the image
+    command: ls /opt/qsmbly/start.sh
+    expected_output_contains: "start.sh"
+
+  - name: start.sh is executable
+    description: Verify the startup script has execute permissions
+    command: test -x /opt/qsmbly/start.sh && echo "executable"
+    expected_output_contains: "executable"
+
+  - name: start.sh serves dist
+    description: Verify the startup script serves the built dist directory
+    command: cat /opt/qsmbly/start.sh
+    expected_output_contains: "serve -s dist -l"
+
+  - name: start.sh honors configured port
+    description: Verify the startup script uses the Neurodesk webapp port override
+    command: cat /opt/qsmbly/start.sh
+    expected_output_contains: "NEURODESK_WEBAPP_PORT:-3001"
+
+  - name: dist directory exists
+    description: Verify the built webapp directory exists
+    command: ls -d /opt/qsmbly/dist
+    expected_output_contains: "/opt/qsmbly/dist"
+
+  - name: index.html exists
+    description: Verify the main HTML file exists
+    command: ls /opt/qsmbly/dist/index.html
+    expected_output_contains: "index.html"
+
+  - name: favicon exists
+    description: Verify the favicon is bundled
+    command: ls /opt/qsmbly/dist/favicon.ico
+    expected_output_contains: "favicon.ico"
+
+  - name: JavaScript app bundle exists
+    description: Verify the main JavaScript app bundle is present
+    command: ls /opt/qsmbly/dist/js/qsm-app-romeo.js
+    expected_output_contains: "qsm-app-romeo.js"
+
+  - name: worker bundle exists
+    description: Verify the worker script is present
+    command: ls /opt/qsmbly/dist/js/qsm-worker-pure.js
+    expected_output_contains: "qsm-worker-pure.js"
+
+  - name: wasm bundle exists
+    description: Verify the compiled WebAssembly bundle is present
+    command: ls /opt/qsmbly/dist/wasm/qsm_wasm_bg.wasm
+    expected_output_contains: "qsm_wasm_bg.wasm"
+
+  - name: local web server can start
+    description: Verify serve can host the bundled app locally
+    command: |
+      timeout 5s serve -s /opt/qsmbly/dist -l 3011 --no-clipboard &
+      sleep 2
+      curl -s -o /dev/null -w "%{http_code}" http://localhost:3011/ || echo "failed"
+      pkill -f "serve.*3011" 2>/dev/null || true
+    expected_output_contains: "200"
+    timeout: 10
+
+  - name: local web server serves index
+    description: Verify the local server returns the app HTML
+    command: |
+      timeout 5s serve -s /opt/qsmbly/dist -l 3012 --no-clipboard &
+      sleep 2
+      curl -s http://localhost:3012/ | head -1 || echo "failed"
+      pkill -f "serve.*3012" 2>/dev/null || true
+    expected_output_contains: "<!DOCTYPE html>"
+    timeout: 10
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    pkill -f "serve.*301[12]" 2>/dev/null || true
+    echo "Test outputs preserved in test_output/qsmbly/"
