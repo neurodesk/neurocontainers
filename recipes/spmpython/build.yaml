@@ -18,7 +18,9 @@ build:
         install_path: /opt/miniconda
         env_name: spmpython
         env_exists: "false"
-        pip_install: spm-python
+        pip_install: spm-python=={{ context.version }}
+    - environment:
+        PATH: /opt/miniconda/envs/spmpython/bin:$PATH
 readme: |-
   ----------------------------------
   ## spmpython/{{ context.version }} ##
