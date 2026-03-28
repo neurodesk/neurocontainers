@@ -28,7 +28,7 @@ tests:
   - name: FitLins CLI on PATH
     description: Verify the fitlins launcher renders its shipped help text
     command: bash -lc "fitlins --help 2>&1 | sed -n '1,18p'"
-    expected_output_contains: "FitLins: Workflows for Fitting Linear models to fMRI"
+    expected_output_contains: "usage: fitlins [-h] [--version] [-v] [-q]"
 
   - name: FitLins package metadata
     description: Verify pip metadata reports the installed fitlins package
