@@ -1,0 +1,46 @@
+# lqt container test suite
+# Tests for lqt v0.1.0 on ARM64.
+#
+# This suite validates the installed R runtime and the packaged LQT library
+# without expanding into data-heavy analyses.
+
+name: lqt
+version: 0.1.0
+container: lqt_0.1.0.simg
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/lqt
+
+tests:
+  - name: R version
+    description: Verify the packaged R runtime starts
+    command: R --version
+    expected_output_contains: "R version 4.3"
+
+  - name: LQT library loads
+    description: Verify the LQT package loads successfully in R
+    command: R --slave -e "library(LQT); cat('LQT loaded\\n')"
+    expected_output_contains: "LQT loaded"
+
+  - name: LQT package version
+    description: Verify the installed LQT package reports the expected version
+    command: R --slave -e "library(LQT); cat(as.character(packageVersion('LQT')), '\\n')"
+    expected_output_contains: "0.1.0"
+
+  - name: LQT package path
+    description: Verify the installed package path resolves inside site-library
+    command: R --slave -e "cat(system.file(package='LQT'), '\\n')"
+    expected_output_contains: "/usr/local/lib/R/site-library/LQT"
+
+  - name: LQT namespace exports
+    description: Verify the installed namespace exports at least one symbol
+    command: R --slave -e "library(LQT); cat(length(getNamespaceExports('LQT')) > 0, '\\n')"
+    expected_output_contains: "TRUE"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    echo "Test outputs preserved in test_output/lqt/"
