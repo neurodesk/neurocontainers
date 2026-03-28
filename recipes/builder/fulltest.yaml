@@ -38,4 +38,4 @@ tests:
   - name: Architecture option documented
     description: Verify sf-make exposes the architecture flag
     command: sf-make --help 2>&1
-    expected_output_contains: "--architecture"
+    expected_output_contains: "--architecture ARCHITECTURE"
