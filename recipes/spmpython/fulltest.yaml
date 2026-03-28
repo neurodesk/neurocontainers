@@ -15,7 +15,7 @@
 
 name: spmpython
 version: 25.1.2.post1
-container: spmpython_25.1.2.post1_20250905.simg
+container: spmpython_25.1.2.post1.simg
 
 required_files:
   - dataset: ds000001
