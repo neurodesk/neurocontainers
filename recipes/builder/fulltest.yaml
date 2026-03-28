@@ -25,6 +25,11 @@ tests:
     command: sf-make --help 2>&1 | sed -n '1,20p'
     expected_output_contains: "usage: sf-make [-h] [--architecture ARCHITECTURE] [--ignore-architectures]"
 
+  - name: Help description documented
+    description: Verify sf-make help renders its shipped one-line description
+    command: sf-make --help 2>&1 | sed -n '5,6p'
+    expected_output_contains: "Build a recipe directory into a SIF using BuildKit (no Docker required)"
+
   - name: Wrapped usage continuation documented
     description: Verify sf-make help shows the wrapped continuation line for optional arguments
     command: sf-make --help 2>&1 | sed -n '1,4p'
