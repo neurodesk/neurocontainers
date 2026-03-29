@@ -7,6 +7,21 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
+
+variables:
+  julia_archive:
+    try:
+      - value: julia_1_9_4_linux_x86_64_tar_gz
+        condition: arch == "x86_64"
+      - value: julia_1_9_4_linux_aarch64_tar_gz
+        condition: arch == "aarch64"
+  julia_tarball:
+    try:
+      - value: julia-1.9.4-linux-x86_64.tar.gz
+        condition: arch == "x86_64"
+      - value: julia-1.9.4-linux-aarch64.tar.gz
+        condition: arch == "aarch64"
 
 build:
   kind: neurodocker
@@ -56,16 +71,23 @@ build:
         - pkg-config
 
     - run:
-        - cp {{ get_file("download") }} vscode.deb
-        - apt install ./vscode.deb
-        - rm -rf ./vscode.deb
+        - |
+          arch="$(uname -m)"
+          if [ "$arch" = "aarch64" ]; then
+            vscode_os="linux-deb-arm64"
+          else
+            vscode_os="linux-deb-x64"
+          fi
+          curl -fsSL -o vscode.deb "https://code.visualstudio.com/sha/download?build=stable&os=${vscode_os}"
+          apt install -y ./vscode.deb
+          rm -rf ./vscode.deb
 
     - workdir: /opt
 
     - run:
-        - cp {{ get_file("julia_1_9_4_linux_x86_64_tar_gz") }} julia-1.9.4-linux-x86_64.tar.gz
-        - tar zxvf julia-1.9.4-linux-x86_64.tar.gz
-        - rm -rf julia-1.9.4-linux-x86_64.tar.gz
+        - cp {{ get_file(context.julia_archive) }} {{ context.julia_tarball }}
+        - tar zxvf {{ context.julia_tarball }}
+        - rm -rf {{ context.julia_tarball }}
         - ln -s /opt/julia-1.9.4 /opt/julia-latest
 
     - run:
@@ -122,11 +144,10 @@ readme: |-
   ----------------------------------
 
 files:
-  - name: download
-    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
-
   - name: julia_1_9_4_linux_x86_64_tar_gz
     url: https://julialang-s3.julialang.org/bin/linux/x64/1.9/julia-1.9.4-linux-x86_64.tar.gz
+  - name: julia_1_9_4_linux_aarch64_tar_gz
+    url: https://julialang-s3.julialang.org/bin/linux/aarch64/1.9/julia-1.9.4-linux-aarch64.tar.gz
   - name: install_packages.jl
     contents: |-
       using Pkg
