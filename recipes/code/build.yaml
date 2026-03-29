@@ -42,7 +42,7 @@ build:
 
     - template:
         name: miniconda
-        version: latest
+        version: py310_25.5.1-0
         install_path: /opt/miniconda
         conda_install: "python=3.11 nipype jupyter nb_conda_kernels h5py seaborn numpy"
         pip_install: "osfclient"
@@ -131,9 +131,11 @@ build:
         - tar -C /usr/local -xzvf {{ context.go_tarball }}
         - rm {{ context.go_tarball }}
 
+    - environment:
+        GOPATH: /root/go
+        PATH: /usr/local/go/bin:/root/go/bin:$PATH
+
     - run:
-        - export GOPATH=/root/go
-        - export PATH=/usr/local/go/bin:$PATH
         - mkdir -p /root/go/src/github.com/sylabs
         - cd /root/go/src/github.com/sylabs && wget https://github.com/sylabs/singularity/releases/download/v3.9.3/singularity-ce-3.9.3.tar.gz
         - cd /root/go/src/github.com/sylabs && tar -xzvf singularity-ce-3.9.3.tar.gz

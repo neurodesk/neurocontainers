@@ -19,6 +19,7 @@ build:
         - cmake
         - libglew-dev
         - libboost-all-dev
+        - libboost-math-dev
         - libdevil-dev
         - qtbase5-dev
         - libqt5svg5-dev
@@ -30,7 +31,7 @@ build:
         - tar -xf voreen-src-{{ context.version }}-unix.tar.gz
 
     - run:
-        - cd /root/voreen-src-unix-nightly && mkdir build && cd build && cmake .. && make -j8 && export VRN_DEPLOYMENT=ON && export VRN_ADD_INSTALL_TARGET=ON && export CMAKE_INSTALL_PREFIX=/usr/share/voreen/ && make install && rm -rf /root/*
+        - cd /root/voreen-src-unix-nightly && sed -i '/math_c99l/d; /math_tr1l/d' cmake/FindBoostVRN.cmake && perl -0pi -e 's@static void cpuid\\(int CPUInfo\\[4\\],int InfoType\\)\\{\\n        __asm__ __volatile__ \\(\\n            "cpuid":\\n        "=a" \\(CPUInfo\\[0\\]\\),\\n            "=b" \\(CPUInfo\\[1\\]\\),\\n            "=c" \\(CPUInfo\\[2\\]\\),\\n            "=d" \\(CPUInfo\\[3\\]\\) :\\n        "a" \\(InfoType\\), "c" \\(0\\)\\n            \\);\\n    \\}@static void cpuid(int CPUInfo[4],int InfoType){\\n#if defined(__i386__) || defined(__x86_64__)\\n        __asm__ __volatile__ (\\n            "cpuid":\\n        "=a" (CPUInfo[0]),\\n            "=b" (CPUInfo[1]),\\n            "=c" (CPUInfo[2]),\\n            "=d" (CPUInfo[3]) :\\n        "a" (InfoType), "c" (0)\\n            );\\n#else\\n        CPUInfo[0] = CPUInfo[1] = CPUInfo[2] = CPUInfo[3] = 0;\\n        (void)InfoType;\\n#endif\\n    }@s' ext/tgt/cpucapabilities.cpp && mkdir build && cd build && cmake -DBoost_NO_BOOST_CMAKE=ON -DVRN_DEPLOYMENT=ON -DVRN_ADD_INSTALL_TARGET=ON -DVRN_MODULE_STAGING=OFF -DCMAKE_INSTALL_PREFIX=/usr/share/voreen/ .. && make -j8 && make install && rm -rf /root/*
 
 deploy:
   bins:
