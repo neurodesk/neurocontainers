@@ -112,6 +112,7 @@ build:
         - tar zxvf {{ context.julia_tarball }}
         - rm -rf {{ context.julia_tarball }}
         - ln -s /opt/julia-1.6.3 /opt/julia-latest
+        - ln -sf /opt/julia-1.6.3/bin/julia /usr/local/bin/julia
 
     - run:
         - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.python
@@ -124,18 +125,15 @@ build:
 
     - environment:
         DONT_PROMPT_WSL_INSTALL: "1"
-        PATH: \$PATH:/opt/julia-1.6.3/bin
-        GOPATH: \$HOME/go
 
     - run:
         - cp {{ get_file(context.go_archive) }} {{ context.go_tarball }}
         - tar -C /usr/local -xzvf {{ context.go_tarball }}
         - rm {{ context.go_tarball }}
 
-    - environment:
-        PATH: \$PATH:/usr/local/go/bin:\$GOPATH/bin
-
     - run:
+        - export GOPATH=/root/go
+        - export PATH=/usr/local/go/bin:$PATH
         - mkdir -p /root/go/src/github.com/sylabs
         - cd /root/go/src/github.com/sylabs && wget https://github.com/sylabs/singularity/releases/download/v3.9.3/singularity-ce-3.9.3.tar.gz
         - cd /root/go/src/github.com/sylabs && tar -xzvf singularity-ce-3.9.3.tar.gz
