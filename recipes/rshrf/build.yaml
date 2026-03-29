@@ -7,6 +7,7 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 categories:
   - functional imaging
@@ -22,19 +23,31 @@ structured_readme:
 
 build:
   kind: neurodocker
-  base-image: bids/rshrf:{{ context.version }}
+  base-image: python:3.10-slim
   pkg-manager: apt
-  add-default-template: false
-  add-tzdata: false
   directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PIP_DISABLE_PIP_VERSION_CHECK: "1"
     - run:
-        - apk add --no-cache bash
+        - apt-get update -qq
+        - apt-get install -y -q --no-install-recommends bash build-essential
+        - rm -rf /var/lib/apt/lists/*
         - mkdir -p /neurodocker
         - echo '#!/usr/bin/env bash' > /neurodocker/startup.sh
         - echo 'set -e' >> /neurodocker/startup.sh
         - echo 'export USER="${USER:=`whoami`}"' >> /neurodocker/startup.sh
         - echo 'if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi' >> /neurodocker/startup.sh
         - chmod +x /neurodocker/startup.sh
+        - python -m pip install --upgrade pip 'setuptools<60' wheel 'numpy<2' cython
+        - mkdir -p /tmp/pyyawt-src
+        - curl -fsSL https://files.pythonhosted.org/packages/source/p/pyyawt/pyyawt-0.1.1.zip -o /tmp/pyyawt-src/pyyawt-0.1.1.zip
+        - unzip -q /tmp/pyyawt-src/pyyawt-0.1.1.zip -d /tmp/pyyawt-src
+        - "python -c \"from pathlib import Path; p=Path('/tmp/pyyawt-src/pyyawt-0.1.1/pyyawt/__init__.py'); p.write_text(p.read_text().replace('from numpy.testing import Tester\\n\\n__all__ = [s for s in dir() if not s.startswith(\\'_\\')]\\ntest = Tester().test\\n', 'try:\\n    from numpy.testing import Tester\\nexcept ImportError:\\n    Tester = None\\n\\n__all__ = [s for s in dir() if not s.startswith(\\'_\\')]\\n\\ndef test(*args, **kwargs):\\n    if Tester is None:\\n        raise RuntimeError(\\'numpy.testing.Tester is unavailable in this NumPy release\\')\\n    return Tester().test(*args, **kwargs)\\n'))\""
+        - "python -c \"from pathlib import Path; root=Path('/tmp/pyyawt-src/pyyawt-0.1.1/pyyawt/src'); files=['cwt.c','dwt1d.c','dwt2d.c','utility.c']; [p.write_text(p.read_text().replace('#include \\\"swtlib.h\\\"\\n', '#include \\\"swtlib.h\\\"\\n#include <string.h>\\n', 1)) for p in (root / name for name in files)]\""
+        - "python -c \"from pathlib import Path; p=Path('/tmp/pyyawt-src/pyyawt-0.1.1/pyyawt/src/cwt.c'); p.write_text(p.read_text().replace('#include \\\"kiss_fft.h\\\"\\n', '#include \\\"kiss_fft.h\\\"\\nint fftshift (double *vector_in, double *vector_out, int vector_length);\\nint ifft (int Signal_Length, int Nfft, double *sig_real, double *sig_imag);\\n', 1))\""
+        - cd /tmp/pyyawt-src/pyyawt-0.1.1 && python setup.py install
+        - python -m pip install --no-build-isolation rsHRF==1.5.8
     - entrypoint: /neurodocker/startup.sh
     - test:
         name: Show rsHRF help
