@@ -57,6 +57,7 @@ build:
 
     - run:
         - pip install nipype pandas nilearn JCC
+        - pip install 'numpy<2.0' 'psutil>=5.9.0' 'antspyx<=0.5.2' 'matplotlib>=3.8' 'dipy>=1.5.0' scipy
 
     - run:
         - python3 -m pip install --upgrade setuptools wheel
@@ -67,7 +68,8 @@ build:
         - git clone https://github.com/nighres/nighres.git
         - cd nighres
         - "git checkout release-{{ context.version }}"
-        - make install
+        - ./build.sh
+        - pip install --no-deps .
 
     - template:
         name: ants
