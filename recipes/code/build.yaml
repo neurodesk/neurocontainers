@@ -6,6 +6,12 @@ architectures:
   - aarch64
 
 variables:
+  miniforge_installer:
+    try:
+      - value: Miniforge3-Linux-x86_64.sh
+        condition: arch == "x86_64"
+      - value: Miniforge3-Linux-aarch64.sh
+        condition: arch == "aarch64"
   julia_archive:
     try:
       - value: julia_1_6_3_linux_x86_64_tar_gz
@@ -40,12 +46,22 @@ build:
     - environment:
         DEBIAN_FRONTEND: noninteractive
 
-    - template:
-        name: miniconda
-        version: py310_25.5.1-0
-        install_path: /opt/miniconda
-        conda_install: "python=3.11 nipype jupyter nb_conda_kernels h5py seaborn numpy"
-        pip_install: "osfclient"
+    - environment:
+        CONDA_DIR: /opt/miniconda
+        PATH: /opt/miniconda/bin:$PATH
+
+    - run:
+        - curl -fsSL -o /tmp/miniforge.sh "https://github.com/conda-forge/miniforge/releases/latest/download/{{ context.miniforge_installer }}"
+        - bash /tmp/miniforge.sh -b -p /opt/miniconda
+        - rm -f /tmp/miniforge.sh
+        - conda config --system --prepend channels conda-forge
+        - conda config --set channel_priority strict
+        - conda config --system --set auto_update_conda false
+        - conda config --system --set show_channel_urls true
+        - conda init bash
+        - conda install -y --name base python=3.11 nipype jupyter nb_conda_kernels h5py seaborn numpy
+        - python -m pip install --no-cache-dir osfclient
+        - conda clean --all --yes
 
     - install:
         - xdg-utils
@@ -94,16 +110,7 @@ build:
         - pkg-config
 
     - run:
-        - |
-          arch="$(uname -m)"
-          if [ "$arch" = "aarch64" ]; then
-            vscode_os="linux-deb-arm64"
-          else
-            vscode_os="linux-deb-x64"
-          fi
-          curl -fsSL -o vscode.deb "https://code.visualstudio.com/sha/download?build=stable&os=${vscode_os}"
-          apt install -y ./vscode.deb
-          rm -rf ./vscode.deb
+        - bash -lc 'set -e; arch="$(uname -m)"; if [ "$arch" = "aarch64" ]; then vscode_os="linux-deb-arm64"; else vscode_os="linux-deb-x64"; fi; curl -fsSL -o vscode.deb "https://code.visualstudio.com/sha/download?build=stable&os=${vscode_os}"; apt install -y ./vscode.deb; rm -rf ./vscode.deb'
 
     - workdir: /opt
 
