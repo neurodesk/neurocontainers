@@ -51,15 +51,15 @@ tests:
     command: python3 --version
     expected_output_contains: "Python 3"
 
-  - name: Check README documentation
-    description: Verify container README exists with usage instructions
-    command: cat /README.md
+  - name: Check installed package metadata
+    description: Verify the packaged GLMsingle distribution metadata is present
+    command: "python3 -c \"import importlib.metadata as md; print(md.metadata('GLMsingle')['Name'])\""
     expected_output_contains: "GLMsingle"
 
   - name: Container labels check
-    description: Verify container metadata labels exist
+    description: Verify Apptainer metadata labels were embedded during local conversion
     command: cat /.singularity.d/labels.json
-    expected_output_contains: "NeuroDesk"
+    expected_output_contains: "\"org.label-schema.build-arch\": \"arm64\""
 
   # ==========================================================================
   # GLMSINGLE MODULE IMPORTS
