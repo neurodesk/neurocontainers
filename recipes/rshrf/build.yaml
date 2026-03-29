@@ -31,7 +31,7 @@ build:
         PIP_DISABLE_PIP_VERSION_CHECK: "1"
     - run:
         - apt-get update -qq
-        - apt-get install -y -q --no-install-recommends bash build-essential
+        - apt-get install -y -q --no-install-recommends bash build-essential procps
         - rm -rf /var/lib/apt/lists/*
         - mkdir -p /neurodocker
         - echo '#!/usr/bin/env bash' > /neurodocker/startup.sh
@@ -48,6 +48,7 @@ build:
         - "python -c \"from pathlib import Path; p=Path('/tmp/pyyawt-src/pyyawt-0.1.1/pyyawt/src/cwt.c'); p.write_text(p.read_text().replace('#include \\\"kiss_fft.h\\\"\\n', '#include \\\"kiss_fft.h\\\"\\nint fftshift (double *vector_in, double *vector_out, int vector_length);\\nint ifft (int Signal_Length, int Nfft, double *sig_real, double *sig_imag);\\n', 1))\""
         - cd /tmp/pyyawt-src/pyyawt-0.1.1 && python setup.py install
         - python -m pip install --no-build-isolation rsHRF==1.5.8
+        - "python -c \"from pathlib import Path; p=Path('/usr/local/lib/python3.10/site-packages/rsHRF/processing/knee.py'); p.write_text(p.read_text().replace('dtype=np.int)', 'dtype=int)'))\""
     - entrypoint: /neurodocker/startup.sh
     - test:
         name: Show rsHRF help
