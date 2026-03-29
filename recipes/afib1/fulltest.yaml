@@ -1,0 +1,33 @@
+name: afib1
+version: 1.6.0
+container: afib1_1.6.0.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: bet2 help available
+    description: Verify the rebuilt BET2 binary starts and prints its usage banner
+    command: bet2 -h 2>&1
+    expected_output_contains: "BET (Brain Extraction Tool) v2.1"
+
+  - name: bet2 usage includes mask option
+    description: Verify the command help exposes a representative runtime option
+    command: bet2 -h 2>&1
+    expected_output_contains: "-m,--mask"
+
+  - name: afib1 openrecon script present
+    description: Verify the shipped OpenRecon server script is deployed in the image
+    command: bash -lc "test -f /opt/code/python-ismrmrd-server/afib1.py && printf 'True\n'"
+    expected_output_contains: "True"
+
+  - name: afib1 openrecon script parses
+    description: Verify the shipped OpenRecon server script is valid Python
+    command: python -m py_compile /opt/code/python-ismrmrd-server/afib1.py
+    expected_exit_code: 0
