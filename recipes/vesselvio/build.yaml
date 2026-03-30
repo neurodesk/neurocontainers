@@ -49,8 +49,8 @@ build:
     - run:
         - git clone https://github.com/JacobBumgarner/VesselVio.git /opt/vesselvio-{{ context.version }}/
         - |
-          sed -i 's/^PyQt5==5.13.2$/PyQt5==5.15.11/' /opt/vesselvio-{{ context.version }}/requirements.txt
-        - conda run -n vesselvio python -m pip install -r /opt/vesselvio-{{ context.version }}/requirements.txt
+          sed -i 's/^PyQt5==5.13.2$/PyQt5==5.15.11/' /opt/vesselvio-{{ context.version }}/requirements.txt && \
+          conda run -n vesselvio python -m pip install -r /opt/vesselvio-{{ context.version }}/requirements.txt
 
     - copy:
         - vesselvio

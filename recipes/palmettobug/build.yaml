@@ -1,27 +1,39 @@
 name: palmettobug
 version: 0.0.3 # https://github.com/immunecells/HARMONI
 architectures:
+  - aarch64
   - x86_64
 build:
   kind: neurodocker
 
-  base-image: ubuntu:24.04
+  base-image: python:3.10-slim-bookworm
   pkg-manager: apt
 
   directives:
     - install:
-        - ca-certificates wget unzip libx11-6 fontconfig libgles2
+        - ca-certificates
+        - wget
+        - unzip
+        - build-essential
+        - gfortran
+        - libopenblas-dev
+        - tk
+        - libx11-6
+        - fontconfig
+        - libgles2
+        - libglib2.0-0
+        - libdbus-1-3
+        - libxkbcommon-x11-0
+        - libxcb-cursor0
     - workdir: /opt
-    - template:
-          name: miniconda
-          conda_install: -c conda-forge python=3.9
-          version: latest
     - run:
         - cp {{ get_file("HARMONI_main_250424_zip") }} HARMONI-main-250424.zip
         - unzip HARMONI-main-250424.zip
         - rm -rf HARMONI-main-250424.zip
         - cd HARMONI-main
-        - pip install .
+        - sed -i 's/PySide6 = "<6.5"/PySide6 = ">=6.5.3,<6.6"/' pyproject.toml
+        - python -m pip install --no-cache-dir --upgrade pip
+        - python -m pip install --no-cache-dir .
         - cd ..
         - rm -rf HARMONI-main
 
