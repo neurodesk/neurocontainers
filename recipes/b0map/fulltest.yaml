@@ -1,0 +1,46 @@
+# b0map container test suite
+# Focused ARM64 verification for the shipped BET2 binary and OpenRecon runtime.
+
+name: b0map
+version: 1.0.0
+container: b0map_1.0.0.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: Native ARM64 runtime
+    description: Verify the local Docker image runs natively on ARM64
+    script: |
+      uname -m | grep -x 'aarch64'
+
+  - name: BET2 binary in PATH
+    description: Verify the compiled BET2 executable is installed on PATH
+    script: |
+      command -v bet2 | grep -x '/opt/code/FSL-BET2/bin/bet2'
+
+  - name: BET2 help output
+    description: Verify the bundled BET2 CLI renders its usage text
+    script: |
+      bet2 2>&1 | sed -n '1,12p' | grep 'BET (Brain Extraction Tool) v2.1'
+
+  - name: OpenRecon server help
+    description: Verify the shipped python-ismrmrd server entrypoint starts correctly
+    script: |
+      python /opt/code/python-ismrmrd-server/main.py -h 2>&1 | sed -n '1,20p' | grep 'Example server for MRD streaming format'
+
+  - name: DICOM to MRD converter help
+    description: Verify the dicom2mrd helper script is available
+    script: |
+      python /opt/code/python-ismrmrd-server/dicom2mrd.py -h 2>&1 | sed -n '1,12p' | grep 'Convert DICOMs to MRD file'
+
+  - name: b0map module imports
+    description: Verify the shipped reconstruction module imports with its server-side helpers
+    script: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import b0map, ismrmrd, nibabel, scipy, skimage; print(b0map.__file__)" | grep -x '/opt/code/python-ismrmrd-server/b0map.py'
