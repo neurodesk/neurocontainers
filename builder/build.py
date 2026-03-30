@@ -4,6 +4,7 @@ import subprocess
 import os
 import sys
 import urllib.request
+import urllib.parse
 import argparse
 import shutil
 import jinja2
@@ -454,37 +455,42 @@ class LocalBuildContext(object):
         return target
 
     def ensure_context_cached(self, cache_filename, guest_filename):
-        # Check if the file is already cached
         context_cache_dir = self.context.get_context_cache_dir(self.cache_id)
+        resolved_guest_filename = guest_filename
 
-        cached_file = os.path.join(context_cache_dir, guest_filename)
+        cached_file = os.path.join(context_cache_dir, resolved_guest_filename)
         if os.path.exists(cached_file):
-            return guest_filename
+            try:
+                if os.path.samefile(cache_filename, cached_file):
+                    return resolved_guest_filename
+            except OSError:
+                pass
 
-        # if not then link it from the cache (skip in Pyodide to avoid large file copying)
+            stem, ext = os.path.splitext(guest_filename)
+            suffix = hashlib.sha256(cache_filename.encode("utf-8")).hexdigest()[:12]
+            resolved_guest_filename = f"{stem}_{suffix}{ext}"
+            cached_file = os.path.join(context_cache_dir, resolved_guest_filename)
+
+            if os.path.exists(cached_file):
+                try:
+                    if os.path.samefile(cache_filename, cached_file):
+                        return resolved_guest_filename
+                except OSError:
+                    pass
+
         try:
             import sys
-            import errno
 
             if "pyodide" in sys.modules:
-                # In Pyodide, skip copying large files
-                return guest_filename
-            else:
-                os.link(cache_filename, cached_file)
+                return resolved_guest_filename
+
+            link_or_copy_file(cache_filename, cached_file)
         except FileNotFoundError:
             return None
-        except OSError as e:
-            if e.errno == errno.EXDEV:
-                # Hard links are not possible across filesystems; copy instead.
-                shutil.copy2(cache_filename, cached_file)
-            else:
-                raise
         except AttributeError:
-            # Fallback if os.link is not available
-            return guest_filename
+            return resolved_guest_filename
 
-        # return the filename
-        return guest_filename
+        return resolved_guest_filename
 
     def get_file(self, filename):
         file_info = self.context.files.get(filename)
@@ -495,7 +501,7 @@ class LocalBuildContext(object):
             cache_dir = self.try_mount_cache()
             cache_filename = self.ensure_context_cached(
                 file_info["cached_path"],
-                filename,
+                file_info.get("guest_filename", filename),
             )
             if cache_filename is None:
                 return None
@@ -689,11 +695,13 @@ class BuildContext(object):
             import sys
 
             url = self.execute_template(file["url"], locals=locals)
+            guest_filename = get_guest_filename(name, url)
 
             if dry_run:
                 self.files[name] = {
                     "cached_path": get_cached_download_path(url),
                     "url": url,
+                    "guest_filename": guest_filename,
                 }
                 return
 
@@ -703,6 +711,7 @@ class BuildContext(object):
                 self.files[name] = {
                     "cached_path": output_filename,
                     "url": url,
+                    "guest_filename": guest_filename,
                 }
             else:
                 # download and cache the file
@@ -721,6 +730,7 @@ class BuildContext(object):
                 self.files[name] = {
                     "cached_path": cached_file,
                     "url": url,
+                    "guest_filename": guest_filename,
                 }
         else:
             if "contents" in file:
@@ -1259,6 +1269,16 @@ def get_cached_download_path(url: str) -> str:
     os.makedirs(cache_dir, exist_ok=True)
     filename = sha256(url.encode("utf-8"))
     return os.path.join(cache_dir, filename)
+
+
+def get_guest_filename(name: str, url: str | None = None) -> str:
+    if url is not None:
+        parsed = urllib.parse.urlparse(url)
+        basename = os.path.basename(urllib.parse.unquote(parsed.path))
+        if basename not in {"", ".", ".."}:
+            return basename
+
+    return name
 
 
 def link_or_copy_file(source: str, destination: str) -> None:
