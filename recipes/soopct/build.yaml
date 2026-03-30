@@ -5,6 +5,7 @@ copyright:
     url: https://github.com/rordenlab/soop-ct/tree/main?tab=BSD-2-Clause-1-ov-file
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: This repository provides tools for converting CT scans from DICOM format to NIfTI using BIDS organization. The goal is to support scientific and medical discovery by enabling standardized analysis pipelines. While the DICOM format is the clinical standard for medical imaging, it is complex and not broadly supported by most neuroimaging tools. In contrast, the NIfTI format is simpler, and the Brain Imaging Data Structure (BIDS) allows automated and reproducible analysis.
   example: |-
@@ -52,11 +53,14 @@ build:
   pkg-manager: apt
   directives:
     - install: git unzip
+    - install:
+        - build-essential
+        - cmake
     - template:
         name: miniconda
         version: latest
-        conda_install: python=3.13
-        pip_install: antspyx>=0.5.4 nibabel>=5.3.2 numpy>=2.3.0 scipy>=1.15.2 brainchop>=0.1.8
+        conda_install: python=3.12
+        pip_install: antspyx==0.4.2 nibabel>=5.3.2 numpy>=2.3.0 scipy>=1.15.2 brainchop>=0.1.8
         install_path: /opt/miniconda
     - run:
         - git clone https://github.com/rordenlab/soop-ct.git
