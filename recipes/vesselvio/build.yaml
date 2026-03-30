@@ -43,7 +43,7 @@ build:
         - conda config --set channel_priority strict
         - conda config --system --set auto_update_conda false
         - conda config --system --set show_channel_urls true
-        - conda create -y -n vesselvio python=3.8.8 pip pyqt=5.15
+        - conda create -y -n vesselvio python=3.10 pip pyqt=5.15
         - conda clean --all --yes
 
     - run:

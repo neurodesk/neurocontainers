@@ -39,6 +39,7 @@ build:
         - cd /opt
         - git clone https://github.com/mafortin/GOUHFI.git
         - cd GOUHFI
+        - pip install antspyx==0.4.2 antspynet==0.3.1
         - pip install -e .
     - file:
         name: GOUHFI.zip
