@@ -16,26 +16,30 @@ setup:
 
 tests:
   - name: Python runtime available
-    description: Verify the shipped Python runtime matches the image
-    command: python --version
-    expected_output_contains: "Python 3.13.12"
+    description: Verify the shipped HD-BET conda runtime matches the image
+    command: /opt/miniconda-latest/envs/hdbet/bin/python --version
+    expected_output_contains: "Python 3.10.20"
 
   - name: HD_BET import path
-    description: Verify the HD_BET module imports from the shipped project tree
-    command: python -c "import HD_BET; print(HD_BET.__file__)"
+    description: Verify the HD_BET module imports from the shipped conda environment
+    command: >-
+      /opt/miniconda-latest/envs/hdbet/bin/python -c "import HD_BET; print(HD_BET.__file__)"
     expected_output_contains: "/opt/HD-BET/HD_BET/__init__.py"
 
   - name: HD_BET package metadata version
     description: Verify the editable package metadata reports the shipped HD_BET version
-    command: grep -n "^Version: 2.0.1$" /opt/HD-BET/HD_BET.egg-info/PKG-INFO
+    command: >-
+      grep -n "^Version: 2.0.1$" /opt/HD-BET/HD_BET.egg-info/PKG-INFO
     expected_output_contains: "Version: 2.0.1"
 
   - name: HD_BET console entrypoint metadata
     description: Verify the shipped editable metadata still declares the hd-bet console script
-    command: grep -n "^hd-bet = HD_BET.entry_point:main$" /opt/HD-BET/HD_BET.egg-info/entry_points.txt
+    command: >-
+      grep -n "^hd-bet = HD_BET.entry_point:main$" /opt/HD-BET/HD_BET.egg-info/entry_points.txt
     expected_output_contains: "hd-bet = HD_BET.entry_point:main"
 
   - name: HD-BET model bundle present
     description: Verify the bundled model payload is present in the image
-    command: bash -lc "cd /opt/HD-BET/hd-bet_params && test -f 0.model && test -f 1.model && test -f 2.model && test -f 3.model && test -f 4.model && printf '0.model 1.model 2.model 3.model 4.model\n'"
+    command: >-
+      bash -lc "cd /opt/HD-BET/hd-bet_params && test -f 0.model && test -f 1.model && test -f 2.model && test -f 3.model && test -f 4.model && printf '0.model 1.model 2.model 3.model 4.model\n'"
     expected_output_contains: "0.model 1.model 2.model 3.model 4.model"
