@@ -34,6 +34,7 @@ build:
     - install:
         - git
         - unzip
+        - build-essential
     - run:
         - cd /opt
         - git clone https://github.com/mafortin/GOUHFI.git
