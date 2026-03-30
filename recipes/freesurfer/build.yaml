@@ -100,12 +100,14 @@ build:
         - unzip
         - libncurses5
         - libgomp1
-        - openjdk-8-jdk
+        - default-jdk
         - xvfb
         - xauth
 
     - run:
-        - dpkg -i {{ get_file("freesurfer_deb") }}
+        - apt-get update -qq
+        - apt-get install -y -q --no-install-recommends {{ get_file("freesurfer_deb") }}
+        - rm -rf /var/lib/apt/lists/*
 
     - workdir: /opt/freesurfer-{{ context.version }}
 
