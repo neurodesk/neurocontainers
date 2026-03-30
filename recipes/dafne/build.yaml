@@ -9,6 +9,14 @@ architectures:
   - x86_64
   - aarch64
 
+variables:
+  conda_download_url:
+    try:
+      - value: https://repo.anaconda.com/miniconda/Miniconda3-py310_25.5.1-0-Linux-x86_64.sh
+        condition: arch == "x86_64"
+      - value: https://repo.anaconda.com/miniconda/Miniconda3-py310_25.5.1-0-Linux-aarch64.sh
+        condition: arch == "aarch64"
+
 build:
   kind: neurodocker
 
@@ -32,15 +40,30 @@ build:
         - libxrender1
         - libxext6
 
-    - template:
-        name: miniconda
-        conda_install: "python=3.10 tensorflow numpy "
-        mamba: "true"
-        pip_install: ""
-        version: latest
+    - environment:
+        CONDA_DIR: /opt/miniconda
+        PATH: /opt/miniconda/bin:$PATH
 
     - run:
-        - /opt/miniconda-latest/condabin/conda run --no-capture-output --name base python -m pip install --no-cache-dir --no-build-isolation pyradiomics dafne==1.8a4
+        - export PATH="/opt/miniconda/bin:$PATH"
+        - echo "Downloading Miniconda installer ..."
+        - conda_installer="/tmp/miniconda.sh"
+        - curl -fsSL -o "$conda_installer" "{{ context.conda_download_url }}"
+        - bash "$conda_installer" -b -p /opt/miniconda
+        - rm -f "$conda_installer"
+        - conda tos accept || true
+        - conda config --system --prepend channels conda-forge
+        - conda config --set channel_priority strict
+        - conda config --system --set auto_update_conda false
+        - conda config --system --set show_channel_urls true
+        - conda init bash
+        - conda install -y --solver classic -n base -c conda-forge python=3.10 tensorflow numpy pip
+        - python -m pip install --no-cache-dir --no-build-isolation pyradiomics dafne==1.8a4
+        - sync && conda clean --all --yes && sync
+        - rm -rf ~/.cache/pip/*
+
+    - run:
+        - dafne --help >/dev/null || true
 
 deploy:
   bins:
