@@ -7,6 +7,7 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
@@ -33,10 +34,13 @@ build:
 
     - template:
         name: miniconda
-        conda_install: "python=3.8 tensorflow "
+        conda_install: "python=3.10 tensorflow numpy "
         mamba: "true"
-        pip_install: pyradiomics dafne==1.8a4
-        version: py38_22.11.1-1
+        pip_install: ""
+        version: latest
+
+    - run:
+        - /opt/miniconda-latest/condabin/conda run --no-capture-output --name base python -m pip install --no-cache-dir --no-build-isolation pyradiomics dafne==1.8a4
 
 deploy:
   bins:
