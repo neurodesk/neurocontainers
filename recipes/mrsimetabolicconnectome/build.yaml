@@ -2,6 +2,7 @@ name: mrsimetabolicconnectome
 version: 1.0.0
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: |+
     This repository provides tools and preprocessing utilites to construct a within-subject Metabolic Similarity Matrix (MeSiM) based on MRSI scans, as detailed in preprint and preparing files for a voxel-based analysis as detailed in preprint
@@ -17,6 +18,8 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - install:
+        - git
     - run:
         - cd /opt
         - git clone https://github.com/MRSI-Psychosis-UP/MRSI-Metabolic-Connectome.git
@@ -26,7 +29,9 @@ build:
         install_path: /opt/miniconda
     - run:
         - cd /opt/MRSI-Metabolic-Connectome
-        - conda env create -n mrsitooldemo_env -f environment.yaml
+        - conda create -y -n mrsitooldemo_env python=3.10 pip
+        - conda run --no-capture-output -n mrsitooldemo_env python -m pip install --no-cache-dir numpy scipy nibabel nilearn networkx mne tqdm matplotlib SimpleITK scikit-image statsmodels scikit-learn antspyx==0.4.2 python-dotenv rich
+        - conda run --no-capture-output -n mrsitooldemo_env python -m pip install --no-deps .
     - environment:
         DEVANALYSEPATH: /opt/MRSI-Metabolic-Connectome
         PATH: /opt/miniconda/envs/mrsitooldemo_env/bin:$PATH
