@@ -2,6 +2,7 @@ name: mipav
 version: 11.3.3
 architectures:
   - x86_64
+  - aarch64
 build:
   kind: neurodocker
   base-image: ubuntu:22.04
@@ -15,11 +16,11 @@ build:
         - libxtst6
         - libxi6
     - file:
-        name: mipav_unix.sh
+        name: installer
         url: >-
           https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/mipav_unix_11_3_3.sh
     - run:
-      - sh {{ get_file("mipav_unix.sh") }} -q
+      - sh {{ get_file("installer") }} -q
     - environment:
         PATH: /usr/local/mipav:${PATH}
 copyright:

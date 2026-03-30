@@ -43,13 +43,13 @@ build:
         - conda config --set channel_priority strict
         - conda config --system --set auto_update_conda false
         - conda config --system --set show_channel_urls true
-        - conda create -y -n vesselvio python=3.8.8 pip
+        - conda create -y -n vesselvio python=3.8.8 pip pyqt=5.15
         - conda clean --all --yes
 
     - run:
         - git clone https://github.com/JacobBumgarner/VesselVio.git /opt/vesselvio-{{ context.version }}/
         - |
-          sed -i 's/^PyQt5==5.13.2$/PyQt5==5.15.11/' /opt/vesselvio-{{ context.version }}/requirements.txt && \
+          sed -i '/^PyQt5==/d;/^PyQt5-Qt5==/d;/^PyQt5-sip==/d' /opt/vesselvio-{{ context.version }}/requirements.txt && \
           conda run -n vesselvio python -m pip install -r /opt/vesselvio-{{ context.version }}/requirements.txt
 
     - copy:
