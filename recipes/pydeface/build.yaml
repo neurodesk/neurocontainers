@@ -7,11 +7,12 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
 
-  base-image: vnmd/fsl_6.0.3:20200905
+  base-image: fsl:6.0.7.19
   pkg-manager: apt
 
   directives:
@@ -20,7 +21,7 @@ build:
     - template:
         name: miniconda
         version: latest
-        conda_install: "python=3.7 nipype=1.5.1 nibabel=4.0.1 numpy=1.21.6"
+        conda_install: "python=3.10 nipype nibabel numpy"
         pip_install: "osfclient pydeface=={{ context.version }}"
 
     - environment:
