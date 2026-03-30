@@ -67,13 +67,7 @@ build:
   directives:
     - install: r-base r-base-dev libgsl-dev
     - run:
-        - |-
-          R --slave <<'EOF'
-          options(repos = c(CRAN = "https://cloud.r-project.org"))
-          if (!requireNamespace("remotes", quietly = TRUE)) install.packages("remotes")
-          remotes::install_github("jdwor/LQT", dependencies = NA, upgrade = "never", build_vignettes = FALSE)
-          cat("Installed LQT from GitHub (jdwor/LQT)\n")
-          EOF
+        - R --slave -e "options(repos = c(CRAN = 'https://cloud.r-project.org')); if (!requireNamespace('remotes', quietly = TRUE)) install.packages('remotes'); remotes::install_version('gsl', version = '2.1-8', repos = 'https://cloud.r-project.org'); install.packages('aws', dependencies = TRUE); remotes::install_github('jdwor/LQT', dependencies = NA, upgrade = 'never', build_vignettes = FALSE); cat('Installed LQT from GitHub\\n')"
     - test:
         name: verify_r_installation
         script: |-
