@@ -12,25 +12,35 @@ architectures:
 build:
   kind: neurodocker
 
-  base-image: fsl:6.0.7.19
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
-    - install: ca-certificates
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
 
-    - template:
-        name: miniconda
-        version: latest
-        conda_install: "python=3.10 nipype nibabel numpy"
-        pip_install: "osfclient pydeface=={{ context.version }}"
+    - install:
+        - ca-certificates
+        - build-essential
+        - python3
+        - python3-dev
+        - python3-pip
+        - python3-venv
+
+    - run:
+        - python3 -m venv /opt/pydeface
+        - /opt/pydeface/bin/pip install --upgrade pip "setuptools<81" wheel
+        - /opt/pydeface/bin/pip install pydeface=={{ context.version }}
 
     - environment:
-        PATH: "'$PATH':/opt/pydeface/bin"
+        PATH: /opt/pydeface/bin:$PATH
 
 deploy:
   path:
-    - /opt/pydeface-{{ context.version }}/bin/
     - /opt/pydeface/bin
+  bins:
+    - pydeface
+    - python
 
 readme: |
   ----------------------------------
