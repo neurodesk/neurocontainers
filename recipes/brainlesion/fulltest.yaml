@@ -1,0 +1,48 @@
+# brainlesion container test suite
+# ARM64 validation for the packaged Python environment and representative modules.
+
+name: brainlesion
+version: 1.0.0
+container: brainlesion_1.0.0.sif
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/brainlesion
+
+tests:
+  - name: Python version
+    description: Verify the packaged Python runtime starts on ARM64
+    script: |
+      set -euo pipefail
+      python --version | grep -F "Python 3.10"
+
+  - name: Core package metadata
+    description: Verify the key BrainLesion packages are installed with expected versions
+    script: |
+      set -euo pipefail
+      python -c "import importlib.metadata as md; expected={'deep-quality-estimation':'0.0.3','petu':'0.0.7','gliomoda':'0.0.4','panoptica':'1.5.1','brainles-aurora':'0.2.7','brats':'0.1.7','brainles-preprocessing':'0.0.9'}; [print(name, md.version(name)) for name in expected]; assert all(md.version(name) == version for name, version in expected.items())"
+
+  - name: Representative imports
+    description: Verify the main analysis modules import successfully
+    script: |
+      set -euo pipefail
+      python -c "import deep_quality_estimation, petu, gliomoda, panoptica, brainles_preprocessing; print('imports ok')"
+
+  - name: BRATS import
+    description: Verify the BRATS package imports on ARM64
+    script: |
+      set -euo pipefail
+      python -c "import brats; print('brats ok')"
+
+  - name: Conda environment path
+    description: Verify the active Python executable comes from the packaged conda env
+    script: |
+      set -euo pipefail
+      python -c "import sys; print(sys.executable); assert sys.executable.startswith('/opt/miniconda/envs/brainlesion/bin/python')"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    echo "Test outputs preserved in test_output/brainlesion/"
