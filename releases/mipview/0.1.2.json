@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "mipview 0.1.2": {
+      "version": "20260330",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "visualization"
+  ]
+}
