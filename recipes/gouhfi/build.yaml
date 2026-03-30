@@ -2,6 +2,7 @@ name: gouhfi
 version: 0.0.1
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: GOUHFI is a fully automatic, contrast- and resolution-agnostic, DL-based brain segmentation tool optimized for Ultra-High Field MRI (UHF-MRI)
   example: |
@@ -28,7 +29,7 @@ build:
         name: miniconda
         version: py310_25.5.1-0
         install_path: /opt/miniconda
-        pip_install: torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+        pip_install: torch torchvision torchaudio
         conda_install: python=3.10
     - install:
         - git

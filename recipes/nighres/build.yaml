@@ -71,12 +71,6 @@ build:
         - ./build.sh
         - pip install --no-deps .
 
-    - template:
-        name: ants
-        make_opts: -j8
-        method: source
-        version: 2.5.1
-
 deploy:
   bins:
     - python
