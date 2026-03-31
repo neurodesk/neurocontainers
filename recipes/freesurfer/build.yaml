@@ -240,8 +240,8 @@ readme: |-
   Example:
   ```
   # start freesurfer from application menu or load freesurfer via module load command
-  mkdir /neurodesktop-storage/freesurfer_output
-  export SUBJECTS_DIR=/neurodesktop-storage/freesurfer_output
+  mkdir ~/freesurfer_output
+  export SUBJECTS_DIR=~/freesurfer_output
   export SINGULARITYENV_SUBJECTS_DIR=$SUBJECTS_DIR
   recon-all -subject subjectname -i invol1.nii.gz -all
   ```
