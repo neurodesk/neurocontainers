@@ -141,6 +141,10 @@ def process(connection, config, metadata):
                     imgGroup.append(item)
                 else:
                     tmpMeta["Keep_image_geometry"] = 1
+                    # Tag pass-through images with their contrast type so every
+                    # output series has a distinct name on the scanner.
+                    contrastLabel = imageTypeValue4 or imageTypeValue3 or "ORIGINAL"
+                    tmpMeta["SequenceDescriptionAdditional"] = contrastLabel
                     item.attribute_string = tmpMeta.serialize()
 
                     connection.send_image(item)
@@ -269,6 +273,12 @@ def _extract_dicom_image_type_values(meta_obj):
     image_type_values = _meta_text_values(meta_obj.get("ImageType"))
     if not image_type_values:
         return []
+
+    # If ImageType already contains 3+ backslash-separated components
+    # (e.g. "DERIVED\PRIMARY\DIXON\OPP_PHASE"), it is a complete DICOM
+    # image type string and should be used directly without padding.
+    if len(image_type_values) >= 3:
+        return image_type_values
 
     value3 = _meta_text_values(meta_obj.get("ImageTypeValue3"))
     prefix = ["", "", value3[0] if value3 else ""]
