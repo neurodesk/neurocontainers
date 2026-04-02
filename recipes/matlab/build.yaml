@@ -1,5 +1,5 @@
 name: matlab
-version: R2025b
+version: 2025b
 
 copyright:
   - name: MATLAB
@@ -13,8 +13,8 @@ categories:
   - machine learning
 
 variables:
-  matlab_install_root: /opt/matlab/{{ context.version }}
-  shared_support_package_root: /opt/matlab/support-packages/{{ context.version }}
+  matlab_install_root: /opt/matlab/R{{ context.version }}
+  shared_support_package_root: /opt/matlab/support-packages/R{{ context.version }}
   matlab_products: >-
     Bioinformatics_Toolbox
     Computer_Vision_Toolbox
@@ -29,7 +29,7 @@ variables:
 
 build:
   kind: neurodocker
-  base-image: mathworks/matlab:{{ context.version }}
+  base-image: mathworks/matlab:R{{ context.version }}
   pkg-manager: apt
 
   directives:
@@ -70,11 +70,11 @@ build:
         - >-
           sudo HOME="${HOME}" /tmp/mpm install
           --destination="${EXISTING_MATLAB_LOCATION}"
-          --release={{ context.version }}
+          --release=R{{ context.version }}
           --products {{ context.matlab_products }}
           || (echo "MPM installation failed. See below for more information:" && cat /tmp/mathworks_root.log && false)
         - test -d /home/matlab/Documents/MATLAB/SupportPackages
-        - SUPPORT_PACKAGE_ROOT="$(find /home/matlab/Documents/MATLAB/SupportPackages -maxdepth 2 -type d -name '{{ context.version }}' | sort | head -n 1)"
+        - SUPPORT_PACKAGE_ROOT="$(find /home/matlab/Documents/MATLAB/SupportPackages -maxdepth 2 -type d -name 'R{{ context.version }}' | sort | head -n 1)"
         - test -n "${SUPPORT_PACKAGE_ROOT}"
         - sudo mkdir -p "{{ context.shared_support_package_root }}"
         - sudo cp -a "${SUPPORT_PACKAGE_ROOT}/." "{{ context.shared_support_package_root }}/"
@@ -116,7 +116,7 @@ deploy:
 
 readme: |-
   ----------------------------------
-  ## matlab/{{ context.version }} ##
+  ## matlab/R{{ context.version }} ##
 
   MATLAB with the Deep Learning Toolbox Converter for ONNX Model Format preinstalled.
 
@@ -138,7 +138,7 @@ readme: |-
   - https://www.mathworks.com/help/deeplearning/ref/importonnxfunction.html
   - https://github.com/mathworks-ref-arch/matlab-dockerfile
 
-  To run the application outside of this environment: ml matlab/{{ context.version }}
+  To run the application outside of this environment: ml matlab/R{{ context.version }}
 
   ----------------------------------
 
@@ -150,7 +150,7 @@ files:
     filename: module.sh
   - name: startup.m
     contents: |-
-      sharedSupportPackageRoot = '/opt/matlab/support-packages/{{ context.version }}';
+      sharedSupportPackageRoot = '/opt/matlab/support-packages/R{{ context.version }}';
       if isfolder(sharedSupportPackageRoot)
           addpath(genpath(sharedSupportPackageRoot), '-begin');
       end
