@@ -1,0 +1,157 @@
+name: matlab
+version: R2025b
+
+copyright:
+  - name: MATLAB
+    url: https://www.mathworks.com/products/matlab.html
+
+architectures:
+  - x86_64
+
+categories:
+  - programming
+  - machine learning
+
+variables:
+  matlab_install_root: /opt/matlab/{{ context.version }}
+  shared_support_package_root: /opt/matlab/support-packages/{{ context.version }}
+  matlab_products: >-
+    Bioinformatics_Toolbox
+    Computer_Vision_Toolbox
+    Deep_Learning_Toolbox
+    Deep_Learning_Toolbox_Converter_for_ONNX_Model_Format
+    Image_Processing_Toolbox
+    Parallel_Computing_Toolbox
+    Signal_Processing_Toolbox
+    Simulink
+    Statistics_and_Machine_Learning_Toolbox
+    Text_Analytics_Toolbox
+
+build:
+  kind: neurodocker
+  base-image: mathworks/matlab:{{ context.version }}
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - build-essential
+        - ca-certificates
+        - csh
+        - curl
+        - dbus-x11
+        - less
+        - libfftw3-double3
+        - lmod
+        - lua-bit32
+        - lua-filesystem
+        - lua-json
+        - lua-lpeg
+        - lua-posix
+        - lua-term
+        - lua5.2
+        - nano
+        - sudo
+        - tree
+        - unzip
+        - wget
+        - xdg-utils
+
+    - workdir: /tmp
+
+    - user: matlab
+
+    - run:
+        - cp {{ get_file("mpm") }} /tmp/mpm
+        - chmod +x /tmp/mpm
+        - EXISTING_MATLAB_LOCATION="$(dirname "$(dirname "$(readlink -f "$(command -v matlab)")")")"
+        - >-
+          sudo HOME="${HOME}" /tmp/mpm install
+          --destination="${EXISTING_MATLAB_LOCATION}"
+          --release={{ context.version }}
+          --products {{ context.matlab_products }}
+          || (echo "MPM installation failed. See below for more information:" && cat /tmp/mathworks_root.log && false)
+        - test -d /home/matlab/Documents/MATLAB/SupportPackages
+        - SUPPORT_PACKAGE_ROOT="$(find /home/matlab/Documents/MATLAB/SupportPackages -maxdepth 2 -type d -name '{{ context.version }}' | sort | head -n 1)"
+        - test -n "${SUPPORT_PACKAGE_ROOT}"
+        - sudo mkdir -p "{{ context.shared_support_package_root }}"
+        - sudo cp -a "${SUPPORT_PACKAGE_ROOT}/." "{{ context.shared_support_package_root }}/"
+        - sudo chmod -R a+rX /opt/matlab/support-packages
+        - sudo rm -rf /home/matlab/Documents/MATLAB/SupportPackages /tmp/mpm /tmp/mathworks_root.log
+
+    - user: root
+
+    - run:
+        - if [ -e /usr/local/bin/matlab ] && [ ! -e /usr/local/bin/matlab.real ]; then mv /usr/local/bin/matlab /usr/local/bin/matlab.real; fi
+        - mkdir -p {{ context.matlab_install_root }}/licenses
+        - chmod a+rwx {{ context.matlab_install_root }}/licenses
+
+    - copy:
+        - matlab
+        - /usr/local/bin/matlab
+
+    - copy:
+        - module.sh
+        - /usr/share/module.sh
+
+    - copy:
+        - startup.m
+        - "{{ context.matlab_install_root }}/toolbox/local/startup.m"
+
+    - environment:
+        BASH_ENV: /usr/share/module.sh
+        PATH: $PATH:{{ context.matlab_install_root }}/bin
+
+    - run:
+        - chmod 0755 /usr/local/bin/matlab
+
+deploy:
+  bins:
+    - matlab
+    - mex
+  path:
+    - "{{ context.matlab_install_root }}/bin"
+
+readme: |-
+  ----------------------------------
+  ## matlab/{{ context.version }} ##
+
+  MATLAB with the Deep Learning Toolbox Converter for ONNX Model Format preinstalled.
+
+  Licensing:
+  MATLAB is commercial software and requires a valid MathWorks license.
+  Preferred options are:
+  - set `MLM_LICENSE_FILE=port@hostname` for a network license manager
+  - place a `.lic` file in `~/Downloads`; the wrapper script automatically uses the first `.lic` file it finds there
+
+  Examples:
+  ```bash
+  matlab
+  matlab -batch "ver"
+  mex -help
+  module avail
+  ```
+
+  More documentation:
+  - https://www.mathworks.com/help/deeplearning/ref/importonnxfunction.html
+  - https://github.com/mathworks-ref-arch/matlab-dockerfile
+
+  To run the application outside of this environment: ml matlab/{{ context.version }}
+
+  ----------------------------------
+
+files:
+  - name: mpm
+    url: https://www.mathworks.com/mpm/glnxa64/mpm
+    executable: true
+  - name: module.sh
+    filename: module.sh
+  - name: startup.m
+    contents: |-
+      sharedSupportPackageRoot = '/opt/matlab/support-packages/{{ context.version }}';
+      if isfolder(sharedSupportPackageRoot)
+          addpath(genpath(sharedSupportPackageRoot), '-begin');
+      end
+      clear sharedSupportPackageRoot

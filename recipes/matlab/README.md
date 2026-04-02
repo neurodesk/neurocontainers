@@ -1,54 +1,56 @@
-
 ----------------------------------
-## matlab/2022b ##
-Matlab IDE
+## matlab/R2025b ##
+MATLAB with the Deep Learning Toolbox Converter for ONNX Model Format preinstalled.
 
-Important note about licensing
-------------------------------
-  
-The Matlab application includes a commercial product, and requires a MATLAB license to run. On first run, a license dialog will appear. Users should follow these steps to activate license:
-1. Choose "Activate automatically using the internet" (and press Next)
-2. Enter their institutional email address and password (and press Next)
-3. Select license to use (and press Next)
-4. A username will be displayed (just press Next)
+Licensing
+---------
 
-If the user is eligible for a MATLAB license through the institution, the license will be downloaded to the user home directory (inside the ~/.matlab folder). After the license dialog closes, it is required to re-run the Matlab application. The license will be now available for future executions of Matlab, and the dialog will not show again.
+MATLAB is commercial software and requires a valid MathWorks license.
 
-To use the application without internet connectivity, it should also be possible to generate a license on the mathworks website, and place it in ~/Downloads (exact file name does not matter, but it should have a .lic extension). The license should be detected automatically when the Matlab application starts (no license dialog will be presented). Generating a license on the Mathworks website requires specifying username and host id. Username can be displayed in Linux by typing 'id' in the terminal. For instructions on how to find your host id, read here: https://au.mathworks.com/matlabcentral/answers/101892-what-is-a-host-id-how-do-i-find-my-host-id-in-order-to-activate-my-license?s_tid=srchtitle
-
-
+Preferred options:
+1. Set `MLM_LICENSE_FILE=port@hostname` to use a network license manager.
+2. Place a `.lic` file in `~/Downloads`. The `matlab` wrapper automatically picks up the first license file it finds there.
 
 Examples
 --------
 
-  LAUNCH INTERACTIVE IDE -
-  
+Launch the interactive IDE:
+
   matlab
 
-  RUNNING SCRIPT IN BATCH -
-  
-  matlab -batch command
+Run a batch command:
 
-  COMPILYING C CODE TO WORK WITH MATLAB -
-  
-  mex
+  matlab -batch "ver"
 
-More documentation can be found here
-------------------------------------
+Show the MEX tool help:
 
-  https://hub.docker.com/r/mathworks/matlab-deep-learning
-  
-  mathworks.com
+  mex -help
 
+Check the module system:
+
+  module avail
+
+ONNX support
+------------
+
+The container includes the `Deep_Learning_Toolbox_Converter_for_ONNX_Model_Format`
+support package and stores it under `/opt/matlab/support-packages/R2025b`, so
+`importONNXFunction` does not require installing the add-on through Add-On Explorer.
+
+More documentation
+------------------
+
+  https://www.mathworks.com/help/deeplearning/ref/importonnxfunction.html
+  https://github.com/mathworks-ref-arch/matlab-dockerfile
 
 To run applications outside of this container
 ---------------------------------------------
 
-  ml matlab/2022b
+  ml matlab/R2025b
 
 Citation
 --------
-  
-  (MATLAB, Mathworks Inc.)
+
+  (MATLAB, MathWorks Inc.)
 
 ----------------------------------
