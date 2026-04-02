@@ -85,7 +85,7 @@ def test_generated_dockerfile_preserves_downloaded_file_basename():
         dockerfile_path = os.path.join(
             build_dir,
             ctx.name,
-            f"{ctx.name}_{ctx.version}.Dockerfile",
+            ctx.dockerfile_name,
         )
         with open(dockerfile_path, "r") as f:
             dockerfile_content = f.read()

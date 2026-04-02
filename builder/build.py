@@ -1772,7 +1772,7 @@ def generate_from_description(
         if "path" in description_file["deploy"]:
             ctx.top_level_deploy_path = ctx.execute_template(description_file["deploy"]["path"], locals=locals)  # type: ignore
 
-    ctx.tag = f"{name}:{version}"
+    ctx.tag = f"{name}:{version}".lower()
 
     # Get build information
     ctx.build_info = description_file.get("build") or None
@@ -1788,7 +1788,7 @@ def generate_from_description(
     ctx.build_directory = os.path.join(output_directory, name)
     ctx.dockerfile_name = "{}_{}.Dockerfile".format(
         ctx.name, ctx.version.replace(":", "_")
-    )
+    ).lower()
     ctx.skip_file_population = skip_file_population
 
     if skip_file_population:

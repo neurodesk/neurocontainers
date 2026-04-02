@@ -63,7 +63,7 @@ def test_tzdata_disabled_with_add_default_template_false():
         dockerfile_path = os.path.join(
             build_dir,
             ctx.name,
-            f"{ctx.name}_{ctx.version}.Dockerfile"
+            ctx.dockerfile_name
         )
         
         with open(dockerfile_path, "r") as f:
@@ -124,7 +124,7 @@ def test_tzdata_enabled_by_default():
         dockerfile_path = os.path.join(
             build_dir,
             ctx.name,
-            f"{ctx.name}_{ctx.version}.Dockerfile"
+            ctx.dockerfile_name
         )
         
         with open(dockerfile_path, "r") as f:
@@ -187,7 +187,7 @@ def test_tzdata_explicit_override():
         dockerfile_path = os.path.join(
             build_dir,
             ctx.name,
-            f"{ctx.name}_{ctx.version}.Dockerfile"
+            ctx.dockerfile_name
         )
         
         with open(dockerfile_path, "r") as f:
@@ -250,7 +250,7 @@ def test_tzdata_explicit_false():
         dockerfile_path = os.path.join(
             build_dir,
             ctx.name,
-            f"{ctx.name}_{ctx.version}.Dockerfile"
+            ctx.dockerfile_name
         )
         
         with open(dockerfile_path, "r") as f:
