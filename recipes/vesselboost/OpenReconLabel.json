@@ -28,11 +28,11 @@
     "emitter": "image",
     "injector": "image",
     "can_process_adjustment_data": false,
-    "can_use_gpu": false,
-    "min_count_required_gpus": 0,
-    "min_required_gpu_memory": 2048,
-    "min_required_memory": 4096,
-    "min_count_required_cpu_cores": 1,
+    "can_use_gpu": true,
+    "min_count_required_gpus": 1,
+    "min_required_gpu_memory": 10048,
+    "min_required_memory": 40096,
+    "min_count_required_cpu_cores": 32,
     "content_qualification_type": "RESEARCH"
   },
   "parameters": [
@@ -83,6 +83,22 @@
       "type": "string",
       "default": "0.001",
       "information": { "en": "Enter a learning rate (float) for tta/booster module" }
+    },
+    {
+      "id": "vbuseblending",
+      "label": { "en": "Gaussian blending" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Experimental. Enable Gaussian blending for smoother patch boundaries at the cost of much longer runtime." }
+    },
+    {
+      "id": "vboverlap",
+      "label": { "en": "Blend overlap %" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 99,
+      "default": 50,
+      "information": { "en": "Overlap percentage used only when Gaussian blending is enabled." }
     },
     {
       "id": "vbprepmode",

@@ -1,13 +1,14 @@
 name: vesselboost
-version: 2.0.3
+version: 2.0.9
 copyright:
   - license: MIT
-    url: https://github.com/KMarshallX/VesselBoost/blob/master/LICENSE
+    url: https://github.com/stebo85/VesselBoost/blob/memory_optimizations/LICENSE
 architectures:
   - x86_64
 variables:
-  vesselboost_version: 2.0.1
-  vesselboost_archive_url: "https://github.com/KMarshallX/VesselBoost/archive/refs/tags/v{{ context.vesselboost_version }}.zip"
+  vesselboost_branch: memory_optimizations
+  vesselboost_source_version: 2.0.1
+  vesselboost_archive_url: "https://github.com/stebo85/VesselBoost/archive/refs/heads/{{ context.vesselboost_branch }}.zip"
 files:
   - name: vesselboost_zip
     url: "{{ context.vesselboost_archive_url }}"
@@ -26,7 +27,7 @@ build:
     - workdir: /opt
     - run:
         - unzip -q {{ get_file("vesselboost_zip") }} -d /opt
-        - mv /opt/VesselBoost-{{ context.vesselboost_version }} /opt/VesselBoost
+        - mv /opt/VesselBoost-* /opt/VesselBoost
         - cd /opt/VesselBoost
         - chmod a+x train.py angiboost.py boost.py prediction.py test_time_adaptation.py
     - workdir: /opt/VesselBoost/
@@ -53,14 +54,14 @@ build:
 readme: |2-
     ----------------------------------
     ## Vesselboost/{{ context.version }} ##
-    This container provides VesselBoost {{ context.vesselboost_version }} in container version {{ context.version }}.
+    This container provides VesselBoost {{ context.vesselboost_source_version }} from the latest `{{ context.vesselboost_branch }}` branch.
 
     Example:
     ```
     prediction.py --image_path $path_to_images --output_path $path_to_output --pretrained $path_to_pretrained_model --prep_mode 4
     ```
 
-    More documentation can be found here: https://github.com/KMarshallX/VesselBoost
+    More documentation can be found here: https://github.com/stebo85/VesselBoost/tree/{{ context.vesselboost_branch }}
 
     To run applications outside of this container: ml vesselboost/{{ context.version }}
 

@@ -22,6 +22,49 @@ import shutil
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
 
+# Keep these defaults aligned with recipes/vesselboost/OpenReconLabel.json.
+OPENRECON_DEFAULTS = {
+    "vbmodules": "prediction",
+    "vbepochs": "200",
+    "vbrate": "0.001",
+    "vbuseblending": False,
+    "vboverlap": 50,
+    "vbprepmode": 1,
+    "vbbrainextraction": False,
+}
+
+
+def _log_array_summary(label: str, data: np.ndarray) -> None:
+    logging.info(
+        "%s summary: shape=%s ndim=%d dtype=%s is_complex=%s",
+        label,
+        data.shape,
+        data.ndim,
+        data.dtype,
+        np.iscomplexobj(data),
+    )
+
+    if data.size == 0:
+        logging.warning("%s is empty", label)
+        return
+
+    summary_data = np.abs(data) if np.iscomplexobj(data) else data
+    logging.info(
+        "%s value range: min=%s max=%s",
+        label,
+        float(np.min(summary_data)),
+        float(np.max(summary_data)),
+    )
+
+
+def _log_directory_contents(label: str, path: Path) -> None:
+    if not path.exists():
+        logging.info("%s does not exist: %s", label, path)
+        return
+
+    entries = sorted(child.name for child in path.iterdir())
+    logging.info("%s contents (%s): %s", label, path, entries)
+
 
 def _is_nifti_file(path: Path) -> bool:
     return path.is_file() and path.name.endswith((".nii", ".nii.gz"))
@@ -365,14 +408,23 @@ def process_image(images, connection, config, metadata):
 
     # convert data to nifti using nibabel
     # vesselboost needs 3D data:
+    _log_array_summary("OpenRecon input before squeeze", data)
     data = np.squeeze(data)
     logging.debug("Cropped to 3D from Original image data is size %s" % (data.shape,))
+    if data.ndim != 3:
+        logging.warning(
+            "OpenRecon input shape after squeeze is %s (%dD). "
+            "VesselBoost expects 3D input and preprocessing or inference may fail.",
+            data.shape,
+            data.ndim,
+        )
     if np.iscomplexobj(data):
         logging.warning(
             "Complex-valued input received. VesselBoost expects real-valued data, "
             "so the input will be converted to magnitude before inference."
         )
         data = np.abs(data)
+    _log_array_summary("OpenRecon input after squeeze", data)
 
     work_dir = Path(tempfile.mkdtemp(prefix="vesselboost_", dir=debugFolder))
     input_dir = work_dir / "tof_input"
@@ -388,23 +440,83 @@ def process_image(images, connection, config, metadata):
     xform = np.eye(4)
     new_img = nib.nifti1.Nifti1Image(data, xform)
     nib.save(new_img, str(input_path))
-    logging.info("Saved OpenRecon input image to %s", input_path)
+    logging.info(
+        "Saved OpenRecon input image to %s with shape=%s dtype=%s zooms=%s",
+        input_path,
+        new_img.shape,
+        new_img.get_data_dtype(),
+        new_img.header.get_zooms(),
+    )
     logging.info("Using VesselBoost workspace %s", work_dir)
 
     # Read user's choice of vesselboost modules
-    module = mrdhelper.get_json_config_param(config, 'vbmodules', default='prediction', type='str')
+    module = mrdhelper.get_json_config_param(
+        config,
+        "vbmodules",
+        default=OPENRECON_DEFAULTS["vbmodules"],
+        type='str',
+    )
     prep_mode = int(
         mrdhelper.get_json_config_param(
             config,
             "vbprepmode",
-            default=mrdhelper.get_json_config_param(config, "prep_mode", default=1, type='int'),
+            default=mrdhelper.get_json_config_param(
+                config,
+                "prep_mode",
+                default=OPENRECON_DEFAULTS["vbprepmode"],
+                type='int',
+            ),
             type='int',
         )
     )
-    brain_extraction = boolean_checker("vbbrainextraction", default_val=False)
-    epochs = mrdhelper.get_json_config_param(config, "vbepochs", default='200', type='str')
-    l_rate = mrdhelper.get_json_config_param(config, "vbrate", default='0.001', type='str')
+    brain_extraction = boolean_checker(
+        "vbbrainextraction",
+        default_val=OPENRECON_DEFAULTS["vbbrainextraction"],
+    )
+    epochs = mrdhelper.get_json_config_param(
+        config,
+        "vbepochs",
+        default=OPENRECON_DEFAULTS["vbepochs"],
+        type='str',
+    )
+    l_rate = mrdhelper.get_json_config_param(
+        config,
+        "vbrate",
+        default=OPENRECON_DEFAULTS["vbrate"],
+        type='str',
+    )
+    use_blending = boolean_checker(
+        "vbuseblending",
+        default_val=OPENRECON_DEFAULTS["vbuseblending"],
+    )
+    overlap_percent = int(
+        mrdhelper.get_json_config_param(
+            config,
+            "vboverlap",
+            default=OPENRECON_DEFAULTS["vboverlap"],
+            type='int',
+        )
+    )
+    if not 0 <= overlap_percent < 100:
+        logging.warning(
+            "Invalid blending overlap percentage %s requested. Falling back to %s.",
+            overlap_percent,
+            OPENRECON_DEFAULTS["vboverlap"],
+        )
+        overlap_percent = OPENRECON_DEFAULTS["vboverlap"]
+    overlap_ratio = overlap_percent / 100.0
     pretrained_model = _resolve_vesselboost_model("manual_0429")
+    logging.info(
+        "OpenRecon VesselBoost options: module=%s prep_mode=%s brain_extraction=%s "
+        "epochs=%s learning_rate=%s use_blending=%s overlap_ratio=%s",
+        module,
+        prep_mode,
+        brain_extraction,
+        epochs,
+        l_rate,
+        use_blending,
+        overlap_ratio,
+    )
 
     def maybe_add_preprocessing_args(vb_cmd):
         if prep_mode != 4:
@@ -413,9 +525,31 @@ def process_image(images, connection, config, metadata):
             if brain_extraction:
                 vb_cmd.append("--enable_brain_extraction")
 
+    def maybe_add_blending_args(vb_cmd):
+        if use_blending:
+            vb_cmd.extend(["--use_blending", "--overlap_ratio", str(overlap_ratio)])
+
     def run_vesselboost_command(vb_cmd):
         logging.info("Running VesselBoost command: %s", " ".join(vb_cmd))
-        subprocess.run(vb_cmd, check=True)
+        result = subprocess.run(vb_cmd, check=False, capture_output=True, text=True)
+
+        if result.stdout and result.stdout.strip():
+            logging.info("VesselBoost stdout:\n%s", result.stdout.rstrip())
+        if result.stderr and result.stderr.strip():
+            logging.info("VesselBoost stderr:\n%s", result.stderr.rstrip())
+
+        _log_directory_contents("VesselBoost input directory", input_dir)
+        _log_directory_contents("VesselBoost preprocessing directory", preproc_dir)
+        _log_directory_contents("VesselBoost output directory", output_dir)
+
+        if result.returncode != 0:
+            logging.error("VesselBoost command failed with exit code %s", result.returncode)
+            raise subprocess.CalledProcessError(
+                result.returncode,
+                vb_cmd,
+                output=result.stdout,
+                stderr=result.stderr,
+            )
 
     if module == 'prediction':
         logging.info("Running prediction module")
@@ -426,11 +560,12 @@ def process_image(images, connection, config, metadata):
             "--output_path", str(output_dir),
             "--pretrained", str(pretrained_model),
             "--prep_mode", str(prep_mode),
-            "--use_blending",
-            "--overlap_ratio", "0.5",
         ]
         maybe_add_preprocessing_args(vb_cmd)
+        maybe_add_blending_args(vb_cmd)
         run_vesselboost_command(vb_cmd)
+        logging.info("prediction module completed successfully")
+
 
     elif module == 'tta':
         logging.info("Running tta module")
@@ -443,10 +578,9 @@ def process_image(images, connection, config, metadata):
             "--epochs", str(epochs),
             "--learning_rate", str(l_rate),
             "--prep_mode", str(prep_mode),
-            "--use_blending",
-            "--overlap_ratio", "0.5",
         ]
         maybe_add_preprocessing_args(vb_cmd)
+        maybe_add_blending_args(vb_cmd)
         run_vesselboost_command(vb_cmd)
 
     elif module == 'booster':
