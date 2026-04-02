@@ -1,53 +1,10 @@
-# CLAUDE.md - NeuroContainers Development Guide
+# AGENTS.md - NeuroContainers Development Guide
 
 ## Does and Don't
 - always use {{ context.version }} instead of the hardcoded version number
 - always use `{{ get_file("filename") }}` to reference declared files in run directives instead of using `wget` or `curl` directly
+- the home directory will not be available during container runtime! Files cannot be stored under /home if they are needed during runtime!
 
-## Project Overview
-
-NeuroContainers is a Python-based automated system for building, testing, and distributing Docker and Singularity/Apptainer containers for neuroscience applications through [NeuroDesk](https://neurodesk.org). It uses declarative YAML recipes processed by [NeuroDocker](https://github.com/ReproNim/neurodocker) to generate Dockerfiles.
-
-The repository contains ~190 container recipes for neuroscience tools (FSL, FreeSurfer, AFNI, ANTs, MRtrix3, etc.) with full CI/CD automation for building, testing, and publishing to multiple container registries.
-
-## Repository Structure
-
-```
-recipes/                  # Container recipes (~190 neuroscience tools)
-  <toolname>/
-    build.yaml            # Container definition (required)
-    test.yaml             # Test configuration (optional)
-    README.md             # Tool documentation (optional)
-    *.sh, *.py, etc.      # Supporting files referenced by build.yaml
-
-builder/                  # Python build system
-  build.py                # Main CLI: generate, build, test, login, init, make, cache
-  validation.py           # Recipe schema validation (attrs-based, matches UI zod schema)
-  check_version.py        # Automated version update checker (weekly)
-  tester/                 # Go-based container tester (built on-demand during sf-build)
-    main.go               # Tester entry point
-    Dockerfile            # Tester helper image
-
-workflows/                # Testing infrastructure (Python + bash)
-  test_all.sh             # Validate all recipes (validation + check-only build)
-  validate_all.sh         # Schema-only validation of all recipes
-  container_tester.py     # Multi-runtime container test executor
-  test_runner.py          # High-level test runner with result reporting
-  pr_test_runner.py       # PR-specific test automation
-  full_container_test.py  # Full matrix testing across all containers
-
-releases/                 # Auto-generated release files (JSON metadata)
-  <toolname>/
-    <version>.json
-
-tools/                    # Utilities
-  generate_apps_json.py   # Generate apps.json for neurocommand integration
-  generate_webapps_json.py
-
-macros/                   # Shared recipe macros (e.g., openrecon)
-dashboard/                # Status dashboard
-.github/workflows/        # CI/CD automation (17 workflow files)
-```
 
 ## Environment Setup
 
@@ -188,43 +145,6 @@ Recipe validation (`builder/validation.py`) enforces:
 
 The validation schema matches the Zod schema from `neurocontainers-ui`.
 
-## CI/CD Workflows
-
-### Automatic Build Pipeline
-- **auto-build.yml**: Triggers on pushes to `main` modifying `recipes/**`; detects changed recipes and builds them
-- **build-app.yml**: Reusable workflow - generates Dockerfile, builds Docker image, pushes to GHCR + DockerHub, converts to SIF, uploads to S3 + Nectar, creates release PR
-
-### Validation
-- **validate-recipes.yml**: Runs on PRs; validates changed recipe YAML files
-- **test-builder.yml**: Tests builder code changes
-
-### Testing
-- **test-release-pr.yml**: Tests containers when release files are modified in PRs
-- **full-container-test.yml**: Manual dispatch; tests all released containers in matrix
-- **recipes-ci.yml**: Manual dispatch; builds and tests recipes in isolated Apptainer containers
-
-### Other
-- **auto-update.yml**: Weekly check for upstream version updates (Monday 3 AM)
-- **manual-build.yml**: Manual workflow dispatch for custom builds
-- **update-apps-json.yml / update-webapps-json.yml**: Regenerate app metadata after release merges
-
-### Build Configuration
-`.github/workflows/build-config.json` controls per-app CI behavior:
-```json
-{
-  "default": { "autoBuild": true, "freeUpSpace": false },
-  "qsmxt": { "autoBuild": true, "freeUpSpace": true }
-}
-```
-
-## Container Distribution
-
-Built containers are distributed to:
-1. **GHCR** (ghcr.io/neurodesk/): Primary Docker registry
-2. **DockerHub** (neurodesk/): Mirror
-3. **AWS S3** (neurocontainers bucket): SIF files
-4. **Nectar Object Storage**: SIF files for Australian users
-
 ## Code Conventions
 
 ### YAML Recipes
@@ -280,10 +200,3 @@ Built containers are distributed to:
 - NeuroDocker templates exist for many common neuroscience tools - check NeuroDocker docs before writing custom install steps.
 - The `deploy` section controls how tools appear as loadable modules in NeuroDesk via Transparent Singularity.
 - Release files in `releases/` are auto-generated; do not edit manually.
-
-## External Documentation
-
-- [Adding New Tools to NeuroDesk](https://www.neurodesk.org/developers/new_tools/)
-- [NeuroContainers Documentation](https://www.neurodesk.org/docs/getting-started/neurocontainers/)
-- [NeuroDocker GitHub](https://github.com/ReproNim/neurodocker)
-- [Builder README](builder/README.md) - Detailed recipe syntax reference

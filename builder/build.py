@@ -2706,7 +2706,21 @@ def run_docker_test(tag, test, gpu=False):
 def run_test(tag, test, gpu=False):
     test_name = test["name"]
     print(f"Running test {test_name} on image {tag}")
-    return run_docker_test(tag, test, gpu=gpu)
+    try:
+        return run_docker_test(tag, test, gpu=gpu)
+    except subprocess.CalledProcessError as exc:
+        cmd_parts = [str(part) for part in exc.cmd]
+        if len(cmd_parts) >= 2 and cmd_parts[-2] == "-c":
+            command_str = " ".join(cmd_parts[:-1]) + " <script omitted>"
+        elif len(cmd_parts) > 10:
+            command_str = " ".join(cmd_parts[:10]) + " ..."
+        else:
+            command_str = " ".join(cmd_parts)
+        raise RuntimeError(
+            f"Test '{test_name}' failed on image {tag} with exit code {exc.returncode}.\n"
+            f"Command: {command_str}\n"
+            "See the test output above for the failure details."
+        ) from None
 
 
 def check_docker(tag):
@@ -3269,7 +3283,11 @@ def test_main():
         gpu=args.gpu,
     )
 
-    run_tests(recipe_path, gpu=args.gpu)
+    try:
+        run_tests(recipe_path, gpu=args.gpu)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
 
 def test_remote_main():
