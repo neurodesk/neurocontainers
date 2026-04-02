@@ -1786,9 +1786,9 @@ def generate_from_description(
 
     # Create build directory
     ctx.build_directory = os.path.join(output_directory, name)
-    ctx.dockerfile_name = "{}_{}.Dockerfile".format(
-        ctx.name, ctx.version.replace(":", "_")
-    ).lower()
+    ctx.dockerfile_name = "{}.Dockerfile".format(
+        "{}_{}".format(ctx.name, ctx.version.replace(":", "_")).lower()
+    )
     ctx.skip_file_population = skip_file_population
 
     if skip_file_population:

@@ -56,6 +56,7 @@ jobs:
       BUILDDATE: ${{ steps.envars.outputs.BUILDDATE }}
       IMAGETAG: ${{ steps.envars.outputs.IMAGETAG }}
       IMAGENAME: ${{ steps.imgvars.outputs.IMAGENAME }}
+      DOCKERFILE: ${{ steps.imgvars.outputs.DOCKERFILE }}
       ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
     steps:
       - name: Configure runner
@@ -114,14 +115,18 @@ jobs:
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          DOCKERFILE=`basename $(find ./build/$APPLICATION/ -type f -iname "*.Dockerfile" | head -1)`
+          DOCKERFILE_PATH=$(find "./build/$APPLICATION/" -type f -iname "*.dockerfile" | head -1)
           # if the dockerfile is not found, exit with error
-          if [ -z "$DOCKERFILE" ]; then
+          if [ -z "$DOCKERFILE_PATH" ]; then
             echo "Dockerfile not found for $APPLICATION"
             exit 1
           fi
-          IMAGENAME=$(echo $(basename $DOCKERFILE .Dockerfile) | tr '[A-Z]' '[a-z]')
+          DOCKERFILE=$(basename "$DOCKERFILE_PATH")
+          IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
+          echo "DOCKERFILE: $DOCKERFILE"
           echo "IMAGENAME: $IMAGENAME"
+          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_OUTPUT
+          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_ENV
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
 
@@ -154,6 +159,7 @@ jobs:
     env:
       APPLICATION: ${{ needs.config.outputs.APPLICATION }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      DOCKERFILE: ${{ needs.config.outputs.DOCKERFILE }}
       IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
       ROOTFS_CACHE: ${{ needs.config.outputs.ROOTFS_CACHE }}
@@ -193,13 +199,18 @@ jobs:
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          DOCKERFILE=`basename $(find ./build/$APPLICATION/ -type f -iname "*.Dockerfile" | head -1)`
+          DOCKERFILE_PATH=$(find "./build/$APPLICATION/" -type f -iname "*.dockerfile" | head -1)
           # if the dockerfile is not found, exit with error
-          if [ -z "$DOCKERFILE" ]; then
+          if [ -z "$DOCKERFILE_PATH" ]; then
             echo "Dockerfile not found for $APPLICATION"
             exit 1
           fi
+          DOCKERFILE=$(basename "$DOCKERFILE_PATH")
+          IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
+          echo "DOCKERFILE: $DOCKERFILE"
           echo "IMAGENAME: $IMAGENAME"
+          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_ENV
+          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
           echo "IMAGENAME_TEST=${IMAGENAME//_/ }" >> $GITHUB_ENV
           echo "test command: bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE"
 
@@ -214,7 +225,7 @@ jobs:
       #   uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
 
       - name: Debug Dockerfile
-        run: cat ./build/${APPLICATION}/${IMAGENAME}.Dockerfile
+        run: cat ./build/${APPLICATION}/${DOCKERFILE}
 
       - name: Debug storage
         run: |
@@ -227,7 +238,7 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           cd ./build/${APPLICATION}
-          docker build . --file ${IMAGENAME}.Dockerfile --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --cache-from ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+          docker build . --file ${DOCKERFILE} --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --cache-from ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
           
       - name: Debug storage
         run: |
