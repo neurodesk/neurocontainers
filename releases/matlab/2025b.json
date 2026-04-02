@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "matlab 2025b": {
+      "version": "20260402",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "programming",
+    "machine learning"
+  ]
+}
