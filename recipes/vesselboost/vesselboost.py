@@ -680,7 +680,7 @@ def process_image(images, connection, config, metadata):
         tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'VESSELBOOST']
         tmpMeta['WindowCenter']                   = str((maxVal+1)/2)
         tmpMeta['WindowWidth']                    = str((maxVal+1))
-        tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon'
+        tmpMeta['SequenceDescriptionAdditional']  = 'VesselBoost'
         tmpMeta['Keep_image_geometry']            = 1
 
         # Add image orientation directions to MetaAttributes if not already present
