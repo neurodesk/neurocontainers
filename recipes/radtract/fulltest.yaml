@@ -1,0 +1,41 @@
+# radtract container test suite
+# Tests for radtract v0.2.3 - Radiomic tractometry command-line tools
+#
+# This container includes the RadTract CLI entrypoints installed from PyPI.
+# Tests focus on the packaged command availability and top-level help output.
+
+name: radtract
+version: 0.2.3
+container: radtract_0.2.3.simg
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/radtract
+
+tests:
+  - name: radtract_features on PATH
+    description: Verify the main feature extraction CLI is available
+    command: command -v radtract_features
+    expected_output_contains: "/usr/local/bin/radtract_features"
+
+  - name: radtract_parcellate on PATH
+    description: Verify the tract parcellation CLI is available
+    command: command -v radtract_parcellate
+    expected_output_contains: "/usr/local/bin/radtract_parcellate"
+
+  - name: radtract_features help
+    description: Verify radtract_features returns its help output
+    command: radtract_features --help
+    expected_output_contains: "RadTract Feature Calculation"
+
+  - name: radtract_parcellate help
+    description: Verify radtract_parcellate returns its help output
+    command: radtract_parcellate --help
+    expected_output_contains: "RadTract Tract Parcellation"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    echo "Test outputs preserved in test_output/radtract/"

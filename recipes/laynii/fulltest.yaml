@@ -17,7 +17,7 @@
 
 name: laynii
 version: 2.2.1
-container: laynii_2.2.1_20220701.simg
+container: laynii_2.2.1.simg
 
 required_files:
   - dataset: ds000001
@@ -36,6 +36,11 @@ setup:
   script: |
     #!/usr/bin/env bash
     set -e
+    # Fail fast when the bundled LayNii executables are not runnable.
+    LN_INFO -help >/dev/null 2>&1 || {
+      echo "LayNii bundled executables are not runnable on arm64"
+      exit 126
+    }
     mkdir -p test_output
 
 tests:

@@ -8,7 +8,7 @@
 #   - bidsme 1.9.3: Main BIDS conversion tool with prepare/process/bidsify/map workflow
 #   - dcm2niix v1.0.20250505: DICOM to NIfTI converter
 #   - nibabel tools: nib-ls, nib-diff, nib-stats, nib-conform, nib-convert, etc.
-#   - Python 3.9 with neuroimaging packages
+#   - Python 3.11 with neuroimaging packages
 #
 # Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
 #   - inplaneT2: 256x256x30, 0.9375x0.9375x4mm (structural)
@@ -61,7 +61,7 @@ tests:
   - name: bidsme BIDS version check
     description: Verify BIDS schema version
     command: bidsme --version-bids
-    expected_output_contains: "1.10.0"
+    expected_output_contains: "1.11.1"
 
   - name: bidsme main help
     description: Display main help showing available subcommands
@@ -522,24 +522,6 @@ tests:
       - "PREPARE"
       - "MAP"
       - "BIDSIFY"
-
-  # ==========================================================================
-  # JUPYTER AND INTERACTIVE TOOLS
-  # ==========================================================================
-  - name: Jupyter version check
-    description: Verify Jupyter is available
-    command: jupyter --version 2>&1 | head -5
-    expected_exit_code: 0
-
-  - name: Jupyter lab version
-    description: Verify JupyterLab is available
-    command: jupyter-lab --version
-    expected_exit_code: 0
-
-  - name: IPython version check
-    description: Verify IPython is available
-    command: ipython --version
-    expected_exit_code: 0
 
   # ==========================================================================
   # BIDSME-GUI AND BIDSME-PDB

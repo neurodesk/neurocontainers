@@ -9,11 +9,12 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
 
-  base-image: ubuntu:24.10
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
@@ -23,17 +24,14 @@ build:
         - libgl1
         - libgtk2.0-0
         - dcmtk
+        - dcm2niix
         - xmedcon
         - pigz
         - libxcb-cursor0
 
-    - template:
-        name: dcm2niix
-        method: source
-        version: latest
-
 deploy:
   bins:
+    - dcm2niix
     - xmedcon
 
 readme: |-

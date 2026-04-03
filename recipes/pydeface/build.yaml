@@ -7,29 +7,46 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
 
-  base-image: vnmd/fsl_6.0.3:20200905
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
-    - install: ca-certificates
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
 
-    - template:
-        name: miniconda
-        version: latest
-        conda_install: "python=3.7 nipype=1.5.1 nibabel=4.0.1 numpy=1.21.6"
-        pip_install: "osfclient pydeface=={{ context.version }}"
+    - install:
+        - bzip2
+        - ca-certificates
+        - build-essential
+        - curl
+        - python3
+        - python3-dev
+        - python3-pip
+        - python3-venv
+
+    - run:
+        - curl -Ls https://micro.mamba.pm/api/micromamba/linux-aarch64/latest | tar -xj -C /tmp bin/micromamba
+        - install -m 0755 /tmp/bin/micromamba /usr/local/bin/micromamba
+        - /usr/local/bin/micromamba create -y -p /opt/fsl -c https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public -c conda-forge fsl-base fsl-flirt
+        - python3 -m venv /opt/pydeface
+        - /opt/pydeface/bin/pip install --upgrade pip "setuptools<81" wheel
+        - /opt/pydeface/bin/pip install pydeface=={{ context.version }}
 
     - environment:
-        PATH: "'$PATH':/opt/pydeface/bin"
+        FSLDIR: /opt/fsl
+        PATH: /opt/fsl/bin:/opt/pydeface/bin:$PATH
 
 deploy:
   path:
-    - /opt/pydeface-{{ context.version }}/bin/
     - /opt/pydeface/bin
+  bins:
+    - pydeface
+    - python
 
 readme: |
   ----------------------------------

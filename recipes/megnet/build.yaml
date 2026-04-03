@@ -2,6 +2,7 @@ name: megnet
 version: 1.0.1
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: MEGNET pipelines for MEG (MEGIN and KIT) data analysis
   example: python xxx.py config_file
@@ -12,15 +13,26 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
-    - template:
-        name: miniconda
-        version: py310_25.5.1-0
-        install_path: /opt/miniconda
-        conda_install: python jupyterlab mne mne-bids mne-connectivity hdf5storage ipympl nb_conda_kernels pydicom seaborn openpyxl pip
-        pip_install: tabulate pyyaml easydict
-        conda_opts: "-C conda-forge"
-        installed: false
-    - install: git
+    - environment:
+        CONDA_DIR: /opt/miniconda
+        PATH: /opt/miniconda/bin:$PATH
+    - install:
+        - bzip2
+        - ca-certificates
+        - curl
+        - git
+    - run:
+        - curl -fsSL -o /tmp/miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-py310_25.5.1-0-Linux-aarch64.sh
+        - bash /tmp/miniconda.sh -b -p /opt/miniconda
+        - rm -f /tmp/miniconda.sh
+        - conda tos accept || true
+        - conda config --system --prepend channels conda-forge
+        - conda config --set channel_priority strict
+        - conda config --system --set auto_update_conda false
+        - conda config --system --set show_channel_urls true
+        - conda install -y --solver classic -n base -c conda-forge python jupyterlab mne mne-bids mne-connectivity hdf5storage ipympl nb_conda_kernels pydicom seaborn openpyxl pip
+        - python -m pip install --no-cache-dir tabulate pyyaml easydict
+        - conda clean --all --yes
     - run:
         - git clone https://github.com/miao-cao/MEGNET_pipeline.git
     - deploy:

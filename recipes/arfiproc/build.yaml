@@ -2,6 +2,7 @@ name: arfiproc
 version: 1.0.0
 architectures:
     - x86_64
+    - aarch64
 
 files:
     - name: arfiproc.py

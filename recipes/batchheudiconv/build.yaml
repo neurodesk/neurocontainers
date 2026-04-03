@@ -2,6 +2,7 @@ name: batchheudiconv
 version: 1.0.0
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: A set of scripts to help convert DICOM files to BIDS format using heudiconv. Each study is managed as a self-contained workspace with organized directory structure
   example: |-
@@ -14,9 +15,23 @@ structured_readme:
   citation: ''
 build:
   kind: neurodocker
-  base-image: kytk/batch-heudiconv
+  base-image: python:3.11-slim-bookworm
   pkg-manager: apt
   directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PATH: /opt/batch-heudiconv:$PATH
+    - install:
+        - ca-certificates
+        - build-essential
+        - dcm2niix
+        - git
+    - run:
+        - python -m pip install --no-cache-dir setuptools pydicom heudiconv==1.3.1
+    - run:
+        - git clone --depth 1 https://github.com/kytk/batch-heudiconv.git /opt/batch-heudiconv
+        - chmod +x /opt/batch-heudiconv/*.sh /opt/batch-heudiconv/*.py
+        - ln -sf /opt/batch-heudiconv/bh*.sh /opt/batch-heudiconv/bh*.py /usr/local/bin/
     - deploy:
         path:
           - /opt/batch-heudiconv

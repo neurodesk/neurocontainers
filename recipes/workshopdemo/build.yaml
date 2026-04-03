@@ -2,6 +2,7 @@ name: workshopdemo
 version: 1.0.0
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: This tool was commited for the workshop.
   example: hello
@@ -12,9 +13,6 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
-    - template:
-        name: matlabmcr
-        version: 2023b
     - install: hello
 categories:
   - functional imaging

@@ -15,7 +15,7 @@
 
 name: spmpython
 version: 25.1.2.post1
-container: spmpython_25.1.2.post1_20250905.simg
+container: spmpython_25.1.2.post1.simg
 
 required_files:
   - dataset: ds000001
@@ -48,7 +48,7 @@ tests:
   - name: Python executable path
     description: Check Python is from miniconda
     command: which python
-    expected_output_contains: "/opt/miniconda/bin/python"
+    expected_output_contains: "/opt/miniconda/envs/spmpython/bin/python"
 
   - name: Pip version check
     description: Verify pip is available

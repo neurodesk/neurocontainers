@@ -1,0 +1,135 @@
+# soopct container test suite
+# Focused arm64 verification for the core DICOM-to-BIDS workflow shipped in the image.
+
+name: soopct
+version: 0.0.0
+container: soopct_0.0.0.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p "${output_dir}"
+
+tests:
+  - name: Native arm64 runtime
+    description: Verify the image executes as a native aarch64 container
+    command: uname -m
+    expected_output_contains: "aarch64"
+
+  - name: Python runtime version
+    description: Verify the expected Python runtime is available
+    command: python --version
+    expected_output_contains: "Python 3.12."
+
+  - name: dcm2niix available
+    description: Verify the DICOM conversion dependency is on PATH
+    command: dcm2niix --version 2>&1 | sed -n '1,4p'
+    expected_output_contains: "version v"
+
+  - name: Core Python modules import
+    description: Verify the key Python dependencies import successfully
+    command: |
+      python - <<'PY'
+      import ants
+      import brainchop
+      import nibabel
+      import numpy
+      import scipy
+
+      print("imports ok")
+      print(ants.__version__)
+      print(nibabel.__file__)
+      PY
+    expected_output_contains:
+      - "imports ok"
+      - "/opt/miniconda"
+
+  - name: DICOM to raw NIfTI conversion
+    description: Verify the bundled sample DICOM data converts to NIfTI output
+    command: |
+      cd /soop-ct
+      python 1dcm2raw.py /soop-ct/DICOM ${output_dir}/raw
+      find ${output_dir}/raw -type f \( -name '*.nii' -o -name '*.nii.gz' \) | sort > ${output_dir}/raw-nifti-list.txt
+      test -s ${output_dir}/raw-nifti-list.txt
+      sed -n '1,5p' ${output_dir}/raw-nifti-list.txt
+    validate:
+      - output_exists: ${output_dir}/raw-nifti-list.txt
+
+  - name: Best-volume selection
+    description: Verify the bundled selector can pick a CT volume from the converted sample data
+    command: |
+      cd /soop-ct
+      python 2raw2best.py ${output_dir}/raw ${output_dir}/best
+      find ${output_dir}/best -maxdepth 1 -type f \( -name '*.nii' -o -name '*.nii.gz' \) | sort > ${output_dir}/best-nifti-list.txt
+      test -s ${output_dir}/best-nifti-list.txt
+      sed -n '1,5p' ${output_dir}/best-nifti-list.txt
+    validate:
+      - output_exists: ${output_dir}/best-nifti-list.txt
+
+  - name: Anon to BIDS structuring
+    description: Verify the BIDS staging script creates the expected boilerplate and subject layout
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+      import shutil
+
+      out_dir = Path("${output_dir}")
+      anon_dir = out_dir / "anon"
+      anon_dir.mkdir(parents=True, exist_ok=True)
+
+      best_candidates = sorted((out_dir / "best").glob("*.nii")) + sorted((out_dir / "best").glob("*.nii.gz"))
+      if not best_candidates:
+          raise SystemExit("No best-image candidate found")
+
+      src_img = best_candidates[0]
+      dst_img = anon_dir / ("001_ct.nii.gz" if src_img.name.endswith(".nii.gz") else "001_ct.nii")
+      shutil.copy2(src_img, dst_img)
+
+      src_json = src_img.with_suffix(".json")
+      if not src_json.exists() and src_img.name.endswith(".nii.gz"):
+          src_json = src_img.with_suffix("").with_suffix(".json")
+      if not src_json.exists():
+          raise SystemExit(f"Missing JSON sidecar for {src_img}")
+
+      shutil.copy2(src_json, anon_dir / "001_ct.json")
+      print(dst_img)
+      PY
+      cd /soop-ct
+      python 4anon2bids.py ${output_dir}/anon ${output_dir}/bids
+      test -f ${output_dir}/bids/dataset_description.json
+      test -f ${output_dir}/bids/participants.tsv
+      find ${output_dir}/bids -path '*/ct/sub-1_ct.nii*' | sort > ${output_dir}/bids-ct-list.txt
+      test -s ${output_dir}/bids-ct-list.txt
+      sed -n '1,5p' ${output_dir}/bids-ct-list.txt
+    validate:
+      - output_exists: ${output_dir}/bids/dataset_description.json
+      - output_exists: ${output_dir}/bids/participants.tsv
+      - output_exists: ${output_dir}/bids-ct-list.txt
+
+  - name: Mean image generation
+    description: Verify the mean-image helper can consume the selected CT output
+    command: |
+      python - <<'PY'
+      from pathlib import Path
+      import nibabel as nib
+
+      out_dir = Path("${output_dir}")
+      mean_input_dir = out_dir / "mean-input"
+      mean_input_dir.mkdir(parents=True, exist_ok=True)
+
+      best_candidates = sorted((out_dir / "best").glob("*.nii")) + sorted((out_dir / "best").glob("*.nii.gz"))
+      if not best_candidates:
+          raise SystemExit("No best-image candidate found")
+
+      img = nib.load(str(best_candidates[0]))
+      nib.save(img, str(mean_input_dir / "sample_ct.nii.gz"))
+      print(mean_input_dir / "sample_ct.nii.gz")
+      PY
+      cd /soop-ct
+      python nii2mean.py ${output_dir}/mean-input _ct.nii.gz ${output_dir}/mean_ct.nii.gz
+    validate:
+      - output_exists: ${output_dir}/mean_ct.nii.gz

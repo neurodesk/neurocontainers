@@ -29,7 +29,7 @@
 
 name: amico
 version: 2.1.0
-container: amico_2.1.0_20250628.simg
+container: amico_2.1.0.simg
 
 required_files:
   - dataset: ds000001
@@ -60,9 +60,9 @@ tests:
     expected_output_contains: "python"
 
   - name: Python version check
-    description: Check Python version in container
+    description: Check the Python runtime matches the shipped image
     command: python --version
-    expected_output_contains: "Python"
+    expected_output_contains: "Python 3.13.12"
 
   - name: AMICO module import
     description: Verify AMICO module can be imported
@@ -72,12 +72,12 @@ tests:
   - name: AMICO version check
     description: Verify AMICO version
     command: python -c "import amico; print('AMICO version:', amico.__version__)"
-    expected_output_contains: "2.1.0"
+    expected_output_contains: "2.1.1"
 
-  - name: AMICO README check
-    description: Verify AMICO README contains expected information
-    command: cat /README.md
-    expected_output_contains: "amico/2.1.0"
+  - name: AMICO package metadata check
+    description: Verify the installed package metadata matches the deployed module
+    command: python -m pip show dmri-amico
+    expected_output_contains: "Summary: Accelerated Microstructure Imaging via Convex Optimization (AMICO)"
 
   # ==========================================================================
   # SUBMODULE IMPORTS

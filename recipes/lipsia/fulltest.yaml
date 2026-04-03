@@ -1,0 +1,41 @@
+# lipsia container test suite
+# Minimal no-rebuild verification for the installed Lipsia CLI tools.
+
+name: lipsia
+version: 3.1.1
+container: lipsia_3.1.1.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: Lipsia binary in PATH
+    description: Verify vlisa_onesample is available on PATH
+    command: which vlisa_onesample
+    expected_output_contains: "/opt/lipsia/bin/vlisa_onesample"
+
+  - name: Lipsia one-sample help
+    description: Verify vlisa_onesample prints version and usage text
+    command: vlisa_onesample 2>&1 | sed -n '1,12p'
+    expected_output_contains: "vlisa_onesample V3.1.0"
+
+  - name: Lipsia two-sample help
+    description: Verify vlisa_twosample prints usage text
+    command: vlisa_twosample 2>&1 | sed -n '1,12p'
+    expected_output_contains: "vlisa_twosample V3.1.0"
+
+  - name: Lipsia vnifti help
+    description: Verify vnifti prints version and usage text
+    command: vnifti 2>&1 | sed -n '1,12p'
+    expected_output_contains: "vnifti V3.1.0"
+
+  - name: Lipsia bin directory contents
+    description: Verify the installed bin directory contains core tools
+    command: ls /opt/lipsia/bin | grep -E '^(vlisa_onesample|vlisa_twosample|vnifti|vpreprocess)$'
+    expected_output_contains: "vlisa_onesample"

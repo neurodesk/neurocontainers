@@ -3,6 +3,15 @@ version: 1.0.4
 
 architectures:
   - x86_64
+  - aarch64
+
+variables:
+  conda_download_url:
+    try:
+      - value: https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+        condition: arch == "x86_64"
+      - value: https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh
+        condition: arch == "aarch64"
 
 build:
   kind: neurodocker
@@ -12,35 +21,73 @@ build:
 
   directives:
     - install:
+        - build-essential
         - gcc
 
-    - template:
-        name: miniconda
-        conda_install: python=3.11
-        mamba: "true"
-        pip_install: heudiconv traits
-        version: latest
+    - environment:
+        CONDA_DIR: /opt/miniconda
+        PATH: /opt/miniconda/envs/bidstools/bin:/opt/miniconda/bin:$PATH
+
+    - run:
+        - export PATH="/opt/miniconda/bin:$PATH"
+        - echo "Downloading Miniconda installer ..."
+        - conda_installer="/tmp/miniconda.sh"
+        - curl -fsSL -o "$conda_installer" "{{ context.conda_download_url }}"
+        - bash "$conda_installer" -b -p /opt/miniconda
+        - rm -f "$conda_installer"
+        - conda tos accept || true
+        - conda config --system --prepend channels conda-forge
+        - conda config --set channel_priority strict
+        - conda config --system --set auto_update_conda false
+        - conda config --system --set show_channel_urls true
+        - conda init bash
+        - conda create -y -q --name bidstools python=3.11
+        - bash -lc 'source /opt/miniconda/etc/profile.d/conda.sh && conda activate bidstools && python -m pip install --no-cache-dir heudiconv traits'
+        - sync && conda clean --all --yes && sync
+        - rm -rf ~/.cache/pip/*
 
     - install:
         - wget
         - zip
+        - git
         - libgl1
         - libgtk2.0-0
         - dcmtk
         - xmedcon
         - pigz
         - libxcb-cursor0
+        - fp-compiler
+        - fp-units-base
+        - fp-units-fcl
 
     - workdir: /opt/bru2
 
     - run:
-        - cp {{ get_file("Bru2_Linux_zip") }} Bru2_Linux.zip
-        - unzip Bru2_Linux.zip
+        - bash -lc 'if [ "$(uname -m)" = "aarch64" ]; then git clone --depth 1 https://github.com/neurolabusc/Bru2Nii /tmp/Bru2Nii && cd /tmp/Bru2Nii && fpc Bru2.lpr && install -m 0755 Bru2 /opt/bru2/Bru2 && install -m 0755 Bru2 /opt/bru2/Bru2Nii && rm -rf /tmp/Bru2Nii; else cp {{ get_file("Bru2_Linux_zip") }} Bru2_Linux.zip && unzip Bru2_Linux.zip; fi'
 
-    - template:
-        name: dcm2niix
-        method: source
-        version: latest
+    - install:
+        - cmake
+        - make
+        - zlib1g-dev
+
+    - run:
+        - git clone https://github.com/rordenlab/dcm2niix /tmp/dcm2niix
+
+    - workdir: /tmp/dcm2niix
+
+    - run:
+        - mkdir /tmp/dcm2niix/build
+
+    - workdir: /tmp/dcm2niix/build
+
+    - run:
+        - cmake -DCMAKE_INSTALL_PREFIX:PATH=/opt/dcm2niix-latest ..
+        - make -j1
+        - make install
+        - rm -rf /tmp/dcm2niix
+
+    - environment:
+        PATH: $PATH:/opt/dcm2niix-latest/bin
 
     - environment:
         PATH: $PATH:/opt/bru2

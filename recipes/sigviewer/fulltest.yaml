@@ -21,7 +21,7 @@
 
 name: sigviewer
 version: 0.6.4
-container: sigviewer_0.6.4_20220315.simg
+container: sigviewer_0.6.4.simg
 
 # Environment variables required for headless testing
 environment:
@@ -150,7 +150,7 @@ tests:
 
   - name: Libbiosig present
     description: Verify libbiosig library is available
-    command: ls -la /usr/lib/x86_64-linux-gnu/libbiosig.so*
+    command: ls -la /usr/lib/*/libbiosig.so*
     expected_output_contains: "libbiosig.so.3"
 
   - name: Qt libraries present
@@ -161,10 +161,10 @@ tests:
   # ==========================================================================
   # DOCUMENTATION AND METADATA
   # ==========================================================================
-  - name: README available
-    description: Verify container README is accessible
-    command: cat /README.md
-    expected_output_contains: "sigviewer/0.6.4"
+  - name: Packaged README available
+    description: Verify the Debian-packaged README is accessible
+    command: gzip -dc /usr/share/doc/sigviewer/README.md.gz | head -20
+    expected_output_contains: "SigViewer"
 
   - name: Documentation files present
     description: Check documentation directory
@@ -277,19 +277,19 @@ tests:
   # ==========================================================================
   # INTEGRATION WITH CONTAINER ENVIRONMENT
   # ==========================================================================
-  - name: Module load message
-    description: Verify module loading instructions are documented
-    command: cat /README.md | grep -i "ml sigviewer"
-    expected_output_contains: "ml sigviewer/0.6.4"
+  - name: Packaged README mentions project
+    description: Verify the packaged README documents SigViewer itself
+    command: gzip -dc /usr/share/doc/sigviewer/README.md.gz | grep -m1 -i "SigViewer"
+    expected_output_contains: "SigViewer"
 
   - name: Example usage documented
-    description: Verify example command is in README
-    command: cat /README.md | grep -A2 "Example:"
+    description: Verify the packaged README documents command-line startup
+    command: gzip -dc /usr/share/doc/sigviewer/README.md.gz | grep -F "You can directly start the executable in a terminal."
     expected_output_contains: "sigviewer"
 
   - name: Documentation link present
     description: Verify GitHub documentation link
-    command: cat /README.md | grep github
+    command: gzip -dc /usr/share/doc/sigviewer/README.md.gz | grep github.com/cbrnr/sigviewer | head -5
     expected_output_contains: "github.com/cbrnr/sigviewer"
 
 cleanup:

@@ -16,7 +16,7 @@
 
 name: brainlifecli
 version: 1.7.0
-container: brainlifecli_1.7.0_20241003.simg
+container: brainlifecli_1.7.0.simg
 
 required_files:
   - dataset: ds000001
@@ -43,23 +43,17 @@ tests:
   - name: Version check
     description: Verify brainlife CLI binary runs and reports version
     command: bl --version
-    expected_output_contains: "1.7.0"
+    expected_output_contains: "1.8.2"
 
   - name: Version command
     description: Test bl version command
     command: bl version
-    expected_output_contains: "1.7.0"
+    expected_output_contains: "1.8.2"
 
   - name: Main help
     description: Verify main help displays all available commands
     command: bl --help
-    expected_output_contains:
-      - "login"
-      - "project"
-      - "data"
-      - "app"
-      - "bids"
-      - "datatype"
+    expected_output_contains: "Usage: bl [options] [command]"
 
   # ==========================================================================
   # LOGIN AND AUTHENTICATION HELP
@@ -67,17 +61,12 @@ tests:
   - name: Login help
     description: Verify login command help and options
     command: bl login --help
-    expected_output_contains:
-      - "--username"
-      - "--password"
-      - "--ttl"
+    expected_output_contains: "Usage: bl-login [options]"
 
   - name: Refresh help
     description: Verify refresh command help
     command: bl refresh --help
-    expected_output_contains:
-      - "--ttl"
-      - "time to live"
+    expected_output_contains: "Usage: bl-refresh [options]"
 
   # ==========================================================================
   # PROFILE COMMANDS

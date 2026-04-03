@@ -1,0 +1,48 @@
+# mrsimetabolicconnectome container test suite
+# Minimal ARM64 verification for the rebuilt Python-based workflow image.
+
+name: mrsimetabolicconnectome
+version: 1.0.0
+container: mrsimetabolicconnectome_1.0.0.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p "${output_dir}"
+
+tests:
+  - name: ARM64 runtime
+    description: Verify the container runs natively on arm64
+    command: uname -m
+    expected_output_contains: "aarch64"
+
+  - name: Python runtime
+    description: Verify the rebuilt image exposes the expected Python runtime
+    command: python --version
+    expected_output_contains: "Python 3.10.20"
+
+  - name: mrsitoolbox package metadata
+    description: Verify the installed package metadata matches the rebuilt image
+    command: python -m pip show mrsitoolbox
+    expected_output_contains: "Version: 1.0.2"
+
+  - name: Workflow repository present
+    description: Verify the cloned workflow repository is present in the image
+    command: ls /opt/MRSI-Metabolic-Connectome/experiments/Preprocessing
+    expected_output_contains: "registration_mrsi_to_t1.py"
+
+  - name: Registration workflow help
+    description: Verify the shipped preprocessing entry script responds to --help
+    command: >-
+      python /opt/MRSI-Metabolic-Connectome/experiments/Preprocessing/registration_mrsi_to_t1.py --help 2>&1
+    expected_output_contains: "usage: registration_mrsi_to_t1.py"
+
+  - name: Script imports resolve
+    description: Verify the core imports used by the preprocessing script are available
+    command: >-
+      python -c "from mrsitoolbox.registration.registration import Registration; from mrsitoolbox.tools.datautils import DataUtils; from mrsitoolbox.filters.biharmonic import BiHarmonic; print('Registration', Registration.__name__); print('DataUtils', DataUtils.__name__); print('BiHarmonic', BiHarmonic.__name__)"
+    expected_output_contains: "BiHarmonic BiHarmonic"

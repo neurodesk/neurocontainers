@@ -7,17 +7,42 @@ copyright:
     
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
-  base-image: dmri/neurodock:v1.0.0
+
+  base-image: python:3.10-slim
   pkg-manager: apt
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
 
+    - install:
+        - bzip2
+        - curl
+        - git
+        - mrtrix3
+
+    - run:
+        - python -m venv /opt/pydesigner
+        - /opt/pydesigner/bin/pip install --upgrade pip setuptools wheel
+        - /opt/pydesigner/bin/pip install "numpy<2" "scipy<1.15" "dipy==1.8.0" git+https://github.com/muscbridge/PyDesigner.git@v{{ context.version }}
+        - curl -Ls https://micro.mamba.pm/api/micromamba/linux-aarch64/latest | tar -xj -C /tmp bin/micromamba
+        - install -m 0755 /tmp/bin/micromamba /usr/local/bin/micromamba
+        - /usr/local/bin/micromamba create -y -p /opt/fsl -c https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public -c conda-forge fsl-base fsl-flirt
+
+    - environment:
+        FSLDIR: /opt/fsl
+        PATH: /opt/fsl/bin:/opt/pydesigner/bin:$PATH
+
 deploy:
+  path:
+    - /opt/pydesigner/bin
+    - /opt/fsl/bin
   bins:
+    - flirt
+    - mrinfo
     - pydesigner
 
 readme: |-

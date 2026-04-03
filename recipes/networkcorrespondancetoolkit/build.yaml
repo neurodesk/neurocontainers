@@ -7,6 +7,7 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 structured_readme:
   description: This toolbox was used to explore the network correspondence between networks across different atlases.
@@ -68,6 +69,12 @@ build:
 
     - variables:
         install_path: /opt/miniconda
+        miniconda_url:
+          try:
+            - value: https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh
+              condition: arch == "aarch64"
+            - value: https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+              condition: arch == "x86_64"
 
     - workdir: /opt
 
@@ -77,7 +84,7 @@ build:
 
     - file:
         name: miniconda.sh
-        url: https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+        url: "{{ local.miniconda_url }}"
 
     - run:
         - export PATH="{{ local.install_path }}/bin:$PATH"
@@ -97,8 +104,9 @@ build:
         - conda config --system --set auto_update_conda false
         - conda config --system --set show_channel_urls true
 
-        # Create the environment from the environment.yml file
-        - conda env create -f {{ get_file("environment.yml") }}
+        # The upstream env file includes linux-64-specific build pins that do not solve on ARM64.
+        # Build a minimal env here and let the package install resolve its own Python dependencies.
+        - conda create -y -n NCT_env python=3.11 pip
         - conda init bash
 
         # Clean up
@@ -115,7 +123,46 @@ build:
     - install: libx11-6 libgl1 libxext6 libsm6 libxrender1 git
 
     - run:
-        - python3 -m pip install --no-cache-dir cbig_network_correspondence
+        - >-
+          python3 -m pip install --no-cache-dir
+          brainspace==0.1.10
+          certifi==2024.6.2
+          charset-normalizer==3.3.2
+          colorcet==3.1.0
+          contourpy==1.2.1
+          cycler==0.12.1
+          fonttools==4.53.0
+          gitdb==4.0.11
+          gitpython==3.1.43
+          idna==3.7
+          importlib-resources==6.4.0
+          joblib==1.4.2
+          kiwisolver==1.4.5
+          lxml==5.2.2
+          matplotlib==3.9.0
+          natsort==8.4.0
+          nibabel==5.2.1
+          nilearn==0.10.4
+          numpy==1.26.4
+          packaging==24.1
+          pandas==2.2.2
+          pillow==10.3.0
+          plottable==0.1.5
+          pyparsing==3.1.2
+          python-dateutil==2.9.0.post0
+          pytz==2024.1
+          regfusion==0.1.0
+          requests==2.32.3
+          scikit-learn==1.5.0
+          scipy==1.13.1
+          seaborn==0.13.2
+          smmap==5.0.1
+          threadpoolctl==3.5.0
+          tzdata==2024.1
+          urllib3==2.2.1
+          "vtk>=9.5,<10"
+          zipp==3.19.2
+        - python3 -m pip install --no-cache-dir --no-deps cbig_network_correspondence=={{ context.version }}
 
     - deploy:
         bins:

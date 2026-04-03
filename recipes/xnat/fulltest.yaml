@@ -15,7 +15,7 @@
 
 name: xnat
 version: 1.9.2.1
-container: xnat_1.9.2.1_20250805.simg
+container: xnat_1.9.2.1.simg
 
 required_files:
   - dataset: ds000001
@@ -42,9 +42,9 @@ tests:
   # JAVA RUNTIME VERIFICATION
   # ==========================================================================
   - name: Java version check
-    description: Verify Java 8 runtime is available
+    description: Verify the Java runtime matches the shipped image
     command: java -version 2>&1
-    expected_output_contains: "1.8.0"
+    expected_output_contains: "1.8.0_452"
 
   - name: Java OpenJDK verification
     description: Verify OpenJDK is the Java provider
@@ -295,25 +295,25 @@ tests:
   # ==========================================================================
   # BUILD INFORMATION VERIFICATION
   # ==========================================================================
-  - name: Build YAML exists
-    description: Verify build.yaml exists in container
-    command: test -f /build.yaml && echo "build.yaml exists"
-    expected_output_contains: "build.yaml exists"
+  - name: XNAT manifest exists
+    description: Verify the packaged XNAT webapp manifest exists
+    command: test -f /opt/xnat-webapp/META-INF/MANIFEST.MF && echo "manifest exists"
+    expected_output_contains: "manifest exists"
 
-  - name: Build YAML version
-    description: Verify version in build.yaml
-    command: grep "version:" /build.yaml | head -1
-    expected_output_contains: "1.9.2.1"
+  - name: XNAT manifest version
+    description: Verify the packaged XNAT manifest reports the expected version
+    command: grep "^Implementation-Version:" /opt/xnat-webapp/META-INF/MANIFEST.MF
+    expected_output_contains: "Implementation-Version: 1.9.2.1"
 
-  - name: Build YAML name
-    description: Verify name in build.yaml
-    command: grep "name:" /build.yaml | head -1
-    expected_output_contains: "xnat"
+  - name: XNAT sample config exists
+    description: Verify the packaged XNAT sample configuration exists
+    command: sed -n '1,8p' /opt/xnat-webapp/resources/samples/xnat-conf.properties
+    expected_output_contains: "# web: xnat-conf.properties"
 
-  - name: README exists
-    description: Verify README.md exists
-    command: test -f /README.md && cat /README.md
-    expected_output_contains: "xnat"
+  - name: XNAT generated schema asset
+    description: Verify an XNAT-generated schema JavaScript asset is present
+    command: sed -n '1,12p' /opt/xnat-webapp/scripts/generated/xnat_projectData.js
+    expected_output_contains: " * GENERATED FILE"
 
   # ==========================================================================
   # XNAT WEBAPP STRUCTURE VERIFICATION

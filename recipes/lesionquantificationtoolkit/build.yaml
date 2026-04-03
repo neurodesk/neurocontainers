@@ -5,6 +5,7 @@ copyright:
     url: https://github.com/jdwor/LQT
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: |-
     LQT is an R implementation of the lesion quantification toolkit, based on the paper “Lesion Quantification Toolkit: A MATLAB software tool for estimating grey matter damage and white matter disconnections in patients with focal brain lesions” by Griffis et al. The LQT is “a publicly available software package for quantifying the structural impacts of focal brain lesions. It uses atlas-based approaches to estimate parcel-level grey matter lesion loads and multiple measures of white matter disconnection severity that include tract-level disconnection measures, voxel-wise disconnection maps, and parcel-wise disconnection matrices. The toolkit also estimates lesion-induced increases in the lengths of the shortest structural paths between parcel pairs, which provide information about changes in higher-order structural network topology.”
@@ -66,11 +67,7 @@ build:
   directives:
     - install: r-base r-base-dev libgsl-dev
     - run:
-        - |-
-          R --slave -e "options(repos = c(CRAN = 'https://cloud.r-project.org')); \
-            if (!requireNamespace('remotes', quietly = TRUE)) install.packages('remotes'); \
-            remotes::install_github('jdwor/LQT', dependencies = NA, upgrade = 'never', build_vignettes = FALSE); \
-            cat('Installed LQT from GitHub (', 'jdwor/LQT', ")\n")"
+        - R --slave -e "options(repos = c(CRAN = 'https://cloud.r-project.org')); if (!requireNamespace('remotes', quietly = TRUE)) install.packages('remotes'); remotes::install_version('gsl', version = '2.1-8', repos = 'https://cloud.r-project.org'); install.packages('aws', dependencies = TRUE); remotes::install_github('jdwor/LQT', dependencies = NA, upgrade = 'never', build_vignettes = FALSE); cat('Installed LQT from GitHub\\n')"
     - test:
         name: verify_r_installation
         script: |-

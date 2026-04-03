@@ -2,6 +2,7 @@ name: eharmonize
 version: 1.0.0
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: ENIGMA Harmonization (eharmonize) is a python-based package that harmonizes provided data to included lifespan reference curves. The package is currently set up for outputs of the ENIGMA-DTI pipeline.
   example: eharmonize --help
@@ -20,6 +21,8 @@ build:
         name: miniconda
         version: latest
         install_path: /opt/miniconda
+        env_name: eharmonize
+        env_exists: "false"
     - run:
         - cd /opt
         - git clone https://github.com/ahzhu/eharmonize.git

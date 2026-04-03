@@ -13,7 +13,7 @@
 
 name: itksnap
 version: 4.4.0
-container: itksnap_4.4.0_20260117.simg
+container: itksnap_4.4.0.simg
 
 required_files:
   - dataset: ds000001
@@ -33,6 +33,15 @@ setup:
     #!/usr/bin/env bash
     set -e
     mkdir -p test_output
+
+    # The packaged ITK-SNAP toolchain must be runnable before the suite can
+    # meaningfully exercise any command-specific behavior.
+    c3d --help >/tmp/itksnap-c3d-help.txt 2>&1 || {
+      status=$?
+      echo "c3d launcher failed during setup (exit ${status})" >&2
+      cat /tmp/itksnap-c3d-help.txt >&2 || true
+      exit "${status}"
+    }
 
 tests:
   # ==========================================================================

@@ -1,0 +1,48 @@
+name: rshrf
+version: 1.5.8
+container: rshrf_1.5.8.simg
+
+test_data:
+  input_ts: test_output/ts.txt
+  output_dir: test_output/out
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output
+    seq 1 40 > ${input_ts}
+
+tests:
+  - name: Version check
+    description: Verify the rsHRF CLI reports the packaged version
+    command: rsHRF --version
+    expected_output_contains: "rsHRF version 1.5.8"
+    expected_exit_code: 0
+
+  - name: Help output
+    description: Verify the CLI usage text is available
+    command: rsHRF --help
+    expected_output_contains:
+      - "usage: rsHRF"
+      - "--output_dir OUTPUT_DIR"
+    expected_exit_code: 0
+
+  - name: Single time-series processing
+    description: Run a minimal rsHRF estimation/deconvolution workflow on ARM64
+    command: >
+      rsHRF --ts ${input_ts} -TR 2.0 --output_dir ${output_dir}
+      --estimation hanning --n_jobs 1 &&
+      test -f ${output_dir}/ts_hrf_deconv.mat &&
+      test -f ${output_dir}/ts_hrf_plot.png &&
+      test -f ${output_dir}/ts_deconvolution_plot.png
+    expected_output_contains:
+      - "Retrieving HRF ..."
+      - "Deconvolving HRF ..."
+      - "Saving Output ..."
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    echo "Test outputs preserved in test_output/"

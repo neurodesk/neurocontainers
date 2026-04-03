@@ -1,5 +1,5 @@
 # ANTs container test suite
-# Tests for ANTs (Advanced Normalization Tools) v2.6.0
+# Tests for ANTs (Advanced Normalization Tools) v2.6.5
 #
 # ANTs is a state-of-the-art medical image registration and segmentation toolkit.
 # It provides tools for image registration, bias correction, segmentation, and more.
@@ -13,8 +13,8 @@
 #           Neuroimage. 2011 Feb 1;54(3):2033-44.
 
 name: ants
-version: 2.6.0
-container: ants_2.6.0_20250424.simg
+version: 2.6.5
+container: ants_2.6.5.simg
 
 required_files:
   - dataset: ds000001
@@ -34,6 +34,12 @@ setup:
     #!/usr/bin/env bash
     set -e
     mkdir -p ${output_dir}
+    antsRegistration --version > /tmp/ants-launcher-check.log 2>&1 || {
+      status=$?
+      echo "antsRegistration launcher failed during setup (exit ${status})" >&2
+      cat /tmp/ants-launcher-check.log >&2
+      exit ${status}
+    }
 
 tests:
   # ==========================================================================

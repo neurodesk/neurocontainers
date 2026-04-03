@@ -2,6 +2,7 @@ name: amico
 version: 2.1.0
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: >-
     Accelerated Microstructure Imaging via Convex Optimization (AMICO) from
@@ -57,7 +58,11 @@ build:
         name: miniconda
         version: latest
         install_path: /opt/miniconda
+        env_name: amico
+        env_exists: "false"
         pip_install: dmri-amico
+    - environment:
+        PATH: /opt/miniconda/envs/amico/bin:/opt/miniconda/bin:$PATH
     - deploy:
         path: []
         bins:
@@ -139,4 +144,3 @@ readme: >-
 copyright:
   - name: AMICO software license agreement
     url: https://github.com/daducci/AMICO/blob/master/LICENSE
-

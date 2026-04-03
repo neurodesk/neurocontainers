@@ -6,6 +6,7 @@ copyright:
     url: https://github.com/mne-tools/mne-bids-pipeline/blob/main/LICENSE.txt
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
@@ -46,19 +47,24 @@ build:
 
     - template:
         name: miniconda
-        env_name: base
-        version: 4.7.12
+        env_name: mne
+        env_exists: "false"
+        version: latest
 
     - run:
-        - conda install -c conda-forge -n base mamba=0.24.0
+        - conda create --override-channels --channel=conda-forge --name=mne-1.7.1 urllib3=2.2.1 mne=1.7.1
 
     - run:
-        - mamba create --override-channels --channel=conda-forge --name=mne-1.7.1 urllib3=2.2.1 mne=1.7.1
-
-    - run:
-        - cp {{ get_file("download") }} vscode.deb
-        - apt install ./vscode.deb
-        - rm -rf ./vscode.deb
+        - |
+          arch="$(uname -m)"
+          if [ "$arch" = "aarch64" ]; then
+            vscode_os="linux-deb-arm64"
+          else
+            vscode_os="linux-deb-x64"
+          fi
+          curl -fsSL -o vscode.deb "https://code.visualstudio.com/sha/download?build=stable&os=${vscode_os}"
+          apt install -y ./vscode.deb
+          rm -rf ./vscode.deb
 
     - run:
         - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.python
@@ -120,8 +126,6 @@ readme: |-
 files:
   - name: main_tar_gz
     url: https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz
-  - name: download
-    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
   - name: code
     contents: |-
       #!/usr/bin/env sh

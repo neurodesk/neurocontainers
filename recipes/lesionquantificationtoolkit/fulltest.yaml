@@ -1,0 +1,54 @@
+# lesionquantificationtoolkit container test suite
+# ARM64 validation for the packaged R runtime and installed LQT package.
+
+name: lesionquantificationtoolkit
+version: 0.1.0
+container: lesionquantificationtoolkit_0.1.0.sif
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/lesionquantificationtoolkit
+
+tests:
+  - name: R version
+    description: Verify the packaged R runtime starts
+    script: |
+      set -euo pipefail
+      R --version | grep -F "R version 4.3"
+
+  - name: aws dependency loads
+    description: Verify the missing CRAN dependency is installed on ARM64
+    script: |
+      set -euo pipefail
+      R --slave -e "library(aws); cat('aws loaded\n')" | grep -F "aws loaded"
+
+  - name: LQT library loads
+    description: Verify the LQT package loads successfully in R
+    script: |
+      set -euo pipefail
+      R --slave -e "library(LQT); cat('LQT loaded\n')" | grep -F "LQT loaded"
+
+  - name: LQT package version
+    description: Verify the installed LQT package reports the expected version
+    script: |
+      set -euo pipefail
+      R --slave -e "library(LQT); cat(as.character(packageVersion('LQT')), '\n')" | grep -F "0.1.0"
+
+  - name: LQT package path
+    description: Verify the installed package path resolves inside site-library
+    script: |
+      set -euo pipefail
+      R --slave -e "cat(system.file(package='LQT'), '\n')" | grep -F "/usr/local/lib/R/site-library/LQT"
+
+  - name: LQT namespace exports
+    description: Verify the installed namespace exports at least one symbol
+    script: |
+      set -euo pipefail
+      R --slave -e "library(LQT); cat(length(getNamespaceExports('LQT')) > 0, '\n')" | grep -F "TRUE"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    echo "Test outputs preserved in test_output/lesionquantificationtoolkit/"

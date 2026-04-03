@@ -9,7 +9,7 @@
 
 name: hnncore
 version: "0.3"
-container: hnncore_0.3_20231112.simg
+container: hnncore_0.3.simg
 
 test_data:
   output_dir: test_output
@@ -32,7 +32,7 @@ tests:
   - name: hnn-core version check
     description: Verify hnn_core module version
     command: python3 -c "import hnn_core; print(\"hnn_core version:\", hnn_core.__version__)"
-    expected_output_contains: "0.3"
+    expected_output_contains: "0.5.0"
 
   - name: NEURON version check
     description: Verify NEURON simulator is available
@@ -539,11 +539,13 @@ tests:
     command: |
       python3 -c "
       from hnn_core import CellResponse
+      cell_type_names = [\"L2_pyramidal\", \"L2_basket\", \"L5_pyramidal\"]
       spike_times = [[10.5, 20.3, 15.2], [25.1, 12.0, 30.5]]
       spike_gids = [[0, 0, 1], [1, 2, 2]]
       spike_types = [[\"L2_pyramidal\", \"L2_pyramidal\", \"L2_basket\"],
                      [\"L2_basket\", \"L5_pyramidal\", \"L5_pyramidal\"]]
-      cell_resp = CellResponse(spike_times, spike_gids, spike_types)
+      cell_resp = CellResponse(cell_type_names, spike_times=spike_times,
+                               spike_gids=spike_gids, spike_types=spike_types)
       print(\"CellResponse created with\", len(cell_resp.spike_times), \"trials\")
       "
     expected_output_contains: "CellResponse created with 2 trials"

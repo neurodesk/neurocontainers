@@ -8,11 +8,20 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
+
+variables:
+  jdk_url:
+    try:
+      - value: https://download.java.net/java/GA/jdk20.0.1/b4887098932d415489976708ad6d1a4b/9/GPL/openjdk-20.0.1_linux-x64_bin.tar.gz
+        condition: arch == "x86_64"
+      - value: https://download.java.net/java/GA/jdk20.0.1/b4887098932d415489976708ad6d1a4b/9/GPL/openjdk-20.0.1_linux-aarch64_bin.tar.gz
+        condition: arch == "aarch64"
 
 build:
   kind: neurodocker
 
-  base-image: ubuntu:24.10
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
@@ -24,13 +33,16 @@ build:
         - pipx
         - python-is-python3
         - python3-pip
+        - python3-dev
         - curl
         - locales
         - wget
         - build-essential
 
     - run:
-        - tar -zx -C /opt --transform=s/jdk-20.0.1/jdk-temurin-20.0.1/ -f {{ get_file("openjdk_20_0_1_linux_x64_bin_tar_gz") }}
+        - wget -O /tmp/openjdk.tar.gz "{{ context.jdk_url }}"
+        - tar -zx -C /opt --transform=s/jdk-20.0.1/jdk-temurin-20.0.1/ -f /tmp/openjdk.tar.gz
+        - rm -f /tmp/openjdk.tar.gz
 
     - environment:
         JAVAHOME: /opt/jdk-temurin-20.0.1
@@ -45,6 +57,7 @@ build:
 
     - run:
         - pip install nipype pandas nilearn JCC
+        - pip install 'numpy<2.0' 'psutil>=5.9.0' 'antspyx<=0.5.2' 'matplotlib>=3.8' 'dipy>=1.5.0' scipy
 
     - run:
         - python3 -m pip install --upgrade setuptools wheel
@@ -55,13 +68,8 @@ build:
         - git clone https://github.com/nighres/nighres.git
         - cd nighres
         - "git checkout release-{{ context.version }}"
-        - make install
-
-    - template:
-        name: ants
-        make_opts: -j8
-        method: source
-        version: 2.5.1
+        - ./build.sh
+        - pip install --no-deps .
 
 deploy:
   bins:
@@ -109,7 +117,3 @@ readme: |-
 
 categories:
   - "structural imaging"
-
-files:
-  - name: openjdk_20_0_1_linux_x64_bin_tar_gz
-    url: https://download.java.net/java/GA/jdk20.0.1/b4887098932d415489976708ad6d1a4b/9/GPL/openjdk-20.0.1_linux-x64_bin.tar.gz

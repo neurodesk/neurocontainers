@@ -1,0 +1,41 @@
+# eharmonize container test suite
+# Minimal no-rebuild verification for the shipped eharmonize CLI and Python package.
+
+name: eharmonize
+version: 1.0.0
+container: eharmonize_1.0.0.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: eharmonize binary in PATH
+    description: Verify the shipped CLI is installed on PATH
+    command: command -v eharmonize
+    expected_output_contains: "/opt/miniconda/bin/eharmonize"
+
+  - name: eharmonize help output
+    description: Verify the main CLI help text renders
+    command: eharmonize --help 2>&1 | sed -n '1,20p'
+    expected_output_contains: "eharmonize (ENIGMA harmonization)"
+
+  - name: harmonize-fa help output
+    description: Verify the harmonize-fa subcommand is exposed
+    command: eharmonize harmonize-fa --help 2>&1 | sed -n '1,20p'
+    expected_output_contains: "Usage: eharmonize harmonize-fa"
+
+  - name: Python runtime available
+    description: Verify Python resolves from the Miniconda installation
+    command: python --version
+    expected_output_contains: "Python 3.13."
+
+  - name: eharmonize package metadata
+    description: Verify the installed Python package metadata matches the shipped runtime
+    command: python -m pip show eharmonize 2>&1 | sed -n '1,20p'
+    expected_output_contains: "Version: 0.0.0"

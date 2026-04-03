@@ -5,6 +5,7 @@ copyright:
     url: https://github.com/spm/spm?tab=GPL-2.0-1-ov-file#readme
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: |-
     Statistical Parametric Mapping refers to the construction and assessment of spatially extended statistical processes used to test hypotheses about functional imaging data. These ideas have been instantiated in a free and open source software that is called SPM.

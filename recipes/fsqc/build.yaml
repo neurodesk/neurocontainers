@@ -5,6 +5,7 @@ copyright:
     url: https://github.com/Deep-MI/fsqc?tab=MIT-1-ov-file
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: |-
     This package provides quality assurance / quality control scripts for FastSurfer- or FreeSurfer-processed structural MRI data. It will check outputs of these two software packages by means of quantitative and visual summaries. Prior processing of data using either FastSurfer or FreeSurfer is required, i.e. the software cannot be used on raw images.
@@ -76,13 +77,18 @@ build:
     - template:
         name: miniconda
         version: latest
+        env_name: fsqc
+        env_exists: "false"
         conda_install: python=3.13
         pip_install: brainprint==0.4.0 lapy==1.3.0 matplotlib nibabel numpy pandas scipy scikit-image transforms3d pyopengl glfw pillow pyrr PyQt6 whippersnappy>=1.3.0
     - deploy:
         bins: []
     - install: git
     - run:
-        - pip install git+https://github.com/deep-mi/fsqc.git
+        - |
+          bash -c "source activate fsqc
+          python -m pip install git+https://github.com/deep-mi/fsqc.git
+          "
     - test:
         name: verify_installation
         script: |-

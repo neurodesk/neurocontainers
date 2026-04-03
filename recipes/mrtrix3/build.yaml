@@ -5,6 +5,7 @@ copyright:
     url: https://github.com/MRtrix3/mrtrix3/blob/master/LICENCE.txt
 architectures:
   - x86_64
+  - aarch64
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -14,22 +15,16 @@ build:
         path:
           - /opt/mrtrix3-"{{ context.version }}"/bin/
           - /opt/acpcdetect_V2.1/bin
-    - template:
-        name: fsl
-        version: 6.0.7.18
-    - template:
-        name: mrtrix3
-        build_processes: "1"
-        method: source
-        version: "{{ context.version }}"
-    - template:
-        name: ants
-        version: 2.4.3
-    - template:
-        name: freesurfer
-        version: 7.4.1
-    - workdir: /opt/mrtrix3-"{{ context.version }}"
     - install:
+        - ca-certificates
+        - g++
+        - gcc
+        - git
+        - libeigen3-dev
+        - make
+        - python3
+        - python3-numpy
+        - zlib1g-dev
         - dbus-x11
         - less
         - mesa-common-dev
@@ -45,9 +40,15 @@ build:
         - libfftw3-dev
         - liblapack3
     - run:
-        - python3 configure
+        - mkdir -p /opt/mrtrix3-"{{ context.version }}"
+        - git clone https://github.com/MRtrix3/mrtrix3.git /opt/mrtrix3-"{{ context.version }}"
+    - workdir: /opt/mrtrix3-"{{ context.version }}"
     - run:
-        - python3 build
+        - git checkout {{ context.version }}
+    - run:
+        - python3 configure -nogui
+    - run:
+        - NUMBER_OF_PROCESSORS=1 python3 build
     - run:
         - ln -s /usr/bin/python3 /usr/bin/python
     - workdir: /opt/acpcdetect_V2.1
@@ -57,7 +58,7 @@ build:
         - rm -rf acpcdetect_V2.1_LinuxCentOS6.7.tar.gz
     - environment:
         ARTHOME: /opt/acpcdetect_V2.1/
-        PATH: $PATH:/opt/acpcdetect_V2.1/bin
+        PATH: /opt/mrtrix3-{{ context.version }}/bin:$PATH:/opt/acpcdetect_V2.1/bin
 readme: |
   ----------------------------------
   ## mrtrix3/{{ context.version }} ##

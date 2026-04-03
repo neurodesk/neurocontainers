@@ -1,0 +1,91 @@
+# builder container test suite
+# Minimal no-rebuild verification for the shipped NeuroContainers builder tools.
+
+name: builder
+version: "0.2"
+container: builder_0.2.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: sf-make binary in PATH
+    description: Verify the shipped builder CLI is on PATH
+    command: command -v sf-make
+    expected_output_contains: "/usr/bin/sf-make"
+
+  - name: sf-make help output
+    description: Verify the builder CLI renders its main help text
+    command: sf-make --help 2>&1 | sed -n '1,20p'
+    expected_output_contains: "usage: sf-make [-h] [--architecture ARCHITECTURE] [--ignore-architectures]"
+
+  - name: Help description documented
+    description: Verify sf-make help renders its shipped one-line description
+    command: sf-make --help 2>&1 | sed -n '5,6p'
+    expected_output_contains: "Build a recipe directory into a SIF using BuildKit (no Docker required)"
+
+  - name: Wrapped usage continuation documented
+    description: Verify sf-make help shows the wrapped continuation line for optional arguments
+    command: sf-make --help 2>&1 | sed -n '1,4p'
+    expected_output_contains: "[--local LOCAL] [--mount MOUNT] [--use-docker]"
+
+  - name: Wrapped positional continuation documented
+    description: Verify sf-make help shows the wrapped positional continuation line
+    command: sf-make --help 2>&1 | sed -n '1,4p'
+    expected_output_contains: "[name]"
+
+  - name: Help option documented
+    description: Verify sf-make documents its standard help option
+    command: sf-make --help 2>&1 | sed -n '10,14p'
+    expected_output_contains: "-h, --help            show this help message and exit"
+
+  - name: Positional recipe argument documented
+    description: Verify sf-make documents the recipe name positional argument
+    command: sf-make --help 2>&1 | sed -n '5,10p'
+    expected_output_contains: "name                  Name of the recipe to generate"
+
+  - name: Python runtime available
+    description: Verify the Python runtime matches the shipped image
+    command: python3 --version
+    expected_output_contains: "Python 3.12.12"
+
+  - name: Apptainer available
+    description: Verify Apptainer matches the shipped runtime version
+    command: apptainer --version
+    expected_output_contains: "apptainer version 1.4.5"
+
+  - name: Architecture option documented
+    description: Verify sf-make exposes the architecture flag
+    command: sf-make --help 2>&1 | sed -n '10,16p'
+    expected_output_contains: "Architecture to build for"
+
+  - name: Ignore-architectures option documented
+    description: Verify sf-make exposes the ignore-architectures option detail
+    command: sf-make --help 2>&1 | sed -n '10,18p'
+    expected_output_contains: "Ignore architecture checks"
+
+  - name: Local context option documented
+    description: Verify sf-make exposes the local build-context option
+    command: sf-make --help 2>&1 | sed -n '10,18p'
+    expected_output_contains: "(key=path)"
+
+  - name: Mount option documented
+    description: Verify sf-make exposes the mount option detail
+    command: sf-make --help 2>&1 | sed -n '10,20p'
+    expected_output_contains: "(host:container)"
+
+  - name: Docker fallback option documented
+    description: Verify sf-make exposes the Docker fallback option
+    command: sf-make --help 2>&1 | sed -n '16,24p'
+    expected_output_contains: "Use Docker for building instead of BuildKit"
+
+  - name: Bash runtime version
+    description: Verify bash matches the shipped runtime version
+    command: bash --version | head -1
+    expected_output_contains: "GNU bash, version 5.3.3(1)-release (aarch64-alpine-linux-musl)"

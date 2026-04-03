@@ -2,6 +2,7 @@ name: brainlesion
 version: 1.0.0
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: |-
     BrainLesion Suite (BLS) is a modular and open-source framework for brain lesion image analysis in Python. Developed by an international consortium of researchers, BLS enables efficient, reproducible, and customizable pipelines for processing and analyzing multi-modal brain image data.
@@ -15,11 +16,30 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
-    - template:
-        name: miniconda
-        version: py310_25.5.1-0
-        install_path: /opt/miniconda
-        pip_install: loguru==0.7.3 panoptica deep_quality_estimation petu gliomoda brainles-aurora brats brainles-preprocessing
+    - install:
+        - bzip2
+        - ca-certificates
+        - curl
+    - environment:
+        CONDA_DIR: /opt/miniconda
+        PATH: /opt/miniconda/envs/brainlesion/bin:/opt/miniconda/bin:$PATH
+    - run:
+        - export PATH="/opt/miniconda/bin:$PATH"
+        - echo "Downloading ARM64 Miniconda installer ..."
+        - conda_installer="/tmp/miniconda.sh"
+        - curl -fsSL -o "$conda_installer" https://repo.anaconda.com/miniconda/Miniconda3-py310_25.5.1-0-Linux-aarch64.sh
+        - bash "$conda_installer" -b -p /opt/miniconda
+        - rm -f "$conda_installer"
+        - conda tos accept || true
+        - conda config --system --prepend channels conda-forge
+        - conda config --set channel_priority strict
+        - conda config --system --set auto_update_conda false
+        - conda config --system --set show_channel_urls true
+        - conda init bash
+        - conda create -y -q --name brainlesion python=3.10
+        - bash -lc 'source /opt/miniconda/etc/profile.d/conda.sh && conda activate brainlesion && python -m pip install --no-cache-dir loguru==0.7.3 panoptica deep_quality_estimation petu gliomoda brainles-aurora brats brainles-preprocessing'
+        - sync && conda clean --all --yes && sync
+        - rm -rf ~/.cache/pip/*
     - deploy:
         bins:
           - python

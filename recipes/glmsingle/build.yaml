@@ -7,6 +7,7 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
@@ -19,10 +20,16 @@ build:
         DEBIAN_FRONTEND: noninteractive
 
     - install:
+        - build-essential
         - python3.8
         - python3-pip
         - libpython3.8-dev
+        - libhdf5-dev
+        - pkg-config
         - git
+
+    - run:
+        - ln -sf /usr/bin/gcc /usr/bin/aarch64-linux-gnu-gcc
 
     - run:
         - python3.8 -m pip install git+https://github.com/cvnlab/GLMsingle.git@{{ context.version }}

@@ -1,0 +1,54 @@
+# mrtrix3 container test suite
+# Compact ARM64 verification for the rebuilt source-built MRtrix3 image.
+
+name: mrtrix3
+version: 3.0.8
+container: mrtrix3_3.0.8.simg
+
+required_files:
+  - dataset: ds000001
+    files:
+      - sub-01/anat/sub-01_T1w.nii.gz
+
+test_data:
+  t1w: ds000001/sub-01/anat/sub-01_T1w.nii.gz
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p "${output_dir}"
+
+tests:
+  - name: ARM64 runtime
+    description: Verify the container runs natively on arm64
+    command: uname -m
+    expected_output_contains: "aarch64"
+
+  - name: mrinfo version
+    description: Verify the rebuilt MRtrix3 binary is available
+    command: mrinfo -version 2>&1
+    expected_output_contains: "mrinfo 3.0.8"
+
+  - name: mrconvert help
+    description: Verify the conversion CLI is available
+    command: mrconvert -help 2>&1
+    expected_output_contains: "Perform conversion between different file types"
+
+  - name: Input nifti readable
+    description: Verify MRtrix3 can inspect the sample NIfTI input
+    command: mrinfo ${t1w}
+    expected_output_contains: "Dimensions:"
+
+  - name: NIfTI to MIF conversion
+    description: Convert the sample T1w image into MRtrix3 MIF format
+    command: >-
+      mrconvert ${t1w} ${output_dir}/sub-01_T1w.mif -force
+    validate:
+      - output_exists: ${output_dir}/sub-01_T1w.mif
+
+  - name: Converted MIF readable
+    description: Verify the converted MIF image is readable
+    command: mrinfo ${output_dir}/sub-01_T1w.mif
+    expected_output_contains: ".mif"

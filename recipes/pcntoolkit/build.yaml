@@ -2,6 +2,7 @@ name: pcntoolkit
 version: '0.35'
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: Toolbox for normative modelling and spatial inference of neuroimaging data. https://pcntoolkit.readthedocs.io/en/latest/
   example: |
@@ -69,9 +70,14 @@ build:
   directives:
     - template:
         name: miniconda
-        version: py310_25.5.1-0
+        version: py312_25.5.1-0
         install_path: /opt/miniconda
+        env_name: pcntoolkit
+        env_exists: "false"
+        conda_install: python=3.12
         pip_install: pcntoolkit
+    - environment:
+        PATH: /opt/miniconda/envs/pcntoolkit/bin:$PATH
     - deploy:
         path: []
         bins:

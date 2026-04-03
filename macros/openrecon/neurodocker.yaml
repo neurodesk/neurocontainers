@@ -46,7 +46,7 @@ directives:
 
   - run:
       - git clone --branch fix/ismrmrd-compatibility https://github.com/astewartau/python-ismrmrd-server
-      - find /opt/code/python-ismrmrd-server -name "*.sh" -exec chmod +x {} \;
-      - find /opt/code/python-ismrmrd-server -name "*.sh" | xargs dos2unix
+      - find /opt/code/python-ismrmrd-server -name "*.sh" -exec chmod +x {} ';'
+      - find /opt/code/python-ismrmrd-server -name "*.sh" -print0 | xargs -0 dos2unix
     # replace 'invertcontrast' in main.py with 'default_replace_with_valid_name' to avoid running 
       - sed -i 's/invertcontrast/default_replace_with_valid_name/g' /opt/code/python-ismrmrd-server/main.py

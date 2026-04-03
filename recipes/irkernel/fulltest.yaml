@@ -1,0 +1,49 @@
+name: irkernel
+version: 4.4.3
+container: irkernel_4.4.3.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: R version
+    description: Verify the packaged R runtime reports the ARM64 platform
+    command: R --version
+    expected_output_contains:
+      - "R version 4.5.3"
+      - "Platform: aarch64-conda-linux-gnu"
+    expected_exit_code: 0
+
+  - name: IRkernel package
+    description: Verify the IRkernel R package loads and reports its version
+    command: R -q -e "library(IRkernel); cat(as.character(packageVersion('IRkernel')), '\n')"
+    expected_output_contains: "1.3.2"
+    expected_exit_code: 0
+
+  - name: Jupyter kernelspecs
+    description: Verify both IR and Python kernels are registered
+    command: jupyter kernelspec list --json
+    expected_output_contains:
+      - '"python3"'
+      - '"ir"'
+      - '"display_name": "R"'
+    expected_exit_code: 0
+
+  - name: R PNG output
+    description: Verify the runtime can render a simple PNG plot to the mounted workdir
+    command: >
+      R -q -e "png('${output_dir}/plot.png'); plot(1:5, 1:5, col='steelblue'); dev.off(); cat(file.exists('${output_dir}/plot.png'), '\n')" &&
+      test -f ${output_dir}/plot.png
+    expected_output_contains: "TRUE"
+    expected_exit_code: 0
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    echo "Test outputs preserved in test_output/"
