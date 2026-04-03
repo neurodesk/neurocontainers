@@ -238,7 +238,15 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           cd ./build/${APPLICATION}
-          docker build . --file ${DOCKERFILE} --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --cache-from ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+          CACHE_IMAGE=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest
+          CACHE_FROM_ARGS=""
+          if docker pull "${CACHE_IMAGE}"; then
+            echo "Using cache image ${CACHE_IMAGE}"
+            CACHE_FROM_ARGS="--cache-from ${CACHE_IMAGE}"
+          else
+            echo "Cache image ${CACHE_IMAGE} is unavailable; building without --cache-from"
+          fi
+          docker build . --file ${DOCKERFILE} --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ${CACHE_FROM_ARGS} --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
           
       - name: Debug storage
         run: |
