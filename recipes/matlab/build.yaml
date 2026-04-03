@@ -153,5 +153,14 @@ files:
       sharedSupportPackageRoot = '/opt/matlab/support-packages/R{{ context.version }}';
       if isfolder(sharedSupportPackageRoot)
           addpath(genpath(sharedSupportPackageRoot), '-begin');
+          resList = dir(fullfile(sharedSupportPackageRoot, '**', 'resources'));
+          for k = 1:numel(resList)
+              if resList(k).isdir
+                  try
+                      matlab.internal.msgcat.setAdditionalResourceLocation(resList(k).folder);
+                  catch
+                  end
+              end
+          end
       end
-      clear sharedSupportPackageRoot
+      clear sharedSupportPackageRoot resList k
