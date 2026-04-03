@@ -141,10 +141,6 @@ def process(connection, config, metadata):
                     imgGroup.append(item)
                 else:
                     tmpMeta["Keep_image_geometry"] = 1
-                    # Tag pass-through images with their contrast type so every
-                    # output series has a distinct name on the scanner.
-                    contrastLabel = imageTypeValue4 or imageTypeValue3 or "ORIGINAL"
-                    tmpMeta["SequenceDescriptionAdditional"] = contrastLabel
                     item.attribute_string = tmpMeta.serialize()
 
                     connection.send_image(item)
@@ -813,8 +809,8 @@ def process_image(imgGroup, connection, config, metadata):
         tmpMeta["WindowWidth"] = str((maxVal + 1))
         tmpMeta["ImageType"] = "NONE"
         tmpMeta["ImageTypeValue3"] = "M"
-        tmpMeta["ImageTypeValue4"] = "NONE"
-        tmpMeta["DicomImageType"] = "DERIVED\\PRIMARY\\M\\NONE"
+        tmpMeta["ImageTypeValue4"] = "SEGMENTATION"
+        tmpMeta["DicomImageType"] = "DERIVED\\PRIMARY\\M\\SEGMENTATION"
         tmpMeta["SequenceDescriptionAdditional"] = "Musclemap segmentation"
         tmpMeta["Keep_image_geometry"] = 1
 
