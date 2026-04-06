@@ -79,7 +79,16 @@ build:
         - sudo mkdir -p "{{ context.shared_support_package_root }}"
         - sudo cp -a "${SUPPORT_PACKAGE_ROOT}/." "{{ context.shared_support_package_root }}/"
         - sudo chmod -R a+rX /opt/matlab/support-packages
-        - sudo rm -rf /home/matlab/Documents/MATLAB/SupportPackages /tmp/mpm /tmp/mathworks_root.log
+        - MATLAB_SETTINGS_ROOT="$(mktemp -d)"
+        - >-
+          SETTINGS_INSTALLATIONDIR="${MATLAB_SETTINGS_ROOT}" sudo -E
+          "${EXISTING_MATLAB_LOCATION}/bin/glnxa64/sprootsettingwriter"
+          -matlabroot "${EXISTING_MATLAB_LOCATION}"
+          -sproot "{{ context.shared_support_package_root }}"
+        - test -f "${MATLAB_SETTINGS_ROOT}/matlab.mlsettings"
+        - sudo mkdir -p "{{ context.matlab_install_root }}/toolbox/local/settings"
+        - sudo install -m 0644 "${MATLAB_SETTINGS_ROOT}/matlab.mlsettings" "{{ context.matlab_install_root }}/toolbox/local/settings/matlab.mlsettings"
+        - sudo rm -rf /home/matlab/Documents/MATLAB/SupportPackages /tmp/mpm /tmp/mathworks_root.log "${MATLAB_SETTINGS_ROOT}"
 
     - user: root
 
@@ -103,6 +112,7 @@ build:
     - environment:
         BASH_ENV: /usr/share/module.sh
         PATH: $PATH:{{ context.matlab_install_root }}/bin
+        SUPPORTPACKAGEROOT_OVERRIDE: "{{ context.shared_support_package_root }}"
 
     - run:
         - chmod 0755 /usr/local/bin/matlab
@@ -134,6 +144,10 @@ readme: |-
   module avail
   ```
 
+  The ONNX support package is installed under `/opt/matlab/support-packages/R{{ context.version }}`.
+  This location is registered as the MATLAB support package root, so
+  `matlabshared.supportpkg.getSupportPackageRoot` resolves to the shared path.
+
   More documentation:
   - https://www.mathworks.com/help/deeplearning/ref/importonnxfunction.html
   - https://github.com/mathworks-ref-arch/matlab-dockerfile
@@ -151,16 +165,31 @@ files:
   - name: startup.m
     contents: |-
       sharedSupportPackageRoot = '/opt/matlab/support-packages/R{{ context.version }}';
+      registeredSupportPackageRoot = '';
       if isfolder(sharedSupportPackageRoot)
-          addpath(genpath(sharedSupportPackageRoot), '-begin');
-          resList = dir(fullfile(sharedSupportPackageRoot, '**', 'resources'));
-          for k = 1:numel(resList)
-              if resList(k).isdir
+          try
+              registeredSupportPackageRoot = matlabshared.supportpkg.getSupportPackageRoot;
+          catch
+          end
+          if isempty(registeredSupportPackageRoot)
+              ssiSearchFoldersFile = fullfile(sharedSupportPackageRoot, 'ssiSearchFolders');
+              if isfile(ssiSearchFoldersFile)
                   try
-                      matlab.internal.msgcat.setAdditionalResourceLocation(resList(k).folder);
+                      matlab.internal.addons.addFoldersToPathFrom(ssiSearchFoldersFile);
                   catch
+                  end
+              else
+                  addpath(genpath(sharedSupportPackageRoot), '-begin');
+              end
+              resList = dir(fullfile(sharedSupportPackageRoot, '**', 'resources'));
+              for k = 1:numel(resList)
+                  if resList(k).isdir
+                      try
+                          matlab.internal.msgcat.setAdditionalResourceLocation(resList(k).folder);
+                      catch
+                      end
                   end
               end
           end
       end
-      clear sharedSupportPackageRoot resList k
+      clear sharedSupportPackageRoot registeredSupportPackageRoot ssiSearchFoldersFile resList k

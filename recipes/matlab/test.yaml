@@ -16,4 +16,28 @@ tests:
     script: |
       support_root="/opt/matlab/support-packages/R2025b"
       test -d "${support_root}"
+      test -f "${support_root}/ssiSearchFolders"
       find "${support_root}" -type f \( -iname 'importONNXFunction.m' -o -iname 'importNetworkFromONNX.m' -o -iname '*onnx*' \) | head -n 20
+
+  - name: Test MATLAB support package root registration
+    script: |
+      settings_file="/opt/matlab/R2025b/toolbox/local/settings/matlab.mlsettings"
+      expected_root="/opt/matlab/support-packages/R2025b"
+      test -f "${settings_file}"
+      test "${SUPPORTPACKAGEROOT_OVERRIDE}" = "${expected_root}"
+      python3 - <<'PY'
+      import json
+      import zipfile
+
+      settings_file = "/opt/matlab/R2025b/toolbox/local/settings/matlab.mlsettings"
+      expected_root = "/opt/matlab/support-packages/R2025b"
+
+      with zipfile.ZipFile(settings_file) as archive:
+          payload = json.loads(
+              archive.read("fsroot/settingstree/matlab/supportpackageroot/settings.json")
+          )
+
+      value = json.loads(payload["settings"][0]["value"])
+      assert value == expected_root, (value, expected_root)
+      print(value)
+      PY
