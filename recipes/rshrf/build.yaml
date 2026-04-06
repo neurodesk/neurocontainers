@@ -1,0 +1,68 @@
+name: rshrf
+version: 1.5.8
+
+copyright:
+  - license: MIT
+    url: https://github.com/bids-apps/rsHRF/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+categories:
+  - functional imaging
+  - bids apps
+
+structured_readme:
+  description: |-
+    rsHRF is a toolbox for resting-state HRF estimation and deconvolution from BOLD-fMRI data. The Python package also supports BIDS-style inputs through its `--bids_dir` interface.
+  example: |-
+    rsHRF --ts input_file.txt --estimation hanning --output_dir results -TR 2.0
+  documentation: https://bids-apps.neuroimaging.io/rsHRF/
+  citation: 'Wu, G. R., Colenbier, N., Van Den Bossche, S., Clauw, K., Johri, A., Tandon, M., & Marinazzo, D. (2021). rsHRF: A toolbox for resting-state HRF estimation and deconvolution. NeuroImage, 244, 118591. doi:10.1016/j.neuroimage.2021.118591.'
+
+build:
+  kind: neurodocker
+  base-image: bids/rshrf:{{ context.version }}
+  pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
+  directives:
+    - run:
+        - apk add --no-cache bash
+        - mkdir -p /neurodocker
+        - echo '#!/usr/bin/env bash' > /neurodocker/startup.sh
+        - echo 'set -e' >> /neurodocker/startup.sh
+        - echo 'export USER="${USER:=`whoami`}"' >> /neurodocker/startup.sh
+        - echo 'if [ -n "$1" ]; then "$@"; else /usr/bin/env bash; fi' >> /neurodocker/startup.sh
+        - chmod +x /neurodocker/startup.sh
+    - entrypoint: /neurodocker/startup.sh
+    - test:
+        name: Show rsHRF help
+        script: |-
+          rsHRF --help
+
+deploy:
+  bins:
+    - rsHRF
+
+readme: |-
+  ----------------------------------
+  ## rshrf/{{ context.version }} ##
+
+  rsHRF is a toolbox for resting-state HRF estimation and deconvolution from BOLD-fMRI data. It can be used on standalone text or imaging inputs, and also supports BIDS-style inputs through its `--bids_dir` interface.
+
+  Example:
+  ```
+  rsHRF --ts input_file.txt --estimation hanning --output_dir results -TR 2.0
+  ```
+
+  More documentation can be found here: https://bids-apps.neuroimaging.io/rsHRF/
+
+  Citation:
+  ```
+  Wu, G. R., Colenbier, N., Van Den Bossche, S., Clauw, K., Johri, A., Tandon, M., & Marinazzo, D. (2021). rsHRF: A toolbox for resting-state HRF estimation and deconvolution. NeuroImage, 244, 118591. doi:10.1016/j.neuroimage.2021.118591.
+  ```
+
+  To run container outside of this environment: ml rshrf/{{ context.version }}
+
+  ----------------------------------

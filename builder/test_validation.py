@@ -242,6 +242,33 @@ def test_directive_validation():
     assert result.name == "directive-test"
 
 
+def test_structured_readme_allows_missing_optional_fields():
+    """Test structured_readme accepts omitted documentation and citation fields."""
+    recipe = {
+        "name": "structured-readme-test",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": ["other"],
+        "structured_readme": {
+            "description": "Example tool",
+            "example": "example-tool --help",
+        },
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": [{"install": ["curl"]}],
+        },
+    }
+
+    result = validate_recipe_dict(recipe)
+
+    assert isinstance(result, ContainerRecipe)
+    assert result.structured_readme is not None
+    assert result.structured_readme.documentation == ""
+    assert result.structured_readme.citation == ""
+
+
 def test_file_info_accepts_refresh_flag():
     """Test validation accepts URL-backed files that force refresh."""
     file_info = FileInfo(
@@ -362,6 +389,7 @@ if __name__ == "__main__":
     test_validate_recipe_file()
     test_validate_nonexistent_file()
     test_directive_validation()
+    test_structured_readme_allows_missing_optional_fields()
     test_file_info_accepts_refresh_flag()
     test_invalid_jinja_template_in_file_url()
     test_non_string_file_name_fails_validation()

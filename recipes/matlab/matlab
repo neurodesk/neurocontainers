@@ -1,4 +1,21 @@
 #!/bin/bash
-export MLM_LICENSE_FILE=${HOME}/Downloads
-echo 'MLM_LICENSE_FILE='${MLM_LICENSE_FILE}
-/opt/matlab/R2022b/bin/matlab "$@"
+set -e
+
+if [ -z "${MLM_LICENSE_FILE:-}" ] && [ -d "${HOME}/Downloads" ]; then
+    license_file="$(find "${HOME}/Downloads" -maxdepth 1 -type f -name '*.lic' | sort | head -n 1)"
+    if [ -n "${license_file}" ]; then
+        export MLM_LICENSE_FILE="${license_file}"
+    fi
+fi
+
+if [ -x /usr/local/bin/matlab.real ]; then
+    exec /usr/local/bin/matlab.real "$@"
+fi
+
+matlab_bin="$(find /opt/matlab -maxdepth 2 -path '*/bin/matlab' -type f | sort | tail -n 1)"
+if [ -z "${matlab_bin}" ]; then
+    echo "Unable to locate the MATLAB launcher under /opt/matlab." >&2
+    exit 1
+fi
+
+exec "${matlab_bin}" "$@"

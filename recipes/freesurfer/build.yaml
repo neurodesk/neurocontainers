@@ -1,5 +1,5 @@
 name: freesurfer
-version: 8.0.0
+version: 8.2.0
 # https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/
 
 
@@ -100,12 +100,14 @@ build:
         - unzip
         - libncurses5
         - libgomp1
-        - openjdk-8-jdk
+        - default-jdk
         - xvfb
         - xauth
 
     - run:
-        - dpkg -i {{ get_file("freesurfer_deb") }}
+        - apt-get update -qq
+        - apt-get install -y -q --no-install-recommends {{ get_file("freesurfer_deb") }}
+        - rm -rf /var/lib/apt/lists/*
 
     - workdir: /opt/freesurfer-{{ context.version }}
 
@@ -238,11 +240,12 @@ readme: |-
   Example:
   ```
   # start freesurfer from application menu or load freesurfer via module load command
-  mkdir /neurodesktop-storage/freesurfer_output
-  export SUBJECTS_DIR=/neurodesktop-storage/freesurfer_output
+  mkdir ~/freesurfer_output
+  export SUBJECTS_DIR=~/freesurfer_output
   export SINGULARITYENV_SUBJECTS_DIR=$SUBJECTS_DIR
   recon-all -subject subjectname -i invol1.nii.gz -all
   ```
+
 
   More documentation can be found here: https://surfer.nmr.mgh.harvard.edu/fswiki/recon-all
 

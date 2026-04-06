@@ -270,6 +270,12 @@ def _extract_dicom_image_type_values(meta_obj):
     if not image_type_values:
         return []
 
+    # If ImageType already contains 3+ backslash-separated components
+    # (e.g. "DERIVED\PRIMARY\DIXON\OPP_PHASE"), it is a complete DICOM
+    # image type string and should be used directly without padding.
+    if len(image_type_values) >= 3:
+        return image_type_values
+
     value3 = _meta_text_values(meta_obj.get("ImageTypeValue3"))
     prefix = ["", "", value3[0] if value3 else ""]
     return prefix + image_type_values
@@ -803,8 +809,8 @@ def process_image(imgGroup, connection, config, metadata):
         tmpMeta["WindowWidth"] = str((maxVal + 1))
         tmpMeta["ImageType"] = "NONE"
         tmpMeta["ImageTypeValue3"] = "M"
-        tmpMeta["ImageTypeValue4"] = "NONE"
-        tmpMeta["DicomImageType"] = "DERIVED\\PRIMARY\\M\\NONE"
+        tmpMeta["ImageTypeValue4"] = "SEGMENTATION"
+        tmpMeta["DicomImageType"] = "DERIVED\\PRIMARY\\M\\SEGMENTATION"
         tmpMeta["SequenceDescriptionAdditional"] = "Musclemap segmentation"
         tmpMeta["Keep_image_geometry"] = 1
 

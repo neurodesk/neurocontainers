@@ -81,9 +81,20 @@ build:
     - install:
         - r-base
         - r-base-dev
+        - libnlopt-dev
+        - cmake
+        - libcurl4-openssl-dev
+        - libssl-dev
+        - libxml2-dev
+        - libfontconfig1-dev
+        - libharfbuzz-dev
+        - libfribidi-dev
+        - libfreetype6-dev
+        - libpng-dev
+        - libtiff5-dev
+        - libjpeg-dev
     - run:
-        - R --slave -e " options(repos = c(CRAN = 'https://cloud.r-project.org')); pkgs <- c('spant'); mis <- setdiff(pkgs, rownames(installed.packages())); if (length(mis)) install.packages(mis, dependencies = TRUE); cat('Installed CRAN packages:\n'); if (length(pkgs)) cat(paste(pkgs, collapse = ', '), '\n') "
-        - R --slave -e " options(repos = c(CRAN = 'https://cloud.r-project.org')); if (!requireNamespace('remotes', quietly = TRUE))    install.packages('remotes'); remotes::install_github('martin3141/spant',    dependencies = NA, upgrade = 'never', build_vignettes = FALSE ); cat('Installed spant from GitHub (', 'martin3141/spant',  )\n') "
+        - R --slave -e " options(repos = c(CRAN = 'https://cloud.r-project.org')); if (!requireNamespace('remotes', quietly = TRUE)) install.packages('remotes'); remotes::install_github('martin3141/spant@v3.7.0', dependencies = TRUE, upgrade = 'never', build_vignettes = FALSE); cat('Installed spant from GitHub\n') "
     - test:
         name: verify_r_installation
         script: |-

@@ -1,5 +1,5 @@
 name: musclemap
-version: 1.2.5
+version: 1.2.9
 architectures:
     - x86_64
 
@@ -66,9 +66,6 @@ readme: |-
   #mm_segment -i str(input_image) -r str(bodyregion) -c int(chunksize) -s int(spatialoverlap) -g Y
   mm_segment -i /opt/input.nii.gz -r wholebody -c 50 -s 50 -g Y
   ```
-
-
-  We are currently developing the standardized acquisition protocol for whole-body quantitative MRI of muscle. You can access the Google doc here: https://docs.google.com/document/d/1q7AAnPEr7Rj5gb9d_mLrRnAiav1f32J-RPswvOPk5xE/edit?usp=sharing. To collaborate on the standardized acquisition protocol, please contact us: neuromuscularinsightlab@stanford.edu.
 
   When citing MuscleMap, please cite the following publication:
 

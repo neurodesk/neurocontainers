@@ -56,6 +56,7 @@ jobs:
       BUILDDATE: ${{ steps.envars.outputs.BUILDDATE }}
       IMAGETAG: ${{ steps.envars.outputs.IMAGETAG }}
       IMAGENAME: ${{ steps.imgvars.outputs.IMAGENAME }}
+      DOCKERFILE: ${{ steps.imgvars.outputs.DOCKERFILE }}
       ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
     steps:
       - name: Configure runner
@@ -114,14 +115,18 @@ jobs:
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          DOCKERFILE=`basename $(find ./build/$APPLICATION/ -type f -iname "*.Dockerfile" | head -1)`
+          DOCKERFILE_PATH=$(find "./build/$APPLICATION/" -type f -iname "*.dockerfile" | head -1)
           # if the dockerfile is not found, exit with error
-          if [ -z "$DOCKERFILE" ]; then
+          if [ -z "$DOCKERFILE_PATH" ]; then
             echo "Dockerfile not found for $APPLICATION"
             exit 1
           fi
-          IMAGENAME=$(echo $(basename $DOCKERFILE .Dockerfile) | tr '[A-Z]' '[a-z]')
+          DOCKERFILE=$(basename "$DOCKERFILE_PATH")
+          IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
+          echo "DOCKERFILE: $DOCKERFILE"
           echo "IMAGENAME: $IMAGENAME"
+          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_OUTPUT
+          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_ENV
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
 
@@ -154,6 +159,7 @@ jobs:
     env:
       APPLICATION: ${{ needs.config.outputs.APPLICATION }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      DOCKERFILE: ${{ needs.config.outputs.DOCKERFILE }}
       IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
       ROOTFS_CACHE: ${{ needs.config.outputs.ROOTFS_CACHE }}
@@ -193,13 +199,18 @@ jobs:
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          DOCKERFILE=`basename $(find ./build/$APPLICATION/ -type f -iname "*.Dockerfile" | head -1)`
+          DOCKERFILE_PATH=$(find "./build/$APPLICATION/" -type f -iname "*.dockerfile" | head -1)
           # if the dockerfile is not found, exit with error
-          if [ -z "$DOCKERFILE" ]; then
+          if [ -z "$DOCKERFILE_PATH" ]; then
             echo "Dockerfile not found for $APPLICATION"
             exit 1
           fi
+          DOCKERFILE=$(basename "$DOCKERFILE_PATH")
+          IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
+          echo "DOCKERFILE: $DOCKERFILE"
           echo "IMAGENAME: $IMAGENAME"
+          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_ENV
+          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
           echo "IMAGENAME_TEST=${IMAGENAME//_/ }" >> $GITHUB_ENV
           echo "test command: bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE"
 
@@ -214,7 +225,7 @@ jobs:
       #   uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
 
       - name: Debug Dockerfile
-        run: cat ./build/${APPLICATION}/${IMAGENAME}.Dockerfile
+        run: cat ./build/${APPLICATION}/${DOCKERFILE}
 
       - name: Debug storage
         run: |
@@ -227,7 +238,15 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           cd ./build/${APPLICATION}
-          docker build . --file ${IMAGENAME}.Dockerfile --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --cache-from ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+          CACHE_IMAGE=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest
+          CACHE_FROM_ARGS=""
+          if docker pull "${CACHE_IMAGE}"; then
+            echo "Using cache image ${CACHE_IMAGE}"
+            CACHE_FROM_ARGS="--cache-from ${CACHE_IMAGE}"
+          else
+            echo "Cache image ${CACHE_IMAGE} is unavailable; building without --cache-from"
+          fi
+          docker build . --file ${DOCKERFILE} --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ${CACHE_FROM_ARGS} --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
           
       - name: Debug storage
         run: |
@@ -484,10 +503,11 @@ jobs:
   
       - name: Upload simg artifact
         if: inputs.skip_simg_build != 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
           path: /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          # Upload the single SIF/Singularity image as a raw file to avoid zip/unzip overhead.
+          archive: false
           retention-days: 7
 
   upload-nectar:
@@ -510,7 +530,7 @@ jobs:
           
       - name: Download simg artifact
         if: inputs.skip_simg_build != 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
           path: /mnt/tmp/
@@ -552,7 +572,7 @@ jobs:
           aws-region: us-east-2
       - name: Download simg artifact
         if: inputs.skip_simg_build != 'true'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
           path: /mnt/tmp/

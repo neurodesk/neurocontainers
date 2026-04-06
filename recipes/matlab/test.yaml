@@ -1,0 +1,19 @@
+tests:
+  - name: Test matlab help
+    script: |
+      matlab -help | head -20
+
+  - name: Test mex help
+    script: |
+      mex -help | head -20
+
+  - name: Test lmod module command
+    script: |
+      type module
+      module --version | head -20
+
+  - name: Test ONNX converter support package files
+    script: |
+      support_root="/opt/matlab/support-packages/R2025b"
+      test -d "${support_root}"
+      find "${support_root}" -type f \( -iname 'importONNXFunction.m' -o -iname 'importNetworkFromONNX.m' -o -iname '*onnx*' \) | head -n 20
