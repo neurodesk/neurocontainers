@@ -58,8 +58,11 @@ build:
     - bash setup.sh
   - environment:
       QT_QPA_PLATFORM: xcb
-      PATH: $PATH:/opt/MipView/.venv/bin
       MIPVIEW_HOME: /opt/MipView
+      PATH: $PATH:/opt/MipView/.venv/bin:/opt/MipView/
+  - deploy:
+      bins: 
+        - run.sh
 readme: |2-
     ----------------------------------
     ## MipView/{{ context.version }} ##
