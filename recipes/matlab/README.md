@@ -22,10 +22,6 @@ Run a batch command:
 
   matlab -batch "ver"
 
-Show the MEX tool help:
-
-  mex -help
-
 Check the module system:
 
   module avail
