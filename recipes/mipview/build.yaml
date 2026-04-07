@@ -1,12 +1,12 @@
 name: mipview
-version: 0.1.2
+version: 0.1.4
 architectures:
 - x86_64
 copyright:
 - license: MIT
   url: https://github.com/KMarshallX/MipView/blob/master/License.md
 variables:
-  mipview_version: 0.1.2
+  mipview_version: 0.1.4
   mipview_archive_url: "https://github.com/KMarshallX/MipView/archive/refs/tags/v{{ context.mipview_version }}.tar.gz"
 files:
 - name: MipView_tar
@@ -55,14 +55,16 @@ build:
     - chmod a+x setup.sh run.sh
   - workdir: /opt/MipView
   - run:
-    - bash setup.sh
+    - python -m pip install --prefer-binary --no-cache-dir .
   - environment:
       QT_QPA_PLATFORM: xcb
       MIPVIEW_HOME: /opt/MipView
-      PATH: $PATH:/opt/MipView/.venv/bin:/opt/MipView/
   - deploy:
       bins: 
-        - run.sh
+        - mipview
+gui_apps:
+  - name: "MipViewGUI"
+    exec: "mipview"
 readme: |2-
     ----------------------------------
     ## MipView/{{ context.version }} ##
