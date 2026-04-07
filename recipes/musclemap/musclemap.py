@@ -288,6 +288,185 @@ def _get_dicom_image_type_value(meta_obj, index):
     return ""
 
 
+def _first_non_empty_text(*values):
+    for value in values:
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                text = _first_non_empty_text(item)
+                if text:
+                    return text
+            continue
+
+        if value is None:
+            continue
+
+        text = str(value).strip()
+        if text and text.upper() != "N/A":
+            return text
+
+    return ""
+
+
+def _get_meta_text(meta_obj, key):
+    try:
+        return _first_non_empty_text(meta_obj.get(key))
+    except Exception:
+        return ""
+
+
+def _decode_ice_minihead(meta_obj):
+    try:
+        encoded = meta_obj.get("IceMiniHead")
+        if encoded is None:
+            return ""
+        if isinstance(encoded, (list, tuple)):
+            encoded = encoded[0] if encoded else None
+        if not encoded:
+            return ""
+        return base64.b64decode(encoded).decode("utf-8")
+    except Exception:
+        return ""
+
+
+def _encode_ice_minihead(minihead_text):
+    return base64.b64encode(minihead_text.encode("utf-8")).decode("ascii")
+
+
+def _extract_minihead_string_value(minihead_text, name):
+    if not minihead_text:
+        return ""
+
+    try:
+        return _first_non_empty_text(mrdhelper.extract_minihead_string_param(minihead_text, name))
+    except Exception:
+        pass
+
+    match = re.search(
+        rf'<ParamString\."{re.escape(name)}">\s*\{{\s*"([^"]*)"\s*\}}',
+        minihead_text,
+    )
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def _extract_minihead_array_tokens(minihead_text, name):
+    if not minihead_text:
+        return []
+
+    block_match = re.search(
+        rf'<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}',
+        minihead_text,
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    if not block_match:
+        return []
+
+    return [token.strip() for token in re.findall(r'\{\s*"([^"]+)"\s*\}', block_match.group(0))]
+
+
+def _replace_minihead_string_param(minihead_text, name, value):
+    if not minihead_text or not value:
+        return minihead_text, False
+
+    pattern = re.compile(
+        rf'(<ParamString\."{re.escape(name)}">\s*\{{\s*")([^"]*)("\s*\}})'
+    )
+    match = pattern.search(minihead_text)
+    if not match:
+        return minihead_text, False
+
+    replacement = f"{match.group(1)}{value}{match.group(3)}"
+    return minihead_text[:match.start()] + replacement + minihead_text[match.end():], True
+
+
+def _replace_minihead_array_token(minihead_text, name, source_token, target_token):
+    if not minihead_text or not target_token:
+        return minihead_text, False
+
+    block_pattern = re.compile(
+        rf'<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    block_match = block_pattern.search(minihead_text)
+    if not block_match:
+        return minihead_text, False
+
+    block_text = block_match.group(0)
+    tokens = [token.strip() for token in re.findall(r'\{\s*"([^"]+)"\s*\}', block_text)]
+    if not tokens:
+        return minihead_text, False
+
+    if any(token.upper() == target_token.upper() for token in tokens):
+        return minihead_text, False
+
+    replacement_source = ""
+    source_token = (source_token or "").strip().upper()
+    for token in tokens:
+        if token.upper() == source_token:
+            replacement_source = token
+            break
+
+    if not replacement_source:
+        reserved_tokens = {"NORM", "DIS2D", "DIS3D"}
+        for token in tokens:
+            if token.upper() not in reserved_tokens:
+                replacement_source = token
+                break
+
+    if not replacement_source:
+        return minihead_text, False
+
+    token_pattern = re.compile(rf'(\{{\s*"){re.escape(replacement_source)}("\s*\}})')
+    token_match = token_pattern.search(block_text)
+    if not token_match:
+        return minihead_text, False
+
+    replaced_block = (
+        block_text[:token_match.start()]
+        + f'{token_match.group(1)}{target_token}{token_match.group(2)}'
+        + block_text[token_match.end():]
+    )
+    return (
+        minihead_text[:block_match.start()] + replaced_block + minihead_text[block_match.end():],
+        True,
+    )
+
+
+def _patch_ice_minihead(
+    minihead_text,
+    parent_sequence,
+    parent_grouping,
+    source_type_token,
+    target_type_token,
+):
+    if not minihead_text:
+        return minihead_text, False
+
+    changed = False
+    current_text = minihead_text
+
+    for param_name, param_value in (
+        ("SequenceDescription", parent_sequence),
+        ("SeriesNumberRangeNameUID", parent_grouping),
+        ("ImageType", f"DERIVED\\PRIMARY\\M\\{target_type_token}"),
+        ("ImageTypeValue3", "M"),
+        ("ComplexImageComponent", "MAGNITUDE"),
+    ):
+        current_text, did_change = _replace_minihead_string_param(current_text, param_name, param_value)
+        changed = changed or did_change
+
+    current_text, did_change = _replace_minihead_array_token(
+        current_text,
+        "ImageTypeValue4",
+        source_type_token,
+        target_type_token,
+    )
+    changed = changed or did_change
+
+    return current_text, changed
+
+
 def _build_image_volume_key(image):
     return (
         int(getattr(image, "image_series_index", 0)),
@@ -524,7 +703,26 @@ def process_image(imgGroup, connection, config, metadata):
         source_image_label = _source_type_value.lower() + "_segmentation"
     else:
         source_image_label = "segmentation"
+    source_image_type_value4 = source_image_label.upper()
+    source_volume_key = _build_image_volume_key(imgGroup[0])
+    source_series_description = _get_meta_text(_first_meta, "SeriesDescription")
+    source_minihead = _decode_ice_minihead(_first_meta)
+    source_parent_sequence = _first_non_empty_text(
+        _get_meta_text(_first_meta, "SequenceDescription"),
+        _extract_minihead_string_value(source_minihead, "SequenceDescription"),
+    )
+    source_parent_grouping = _first_non_empty_text(
+        _extract_minihead_string_value(source_minihead, "SeriesNumberRangeNameUID"),
+        source_parent_sequence,
+    )
     logging.info("Source image type for segmentation naming: %s -> %s", _source_type_value, source_image_label)
+    logging.info(
+        "Source segmentation parent identity: volume_key=%s series_description=%s sequence=%s grouping=%s",
+        source_volume_key,
+        source_series_description or "N/A",
+        source_parent_sequence or "N/A",
+        source_parent_grouping or "N/A",
+    )
 
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
@@ -813,17 +1011,43 @@ def process_image(imgGroup, connection, config, metadata):
 
         # Create a copy of the original ISMRMRD Meta attributes and update
         tmpMeta = meta[iImg]
+
         tmpMeta["DataRole"] = "Image"
         tmpMeta["ImageProcessingHistory"] = ["OPENRECON", "MUSCLEMAP"]
         tmpMeta["WindowCenter"] = str((maxVal + 1) / 2)
         tmpMeta["WindowWidth"] = str((maxVal + 1))
-        tmpMeta["ImageType"] = "NONE"
+        tmpMeta["ImageType"] = source_image_type_value4
         tmpMeta["ImageTypeValue3"] = "M"
-        tmpMeta["ImageTypeValue4"] = "SEGMENTATION"
-        tmpMeta["DicomImageType"] = "DERIVED\\PRIMARY\\M\\SEGMENTATION"
-        tmpMeta["SequenceDescriptionAdditional"] = source_image_label
-        tmpMeta["SeriesDescription"] = source_image_label
-        tmpMeta["SequenceDescription"] = source_image_label
+        tmpMeta["ImageTypeValue4"] = source_image_type_value4
+        tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{source_image_type_value4}"
+        tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
+        tmpMeta["ImageComments"] = source_image_label
+        if source_series_description:
+            tmpMeta["SeriesDescription"] = source_series_description
+        if source_parent_sequence:
+            tmpMeta["SequenceDescription"] = source_parent_sequence
+        if "SequenceDescriptionAdditional" in tmpMeta:
+            try:
+                del tmpMeta["SequenceDescriptionAdditional"]
+            except Exception:
+                tmpMeta["SequenceDescriptionAdditional"] = ""
+
+        minihead_text = _decode_ice_minihead(tmpMeta)
+        if minihead_text:
+            patched_minihead_text, minihead_changed = _patch_ice_minihead(
+                minihead_text,
+                source_parent_sequence,
+                source_parent_grouping,
+                _source_type_value,
+                source_image_type_value4,
+            )
+            if minihead_changed:
+                tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
+            else:
+                logging.warning(
+                    "IceMiniHead was present but not updated for segmentation output slice %d",
+                    iImg,
+                )
         tmpMeta["Keep_image_geometry"] = 1
 
         # Add image orientation directions to MetaAttributes if not already present
@@ -846,6 +1070,45 @@ def process_image(imgGroup, connection, config, metadata):
         # logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
 
         imagesOut[iImg].attribute_string = metaXml
+
+        if iImg == 0:
+            final_meta = ismrmrd.Meta.deserialize(metaXml)
+            final_header = imagesOut[iImg].getHead()
+            final_minihead = _decode_ice_minihead(final_meta)
+            logging.info(
+                "Final segmentation identity: measurement_uid=%s source_volume_key=%s header=%s meta=%s minihead=%s",
+                getattr(final_header, "measurement_uid", None),
+                source_volume_key,
+                {
+                    "image_series_index": getattr(final_header, "image_series_index", None),
+                    "contrast": getattr(final_header, "contrast", None),
+                    "image_type": getattr(final_header, "image_type", None),
+                },
+                {
+                    "SeriesDescription": final_meta.get("SeriesDescription", "N/A"),
+                    "SequenceDescription": final_meta.get("SequenceDescription", "N/A"),
+                    "SequenceDescriptionAdditional": final_meta.get("SequenceDescriptionAdditional", "N/A"),
+                    "ImageType": final_meta.get("ImageType", "N/A"),
+                    "ImageTypeValue3": final_meta.get("ImageTypeValue3", "N/A"),
+                    "ImageTypeValue4": final_meta.get("ImageTypeValue4", "N/A"),
+                    "DicomImageType": final_meta.get("DicomImageType", "N/A"),
+                    "ComplexImageComponent": final_meta.get("ComplexImageComponent", "N/A"),
+                    "ImageComments": final_meta.get("ImageComments", "N/A"),
+                    "IceMiniHeadPresent": "IceMiniHead" in final_meta,
+                },
+                {
+                    "SequenceDescription": _extract_minihead_string_value(final_minihead, "SequenceDescription") or "N/A",
+                    "SeriesNumberRangeNameUID": _extract_minihead_string_value(final_minihead, "SeriesNumberRangeNameUID") or "N/A",
+                    "ImageType": _extract_minihead_string_value(final_minihead, "ImageType") or "N/A",
+                    "ImageTypeValue3": _extract_minihead_string_value(final_minihead, "ImageTypeValue3") or "N/A",
+                    "ComplexImageComponent": _extract_minihead_string_value(final_minihead, "ComplexImageComponent") or "N/A",
+                    "ImageTypeValue4Tokens": _extract_minihead_array_tokens(final_minihead, "ImageTypeValue4"),
+                },
+            )
+            logging.info("=== Final metadata dump for first segmentation output image ===")
+            for key in final_meta.keys():
+                logging.info("  META [%s] = %s", key, final_meta[key])
+            logging.info("=== End final metadata dump ===")
 
 
      # Send a copy of original (unmodified) images back too if selected
