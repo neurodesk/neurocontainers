@@ -1,5 +1,5 @@
 name: musclemap
-version: 1.2.9
+version: 0.2.3
 architectures:
     - x86_64
 
@@ -29,7 +29,7 @@ build:
         - file:
             name: musclemap.zip
             url: "{{ context.musclemap_archive_url }}"
-            refresh: true
+            refresh: false
 
         - copy: musclemap.zip /opt/musclemap.zip
 

@@ -516,6 +516,16 @@ def process_image(imgGroup, connection, config, metadata):
             imagesOut.append(tmpImg)
         return imagesOut
 
+    # Determine the source image type (e.g. "Water", "Fat", "In_Phase", …)
+    # from the first image's metadata so the segmentation output is named accordingly.
+    _first_meta = ismrmrd.Meta.deserialize(imgGroup[0].attribute_string)
+    _source_type_value = _get_dicom_image_type_value(_first_meta, 3)  # value4
+    if _source_type_value:
+        source_image_label = _source_type_value.lower() + "_segmentation"
+    else:
+        source_image_label = "segmentation"
+    logging.info("Source image type for segmentation naming: %s -> %s", _source_type_value, source_image_label)
+
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
         os.makedirs(debugFolder)
@@ -811,7 +821,9 @@ def process_image(imgGroup, connection, config, metadata):
         tmpMeta["ImageTypeValue3"] = "M"
         tmpMeta["ImageTypeValue4"] = "SEGMENTATION"
         tmpMeta["DicomImageType"] = "DERIVED\\PRIMARY\\M\\SEGMENTATION"
-        tmpMeta["SequenceDescriptionAdditional"] = "Musclemap segmentation"
+        tmpMeta["SequenceDescriptionAdditional"] = source_image_label
+        tmpMeta["SeriesDescription"] = source_image_label
+        tmpMeta["SequenceDescription"] = source_image_label
         tmpMeta["Keep_image_geometry"] = 1
 
         # Add image orientation directions to MetaAttributes if not already present
