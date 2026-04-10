@@ -35,4 +35,4 @@ tests:
       # Check output h5 data in "H5Web" VS code plugin viewer
 
       # check for wasted space in the image:
-      docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock wagoodman/dive:latest musclemap:0.3.0
+      docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock wagoodman/dive:latest musclemap:1.3.0

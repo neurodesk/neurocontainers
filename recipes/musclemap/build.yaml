@@ -1,11 +1,13 @@
 name: musclemap
-version: 0.2.6
+version: 1.3.0
 architectures:
     - x86_64
 
 variables:
-    musclemap_branch: chunksize-auto
-    musclemap_archive_url: "https://github.com/stebo85/MuscleMap/archive/refs/heads/{{ context.musclemap_branch }}.zip"
+    # Upstream publishes the official release as tag "1.3", while the
+    # NeuroContainers recipe version is kept as 1.3.x.
+    musclemap_source_tag: "{{ context.version | replace('.0', '') }}"
+    musclemap_archive_url: "https://github.com/MuscleMap/MuscleMap/archive/refs/tags/{{ context.musclemap_source_tag }}.zip"
 
 files:
     - name: musclemap.py
@@ -13,10 +15,9 @@ files:
 
 build:
     kind: neurodocker
-    base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime
-    # This needs to be same version as what MuscleMap requires later for pytorch 
-    # - otherwise Muscle map installs a new version of pytorch with CUDA 12.1 which breaks on the scanner!!!!!
-    # - that why we need to remove the torch version requirement in the musclemap requirements.txt file before installing musclemap later in this recipe
+    base-image: pytorch/pytorch:2.4.0-cuda11.8-cudnn9-runtime
+    # Match the official MuscleMap 1.3 torch pin while keeping a CUDA 11.8 build
+    # preinstalled in the base image for scanner compatibility.
     pkg-manager: apt
 
     directives:
@@ -37,10 +38,9 @@ build:
         - run: 
             - unzip /opt/musclemap.zip
             - rm /opt/musclemap.zip
-            - mv MuscleMap-* MuscleMap
+            - mv MuscleMap-{{ context.musclemap_source_tag }} MuscleMap
             - cd MuscleMap
-            - sed -i '/^torch[[:space:]]*==/d' requirements.txt
-            - pip install .
+            - pip install -e .
         
         - environment:
               MKL_THREADING_LAYER: GNU
@@ -72,12 +72,12 @@ readme: |-
   McKay MJ, Weber KA 2nd, Wesselink EO, Smith ZA, Abbott R, Anderson DB, Ashton-James CE, Atyeo J, Beach AJ, Burns J, Clarke S, Collins NJ, Coppieters MW, Cornwall J, Crawford RJ, De Martino E, Dunn AG, Eyles JP, Feng HJ, Fortin M, Franettovich Smith MM, Galloway G, Gandomkar Z, Glastras S, Henderson LA, Hides JA, Hiller CE, Hilmer SN, Hoggarth MA, Kim B, Lal N, LaPorta L, Magnussen JS, Maloney S, March L, Nackley AG, O'Leary SP, Peolsson A, Perraton Z, Pool-Goudzwaard AL, Schnitzler M, Seitz AL, Semciw AI, Sheard PW, Smith AC, Snodgrass SJ, Sullivan J, Tran V, Valentin S, Walton DM, Wishart LR, Elliott JM. MuscleMap: An Open-Source, Community-Supported Consortium for Whole-Body Quantitative MRI of Muscle. J Imaging. 2024;10(11):262. https://doi.org/10.3390/jimaging10110262
   
   label values can be found here:
-  wholebody: https://github.com/MuscleMap/MuscleMap/blob/main/scripts/models/wholebody/contrast_agnostic_wholebody_model.json
-  abdomen: https://github.com/MuscleMap/MuscleMap/blob/main/scripts/models/abdomen/contrast_agnostic_abdomen_model.json
-  forearm: https://github.com/MuscleMap/MuscleMap/blob/main/scripts/models/forearm/contrast_agnostic_forearm_model.json
-  leg: https://github.com/MuscleMap/MuscleMap/blob/main/scripts/models/leg/contrast_agnostic_leg_model.json
-  pelvis: https://github.com/MuscleMap/MuscleMap/blob/main/scripts/models/pelvis/contrast_agnostic_pelvis_model.json
-  thigh: https://github.com/MuscleMap/MuscleMap/blob/main/scripts/models/thigh/contrast_agnostic_thigh_model.json
+  wholebody: https://github.com/MuscleMap/MuscleMap/blob/{{ context.musclemap_source_tag }}/scripts/models/wholebody/contrast_agnostic_wholebody_model.json
+  abdomen: https://github.com/MuscleMap/MuscleMap/blob/{{ context.musclemap_source_tag }}/scripts/models/abdomen/contrast_agnostic_abdomen_model.json
+  forearm: https://github.com/MuscleMap/MuscleMap/blob/{{ context.musclemap_source_tag }}/scripts/models/forearm/contrast_agnostic_forearm_model.json
+  leg: https://github.com/MuscleMap/MuscleMap/blob/{{ context.musclemap_source_tag }}/scripts/models/leg/contrast_agnostic_leg_model.json
+  pelvis: https://github.com/MuscleMap/MuscleMap/blob/{{ context.musclemap_source_tag }}/scripts/models/pelvis/contrast_agnostic_pelvis_model.json
+  thigh: https://github.com/MuscleMap/MuscleMap/blob/{{ context.musclemap_source_tag }}/scripts/models/thigh/contrast_agnostic_thigh_model.json
   
 
   ----------------------------------

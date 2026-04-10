@@ -314,6 +314,46 @@ def _get_meta_text(meta_obj, key):
         return ""
 
 
+def _strip_dixon_series_suffix(series_name):
+    series_name = _first_non_empty_text(series_name)
+    if not series_name:
+        return ""
+
+    # Siemens DIXON child reconstructions can carry suffixes like _W_1 or
+    # _F_1. Keep derived images in the parent DIXON series by removing only
+    # that final image-type token before the trailing series number.
+    return re.sub(
+        r"_(?:W|WATER|F|FAT|IN|IN_PHASE|OPP|OPP_PHASE|OUT|OUT_PHASE)(_\d+)$",
+        r"\1",
+        series_name,
+        flags=re.IGNORECASE,
+    )
+
+
+def _format_dixon_image_label(image_type_value):
+    label_map = {
+        "WATER": "Water",
+        "FAT": "Fat",
+        "IN_PHASE": "In_Phase",
+        "OUT_PHASE": "Opposed_Phase",
+        "OPP_PHASE": "Opposed_Phase",
+        "OPPOSED_PHASE": "Opposed_Phase",
+    }
+    image_type_value = _first_non_empty_text(image_type_value).upper()
+    if image_type_value in label_map:
+        return label_map[image_type_value]
+    if image_type_value:
+        return image_type_value.title().replace(" ", "_")
+    return ""
+
+
+def _build_segmentation_image_label(source_image_type_value):
+    source_label = _format_dixon_image_label(source_image_type_value)
+    if source_label:
+        return f"Musclemap_Segmentation_{source_label}"
+    return "Musclemap_Segmentation"
+
+
 def _decode_ice_minihead(meta_obj):
     try:
         encoded = meta_obj.get("IceMiniHead")
@@ -699,28 +739,36 @@ def process_image(imgGroup, connection, config, metadata):
     # from the first image's metadata so the segmentation output is named accordingly.
     _first_meta = ismrmrd.Meta.deserialize(imgGroup[0].attribute_string)
     _source_type_value = _get_dicom_image_type_value(_first_meta, 3)  # value4
-    if _source_type_value:
-        source_image_label = _source_type_value.lower() + "_segmentation"
-    else:
-        source_image_label = "segmentation"
-    source_image_type_value4 = source_image_label.upper()
+    source_image_label = _build_segmentation_image_label(_source_type_value)
+    source_image_type_value4 = source_image_label
+    source_dicom_image_type_value4 = source_image_label.upper()
     source_volume_key = _build_image_volume_key(imgGroup[0])
-    source_series_description = _get_meta_text(_first_meta, "SeriesDescription")
+    raw_source_series_description = _get_meta_text(_first_meta, "SeriesDescription")
+    source_series_description = _strip_dixon_series_suffix(raw_source_series_description)
     source_minihead = _decode_ice_minihead(_first_meta)
-    source_parent_sequence = _first_non_empty_text(
+    raw_source_parent_sequence = _first_non_empty_text(
         _get_meta_text(_first_meta, "SequenceDescription"),
         _extract_minihead_string_value(source_minihead, "SequenceDescription"),
     )
-    source_parent_grouping = _first_non_empty_text(
+    source_parent_sequence = _strip_dixon_series_suffix(raw_source_parent_sequence)
+    raw_source_parent_grouping = _first_non_empty_text(
         _extract_minihead_string_value(source_minihead, "SeriesNumberRangeNameUID"),
         source_parent_sequence,
     )
+    source_parent_grouping = _strip_dixon_series_suffix(raw_source_parent_grouping)
+    if not source_parent_sequence:
+        source_parent_sequence = source_series_description
+    if not source_parent_grouping:
+        source_parent_grouping = source_parent_sequence
     logging.info("Source image type for segmentation naming: %s -> %s", _source_type_value, source_image_label)
     logging.info(
-        "Source segmentation parent identity: volume_key=%s series_description=%s sequence=%s grouping=%s",
+        "Source segmentation parent identity: volume_key=%s series_description=%s -> %s sequence=%s -> %s grouping=%s -> %s",
         source_volume_key,
+        raw_source_series_description or "N/A",
         source_series_description or "N/A",
+        raw_source_parent_sequence or "N/A",
         source_parent_sequence or "N/A",
+        raw_source_parent_grouping or "N/A",
         source_parent_grouping or "N/A",
     )
 
@@ -1019,7 +1067,7 @@ def process_image(imgGroup, connection, config, metadata):
         tmpMeta["ImageType"] = source_image_type_value4
         tmpMeta["ImageTypeValue3"] = "M"
         tmpMeta["ImageTypeValue4"] = source_image_type_value4
-        tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{source_image_type_value4}"
+        tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{source_dicom_image_type_value4}"
         tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
         tmpMeta["ImageComments"] = source_image_label
         if source_series_description:
