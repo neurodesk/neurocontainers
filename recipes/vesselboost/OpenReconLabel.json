@@ -101,19 +101,24 @@
       "information": { "en": "Overlap percentage used only when Gaussian blending is enabled." }
     },
     {
-      "id": "vbprepmode",
-      "label": { "en": "Preprocessing mode" },
-      "type": "int",
-      "minimum": 1,
-      "maximum": 4,
-      "default": 1,
-      "information": { "en": "Preprocessing mode options. prep_mode=1 : bias field correction only | prep_mode=2 : denoising only | prep_mode=3 : bfc + denoising | prep_mode=4 : no preprocessing applied" }
+      "id": "vbbiasfieldcorrection",
+      "label": { "en": "N4 bias field correction" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Enable N4 bias field correction preprocessing." }
+    },
+    {
+      "id": "vbdenoising",
+      "label": { "en": "Denoising" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Enable non-local means denoising preprocessing." }
     },
     {
       "id": "vbbrainextraction",
-      "label": { "en": "Brain extraction flag" },
+      "label": { "en": "Brain masking" },
       "type": "boolean",
-      "information": { "en": "Set true to enable brain extraction" },
+      "information": { "en": "Enable SynthStrip brain extraction during preprocessing. Used only when N4 bias field correction or denoising is enabled." },
       "default": false
     }
   ]

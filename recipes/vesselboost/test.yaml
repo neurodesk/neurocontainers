@@ -2,6 +2,98 @@ tests:
   - name: Test vesselboost
     manual: true
     script: |
+      # Test openrecon side:
+      source .venv/bin/activate
+      ./builder/build.py generate vesselboost --recreate --build --login --architecture x86_64 --offline_mode true
+
+      # check that the CUDA version is valid for MARS: has to be CUDA 11.x
+      python -c "import torch; print(torch.version.cuda)"
+
+
+      # Start OpenRecon server
+      python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
+      sleep 2
+
+      # Default setup:
+      rm -f /buildhostdirectory/output.h5
+      rm -f vesselboost.json
+      python3 /opt/code/python-ismrmrd-server/client.py \
+        -G dataset \
+        -o /buildhostdirectory/output.h5 \
+        /buildhostdirectory/tof.h5 \
+        -c vesselboost
+
+      default_openrecon_nii_dir=/tmp/share/debug/vesselboost_openrecon/prediction_prep4_brain0_blend0/tof_output
+      rm -rf /buildhostdirectory/tof_openrecon_output
+      mkdir -p /buildhostdirectory/tof_openrecon_output
+      cp -a "${default_openrecon_nii_dir}/." /buildhostdirectory/tof_openrecon_output/
+
+
+
+      # Test with Brain extraction:
+      rm -f /buildhostdirectory/output_brain_extraction.h5
+      printf '%s\n' \
+        '{' \
+        '  "parameters": {' \
+        '    "config": "vesselboost",' \
+        '    "vbmodules": "prediction",' \
+        '    "vbepochs": "200",' \
+        '    "vbrate": "0.001",' \
+        '    "vbuseblending": false,' \
+        '    "vboverlap": 50,' \
+        '    "vbbiasfieldcorrection": true,' \
+        '    "vbdenoising": false,' \
+        '    "vbbrainextraction": true,' \
+        '    "vboutputname": "prediction_prep1_brain1_blend0"' \
+        '  }' \
+        '}' > vesselboost.json
+      python3 /opt/code/python-ismrmrd-server/client.py \
+        -G dataset \
+        -o /buildhostdirectory/output_brain_extraction.h5 \
+        /buildhostdirectory/tof.h5 \
+        -c vesselboost
+
+      brain_extraction_openrecon_nii_dir=/tmp/share/debug/vesselboost_openrecon/prediction_prep1_brain1_blend0/tof_output
+      rm -rf /buildhostdirectory/tof_openrecon_brain_extraction_output
+      mkdir -p /buildhostdirectory/tof_openrecon_brain_extraction_output
+      cp -a "${brain_extraction_openrecon_nii_dir}/." /buildhostdirectory/tof_openrecon_brain_extraction_output/
+      rm -f vesselboost.json
+
+
+      # Optional exhaustive OpenRecon parameter matrix.
+      # Enable with:
+      export VESSELBOOST_TEST_ALL_OPENRECON_PARAMS=1
+      if [ "${VESSELBOOST_TEST_ALL_OPENRECON_PARAMS:-0}" = "1" ]; then
+        matrix_dir=/tmp/vesselboost_openrecon_parameter_matrix
+        matrix_output_dir=/buildhostdirectory/vesselboost_openrecon_parameter_matrix_outputs
+        rm -rf "${matrix_dir}"
+        rm -rf "${matrix_output_dir}"
+        mkdir -p "${matrix_output_dir}"
+        python3 /opt/code/python-ismrmrd-server/vesselboost.py \
+          --write-openrecon-test-configs "${matrix_dir}" \
+          --modules "${VESSELBOOST_OPENRECON_MATRIX_MODULES:-prediction,tta,booster}" \
+          --fast-training
+
+        for config_file in "${matrix_dir}"/*.json; do
+          test_name=$(basename "${config_file}" .json)
+          cp "${config_file}" vesselboost.json
+          test_output_dir="${matrix_output_dir}/${test_name}"
+          mkdir -p "${test_output_dir}"
+          cp "${config_file}" "${test_output_dir}/config.json"
+          python3 /opt/code/python-ismrmrd-server/client.py \
+            -G dataset \
+            -o "${test_output_dir}/output.h5" \
+            /buildhostdirectory/tof.h5 \
+            -c vesselboost
+          mkdir -p "${test_output_dir}/debug_workspace"
+          cp -a "/tmp/share/debug/vesselboost_openrecon/${test_name}/." \
+            "${test_output_dir}/debug_workspace/"
+        done
+        rm -f vesselboost.json
+      fi
+
+
+
       ## Test vesselboost on it's own:
       python test_time_adaptation.py --ds_path "/root/Desktop/eval_data/" --out_path "/root/Desktop/eval_out/" --pretrained "./saved_models/Init_ep1000_lr1e3_tver" --ep 2000 --prep_mode 4
 
@@ -12,33 +104,3 @@ tests:
       cp /data/tof.nii tof_input
       mkdir tof_output
       angiboost.py --ds_path tof_input --out_path tof_output --lb_path init_label --pretrained /opt/VesselBoost/saved_models/manual_0429 --outmo tof_output/outmo --ep 100 --lr 0.05 --prep_mode 4
-
-
-
-
-      # Test openrecon side:
-      source .venv/bin/activate
-      ./builder/build.py generate vesselboost --recreate --build --login --architecture x86_64
-
-      # check that the CUDA version is valid for MARS: has to be CUDA 11.x
-      python -c "import torch; print(torch.version.cuda)"
-
-
-      # Start OpenRecon server
-      python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
-      sleep 2
-      
-      rm /buildhostdirectory/output.h5
-      python3 /opt/code/python-ismrmrd-server/client.py \
-        -G dataset \
-        -o /buildhostdirectory/output.h5 \
-        /buildhostdirectory/tof.h5 \
-        -c vesselboost
-      
-      cp tof_output/tof.nii /buildhostdirectory/tof_openrecon_output.nii
-
-      #TEST GPU capability.
-
-      # TODO: Test by giving a config paramter to the client that tests 
-      #         if config['parameters']['options'] == 'tta':
-      #         if config['parameters']['options'] == 'booster':

@@ -1,17 +1,20 @@
 name: vesselboost
-version: 2.0.9
+version: 2.0.10
 copyright:
   - license: MIT
     url: https://github.com/stebo85/VesselBoost/blob/memory_optimizations/LICENSE
 architectures:
   - x86_64
 variables:
-  vesselboost_branch: memory_optimizations
+  vesselboost_branch: fix-brain-extraction
   vesselboost_source_version: 2.0.1
   vesselboost_archive_url: "https://github.com/stebo85/VesselBoost/archive/refs/heads/{{ context.vesselboost_branch }}.zip"
+  synthstrip_weights_url: "https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.1.pt"
 files:
   - name: vesselboost_zip
     url: "{{ context.vesselboost_archive_url }}"
+  - name: synthstrip_weights
+    url: "{{ context.synthstrip_weights_url }}"
 build:
   kind: neurodocker
   base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime
@@ -36,8 +39,11 @@ build:
         - sed -i "s/scikit-learn==1.1.1/scikit-learn==1.2.2/" requirements.txt || true
         - sed -i -E '/^[[:space:]]*(torch|torchvision|torchaudio)[[:space:]]*==/d' requirements.txt
         - sed -i '/^[[:space:]]*--extra-index-url[[:space:]]\+https:\/\/download\.pytorch\.org\/whl\/cu124[[:space:]]*$/d' requirements.txt
+        - sed -i 's|\.\./saved_models/|/opt/VesselBoost/saved_models/|g' library/synthstrip_utils.py
         - pip install --prefer-binary --no-cache-dir -r requirements.txt
     - workdir: /opt/VesselBoost/saved_models
+    - run:
+        - cp {{ get_file("synthstrip_weights") }} synthstrip.1.pt
     - run:
         - osf -p abk4p fetch osfstorage/pretrained_models/manual_0429
     - run:

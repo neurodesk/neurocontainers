@@ -1,36 +1,62 @@
-import ismrmrd
-import os
-import itertools
-import logging
-import traceback
-import numpy as np
-import numpy.fft as fft
-import xml.dom.minidom
+import argparse
 import base64
 import ctypes
-import re
-import mrdhelper
-import constants
-from time import perf_counter
-import nibabel as nib
+import itertools
+import json
+import logging
+import os
 from pathlib import Path
-import subprocess
-import tempfile
+import re
 import shutil
+import subprocess
+from time import perf_counter
+import traceback
+import xml.dom.minidom
+
+import ismrmrd
+import nibabel as nib
+import numpy as np
+import numpy.fft as fft
+
+import constants
+import mrdhelper
 
 
 # Folder for debug output files
 debugFolder = "/tmp/share/debug"
+OPENRECON_WORKSPACE_ROOT = "vesselboost_openrecon"
+OPENRECON_OUTPUT_NAME_PARAM = "vboutputname"
 
-# Keep these defaults aligned with recipes/vesselboost/OpenReconLabel.json.
+# Keep this overview aligned with recipes/vesselboost/OpenReconLabel.json.
+# Tests can import it to build a minimal OpenRecon config payload.
 OPENRECON_DEFAULTS = {
+    "config": "vesselboost",
     "vbmodules": "prediction",
     "vbepochs": "200",
     "vbrate": "0.001",
     "vbuseblending": False,
     "vboverlap": 50,
-    "vbprepmode": 1,
+    "vbbiasfieldcorrection": False,
+    "vbdenoising": False,
     "vbbrainextraction": False,
+}
+OPENRECON_DEFAULT_TEST_CONFIG = {
+    "parameters": OPENRECON_DEFAULTS.copy(),
+}
+
+OPENRECON_COMBINATION_PARAMETER_VALUES = {
+    "vbmodules": ("prediction", "tta", "booster"),
+    "vbuseblending": (False, True),
+    "vbbiasfieldcorrection": (False, True),
+    "vbdenoising": (False, True),
+    "vbbrainextraction": (False, True),
+}
+
+PREP_MODE_FROM_FLAGS = {
+    (True, False): 1,
+    (False, True): 2,
+    (True, True): 3,
+    (False, False): 4,
 }
 
 
@@ -128,6 +154,172 @@ def _resolve_vesselboost_model(model_name: str) -> Path:
     raise FileNotFoundError(
         f"Could not find VesselBoost model '{model_name}'. Checked: {checked_paths}"
     )
+
+
+def _config_has_param(config, key: str) -> bool:
+    return (
+        isinstance(config, dict)
+        and isinstance(config.get("parameters"), dict)
+        and key in config["parameters"]
+    )
+
+
+def _derive_prep_mode(bias_field_correction: bool, denoising: bool) -> int:
+    return PREP_MODE_FROM_FLAGS[(bias_field_correction, denoising)]
+
+
+def _prep_mode_to_flags(prep_mode: int) -> tuple[bool, bool]:
+    if prep_mode == 1:
+        return True, False
+    if prep_mode == 2:
+        return False, True
+    if prep_mode == 3:
+        return True, True
+    if prep_mode == 4:
+        return False, False
+    raise ValueError(
+        f"Invalid preprocessing mode: {prep_mode}. Valid modes: 1, 2, 3, 4"
+    )
+
+
+def _safe_path_component(value: str) -> str:
+    safe_value = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("._")
+    return safe_value[:120] or "default"
+
+
+def _openrecon_run_name(
+    module: str,
+    prep_mode: int,
+    brain_extraction: bool,
+    use_blending: bool,
+    config,
+) -> str:
+    requested_name = mrdhelper.get_json_config_param(
+        config,
+        OPENRECON_OUTPUT_NAME_PARAM,
+        default="",
+        type='str',
+    )
+    if requested_name:
+        return _safe_path_component(requested_name)
+
+    return _safe_path_component(
+        f"{module}_prep{prep_mode}_brain{int(brain_extraction)}"
+        f"_blend{int(use_blending)}"
+    )
+
+
+def iter_openrecon_parameter_combinations(
+    modules: tuple[str, ...] | None = None,
+    fast_training: bool = False,
+):
+    module_values = modules or OPENRECON_COMBINATION_PARAMETER_VALUES["vbmodules"]
+    bool_keys = (
+        "vbuseblending",
+        "vbbiasfieldcorrection",
+        "vbdenoising",
+        "vbbrainextraction",
+    )
+    bool_value_sets = [
+        OPENRECON_COMBINATION_PARAMETER_VALUES[key] for key in bool_keys
+    ]
+
+    for module, bool_values in itertools.product(
+        module_values,
+        itertools.product(*bool_value_sets),
+    ):
+        parameters = OPENRECON_DEFAULTS.copy()
+        parameters["vbmodules"] = module
+        parameters.update(dict(zip(bool_keys, bool_values)))
+        if fast_training and module in ("tta", "booster"):
+            parameters["vbepochs"] = "1"
+
+        prep_mode = _derive_prep_mode(
+            parameters["vbbiasfieldcorrection"],
+            parameters["vbdenoising"],
+        )
+        name = (
+            f"{module}"
+            f"_prep{prep_mode}"
+            f"_brain{int(parameters['vbbrainextraction'])}"
+            f"_blend{int(parameters['vbuseblending'])}"
+        )
+        parameters[OPENRECON_OUTPUT_NAME_PARAM] = name
+        yield name, {"parameters": parameters}
+
+
+def write_openrecon_parameter_combinations(
+    output_dir: Path,
+    modules: tuple[str, ...] | None = None,
+    fast_training: bool = False,
+) -> list[Path]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    written_paths = []
+
+    for name, config in iter_openrecon_parameter_combinations(
+        modules=modules,
+        fast_training=fast_training,
+    ):
+        output_path = output_dir / f"{name}.json"
+        output_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+        written_paths.append(output_path)
+
+    return written_paths
+
+
+def _parse_module_list(value: str) -> tuple[str, ...]:
+    modules = tuple(module.strip() for module in value.split(",") if module.strip())
+    valid_modules = set(OPENRECON_COMBINATION_PARAMETER_VALUES["vbmodules"])
+    invalid_modules = sorted(set(modules) - valid_modules)
+    if invalid_modules:
+        raise ValueError(
+            "Invalid module(s): "
+            f"{', '.join(invalid_modules)}. "
+            f"Valid modules: {', '.join(sorted(valid_modules))}"
+        )
+    return modules
+
+
+def _main(argv=None) -> int:
+    parser = argparse.ArgumentParser(
+        description="VesselBoost OpenRecon testing helpers"
+    )
+    parser.add_argument(
+        "--write-openrecon-test-configs",
+        type=Path,
+        metavar="DIR",
+        help="Write JSON configs for all finite OpenRecon choice/boolean combinations.",
+    )
+    parser.add_argument(
+        "--modules",
+        default=",".join(OPENRECON_COMBINATION_PARAMETER_VALUES["vbmodules"]),
+        help="Comma-separated module list for generated configs.",
+    )
+    parser.add_argument(
+        "--fast-training",
+        action="store_true",
+        help="Use one epoch for TTA and booster matrix configs.",
+    )
+    args = parser.parse_args(argv)
+
+    if args.write_openrecon_test_configs is None:
+        parser.print_help()
+        return 0
+
+    try:
+        modules = _parse_module_list(args.modules)
+    except ValueError as exc:
+        parser.error(str(exc))
+    written_paths = write_openrecon_parameter_combinations(
+        args.write_openrecon_test_configs,
+        modules=modules,
+        fast_training=args.fast_training,
+    )
+    print(f"Wrote {len(written_paths)} OpenRecon test config(s)")
+    for path in written_paths:
+        print(path)
+    return 0
+
 
 def process(connection, config, metadata):
     logging.info("Config: \n%s", config)
@@ -426,29 +618,6 @@ def process_image(images, connection, config, metadata):
         data = np.abs(data)
     _log_array_summary("OpenRecon input after squeeze", data)
 
-    work_dir = Path(tempfile.mkdtemp(prefix="vesselboost_", dir=debugFolder))
-    input_dir = work_dir / "tof_input"
-    output_dir = work_dir / "tof_output"
-    preproc_dir = work_dir / "tof_preproc"
-    init_label_dir = work_dir / "init_label"
-    input_name = "tof.nii"
-    input_path = input_dir / input_name
-
-    input_dir.mkdir(parents=True, exist_ok=True)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    xform = np.eye(4)
-    new_img = nib.nifti1.Nifti1Image(data, xform)
-    nib.save(new_img, str(input_path))
-    logging.info(
-        "Saved OpenRecon input image to %s with shape=%s dtype=%s zooms=%s",
-        input_path,
-        new_img.shape,
-        new_img.get_data_dtype(),
-        new_img.header.get_zooms(),
-    )
-    logging.info("Using VesselBoost workspace %s", work_dir)
-
     # Read user's choice of vesselboost modules
     module = mrdhelper.get_json_config_param(
         config,
@@ -456,23 +625,42 @@ def process_image(images, connection, config, metadata):
         default=OPENRECON_DEFAULTS["vbmodules"],
         type='str',
     )
-    prep_mode = int(
-        mrdhelper.get_json_config_param(
-            config,
-            "vbprepmode",
-            default=mrdhelper.get_json_config_param(
-                config,
-                "prep_mode",
-                default=OPENRECON_DEFAULTS["vbprepmode"],
-                type='int',
-            ),
-            type='int',
-        )
+    bias_field_correction = boolean_checker(
+        "vbbiasfieldcorrection",
+        default_val=OPENRECON_DEFAULTS["vbbiasfieldcorrection"],
     )
+    denoising = boolean_checker(
+        "vbdenoising",
+        default_val=OPENRECON_DEFAULTS["vbdenoising"],
+    )
+    if not (
+        _config_has_param(config, "vbbiasfieldcorrection")
+        or _config_has_param(config, "vbdenoising")
+    ):
+        legacy_prep_mode = None
+        if _config_has_param(config, "vbprepmode"):
+            legacy_prep_mode = int(
+                mrdhelper.get_json_config_param(config, "vbprepmode", type='int')
+            )
+        elif _config_has_param(config, "prep_mode"):
+            legacy_prep_mode = int(
+                mrdhelper.get_json_config_param(config, "prep_mode", type='int')
+            )
+        if legacy_prep_mode is not None:
+            bias_field_correction, denoising = _prep_mode_to_flags(legacy_prep_mode)
+
+    prep_mode = _derive_prep_mode(bias_field_correction, denoising)
     brain_extraction = boolean_checker(
         "vbbrainextraction",
         default_val=OPENRECON_DEFAULTS["vbbrainextraction"],
     )
+    if prep_mode == 4 and brain_extraction:
+        logging.warning(
+            "Brain masking was requested without preprocessing. VesselBoost only "
+            "runs brain extraction during preprocessing, so brain masking will be "
+            "ignored."
+        )
+        brain_extraction = False
     epochs = mrdhelper.get_json_config_param(
         config,
         "vbepochs",
@@ -505,11 +693,50 @@ def process_image(images, connection, config, metadata):
         )
         overlap_percent = OPENRECON_DEFAULTS["vboverlap"]
     overlap_ratio = overlap_percent / 100.0
+    run_name = _openrecon_run_name(
+        module,
+        prep_mode,
+        brain_extraction,
+        use_blending,
+        config,
+    )
+
+    workspace_root = Path(debugFolder) / OPENRECON_WORKSPACE_ROOT
+    work_dir = workspace_root / run_name
+    if work_dir.exists():
+        shutil.rmtree(work_dir)
+
+    input_dir = work_dir / "tof_input"
+    output_dir = work_dir / "tof_output"
+    preproc_dir = work_dir / "tof_preproc"
+    init_label_dir = work_dir / "init_label"
+    input_name = "tof.nii"
+    input_path = input_dir / input_name
+
+    input_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    xform = np.eye(4)
+    new_img = nib.nifti1.Nifti1Image(data, xform)
+    nib.save(new_img, str(input_path))
+    logging.info(
+        "Saved OpenRecon input image to %s with shape=%s dtype=%s zooms=%s",
+        input_path,
+        new_img.shape,
+        new_img.get_data_dtype(),
+        new_img.header.get_zooms(),
+    )
+    logging.info("Using VesselBoost workspace %s", work_dir)
+
     pretrained_model = _resolve_vesselboost_model("manual_0429")
     logging.info(
-        "OpenRecon VesselBoost options: module=%s prep_mode=%s brain_extraction=%s "
-        "epochs=%s learning_rate=%s use_blending=%s overlap_ratio=%s",
+        "OpenRecon VesselBoost options: run_name=%s module=%s bias_field_correction=%s "
+        "denoising=%s prep_mode=%s brain_extraction=%s epochs=%s "
+        "learning_rate=%s use_blending=%s overlap_ratio=%s",
+        run_name,
         module,
+        bias_field_correction,
+        denoising,
         prep_mode,
         brain_extraction,
         epochs,
@@ -697,3 +924,7 @@ def process_image(images, connection, config, metadata):
         imagesOut[iImg].attribute_string = metaXml
 
     return imagesOut
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())
