@@ -57,6 +57,8 @@ build:
         PATH: $PATH:/opt/VesselBoost/
         VESSELBOOST_HOME: /opt/VesselBoost
     - copy: vesselboost.py /opt/code/python-ismrmrd-server/vesselboost.py
+    - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
+
 readme: |2-
     ----------------------------------
     ## Vesselboost/{{ context.version }} ##

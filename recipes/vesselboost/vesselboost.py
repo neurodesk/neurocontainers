@@ -92,6 +92,228 @@ def _log_directory_contents(label: str, path: Path) -> None:
     logging.info("%s contents (%s): %s", label, path, entries)
 
 
+def compute_nifti_affine(image_header, voxel_size):
+    # MRD stores geometry in DICOM/LPS. NIfTI uses RAS.
+    lps_to_ras = np.array([-1, -1, 1], dtype=float)
+
+    position = np.asarray(image_header.position, dtype=float) * lps_to_ras
+    read_dir = np.asarray(image_header.read_dir, dtype=float) * lps_to_ras
+    phase_dir = np.asarray(image_header.phase_dir, dtype=float) * lps_to_ras
+    slice_dir = np.asarray(image_header.slice_dir, dtype=float) * lps_to_ras
+
+    affine = np.eye(4)
+    affine[:3, :3] = np.column_stack(
+        [
+            voxel_size[0] * read_dir,
+            voxel_size[1] * phase_dir,
+            voxel_size[2] * slice_dir,
+        ]
+    )
+    affine[:3, 3] = position
+    return affine
+
+
+def _header_vector(image_header, field_name):
+    try:
+        return np.asarray(getattr(image_header, field_name), dtype=float)
+    except Exception:
+        return np.zeros(3, dtype=float)
+
+
+def _normalize_vector(vector):
+    vector = np.asarray(vector, dtype=float)
+    norm = float(np.linalg.norm(vector))
+    if norm < 1e-8:
+        return None
+    return vector / norm
+
+
+def _format_vector(vector):
+    return "[" + ", ".join(f"{float(value):.3f}" for value in vector) + "]"
+
+
+def _infer_slice_axis(image_headers):
+    for image_header in image_headers:
+        axis = _normalize_vector(_header_vector(image_header, "slice_dir"))
+        if axis is not None:
+            return axis
+
+    if len(image_headers) > 1:
+        axis = _normalize_vector(
+            _header_vector(image_headers[-1], "position")
+            - _header_vector(image_headers[0], "position")
+        )
+        if axis is not None:
+            return axis
+
+    return np.array([0.0, 0.0, 1.0], dtype=float)
+
+
+def _build_slice_geometry_records(image_headers, input_indices=None, slice_axis=None):
+    if input_indices is None:
+        input_indices = list(range(len(image_headers)))
+    if slice_axis is None:
+        slice_axis = _infer_slice_axis(image_headers)
+
+    records = []
+    for local_index, image_header in enumerate(image_headers):
+        position = _header_vector(image_header, "position")
+        slice_dir = _normalize_vector(_header_vector(image_header, "slice_dir"))
+        slice_dir_dot_axis = float(np.dot(slice_dir, slice_axis)) if slice_dir is not None else 0.0
+        records.append(
+            {
+                "local_index": local_index,
+                "input_index": int(input_indices[local_index]),
+                "image_index": int(getattr(image_header, "image_index", 0)),
+                "slice": int(getattr(image_header, "slice", 0)),
+                "phase": int(getattr(image_header, "phase", 0)),
+                "position": position,
+                "projected_position": float(np.dot(position, slice_axis)),
+                "slice_dir_dot_axis": slice_dir_dot_axis,
+            }
+        )
+
+    return slice_axis, records
+
+
+def _estimate_slice_spacing(image_headers, slice_axis=None):
+    if len(image_headers) < 2:
+        return None
+
+    slice_axis, records = _build_slice_geometry_records(image_headers, slice_axis=slice_axis)
+    projected_positions = np.array(
+        [record["projected_position"] for record in records],
+        dtype=float,
+    )
+    sorted_diffs = np.diff(np.sort(projected_positions))
+    nonzero_diffs = np.abs(sorted_diffs[np.abs(sorted_diffs) > 1e-4])
+    if nonzero_diffs.size == 0:
+        return None
+    return float(np.median(nonzero_diffs))
+
+
+def _slice_sort_indices(image_headers):
+    slice_axis, records = _build_slice_geometry_records(image_headers)
+    sorted_records = sorted(
+        records,
+        key=lambda record: (
+            round(record["projected_position"], 4),
+            record["slice"],
+            record["image_index"],
+            record["input_index"],
+        ),
+    )
+    return [record["input_index"] for record in sorted_records], slice_axis, records
+
+
+def _log_slice_geometry(label, image_headers, input_indices=None, slice_axis=None):
+    slice_axis, records = _build_slice_geometry_records(
+        image_headers,
+        input_indices=input_indices,
+        slice_axis=slice_axis,
+    )
+    projected_positions = np.array(
+        [record["projected_position"] for record in records],
+        dtype=float,
+    )
+    slice_dir_alignment = np.array(
+        [record["slice_dir_dot_axis"] for record in records],
+        dtype=float,
+    )
+    min_slice_dir_alignment = float(np.min(slice_dir_alignment)) if slice_dir_alignment.size else 1.0
+
+    if len(projected_positions) > 1:
+        current_diffs = np.diff(projected_positions)
+        sorted_diffs = np.diff(np.sort(projected_positions))
+        nonzero_sorted_diffs = np.abs(sorted_diffs[np.abs(sorted_diffs) > 1e-4])
+        median_spacing = float(np.median(nonzero_sorted_diffs)) if nonzero_sorted_diffs.size else 0.0
+        duplicate_positions = int(np.sum(np.abs(sorted_diffs) <= 1e-4))
+        monotonic_increasing = bool(np.all(current_diffs >= -1e-4))
+    else:
+        median_spacing = 0.0
+        duplicate_positions = 0
+        monotonic_increasing = True
+
+    logging.info(
+        "%s slice geometry: count=%d axis=%s projected_range=[%.3f, %.3f] "
+        "median_spacing=%.3f duplicates=%d order_inc=%s min_slice_dir_dot_axis=%.6f",
+        label,
+        len(records),
+        _format_vector(slice_axis),
+        float(np.min(projected_positions)) if projected_positions.size else 0.0,
+        float(np.max(projected_positions)) if projected_positions.size else 0.0,
+        median_spacing,
+        duplicate_positions,
+        monotonic_increasing,
+        min_slice_dir_alignment,
+    )
+
+    if not monotonic_increasing:
+        logging.warning(
+            "%s slice positions are not increasing along slice_dir in their current order",
+            label,
+        )
+    if duplicate_positions > 0:
+        logging.warning(
+            "%s has %d duplicate projected slice position(s)",
+            label,
+            duplicate_positions,
+        )
+    if min_slice_dir_alignment < 0.99:
+        logging.warning(
+            "%s has slice_dir vectors that are not aligned with the inferred slice axis",
+            label,
+        )
+
+    return slice_axis, records
+
+
+def _log_slice_sort_mapping(sort_indices):
+    identity = list(range(len(sort_indices)))
+    if sort_indices == identity:
+        logging.info("VesselBoost input slice order already matches physical slice order")
+        return
+
+    logging.warning(
+        "Reordering VesselBoost input slices by physical position: first mappings %s",
+        ", ".join(
+            f"out{output_index}->in{input_index}"
+            for output_index, input_index in enumerate(sort_indices[:24])
+        ),
+    )
+    if len(sort_indices) > 24:
+        logging.warning(
+            "Reordering mapping omitted %d additional slice(s)",
+            len(sort_indices) - 24,
+        )
+
+
+def _log_affine_slice_consistency(image_headers, voxel_size):
+    if len(image_headers) < 2:
+        return
+
+    _, records = _build_slice_geometry_records(image_headers)
+    projected_positions = np.array(
+        [record["projected_position"] for record in records],
+        dtype=float,
+    )
+    expected_positions = projected_positions[0] + np.arange(len(projected_positions)) * float(voxel_size[2])
+    residuals = projected_positions - expected_positions
+    max_abs_residual = float(np.max(np.abs(residuals))) if residuals.size else 0.0
+    logging.info(
+        "NIfTI affine slice consistency: z_spacing=%.6f residual_range=[%.6f, %.6f] max_abs_residual=%.6f",
+        float(voxel_size[2]),
+        float(np.min(residuals)),
+        float(np.max(residuals)),
+        max_abs_residual,
+    )
+    if max_abs_residual > max(0.25, 0.25 * float(voxel_size[2])):
+        logging.warning(
+            "Input slice positions are not well described by a single linear NIfTI z-spacing; "
+            "VesselBoost output will still reuse original per-slice MRD positions"
+        )
+
+
 def _is_nifti_file(path: Path) -> bool:
     return path.is_file() and path.name.endswith((".nii", ".nii.gz"))
 
@@ -573,16 +795,69 @@ def process_image(images, connection, config, metadata):
     logging.debug("Processing data with %d images of type %s", len(images), data_type)
 
     # Note: The MRD Image class stores data as [cha z y x]
+    unsorted_head = [img.getHead() for img in images]
+    slice_sort_indices, slice_axis, _ = _slice_sort_indices(unsorted_head)
+    _log_slice_geometry(
+        "Incoming VesselBoost source",
+        unsorted_head,
+        slice_axis=slice_axis,
+    )
+    _log_slice_sort_mapping(slice_sort_indices)
+
+    ordered_images = [images[index] for index in slice_sort_indices]
 
     # Extract image data into a 5D array of size [img cha z y x]
-    data = np.stack([img.data                              for img in images])
-    head = [img.getHead()                                  for img in images]
-    meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in images]
+    data = np.stack([img.data for img in ordered_images])
+    head = [unsorted_head[index] for index in slice_sort_indices]
+    meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in ordered_images]
     legacy_option = None
     if isinstance(config, dict):
         parameters = config.get("parameters")
         if isinstance(parameters, dict):
             legacy_option = parameters.get("options")
+
+    _log_slice_geometry(
+        "Sorted VesselBoost source",
+        head,
+        input_indices=slice_sort_indices,
+        slice_axis=slice_axis,
+    )
+
+    matrix = np.asarray(head[0].matrix_size[:], dtype=float)
+    fov = np.asarray(head[0].field_of_view[:], dtype=float)
+    if matrix.size < 3 or fov.size < 3:
+        raise ValueError(
+            "MRD image geometry is incomplete: "
+            f"matrix_size={matrix.tolist()} field_of_view={fov.tolist()}"
+        )
+
+    matrix = matrix[:3].copy()
+    fov = fov[:3].copy()
+    if matrix[2] != len(ordered_images):
+        matrix[2] = len(ordered_images)
+
+    slice_thickness = float(fov[2])
+    measured_slice_spacing = _estimate_slice_spacing(head, slice_axis=slice_axis)
+    if measured_slice_spacing is not None:
+        if abs(float(measured_slice_spacing) - slice_thickness) > 0.05:
+            logging.warning(
+                "MRD slice thickness %.6f differs from measured slice spacing %.6f; "
+                "using measured spacing for NIfTI affine",
+                slice_thickness,
+                float(measured_slice_spacing),
+            )
+        fov[2] = measured_slice_spacing * len(ordered_images)
+    else:
+        fov[2] = slice_thickness * len(ordered_images)
+
+    if np.any(matrix <= 0) or np.any(fov <= 0):
+        raise ValueError(
+            "MRD image geometry has non-positive matrix or FOV values: "
+            f"matrix_size={matrix.tolist()} field_of_view={fov.tolist()}"
+        )
+
+    voxel_size = fov / matrix
+    _log_affine_slice_consistency(head, voxel_size)
 
     # Reformat data to [y x img cha z], i.e. [row ~col] for the first two dimensions
     data = data.transpose((3, 4, 0, 1, 2))
@@ -716,8 +991,21 @@ def process_image(images, connection, config, metadata):
     input_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    xform = np.eye(4)
-    new_img = nib.nifti1.Nifti1Image(data, xform)
+    affine = compute_nifti_affine(head[0], voxel_size)
+    logging.info("Computed VesselBoost input NIfTI affine:\n%s", affine)
+
+    if data.ndim == 2:
+        data_nifti = np.asarray(data.T[:, :, None])
+    elif data.ndim == 3:
+        data_nifti = np.asarray(data.transpose((1, 0, 2)))
+    else:
+        data_nifti = np.asarray(data)
+
+    new_img = nib.nifti1.Nifti1Image(data_nifti, affine)
+    new_img.header.set_xyzt_units(xyz="mm", t="sec")
+    new_img.header.set_dim_info(freq=1, phase=0, slice=2)
+    new_img.set_qform(affine, code=1)
+    new_img.set_sform(affine, code=1)
     nib.save(new_img, str(input_path))
     logging.info(
         "Saved OpenRecon input image to %s with shape=%s dtype=%s zooms=%s",
@@ -840,6 +1128,20 @@ def process_image(images, connection, config, metadata):
     # Reformat data
     print("shape after loading with nibabel")
     print(data.shape)
+    if data.ndim == 2:
+        data = data[:, :, None]
+    if data.ndim == 3:
+        # Bring NIfTI [x, y, z] back to OpenRecon/MRD convenience [y, x, z].
+        data = data.transpose((1, 0, 2))
+    if data.ndim != 3:
+        raise ValueError(
+            f"VesselBoost output must be 3D after squeezing, got shape {data.shape}"
+        )
+    if data.shape[-1] != len(head):
+        raise ValueError(
+            "VesselBoost output slice count does not match MRD input: "
+            f"output_z={data.shape[-1]} input_images={len(head)}"
+        )
     data = data[:, :, :, None, None]
     data = data.transpose((0, 1, 4, 3, 2))
 
