@@ -54,24 +54,12 @@ jobs:
     outputs:
       APPLICATION: ${{ steps.envars.outputs.APPLICATION }}
       BUILDDATE: ${{ steps.envars.outputs.BUILDDATE }}
+      SHORT_SHA: ${{ steps.envars.outputs.SHORT_SHA }}
       IMAGETAG: ${{ steps.envars.outputs.IMAGETAG }}
       IMAGENAME: ${{ steps.imgvars.outputs.IMAGENAME }}
       DOCKERFILE: ${{ steps.imgvars.outputs.DOCKERFILE }}
       ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
     steps:
-      - name: Configure runner
-        run: |
-          BASE_PATH=/mnt
-          if [ -d /storage ]; then
-            BASE_PATH=/storage
-          fi
-          echo "BASE_PATH=$BASE_PATH" >> $GITHUB_ENV
-          sudo mkdir -p $BASE_PATH/tmp
-          sudo chown $USER $BASE_PATH/tmp
-          sudo mkdir -p $BASE_PATH/docker
-          echo "{\"data-root\": \"$BASE_PATH/docker\"}" | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
-
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -92,6 +80,7 @@ jobs:
           echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
           echo "APPLICATION=$APPLICATION" >> $GITHUB_OUTPUT
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
+          echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
           echo "BUILDDATE=$BUILDDATE" >> $GITHUB_ENV
           echo "BUILDDATE=$BUILDDATE" >> $GITHUB_OUTPUT
           if [ "${{ inputs.skip_docker_build }}" = "true" ]; then
@@ -163,20 +152,26 @@ jobs:
       IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
       ROOTFS_CACHE: ${{ needs.config.outputs.ROOTFS_CACHE }}
+      SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
     steps:
-      - name: Configure runner
+      - name: Set runner base path
         run: |
           BASE_PATH=/mnt
-          if [ "${{ inputs.runner }}" = "self-hosted" ] && [ -d /storage ]; then
+          if [ -d /storage ]; then
             BASE_PATH=/storage
-          else
-            sudo swapoff -a && sudo rm -rf /mnt/*
           fi
-          echo "BASE_PATH=$BASE_PATH" >> $GITHUB_ENV
-          sudo mkdir -p $BASE_PATH/tmp
-          sudo chown $USER $BASE_PATH/tmp
-          sudo mkdir -p $BASE_PATH/docker
-          echo "{\"data-root\": \"$BASE_PATH/docker\"}" | sudo tee /etc/docker/daemon.json
+          echo "BASE_PATH=$BASE_PATH" >> "$GITHUB_ENV"
+
+      - name: Configure GitHub-hosted runner
+        if: ${{ runner.environment == 'github-hosted' }}
+        run: |
+          BASE_PATH=/mnt
+          echo "BASE_PATH=$BASE_PATH" >> "$GITHUB_ENV"
+          sudo swapoff -a && sudo rm -rf "$BASE_PATH"/*
+          sudo mkdir -p "$BASE_PATH/tmp"
+          sudo chown "$USER" "$BASE_PATH/tmp"
+          sudo mkdir -p "$BASE_PATH/docker"
+          printf '{"data-root": "%s"}\n' "$BASE_PATH/docker" | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
 
       - name: Checkout repository
@@ -368,13 +363,16 @@ jobs:
       packages: write
 
     steps:
-      - name: Configure runner
+      - name: Configure GitHub-hosted runner
+        if: ${{ runner.environment == 'github-hosted' }}
         run: |
-          sudo swapoff -a && sudo rm -rf /mnt/*
-          sudo mkdir -p /mnt/tmp
-          sudo chown $USER /mnt/tmp
-          sudo mkdir -p /mnt/docker
-          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          BASE_PATH=/mnt
+          echo "BASE_PATH=$BASE_PATH" >> "$GITHUB_ENV"
+          sudo swapoff -a && sudo rm -rf "$BASE_PATH"/*
+          sudo mkdir -p "$BASE_PATH/tmp"
+          sudo chown "$USER" "$BASE_PATH/tmp"
+          sudo mkdir -p "$BASE_PATH/docker"
+          printf '{"data-root": "%s"}\n' "$BASE_PATH/docker" | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
 
       - name: Login to GHCR
@@ -422,27 +420,40 @@ jobs:
       packages: write
 
     steps:
-      - name: Configure runner
+      - name: Set runner base path
+        id: base-path
         run: |
-          sudo swapoff -a && sudo rm -rf /mnt/*
-          sudo mkdir -p /mnt/tmp
-          sudo chown $USER /mnt/tmp
-          sudo mkdir -p /mnt/docker
-          echo '{"data-root": "/mnt/docker"}' | sudo tee /etc/docker/daemon.json
+          BASE_PATH=/mnt
+          if [ -d /storage ]; then
+            BASE_PATH=/storage
+          fi
+          echo "BASE_PATH=$BASE_PATH" >> "$GITHUB_ENV"
+          echo "base_path=$BASE_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Configure GitHub-hosted runner
+        if: ${{ runner.environment == 'github-hosted' }}
+        run: |
+          BASE_PATH=/mnt
+          echo "BASE_PATH=$BASE_PATH" >> "$GITHUB_ENV"
+          sudo swapoff -a && sudo rm -rf "$BASE_PATH"/*
+          sudo mkdir -p "$BASE_PATH/tmp"
+          sudo chown "$USER" "$BASE_PATH/tmp"
+          sudo mkdir -p "$BASE_PATH/docker"
+          printf '{"data-root": "%s"}\n' "$BASE_PATH/docker" | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
 
-          sudo mkdir -p /mnt/apptainer/cache /mnt/apptainer/tmp
-          sudo chown $USER /mnt/apptainer/cache /mnt/apptainer/tmp
+          sudo mkdir -p "$BASE_PATH/apptainer/cache" "$BASE_PATH/apptainer/tmp"
+          sudo chown "$USER" "$BASE_PATH/apptainer/cache" "$BASE_PATH/apptainer/tmp"
 
-          APPTAINER_CACHEDIR=/mnt/apptainer/cache
-          echo "APPTAINER_CACHEDIR=$APPTAINER_CACHEDIR" >> $GITHUB_ENV
-          APPTAINER_TMPDIR=/mnt/apptainer/tmp
-          echo "APPTAINER_TMPDIR=$APPTAINER_TMPDIR" >> $GITHUB_ENV
-          
-          SINGULARITY_CACHEDIR=/mnt/apptainer/cache
-          echo "SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR" >> $GITHUB_ENV
-          SINGULARITY_TMPDIR=/mnt/apptainer/tmp
-          echo "SINGULARITY_TMPDIR=$SINGULARITY_TMPDIR" >> $GITHUB_ENV
+          APPTAINER_CACHEDIR="$BASE_PATH/apptainer/cache"
+          echo "APPTAINER_CACHEDIR=$APPTAINER_CACHEDIR" >> "$GITHUB_ENV"
+          APPTAINER_TMPDIR="$BASE_PATH/apptainer/tmp"
+          echo "APPTAINER_TMPDIR=$APPTAINER_TMPDIR" >> "$GITHUB_ENV"
+
+          SINGULARITY_CACHEDIR="$BASE_PATH/apptainer/cache"
+          echo "SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR" >> "$GITHUB_ENV"
+          SINGULARITY_TMPDIR="$BASE_PATH/apptainer/tmp"
+          echo "SINGULARITY_TMPDIR=$SINGULARITY_TMPDIR" >> "$GITHUB_ENV"
 
           sudo apt-get install -y software-properties-common
           sudo add-apt-repository -y ppa:apptainer/ppa
@@ -480,7 +491,7 @@ jobs:
       - name: Debug storage
         run: |
           sudo df -ha
-          sudo du -sh /mnt
+          sudo du -sh "$BASE_PATH"
 
       - name: Build simg file
         if: inputs.skip_simg_build != 'true'
@@ -488,10 +499,12 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           echo "[DEBUG] building singularity image from docker image:"
-          time singularity build "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" docker://ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.IMAGETAG }}
+          SIMG_PATH="$BASE_PATH/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg"
+          IMAGE_REF="docker://ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.IMAGETAG }}"
+          time singularity build "$SIMG_PATH" "$IMAGE_REF"
           echo "[DEBUG] done building singularity image from docker image!"
           # Verify the image was created successfully
-          if [ ! -f "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" ]; then
+          if [ ! -f "$SIMG_PATH" ]; then
             echo "ERROR: Singularity image file was not created"
             exit 1
           fi
@@ -499,13 +512,13 @@ jobs:
       - name: Debug storage
         run: |
           sudo df -ha
-          sudo du -sh /mnt
+          sudo du -sh "$BASE_PATH"
   
       - name: Upload simg artifact
         if: inputs.skip_simg_build != 'true'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          path: /mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          path: ${{ steps.base-path.outputs.base_path }}/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
           # Upload the single SIF/Singularity image as a raw file to avoid zip/unzip overhead.
           archive: false
           retention-days: 7
