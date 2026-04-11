@@ -120,6 +120,20 @@
       "type": "boolean",
       "information": { "en": "Enable SynthStrip brain extraction during preprocessing. Used only when N4 bias field correction or denoising is enabled." },
       "default": false
+    },
+    {
+      "id": "vbreslicesagittal",
+      "label": { "en": "Reslice sagittal" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Emit an additional output series with the segmentation resliced in the sagittal plane." }
+    },
+    {
+      "id": "vbreslicecoronal",
+      "label": { "en": "Reslice coronal" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Emit an additional output series with the segmentation resliced in the coronal plane." }
     }
   ]
 }

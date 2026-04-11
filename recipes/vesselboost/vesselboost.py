@@ -39,6 +39,8 @@ OPENRECON_DEFAULTS = {
     "vbbiasfieldcorrection": False,
     "vbdenoising": False,
     "vbbrainextraction": False,
+    "vbreslicesagittal": False,
+    "vbreslicecoronal": False,
 }
 OPENRECON_DEFAULT_TEST_CONFIG = {
     "parameters": OPENRECON_DEFAULTS.copy(),
@@ -543,6 +545,138 @@ def _main(argv=None) -> int:
     return 0
 
 
+def _build_reformatted_images(
+    volume_yxz: np.ndarray,
+    head_template,
+    meta_template,
+    voxel_size: np.ndarray,
+    fov: np.ndarray,
+    orientation: str,
+    series_index: int,
+    max_val: int,
+):
+    """Build MRD images for a sagittal or coronal reformat of the segmentation.
+
+    volume_yxz is an int16 array with shape (N_y, N_x, N_z), where the axes map
+    to the original axial phase_dir, read_dir and slice_dir respectively.
+    """
+    if orientation not in ("sagittal", "coronal"):
+        raise ValueError(f"Unsupported reformat orientation: {orientation}")
+
+    N_y, N_x, N_z = volume_yxz.shape
+    read_dir = np.asarray(head_template.read_dir, dtype=float)
+    phase_dir = np.asarray(head_template.phase_dir, dtype=float)
+    slice_dir = np.asarray(head_template.slice_dir, dtype=float)
+
+    first_position = np.asarray(head_template.position, dtype=float)
+    # Center of the 3D volume in world space (slice 0 position is the slice
+    # center, so the stack center is offset by half of the remaining slices).
+    volume_center = first_position + 0.5 * (N_z - 1) * slice_dir * float(voxel_size[2])
+
+    if orientation == "sagittal":
+        n_slices = N_x
+        new_read_dir = phase_dir
+        new_phase_dir = slice_dir
+        new_slice_dir = read_dir
+        slice_spacing = float(voxel_size[0])
+        new_fov = (float(fov[1]), float(fov[2]), float(fov[0]))
+    else:  # coronal
+        n_slices = N_y
+        new_read_dir = read_dir
+        new_phase_dir = slice_dir
+        new_slice_dir = phase_dir
+        slice_spacing = float(voxel_size[1])
+        new_fov = (float(fov[0]), float(fov[2]), float(fov[1]))
+
+    logging.info(
+        "Building %s reformat: n_slices=%d slice_spacing=%.4f new_fov=%s "
+        "series_index=%d",
+        orientation,
+        n_slices,
+        slice_spacing,
+        new_fov,
+        series_index,
+    )
+
+    images_out = []
+    for j in range(n_slices):
+        offset = (j - 0.5 * (n_slices - 1)) * slice_spacing
+        slice_position = volume_center + offset * new_slice_dir
+
+        if orientation == "sagittal":
+            # volume_yxz[:, j, :] has shape (N_y, N_z) -> transpose to (N_z, N_y)
+            # so rows = Z (phase_dir), cols = Y (read_dir).
+            slice2d = np.ascontiguousarray(volume_yxz[:, j, :].T)
+        else:
+            # volume_yxz[j, :, :] has shape (N_x, N_z) -> transpose to (N_z, N_x)
+            # so rows = Z (phase_dir), cols = X (read_dir).
+            slice2d = np.ascontiguousarray(volume_yxz[j, :, :].T)
+
+        mrd_image = ismrmrd.Image.from_array(slice2d, transpose=False)
+
+        new_header = mrd_image.getHead()
+        new_header.data_type = mrd_image.data_type
+        new_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+        new_header.position = tuple(float(v) for v in slice_position)
+        new_header.read_dir = tuple(float(v) for v in new_read_dir)
+        new_header.phase_dir = tuple(float(v) for v in new_phase_dir)
+        new_header.slice_dir = tuple(float(v) for v in new_slice_dir)
+        new_header.field_of_view = (
+            ctypes.c_float(new_fov[0]),
+            ctypes.c_float(new_fov[1]),
+            ctypes.c_float(new_fov[2]),
+        )
+        new_header.image_index = j
+        new_header.image_series_index = series_index
+        new_header.slice = j
+
+        for attr in (
+            "measurement_uid",
+            "patient_table_position",
+            "acquisition_time_stamp",
+            "physiology_time_stamp",
+            "user_int",
+            "user_float",
+        ):
+            try:
+                setattr(new_header, attr, getattr(head_template, attr))
+            except Exception:
+                pass
+        mrd_image.setHead(new_header)
+
+        tmp_meta = ismrmrd.Meta()
+        if meta_template is not None:
+            for key in meta_template.keys():
+                try:
+                    tmp_meta[key] = meta_template[key]
+                except Exception:
+                    pass
+        tmp_meta["DataRole"] = "Image"
+        tmp_meta["ImageProcessingHistory"] = [
+            "PYTHON",
+            "VESSELBOOST",
+            f"RESLICE_{orientation.upper()}",
+        ]
+        tmp_meta["WindowCenter"] = str((max_val + 1) / 2)
+        tmp_meta["WindowWidth"] = str((max_val + 1))
+        tmp_meta["SequenceDescriptionAdditional"] = f"VesselBoost_{orientation}"
+        tmp_meta["Keep_image_geometry"] = 1
+        tmp_meta["ImageRowDir"] = [
+            "{:.18f}".format(new_read_dir[0]),
+            "{:.18f}".format(new_read_dir[1]),
+            "{:.18f}".format(new_read_dir[2]),
+        ]
+        tmp_meta["ImageColumnDir"] = [
+            "{:.18f}".format(new_phase_dir[0]),
+            "{:.18f}".format(new_phase_dir[1]),
+            "{:.18f}".format(new_phase_dir[2]),
+        ]
+        mrd_image.attribute_string = tmp_meta.serialize()
+        images_out.append(mrd_image)
+
+    return images_out
+
+
 def process(connection, config, metadata):
     logging.info("Config: \n%s", config)
 
@@ -968,6 +1102,14 @@ def process_image(images, connection, config, metadata):
         )
         overlap_percent = OPENRECON_DEFAULTS["vboverlap"]
     overlap_ratio = overlap_percent / 100.0
+    reslice_sagittal = boolean_checker(
+        "vbreslicesagittal",
+        default_val=OPENRECON_DEFAULTS["vbreslicesagittal"],
+    )
+    reslice_coronal = boolean_checker(
+        "vbreslicecoronal",
+        default_val=OPENRECON_DEFAULTS["vbreslicecoronal"],
+    )
     run_name = _openrecon_run_name(
         module,
         prep_mode,
@@ -1020,7 +1162,8 @@ def process_image(images, connection, config, metadata):
     logging.info(
         "OpenRecon VesselBoost options: run_name=%s module=%s bias_field_correction=%s "
         "denoising=%s prep_mode=%s brain_extraction=%s epochs=%s "
-        "learning_rate=%s use_blending=%s overlap_ratio=%s",
+        "learning_rate=%s use_blending=%s overlap_ratio=%s "
+        "reslice_sagittal=%s reslice_coronal=%s",
         run_name,
         module,
         bias_field_correction,
@@ -1031,6 +1174,8 @@ def process_image(images, connection, config, metadata):
         l_rate,
         use_blending,
         overlap_ratio,
+        reslice_sagittal,
+        reslice_coronal,
     )
 
     def maybe_add_preprocessing_args(vb_cmd):
@@ -1142,8 +1287,6 @@ def process_image(images, connection, config, metadata):
             "VesselBoost output slice count does not match MRD input: "
             f"output_z={data.shape[-1]} input_images={len(head)}"
         )
-    data = data[:, :, :, None, None]
-    data = data.transpose((0, 1, 4, 3, 2))
 
     if legacy_option == "complex":
         logging.warning(
@@ -1165,10 +1308,14 @@ def process_image(images, connection, config, metadata):
 
     data_max = float(np.max(data))
     if data_max > 0:
-        data = np.rint(data * (maxVal / data_max)).astype(np.int16)
+        volume_yxz = np.rint(data * (maxVal / data_max)).astype(np.int16)
     else:
         logging.warning("VesselBoost output is all zeros; returning a zero-valued image.")
-        data = np.zeros_like(data, dtype=np.int16)
+        volume_yxz = np.zeros(data.shape, dtype=np.int16)
+
+    # Reshape the axial segmentation volume for the per-slice MRD loop.
+    data = volume_yxz[:, :, :, None, None]
+    data = data.transpose((0, 1, 4, 3, 2))
 
     currentSeries = 0
 
@@ -1224,6 +1371,50 @@ def process_image(images, connection, config, metadata):
         logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
 
         imagesOut[iImg].attribute_string = metaXml
+
+    if reslice_sagittal or reslice_coronal:
+        base_series = max(
+            (int(getattr(h, "image_series_index", 0)) for h in head),
+            default=0,
+        ) + 1
+        meta_template = meta[0] if meta else None
+
+        if reslice_sagittal:
+            logging.info(
+                "Appending sagittal reformat output series (series_index=%d)",
+                base_series,
+            )
+            imagesOut.extend(
+                _build_reformatted_images(
+                    volume_yxz=volume_yxz,
+                    head_template=head[0],
+                    meta_template=meta_template,
+                    voxel_size=voxel_size,
+                    fov=fov,
+                    orientation="sagittal",
+                    series_index=base_series,
+                    max_val=maxVal,
+                )
+            )
+            base_series += 1
+
+        if reslice_coronal:
+            logging.info(
+                "Appending coronal reformat output series (series_index=%d)",
+                base_series,
+            )
+            imagesOut.extend(
+                _build_reformatted_images(
+                    volume_yxz=volume_yxz,
+                    head_template=head[0],
+                    meta_template=meta_template,
+                    voxel_size=voxel_size,
+                    fov=fov,
+                    orientation="coronal",
+                    series_index=base_series,
+                    max_val=maxVal,
+                )
+            )
 
     return imagesOut
 
