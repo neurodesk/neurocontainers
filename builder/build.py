@@ -69,6 +69,32 @@ def _env_truthy(name: str, default: bool = False) -> bool:
     return value.strip().lower() not in {"0", "false", "no", "off"}
 
 
+def _parse_bool_argument(value: str | bool) -> bool:
+    if isinstance(value, bool):
+        return value
+
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+
+    raise argparse.ArgumentTypeError("expected true/false, yes/no, on/off, or 1/0")
+
+
+def add_offline_mode_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--offline-mode",
+        "--offline_mode",
+        dest="offline_mode",
+        nargs="?",
+        const=True,
+        default=False,
+        type=_parse_bool_argument,
+        help="Run Docker containers without network access.",
+    )
+
+
 def ensure_neurodocker_renderer():
     """
     Ensure NeuroDocker is importable.
@@ -2087,7 +2113,12 @@ def _parse_tester_output(raw_output: str) -> dict[str, typing.Any] | None:
     return None
 
 
-def run_container_tester(tag: str, architecture: str, use_podman: bool = False) -> None:
+def run_container_tester(
+    tag: str,
+    architecture: str,
+    use_podman: bool = False,
+    offline_mode: bool = False,
+) -> None:
     container_cli = "podman" if use_podman else "docker"
     tester_binary = ensure_container_tester_binary(container_cli)
     tester_binary = os.path.abspath(tester_binary)
@@ -2095,6 +2126,9 @@ def run_container_tester(tag: str, architecture: str, use_podman: bool = False) 
     mount_suffix = ":ro,Z" if use_podman else ":ro"
 
     run_cmd = [container_cli, "run", "--rm"]
+    if offline_mode:
+        run_cmd.extend(["--network", "none"])
+
     if not use_podman:
         run_cmd.extend(["--platform", get_build_platform(architecture)])
 
@@ -2174,6 +2208,7 @@ def build_and_run_container(
     use_buildkit: bool = False,
     use_podman: bool = False,
     load_into_docker: bool = False,
+    offline_mode: bool = False,
 ):
     if use_buildkit:
         # Build using buildkitd + buildctl (no host Docker daemon required)
@@ -2268,7 +2303,12 @@ def build_and_run_container(
                 with open(image_tar, "rb") as f:
                     subprocess.check_call(["docker", "load"], stdin=f)
                 print("Docker image loaded successfully")
-                run_container_tester(tag, architecture, use_podman=False)
+                run_container_tester(
+                    tag,
+                    architecture,
+                    use_podman=False,
+                    offline_mode=offline_mode,
+                )
             elif load_into_docker:
                 print(
                     "Skipping container tester run: Docker CLI not available to load/run the image."
@@ -2417,7 +2457,12 @@ def build_and_run_container(
             raise original_error
 
     print("Docker image built successfully at", tag)
-    run_container_tester(tag, architecture, use_podman=use_podman)
+    run_container_tester(
+        tag,
+        architecture,
+        use_podman=use_podman,
+        offline_mode=offline_mode,
+    )
 
     # Generate release file if in CI or auto-build mode
     if should_generate_release_file(generate_release):
@@ -2432,23 +2477,32 @@ def build_and_run_container(
             "--platform",
             get_build_platform(architecture),
             "--rm",
-            "-it",
             "-v",
             abs_path + ":/buildhostdirectory",
         ]
+        if offline_mode:
+            docker_run_cmd.extend(["--network", "none"])
+
+        docker_run_cmd.append("-it")
 
         # Expose webapp ports if defined in recipe
         recipe = load_description_file(recipe_path)
         deploy = recipe.get("deploy") or {}
         webapp = deploy.get("webapp") or {}
-        if webapp.get("port"):
-            main_port = webapp["port"]
-            docker_run_cmd.extend(["-p", f"{main_port}:{main_port}"])
-            print(f"Exposing webapp port {main_port}")
-        for proxy in webapp.get("additional_proxies") or []:
-            if proxy.get("port"):
-                docker_run_cmd.extend(["-p", f"{proxy['port']}:{proxy['port']}"])
-                print(f"Exposing additional proxy port {proxy['port']}")
+        has_webapp_ports = webapp.get("port") or any(
+            proxy.get("port") for proxy in webapp.get("additional_proxies") or []
+        )
+        if offline_mode and has_webapp_ports:
+            print("Offline mode enabled; skipping webapp port publishing.")
+        elif not offline_mode:
+            if webapp.get("port"):
+                main_port = webapp["port"]
+                docker_run_cmd.extend(["-p", f"{main_port}:{main_port}"])
+                print(f"Exposing webapp port {main_port}")
+            for proxy in webapp.get("additional_proxies") or []:
+                if proxy.get("port"):
+                    docker_run_cmd.extend(["-p", f"{proxy['port']}:{proxy['port']}"])
+                    print(f"Exposing additional proxy port {proxy['port']}")
 
         if mount:
             # Handle Windows paths with drive letters (e.g., C:\Users\...:container)
@@ -2502,7 +2556,7 @@ def build_and_run_container(
         print("Singularity image built successfully as", tag + ".sif")
 
 
-def run_docker_prep(prep, volume_name):
+def run_docker_prep(prep, volume_name, offline_mode: bool = False):
     name = prep.get("name")
     image = prep.get("image")
     script = prep.get("script")
@@ -2510,21 +2564,28 @@ def run_docker_prep(prep, volume_name):
         raise ValueError("Prep step must have a name, image and script")
 
     # Docker run the script in the container mounting the volume as /test
-    subprocess.check_call(
+    docker_run_cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        f"{volume_name}:/test",
+    ]
+    if offline_mode:
+        docker_run_cmd.extend(["--network", "none"])
+
+    docker_run_cmd.extend(
         [
-            "docker",
-            "run",
-            "--rm",
-            "-v",
-            f"{volume_name}:/test",
             image,
             "bash",
             "-c",
             f"""set -ex
                 cd /test
                 {script}""",
-        ],
+        ]
     )
+
+    subprocess.check_call(docker_run_cmd)
 
 
 def _parse_builtin_test_json(raw_output: str) -> dict[str, typing.Any] | None:
@@ -2568,7 +2629,7 @@ def _summarise_builtin_test_payload(
     return summary, failed_entries
 
 
-def run_builtin_test(tag, test, gpu=False):
+def run_builtin_test(tag, test, gpu=False, offline_mode: bool = False):
     # Locate builtin tests in either the legacy builder directory or the
     # relocated workflows directory.
     search_dirs = [
@@ -2594,6 +2655,8 @@ def run_builtin_test(tag, test, gpu=False):
         "run",
         "--rm",
     ]
+    if offline_mode:
+        docker_run_cmd.extend(["--network", "none"])
 
     if gpu:
         docker_run_cmd.extend(["--gpus", "all"])
@@ -2631,9 +2694,14 @@ def run_builtin_test(tag, test, gpu=False):
         raise subprocess.CalledProcessError(process.returncode, docker_run_cmd)
 
 
-def run_docker_test(tag, test, gpu=False):
+def run_docker_test(tag, test, gpu=False, offline_mode: bool = False):
     if test.get("builtin") in {"test_deploy.sh"}:
-        return run_builtin_test(tag, test.get("builtin"), gpu=gpu)
+        return run_builtin_test(
+            tag,
+            test.get("builtin"),
+            gpu=gpu,
+            offline_mode=offline_mode,
+        )
 
     script = test.get("script")
     if script is None:
@@ -2664,7 +2732,7 @@ def run_docker_test(tag, test, gpu=False):
     # For each prep step in the test, run it in a docker container
     if "prep" in test:
         for prep in test["prep"]:
-            run_docker_prep(prep, volume_name)
+            run_docker_prep(prep, volume_name, offline_mode=offline_mode)
 
     # Docker run the test script in the container mounting the volume as /test
     docker_run_cmd = [
@@ -2674,6 +2742,8 @@ def run_docker_test(tag, test, gpu=False):
         "-v",
         f"{volume_name}:/test",
     ]
+    if offline_mode:
+        docker_run_cmd.extend(["--network", "none"])
 
     if gpu:
         docker_run_cmd.extend(["--gpus", "all"])
@@ -2703,11 +2773,11 @@ def run_docker_test(tag, test, gpu=False):
     subprocess.check_call(docker_run_cmd)
 
 
-def run_test(tag, test, gpu=False):
+def run_test(tag, test, gpu=False, offline_mode: bool = False):
     test_name = test["name"]
     print(f"Running test {test_name} on image {tag}")
     try:
-        return run_docker_test(tag, test, gpu=gpu)
+        return run_docker_test(tag, test, gpu=gpu, offline_mode=offline_mode)
     except subprocess.CalledProcessError as exc:
         cmd_parts = [str(part) for part in exc.cmd]
         if len(cmd_parts) >= 2 and cmd_parts[-2] == "-c":
@@ -2794,13 +2864,13 @@ def get_tag_from_description_file(description_file: dict) -> str:
     return f"{name}:{version}"
 
 
-def run_tests(recipe_path: str, gpu=False):
+def run_tests(recipe_path: str, gpu=False, offline_mode: bool = False):
     description_file = load_description_file(recipe_path)
 
     tag = get_tag_from_description_file(description_file)
 
     for test in get_all_tests(description_file, recipe_path):
-        run_test(tag, test, gpu=gpu)
+        run_test(tag, test, gpu=gpu, offline_mode=offline_mode)
 
 
 def autodetect_recipe_path(repo_path: str, path: str) -> str | None:
@@ -3011,6 +3081,7 @@ def generate_and_build(
     use_buildkit: bool = False,
     use_podman: bool = False,
     load_into_docker: bool = False,
+    offline_mode: bool = False,
 ):
     ctx = generate_dockerfile(
         repo_path,
@@ -3054,6 +3125,7 @@ def generate_and_build(
         use_buildkit=use_buildkit,
         use_podman=use_podman,
         load_into_docker=load_into_docker,
+        offline_mode=offline_mode,
     )
 
 
@@ -3087,6 +3159,7 @@ def build_main(login=False):
         action="store_true",
         help="Enable GPU support by adding --gpus all to Docker run commands",
     )
+    add_offline_mode_argument(root)
     root.add_argument(
         "--local",
         help="Add local directories into the build context",
@@ -3141,6 +3214,7 @@ def build_main(login=False):
         use_buildkit=args.use_buildkit,
         use_podman=args.use_podman,
         load_into_docker=args.load_into_docker,
+        offline_mode=args.offline_mode,
     )
 
 
@@ -3260,6 +3334,7 @@ def test_main():
         action="store_true",
         help="Enable GPU support by adding --gpus all to Docker run commands",
     )
+    add_offline_mode_argument(root)
 
     args = root.parse_args()
 
@@ -3281,10 +3356,11 @@ def test_main():
         architecture=args.architecture,
         ignore_architecture=args.ignore_architectures,
         gpu=args.gpu,
+        offline_mode=args.offline_mode,
     )
 
     try:
-        run_tests(recipe_path, gpu=args.gpu)
+        run_tests(recipe_path, gpu=args.gpu, offline_mode=args.offline_mode)
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
@@ -3515,6 +3591,7 @@ def main(args):
         action="store_true",
         help="Enable GPU support by adding --gpus all to Docker run commands",
     )
+    add_offline_mode_argument(build_parser)
     build_parser.add_argument(
         "--use-buildkit",
         action="store_true",
@@ -3660,10 +3737,15 @@ def main(args):
                 use_buildkit=args.use_buildkit,
                 use_podman=args.use_podman,
                 load_into_docker=args.load_into_docker,
+                offline_mode=args.offline_mode,
             )
 
             if args.test:
-                run_tests(recipe_path, gpu=args.gpu)
+                run_tests(
+                    recipe_path,
+                    gpu=args.gpu,
+                    offline_mode=args.offline_mode,
+                )
     else:
         root.print_help()
         sys.exit(1)
