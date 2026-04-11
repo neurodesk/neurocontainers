@@ -4,7 +4,7 @@ tests:
     script: |
       # build:
       source .venv/bin/activate
-      ./builder/build.py generate musclemap --recreate --build --login --architecture x86_64
+      ./builder/build.py generate musclemap --recreate --build --login --architecture x86_64 --offline_mode true
 
       # check that the CUDA version is valid for MARS: has to be CUDA 11.x
       python -c "import torch; print(torch.version.cuda)"

@@ -518,6 +518,259 @@ def _build_image_volume_key(image):
     )
 
 
+def _header_vector(image_header, field_name):
+    try:
+        return np.asarray(getattr(image_header, field_name), dtype=float)
+    except Exception:
+        return np.zeros(3, dtype=float)
+
+
+def _normalize_vector(vector):
+    vector = np.asarray(vector, dtype=float)
+    norm = float(np.linalg.norm(vector))
+    if norm < 1e-8:
+        return None
+    return vector / norm
+
+
+def _format_vector(vector):
+    return "[" + ", ".join(f"{float(value):.3f}" for value in vector) + "]"
+
+
+def _infer_slice_axis(image_headers):
+    for image_header in image_headers:
+        axis = _normalize_vector(_header_vector(image_header, "slice_dir"))
+        if axis is not None:
+            return axis
+
+    if len(image_headers) > 1:
+        axis = _normalize_vector(
+            _header_vector(image_headers[-1], "position")
+            - _header_vector(image_headers[0], "position")
+        )
+        if axis is not None:
+            return axis
+
+    return np.array([0.0, 0.0, 1.0], dtype=float)
+
+
+def _build_slice_geometry_records(image_headers, input_indices=None, slice_axis=None):
+    if input_indices is None:
+        input_indices = list(range(len(image_headers)))
+    if slice_axis is None:
+        slice_axis = _infer_slice_axis(image_headers)
+
+    records = []
+    for local_index, image_header in enumerate(image_headers):
+        position = _header_vector(image_header, "position")
+        slice_dir = _normalize_vector(_header_vector(image_header, "slice_dir"))
+        slice_dir_dot_axis = float(np.dot(slice_dir, slice_axis)) if slice_dir is not None else 0.0
+        records.append(
+            {
+                "local_index": local_index,
+                "input_index": int(input_indices[local_index]),
+                "image_index": int(getattr(image_header, "image_index", 0)),
+                "slice": int(getattr(image_header, "slice", 0)),
+                "phase": int(getattr(image_header, "phase", 0)),
+                "position": position,
+                "projected_position": float(np.dot(position, slice_axis)),
+                "slice_dir_dot_axis": slice_dir_dot_axis,
+            }
+        )
+
+    return slice_axis, records
+
+
+def _estimate_slice_spacing(image_headers, slice_axis=None):
+    if len(image_headers) < 2:
+        return None
+
+    slice_axis, records = _build_slice_geometry_records(image_headers, slice_axis=slice_axis)
+    projected_positions = np.array(
+        [record["projected_position"] for record in records],
+        dtype=float,
+    )
+    sorted_diffs = np.diff(np.sort(projected_positions))
+    nonzero_diffs = np.abs(sorted_diffs[np.abs(sorted_diffs) > 1e-4])
+    if nonzero_diffs.size == 0:
+        return None
+    return float(np.median(nonzero_diffs))
+
+
+def _slice_sort_indices(image_headers):
+    slice_axis, records = _build_slice_geometry_records(image_headers)
+    sorted_records = sorted(
+        records,
+        key=lambda record: (
+            round(record["projected_position"], 4),
+            record["slice"],
+            record["image_index"],
+            record["input_index"],
+        ),
+    )
+    return [record["input_index"] for record in sorted_records], slice_axis, records
+
+
+def _log_slice_geometry(label, image_headers, input_indices=None, slice_axis=None, max_records=12):
+    slice_axis, records = _build_slice_geometry_records(
+        image_headers,
+        input_indices=input_indices,
+        slice_axis=slice_axis,
+    )
+    projected_positions = np.array(
+        [record["projected_position"] for record in records],
+        dtype=float,
+    )
+    slice_dir_alignment = np.array(
+        [record["slice_dir_dot_axis"] for record in records],
+        dtype=float,
+    )
+    min_slice_dir_alignment = float(np.min(slice_dir_alignment)) if slice_dir_alignment.size else 1.0
+
+    if len(projected_positions) > 1:
+        current_diffs = np.diff(projected_positions)
+        image_indices = np.array([record["image_index"] for record in records], dtype=int)
+        slice_indices = np.array([record["slice"] for record in records], dtype=int)
+        sorted_diffs = np.diff(np.sort(projected_positions))
+        nonzero_sorted_diffs = np.abs(sorted_diffs[np.abs(sorted_diffs) > 1e-4])
+        median_spacing = float(np.median(nonzero_sorted_diffs)) if nonzero_sorted_diffs.size else 0.0
+        max_spacing = float(np.max(nonzero_sorted_diffs)) if nonzero_sorted_diffs.size else 0.0
+        duplicate_positions = int(np.sum(np.abs(sorted_diffs) <= 1e-4))
+        large_gap_count = int(
+            np.sum(nonzero_sorted_diffs > (1.5 * median_spacing))
+        ) if median_spacing > 0 else 0
+        monotonic_increasing = bool(np.all(current_diffs >= -1e-4))
+        monotonic_decreasing = bool(np.all(current_diffs <= 1e-4))
+        image_index_increasing = bool(np.all(np.diff(image_indices) >= 0))
+        slice_index_increasing = bool(np.all(np.diff(slice_indices) >= 0))
+    else:
+        median_spacing = 0.0
+        max_spacing = 0.0
+        duplicate_positions = 0
+        large_gap_count = 0
+        monotonic_increasing = True
+        monotonic_decreasing = True
+        image_index_increasing = True
+        slice_index_increasing = True
+
+    logging.info(
+        "%s slice geometry: count=%d axis=%s projected_range=[%.3f, %.3f] "
+        "median_spacing=%.3f max_spacing=%.3f duplicates=%d large_gaps=%d "
+        "order_inc=%s order_dec=%s image_index_inc=%s slice_index_inc=%s min_slice_dir_dot_axis=%.6f",
+        label,
+        len(records),
+        _format_vector(slice_axis),
+        float(np.min(projected_positions)) if projected_positions.size else 0.0,
+        float(np.max(projected_positions)) if projected_positions.size else 0.0,
+        median_spacing,
+        max_spacing,
+        duplicate_positions,
+        large_gap_count,
+        monotonic_increasing,
+        monotonic_decreasing,
+        image_index_increasing,
+        slice_index_increasing,
+        min_slice_dir_alignment,
+    )
+
+    if not monotonic_increasing:
+        logging.warning(
+            "%s slice positions are not increasing along slice_dir in their current order",
+            label,
+        )
+    if duplicate_positions > 0:
+        logging.warning(
+            "%s has %d duplicate projected slice position(s)",
+            label,
+            duplicate_positions,
+        )
+    if large_gap_count > 0:
+        logging.warning(
+            "%s has %d slice spacing gap(s) larger than 1.5x the median spacing",
+            label,
+            large_gap_count,
+        )
+    if min_slice_dir_alignment < 0.99:
+        logging.warning(
+            "%s has slice_dir vectors that are not aligned with the inferred slice axis",
+            label,
+        )
+
+    if len(records) <= max_records:
+        sample_records = records
+        omitted_count = 0
+    else:
+        head_count = max_records // 2
+        tail_count = max_records - head_count
+        sample_records = records[:head_count] + records[-tail_count:]
+        omitted_count = len(records) - len(sample_records)
+
+    for record in sample_records:
+        logging.info(
+            "%s slice sample: local=%d input=%d image_index=%d slice=%d phase=%d "
+            "proj=%.3f pos=%s slice_dir_dot_axis=%.6f",
+            label,
+            record["local_index"],
+            record["input_index"],
+            record["image_index"],
+            record["slice"],
+            record["phase"],
+            record["projected_position"],
+            _format_vector(record["position"]),
+            record["slice_dir_dot_axis"],
+        )
+    if omitted_count > 0:
+        logging.info("%s slice sample omitted %d middle slice(s)", label, omitted_count)
+
+    return slice_axis, records
+
+
+def _log_slice_sort_mapping(sort_indices, max_records=24):
+    identity = list(range(len(sort_indices)))
+    if sort_indices == identity:
+        logging.info("Segmentation input slice order already matches physical slice order")
+        return
+
+    logging.warning(
+        "Reordering segmentation input slices by physical position: first mappings %s",
+        ", ".join(
+            f"out{output_index}->in{input_index}"
+            for output_index, input_index in enumerate(sort_indices[:max_records])
+        ),
+    )
+    if len(sort_indices) > max_records:
+        logging.warning(
+            "Reordering mapping omitted %d additional slice(s)",
+            len(sort_indices) - max_records,
+        )
+
+
+def _log_affine_slice_consistency(image_headers, voxel_size):
+    if len(image_headers) < 2:
+        return
+
+    slice_axis, records = _build_slice_geometry_records(image_headers)
+    projected_positions = np.array(
+        [record["projected_position"] for record in records],
+        dtype=float,
+    )
+    expected_positions = projected_positions[0] + np.arange(len(projected_positions)) * float(voxel_size[2])
+    residuals = projected_positions - expected_positions
+    max_abs_residual = float(np.max(np.abs(residuals))) if residuals.size else 0.0
+    logging.info(
+        "NIfTI affine slice consistency: z_spacing=%.6f residual_range=[%.6f, %.6f] max_abs_residual=%.6f",
+        float(voxel_size[2]),
+        float(np.min(residuals)),
+        float(np.max(residuals)),
+        max_abs_residual,
+    )
+    if max_abs_residual > max(0.25, 0.25 * float(voxel_size[2])):
+        logging.warning(
+            "Input slice positions are not well described by a single linear NIfTI z-spacing; "
+            "segmentation output will still reuse original per-slice MRD positions"
+        )
+
+
 def _header_to_log_dict(image_header):
     return {
         "version": getattr(image_header, "version", None),
@@ -780,24 +1033,54 @@ def process_image(imgGroup, connection, config, metadata):
 
     # Note: The MRD Image class stores data as [cha z y x]
 
+    unsorted_head = [img.getHead() for img in imgGroup]
+    slice_sort_indices, slice_axis, _ = _slice_sort_indices(unsorted_head)
+    _log_slice_geometry(
+        "Incoming segmentation source",
+        unsorted_head,
+        slice_axis=slice_axis,
+    )
+    _log_slice_sort_mapping(slice_sort_indices)
+
+    ordered_img_group = [imgGroup[index] for index in slice_sort_indices]
+
     # Extract image data into a 5D array of size [img cha z y x]
-    data = np.stack([img.data for img in imgGroup])
-    head = [img.getHead() for img in imgGroup]
-    meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in imgGroup]
+    data = np.stack([img.data for img in ordered_img_group])
+    head = [unsorted_head[index] for index in slice_sort_indices]
+    meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in ordered_img_group]
+
+    _log_slice_geometry(
+        "Sorted segmentation source",
+        head,
+        input_indices=slice_sort_indices,
+        slice_axis=slice_axis,
+    )
 
     matrix = np.array(head[0].matrix_size[:])
 
     #adjust the matrix size to the full 3D volume, it should be as many slices as in length(imgGroup)
-    if matrix[2] != len(imgGroup):
-        matrix[2] = len(imgGroup)    
+    if matrix[2] != len(ordered_img_group):
+        matrix[2] = len(ordered_img_group)    
 
     fov = np.array(head[0].field_of_view[:])
 
     #we also need to adjust fov z to be slice thickness * number of slices
     slice_thickness = fov[2]
-    fov[2] = slice_thickness * len(imgGroup)
+    measured_slice_spacing = _estimate_slice_spacing(head, slice_axis=slice_axis)
+    if measured_slice_spacing is not None:
+        if abs(float(measured_slice_spacing) - float(slice_thickness)) > 0.05:
+            logging.warning(
+                "MRD slice thickness %.6f differs from measured slice spacing %.6f; "
+                "using measured spacing for NIfTI affine",
+                float(slice_thickness),
+                float(measured_slice_spacing),
+            )
+        fov[2] = measured_slice_spacing * len(ordered_img_group)
+    else:
+        fov[2] = slice_thickness * len(ordered_img_group)
 
     voxelsize = fov/matrix
+    _log_affine_slice_consistency(head, voxelsize)
 
     print("matrix:")
     print(matrix)
@@ -1007,6 +1290,18 @@ def process_image(imgGroup, connection, config, metadata):
     print("header length - should be as many as images:")
     print(len(head))
 
+    if data.shape[-1] != len(head):
+        raise ValueError(
+            f"Segmented slice count ({data.shape[-1]}) does not match source header count ({len(head)})"
+        )
+
+    _, output_slice_records = _log_slice_geometry(
+        "Segmentation output header order",
+        head,
+        input_indices=slice_sort_indices,
+        slice_axis=slice_axis,
+    )
+
     for iImg in range(data.shape[-1]):
         # Create new MRD instance for the segmented image
         # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
@@ -1018,7 +1313,12 @@ def process_image(imgGroup, connection, config, metadata):
         # Create a copy of the original fixed header and update the data_type
         # (we changed it to int16 from all other types)
         oldHeader = head[iImg]
+        source_record = output_slice_records[iImg]
+        source_image_index = int(getattr(oldHeader, "image_index", 0))
+        source_slice_index = int(getattr(oldHeader, "slice", 0))
         oldHeader.data_type = imagesOut[iImg].data_type
+        oldHeader.image_index = iImg + 1
+        oldHeader.slice = iImg
 
         print(f"Image {iImg}: data_type = {imagesOut[iImg].data_type}")
 
@@ -1070,6 +1370,10 @@ def process_image(imgGroup, connection, config, metadata):
         tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{source_dicom_image_type_value4}"
         tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
         tmpMeta["ImageComments"] = source_image_label
+        tmpMeta["MuscleMapSourceInputIndex"] = str(source_record["input_index"])
+        tmpMeta["MuscleMapSourceImageIndex"] = str(source_image_index)
+        tmpMeta["MuscleMapSourceSlice"] = str(source_slice_index)
+        tmpMeta["MuscleMapSourceProjectedPosition"] = f"{source_record['projected_position']:.6f}"
         if source_series_description:
             tmpMeta["SeriesDescription"] = source_series_description
         if source_parent_sequence:
@@ -1119,6 +1423,25 @@ def process_image(imgGroup, connection, config, metadata):
 
         imagesOut[iImg].attribute_string = metaXml
 
+        if (
+            data.shape[-1] <= 12
+            or iImg < 6
+            or iImg >= data.shape[-1] - 6
+        ):
+            logging.info(
+                "Segmentation output mapping: output=%d source_input=%d "
+                "image_index=%d->%d slice=%d->%d proj=%.3f pos=%s nonzero_voxels=%d",
+                iImg,
+                source_record["input_index"],
+                source_image_index,
+                oldHeader.image_index,
+                source_slice_index,
+                oldHeader.slice,
+                source_record["projected_position"],
+                _format_vector(source_record["position"]),
+                int(np.count_nonzero(data[..., iImg])),
+            )
+
         if iImg == 0:
             final_meta = ismrmrd.Meta.deserialize(metaXml)
             final_header = imagesOut[iImg].getHead()
@@ -1129,8 +1452,12 @@ def process_image(imgGroup, connection, config, metadata):
                 source_volume_key,
                 {
                     "image_series_index": getattr(final_header, "image_series_index", None),
+                    "image_index": getattr(final_header, "image_index", None),
+                    "slice": getattr(final_header, "slice", None),
                     "contrast": getattr(final_header, "contrast", None),
                     "image_type": getattr(final_header, "image_type", None),
+                    "position": list(getattr(final_header, "position", [])),
+                    "slice_dir": list(getattr(final_header, "slice_dir", [])),
                 },
                 {
                     "SeriesDescription": final_meta.get("SeriesDescription", "N/A"),
@@ -1142,6 +1469,10 @@ def process_image(imgGroup, connection, config, metadata):
                     "DicomImageType": final_meta.get("DicomImageType", "N/A"),
                     "ComplexImageComponent": final_meta.get("ComplexImageComponent", "N/A"),
                     "ImageComments": final_meta.get("ImageComments", "N/A"),
+                    "MuscleMapSourceInputIndex": final_meta.get("MuscleMapSourceInputIndex", "N/A"),
+                    "MuscleMapSourceImageIndex": final_meta.get("MuscleMapSourceImageIndex", "N/A"),
+                    "MuscleMapSourceSlice": final_meta.get("MuscleMapSourceSlice", "N/A"),
+                    "MuscleMapSourceProjectedPosition": final_meta.get("MuscleMapSourceProjectedPosition", "N/A"),
                     "IceMiniHeadPresent": "IceMiniHead" in final_meta,
                 },
                 {
