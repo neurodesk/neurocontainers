@@ -1,14 +1,14 @@
 name: vesselboost
-version: 2.0.11
+version: 2.0.20
 copyright:
   - license: MIT
-    url: https://github.com/stebo85/VesselBoost/blob/memory_optimizations/LICENSE
+    url: https://github.com/KMarshallX/VesselBoost/blob/master/LICENSE
 architectures:
   - x86_64
 variables:
-  vesselboost_branch: fix-brain-extraction
-  vesselboost_source_version: 2.0.1
-  vesselboost_archive_url: "https://github.com/stebo85/VesselBoost/archive/refs/heads/{{ context.vesselboost_branch }}.zip"
+  vesselboost_branch: master
+  vesselboost_source_version: v2.0.2
+  vesselboost_archive_url: "https://github.com/KMarshallX/VesselBoost/archive/refs/tags/{{ context.vesselboost_source_version }}.zip"
   synthstrip_weights_url: "https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.1.pt"
 files:
   - name: vesselboost_zip
@@ -69,7 +69,7 @@ readme: |2-
     prediction.py --image_path $path_to_images --output_path $path_to_output --pretrained $path_to_pretrained_model --prep_mode 4
     ```
 
-    More documentation can be found here: https://github.com/stebo85/VesselBoost/tree/{{ context.vesselboost_branch }}
+    More documentation can be found here: https://github.com/KMarshallX/VesselBoost/tree/{{ context.vesselboost_source_version }}
 
     To run applications outside of this container: ml vesselboost/{{ context.version }}
 
