@@ -26,28 +26,32 @@ import mrdhelper
 debugFolder = "/tmp/share/debug"
 OPENRECON_WORKSPACE_ROOT = "vesselboost_openrecon"
 OPENRECON_OUTPUT_NAME_PARAM = "vboutputname"
+OPENRECON_MODULE_DEFAULT = "prediction"
+OPENRECON_MODULE_VALUES = (OPENRECON_MODULE_DEFAULT,)
+VESSELBOOST_SEGMENTATION_LABEL = "vesselboost_segmentation"
 
 # Keep this overview aligned with recipes/vesselboost/OpenReconLabel.json.
 # Tests can import it to build a minimal OpenRecon config payload.
 OPENRECON_DEFAULTS = {
     "config": "vesselboost",
-    "vbmodules": "prediction",
-    "vbepochs": "200",
-    "vbrate": "0.001",
+    "sendoriginal": True,
     "vbuseblending": False,
     "vboverlap": 50,
-    "vbbiasfieldcorrection": False,
+    "vbbiasfieldcorrection": True,
     "vbdenoising": False,
-    "vbbrainextraction": False,
+    "vbbrainextraction": True,
     "vbreslicesagittal": False,
     "vbreslicecoronal": False,
+}
+OPENRECON_TRAINING_DEFAULTS = {
+    "vbepochs": "200",
+    "vbrate": "0.001",
 }
 OPENRECON_DEFAULT_TEST_CONFIG = {
     "parameters": OPENRECON_DEFAULTS.copy(),
 }
 
 OPENRECON_COMBINATION_PARAMETER_VALUES = {
-    "vbmodules": ("prediction", "tta", "booster"),
     "vbuseblending": (False, True),
     "vbbiasfieldcorrection": (False, True),
     "vbdenoising": (False, True),
@@ -388,6 +392,246 @@ def _config_has_param(config, key: str) -> bool:
     )
 
 
+def _clone_mrd_image(image):
+    image_copy = ismrmrd.Image.from_array(
+        np.array(image.data, copy=True),
+        transpose=False,
+    )
+    image_copy.setHead(image.getHead())
+    image_copy.attribute_string = image.attribute_string
+    return image_copy
+
+
+def _first_non_empty_text(*values):
+    for value in values:
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                text = _first_non_empty_text(item)
+                if text:
+                    return text
+            continue
+
+        if value is None:
+            continue
+
+        text = str(value).strip()
+        if text and text.upper() != "N/A":
+            return text
+
+    return ""
+
+
+def _get_meta_text(meta_obj, key):
+    try:
+        return _first_non_empty_text(meta_obj.get(key))
+    except Exception:
+        return ""
+
+
+def _meta_text_values(value):
+    if value is None:
+        return []
+
+    if isinstance(value, (list, tuple)):
+        raw_values = value
+    else:
+        raw_values = str(value).split("\\")
+
+    values = []
+    for raw_value in raw_values:
+        text = str(raw_value).strip()
+        if text:
+            values.append(text.upper())
+    return values
+
+
+def _extract_dicom_image_type_values(meta_obj):
+    dicom_values = _meta_text_values(meta_obj.get("DicomImageType"))
+    if dicom_values:
+        return dicom_values
+
+    image_type_values = _meta_text_values(meta_obj.get("ImageType"))
+    if not image_type_values:
+        return []
+
+    if len(image_type_values) >= 3:
+        return image_type_values
+
+    value3 = _meta_text_values(meta_obj.get("ImageTypeValue3"))
+    prefix = ["", "", value3[0] if value3 else ""]
+    return prefix + image_type_values
+
+
+def _get_dicom_image_type_value(meta_obj, index):
+    values = _extract_dicom_image_type_values(meta_obj)
+    if len(values) > index:
+        return values[index]
+    return ""
+
+
+def _decode_ice_minihead(meta_obj):
+    try:
+        encoded = meta_obj.get("IceMiniHead")
+        if encoded is None:
+            return ""
+        if isinstance(encoded, (list, tuple)):
+            encoded = encoded[0] if encoded else None
+        if not encoded:
+            return ""
+        return base64.b64decode(encoded).decode("utf-8")
+    except Exception:
+        return ""
+
+
+def _encode_ice_minihead(minihead_text):
+    return base64.b64encode(minihead_text.encode("utf-8")).decode("ascii")
+
+
+def _extract_minihead_string_value(minihead_text, name):
+    if not minihead_text:
+        return ""
+
+    try:
+        return _first_non_empty_text(mrdhelper.extract_minihead_string_param(minihead_text, name))
+    except Exception:
+        pass
+
+    match = re.search(
+        rf'<ParamString\."{re.escape(name)}">\s*\{{\s*"([^"]*)"\s*\}}',
+        minihead_text,
+    )
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def _replace_minihead_string_param(minihead_text, name, value):
+    if not minihead_text or not value:
+        return minihead_text, False
+
+    pattern = re.compile(
+        rf'(<ParamString\."{re.escape(name)}">\s*\{{\s*")([^"]*)("\s*\}})'
+    )
+    match = pattern.search(minihead_text)
+    if not match:
+        return minihead_text, False
+
+    replacement = f"{match.group(1)}{value}{match.group(3)}"
+    return minihead_text[:match.start()] + replacement + minihead_text[match.end():], True
+
+
+def _replace_minihead_array_token(minihead_text, name, source_token, target_token):
+    if not minihead_text or not target_token:
+        return minihead_text, False
+
+    block_pattern = re.compile(
+        rf'<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    block_match = block_pattern.search(minihead_text)
+    if not block_match:
+        return minihead_text, False
+
+    block_text = block_match.group(0)
+    tokens = [token.strip() for token in re.findall(r'\{\s*"([^"]+)"\s*\}', block_text)]
+    if not tokens:
+        return minihead_text, False
+
+    if any(token.upper() == target_token.upper() for token in tokens):
+        return minihead_text, False
+
+    replacement_source = ""
+    source_token = (source_token or "").strip().upper()
+    for token in tokens:
+        if token.upper() == source_token:
+            replacement_source = token
+            break
+
+    if not replacement_source:
+        reserved_tokens = {"NORM", "DIS2D", "DIS3D"}
+        for token in tokens:
+            if token.upper() not in reserved_tokens:
+                replacement_source = token
+                break
+
+    if not replacement_source:
+        return minihead_text, False
+
+    token_pattern = re.compile(rf'(\{{\s*"){re.escape(replacement_source)}("\s*\}})')
+    token_match = token_pattern.search(block_text)
+    if not token_match:
+        return minihead_text, False
+
+    replaced_block = (
+        block_text[:token_match.start()]
+        + f'{token_match.group(1)}{target_token}{token_match.group(2)}'
+        + block_text[token_match.end():]
+    )
+    return (
+        minihead_text[:block_match.start()] + replaced_block + minihead_text[block_match.end():],
+        True,
+    )
+
+
+def _patch_ice_minihead(
+    minihead_text,
+    parent_sequence,
+    parent_grouping,
+    source_type_token,
+    target_type_token,
+):
+    if not minihead_text:
+        return minihead_text, False
+
+    changed = False
+    current_text = minihead_text
+
+    for param_name, param_value in (
+        ("SequenceDescription", parent_sequence),
+        ("SeriesNumberRangeNameUID", parent_grouping),
+        ("ImageType", f"DERIVED\\PRIMARY\\M\\{target_type_token}"),
+        ("ImageTypeValue3", "M"),
+        ("ComplexImageComponent", "MAGNITUDE"),
+    ):
+        current_text, did_change = _replace_minihead_string_param(current_text, param_name, param_value)
+        changed = changed or did_change
+
+    current_text, did_change = _replace_minihead_array_token(
+        current_text,
+        "ImageTypeValue4",
+        source_type_token,
+        target_type_token,
+    )
+    changed = changed or did_change
+
+    return current_text, changed
+
+
+def _resolve_source_series_identity(meta_obj):
+    minihead_text = _decode_ice_minihead(meta_obj)
+    series_description = _get_meta_text(meta_obj, "SeriesDescription")
+    parent_sequence = _first_non_empty_text(
+        _get_meta_text(meta_obj, "SequenceDescription"),
+        _extract_minihead_string_value(minihead_text, "SequenceDescription"),
+        series_description,
+    )
+    parent_grouping = _first_non_empty_text(
+        _extract_minihead_string_value(minihead_text, "SeriesNumberRangeNameUID"),
+        parent_sequence,
+    )
+    source_type_token = _first_non_empty_text(
+        _get_meta_text(meta_obj, "ImageTypeValue4"),
+        _get_dicom_image_type_value(meta_obj, 3),
+    )
+
+    return {
+        "series_description": series_description,
+        "parent_sequence": parent_sequence,
+        "parent_grouping": parent_grouping,
+        "source_type_token": source_type_token,
+    }
+
+
 def _derive_prep_mode(bias_field_correction: bool, denoising: bool) -> int:
     return PREP_MODE_FROM_FLAGS[(bias_field_correction, denoising)]
 
@@ -437,7 +681,7 @@ def iter_openrecon_parameter_combinations(
     modules: tuple[str, ...] | None = None,
     fast_training: bool = False,
 ):
-    module_values = modules or OPENRECON_COMBINATION_PARAMETER_VALUES["vbmodules"]
+    module_values = modules or OPENRECON_MODULE_VALUES
     bool_keys = (
         "vbuseblending",
         "vbbiasfieldcorrection",
@@ -453,7 +697,6 @@ def iter_openrecon_parameter_combinations(
         itertools.product(*bool_value_sets),
     ):
         parameters = OPENRECON_DEFAULTS.copy()
-        parameters["vbmodules"] = module
         parameters.update(dict(zip(bool_keys, bool_values)))
         if fast_training and module in ("tta", "booster"):
             parameters["vbepochs"] = "1"
@@ -493,7 +736,7 @@ def write_openrecon_parameter_combinations(
 
 def _parse_module_list(value: str) -> tuple[str, ...]:
     modules = tuple(module.strip() for module in value.split(",") if module.strip())
-    valid_modules = set(OPENRECON_COMBINATION_PARAMETER_VALUES["vbmodules"])
+    valid_modules = set(OPENRECON_MODULE_VALUES)
     invalid_modules = sorted(set(modules) - valid_modules)
     if invalid_modules:
         raise ValueError(
@@ -516,7 +759,7 @@ def _main(argv=None) -> int:
     )
     parser.add_argument(
         "--modules",
-        default=",".join(OPENRECON_COMBINATION_PARAMETER_VALUES["vbmodules"]),
+        default=",".join(OPENRECON_MODULE_VALUES),
         help="Comma-separated module list for generated configs.",
     )
     parser.add_argument(
@@ -915,6 +1158,29 @@ def process_image(images, connection, config, metadata):
         else:
             return bool(option)
 
+    send_original = boolean_checker(
+        "sendoriginal",
+        default_val=OPENRECON_DEFAULTS["sendoriginal"],
+    )
+    called_from_raw = traceback.extract_stack()[-2].name == "process_raw"
+    original_images = []
+    if send_original and not called_from_raw:
+        original_images = [_clone_mrd_image(image) for image in images]
+    logging.info("sendoriginal resolved to %s", send_original)
+
+    source_identity = _resolve_source_series_identity(
+        ismrmrd.Meta.deserialize(images[0].attribute_string)
+    )
+    logging.info(
+        "VesselBoost output identity: series_description=%s sequence=%s "
+        "grouping=%s source_type=%s output_type=%s",
+        source_identity["series_description"] or "N/A",
+        source_identity["parent_sequence"] or "N/A",
+        source_identity["parent_grouping"] or "N/A",
+        source_identity["source_type_token"] or "N/A",
+        VESSELBOOST_SEGMENTATION_LABEL,
+    )
+
     # Create folder, if necessary
     if not os.path.exists(debugFolder):
         os.makedirs(debugFolder)
@@ -1031,7 +1297,7 @@ def process_image(images, connection, config, metadata):
     module = mrdhelper.get_json_config_param(
         config,
         "vbmodules",
-        default=OPENRECON_DEFAULTS["vbmodules"],
+        default=OPENRECON_MODULE_DEFAULT,
         type='str',
     )
     bias_field_correction = boolean_checker(
@@ -1073,13 +1339,13 @@ def process_image(images, connection, config, metadata):
     epochs = mrdhelper.get_json_config_param(
         config,
         "vbepochs",
-        default=OPENRECON_DEFAULTS["vbepochs"],
+        default=OPENRECON_TRAINING_DEFAULTS["vbepochs"],
         type='str',
     )
     l_rate = mrdhelper.get_json_config_param(
         config,
         "vbrate",
-        default=OPENRECON_DEFAULTS["vbrate"],
+        default=OPENRECON_TRAINING_DEFAULTS["vbrate"],
         type='str',
     )
     use_blending = boolean_checker(
@@ -1356,7 +1622,38 @@ def process_image(images, connection, config, metadata):
         tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'VESSELBOOST']
         tmpMeta['WindowCenter']                   = str((maxVal+1)/2)
         tmpMeta['WindowWidth']                    = str((maxVal+1))
-        tmpMeta['SequenceDescriptionAdditional']  = 'VesselBoost'
+        tmpMeta['ImageType']                      = VESSELBOOST_SEGMENTATION_LABEL
+        tmpMeta['ImageTypeValue3']                = 'M'
+        tmpMeta['ImageTypeValue4']                = VESSELBOOST_SEGMENTATION_LABEL
+        tmpMeta['DicomImageType']                 = f"DERIVED\\PRIMARY\\M\\{VESSELBOOST_SEGMENTATION_LABEL.upper()}"
+        tmpMeta['ComplexImageComponent']          = 'MAGNITUDE'
+        tmpMeta['ImageComments']                  = VESSELBOOST_SEGMENTATION_LABEL
+        if source_identity["series_description"]:
+            tmpMeta['SeriesDescription'] = source_identity["series_description"]
+        if source_identity["parent_sequence"]:
+            tmpMeta['SequenceDescription'] = source_identity["parent_sequence"]
+        if 'SequenceDescriptionAdditional' in tmpMeta:
+            try:
+                del tmpMeta['SequenceDescriptionAdditional']
+            except Exception:
+                tmpMeta['SequenceDescriptionAdditional'] = ''
+
+        minihead_text = _decode_ice_minihead(tmpMeta)
+        if minihead_text:
+            patched_minihead_text, minihead_changed = _patch_ice_minihead(
+                minihead_text,
+                source_identity["parent_sequence"],
+                source_identity["parent_grouping"],
+                source_identity["source_type_token"],
+                VESSELBOOST_SEGMENTATION_LABEL,
+            )
+            if minihead_changed:
+                tmpMeta['IceMiniHead'] = _encode_ice_minihead(patched_minihead_text)
+            else:
+                logging.warning(
+                    "IceMiniHead was present but not updated for VesselBoost output slice %d",
+                    iImg,
+                )
         tmpMeta['Keep_image_geometry']            = 1
 
         # Add image orientation directions to MetaAttributes if not already present
@@ -1415,6 +1712,24 @@ def process_image(images, connection, config, metadata):
                     max_val=maxVal,
                 )
             )
+
+    if send_original:
+        if called_from_raw:
+            logging.warning(
+                "sendoriginal is true, but input was raw data, so no original images to return."
+            )
+        else:
+            logging.info(
+                "Sending original MRA images with their source series grouping preserved"
+            )
+            ordered_original_images = [
+                original_images[index] for index in slice_sort_indices
+            ]
+            for original_image in reversed(ordered_original_images):
+                tmpMeta = ismrmrd.Meta.deserialize(original_image.attribute_string)
+                tmpMeta['Keep_image_geometry'] = 1
+                original_image.attribute_string = tmpMeta.serialize()
+                imagesOut.insert(0, original_image)
 
     return imagesOut
 

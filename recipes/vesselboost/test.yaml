@@ -27,7 +27,7 @@ tests:
         /buildhostdirectory/tof.h5 \
         -c vesselboost
 
-      default_openrecon_nii_dir=/tmp/share/debug/vesselboost_openrecon/prediction_prep4_brain0_blend0/tof_output
+      default_openrecon_nii_dir=/tmp/share/debug/vesselboost_openrecon/prediction_prep1_brain1_blend0/tof_output
       rm -rf /buildhostdirectory/tof_openrecon_output
       mkdir -p /buildhostdirectory/tof_openrecon_output
       cp -a "${default_openrecon_nii_dir}/." /buildhostdirectory/tof_openrecon_output/
@@ -40,9 +40,6 @@ tests:
         '{' \
         '  "parameters": {' \
         '    "config": "vesselboost",' \
-        '    "vbmodules": "prediction",' \
-        '    "vbepochs": "200",' \
-        '    "vbrate": "0.001",' \
         '    "vbuseblending": false,' \
         '    "vboverlap": 50,' \
         '    "vbbiasfieldcorrection": true,' \
@@ -64,8 +61,7 @@ tests:
       rm -f vesselboost.json
 
 
-      # Optional exhaustive OpenRecon parameter matrix.
-      # Enable with:
+      # Test exhaustive OpenRecon parameter matrix.
       export VESSELBOOST_TEST_ALL_OPENRECON_PARAMS=1
       if [ "${VESSELBOOST_TEST_ALL_OPENRECON_PARAMS:-0}" = "1" ]; then
         matrix_dir=/tmp/vesselboost_openrecon_parameter_matrix
@@ -75,8 +71,7 @@ tests:
         mkdir -p "${matrix_output_dir}"
         python3 /opt/code/python-ismrmrd-server/vesselboost.py \
           --write-openrecon-test-configs "${matrix_dir}" \
-          --modules "${VESSELBOOST_OPENRECON_MATRIX_MODULES:-prediction,tta,booster}" \
-          --fast-training
+          --modules "${VESSELBOOST_OPENRECON_MATRIX_MODULES:-prediction}"
 
         for config_file in "${matrix_dir}"/*.json; do
           test_name=$(basename "${config_file}" .json)
