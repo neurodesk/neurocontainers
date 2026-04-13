@@ -781,7 +781,7 @@ jobs:
         gh repo clone neurodesk/openrecon "$OPENRECON_DIR"
 
         SOURCE_LABEL_FILE="${GITHUB_WORKSPACE}/recipes/${CONTAINER_NAME}/OpenReconLabel.json"
-        SOURCE_README_FILE="${GITHUB_WORKSPACE}/recipes/${CONTAINER_NAME}/OpenRecon_README.md"
+        SOURCE_README_FILE="${GITHUB_WORKSPACE}/recipes/${CONTAINER_NAME}/OpenReconREADME.md"
         TARGET_RECIPE_DIR="${OPENRECON_DIR}/recipes/${CONTAINER_NAME}"
         TARGET_LABEL_FILE="${TARGET_RECIPE_DIR}/OpenReconLabel.json"
         TARGET_PARAMS_FILE="${TARGET_RECIPE_DIR}/params.sh"
@@ -807,7 +807,7 @@ jobs:
         if [ -f "$SOURCE_README_FILE" ]; then
           cp "$SOURCE_README_FILE" "$TARGET_README_FILE"
           OPENRECON_PATHS+=("recipes/${CONTAINER_NAME}/README.md")
-          OPENRECON_README_CHANGE_NOTE="- Copy \`recipes/${CONTAINER_NAME}/OpenRecon_README.md\` from neurocontainers to \`recipes/${CONTAINER_NAME}/README.md\` for OpenRecon PDF generation"
+          OPENRECON_README_CHANGE_NOTE="- Copy \`recipes/${CONTAINER_NAME}/OpenReconREADME.md\` from neurocontainers to \`recipes/${CONTAINER_NAME}/README.md\` for OpenRecon PDF generation"
           echo "Copied OpenRecon README: ${SOURCE_README_FILE} -> ${TARGET_README_FILE}"
         else
           echo "No OpenRecon README found for ${CONTAINER_NAME}; skipping README sync."
