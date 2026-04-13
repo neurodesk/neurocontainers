@@ -1,5 +1,5 @@
 name: vesselboost
-version: 2.0.10
+version: 2.0.11
 copyright:
   - license: MIT
     url: https://github.com/stebo85/VesselBoost/blob/memory_optimizations/LICENSE
