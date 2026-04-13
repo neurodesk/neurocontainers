@@ -1,27 +1,22 @@
 name: aslprep
 version: 0.7.5
-
 copyright:
-  - license: BSD-3-Clause # has to be SPDX Identifier
+  - license: BSD-3-Clause
     url: https://github.com/pennlinc/aslprep/blob/main/LICENSE.md
-
 architectures:
   - x86_64
-
 build:
   kind: neurodocker
-
   base-image: pennlinc/aslprep:0.7.5
   pkg-manager: apt
-
   directives:
+    - run:
+        - pip install bids-validator
+    - deploy:
+        bins:
+          - aslprep
     - environment:
         HOME: ~/
-
-deploy:
-  bins:
-    - aslprep
-
 readme: |-
   ----------------------------------
   ## aslprep/{{ context.version }} ##
@@ -44,7 +39,7 @@ readme: |-
   License: 3-clause BSD license, https://github.com/pennlinc/aslprep/blob/main/LICENSE.md
 
   ----------------------------------
-
 categories:
-  - "quantitative imaging"
-  - "workflows"
+  - quantitative imaging
+  - workflows
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAADzElEQVR4AexTX0hbZxT/XavGNJ12mwksaouyjDVpO1v0UiNLfJA9FNzWWeNUtHQJa0HpRl82BBtFGLi3PTjGiBRR9jrYn7YMnIYO1wnrGGum0EIaE9OmmsRc02quyb39vqO2lTTUlz4Uesk535fznXN+3/md8+U5P02oO5Xuc5JqmfxRLb3yw44lDzk+RUkjHp9FOv0gh8fOzDkBMpkUAv5fkFyZ31mmHF45AeTUMsJhL2IxH1RVyRH+bHNOgAerEcRjs7gXmYGiyNmZMhlkIotQojGwG2Sfb1qeCrAi3cZVbw/W1pbgu/EdvJNnIcsShcihMJLfeBD98BPET32GWEcPos0u3P9+HMoSAyOvxyoLgNMRifyFZdZgn8+HUCiEt0wZ8IYvx28i6P4aLaVlSESj7OIqSeJuBCd1ryP57ShUKfk4O9tlAayvJzEfuIyBgX6UlJQwF6C+vobZrsDvv4yWehuGh4cxMzMDQRBI+J7bWt88APmf/7ZRlgWQSNzCnfBVWK1WzM3NkTQ3N2P+9iXEov/DZDIR6PT0NK1cjY6O8gV2mw3pm36o6TT952obAJ/9cGiSJT+MyspK8CQ8mFfS1CSynsQxNTUFSZLQ19cHj8fDc2BsbAzFxcVwuVxQk/fBpoLsXG0DWFu9h0DgEhoaGvgZeDIenEgkYLfbsCIFMOn1ory8HCMjI3A6ndQDVVXhuXgRu/aVoeDQ2xDy8ymeqycAVCwuXkd06V9WgRVVVVWYmJigBGazGXV1dexNzEJl48kD+W0FYaMHg4ODcDAa3a4zkK/fgLr+FIrS6VUE539DR8fHEEWRbigIGwm6urpgMBhY4weIFj5dHGRLeKWcNqPRCIW9DXV1besIjypYkfxYCP3OqLDToZdRQRumFhYWkEqlqDJur6ioICB2RL/29nbo9Xr28sPIM5RC0BaRnSsC4M29E/4DyWSQqAgGg/jp52s42fo3PjgxhT+v+WiaeGU8qLu7Gw6Hg+jj/Hd2dmJoaAgX+vtRKFZD0BRyNxICkOVl1txfyWCxWMDFaLRjj64MJXtNMBrfRWNjI00Kb/rY+DjtBWGDQo1GgwtuN3TONhRaa8EeB7Y+AlCUdezbfxxHa3pJasUBHDA7sSu/CAUFOhw81IMa0Q3xWC8Mp9ugdbwP3akWFL1nh8Z2jBLvHf4K2o+OQygs2MpNKwHs3v0GLAfP4sjRL0gOV3+OV18zMweBpFR/BO9Un0et+CX0XQ7oTrdC23YCe86fwSu956BtaUJ+1X48eXNsfgSwuX8uy0uAZ9L64lP0EAAA//8q0/N/AAAABklEQVQDAA16yHBOSHJPAAAAAElFTkSuQmCC
