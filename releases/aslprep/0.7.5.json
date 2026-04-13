@@ -1,8 +1,9 @@
 {
   "apps": {
     "aslprep 0.7.5": {
-      "version": "20250206",
-      "exec": ""
+      "version": "20260413",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
