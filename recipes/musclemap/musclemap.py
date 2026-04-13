@@ -988,6 +988,13 @@ def process_image(imgGroup, connection, config, metadata):
             imagesOut.append(tmpImg)
         return imagesOut
 
+    segmentation_colormap = mrdhelper.get_json_config_param(config, 'segmentationcolormap', default=False, type='bool')
+    if isinstance(segmentation_colormap, str):
+        segmentation_colormap = segmentation_colormap.strip().lower() in ("1", "true", "yes", "on")
+    else:
+        segmentation_colormap = bool(segmentation_colormap)
+    logging.info("segmentationcolormap resolved to %s", segmentation_colormap)
+
     # Determine the source image type (e.g. "Water", "Fat", "In_Phase", …)
     # from the first image's metadata so the segmentation output is named accordingly.
     _first_meta = ismrmrd.Meta.deserialize(imgGroup[0].attribute_string)
@@ -1416,6 +1423,9 @@ def process_image(imgGroup, connection, config, metadata):
                 "{:.18f}".format(oldHeader.phase_dir[1]),
                 "{:.18f}".format(oldHeader.phase_dir[2]),
             ]
+
+        if segmentation_colormap:
+            tmpMeta["LUTFileName"] = "MicroDeltaHotMetal.pal"
 
         metaXml = tmpMeta.serialize()
         # logging.debug("Image MetaAttributes: %s", xml.dom.minidom.parseString(metaXml).toprettyxml())

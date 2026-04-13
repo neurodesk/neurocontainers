@@ -71,6 +71,13 @@
       "default": true
     },
     {
+      "id": "segmentationcolormap",
+      "label": { "en": "Segmentation color map" },
+      "type": "boolean",
+      "information": { "en": "Show MuscleMap segmentation using a color lookup table when supported by the viewer." },
+      "default": false
+    },
+    {
       "id": "bodyregion",
       "label": { "en": "Body Region" },
       "type": "choice",
