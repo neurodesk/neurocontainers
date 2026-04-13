@@ -1,5 +1,5 @@
 name: aslprep
-version: 0.7.5
+version: 26.0.2
 copyright:
   - license: BSD-3-Clause
     url: https://github.com/pennlinc/aslprep/blob/main/LICENSE.md
@@ -7,14 +7,13 @@ architectures:
   - x86_64
 build:
   kind: neurodocker
-  base-image: pennlinc/aslprep:0.7.5
+  base-image: pennlinc/aslprep:{{ context.version }}
   pkg-manager: apt
   directives:
-    - run:
-        - pip install bids-validator
     - deploy:
         bins:
           - aslprep
+          - bids-validator
     - environment:
         HOME: ~/
 readme: |-
