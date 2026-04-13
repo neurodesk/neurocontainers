@@ -13,6 +13,7 @@ build:
     - deploy:
         bins:
           - fmriprep
+          - bids-validator
   add-default-template: false
   add-tzdata: false
 readme: |-
