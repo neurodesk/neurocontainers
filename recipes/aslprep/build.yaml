@@ -16,6 +16,8 @@ build:
           - bids-validator
     - environment:
         HOME: ~/
+  add-default-template: false
+  add-tzdata: false
 readme: |-
   ----------------------------------
   ## aslprep/{{ context.version }} ##
