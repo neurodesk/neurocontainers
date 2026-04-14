@@ -964,30 +964,6 @@ def process_image(imgGroup, connection, config, metadata):
     if len(imgGroup) == 0:
         return []
 
-    only_save_original = mrdhelper.get_json_config_param(config, 'onlysaveoriginal', default=False, type='bool')
-    if isinstance(only_save_original, str):
-        only_save_original = only_save_original.strip().lower() in ("1", "true", "yes", "on")
-    else:
-        only_save_original = bool(only_save_original)
-    logging.info("onlysaveoriginal resolved to %s", only_save_original)
-
-    if only_save_original:
-        logging.info("Skipping segmentation and forwarding only original images due to onlysaveoriginal=True")
-        imagesOut = []
-        for idx, image in enumerate(imgGroup):
-            tmpImg = image
-            tmpMeta = ismrmrd.Meta.deserialize(tmpImg.attribute_string)
-            tmpMeta["Keep_image_geometry"] = 1
-            tmpImg.attribute_string = tmpMeta.serialize()
-            logging.info(
-                "Original-only header [%d/%d]: %s",
-                idx + 1,
-                len(imgGroup),
-                _header_to_log_dict(tmpImg.getHead()),
-            )
-            imagesOut.append(tmpImg)
-        return imagesOut
-
     segmentation_colormap = mrdhelper.get_json_config_param(config, 'segmentationcolormap', default=False, type='bool')
     if isinstance(segmentation_colormap, str):
         segmentation_colormap = segmentation_colormap.strip().lower() in ("1", "true", "yes", "on")
