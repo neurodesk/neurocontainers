@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "aslprep 26.0.2": {
+      "version": "20260414",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "quantitative imaging",
+    "workflows"
+  ]
+}
