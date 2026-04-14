@@ -1210,6 +1210,17 @@ def process_image(images, connection, config, metadata):
     data = np.stack([img.data for img in ordered_images])
     head = [unsorted_head[index] for index in slice_sort_indices]
     meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in ordered_images]
+    source_series_indices = [
+        int(getattr(image_header, "image_series_index", 0))
+        for image_header in head
+    ]
+    segmentation_series_index = max(source_series_indices, default=0) + 1
+    logging.info(
+        "Using image_series_index=%d for VesselBoost segmentation "
+        "(source series indices=%s)",
+        segmentation_series_index,
+        sorted(set(source_series_indices)),
+    )
     legacy_option = None
     if isinstance(config, dict):
         parameters = config.get("parameters")
@@ -1606,8 +1617,9 @@ def process_image(images, connection, config, metadata):
         else:
             oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
 
-        # Unused example, as images are grouped by series before being passed into this function now
-        # oldHeader.image_series_index = currentSeries
+        oldHeader.image_series_index = segmentation_series_index
+        oldHeader.image_index = iImg + 1
+        oldHeader.slice = iImg
 
         # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
         if mrdhelper.get_meta_value(meta[iImg], 'IceMiniHead') is not None:
@@ -1670,10 +1682,7 @@ def process_image(images, connection, config, metadata):
         imagesOut[iImg].attribute_string = metaXml
 
     if reslice_sagittal or reslice_coronal:
-        base_series = max(
-            (int(getattr(h, "image_series_index", 0)) for h in head),
-            default=0,
-        ) + 1
+        base_series = segmentation_series_index + 1
         meta_template = meta[0] if meta else None
 
         if reslice_sagittal:
