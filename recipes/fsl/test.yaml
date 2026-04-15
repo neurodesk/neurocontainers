@@ -22,7 +22,30 @@ tests:
       ICA_AROMA.py -h
 
       oxasl --version
- 
+
+      fslpython -c "import regtricks as rt; print('regtricks version:', rt.__version__)"
+
+
+      # Test that xdg-open and a browser are available so FSL can open help URLs
+      if ! command -v xdg-open &> /dev/null; then
+          echo "xdg-open is not available."
+          exit 1
+      fi
+      echo "xdg-open found at: $(command -v xdg-open)"
+
+      if ! command -v firefox &> /dev/null; then
+          echo "firefox is not available."
+          exit 1
+      fi
+      firefox --version
+
+      # Confirm xdg-open resolves to firefox via BROWSER env var
+      if [ "$BROWSER" != "firefox" ]; then
+          echo "Error: BROWSER env var is not set to firefox (got: '$BROWSER')."
+          exit 1
+      fi
+      echo "BROWSER env var is set to: $BROWSER"
+
       #test if DEPLOY_ENV_FSLDIR is set correctly
       if [ -z "$DEPLOY_ENV_FSLDIR" ]; then
           echo "Error: Variable is NOT set."

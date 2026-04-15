@@ -1,7 +1,7 @@
 name: fsl
 # check for latest version: https://fsl.fmrib.ox.ac.uk/fsl/docs/development/history/index.html
 # check or add latest version is in neurodocker https://github.com/ReproNim/neurodocker/blob/master/neurodocker/templates/fsl.yaml
-version: 6.0.7.19
+version: 6.0.7.22
 
 copyright:
   - name: fsl license
@@ -34,7 +34,22 @@ build:
   pkg-manager: apt
 
   directives:
-    - install: git ca-certificates ltrace strace wget libxml2 gcc build-essential nvidia-cuda-toolkit
+    - install: git ca-certificates ltrace strace wget libxml2 gcc build-essential nvidia-cuda-toolkit xdg-utils gnupg
+
+    # Install Firefox from Mozilla's official APT repo so xdg-open has a working
+    # browser. The default Ubuntu 24.04 `firefox` package is a snap transitional
+    # that does not work inside containers.
+    - run:
+        - install -d -m 0755 /etc/apt/keyrings
+        - wget -q https://packages.mozilla.org/apt/repo-signing-key.gpg -O /etc/apt/keyrings/packages.mozilla.org.asc
+        - echo "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main" > /etc/apt/sources.list.d/mozilla.list
+        - "echo 'Package: *' > /etc/apt/preferences.d/mozilla"
+        - "echo 'Pin: origin packages.mozilla.org' >> /etc/apt/preferences.d/mozilla"
+        - "echo 'Pin-Priority: 1000' >> /etc/apt/preferences.d/mozilla"
+        - apt-get update -qq && apt-get install -y --no-install-recommends firefox && rm -rf /var/lib/apt/lists/*
+
+    - environment:
+        BROWSER: firefox
 
     - template:
         name: fsl
@@ -90,7 +105,7 @@ build:
     - run:
         - fslpython -m pip install Cython
         - fslpython -m pip install --no-build-isolation maskslic
-        - fslpython -m pip install oxasl oxasl_ve oxasl_mp
+        - fslpython -m pip install oxasl oxasl_ve oxasl_mp regtricks
         - rm -rf /root/.cache
 
     - run:
@@ -121,41 +136,55 @@ deploy:
 files:
   - name: v0_4_3_beta_tar_gz
     url: https://github.com/rhr-pruim/ICA-AROMA/archive/v0.4.3-beta.tar.gz
+
   - name: UnixIntro_tar_gz
+    condition: context.options.workshop
     url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/UnixIntro.tar.gz
 
   - name: preCourse_tar_gz
+    condition: context.options.workshop
     url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/preCourse.tar.gz
 
   - name: registration_tar_gz
+    condition: context.options.workshop
     url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/registration.tar.gz
 
   - name: structural_tar_gz
+    condition: context.options.workshop
     url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/structural.tar.gz
 
   - name: fmri1_tar_gz
+    condition: context.options.workshop
     url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fmri1.tar.gz
 
   - name: fmri2_tar_gz
+    condition: context.options.workshop
     url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fmri2.tar.gz
 
   - name: fmri3_tar_gz
+    condition: context.options.workshop
     url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fmri3.tar.gz
 
   - name: fmri_extras_tar_gz
+    condition: context.options.workshop
     url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fmri_extras.tar.gz
 
   - name: rest_tar_gz
+    condition: context.options.workshop
     url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/rest.tar.gz
 
   - name: fdt_tar_gz
+    condition: context.options.workshop
     url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/fdt.tar.gz
 
   - name: mrs_tar_gz
+    condition: context.options.workshop
     url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/mrs.tar.gz
 
   - name: asl_tar_gz
+    condition: context.options.workshop
     url: http://fsl.fmrib.ox.ac.uk/fslcourse/downloads/asl.tar.gz
+
   - name: eddy
     filename: eddy
 
@@ -176,14 +205,22 @@ readme: |
   fnirt
   ```
 
-  {% if context.options.workshop %}
-  This image contains the fsl course data under /opt/fsl_course_data
-  e.g.:
+  This container also includes the [oxasl](https://github.com/physimals/oxasl) ASL (Arterial Spin Labelling) analysis pipeline from the Physimals group, along with the `oxasl_ve` (vessel-encoded ASL) and `oxasl_mp` (multi-phase ASL) extensions. The pipeline wraps FSL's BASIL toolbox and provides a single-command interface for preprocessing, kinetic model fitting, calibration, and output of perfusion maps.
 
+  Examples:
   ```
-  fslmaths /opt/fsl_course_data/UnixIntro/structural/sub-01_T1w.nii.gz -mul 2 /opt/fsl_course_data/UnixIntro/structural/sub-01_T1w_2.nii.gz
+  oxasl --version
+  oxasl -i asl_data.nii.gz --casl --iaf=tc --ibf=rpt --plds=0.25,0.5,0.75,1.0,1.25,1.5 --bolus=1.4 -o oxasl_out
   ```
-  {% endif %}
+
+  oxasl documentation: https://oxasl.readthedocs.io/
+
+  This container also includes [regtricks](https://github.com/tomfrankkirk/regtricks), a Python library for manipulating and applying transformations between neuroimaging volumes. It wraps FSL/FLIRT and other tools to handle registration chains, resampling, and coordinate transforms with a consistent API.
+
+  Example:
+  ```
+  fslpython -c "import regtricks as rt; print(rt.__version__)"
+  ```
 
 
   More documentation can be found here: https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/
