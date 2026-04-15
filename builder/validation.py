@@ -197,6 +197,8 @@ def validate_file_template_syntax(file_dict: Dict[str, Any], path: str):
         if not isinstance(file_dict["contents"], str):
             raise ValueError(f"{path}.contents must be a string")
         validate_template_syntax(file_dict["contents"], f"{path}.contents")
+    if "condition" in file_dict:
+        validate_condition_syntax(file_dict["condition"], f"{path}.condition")
 
 
 def validate_directive_template_syntax(directive_dict: Dict[str, Any], path: str):
@@ -380,6 +382,7 @@ class FileInfo:
     insecure: Optional[bool] = attrs.field(default=None)
     retry: Optional[int] = attrs.field(default=None)
     refresh: Optional[bool] = attrs.field(default=None)
+    condition: Optional[str] = attrs.field(default=None)
 
 
 # ============================================================================

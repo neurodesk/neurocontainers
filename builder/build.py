@@ -1819,6 +1819,10 @@ def generate_from_description(
 
     if skip_file_population:
         for file in description_file.get("files", []):
+            if "condition" in file and not ctx.execute_condition(
+                file["condition"], locals=locals
+            ):
+                continue
             ctx.add_file(
                 file,
                 recipe_path,
@@ -1855,6 +1859,10 @@ def generate_from_description(
 
     # Write all files
     for file in description_file.get("files", []):
+        if "condition" in file and not ctx.execute_condition(
+            file["condition"], locals=locals
+        ):
+            continue
         ctx.add_file(file, recipe_path, check_only=check_only, locals=locals)
 
     # Copy build.yaml to build directory for inclusion in container
