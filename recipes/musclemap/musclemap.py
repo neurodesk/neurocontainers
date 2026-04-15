@@ -1,8 +1,12 @@
 import ismrmrd
+import csv
 import copy
+import glob
 import os
 import itertools
+import json
 import logging
+import shutil
 import traceback
 import numpy as np
 import numpy.fft as fft
@@ -21,6 +25,9 @@ import subprocess
 debugFolder = "/tmp/share/debug"
 mmSegmentInputPath = "/opt/input.nii.gz"
 mmSegmentOutputPath = "/opt/input_dseg.nii.gz"
+mmMetricsSegmentationPath = "/tmp/musclemap_input_dseg_metrics.nii.gz"
+mmMetricsOutputDir = "/tmp/musclemap_metrics"
+mmMetricsMethod = "average"
 
 
 def process(connection, config, metadata):
@@ -318,6 +325,12 @@ def _get_meta_text(meta_obj, key):
         return ""
 
 
+def _as_config_bool(value):
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
 def _strip_dixon_series_suffix(series_name):
     series_name = _first_non_empty_text(series_name)
     if not series_name:
@@ -424,6 +437,37 @@ def _replace_minihead_string_param(minihead_text, name, value):
     return minihead_text[:match.start()] + replacement + minihead_text[match.end():], True
 
 
+def _sanitize_minihead_param_value(value):
+    text = _first_non_empty_text(value)
+    if not text:
+        return ""
+    return (
+        text.replace("\\", "/")
+        .replace('"', "'")
+        .replace("\r", " ")
+        .replace("\n", " ")
+    )
+
+
+def _replace_or_append_minihead_string_param(minihead_text, name, value):
+    value = _sanitize_minihead_param_value(value)
+    if not minihead_text or not value:
+        return minihead_text, False
+
+    pattern = re.compile(
+        rf'(<ParamString\."{re.escape(name)}">\s*\{{\s*")([^"]*)("\s*\}})'
+    )
+    match = pattern.search(minihead_text)
+    if match:
+        if match.group(2) == value:
+            return minihead_text, False
+        replacement = f"{match.group(1)}{value}{match.group(3)}"
+        return minihead_text[:match.start()] + replacement + minihead_text[match.end():], True
+
+    appended_param = f'\n<ParamString."{name}">\t{{ "{value}" }}\n'
+    return minihead_text.rstrip() + appended_param, True
+
+
 def _replace_minihead_array_token(minihead_text, name, source_token, target_token):
     if not minihead_text or not target_token:
         return minihead_text, False
@@ -483,6 +527,7 @@ def _patch_ice_minihead(
     parent_grouping,
     source_type_token,
     target_type_token,
+    metrics_text=None,
 ):
     if not minihead_text:
         return minihead_text, False
@@ -507,6 +552,14 @@ def _patch_ice_minihead(
         target_type_token,
     )
     changed = changed or did_change
+
+    if metrics_text:
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            "MuscleMapMetrics",
+            metrics_text,
+        )
+        changed = changed or did_change
 
     return current_text, changed
 
@@ -865,6 +918,542 @@ def _log_mm_segment_output(output_text, log_fn=logging.info):
             log_fn("mm_segment | %s", line)
 
 
+def _log_mm_extract_metrics_output(output_text, log_fn=logging.info):
+    if not output_text:
+        return
+
+    for line in output_text.splitlines():
+        line = line.strip()
+        if line:
+            log_fn("mm_extract_metrics | %s", line)
+
+
+def _read_metrics_csv(csv_path):
+    with open(csv_path, "r", encoding="utf-8-sig", newline="") as csv_file:
+        reader = csv.DictReader(csv_file)
+        fieldnames = [field.strip() for field in (reader.fieldnames or []) if field]
+        rows = []
+        for row in reader:
+            cleaned_row = {}
+            for key, value in row.items():
+                if key is None:
+                    continue
+                cleaned_row[key.strip()] = "" if value is None else str(value).strip()
+            if any(value for value in cleaned_row.values()):
+                rows.append(cleaned_row)
+    return fieldnames, rows
+
+
+def _run_mm_extract_metrics(method, region, components, segmentation_path, input_image_path, output_dir):
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    metrics_cmd = [
+        "python",
+        "/opt/MuscleMap/scripts/mm_extract_metrics.py",
+        "-m", method,
+        "-s", segmentation_path,
+        "-i", input_image_path,
+        "-o", output_dir,
+    ]
+    if region:
+        metrics_cmd.extend(["-r", region])
+    if method in ("kmeans", "gmm") and components is not None:
+        metrics_cmd.extend(["-c", str(components)])
+
+    logging.info("Running command: %s", " ".join(metrics_cmd))
+    metrics_result = subprocess.run(
+        metrics_cmd,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    combined_output = "\n".join(
+        part for part in (metrics_result.stdout, metrics_result.stderr) if part
+    )
+    _log_mm_extract_metrics_output(combined_output)
+
+    csv_candidates = sorted(glob.glob(os.path.join(output_dir, "*_results.csv")))
+    if not csv_candidates:
+        raise FileNotFoundError(f"mm_extract_metrics finished without creating a results CSV in {output_dir}")
+
+    csv_path = max(csv_candidates, key=os.path.getmtime)
+    fieldnames, rows = _read_metrics_csv(csv_path)
+    if not rows:
+        raise ValueError(f"mm_extract_metrics results CSV was empty: {csv_path}")
+
+    logging.info(
+        "Loaded MuscleMap metrics CSV %s with %d row(s) and columns=%s",
+        csv_path,
+        len(rows),
+        fieldnames,
+    )
+    return {
+        "method": method,
+        "region": region,
+        "components": components,
+        "csv_path": csv_path,
+        "fieldnames": fieldnames,
+        "rows": rows,
+    }
+
+
+def _metrics_rows(metrics_result):
+    if not metrics_result:
+        return []
+    return metrics_result.get("rows") or []
+
+
+def _metrics_fieldnames(metrics_result):
+    if not metrics_result:
+        return []
+    fieldnames = metrics_result.get("fieldnames") or []
+    if fieldnames:
+        return fieldnames
+    rows = _metrics_rows(metrics_result)
+    if rows:
+        return list(rows[0].keys())
+    return []
+
+
+def _find_metrics_label_field(fieldnames):
+    lower_map = {field.lower().strip(): field for field in fieldnames}
+    for candidate in ("label", "label_name", "name", "muscle", "structure", "anatomy", "region"):
+        if candidate in lower_map:
+            return lower_map[candidate]
+    for field in fieldnames:
+        lowered = field.lower()
+        if "label" in lowered or "muscle" in lowered or "anatomy" in lowered:
+            return field
+    return fieldnames[0] if fieldnames else ""
+
+
+def _select_metrics_summary_fields(fieldnames, label_field, max_fields=3):
+    preferred_tokens = (
+        "csa",
+        "fat",
+        "fraction",
+        "ff",
+        "volume",
+        "area",
+        "mean",
+        "average",
+        "slice",
+        "count",
+    )
+    selected = []
+    for token in preferred_tokens:
+        for field in fieldnames:
+            if field == label_field or field in selected:
+                continue
+            if token in field.lower():
+                selected.append(field)
+                if len(selected) >= max_fields:
+                    return selected
+    for field in fieldnames:
+        if field != label_field and field not in selected:
+            selected.append(field)
+            if len(selected) >= max_fields:
+                return selected
+    return selected
+
+
+def _format_metric_value(value, max_chars=24):
+    text = "" if value is None else str(value).strip()
+    if not text:
+        return ""
+    try:
+        numeric_value = float(text)
+        if np.isfinite(numeric_value):
+            text = f"{numeric_value:.4g}"
+    except Exception:
+        pass
+    if len(text) > max_chars:
+        return text[: max_chars - 3] + "..."
+    return text
+
+
+def _format_metrics_comment(metrics_result, max_chars=1000):
+    rows = _metrics_rows(metrics_result)
+    fieldnames = _metrics_fieldnames(metrics_result)
+    if not rows:
+        return ""
+
+    label_field = _find_metrics_label_field(fieldnames)
+    summary_fields = _select_metrics_summary_fields(fieldnames, label_field)
+    payload = {
+        "v": 1,
+        "method": metrics_result.get("method", mmMetricsMethod),
+        "region": metrics_result.get("region", ""),
+        "labels": metrics_result.get("label_scale", ""),
+        "rows": len(rows),
+        "csv": os.path.basename(metrics_result.get("csv_path", "")),
+        "sample": [],
+    }
+
+    for row in rows[:5]:
+        entry = {}
+        if label_field:
+            entry[label_field] = _format_metric_value(row.get(label_field), 32)
+        for field in summary_fields:
+            entry[field] = _format_metric_value(row.get(field))
+        payload["sample"].append(entry)
+
+    while True:
+        text = "MMMETRICS " + json.dumps(payload, separators=(",", ":"))
+        if len(text) <= max_chars:
+            return text
+        if payload["sample"]:
+            payload["sample"].pop()
+            continue
+        payload.pop("csv", None)
+        text = "MMMETRICS " + json.dumps(payload, separators=(",", ":"))
+        if len(text) <= max_chars:
+            return text
+        return text[: max_chars - 3] + "..."
+
+
+def _format_metrics_minihead_value(metrics_result, max_chars=3500):
+    rows = _metrics_rows(metrics_result)
+    fieldnames = _metrics_fieldnames(metrics_result)
+    if not rows:
+        return ""
+
+    label_field = _find_metrics_label_field(fieldnames)
+    summary_fields = _select_metrics_summary_fields(fieldnames, label_field)
+    parts = [
+        "MuscleMapMetrics v=1",
+        f"method={metrics_result.get('method', mmMetricsMethod)}",
+        f"region={metrics_result.get('region', '')}",
+        f"labels={metrics_result.get('label_scale', '')}",
+        f"rows={len(rows)}",
+    ]
+
+    for row in rows:
+        label = _format_metric_value(row.get(label_field), 32) if label_field else ""
+        values = []
+        for field in summary_fields:
+            value = _format_metric_value(row.get(field))
+            if value:
+                values.append(f"{field}={value}")
+        row_text = label
+        if values:
+            row_text = f"{row_text}: " + ", ".join(values) if row_text else ", ".join(values)
+        if row_text:
+            parts.append(row_text)
+        text = "; ".join(parts)
+        if len(text) > max_chars:
+            parts.pop()
+            parts.append("truncated=true")
+            break
+
+    text = "; ".join(parts)
+    if len(text) > max_chars:
+        marker = "truncated=true"
+        base_parts = parts[:-1] if parts and parts[-1] == marker else parts
+        base_text = "; ".join(base_parts)
+        suffix = f"; {marker}"
+        prefix = base_text[: max(0, max_chars - len(suffix))]
+        boundary = prefix.rfind("; ")
+        if boundary > 0:
+            prefix = prefix[:boundary]
+        text = f"{prefix.rstrip('; ')}{suffix}" if prefix else marker
+
+    return _sanitize_minihead_param_value(text[:max_chars])
+
+
+def _join_image_comment(prefix, metrics_comment, max_chars=1200):
+    prefix = _first_non_empty_text(prefix)
+    metrics_comment = _first_non_empty_text(metrics_comment)
+    if prefix and metrics_comment:
+        text = f"{prefix} | {metrics_comment}"
+    else:
+        text = prefix or metrics_comment
+    if len(text) > max_chars:
+        return text[: max_chars - 3] + "..."
+    return text
+
+
+def _save_metrics_segmentation_nifti(segmentation_data, reference_img, output_path):
+    labels = np.asarray(segmentation_data)
+    if labels.ndim == 5 and labels.shape[2] == 1 and labels.shape[3] == 1:
+        labels = labels[:, :, 0, 0, :]
+    elif labels.ndim == 3:
+        pass
+    elif labels.ndim == 2:
+        labels = labels[:, :, None]
+    else:
+        labels = np.squeeze(labels)
+        if labels.ndim == 2:
+            labels = labels[:, :, None]
+        if labels.ndim != 3:
+            raise ValueError(f"Cannot convert segmentation data with shape {labels.shape} to NIfTI")
+
+    labels_nifti = labels.transpose((1, 0, 2))
+    i16 = np.iinfo(np.int16)
+    labels_min = int(np.min(labels_nifti))
+    labels_max = int(np.max(labels_nifti))
+    if labels_min < i16.min or labels_max > i16.max:
+        raise ValueError(f"Metrics segmentation labels [{labels_min}, {labels_max}] exceed int16 range")
+
+    header = reference_img.header.copy()
+    header.set_data_dtype(np.int16)
+    metrics_img = nib.Nifti1Image(labels_nifti.astype(np.int16, copy=False), reference_img.affine, header=header)
+    try:
+        metrics_img.set_qform(reference_img.get_qform(), code=int(reference_img.header["qform_code"]))
+        metrics_img.set_sform(reference_img.get_sform(), code=int(reference_img.header["sform_code"]))
+    except Exception:
+        metrics_img.set_qform(reference_img.affine, code=1)
+        metrics_img.set_sform(reference_img.affine, code=1)
+    metrics_img.header.set_slope_inter(1.0, 0.0)
+    nib.save(metrics_img, output_path)
+    return output_path
+
+
+def _pil_text_size(draw, text, font):
+    bbox = draw.textbbox((0, 0), str(text), font=font)
+    return bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+
+def _truncate_text_to_width(draw, text, font, max_width):
+    text = _format_metric_value(text, 128)
+    if _pil_text_size(draw, text, font)[0] <= max_width:
+        return text
+    if max_width <= 0:
+        return ""
+    suffix = "..."
+    low = 0
+    high = len(text)
+    while low < high:
+        mid = (low + high + 1) // 2
+        candidate = text[:mid] + suffix
+        if _pil_text_size(draw, candidate, font)[0] <= max_width:
+            low = mid
+        else:
+            high = mid - 1
+    return text[:low] + suffix if low > 0 else suffix
+
+
+def _chunk_list(values, chunk_size):
+    chunk_size = max(1, int(chunk_size))
+    return [values[index : index + chunk_size] for index in range(0, len(values), chunk_size)]
+
+
+def _build_metrics_column_groups(fieldnames, available_width):
+    if not fieldnames:
+        return []
+
+    label_field = _find_metrics_label_field(fieldnames)
+    min_column_width = 96
+    if label_field and len(fieldnames) > 1:
+        other_fields = [field for field in fieldnames if field != label_field]
+        max_other_columns = max(1, int((available_width - 160) // min_column_width))
+        return [[label_field] + group for group in _chunk_list(other_fields, max_other_columns)]
+
+    max_columns = max(1, int(available_width // min_column_width))
+    return _chunk_list(fieldnames, max_columns)
+
+
+def _render_metrics_report_pages(metrics_result, width, height):
+    rows = _metrics_rows(metrics_result)
+    fieldnames = _metrics_fieldnames(metrics_result)
+    if not rows or not fieldnames:
+        return []
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    width = max(int(width), 512)
+    height = max(int(height), 512)
+    margin = 18
+    image_probe = Image.new("L", (width, height), 0)
+    draw_probe = ImageDraw.Draw(image_probe)
+    font = ImageFont.load_default()
+    line_height = max(12, _pil_text_size(draw_probe, "Ag", font)[1] + 6)
+    title_line_count = 4
+    table_top = margin + title_line_count * line_height + 8
+    footer_height = line_height + 6
+    available_width = width - (2 * margin)
+    available_height = max(line_height * 3, height - table_top - margin - footer_height)
+    rows_per_page = max(1, int(available_height // line_height) - 1)
+    row_groups = _chunk_list(rows, rows_per_page)
+    column_groups = _build_metrics_column_groups(fieldnames, available_width)
+    total_pages = max(1, len(row_groups) * len(column_groups))
+    pages = []
+    page_number = 0
+
+    for row_group_index, row_group in enumerate(row_groups):
+        row_start = row_group_index * rows_per_page
+        for column_group_index, column_group in enumerate(column_groups):
+            page_number += 1
+            image = Image.new("L", (width, height), 0)
+            draw = ImageDraw.Draw(image)
+
+            title_lines = [
+                "MuscleMap Metrics",
+                f"Method: {metrics_result.get('method', mmMetricsMethod)}    Region: {metrics_result.get('region', '')}    Rows: {len(rows)}",
+                f"CSV: {os.path.basename(metrics_result.get('csv_path', ''))}",
+                f"Page {page_number}/{total_pages}    Rows {row_start + 1}-{row_start + len(row_group)}    Column group {column_group_index + 1}/{len(column_groups)}",
+            ]
+            y = margin
+            for title_line in title_lines:
+                draw.text((margin, y), _truncate_text_to_width(draw, title_line, font, available_width), fill=255, font=font)
+                y += line_height
+
+            column_width = max(1, int(available_width // len(column_group)))
+            y = table_top
+            x = margin
+            for field in column_group:
+                draw.text((x, y), _truncate_text_to_width(draw, field, font, column_width - 6), fill=255, font=font)
+                x += column_width
+            y += line_height
+            draw.line((margin, y - 2, width - margin, y - 2), fill=120)
+
+            for row in row_group:
+                x = margin
+                for field in column_group:
+                    draw.text(
+                        (x, y),
+                        _truncate_text_to_width(draw, row.get(field, ""), font, column_width - 6),
+                        fill=220,
+                        font=font,
+                    )
+                    x += column_width
+                y += line_height
+
+            page_array = np.asarray(image, dtype=np.uint16) * 16
+            pages.append(page_array)
+
+    return pages
+
+
+def _build_metrics_report_images(
+    metrics_result,
+    source_headers,
+    source_meta,
+    metrics_series_index,
+    source_series_description,
+    source_parent_sequence,
+    source_parent_grouping,
+    source_type_token,
+    metrics_comment,
+    metrics_minihead_text,
+    include_minihead_metrics,
+    report_spacing,
+):
+    rows = _metrics_rows(metrics_result)
+    if not rows or not source_headers:
+        return []
+
+    base_header = copy.deepcopy(source_headers[0])
+    base_meta = _copy_meta(source_meta[0]) if source_meta else ismrmrd.Meta()
+    source_matrix = np.array(base_header.matrix_size[:], dtype=float)
+    source_fov = np.array(base_header.field_of_view[:], dtype=float)
+    source_width = int(source_matrix[0]) if source_matrix.size > 0 and source_matrix[0] > 0 else 512
+    source_height = int(source_matrix[1]) if source_matrix.size > 1 and source_matrix[1] > 0 else 512
+    report_width = max(source_width, 768)
+    report_height = max(source_height, 768)
+
+    try:
+        report_pages = _render_metrics_report_pages(metrics_result, report_width, report_height)
+    except Exception:
+        logging.warning("Failed to render MuscleMap metrics report images:\n%s", traceback.format_exc())
+        return []
+
+    if not report_pages:
+        return []
+
+    voxel_x = float(source_fov[0] / source_matrix[0]) if source_matrix.size > 0 and source_matrix[0] > 0 else 1.0
+    voxel_y = float(source_fov[1] / source_matrix[1]) if source_matrix.size > 1 and source_matrix[1] > 0 else 1.0
+    report_spacing = float(report_spacing) if report_spacing and float(report_spacing) > 0 else 1.0
+    slice_dir = _normalize_vector(_header_vector(base_header, "slice_dir"))
+    if slice_dir is None:
+        slice_dir = np.array([0.0, 0.0, 1.0], dtype=float)
+    base_position = _header_vector(base_header, "position")
+    report_series_description = (
+        f"{source_series_description}_MuscleMap_Metrics"
+        if source_series_description
+        else "MuscleMap_Metrics"
+    )
+    report_parent_grouping = (
+        f"{source_parent_grouping}_MuscleMap_Metrics"
+        if source_parent_grouping
+        else report_series_description
+    )
+
+    report_images = []
+    for page_index, page_array in enumerate(report_pages):
+        report_image = ismrmrd.Image.from_array(page_array.astype(np.uint16, copy=False), transpose=False)
+        report_header = copy.deepcopy(base_header)
+        report_header.data_type = report_image.data_type
+        _set_header_sequence_field(report_header, "matrix_size", [report_width, report_height, 1])
+        _set_header_sequence_field(
+            report_header,
+            "field_of_view",
+            [voxel_x * report_width, voxel_y * report_height, report_spacing],
+        )
+        _set_header_sequence_field(report_header, "slice_dir", [float(value) for value in slice_dir])
+        _set_header_sequence_field(
+            report_header,
+            "position",
+            [float(value) for value in (base_position + page_index * report_spacing * slice_dir)],
+        )
+        report_header.image_index = page_index + 1
+        report_header.slice = page_index
+        report_header.image_series_index = metrics_series_index
+        report_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+        report_image.setHead(report_header)
+
+        report_meta = _copy_meta(base_meta)
+        report_meta["DataRole"] = "Image"
+        report_meta["ImageProcessingHistory"] = ["OPENRECON", "MUSCLEMAP", "METRICS"]
+        report_meta["WindowCenter"] = "2040"
+        report_meta["WindowWidth"] = "4080"
+        report_meta["SeriesDescription"] = report_series_description
+        if source_parent_sequence:
+            report_meta["SequenceDescription"] = report_series_description
+        report_meta["ImageType"] = "METRICS"
+        report_meta["ImageTypeValue3"] = "M"
+        report_meta["ImageTypeValue4"] = "METRICS"
+        report_meta["DicomImageType"] = "DERIVED\\SECONDARY\\M\\METRICS"
+        report_meta["ComplexImageComponent"] = "MAGNITUDE"
+        report_meta["ImageComments"] = metrics_comment
+        report_meta["Keep_image_geometry"] = 1
+        report_meta["ImageRowDir"] = [
+            "{:.18f}".format(report_header.read_dir[0]),
+            "{:.18f}".format(report_header.read_dir[1]),
+            "{:.18f}".format(report_header.read_dir[2]),
+        ]
+        report_meta["ImageColumnDir"] = [
+            "{:.18f}".format(report_header.phase_dir[0]),
+            "{:.18f}".format(report_header.phase_dir[1]),
+            "{:.18f}".format(report_header.phase_dir[2]),
+        ]
+
+        minihead_text = _decode_ice_minihead(report_meta)
+        if minihead_text:
+            patched_minihead_text, minihead_changed = _patch_ice_minihead(
+                minihead_text,
+                report_series_description,
+                report_parent_grouping,
+                source_type_token,
+                "METRICS",
+                metrics_text=metrics_minihead_text if include_minihead_metrics else None,
+            )
+            if minihead_changed:
+                report_meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
+
+        report_image.attribute_string = report_meta.serialize()
+        report_images.append(report_image)
+
+    logging.info(
+        "Created %d MuscleMap metrics report image(s) in image_series_index=%d",
+        len(report_images),
+        metrics_series_index,
+    )
+    return report_images
+
+
 def _is_likely_mm_segment_oom(exc, output_text):
     if exc.returncode in (-9, 9, 137):
         return True
@@ -984,12 +1573,30 @@ def process_image(imgGroup, connection, config, metadata):
     if len(imgGroup) == 0:
         return []
 
-    segmentation_colormap = mrdhelper.get_json_config_param(config, 'segmentationcolormap', default=False, type='bool')
-    if isinstance(segmentation_colormap, str):
-        segmentation_colormap = segmentation_colormap.strip().lower() in ("1", "true", "yes", "on")
-    else:
-        segmentation_colormap = bool(segmentation_colormap)
+    segmentation_colormap = _as_config_bool(
+        mrdhelper.get_json_config_param(config, 'segmentationcolormap', default=False, type='bool')
+    )
     logging.info("segmentationcolormap resolved to %s", segmentation_colormap)
+    compute_metrics = _as_config_bool(
+        mrdhelper.get_json_config_param(config, 'computemetrics', default=False, type='bool')
+    )
+    metrics_burn_series = _as_config_bool(
+        mrdhelper.get_json_config_param(config, 'metricsburnseries', default=False, type='bool')
+    )
+    metrics_in_comments = _as_config_bool(
+        mrdhelper.get_json_config_param(config, 'metricsincomments', default=False, type='bool')
+    )
+    metrics_in_minihead = _as_config_bool(
+        mrdhelper.get_json_config_param(config, 'metricsinminihead', default=False, type='bool')
+    )
+    logging.info(
+        "MuscleMap metrics config: computemetrics=%s burnseries=%s comments=%s minihead=%s method=%s",
+        compute_metrics,
+        metrics_burn_series,
+        metrics_in_comments,
+        metrics_in_minihead,
+        mmMetricsMethod,
+    )
 
     # Determine the source image type (e.g. "Water", "Fat", "In_Phase", …)
     # from the first image's metadata so the segmentation output is named accordingly.
@@ -1167,10 +1774,18 @@ def process_image(imgGroup, connection, config, metadata):
 
     # Extract UI parameters from JSON config
     bodyregion = mrdhelper.get_json_config_param(config, 'bodyregion', default='wholebody', type='str')
+    metrics_region = mrdhelper.get_json_config_param(config, 'metricsregion', default='', type='str')
+    metrics_region = _first_non_empty_text(metrics_region) or bodyregion
     chunksize = mrdhelper.get_json_config_param(config, 'chunksize', default='auto', type='str')
     spatialoverlap = mrdhelper.get_json_config_param(config, 'spatialoverlap', default=50, type='int')
     
-    logging.info(f"mm_segment parameters: bodyregion={bodyregion}, chunksize={chunksize}, spatialoverlap={spatialoverlap}")
+    logging.info(
+        "mm_segment parameters: bodyregion=%s, chunksize=%s, spatialoverlap=%s, metrics_region=%s",
+        bodyregion,
+        chunksize,
+        spatialoverlap,
+        metrics_region,
+    )
     
     DEBUG=False
     if DEBUG:
@@ -1185,6 +1800,10 @@ def process_image(imgGroup, connection, config, metadata):
         )
 
     img = nib.load(mmSegmentOutputPath)
+
+    metrics_result = None
+    metrics_comment = ""
+    metrics_minihead_text = ""
 
     # Keep on-disk label values to avoid float conversion/rescaling artifacts.
     data = np.asarray(img.dataobj)
@@ -1249,17 +1868,67 @@ def process_image(imgGroup, connection, config, metadata):
     print("data shape after crop:")
     print(data.shape)
 
-    label_transform = mrdhelper.get_json_config_param(config, 'labeltransform', default=True, type='bool')
-    if isinstance(label_transform, str):
-        label_transform = label_transform.strip().lower() in ("1", "true", "yes", "on")
-    else:
-        label_transform = bool(label_transform)
+    label_transform = _as_config_bool(
+        mrdhelper.get_json_config_param(config, 'labeltransform', default=True, type='bool')
+    )
     logging.info("labeltransform resolved to %s", label_transform)
 
     if label_transform:
         logging.info("Applying label transformation: 3 * (label_in // 10) + (label_in % 10)")
         data = 3 * (data // 10) + (data % 10)
         logging.info(f"Label transformation complete. New data range: [{data.min()}, {data.max()}]")
+
+    if compute_metrics and (metrics_burn_series or metrics_in_comments or metrics_in_minihead):
+        try:
+            metrics_segmentation_path = _save_metrics_segmentation_nifti(
+                data,
+                new_img,
+                mmMetricsSegmentationPath,
+            )
+            metrics_region_for_run = "" if label_transform else metrics_region
+            if label_transform and metrics_region:
+                logging.info(
+                    "Skipping MuscleMap metrics region label-name mapping for transformed labels; "
+                    "metrics labels will match the returned overlay values"
+                )
+            logging.info(
+                "Running MuscleMap metrics on %s labels saved to %s",
+                "transformed" if label_transform else "untransformed",
+                metrics_segmentation_path,
+            )
+            metrics_result = _run_mm_extract_metrics(
+                method=mmMetricsMethod,
+                region=metrics_region_for_run,
+                components=None,
+                segmentation_path=metrics_segmentation_path,
+                input_image_path=mmSegmentInputPath,
+                output_dir=mmMetricsOutputDir,
+            )
+            metrics_result["region"] = metrics_region
+            metrics_result["label_scale"] = "transformed" if label_transform else "untransformed"
+            metrics_comment = _format_metrics_comment(metrics_result)
+            metrics_minihead_text = _format_metrics_minihead_value(metrics_result)
+        except subprocess.CalledProcessError as exc:
+            combined_output = "\n".join(
+                part for part in (exc.stdout, exc.stderr) if part
+            )
+            _log_mm_extract_metrics_output(combined_output, logging.warning)
+            logging.warning(
+                "MuscleMap metrics extraction failed with return code %s; "
+                "segmentation output will still be returned",
+                exc.returncode,
+            )
+            metrics_result = None
+        except Exception:
+            logging.warning(
+                "MuscleMap metrics extraction failed; segmentation output will still be returned:\n%s",
+                traceback.format_exc(),
+            )
+            metrics_result = None
+    elif compute_metrics:
+        logging.info("MuscleMap metrics computation is enabled but no metrics output path is enabled; skipping")
+    else:
+        logging.info("MuscleMap metrics computation disabled")
 
 
     print("maximum value in segmented data before sending out:")
@@ -1412,7 +2081,10 @@ def process_image(imgGroup, connection, config, metadata):
         tmpMeta["ImageTypeValue4"] = source_image_type_value4
         tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{source_dicom_image_type_value4}"
         tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
-        tmpMeta["ImageComments"] = source_image_label
+        if metrics_in_comments and metrics_comment:
+            tmpMeta["ImageComments"] = _join_image_comment(source_image_label, metrics_comment)
+        else:
+            tmpMeta["ImageComments"] = source_image_label
         tmpMeta["MuscleMapSourceInputIndex"] = str(source_record["input_index"])
         tmpMeta["MuscleMapSourceImageIndex"] = str(source_image_index)
         tmpMeta["MuscleMapSourceSlice"] = str(source_slice_index)
@@ -1435,6 +2107,7 @@ def process_image(imgGroup, connection, config, metadata):
                 source_parent_grouping,
                 _source_type_value,
                 source_image_type_value4,
+                metrics_text=metrics_minihead_text if metrics_in_minihead and metrics_minihead_text else None,
             )
             if minihead_changed:
                 tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
@@ -1533,8 +2206,32 @@ def process_image(imgGroup, connection, config, metadata):
             logging.info("=== End final metadata dump ===")
 
 
-     # Send a copy of original (unmodified) images back too if selected
-    opre_sendoriginal = mrdhelper.get_json_config_param(config, 'sendoriginal', default=True, type='bool')
+    if metrics_burn_series and _metrics_rows(metrics_result):
+        metrics_series_index = segmentation_series_index + 1
+        if metrics_series_index == 99:
+            metrics_series_index += 1
+        report_images = _build_metrics_report_images(
+            metrics_result=metrics_result,
+            source_headers=head,
+            source_meta=meta,
+            metrics_series_index=metrics_series_index,
+            source_series_description=source_series_description,
+            source_parent_sequence=source_parent_sequence,
+            source_parent_grouping=source_parent_grouping,
+            source_type_token=_source_type_value,
+            metrics_comment=metrics_comment or _format_metrics_comment(metrics_result),
+            metrics_minihead_text=metrics_minihead_text,
+            include_minihead_metrics=metrics_in_minihead,
+            report_spacing=float(voxelsize[2]) if len(voxelsize) > 2 else 1.0,
+        )
+        imagesOut.extend(report_images)
+    elif metrics_burn_series and compute_metrics:
+        logging.info("MuscleMap metrics report series requested but no metrics rows are available")
+
+    # Send a copy of original (unmodified) images back too if selected
+    opre_sendoriginal = _as_config_bool(
+        mrdhelper.get_json_config_param(config, 'sendoriginal', default=True, type='bool')
+    )
     if opre_sendoriginal:
         stack = traceback.extract_stack()
         if stack[-2].name == 'process_raw':

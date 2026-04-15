@@ -71,6 +71,34 @@
       "default": false
     },
     {
+      "id": "computemetrics",
+      "label": { "en": "Compute segmentation metrics" },
+      "type": "boolean",
+      "information": { "en": "Run MuscleMap average metrics on the generated segmentation and source image." },
+      "default": false
+    },
+    {
+      "id": "metricsburnseries",
+      "label": { "en": "Send metrics report series" },
+      "type": "boolean",
+      "information": { "en": "Return a separate burned-in image series containing the metrics table." },
+      "default": false
+    },
+    {
+      "id": "metricsincomments",
+      "label": { "en": "Metrics in image comments" },
+      "type": "boolean",
+      "information": { "en": "Add a compact MuscleMap metrics summary to ImageComments." },
+      "default": false
+    },
+    {
+      "id": "metricsinminihead",
+      "label": { "en": "Metrics in IceMiniHead" },
+      "type": "boolean",
+      "information": { "en": "Add a compact MuscleMapMetrics entry to the Siemens IceMiniHead when present." },
+      "default": false
+    },
+    {
       "id": "bodyregion",
       "label": { "en": "Body Region" },
       "type": "choice",
@@ -98,6 +126,13 @@
       ],
       "default": "wholebody",
       "information": { "en": "Select the body region for segmentation" }
+    },
+    {
+      "id": "metricsregion",
+      "label": { "en": "Metrics Region" },
+      "type": "string",
+      "default": "",
+      "information": { "en": "Optional region passed to MuscleMap metrics; leave empty to use Body Region." }
     },
     {
       "id": "chunksize",
