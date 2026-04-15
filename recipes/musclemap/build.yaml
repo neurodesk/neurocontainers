@@ -8,10 +8,16 @@ variables:
     # NeuroContainers recipe version is kept as 1.3.x.
     musclemap_source_tag: "{{ context.version.split('.')[:2] | join('.') }}"
     musclemap_archive_url: "https://github.com/MuscleMap/MuscleMap/archive/refs/tags/{{ context.musclemap_source_tag }}.zip"
+    spinalcordtoolbox_version: "6.5"
+    spinalcordtoolbox_archive_url: "https://github.com/spinalcordtoolbox/spinalcordtoolbox/archive/refs/tags/{{ context.spinalcordtoolbox_version }}.tar.gz"
 
 files:
     - name: musclemap.py
       filename: musclemap.py
+    - name: musclemap_zip
+      url: "{{ context.musclemap_archive_url }}"
+    - name: spinalcordtoolbox_tar
+      url: "{{ context.spinalcordtoolbox_archive_url }}"
 
 build:
     kind: neurodocker
@@ -23,26 +29,45 @@ build:
     directives:
         - environment:
               DEBIAN_FRONTEND: noninteractive
-        - install: bzip2 ca-certificates git unzip build-essential python3-pip python-is-python3
+        - install:
+            - bzip2
+            - build-essential
+            - ca-certificates
+            - curl
+            - git
+            - libglib2.0-0
+            - libmpich-dev
+            - python3-pip
+            - python3-pyqt5
+            - python-is-python3
+            - rsync
+            - unzip
 
         - include: macros/openrecon/neurodocker.yaml
 
-        - file:
-            name: musclemap.zip
-            url: "{{ context.musclemap_archive_url }}"
-            refresh: false
-
-        - copy: musclemap.zip /opt/musclemap.zip
-
         - workdir: /opt/
         - run: 
-            - unzip /opt/musclemap.zip
-            - rm /opt/musclemap.zip
+            - unzip {{ get_file("musclemap_zip") }} -d /opt
             - mv MuscleMap-{{ context.musclemap_source_tag }} MuscleMap
             - cd MuscleMap
             - pip install -e .
             - pip install pillow==10.4.0
             - python -c "from PIL import Image, ImageDraw, ImageFont"
+
+        - run:
+            - tar -xz -C /opt/ -f {{ get_file("spinalcordtoolbox_tar") }}
+        - workdir: /opt/spinalcordtoolbox-{{ context.spinalcordtoolbox_version }}
+        - run:
+            - chmod a+rwx /opt/spinalcordtoolbox-{{ context.spinalcordtoolbox_version }}/ -R
+        - user: spinalcordtoolbox
+        - run:
+            - yes | ./install_sct -i
+        - environment:
+              PATH: /opt/spinalcordtoolbox-{{ context.spinalcordtoolbox_version }}/bin/:$PATH
+              SCT_DIR: /opt/spinalcordtoolbox-{{ context.spinalcordtoolbox_version }}
+        - run:
+            - sct_check_dependencies -short
+        - user: root
         
         - environment:
               MKL_THREADING_LAYER: GNU
@@ -54,6 +79,10 @@ build:
 deploy:
     bins:
         - mm_segment
+        - mm_register_to_template
+        - mm_extract_metrics
+        - mm_gui
+
 
 readme: |-
   ----------------------------------
@@ -67,6 +96,15 @@ readme: |-
   ```bash
   #mm_segment -i str(input_image) -r str(bodyregion) -c int(chunksize) -s int(spatialoverlap) -g Y
   mm_segment -i /opt/input.nii.gz -r wholebody -c 50 -s 50 -g Y
+
+  mm_register_to_template -i sub-example02_t2w.nii.gz -s sub-example02_t2w_dseg.nii.gz -r wholebody
+
+  #For T1w and T2w MRI:
+  mm_extract_metrics -m gmm -r wholebody -i image.nii.gz -s image_dseg.nii.gz -c 3
+
+  #For Dixon Fat-Water MRI:
+  mm_extract_metrics -m dixon -r wholebody -f image_fat.nii.gz -w image_water.nii.gz -s image_dseg.nii.gz
+
   ```
 
   When citing MuscleMap, please cite the following publication:
@@ -89,3 +127,5 @@ categories:
 copyright:
   - license: MIT
     url: https://github.com/MuscleMap/MuscleMap?tab=MIT-1-ov-file#readme
+  - license: LGPL-3.0
+    url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE
