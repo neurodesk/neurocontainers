@@ -1,5 +1,5 @@
 name: musclemap
-version: 1.3.6
+version: 1.3.9
 architectures:
     - x86_64
 
@@ -68,7 +68,13 @@ build:
         - run:
             - sct_check_dependencies -short
         - user: root
-        
+
+        # Reset the container WORKDIR after the SCT install block so the
+        # runtime cwd is /opt/ again; otherwise mm_segment writes
+        # "<input>_dseg.nii.gz" into /opt/spinalcordtoolbox-6.5/ and
+        # musclemap.py can't find it at /opt/input_dseg.nii.gz.
+        - workdir: /opt/
+
         - environment:
               MKL_THREADING_LAYER: GNU
 

@@ -75,28 +75,28 @@
       "label": { "en": "Compute segmentation metrics" },
       "type": "boolean",
       "information": { "en": "Run MuscleMap average metrics on the generated segmentation and source image." },
-      "default": false
+      "default": true
     },
     {
       "id": "metricsburnseries",
       "label": { "en": "Send metrics report series" },
       "type": "boolean",
       "information": { "en": "Return a separate burned-in image series containing the metrics table." },
-      "default": false
+      "default": true
     },
     {
       "id": "metricsincomments",
       "label": { "en": "Metrics in image comments" },
       "type": "boolean",
       "information": { "en": "Add a compact MuscleMap metrics summary to ImageComments." },
-      "default": false
+      "default": true
     },
     {
       "id": "metricsinminihead",
       "label": { "en": "Metrics in IceMiniHead" },
       "type": "boolean",
       "information": { "en": "Add a compact MuscleMapMetrics entry to the Siemens IceMiniHead when present." },
-      "default": false
+      "default": true
     },
     {
       "id": "bodyregion",

@@ -359,9 +359,12 @@ def _format_dixon_image_label(image_type_value):
     image_type_value = _first_non_empty_text(image_type_value).upper()
     if image_type_value in label_map:
         return label_map[image_type_value]
-    if image_type_value:
-        return image_type_value.title().replace(" ", "_")
-    return ""
+    # NONE is the standard placeholder DICOM emits for non-tissue-typed scans;
+    # treat it like an empty value so the segmentation series is not named
+    # "Musclemap_Segmentation_None".
+    if image_type_value in ("", "NONE"):
+        return ""
+    return image_type_value.title().replace(" ", "_")
 
 
 def _build_segmentation_image_label(source_image_type_value):
@@ -968,6 +971,7 @@ def _run_mm_extract_metrics(method, region, components, segmentation_path, input
         check=True,
         capture_output=True,
         text=True,
+        cwd=output_dir,
     )
     combined_output = "\n".join(
         part for part in (metrics_result.stdout, metrics_result.stderr) if part
@@ -1519,11 +1523,17 @@ def _run_mm_segment(bodyregion, chunksize, spatialoverlap, image_depth):
         logging.info("Running command: %s", " ".join(mm_segment_cmd))
 
         try:
+            # Pin cwd so mm_segment's output path resolution is independent of
+            # the container WORKDIR. Upstream writes "<input>_dseg.nii.gz"
+            # relative to cwd when the input is supplied; without this the
+            # segmentation would land in whatever directory the server was
+            # launched from (e.g. /opt/spinalcordtoolbox-6.5/).
             mm_segment_result = subprocess.run(
                 mm_segment_cmd,
                 check=True,
                 capture_output=True,
                 text=True,
+                cwd=os.path.dirname(mmSegmentOutputPath) or "/opt",
             )
         except subprocess.CalledProcessError as exc:
             combined_output = "\n".join(
@@ -1577,21 +1587,28 @@ def process_image(imgGroup, connection, config, metadata):
         mrdhelper.get_json_config_param(config, 'segmentationcolormap', default=False, type='bool')
     )
     logging.info("segmentationcolormap resolved to %s", segmentation_colormap)
-    compute_metrics = _as_config_bool(
-        mrdhelper.get_json_config_param(config, 'computemetrics', default=False, type='bool')
+    compute_metrics_flag = _as_config_bool(
+        mrdhelper.get_json_config_param(config, 'computemetrics', default=True, type='bool')
     )
     metrics_burn_series = _as_config_bool(
-        mrdhelper.get_json_config_param(config, 'metricsburnseries', default=False, type='bool')
+        mrdhelper.get_json_config_param(config, 'metricsburnseries', default=True, type='bool')
     )
     metrics_in_comments = _as_config_bool(
-        mrdhelper.get_json_config_param(config, 'metricsincomments', default=False, type='bool')
+        mrdhelper.get_json_config_param(config, 'metricsincomments', default=True, type='bool')
     )
     metrics_in_minihead = _as_config_bool(
-        mrdhelper.get_json_config_param(config, 'metricsinminihead', default=False, type='bool')
+        mrdhelper.get_json_config_param(config, 'metricsinminihead', default=True, type='bool')
     )
+    # Treat the master "computemetrics" toggle as advisory: if the operator has
+    # ticked any specific output (burned series, ImageComments, IceMiniHead),
+    # we must compute the metrics regardless. This avoids the foot-gun where
+    # the master checkbox is unchecked on the UI but an output is requested,
+    # which would otherwise silently produce no metrics.
+    compute_metrics = compute_metrics_flag or metrics_burn_series or metrics_in_comments or metrics_in_minihead
     logging.info(
-        "MuscleMap metrics config: computemetrics=%s burnseries=%s comments=%s minihead=%s method=%s",
+        "MuscleMap metrics config: computemetrics=%s (flag=%s) burnseries=%s comments=%s minihead=%s method=%s",
         compute_metrics,
+        compute_metrics_flag,
         metrics_burn_series,
         metrics_in_comments,
         metrics_in_minihead,
@@ -1609,6 +1626,11 @@ def process_image(imgGroup, connection, config, metadata):
     raw_source_series_description = _get_meta_text(_first_meta, "SeriesDescription")
     source_series_description = _strip_dixon_series_suffix(raw_source_series_description)
     source_minihead = _decode_ice_minihead(_first_meta)
+    if not source_minihead:
+        logging.info(
+            "Source images carry no IceMiniHead; minihead patching and "
+            "metricsinminihead injection will be no-ops for this volume"
+        )
     raw_source_parent_sequence = _first_non_empty_text(
         _get_meta_text(_first_meta, "SequenceDescription"),
         _extract_minihead_string_value(source_minihead, "SequenceDescription"),
