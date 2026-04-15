@@ -1,4 +1,5 @@
 import ismrmrd
+import copy
 import os
 import itertools
 import logging
@@ -172,7 +173,7 @@ def process(connection, config, metadata):
         connection.send_close()
 
 # from https://github.com/benoitberanger/openrecon-template/blob/main/app/i2i-save-original-images.py
-def compute_nifti_affine(image_header, voxel_size):
+def compute_nifti_affine(image_header, voxel_size, slice_axis=None):
     # MRD stores geometry in DICOM/LPS (x=Left, y=Posterior, z=Superior).
     # NIfTI uses RAS (x=Right, y=Anterior, z=Superior).
     # Convert by negating x and y components.
@@ -181,7 +182,10 @@ def compute_nifti_affine(image_header, voxel_size):
     position  = np.array(image_header.position)  * lps_to_ras
     read_dir  = np.array(image_header.read_dir)   * lps_to_ras
     phase_dir = np.array(image_header.phase_dir)  * lps_to_ras
-    slice_dir = np.array(image_header.slice_dir)  * lps_to_ras
+    raw_slice_dir = np.array(image_header.slice_dir, dtype=float)
+    if np.linalg.norm(raw_slice_dir) < 1e-8 and slice_axis is not None:
+        raw_slice_dir = np.asarray(slice_axis, dtype=float)
+    slice_dir = raw_slice_dir * lps_to_ras
 
     # Construct rotation-scaling matrix
     rotation_scaling_matrix = np.column_stack([
@@ -535,6 +539,22 @@ def _normalize_vector(vector):
 
 def _format_vector(vector):
     return "[" + ", ".join(f"{float(value):.3f}" for value in vector) + "]"
+
+
+def _set_header_sequence_field(image_header, field_name, values):
+    values = list(values)
+    current_value = getattr(image_header, field_name)
+    try:
+        current_value[:] = values
+    except Exception:
+        setattr(image_header, field_name, tuple(values))
+
+
+def _copy_meta(meta_obj):
+    try:
+        return ismrmrd.Meta.deserialize(meta_obj.serialize())
+    except Exception:
+        return copy.deepcopy(meta_obj)
 
 
 def _infer_slice_axis(image_headers):
@@ -1084,7 +1104,7 @@ def process_image(imgGroup, connection, config, metadata):
     print(data.shape)
 
     # convert data to nifti using nibabel
-    affine = compute_nifti_affine(head[0], voxelsize)
+    affine = compute_nifti_affine(head[0], voxelsize, slice_axis=slice_axis)
     print("affine matrix:")
     print(affine)
 
@@ -1284,6 +1304,19 @@ def process_image(imgGroup, connection, config, metadata):
         input_indices=slice_sort_indices,
         slice_axis=slice_axis,
     )
+    source_series_indices = [
+        int(getattr(image_header, "image_series_index", 0))
+        for image_header in head
+    ]
+    segmentation_series_index = max(source_series_indices, default=0) + 1
+    if segmentation_series_index == 99:
+        segmentation_series_index += 1
+    logging.info(
+        "Using image_series_index=%d for MuscleMap segmentation "
+        "(source series indices=%s)",
+        segmentation_series_index,
+        sorted(set(source_series_indices)),
+    )
 
     for iImg in range(data.shape[-1]):
         # Create new MRD instance for the segmented image
@@ -1293,15 +1326,42 @@ def process_image(imgGroup, connection, config, metadata):
         # imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
         imagesOut[iImg] = ismrmrd.Image.from_array(data[..., iImg].transpose((3, 2, 0, 1)), transpose=False)
 
-        # Create a copy of the original fixed header and update the data_type
-        # (we changed it to int16 from all other types)
-        oldHeader = head[iImg]
         source_record = output_slice_records[iImg]
-        source_image_index = int(getattr(oldHeader, "image_index", 0))
-        source_slice_index = int(getattr(oldHeader, "slice", 0))
+        source_image_index = int(getattr(head[iImg], "image_index", 0))
+        source_slice_index = int(getattr(head[iImg], "slice", 0))
+
+        # Create an independent copy of the source fixed header. Some
+        # pyismrmrd versions expose getHead() as a live ctypes-backed object,
+        # so mutating it can corrupt sendoriginal images.
+        oldHeader = copy.deepcopy(head[iImg])
         oldHeader.data_type = imagesOut[iImg].data_type
+        _set_header_sequence_field(
+            oldHeader,
+            "matrix_size",
+            [
+                int(oldHeader.matrix_size[0]),
+                int(oldHeader.matrix_size[1]),
+                1,
+            ],
+        )
+        _set_header_sequence_field(
+            oldHeader,
+            "field_of_view",
+            [
+                float(oldHeader.field_of_view[0]),
+                float(oldHeader.field_of_view[1]),
+                float(voxelsize[2]),
+            ],
+        )
+        if np.linalg.norm(_header_vector(oldHeader, "slice_dir")) < 1e-6:
+            _set_header_sequence_field(
+                oldHeader,
+                "slice_dir",
+                [float(value) for value in slice_axis],
+            )
         oldHeader.image_index = iImg + 1
         oldHeader.slice = iImg
+        oldHeader.image_series_index = segmentation_series_index
 
         print(f"Image {iImg}: data_type = {imagesOut[iImg].data_type}")
 
@@ -1341,7 +1401,7 @@ def process_image(imgGroup, connection, config, metadata):
         imagesOut[iImg].setHead(oldHeader)
 
         # Create a copy of the original ISMRMRD Meta attributes and update
-        tmpMeta = meta[iImg]
+        tmpMeta = _copy_meta(meta[iImg])
 
         tmpMeta["DataRole"] = "Image"
         tmpMeta["ImageProcessingHistory"] = ["OPENRECON", "MUSCLEMAP"]
@@ -1385,20 +1445,17 @@ def process_image(imgGroup, connection, config, metadata):
                 )
         tmpMeta["Keep_image_geometry"] = 1
 
-        # Add image orientation directions to MetaAttributes if not already present
-        if tmpMeta.get("ImageRowDir") is None:
-            tmpMeta["ImageRowDir"] = [
-                "{:.18f}".format(oldHeader.read_dir[0]),
-                "{:.18f}".format(oldHeader.read_dir[1]),
-                "{:.18f}".format(oldHeader.read_dir[2]),
-            ]
+        tmpMeta["ImageRowDir"] = [
+            "{:.18f}".format(oldHeader.read_dir[0]),
+            "{:.18f}".format(oldHeader.read_dir[1]),
+            "{:.18f}".format(oldHeader.read_dir[2]),
+        ]
 
-        if tmpMeta.get("ImageColumnDir") is None:
-            tmpMeta["ImageColumnDir"] = [
-                "{:.18f}".format(oldHeader.phase_dir[0]),
-                "{:.18f}".format(oldHeader.phase_dir[1]),
-                "{:.18f}".format(oldHeader.phase_dir[2]),
-            ]
+        tmpMeta["ImageColumnDir"] = [
+            "{:.18f}".format(oldHeader.phase_dir[0]),
+            "{:.18f}".format(oldHeader.phase_dir[1]),
+            "{:.18f}".format(oldHeader.phase_dir[2]),
+        ]
 
         if segmentation_colormap:
             tmpMeta["LUTFileName"] = "MicroDeltaHotMetal.pal"
@@ -1486,15 +1543,15 @@ def process_image(imgGroup, connection, config, metadata):
             logging.info('Sending a copy of original unmodified images due to sendOriginal set to True')
             # In reverse order so that they'll be in correct order as we insert them to the front of the list
             for i, image in enumerate(reversed(imgGroup)):
-                # Create a copy to not modify the original inputs
-                tmpImg = image
-
-                # Change the series_index to have a different series
-                old_series_index = tmpImg.image_series_index
-                tmpImg.image_series_index = 99
+                # Create a copy to not modify the original inputs.
+                tmpImg = ismrmrd.Image.from_array(np.array(image.data, copy=True), transpose=False)
+                tmpHeader = copy.deepcopy(image.getHead())
+                old_series_index = int(getattr(tmpHeader, "image_series_index", 0))
+                tmpHeader.image_series_index = 99
+                tmpImg.setHead(tmpHeader)
 
                 # Ensure Keep_image_geometry is set to not reverse image orientation
-                tmpMeta = ismrmrd.Meta.deserialize(tmpImg.attribute_string)
+                tmpMeta = ismrmrd.Meta.deserialize(image.attribute_string)
                 tmpMeta['Keep_image_geometry'] = 1
                 tmpImg.attribute_string = tmpMeta.serialize()
 
