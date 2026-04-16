@@ -72,14 +72,14 @@
     },
     {
       "id": "computemetrics",
-      "label": { "en": "Compute segmentation metrics" },
+      "label": { "en": "Compute metrics" },
       "type": "boolean",
       "information": { "en": "Run MuscleMap average metrics on the generated segmentation and source image." },
       "default": true
     },
     {
       "id": "metricsburnseries",
-      "label": { "en": "Send metrics report series" },
+      "label": { "en": "Metrics in DICOM" },
       "type": "boolean",
       "information": { "en": "Return a separate burned-in image series containing the metrics table." },
       "default": true
@@ -130,7 +130,29 @@
     {
       "id": "metricsregion",
       "label": { "en": "Metrics Region" },
-      "type": "string",
+      "type": "choice",
+      "values": [
+        {
+          "id": "wholebody",
+          "name": { "en": "wholebody" }
+        },
+        {
+          "id": "abdomen",
+          "name": { "en": "abdomen" }
+        },
+        {
+          "id": "pelvis",
+          "name": { "en": "pelvis" }
+        },
+        {
+          "id": "thigh",
+          "name": { "en": "thigh" }
+        },
+        {
+          "id": "leg",
+          "name": { "en": "leg" }
+        }
+      ],
       "default": "",
       "information": { "en": "Optional region passed to MuscleMap metrics; leave empty to use Body Region." }
     },
