@@ -100,7 +100,7 @@ build:
         - run:
             - pip install dunamai
             - pip install git+https://github.com/astewartau/nii2dcm.git@v0.1.6c
-            - pip install nextqsm
+            - pip install nextqsm>=1.0.5
             - nextqsm --download_weights
         - deploy:
             bins:
