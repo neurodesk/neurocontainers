@@ -12,8 +12,23 @@ import os.path    as op
 import subprocess as sp
 
 
+def parse_cuda_version(version):
+    """Returns a CUDA version string as a comparable tuple, or None if it
+    cannot be parsed.
+    """
+
+    try:
+        parts = version.split('.')
+        major = int(parts[0])
+        minor = int(parts[1]) if len(parts) > 1 else 0
+        return (major, minor)
+
+    except (AttributeError, IndexError, ValueError):
+        return None
+
+
 def query_cuda_version():
-    """Returns the installed CUDA runtime version, as a float, or None
+    """Returns the installed CUDA runtime version, or None
     if CUDA cannot be detected.
     """
 
@@ -33,40 +48,65 @@ def query_cuda_version():
     for line in lines:
         match = re.search(pat, line)
         if match:
-            cudaver = float(match.group(1))
+            cudaver = parse_cuda_version(match.group(1))
             break
 
     return cudaver
 
 
+def executable(path):
+    """Returns true if the given path points to an executable file."""
+
+    return op.isfile(path) and os.access(path, os.X_OK)
+
+
 def find_all_eddy_cudas():
     """Returns a dictionary of {cuda_version : eddy_executable} mappings,
-    containing all eddy_cudaX.Y variants that are available.
+    containing all eddy_cudaX.Y variants that are available. The unversioned
+    eddy_cuda executable used by recent FSL releases is ignored here.
     """
     fsldir     = os.environ['FSLDIR']
-    eddy_cudas = glob.glob(op.join(fsldir, 'bin', 'eddy_cuda*'))
-    eddy_vers  = [float(op.basename(f)[9:]) for f in eddy_cudas]
-    eddy_cudas = {ver : exe for ver, exe in zip(eddy_vers, eddy_cudas)}
+    eddy_cudas = {}
+
+    for exe in glob.glob(op.join(fsldir, 'bin', 'eddy_cuda*')):
+        if not executable(exe):
+            continue
+
+        basename = op.basename(exe)
+        match    = re.fullmatch(r'eddy_cuda(\d+(?:\.\d+)*)', basename)
+
+        if match is None:
+            continue
+
+        version = parse_cuda_version(match.group(1))
+
+        if version is not None:
+            eddy_cudas[version] = exe
+
     return eddy_cudas
 
 
 def find_suitable_eddy_cuda():
-    """Returns the path to an eddy_cudaX.Y executable which is most
-    suitable for running on this machine.
+    """Returns the path to an eddy_cuda executable which is suitable for
+    running on this machine.
     """
 
-    eddy_cudas = find_all_eddy_cudas()
-    cuda_ver   = query_cuda_version()
+    fsldir            = os.environ['FSLDIR']
+    eddy_cuda         = op.join(fsldir, 'bin', 'eddy_cuda')
+    versioned_binaries = find_all_eddy_cudas()
+    cuda_ver          = query_cuda_version()
 
-    if cuda_ver is None or len(eddy_cudas) == 0:
+    if cuda_ver is None:
         return None
 
-    # Find the nearest eddy_cuda
-    # which is less than or equal
-    # to the installed cuda
-    for eddy_ver in reversed(sorted(eddy_cudas)):
+    if executable(eddy_cuda):
+        return eddy_cuda
+
+    # Older FSL releases used names like eddy_cuda10.2 or eddy_cuda11.0.
+    # Find the newest one that is not newer than the visible CUDA driver.
+    for eddy_ver in reversed(sorted(versioned_binaries)):
         if eddy_ver <= cuda_ver:
-            return eddy_cudas[eddy_ver]
+            return versioned_binaries[eddy_ver]
 
     return None
 
@@ -76,7 +116,7 @@ def main():
     whether a CUDA driver is available.
     """
     fsldir      = os.environ['FSLDIR']
-    eddy_cuda   = op.join(fsldir, 'bin', 'eddy_cuda')# old, but doesn't work when we pin eddy_cuda version to the cuda version in the container: find_suitable_eddy_cuda()
+    eddy_cuda   = find_suitable_eddy_cuda()
     eddy_cpu    = op.join(fsldir, 'bin', 'eddy_cpu')
 
     # Call eddy_cuda if it exists and we
@@ -85,10 +125,11 @@ def main():
         cmd = eddy_cuda
 
     # Otherwise fall back to eddy_cpu
-    elif op.exists(eddy_cpu):
+    elif executable(eddy_cpu):
         cmd = eddy_cpu
 
     else:
+        sys.stderr.write('Could not find a suitable eddy executable\n')
         sys.exit(1)
 
     os.execl(cmd, cmd, *sys.argv[1:])

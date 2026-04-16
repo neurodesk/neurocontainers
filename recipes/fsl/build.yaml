@@ -108,9 +108,6 @@ build:
         - fslpython -m pip install oxasl oxasl_ve oxasl_mp regtricks
         - rm -rf /root/.cache
 
-    - run:
-        - cp /opt/fsl-{{ context.original_version }}/bin/eddy_cuda11.0 /opt/fsl-{{ context.original_version }}/bin/eddy_cuda
-
     - copy:
         - eddy
         - /opt/fsl-{{ context.original_version }}/bin/eddy
