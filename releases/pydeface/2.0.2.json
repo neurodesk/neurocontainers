@@ -1,8 +1,9 @@
 {
   "apps": {
     "pydeface 2.0.2": {
-      "version": "20250206",
-      "exec": ""
+      "version": "20260417",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
