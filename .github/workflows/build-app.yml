@@ -225,7 +225,7 @@ jobs:
       - name: Debug storage
         run: |
           sudo df -ha
-          sudo du -sh $BASE_PATH
+          sudo du -sh --exclude="$BASE_PATH/docker" "$BASE_PATH"
 
       - name: Build new image
         if: inputs.skip_docker_build != 'true'
@@ -246,7 +246,7 @@ jobs:
       - name: Debug storage
         run: |
           sudo df -ha
-          sudo du -sh $BASE_PATH
+          sudo du -sh --exclude="$BASE_PATH/docker" "$BASE_PATH"
           
       # - name: Save new image to file
       #   if: inputs.skip_docker_build != 'true'
@@ -491,7 +491,7 @@ jobs:
       - name: Debug storage
         run: |
           sudo df -ha
-          sudo du -sh "$BASE_PATH"
+          sudo du -sh --exclude="$BASE_PATH/docker" "$BASE_PATH"
 
       - name: Build simg file
         if: inputs.skip_simg_build != 'true'
@@ -512,7 +512,7 @@ jobs:
       - name: Debug storage
         run: |
           sudo df -ha
-          sudo du -sh "$BASE_PATH"
+          sudo du -sh --exclude="$BASE_PATH/docker" "$BASE_PATH"
   
       - name: Upload simg artifact
         if: inputs.skip_simg_build != 'true'
