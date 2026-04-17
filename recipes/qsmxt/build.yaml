@@ -117,7 +117,7 @@ build:
             - /opt/FastSurfer/Docker/install_fs_pruned.sh /opt --url https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/7.4.1/freesurfer-linux-ubuntu22_amd64-7.4.1.tar.gz
           condition: arch=="x86_64"
         - run:
-            - cd /opt/FastSurfer && python3 FastSurferCNN/download_checkpoints.py --all
+            - cd /opt/FastSurfer && PYTHONPATH=/opt/FastSurfer python3 FastSurferCNN/download_checkpoints.py --all
         - environment:
             FASTSURFER_HOME: /opt/FastSurfer
             FREESURFER_HOME: /opt/freesurfer
