@@ -8,6 +8,11 @@ copyright:
 architectures:
   - x86_64
 
+variables:
+  conda_version: 4.7.12.1
+  conda_dir: /opt/miniconda-{{ context.conda_version }}
+  conda_download_url: https://repo.anaconda.com/miniconda/Miniconda3-{{ context.conda_version }}-Linux-x86_64.sh
+
 build:
   kind: neurodocker
 
@@ -15,21 +20,20 @@ build:
   pkg-manager: apt
 
   directives:
-    - install: ca-certificates
-
-    - template:
-        name: miniconda
-        version: latest
-        conda_install: "python=3.7 nipype=1.5.1 nibabel=4.0.1 numpy=1.21.6"
-        pip_install: "osfclient pydeface=={{ context.version }}"
-
     - environment:
-        PATH: "'$PATH':/opt/pydeface/bin"
+        CONDA_DIR: "{{ context.conda_dir }}"
+        PATH: "{{ context.conda_dir }}/bin:$PATH"
+
+    - run:
+        - bash {{ get_file("miniconda_sh") }} -b -p {{ context.conda_dir }}
+        - conda init bash
+        - python -m pip install --no-cache-dir --upgrade "pip<24.1" setuptools wheel
+        - python -m pip install --no-cache-dir "numpy==1.21.6" "nibabel==4.0.1" "nipype==1.5.1" osfclient "pydeface=={{ context.version }}"
+        - rm -rf /root/.cache/pip
 
 deploy:
-  path:
-    - /opt/pydeface-{{ context.version }}/bin/
-    - /opt/pydeface/bin
+  bins:
+    - pydeface
 
 readme: |
   ----------------------------------
@@ -58,3 +62,7 @@ readme: |
 
 categories:
   - "image segmentation"
+
+files:
+  - name: miniconda_sh
+    url: "{{ context.conda_download_url }}"
