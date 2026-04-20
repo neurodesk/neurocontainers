@@ -14,173 +14,6 @@ tests:
               -i /buildhostdirectory/tof_Se1_Res0.3_0.3_Spac0.3.nii \
               -o /buildhostdirectory/tof.h5
 
-      # Create a second input with scanner-like TOF naming and IceMiniHead so
-      # the OpenRecon output metadata can be asserted precisely.
-      rm -f /buildhostdirectory/tof_named_with_minihead.h5
-      python3 - <<'PY'
-      import base64
-      import os
-
-      import ismrmrd
-
-      source_path = "/buildhostdirectory/tof.h5"
-      target_path = "/buildhostdirectory/tof_named_with_minihead.h5"
-      source_series = "tof_fl3d_tra"
-      source_type = "TOF"
-      minihead_text = "\n".join(
-          [
-              '<ParamString."SequenceDescription">\t{ "tof_fl3d_tra" }',
-              '<ParamString."SeriesNumberRangeNameUID">\t{ "tof_fl3d_tra" }',
-              '<ParamString."ImageType">\t{ "ORIGINAL\\\\PRIMARY\\\\M\\\\TOF" }',
-              '<ParamString."ImageTypeValue3">\t{ "M" }',
-              '<ParamString."ComplexImageComponent">\t{ "MAGNITUDE" }',
-              '<ParamArray."ImageTypeValue4">\t{',
-              '\t{ "TOF" }',
-              '}',
-          ]
-      ) + "\n"
-      encoded_minihead = base64.b64encode(minihead_text.encode("utf-8")).decode("ascii")
-
-      src = ismrmrd.Dataset(source_path, "dataset")
-      dst = ismrmrd.Dataset(target_path, "dataset")
-      dst._file.require_group("dataset")
-      dst.write_xml_header(src.read_xml_header())
-
-      image_groups = sorted(
-          name for name in src._file["dataset"].keys()
-          if name.startswith("image_")
-      )
-      for image_group in image_groups:
-          for image_index in range(src.number_of_images(image_group)):
-              image = src.read_image(image_group, image_index)
-              meta = ismrmrd.Meta.deserialize(image.attribute_string)
-              meta["SeriesDescription"] = source_series
-              meta["SequenceDescription"] = source_series
-              meta["SeriesNumberRangeNameUID"] = source_series
-              meta["ImageType"] = f"ORIGINAL\\PRIMARY\\M\\{source_type}"
-              meta["ImageTypeValue3"] = "M"
-              meta["ImageTypeValue4"] = source_type
-              meta["DicomImageType"] = f"ORIGINAL\\PRIMARY\\M\\{source_type}"
-              meta["ImageComments"] = source_series
-              meta["IceMiniHead"] = encoded_minihead
-              image.attribute_string = meta.serialize()
-              image.image_series_index = 1
-              dst.append_image("image_1", image)
-
-      src.close()
-      dst.close()
-      PY
-
-      assert_vesselboost_metadata() {
-        output_path="$1"
-        scenario="$2"
-        python3 - "$output_path" "$scenario" <<'PY'
-      import base64
-      import sys
-
-      import ismrmrd
-
-      output_path = sys.argv[1]
-      scenario = sys.argv[2]
-      expected_source = "tof_fl3d_tra"
-      expected_derived = "tof_fl3d_tra_vesselboost"
-      expected_sagittal = f"{expected_derived}_sagittal"
-      expected_coronal = f"{expected_derived}_coronal"
-
-      def get_text(meta_obj, key):
-          try:
-              value = meta_obj.get(key)
-          except Exception:
-              value = None
-          if isinstance(value, (list, tuple)):
-              for item in value:
-                  text = str(item).strip()
-                  if text:
-                      return text
-              return ""
-          if value is None:
-              return ""
-          return str(value).strip()
-
-      dataset = ismrmrd.Dataset(output_path, "dataset")
-      image_groups = sorted(
-          name for name in dataset._file["dataset"].keys()
-          if name.startswith("image_")
-      )
-      summaries = []
-      for image_group in image_groups:
-          image = dataset.read_image(image_group, 0)
-          header = image.getHead()
-          meta = ismrmrd.Meta.deserialize(image.attribute_string)
-          ice_minihead = get_text(meta, "IceMiniHead")
-          if ice_minihead:
-              ice_minihead = base64.b64decode(ice_minihead).decode("utf-8")
-          summaries.append(
-              {
-                  "group": image_group,
-                  "series_index": int(getattr(header, "image_series_index", 0)),
-                  "series_description": get_text(meta, "SeriesDescription"),
-                  "sequence_description": get_text(meta, "SequenceDescription"),
-                  "grouping": get_text(meta, "SeriesNumberRangeNameUID"),
-                  "image_type": get_text(meta, "ImageType"),
-                  "image_type_value4": get_text(meta, "ImageTypeValue4"),
-                  "dicom_image_type": get_text(meta, "DicomImageType"),
-                  "image_comments": get_text(meta, "ImageComments"),
-                  "image_comment": get_text(meta, "ImageComment"),
-                  "ice_minihead": ice_minihead,
-              }
-          )
-      dataset.close()
-
-      if scenario == "default":
-          assert len(summaries) == 2, summaries
-          original, derived = summaries
-          assert original["series_index"] == 1, original
-          assert original["series_description"] == expected_source, original
-          assert original["grouping"] == expected_source, original
-          assert expected_source in original["ice_minihead"], original["ice_minihead"]
-          assert derived["series_index"] == 2, derived
-          assert derived["series_description"] == expected_derived, derived
-          assert derived["sequence_description"] == expected_derived, derived
-          assert derived["grouping"] == expected_derived, derived
-          assert derived["grouping"] != original["grouping"], summaries
-          assert derived["image_type"] == "DERIVED\\PRIMARY\\M\\VESSELBOOST_SEGMENTATION", derived
-          assert derived["dicom_image_type"] == "DERIVED\\PRIMARY\\M\\VESSELBOOST_SEGMENTATION", derived
-          assert derived["image_type_value4"] == "vesselboost", derived
-          assert derived["image_comments"] == "vesselboost", derived
-          assert derived["image_comment"] == "vesselboost", derived
-          assert expected_derived in derived["ice_minihead"], derived["ice_minihead"]
-          assert 'SequenceDescription' in derived["ice_minihead"], derived["ice_minihead"]
-          assert 'SeriesNumberRangeNameUID' in derived["ice_minihead"], derived["ice_minihead"]
-      elif scenario == "sendoriginal_false":
-          assert len(summaries) == 1, summaries
-          derived = summaries[0]
-          assert derived["series_index"] == 2, derived
-          assert derived["series_description"] == expected_derived, derived
-          assert derived["sequence_description"] == expected_derived, derived
-          assert derived["grouping"] == expected_derived, derived
-          assert derived["image_type_value4"] == "vesselboost", derived
-      elif scenario == "reslice":
-          assert len(summaries) == 4, summaries
-          assert [summary["series_index"] for summary in summaries] == [1, 2, 3, 4], summaries
-          assert [summary["series_description"] for summary in summaries] == [
-              expected_source,
-              expected_derived,
-              expected_sagittal,
-              expected_coronal,
-          ], summaries
-          assert [summary["grouping"] for summary in summaries] == [
-              expected_source,
-              expected_derived,
-              expected_sagittal,
-              expected_coronal,
-          ], summaries
-      else:
-          raise ValueError(f"Unknown scenario: {scenario}")
-
-      print(f"{scenario} metadata assertions passed for {output_path}")
-      PY
-      }
 
       # Start OpenRecon server
       python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
@@ -194,6 +27,7 @@ tests:
         -o /buildhostdirectory/output.h5 \
         /buildhostdirectory/tof_named_with_minihead.h5 \
         -c vesselboost
+
       assert_vesselboost_metadata /buildhostdirectory/output.h5 default
 
       default_openrecon_nii_dir=/tmp/share/debug/vesselboost_openrecon/prediction_prep1_brain1_blend0/tof_output
@@ -306,6 +140,174 @@ tests:
         rm -f vesselboost.json
       fi
 
+
+
+      # Create an input with scanner-like TOF naming and IceMiniHead so
+      # the OpenRecon output metadata can be tested.
+      rm -f /buildhostdirectory/tof_named_with_minihead.h5
+      python3 -c 'import textwrap; exec(textwrap.dedent("""
+      import base64
+
+      import ismrmrd
+
+      source_path = "/buildhostdirectory/tof.h5"
+      target_path = "/buildhostdirectory/tof_named_with_minihead.h5"
+      source_series = "tof_fl3d_tra"
+      source_type = "TOF"
+      minihead_text = "\\n".join(
+          [
+              "<ParamString.\\"SequenceDescription\\">\\t{ \\"tof_fl3d_tra\\" }",
+              "<ParamString.\\"SeriesNumberRangeNameUID\\">\\t{ \\"tof_fl3d_tra\\" }",
+              "<ParamString.\\"ImageType\\">\\t{ \\"ORIGINAL\\\\\\\\PRIMARY\\\\\\\\M\\\\\\\\TOF\\" }",
+              "<ParamString.\\"ImageTypeValue3\\">\\t{ \\"M\\" }",
+              "<ParamString.\\"ComplexImageComponent\\">\\t{ \\"MAGNITUDE\\" }",
+              "<ParamArray.\\"ImageTypeValue4\\">\\t{",
+              "\\t{ \\"TOF\\" }",
+              "}",
+          ]
+      ) + "\\n"
+      encoded_minihead = base64.b64encode(minihead_text.encode("utf-8")).decode("ascii")
+
+      src = ismrmrd.Dataset(source_path, "dataset")
+      dst = ismrmrd.Dataset(target_path, "dataset")
+      dst._file.require_group("dataset")
+      dst.write_xml_header(src.read_xml_header())
+
+      image_groups = sorted(
+          name for name in src._file["dataset"].keys()
+          if name.startswith("image_")
+      )
+      for image_group in image_groups:
+          for image_index in range(src.number_of_images(image_group)):
+              image = src.read_image(image_group, image_index)
+              meta = ismrmrd.Meta.deserialize(image.attribute_string)
+              meta["SeriesDescription"] = source_series
+              meta["SequenceDescription"] = source_series
+              meta["SeriesNumberRangeNameUID"] = source_series
+              meta["ImageType"] = f"ORIGINAL\\\\PRIMARY\\\\M\\\\{source_type}"
+              meta["ImageTypeValue3"] = "M"
+              meta["ImageTypeValue4"] = source_type
+              meta["DicomImageType"] = f"ORIGINAL\\\\PRIMARY\\\\M\\\\{source_type}"
+              meta["ImageComments"] = source_series
+              meta["IceMiniHead"] = encoded_minihead
+              image.attribute_string = meta.serialize()
+              image.image_series_index = 1
+              dst.append_image("image_1", image)
+
+      src.close()
+      dst.close()
+      """))'
+
+      assert_vesselboost_metadata() {
+        output_path="$1"
+        scenario="$2"
+        python3 -c 'import textwrap; exec(textwrap.dedent("""
+        import base64
+        import sys
+
+        import ismrmrd
+
+        output_path = sys.argv[1]
+        scenario = sys.argv[2]
+        expected_source = "tof_fl3d_tra"
+        expected_derived = "tof_fl3d_tra_vesselboost"
+        expected_sagittal = f"{expected_derived}_sagittal"
+        expected_coronal = f"{expected_derived}_coronal"
+
+        def get_text(meta_obj, key):
+            try:
+                value = meta_obj.get(key)
+            except Exception:
+                value = None
+            if isinstance(value, (list, tuple)):
+                for item in value:
+                    text = str(item).strip()
+                    if text:
+                        return text
+                return ""
+            if value is None:
+                return ""
+            return str(value).strip()
+
+        dataset = ismrmrd.Dataset(output_path, "dataset")
+        image_groups = sorted(
+            name for name in dataset._file["dataset"].keys()
+            if name.startswith("image_")
+        )
+        summaries = []
+        for image_group in image_groups:
+            image = dataset.read_image(image_group, 0)
+            header = image.getHead()
+            meta = ismrmrd.Meta.deserialize(image.attribute_string)
+            ice_minihead = get_text(meta, "IceMiniHead")
+            if ice_minihead:
+                ice_minihead = base64.b64decode(ice_minihead).decode("utf-8")
+            summaries.append(
+                {
+                    "group": image_group,
+                    "series_index": int(getattr(header, "image_series_index", 0)),
+                    "series_description": get_text(meta, "SeriesDescription"),
+                    "sequence_description": get_text(meta, "SequenceDescription"),
+                    "grouping": get_text(meta, "SeriesNumberRangeNameUID"),
+                    "image_type": get_text(meta, "ImageType"),
+                    "image_type_value4": get_text(meta, "ImageTypeValue4"),
+                    "dicom_image_type": get_text(meta, "DicomImageType"),
+                    "image_comments": get_text(meta, "ImageComments"),
+                    "image_comment": get_text(meta, "ImageComment"),
+                    "ice_minihead": ice_minihead,
+                }
+            )
+        dataset.close()
+
+        if scenario == "default":
+            assert len(summaries) == 2, summaries
+            original, derived = summaries
+            assert original["series_index"] == 1, original
+            assert original["series_description"] == expected_source, original
+            assert original["grouping"] == expected_source, original
+            assert expected_source in original["ice_minihead"], original["ice_minihead"]
+            assert derived["series_index"] == 2, derived
+            assert derived["series_description"] == expected_derived, derived
+            assert derived["sequence_description"] == expected_derived, derived
+            assert derived["grouping"] == expected_derived, derived
+            assert derived["grouping"] != original["grouping"], summaries
+            assert derived["image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST_SEGMENTATION", derived
+            assert derived["dicom_image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST_SEGMENTATION", derived
+            assert derived["image_type_value4"] == "vesselboost", derived
+            assert derived["image_comments"] == "vesselboost", derived
+            assert derived["image_comment"] == "vesselboost", derived
+            assert expected_derived in derived["ice_minihead"], derived["ice_minihead"]
+            assert "SequenceDescription" in derived["ice_minihead"], derived["ice_minihead"]
+            assert "SeriesNumberRangeNameUID" in derived["ice_minihead"], derived["ice_minihead"]
+        elif scenario == "sendoriginal_false":
+            assert len(summaries) == 1, summaries
+            derived = summaries[0]
+            assert derived["series_index"] == 2, derived
+            assert derived["series_description"] == expected_derived, derived
+            assert derived["sequence_description"] == expected_derived, derived
+            assert derived["grouping"] == expected_derived, derived
+            assert derived["image_type_value4"] == "vesselboost", derived
+        elif scenario == "reslice":
+            assert len(summaries) == 4, summaries
+            assert [summary["series_index"] for summary in summaries] == [1, 2, 3, 4], summaries
+            assert [summary["series_description"] for summary in summaries] == [
+                expected_source,
+                expected_derived,
+                expected_sagittal,
+                expected_coronal,
+            ], summaries
+            assert [summary["grouping"] for summary in summaries] == [
+                expected_source,
+                expected_derived,
+                expected_sagittal,
+                expected_coronal,
+            ], summaries
+        else:
+            raise ValueError(f"Unknown scenario: {scenario}")
+
+        print(f"{scenario} metadata assertions passed for {output_path}")
+        """))' "$output_path" "$scenario"
+      }        
 
 
       ## Test vesselboost on it's own:
