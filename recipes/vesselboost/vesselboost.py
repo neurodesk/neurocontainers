@@ -29,6 +29,8 @@ OPENRECON_OUTPUT_NAME_PARAM = "vboutputname"
 OPENRECON_MODULE_DEFAULT = "prediction"
 OPENRECON_MODULE_VALUES = (OPENRECON_MODULE_DEFAULT,)
 VESSELBOOST_SEGMENTATION_LABEL = "vesselboost_segmentation"
+VESSELBOOST_DISPLAY_LABEL = "vesselboost"
+VESSELBOOST_SEGMENTATION_TYPE_TOKEN = VESSELBOOST_SEGMENTATION_LABEL.upper()
 
 # Keep this overview aligned with recipes/vesselboost/OpenReconLabel.json.
 # Tests can import it to build a minimal OpenRecon config payload.
@@ -402,6 +404,19 @@ def _clone_mrd_image(image):
     return image_copy
 
 
+def _copy_meta(meta_obj):
+    try:
+        return ismrmrd.Meta.deserialize(meta_obj.serialize())
+    except Exception:
+        meta_copy = ismrmrd.Meta()
+        for key in meta_obj.keys():
+            try:
+                meta_copy[key] = meta_obj[key]
+            except Exception:
+                pass
+        return meta_copy
+
+
 def _first_non_empty_text(*values):
     for value in values:
         if isinstance(value, (list, tuple)):
@@ -505,6 +520,21 @@ def _extract_minihead_string_value(minihead_text, name):
     return ""
 
 
+def _extract_minihead_array_tokens(minihead_text, name):
+    if not minihead_text:
+        return []
+
+    block_match = re.search(
+        rf'<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}',
+        minihead_text,
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    if not block_match:
+        return []
+
+    return [token.strip() for token in re.findall(r'\{\s*"([^"]+)"\s*\}', block_match.group(0))]
+
+
 def _replace_minihead_string_param(minihead_text, name, value):
     if not minihead_text or not value:
         return minihead_text, False
@@ -518,6 +548,37 @@ def _replace_minihead_string_param(minihead_text, name, value):
 
     replacement = f"{match.group(1)}{value}{match.group(3)}"
     return minihead_text[:match.start()] + replacement + minihead_text[match.end():], True
+
+
+def _sanitize_minihead_param_value(value):
+    text = _first_non_empty_text(value)
+    if not text:
+        return ""
+    return (
+        text.replace("\\", "/")
+        .replace('"', "'")
+        .replace("\r", " ")
+        .replace("\n", " ")
+    )
+
+
+def _replace_or_append_minihead_string_param(minihead_text, name, value):
+    value = _sanitize_minihead_param_value(value)
+    if not minihead_text or not value:
+        return minihead_text, False
+
+    pattern = re.compile(
+        rf'(<ParamString\."{re.escape(name)}">\s*\{{\s*")([^"]*)("\s*\}})'
+    )
+    match = pattern.search(minihead_text)
+    if match:
+        if match.group(2) == value:
+            return minihead_text, False
+        replacement = f"{match.group(1)}{value}{match.group(3)}"
+        return minihead_text[:match.start()] + replacement + minihead_text[match.end():], True
+
+    appended_param = f'\n<ParamString."{name}">\t{{ "{value}" }}\n'
+    return minihead_text.rstrip() + appended_param, True
 
 
 def _replace_minihead_array_token(minihead_text, name, source_token, target_token):
@@ -573,34 +634,58 @@ def _replace_minihead_array_token(minihead_text, name, source_token, target_toke
     )
 
 
+def _replace_or_append_minihead_array_token(minihead_text, name, source_token, target_token):
+    current_text, did_change = _replace_minihead_array_token(
+        minihead_text,
+        name,
+        source_token,
+        target_token,
+    )
+    if did_change or not current_text or not target_token:
+        return current_text, did_change
+    if _extract_minihead_array_tokens(current_text, name):
+        return current_text, False
+
+    target_token = _sanitize_minihead_param_value(target_token)
+    appended_param = f'\n<ParamArray."{name}">\t{{\n\t{{ "{target_token}" }}\n}}\n'
+    return current_text.rstrip() + appended_param, True
+
+
 def _patch_ice_minihead(
     minihead_text,
     parent_sequence,
     parent_grouping,
     source_type_token,
     target_type_token,
+    target_display_token=None,
+    target_image_type_value3="M",
 ):
     if not minihead_text:
         return minihead_text, False
 
     changed = False
     current_text = minihead_text
+    target_display_token = target_display_token or target_type_token
 
     for param_name, param_value in (
         ("SequenceDescription", parent_sequence),
         ("SeriesNumberRangeNameUID", parent_grouping),
-        ("ImageType", f"DERIVED\\PRIMARY\\M\\{target_type_token}"),
+        ("ImageType", f"DERIVED\\PRIMARY\\{target_image_type_value3}\\{target_type_token}"),
         ("ImageTypeValue3", "M"),
         ("ComplexImageComponent", "MAGNITUDE"),
     ):
-        current_text, did_change = _replace_minihead_string_param(current_text, param_name, param_value)
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            param_name,
+            param_value,
+        )
         changed = changed or did_change
 
-    current_text, did_change = _replace_minihead_array_token(
+    current_text, did_change = _replace_or_append_minihead_array_token(
         current_text,
         "ImageTypeValue4",
         source_type_token,
-        target_type_token,
+        target_display_token,
     )
     changed = changed or did_change
 
@@ -629,6 +714,58 @@ def _resolve_source_series_identity(meta_obj):
         "parent_sequence": parent_sequence,
         "parent_grouping": parent_grouping,
         "source_type_token": source_type_token,
+    }
+
+
+def _build_vesselboost_series_name(source_series_description, suffix=""):
+    source_series_description = _first_non_empty_text(source_series_description)
+    if source_series_description:
+        name = f"{source_series_description}_{VESSELBOOST_DISPLAY_LABEL}"
+    else:
+        name = VESSELBOOST_DISPLAY_LABEL
+    if suffix:
+        name = f"{name}_{suffix}"
+    return name
+
+
+def _build_vesselboost_grouping(source_parent_grouping, fallback_series_name, suffix=""):
+    source_parent_grouping = _first_non_empty_text(source_parent_grouping)
+    if source_parent_grouping:
+        grouping = f"{source_parent_grouping}_{VESSELBOOST_DISPLAY_LABEL}"
+    else:
+        grouping = fallback_series_name
+    if suffix:
+        grouping = f"{grouping}_{suffix}"
+    return grouping
+
+
+def _build_openrecon_output_identity(source_identity, orientation=None):
+    orientation = _first_non_empty_text(orientation).lower()
+    base_series_description = _build_vesselboost_series_name(
+        source_identity.get("series_description", ""),
+    )
+    base_grouping = _build_vesselboost_grouping(
+        source_identity.get("parent_grouping", ""),
+        fallback_series_name=base_series_description,
+    )
+    series_description = (
+        f"{base_series_description}_{orientation}"
+        if orientation
+        else base_series_description
+    )
+    grouping = f"{base_grouping}_{orientation}" if orientation else base_grouping
+    image_comment = (
+        f"{VESSELBOOST_DISPLAY_LABEL}_{orientation}"
+        if orientation
+        else VESSELBOOST_DISPLAY_LABEL
+    )
+    return {
+        "series_description": series_description,
+        "sequence_description": series_description,
+        "grouping": grouping,
+        "display_token": VESSELBOOST_DISPLAY_LABEL,
+        "type_token": VESSELBOOST_SEGMENTATION_TYPE_TOKEN,
+        "image_comment": image_comment,
     }
 
 
@@ -792,6 +929,8 @@ def _build_reformatted_images(
     volume_yxz: np.ndarray,
     head_template,
     meta_template,
+    source_type_token: str,
+    output_identity: dict,
     voxel_size: np.ndarray,
     fov: np.ndarray,
     orientation: str,
@@ -902,6 +1041,20 @@ def _build_reformatted_images(
         ]
         tmp_meta["WindowCenter"] = str((max_val + 1) / 2)
         tmp_meta["WindowWidth"] = str((max_val + 1))
+        tmp_meta["SeriesDescription"] = output_identity["series_description"]
+        tmp_meta["SequenceDescription"] = output_identity["sequence_description"]
+        tmp_meta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
+        tmp_meta["ImageType"] = (
+            f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+        )
+        tmp_meta["ImageTypeValue3"] = "M"
+        tmp_meta["ImageTypeValue4"] = output_identity["display_token"]
+        tmp_meta["DicomImageType"] = (
+            f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+        )
+        tmp_meta["ComplexImageComponent"] = "MAGNITUDE"
+        tmp_meta["ImageComments"] = output_identity["image_comment"]
+        tmp_meta["ImageComment"] = output_identity["image_comment"]
         tmp_meta["SequenceDescriptionAdditional"] = f"VesselBoost_{orientation}"
         tmp_meta["Keep_image_geometry"] = 1
         tmp_meta["ImageRowDir"] = [
@@ -914,6 +1067,18 @@ def _build_reformatted_images(
             "{:.18f}".format(new_phase_dir[1]),
             "{:.18f}".format(new_phase_dir[2]),
         ]
+        minihead_text = _decode_ice_minihead(tmp_meta)
+        if minihead_text:
+            patched_minihead_text, minihead_changed = _patch_ice_minihead(
+                minihead_text,
+                output_identity["sequence_description"],
+                output_identity["grouping"],
+                source_type_token,
+                output_identity["type_token"],
+                target_display_token=output_identity["display_token"],
+            )
+            if minihead_changed:
+                tmp_meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
         mrd_image.attribute_string = tmp_meta.serialize()
         images_out.append(mrd_image)
 
@@ -1171,14 +1336,19 @@ def process_image(images, connection, config, metadata):
     source_identity = _resolve_source_series_identity(
         ismrmrd.Meta.deserialize(images[0].attribute_string)
     )
+    segmentation_identity = _build_openrecon_output_identity(source_identity)
     logging.info(
-        "VesselBoost output identity: series_description=%s sequence=%s "
-        "grouping=%s source_type=%s output_type=%s",
+        "VesselBoost output identity: source_series=%s source_sequence=%s "
+        "source_grouping=%s derived_series=%s derived_grouping=%s "
+        "source_type=%s output_type=%s display_token=%s",
         source_identity["series_description"] or "N/A",
         source_identity["parent_sequence"] or "N/A",
         source_identity["parent_grouping"] or "N/A",
+        segmentation_identity["series_description"],
+        segmentation_identity["grouping"],
         source_identity["source_type_token"] or "N/A",
-        VESSELBOOST_SEGMENTATION_LABEL,
+        segmentation_identity["type_token"],
+        segmentation_identity["display_token"],
     )
 
     # Create folder, if necessary
@@ -1629,21 +1799,21 @@ def process_image(images, connection, config, metadata):
         imagesOut[iImg].setHead(oldHeader)
 
         # Create a copy of the original ISMRMRD Meta attributes and update
-        tmpMeta = meta[iImg]
+        tmpMeta = _copy_meta(meta[iImg])
         tmpMeta['DataRole']                       = 'Image'
         tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'VESSELBOOST']
         tmpMeta['WindowCenter']                   = str((maxVal+1)/2)
         tmpMeta['WindowWidth']                    = str((maxVal+1))
-        tmpMeta['ImageType']                      = VESSELBOOST_SEGMENTATION_LABEL
+        tmpMeta['SeriesDescription']              = segmentation_identity["series_description"]
+        tmpMeta['SequenceDescription']            = segmentation_identity["sequence_description"]
+        tmpMeta['SeriesNumberRangeNameUID']       = segmentation_identity["grouping"]
+        tmpMeta['ImageType']                      = f"DERIVED\\PRIMARY\\M\\{segmentation_identity['type_token']}"
         tmpMeta['ImageTypeValue3']                = 'M'
-        tmpMeta['ImageTypeValue4']                = VESSELBOOST_SEGMENTATION_LABEL
-        tmpMeta['DicomImageType']                 = f"DERIVED\\PRIMARY\\M\\{VESSELBOOST_SEGMENTATION_LABEL.upper()}"
+        tmpMeta['ImageTypeValue4']                = segmentation_identity["display_token"]
+        tmpMeta['DicomImageType']                 = f"DERIVED\\PRIMARY\\M\\{segmentation_identity['type_token']}"
         tmpMeta['ComplexImageComponent']          = 'MAGNITUDE'
-        tmpMeta['ImageComments']                  = VESSELBOOST_SEGMENTATION_LABEL
-        if source_identity["series_description"]:
-            tmpMeta['SeriesDescription'] = source_identity["series_description"]
-        if source_identity["parent_sequence"]:
-            tmpMeta['SequenceDescription'] = source_identity["parent_sequence"]
+        tmpMeta['ImageComments']                  = segmentation_identity["image_comment"]
+        tmpMeta['ImageComment']                   = segmentation_identity["image_comment"]
         if 'SequenceDescriptionAdditional' in tmpMeta:
             try:
                 del tmpMeta['SequenceDescriptionAdditional']
@@ -1654,10 +1824,11 @@ def process_image(images, connection, config, metadata):
         if minihead_text:
             patched_minihead_text, minihead_changed = _patch_ice_minihead(
                 minihead_text,
-                source_identity["parent_sequence"],
-                source_identity["parent_grouping"],
+                segmentation_identity["sequence_description"],
+                segmentation_identity["grouping"],
                 source_identity["source_type_token"],
-                VESSELBOOST_SEGMENTATION_LABEL,
+                segmentation_identity["type_token"],
+                target_display_token=segmentation_identity["display_token"],
             )
             if minihead_changed:
                 tmpMeta['IceMiniHead'] = _encode_ice_minihead(patched_minihead_text)
@@ -1686,15 +1857,22 @@ def process_image(images, connection, config, metadata):
         meta_template = meta[0] if meta else None
 
         if reslice_sagittal:
+            sagittal_identity = _build_openrecon_output_identity(
+                source_identity,
+                orientation="sagittal",
+            )
             logging.info(
-                "Appending sagittal reformat output series (series_index=%d)",
+                "Appending sagittal reformat output series (series_index=%d, name=%s)",
                 base_series,
+                sagittal_identity["series_description"],
             )
             imagesOut.extend(
                 _build_reformatted_images(
                     volume_yxz=volume_yxz,
                     head_template=head[0],
                     meta_template=meta_template,
+                    source_type_token=source_identity["source_type_token"],
+                    output_identity=sagittal_identity,
                     voxel_size=voxel_size,
                     fov=fov,
                     orientation="sagittal",
@@ -1705,15 +1883,22 @@ def process_image(images, connection, config, metadata):
             base_series += 1
 
         if reslice_coronal:
+            coronal_identity = _build_openrecon_output_identity(
+                source_identity,
+                orientation="coronal",
+            )
             logging.info(
-                "Appending coronal reformat output series (series_index=%d)",
+                "Appending coronal reformat output series (series_index=%d, name=%s)",
                 base_series,
+                coronal_identity["series_description"],
             )
             imagesOut.extend(
                 _build_reformatted_images(
                     volume_yxz=volume_yxz,
                     head_template=head[0],
                     meta_template=meta_template,
+                    source_type_token=source_identity["source_type_token"],
+                    output_identity=coronal_identity,
                     voxel_size=voxel_size,
                     fov=fov,
                     orientation="coronal",

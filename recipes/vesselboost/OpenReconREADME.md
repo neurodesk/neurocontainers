@@ -1,14 +1,14 @@
 # VesselBoost OpenRecon
 
-VesselBoost runs a deep learning pipeline for vessel segmentation of high-resolution time-of-flight magnetic resonance angiography (TOF-MRA). It uses a UNet3D-based segmentation workflow designed to be sensitive to small vessels. The OpenRecon configuration exposes the prediction workflow and returns a derived `vesselboost_segmentation` image series.
+VesselBoost runs a deep learning pipeline for vessel segmentation of high-resolution time-of-flight magnetic resonance angiography (TOF-MRA). It uses a UNet3D-based segmentation workflow designed to be sensitive to small vessels. The OpenRecon configuration exposes the prediction workflow and returns a derived series named `<source>_vesselboost`.
 
 The normal VesselBoost software suite includes three command-line modules: prediction, test-time adaptation, and boost. In this OpenRecon application, the scanner GUI only makes the VesselBoost prediction pipeline available.
 
 ## Input and Output
 
-Use this reconstruction pipeline on 3D TOF-MRA image data. 
+Use this reconstruction pipeline on 3D TOF-MRA image data.
 
-The output is a derived segmentation series named `vesselboost_segmentation`. By default, OpenRecon also returns the original MRA images before the segmentation output. Optional sagittal and coronal reformat series can be requested.
+The main derived output is named `<source>_vesselboost`, where `<source>` is the incoming source `SeriesDescription`. If the source series has no description, the fallback name is `vesselboost`. By default, OpenRecon also returns the original MRA images before the derived output. Optional sagittal and coronal reformat series are named `<source>_vesselboost_sagittal` and `<source>_vesselboost_coronal`.
 
 ## GUI Parameters
 
@@ -64,4 +64,3 @@ Please cite VesselBoost if you use this reconstruction in research:
   langid = {english}
 }
 ```
-
