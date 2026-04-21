@@ -248,12 +248,15 @@ tests:
                     "series_index": int(getattr(header, "image_series_index", 0)),
                     "series_description": get_text(meta, "SeriesDescription"),
                     "sequence_description": get_text(meta, "SequenceDescription"),
+                    "sequence_description_additional": get_text(meta, "SequenceDescriptionAdditional"),
                     "grouping": get_text(meta, "SeriesNumberRangeNameUID"),
                     "image_type": get_text(meta, "ImageType"),
                     "image_type_value4": get_text(meta, "ImageTypeValue4"),
                     "dicom_image_type": get_text(meta, "DicomImageType"),
                     "image_comments": get_text(meta, "ImageComments"),
                     "image_comment": get_text(meta, "ImageComment"),
+                    "pixel_spacing_x": float(header.field_of_view[0]) / float(header.matrix_size[0]),
+                    "pixel_spacing_y": float(header.field_of_view[1]) / float(header.matrix_size[1]),
                     "ice_minihead": ice_minihead,
                 }
             )
@@ -302,6 +305,12 @@ tests:
                 expected_sagittal,
                 expected_coronal,
             ], summaries
+            sagittal = summaries[2]
+            coronal = summaries[3]
+            assert sagittal["sequence_description_additional"] == "", sagittal
+            assert coronal["sequence_description_additional"] == "", coronal
+            assert abs(sagittal["pixel_spacing_x"] - sagittal["pixel_spacing_y"]) < 1e-3, sagittal
+            assert abs(coronal["pixel_spacing_x"] - coronal["pixel_spacing_y"]) < 1e-3, coronal
         else:
             raise ValueError(f"Unknown scenario: {scenario}")
 

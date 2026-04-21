@@ -17,6 +17,7 @@ import ismrmrd
 import nibabel as nib
 import numpy as np
 import numpy.fft as fft
+import scipy.ndimage as ndi
 
 import constants
 import mrdhelper
@@ -925,6 +926,49 @@ def _main(argv=None) -> int:
     return 0
 
 
+def _square_pixel_target_shape(
+    input_shape: tuple[int, int],
+    row_spacing: float,
+    col_spacing: float,
+) -> tuple[tuple[int, int], float]:
+    target_spacing = float(min(row_spacing, col_spacing))
+    target_rows = max(
+        1,
+        int(round(input_shape[0] * float(row_spacing) / target_spacing)),
+    )
+    target_cols = max(
+        1,
+        int(round(input_shape[1] * float(col_spacing) / target_spacing)),
+    )
+    return (target_rows, target_cols), target_spacing
+
+
+def _resize_2d_nearest(
+    data: np.ndarray,
+    target_shape: tuple[int, int],
+) -> np.ndarray:
+    if data.shape == target_shape:
+        return np.ascontiguousarray(data)
+
+    zoom_factors = (
+        target_shape[0] / data.shape[0],
+        target_shape[1] / data.shape[1],
+    )
+    resized = ndi.zoom(data, zoom_factors, order=0, prefilter=False)
+
+    if resized.shape != target_shape:
+        corrected = np.zeros(target_shape, dtype=resized.dtype)
+        rows = min(target_shape[0], resized.shape[0])
+        cols = min(target_shape[1], resized.shape[1])
+        corrected[:rows, :cols] = resized[:rows, :cols]
+        resized = corrected
+
+    if resized.dtype != data.dtype:
+        resized = np.rint(resized).astype(data.dtype, copy=False)
+
+    return np.ascontiguousarray(resized)
+
+
 def _build_reformatted_images(
     volume_yxz: np.ndarray,
     head_template,
@@ -961,23 +1005,42 @@ def _build_reformatted_images(
         new_phase_dir = slice_dir
         new_slice_dir = read_dir
         slice_spacing = float(voxel_size[0])
-        new_fov = (float(fov[1]), float(fov[2]), float(fov[0]))
+        inplane_row_spacing = float(voxel_size[2])
+        inplane_col_spacing = float(voxel_size[1])
+        inplane_input_shape = (N_z, N_y)
+        orthogonal_fov = float(fov[0])
     else:  # coronal
         n_slices = N_y
         new_read_dir = read_dir
         new_phase_dir = slice_dir
         new_slice_dir = phase_dir
         slice_spacing = float(voxel_size[1])
-        new_fov = (float(fov[0]), float(fov[2]), float(fov[1]))
+        inplane_row_spacing = float(voxel_size[2])
+        inplane_col_spacing = float(voxel_size[0])
+        inplane_input_shape = (N_z, N_x)
+        orthogonal_fov = float(fov[1])
+
+    target_inplane_shape, target_inplane_spacing = _square_pixel_target_shape(
+        inplane_input_shape,
+        row_spacing=inplane_row_spacing,
+        col_spacing=inplane_col_spacing,
+    )
+    new_fov = (
+        float(target_inplane_shape[1] * target_inplane_spacing),
+        float(target_inplane_shape[0] * target_inplane_spacing),
+        orthogonal_fov,
+    )
 
     logging.info(
         "Building %s reformat: n_slices=%d slice_spacing=%.4f new_fov=%s "
-        "series_index=%d",
+        "series_index=%d target_shape=%s target_spacing=%.4f",
         orientation,
         n_slices,
         slice_spacing,
         new_fov,
         series_index,
+        target_inplane_shape,
+        target_inplane_spacing,
     )
 
     images_out = []
@@ -994,6 +1057,7 @@ def _build_reformatted_images(
             # so rows = Z (phase_dir), cols = X (read_dir).
             slice2d = np.ascontiguousarray(volume_yxz[j, :, :].T)
 
+        slice2d = _resize_2d_nearest(slice2d, target_inplane_shape)
         mrd_image = ismrmrd.Image.from_array(slice2d, transpose=False)
 
         new_header = mrd_image.getHead()
@@ -1055,7 +1119,11 @@ def _build_reformatted_images(
         tmp_meta["ComplexImageComponent"] = "MAGNITUDE"
         tmp_meta["ImageComments"] = output_identity["image_comment"]
         tmp_meta["ImageComment"] = output_identity["image_comment"]
-        tmp_meta["SequenceDescriptionAdditional"] = f"VesselBoost_{orientation}"
+        if "SequenceDescriptionAdditional" in tmp_meta:
+            try:
+                del tmp_meta["SequenceDescriptionAdditional"]
+            except Exception:
+                tmp_meta["SequenceDescriptionAdditional"] = ""
         tmp_meta["Keep_image_geometry"] = 1
         tmp_meta["ImageRowDir"] = [
             "{:.18f}".format(new_read_dir[0]),

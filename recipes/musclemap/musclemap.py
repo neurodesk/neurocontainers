@@ -14,6 +14,7 @@ import xml.dom.minidom
 import base64
 import ctypes
 import re
+import uuid
 import mrdhelper
 import constants
 from time import perf_counter
@@ -384,6 +385,102 @@ def _strip_dixon_series_suffix(series_name):
     )
 
 
+def _resolve_source_series_identity(meta_obj, minihead_text):
+    raw_series_description = _get_meta_text(meta_obj, "SeriesDescription")
+    series_description = _strip_dixon_series_suffix(raw_series_description)
+
+    raw_parent_sequence = _first_non_empty_text(
+        _get_meta_text(meta_obj, "SequenceDescription"),
+        _extract_minihead_string_value(minihead_text, "SequenceDescription"),
+    )
+    parent_sequence = _strip_dixon_series_suffix(raw_parent_sequence)
+
+    raw_parent_grouping = _first_non_empty_text(
+        _get_meta_text(meta_obj, "SeriesNumberRangeNameUID"),
+        _extract_minihead_string_value(minihead_text, "SeriesNumberRangeNameUID"),
+        parent_sequence,
+    )
+    parent_grouping = _strip_dixon_series_suffix(raw_parent_grouping)
+
+    if not parent_sequence:
+        parent_sequence = series_description
+    if not parent_grouping:
+        parent_grouping = parent_sequence
+
+    return {
+        "raw_series_description": raw_series_description,
+        "series_description": series_description,
+        "raw_parent_sequence": raw_parent_sequence,
+        "parent_sequence": parent_sequence,
+        "raw_parent_grouping": raw_parent_grouping,
+        "parent_grouping": parent_grouping,
+        "series_instance_uid": _first_non_empty_text(
+            _get_meta_text(meta_obj, "SeriesInstanceUID"),
+            _extract_minihead_string_value(minihead_text, "SeriesInstanceUID"),
+        ),
+    }
+
+
+def _build_derived_series_instance_uid(
+    source_series_instance_uid,
+    derived_kind,
+    derived_series_index,
+    series_grouping,
+    series_description,
+):
+    stable_source_uid = _first_non_empty_text(source_series_instance_uid)
+    if stable_source_uid:
+        seed_text = json.dumps(
+            {
+                "source_series_instance_uid": stable_source_uid,
+                "derived_kind": _first_non_empty_text(derived_kind),
+                "derived_series_index": int(derived_series_index) if derived_series_index is not None else None,
+                "series_grouping": _first_non_empty_text(series_grouping),
+                "series_description": _first_non_empty_text(series_description),
+            },
+            sort_keys=True,
+        )
+        derived_uuid = uuid.uuid5(uuid.NAMESPACE_OID, seed_text)
+    else:
+        derived_uuid = uuid.uuid4()
+
+    return f"2.25.{derived_uuid.int}"
+
+
+def _build_derived_series_identity(
+    source_identity,
+    *,
+    series_description,
+    sequence_description=None,
+    grouping_suffix=None,
+    series_grouping=None,
+    derived_series_index=None,
+    derived_kind="derived",
+):
+    series_description = _first_non_empty_text(series_description)
+    sequence_description = _first_non_empty_text(sequence_description, series_description)
+    grouping_token = _first_non_empty_text(grouping_suffix, series_description, sequence_description)
+
+    if not series_grouping:
+        if source_identity.get("parent_grouping") and grouping_token:
+            series_grouping = f"{source_identity['parent_grouping']}_{grouping_token}"
+        else:
+            series_grouping = grouping_token or source_identity.get("parent_grouping", "")
+
+    return {
+        "series_description": series_description,
+        "sequence_description": sequence_description,
+        "grouping": series_grouping,
+        "series_instance_uid": _build_derived_series_instance_uid(
+            source_series_instance_uid=source_identity.get("series_instance_uid"),
+            derived_kind=derived_kind,
+            derived_series_index=derived_series_index,
+            series_grouping=series_grouping,
+            series_description=series_description,
+        ),
+    }
+
+
 def _format_dixon_image_label(image_type_value):
     label_map = {
         "WATER": "Water",
@@ -599,6 +696,7 @@ def _patch_ice_minihead(
     minihead_text,
     parent_sequence,
     parent_grouping,
+    series_instance_uid,
     source_type_token,
     target_type_token,
     metrics_text=None,
@@ -615,6 +713,7 @@ def _patch_ice_minihead(
     for param_name, param_value in (
         ("SequenceDescription", parent_sequence),
         ("SeriesNumberRangeNameUID", parent_grouping),
+        ("SeriesInstanceUID", series_instance_uid),
         ("ImageType", f"DERIVED\\PRIMARY\\{target_image_type_value3}\\{target_type_token}"),
         ("ImageTypeValue3", "M"),
         ("ComplexImageComponent", "MAGNITUDE"),
@@ -1676,6 +1775,13 @@ def _build_metrics_column_groups(fieldnames, available_width):
     return _chunk_list(fieldnames, max_columns)
 
 
+def _orient_metrics_report_page(page_array):
+    # The scanner viewer currently displays the burned-in metrics page mirrored
+    # left/right and rotated; transpose the synthetic raster before wrapping it
+    # as DICOM/MRD so the visible page reads correctly.
+    return np.ascontiguousarray(np.rot90(np.fliplr(page_array), 1))
+
+
 def _render_metrics_report_pages(metrics_result, width, height):
     rows = _metrics_rows(metrics_result)
     fieldnames = _metrics_fieldnames(metrics_result)
@@ -1743,6 +1849,7 @@ def _render_metrics_report_pages(metrics_result, width, height):
                 y += line_height
 
             page_array = np.asarray(image, dtype=np.uint16) * 16
+            page_array = _orient_metrics_report_page(page_array)
             pages.append(page_array)
 
     return pages
@@ -1753,9 +1860,7 @@ def _build_metrics_report_images(
     source_headers,
     source_meta,
     metrics_series_index,
-    source_series_description,
-    source_parent_sequence,
-    source_parent_grouping,
+    source_series_identity,
     source_type_token,
     metrics_comment,
     metrics_minihead_text,
@@ -1792,26 +1897,33 @@ def _build_metrics_report_images(
         slice_dir = np.array([0.0, 0.0, 1.0], dtype=float)
     base_position = _header_vector(base_header, "position")
     report_series_description = (
-        f"{source_series_description}_MuscleMap_Metrics"
-        if source_series_description
+        f"{source_series_identity['series_description']}_MuscleMap_Metrics"
+        if source_series_identity["series_description"]
         else "MuscleMap_Metrics"
     )
-    report_parent_grouping = (
-        f"{source_parent_grouping}_MuscleMap_Metrics"
-        if source_parent_grouping
-        else report_series_description
+    report_identity = _build_derived_series_identity(
+        source_series_identity,
+        series_description=report_series_description,
+        sequence_description=report_series_description,
+        grouping_suffix="MuscleMap_Metrics",
+        derived_series_index=metrics_series_index,
+        derived_kind="metrics",
     )
+    report_parent_grouping = report_identity["grouping"]
+    report_series_instance_uid = report_identity["series_instance_uid"]
 
     report_images = []
     for page_index, page_array in enumerate(report_pages):
+        page_height = int(page_array.shape[0]) if page_array.ndim >= 1 else report_height
+        page_width = int(page_array.shape[1]) if page_array.ndim >= 2 else report_width
         report_image = ismrmrd.Image.from_array(page_array.astype(np.uint16, copy=False), transpose=False)
         report_header = copy.deepcopy(base_header)
         report_header.data_type = report_image.data_type
-        _set_header_sequence_field(report_header, "matrix_size", [report_width, report_height, 1])
+        _set_header_sequence_field(report_header, "matrix_size", [page_width, page_height, 1])
         _set_header_sequence_field(
             report_header,
             "field_of_view",
-            [voxel_x * report_width, voxel_y * report_height, report_spacing],
+            [voxel_x * page_width, voxel_y * page_height, report_spacing],
         )
         _set_header_sequence_field(report_header, "slice_dir", [float(value) for value in slice_dir])
         _set_header_sequence_field(
@@ -1830,9 +1942,10 @@ def _build_metrics_report_images(
         report_meta["ImageProcessingHistory"] = ["OPENRECON", "MUSCLEMAP", "METRICS"]
         report_meta["WindowCenter"] = "2040"
         report_meta["WindowWidth"] = "4080"
-        report_meta["SeriesDescription"] = report_series_description
-        if source_parent_sequence:
-            report_meta["SequenceDescription"] = report_series_description
+        report_meta["SeriesDescription"] = report_identity["series_description"]
+        report_meta["SequenceDescription"] = report_identity["sequence_description"]
+        report_meta["SeriesNumberRangeNameUID"] = report_parent_grouping
+        report_meta["SeriesInstanceUID"] = report_series_instance_uid
         report_meta["ImageType"] = "METRICS"
         report_meta["ImageTypeValue3"] = "M"
         report_meta["ImageTypeValue4"] = "METRICS"
@@ -1855,8 +1968,9 @@ def _build_metrics_report_images(
         if minihead_text:
             patched_minihead_text, minihead_changed = _patch_ice_minihead(
                 minihead_text,
-                report_series_description,
+                report_identity["sequence_description"],
                 report_parent_grouping,
+                report_series_instance_uid,
                 source_type_token,
                 "METRICS",
                 metrics_text=metrics_minihead_text if include_minihead_metrics else None,
@@ -2039,46 +2153,25 @@ def process_image(imgGroup, connection, config, metadata):
     source_image_label = muscleMapDisplayLabel
     source_image_type_value4 = muscleMapDisplayLabel
     source_dicom_image_type_value4 = muscleMapImageTypeToken
-    segmentation_sequence_description = muscleMapDisplayLabel
     source_volume_key = _build_image_volume_key(imgGroup[0])
-    raw_source_series_description = _get_meta_text(_first_meta, "SeriesDescription")
-    source_series_description = _strip_dixon_series_suffix(raw_source_series_description)
     source_minihead = _decode_ice_minihead(_first_meta)
     if not source_minihead:
         logging.info(
             "Source images carry no IceMiniHead; minihead patching and "
             "metricsinminihead injection will be no-ops for this volume"
         )
-    raw_source_parent_sequence = _first_non_empty_text(
-        _get_meta_text(_first_meta, "SequenceDescription"),
-        _extract_minihead_string_value(source_minihead, "SequenceDescription"),
-    )
-    source_parent_sequence = _strip_dixon_series_suffix(raw_source_parent_sequence)
-    raw_source_parent_grouping = _first_non_empty_text(
-        _extract_minihead_string_value(source_minihead, "SeriesNumberRangeNameUID"),
-        source_parent_sequence,
-    )
-    source_parent_grouping = _strip_dixon_series_suffix(raw_source_parent_grouping)
-    if not source_parent_sequence:
-        source_parent_sequence = source_series_description
-    if not source_parent_grouping:
-        source_parent_grouping = source_parent_sequence
-    segmentation_grouping = (
-        f"{source_parent_grouping}_{muscleMapDisplayLabel}"
-        if source_parent_grouping
-        else muscleMapDisplayLabel
-    )
+    source_series_identity = _resolve_source_series_identity(_first_meta, source_minihead)
     logging.info("Source image type for segmentation naming: %s -> %s", _source_type_value, source_image_label)
     logging.info(
-        "Source segmentation parent identity: volume_key=%s series_description=%s -> %s sequence=%s -> %s grouping=%s -> %s segmentation_grouping=%s",
+        "Source segmentation parent identity: volume_key=%s series_description=%s -> %s sequence=%s -> %s grouping=%s -> %s source_series_uid=%s",
         source_volume_key,
-        raw_source_series_description or "N/A",
-        source_series_description or "N/A",
-        raw_source_parent_sequence or "N/A",
-        source_parent_sequence or "N/A",
-        raw_source_parent_grouping or "N/A",
-        source_parent_grouping or "N/A",
-        segmentation_grouping,
+        source_series_identity["raw_series_description"] or "N/A",
+        source_series_identity["series_description"] or "N/A",
+        source_series_identity["raw_parent_sequence"] or "N/A",
+        source_series_identity["parent_sequence"] or "N/A",
+        source_series_identity["raw_parent_grouping"] or "N/A",
+        source_series_identity["parent_grouping"] or "N/A",
+        source_series_identity["series_instance_uid"] or "N/A",
     )
 
     # Create folder, if necessary
@@ -2469,12 +2562,22 @@ def process_image(imgGroup, connection, config, metadata):
     segmentation_series_index = known_series_floor + 1
     if segmentation_series_index == 99:
         segmentation_series_index += 1
+    segmentation_identity = _build_derived_series_identity(
+        source_series_identity,
+        series_description=muscleMapDisplayLabel,
+        sequence_description=muscleMapDisplayLabel,
+        grouping_suffix=muscleMapDisplayLabel,
+        derived_series_index=segmentation_series_index,
+        derived_kind="segmentation",
+    )
     logging.info(
         "Using image_series_index=%d for MuscleMap segmentation "
-        "(source series indices=%s, known_series_floor=%d)",
+        "(source series indices=%s, known_series_floor=%d, derived_grouping=%s, derived_series_uid=%s)",
         segmentation_series_index,
         sorted(set(source_series_indices)),
         known_series_floor,
+        segmentation_identity["grouping"],
+        segmentation_identity["series_instance_uid"],
     )
 
     for iImg in range(data.shape[-1]):
@@ -2567,9 +2670,10 @@ def process_image(imgGroup, connection, config, metadata):
         tmpMeta["ImageProcessingHistory"] = ["OPENRECON", "MUSCLEMAP"]
         tmpMeta["WindowCenter"] = str((maxVal + 1) / 2)
         tmpMeta["WindowWidth"] = str((maxVal + 1))
-        tmpMeta["SeriesDescription"] = segmentation_sequence_description
-        tmpMeta["SequenceDescription"] = segmentation_sequence_description
-        tmpMeta["SeriesNumberRangeNameUID"] = segmentation_grouping
+        tmpMeta["SeriesDescription"] = segmentation_identity["series_description"]
+        tmpMeta["SequenceDescription"] = segmentation_identity["sequence_description"]
+        tmpMeta["SeriesNumberRangeNameUID"] = segmentation_identity["grouping"]
+        tmpMeta["SeriesInstanceUID"] = segmentation_identity["series_instance_uid"]
         tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\DIXON\\{source_dicom_image_type_value4}"
         tmpMeta["ImageTypeValue3"] = "M"
         tmpMeta["ImageTypeValue4"] = source_image_type_value4
@@ -2596,8 +2700,9 @@ def process_image(imgGroup, connection, config, metadata):
         if minihead_text:
             patched_minihead_text, minihead_changed = _patch_ice_minihead(
                 minihead_text,
-                segmentation_sequence_description,
-                segmentation_grouping,
+                segmentation_identity["sequence_description"],
+                segmentation_identity["grouping"],
+                segmentation_identity["series_instance_uid"],
                 _source_type_value,
                 source_dicom_image_type_value4,
                 metrics_text=metrics_minihead_text if metrics_in_minihead and metrics_minihead_text else None,
@@ -2658,8 +2763,8 @@ def process_image(imgGroup, connection, config, metadata):
                     "source_volume_key": list(source_volume_key),
                     "output_series_index": int(segmentation_series_index),
                     "display_label": source_image_label,
-                    "parent_grouping": source_parent_grouping,
-                    "series_grouping": segmentation_grouping,
+                    "parent_grouping": source_series_identity["parent_grouping"],
+                    "series_grouping": segmentation_identity["grouping"],
                     "source": {
                         "input_index": source_record["input_index"],
                         "image_index": source_image_index,
@@ -2711,8 +2816,8 @@ def process_image(imgGroup, connection, config, metadata):
         extra={
             "output_series_index": segmentation_series_index,
             "display_label": source_image_label,
-            "parent_grouping": source_parent_grouping,
-            "series_grouping": segmentation_grouping,
+            "parent_grouping": source_series_identity["parent_grouping"],
+            "series_grouping": segmentation_identity["grouping"],
         },
     )
 
@@ -2725,9 +2830,7 @@ def process_image(imgGroup, connection, config, metadata):
             source_headers=head,
             source_meta=meta,
             metrics_series_index=metrics_series_index,
-            source_series_description=source_series_description,
-            source_parent_sequence=source_parent_sequence,
-            source_parent_grouping=source_parent_grouping,
+            source_series_identity=source_series_identity,
             source_type_token=_source_type_value,
             metrics_comment=metrics_comment or _format_metrics_comment(metrics_result),
             metrics_minihead_text=metrics_minihead_text,
