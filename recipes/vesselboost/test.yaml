@@ -236,8 +236,11 @@ tests:
         )
         summaries = []
         for image_group in image_groups:
+            image_count = dataset.number_of_images(image_group)
             image = dataset.read_image(image_group, 0)
+            last_image = dataset.read_image(image_group, image_count - 1)
             header = image.getHead()
+            last_header = last_image.getHead()
             meta = ismrmrd.Meta.deserialize(image.attribute_string)
             ice_minihead = get_text(meta, "IceMiniHead")
             if ice_minihead:
@@ -245,7 +248,11 @@ tests:
             summaries.append(
                 {
                     "group": image_group,
+                    "image_count": image_count,
                     "series_index": int(getattr(header, "image_series_index", 0)),
+                    "image_index": int(getattr(header, "image_index", 0)),
+                    "last_image_index": int(getattr(last_header, "image_index", 0)),
+                    "last_slice": int(getattr(last_header, "slice", 0)),
                     "series_description": get_text(meta, "SeriesDescription"),
                     "sequence_description": get_text(meta, "SequenceDescription"),
                     "sequence_description_additional": get_text(meta, "SequenceDescriptionAdditional"),
@@ -255,6 +262,7 @@ tests:
                     "dicom_image_type": get_text(meta, "DicomImageType"),
                     "image_comments": get_text(meta, "ImageComments"),
                     "image_comment": get_text(meta, "ImageComment"),
+                    "keep_image_geometry": get_text(meta, "Keep_image_geometry"),
                     "pixel_spacing_x": float(header.field_of_view[0]) / float(header.matrix_size[0]),
                     "pixel_spacing_y": float(header.field_of_view[1]) / float(header.matrix_size[1]),
                     "ice_minihead": ice_minihead,
@@ -279,6 +287,9 @@ tests:
             assert derived["image_type_value4"] == "vesselboost", derived
             assert derived["image_comments"] == "vesselboost", derived
             assert derived["image_comment"] == "vesselboost", derived
+            assert derived["image_index"] == 0, derived
+            assert derived["last_image_index"] == derived["image_count"] - 1, derived
+            assert derived["last_slice"] == derived["image_count"] - 1, derived
             assert expected_derived in derived["ice_minihead"], derived["ice_minihead"]
             assert "SequenceDescription" in derived["ice_minihead"], derived["ice_minihead"]
             assert "SeriesNumberRangeNameUID" in derived["ice_minihead"], derived["ice_minihead"]
@@ -290,6 +301,9 @@ tests:
             assert derived["sequence_description"] == expected_derived, derived
             assert derived["grouping"] == expected_derived, derived
             assert derived["image_type_value4"] == "vesselboost", derived
+            assert derived["image_index"] == 0, derived
+            assert derived["last_image_index"] == derived["image_count"] - 1, derived
+            assert derived["last_slice"] == derived["image_count"] - 1, derived
         elif scenario == "reslice":
             assert len(summaries) == 4, summaries
             assert [summary["series_index"] for summary in summaries] == [1, 2, 3, 4], summaries
@@ -307,8 +321,14 @@ tests:
             ], summaries
             sagittal = summaries[2]
             coronal = summaries[3]
+            derived = summaries[1]
+            assert derived["image_index"] == 0, derived
+            assert derived["last_image_index"] == derived["image_count"] - 1, derived
+            assert derived["last_slice"] == derived["image_count"] - 1, derived
             assert sagittal["sequence_description_additional"] == "", sagittal
             assert coronal["sequence_description_additional"] == "", coronal
+            assert sagittal["keep_image_geometry"] == "", sagittal
+            assert coronal["keep_image_geometry"] == "", coronal
             assert abs(sagittal["pixel_spacing_x"] - sagittal["pixel_spacing_y"]) < 1e-3, sagittal
             assert abs(coronal["pixel_spacing_x"] - coronal["pixel_spacing_y"]) < 1e-3, coronal
         else:

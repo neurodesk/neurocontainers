@@ -1124,7 +1124,13 @@ def _build_reformatted_images(
                 del tmp_meta["SequenceDescriptionAdditional"]
             except Exception:
                 tmp_meta["SequenceDescriptionAdditional"] = ""
-        tmp_meta["Keep_image_geometry"] = 1
+        # Reformatted outputs have their own geometry and slice count, so they
+        # must not request reuse of the incoming axial geometry.
+        if "Keep_image_geometry" in tmp_meta:
+            try:
+                del tmp_meta["Keep_image_geometry"]
+            except Exception:
+                tmp_meta["Keep_image_geometry"] = ""
         tmp_meta["ImageRowDir"] = [
             "{:.18f}".format(new_read_dir[0]),
             "{:.18f}".format(new_read_dir[1]),
@@ -1856,7 +1862,7 @@ def process_image(images, connection, config, metadata):
             oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
 
         oldHeader.image_series_index = segmentation_series_index
-        oldHeader.image_index = iImg + 1
+        oldHeader.image_index = iImg
         oldHeader.slice = iImg
 
         # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
