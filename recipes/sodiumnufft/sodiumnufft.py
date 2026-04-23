@@ -25,7 +25,7 @@ OPENRECON_DEFAULTS = {
     "fovcm": 22.0,
     "trajectoryfile": "/opt/sodiumnufft/23NA_n50_trajectory.h5",
     "trajectorydataset": "k",
-    "trajectorysampleoffset": 10,
+    "trajectorysampleoffset": 0,
     "rejectbadreadouts": True,
     "badreadoutsigma": 3.0,
     "centerwindow": 5,
@@ -206,14 +206,20 @@ def _build_data_array(acquisitions):
 
 def _compute_default_fov_cm(metadata):
     try:
-        return float(metadata.encoding[0].reconSpace.fieldOfView_mm.x) / 10.0
+        fov_cm = float(metadata.encoding[0].reconSpace.fieldOfView_mm.x) / 10.0
+        if fov_cm <= 0:
+            raise ValueError(f"Invalid reconSpace FOV from metadata: {fov_cm}")
+        return fov_cm
     except Exception:
         return OPENRECON_DEFAULTS["fovcm"]
 
 
 def _compute_default_matrix_size(metadata):
     try:
-        return int(metadata.encoding[0].reconSpace.matrixSize.x)
+        matrix_size = int(metadata.encoding[0].reconSpace.matrixSize.x)
+        if matrix_size <= 1:
+            raise ValueError(f"Invalid reconSpace matrix size from metadata: {matrix_size}")
+        return matrix_size
     except Exception:
         return OPENRECON_DEFAULTS["matrixsize"]
 
@@ -374,8 +380,6 @@ def _reconstruct_single_coil(coil_index, coil_data, coordinates, weights, matrix
         coil_data.ravel() * weights,
         coordinates,
         (matrix_size, matrix_size, matrix_size),
-        oversamp=1,
-        width=2,
     )
     logging.info("Finished %s NUFFT for coil %d", stage_label, coil_index)
     return coil_index, np.asarray(reconstructed, dtype=np.complex64)

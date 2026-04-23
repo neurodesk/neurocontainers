@@ -19,7 +19,8 @@ tests:
       printf '%s\n' \
         '{' \
         '  "parameters": {' \
-        '    "maxworkers": 1' \
+        '    "matrixsize": 128,' \
+        '    "maxworkers": 10' \
         '  }' \
         '}' > "${config_json}"
 

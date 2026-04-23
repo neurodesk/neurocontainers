@@ -153,8 +153,8 @@
           "name": { "en": "leg" }
         }
       ],
-      "default": "",
-      "information": { "en": "Optional region passed to MuscleMap metrics; leave empty to use Body Region." }
+      "default": "wholebody",
+      "information": { "en": "Region passed to MuscleMap metrics" }
     },
     {
       "id": "chunksize",

@@ -30,7 +30,6 @@ OPENRECON_OUTPUT_NAME_PARAM = "vboutputname"
 OPENRECON_MODULE_DEFAULT = "prediction"
 OPENRECON_MODULE_VALUES = (OPENRECON_MODULE_DEFAULT,)
 VESSELBOOST_SEGMENTATION_LABEL = "vesselboost_segmentation"
-VESSELBOOST_DISPLAY_LABEL = "vesselboost"
 VESSELBOOST_SEGMENTATION_TYPE_TOKEN = VESSELBOOST_SEGMENTATION_LABEL.upper()
 
 # Keep this overview aligned with recipes/vesselboost/OpenReconLabel.json.
@@ -711,7 +710,10 @@ def _resolve_source_series_identity(meta_obj):
     )
 
     return {
-        "series_description": series_description,
+        "series_description": _first_non_empty_text(
+            series_description,
+            parent_sequence,
+        ),
         "parent_sequence": parent_sequence,
         "parent_grouping": parent_grouping,
         "source_type_token": source_type_token,
@@ -721,9 +723,9 @@ def _resolve_source_series_identity(meta_obj):
 def _build_vesselboost_series_name(source_series_description, suffix=""):
     source_series_description = _first_non_empty_text(source_series_description)
     if source_series_description:
-        name = f"{source_series_description}_{VESSELBOOST_DISPLAY_LABEL}"
+        name = f"{source_series_description}_{VESSELBOOST_SEGMENTATION_LABEL}"
     else:
-        name = VESSELBOOST_DISPLAY_LABEL
+        name = VESSELBOOST_SEGMENTATION_LABEL
     if suffix:
         name = f"{name}_{suffix}"
     return name
@@ -732,7 +734,7 @@ def _build_vesselboost_series_name(source_series_description, suffix=""):
 def _build_vesselboost_grouping(source_parent_grouping, fallback_series_name, suffix=""):
     source_parent_grouping = _first_non_empty_text(source_parent_grouping)
     if source_parent_grouping:
-        grouping = f"{source_parent_grouping}_{VESSELBOOST_DISPLAY_LABEL}"
+        grouping = f"{source_parent_grouping}_{VESSELBOOST_SEGMENTATION_LABEL}"
     else:
         grouping = fallback_series_name
     if suffix:
@@ -756,15 +758,15 @@ def _build_openrecon_output_identity(source_identity, orientation=None):
     )
     grouping = f"{base_grouping}_{orientation}" if orientation else base_grouping
     image_comment = (
-        f"{VESSELBOOST_DISPLAY_LABEL}_{orientation}"
+        f"{VESSELBOOST_SEGMENTATION_LABEL}_{orientation}"
         if orientation
-        else VESSELBOOST_DISPLAY_LABEL
+        else VESSELBOOST_SEGMENTATION_LABEL
     )
     return {
         "series_description": series_description,
         "sequence_description": series_description,
         "grouping": grouping,
-        "display_token": VESSELBOOST_DISPLAY_LABEL,
+        "display_token": VESSELBOOST_SEGMENTATION_LABEL,
         "type_token": VESSELBOOST_SEGMENTATION_TYPE_TOKEN,
         "image_comment": image_comment,
     }

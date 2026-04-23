@@ -1,5 +1,5 @@
 name: musclemap
-version: 1.3.18
+version: 0.3.0
 architectures:
     - x86_64
 

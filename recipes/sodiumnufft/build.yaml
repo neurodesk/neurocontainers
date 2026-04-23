@@ -18,7 +18,7 @@ files:
   - name: mrd2nifti.py
     filename: mrd2nifti.py
   - name: sodium_trajectory
-    filename: 23NA_n50_trajectory.h5
+    url: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/build/23Na_n50_trajectory.h5
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
@@ -57,9 +57,8 @@ build:
     - copy:
         - mrd2nifti.py
         - /opt/code/python-ismrmrd-server/mrd2nifti.py
-    - copy:
-        - sodium_trajectory
-        - /opt/sodiumnufft/23NA_n50_trajectory.h5
+    - run:
+        - cp {{ get_file("sodium_trajectory") }} /opt/sodiumnufft/23NA_n50_trajectory.h5
 
 deploy:
   bins:

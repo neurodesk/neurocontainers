@@ -25,12 +25,12 @@
       "version": "1.4.1"
     },
     "port": 9002,
-    "emitter": "image",
-    "injector": "kspace",
-    "can_process_adjustment_data": false,
-    "can_use_gpu": false,
-    "min_required_memory": 8192,
-    "min_count_required_cpu_cores": 6,
+    "emitter": "raw",
+    "injector": "compleximage",
+    "can_process_adjustment_data": true,
+    "can_use_gpu": true,
+    "min_required_memory": 32000,
+    "min_count_required_cpu_cores": 10,
     "content_qualification_type": "RESEARCH"
   },
   "parameters": [
@@ -55,20 +55,13 @@
       "information": { "en": "HDF5 trajectory file path used when the MRD data does not contain embedded trajectories. Defaults to the bundled 23NA_n50 trajectory." }
     },
     {
-      "id": "trajectorydataset",
-      "label": { "en": "Trajectory dataset" },
-      "type": "string",
-      "default": "k",
-      "information": { "en": "Dataset name inside the trajectory HDF5 file. Default: k." }
-    },
-    {
       "id": "trajectorysampleoffset",
       "label": { "en": "Trajectory sample offset" },
       "type": "int",
       "minimum": 0,
       "maximum": 128,
-      "default": 10,
-      "information": { "en": "Number of leading trajectory samples to skip before pairing the external trajectory with the MRD raw samples. Default: 10 for the bundled 23NA_n50 trajectory." }
+      "default": 0,
+      "information": { "en": "Number of leading trajectory samples to skip before pairing the external trajectory with the MRD raw samples. Default: 0 to match the standalone sodium NUFFT script." }
     },
     {
       "id": "matrixsize",
