@@ -40,6 +40,9 @@ on:
         required: false
         type: string
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Workflow needs the following set in GitHub
 # - secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION
 # - secrets.GH_REGISTRY
@@ -61,7 +64,7 @@ jobs:
       ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
 
@@ -175,7 +178,7 @@ jobs:
           sudo systemctl restart docker
 
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
 
@@ -621,7 +624,7 @@ jobs:
       IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
     steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+    - uses: actions/checkout@v5
       with:
         token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
     - name: Install Builder Dependencies

@@ -22,6 +22,9 @@ on:
           - x86_64
           - arm64
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build-builder-sif:
     name: Build builder.sif
@@ -30,10 +33,10 @@ jobs:
       ARCH: ${{ github.event.inputs.architecture || 'x86_64' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -70,7 +73,7 @@ jobs:
       recipes: ${{ steps.set-matrix.outputs.recipes }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Build recipe list (debug or full)
         id: set-matrix
@@ -111,7 +114,7 @@ jobs:
         recipe: ${{ fromJSON(needs.prepare-matrix.outputs.recipes) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Apptainer
         run: |
@@ -157,7 +160,7 @@ jobs:
 
       - name: Set up Python for testing
         if: ${{ github.event.inputs['run-tests'] == 'true' }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 

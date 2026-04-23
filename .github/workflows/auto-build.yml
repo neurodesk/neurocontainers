@@ -15,6 +15,9 @@ on:
     branches:
       - main
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   list-apps:
     runs-on: ubuntu-22.04
@@ -23,12 +26,12 @@ jobs:
       app_list: ${{ steps.find_changed_recipes.outputs.app_list }}
       runner: ${{ steps.select_runner.outputs.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Find all recipe directories with changes
         id: find_changed_dirs
-        uses: tj-actions/changed-files@2f7c5bfce28377bc069a65ba478de0a74aa0ca32
+        uses: tj-actions/changed-files@v47
         with:
           files: "recipes/**"
           dir_names: "true"
