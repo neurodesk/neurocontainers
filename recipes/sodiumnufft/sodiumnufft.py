@@ -244,10 +244,27 @@ def _clip_data_to_trajectory(data, trajectory):
             readouts,
             samples,
         )
-    return data[:, :readouts, :samples], trajectory[:readouts, :samples, :]
+
+    data = data[:, :readouts, :data_samples]
+    trajectory = trajectory[:readouts, :, :]
+
+    if trajectory.shape[1] > samples:
+        radial_profile = np.median(np.linalg.norm(trajectory, axis=-1), axis=0)
+        sample_offset = 0
+        if int(np.argmin(radial_profile)) <= 1:
+            sample_offset = trajectory.shape[1] - samples
+        logging.warning(
+            "Aligning trajectory samples with offset %d: trajectory_samples=%d data_samples=%d",
+            sample_offset,
+            trajectory.shape[1],
+            samples,
+        )
+        trajectory = trajectory[:, sample_offset:sample_offset + samples, :]
+
+    return data[:, :readouts, :samples], trajectory[:, :samples, :]
 
 
-def _compute_sample_mask_and_scale(coil_data, sigma, center_window):
+def _compute_sample_mask_and_scale(coil_data, sigma):
     column_max = np.abs(coil_data).max(axis=0)
     smoothed = ndi.gaussian_filter1d(column_max.astype(np.float32), 5)
     histogram, edges = np.histogram(smoothed, bins=40)
@@ -264,31 +281,7 @@ def _compute_sample_mask_and_scale(coil_data, sigma, center_window):
     if bad_columns.size > 0:
         filtered[:, bad_columns] = 0
 
-    center = filtered.shape[1] // 2
-    start = max(0, center - center_window)
-    stop = min(filtered.shape[1], center + center_window)
-    if stop <= start:
-        return filtered, bad_columns
-
-    reference_mean = float(np.abs(filtered[:, start:stop]).mean())
-    if reference_mean > 0:
-        filtered *= 2.0 / reference_mean
-
     return filtered, bad_columns
-
-
-def _scale_coil_data(coil_data, center_window):
-    filtered = np.array(coil_data, copy=True)
-    center = filtered.shape[1] // 2
-    start = max(0, center - center_window)
-    stop = min(filtered.shape[1], center + center_window)
-    if stop <= start:
-        return filtered
-
-    reference_mean = float(np.abs(filtered[:, start:stop]).mean())
-    if reference_mean > 0:
-        filtered *= 2.0 / reference_mean
-    return filtered
 
 
 def _compute_clipped_radial_dcf(abs_k):
@@ -296,10 +289,13 @@ def _compute_clipped_radial_dcf(abs_k):
         return np.array([], dtype=np.float32)
 
     dcf = np.square(abs_k, dtype=np.float32)
-    if abs_k.shape[0] < 2:
+    if abs_k.ndim != 2 or abs_k.shape[1] < 2:
         return dcf.ravel()
 
-    dk = abs_k[1:, 0] - abs_k[:-1, 0]
+    # After trajectory normalization the array is shaped (readouts, samples), so
+    # the radial profile evolves along the sample axis rather than across readouts.
+    radial_profile = np.median(abs_k, axis=0)
+    dk = radial_profile[1:] - radial_profile[:-1]
     if dk.size == 0 or float(np.max(dk)) <= 0:
         return dcf.ravel()
 
@@ -307,7 +303,12 @@ def _compute_clipped_radial_dcf(abs_k):
     if twist_indices.size == 0:
         return dcf.ravel()
 
-    abs_k_twist = float(abs_k[int(twist_indices.max()), 0])
+    abs_k_twist = float(radial_profile[int(twist_indices.max())])
+    logging.info(
+        "Clipping radial DCF at sample %d with |k|=%.6f",
+        int(twist_indices.max()),
+        abs_k_twist,
+    )
     return np.asarray(np.clip(dcf, None, abs_k_twist ** 2), dtype=np.float32).ravel()
 
 
@@ -344,20 +345,42 @@ def _build_reconstruction_weights(
     return np.asarray(weights, dtype=np.float32), abs_k
 
 
+def _compute_reference_window_bounds(num_samples, center_sample_index, center_window):
+    center_index = min(max(int(center_sample_index), 0), max(num_samples - 1, 0))
+    start = max(0, center_index - center_window)
+    stop = min(num_samples, center_index + center_window)
+    if stop - start < 2 * center_window:
+        if start == 0:
+            stop = min(num_samples, 2 * center_window)
+        elif stop == num_samples:
+            start = max(0, num_samples - 2 * center_window)
+    return start, stop
+
+
+def _compute_low_k_sample_index(trajectory):
+    radial_profile = np.median(np.linalg.norm(trajectory, axis=-1), axis=0)
+    return int(np.argmin(radial_profile))
+
+
 def _prepare_single_coil_data(
     coil_index,
     coil_data,
     reject_bad_readouts,
     bad_readout_sigma,
     center_window,
+    center_sample_index,
 ):
     working_data = np.asarray(coil_data, dtype=np.complex64)
+    start, stop = _compute_reference_window_bounds(
+        working_data.shape[1],
+        center_sample_index=center_sample_index,
+        center_window=center_window,
+    )
 
     if reject_bad_readouts:
         working_data, bad_columns = _compute_sample_mask_and_scale(
             working_data,
             sigma=bad_readout_sigma,
-            center_window=center_window,
         )
         logging.info(
             "Coil %d: rejected %d low-signal sample columns",
@@ -366,7 +389,11 @@ def _prepare_single_coil_data(
         )
     else:
         bad_columns = np.array([], dtype=np.int64)
-        working_data = _scale_coil_data(working_data, center_window=center_window)
+        working_data = np.array(working_data, copy=True)
+
+    reference_mean = float(np.abs(working_data[:, start:stop]).mean())
+    if reference_mean > 0:
+        working_data *= 2.0 / reference_mean
 
     return np.asarray(working_data, dtype=np.complex64)
 
@@ -569,6 +596,8 @@ def process_raw(group, connection, config, metadata):
         fov_cm,
     )
     logging.info("Trajectory shape after clipping: %s", trajectory.shape)
+    center_sample_index = _compute_low_k_sample_index(trajectory)
+    logging.info("Using low-k sample index %d for preprocessing scale window", center_sample_index)
 
     reference_head = group[len(group) // 2].getHead()
     max_workers = min(max_workers, data.shape[0])
@@ -592,6 +621,7 @@ def process_raw(group, connection, config, metadata):
             reject_bad_readouts=reject_bad_readouts,
             bad_readout_sigma=bad_readout_sigma,
             center_window=center_window,
+            center_sample_index=center_sample_index,
         )
     logging.info("Finished coil data preparation")
 
