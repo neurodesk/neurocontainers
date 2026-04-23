@@ -25,10 +25,11 @@ OPENRECON_DEFAULTS = {
     "fovcm": 22.0,
     "trajectoryfile": "/opt/sodiumnufft/23NA_n50_trajectory.h5",
     "trajectorydataset": "k",
+    "trajectorysampleoffset": 10,
     "rejectbadreadouts": True,
     "badreadoutsigma": 3.0,
     "centerwindow": 5,
-    "applyfermifilter": False,
+    "applyfermifilter": True,
     "fermiwidth": 0.15,
     "fermicutoff": 0.9,
     "dcfiterations": 0,
@@ -217,51 +218,48 @@ def _compute_default_matrix_size(metadata):
         return OPENRECON_DEFAULTS["matrixsize"]
 
 
-def _clip_data_to_trajectory(data, trajectory):
+def _clip_data_to_trajectory(data, trajectory, sample_offset):
     data_readouts = data.shape[1]
     data_samples = data.shape[2]
 
     if trajectory.ndim == 3:
-        direct_score = abs(trajectory.shape[0] - data_readouts) + abs(trajectory.shape[1] - data_samples)
-        swapped_score = abs(trajectory.shape[1] - data_readouts) + abs(trajectory.shape[0] - data_samples)
+        direct_score = abs(trajectory.shape[0] - data_samples) + abs(trajectory.shape[1] - data_readouts)
+        swapped_score = abs(trajectory.shape[1] - data_samples) + abs(trajectory.shape[0] - data_readouts)
 
         if swapped_score < direct_score:
             logging.warning(
-                "Swapping trajectory axes to match data dimensions: trajectory=%s data=(readouts=%d, samples=%d)",
+                "Swapping trajectory axes to match standalone dimensions: trajectory=%s data=(samples=%d, readouts=%d)",
                 trajectory.shape,
-                data_readouts,
                 data_samples,
+                data_readouts,
             )
             trajectory = np.swapaxes(trajectory, 0, 1)
 
-    readouts = min(data.shape[1], trajectory.shape[0])
-    samples = min(data.shape[2], trajectory.shape[1])
+    available_sample_offset = max(0, trajectory.shape[0] - data_samples)
+    applied_sample_offset = max(0, min(sample_offset, available_sample_offset))
+    if applied_sample_offset > 0:
+        logging.info(
+            "Applying trajectory sample offset %d to align %d trajectory samples with %d raw samples",
+            applied_sample_offset,
+            trajectory.shape[0],
+            data_samples,
+        )
+
+    samples = min(data.shape[2], trajectory.shape[0] - applied_sample_offset)
+    readouts = min(data.shape[1], trajectory.shape[1])
     if readouts != data.shape[1] or samples != data.shape[2]:
         logging.warning(
-            "Cropping raw data to match trajectory dimensions: data=%s trajectory=%s -> (%d, %d)",
+            "Cropping raw data to match trajectory dimensions: data=%s trajectory=%s offset=%d -> (%d, %d)",
             data.shape,
             trajectory.shape,
+            applied_sample_offset,
             readouts,
             samples,
         )
-
-    data = data[:, :readouts, :data_samples]
-    trajectory = trajectory[:readouts, :, :]
-
-    if trajectory.shape[1] > samples:
-        radial_profile = np.median(np.linalg.norm(trajectory, axis=-1), axis=0)
-        sample_offset = 0
-        if int(np.argmin(radial_profile)) <= 1:
-            sample_offset = trajectory.shape[1] - samples
-        logging.warning(
-            "Aligning trajectory samples with offset %d: trajectory_samples=%d data_samples=%d",
-            sample_offset,
-            trajectory.shape[1],
-            samples,
-        )
-        trajectory = trajectory[:, sample_offset:sample_offset + samples, :]
-
-    return data[:, :readouts, :samples], trajectory[:, :samples, :]
+    return (
+        data[:, :readouts, :samples],
+        trajectory[applied_sample_offset:applied_sample_offset + samples, :readouts, :],
+    )
 
 
 def _compute_sample_mask_and_scale(coil_data, sigma):
@@ -289,13 +287,10 @@ def _compute_clipped_radial_dcf(abs_k):
         return np.array([], dtype=np.float32)
 
     dcf = np.square(abs_k, dtype=np.float32)
-    if abs_k.ndim != 2 or abs_k.shape[1] < 2:
+    if abs_k.ndim != 2 or abs_k.shape[0] < 2:
         return dcf.ravel()
 
-    # After trajectory normalization the array is shaped (readouts, samples), so
-    # the radial profile evolves along the sample axis rather than across readouts.
-    radial_profile = np.median(abs_k, axis=0)
-    dk = radial_profile[1:] - radial_profile[:-1]
+    dk = abs_k[1:, 0] - abs_k[:-1, 0]
     if dk.size == 0 or float(np.max(dk)) <= 0:
         return dcf.ravel()
 
@@ -303,13 +298,8 @@ def _compute_clipped_radial_dcf(abs_k):
     if twist_indices.size == 0:
         return dcf.ravel()
 
-    abs_k_twist = float(radial_profile[int(twist_indices.max())])
-    logging.info(
-        "Clipping radial DCF at sample %d with |k|=%.6f",
-        int(twist_indices.max()),
-        abs_k_twist,
-    )
-    return np.asarray(np.clip(dcf, None, abs_k_twist ** 2), dtype=np.float32).ravel()
+    abs_k_twist = float(abs_k[int(twist_indices.max()), 0])
+    return np.asarray(np.clip(dcf, 1e-6, abs_k_twist ** 2), dtype=np.float32).ravel()
 
 
 def _build_reconstruction_weights(
@@ -345,37 +335,14 @@ def _build_reconstruction_weights(
     return np.asarray(weights, dtype=np.float32), abs_k
 
 
-def _compute_reference_window_bounds(num_samples, center_sample_index, center_window):
-    center_index = min(max(int(center_sample_index), 0), max(num_samples - 1, 0))
-    start = max(0, center_index - center_window)
-    stop = min(num_samples, center_index + center_window)
-    if stop - start < 2 * center_window:
-        if start == 0:
-            stop = min(num_samples, 2 * center_window)
-        elif stop == num_samples:
-            start = max(0, num_samples - 2 * center_window)
-    return start, stop
-
-
-def _compute_low_k_sample_index(trajectory):
-    radial_profile = np.median(np.linalg.norm(trajectory, axis=-1), axis=0)
-    return int(np.argmin(radial_profile))
-
-
 def _prepare_single_coil_data(
     coil_index,
     coil_data,
     reject_bad_readouts,
     bad_readout_sigma,
     center_window,
-    center_sample_index,
 ):
-    working_data = np.asarray(coil_data, dtype=np.complex64)
-    start, stop = _compute_reference_window_bounds(
-        working_data.shape[1],
-        center_sample_index=center_sample_index,
-        center_window=center_window,
-    )
+    working_data = np.asarray(coil_data.T, dtype=np.complex64)
 
     if reject_bad_readouts:
         working_data, bad_columns = _compute_sample_mask_and_scale(
@@ -391,6 +358,9 @@ def _prepare_single_coil_data(
         bad_columns = np.array([], dtype=np.int64)
         working_data = np.array(working_data, copy=True)
 
+    center = working_data.shape[1] // 2
+    start = max(0, center - center_window)
+    stop = min(working_data.shape[1], center + center_window)
     reference_mean = float(np.abs(working_data[:, start:stop]).mean())
     if reference_mean > 0:
         working_data *= 2.0 / reference_mean
@@ -404,7 +374,8 @@ def _reconstruct_single_coil(coil_index, coil_data, coordinates, weights, matrix
         coil_data.ravel() * weights,
         coordinates,
         (matrix_size, matrix_size, matrix_size),
-        oversamp=1, width=2
+        oversamp=1,
+        width=2,
     )
     logging.info("Finished %s NUFFT for coil %d", stage_label, coil_index)
     return coil_index, np.asarray(reconstructed, dtype=np.complex64)
@@ -573,12 +544,24 @@ def process_raw(group, connection, config, metadata):
     fermi_width = _config_float(config, "fermiwidth", OPENRECON_DEFAULTS["fermiwidth"])
     fermi_cutoff = _config_float(config, "fermicutoff", OPENRECON_DEFAULTS["fermicutoff"])
     dcf_iterations = max(0, _config_int(config, "dcfiterations", OPENRECON_DEFAULTS["dcfiterations"]))
+    trajectory_sample_offset = max(
+        0,
+        _config_int(
+            config,
+            "trajectorysampleoffset",
+            OPENRECON_DEFAULTS["trajectorysampleoffset"],
+        ),
+    )
     max_coils = max(0, _config_int(config, "maxcoils", OPENRECON_DEFAULTS["maxcoils"]))
     max_workers = max(1, _config_int(config, "maxworkers", OPENRECON_DEFAULTS["maxworkers"]))
 
     data = _build_data_array(group)
     trajectory = _load_trajectory(group, config)
-    data, trajectory = _clip_data_to_trajectory(data, trajectory)
+    data, trajectory = _clip_data_to_trajectory(
+        data,
+        trajectory,
+        sample_offset=trajectory_sample_offset,
+    )
     if 0 < max_coils < data.shape[0]:
         logging.warning(
             "Limiting reconstruction to first %d of %d coils",
@@ -596,12 +579,8 @@ def process_raw(group, connection, config, metadata):
         fov_cm,
     )
     logging.info("Trajectory shape after clipping: %s", trajectory.shape)
-    center_sample_index = _compute_low_k_sample_index(trajectory)
-    logging.info("Using low-k sample index %d for preprocessing scale window", center_sample_index)
-
     reference_head = group[len(group) // 2].getHead()
     max_workers = min(max_workers, data.shape[0])
-    coordinates = np.asarray(trajectory.reshape(-1, 3) * float(fov_cm), dtype=np.float32)
     reconstruction_weights, _ = _build_reconstruction_weights(
         trajectory,
         matrix_size=matrix_size,
@@ -612,16 +591,17 @@ def process_raw(group, connection, config, metadata):
         dcf_iterations=dcf_iterations,
     )
 
-    prepared_data = np.zeros_like(data, dtype=np.complex64)
+    prepared_data = []
     logging.info("Preparing %d coils for reconstruction", data.shape[0])
     for coil_index in range(data.shape[0]):
-        prepared_data[coil_index] = _prepare_single_coil_data(
-            coil_index,
-            data[coil_index],
-            reject_bad_readouts=reject_bad_readouts,
-            bad_readout_sigma=bad_readout_sigma,
-            center_window=center_window,
-            center_sample_index=center_sample_index,
+        prepared_data.append(
+            _prepare_single_coil_data(
+                coil_index,
+                data[coil_index],
+                reject_bad_readouts=reject_bad_readouts,
+                bad_readout_sigma=bad_readout_sigma,
+                center_window=center_window,
+            )
         )
     logging.info("Finished coil data preparation")
 
@@ -641,7 +621,7 @@ def process_raw(group, connection, config, metadata):
                 _reconstruct_single_coil,
                 coil_index,
                 prepared_data[coil_index],
-                coordinates,
+                np.asarray(trajectory[: prepared_data[coil_index].shape[0], : prepared_data[coil_index].shape[1], :].reshape(-1, 3) * float(fov_cm), dtype=np.float32),
                 reconstruction_weights,
                 matrix_size,
                 "full-resolution",

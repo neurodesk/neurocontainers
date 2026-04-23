@@ -13,6 +13,8 @@ files:
     filename: sodiumnufft.py
   - name: twix2mrd.py
     filename: twix2mrd.py
+  - name: siemens_twix2mrd.py
+    filename: siemens_twix2mrd.py
   - name: mrd2nifti.py
     filename: mrd2nifti.py
   - name: sodium_trajectory
@@ -49,6 +51,9 @@ build:
     - copy:
         - twix2mrd.py
         - /opt/code/python-ismrmrd-server/twix2mrd.py
+    - copy:
+        - siemens_twix2mrd.py
+        - /opt/code/python-ismrmrd-server/siemens_twix2mrd.py
     - copy:
         - mrd2nifti.py
         - /opt/code/python-ismrmrd-server/mrd2nifti.py

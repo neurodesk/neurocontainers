@@ -62,6 +62,15 @@
       "information": { "en": "Dataset name inside the trajectory HDF5 file. Default: k." }
     },
     {
+      "id": "trajectorysampleoffset",
+      "label": { "en": "Trajectory sample offset" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 128,
+      "default": 10,
+      "information": { "en": "Number of leading trajectory samples to skip before pairing the external trajectory with the MRD raw samples. Default: 10 for the bundled 23NA_n50 trajectory." }
+    },
+    {
       "id": "matrixsize",
       "label": { "en": "Matrix size" },
       "type": "int",
@@ -104,7 +113,7 @@
       "id": "applyfermifilter",
       "label": { "en": "Apply Fermi filter" },
       "type": "boolean",
-      "default": false,
+      "default": true,
       "information": { "en": "Apply the optional k-space Fermi taper before adjoint NUFFT." }
     },
     {
