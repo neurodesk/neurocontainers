@@ -1,0 +1,88 @@
+tests:
+  - name: Manual sodiumnufft container smoke test
+    manual: true
+    script: |
+      source env/bin/activate
+      python builder/build.py generate sodiumnufft --recreate --build --login --architecture x86_64 --offline_mode true
+
+      python3 -c 'import h5py, ismrmrd, nibabel, sigpy, twixtools; print("sodiumnufft dependencies available")'
+
+      input_dat=/buildhostdirectory/meas_MID00126_FID18530_tpiTqf_HighSpoil_23Na_n50_TE05_Ref480.dat
+      input_mrd=/buildhostdirectory/meas_MID00126_FID18530_tpiTqf_HighSpoil_23Na_n50_TE05_Ref480.mrd
+      output_mrd=/buildhostdirectory/sodiumnufft_output.h5
+      output_nii=/buildhostdirectory/sodiumnufft_output_magnitude.nii.gz
+      config_json=/opt/sodiumnufft/sodiumnufft.json
+
+      rm -f "${input_mrd}"
+      python3 /opt/code/python-ismrmrd-server/twix2mrd.py \
+        -f "${input_dat}" \
+        -o "${input_mrd}" \
+        --matrix-size 128 \
+        --fov-mm 220
+
+      python3 -c 'import pathlib; import ismrmrd
+      output_path = pathlib.Path("/buildhostdirectory/meas_MID00126_FID18530_tpiTqf_HighSpoil_23Na_n50_TE05_Ref480.mrd")
+      assert output_path.exists(), output_path
+      assert output_path.stat().st_size > 0, output_path.stat().st_size
+
+      dataset = ismrmrd.Dataset(str(output_path), "dataset")
+      xml_header = dataset.read_xml_header()
+      assert xml_header, "Missing ISMRMRD XML header"
+
+      acquisition_count = dataset.number_of_acquisitions()
+      assert acquisition_count > 0, acquisition_count
+
+      first_acquisition = dataset.read_acquisition(0)
+      assert first_acquisition.active_channels > 0, first_acquisition.active_channels
+      assert first_acquisition.number_of_samples > 0, first_acquisition.number_of_samples
+      dataset.close()
+
+      print(f"Converted Siemens raw data to MRD: {output_path}")
+      print(f"Acquisitions: {acquisition_count}")'
+
+      printf '%s\n' \
+        '{' \
+        '  "parameters": {' \
+        '    "maxworkers": 1' \
+        '  }' \
+        '}' > "${config_json}"
+
+      # Start OpenRecon server
+      python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
+      sleep 2
+
+      rm -f "${output_mrd}"
+      python3 /opt/code/python-ismrmrd-server/client.py \
+        -G dataset \
+        -o "${output_mrd}" \
+        "${input_mrd}" \
+        -c sodiumnufft
+
+      python3 -c 'import pathlib; import ismrmrd
+      output_path = pathlib.Path("/buildhostdirectory/sodiumnufft_output.h5")
+      assert output_path.exists(), output_path
+      assert output_path.stat().st_size > 0, output_path.stat().st_size
+
+      dataset = ismrmrd.Dataset(str(output_path), "dataset")
+      image_count = dataset.number_of_images("image_0")
+      assert image_count > 0, image_count
+
+      first_image = dataset.read_image("image_0", 0)
+      assert first_image.data_type == ismrmrd.DATATYPE_FLOAT, first_image.data_type
+      assert first_image.image_type == ismrmrd.IMTYPE_MAGNITUDE, first_image.image_type
+      assert first_image.data.size > 0, first_image.data.size
+      dataset.close()
+
+      print(f"OpenRecon produced {image_count} magnitude images: {output_path}")'
+
+      rm -f "${output_nii}"
+      python3 /opt/code/python-ismrmrd-server/mrd2nifti.py \
+        -i "${output_mrd}" \
+        -o "${output_nii}" \
+        --component magnitude
+
+      python3 -c 'import pathlib
+      output_path = pathlib.Path("/buildhostdirectory/sodiumnufft_output_magnitude.nii.gz")
+      assert output_path.exists(), output_path
+      assert output_path.stat().st_size > 0, output_path.stat().st_size
+      print(f"Converted MRD output to magnitude NIfTI: {output_path}")'

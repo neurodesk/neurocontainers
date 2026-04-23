@@ -1,0 +1,86 @@
+name: sodiumnufft
+version: 0.1.0
+
+copyright:
+  - license: MIT
+    url: https://github.com/NeuroDesk/neurocontainers/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+files:
+  - name: sodiumnufft.py
+    filename: sodiumnufft.py
+  - name: twix2mrd.py
+    filename: twix2mrd.py
+  - name: mrd2nifti.py
+    filename: mrd2nifti.py
+  - name: sodium_trajectory
+    filename: 23NA_n50_trajectory.h5
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - bzip2
+        - ca-certificates
+        - git
+        - build-essential
+        - python3-pip
+        - python-is-python3
+    - include: macros/openrecon/neurodocker.yaml
+    - run:
+        - ldconfig
+    - run:
+        - pip3 install --no-cache-dir sigpy==0.1.27 twixtools
+    - workdir: /opt/sodiumnufft
+    - copy:
+        - sodiumnufft.py
+        - /opt/code/python-ismrmrd-server/sodiumnufft.py
+    - copy:
+        - twix2mrd.py
+        - /opt/code/python-ismrmrd-server/twix2mrd.py
+    - copy:
+        - mrd2nifti.py
+        - /opt/code/python-ismrmrd-server/mrd2nifti.py
+    - copy:
+        - sodium_trajectory
+        - /opt/sodiumnufft/23NA_n50_trajectory.h5
+
+deploy:
+  bins:
+    - python
+    - siemens_to_ismrmrd
+
+categories:
+  - image reconstruction
+
+readme: |-
+  ----------------------------------
+  ## sodiumnufft/{{ context.version }} ##
+  This container runs a sodium NUFFT reconstruction for OpenRecon using `sigpy`
+  and the python-ismrmrd-server.
+
+  Build the recipe with:
+  ```bash
+  source env/bin/activate
+  python builder/build.py generate sodiumnufft --recreate --check-only --architecture x86_64
+  ```
+
+  Full build:
+  ```bash
+  source env/bin/activate
+  sf-build sodiumnufft --architecture x86_64
+  ```
+
+  OpenRecon runtime notes are documented in `recipes/sodiumnufft/OpenReconREADME.md`.
+  ----------------------------------

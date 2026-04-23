@@ -43,3 +43,5 @@ dashboard/apps.json
 /public
 actionlint
 vesselboost_openrecon_parameter_matrix_outputs
+*.dat
+*.mrd

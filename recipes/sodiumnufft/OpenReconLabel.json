@@ -1,0 +1,152 @@
+{
+  "general": {
+    "name": { "en": "sodiumnufft" },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": { "en": "3D sodium NUFFT reconstruction from ISMRMRD raw k-space to magnitude image data." },
+    "id": "sodiumnufft",
+    "regulatory_information": {
+      "device_trade_name": "sodiumnufft",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "Erlangen, Germany",
+      "made_in": "DE",
+      "manufacture_date": "2023/02/14",
+      "material_number": "sodiumnufft_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "00860000171212",
+      "udi": "(01)00860000171212(21)1.3.0",
+      "safety_advices": "",
+      "special_operating_instructions": "Open Recon sodium NUFFT reconstruction from raw k-space to magnitude image data",
+      "additional_relevant_information": ""
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "image",
+    "injector": "kspace",
+    "can_process_adjustment_data": false,
+    "can_use_gpu": false,
+    "min_required_memory": 8192,
+    "min_count_required_cpu_cores": 6,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": { "en": "config" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "sodiumnufft",
+          "name": { "en": "sodiumnufft" }
+        }
+      ],
+      "default": "sodiumnufft",
+      "information": { "en": "Define the config to be executed by the MRD server." }
+    },
+    {
+      "id": "trajectoryfile",
+      "label": { "en": "Trajectory file" },
+      "type": "string",
+      "default": "/opt/sodiumnufft/23NA_n50_trajectory.h5",
+      "information": { "en": "HDF5 trajectory file path used when the MRD data does not contain embedded trajectories. Defaults to the bundled 23NA_n50 trajectory." }
+    },
+    {
+      "id": "trajectorydataset",
+      "label": { "en": "Trajectory dataset" },
+      "type": "string",
+      "default": "k",
+      "information": { "en": "Dataset name inside the trajectory HDF5 file. Default: k." }
+    },
+    {
+      "id": "matrixsize",
+      "label": { "en": "Matrix size" },
+      "type": "int",
+      "minimum": 32,
+      "maximum": 512,
+      "default": 128,
+      "information": { "en": "Final isotropic reconstruction matrix." }
+    },
+    {
+      "id": "fovcm",
+      "label": { "en": "FOV cm" },
+      "type": "string",
+      "default": "22.0",
+      "information": { "en": "Reconstruction field of view in cm. Trajectories are interpreted in 1/cm units, matching the standalone NUFFT script." }
+    },
+    {
+      "id": "rejectbadreadouts",
+      "label": { "en": "Reject weak samples" },
+      "type": "boolean",
+      "default": true,
+      "information": { "en": "Zero low-signal sample columns before reconstruction using the histogram thresholding from the standalone script." }
+    },
+    {
+      "id": "badreadoutsigma",
+      "label": { "en": "Reject sigma" },
+      "type": "string",
+      "default": "3.0",
+      "information": { "en": "Sigma multiplier used for the low-signal threshold." }
+    },
+    {
+      "id": "centerwindow",
+      "label": { "en": "Center window" },
+      "type": "int",
+      "minimum": 1,
+      "maximum": 64,
+      "default": 5,
+      "information": { "en": "Half-width of the central sample window used for intensity scaling." }
+    },
+    {
+      "id": "applyfermifilter",
+      "label": { "en": "Apply Fermi filter" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Apply the optional k-space Fermi taper before adjoint NUFFT." }
+    },
+    {
+      "id": "fermiwidth",
+      "label": { "en": "Fermi width" },
+      "type": "string",
+      "default": "0.15",
+      "information": { "en": "Width parameter for the optional Fermi filter." }
+    },
+    {
+      "id": "fermicutoff",
+      "label": { "en": "Fermi cutoff" },
+      "type": "string",
+      "default": "0.9",
+      "information": { "en": "Cutoff parameter for the optional Fermi filter." }
+    },
+    {
+      "id": "dcfiterations",
+      "label": { "en": "DCF iterations" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 50,
+      "default": 0,
+      "information": { "en": "Use iterative DCF estimation when greater than 0. Set to 0 to use the clipped radial DCF from the standalone script." }
+    },
+    {
+      "id": "maxcoils",
+      "label": { "en": "Max coils" },
+      "type": "int",
+      "minimum": 0,
+      "maximum": 128,
+      "default": 0,
+      "information": { "en": "Limit reconstruction to the first N coils. Use 0 to reconstruct all coils." }
+    },
+    {
+      "id": "maxworkers",
+      "label": { "en": "Max workers" },
+      "type": "int",
+      "minimum": 1,
+      "maximum": 64,
+      "default": 6,
+      "information": { "en": "Maximum number of parallel coil reconstructions." }
+    }
+  ]
+}
