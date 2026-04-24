@@ -2674,10 +2674,10 @@ def process_image(imgGroup, connection, config, metadata):
         tmpMeta["SequenceDescription"] = segmentation_identity["sequence_description"]
         tmpMeta["SeriesNumberRangeNameUID"] = segmentation_identity["grouping"]
         tmpMeta["SeriesInstanceUID"] = segmentation_identity["series_instance_uid"]
-        tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\DIXON\\{source_dicom_image_type_value4}"
+        tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{muscleMapImageTypeToken}"
         tmpMeta["ImageTypeValue3"] = "M"
-        tmpMeta["ImageTypeValue4"] = source_image_type_value4
-        tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\DIXON\\{source_dicom_image_type_value4}"
+        tmpMeta["ImageTypeValue4"] = muscleMapImageTypeToken
+        tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{muscleMapImageTypeToken}"
         tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
         tmpMeta["partition_count"] = str(data.shape[-1])
         if metrics_in_comments and metrics_comment:
@@ -2704,10 +2704,10 @@ def process_image(imgGroup, connection, config, metadata):
                 segmentation_identity["grouping"],
                 segmentation_identity["series_instance_uid"],
                 _source_type_value,
-                source_dicom_image_type_value4,
+                muscleMapImageTypeToken,
                 metrics_text=metrics_minihead_text if metrics_in_minihead and metrics_minihead_text else None,
-                target_display_token=source_image_type_value4,
-                target_image_type_value3="DIXON",
+                target_display_token=muscleMapImageTypeToken,
+                target_image_type_value3="M",
             )
             if minihead_changed:
                 minihead_text = patched_minihead_text
