@@ -945,6 +945,29 @@ def _square_pixel_target_shape(
     return (target_rows, target_cols), target_spacing
 
 
+def _ice_compatible_target_shape(
+    target_shape: tuple[int, int],
+    orientation: str,
+) -> tuple[int, int]:
+    """Keep reformat image dimensions acceptable to Siemens ICE orientation code."""
+    rows, cols = target_shape
+    if rows % 2 == cols % 2:
+        return target_shape
+
+    adjusted_shape = (
+        rows + (rows % 2),
+        cols + (cols % 2),
+    )
+    logging.info(
+        "Adjusted %s reformat target_shape from %s to %s so row/column "
+        "dimensions have matching parity for ICE orientation handling",
+        orientation,
+        target_shape,
+        adjusted_shape,
+    )
+    return adjusted_shape
+
+
 def _resize_2d_nearest(
     data: np.ndarray,
     target_shape: tuple[int, int],
@@ -1026,6 +1049,10 @@ def _build_reformatted_images(
         inplane_input_shape,
         row_spacing=inplane_row_spacing,
         col_spacing=inplane_col_spacing,
+    )
+    target_inplane_shape = _ice_compatible_target_shape(
+        target_inplane_shape,
+        orientation,
     )
     new_fov = (
         float(target_inplane_shape[1] * target_inplane_spacing),
@@ -1126,13 +1153,9 @@ def _build_reformatted_images(
                 del tmp_meta["SequenceDescriptionAdditional"]
             except Exception:
                 tmp_meta["SequenceDescriptionAdditional"] = ""
-        # Reformatted outputs have their own geometry and slice count, so they
-        # must not request reuse of the incoming axial geometry.
-        if "Keep_image_geometry" in tmp_meta:
-            try:
-                del tmp_meta["Keep_image_geometry"]
-            except Exception:
-                tmp_meta["Keep_image_geometry"] = ""
+        # The host requires this attribute to be present, but reformatted
+        # outputs must use the explicit geometry set on the MRD header.
+        tmp_meta["Keep_image_geometry"] = "0"
         tmp_meta["ImageRowDir"] = [
             "{:.18f}".format(new_read_dir[0]),
             "{:.18f}".format(new_read_dir[1]),
@@ -1143,22 +1166,72 @@ def _build_reformatted_images(
             "{:.18f}".format(new_phase_dir[1]),
             "{:.18f}".format(new_phase_dir[2]),
         ]
-        minihead_text = _decode_ice_minihead(tmp_meta)
-        if minihead_text:
-            patched_minihead_text, minihead_changed = _patch_ice_minihead(
-                minihead_text,
-                output_identity["sequence_description"],
-                output_identity["grouping"],
-                source_type_token,
-                output_identity["type_token"],
-                target_display_token=output_identity["display_token"],
-            )
-            if minihead_changed:
-                tmp_meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
+        if "IceMiniHead" in tmp_meta:
+            # The source miniheader contains original stack geometry and slice
+            # counts. Reusing it on reformats makes ICE treat sagittal/coronal
+            # outputs like the original axial series.
+            try:
+                del tmp_meta["IceMiniHead"]
+            except Exception:
+                tmp_meta["IceMiniHead"] = ""
         mrd_image.attribute_string = tmp_meta.serialize()
         images_out.append(mrd_image)
 
     return images_out
+
+
+OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96
+
+
+def _send_images_by_series(connection, images, context: str = "images") -> None:
+    """Send MRD images in series-preserving chunks."""
+    if images is None:
+        return
+    if isinstance(images, ismrmrd.Image):
+        images = [images]
+    images = list(images)
+    if not images:
+        logging.info("Skipping send for %s because there are no images", context)
+        return
+
+    batch = []
+    batch_series = None
+
+    def flush_batch():
+        nonlocal batch, batch_series
+        if not batch:
+            return
+        for chunk_start in range(0, len(batch), OPENRECON_SEND_IMAGE_CHUNK_SIZE):
+            chunk = batch[chunk_start:chunk_start + OPENRECON_SEND_IMAGE_CHUNK_SIZE]
+            logging.info(
+                "Sending %s batch: series_index=%s chunk=%d-%d/%d image_count=%d",
+                context,
+                batch_series,
+                chunk_start + 1,
+                chunk_start + len(chunk),
+                len(batch),
+                len(chunk),
+            )
+            connection.send_image(chunk)
+        batch = []
+        batch_series = None
+
+    for image in images:
+        series_index = int(getattr(image, "image_series_index", 0))
+        if batch and series_index != batch_series:
+            flush_batch()
+        batch.append(image)
+        batch_series = series_index
+
+    flush_batch()
+
+
+def _as_image_list(images):
+    if images is None:
+        return []
+    if isinstance(images, ismrmrd.Image):
+        return [images]
+    return list(images)
 
 
 def process(connection, config, metadata):
@@ -1185,9 +1258,9 @@ def process(connection, config, metadata):
         logging.info("Improperly formatted metadata: \n%s", metadata)
 
     # Continuously parse incoming data parsed from MRD messages
-    currentSeries = 0
     acqGroup = []
-    imgGroup = []
+    imageGroups = {}
+    passthroughImages = []
     waveformGroup = []
     try:
         for item in connection:
@@ -1207,32 +1280,22 @@ def process(connection, config, metadata):
                 if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
                     logging.info("Processing a group of k-space data")
                     image = process_raw(acqGroup, connection, config, metadata)
-                    connection.send_image(image)
+                    _send_images_by_series(connection, image, "processed raw output")
                     acqGroup = []
 
             # ----------------------------------------------------------
             # Image data messages
             # ----------------------------------------------------------
             elif isinstance(item, ismrmrd.Image):
-                # When this criteria is met, run process_group() on the accumulated
-                # data, which returns images that are sent back to the client.
-                # e.g. when the series number changes:
-                if item.image_series_index != currentSeries:
-                    logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
-                    currentSeries = item.image_series_index
-                    image = process_image(imgGroup, connection, config, metadata)
-                    connection.send_image(image)
-                    imgGroup = []
-
                 # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
                 if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
-                    imgGroup.append(item)
+                    imageGroups.setdefault(int(item.image_series_index), []).append(item)
                 else:
                     tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
                     tmpMeta['Keep_image_geometry']    = 1
                     item.attribute_string = tmpMeta.serialize()
 
-                    connection.send_image(item)
+                    passthroughImages.append(item)
                     continue
 
             # ----------------------------------------------------------
@@ -1247,6 +1310,37 @@ def process(connection, config, metadata):
             else:
                 logging.error("Unsupported data type %s", type(item).__name__)
 
+        logging.info(
+            "Input stream drained before VesselBoost image processing: "
+            "processable_series=%d processable_images=%d passthrough_images=%d",
+            len(imageGroups),
+            sum(len(group) for group in imageGroups.values()),
+            len(passthroughImages),
+        )
+
+        if passthroughImages:
+            _send_images_by_series(
+                connection,
+                passthroughImages,
+                "passthrough image after input drain",
+            )
+
+        for series_index, images in imageGroups.items():
+            logging.info(
+                "Processing buffered VesselBoost image series after input drain: "
+                "series_index=%d images=%d",
+                series_index,
+                len(images),
+            )
+            image = process_image(images, connection, config, metadata)
+            _send_images_by_series(
+                connection,
+                image,
+                "processed image output after input drain",
+            )
+
+        imageGroups.clear()
+
         # Extract raw ECG waveform data. Basic sorting to make sure that data 
         # is time-ordered, but no additional checking for missing data.
         # ecgData has shape (5 x timepoints)
@@ -1255,21 +1349,13 @@ def process(connection, config, metadata):
             ecgData = [item.data for item in waveformGroup if item.waveform_id == 0]
             ecgData = np.concatenate(ecgData,1)
 
-        # Process any remaining groups of raw or image data.  This can 
+        # Process any remaining groups of raw data.  This can
         # happen if the trigger condition for these groups are not met.
-        # This is also a fallback for handling image data, as the last
-        # image in a series is typically not separately flagged.
         if len(acqGroup) > 0:
             logging.info("Processing a group of k-space data (untriggered)")
             image = process_raw(acqGroup, connection, config, metadata)
-            connection.send_image(image)
+            _send_images_by_series(connection, image, "processed raw output")
             acqGroup = []
-
-        if len(imgGroup) > 0:
-            logging.info("Processing a group of images (untriggered)")
-            image = process_image(imgGroup, connection, config, metadata)
-            connection.send_image(image)
-            imgGroup = []
 
     except Exception as e:
         logging.error(traceback.format_exc())

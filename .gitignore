@@ -42,6 +42,7 @@ dashboard/local/
 dashboard/apps.json
 /public
 actionlint
+*.log
 vesselboost_openrecon_parameter_matrix_outputs
 *.dat
 *.mrd

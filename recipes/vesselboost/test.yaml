@@ -263,6 +263,8 @@ tests:
                     "image_comments": get_text(meta, "ImageComments"),
                     "image_comment": get_text(meta, "ImageComment"),
                     "keep_image_geometry": get_text(meta, "Keep_image_geometry"),
+                    "matrix_x": int(header.matrix_size[0]),
+                    "matrix_y": int(header.matrix_size[1]),
                     "pixel_spacing_x": float(header.field_of_view[0]) / float(header.matrix_size[0]),
                     "pixel_spacing_y": float(header.field_of_view[1]) / float(header.matrix_size[1]),
                     "ice_minihead": ice_minihead,
@@ -327,8 +329,12 @@ tests:
             assert derived["last_slice"] == derived["image_count"] - 1, derived
             assert sagittal["sequence_description_additional"] == "", sagittal
             assert coronal["sequence_description_additional"] == "", coronal
-            assert sagittal["keep_image_geometry"] == "", sagittal
-            assert coronal["keep_image_geometry"] == "", coronal
+            assert sagittal["keep_image_geometry"] == "0", sagittal
+            assert coronal["keep_image_geometry"] == "0", coronal
+            assert not sagittal["ice_minihead"], sagittal
+            assert not coronal["ice_minihead"], coronal
+            assert sagittal["matrix_x"] % 2 == sagittal["matrix_y"] % 2, sagittal
+            assert coronal["matrix_x"] % 2 == coronal["matrix_y"] % 2, coronal
             assert abs(sagittal["pixel_spacing_x"] - sagittal["pixel_spacing_y"]) < 1e-3, sagittal
             assert abs(coronal["pixel_spacing_x"] - coronal["pixel_spacing_y"]) < 1e-3, coronal
         else:

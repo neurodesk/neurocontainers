@@ -61,8 +61,9 @@ def process(connection, config, metadata):
     # Continuously parse incoming data parsed from MRD messages
     acqGroup = []
     imgGroup = []
-    currentImageVolumeKey = None
+    processableImageGroups = {}
     inputVolumeSummaries = {}
+    passthroughImages = []
     sentImagesForSummary = []
     waveformGroup = []
     try:
@@ -93,22 +94,6 @@ def process(connection, config, metadata):
             # ----------------------------------------------------------
             elif isinstance(item, ismrmrd.Image):
                 itemVolumeKey = _build_image_volume_key(item)
-                if imgGroup and currentImageVolumeKey is not None and itemVolumeKey != currentImageVolumeKey:
-                    logging.info(
-                        "Processing a group of images because volume key changed from %s to %s",
-                        currentImageVolumeKey,
-                        itemVolumeKey,
-                    )
-                    image = process_image(imgGroup, connection, config, metadata)
-                    _send_images_with_summary(
-                        connection,
-                        image,
-                        "processed_volume_key_change",
-                        sentImagesForSummary,
-                        log_now=False,
-                    )
-                    imgGroup = []
-                    currentImageVolumeKey = None
 
                 # Only process magnitude Water images -- send phase images and non-Water images back without modification
                 tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
@@ -152,19 +137,11 @@ def process(connection, config, metadata):
                 )
                 
                 if shouldProcess:
-                    currentImageVolumeKey = itemVolumeKey
-                    imgGroup.append(item)
+                    processableImageGroups.setdefault(itemVolumeKey, []).append(item)
                 else:
                     tmpMeta["Keep_image_geometry"] = 1
                     item.attribute_string = tmpMeta.serialize()
-
-                    _send_images_with_summary(
-                        connection,
-                        item,
-                        "passthrough_not_processed",
-                        sentImagesForSummary,
-                        log_now=False,
-                    )
+                    passthroughImages.append(item)
                     continue
 
             # ----------------------------------------------------------
@@ -179,17 +156,39 @@ def process(connection, config, metadata):
             else:
                 logging.error("Unsupported data type %s", type(item).__name__)
 
-        if len(imgGroup) > 0:
-            logging.info("Processing a group of images (untriggered)")
+        logging.info(
+            "Input stream drained before MuscleMap processing: passthrough_images=%d processable_volumes=%d processable_images=%d",
+            len(passthroughImages),
+            len(processableImageGroups),
+            sum(len(group) for group in processableImageGroups.values()),
+        )
+
+        if passthroughImages:
+            logging.info("Sending %d buffered passthrough image(s)", len(passthroughImages))
+            _send_images_with_summary(
+                connection,
+                passthroughImages,
+                "passthrough_not_processed_drained",
+                sentImagesForSummary,
+                log_now=False,
+            )
+
+        for volume_key, imgGroup in processableImageGroups.items():
+            logging.info(
+                "Processing buffered image volume after input drain: volume_key=%s images=%d",
+                volume_key,
+                len(imgGroup),
+            )
             image = process_image(imgGroup, connection, config, metadata)
             _send_images_with_summary(
                 connection,
                 image,
-                "processed_untriggered",
+                "processed_after_input_drain",
                 sentImagesForSummary,
                 log_now=False,
             )
-            imgGroup = []
+
+        processableImageGroups.clear()
 
     except Exception as e:
         logging.error(traceback.format_exc())
@@ -1384,13 +1383,53 @@ def _as_image_list(images):
     return [images]
 
 
+def _get_image_series_index(image):
+    try:
+        return int(getattr(image.getHead(), "image_series_index", 0))
+    except Exception:
+        return 0
+
+
+def _send_images_by_series(connection, images, context):
+    image_list = _as_image_list(images)
+    if not image_list:
+        logging.info("Skipping send for %s because there are no images", context)
+        return
+
+    batch = []
+    batch_series = None
+
+    def flush_batch():
+        nonlocal batch, batch_series
+        if not batch:
+            return
+        logging.info(
+            "Sending %s batch: series_index=%s image_count=%d",
+            context,
+            batch_series,
+            len(batch),
+        )
+        connection.send_image(batch)
+        batch = []
+        batch_series = None
+
+    for image in image_list:
+        series_index = _get_image_series_index(image)
+        if batch and series_index != batch_series:
+            flush_batch()
+        batch.append(image)
+        batch_series = series_index
+
+    flush_batch()
+
+
 def _send_images_with_summary(connection, images, context, sent_images=None, log_now=True):
     image_list = _as_image_list(images)
     if sent_images is not None:
         sent_images.extend(image_list)
     if log_now:
         _log_send_batch_summary(image_list, context)
-    connection.send_image(images)
+    _send_images_by_series(connection, image_list, context)
 
 
 def _parse_mm_segment_chunksize(value):
@@ -2028,6 +2067,59 @@ def _build_mm_segment_retry_chunks(chunksize, image_depth, output_text):
     return candidates
 
 
+_mm_segment_help_text = None
+
+
+def _get_mm_segment_help_text():
+    global _mm_segment_help_text
+    if _mm_segment_help_text is not None:
+        return _mm_segment_help_text
+
+    try:
+        result = subprocess.run(
+            ["mm_segment", "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        _mm_segment_help_text = "\n".join(
+            part for part in (result.stdout, result.stderr) if part
+        )
+    except Exception:
+        logging.warning("Unable to inspect mm_segment --help; assuming current CLI supports chunk options")
+        _mm_segment_help_text = ""
+
+    return _mm_segment_help_text
+
+
+def _mm_segment_supports_option(*option_names):
+    help_text = _get_mm_segment_help_text()
+    if not help_text:
+        return True
+    return any(option_name in help_text for option_name in option_names)
+
+
+def _build_mm_segment_command(bodyregion, chunksize, spatialoverlap):
+    command = [
+        "mm_segment",
+        "-i", mmSegmentInputPath,
+        "-r", bodyregion,
+    ]
+
+    if _mm_segment_supports_option("-c", "--chunksize"):
+        command.extend(["-c", str(chunksize)])
+    else:
+        logging.warning("Installed mm_segment does not advertise -c/--chunksize; omitting chunk size option")
+
+    if _mm_segment_supports_option("-s", "--spatialoverlap"):
+        command.extend(["-s", str(spatialoverlap)])
+    else:
+        logging.warning("Installed mm_segment does not advertise -s/--spatialoverlap; omitting spatial overlap option")
+
+    command.extend(["-g", "Y"])
+    return command
+
+
 def _run_mm_segment(bodyregion, chunksize, spatialoverlap, image_depth):
     attempt_chunks = [chunksize]
     seen_chunks = set()
@@ -2039,14 +2131,7 @@ def _run_mm_segment(bodyregion, chunksize, spatialoverlap, image_depth):
             continue
         seen_chunks.add(chunk_label)
 
-        mm_segment_cmd = [
-            "mm_segment",
-            "-i", mmSegmentInputPath,
-            "-r", bodyregion,
-            "-c", chunk_label,
-            "-s", str(spatialoverlap),
-            "-g", "Y",
-        ]
+        mm_segment_cmd = _build_mm_segment_command(bodyregion, chunk_label, spatialoverlap)
 
         if os.path.exists(mmSegmentOutputPath):
             os.remove(mmSegmentOutputPath)
