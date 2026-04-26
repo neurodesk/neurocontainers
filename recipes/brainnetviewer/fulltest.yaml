@@ -58,12 +58,12 @@ tests:
   # ==========================================================================
   - name: BrainNet binary exists
     description: Verify BrainNet compiled binary is present at container root
-    command: test -f /BrainNet && echo "BrainNet binary found"
+    command: bash -lc 'test -f /BrainNet && echo "BrainNet binary found"'
     expected_output_contains: "BrainNet binary found"
 
   - name: BrainNet binary is executable
     description: Verify BrainNet binary has execute permissions
-    command: test -x /BrainNet && echo "BrainNet is executable"
+    command: bash -lc 'test -x /BrainNet && echo "BrainNet is executable"'
     expected_output_contains: "BrainNet is executable"
 
   - name: BrainNet binary is ELF executable
@@ -78,12 +78,12 @@ tests:
 
   - name: brainnetviewer wrapper script exists
     description: Verify brainnetviewer wrapper script is in /usr/bin
-    command: test -f /usr/bin/brainnetviewer && echo "Wrapper script found"
+    command: bash -lc 'test -f /usr/bin/brainnetviewer && echo "Wrapper script found"'
     expected_output_contains: "Wrapper script found"
 
   - name: brainnetviewer wrapper is executable
     description: Verify brainnetviewer wrapper has execute permissions
-    command: test -x /usr/bin/brainnetviewer && echo "Wrapper is executable"
+    command: bash -lc 'test -x /usr/bin/brainnetviewer && echo "Wrapper is executable"'
     expected_output_contains: "Wrapper is executable"
 
   - name: brainnetviewer wrapper content
@@ -98,12 +98,12 @@ tests:
 
   - name: Run script exists
     description: Verify run_BrainNet.sh wrapper script is present
-    command: test -f /run_BrainNet.sh && echo "Run script found"
+    command: bash -lc 'test -f /run_BrainNet.sh && echo "Run script found"'
     expected_output_contains: "Run script found"
 
   - name: Run script is executable
     description: Verify run_BrainNet.sh has execute permissions
-    command: test -x /run_BrainNet.sh && echo "Run script executable"
+    command: bash -lc 'test -x /run_BrainNet.sh && echo "Run script executable"'
     expected_output_contains: "Run script executable"
 
   # ==========================================================================
@@ -149,57 +149,57 @@ tests:
   # ==========================================================================
   - name: MCR directory exists
     description: Verify MATLAB Compiler Runtime is installed
-    command: test -d /opt/matlab/v94 && echo "MCR v94 directory found"
+    command: bash -lc 'test -d /opt/matlab/v94 && echo "MCR v94 directory found"'
     expected_output_contains: "MCR v94 directory found"
 
   - name: MCR version is R2018a
     description: Verify MCR version matches BrainNet requirements (R2018a)
-    command: cat /opt/matlab/v94/VersionInfo.xml
+    command: "bash -lc 'cat /opt/matlab/v94/VersionInfo.xml'"
     expected_output_contains: "R2018a"
 
   - name: MCR version number 9.4
     description: Verify MCR version 9.4 is installed
-    command: cat /opt/matlab/v94/VersionInfo.xml
+    command: "bash -lc 'cat /opt/matlab/v94/VersionInfo.xml'"
     expected_output_contains: "9.4"
 
   - name: MCR runtime libraries exist
     description: Verify MCR runtime library directory is present
-    command: test -d /opt/matlab/v94/runtime/glnxa64 && echo "MCR runtime found"
+    command: bash -lc 'test -d /opt/matlab/v94/runtime/glnxa64 && echo "MCR runtime found"'
     expected_output_contains: "MCR runtime found"
 
   - name: MCR bin libraries exist
     description: Verify MCR bin library directory is present
-    command: test -d /opt/matlab/v94/bin/glnxa64 && echo "MCR bin found"
+    command: bash -lc 'test -d /opt/matlab/v94/bin/glnxa64 && echo "MCR bin found"'
     expected_output_contains: "MCR bin found"
 
   - name: MCR system libraries exist
     description: Verify MCR system OS libraries are present
-    command: test -d /opt/matlab/v94/sys/os/glnxa64 && echo "MCR sys/os found"
+    command: bash -lc 'test -d /opt/matlab/v94/sys/os/glnxa64 && echo "MCR sys/os found"'
     expected_output_contains: "MCR sys/os found"
 
   - name: MCR OpenGL libraries exist
     description: Verify MCR OpenGL libraries directory is present
-    command: test -d /opt/matlab/v94/sys/opengl/lib/glnxa64 && echo "OpenGL libs found"
+    command: bash -lc 'test -d /opt/matlab/v94/sys/opengl/lib/glnxa64 && echo "OpenGL libs found"'
     expected_output_contains: "OpenGL libs found"
 
   - name: MCR toolbox directory exists
     description: Verify MCR toolbox directory is present
-    command: test -d /opt/matlab/v94/toolbox && echo "MCR toolbox found"
+    command: bash -lc 'test -d /opt/matlab/v94/toolbox && echo "MCR toolbox found"'
     expected_output_contains: "MCR toolbox found"
 
   - name: MCR Java runtime exists
     description: Verify MCR Java Runtime Environment is present
-    command: test -d /opt/matlab/v94/java && echo "MCR Java found"
+    command: bash -lc 'test -d /opt/matlab/v94/java && echo "MCR Java found"'
     expected_output_contains: "MCR Java found"
 
   - name: MCR resources directory exists
     description: Verify MCR resources directory is present
-    command: test -d /opt/matlab/v94/resources && echo "MCR resources found"
+    command: bash -lc 'test -d /opt/matlab/v94/resources && echo "MCR resources found"'
     expected_output_contains: "MCR resources found"
 
   - name: MCR extern directory exists
     description: Verify MCR extern directory is present
-    command: test -d /opt/matlab/v94/extern && echo "MCR extern found"
+    command: bash -lc 'test -d /opt/matlab/v94/extern && echo "MCR extern found"'
     expected_output_contains: "MCR extern found"
 
   # ==========================================================================
@@ -207,24 +207,22 @@ tests:
   # ==========================================================================
   - name: libmwmclmcrrt library exists
     description: Verify core MCR library is present
-    command: ls /opt/matlab/v94/runtime/glnxa64/libmwmclmcrrt.so* 2>/dev/null | head -1 && echo "libmwmclmcrrt found"
+    command: bash -lc 'ls /opt/matlab/v94/runtime/glnxa64/libmwmclmcrrt.so* 2>/dev/null | head -1 && echo "libmwmclmcrrt found"'
     expected_output_contains: "libmwmclmcrrt found"
 
   - name: MCR has runtime shared libraries
     description: Verify MCR runtime has shared libraries
-    command: ls /opt/matlab/v94/runtime/glnxa64/*.so* 2>/dev/null | wc -l
+    command: bash -lc 'ls /opt/matlab/v94/runtime/glnxa64/*.so* 2>/dev/null | wc -l'
     expected_exit_code: 0
 
   - name: MCR has bin shared libraries
     description: Verify MCR bin has shared libraries
-    command: ls /opt/matlab/v94/bin/glnxa64/*.so* 2>/dev/null | wc -l
+    command: bash -lc 'ls /opt/matlab/v94/bin/glnxa64/*.so* 2>/dev/null | wc -l'
     expected_exit_code: 0
 
   - name: MCR runtime library count
     description: Verify MCR has runtime libraries present
-    command: |
-      count=$(ls -1 /opt/matlab/v94/runtime/glnxa64/ 2>/dev/null | wc -l)
-      if [ "$count" -gt 2 ]; then echo "MCR runtime has $count files"; else echo "MCR incomplete"; fi
+    command: "bash -lc 'count=$(ls -1 /opt/matlab/v94/runtime/glnxa64/ 2>/dev/null | wc -l)\nif [ \"$count\" -gt 2 ]; then echo \"MCR runtime has $count files\"; else echo \"MCR incomplete\"; fi'"
     expected_output_contains: "MCR runtime has"
 
   # ==========================================================================
@@ -232,7 +230,7 @@ tests:
   # ==========================================================================
   - name: README exists in container root
     description: Verify README.md is present at container root
-    command: test -f /README.md && echo "README found"
+    command: bash -lc 'test -f /README.md && echo "README found"'
     expected_output_contains: "README found"
 
   - name: README contains BrainNet Viewer info
@@ -272,7 +270,7 @@ tests:
 
   - name: readme.txt exists
     description: Verify readme.txt is present at container root
-    command: test -f /readme.txt && echo "readme.txt found"
+    command: bash -lc 'test -f /readme.txt && echo "readme.txt found"'
     expected_output_contains: "readme.txt found"
 
   - name: readme.txt mentions MCR version
@@ -295,17 +293,17 @@ tests:
   # ==========================================================================
   - name: MCR license file exists
     description: Verify MCR license file is present
-    command: test -f /opt/matlab/v94/MCR_license.txt && echo "MCR license found"
+    command: bash -lc 'test -f /opt/matlab/v94/MCR_license.txt && echo "MCR license found"'
     expected_output_contains: "MCR license found"
 
   - name: MCR patents file exists
     description: Verify MCR patents file is present
-    command: test -f /opt/matlab/v94/patents.txt && echo "MCR patents found"
+    command: bash -lc 'test -f /opt/matlab/v94/patents.txt && echo "MCR patents found"'
     expected_output_contains: "MCR patents found"
 
   - name: MCR trademarks file exists
     description: Verify MCR trademarks file is present
-    command: test -f /opt/matlab/v94/trademarks.txt && echo "MCR trademarks found"
+    command: bash -lc 'test -f /opt/matlab/v94/trademarks.txt && echo "MCR trademarks found"'
     expected_output_contains: "MCR trademarks found"
 
   # ==========================================================================
@@ -377,27 +375,27 @@ tests:
   # ==========================================================================
   - name: Reproenv JSON exists
     description: Verify reproenv build metadata is present
-    command: test -f /.reproenv.json && echo "reproenv.json found"
+    command: bash -lc 'test -f /.reproenv.json && echo "reproenv.json found"'
     expected_output_contains: "reproenv.json found"
 
   - name: Singularity environment directory exists
     description: Verify Singularity metadata directory is present
-    command: test -d /.singularity.d && echo "Singularity metadata found"
+    command: bash -lc 'test -d /.singularity.d && echo "Singularity metadata found"'
     expected_output_contains: "Singularity metadata found"
 
   - name: Singularity runscript exists
     description: Verify Singularity runscript is present
-    command: test -f /.singularity.d/runscript && echo "Runscript found"
+    command: bash -lc 'test -f /.singularity.d/runscript && echo "Runscript found"'
     expected_output_contains: "Runscript found"
 
   - name: Environment scripts exist
     description: Verify environment setup scripts are present
-    command: test -d /.singularity.d/env && ls /.singularity.d/env/*.sh | wc -l
+    command: bash -lc 'test -d /.singularity.d/env && ls /.singularity.d/env/*.sh | wc -l'
     expected_exit_code: 0
 
   - name: Singularity labels present
     description: Verify Singularity labels file exists
-    command: test -f /.singularity.d/labels.json && echo "Labels file found"
+    command: bash -lc 'test -f /.singularity.d/labels.json && echo "Labels file found"'
     expected_output_contains: "Labels file found"
 
   # ==========================================================================
@@ -405,27 +403,27 @@ tests:
   # ==========================================================================
   - name: Standard mount points exist
     description: Verify standard mount point directories are present
-    command: test -d /data && echo "Data mount point found"
+    command: bash -lc 'test -d /data && echo "Data mount point found"'
     expected_output_contains: "Data mount point found"
 
   - name: Home directory accessible
     description: Verify home directory is accessible
-    command: test -d /home && echo "Home accessible"
+    command: bash -lc 'test -d /home && echo "Home accessible"'
     expected_output_contains: "Home accessible"
 
   - name: Tmp directory exists and writable
     description: Verify tmp directory exists and is writable
-    command: test -d /tmp && test -w /tmp && echo "Tmp writable"
+    command: bash -lc 'test -d /tmp && test -w /tmp && echo "Tmp writable"'
     expected_output_contains: "Tmp writable"
 
   - name: Proc filesystem mounted
     description: Verify proc filesystem is mounted
-    command: test -d /proc && echo "Proc mounted"
+    command: bash -lc 'test -d /proc && echo "Proc mounted"'
     expected_output_contains: "Proc mounted"
 
   - name: Neurodesktop storage directory exists
     description: Verify neurodesktop-storage mount point exists
-    command: test -d /neurodesktop-storage && echo "Neurodesktop storage found"
+    command: bash -lc 'test -d /neurodesktop-storage && echo "Neurodesktop storage found"'
     expected_output_contains: "Neurodesktop storage found"
 
   # ==========================================================================
@@ -450,7 +448,7 @@ tests:
   # ==========================================================================
   - name: System x86_64 libraries exist
     description: Verify system x86_64 library directory is present
-    command: test -d /usr/lib/x86_64-linux-gnu && echo "x86_64 libs found" || test -d /lib64 && echo "lib64 found"
+    command: bash -lc 'test -d /usr/lib/x86_64-linux-gnu && echo "x86_64 libs found" || test -d /lib64 && echo "lib64 found"'
     expected_exit_code: 0
 
   - name: Basic system utilities available
@@ -473,24 +471,22 @@ tests:
   # ==========================================================================
   - name: MCR MATLAB toolbox exists
     description: Verify core MATLAB toolbox is present
-    command: test -d /opt/matlab/v94/toolbox/matlab && echo "MATLAB toolbox found"
+    command: bash -lc 'test -d /opt/matlab/v94/toolbox/matlab && echo "MATLAB toolbox found"'
     expected_output_contains: "MATLAB toolbox found"
 
   - name: MCR shared toolbox exists
     description: Verify shared toolbox directory is present
-    command: test -d /opt/matlab/v94/toolbox/shared && echo "Shared toolbox found"
+    command: bash -lc 'test -d /opt/matlab/v94/toolbox/shared && echo "Shared toolbox found"'
     expected_output_contains: "Shared toolbox found"
 
   - name: MCR cefclient exists
     description: Verify CEF client directory is present (for web rendering)
-    command: test -d /opt/matlab/v94/cefclient && echo "CEF client found"
+    command: bash -lc 'test -d /opt/matlab/v94/cefclient && echo "CEF client found"'
     expected_output_contains: "CEF client found"
 
   - name: MCR resources count
     description: Verify MCR resources directory has content
-    command: |
-      count=$(ls -1 /opt/matlab/v94/resources/ 2>/dev/null | wc -l)
-      echo "MCR resources count: $count"
+    command: "bash -lc 'count=$(ls -1 /opt/matlab/v94/resources/ 2>/dev/null | wc -l)\necho \"MCR resources count: $count\"'"
     expected_exit_code: 0
 
   # ==========================================================================

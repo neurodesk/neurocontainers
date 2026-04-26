@@ -105,27 +105,27 @@ tests:
   # ===========================================================================
   - name: Polar angle models exist
     description: Verify polar angle prediction models are installed
-    command: ls -la /opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_polarAngle_*.pt
+    command: bash -lc 'ls -la /opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_polarAngle_*.pt'
     expected_output_contains: "deepRetinotopy_polarAngle_LH_model.pt"
 
   - name: Eccentricity models exist
     description: Verify eccentricity prediction models are installed
-    command: ls -la /opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_eccentricity_*.pt
+    command: bash -lc 'ls -la /opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_eccentricity_*.pt'
     expected_output_contains: "deepRetinotopy_eccentricity_LH_model.pt"
 
   - name: pRF size models exist
     description: Verify pRF size prediction models are installed
-    command: ls -la /opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_pRFsize_*.pt
+    command: bash -lc 'ls -la /opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_pRFsize_*.pt'
     expected_output_contains: "deepRetinotopy_pRFsize_LH_model.pt"
 
   - name: Model file count
     description: Verify all 6 model files are present (LH/RH for 3 maps)
-    command: ls /opt/deepRetinotopy_TheToolbox/models/*.pt | wc -l
+    command: bash -lc 'ls /opt/deepRetinotopy_TheToolbox/models/*.pt | wc -l'
     expected_output_contains: "6"
 
   - name: Load PyTorch model
     description: Test loading a deepRetinotopy model file
-    command: python -c "import torch; m=torch.load('/opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_polarAngle_LH_model.pt', map_location='cpu', weights_only=False); print('Model loaded successfully')"
+    command: "bash -lc 'python -c \"import torch; m=torch.load('\"'\"'/opt/deepRetinotopy_TheToolbox/models/deepRetinotopy_polarAngle_LH_model.pt'\"'\"', map_location='\"'\"'cpu'\"'\"', weights_only=False); print('\"'\"'Model loaded successfully'\"'\"')\"'"
     expected_output_contains: "Model loaded successfully"
 
   # ===========================================================================
@@ -133,22 +133,22 @@ tests:
   # ===========================================================================
   - name: Inference script exists
     description: Verify main inference script is present
-    command: ls -la /opt/deepRetinotopy_TheToolbox/main/2_inference.py
+    command: "bash -lc 'ls -la /opt/deepRetinotopy_TheToolbox/main/2_inference.py'"
     expected_output_contains: "2_inference.py"
 
   - name: Native to fsaverage script exists
     description: Verify surface transformation script is present
-    command: ls -la /opt/deepRetinotopy_TheToolbox/main/1_native2fsaverage.sh
+    command: "bash -lc 'ls -la /opt/deepRetinotopy_TheToolbox/main/1_native2fsaverage.sh'"
     expected_output_contains: "1_native2fsaverage.sh"
 
   - name: fsaverage to native script exists
     description: Verify reverse transformation script is present
-    command: ls -la /opt/deepRetinotopy_TheToolbox/main/3_fsaverage2native.sh
+    command: "bash -lc 'ls -la /opt/deepRetinotopy_TheToolbox/main/3_fsaverage2native.sh'"
     expected_output_contains: "3_fsaverage2native.sh"
 
   - name: Sign maps script exists
     description: Verify visual field sign calculation script is present
-    command: ls -la /opt/deepRetinotopy_TheToolbox/main/4_signmaps.py
+    command: "bash -lc 'ls -la /opt/deepRetinotopy_TheToolbox/main/4_signmaps.py'"
     expected_output_contains: "4_signmaps.py"
 
   # ===========================================================================
@@ -301,7 +301,7 @@ tests:
 
   - name: FreeSurfer SUBJECTS_DIR
     description: Verify SUBJECTS_DIR environment is accessible
-    command: echo $FREESURFER_HOME || ls /opt/freesurfer-7.3.2
+    command: "bash -lc 'echo $FREESURFER_HOME || ls /opt/freesurfer-7.3.2'"
     expected_exit_code: 0
 
   # ===========================================================================
@@ -624,48 +624,48 @@ tests:
   - name: Import deepRetinotopy dataset module
     description: Test importing dataset utilities
     command: |
-      cd /opt/deepRetinotopy_TheToolbox && python -c "
+      bash -lc 'cd /opt/deepRetinotopy_TheToolbox && python -c "
       from utils.dataset import SurfaceDataset
-      print('SurfaceDataset class imported successfully')
-      " 2>&1 | tail -2
+      print('\''SurfaceDataset class imported successfully'\'')
+      " 2>&1 | tail -2'
     expected_output_contains: "SurfaceDataset"
 
   - name: Import deepRetinotopy read_data module
     description: Test importing data reading utilities
     command: |
-      cd /opt/deepRetinotopy_TheToolbox && python -c "
+      bash -lc 'cd /opt/deepRetinotopy_TheToolbox && python -c "
       from utils.read_data import read_gifti
-      print('read_gifti function imported successfully')
-      " 2>&1 | tail -2
+      print('\''read_gifti function imported successfully'\'')
+      " 2>&1 | tail -2'
     expected_output_contains: "read_gifti"
 
   - name: Import deepRetinotopy labels module
     description: Test importing label utilities
     command: |
-      cd /opt/deepRetinotopy_TheToolbox && python -c "
+      bash -lc 'cd /opt/deepRetinotopy_TheToolbox && python -c "
       from utils.labels import ROI_WangParcelsPlusFovea
-      print('ROI labels imported successfully')
-      " 2>&1 | tail -2
+      print('\''ROI labels imported successfully'\'')
+      " 2>&1 | tail -2'
     expected_output_contains: "ROI labels"
 
   - name: Import deepRetinotopy fieldSign module
     description: Test importing field sign calculation
     command: |
-      cd /opt/deepRetinotopy_TheToolbox && python -c "
+      bash -lc 'cd /opt/deepRetinotopy_TheToolbox && python -c "
       from utils.fieldSign import FieldSign
-      print('FieldSign class imported successfully')
-      " 2>&1 | tail -2
+      print('\''FieldSign class imported successfully'\'')
+      " 2>&1 | tail -2'
     expected_output_contains: "FieldSign"
 
   - name: Check model architecture
     description: Verify model architecture is loadable
     command: |
-      cd /opt/deepRetinotopy_TheToolbox && python -c "
+      bash -lc 'cd /opt/deepRetinotopy_TheToolbox && python -c "
       import torch
       from utils.model import Model
       # Just verify the Model class exists and has expected methods
-      print('Model class has forward method:', hasattr(Model, 'forward') or hasattr(Model, '__call__'))
-      " 2>&1 | tail -2
+      print('\''Model class has forward method:'\'', hasattr(Model, '\''forward'\'') or hasattr(Model, '\''__call__'\''))
+      " 2>&1 | tail -2'
     expected_exit_code: 0
 
   # ===========================================================================
@@ -868,12 +868,12 @@ tests:
   # ===========================================================================
   - name: Labels directory exists
     description: Verify retinotopy labels are available
-    command: ls -la /opt/deepRetinotopy_TheToolbox/labels/
+    command: "bash -lc 'ls -la /opt/deepRetinotopy_TheToolbox/labels/'"
     expected_output_contains: "total"
 
   - name: Utils templates exist
     description: Verify template utilities are available
-    command: ls -la /opt/deepRetinotopy_TheToolbox/utils/templates/
+    command: "bash -lc 'ls -la /opt/deepRetinotopy_TheToolbox/utils/templates/'"
     expected_exit_code: 0
 
   # ===========================================================================

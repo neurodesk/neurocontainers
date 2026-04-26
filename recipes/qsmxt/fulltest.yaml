@@ -526,19 +526,19 @@ tests:
   # ==========================================================================
   - name: FastSurfer script exists
     description: Verify FastSurfer run script exists
-    command: ls -la /opt/FastSurfer/run_fastsurfer.sh 2>&1
+    command: "bash -lc 'ls -la /opt/FastSurfer/run_fastsurfer.sh 2>&1'"
     expected_output_contains: "run_fastsurfer.sh"
     expected_exit_code: 0
 
   - name: FastSurfer help
     description: Verify FastSurfer help is accessible
-    command: /opt/FastSurfer/run_fastsurfer.sh --help 2>&1 | head -10
+    command: bash -lc '/opt/FastSurfer/run_fastsurfer.sh --help 2>&1 | head -10'
     expected_output_contains: "run_fastsurfer.sh"
     expected_exit_code: 0
 
   - name: FastSurfer checkpoints exist
     description: Verify FastSurfer model checkpoints are available
-    command: ls /opt/FastSurfer/checkpoints/ 2>&1
+    command: "bash -lc 'ls /opt/FastSurfer/checkpoints/ 2>&1'"
     expected_output_contains: "Weights"
     expected_exit_code: 0
 
@@ -547,7 +547,7 @@ tests:
   # ==========================================================================
   - name: QSMxT-UI exists
     description: Verify QSMxT-UI directory exists
-    command: ls -la /opt/QSMxT-UI/ 2>&1
+    command: "bash -lc 'ls -la /opt/QSMxT-UI/ 2>&1'"
     expected_output_contains: "qsmxt-gui"
     expected_exit_code: 0
 

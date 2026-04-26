@@ -327,20 +327,12 @@ tests:
   # ==========================================================================
   - name: MNI template exists in container
     description: Verify MNI152 template is bundled in container
-    command: ls -la /opt/MNI152_T1_1mm_brain.nii.gz
+    command: "bash -lc 'ls -la /opt/MNI152_T1_1mm_brain.nii.gz'"
     expected_output_contains: "MNI152_T1_1mm_brain.nii.gz"
 
   - name: MNI template dimensions
     description: Verify MNI template has expected dimensions
-    command: |
-      python3 -c "
-      import nibabel as nib
-      img = nib.load('/opt/MNI152_T1_1mm_brain.nii.gz')
-      print(f'MNI template shape: {img.shape}')
-      print(f'MNI template voxel size: {img.header.get_zooms()}')
-      assert img.shape == (182, 218, 182), f'Unexpected shape {img.shape}'
-      print('MNI template verified')
-      "
+    command: "bash -lc 'python3 -c \"\nimport nibabel as nib\nimg = nib.load('\"'\"'/opt/MNI152_T1_1mm_brain.nii.gz'\"'\"')\nprint(f'\"'\"'MNI template shape: {img.shape}'\"'\"')\nprint(f'\"'\"'MNI template voxel size: {img.header.get_zooms()}'\"'\"')\nassert img.shape == (182, 218, 182), f'\"'\"'Unexpected shape {img.shape}'\"'\"'\nprint('\"'\"'MNI template verified'\"'\"')\n\"'"
     expected_output_contains: "MNI template verified"
 
   # ==========================================================================
@@ -375,106 +367,17 @@ tests:
   # ==========================================================================
   - name: Test distance transform smoothing
     description: Verify binary mask dilation and smoothing works
-    command: |
-      python3 -c "
-      import sys
-      sys.path.insert(0, '/opt')
-      from SYNcro import dilate_smooth_nifti
-      import nibabel as nib
-      import numpy as np
-      import tempfile
-      import os
-
-      # Create a simple binary test image
-      data = np.zeros((50, 50, 50), dtype=np.float32)
-      data[20:30, 20:30, 20:30] = 1
-      affine = np.eye(4)
-      img = nib.Nifti1Image(data, affine)
-
-      with tempfile.NamedTemporaryFile(suffix='.nii.gz', delete=False) as f:
-          nib.save(img, f.name)
-          dilate_smooth_nifti(f.name, dilate_vox=2, fwhm_mm=2)
-          result = nib.load(f.name).get_fdata()
-          os.unlink(f.name)
-
-      # Check that dilation expanded the mask
-      assert result.sum() > data.sum(), 'Dilation should expand mask'
-      # Check that smoothing created non-binary values
-      unique_count = len(np.unique(result))
-      assert unique_count > 2, f'Smoothing should create gradient, got {unique_count} unique values'
-      print('Distance transform and smoothing work correctly')
-      "
+    command: "bash -lc 'python3 -c \"\nimport sys\nsys.path.insert(0, '\"'\"'/opt'\"'\"')\nfrom SYNcro import dilate_smooth_nifti\nimport nibabel as nib\nimport numpy as np\nimport tempfile\nimport os\n\n# Create a simple binary test image\ndata = np.zeros((50, 50, 50), dtype=np.float32)\ndata[20:30, 20:30, 20:30] = 1\naffine = np.eye(4)\nimg = nib.Nifti1Image(data, affine)\n\nwith tempfile.NamedTemporaryFile(suffix='\"'\"'.nii.gz'\"'\"', delete=False) as f:\n    nib.save(img, f.name)\n    dilate_smooth_nifti(f.name, dilate_vox=2, fwhm_mm=2)\n    result = nib.load(f.name).get_fdata()\n    os.unlink(f.name)\n\n# Check that dilation expanded the mask\nassert result.sum() > data.sum(), '\"'\"'Dilation should expand mask'\"'\"'\n# Check that smoothing created non-binary values\nunique_count = len(np.unique(result))\nassert unique_count > 2, f'\"'\"'Smoothing should create gradient, got {unique_count} unique values'\"'\"'\nprint('\"'\"'Distance transform and smoothing work correctly'\"'\"')\n\"'"
     expected_output_contains: "work correctly"
 
   - name: Test nifti_min_max_binary function
     description: Verify binary detection function works
-    command: |
-      python3 -c "
-      import sys
-      sys.path.insert(0, '/opt')
-      from SYNcro import nifti_min_max_binary
-      import nibabel as nib
-      import numpy as np
-      import tempfile
-      import os
-
-      # Test with binary image
-      data = np.zeros((10, 10, 10), dtype=np.float32)
-      data[3:7, 3:7, 3:7] = 1
-      affine = np.eye(4)
-      img = nib.Nifti1Image(data, affine)
-
-      with tempfile.NamedTemporaryFile(suffix='.nii.gz', delete=False) as f:
-          nib.save(img, f.name)
-          min_val, max_val, is_binary = nifti_min_max_binary(f.name)
-          os.unlink(f.name)
-
-      assert min_val == 0, f'Expected min 0, got {min_val}'
-      assert max_val == 1, f'Expected max 1, got {max_val}'
-      assert is_binary == True, f'Expected binary=True, got {is_binary}'
-
-      # Test with non-binary image
-      data = np.random.rand(10, 10, 10).astype(np.float32)
-      img = nib.Nifti1Image(data, affine)
-
-      with tempfile.NamedTemporaryFile(suffix='.nii.gz', delete=False) as f:
-          nib.save(img, f.name)
-          min_val, max_val, is_binary = nifti_min_max_binary(f.name)
-          os.unlink(f.name)
-
-      assert is_binary == False, f'Expected binary=False for random data, got {is_binary}'
-      print('nifti_min_max_binary function works correctly')
-      "
+    command: "bash -lc 'python3 -c \"\nimport sys\nsys.path.insert(0, '\"'\"'/opt'\"'\"')\nfrom SYNcro import nifti_min_max_binary\nimport nibabel as nib\nimport numpy as np\nimport tempfile\nimport os\n\n# Test with binary image\ndata = np.zeros((10, 10, 10), dtype=np.float32)\ndata[3:7, 3:7, 3:7] = 1\naffine = np.eye(4)\nimg = nib.Nifti1Image(data, affine)\n\nwith tempfile.NamedTemporaryFile(suffix='\"'\"'.nii.gz'\"'\"', delete=False) as f:\n    nib.save(img, f.name)\n    min_val, max_val, is_binary = nifti_min_max_binary(f.name)\n    os.unlink(f.name)\n\nassert min_val == 0, f'\"'\"'Expected min 0, got {min_val}'\"'\"'\nassert max_val == 1, f'\"'\"'Expected max 1, got {max_val}'\"'\"'\nassert is_binary == True, f'\"'\"'Expected binary=True, got {is_binary}'\"'\"'\n\n# Test with non-binary image\ndata = np.random.rand(10, 10, 10).astype(np.float32)\nimg = nib.Nifti1Image(data, affine)\n\nwith tempfile.NamedTemporaryFile(suffix='\"'\"'.nii.gz'\"'\"', delete=False) as f:\n    nib.save(img, f.name)\n    min_val, max_val, is_binary = nifti_min_max_binary(f.name)\n    os.unlink(f.name)\n\nassert is_binary == False, f'\"'\"'Expected binary=False for random data, got {is_binary}'\"'\"'\nprint('\"'\"'nifti_min_max_binary function works correctly'\"'\"')\n\"'"
     expected_output_contains: "works correctly"
 
   - name: Test binarize_nifti function
     description: Verify binarization function works
-    command: |
-      python3 -c "
-      import sys
-      sys.path.insert(0, '/opt')
-      from SYNcro import binarize_nifti
-      import nibabel as nib
-      import numpy as np
-      import tempfile
-      import os
-
-      # Create non-binary image (simulating post-interpolation)
-      data = np.array([[[0.0, 0.2, 0.5], [0.8, 1.0, 0.3], [0.1, 0.9, 0.4]]], dtype=np.float32)
-      affine = np.eye(4)
-      img = nib.Nifti1Image(data, affine)
-
-      with tempfile.NamedTemporaryFile(suffix='.nii.gz', delete=False) as f:
-          nib.save(img, f.name)
-          binarize_nifti(f.name)
-          result = nib.load(f.name).get_fdata()
-          os.unlink(f.name)
-
-      unique_vals = np.unique(result)
-      assert len(unique_vals) == 2, f'Expected 2 unique values, got {len(unique_vals)}'
-      assert 0 in unique_vals and 1 in unique_vals, 'Expected values 0 and 1'
-      print('binarize_nifti function works correctly')
-      "
+    command: "bash -lc 'python3 -c \"\nimport sys\nsys.path.insert(0, '\"'\"'/opt'\"'\"')\nfrom SYNcro import binarize_nifti\nimport nibabel as nib\nimport numpy as np\nimport tempfile\nimport os\n\n# Create non-binary image (simulating post-interpolation)\ndata = np.array([[[0.0, 0.2, 0.5], [0.8, 1.0, 0.3], [0.1, 0.9, 0.4]]], dtype=np.float32)\naffine = np.eye(4)\nimg = nib.Nifti1Image(data, affine)\n\nwith tempfile.NamedTemporaryFile(suffix='\"'\"'.nii.gz'\"'\"', delete=False) as f:\n    nib.save(img, f.name)\n    binarize_nifti(f.name)\n    result = nib.load(f.name).get_fdata()\n    os.unlink(f.name)\n\nunique_vals = np.unique(result)\nassert len(unique_vals) == 2, f'\"'\"'Expected 2 unique values, got {len(unique_vals)}'\"'\"'\nassert 0 in unique_vals and 1 in unique_vals, '\"'\"'Expected values 0 and 1'\"'\"'\nprint('\"'\"'binarize_nifti function works correctly'\"'\"')\n\"'"
     expected_output_contains: "works correctly"
 
   # ==========================================================================
@@ -482,35 +385,7 @@ tests:
   # ==========================================================================
   - name: Output registration quality check
     description: Verify registered output is reasonably aligned to MNI space
-    command: |
-      python3 -c "
-      import nibabel as nib
-      import numpy as np
-
-      # Load normalized output and template
-      output = nib.load('test_output/syncro_basic/wbt1sub-01_T1w.nii.gz')
-      template = nib.load('/opt/MNI152_T1_1mm_brain.nii.gz')
-
-      out_data = output.get_fdata()
-      tpl_data = template.get_fdata()
-
-      # Basic sanity checks
-      assert out_data.shape == tpl_data.shape, 'Shapes must match'
-
-      # Check that output has reasonable intensity range
-      out_nonzero = out_data[out_data > 0]
-      assert len(out_nonzero) > 0, 'Output should have nonzero voxels'
-
-      # Calculate overlap with template brain region
-      tpl_mask = tpl_data > 0
-      out_mask = out_data > 0
-      overlap = np.sum(tpl_mask & out_mask) / np.sum(tpl_mask | out_mask)
-      print(f'Dice-like overlap with template: {overlap:.3f}')
-
-      # Overlap should be reasonable (> 0.5 for brain region)
-      assert overlap > 0.4, f'Overlap too low: {overlap}'
-      print('Registration quality check passed')
-      "
+    command: "bash -lc 'python3 -c \"\nimport nibabel as nib\nimport numpy as np\n\n# Load normalized output and template\noutput = nib.load('\"'\"'test_output/syncro_basic/wbt1sub-01_T1w.nii.gz'\"'\"')\ntemplate = nib.load('\"'\"'/opt/MNI152_T1_1mm_brain.nii.gz'\"'\"')\n\nout_data = output.get_fdata()\ntpl_data = template.get_fdata()\n\n# Basic sanity checks\nassert out_data.shape == tpl_data.shape, '\"'\"'Shapes must match'\"'\"'\n\n# Check that output has reasonable intensity range\nout_nonzero = out_data[out_data > 0]\nassert len(out_nonzero) > 0, '\"'\"'Output should have nonzero voxels'\"'\"'\n\n# Calculate overlap with template brain region\ntpl_mask = tpl_data > 0\nout_mask = out_data > 0\noverlap = np.sum(tpl_mask & out_mask) / np.sum(tpl_mask | out_mask)\nprint(f'\"'\"'Dice-like overlap with template: {overlap:.3f}'\"'\"')\n\n# Overlap should be reasonable (> 0.5 for brain region)\nassert overlap > 0.4, f'\"'\"'Overlap too low: {overlap}'\"'\"'\nprint('\"'\"'Registration quality check passed'\"'\"')\n\"'"
     depends_on: Basic T1w normalization
     expected_output_contains: "quality check passed"
 

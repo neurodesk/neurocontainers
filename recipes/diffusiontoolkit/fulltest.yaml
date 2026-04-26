@@ -683,42 +683,42 @@ tests:
   # ==========================================================================
   - name: DSI matrix 515x181 exists
     description: Verify DSI reconstruction matrix 515x181 is available
-    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_matrix_515x181.dat
+    command: "bash -lc 'ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_matrix_515x181.dat'"
     expected_exit_code: 0
 
   - name: DSI matrix 258x181 exists
     description: Verify DSI reconstruction matrix 258x181 is available
-    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_matrix_258x181.dat
+    command: "bash -lc 'ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_matrix_258x181.dat'"
     expected_exit_code: 0
 
   - name: DSI matrix 125x181 exists
     description: Verify DSI reconstruction matrix 125x181 is available
-    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_matrix_125x181.dat
+    command: "bash -lc 'ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_matrix_125x181.dat'"
     expected_exit_code: 0
 
   - name: DSI mesh 181 exists
     description: Verify DSI mesh file 181 is available
-    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_mesh_181.dat
+    command: "bash -lc 'ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_mesh_181.dat'"
     expected_exit_code: 0
 
   - name: DSI vectors 181 exists
     description: Verify DSI vectors file 181 is available
-    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_vectors_181.dat
+    command: "bash -lc 'ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_vectors_181.dat'"
     expected_exit_code: 0
 
   - name: DSI neighbors 181 exists
     description: Verify DSI neighbors file 181 is available
-    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_neighbors_181.dat
+    command: "bash -lc 'ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_neighbors_181.dat'"
     expected_exit_code: 0
 
   - name: DSI sharpness 515 exists
     description: Verify DSI sharpness file 515 is available
-    command: ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_sharpness_515.dat
+    command: "bash -lc 'ls -la /opt/diffusiontoolkit-0.6.4.1/matrices/DSI_sharpness_515.dat'"
     expected_exit_code: 0
 
   - name: Matrix directory listing
     description: List all available matrix files
-    command: ls /opt/diffusiontoolkit-0.6.4.1/matrices/
+    command: "bash -lc 'ls /opt/diffusiontoolkit-0.6.4.1/matrices/'"
     expected_output_contains: "DSI_matrix"
 
   # ==========================================================================
@@ -784,12 +784,12 @@ tests:
 
   - name: Installation directory exists
     description: Verify installation directory structure
-    command: ls /opt/diffusiontoolkit-0.6.4.1/
+    command: "bash -lc 'ls /opt/diffusiontoolkit-0.6.4.1/'"
     expected_output_contains: "dti_recon"
 
   - name: README exists
     description: Verify README file is present
-    command: ls /opt/diffusiontoolkit-0.6.4.1/README.txt
+    command: "bash -lc 'ls /opt/diffusiontoolkit-0.6.4.1/README.txt'"
     expected_exit_code: 0
 
   # ==========================================================================

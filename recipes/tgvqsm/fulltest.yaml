@@ -108,43 +108,43 @@ tests:
   # ==========================================================================
   - name: bet2 help
     description: Verify bet2 binary runs and displays help
-    command: /bet2/bin/bet2 2>&1
+    command: bash -lc '/bet2/bin/bet2 2>&1'
     ignore_exit_code: true
     expected_output_contains: "Brain Extraction Tool"
 
   - name: bet2 version
     description: Check bet2 version information
-    command: /bet2/bin/bet2 2>&1
+    command: bash -lc '/bet2/bin/bet2 2>&1'
     ignore_exit_code: true
     expected_output_contains: "Part of FSL"
 
   - name: bet2 usage info
     description: Verify bet2 shows usage syntax
-    command: /bet2/bin/bet2 2>&1
+    command: bash -lc '/bet2/bin/bet2 2>&1'
     ignore_exit_code: true
     expected_output_contains: "bet2 <input_fileroot> <output_fileroot>"
 
   - name: bet2 fractional threshold option
     description: Verify bet2 shows -f option
-    command: /bet2/bin/bet2 2>&1
+    command: bash -lc '/bet2/bin/bet2 2>&1'
     ignore_exit_code: true
     expected_output_contains: "fractional intensity threshold"
 
   - name: bet2 mask option
     description: Verify bet2 shows mask generation option
-    command: /bet2/bin/bet2 2>&1
+    command: bash -lc '/bet2/bin/bet2 2>&1'
     ignore_exit_code: true
     expected_output_contains: "--mask"
 
   - name: bet2 skull option
     description: Verify bet2 shows skull estimation option
-    command: /bet2/bin/bet2 2>&1
+    command: bash -lc '/bet2/bin/bet2 2>&1'
     ignore_exit_code: true
     expected_output_contains: "--skull"
 
   - name: bet2 basic brain extraction
     description: Run bet2 on T1w image with default settings
-    command: /bet2/bin/bet2 ${t1w} test_output/t1w_brain
+    command: bash -lc '/bet2/bin/bet2 ${t1w} test_output/t1w_brain'
     validate:
       - output_exists: ${output_dir}/t1w_brain.nii.gz
 
@@ -170,26 +170,26 @@ tests:
 
   - name: bet2 with fractional threshold 0.3
     description: Run bet2 with lower threshold for larger brain estimate
-    command: /bet2/bin/bet2 ${t1w} test_output/t1w_brain_f03 -f 0.3
+    command: bash -lc '/bet2/bin/bet2 ${t1w} test_output/t1w_brain_f03 -f 0.3'
     validate:
       - output_exists: ${output_dir}/t1w_brain_f03.nii.gz
 
   - name: bet2 with fractional threshold 0.7
     description: Run bet2 with higher threshold for smaller brain estimate
-    command: /bet2/bin/bet2 ${t1w} test_output/t1w_brain_f07 -f 0.7
+    command: bash -lc '/bet2/bin/bet2 ${t1w} test_output/t1w_brain_f07 -f 0.7'
     validate:
       - output_exists: ${output_dir}/t1w_brain_f07.nii.gz
 
   - name: bet2 with outline
     description: Run bet2 with brain surface outline output
-    command: /bet2/bin/bet2 ${t1w} test_output/t1w_brain_outline -o
+    command: bash -lc '/bet2/bin/bet2 ${t1w} test_output/t1w_brain_outline -o'
     validate:
       - output_exists: ${output_dir}/t1w_brain_outline.nii.gz
       - output_exists: ${output_dir}/t1w_brain_outline_overlay.nii.gz
 
   - name: bet2 with skull estimation
     description: Run bet2 (skull flag -s not supported, verify brain extraction only)
-    command: /bet2/bin/bet2 ${t1w} test_output/t1w_brain_skull
+    command: bash -lc '/bet2/bin/bet2 ${t1w} test_output/t1w_brain_skull'
     validate:
       - output_exists: ${output_dir}/t1w_brain_skull.nii.gz
 
@@ -212,32 +212,32 @@ tests:
 
   - name: bet2 with mesh output
     description: Run bet2 with VTK mesh output
-    command: /bet2/bin/bet2 ${t1w} test_output/t1w_brain_mesh -e
+    command: bash -lc '/bet2/bin/bet2 ${t1w} test_output/t1w_brain_mesh -e'
     validate:
       - output_exists: ${output_dir}/t1w_brain_mesh.nii.gz
       - output_exists: ${output_dir}/t1w_brain_mesh_mesh.vtk
 
   - name: bet2 with gradient
     description: Run bet2 with vertical gradient adjustment
-    command: /bet2/bin/bet2 ${t1w} test_output/t1w_brain_grad -g 0.1
+    command: bash -lc '/bet2/bin/bet2 ${t1w} test_output/t1w_brain_grad -g 0.1'
     validate:
       - output_exists: ${output_dir}/t1w_brain_grad.nii.gz
 
   - name: bet2 with smoothness factor
     description: Run bet2 with adjusted smoothness
-    command: /bet2/bin/bet2 ${t1w} test_output/t1w_brain_smooth -w 0.5
+    command: bash -lc '/bet2/bin/bet2 ${t1w} test_output/t1w_brain_smooth -w 0.5'
     validate:
       - output_exists: ${output_dir}/t1w_brain_smooth.nii.gz
 
   - name: bet2 with thresholding
     description: Run bet2 with thresholding applied
-    command: /bet2/bin/bet2 ${t1w} test_output/t1w_brain_thr -t
+    command: bash -lc '/bet2/bin/bet2 ${t1w} test_output/t1w_brain_thr -t'
     validate:
       - output_exists: ${output_dir}/t1w_brain_thr.nii.gz
 
   - name: bet2 on inplane T2
     description: Run bet2 on T2-weighted image
-    command: /bet2/bin/bet2 ${t2} test_output/t2_brain
+    command: bash -lc '/bet2/bin/bet2 ${t2} test_output/t2_brain'
     validate:
       - output_exists: ${output_dir}/t2_brain.nii.gz
 
@@ -266,53 +266,53 @@ tests:
   # ==========================================================================
   - name: dcm2niix help
     description: Verify dcm2niix binary runs and displays help
-    command: /opt/dcm2niix-latest/bin/dcm2niix -h 2>&1
+    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
     expected_output_contains: "dcm2niiX"
 
   - name: dcm2niix version
     description: Check dcm2niix version information
-    command: /opt/dcm2niix-latest/bin/dcm2niix -h 2>&1
+    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
     expected_output_contains: "Chris Rorden"
 
   - name: dcm2niix usage info
     description: Verify dcm2niix shows usage syntax
-    command: /opt/dcm2niix-latest/bin/dcm2niix -h 2>&1
+    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
     expected_output_contains: "dcm2niix [options] <in_folder>"
 
   - name: dcm2niix output options
     description: Verify dcm2niix shows output directory option
-    command: /opt/dcm2niix-latest/bin/dcm2niix -h 2>&1
+    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
     expected_output_contains: "-o : output directory"
 
   - name: dcm2niix filename format
     description: Verify dcm2niix shows filename format option
-    command: /opt/dcm2niix-latest/bin/dcm2niix -h 2>&1
+    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
     expected_output_contains: "-f : filename"
 
   - name: dcm2niix compression option
     description: Verify dcm2niix shows compression option
-    command: /opt/dcm2niix-latest/bin/dcm2niix -h 2>&1
+    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
     expected_output_contains: "-z : gz compress"
 
   - name: dcm2niix BIDS option
     description: Verify dcm2niix shows BIDS sidecar option
-    command: /opt/dcm2niix-latest/bin/dcm2niix -h 2>&1
+    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
     expected_output_contains: "-b : BIDS sidecar"
 
   - name: dcm2niix verbose option
     description: Verify dcm2niix shows verbose option
-    command: /opt/dcm2niix-latest/bin/dcm2niix -h 2>&1
+    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
     expected_output_contains: "-v : verbose"
 
   - name: dcm2niix version check
     description: Get dcm2niix version number
-    command: /opt/dcm2niix-latest/bin/dcm2niix --version 2>&1
+    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix --version 2>&1'
     ignore_exit_code: true
     expected_output_contains: "v1.0.20210317"
 
   - name: dcm2niix xml features
     description: Check dcm2niix XML output mode
-    command: /opt/dcm2niix-latest/bin/dcm2niix --xml 2>&1
+    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix --xml 2>&1'
     expected_output_contains: "dcm2niix"
 
   # ==========================================================================
@@ -621,16 +621,16 @@ tests:
   - name: Full QSM pipeline - brain extraction
     description: First step of QSM pipeline - extract brain and create mask
     command: |
-      /bet2/bin/bet2 ${t1w} test_output/pipeline_magnitude_bet -f 0.4 && \
+      bash -lc '/bet2/bin/bet2 ${t1w} test_output/pipeline_magnitude_bet -f 0.4 && \
       python2 -c "
       import nibabel as nib
       import numpy as np
-      img = nib.load('test_output/pipeline_magnitude_bet.nii.gz')
+      img = nib.load('\''test_output/pipeline_magnitude_bet.nii.gz'\'')
       data = img.get_data()
       mask = nib.Nifti1Image((data > 0).astype(np.uint8), img.affine, img.header)
-      mask.to_filename('test_output/pipeline_magnitude_bet_mask.nii.gz')
-      print('Pipeline mask created')
-      "
+      mask.to_filename('\''test_output/pipeline_magnitude_bet_mask.nii.gz'\'')
+      print('\''Pipeline mask created'\'')
+      "'
     expected_output_contains: "Pipeline mask created"
     validate:
       - output_exists: ${output_dir}/pipeline_magnitude_bet.nii.gz
@@ -697,12 +697,12 @@ tests:
 
   - name: bet2 missing input
     description: Test bet2 error when input file is missing
-    command: /bet2/bin/bet2 nonexistent.nii.gz test_output/bet_error 2>&1
+    command: bash -lc '/bet2/bin/bet2 nonexistent.nii.gz test_output/bet_error 2>&1'
     ignore_exit_code: true
 
   - name: dcm2niix empty directory
     description: Test dcm2niix on directory with no DICOMs
-    command: mkdir -p test_output/empty_dir && /opt/dcm2niix-latest/bin/dcm2niix -o test_output test_output/empty_dir 2>&1 || true
+    command: bash -lc 'mkdir -p test_output/empty_dir && /opt/dcm2niix-latest/bin/dcm2niix -o test_output test_output/empty_dir 2>&1 || true'
     expected_output_contains: "Unable to find"
 
   # ==========================================================================

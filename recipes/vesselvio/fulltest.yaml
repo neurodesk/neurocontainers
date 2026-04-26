@@ -301,62 +301,62 @@ tests:
   # ==========================================================================
   - name: VesselVio image_processing module
     description: Test VesselVio image processing module import
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import image_processing as ImProc; print('image_processing imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import image_processing as ImProc; print('\"'\"'image_processing imported successfully'\"'\"')\"'"
     expected_output_contains: "image_processing imported successfully"
 
   - name: VesselVio volume_processing module
     description: Test VesselVio volume processing module import
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import volume_processing as VolProc; print('volume_processing imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import volume_processing as VolProc; print('\"'\"'volume_processing imported successfully'\"'\"')\"'"
     expected_output_contains: "volume_processing imported successfully"
 
   - name: VesselVio graph_processing module
     description: Test VesselVio graph processing module import
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import graph_processing as GProc; print('graph_processing imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import graph_processing as GProc; print('\"'\"'graph_processing imported successfully'\"'\"')\"'"
     expected_output_contains: "graph_processing imported successfully"
 
   - name: VesselVio feature_extraction module
     description: Test VesselVio feature extraction module import
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import feature_extraction as FeatExt; print('feature_extraction imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import feature_extraction as FeatExt; print('\"'\"'feature_extraction imported successfully'\"'\"')\"'"
     expected_output_contains: "feature_extraction imported successfully"
 
   - name: VesselVio graph_io module
     description: Test VesselVio graph I/O module import
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import graph_io as GIO; print('graph_io imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import graph_io as GIO; print('\"'\"'graph_io imported successfully'\"'\"')\"'"
     expected_output_contains: "graph_io imported successfully"
 
   - name: VesselVio helpers module
     description: Test VesselVio helpers utility module import
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import helpers; print('helpers imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import helpers; print('\"'\"'helpers imported successfully'\"'\"')\"'"
     expected_output_contains: "helpers imported successfully"
 
   - name: VesselVio input_classes module
     description: Test VesselVio input classes module import
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import input_classes as IC; print('input_classes imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import input_classes as IC; print('\"'\"'input_classes imported successfully'\"'\"')\"'"
     expected_output_contains: "input_classes imported successfully"
 
   - name: VesselVio results_export module
     description: Test VesselVio results export module import
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import results_export as ResExp; print('results_export imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import results_export as ResExp; print('\"'\"'results_export imported successfully'\"'\"')\"'"
     expected_output_contains: "results_export imported successfully"
 
   - name: VesselVio volume_visualization module
     description: Test VesselVio volume visualization module import
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import volume_visualization as VolVis; print('volume_visualization imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import volume_visualization as VolVis; print('\"'\"'volume_visualization imported successfully'\"'\"')\"'"
     expected_output_contains: "volume_visualization imported successfully"
 
   - name: VesselVio lee94 skeletonization module
     description: Test VesselVio Lee94 skeletonization algorithm module
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import lee94; print('lee94 imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import lee94; print('\"'\"'lee94 imported successfully'\"'\"')\"'"
     expected_output_contains: "lee94 imported successfully"
 
   - name: VesselVio pk12 module
     description: Test VesselVio PK12 algorithm module
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import pk12; print('pk12 imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import pk12; print('\"'\"'pk12 imported successfully'\"'\"')\"'"
     expected_output_contains: "pk12 imported successfully"
 
   - name: VesselVio radii_corrections module
     description: Test VesselVio radii corrections module
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import radii_corrections as RadCor; print('radii_corrections imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import radii_corrections as RadCor; print('\"'\"'radii_corrections imported successfully'\"'\"')\"'"
     expected_output_contains: "radii_corrections imported successfully"
 
   # ==========================================================================
@@ -364,17 +364,17 @@ tests:
   # ==========================================================================
   - name: VesselVio annotation labeling module
     description: Test VesselVio annotation labeling module
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library.annotation import labeling; print('annotation labeling imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library.annotation import labeling; print('\"'\"'annotation labeling imported successfully'\"'\"')\"'"
     expected_output_contains: "annotation labeling imported successfully"
 
   - name: VesselVio annotation segmentation module
     description: Test VesselVio annotation segmentation module
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library.annotation import segmentation; print('annotation segmentation imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library.annotation import segmentation; print('\"'\"'annotation segmentation imported successfully'\"'\"')\"'"
     expected_output_contains: "annotation segmentation imported successfully"
 
   - name: VesselVio annotation tree_processing module
     description: Test VesselVio annotation tree processing module
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library.annotation import tree_processing; print('annotation tree_processing imported successfully')"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library.annotation import tree_processing; print('\"'\"'annotation tree_processing imported successfully'\"'\"')\"'"
     expected_output_contains: "annotation tree_processing imported successfully"
 
   # ==========================================================================
@@ -382,22 +382,22 @@ tests:
   # ==========================================================================
   - name: Sample vertices CSV exists
     description: Verify sample vertices CSV file exists
-    command: ls -la /opt/vesselvio-1.1.2/sample_data/demo_csv/vertices.csv
+    command: "bash -lc 'ls -la /opt/vesselvio-1.1.2/sample_data/demo_csv/vertices.csv'"
     expected_output_contains: "vertices.csv"
 
   - name: Sample edges CSV exists
     description: Verify sample edges CSV file exists
-    command: ls -la /opt/vesselvio-1.1.2/sample_data/demo_csv/edges.csv
+    command: "bash -lc 'ls -la /opt/vesselvio-1.1.2/sample_data/demo_csv/edges.csv'"
     expected_output_contains: "edges.csv"
 
   - name: Load sample vertices with Pandas
     description: Test loading sample vertices CSV data
-    command: python -c "import pandas as pd; df = pd.read_csv('/opt/vesselvio-1.1.2/sample_data/demo_csv/vertices.csv', delimiter=';'); print('Vertices shape:', df.shape); print('Columns:', list(df.columns))"
+    command: "bash -lc 'python -c \"import pandas as pd; df = pd.read_csv('\"'\"'/opt/vesselvio-1.1.2/sample_data/demo_csv/vertices.csv'\"'\"', delimiter='\"'\"';'\"'\"'); print('\"'\"'Vertices shape:'\"'\"', df.shape); print('\"'\"'Columns:'\"'\"', list(df.columns))\"'"
     expected_output_contains: "Vertices shape:"
 
   - name: Load sample edges with Pandas
     description: Test loading sample edges CSV data
-    command: python -c "import pandas as pd; df = pd.read_csv('/opt/vesselvio-1.1.2/sample_data/demo_csv/edges.csv', delimiter=';'); print('Edges shape:', df.shape)"
+    command: "bash -lc 'python -c \"import pandas as pd; df = pd.read_csv('\"'\"'/opt/vesselvio-1.1.2/sample_data/demo_csv/edges.csv'\"'\"', delimiter='\"'\"';'\"'\"'); print('\"'\"'Edges shape:'\"'\"', df.shape)\"'"
     expected_output_contains: "Edges shape:"
 
   # ==========================================================================
@@ -582,26 +582,17 @@ tests:
   # ==========================================================================
   - name: VesselVio resolution preparation
     description: Test VesselVio resolution format preparation
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import image_processing as ImProc; res = ImProc.prep_resolution(1.0); print('Resolution:', res); res2 = ImProc.prep_resolution([1.0, 1.0, 1.0]); print('Resolution array:', res2)"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import image_processing as ImProc; res = ImProc.prep_resolution(1.0); print('\"'\"'Resolution:'\"'\"', res); res2 = ImProc.prep_resolution([1.0, 1.0, 1.0]); print('\"'\"'Resolution array:'\"'\"', res2)\"'"
     expected_output_contains: "Resolution:"
 
   - name: VesselVio binary check
     description: Test VesselVio binary volume validation
-    command: |
-      python -c "
-      import sys
-      sys.path.insert(0, '/opt/vesselvio-1.1.2')
-      import numpy as np
-      from library import image_processing as ImProc
-      binary_vol = np.array([[[0,1],[1,0]],[[1,0],[0,1]]], dtype=np.uint8)
-      result = ImProc.binary_check(binary_vol)
-      print('Binary check result:', result)
-      "
+    command: "bash -lc 'python -c \"\nimport sys\nsys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"')\nimport numpy as np\nfrom library import image_processing as ImProc\nbinary_vol = np.array([[[0,1],[1,0]],[[1,0],[0,1]]], dtype=np.uint8)\nresult = ImProc.binary_check(binary_vol)\nprint('\"'\"'Binary check result:'\"'\"', result)\n\"'"
     expected_output_contains: "Binary check result: True"
 
   - name: VesselVio filename extraction
     description: Test VesselVio filename extraction utility
-    command: python -c "import sys; sys.path.insert(0, '/opt/vesselvio-1.1.2'); from library import image_processing as ImProc; name = ImProc.get_filename('/path/to/vessel_data.nii.gz'); print('Extracted filename:', name)"
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/opt/vesselvio-1.1.2'\"'\"'); from library import image_processing as ImProc; name = ImProc.get_filename('\"'\"'/path/to/vessel_data.nii.gz'\"'\"'); print('\"'\"'Extracted filename:'\"'\"', name)\"'"
     expected_output_contains: "Extracted filename:"
 
   # ==========================================================================
@@ -609,17 +600,17 @@ tests:
   # ==========================================================================
   - name: VesselVio installation directory
     description: Verify VesselVio installation directory structure
-    command: ls -la /opt/vesselvio-1.1.2/
+    command: "bash -lc 'ls -la /opt/vesselvio-1.1.2/'"
     expected_output_contains: "VVTerminal.py"
 
   - name: VesselVio library directory
     description: Verify VesselVio library modules
-    command: ls -la /opt/vesselvio-1.1.2/library/
+    command: "bash -lc 'ls -la /opt/vesselvio-1.1.2/library/'"
     expected_output_contains: "feature_extraction.py"
 
   - name: VesselVio annotation directory
     description: Verify VesselVio annotation modules
-    command: ls -la /opt/vesselvio-1.1.2/library/annotation/
+    command: "bash -lc 'ls -la /opt/vesselvio-1.1.2/library/annotation/'"
     expected_output_contains: "labeling.py"
 
   - name: VesselVio executable script
@@ -629,7 +620,7 @@ tests:
 
   - name: VesselVio README exists
     description: Verify VesselVio documentation
-    command: head -5 /opt/vesselvio-1.1.2/README.md
+    command: "bash -lc 'head -5 /opt/vesselvio-1.1.2/README.md'"
     expected_output_contains: "VesselVio"
 
   - name: Container README

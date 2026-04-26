@@ -516,17 +516,17 @@ tests:
   # ==========================================================================
   - name: Access container example config
     description: Verify access to bundled example config
-    command: cat /dcm2bids/example/config.json 2>&1 | head -20
+    command: "bash -lc 'cat /dcm2bids/example/config.json 2>&1 | head -20'"
     expected_output_contains: "descriptions"
 
   - name: Access container test configs
     description: Verify access to bundled test configurations
-    command: ls /dcm2bids/tests/data/*.json 2>&1 | head -10
+    command: bash -lc 'ls /dcm2bids/tests/data/*.json 2>&1 | head -10'
     expected_output_contains: "config_test.json"
 
   - name: Access container test sidecars
     description: Verify access to bundled test sidecar files
-    command: ls /dcm2bids/tests/data/sidecars/*.json 2>&1 | head -5
+    command: bash -lc 'ls /dcm2bids/tests/data/sidecars/*.json 2>&1 | head -5'
     expected_output_contains: ".json"
 
   # ==========================================================================
@@ -686,7 +686,6 @@ tests:
     command: |
       echo "=== Test output summary ===" && \
       du -sh ${output_dir}/*/ 2>/dev/null | head -20 || echo "Listing outputs"
-
 cleanup:
   script: |
     #!/usr/bin/env bash

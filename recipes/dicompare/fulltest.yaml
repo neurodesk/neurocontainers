@@ -116,27 +116,27 @@ tests:
   # ==========================================================================
   - name: webapp directory exists
     description: Verify /opt/dicompare directory exists
-    command: ls -d /opt/dicompare
+    command: "bash -lc 'ls -d /opt/dicompare'"
     expected_output_contains: "/opt/dicompare"
 
   - name: dist directory exists
     description: Verify built webapp exists
-    command: ls -d /opt/dicompare/dist
+    command: "bash -lc 'ls -d /opt/dicompare/dist'"
     expected_output_contains: "/opt/dicompare/dist"
 
   - name: start.sh exists
     description: Verify startup script exists
-    command: ls /opt/dicompare/start.sh
+    command: "bash -lc 'ls /opt/dicompare/start.sh'"
     expected_output_contains: "start.sh"
 
   - name: start.sh is executable
     description: Verify startup script has execute permissions
-    command: test -x /opt/dicompare/start.sh && echo "executable"
+    command: bash -lc 'test -x /opt/dicompare/start.sh && echo "executable"'
     expected_output_contains: "executable"
 
   - name: start.sh contains serve command
     description: Verify startup script runs serve
-    command: cat /opt/dicompare/start.sh
+    command: "bash -lc 'cat /opt/dicompare/start.sh'"
     expected_output_contains: "serve -s dist -l 3001"
 
   # ==========================================================================
@@ -144,22 +144,22 @@ tests:
   # ==========================================================================
   - name: index.html exists
     description: Verify main HTML file exists
-    command: ls /opt/dicompare/dist/index.html
+    command: "bash -lc 'ls /opt/dicompare/dist/index.html'"
     expected_output_contains: "index.html"
 
   - name: index.html has content
     description: Verify index.html is not empty
-    command: test -s /opt/dicompare/dist/index.html && echo "has content"
+    command: bash -lc 'test -s /opt/dicompare/dist/index.html && echo "has content"'
     expected_output_contains: "has content"
 
   - name: index.html is valid HTML
     description: Check for basic HTML structure
-    command: cat /opt/dicompare/dist/index.html | head -20
+    command: "bash -lc 'cat /opt/dicompare/dist/index.html | head -20'"
     expected_output_contains: "<!DOCTYPE html>"
 
   - name: index.html includes app root
     description: Verify React mount point exists
-    command: cat /opt/dicompare/dist/index.html
+    command: "bash -lc 'cat /opt/dicompare/dist/index.html'"
     expected_output_contains: "<div id=\"root\""
 
   # ==========================================================================
@@ -167,47 +167,47 @@ tests:
   # ==========================================================================
   - name: assets directory exists
     description: Verify assets directory is present
-    command: ls -d /opt/dicompare/dist/assets
+    command: "bash -lc 'ls -d /opt/dicompare/dist/assets'"
     expected_output_contains: "/opt/dicompare/dist/assets"
 
   - name: JavaScript bundle exists
     description: Verify main JS bundle is present
-    command: ls /opt/dicompare/dist/assets/*.js | head -1
+    command: bash -lc 'ls /opt/dicompare/dist/assets/*.js | head -1'
     expected_exit_code: 0
 
   - name: CSS bundle exists
     description: Verify main CSS bundle is present
-    command: ls /opt/dicompare/dist/assets/*.css | head -1
+    command: bash -lc 'ls /opt/dicompare/dist/assets/*.css | head -1'
     expected_exit_code: 0
 
   - name: favicon exists
     description: Verify favicon is present
-    command: ls /opt/dicompare/dist/favicon.ico
+    command: "bash -lc 'ls /opt/dicompare/dist/favicon.ico'"
     expected_output_contains: "favicon.ico"
 
   - name: manifest.json exists
     description: Verify PWA manifest is present
-    command: ls /opt/dicompare/dist/manifest.json
+    command: "bash -lc 'ls /opt/dicompare/dist/manifest.json'"
     expected_output_contains: "manifest.json"
 
   - name: manifest.json is valid JSON
     description: Verify manifest.json can be parsed
-    command: cat /opt/dicompare/dist/manifest.json | python3 -c "import sys,json; json.load(sys.stdin); print('valid')"
+    command: "bash -lc 'cat /opt/dicompare/dist/manifest.json | python3 -c \"import sys,json; json.load(sys.stdin); print('\"'\"'valid'\"'\"')\"'"
     expected_output_contains: "valid"
 
   - name: robots.txt exists
     description: Verify robots.txt is present
-    command: ls /opt/dicompare/dist/robots.txt
+    command: "bash -lc 'ls /opt/dicompare/dist/robots.txt'"
     expected_output_contains: "robots.txt"
 
   - name: logo images exist
     description: Verify logo images are present
-    command: ls /opt/dicompare/dist/logo*.png | wc -l
+    command: bash -lc 'ls /opt/dicompare/dist/logo*.png | wc -l'
     expected_output_contains: "2"
 
   - name: hero images exist
     description: Verify hero images are present
-    command: ls /opt/dicompare/dist/hero*.png | wc -l
+    command: bash -lc 'ls /opt/dicompare/dist/hero*.png | wc -l'
     expected_output_contains: "2"
 
   # ==========================================================================
@@ -215,13 +215,13 @@ tests:
   # ==========================================================================
   - name: Pyodide worker exists
     description: Verify Pyodide web worker is bundled
-    command: ls /opt/dicompare/dist/assets/pyodide.worker*.js | head -1
+    command: bash -lc 'ls /opt/dicompare/dist/assets/pyodide.worker*.js | head -1'
     expected_exit_code: 0
 
   - name: Pyodide worker has content
     description: Verify Pyodide worker is not empty
     command: |
-      ls -s /opt/dicompare/dist/assets/pyodide.worker*.js | awk '{print ($1 > 0 ? "has content" : "empty")}'
+      bash -lc 'ls -s /opt/dicompare/dist/assets/pyodide.worker*.js | awk '\''{print ($1 > 0 ? "has content" : "empty")}'\'''
     expected_output_contains: "has content"
 
   # ==========================================================================
@@ -229,97 +229,97 @@ tests:
   # ==========================================================================
   - name: schemas directory exists
     description: Verify schemas directory is present
-    command: ls -d /opt/dicompare/dist/schemas
+    command: "bash -lc 'ls -d /opt/dicompare/dist/schemas'"
     expected_output_contains: "/opt/dicompare/dist/schemas"
 
   - name: schemas index.json exists
     description: Verify schema index file is present
-    command: ls /opt/dicompare/dist/schemas/index.json
+    command: "bash -lc 'ls /opt/dicompare/dist/schemas/index.json'"
     expected_output_contains: "index.json"
 
   - name: schemas index.json is valid JSON
     description: Verify schema index can be parsed
-    command: cat /opt/dicompare/dist/schemas/index.json | python3 -c "import sys,json; json.load(sys.stdin); print('valid')"
+    command: "bash -lc 'cat /opt/dicompare/dist/schemas/index.json | python3 -c \"import sys,json; json.load(sys.stdin); print('\"'\"'valid'\"'\"')\"'"
     expected_output_contains: "valid"
 
   - name: MS CMSC Guidelines schema exists
     description: Verify MS CMSC Guidelines schema is present
-    command: ls /opt/dicompare/dist/schemas/MS_CMSC_Guidelines_v1.0.json
+    command: "bash -lc 'ls /opt/dicompare/dist/schemas/MS_CMSC_Guidelines_v1.0.json'"
     expected_output_contains: "MS_CMSC_Guidelines"
 
   - name: MS CMSC Guidelines schema is valid JSON
     description: Verify MS CMSC Guidelines schema can be parsed
-    command: cat /opt/dicompare/dist/schemas/MS_CMSC_Guidelines_v1.0.json | python3 -c "import sys,json; json.load(sys.stdin); print('valid')"
+    command: "bash -lc 'cat /opt/dicompare/dist/schemas/MS_CMSC_Guidelines_v1.0.json | python3 -c \"import sys,json; json.load(sys.stdin); print('\"'\"'valid'\"'\"')\"'"
     expected_output_contains: "valid"
 
   - name: ASL Clinical Guidelines schema exists
     description: Verify ASL Clinical Guidelines schema is present
-    command: ls /opt/dicompare/dist/schemas/ASL_Clinical_Guidelines_v1.0.json
+    command: "bash -lc 'ls /opt/dicompare/dist/schemas/ASL_Clinical_Guidelines_v1.0.json'"
     expected_output_contains: "ASL_Clinical_Guidelines"
 
   - name: ASL Clinical Guidelines schema is valid JSON
     description: Verify ASL Clinical Guidelines schema can be parsed
-    command: cat /opt/dicompare/dist/schemas/ASL_Clinical_Guidelines_v1.0.json | python3 -c "import sys,json; json.load(sys.stdin); print('valid')"
+    command: "bash -lc 'cat /opt/dicompare/dist/schemas/ASL_Clinical_Guidelines_v1.0.json | python3 -c \"import sys,json; json.load(sys.stdin); print('\"'\"'valid'\"'\"')\"'"
     expected_output_contains: "valid"
 
   - name: QSM Consensus Guidelines schema exists
     description: Verify QSM Consensus Guidelines schema is present
-    command: ls /opt/dicompare/dist/schemas/QSM_Consensus_Guidelines_v1.0.json
+    command: "bash -lc 'ls /opt/dicompare/dist/schemas/QSM_Consensus_Guidelines_v1.0.json'"
     expected_output_contains: "QSM_Consensus_Guidelines"
 
   - name: QSM Consensus Guidelines schema is valid JSON
     description: Verify QSM Consensus Guidelines schema can be parsed
-    command: cat /opt/dicompare/dist/schemas/QSM_Consensus_Guidelines_v1.0.json | python3 -c "import sys,json; json.load(sys.stdin); print('valid')"
+    command: "bash -lc 'cat /opt/dicompare/dist/schemas/QSM_Consensus_Guidelines_v1.0.json | python3 -c \"import sys,json; json.load(sys.stdin); print('\"'\"'valid'\"'\"')\"'"
     expected_output_contains: "valid"
 
   - name: MY-RADS Myeloma schema exists
     description: Verify MY-RADS Myeloma schema is present
-    command: ls /opt/dicompare/dist/schemas/MY-RADS_Myeloma_v1.0.json
+    command: "bash -lc 'ls /opt/dicompare/dist/schemas/MY-RADS_Myeloma_v1.0.json'"
     expected_output_contains: "MY-RADS_Myeloma"
 
   - name: UK Biobank schema exists
     description: Verify UK Biobank schema is present
-    command: ls /opt/dicompare/dist/schemas/UK_Biobank_v1.0.json
+    command: "bash -lc 'ls /opt/dicompare/dist/schemas/UK_Biobank_v1.0.json'"
     expected_output_contains: "UK_Biobank"
 
   - name: UK Biobank schema is valid JSON
     description: Verify UK Biobank schema can be parsed
-    command: cat /opt/dicompare/dist/schemas/UK_Biobank_v1.0.json | python3 -c "import sys,json; json.load(sys.stdin); print('valid')"
+    command: "bash -lc 'cat /opt/dicompare/dist/schemas/UK_Biobank_v1.0.json | python3 -c \"import sys,json; json.load(sys.stdin); print('\"'\"'valid'\"'\"')\"'"
     expected_output_contains: "valid"
 
   - name: UMMS Ping schema exists
     description: Verify UMMS Ping schema is present
-    command: ls /opt/dicompare/dist/schemas/UMMS_Ping_v1.0.json
+    command: "bash -lc 'ls /opt/dicompare/dist/schemas/UMMS_Ping_v1.0.json'"
     expected_output_contains: "UMMS_Ping"
 
   - name: Generic Spine schema exists
     description: Verify Generic Spine schema is present
-    command: ls /opt/dicompare/dist/schemas/Generic_Spine_v1.0.json
+    command: "bash -lc 'ls /opt/dicompare/dist/schemas/Generic_Spine_v1.0.json'"
     expected_output_contains: "Generic_Spine"
 
   - name: HCP schema exists
     description: Verify HCP schema is present
-    command: ls /opt/dicompare/dist/schemas/hcp_schema.json
+    command: "bash -lc 'ls /opt/dicompare/dist/schemas/hcp_schema.json'"
     expected_output_contains: "hcp_schema"
 
   - name: HCP schema is valid JSON
     description: Verify HCP schema can be parsed
-    command: cat /opt/dicompare/dist/schemas/hcp_schema.json | python3 -c "import sys,json; json.load(sys.stdin); print('valid')"
+    command: "bash -lc 'cat /opt/dicompare/dist/schemas/hcp_schema.json | python3 -c \"import sys,json; json.load(sys.stdin); print('\"'\"'valid'\"'\"')\"'"
     expected_output_contains: "valid"
 
   - name: ABCD schema exists
     description: Verify ABCD schema is present
-    command: ls /opt/dicompare/dist/schemas/abcd_schema_cleaned.json
+    command: "bash -lc 'ls /opt/dicompare/dist/schemas/abcd_schema_cleaned.json'"
     expected_output_contains: "abcd_schema"
 
   - name: ABCD schema is valid JSON
     description: Verify ABCD schema can be parsed
-    command: cat /opt/dicompare/dist/schemas/abcd_schema_cleaned.json | python3 -c "import sys,json; json.load(sys.stdin); print('valid')"
+    command: "bash -lc 'cat /opt/dicompare/dist/schemas/abcd_schema_cleaned.json | python3 -c \"import sys,json; json.load(sys.stdin); print('\"'\"'valid'\"'\"')\"'"
     expected_output_contains: "valid"
 
   - name: All schemas count
     description: Verify expected number of schema files
-    command: ls /opt/dicompare/dist/schemas/*.json | wc -l
+    command: bash -lc 'ls /opt/dicompare/dist/schemas/*.json | wc -l'
     expected_output_contains: "10"
 
   # ==========================================================================
@@ -327,112 +327,112 @@ tests:
   # ==========================================================================
   - name: validation-functions directory exists
     description: Verify validation-functions directory is present
-    command: ls -d /opt/dicompare/dist/validation-functions
+    command: "bash -lc 'ls -d /opt/dicompare/dist/validation-functions'"
     expected_output_contains: "/opt/dicompare/dist/validation-functions"
 
   - name: validate_bvalue_shells function exists
     description: Verify b-value shells validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_bvalue_shells.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_bvalue_shells.json'"
     expected_output_contains: "validate_bvalue_shells"
 
   - name: validate_bvalue_shells is valid JSON
     description: Verify b-value shells validation function can be parsed
-    command: cat /opt/dicompare/dist/validation-functions/validate_bvalue_shells.json | python3 -c "import sys,json; json.load(sys.stdin); print('valid')"
+    command: "bash -lc 'cat /opt/dicompare/dist/validation-functions/validate_bvalue_shells.json | python3 -c \"import sys,json; json.load(sys.stdin); print('\"'\"'valid'\"'\"')\"'"
     expected_output_contains: "valid"
 
   - name: validate_diffusion_directions function exists
     description: Verify diffusion directions validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_diffusion_directions.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_diffusion_directions.json'"
     expected_output_contains: "validate_diffusion_directions"
 
   - name: validate_echo_count function exists
     description: Verify echo count validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_echo_count.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_echo_count.json'"
     expected_output_contains: "validate_echo_count"
 
   - name: validate_echo_times function exists
     description: Verify echo times validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_echo_times.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_echo_times.json'"
     expected_output_contains: "validate_echo_times"
 
   - name: validate_exact_echo_count function exists
     description: Verify exact echo count validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_exact_echo_count.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_exact_echo_count.json'"
     expected_output_contains: "validate_exact_echo_count"
 
   - name: validate_first_echo function exists
     description: Verify first echo validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_first_echo.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_first_echo.json'"
     expected_output_contains: "validate_first_echo"
 
   - name: validate_flip_angle function exists
     description: Verify flip angle validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_flip_angle.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_flip_angle.json'"
     expected_output_contains: "validate_flip_angle"
 
   - name: validate_image_slices function exists
     description: Verify image slices validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_image_slices.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_image_slices.json'"
     expected_output_contains: "validate_image_slices"
 
   - name: validate_image_type function exists
     description: Verify image type validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_image_type.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_image_type.json'"
     expected_output_contains: "validate_image_type"
 
   - name: validate_magnitude_phase_pairs function exists
     description: Verify magnitude phase pairs validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_magnitude_phase_pairs.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_magnitude_phase_pairs.json'"
     expected_output_contains: "validate_magnitude_phase_pairs"
 
   - name: validate_mra_type function exists
     description: Verify MRA type validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_mra_type.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_mra_type.json'"
     expected_output_contains: "validate_mra_type"
 
   - name: validate_phase_encoding_polarity function exists
     description: Verify phase encoding polarity validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_phase_encoding_polarity.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_phase_encoding_polarity.json'"
     expected_output_contains: "validate_phase_encoding_polarity"
 
   - name: validate_pixel_bandwidth function exists
     description: Verify pixel bandwidth validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_pixel_bandwidth.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_pixel_bandwidth.json'"
     expected_output_contains: "validate_pixel_bandwidth"
 
   - name: validate_pixel_spacing function exists
     description: Verify pixel spacing validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_pixel_spacing.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_pixel_spacing.json'"
     expected_output_contains: "validate_pixel_spacing"
 
   - name: validate_repetition_time function exists
     description: Verify repetition time validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_repetition_time.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_repetition_time.json'"
     expected_output_contains: "validate_repetition_time"
 
   - name: validate_slice_count function exists
     description: Verify slice count validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_slice_count.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_slice_count.json'"
     expected_output_contains: "validate_slice_count"
 
   - name: validate_temporal_positions function exists
     description: Verify temporal positions validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_temporal_positions.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_temporal_positions.json'"
     expected_output_contains: "validate_temporal_positions"
 
   - name: validate_voxel_shape function exists
     description: Verify voxel shape validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/validate_voxel_shape.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/validate_voxel_shape.json'"
     expected_output_contains: "validate_voxel_shape"
 
   - name: uniform_echo_spacing function exists
     description: Verify uniform echo spacing validation function is present
-    command: ls /opt/dicompare/dist/validation-functions/uniform_echo_spacing.json
+    command: "bash -lc 'ls /opt/dicompare/dist/validation-functions/uniform_echo_spacing.json'"
     expected_output_contains: "uniform_echo_spacing"
 
   - name: All validation functions count
     description: Verify expected number of validation function files
-    command: ls /opt/dicompare/dist/validation-functions/*.json | wc -l
+    command: bash -lc 'ls /opt/dicompare/dist/validation-functions/*.json | wc -l'
     expected_output_contains: "19"
 
   # ==========================================================================
@@ -483,71 +483,43 @@ tests:
   # ==========================================================================
   - name: Web server can start
     description: Test that serve can start serving files
-    command: |
-      timeout 5s serve -s /opt/dicompare/dist -l 3002 &
-      sleep 2
-      curl -s -o /dev/null -w "%{http_code}" http://localhost:3002/ || echo "failed"
-      pkill -f "serve.*3002" 2>/dev/null || true
+    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3002 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/ || echo \"failed\"\npkill -f \"serve.*3002\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
   - name: Web server serves index.html
     description: Test that serve returns HTML content
-    command: |
-      timeout 5s serve -s /opt/dicompare/dist -l 3003 &
-      sleep 2
-      curl -s http://localhost:3003/ | head -1 || echo "failed"
-      pkill -f "serve.*3003" 2>/dev/null || true
+    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3003 &\nsleep 2\ncurl -s http://localhost:3003/ | head -1 || echo \"failed\"\npkill -f \"serve.*3003\" 2>/dev/null || true'"
     expected_output_contains: "<!DOCTYPE html>"
     timeout: 10
 
   - name: Web server serves favicon
     description: Test that serve returns favicon
-    command: |
-      timeout 5s serve -s /opt/dicompare/dist -l 3004 &
-      sleep 2
-      curl -s -o /dev/null -w "%{http_code}" http://localhost:3004/favicon.ico || echo "failed"
-      pkill -f "serve.*3004" 2>/dev/null || true
+    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3004 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3004/favicon.ico || echo \"failed\"\npkill -f \"serve.*3004\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
   - name: Web server serves manifest.json
     description: Test that serve returns manifest.json
-    command: |
-      timeout 5s serve -s /opt/dicompare/dist -l 3005 &
-      sleep 2
-      curl -s -o /dev/null -w "%{http_code}" http://localhost:3005/manifest.json || echo "failed"
-      pkill -f "serve.*3005" 2>/dev/null || true
+    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3005 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3005/manifest.json || echo \"failed\"\npkill -f \"serve.*3005\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
   - name: Web server serves schema files
     description: Test that serve returns schema index
-    command: |
-      timeout 5s serve -s /opt/dicompare/dist -l 3006 &
-      sleep 2
-      curl -s http://localhost:3006/schemas/index.json | head -1 || echo "failed"
-      pkill -f "serve.*3006" 2>/dev/null || true
+    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3006 &\nsleep 2\ncurl -s http://localhost:3006/schemas/index.json | head -1 || echo \"failed\"\npkill -f \"serve.*3006\" 2>/dev/null || true'"
     expected_output_contains: "["
     timeout: 10
 
   - name: Web server serves validation functions
     description: Test that serve returns validation function
-    command: |
-      timeout 5s serve -s /opt/dicompare/dist -l 3007 &
-      sleep 2
-      curl -s -o /dev/null -w "%{http_code}" http://localhost:3007/validation-functions/validate_echo_count.json || echo "failed"
-      pkill -f "serve.*3007" 2>/dev/null || true
+    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3007 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3007/validation-functions/validate_echo_count.json || echo \"failed\"\npkill -f \"serve.*3007\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
   - name: Web server single page mode works
     description: Test that SPA routing redirects to index.html
-    command: |
-      timeout 5s serve -s /opt/dicompare/dist -l 3008 &
-      sleep 2
-      curl -s -o /dev/null -w "%{http_code}" http://localhost:3008/nonexistent/path || echo "failed"
-      pkill -f "serve.*3008" 2>/dev/null || true
+    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3008 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3008/nonexistent/path || echo \"failed\"\npkill -f \"serve.*3008\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
@@ -556,22 +528,22 @@ tests:
   # ==========================================================================
   - name: HCP schema has series definitions
     description: Verify HCP schema contains acquisitions definitions
-    command: cat /opt/dicompare/dist/schemas/hcp_schema.json | python3 -c "import sys,json; d=json.load(sys.stdin); print('acquisitions' if 'acquisitions' in d else 'missing')"
+    command: "bash -lc 'cat /opt/dicompare/dist/schemas/hcp_schema.json | python3 -c \"import sys,json; d=json.load(sys.stdin); print('\"'\"'acquisitions'\"'\"' if '\"'\"'acquisitions'\"'\"' in d else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "acquisitions"
 
   - name: ABCD schema has series definitions
     description: Verify ABCD schema contains acquisitions definitions
-    command: cat /opt/dicompare/dist/schemas/abcd_schema_cleaned.json | python3 -c "import sys,json; d=json.load(sys.stdin); print('acquisitions' if 'acquisitions' in d else 'missing')"
+    command: "bash -lc 'cat /opt/dicompare/dist/schemas/abcd_schema_cleaned.json | python3 -c \"import sys,json; d=json.load(sys.stdin); print('\"'\"'acquisitions'\"'\"' if '\"'\"'acquisitions'\"'\"' in d else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "acquisitions"
 
   - name: MS CMSC schema has series definitions
     description: Verify MS CMSC schema contains acquisitions definitions
-    command: cat /opt/dicompare/dist/schemas/MS_CMSC_Guidelines_v1.0.json | python3 -c "import sys,json; d=json.load(sys.stdin); print('acquisitions' if 'acquisitions' in d else 'missing')"
+    command: "bash -lc 'cat /opt/dicompare/dist/schemas/MS_CMSC_Guidelines_v1.0.json | python3 -c \"import sys,json; d=json.load(sys.stdin); print('\"'\"'acquisitions'\"'\"' if '\"'\"'acquisitions'\"'\"' in d else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "acquisitions"
 
   - name: UK Biobank schema has series definitions
     description: Verify UK Biobank schema contains acquisitions definitions
-    command: cat /opt/dicompare/dist/schemas/UK_Biobank_v1.0.json | python3 -c "import sys,json; d=json.load(sys.stdin); print('acquisitions' if 'acquisitions' in d else 'missing')"
+    command: "bash -lc 'cat /opt/dicompare/dist/schemas/UK_Biobank_v1.0.json | python3 -c \"import sys,json; d=json.load(sys.stdin); print('\"'\"'acquisitions'\"'\"' if '\"'\"'acquisitions'\"'\"' in d else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "acquisitions"
 
   # ==========================================================================
@@ -579,17 +551,17 @@ tests:
   # ==========================================================================
   - name: validate_echo_count has Python code
     description: Verify validation function contains implementation
-    command: cat /opt/dicompare/dist/validation-functions/validate_echo_count.json | python3 -c "import sys,json; d=json.load(sys.stdin); print('implementation' if 'implementation' in d else 'missing')"
+    command: "bash -lc 'cat /opt/dicompare/dist/validation-functions/validate_echo_count.json | python3 -c \"import sys,json; d=json.load(sys.stdin); print('\"'\"'implementation'\"'\"' if '\"'\"'implementation'\"'\"' in d else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "implementation"
 
   - name: validate_flip_angle has Python code
     description: Verify validation function contains implementation
-    command: cat /opt/dicompare/dist/validation-functions/validate_flip_angle.json | python3 -c "import sys,json; d=json.load(sys.stdin); print('implementation' if 'implementation' in d else 'missing')"
+    command: "bash -lc 'cat /opt/dicompare/dist/validation-functions/validate_flip_angle.json | python3 -c \"import sys,json; d=json.load(sys.stdin); print('\"'\"'implementation'\"'\"' if '\"'\"'implementation'\"'\"' in d else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "implementation"
 
   - name: validate_repetition_time has Python code
     description: Verify validation function contains implementation
-    command: cat /opt/dicompare/dist/validation-functions/validate_repetition_time.json | python3 -c "import sys,json; d=json.load(sys.stdin); print('implementation' if 'implementation' in d else 'missing')"
+    command: "bash -lc 'cat /opt/dicompare/dist/validation-functions/validate_repetition_time.json | python3 -c \"import sys,json; d=json.load(sys.stdin); print('\"'\"'implementation'\"'\"' if '\"'\"'implementation'\"'\"' in d else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "implementation"
 
   # ==========================================================================
@@ -597,12 +569,12 @@ tests:
   # ==========================================================================
   - name: JavaScript bundle has substantial size
     description: Verify main JS bundle is properly built
-    command: ls -l /opt/dicompare/dist/assets/index*.js | awk '{if($5 > 100000) print "large enough"; else print "too small"}'
+    command: bash -lc 'ls -l /opt/dicompare/dist/assets/index*.js | awk '\''{if($5 > 100000) print "large enough"; else print "too small"}'\'''
     expected_output_contains: "large enough"
 
   - name: CSS bundle has substantial size
     description: Verify main CSS bundle is properly built
-    command: ls -l /opt/dicompare/dist/assets/index*.css | awk '{if($5 > 10000) print "large enough"; else print "too small"}'
+    command: bash -lc 'ls -l /opt/dicompare/dist/assets/index*.css | awk '\''{if($5 > 10000) print "large enough"; else print "too small"}'\'''
     expected_output_contains: "large enough"
 
   # ==========================================================================
@@ -656,13 +628,13 @@ tests:
   # ==========================================================================
   - name: Export schema to test_output
     description: Copy a schema file to test output directory
-    command: cp /opt/dicompare/dist/schemas/hcp_schema.json test_output/
+    command: "bash -lc 'cp /opt/dicompare/dist/schemas/hcp_schema.json test_output/'"
     validate:
       - output_exists: ${output_dir}/hcp_schema.json
 
   - name: Export validation function to test_output
     description: Copy a validation function file to test output directory
-    command: cp /opt/dicompare/dist/validation-functions/validate_echo_count.json test_output/
+    command: "bash -lc 'cp /opt/dicompare/dist/validation-functions/validate_echo_count.json test_output/'"
     validate:
       - output_exists: ${output_dir}/validate_echo_count.json
 

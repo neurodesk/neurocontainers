@@ -663,53 +663,25 @@ tests:
   - name: NCT grab_data_info module
     description: Test NCT configuration parsing module (import triggers data download which fails - container bug)
     ignore_exit_code: true
-    command: |
-      python3 -c "
-      import sys
-      sys.path.insert(0, '/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages')
-      from cbig_network_correspondence import grab_data_info
-      args = grab_data_info.MyClass()
-      args.category = 'parcellation'
-      args.name = 'TestAtlas'
-      print('Config class created')
-      "
+    command: "bash -lc 'python3 -c \"\nimport sys\nsys.path.insert(0, '\"'\"'/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages'\"'\"')\nfrom cbig_network_correspondence import grab_data_info\nargs = grab_data_info.MyClass()\nargs.category = '\"'\"'parcellation'\"'\"'\nargs.name = '\"'\"'TestAtlas'\"'\"'\nprint('\"'\"'Config class created'\"'\"')\n\"'"
     expected_output_contains: "Download data"
 
   - name: NCT str2bool function
     description: Test NCT string to boolean conversion (import triggers data download - container bug)
     ignore_exit_code: true
-    command: |
-      python3 -c "
-      import sys
-      sys.path.insert(0, '/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages')
-      from cbig_network_correspondence.grab_data_info import str2bool
-      print('yes ->', str2bool('yes'))
-      "
+    command: "bash -lc 'python3 -c \"\nimport sys\nsys.path.insert(0, '\"'\"'/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages'\"'\"')\nfrom cbig_network_correspondence.grab_data_info import str2bool\nprint('\"'\"'yes ->'\"'\"', str2bool('\"'\"'yes'\"'\"'))\n\"'"
     expected_output_contains: "Download data"
 
   - name: NCT str2num function
     description: Test NCT string to number conversion (import triggers data download - container bug)
     ignore_exit_code: true
-    command: |
-      python3 -c "
-      import sys
-      sys.path.insert(0, '/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages')
-      from cbig_network_correspondence.grab_data_info import str2num
-      print('42 ->', str2num('42'))
-      "
+    command: "bash -lc 'python3 -c \"\nimport sys\nsys.path.insert(0, '\"'\"'/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages'\"'\"')\nfrom cbig_network_correspondence.grab_data_info import str2num\nprint('\"'\"'42 ->'\"'\"', str2num('\"'\"'42'\"'\"'))\n\"'"
     expected_output_contains: "Download data"
 
   - name: NCT thresh_str_to_num function
     description: Test NCT threshold string parsing (import triggers data download - container bug)
     ignore_exit_code: true
-    command: |
-      python3 -c "
-      import sys
-      sys.path.insert(0, '/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages')
-      from cbig_network_correspondence.grab_data_info import thresh_str_to_num
-      result = thresh_str_to_num('[0, Inf]')
-      print('Threshold [0, Inf]:', result)
-      "
+    command: "bash -lc 'python3 -c \"\nimport sys\nsys.path.insert(0, '\"'\"'/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages'\"'\"')\nfrom cbig_network_correspondence.grab_data_info import thresh_str_to_num\nresult = thresh_str_to_num('\"'\"'[0, Inf]'\"'\"')\nprint('\"'\"'Threshold [0, Inf]:'\"'\"', result)\n\"'"
     expected_output_contains: "Download data"
 
   # ==========================================================================
@@ -718,25 +690,13 @@ tests:
   - name: NCT pair_match function
     description: Test NCT network pair matching algorithm (import triggers data download - container bug)
     ignore_exit_code: true
-    command: |
-      python3 -c "
-      import sys
-      sys.path.insert(0, '/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages')
-      from cbig_network_correspondence.visualize_overlap_lib import pair_match
-      print('pair_match imported')
-      "
+    command: "bash -lc 'python3 -c \"\nimport sys\nsys.path.insert(0, '\"'\"'/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages'\"'\"')\nfrom cbig_network_correspondence.visualize_overlap_lib import pair_match\nprint('\"'\"'pair_match imported'\"'\"')\n\"'"
     expected_output_contains: "Download data"
 
   - name: NCT construct_network_name function
     description: Test NCT network name construction (import triggers data download - container bug)
     ignore_exit_code: true
-    command: |
-      python3 -c "
-      import sys
-      sys.path.insert(0, '/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages')
-      from cbig_network_correspondence.visualize_overlap_lib import construct_network_name
-      print('construct_network_name imported')
-      "
+    command: "bash -lc 'python3 -c \"\nimport sys\nsys.path.insert(0, '\"'\"'/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages'\"'\"')\nfrom cbig_network_correspondence.visualize_overlap_lib import construct_network_name\nprint('\"'\"'construct_network_name imported'\"'\"')\n\"'"
     expected_output_contains: "Download data"
 
   # ==========================================================================
@@ -889,13 +849,7 @@ tests:
   - name: Parse NCT config file
     description: Parse config file with NCT functions (import triggers data download - container bug)
     ignore_exit_code: true
-    command: |
-      python3 -c "
-      import sys
-      sys.path.insert(0, '/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages')
-      from cbig_network_correspondence.grab_data_info import read_config
-      print('read_config imported')
-      "
+    command: "bash -lc 'python3 -c \"\nimport sys\nsys.path.insert(0, '\"'\"'/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages'\"'\"')\nfrom cbig_network_correspondence.grab_data_info import read_config\nprint('\"'\"'read_config imported'\"'\"')\n\"'"
     expected_output_contains: "Download data"
 
   # ==========================================================================
@@ -1088,13 +1042,7 @@ tests:
   - name: Handle invalid config gracefully
     description: Test error handling for invalid config (import triggers data download - container bug)
     ignore_exit_code: true
-    command: |
-      python3 -c "
-      import sys
-      sys.path.insert(0, '/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages')
-      from cbig_network_correspondence.grab_data_info import read_config, MyClass, check_args_format
-      print('check_args_format imported')
-      "
+    command: "bash -lc 'python3 -c \"\nimport sys\nsys.path.insert(0, '\"'\"'/opt/miniconda/envs/NCT_env/lib/python3.9/site-packages'\"'\"')\nfrom cbig_network_correspondence.grab_data_info import read_config, MyClass, check_args_format\nprint('\"'\"'check_args_format imported'\"'\"')\n\"'"
     expected_output_contains: "Download data"
 
   # ==========================================================================

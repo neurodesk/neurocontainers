@@ -63,22 +63,22 @@ tests:
 
   - name: prediction.py help
     description: Verify prediction.py script runs and shows help
-    command: python /opt/VesselBoost/prediction.py --help
+    command: "bash -lc 'python /opt/VesselBoost/prediction.py --help'"
     expected_output_contains: "VesselBoost prediction arguments"
 
   - name: test_time_adaptation.py help
     description: Verify test_time_adaptation.py script runs and shows help
-    command: python /opt/VesselBoost/test_time_adaptation.py --help
+    command: "bash -lc 'python /opt/VesselBoost/test_time_adaptation.py --help'"
     expected_output_contains: "VesselBoost test time adaptation arguments"
 
   - name: boost.py help
     description: Verify boost.py script runs and shows help
-    command: python /opt/VesselBoost/boost.py --help
+    command: "bash -lc 'python /opt/VesselBoost/boost.py --help'"
     expected_output_contains: "VesselBoost training arguments"
 
   - name: train.py help
     description: Verify train.py script runs and shows help
-    command: python /opt/VesselBoost/train.py --help
+    command: "bash -lc 'python /opt/VesselBoost/train.py --help'"
     expected_output_contains: "VesselBoost training arguments"
 
   # ==========================================================================
@@ -86,17 +86,17 @@ tests:
   # ==========================================================================
   - name: Verify manual_0429 model exists
     description: Check that the manual_0429 pre-trained model is available
-    command: ls -la /opt/VesselBoost/saved_models/manual_0429
+    command: "bash -lc 'ls -la /opt/VesselBoost/saved_models/manual_0429'"
     expected_exit_code: 0
 
   - name: Verify omelette1_0429 model exists
     description: Check that the omelette1_0429 pre-trained model is available
-    command: ls -la /opt/VesselBoost/saved_models/omelette1_0429
+    command: "bash -lc 'ls -la /opt/VesselBoost/saved_models/omelette1_0429'"
     expected_exit_code: 0
 
   - name: Verify omelette2_0429 model exists
     description: Check that the omelette2_0429 pre-trained model is available
-    command: ls -la /opt/VesselBoost/saved_models/omelette2_0429
+    command: "bash -lc 'ls -la /opt/VesselBoost/saved_models/omelette2_0429'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -129,19 +129,19 @@ tests:
   - name: Import VesselBoost utils
     description: Verify VesselBoost utility modules can be imported
     command: |
-      cd /opt/VesselBoost && python -c "
+      bash -lc 'cd /opt/VesselBoost && python -c "
       from utils import preprocess_procedure, make_prediction
-      print('VesselBoost utils imported successfully')
-      "
+      print('\''VesselBoost utils imported successfully'\'')
+      "'
     expected_output_contains: "VesselBoost utils imported successfully"
 
   - name: Import VesselBoost UNet
     description: Verify VesselBoost UNet model can be imported
     command: |
-      cd /opt/VesselBoost && python -c "
+      bash -lc 'cd /opt/VesselBoost && python -c "
       from models.unet_3d import Unet
-      print('Unet model imported successfully')
-      "
+      print('\''Unet model imported successfully'\'')
+      "'
     expected_output_contains: "Unet model imported successfully"
 
   # ==========================================================================
@@ -149,44 +149,19 @@ tests:
   # ==========================================================================
   - name: Prediction with manual_0429 model (no preprocessing)
     description: Run vessel segmentation prediction using manual_0429 pretrained model with prep_mode=4 (no preprocessing)
-    command: |
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --out_path test_output/vesselboost/output_pred \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 4 \
-        --thresh 0.1 \
-        --cc 10
+    command: "bash -lc 'python /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --out_path test_output/vesselboost/output_pred \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 4 \\\n  --thresh 0.1 \\\n  --cc 10'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred
 
   - name: Prediction with omelette1_0429 model (no preprocessing)
     description: Run vessel segmentation prediction using omelette1_0429 pretrained model
-    command: |
-      rm -rf test_output/vesselboost/output_pred_omelette1 && \
-      mkdir -p test_output/vesselboost/output_pred_omelette1 && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --out_path test_output/vesselboost/output_pred_omelette1 \
-        --pretrained /opt/VesselBoost/saved_models/omelette1_0429 \
-        --prep_mode 4 \
-        --thresh 0.1 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_pred_omelette1 && \\\nmkdir -p test_output/vesselboost/output_pred_omelette1 && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --out_path test_output/vesselboost/output_pred_omelette1 \\\n  --pretrained /opt/VesselBoost/saved_models/omelette1_0429 \\\n  --prep_mode 4 \\\n  --thresh 0.1 \\\n  --cc 10'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred_omelette1
 
   - name: Prediction with omelette2_0429 model (no preprocessing)
     description: Run vessel segmentation prediction using omelette2_0429 pretrained model
-    command: |
-      rm -rf test_output/vesselboost/output_pred_omelette2 && \
-      mkdir -p test_output/vesselboost/output_pred_omelette2 && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --out_path test_output/vesselboost/output_pred_omelette2 \
-        --pretrained /opt/VesselBoost/saved_models/omelette2_0429 \
-        --prep_mode 4 \
-        --thresh 0.1 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_pred_omelette2 && \\\nmkdir -p test_output/vesselboost/output_pred_omelette2 && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --out_path test_output/vesselboost/output_pred_omelette2 \\\n  --pretrained /opt/VesselBoost/saved_models/omelette2_0429 \\\n  --prep_mode 4 \\\n  --thresh 0.1 \\\n  --cc 10'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred_omelette2
 
@@ -195,46 +170,19 @@ tests:
   # ==========================================================================
   - name: Prediction with lower threshold (thresh=0.05)
     description: Run prediction with lower binary threshold for more sensitive detection
-    command: |
-      rm -rf test_output/vesselboost/output_pred_thresh05 && \
-      mkdir -p test_output/vesselboost/output_pred_thresh05 && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --out_path test_output/vesselboost/output_pred_thresh05 \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 4 \
-        --thresh 0.05 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_pred_thresh05 && \\\nmkdir -p test_output/vesselboost/output_pred_thresh05 && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --out_path test_output/vesselboost/output_pred_thresh05 \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 4 \\\n  --thresh 0.05 \\\n  --cc 10'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred_thresh05
 
   - name: Prediction with higher threshold (thresh=0.3)
     description: Run prediction with higher binary threshold for more specific detection
-    command: |
-      rm -rf test_output/vesselboost/output_pred_thresh30 && \
-      mkdir -p test_output/vesselboost/output_pred_thresh30 && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --out_path test_output/vesselboost/output_pred_thresh30 \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 4 \
-        --thresh 0.3 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_pred_thresh30 && \\\nmkdir -p test_output/vesselboost/output_pred_thresh30 && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --out_path test_output/vesselboost/output_pred_thresh30 \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 4 \\\n  --thresh 0.3 \\\n  --cc 10'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred_thresh30
 
   - name: Prediction with very high threshold (thresh=0.5)
     description: Run prediction with very high binary threshold
-    command: |
-      rm -rf test_output/vesselboost/output_pred_thresh50 && \
-      mkdir -p test_output/vesselboost/output_pred_thresh50 && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --out_path test_output/vesselboost/output_pred_thresh50 \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 4 \
-        --thresh 0.5 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_pred_thresh50 && \\\nmkdir -p test_output/vesselboost/output_pred_thresh50 && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --out_path test_output/vesselboost/output_pred_thresh50 \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 4 \\\n  --thresh 0.5 \\\n  --cc 10'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred_thresh50
 
@@ -243,46 +191,19 @@ tests:
   # ==========================================================================
   - name: Prediction with no connected component filtering (cc=0)
     description: Run prediction without connected component denoising
-    command: |
-      rm -rf test_output/vesselboost/output_pred_cc0 && \
-      mkdir -p test_output/vesselboost/output_pred_cc0 && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --out_path test_output/vesselboost/output_pred_cc0 \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 4 \
-        --thresh 0.1 \
-        --cc 0
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_pred_cc0 && \\\nmkdir -p test_output/vesselboost/output_pred_cc0 && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --out_path test_output/vesselboost/output_pred_cc0 \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 4 \\\n  --thresh 0.1 \\\n  --cc 0'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred_cc0
 
   - name: Prediction with higher cc threshold (cc=50)
     description: Run prediction with higher connected component threshold for more aggressive denoising
-    command: |
-      rm -rf test_output/vesselboost/output_pred_cc50 && \
-      mkdir -p test_output/vesselboost/output_pred_cc50 && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --out_path test_output/vesselboost/output_pred_cc50 \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 4 \
-        --thresh 0.1 \
-        --cc 50
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_pred_cc50 && \\\nmkdir -p test_output/vesselboost/output_pred_cc50 && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --out_path test_output/vesselboost/output_pred_cc50 \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 4 \\\n  --thresh 0.1 \\\n  --cc 50'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred_cc50
 
   - name: Prediction with very high cc threshold (cc=100)
     description: Run prediction with very high connected component threshold
-    command: |
-      rm -rf test_output/vesselboost/output_pred_cc100 && \
-      mkdir -p test_output/vesselboost/output_pred_cc100 && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --out_path test_output/vesselboost/output_pred_cc100 \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 4 \
-        --thresh 0.1 \
-        --cc 100
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_pred_cc100 && \\\nmkdir -p test_output/vesselboost/output_pred_cc100 && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --out_path test_output/vesselboost/output_pred_cc100 \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 4 \\\n  --thresh 0.1 \\\n  --cc 100'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred_cc100
 
@@ -291,54 +212,21 @@ tests:
   # ==========================================================================
   - name: Prediction with bias field correction only (prep_mode=1)
     description: Run prediction with N4 bias field correction preprocessing
-    command: |
-      rm -rf test_output/vesselboost/output_pred_prep1 test_output/vesselboost/preprocessed_prep1 && \
-      mkdir -p test_output/vesselboost/output_pred_prep1 && \
-      mkdir -p test_output/vesselboost/preprocessed_prep1 && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --ps_path test_output/vesselboost/preprocessed_prep1 \
-        --out_path test_output/vesselboost/output_pred_prep1 \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 1 \
-        --thresh 0.1 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_pred_prep1 test_output/vesselboost/preprocessed_prep1 && \\\nmkdir -p test_output/vesselboost/output_pred_prep1 && \\\nmkdir -p test_output/vesselboost/preprocessed_prep1 && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --ps_path test_output/vesselboost/preprocessed_prep1 \\\n  --out_path test_output/vesselboost/output_pred_prep1 \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 1 \\\n  --thresh 0.1 \\\n  --cc 10'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred_prep1
 
   - name: Prediction with denoising only (prep_mode=2)
     description: Run prediction with denoising preprocessing
     timeout: 300
-    command: |
-      rm -rf test_output/vesselboost/output_pred_prep2 test_output/vesselboost/preprocessed_prep2 && \
-      mkdir -p test_output/vesselboost/output_pred_prep2 && \
-      mkdir -p test_output/vesselboost/preprocessed_prep2 && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --ps_path test_output/vesselboost/preprocessed_prep2 \
-        --out_path test_output/vesselboost/output_pred_prep2 \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 2 \
-        --thresh 0.1 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_pred_prep2 test_output/vesselboost/preprocessed_prep2 && \\\nmkdir -p test_output/vesselboost/output_pred_prep2 && \\\nmkdir -p test_output/vesselboost/preprocessed_prep2 && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --ps_path test_output/vesselboost/preprocessed_prep2 \\\n  --out_path test_output/vesselboost/output_pred_prep2 \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 2 \\\n  --thresh 0.1 \\\n  --cc 10'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred_prep2
 
   - name: Prediction with bias field correction and denoising (prep_mode=3)
     description: Run prediction with both N4 bias field correction and denoising
     timeout: 300
-    command: |
-      rm -rf test_output/vesselboost/output_pred_prep3 test_output/vesselboost/preprocessed_prep3 && \
-      mkdir -p test_output/vesselboost/output_pred_prep3 && \
-      mkdir -p test_output/vesselboost/preprocessed_prep3 && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --ps_path test_output/vesselboost/preprocessed_prep3 \
-        --out_path test_output/vesselboost/output_pred_prep3 \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 3 \
-        --thresh 0.1 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_pred_prep3 test_output/vesselboost/preprocessed_prep3 && \\\nmkdir -p test_output/vesselboost/output_pred_prep3 && \\\nmkdir -p test_output/vesselboost/preprocessed_prep3 && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --ps_path test_output/vesselboost/preprocessed_prep3 \\\n  --out_path test_output/vesselboost/output_pred_prep3 \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 3 \\\n  --thresh 0.1 \\\n  --cc 10'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred_prep3
 
@@ -347,16 +235,7 @@ tests:
   # ==========================================================================
   - name: Prediction on T2-weighted image
     description: Run vessel segmentation on T2-weighted image
-    command: |
-      rm -rf test_output/vesselboost/output_pred_t2 && \
-      mkdir -p test_output/vesselboost/output_pred_t2 && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t2 \
-        --out_path test_output/vesselboost/output_pred_t2 \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 4 \
-        --thresh 0.1 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_pred_t2 && \\\nmkdir -p test_output/vesselboost/output_pred_t2 && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t2 \\\n  --out_path test_output/vesselboost/output_pred_t2 \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 4 \\\n  --thresh 0.1 \\\n  --cc 10'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred_t2
 
@@ -383,38 +262,14 @@ tests:
 
   - name: Boost module training (minimal epochs)
     description: Test boost module with minimal epochs for quick verification
-    command: |
-      rm -rf test_output/vesselboost/output_boost_test test_output/vesselboost/models/boost_test && \
-      mkdir -p test_output/vesselboost/output_boost_test && \
-      python /opt/VesselBoost/boost.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --lb_path test_output/vesselboost/labels \
-        --out_path test_output/vesselboost/output_boost_test \
-        --outmo test_output/vesselboost/models/boost_test \
-        --prep_mode 4 \
-        --ep 2 \
-        --lr 1e-3 \
-        --thresh 0.1 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_boost_test test_output/vesselboost/models/boost_test && \\\nmkdir -p test_output/vesselboost/output_boost_test && \\\npython /opt/VesselBoost/boost.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --lb_path test_output/vesselboost/labels \\\n  --out_path test_output/vesselboost/output_boost_test \\\n  --outmo test_output/vesselboost/models/boost_test \\\n  --prep_mode 4 \\\n  --ep 2 \\\n  --lr 1e-3 \\\n  --thresh 0.1 \\\n  --cc 10'"
     depends_on: Create dummy label for boost testing
     validate:
       - output_exists: ${output_dir}/vesselboost/output_boost_test
 
   - name: Boost module with different learning rate
     description: Test boost module with lower learning rate
-    command: |
-      rm -rf test_output/vesselboost/output_boost_lr test_output/vesselboost/models/boost_lr && \
-      mkdir -p test_output/vesselboost/output_boost_lr && \
-      python /opt/VesselBoost/boost.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --lb_path test_output/vesselboost/labels \
-        --out_path test_output/vesselboost/output_boost_lr \
-        --outmo test_output/vesselboost/models/boost_lr \
-        --prep_mode 4 \
-        --ep 2 \
-        --lr 1e-4 \
-        --thresh 0.1 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_boost_lr test_output/vesselboost/models/boost_lr && \\\nmkdir -p test_output/vesselboost/output_boost_lr && \\\npython /opt/VesselBoost/boost.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --lb_path test_output/vesselboost/labels \\\n  --out_path test_output/vesselboost/output_boost_lr \\\n  --outmo test_output/vesselboost/models/boost_lr \\\n  --prep_mode 4 \\\n  --ep 2 \\\n  --lr 1e-4 \\\n  --thresh 0.1 \\\n  --cc 10'"
     depends_on: Create dummy label for boost testing
     validate:
       - output_exists: ${output_dir}/vesselboost/output_boost_lr
@@ -424,15 +279,7 @@ tests:
   # ==========================================================================
   - name: Train module basic functionality
     description: Test train.py module with minimal epochs
-    command: |
-      rm -rf test_output/vesselboost/models/train_test && \
-      python /opt/VesselBoost/train.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --lb_path test_output/vesselboost/labels \
-        --outmo test_output/vesselboost/models/train_test \
-        --prep_mode 4 \
-        --ep 2 \
-        --lr 1e-3
+    command: "bash -lc 'rm -rf test_output/vesselboost/models/train_test && \\\npython /opt/VesselBoost/train.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --lb_path test_output/vesselboost/labels \\\n  --outmo test_output/vesselboost/models/train_test \\\n  --prep_mode 4 \\\n  --ep 2 \\\n  --lr 1e-3'"
     depends_on: Create dummy label for boost testing
     expected_exit_code: 0
 
@@ -441,73 +288,26 @@ tests:
   # ==========================================================================
   - name: Test-time adaptation without proxy (minimal epochs)
     description: Test TTA module without providing proxy segmentation
-    command: |
-      rm -rf test_output/vesselboost/output_tta_noproxy && \
-      mkdir -p test_output/vesselboost/output_tta_noproxy && \
-      python /opt/VesselBoost/test_time_adaptation.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --out_path test_output/vesselboost/output_tta_noproxy \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 4 \
-        --ep 2 \
-        --lr 1e-3 \
-        --thresh 0.1 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_tta_noproxy && \\\nmkdir -p test_output/vesselboost/output_tta_noproxy && \\\npython /opt/VesselBoost/test_time_adaptation.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --out_path test_output/vesselboost/output_tta_noproxy \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 4 \\\n  --ep 2 \\\n  --lr 1e-3 \\\n  --thresh 0.1 \\\n  --cc 10'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_tta_noproxy
 
   - name: Test-time adaptation with proxy segmentation
     description: Test TTA module with provided proxy segmentation
-    command: |
-      rm -rf test_output/vesselboost/output_tta_proxy && \
-      mkdir -p test_output/vesselboost/output_tta_proxy && \
-      python /opt/VesselBoost/test_time_adaptation.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --px_path test_output/vesselboost/labels \
-        --out_path test_output/vesselboost/output_tta_proxy \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 4 \
-        --ep 2 \
-        --lr 1e-3 \
-        --thresh 0.1 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_tta_proxy && \\\nmkdir -p test_output/vesselboost/output_tta_proxy && \\\npython /opt/VesselBoost/test_time_adaptation.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --px_path test_output/vesselboost/labels \\\n  --out_path test_output/vesselboost/output_tta_proxy \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 4 \\\n  --ep 2 \\\n  --lr 1e-3 \\\n  --thresh 0.1 \\\n  --cc 10'"
     depends_on: Create dummy label for boost testing
     validate:
       - output_exists: ${output_dir}/vesselboost/output_tta_proxy
 
   - name: Test-time adaptation with preprocessing
     description: Test TTA module with bias field correction
-    command: |
-      rm -rf test_output/vesselboost/output_tta_preproc test_output/vesselboost/preprocessed_tta && \
-      mkdir -p test_output/vesselboost/output_tta_preproc && \
-      mkdir -p test_output/vesselboost/preprocessed_tta && \
-      python /opt/VesselBoost/test_time_adaptation.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --ps_path test_output/vesselboost/preprocessed_tta \
-        --out_path test_output/vesselboost/output_tta_preproc \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 1 \
-        --ep 2 \
-        --lr 1e-3 \
-        --thresh 0.1 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_tta_preproc test_output/vesselboost/preprocessed_tta && \\\nmkdir -p test_output/vesselboost/output_tta_preproc && \\\nmkdir -p test_output/vesselboost/preprocessed_tta && \\\npython /opt/VesselBoost/test_time_adaptation.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --ps_path test_output/vesselboost/preprocessed_tta \\\n  --out_path test_output/vesselboost/output_tta_preproc \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 1 \\\n  --ep 2 \\\n  --lr 1e-3 \\\n  --thresh 0.1 \\\n  --cc 10'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_tta_preproc
 
   - name: Test-time adaptation with different model
     description: Test TTA module with omelette1 model
-    command: |
-      rm -rf test_output/vesselboost/output_tta_omelette && \
-      mkdir -p test_output/vesselboost/output_tta_omelette && \
-      python /opt/VesselBoost/test_time_adaptation.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --out_path test_output/vesselboost/output_tta_omelette \
-        --pretrained /opt/VesselBoost/saved_models/omelette1_0429 \
-        --prep_mode 4 \
-        --ep 2 \
-        --lr 1e-3 \
-        --thresh 0.1 \
-        --cc 10
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_tta_omelette && \\\nmkdir -p test_output/vesselboost/output_tta_omelette && \\\npython /opt/VesselBoost/test_time_adaptation.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --out_path test_output/vesselboost/output_tta_omelette \\\n  --pretrained /opt/VesselBoost/saved_models/omelette1_0429 \\\n  --prep_mode 4 \\\n  --ep 2 \\\n  --lr 1e-3 \\\n  --thresh 0.1 \\\n  --cc 10'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_tta_omelette
 
@@ -517,20 +317,20 @@ tests:
   - name: UNet3D model architecture verification
     description: Verify Unet model can be instantiated with default parameters
     command: |
-      cd /opt/VesselBoost && python -c "
+      bash -lc 'cd /opt/VesselBoost && python -c "
       import torch
       from models.unet_3d import Unet
       model = Unet(1, 1, 16)
-      print(f'Model created successfully')
-      print(f'Total parameters: {sum(p.numel() for p in model.parameters())}')
-      print(f'Trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
-      "
+      print(f'\''Model created successfully'\'')
+      print(f'\''Total parameters: {sum(p.numel() for p in model.parameters())}'\'')
+      print(f'\''Trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}'\'')
+      "'
     expected_output_contains: "Model created successfully"
 
   - name: UNet3D forward pass test
     description: Verify Unet model can perform forward pass
     command: |
-      cd /opt/VesselBoost && python -c "
+      bash -lc 'cd /opt/VesselBoost && python -c "
       import torch
       from models.unet_3d import Unet
       model = Unet(1, 1, 16)
@@ -538,24 +338,24 @@ tests:
       dummy_input = torch.randn(1, 1, 64, 64, 64)
       with torch.no_grad():
           output = model(dummy_input)
-      print(f'Input shape: {dummy_input.shape}')
-      print(f'Output shape: {output.shape}')
-      print('Forward pass successful')
-      "
+      print(f'\''Input shape: {dummy_input.shape}'\'')
+      print(f'\''Output shape: {output.shape}'\'')
+      print('\''Forward pass successful'\'')
+      "'
     expected_output_contains: "Forward pass successful"
 
   - name: Load pretrained model weights
     description: Verify pretrained model weights can be loaded
     command: |
-      cd /opt/VesselBoost && python -c "
+      bash -lc 'cd /opt/VesselBoost && python -c "
       import torch
       from models.unet_3d import Unet
       model = Unet(1, 1, 16)
-      state_dict = torch.load('/opt/VesselBoost/saved_models/manual_0429', map_location='cpu')
+      state_dict = torch.load('\''/opt/VesselBoost/saved_models/manual_0429'\'', map_location='\''cpu'\'')
       model.load_state_dict(state_dict)
-      print('Pretrained model loaded successfully')
-      print(f'Model device: cpu')
-      "
+      print('\''Pretrained model loaded successfully'\'')
+      print(f'\''Model device: cpu'\'')
+      "'
     expected_output_contains: "Pretrained model loaded successfully"
 
   # ==========================================================================
@@ -581,10 +381,10 @@ tests:
   - name: Verify preprocessing utilities
     description: Test preprocessing function availability
     command: |
-      cd /opt/VesselBoost && python -c "
+      bash -lc 'cd /opt/VesselBoost && python -c "
       from utils.module_utils import preprocess_procedure
-      print('Preprocessing utilities available')
-      "
+      print('\''Preprocessing utilities available'\'')
+      "'
     expected_output_contains: "Preprocessing utilities available"
 
   # ==========================================================================
@@ -639,7 +439,7 @@ tests:
   - name: Memory usage estimation
     description: Estimate memory requirements for model inference
     command: |
-      cd /opt/VesselBoost && python -c "
+      bash -lc 'cd /opt/VesselBoost && python -c "
       import torch
       from models.unet_3d import Unet
 
@@ -649,10 +449,10 @@ tests:
       buffer_size = sum(b.nelement() * b.element_size() for b in model.buffers())
       total_size_mb = (param_size + buffer_size) / (1024 * 1024)
 
-      print(f'Model size: {total_size_mb:.2f} MB')
-      print(f'Recommended minimum RAM: {total_size_mb * 4:.0f} MB')
-      print('Memory estimation complete')
-      "
+      print(f'\''Model size: {total_size_mb:.2f} MB'\'')
+      print(f'\''Recommended minimum RAM: {total_size_mb * 4:.0f} MB'\'')
+      print('\''Memory estimation complete'\'')
+      "'
     expected_output_contains: "Memory estimation complete"
 
   # ==========================================================================
@@ -660,16 +460,7 @@ tests:
   # ==========================================================================
   - name: Prediction with combined parameters
     description: Test prediction with various combined parameters
-    command: |
-      rm -rf test_output/vesselboost/output_pred_combined && \
-      mkdir -p test_output/vesselboost/output_pred_combined && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --out_path test_output/vesselboost/output_pred_combined \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 4 \
-        --thresh 0.15 \
-        --cc 25
+    command: "bash -lc 'rm -rf test_output/vesselboost/output_pred_combined && \\\nmkdir -p test_output/vesselboost/output_pred_combined && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --out_path test_output/vesselboost/output_pred_combined \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 4 \\\n  --thresh 0.15 \\\n  --cc 25'"
     validate:
       - output_exists: ${output_dir}/vesselboost/output_pred_combined
 
@@ -678,23 +469,12 @@ tests:
   # ==========================================================================
   - name: Invalid model path handling
     description: Test error handling for invalid pretrained model path
-    command: |
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/input_t1w \
-        --out_path test_output/vesselboost/output_pred_invalid \
-        --pretrained /nonexistent/model/path \
-        --prep_mode 4 2>&1 || echo "Expected error occurred"
+    command: "bash -lc 'python /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/input_t1w \\\n  --out_path test_output/vesselboost/output_pred_invalid \\\n  --pretrained /nonexistent/model/path \\\n  --prep_mode 4 2>&1 || echo \"Expected error occurred\"'"
     expected_output_contains: "error"
 
   - name: Empty input directory handling
     description: Test error handling for empty input directory
-    command: |
-      mkdir -p test_output/vesselboost/empty_input && \
-      python /opt/VesselBoost/prediction.py \
-        --ds_path test_output/vesselboost/empty_input \
-        --out_path test_output/vesselboost/output_pred_empty \
-        --pretrained /opt/VesselBoost/saved_models/manual_0429 \
-        --prep_mode 4 2>&1 || echo "Expected error or empty run occurred"
+    command: "bash -lc 'mkdir -p test_output/vesselboost/empty_input && \\\npython /opt/VesselBoost/prediction.py \\\n  --ds_path test_output/vesselboost/empty_input \\\n  --out_path test_output/vesselboost/output_pred_empty \\\n  --pretrained /opt/VesselBoost/saved_models/manual_0429 \\\n  --prep_mode 4 2>&1 || echo \"Expected error or empty run occurred\"'"
     expected_exit_code: 0
 
 cleanup:

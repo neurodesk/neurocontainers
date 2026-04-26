@@ -480,9 +480,9 @@ tests:
   - name: BOLD to T1 preparation
     description: Prepare BOLD for registration (extract middle volume)
     command: |
-      nvols=$(fslnvols ${bold}) && \
+      bash -lc 'nvols=$(fslnvols ${bold}) && \
       midvol=$((nvols / 2)) && \
-      fslroi ${bold} test_output/bold_ref.nii.gz $midvol 1
+      fslroi ${bold} test_output/bold_ref.nii.gz $midvol 1'
     validate:
       - output_exists: ${output_dir}/bold_ref.nii.gz
 

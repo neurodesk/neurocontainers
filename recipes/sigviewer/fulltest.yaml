@@ -150,7 +150,7 @@ tests:
 
   - name: Libbiosig present
     description: Verify libbiosig library is available
-    command: ls -la /usr/lib/x86_64-linux-gnu/libbiosig.so*
+    command: bash -lc 'ls -la /usr/lib/x86_64-linux-gnu/libbiosig.so*'
     expected_output_contains: "libbiosig.so.3"
 
   - name: Qt libraries present

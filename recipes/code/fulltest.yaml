@@ -39,32 +39,32 @@ tests:
   # ==========================================================================
   - name: VSCode version check
     description: Verify VSCode binary runs and reports version
-    command: /usr/bin/code --version 2>&1 | head -1
+    command: bash -lc '/usr/bin/code --version 2>&1 | head -1'
     expected_output_contains: "1.76.1"
 
   - name: VSCode help
     description: Verify VSCode help command works
-    command: /usr/bin/code --help 2>&1 | head -5
+    command: bash -lc '/usr/bin/code --help 2>&1 | head -5'
     expected_output_contains: "Visual Studio Code"
 
   - name: VSCode list extensions
     description: List installed VSCode extensions
-    command: /usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1
+    command: bash -lc '/usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1'
     expected_output_contains: "ms-python.python"
 
   - name: VSCode Python extension
     description: Verify Python extension is installed
-    command: /usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1
+    command: bash -lc '/usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1'
     expected_output_contains: "ms-python.vscode-pylance"
 
   - name: VSCode Julia extension
     description: Verify Julia extension is installed
-    command: /usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1
+    command: bash -lc '/usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1'
     expected_output_contains: "julialang.language-julia"
 
   - name: VSCode Jupyter extension
     description: Verify Jupyter extension is installed
-    command: /usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1
+    command: bash -lc '/usr/bin/code --list-extensions --extensions-dir=/opt/vscode-extensions 2>&1'
     expected_output_contains: "ms-toolsai.jupyter"
 
   # ==========================================================================
@@ -416,39 +416,39 @@ tests:
   # ==========================================================================
   - name: Julia version
     description: Verify Julia version
-    command: /opt/julia-1.6.3/bin/julia --version 2>&1
+    command: bash -lc '/opt/julia-1.6.3/bin/julia --version 2>&1'
     expected_output_contains: "julia version 1.6.3"
 
   - name: Julia help
     description: Verify Julia help works
-    command: /opt/julia-1.6.3/bin/julia --help 2>&1 | head -5
+    command: bash -lc '/opt/julia-1.6.3/bin/julia --help 2>&1 | head -5'
     expected_output_contains: "julia"
 
   - name: Julia basic execution
     description: Test basic Julia execution
-    command: /opt/julia-1.6.3/bin/julia -e 'println(2 + 2)'
+    command: bash -lc '/opt/julia-1.6.3/bin/julia -e '\''println(2 + 2)'\'''
     expected_output_contains: "4"
 
   - name: Julia array operations
     description: Test Julia array creation and sum
-    command: "/opt/julia-1.6.3/bin/julia -e 'a = [1, 2, 3, 4, 5]; println(\"Sum: \", sum(a))'"
+    command: "bash -lc '/opt/julia-1.6.3/bin/julia -e '\"'\"'a = [1, 2, 3, 4, 5]; println(\"Sum: \", sum(a))'\"'\"''"
     expected_output_contains: "Sum: 15"
 
   - name: Julia matrix operations
     description: Test Julia matrix multiplication
-    command: "/opt/julia-1.6.3/bin/julia -e 'using LinearAlgebra; A = [1 2; 3 4]; println(\"Det: \", det(A))'"
+    command: "bash -lc '/opt/julia-1.6.3/bin/julia -e '\"'\"'using LinearAlgebra; A = [1 2; 3 4]; println(\"Det: \", det(A))'\"'\"''"
     expected_output_contains: "Det: -2.0"
 
   - name: Julia file I/O
     description: Test Julia can write and read files
     command: |
-      /opt/julia-1.6.3/bin/julia -e '
+      bash -lc '/opt/julia-1.6.3/bin/julia -e '\''
       open("${output_dir}/julia_test.txt", "w") do f
           write(f, "Hello from Julia!")
       end
       content = read("${output_dir}/julia_test.txt", String)
       println(content)
-      '
+      '\'''
     expected_output_contains: "Hello from Julia"
     validate:
       - output_exists: ${output_dir}/julia_test.txt

@@ -39,27 +39,27 @@ tests:
 
   - name: MGLTools installation directory
     description: Verify MGLTools is installed in expected location
-    command: ls -la /opt/mgltools/
+    command: "bash -lc 'ls -la /opt/mgltools/'"
     expected_output_contains: "MGLToolsPckgs"
 
   - name: AutoDockTools package exists
     description: Verify AutoDockTools Python package is available
-    command: ls /opt/mgltools/MGLToolsPckgs/AutoDockTools/
+    command: "bash -lc 'ls /opt/mgltools/MGLToolsPckgs/AutoDockTools/'"
     expected_output_contains: "__init__.py"
 
   - name: MolKit package exists
     description: Verify MolKit molecular toolkit package is available
-    command: ls /opt/mgltools/MGLToolsPckgs/MolKit/
+    command: "bash -lc 'ls /opt/mgltools/MGLToolsPckgs/MolKit/'"
     expected_output_contains: "molecule.py"
 
   - name: PyAutoDock package exists
     description: Verify PyAutoDock scoring package is available
-    command: ls /opt/mgltools/MGLToolsPckgs/PyAutoDock/
+    command: "bash -lc 'ls /opt/mgltools/MGLToolsPckgs/PyAutoDock/'"
     expected_output_contains: "AutoDockScorer.py"
 
   - name: Utilities24 directory exists
     description: Verify AutoDock Utilities24 scripts are available
-    command: ls /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/
+    command: "bash -lc 'ls /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/'"
     expected_output_contains: "prepare_ligand4.py"
 
   # ==========================================================================
@@ -67,32 +67,32 @@ tests:
   # ==========================================================================
   - name: prepare_ligand4.py help
     description: Test prepare_ligand4.py shows usage information
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_ligand4.py -h 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_ligand4.py -h 2>&1'"
     expected_output_contains: "ligand_filename"
 
   - name: prepare_ligand4.py options A
     description: Verify repair options are documented
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_ligand4.py -h 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_ligand4.py -h 2>&1'"
     expected_output_contains: "bonds_hydrogens"
 
   - name: prepare_ligand4.py options C
     description: Verify charge options are documented
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_ligand4.py -h 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_ligand4.py -h 2>&1'"
     expected_output_contains: "gasteiger"
 
   - name: prepare_ligand.py help
     description: Test prepare_ligand.py (AutoDock 3) shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_ligand.py -h 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_ligand.py -h 2>&1'"
     expected_output_contains: "ligand_filename"
 
   - name: write_rigid_ligand.py help
     description: Test write_rigid_ligand.py shows usage information
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_rigid_ligand.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_rigid_ligand.py 2>&1'"
     expected_output_contains: "rigid ligandfile"
 
   - name: repair_ligand4.py help
     description: Test repair_ligand4.py shows usage information
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/repair_ligand4.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/repair_ligand4.py 2>&1'"
     expected_output_contains: "Usage"
 
   # ==========================================================================
@@ -100,33 +100,33 @@ tests:
   # ==========================================================================
   - name: prepare_receptor4.py help
     description: Test prepare_receptor4.py shows usage information
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_receptor4.py -h 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_receptor4.py -h 2>&1'"
     expected_output_contains: "receptor_filename"
 
   - name: prepare_receptor4.py repair options
     description: Verify receptor repair options are documented
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_receptor4.py -h 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_receptor4.py -h 2>&1'"
     expected_output_contains: "bonds_hydrogens"
 
   - name: prepare_receptor4.py cleanup options
     description: Verify receptor cleanup options are documented
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_receptor4.py -h 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_receptor4.py -h 2>&1'"
     expected_output_contains: "nphs_lps_waters"
 
   - name: prepare_receptor.py help
     description: Test prepare_receptor.py (AutoDock 3) shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_receptor.py -h 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_receptor.py -h 2>&1'"
     expected_exit_code: 2
     expected_output_contains: "prepare_receptor.py"
 
   - name: prepare_flexreceptor4.py help
     description: Test prepare_flexreceptor4.py shows usage information
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_flexreceptor4.py -h 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_flexreceptor4.py -h 2>&1'"
     expected_output_contains: "flex residues"
 
   - name: prepare_pdb_split_alt_confs.py help
     description: Test prepare_pdb_split_alt_confs.py shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_pdb_split_alt_confs.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_pdb_split_alt_confs.py 2>&1'"
     expected_output_contains: "Usage"
 
   # ==========================================================================
@@ -134,27 +134,27 @@ tests:
   # ==========================================================================
   - name: prepare_gpf4.py help
     description: Test prepare_gpf4.py shows usage information
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_gpf4.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_gpf4.py 2>&1'"
     expected_output_contains: "grid parameter file"
 
   - name: prepare_gpf4.py options
     description: Verify GPF parameter options are documented
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_gpf4.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_gpf4.py 2>&1'"
     expected_output_contains: "ligand_types"
 
   - name: prepare_gpf.py help
     description: Test prepare_gpf.py (AutoDock 3) shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_gpf.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_gpf.py 2>&1'"
     expected_output_contains: "Usage"
 
   - name: gpf3_to_gpf4.py help
     description: Test GPF version conversion utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/gpf3_to_gpf4.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/gpf3_to_gpf4.py 2>&1'"
     expected_output_contains: "Usage"
 
   - name: gpf4_to_gpf3.py help
     description: Test GPF4 to GPF3 conversion utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/gpf4_to_gpf3.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/gpf4_to_gpf3.py 2>&1'"
     expected_output_contains: "Usage"
 
   # ==========================================================================
@@ -162,27 +162,27 @@ tests:
   # ==========================================================================
   - name: prepare_dpf4.py help
     description: Test prepare_dpf4.py shows usage information
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_dpf4.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_dpf4.py 2>&1'"
     expected_output_contains: "docking parameter file"
 
   - name: prepare_dpf41.py help
     description: Test prepare_dpf41.py (AutoDock 4.1) shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_dpf41.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_dpf41.py 2>&1'"
     expected_output_contains: "docking parameter file"
 
   - name: prepare_dpf42.py help
     description: Test prepare_dpf42.py (AutoDock 4.2) shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_dpf42.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_dpf42.py 2>&1'"
     expected_output_contains: "AutoDock42"
 
   - name: prepare_dpf.py help
     description: Test prepare_dpf.py (AutoDock 3) shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_dpf.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_dpf.py 2>&1'"
     expected_output_contains: "Usage"
 
   - name: dpf3_to_dpf4.py help
     description: Test DPF version conversion utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/dpf3_to_dpf4.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/dpf3_to_dpf4.py 2>&1'"
     expected_output_contains: "dpf3_stem"
 
   # ==========================================================================
@@ -190,17 +190,17 @@ tests:
   # ==========================================================================
   - name: prepare_configFile.py help
     description: Test AutoDock Vina config file preparation
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_configFile.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_configFile.py 2>&1'"
     expected_output_contains: "AutoDock vina"
 
   - name: prepare_configFile.py grid options
     description: Verify Vina grid center options are documented
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_configFile.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_configFile.py 2>&1'"
     expected_output_contains: "center_x"
 
   - name: prepare_configFile.py size options
     description: Verify Vina grid size options are documented
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_configFile.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_configFile.py 2>&1'"
     expected_output_contains: "size_x"
 
   # ==========================================================================
@@ -208,27 +208,27 @@ tests:
   # ==========================================================================
   - name: summarize_docking.py help
     description: Test summarize_docking.py shows usage information
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/summarize_docking.py -h 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/summarize_docking.py -h 2>&1'"
     expected_output_contains: "docking_logfile"
 
   - name: summarize_docking.py rmsd option
     description: Verify RMSD tolerance option is documented
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/summarize_docking.py -h 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/summarize_docking.py -h 2>&1'"
     expected_output_contains: "rmsd tolerance"
 
   - name: summarize_results4.py help
     description: Test summarize_results4.py shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/summarize_results4.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/summarize_results4.py 2>&1'"
     expected_output_contains: "Usage"
 
   - name: summarize_results41.py help
     description: Test summarize_results41.py shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/summarize_results41.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/summarize_results41.py 2>&1'"
     expected_output_contains: "Usage"
 
   - name: summarize_docking_directory.py help
     description: Test summarize_docking_directory.py shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/summarize_docking_directory.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/summarize_docking_directory.py 2>&1'"
     expected_output_contains: "Usage"
 
   # ==========================================================================
@@ -236,23 +236,23 @@ tests:
   # ==========================================================================
   - name: write_conformations_from_dlg.py help
     description: Test write_conformations_from_dlg.py shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_conformations_from_dlg.py -h 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_conformations_from_dlg.py -h 2>&1'"
     expected_output_contains: "docking filename"
 
   - name: write_lowest_energy_ligand.py help
     description: Test write_lowest_energy_ligand.py shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_lowest_energy_ligand.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_lowest_energy_ligand.py 2>&1'"
     expected_output_contains: "dlgfilename"
 
   - name: write_each_cluster_LE_conf.py help
     description: Test write_each_cluster_LE_conf.py shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_each_cluster_LE_conf.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_each_cluster_LE_conf.py 2>&1'"
     ignore_exit_code: true
     expected_output_contains: "write_each_cluster_LE_conf"
 
   - name: write_all_complexes.py help
     description: Test write_all_complexes.py shows usage
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_all_complexes.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_all_complexes.py 2>&1'"
     expected_output_contains: "Usage"
 
   # ==========================================================================
@@ -260,27 +260,27 @@ tests:
   # ==========================================================================
   - name: pdbqt_to_pdb.py help
     description: Test PDBQT to PDB conversion utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/pdbqt_to_pdb.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/pdbqt_to_pdb.py 2>&1'"
     expected_output_contains: "pdbqt_filename"
 
   - name: pdbq_to_pdbqt.py help
     description: Test PDBQ to PDBQT conversion utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/pdbq_to_pdbqt.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/pdbq_to_pdbqt.py 2>&1'"
     expected_output_contains: "Usage"
 
   - name: pdbqt_to_pdbq.py help
     description: Test PDBQT to PDBQ conversion utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/pdbqt_to_pdbq.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/pdbqt_to_pdbq.py 2>&1'"
     expected_output_contains: "Usage"
 
   - name: pdbqs_to_pdbqt.py help
     description: Test PDBQS to PDBQT conversion utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/pdbqs_to_pdbqt.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/pdbqs_to_pdbqt.py 2>&1'"
     expected_output_contains: "Usage"
 
   - name: pdbqt_to_pdbqs.py help
     description: Test PDBQT to PDBQS conversion utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/pdbqt_to_pdbqs.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/pdbqt_to_pdbqs.py 2>&1'"
     expected_output_contains: "Usage"
 
   # ==========================================================================
@@ -288,22 +288,22 @@ tests:
   # ==========================================================================
   - name: compute_rms_between_conformations.py help
     description: Test RMSD calculation utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/compute_rms_between_conformations.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/compute_rms_between_conformations.py 2>&1'"
     expected_output_contains: "reference"
 
   - name: compute_interatomic_distance_per_pose.py help
     description: Test interatomic distance calculation
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/compute_interatomic_distance_per_pose.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/compute_interatomic_distance_per_pose.py 2>&1'"
     expected_output_contains: "receptor atom"
 
   - name: superpose_molecules.py help
     description: Test molecule superposition utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/superpose_molecules.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/superpose_molecules.py 2>&1'"
     expected_output_contains: "superimposed"
 
   - name: rotate_molecule.py help
     description: Test molecule rotation utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/rotate_molecule.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/rotate_molecule.py 2>&1'"
     expected_output_contains: "rotate"
 
   # ==========================================================================
@@ -311,17 +311,17 @@ tests:
   # ==========================================================================
   - name: compute_AutoDock41_score.py help
     description: Test AutoDock 4.1 scoring utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/compute_AutoDock41_score.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/compute_AutoDock41_score.py 2>&1'"
     expected_output_contains: "Usage"
 
   - name: calc_energy_breakdown_from_results.py help
     description: Test energy breakdown calculation
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/calc_energy_breakdown_from_results.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/calc_energy_breakdown_from_results.py 2>&1'"
     expected_output_contains: "Usage"
 
   - name: write_component_energies.py help
     description: Test component energy writer
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_component_energies.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_component_energies.py 2>&1'"
     expected_output_contains: "Usage"
 
   # ==========================================================================
@@ -329,12 +329,12 @@ tests:
   # ==========================================================================
   - name: process_VinaResult.py help
     description: Test Vina result processing utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/process_VinaResult.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/process_VinaResult.py 2>&1'"
     expected_output_contains: "vina_resultfile"
 
   - name: compute_interatomic_distance_per_vina_pose.py help
     description: Test Vina pose distance calculation
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/compute_interatomic_distance_per_vina_pose.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/compute_interatomic_distance_per_vina_pose.py 2>&1'"
     expected_output_contains: "Usage"
 
   # ==========================================================================
@@ -450,27 +450,27 @@ tests:
   # ==========================================================================
   - name: write_clustering_histogram_postscript.py help
     description: Test clustering histogram utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_clustering_histogram_postscript.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/write_clustering_histogram_postscript.py 2>&1'"
     expected_output_contains: "Usage"
 
   - name: summarize_time.py help
     description: Test timing summarization utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/summarize_time.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/summarize_time.py 2>&1'"
     expected_output_contains: "Usage"
 
   - name: get_trilinterp_values.py help
     description: Test trilinear interpolation utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/get_trilinterp_values.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/get_trilinterp_values.py 2>&1'"
     expected_output_contains: "Usage"
 
   - name: compute_water_map.py help
     description: Test water map computation utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/compute_water_map.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/compute_water_map.py 2>&1'"
     expected_output_contains: "map"
 
   - name: energy_average_maps.py help
     description: Test energy map averaging utility
-    command: pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/energy_average_maps.py 2>&1
+    command: "bash -lc 'pythonsh /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/energy_average_maps.py 2>&1'"
     ignore_exit_code: true
     expected_output_contains: "energy_average_maps"
 
@@ -479,22 +479,22 @@ tests:
   # ==========================================================================
   - name: adt script exists
     description: Verify AutoDockTools main script exists
-    command: ls -la /opt/mgltools/bin/adt
+    command: "bash -lc 'ls -la /opt/mgltools/bin/adt'"
     expected_output_contains: "adt"
 
   - name: pmv script exists
     description: Verify Python Molecular Viewer script exists
-    command: ls -la /opt/mgltools/bin/pmv
+    command: "bash -lc 'ls -la /opt/mgltools/bin/pmv'"
     expected_output_contains: "pmv"
 
   - name: vision script exists
     description: Verify Vision visual programming script exists
-    command: ls -la /opt/mgltools/bin/vision
+    command: "bash -lc 'ls -la /opt/mgltools/bin/vision'"
     expected_output_contains: "vision"
 
   - name: pythonsh script exists
     description: Verify MGLTools Python shell script exists
-    command: ls -la /opt/mgltools/bin/pythonsh
+    command: "bash -lc 'ls -la /opt/mgltools/bin/pythonsh'"
     expected_output_contains: "pythonsh"
 
   # ==========================================================================
@@ -502,17 +502,17 @@ tests:
   # ==========================================================================
   - name: AD4 parameters file exists
     description: Verify AutoDock 4 parameter file exists
-    command: ls /opt/mgltools/MGLToolsPckgs/AutoDockTools/AD4_parameters.dat
+    command: "bash -lc 'ls /opt/mgltools/MGLToolsPckgs/AutoDockTools/AD4_parameters.dat'"
     expected_output_contains: "AD4_parameters.dat"
 
   - name: AD4.1 bound parameters file exists
     description: Verify AutoDock 4.1 bound parameter file exists
-    command: ls /opt/mgltools/MGLToolsPckgs/AutoDockTools/AD4.1_bound.dat
+    command: "bash -lc 'ls /opt/mgltools/MGLToolsPckgs/AutoDockTools/AD4.1_bound.dat'"
     expected_output_contains: "AD4.1_bound.dat"
 
   - name: Reference DPF files exist
     description: Verify reference DPF templates exist
-    command: ls /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/ref*.dpf
+    command: bash -lc 'ls /opt/mgltools/MGLToolsPckgs/AutoDockTools/Utilities24/ref*.dpf'
     expected_output_contains: ".dpf"
 
 cleanup:

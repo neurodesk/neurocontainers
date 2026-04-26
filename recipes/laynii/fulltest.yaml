@@ -266,33 +266,7 @@ tests:
   # ==========================================================================
   - name: Copy container test data
     description: Copy LayNii test data from container for subsequent tests
-    command: |
-      cp /opt/laynii-2.2.1/test_data/sc_rim.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/sc_layers.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/sc_midGM.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/sc_VASO_act.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/sc_BOLD_act.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/sc_UNI.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/sc_INV1.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/sc_INV2.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/sc_columns_3dcolumns.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/sc_layers_3dcolumns.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/sc_landmarks.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/sc_landmarks_3dcolumns.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/lo_BOLD_intemp.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/lo_Nulled_intemp.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/lo_BOLD_act.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/lo_VASO_act.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/lo_gradT1.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/lo_layers.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/lo_columns.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/lo_ALF.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/lo_rim_LL.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/lo_sc_layers.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/lo_T1EPI.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/sc_distlay_1000.nii.gz test_output/
-      cp /opt/laynii-2.2.1/test_data/sc_leakylay_1000.nii.gz test_output/
-      echo "Test data copied successfully"
+    command: "bash -lc 'cp /opt/laynii-2.2.1/test_data/sc_rim.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/sc_layers.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/sc_midGM.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/sc_VASO_act.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/sc_BOLD_act.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/sc_UNI.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/sc_INV1.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/sc_INV2.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/sc_columns_3dcolumns.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/sc_layers_3dcolumns.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/sc_landmarks.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/sc_landmarks_3dcolumns.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/lo_BOLD_intemp.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/lo_Nulled_intemp.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/lo_BOLD_act.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/lo_VASO_act.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/lo_gradT1.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/lo_layers.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/lo_columns.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/lo_ALF.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/lo_rim_LL.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/lo_sc_layers.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/lo_T1EPI.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/sc_distlay_1000.nii.gz test_output/\ncp /opt/laynii-2.2.1/test_data/sc_leakylay_1000.nii.gz test_output/\necho \"Test data copied successfully\"'"
     expected_output_contains: "Test data copied successfully"
 
   # ==========================================================================
