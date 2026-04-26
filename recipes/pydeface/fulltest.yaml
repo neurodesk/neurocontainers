@@ -421,22 +421,22 @@ tests:
   # ==========================================================================
   - name: Check default template exists
     description: Verify default registration template is present
-    command: ls -la /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/mean_reg2mean.nii.gz
+    command: "bash -lc 'ls -la /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/mean_reg2mean.nii.gz'"
     expected_output_contains: "mean_reg2mean.nii.gz"
 
   - name: Check default facemask exists
     description: Verify default face mask is present
-    command: ls -la /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/facemask.nii.gz
+    command: "bash -lc 'ls -la /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/facemask.nii.gz'"
     expected_output_contains: "facemask.nii.gz"
 
   - name: Inspect default template
     description: Get info about default template image
-    command: nib-ls /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/mean_reg2mean.nii.gz
+    command: "bash -lc 'nib-ls /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/mean_reg2mean.nii.gz'"
     expected_output_contains: ""
 
   - name: Inspect default facemask
     description: Get info about default face mask image
-    command: nib-ls /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/facemask.nii.gz
+    command: "bash -lc 'nib-ls /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/facemask.nii.gz'"
     expected_output_contains: ""
 
   # ==========================================================================

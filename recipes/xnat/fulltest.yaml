@@ -66,7 +66,7 @@ tests:
   # ==========================================================================
   - name: PostgreSQL initdb version
     description: Verify PostgreSQL initdb is available
-    command: /usr/lib/postgresql/12/bin/initdb --version
+    command: bash -lc '/usr/lib/postgresql/12/bin/initdb --version'
     expected_output_contains: "initdb (PostgreSQL) 12"
 
   - name: PostgreSQL psql version
@@ -86,22 +86,22 @@ tests:
 
   - name: PostgreSQL pg_dump version
     description: Verify pg_dump backup utility is available
-    command: /usr/lib/postgresql/12/bin/pg_dump --version
+    command: bash -lc '/usr/lib/postgresql/12/bin/pg_dump --version'
     expected_output_contains: "pg_dump (PostgreSQL) 12"
 
   - name: PostgreSQL pg_restore version
     description: Verify pg_restore utility is available
-    command: /usr/lib/postgresql/12/bin/pg_restore --version
+    command: bash -lc '/usr/lib/postgresql/12/bin/pg_restore --version'
     expected_output_contains: "pg_restore (PostgreSQL) 12"
 
   - name: PostgreSQL pg_ctl help
     description: Verify pg_ctl control utility is available
-    command: /usr/lib/postgresql/12/bin/pg_ctl --help 2>&1 | head -10
+    command: bash -lc '/usr/lib/postgresql/12/bin/pg_ctl --help 2>&1 | head -10'
     expected_output_contains: "pg_ctl"
 
   - name: PostgreSQL configuration
     description: Verify PostgreSQL config utility
-    command: /usr/lib/postgresql/12/bin/pg_config --version
+    command: bash -lc '/usr/lib/postgresql/12/bin/pg_config --version'
     expected_output_contains: "PostgreSQL 12"
 
   # ==========================================================================
@@ -109,37 +109,37 @@ tests:
   # ==========================================================================
   - name: Tomcat version check
     description: Verify Apache Tomcat 9 is installed
-    command: /usr/share/tomcat9/bin/version.sh 2>&1
+    command: bash -lc '/usr/share/tomcat9/bin/version.sh 2>&1'
     expected_output_contains: "Apache Tomcat/9"
 
   - name: Tomcat server number
     description: Verify Tomcat server version number
-    command: /usr/share/tomcat9/bin/version.sh 2>&1
+    command: bash -lc '/usr/share/tomcat9/bin/version.sh 2>&1'
     expected_output_contains: "9.0.31"
 
   - name: Tomcat catalina script
     description: Verify Tomcat catalina.sh exists and is executable
-    command: test -x /usr/share/tomcat9/bin/catalina.sh && echo "catalina.sh is executable"
+    command: bash -lc 'test -x /usr/share/tomcat9/bin/catalina.sh && echo "catalina.sh is executable"'
     expected_output_contains: "catalina.sh is executable"
 
   - name: Tomcat startup script
     description: Verify Tomcat startup.sh exists
-    command: test -f /usr/share/tomcat9/bin/startup.sh && echo "startup.sh exists"
+    command: bash -lc 'test -f /usr/share/tomcat9/bin/startup.sh && echo "startup.sh exists"'
     expected_output_contains: "startup.sh exists"
 
   - name: Tomcat shutdown script
     description: Verify Tomcat shutdown.sh exists
-    command: test -f /usr/share/tomcat9/bin/shutdown.sh && echo "shutdown.sh exists"
+    command: bash -lc 'test -f /usr/share/tomcat9/bin/shutdown.sh && echo "shutdown.sh exists"'
     expected_output_contains: "shutdown.sh exists"
 
   - name: Tomcat bootstrap jar
     description: Verify Tomcat bootstrap.jar exists
-    command: test -f /usr/share/tomcat9/bin/bootstrap.jar && echo "bootstrap.jar exists"
+    command: bash -lc 'test -f /usr/share/tomcat9/bin/bootstrap.jar && echo "bootstrap.jar exists"'
     expected_output_contains: "bootstrap.jar exists"
 
   - name: Tomcat configuration directory
     description: Verify Tomcat conf directory exists
-    command: test -d /usr/share/tomcat9/conf && echo "conf directory exists"
+    command: bash -lc 'test -d /usr/share/tomcat9/conf && echo "conf directory exists"'
     expected_output_contains: "conf directory exists"
 
   # ==========================================================================
@@ -147,42 +147,42 @@ tests:
   # ==========================================================================
   - name: XNAT webapp directory
     description: Verify XNAT webapp directory exists
-    command: test -d /opt/xnat-webapp && echo "xnat-webapp exists"
+    command: bash -lc 'test -d /opt/xnat-webapp && echo "xnat-webapp exists"'
     expected_output_contains: "xnat-webapp exists"
 
   - name: XNAT WEB-INF directory
     description: Verify XNAT WEB-INF directory structure
-    command: test -d /opt/xnat-webapp/WEB-INF && echo "WEB-INF exists"
+    command: bash -lc 'test -d /opt/xnat-webapp/WEB-INF && echo "WEB-INF exists"'
     expected_output_contains: "WEB-INF exists"
 
   - name: XNAT web.xml
     description: Verify XNAT web.xml deployment descriptor exists
-    command: test -f /opt/xnat-webapp/WEB-INF/web.xml && echo "web.xml exists"
+    command: bash -lc 'test -f /opt/xnat-webapp/WEB-INF/web.xml && echo "web.xml exists"'
     expected_output_contains: "web.xml exists"
 
   - name: XNAT lib directory
     description: Verify XNAT lib directory with JAR files exists
-    command: test -d /opt/xnat-webapp/WEB-INF/lib && echo "lib directory exists"
+    command: bash -lc 'test -d /opt/xnat-webapp/WEB-INF/lib && echo "lib directory exists"'
     expected_output_contains: "lib directory exists"
 
   - name: XNAT classes directory
     description: Verify XNAT classes directory exists
-    command: test -d /opt/xnat-webapp/WEB-INF/classes && echo "classes directory exists"
+    command: bash -lc 'test -d /opt/xnat-webapp/WEB-INF/classes && echo "classes directory exists"'
     expected_output_contains: "classes directory exists"
 
   - name: XNAT scripts directory
     description: Verify XNAT scripts directory exists
-    command: test -d /opt/xnat-webapp/scripts && ls /opt/xnat-webapp/scripts | wc -l
+    command: bash -lc 'test -d /opt/xnat-webapp/scripts && ls /opt/xnat-webapp/scripts | wc -l'
     expected_exit_code: 0
 
   - name: XNAT templates directory
     description: Verify XNAT templates directory exists
-    command: test -d /opt/xnat-webapp/templates && echo "templates directory exists"
+    command: bash -lc 'test -d /opt/xnat-webapp/templates && echo "templates directory exists"'
     expected_output_contains: "templates directory exists"
 
   - name: XNAT favicon
     description: Verify XNAT favicon.ico exists
-    command: test -f /opt/xnat-webapp/favicon.ico && echo "favicon.ico exists"
+    command: bash -lc 'test -f /opt/xnat-webapp/favicon.ico && echo "favicon.ico exists"'
     expected_output_contains: "favicon.ico exists"
 
   # ==========================================================================
@@ -190,32 +190,32 @@ tests:
   # ==========================================================================
   - name: XNAT config directory
     description: Verify XNAT configuration directory exists
-    command: test -d /opt/xnat-config && echo "xnat-config exists"
+    command: bash -lc 'test -d /opt/xnat-config && echo "xnat-config exists"'
     expected_output_contains: "xnat-config exists"
 
   - name: XNAT properties template
     description: Verify XNAT configuration properties template exists
-    command: test -f /opt/xnat-config/xnat-conf.properties.template && echo "properties template exists"
+    command: bash -lc 'test -f /opt/xnat-config/xnat-conf.properties.template && echo "properties template exists"'
     expected_output_contains: "properties template exists"
 
   - name: XNAT datasource driver config
     description: Verify PostgreSQL driver is configured
-    command: grep -q "org.postgresql.Driver" /opt/xnat-config/xnat-conf.properties.template && echo "PostgreSQL driver configured"
+    command: "bash -lc 'grep -q \"org.postgresql.Driver\" /opt/xnat-config/xnat-conf.properties.template && echo \"PostgreSQL driver configured\"'"
     expected_output_contains: "PostgreSQL driver configured"
 
   - name: XNAT database URL config
     description: Verify database URL is configured
-    command: grep "datasource.url" /opt/xnat-config/xnat-conf.properties.template
+    command: "bash -lc 'grep \"datasource.url\" /opt/xnat-config/xnat-conf.properties.template'"
     expected_output_contains: "jdbc:postgresql://localhost/xnat"
 
   - name: XNAT Hibernate dialect config
     description: Verify Hibernate PostgreSQL dialect is configured
-    command: grep "hibernate.dialect" /opt/xnat-config/xnat-conf.properties.template
+    command: "bash -lc 'grep \"hibernate.dialect\" /opt/xnat-config/xnat-conf.properties.template'"
     expected_output_contains: "PostgreSQL9Dialect"
 
   - name: XNAT web-default.xml
     description: Verify custom web.xml with servlet mappings exists
-    command: test -f /opt/xnat-config/web-default.xml && echo "web-default.xml exists"
+    command: bash -lc 'test -f /opt/xnat-config/web-default.xml && echo "web-default.xml exists"'
     expected_output_contains: "web-default.xml exists"
 
   # ==========================================================================
@@ -223,7 +223,7 @@ tests:
   # ==========================================================================
   - name: Custom server.xml
     description: Verify custom Tomcat server.xml exists
-    command: test -f /usr/share/tomcat9/conf/server.xml && echo "server.xml exists"
+    command: bash -lc 'test -f /usr/share/tomcat9/conf/server.xml && echo "server.xml exists"'
     expected_output_contains: "server.xml exists"
 
   - name: Server HTTP connector port
@@ -246,22 +246,22 @@ tests:
   # ==========================================================================
   - name: XNAT entrypoint script exists
     description: Verify XNAT entrypoint script exists
-    command: test -f /usr/bin/xnat && echo "xnat script exists"
+    command: bash -lc 'test -f /usr/bin/xnat && echo "xnat script exists"'
     expected_output_contains: "xnat script exists"
 
   - name: XNAT entrypoint script executable
     description: Verify XNAT entrypoint script is executable
-    command: test -x /usr/bin/xnat && echo "xnat script is executable"
+    command: bash -lc 'test -x /usr/bin/xnat && echo "xnat script is executable"'
     expected_output_contains: "xnat script is executable"
 
   - name: Init-postgres script exists
     description: Verify PostgreSQL initialization script exists
-    command: test -f /usr/bin/init-postgres && echo "init-postgres exists"
+    command: bash -lc 'test -f /usr/bin/init-postgres && echo "init-postgres exists"'
     expected_output_contains: "init-postgres exists"
 
   - name: Init-postgres script executable
     description: Verify init-postgres script is executable
-    command: test -x /usr/bin/init-postgres && echo "init-postgres is executable"
+    command: bash -lc 'test -x /usr/bin/init-postgres && echo "init-postgres is executable"'
     expected_output_contains: "init-postgres is executable"
 
   - name: XNAT version in entrypoint
@@ -297,7 +297,7 @@ tests:
   # ==========================================================================
   - name: Build YAML exists
     description: Verify build.yaml exists in container
-    command: test -f /build.yaml && echo "build.yaml exists"
+    command: bash -lc 'test -f /build.yaml && echo "build.yaml exists"'
     expected_output_contains: "build.yaml exists"
 
   - name: Build YAML version
@@ -312,7 +312,7 @@ tests:
 
   - name: README exists
     description: Verify README.md exists
-    command: test -f /README.md && cat /README.md
+    command: bash -lc 'test -f /README.md && cat /README.md'
     expected_output_contains: "xnat"
 
   # ==========================================================================
@@ -320,42 +320,42 @@ tests:
   # ==========================================================================
   - name: XNAT images directory
     description: Verify XNAT images directory exists
-    command: test -d /opt/xnat-webapp/images && echo "images directory exists"
+    command: bash -lc 'test -d /opt/xnat-webapp/images && echo "images directory exists"'
     expected_output_contains: "images directory exists"
 
   - name: XNAT style directory
     description: Verify XNAT style directory exists
-    command: test -d /opt/xnat-webapp/style && echo "style directory exists"
+    command: bash -lc 'test -d /opt/xnat-webapp/style && echo "style directory exists"'
     expected_output_contains: "style directory exists"
 
   - name: XNAT resources directory
     description: Verify XNAT resources directory exists
-    command: test -d /opt/xnat-webapp/resources && echo "resources directory exists"
+    command: bash -lc 'test -d /opt/xnat-webapp/resources && echo "resources directory exists"'
     expected_output_contains: "resources directory exists"
 
   - name: XNAT themes directory
     description: Verify XNAT themes directory exists
-    command: test -d /opt/xnat-webapp/themes && echo "themes directory exists"
+    command: bash -lc 'test -d /opt/xnat-webapp/themes && echo "themes directory exists"'
     expected_output_contains: "themes directory exists"
 
   - name: XNAT base-templates directory
     description: Verify XNAT base-templates directory exists
-    command: test -d /opt/xnat-webapp/base-templates && echo "base-templates directory exists"
+    command: bash -lc 'test -d /opt/xnat-webapp/base-templates && echo "base-templates directory exists"'
     expected_output_contains: "base-templates directory exists"
 
   - name: XNAT xnat-templates directory
     description: Verify XNAT xnat-templates directory exists
-    command: test -d /opt/xnat-webapp/xnat-templates && echo "xnat-templates directory exists"
+    command: bash -lc 'test -d /opt/xnat-webapp/xnat-templates && echo "xnat-templates directory exists"'
     expected_output_contains: "xnat-templates directory exists"
 
   - name: XNAT xdat-templates directory
     description: Verify XNAT xdat-templates directory exists
-    command: test -d /opt/xnat-webapp/xdat-templates && echo "xdat-templates directory exists"
+    command: bash -lc 'test -d /opt/xnat-webapp/xdat-templates && echo "xdat-templates directory exists"'
     expected_output_contains: "xdat-templates directory exists"
 
   - name: XNAT setup directory
     description: Verify XNAT setup directory exists
-    command: test -d /opt/xnat-webapp/setup && echo "setup directory exists"
+    command: bash -lc 'test -d /opt/xnat-webapp/setup && echo "setup directory exists"'
     expected_output_contains: "setup directory exists"
 
   # ==========================================================================
@@ -363,47 +363,47 @@ tests:
   # ==========================================================================
   - name: PostgreSQL clusterdb
     description: Verify clusterdb utility exists
-    command: test -x /usr/lib/postgresql/12/bin/clusterdb && echo "clusterdb exists"
+    command: bash -lc 'test -x /usr/lib/postgresql/12/bin/clusterdb && echo "clusterdb exists"'
     expected_output_contains: "clusterdb exists"
 
   - name: PostgreSQL createuser
     description: Verify createuser utility exists
-    command: test -x /usr/lib/postgresql/12/bin/createuser && echo "createuser exists"
+    command: bash -lc 'test -x /usr/lib/postgresql/12/bin/createuser && echo "createuser exists"'
     expected_output_contains: "createuser exists"
 
   - name: PostgreSQL dropdb
     description: Verify dropdb utility exists
-    command: test -x /usr/lib/postgresql/12/bin/dropdb && echo "dropdb exists"
+    command: bash -lc 'test -x /usr/lib/postgresql/12/bin/dropdb && echo "dropdb exists"'
     expected_output_contains: "dropdb exists"
 
   - name: PostgreSQL dropuser
     description: Verify dropuser utility exists
-    command: test -x /usr/lib/postgresql/12/bin/dropuser && echo "dropuser exists"
+    command: bash -lc 'test -x /usr/lib/postgresql/12/bin/dropuser && echo "dropuser exists"'
     expected_output_contains: "dropuser exists"
 
   - name: PostgreSQL pg_basebackup
     description: Verify pg_basebackup utility exists
-    command: test -x /usr/lib/postgresql/12/bin/pg_basebackup && echo "pg_basebackup exists"
+    command: bash -lc 'test -x /usr/lib/postgresql/12/bin/pg_basebackup && echo "pg_basebackup exists"'
     expected_output_contains: "pg_basebackup exists"
 
   - name: PostgreSQL pgbench
     description: Verify pgbench benchmarking tool exists
-    command: test -x /usr/lib/postgresql/12/bin/pgbench && echo "pgbench exists"
+    command: bash -lc 'test -x /usr/lib/postgresql/12/bin/pgbench && echo "pgbench exists"'
     expected_output_contains: "pgbench exists"
 
   - name: PostgreSQL pg_dumpall
     description: Verify pg_dumpall utility exists
-    command: /usr/lib/postgresql/12/bin/pg_dumpall --version
+    command: bash -lc '/usr/lib/postgresql/12/bin/pg_dumpall --version'
     expected_output_contains: "pg_dumpall (PostgreSQL) 12"
 
   - name: PostgreSQL vacuumdb
     description: Verify vacuumdb utility exists
-    command: test -x /usr/lib/postgresql/12/bin/vacuumdb && echo "vacuumdb exists"
+    command: bash -lc 'test -x /usr/lib/postgresql/12/bin/vacuumdb && echo "vacuumdb exists"'
     expected_output_contains: "vacuumdb exists"
 
   - name: PostgreSQL reindexdb
     description: Verify reindexdb utility exists
-    command: test -x /usr/lib/postgresql/12/bin/reindexdb && echo "reindexdb exists"
+    command: bash -lc 'test -x /usr/lib/postgresql/12/bin/reindexdb && echo "reindexdb exists"'
     expected_output_contains: "reindexdb exists"
 
   # ==========================================================================
@@ -424,27 +424,27 @@ tests:
   # ==========================================================================
   - name: MIME types CSS configured
     description: Verify CSS MIME type is configured
-    command: grep -q "text/css" /opt/xnat-config/web-default.xml && echo "CSS MIME type configured"
+    command: "bash -lc 'grep -q \"text/css\" /opt/xnat-config/web-default.xml && echo \"CSS MIME type configured\"'"
     expected_output_contains: "CSS MIME type configured"
 
   - name: MIME types JavaScript configured
     description: Verify JavaScript MIME type is configured
-    command: grep -q "application/javascript" /opt/xnat-config/web-default.xml && echo "JS MIME type configured"
+    command: "bash -lc 'grep -q \"application/javascript\" /opt/xnat-config/web-default.xml && echo \"JS MIME type configured\"'"
     expected_output_contains: "JS MIME type configured"
 
   - name: MIME types JSON configured
     description: Verify JSON MIME type is configured
-    command: grep -q "application/json" /opt/xnat-config/web-default.xml && echo "JSON MIME type configured"
+    command: "bash -lc 'grep -q \"application/json\" /opt/xnat-config/web-default.xml && echo \"JSON MIME type configured\"'"
     expected_output_contains: "JSON MIME type configured"
 
   - name: MIME types PNG configured
     description: Verify PNG MIME type is configured
-    command: grep -q "image/png" /opt/xnat-config/web-default.xml && echo "PNG MIME type configured"
+    command: "bash -lc 'grep -q \"image/png\" /opt/xnat-config/web-default.xml && echo \"PNG MIME type configured\"'"
     expected_output_contains: "PNG MIME type configured"
 
   - name: MIME types SVG configured
     description: Verify SVG MIME type is configured
-    command: grep -q "image/svg+xml" /opt/xnat-config/web-default.xml && echo "SVG MIME type configured"
+    command: "bash -lc 'grep -q \"image/svg+xml\" /opt/xnat-config/web-default.xml && echo \"SVG MIME type configured\"'"
     expected_output_contains: "SVG MIME type configured"
 
   # ==========================================================================
@@ -452,17 +452,17 @@ tests:
   # ==========================================================================
   - name: Default servlet configured
     description: Verify default servlet is configured
-    command: grep -q "DefaultServlet" /opt/xnat-config/web-default.xml && echo "DefaultServlet configured"
+    command: "bash -lc 'grep -q \"DefaultServlet\" /opt/xnat-config/web-default.xml && echo \"DefaultServlet configured\"'"
     expected_output_contains: "DefaultServlet configured"
 
   - name: JSP servlet configured
     description: Verify JSP servlet is configured
-    command: grep -q "JspServlet" /opt/xnat-config/web-default.xml && echo "JspServlet configured"
+    command: "bash -lc 'grep -q \"JspServlet\" /opt/xnat-config/web-default.xml && echo \"JspServlet configured\"'"
     expected_output_contains: "JspServlet configured"
 
   - name: Session timeout configured
     description: Verify session timeout is configured
-    command: grep -q "session-timeout" /opt/xnat-config/web-default.xml && echo "session-timeout configured"
+    command: "bash -lc 'grep -q \"session-timeout\" /opt/xnat-config/web-default.xml && echo \"session-timeout configured\"'"
     expected_output_contains: "session-timeout configured"
 
   # ==========================================================================
@@ -470,12 +470,12 @@ tests:
   # ==========================================================================
   - name: XNAT lib JAR files count
     description: Count JAR files in XNAT lib directory
-    command: ls /opt/xnat-webapp/WEB-INF/lib/*.jar 2>/dev/null | wc -l
+    command: bash -lc 'ls /opt/xnat-webapp/WEB-INF/lib/*.jar 2>/dev/null | wc -l'
     expected_exit_code: 0
 
   - name: Tomcat bootstrap JAR
     description: Verify Tomcat bootstrap JAR file exists
-    command: test -f /usr/share/tomcat9/bin/bootstrap.jar && echo "bootstrap.jar verified"
+    command: bash -lc 'test -f /usr/share/tomcat9/bin/bootstrap.jar && echo "bootstrap.jar verified"'
     expected_output_contains: "bootstrap.jar verified"
 
   # ==========================================================================
@@ -524,22 +524,22 @@ tests:
   # ==========================================================================
   - name: Hibernate cache configuration
     description: Verify Hibernate second-level cache is configured
-    command: grep "use_second_level_cache" /opt/xnat-config/xnat-conf.properties.template
+    command: "bash -lc 'grep \"use_second_level_cache\" /opt/xnat-config/xnat-conf.properties.template'"
     expected_output_contains: "true"
 
   - name: Hibernate query cache configuration
     description: Verify Hibernate query cache is configured
-    command: grep "use_query_cache" /opt/xnat-config/xnat-conf.properties.template
+    command: "bash -lc 'grep \"use_query_cache\" /opt/xnat-config/xnat-conf.properties.template'"
     expected_output_contains: "true"
 
   - name: Max file size configuration
     description: Verify max file upload size is configured (1GB)
-    command: grep "max-file-size" /opt/xnat-config/xnat-conf.properties.template
+    command: "bash -lc 'grep \"max-file-size\" /opt/xnat-config/xnat-conf.properties.template'"
     expected_output_contains: "1073741824"
 
   - name: Max request size configuration
     description: Verify max request size is configured (1GB)
-    command: grep "max-request-size" /opt/xnat-config/xnat-conf.properties.template
+    command: "bash -lc 'grep \"max-request-size\" /opt/xnat-config/xnat-conf.properties.template'"
     expected_output_contains: "1073741824"
 
   # ==========================================================================
@@ -547,12 +547,12 @@ tests:
   # ==========================================================================
   - name: Database username configuration
     description: Verify database username is configured
-    command: grep "datasource.username" /opt/xnat-config/xnat-conf.properties.template
+    command: "bash -lc 'grep \"datasource.username\" /opt/xnat-config/xnat-conf.properties.template'"
     expected_output_contains: "xnat"
 
   - name: Database name in URL
     description: Verify database name in JDBC URL
-    command: grep "datasource.url" /opt/xnat-config/xnat-conf.properties.template
+    command: "bash -lc 'grep \"datasource.url\" /opt/xnat-config/xnat-conf.properties.template'"
     expected_output_contains: "/xnat"
 
   # ==========================================================================
@@ -560,12 +560,12 @@ tests:
   # ==========================================================================
   - name: Tomcat webapps directory
     description: Verify Tomcat webapps directory exists
-    command: test -d /var/lib/tomcat9/webapps && echo "webapps directory exists" || echo "using CATALINA_BASE"
+    command: bash -lc 'test -d /var/lib/tomcat9/webapps && echo "webapps directory exists" || echo "using CATALINA_BASE"'
     expected_exit_code: 0
 
   - name: Tomcat lib directory
     description: Verify Tomcat lib directory exists
-    command: test -d /usr/share/tomcat9/lib && echo "lib directory exists"
+    command: bash -lc 'test -d /usr/share/tomcat9/lib && echo "lib directory exists"'
     expected_output_contains: "lib directory exists"
 
   - name: Tomcat conf directory contents

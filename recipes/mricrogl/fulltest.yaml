@@ -46,17 +46,17 @@ tests:
 
   - name: MRIcroGL binary exists
     description: Verify MRIcroGL executable is installed
-    command: ls -la /opt/MRIcroGL/MRIcroGL
+    command: "bash -lc 'ls -la /opt/MRIcroGL/MRIcroGL'"
     expected_output_contains: "MRIcroGL"
 
   - name: MRIcroGL QT binary exists
     description: Verify alternative QT5-based MRIcroGL is available
-    command: ls -la /opt/MRIcroGL/MRIcroGL_QT
+    command: "bash -lc 'ls -la /opt/MRIcroGL/MRIcroGL_QT'"
     expected_output_contains: "MRIcroGL_QT"
 
   - name: dcm2niix binary exists
     description: Verify dcm2niix is available in Resources
-    command: ls -la /opt/MRIcroGL/Resources/dcm2niix
+    command: "bash -lc 'ls -la /opt/MRIcroGL/Resources/dcm2niix'"
     expected_output_contains: "dcm2niix"
 
   - name: MRIcroGL in PATH
@@ -117,52 +117,52 @@ tests:
   # ==========================================================================
   - name: Resources directory exists
     description: Verify MRIcroGL Resources directory is present
-    command: ls -la /opt/MRIcroGL/Resources/ | wc -l
+    command: "bash -lc 'ls -la /opt/MRIcroGL/Resources/ | wc -l'"
     expected_exit_code: 0
 
   - name: Script directory exists
     description: Verify scripting examples are available
-    command: ls /opt/MRIcroGL/Resources/script/ | wc -l
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/script/ | wc -l'"
     expected_exit_code: 0
 
   - name: Standard images available
     description: Verify standard reference images are included
-    command: ls /opt/MRIcroGL/Resources/standard/
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/standard/'"
     expected_output_contains: "mni152.nii.gz"
 
   - name: SPM152 template available
     description: Verify SPM152 template is included
-    command: ls /opt/MRIcroGL/Resources/standard/spm152.nii.gz
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/standard/spm152.nii.gz'"
     expected_output_contains: "spm152.nii.gz"
 
   - name: Chris T1 sample image available
     description: Verify sample T1 image is included
-    command: ls /opt/MRIcroGL/Resources/standard/chris_t1.nii.gz
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/standard/chris_t1.nii.gz'"
     expected_output_contains: "chris_t1.nii.gz"
 
   - name: Chris T2 sample image available
     description: Verify sample T2 image is included
-    command: ls /opt/MRIcroGL/Resources/standard/chris_t2.nii.gz
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/standard/chris_t2.nii.gz'"
     expected_output_contains: "chris_t2.nii.gz"
 
   - name: CT abdomen sample available
     description: Verify CT sample images are included
-    command: ls /opt/MRIcroGL/Resources/standard/CT_Abdo.nii.gz
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/standard/CT_Abdo.nii.gz'"
     expected_output_contains: "CT_Abdo.nii.gz"
 
   - name: fMRI sample image available
     description: Verify fMRI statistical map sample is included
-    command: ls /opt/MRIcroGL/Resources/standard/spmMotor.nii.gz
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/standard/spmMotor.nii.gz'"
     expected_output_contains: "spmMotor.nii.gz"
 
   - name: MRA sample available
     description: Verify MRA sample image is included
-    command: ls /opt/MRIcroGL/Resources/standard/chris_MRA.nii.gz
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/standard/chris_MRA.nii.gz'"
     expected_output_contains: "chris_MRA.nii.gz"
 
   - name: Visible human sample available
     description: Verify visible human dataset is included
-    command: ls /opt/MRIcroGL/Resources/standard/visiblehuman.nii.gz
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/standard/visiblehuman.nii.gz'"
     expected_output_contains: "visiblehuman.nii.gz"
 
   # ==========================================================================
@@ -170,22 +170,22 @@ tests:
   # ==========================================================================
   - name: Atlas directory exists
     description: Verify atlas resources are available
-    command: ls /opt/MRIcroGL/Resources/atlas/
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/atlas/'"
     expected_exit_code: 0
 
   - name: AAL atlas available
     description: Verify AAL atlas is included
-    command: ls /opt/MRIcroGL/Resources/atlas/aal.nii.gz
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/atlas/aal.nii.gz'"
     expected_output_contains: "aal.nii.gz"
 
   - name: AICHA atlas available
     description: Verify AICHA atlas is included
-    command: ls /opt/MRIcroGL/Resources/atlas/AICHA.nii.gz
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/atlas/AICHA.nii.gz'"
     expected_output_contains: "AICHA.nii.gz"
 
   - name: NatBrainLab atlas available
     description: Verify natbrainlab atlas is included
-    command: ls /opt/MRIcroGL/Resources/atlas/natbrainlab.nii.gz
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/atlas/natbrainlab.nii.gz'"
     expected_output_contains: "natbrainlab.nii.gz"
 
   # ==========================================================================
@@ -193,47 +193,47 @@ tests:
   # ==========================================================================
   - name: LUT directory exists
     description: Verify color lookup tables are available
-    command: ls /opt/MRIcroGL/Resources/lut/ | wc -l
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/lut/ | wc -l'"
     expected_exit_code: 0
 
   - name: Hot colormap available
     description: Verify hot colormap is included
-    command: ls /opt/MRIcroGL/Resources/lut/4hot.clut
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/lut/4hot.clut'"
     expected_output_contains: "4hot.clut"
 
   - name: Viridis colormap available
     description: Verify viridis colormap is included
-    command: ls /opt/MRIcroGL/Resources/lut/Viridis.clut
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/lut/Viridis.clut'"
     expected_output_contains: "Viridis.clut"
 
   - name: Inferno colormap available
     description: Verify inferno colormap is included
-    command: ls /opt/MRIcroGL/Resources/lut/Inferno.clut
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/lut/Inferno.clut'"
     expected_output_contains: "Inferno.clut"
 
   - name: Plasma colormap available
     description: Verify plasma colormap is included
-    command: ls /opt/MRIcroGL/Resources/lut/Plasma.clut
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/lut/Plasma.clut'"
     expected_output_contains: "Plasma.clut"
 
   - name: CT Bones colormap available
     description: Verify CT bone colormap is included
-    command: ls /opt/MRIcroGL/Resources/lut/CT_Bones.clut
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/lut/CT_Bones.clut'"
     expected_output_contains: "CT_Bones.clut"
 
   - name: CT Soft Tissue colormap available
     description: Verify CT soft tissue colormap is included
-    command: ls /opt/MRIcroGL/Resources/lut/CT_Soft_Tissue.clut
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/lut/CT_Soft_Tissue.clut'"
     expected_output_contains: "CT_Soft_Tissue.clut"
 
   - name: Jet colormap available
     description: Verify jet colormap is included
-    command: ls /opt/MRIcroGL/Resources/lut/jet.clut
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/lut/jet.clut'"
     expected_output_contains: "jet.clut"
 
   - name: Blue to red colormap available
     description: Verify diverging colormap is included
-    command: ls /opt/MRIcroGL/Resources/lut/blue2red.clut
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/lut/blue2red.clut'"
     expected_output_contains: "blue2red.clut"
 
   # ==========================================================================
@@ -241,7 +241,7 @@ tests:
   # ==========================================================================
   - name: Shader directory exists
     description: Verify shader resources are available
-    command: ls /opt/MRIcroGL/Resources/shader/ | wc -l
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/shader/ | wc -l'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -249,57 +249,57 @@ tests:
   # ==========================================================================
   - name: Basic script example exists
     description: Verify basic.py script example is present
-    command: cat /opt/MRIcroGL/Resources/script/basic.py | head -5
+    command: "bash -lc 'cat /opt/MRIcroGL/Resources/script/basic.py | head -5'"
     expected_output_contains: "import gl"
 
   - name: Mosaic script example exists
     description: Verify mosaic.py script example is present
-    command: cat /opt/MRIcroGL/Resources/script/mosaic.py
+    command: "bash -lc 'cat /opt/MRIcroGL/Resources/script/mosaic.py'"
     expected_output_contains: "mosaic"
 
   - name: CT abdomen script exists
     description: Verify CT visualization script is present
-    command: cat /opt/MRIcroGL/Resources/script/ct_abdomen.py | head -3
+    command: "bash -lc 'cat /opt/MRIcroGL/Resources/script/ct_abdomen.py | head -3'"
     expected_output_contains: "import gl"
 
   - name: CT head script exists
     description: Verify CT head visualization script is present
-    command: cat /opt/MRIcroGL/Resources/script/ct_head.py | head -3
+    command: "bash -lc 'cat /opt/MRIcroGL/Resources/script/ct_head.py | head -3'"
     expected_output_contains: "import gl"
 
   - name: Help script exists
     description: Verify help documentation script is present
-    command: cat /opt/MRIcroGL/Resources/script/help.py | head -3
+    command: "bash -lc 'cat /opt/MRIcroGL/Resources/script/help.py | head -3'"
     expected_output_contains: "import"
 
   - name: Glass effect script exists
     description: Verify glass rendering script is present
-    command: ls /opt/MRIcroGL/Resources/script/glass.py
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/script/glass.py'"
     expected_output_contains: "glass.py"
 
   - name: Cutout script exists
     description: Verify cutout visualization script is present
-    command: ls /opt/MRIcroGL/Resources/script/cutout.py
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/script/cutout.py'"
     expected_output_contains: "cutout.py"
 
   - name: Clip script exists
     description: Verify clipping plane script is present
-    command: ls /opt/MRIcroGL/Resources/script/clip.py
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/script/clip.py'"
     expected_output_contains: "clip.py"
 
   - name: Cluster script exists
     description: Verify cluster visualization script is present
-    command: ls /opt/MRIcroGL/Resources/script/cluster.py
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/script/cluster.py'"
     expected_output_contains: "cluster.py"
 
   - name: Invert script exists
     description: Verify invert script is present
-    command: ls /opt/MRIcroGL/Resources/script/invert.py
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/script/invert.py'"
     expected_output_contains: "invert.py"
 
   - name: MIP script exists
     description: Verify Maximum Intensity Projection script is present
-    command: ls /opt/MRIcroGL/Resources/script/mip.py
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/script/mip.py'"
     expected_output_contains: "mip.py"
 
   # ==========================================================================
@@ -626,27 +626,27 @@ tests:
   # ==========================================================================
   - name: MNI152 template readable
     description: Verify MNI152 template is a valid NIfTI file
-    command: test -f /opt/MRIcroGL/Resources/standard/mni152.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/standard/mni152.nii.gz | head -1
+    command: bash -lc 'test -f /opt/MRIcroGL/Resources/standard/mni152.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/standard/mni152.nii.gz | head -1'
     expected_output_contains: "1f 8b"
 
   - name: SPM152 template readable
     description: Verify SPM152 template is a valid NIfTI file
-    command: test -f /opt/MRIcroGL/Resources/standard/spm152.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/standard/spm152.nii.gz | head -1
+    command: bash -lc 'test -f /opt/MRIcroGL/Resources/standard/spm152.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/standard/spm152.nii.gz | head -1'
     expected_output_contains: "1f 8b"
 
   - name: AAL atlas readable
     description: Verify AAL atlas is a valid NIfTI file
-    command: test -f /opt/MRIcroGL/Resources/atlas/aal.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/atlas/aal.nii.gz | head -1
+    command: bash -lc 'test -f /opt/MRIcroGL/Resources/atlas/aal.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/atlas/aal.nii.gz | head -1'
     expected_output_contains: "1f 8b"
 
   - name: CT Abdo readable
     description: Verify CT abdomen sample is a valid NIfTI file
-    command: test -f /opt/MRIcroGL/Resources/standard/CT_Abdo.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/standard/CT_Abdo.nii.gz | head -1
+    command: bash -lc 'test -f /opt/MRIcroGL/Resources/standard/CT_Abdo.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/standard/CT_Abdo.nii.gz | head -1'
     expected_output_contains: "1f 8b"
 
   - name: Visible human readable
     description: Verify visible human sample is a valid NIfTI file
-    command: test -f /opt/MRIcroGL/Resources/standard/visiblehuman.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/standard/visiblehuman.nii.gz | head -1
+    command: bash -lc 'test -f /opt/MRIcroGL/Resources/standard/visiblehuman.nii.gz && od -N4 -An -tx1 /opt/MRIcroGL/Resources/standard/visiblehuman.nii.gz | head -1'
     expected_output_contains: "1f 8b"
 
   # ==========================================================================
@@ -654,17 +654,17 @@ tests:
   # ==========================================================================
   - name: Installation instructions exist
     description: Verify Linux installation guide is present
-    command: cat /opt/MRIcroGL/MRIcroGL_Linux_Installation.txt | head -5
+    command: "bash -lc 'cat /opt/MRIcroGL/MRIcroGL_Linux_Installation.txt | head -5'"
     expected_output_contains: "MRIcroGL"
 
   - name: GTK2 instructions documented
     description: Verify GTK2 version documentation exists
-    command: cat /opt/MRIcroGL/MRIcroGL_Linux_Installation.txt
+    command: "bash -lc 'cat /opt/MRIcroGL/MRIcroGL_Linux_Installation.txt'"
     expected_output_contains: "GTK2"
 
   - name: QT5 instructions documented
     description: Verify QT5 version documentation exists
-    command: cat /opt/MRIcroGL/MRIcroGL_Linux_Installation.txt
+    command: "bash -lc 'cat /opt/MRIcroGL/MRIcroGL_Linux_Installation.txt'"
     expected_output_contains: "QT5"
 
   # ==========================================================================
@@ -672,17 +672,17 @@ tests:
   # ==========================================================================
   - name: Standard images README exists
     description: Verify standard images documentation is present
-    command: cat /opt/MRIcroGL/Resources/standard/README.md | head -10
+    command: "bash -lc 'cat /opt/MRIcroGL/Resources/standard/README.md | head -10'"
     expected_output_contains: "Licenses"
 
   - name: BSD license documented
     description: Verify BSD license is documented for source code
-    command: cat /opt/MRIcroGL/Resources/standard/README.md
+    command: "bash -lc 'cat /opt/MRIcroGL/Resources/standard/README.md'"
     expected_output_contains: "BSD license"
 
   - name: MNI template license documented
     description: Verify MNI template license information is present
-    command: cat /opt/MRIcroGL/Resources/standard/README.md
+    command: "bash -lc 'cat /opt/MRIcroGL/Resources/standard/README.md'"
     expected_output_contains: "ICBM 152"
 
   # ==========================================================================
@@ -690,27 +690,27 @@ tests:
   # ==========================================================================
   - name: Roboto font exists
     description: Verify Roboto font resources are present
-    command: ls /opt/MRIcroGL/Resources/Roboto.json
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/Roboto.json'"
     expected_output_contains: "Roboto.json"
 
   - name: Roboto font texture exists
     description: Verify Roboto font texture is present
-    command: ls /opt/MRIcroGL/Resources/Roboto.png
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/Roboto.png'"
     expected_output_contains: "Roboto.png"
 
   - name: Desktop file exists
     description: Verify desktop integration file is present
-    command: ls /opt/MRIcroGL/Resources/mricrogl.desktop
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/mricrogl.desktop'"
     expected_output_contains: "mricrogl.desktop"
 
   - name: Icon file exists
     description: Verify application icon is present
-    command: ls /opt/MRIcroGL/Resources/mricrogl.png
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/mricrogl.png'"
     expected_output_contains: "mricrogl.png"
 
   - name: SVG icon exists
     description: Verify scalable icon is present
-    command: ls /opt/MRIcroGL/Resources/mricrogl.svg
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/mricrogl.svg'"
     expected_output_contains: "mricrogl.svg"
 
   # ==========================================================================
@@ -718,7 +718,7 @@ tests:
   # ==========================================================================
   - name: Matcap directory exists
     description: Verify matcap rendering resources are available
-    command: ls /opt/MRIcroGL/Resources/matcap/ | wc -l
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/matcap/ | wc -l'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -726,7 +726,7 @@ tests:
   # ==========================================================================
   - name: Python37 resources exist
     description: Verify Python 3.7 resources are included
-    command: ls /opt/MRIcroGL/Resources/python37/
+    command: "bash -lc 'ls /opt/MRIcroGL/Resources/python37/'"
     expected_exit_code: 0
 
 cleanup:

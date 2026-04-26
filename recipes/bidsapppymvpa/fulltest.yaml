@@ -50,17 +50,17 @@ tests:
   # ==========================================================================
   - name: Version check
     description: Verify PyMVPA BIDS-App version
-    command: /code/run.py -v 2>&1 | tail -1
+    command: bash -lc '/code/run.py -v 2>&1 | tail -1'
     expected_output_contains: "PyMVPA BIDS-App Version v4.0.3"
 
   - name: Help message
     description: Verify help documentation is accessible
-    command: /code/run.py --help 2>&1 | head -20
+    command: bash -lc '/code/run.py --help 2>&1 | head -20'
     expected_output_contains: "PyMVPA BIDS-App"
 
   - name: Argument parser verification
     description: Check that required arguments are documented
-    command: /code/run.py --help 2>&1
+    command: bash -lc '/code/run.py --help 2>&1'
     expected_output_contains: "bids_dir"
 
   # ==========================================================================
@@ -208,22 +208,22 @@ tests:
   # ==========================================================================
   - name: FSL directory check
     description: Verify FSL is installed
-    command: ls /opt/fsl-6.0.5.1/bin/ | head -5
+    command: "bash -lc 'ls /opt/fsl-6.0.5.1/bin/ | head -5'"
     expected_exit_code: 0
 
   - name: FSLDIR environment
     description: Verify FSLDIR environment can be set
-    command: export FSLDIR=/opt/fsl-6.0.5.1 && echo $FSLDIR
+    command: "bash -lc 'export FSLDIR=/opt/fsl-6.0.5.1 && echo $FSLDIR'"
     expected_output_contains: "/opt/fsl-6.0.5.1"
 
   - name: FSL flirt available
     description: Verify FLIRT registration tool is available
-    command: ls -la /opt/fsl-6.0.5.1/bin/flirt
+    command: "bash -lc 'ls -la /opt/fsl-6.0.5.1/bin/flirt'"
     expected_exit_code: 0
 
   - name: FSL bet available
     description: Verify BET brain extraction is available
-    command: ls -la /opt/fsl-6.0.5.1/bin/bet
+    command: "bash -lc 'ls -la /opt/fsl-6.0.5.1/bin/bet'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -236,7 +236,7 @@ tests:
 
   - name: Run script is executable
     description: Verify run.py has execute permissions
-    command: test -x /code/run.py && echo "executable"
+    command: bash -lc 'test -x /code/run.py && echo "executable"'
     expected_output_contains: "executable"
 
   - name: Version file exists
@@ -249,112 +249,112 @@ tests:
   # ==========================================================================
   - name: Analysis levels available
     description: Verify analysis levels are documented
-    command: /code/run.py --help 2>&1 | grep "participant_prep"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "participant_prep"'
     expected_output_contains: "participant_prep"
 
   - name: Participant ID argument
     description: Verify participant_id argument is documented
-    command: /code/run.py --help 2>&1 | grep "participant_id"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "participant_id"'
     expected_output_contains: "participant_id"
 
   - name: Session argument
     description: Verify session argument is available
-    command: /code/run.py --help 2>&1 | grep "session"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "session"'
     expected_output_contains: "session"
 
   - name: Task argument
     description: Verify task argument is documented
-    command: /code/run.py --help 2>&1 | grep "task"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "task"'
     expected_output_contains: "task"
 
   - name: Searchlight argument
     description: Verify searchlight argument is available
-    command: /code/run.py --help 2>&1 | grep "searchlight"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "searchlight"'
     expected_output_contains: "searchlight"
 
   - name: Conditions argument
     description: Verify conditions_to_classify argument is available
-    command: /code/run.py --help 2>&1 | grep "conditions_to_classify"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "conditions_to_classify"'
     expected_output_contains: "conditions"
 
   - name: RSA argument
     description: Verify RSA mode argument is available
-    command: /code/run.py --help 2>&1 | grep "\-\-rsa"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "\-\-rsa"'
     expected_output_contains: "rsa"
 
   - name: Surface mode argument
     description: Verify surface analysis argument is available
-    command: /code/run.py --help 2>&1 | grep "\-\-surf"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "\-\-surf"'
     expected_output_contains: "surf"
 
   - name: Mask argument
     description: Verify mask argument is available
-    command: /code/run.py --help 2>&1 | grep "\-\-mask"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "\-\-mask"'
     expected_output_contains: "mask"
 
   - name: Polynomial detrending argument
     description: Verify poly_detrend argument is available
-    command: /code/run.py --help 2>&1 | grep "poly_detrend"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "poly_detrend"'
     expected_output_contains: "poly_detrend"
 
   - name: Time-series zscore argument
     description: Verify tzscore argument is available
-    command: /code/run.py --help 2>&1 | grep "tzscore"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "tzscore"'
     expected_output_contains: "tzscore"
 
   - name: Beta zscore argument
     description: Verify bzscore argument is available
-    command: /code/run.py --help 2>&1 | grep "bzscore"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "bzscore"'
     expected_output_contains: "bzscore"
 
   - name: Feature selection argument
     description: Verify feature_select argument is available
-    command: /code/run.py --help 2>&1 | grep "feature_select"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "feature_select"'
     expected_output_contains: "feature_select"
 
   - name: Cross-validation type argument
     description: Verify cvtype argument is available
-    command: /code/run.py --help 2>&1 | grep "cvtype"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "cvtype"'
     expected_output_contains: "cvtype"
 
   - name: LSS argument
     description: Verify LSS (Least Squares Single) argument is available
-    command: /code/run.py --help 2>&1 | grep "\-\-lss"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "\-\-lss"'
     expected_output_contains: "lss"
 
   - name: Individual trials argument
     description: Verify indiv_trials argument is available
-    command: /code/run.py --help 2>&1 | grep "indiv_trials"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "indiv_trials"'
     expected_output_contains: "indiv_trials"
 
   - name: No info label argument
     description: Verify noinfolabel argument is available
-    command: /code/run.py --help 2>&1 | grep "noinfolabel"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "noinfolabel"'
     expected_output_contains: "noinfolabel"
 
   - name: Distance metric argument
     description: Verify distance metric argument is available
-    command: /code/run.py --help 2>&1 | grep "\-\-dist"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "\-\-dist"'
     expected_output_contains: "dist"
 
   - name: Number of processors argument
     description: Verify nproc argument is available
-    command: /code/run.py --help 2>&1 | grep "nproc"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "nproc"'
     expected_output_contains: "nproc"
 
   - name: Skip BIDS validator argument
     description: Verify skip_bids_validator argument is available
-    command: /code/run.py --help 2>&1 | grep "skip_bids_validator"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "skip_bids_validator"'
     expected_output_contains: "skip_bids_validator"
 
   - name: Space argument for surface
     description: Verify space argument for surface mode is available
-    command: /code/run.py --help 2>&1 | grep "\-\-space"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "\-\-space"'
     expected_output_contains: "fsnative"
 
   - name: Hemisphere argument
     description: Verify hemisphere argument is available
-    command: /code/run.py --help 2>&1 | grep "\-\-hemi"
+    command: bash -lc '/code/run.py --help 2>&1 | grep "\-\-hemi"'
     expected_output_contains: "hemi"
 
   # ==========================================================================
@@ -362,12 +362,12 @@ tests:
   # ==========================================================================
   - name: Missing required arguments error
     description: Verify error when required arguments are missing
-    command: /code/run.py 2>&1 | head -20
+    command: bash -lc '/code/run.py 2>&1 | head -20'
     expected_output_contains: "usage"
 
   - name: Invalid analysis level error
     description: Verify error for invalid analysis level
-    command: /code/run.py /tmp /tmp invalid_level 2>&1 | tail -5
+    command: bash -lc '/code/run.py /tmp /tmp invalid_level 2>&1 | tail -5'
     expected_output_contains: "invalid choice"
 
   # ==========================================================================

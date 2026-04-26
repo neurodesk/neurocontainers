@@ -43,22 +43,22 @@ tests:
   # ==========================================================================
   - name: FastCSR pipeline help
     description: Verify FastCSR pipeline.py displays help information
-    command: python3 /opt/FastCSR/pipeline.py --help 2>&1
+    command: "bash -lc 'python3 /opt/FastCSR/pipeline.py --help 2>&1'"
     expected_output_contains: "--sid"
 
   - name: FastCSR model inference help
     description: Verify fastcsr_model_infer.py displays help
-    command: python3 /opt/FastCSR/fastcsr_model_infer.py --help 2>&1
+    command: "bash -lc 'python3 /opt/FastCSR/fastcsr_model_infer.py --help 2>&1'"
     expected_output_contains: "--hemi"
 
   - name: FastCSR brain finalsurfs model help
     description: Verify brain_finalsurfs_model_infer.py displays help
-    command: python3 /opt/FastCSR/brain_finalsurfs_model_infer.py --help 2>&1
+    command: "bash -lc 'python3 /opt/FastCSR/brain_finalsurfs_model_infer.py --help 2>&1'"
     expected_output_contains: "--subj"
 
   - name: FastCSR levelset2surf help
     description: Verify levelset2surf.py displays help
-    command: python3 /opt/FastCSR/levelset2surf.py --help 2>&1
+    command: "bash -lc 'python3 /opt/FastCSR/levelset2surf.py --help 2>&1'"
     expected_output_contains: "--suffix"
 
   # ==========================================================================
@@ -66,15 +66,12 @@ tests:
   # ==========================================================================
   - name: FreeSurfer environment setup
     description: Verify FreeSurfer home directory exists
-    command: ls /opt/freesurfer-6.0.0/SetUpFreeSurfer.sh
+    command: "bash -lc 'ls /opt/freesurfer-6.0.0/SetUpFreeSurfer.sh'"
     expected_exit_code: 0
 
   - name: FreeSurfer version check
     description: Verify FreeSurfer installation version
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      cat $FREESURFER_HOME/build-stamp.txt 2>/dev/null || echo "freesurfer-6.0"
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\ncat $FREESURFER_HOME/build-stamp.txt 2>/dev/null || echo \"freesurfer-6.0\"'"
     expected_output_contains: "freesurfer"
 
   # ==========================================================================
@@ -82,55 +79,37 @@ tests:
   # ==========================================================================
   - name: mri_convert help
     description: Verify mri_convert displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_convert --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_convert --help 2>&1 | head -20'"
     expected_output_contains: "mri_convert"
 
   - name: Convert NIfTI to MGZ
     description: Convert T1w NIfTI to FreeSurfer MGZ format
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_convert ${t1w} test_output/t1w_orig.mgz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_convert ${t1w} test_output/t1w_orig.mgz'"
     validate:
       - output_exists: ${output_dir}/t1w_orig.mgz
 
   - name: Convert MGZ back to NIfTI
     description: Convert MGZ back to NIfTI format
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_convert test_output/t1w_orig.mgz test_output/t1w_reconvert.nii.gz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_convert test_output/t1w_orig.mgz test_output/t1w_reconvert.nii.gz'"
     depends_on: Convert NIfTI to MGZ
     validate:
       - output_exists: ${output_dir}/t1w_reconvert.nii.gz
 
   - name: Conform volume to 256x256x256
     description: Conform T1w to standard FreeSurfer dimensions
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_convert ${t1w} --conform test_output/t1w_conformed.mgz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_convert ${t1w} --conform test_output/t1w_conformed.mgz'"
     validate:
       - output_exists: ${output_dir}/t1w_conformed.mgz
 
   - name: Convert with resampling
     description: Resample T1w to 1mm isotropic voxels
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_convert ${t1w} -vs 1 1 1 test_output/t1w_1mm.nii.gz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_convert ${t1w} -vs 1 1 1 test_output/t1w_1mm.nii.gz'"
     validate:
       - output_exists: ${output_dir}/t1w_1mm.nii.gz
 
   - name: Convert with output type specification
     description: Convert with explicit output data type
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_convert ${t1w} --out_type nii test_output/t1w_nii.nii
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_convert ${t1w} --out_type nii test_output/t1w_nii.nii'"
     validate:
       - output_exists: ${output_dir}/t1w_nii.nii
 
@@ -139,50 +118,32 @@ tests:
   # ==========================================================================
   - name: mri_info basic
     description: Display basic volume information
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_info ${t1w} 2>&1
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_info ${t1w} 2>&1'"
     expected_output_contains: "dimensions"
 
   - name: mri_info dimensions
     description: Get volume dimensions
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_info --dim ${t1w}
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_info --dim ${t1w}'"
     expected_exit_code: 0
 
   - name: mri_info resolution
     description: Get volume resolution
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_info --res ${t1w}
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_info --res ${t1w}'"
     expected_exit_code: 0
 
   - name: mri_info voxel volume
     description: Get voxel volume
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_info --voxvol ${t1w}
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_info --voxvol ${t1w}'"
     expected_exit_code: 0
 
   - name: mri_info orientation
     description: Get volume orientation
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_info --orientation ${t1w}
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_info --orientation ${t1w}'"
     expected_exit_code: 0
 
   - name: mri_info vox2ras matrix
     description: Get voxel to RAS transformation matrix
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_info --vox2ras ${t1w}
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_info --vox2ras ${t1w}'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -190,27 +151,18 @@ tests:
   # ==========================================================================
   - name: mri_normalize help
     description: Verify mri_normalize displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_normalize --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_normalize --help 2>&1 | head -20'"
     expected_output_contains: "mri_normalize"
 
   - name: Normalize T1w intensity
     description: Normalize white matter intensity to ~110
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_normalize ${t1w} test_output/t1w_norm.mgz 2>&1
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_normalize ${t1w} test_output/t1w_norm.mgz 2>&1'"
     validate:
       - output_exists: ${output_dir}/t1w_norm.mgz
 
   - name: Normalize with gentle mode
     description: Perform gentle normalization
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_normalize -gentle ${t1w} test_output/t1w_norm_gentle.mgz 2>&1
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_normalize -gentle ${t1w} test_output/t1w_norm_gentle.mgz 2>&1'"
     validate:
       - output_exists: ${output_dir}/t1w_norm_gentle.mgz
 
@@ -219,18 +171,12 @@ tests:
   # ==========================================================================
   - name: mri_watershed help
     description: Verify mri_watershed displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_watershed --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_watershed --help 2>&1 | head -20'"
     expected_output_contains: "watershed"
 
   - name: Skull strip T1w
     description: Remove skull using watershed algorithm
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_watershed ${t1w} test_output/t1w_brain.mgz 2>&1
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_watershed ${t1w} test_output/t1w_brain.mgz 2>&1'"
     validate:
       - output_exists: ${output_dir}/t1w_brain.mgz
 
@@ -239,63 +185,42 @@ tests:
   # ==========================================================================
   - name: mri_binarize help
     description: Verify mri_binarize displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_binarize --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_binarize --help 2>&1 | head -20'"
     expected_output_contains: "mri_binarize"
 
   - name: Binarize with minimum threshold
     description: Create binary mask with minimum threshold
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_binarize --i ${t1w} --min 50 --o test_output/t1w_bin_min50.nii.gz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_binarize --i ${t1w} --min 50 --o test_output/t1w_bin_min50.nii.gz'"
     validate:
       - output_exists: ${output_dir}/t1w_bin_min50.nii.gz
 
   - name: Binarize with max threshold
     description: Create binary mask with max threshold
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_binarize --i ${t1w} --max 200 --o test_output/t1w_bin_max200.nii.gz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_binarize --i ${t1w} --max 200 --o test_output/t1w_bin_max200.nii.gz'"
     validate:
       - output_exists: ${output_dir}/t1w_bin_max200.nii.gz
 
   - name: Binarize with range
     description: Create binary mask with min and max thresholds
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_binarize --i ${t1w} --min 50 --max 200 --o test_output/t1w_bin_range.nii.gz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_binarize --i ${t1w} --min 50 --max 200 --o test_output/t1w_bin_range.nii.gz'"
     validate:
       - output_exists: ${output_dir}/t1w_bin_range.nii.gz
 
   - name: Binarize and dilate
     description: Create binary mask and dilate
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_binarize --i ${t1w} --min 50 --dilate 2 --o test_output/t1w_bin_dilate.nii.gz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_binarize --i ${t1w} --min 50 --dilate 2 --o test_output/t1w_bin_dilate.nii.gz'"
     validate:
       - output_exists: ${output_dir}/t1w_bin_dilate.nii.gz
 
   - name: Binarize and erode
     description: Create binary mask and erode
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_binarize --i ${t1w} --min 50 --erode 2 --o test_output/t1w_bin_erode.nii.gz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_binarize --i ${t1w} --min 50 --erode 2 --o test_output/t1w_bin_erode.nii.gz'"
     validate:
       - output_exists: ${output_dir}/t1w_bin_erode.nii.gz
 
   - name: Binarize invert
     description: Create inverted binary mask
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_binarize --i ${t1w} --min 50 --inv --o test_output/t1w_bin_inv.nii.gz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_binarize --i ${t1w} --min 50 --inv --o test_output/t1w_bin_inv.nii.gz'"
     validate:
       - output_exists: ${output_dir}/t1w_bin_inv.nii.gz
 
@@ -304,18 +229,12 @@ tests:
   # ==========================================================================
   - name: mri_mask help
     description: Verify mri_mask displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_mask --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_mask --help 2>&1 | head -20'"
     expected_output_contains: "mri_mask"
 
   - name: Apply mask to volume
     description: Apply binary mask to T1w volume
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_mask ${t1w} test_output/t1w_bin_min50.nii.gz test_output/t1w_masked.nii.gz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_mask ${t1w} test_output/t1w_bin_min50.nii.gz test_output/t1w_masked.nii.gz'"
     depends_on: Binarize with minimum threshold
     validate:
       - output_exists: ${output_dir}/t1w_masked.nii.gz
@@ -325,36 +244,24 @@ tests:
   # ==========================================================================
   - name: mri_vol2vol help
     description: Verify mri_vol2vol displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_vol2vol --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_vol2vol --help 2>&1 | head -20'"
     expected_output_contains: "mri_vol2vol"
 
   - name: Resample volume with identity transform
     description: Resample volume using identity registration
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_vol2vol --mov ${t1w} --targ ${t1w} --regheader --o test_output/t1w_resampled.nii.gz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_vol2vol --mov ${t1w} --targ ${t1w} --regheader --o test_output/t1w_resampled.nii.gz'"
     validate:
       - output_exists: ${output_dir}/t1w_resampled.nii.gz
 
   - name: Resample with nearest neighbor
     description: Resample volume using nearest neighbor interpolation
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_vol2vol --mov ${t1w} --targ ${t1w} --regheader --nearest --o test_output/t1w_nn.nii.gz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_vol2vol --mov ${t1w} --targ ${t1w} --regheader --nearest --o test_output/t1w_nn.nii.gz'"
     validate:
       - output_exists: ${output_dir}/t1w_nn.nii.gz
 
   - name: Resample with cubic interpolation
     description: Resample volume using cubic B-spline interpolation
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_vol2vol --mov ${t1w} --targ ${t1w} --regheader --cubic --o test_output/t1w_cubic.nii.gz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_vol2vol --mov ${t1w} --targ ${t1w} --regheader --cubic --o test_output/t1w_cubic.nii.gz'"
     validate:
       - output_exists: ${output_dir}/t1w_cubic.nii.gz
 
@@ -363,10 +270,7 @@ tests:
   # ==========================================================================
   - name: mri_segment help
     description: Verify mri_segment displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_segment --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_segment --help 2>&1 | head -20'"
     expected_output_contains: "mri_segment"
 
   # ==========================================================================
@@ -374,10 +278,7 @@ tests:
   # ==========================================================================
   - name: mri_tessellate help
     description: Verify mri_tessellate displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_tessellate --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_tessellate --help 2>&1 | head -20'"
     expected_output_contains: "mri_tessellate"
 
   # ==========================================================================
@@ -385,10 +286,7 @@ tests:
   # ==========================================================================
   - name: mri_fill help
     description: Verify mri_fill displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_fill --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_fill --help 2>&1 | head -20'"
     expected_output_contains: "mri_fill"
 
   # ==========================================================================
@@ -396,10 +294,7 @@ tests:
   # ==========================================================================
   - name: mris_convert help
     description: Verify mris_convert displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_convert --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_convert --help 2>&1 | head -20'"
     expected_output_contains: "mris_convert"
 
   # ==========================================================================
@@ -407,10 +302,7 @@ tests:
   # ==========================================================================
   - name: mris_info help
     description: Verify mris_info displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_info --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_info --help 2>&1 | head -20'"
     expected_output_contains: "mris_info"
 
   # ==========================================================================
@@ -418,10 +310,7 @@ tests:
   # ==========================================================================
   - name: mris_smooth help
     description: Verify mris_smooth displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_smooth --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_smooth --help 2>&1 | head -20'"
     expected_output_contains: "mris_smooth"
 
   # ==========================================================================
@@ -429,10 +318,7 @@ tests:
   # ==========================================================================
   - name: mris_inflate help
     description: Verify mris_inflate displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_inflate --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_inflate --help 2>&1 | head -20'"
     expected_output_contains: "mris_inflate"
 
   # ==========================================================================
@@ -440,10 +326,7 @@ tests:
   # ==========================================================================
   - name: mris_curvature help
     description: Verify mris_curvature displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_curvature --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_curvature --help 2>&1 | head -20'"
     expected_output_contains: "mris_curvature"
 
   # ==========================================================================
@@ -451,10 +334,7 @@ tests:
   # ==========================================================================
   - name: mris_sphere help
     description: Verify mris_sphere displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_sphere --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_sphere --help 2>&1 | head -20'"
     expected_output_contains: "mris_sphere"
 
   # ==========================================================================
@@ -462,10 +342,7 @@ tests:
   # ==========================================================================
   - name: mris_register help
     description: Verify mris_register displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_register --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_register --help 2>&1 | head -20'"
     expected_output_contains: "mris_register"
 
   # ==========================================================================
@@ -473,10 +350,7 @@ tests:
   # ==========================================================================
   - name: mris_fix_topology help
     description: Verify mris_fix_topology displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_fix_topology --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_fix_topology --help 2>&1 | head -20'"
     expected_output_contains: "mris_fix_topology"
 
   # ==========================================================================
@@ -484,10 +358,7 @@ tests:
   # ==========================================================================
   - name: mris_anatomical_stats help
     description: Verify mris_anatomical_stats displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_anatomical_stats --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_anatomical_stats --help 2>&1 | head -20'"
     expected_output_contains: "mris_anatomical_stats"
 
   # ==========================================================================
@@ -495,18 +366,12 @@ tests:
   # ==========================================================================
   - name: recon-all help
     description: Verify recon-all displays help
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      recon-all --help 2>&1 | head -30
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nrecon-all --help 2>&1 | head -30'"
     expected_output_contains: "recon-all"
 
   - name: recon-all version
     description: Check recon-all version
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      recon-all --version 2>&1
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nrecon-all --version 2>&1'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -552,27 +417,27 @@ tests:
   # ==========================================================================
   - name: FastCSR model directory exists
     description: Verify FastCSR model directory exists
-    command: ls -la /opt/FastCSR/model/
+    command: "bash -lc 'ls -la /opt/FastCSR/model/'"
     expected_exit_code: 0
 
   - name: FastCSR left hemisphere model exists
     description: Verify left hemisphere model file exists
-    command: ls /opt/FastCSR/model/lh_model.pth
+    command: "bash -lc 'ls /opt/FastCSR/model/lh_model.pth'"
     expected_exit_code: 0
 
   - name: FastCSR right hemisphere model exists
     description: Verify right hemisphere model file exists
-    command: ls /opt/FastCSR/model/rh_model.pth
+    command: "bash -lc 'ls /opt/FastCSR/model/rh_model.pth'"
     expected_exit_code: 0
 
   - name: FastCSR brain finalsurfs model exists
     description: Verify brain finalsurfs model file exists
-    command: ls /opt/FastCSR/model/brain_finalsurfs_model.pth
+    command: "bash -lc 'ls /opt/FastCSR/model/brain_finalsurfs_model.pth'"
     expected_exit_code: 0
 
   - name: nnUNet trained models exist
     description: Verify nnUNet trained models directory exists
-    command: ls -la /opt/FastCSR/model/nnUNet_trained_models/nnUNet/3d_fullres/
+    command: "bash -lc 'ls -la /opt/FastCSR/model/nnUNet_trained_models/nnUNet/3d_fullres/'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -580,74 +445,47 @@ tests:
   # ==========================================================================
   - name: mri_concat help
     description: Verify mri_concat for concatenating volumes
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_concat --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_concat --help 2>&1 | head -10'"
     expected_output_contains: "mri_concat"
 
   - name: mri_diff help
     description: Verify mri_diff for comparing volumes
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_diff --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_diff --help 2>&1 | head -10'"
     expected_output_contains: "mri_diff"
 
   - name: mri_robust_register help
     description: Verify mri_robust_register for robust registration
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_robust_register --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_robust_register --help 2>&1 | head -10'"
     expected_output_contains: "mri_robust_register"
 
   - name: mri_label2vol help
     description: Verify mri_label2vol for label to volume conversion
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_label2vol --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_label2vol --help 2>&1 | head -10'"
     expected_output_contains: "mri_label2vol"
 
   - name: mri_extract_label help
     description: Verify mri_extract_label for extracting ROIs
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_extract_label --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_extract_label --help 2>&1 | head -10'"
     expected_exit_code: 0
 
   - name: mri_aparc2aseg help
     description: Verify mri_aparc2aseg for parcellation mapping
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_aparc2aseg --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_aparc2aseg --help 2>&1 | head -10'"
     expected_output_contains: "mri_aparc2aseg"
 
   - name: mri_fwhm help
     description: Verify mri_fwhm for smoothness estimation
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_fwhm --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_fwhm --help 2>&1 | head -10'"
     expected_output_contains: "mri_fwhm"
 
   - name: mri_surf2vol help
     description: Verify mri_surf2vol for surface to volume mapping
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_surf2vol --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_surf2vol --help 2>&1 | head -10'"
     expected_output_contains: "mri_surf2vol"
 
   - name: mri_vol2surf help
     description: Verify mri_vol2surf for volume to surface mapping
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_vol2surf --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_vol2surf --help 2>&1 | head -10'"
     expected_output_contains: "mri_vol2surf"
 
   # ==========================================================================
@@ -655,42 +493,27 @@ tests:
   # ==========================================================================
   - name: mris_calc help
     description: Verify mris_calc for surface calculations
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_calc --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_calc --help 2>&1 | head -10'"
     expected_output_contains: "mris_calc"
 
   - name: mris_thickness help
     description: Verify mris_thickness for cortical thickness
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_thickness --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_thickness --help 2>&1 | head -10'"
     expected_exit_code: 0
 
   - name: mris_sample_parc help
     description: Verify mris_sample_parc for parcellation sampling
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_sample_parc --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_sample_parc --help 2>&1 | head -10'"
     expected_exit_code: 0
 
   - name: mris_decimate help
     description: Verify mris_decimate for surface decimation
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_decimate --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_decimate --help 2>&1 | head -10'"
     expected_exit_code: 0
 
   - name: mris_extract_main_component help
     description: Verify mris_extract_main_component for surface cleanup
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mris_extract_main_component --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmris_extract_main_component --help 2>&1 | head -10'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -698,10 +521,7 @@ tests:
   # ==========================================================================
   - name: bbregister help
     description: Verify bbregister for registration
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      bbregister --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nbbregister --help 2>&1 | head -20'"
     expected_output_contains: "bbregister"
 
   # ==========================================================================
@@ -709,10 +529,7 @@ tests:
   # ==========================================================================
   - name: talairach_avi help
     description: Verify talairach_avi for Talairach registration
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      talairach_avi 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\ntalairach_avi 2>&1 | head -10'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -720,28 +537,17 @@ tests:
   # ==========================================================================
   - name: mri_segstats help
     description: Verify mri_segstats for segmentation statistics
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_segstats --help 2>&1 | head -20
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_segstats --help 2>&1 | head -20'"
     expected_output_contains: "mri_segstats"
 
   - name: asegstats2table help
     description: Verify asegstats2table for stats table generation (needs python→python3 symlink)
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      ln -sf /usr/bin/python3 /tmp/python && export PATH=/tmp:$PATH
-      asegstats2table --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nln -sf /usr/bin/python3 /tmp/python && export PATH=/tmp:$PATH\nasegstats2table --help 2>&1 | head -10'"
     expected_output_contains: "asegstats2table"
 
   - name: aparcstats2table help
     description: Verify aparcstats2table for parcellation stats (needs python→python3 symlink)
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      ln -sf /usr/bin/python3 /tmp/python && export PATH=/tmp:$PATH
-      aparcstats2table --help 2>&1 | head -10
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nln -sf /usr/bin/python3 /tmp/python && export PATH=/tmp:$PATH\naparcstats2table --help 2>&1 | head -10'"
     expected_output_contains: "aparcstats2table"
 
   # ==========================================================================
@@ -759,29 +565,20 @@ tests:
 
   - name: Create orig.mgz for FastCSR
     description: Convert T1w to orig.mgz required by FastCSR
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_convert ${t1w} test_output/subjects/test_sub/mri/orig.mgz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_convert ${t1w} test_output/subjects/test_sub/mri/orig.mgz'"
     depends_on: Prepare subject directory structure
     validate:
       - output_exists: ${output_dir}/subjects/test_sub/mri/orig.mgz
 
   - name: Verify orig.mgz dimensions
     description: Check that orig.mgz has correct dimensions
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_info --dim test_output/subjects/test_sub/mri/orig.mgz
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_info --dim test_output/subjects/test_sub/mri/orig.mgz'"
     depends_on: Create orig.mgz for FastCSR
     expected_exit_code: 0
 
   - name: Compare two identical volumes
     description: Use mri_diff to compare identical volumes
-    command: |
-      export FREESURFER_HOME=/opt/freesurfer-6.0.0
-      source $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null
-      mri_diff ${t1w} ${t1w} 2>&1
+    command: "bash -lc 'export FREESURFER_HOME=/opt/freesurfer-6.0.0\nsource $FREESURFER_HOME/SetUpFreeSurfer.sh 2>/dev/null\nmri_diff ${t1w} ${t1w} 2>&1'"
     expected_exit_code: 0
 
 cleanup:

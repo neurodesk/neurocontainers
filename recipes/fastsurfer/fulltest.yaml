@@ -130,7 +130,7 @@ tests:
   # ==========================================================================
   - name: FreeSurfer license file exists
     description: Verify FreeSurfer license is present at expected location
-    command: test -f /opt/license.txt && echo "License exists"
+    command: bash -lc 'test -f /opt/license.txt && echo "License exists"'
     expected_output_contains: "License exists"
 
   - name: FS_LICENSE environment variable
@@ -194,12 +194,12 @@ tests:
   # ==========================================================================
   - name: Checkpoints directory exists
     description: Verify deep learning model checkpoints are present
-    command: ls /fastsurfer/checkpoints/ 2>&1 | head -5
+    command: "bash -lc 'ls /fastsurfer/checkpoints/ 2>&1 | head -5'"
     expected_output_contains: ""
 
   - name: FastSurferVINN checkpoints
     description: Verify FastSurferVINN model checkpoints exist
-    command: ls /fastsurfer/checkpoints/ | grep -i "vinn" || ls /fastsurfer/checkpoints/
+    command: "bash -lc 'ls /fastsurfer/checkpoints/ | grep -i \"vinn\" || ls /fastsurfer/checkpoints/'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -263,22 +263,22 @@ tests:
   # ==========================================================================
   - name: recon-surf.sh availability
     description: Verify recon-surf.sh surface reconstruction script exists
-    command: test -f /fastsurfer/recon_surf/recon-surf.sh && echo "recon-surf.sh exists"
+    command: bash -lc 'test -f /fastsurfer/recon_surf/recon-surf.sh && echo "recon-surf.sh exists"'
     expected_output_contains: "recon-surf.sh exists"
 
   - name: recon-surfreg.sh availability
     description: Verify recon-surfreg.sh registration script exists
-    command: test -f /fastsurfer/recon_surf/recon-surfreg.sh && echo "recon-surfreg.sh exists"
+    command: bash -lc 'test -f /fastsurfer/recon_surf/recon-surfreg.sh && echo "recon-surfreg.sh exists"'
     expected_output_contains: "recon-surfreg.sh exists"
 
   - name: talairach-reg.sh availability
     description: Verify talairach registration script exists
-    command: test -f /fastsurfer/recon_surf/talairach-reg.sh && echo "talairach-reg.sh exists"
+    command: bash -lc 'test -f /fastsurfer/recon_surf/talairach-reg.sh && echo "talairach-reg.sh exists"'
     expected_output_contains: "talairach-reg.sh exists"
 
   - name: long_prepare_template.sh availability
     description: Verify longitudinal template preparation script exists
-    command: test -f /fastsurfer/recon_surf/long_prepare_template.sh && echo "long_prepare_template.sh exists"
+    command: bash -lc 'test -f /fastsurfer/recon_surf/long_prepare_template.sh && echo "long_prepare_template.sh exists"'
     expected_output_contains: "long_prepare_template.sh exists"
 
   # ==========================================================================
@@ -286,17 +286,17 @@ tests:
   # ==========================================================================
   - name: DKT atlas lookup table
     description: Verify DKT atlas lookup table exists
-    command: test -f /fastsurfer/recon_surf/DKTatlaslookup.txt && echo "DKT LUT exists"
+    command: bash -lc 'test -f /fastsurfer/recon_surf/DKTatlaslookup.txt && echo "DKT LUT exists"'
     expected_output_contains: "DKT LUT exists"
 
   - name: Left hemisphere DKT lookup
     description: Verify left hemisphere DKT lookup exists
-    command: test -f /fastsurfer/recon_surf/lh.DKTatlaslookup.txt && echo "lh DKT LUT exists"
+    command: bash -lc 'test -f /fastsurfer/recon_surf/lh.DKTatlaslookup.txt && echo "lh DKT LUT exists"'
     expected_output_contains: "lh DKT LUT exists"
 
   - name: Right hemisphere DKT lookup
     description: Verify right hemisphere DKT lookup exists
-    command: test -f /fastsurfer/recon_surf/rh.DKTatlaslookup.txt && echo "rh DKT LUT exists"
+    command: bash -lc 'test -f /fastsurfer/recon_surf/rh.DKTatlaslookup.txt && echo "rh DKT LUT exists"'
     expected_output_contains: "rh DKT LUT exists"
 
   # ==========================================================================
@@ -324,17 +324,17 @@ tests:
   # ==========================================================================
   - name: FastSurferCNN config directory
     description: Verify FastSurferCNN config directory exists
-    command: ls /fastsurfer/FastSurferCNN/config/ 2>&1 | head -5
+    command: "bash -lc 'ls /fastsurfer/FastSurferCNN/config/ 2>&1 | head -5'"
     expected_exit_code: 0
 
   - name: CerebNet config directory
     description: Verify CerebNet config directory exists
-    command: ls /fastsurfer/CerebNet/config/ 2>&1 | head -5
+    command: "bash -lc 'ls /fastsurfer/CerebNet/config/ 2>&1 | head -5'"
     expected_exit_code: 0
 
   - name: HypVINN config directory
     description: Verify HypVINN config directory exists
-    command: ls /fastsurfer/HypVINN/config/ 2>&1 | head -5
+    command: "bash -lc 'ls /fastsurfer/HypVINN/config/ 2>&1 | head -5'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -408,7 +408,7 @@ tests:
 
   - name: FASTSURFER_HOME set
     description: Verify FASTSURFER_HOME environment variable is set
-    command: test -n "$FASTSURFER_HOME" && echo "FASTSURFER_HOME is set" || echo "Default is /fastsurfer"
+    command: "bash -lc 'test -n \"$FASTSURFER_HOME\" && echo \"FASTSURFER_HOME is set\" || echo \"Default is /fastsurfer\"'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -416,12 +416,12 @@ tests:
   # ==========================================================================
   - name: BUILD.info exists
     description: Verify BUILD.info file exists in container
-    command: test -f /fastsurfer/BUILD.info && echo "BUILD.info exists"
+    command: bash -lc 'test -f /fastsurfer/BUILD.info && echo "BUILD.info exists"'
     expected_output_contains: "BUILD.info exists"
 
   - name: Read BUILD.info
     description: Display build information
-    command: cat /fastsurfer/BUILD.info 2>&1 | head -20
+    command: "bash -lc 'cat /fastsurfer/BUILD.info 2>&1 | head -20'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -451,12 +451,12 @@ tests:
   # ==========================================================================
   - name: make_upright utility
     description: Verify make_upright utility exists
-    command: test -f /fastsurfer/recon_surf/make_upright && echo "make_upright exists"
+    command: bash -lc 'test -f /fastsurfer/recon_surf/make_upright && echo "make_upright exists"'
     expected_output_contains: "make_upright exists"
 
   - name: fs_time utility
     description: Verify fs_time utility exists
-    command: test -f /fastsurfer/recon_surf/fs_time && echo "fs_time exists"
+    command: bash -lc 'test -f /fastsurfer/recon_surf/fs_time && echo "fs_time exists"'
     expected_output_contains: "fs_time exists"
 
   # ==========================================================================
@@ -464,12 +464,12 @@ tests:
   # ==========================================================================
   - name: brun_fastsurfer.sh availability
     description: Verify batch processing script exists
-    command: test -f /fastsurfer/brun_fastsurfer.sh && echo "brun_fastsurfer.sh exists"
+    command: bash -lc 'test -f /fastsurfer/brun_fastsurfer.sh && echo "brun_fastsurfer.sh exists"'
     expected_output_contains: "brun_fastsurfer.sh exists"
 
   - name: stools.sh availability
     description: Verify supplementary tools script exists
-    command: test -f /fastsurfer/stools.sh && echo "stools.sh exists"
+    command: bash -lc 'test -f /fastsurfer/stools.sh && echo "stools.sh exists"'
     expected_output_contains: "stools.sh exists"
 
   # ==========================================================================
@@ -477,7 +477,7 @@ tests:
   # ==========================================================================
   - name: Docker directory exists
     description: Verify Docker configuration directory exists
-    command: test -d /fastsurfer/Docker && echo "Docker dir exists"
+    command: bash -lc 'test -d /fastsurfer/Docker && echo "Docker dir exists"'
     expected_output_contains: "Docker dir exists"
 
   # ==========================================================================
@@ -485,7 +485,7 @@ tests:
   # ==========================================================================
   - name: Test directory exists
     description: Verify test directory exists in container
-    command: test -d /fastsurfer/test && echo "test dir exists"
+    command: bash -lc 'test -d /fastsurfer/test && echo "test dir exists"'
     expected_output_contains: "test dir exists"
 
 cleanup:

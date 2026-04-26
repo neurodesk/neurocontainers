@@ -124,7 +124,7 @@ tests:
 
   - name: OspreyHBCD executable permissions
     description: Verify OspreyHBCD has executable permissions
-    command: test -x /code/OspreyHBCD && echo "executable"
+    command: bash -lc 'test -x /code/OspreyHBCD && echo "executable"'
     expected_output_contains: "executable"
 
   - name: run_compiled.sh exists
@@ -248,12 +248,12 @@ tests:
 
   - name: Basis sets directory exists
     description: Verify HBCD_basissets directory exists
-    command: ls -d /HBCD_basissets 2>&1
+    command: "bash -lc 'ls -d /HBCD_basissets 2>&1'"
     expected_output_contains: "/HBCD_basissets"
 
   - name: 3T basis sets directory exists
     description: Verify 3T basis sets directory exists
-    command: ls -d /HBCD_basissets/3T 2>&1
+    command: "bash -lc 'ls -d /HBCD_basissets/3T 2>&1'"
     expected_output_contains: "3T"
 
   # ==========================================================================
@@ -261,27 +261,27 @@ tests:
   # ==========================================================================
   - name: Siemens basis sets directory exists
     description: Verify Siemens basis sets directory exists
-    command: ls -d /HBCD_basissets/3T/siemens 2>&1
+    command: "bash -lc 'ls -d /HBCD_basissets/3T/siemens 2>&1'"
     expected_output_contains: "siemens"
 
   - name: Siemens HERCULES-PRESS basis set directory
     description: Verify Siemens HERCULES-PRESS basis set directory exists
-    command: ls -d /HBCD_basissets/3T/siemens/hercules-press 2>&1
+    command: "bash -lc 'ls -d /HBCD_basissets/3T/siemens/hercules-press 2>&1'"
     expected_output_contains: "hercules-press"
 
   - name: Siemens HERCULES-PRESS basis set file
     description: Verify Siemens HERCULES-PRESS basis set .mat file exists
-    command: ls /HBCD_basissets/3T/siemens/hercules-press/*.mat 2>&1
+    command: bash -lc 'ls /HBCD_basissets/3T/siemens/hercules-press/*.mat 2>&1'
     expected_output_contains: ".mat"
 
   - name: Siemens unedited basis set directory
     description: Verify Siemens unedited basis set directory exists
-    command: ls -d /HBCD_basissets/3T/siemens/unedited 2>&1
+    command: "bash -lc 'ls -d /HBCD_basissets/3T/siemens/unedited 2>&1'"
     expected_output_contains: "unedited"
 
   - name: Siemens unedited PRESS basis set directory
     description: Verify Siemens unedited PRESS basis set directory exists
-    command: ls -d /HBCD_basissets/3T/siemens/unedited/press 2>&1
+    command: "bash -lc 'ls -d /HBCD_basissets/3T/siemens/unedited/press 2>&1'"
     expected_output_contains: "press"
 
   # ==========================================================================
@@ -289,17 +289,17 @@ tests:
   # ==========================================================================
   - name: GE basis sets directory exists
     description: Verify GE basis sets directory exists
-    command: ls -d /HBCD_basissets/3T/ge 2>&1
+    command: "bash -lc 'ls -d /HBCD_basissets/3T/ge 2>&1'"
     expected_output_contains: "ge"
 
   - name: GE HERCULES-PRESS basis set directory
     description: Verify GE HERCULES-PRESS basis set directory exists
-    command: ls -d /HBCD_basissets/3T/ge/hercules-press 2>&1
+    command: "bash -lc 'ls -d /HBCD_basissets/3T/ge/hercules-press 2>&1'"
     expected_output_contains: "hercules-press"
 
   - name: GE unedited basis set directory
     description: Verify GE unedited basis set directory exists
-    command: ls -d /HBCD_basissets/3T/ge/unedited 2>&1
+    command: "bash -lc 'ls -d /HBCD_basissets/3T/ge/unedited 2>&1'"
     expected_output_contains: "unedited"
 
   # ==========================================================================
@@ -307,17 +307,17 @@ tests:
   # ==========================================================================
   - name: Philips basis sets directory exists
     description: Verify Philips basis sets directory exists
-    command: ls -d /HBCD_basissets/3T/philips 2>&1
+    command: "bash -lc 'ls -d /HBCD_basissets/3T/philips 2>&1'"
     expected_output_contains: "philips"
 
   - name: Philips HERCULES-PRESS basis set directory
     description: Verify Philips HERCULES-PRESS basis set directory exists
-    command: ls -d /HBCD_basissets/3T/philips/hercules-press 2>&1
+    command: "bash -lc 'ls -d /HBCD_basissets/3T/philips/hercules-press 2>&1'"
     expected_output_contains: "hercules-press"
 
   - name: Philips unedited basis set directory
     description: Verify Philips unedited basis set directory exists
-    command: ls -d /HBCD_basissets/3T/philips/unedited 2>&1
+    command: "bash -lc 'ls -d /HBCD_basissets/3T/philips/unedited 2>&1'"
     expected_output_contains: "unedited"
 
   # ==========================================================================
@@ -412,17 +412,17 @@ tests:
   # ==========================================================================
   - name: Singularity labels exist
     description: Verify container has Singularity labels
-    command: cat /.singularity.d/labels.json 2>&1
+    command: "bash -lc 'cat /.singularity.d/labels.json 2>&1'"
     expected_output_contains: "org.label-schema"
 
   - name: Container build date in labels
     description: Verify container build date is recorded
-    command: cat /.singularity.d/labels.json 2>&1
+    command: "bash -lc 'cat /.singularity.d/labels.json 2>&1'"
     expected_output_contains: "build-date"
 
   - name: Container architecture in labels
     description: Verify container architecture is recorded
-    command: cat /.singularity.d/labels.json 2>&1
+    command: "bash -lc 'cat /.singularity.d/labels.json 2>&1'"
     expected_output_contains: "amd64"
 
   - name: README.md exists
@@ -621,7 +621,7 @@ tests:
 
   - name: OspreyHBCD job file error
     description: Verify OspreyHBCD shows appropriate error for missing job file
-    command: /code/OspreyHBCD 2>&1 || true
+    command: bash -lc '/code/OspreyHBCD 2>&1 || true'
     expected_output_contains: "Not enough"
 
 cleanup:

@@ -41,7 +41,7 @@ tests:
   # ==========================================================================
   - name: FieldTrip help message
     description: Verify FieldTrip binary runs and shows usage information
-    command: /opt/fieldtrip-20220617/run_fieldtrip.sh /opt/MCR/v99 2>&1 | head -5
+    command: bash -lc '/opt/fieldtrip-20220617/run_fieldtrip.sh /opt/MCR/v99 2>&1 | head -5'
     expected_output_contains: "You should start the compiled FieldTrip application"
 
   - name: FieldTrip ft_defaults initialization

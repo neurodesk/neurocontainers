@@ -110,77 +110,77 @@ tests:
   # ==========================================================================
   - name: Nighres source directory
     description: Verify nighres source code is present
-    command: ls -la /opt/nighres/nighres/ | head -20
+    command: "bash -lc 'ls -la /opt/nighres/nighres/ | head -20'"
     expected_output_contains: "__init__.py"
 
   - name: Nighres brain module present
     description: Verify brain module source files exist
-    command: ls /opt/nighres/nighres/brain/
+    command: "bash -lc 'ls /opt/nighres/nighres/brain/'"
     expected_output_contains: "mgdm_segmentation.py"
 
   - name: Nighres cortex module present
     description: Verify cortex module source files exist
-    command: ls /opt/nighres/nighres/cortex/
+    command: "bash -lc 'ls /opt/nighres/nighres/cortex/'"
     expected_output_contains: "cruise_cortex_extraction.py"
 
   - name: Nighres laminar module present
     description: Verify laminar module source files exist
-    command: ls /opt/nighres/nighres/laminar/
+    command: "bash -lc 'ls /opt/nighres/nighres/laminar/'"
     expected_output_contains: "volumetric_layering.py"
 
   - name: Nighres intensity module present
     description: Verify intensity module source files exist
-    command: ls /opt/nighres/nighres/intensity/
+    command: "bash -lc 'ls /opt/nighres/nighres/intensity/'"
     expected_output_contains: "mp2rage_t1_mapping.py"
 
   - name: Nighres segmentation module present
     description: Verify segmentation module source files exist
-    command: ls /opt/nighres/nighres/segmentation/
+    command: "bash -lc 'ls /opt/nighres/nighres/segmentation/'"
     expected_output_contains: "conditional_shape.py"
 
   - name: Nighres registration module present
     description: Verify registration module source files exist
-    command: ls /opt/nighres/nighres/registration/
+    command: "bash -lc 'ls /opt/nighres/nighres/registration/'"
     expected_output_contains: "embedded_antspy.py"
 
   - name: Nighres surface module present
     description: Verify surface module source files exist
-    command: ls /opt/nighres/nighres/surface/
+    command: "bash -lc 'ls /opt/nighres/nighres/surface/'"
     expected_output_contains: "levelset_to_mesh.py"
 
   - name: Nighres shape module present
     description: Verify shape module source files exist
-    command: ls /opt/nighres/nighres/shape/
+    command: "bash -lc 'ls /opt/nighres/nighres/shape/'"
     expected_output_contains: "spectral_embedding.py"
 
   - name: Nighres parcellation module present
     description: Verify parcellation module source files exist
-    command: ls /opt/nighres/nighres/parcellation/
+    command: "bash -lc 'ls /opt/nighres/nighres/parcellation/'"
     expected_output_contains: "massp.py"
 
   - name: Nighres filtering module present
     description: Verify filtering module source files exist
-    command: ls /opt/nighres/nighres/filtering/
+    command: "bash -lc 'ls /opt/nighres/nighres/filtering/'"
     expected_output_contains: "recursive_ridge_diffusion.py"
 
   - name: Nighres microscopy module present
     description: Verify microscopy module source files exist
-    command: ls /opt/nighres/nighres/microscopy/
+    command: "bash -lc 'ls /opt/nighres/nighres/microscopy/'"
     expected_output_contains: "mgdm_cells.py"
 
   - name: Nighres io module present
     description: Verify io module source files exist
-    command: ls /opt/nighres/nighres/io/
+    command: "bash -lc 'ls /opt/nighres/nighres/io/'"
     expected_output_contains: "io_volume.py"
 
   - name: Nighres statistics module present
     description: Verify statistics module source files exist
-    command: ls /opt/nighres/nighres/statistics/
+    command: "bash -lc 'ls /opt/nighres/nighres/statistics/'"
     expected_output_contains: "segmentation_statistics.py"
 
   - name: Nighres data module present
     description: Verify data download module exists
-    command: ls /opt/nighres/nighres/data/
+    command: "bash -lc 'ls /opt/nighres/nighres/data/'"
     expected_output_contains: "download_data.py"
 
   # ==========================================================================
@@ -596,27 +596,27 @@ tests:
   # ==========================================================================
   - name: Nighres examples directory
     description: Verify example scripts are present
-    command: ls /opt/nighres/examples/
+    command: "bash -lc 'ls /opt/nighres/examples/'"
     expected_output_contains: "testing_01"
 
   - name: Quantitative MRI example
     description: Check quantitative MRI example script exists
-    command: head -30 /opt/nighres/examples/testing_01_quantitative_mri.py
+    command: "bash -lc 'head -30 /opt/nighres/examples/testing_01_quantitative_mri.py'"
     expected_output_contains: "Quantitative MRI"
 
   - name: Cortical laminar example
     description: Check cortical laminar analysis example exists
-    command: head -30 /opt/nighres/examples/testing_02_cortical_laminar_analysis.py
+    command: "bash -lc 'head -30 /opt/nighres/examples/testing_02_cortical_laminar_analysis.py'"
     expected_output_contains: "Cortical laminar"
 
   - name: Brain slab coregistration example
     description: Check brain slab coregistration example exists
-    command: head -30 /opt/nighres/examples/testing_03_brain_slab_coregistration.py
+    command: "bash -lc 'head -30 /opt/nighres/examples/testing_03_brain_slab_coregistration.py'"
     expected_output_contains: "registration"
 
   - name: MASSP subcortex example
     description: Check MASSP subcortex parcellation example exists
-    command: head -30 /opt/nighres/examples/testing_04_massp_subcortex_parcellation.py
+    command: "bash -lc 'head -30 /opt/nighres/examples/testing_04_massp_subcortex_parcellation.py'"
     expected_output_contains: "MASSP"
 
   # ==========================================================================
@@ -960,7 +960,7 @@ tests:
 
   - name: Nighres documentation
     description: Check nighres documentation directory exists
-    command: ls /opt/nighres/doc/
+    command: "bash -lc 'ls /opt/nighres/doc/'"
     expected_output_contains: "index.rst"
 
 cleanup:

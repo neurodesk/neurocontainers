@@ -40,67 +40,67 @@ tests:
   # ==========================================================================
   - name: OSHy.py version and banner
     description: Verify OSHy.py runs and displays version banner
-    command: python -u /OSHy/OSHy.py 2>&1 | head -5
+    command: "bash -lc 'python -u /OSHy/OSHy.py 2>&1 | head -5'"
     expected_output_contains: "OSHy-X v0.4"
 
   - name: OSHy.py help message
     description: Display OSHy.py command-line help
-    command: python -u /OSHy/OSHy.py --help 2>&1
+    command: "bash -lc 'python -u /OSHy/OSHy.py --help 2>&1'"
     expected_output_contains: "--target"
 
   - name: OSHy.py help contains all options
     description: Verify all command line options are documented
-    command: python -u /OSHy/OSHy.py --help 2>&1
+    command: "bash -lc 'python -u /OSHy/OSHy.py --help 2>&1'"
     expected_output_contains: "--outdir"
 
   - name: OSHy.py crop option documentation
     description: Verify crop option is documented
-    command: python -u /OSHy/OSHy.py --help 2>&1
+    command: "bash -lc 'python -u /OSHy/OSHy.py --help 2>&1'"
     expected_output_contains: "--crop"
 
   - name: OSHy.py weighting option documentation
     description: Verify weighting option is documented
-    command: python -u /OSHy/OSHy.py --help 2>&1
+    command: "bash -lc 'python -u /OSHy/OSHy.py --help 2>&1'"
     expected_output_contains: "--weighting"
 
   - name: OSHy.py denoise option documentation
     description: Verify denoise option is documented
-    command: python -u /OSHy/OSHy.py --help 2>&1
+    command: "bash -lc 'python -u /OSHy/OSHy.py --help 2>&1'"
     expected_output_contains: "--denoise"
 
   - name: OSHy.py field correction option documentation
     description: Verify field correction option is documented
-    command: python -u /OSHy/OSHy.py --help 2>&1
+    command: "bash -lc 'python -u /OSHy/OSHy.py --help 2>&1'"
     expected_output_contains: "--fieldCorrection"
 
   - name: OSHy.py mosaic option documentation
     description: Verify mosaic option is documented
-    command: python -u /OSHy/OSHy.py --help 2>&1
+    command: "bash -lc 'python -u /OSHy/OSHy.py --help 2>&1'"
     expected_output_contains: "--mosaic"
 
   - name: OSHy.py tesla option documentation
     description: Verify tesla/field strength option is documented
-    command: python -u /OSHy/OSHy.py --help 2>&1
+    command: "bash -lc 'python -u /OSHy/OSHy.py --help 2>&1'"
     expected_output_contains: "--tesla"
 
   - name: OSHy.py bimodal option documentation
     description: Verify bimodal priors option is documented
-    command: python -u /OSHy/OSHy.py --help 2>&1
+    command: "bash -lc 'python -u /OSHy/OSHy.py --help 2>&1'"
     expected_output_contains: "--bimodal"
 
   - name: OSHy.py threads option documentation
     description: Verify threads option is documented
-    command: python -u /OSHy/OSHy.py --help 2>&1
+    command: "bash -lc 'python -u /OSHy/OSHy.py --help 2>&1'"
     expected_output_contains: "--nthreads"
 
   - name: OSHy.py copyright notice
     description: Verify copyright is displayed
-    command: python -u /OSHy/OSHy.py 2>&1
+    command: "bash -lc 'python -u /OSHy/OSHy.py 2>&1'"
     expected_output_contains: "Copyright"
 
   - name: OSHy.py missing arguments message
     description: Verify helpful message when required args missing
-    command: python -u /OSHy/OSHy.py 2>&1
+    command: "bash -lc 'python -u /OSHy/OSHy.py 2>&1'"
     expected_output_contains: "required"
 
   # ==========================================================================
@@ -108,52 +108,52 @@ tests:
   # ==========================================================================
   - name: Test T1w image exists
     description: Verify bundled T1w test image is present
-    command: 'python -c "import os; print(''exists'' if os.path.exists(''/OSHy/sub-test.nii.gz'') else ''missing'')"'
+    command: "bash -lc 'python -c \"import os; print('\"'\"'exists'\"'\"' if os.path.exists('\"'\"'/OSHy/sub-test.nii.gz'\"'\"') else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "exists"
 
   - name: Test T2w image exists
     description: Verify bundled T2w test image is present
-    command: 'python -c "import os; print(''exists'' if os.path.exists(''/OSHy/test_T2w.nii.gz'') else ''missing'')"'
+    command: "bash -lc 'python -c \"import os; print('\"'\"'exists'\"'\"' if os.path.exists('\"'\"'/OSHy/test_T2w.nii.gz'\"'\"') else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "exists"
 
   - name: 3T template exists
     description: Verify 3T template is present
-    command: 'python -c "import os; print(''exists'' if os.path.exists(''/OSHy/templates/3T_template.nii.gz'') else ''missing'')"'
+    command: "bash -lc 'python -c \"import os; print('\"'\"'exists'\"'\"' if os.path.exists('\"'\"'/OSHy/templates/3T_template.nii.gz'\"'\"') else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "exists"
 
   - name: 7T template exists
     description: Verify 7T template is present
-    command: 'python -c "import os; print(''exists'' if os.path.exists(''/OSHy/templates/7T_template.nii.gz'') else ''missing'')"'
+    command: "bash -lc 'python -c \"import os; print('\"'\"'exists'\"'\"' if os.path.exists('\"'\"'/OSHy/templates/7T_template.nii.gz'\"'\"') else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "exists"
 
   - name: 3T bounding box exists
     description: Verify 3T bounding box is present
-    command: 'python -c "import os; print(''exists'' if os.path.exists(''/OSHy/templates/3T_box.nii.gz'') else ''missing'')"'
+    command: "bash -lc 'python -c \"import os; print('\"'\"'exists'\"'\"' if os.path.exists('\"'\"'/OSHy/templates/3T_box.nii.gz'\"'\"') else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "exists"
 
   - name: 7T bounding box exists
     description: Verify 7T bounding box is present
-    command: 'python -c "import os; print(''exists'' if os.path.exists(''/OSHy/templates/7T_box.nii.gz'') else ''missing'')"'
+    command: "bash -lc 'python -c \"import os; print('\"'\"'exists'\"'\"' if os.path.exists('\"'\"'/OSHy/templates/7T_box.nii.gz'\"'\"') else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "exists"
 
   - name: 3T atlases directory exists
     description: Verify 3T atlases directory is present
-    command: 'python -c "import os; print(''exists'' if os.path.isdir(''/OSHy/atlases/3T'') else ''missing'')"'
+    command: "bash -lc 'python -c \"import os; print('\"'\"'exists'\"'\"' if os.path.isdir('\"'\"'/OSHy/atlases/3T'\"'\"') else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "exists"
 
   - name: 7T atlases directory exists
     description: Verify 7T atlases directory is present
-    command: 'python -c "import os; print(''exists'' if os.path.isdir(''/OSHy/atlases/7T'') else ''missing'')"'
+    command: "bash -lc 'python -c \"import os; print('\"'\"'exists'\"'\"' if os.path.isdir('\"'\"'/OSHy/atlases/7T'\"'\"') else '\"'\"'missing'\"'\"')\"'"
     expected_output_contains: "exists"
 
   - name: 3T atlas count
     description: Verify sufficient 3T atlases are present
-    command: 'python -c "import glob; files=glob.glob(''/OSHy/atlases/3T/*.nii.gz''); print(str(len(files)) + '' atlas files'')"'
+    command: "bash -lc 'python -c \"import glob; files=glob.glob('\"'\"'/OSHy/atlases/3T/*.nii.gz'\"'\"'); print(str(len(files)) + '\"'\"' atlas files'\"'\"')\"'"
     expected_output_contains: "atlas files"
 
   - name: 7T atlas count
     description: Verify sufficient 7T atlases are present
-    command: 'python -c "import glob; files=glob.glob(''/OSHy/atlases/7T/*.nii.gz''); print(str(len(files)) + '' atlas files'')"'
+    command: "bash -lc 'python -c \"import glob; files=glob.glob('\"'\"'/OSHy/atlases/7T/*.nii.gz'\"'\"'); print(str(len(files)) + '\"'\"' atlas files'\"'\"')\"'"
     expected_output_contains: "atlas files"
 
   # ==========================================================================
@@ -196,22 +196,22 @@ tests:
 
   - name: antsJointLabelFusion script available
     description: Verify Joint Label Fusion script is available
-    command: ls /opt/ants-2.3.1/antsJointLabelFusion.sh 2>&1
+    command: "bash -lc 'ls /opt/ants-2.3.1/antsJointLabelFusion.sh 2>&1'"
     expected_output_contains: "antsJointLabelFusion.sh"
 
   - name: antsJointLabelFusion2 script available
     description: Verify Joint Label Fusion 2 script is available
-    command: ls /opt/ants-2.3.1/antsJointLabelFusion2.sh 2>&1
+    command: "bash -lc 'ls /opt/ants-2.3.1/antsJointLabelFusion2.sh 2>&1'"
     expected_output_contains: "antsJointLabelFusion2.sh"
 
   - name: antsBrainExtraction script available
     description: Verify brain extraction script is available
-    command: ls /opt/ants-2.3.1/antsBrainExtraction.sh 2>&1
+    command: "bash -lc 'ls /opt/ants-2.3.1/antsBrainExtraction.sh 2>&1'"
     expected_output_contains: "antsBrainExtraction.sh"
 
   - name: antsRegistrationSyN script available
     description: Verify SyN registration script is available
-    command: ls /opt/ants-2.3.1/antsRegistrationSyN.sh 2>&1
+    command: "bash -lc 'ls /opt/ants-2.3.1/antsRegistrationSyN.sh 2>&1'"
     expected_output_contains: "antsRegistrationSyN.sh"
 
   - name: ThresholdImage available
@@ -244,22 +244,22 @@ tests:
 
   - name: ANTsPy image read
     description: Test reading NIfTI with ANTsPy
-    command: 'python -c "import ants; img=ants.image_read(''/OSHy/sub-test.nii.gz''); print(''Shape: '' + str(img.shape))"'
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); print('\"'\"'Shape: '\"'\"' + str(img.shape))\"'"
     expected_output_contains: "Shape:"
 
   - name: ANTsPy image dimensions
     description: Verify test image dimensions
-    command: 'python -c "import ants; img=ants.image_read(''/OSHy/sub-test.nii.gz''); print(''Dims: '' + str(img.shape))"'
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); print('\"'\"'Dims: '\"'\"' + str(img.shape))\"'"
     expected_output_contains: "(192, 240, 256)"
 
   - name: ANTsPy image spacing
     description: Verify test image spacing
-    command: 'python -c "import ants; img=ants.image_read(''/OSHy/sub-test.nii.gz''); print(''Spacing: '' + str(img.spacing))"'
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); print('\"'\"'Spacing: '\"'\"' + str(img.spacing))\"'"
     expected_output_contains: "1.0"
 
   - name: ANTsPy denoise function
     description: Test ANTsPy denoising on downsampled image to avoid timeout
-    command: 'python -c "import ants; img=ants.image_read(''/OSHy/sub-test.nii.gz''); small=ants.resample_image(img, (2,2,2), False, 1); result=ants.denoise_image(small); print(''Denoising works'')"'
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); small=ants.resample_image(img, (2,2,2), False, 1); result=ants.denoise_image(small); print('\"'\"'Denoising works'\"'\"')\"'"
     expected_output_contains: "Denoising works"
 
   - name: ANTsPy registration function exists
@@ -331,7 +331,7 @@ tests:
 
   - name: nibabel load test image
     description: Test loading NIfTI with nibabel
-    command: 'python -c "import nibabel as nib; img=nib.load(''/OSHy/sub-test.nii.gz''); print(''Shape: '' + str(img.shape))"'
+    command: "bash -lc 'python -c \"import nibabel as nib; img=nib.load('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); print('\"'\"'Shape: '\"'\"' + str(img.shape))\"'"
     expected_output_contains: "Shape:"
 
   - name: numpy import
@@ -374,88 +374,88 @@ tests:
   # ==========================================================================
   - name: ANTsPy image write
     description: Test writing NIfTI with ANTsPy
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); ants.image_write(img, 'test_output/ants_write_test.nii.gz'); print('Write successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); ants.image_write(img, '\"'\"'test_output/ants_write_test.nii.gz'\"'\"'); print('\"'\"'Write successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/ants_write_test.nii.gz
 
   - name: ANTsPy image smoothing
     description: Test Gaussian smoothing with ANTsPy
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); smoothed=ants.smooth_image(img, 2.0); ants.image_write(smoothed, 'test_output/smoothed.nii.gz'); print('Smoothing successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); smoothed=ants.smooth_image(img, 2.0); ants.image_write(smoothed, '\"'\"'test_output/smoothed.nii.gz'\"'\"'); print('\"'\"'Smoothing successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/smoothed.nii.gz
 
   - name: ANTsPy image thresholding
     description: Test image thresholding with ANTsPy
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); thresh=ants.threshold_image(img, 100, 500); ants.image_write(thresh, 'test_output/thresholded.nii.gz'); print('Thresholding successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); thresh=ants.threshold_image(img, 100, 500); ants.image_write(thresh, '\"'\"'test_output/thresholded.nii.gz'\"'\"'); print('\"'\"'Thresholding successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/thresholded.nii.gz
 
   - name: ANTsPy Otsu thresholding
     description: Test Otsu automatic thresholding
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); mask=ants.otsu_segmentation(img, 2); ants.image_write(mask, 'test_output/otsu_mask.nii.gz'); print('Otsu successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); mask=ants.otsu_segmentation(img, 2); ants.image_write(mask, '\"'\"'test_output/otsu_mask.nii.gz'\"'\"'); print('\"'\"'Otsu successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/otsu_mask.nii.gz
 
   - name: ANTsPy mask application
     description: Test masking an image
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); mask=ants.otsu_segmentation(img, 2); masked=ants.mask_image(img, mask); ants.image_write(masked, 'test_output/masked.nii.gz'); print('Masking successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); mask=ants.otsu_segmentation(img, 2); masked=ants.mask_image(img, mask); ants.image_write(masked, '\"'\"'test_output/masked.nii.gz'\"'\"'); print('\"'\"'Masking successful'\"'\"')\"'"
     depends_on: ANTsPy Otsu thresholding
     validate:
       - output_exists: ${output_dir}/masked.nii.gz
 
   - name: ANTsPy image resampling
     description: Test image resampling
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); resampled=ants.resample_image(img, (2,2,2), False, 1); ants.image_write(resampled, 'test_output/resampled.nii.gz'); print('Resampling successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); resampled=ants.resample_image(img, (2,2,2), False, 1); ants.image_write(resampled, '\"'\"'test_output/resampled.nii.gz'\"'\"'); print('\"'\"'Resampling successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/resampled.nii.gz
 
   - name: ANTsPy N4 bias correction
     description: Test N4 bias field correction
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); corrected=ants.n4_bias_field_correction(img); ants.image_write(corrected, 'test_output/n4_corrected.nii.gz'); print('N4 successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); corrected=ants.n4_bias_field_correction(img); ants.image_write(corrected, '\"'\"'test_output/n4_corrected.nii.gz'\"'\"'); print('\"'\"'N4 successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/n4_corrected.nii.gz
 
   - name: ANTsPy histogram matching
     description: Test histogram matching between images
-    command: python -c "import ants; img1=ants.image_read('/OSHy/sub-test.nii.gz'); img2=ants.image_read('/OSHy/templates/3T_template.nii.gz'); matched=ants.histogram_match_image(img1, img2); print('Histogram matching successful')"
+    command: "bash -lc 'python -c \"import ants; img1=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); img2=ants.image_read('\"'\"'/OSHy/templates/3T_template.nii.gz'\"'\"'); matched=ants.histogram_match_image(img1, img2); print('\"'\"'Histogram matching successful'\"'\"')\"'"
     expected_output_contains: "successful"
 
   - name: ANTsPy iMath operations gradient
     description: Test iMath gradient operation
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); grad=ants.iMath_grad(img); ants.image_write(grad, 'test_output/gradient.nii.gz'); print('Gradient successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); grad=ants.iMath_grad(img); ants.image_write(grad, '\"'\"'test_output/gradient.nii.gz'\"'\"'); print('\"'\"'Gradient successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/gradient.nii.gz
 
   - name: ANTsPy iMath operations Laplacian
     description: Test iMath Laplacian operation
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); lap=ants.iMath_laplacian(img, 1.5); ants.image_write(lap, 'test_output/laplacian.nii.gz'); print('Laplacian successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); lap=ants.iMath_laplacian(img, 1.5); ants.image_write(lap, '\"'\"'test_output/laplacian.nii.gz'\"'\"'); print('\"'\"'Laplacian successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/laplacian.nii.gz
 
   - name: ANTsPy morphological dilation
     description: Test morphological dilation
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); mask=ants.otsu_segmentation(img, 2); dilated=ants.iMath_MD(mask, 2); ants.image_write(dilated, 'test_output/dilated.nii.gz'); print('Dilation successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); mask=ants.otsu_segmentation(img, 2); dilated=ants.iMath_MD(mask, 2); ants.image_write(dilated, '\"'\"'test_output/dilated.nii.gz'\"'\"'); print('\"'\"'Dilation successful'\"'\"')\"'"
     depends_on: ANTsPy Otsu thresholding
     validate:
       - output_exists: ${output_dir}/dilated.nii.gz
 
   - name: ANTsPy morphological erosion
     description: Test morphological erosion
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); mask=ants.otsu_segmentation(img, 2); eroded=ants.iMath_ME(mask, 2); ants.image_write(eroded, 'test_output/eroded.nii.gz'); print('Erosion successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); mask=ants.otsu_segmentation(img, 2); eroded=ants.iMath_ME(mask, 2); ants.image_write(eroded, '\"'\"'test_output/eroded.nii.gz'\"'\"'); print('\"'\"'Erosion successful'\"'\"')\"'"
     depends_on: ANTsPy Otsu thresholding
     validate:
       - output_exists: ${output_dir}/eroded.nii.gz
 
   - name: ANTsPy fill holes
     description: Test hole filling in mask
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); mask=ants.otsu_segmentation(img, 2); filled=ants.iMath_fill_holes(mask); ants.image_write(filled, 'test_output/filled.nii.gz'); print('Fill holes successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); mask=ants.otsu_segmentation(img, 2); filled=ants.iMath_fill_holes(mask); ants.image_write(filled, '\"'\"'test_output/filled.nii.gz'\"'\"'); print('\"'\"'Fill holes successful'\"'\"')\"'"
     depends_on: ANTsPy Otsu thresholding
     validate:
       - output_exists: ${output_dir}/filled.nii.gz
 
   - name: ANTsPy get largest component
     description: Test extracting largest connected component
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); mask=ants.otsu_segmentation(img, 2); largest=ants.iMath_get_largest_component(mask); ants.image_write(largest, 'test_output/largest_component.nii.gz'); print('Largest component successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); mask=ants.otsu_segmentation(img, 2); largest=ants.iMath_get_largest_component(mask); ants.image_write(largest, '\"'\"'test_output/largest_component.nii.gz'\"'\"'); print('\"'\"'Largest component successful'\"'\"')\"'"
     depends_on: ANTsPy Otsu thresholding
     validate:
       - output_exists: ${output_dir}/largest_component.nii.gz
@@ -465,32 +465,32 @@ tests:
   # ==========================================================================
   - name: 3T template dimensions
     description: Verify 3T template has correct dimensions
-    command: 'python -c "import ants; img=ants.image_read(''/OSHy/templates/3T_template.nii.gz''); print(''Shape: '' + str(img.shape))"'
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/templates/3T_template.nii.gz'\"'\"'); print('\"'\"'Shape: '\"'\"' + str(img.shape))\"'"
     expected_output_contains: "Shape:"
 
   - name: 7T template dimensions
     description: Verify 7T template has correct dimensions
-    command: 'python -c "import ants; img=ants.image_read(''/OSHy/templates/7T_template.nii.gz''); print(''Shape: '' + str(img.shape))"'
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/templates/7T_template.nii.gz'\"'\"'); print('\"'\"'Shape: '\"'\"' + str(img.shape))\"'"
     expected_output_contains: "Shape:"
 
   - name: 3T bounding box is binary
     description: Verify 3T bounding box contains only 0 and 1
-    command: 'python -c "import ants; import numpy as np; img=ants.image_read(''/OSHy/templates/3T_box.nii.gz''); data=img.numpy(); unique=np.unique(data); print(''Unique values: '' + str(unique))"'
+    command: "bash -lc 'python -c \"import ants; import numpy as np; img=ants.image_read('\"'\"'/OSHy/templates/3T_box.nii.gz'\"'\"'); data=img.numpy(); unique=np.unique(data); print('\"'\"'Unique values: '\"'\"' + str(unique))\"'"
     expected_output_contains: "Unique values:"
 
   - name: 7T bounding box is binary
     description: Verify 7T bounding box contains only 0 and 1
-    command: 'python -c "import ants; import numpy as np; img=ants.image_read(''/OSHy/templates/7T_box.nii.gz''); data=img.numpy(); unique=np.unique(data); print(''Unique values: '' + str(unique))"'
+    command: "bash -lc 'python -c \"import ants; import numpy as np; img=ants.image_read('\"'\"'/OSHy/templates/7T_box.nii.gz'\"'\"'); data=img.numpy(); unique=np.unique(data); print('\"'\"'Unique values: '\"'\"' + str(unique))\"'"
     expected_output_contains: "Unique values:"
 
   - name: 3T atlas labels check
     description: Verify 3T atlases contain correct labels (1-4)
-    command: 'python -c "import glob; import ants; import numpy as np; labels=glob.glob(''/OSHy/atlases/3T/*label*.nii.gz''); img=ants.image_read(labels[0]); unique=np.unique(img.numpy()); print(''Labels: '' + str(unique))"'
+    command: "bash -lc 'python -c \"import glob; import ants; import numpy as np; labels=glob.glob('\"'\"'/OSHy/atlases/3T/*label*.nii.gz'\"'\"'); img=ants.image_read(labels[0]); unique=np.unique(img.numpy()); print('\"'\"'Labels: '\"'\"' + str(unique))\"'"
     expected_output_contains: "Labels:"
 
   - name: 7T atlas labels check
     description: Verify 7T atlases contain correct labels (1-4)
-    command: 'python -c "import glob; import ants; import numpy as np; labels=glob.glob(''/OSHy/atlases/7T/*label*.nii.gz''); img=ants.image_read(labels[0]); unique=np.unique(img.numpy()); print(''Labels: '' + str(unique))"'
+    command: "bash -lc 'python -c \"import glob; import ants; import numpy as np; labels=glob.glob('\"'\"'/OSHy/atlases/7T/*label*.nii.gz'\"'\"'); img=ants.image_read(labels[0]); unique=np.unique(img.numpy()); print('\"'\"'Labels: '\"'\"' + str(unique))\"'"
     expected_output_contains: "Labels:"
 
   # ==========================================================================
@@ -498,12 +498,12 @@ tests:
   # ==========================================================================
   - name: ANTsPy affine registration
     description: Test affine registration capability
-    command: python -c "import ants; fixed=ants.image_read('/OSHy/templates/3T_template.nii.gz'); moving=ants.image_read('/OSHy/sub-test.nii.gz'); reg=ants.registration(fixed, moving, type_of_transform='Affine'); print('Affine registration successful')"
+    command: "bash -lc 'python -c \"import ants; fixed=ants.image_read('\"'\"'/OSHy/templates/3T_template.nii.gz'\"'\"'); moving=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); reg=ants.registration(fixed, moving, type_of_transform='\"'\"'Affine'\"'\"'); print('\"'\"'Affine registration successful'\"'\"')\"'"
     expected_output_contains: "successful"
 
   - name: ANTsPy transform application
     description: Test applying transforms to images
-    command: "python -c \"import ants; fixed=ants.image_read('/OSHy/templates/3T_template.nii.gz'); moving=ants.image_read('/OSHy/sub-test.nii.gz'); reg=ants.registration(fixed, moving, type_of_transform='Affine'); warped=ants.apply_transforms(fixed, moving, reg['fwdtransforms']); print('Transform application successful')\""
+    command: "bash -lc 'python -c \"import ants; fixed=ants.image_read('\"'\"'/OSHy/templates/3T_template.nii.gz'\"'\"'); moving=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); reg=ants.registration(fixed, moving, type_of_transform='\"'\"'Affine'\"'\"'); warped=ants.apply_transforms(fixed, moving, reg['\"'\"'fwdtransforms'\"'\"']); print('\"'\"'Transform application successful'\"'\"')\"'"
     expected_output_contains: "successful"
 
   # ==========================================================================
@@ -511,14 +511,12 @@ tests:
   # ==========================================================================
   - name: ANTsPy label geometry measures
     description: Test computing label geometry measures
-    command: 'python -c "import ants; img=ants.image_read(''/OSHy/sub-test.nii.gz''); mask=ants.otsu_segmentation(img, 2); stats=ants.label_geometry_measures(mask, img); print(''Measures computed: '' + str(len(stats)) + '' rows'')"'
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); mask=ants.otsu_segmentation(img, 2); stats=ants.label_geometry_measures(mask, img); print('\"'\"'Measures computed: '\"'\"' + str(len(stats)) + '\"'\"' rows'\"'\"')\"'"
     expected_output_contains: "Measures computed:"
 
   - name: ImageMath label stats
     description: Test ImageMath LabelStats operation
-    command: |
-      python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); mask=ants.otsu_segmentation(img, 2); ants.image_write(mask, 'test_output/temp_mask.nii.gz')" && \
-      ImageMath 3 test_output/label_stats.csv LabelStats test_output/temp_mask.nii.gz /OSHy/sub-test.nii.gz 2>&1 | head -5
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); mask=ants.otsu_segmentation(img, 2); ants.image_write(mask, '\"'\"'test_output/temp_mask.nii.gz'\"'\"')\" && \\\nImageMath 3 test_output/label_stats.csv LabelStats test_output/temp_mask.nii.gz /OSHy/sub-test.nii.gz 2>&1 | head -5'"
     validate:
       - output_exists: ${output_dir}/label_stats.csv
 
@@ -527,28 +525,28 @@ tests:
   # ==========================================================================
   - name: Read compressed NIfTI
     description: Test reading .nii.gz files
-    command: 'python -c "import nibabel as nib; img=nib.load(''/OSHy/sub-test.nii.gz''); print(''Loaded: '' + str(img.shape))"'
+    command: "bash -lc 'python -c \"import nibabel as nib; img=nib.load('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); print('\"'\"'Loaded: '\"'\"' + str(img.shape))\"'"
     expected_output_contains: "Loaded:"
 
   - name: Write uncompressed NIfTI
     description: Test writing .nii files
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); ants.image_write(img, 'test_output/uncompressed.nii'); print('Uncompressed write successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); ants.image_write(img, '\"'\"'test_output/uncompressed.nii'\"'\"'); print('\"'\"'Uncompressed write successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/uncompressed.nii
 
   - name: Header information extraction
     description: Test extracting header information
-    command: "python -c \"import ants; info=ants.image_header_info('/OSHy/sub-test.nii.gz'); print('Dimensions: ' + str(info['dimensions']))\""
+    command: "bash -lc 'python -c \"import ants; info=ants.image_header_info('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); print('\"'\"'Dimensions: '\"'\"' + str(info['\"'\"'dimensions'\"'\"']))\"'"
     expected_output_contains: "Dimensions:"
 
   - name: Image orientation check
     description: Test getting image orientation
-    command: 'python -c "import ants; img=ants.image_read(''/OSHy/sub-test.nii.gz''); orient=ants.get_orientation(img); print(''Orientation: '' + str(orient))"'
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); orient=ants.get_orientation(img); print('\"'\"'Orientation: '\"'\"' + str(orient))\"'"
     expected_output_contains: "Orientation:"
 
   - name: Image direction matrix
     description: Test getting direction matrix
-    command: 'python -c "import ants; img=ants.image_read(''/OSHy/sub-test.nii.gz''); direction=ants.get_direction(img); print(''Direction shape: '' + str(direction.shape))"'
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); direction=ants.get_direction(img); print('\"'\"'Direction shape: '\"'\"' + str(direction.shape))\"'"
     expected_output_contains: "Direction shape:"
 
   # ==========================================================================
@@ -581,7 +579,7 @@ tests:
 
   - name: glob available
     description: Verify glob for file pattern matching
-    command: 'python -c "import glob; files=glob.glob(''/OSHy/*.py''); print(''Found '' + str(len(files)) + '' Python files'')"'
+    command: "bash -lc 'python -c \"import glob; files=glob.glob('\"'\"'/OSHy/*.py'\"'\"'); print('\"'\"'Found '\"'\"' + str(len(files)) + '\"'\"' Python files'\"'\"')\"'"
     expected_output_contains: "Found"
 
   # ==========================================================================
@@ -589,52 +587,52 @@ tests:
   # ==========================================================================
   - name: OSHy module import
     description: Test importing OSHy module
-    command: 'python -c "import sys; sys.path.insert(0, ''/OSHy''); from OSHy import Target_img, OSHy_data, convert_to_bool; print(''OSHy module imported'')"'
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/OSHy'\"'\"'); from OSHy import Target_img, OSHy_data, convert_to_bool; print('\"'\"'OSHy module imported'\"'\"')\"'"
     expected_output_contains: "OSHy module imported"
 
   - name: convert_to_bool True
     description: Test convert_to_bool with True string
-    command: 'python -c "import sys; sys.path.insert(0, ''/OSHy''); from OSHy import convert_to_bool; print(convert_to_bool(''True''))"'
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/OSHy'\"'\"'); from OSHy import convert_to_bool; print(convert_to_bool('\"'\"'True'\"'\"'))\"'"
     expected_output_contains: "True"
 
   - name: convert_to_bool False
     description: Test convert_to_bool with False string
-    command: 'python -c "import sys; sys.path.insert(0, ''/OSHy''); from OSHy import convert_to_bool; print(convert_to_bool(''False''))"'
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/OSHy'\"'\"'); from OSHy import convert_to_bool; print(convert_to_bool('\"'\"'False'\"'\"'))\"'"
     expected_output_contains: "False"
 
   - name: convert_to_bool case insensitive
     description: Test convert_to_bool case insensitivity
-    command: 'python -c "import sys; sys.path.insert(0, ''/OSHy''); from OSHy import convert_to_bool; print(convert_to_bool(''TRUE''), convert_to_bool(''false''))"'
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/OSHy'\"'\"'); from OSHy import convert_to_bool; print(convert_to_bool('\"'\"'TRUE'\"'\"'), convert_to_bool('\"'\"'false'\"'\"'))\"'"
     expected_output_contains: "True False"
 
   - name: OSHy_data class instantiation
     description: Test creating OSHy_data object
-    command: 'python -c "import sys; sys.path.insert(0, ''/OSHy''); from OSHy import OSHy_data; data=OSHy_data(''3'', ''T1w'', False, True); print(''OSHy_data created'')"'
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/OSHy'\"'\"'); from OSHy import OSHy_data; data=OSHy_data('\"'\"'3'\"'\"', '\"'\"'T1w'\"'\"', False, True); print('\"'\"'OSHy_data created'\"'\"')\"'"
     expected_output_contains: "OSHy_data created"
 
   - name: OSHy_data get_template
     description: Test getting template from OSHy_data
-    command: 'python -c "import sys; sys.path.insert(0, ''/OSHy''); from OSHy import OSHy_data; data=OSHy_data(''3'', ''T1w'', False, True); template=data.get_template(); print(''Template shape: '' + str(template.shape))"'
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/OSHy'\"'\"'); from OSHy import OSHy_data; data=OSHy_data('\"'\"'3'\"'\"', '\"'\"'T1w'\"'\"', False, True); template=data.get_template(); print('\"'\"'Template shape: '\"'\"' + str(template.shape))\"'"
     expected_output_contains: "Template shape:"
 
   - name: OSHy_data get_template_box
     description: Test getting template box from OSHy_data
-    command: 'python -c "import sys; sys.path.insert(0, ''/OSHy''); from OSHy import OSHy_data; data=OSHy_data(''3'', ''T1w'', False, True); box=data.get_template_box(); print(''Box shape: '' + str(box.shape))"'
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/OSHy'\"'\"'); from OSHy import OSHy_data; data=OSHy_data('\"'\"'3'\"'\"', '\"'\"'T1w'\"'\"', False, True); box=data.get_template_box(); print('\"'\"'Box shape: '\"'\"' + str(box.shape))\"'"
     expected_output_contains: "Box shape:"
 
   - name: OSHy_data get_atlases 3T T1w
     description: Test getting 3T T1w atlases
-    command: 'python -c "import sys; sys.path.insert(0, ''/OSHy''); from OSHy import OSHy_data; data=OSHy_data(''3'', ''T1w'', False, True); atlases=data.get_atlases(); print(''Found '' + str(len(atlases)) + '' atlases'')"'
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/OSHy'\"'\"'); from OSHy import OSHy_data; data=OSHy_data('\"'\"'3'\"'\"', '\"'\"'T1w'\"'\"', False, True); atlases=data.get_atlases(); print('\"'\"'Found '\"'\"' + str(len(atlases)) + '\"'\"' atlases'\"'\"')\"'"
     expected_output_contains: "Found"
 
   - name: OSHy_data get_atlases 7T T1w
     description: Test getting 7T T1w atlases
-    command: 'python -c "import sys; sys.path.insert(0, ''/OSHy''); from OSHy import OSHy_data; data=OSHy_data(''7'', ''T1w'', False, True); atlases=data.get_atlases(); print(''Found '' + str(len(atlases)) + '' atlases'')"'
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/OSHy'\"'\"'); from OSHy import OSHy_data; data=OSHy_data('\"'\"'7'\"'\"', '\"'\"'T1w'\"'\"', False, True); atlases=data.get_atlases(); print('\"'\"'Found '\"'\"' + str(len(atlases)) + '\"'\"' atlases'\"'\"')\"'"
     expected_output_contains: "Found"
 
   - name: OSHy_data get_labels
     description: Test getting atlas labels
-    command: 'python -c "import sys; sys.path.insert(0, ''/OSHy''); from OSHy import OSHy_data; data=OSHy_data(''3'', ''T1w'', False, True); labels=data.get_labels(); print(''Found '' + str(len(labels)) + '' label files'')"'
+    command: "bash -lc 'python -c \"import sys; sys.path.insert(0, '\"'\"'/OSHy'\"'\"'); from OSHy import OSHy_data; data=OSHy_data('\"'\"'3'\"'\"', '\"'\"'T1w'\"'\"', False, True); labels=data.get_labels(); print('\"'\"'Found '\"'\"' + str(len(labels)) + '\"'\"' label files'\"'\"')\"'"
     expected_output_contains: "Found"
 
   # ==========================================================================
@@ -642,57 +640,57 @@ tests:
   # ==========================================================================
   - name: ANTsPy crop image
     description: Test image cropping with ANTsPy
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); mask=ants.otsu_segmentation(img, 2); cropped=ants.crop_image(img, mask); ants.image_write(cropped, 'test_output/cropped.nii.gz'); print('Cropping successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); mask=ants.otsu_segmentation(img, 2); cropped=ants.crop_image(img, mask); ants.image_write(cropped, '\"'\"'test_output/cropped.nii.gz'\"'\"'); print('\"'\"'Cropping successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/cropped.nii.gz
 
   - name: ANTsPy pad image
     description: Test image padding
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); padded=ants.pad_image(img, pad_width=(10,10,10)); ants.image_write(padded, 'test_output/padded.nii.gz'); print('Padding successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); padded=ants.pad_image(img, pad_width=(10,10,10)); ants.image_write(padded, '\"'\"'test_output/padded.nii.gz'\"'\"'); print('\"'\"'Padding successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/padded.nii.gz
 
   - name: ANTsPy slice image
     description: Test extracting 2D slice from 3D
-    command: 'python -c "import ants; img=ants.image_read(''/OSHy/sub-test.nii.gz''); sliced=ants.slice_image(img, axis=2, idx=100); print(''Slice shape: '' + str(sliced.shape))"'
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); sliced=ants.slice_image(img, axis=2, idx=100); print('\"'\"'Slice shape: '\"'\"' + str(sliced.shape))\"'"
     expected_output_contains: "Slice shape:"
 
   - name: ANTsPy get mask
     description: Test getting mask from image
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); mask=ants.get_mask(img); ants.image_write(mask, 'test_output/get_mask.nii.gz'); print('Get mask successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); mask=ants.get_mask(img); ants.image_write(mask, '\"'\"'test_output/get_mask.nii.gz'\"'\"'); print('\"'\"'Get mask successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/get_mask.nii.gz
 
   - name: ANTsPy image clone
     description: Test image cloning
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); clone=ants.image_clone(img); print('Clone successful' if clone.shape == img.shape else 'Clone failed')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); clone=ants.image_clone(img); print('\"'\"'Clone successful'\"'\"' if clone.shape == img.shape else '\"'\"'Clone failed'\"'\"')\"'"
     expected_output_contains: "Clone successful"
 
   - name: ANTsPy reflect image
     description: Test image reflection
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); reflected=ants.reflect_image(img, axis=0); ants.image_write(reflected, 'test_output/reflected.nii.gz'); print('Reflection successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); reflected=ants.reflect_image(img, axis=0); ants.image_write(reflected, '\"'\"'test_output/reflected.nii.gz'\"'\"'); print('\"'\"'Reflection successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/reflected.nii.gz
 
   - name: ANTsPy multiply images
     description: Test image multiplication
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); result=ants.multiply_images(img, img); ants.image_write(result, 'test_output/multiplied.nii.gz'); print('Multiply successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); result=ants.multiply_images(img, img); ants.image_write(result, '\"'\"'test_output/multiplied.nii.gz'\"'\"'); print('\"'\"'Multiply successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/multiplied.nii.gz
 
   - name: ANTsPy copy image info
     description: Test copying image information
-    command: python -c "import ants; img1=ants.image_read('/OSHy/sub-test.nii.gz'); img2=ants.image_clone(img1); ants.copy_image_info(img1, img2); print('Copy info successful')"
+    command: "bash -lc 'python -c \"import ants; img1=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); img2=ants.image_clone(img1); ants.copy_image_info(img1, img2); print('\"'\"'Copy info successful'\"'\"')\"'"
     expected_output_contains: "successful"
 
   - name: ANTsPy image similarity
     description: Test computing image similarity
-    command: 'python -c "import ants; img=ants.image_read(''/OSHy/sub-test.nii.gz''); sim=ants.image_similarity(img, img, metric_type=''Correlation''); print(''Similarity: '' + str(sim))"'
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); sim=ants.image_similarity(img, img, metric_type='\"'\"'Correlation'\"'\"'); print('\"'\"'Similarity: '\"'\"' + str(sim))\"'"
     expected_output_contains: "Similarity:"
 
   - name: ANTsPy rank intensity
     description: Test rank intensity normalization
-    command: python -c "import ants; img=ants.image_read('/OSHy/sub-test.nii.gz'); ranked=ants.rank_intensity(img); ants.image_write(ranked, 'test_output/ranked.nii.gz'); print('Rank intensity successful')"
+    command: "bash -lc 'python -c \"import ants; img=ants.image_read('\"'\"'/OSHy/sub-test.nii.gz'\"'\"'); ranked=ants.rank_intensity(img); ants.image_write(ranked, '\"'\"'test_output/ranked.nii.gz'\"'\"'); print('\"'\"'Rank intensity successful'\"'\"')\"'"
     validate:
       - output_exists: ${output_dir}/ranked.nii.gz
 

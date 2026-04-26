@@ -654,24 +654,24 @@ tests:
   # ==========================================================================
   - name: CTFFIND binary exists
     description: Check CTFFIND 4 binary location
-    command: ls /opt/ctffind-4.1.14/bin/ctffind
+    command: "bash -lc 'ls /opt/ctffind-4.1.14/bin/ctffind'"
     expected_output_contains: "ctffind"
 
   - name: CTFFIND usage
     description: Check CTFFIND version and scripted mode
-    command: echo "" | /opt/ctffind-4.1.14/bin/ctffind 2>&1 | head -5
+    command: bash -lc 'echo "" | /opt/ctffind-4.1.14/bin/ctffind 2>&1 | head -5'
     expected_output_contains: "Ctffind"
     ignore_exit_code: true
 
   - name: CTFFIND version info
     description: Verify CTFFIND version displays correctly
-    command: echo "" | /opt/ctffind-4.1.14/bin/ctffind 2>&1
+    command: bash -lc 'echo "" | /opt/ctffind-4.1.14/bin/ctffind 2>&1'
     expected_output_contains: "Version"
     ignore_exit_code: true
 
   - name: CTFFIND plot script exists
     description: Check CTFFIND plot results script
-    command: ls /opt/ctffind-4.1.14/bin/ctffind_plot_results.sh
+    command: "bash -lc 'ls /opt/ctffind-4.1.14/bin/ctffind_plot_results.sh'"
     expected_output_contains: "ctffind_plot_results.sh"
 
   # ==========================================================================
@@ -679,17 +679,17 @@ tests:
   # ==========================================================================
   - name: MotionCor2 binaries exist
     description: Check MotionCor2 CUDA binaries directory
-    command: ls /opt/motioncor2-1.6.4/bin/ | head -5
+    command: "bash -lc 'ls /opt/motioncor2-1.6.4/bin/ | head -5'"
     expected_output_contains: "MotionCor2"
 
   - name: MotionCor2 CUDA 11.8 binary exists
     description: Check MotionCor2 for CUDA 11.8
-    command: ls /opt/motioncor2-1.6.4/bin/MotionCor2_1.6.4_Cuda118_Mar312023
+    command: "bash -lc 'ls /opt/motioncor2-1.6.4/bin/MotionCor2_1.6.4_Cuda118_Mar312023'"
     expected_output_contains: "MotionCor2"
 
   - name: MotionCor2 manual exists
     description: Check MotionCor2 user manual
-    command: ls /opt/motioncor2-1.6.4/bin/MotionCor2-UserManual-02-18-2023.pdf
+    command: "bash -lc 'ls /opt/motioncor2-1.6.4/bin/MotionCor2-UserManual-02-18-2023.pdf'"
     expected_output_contains: "UserManual"
 
   # ==========================================================================
@@ -715,10 +715,10 @@ tests:
   # ==========================================================================
   - name: CUDA toolkit directory exists
     description: Check CUDA 11.8 installation
-    command: ls /usr/local/cuda-11.8/
+    command: "bash -lc 'ls /usr/local/cuda-11.8/'"
     expected_output_contains: "bin"
 
   - name: CUDA nvcc exists
     description: Check CUDA compiler exists
-    command: ls /usr/local/cuda-11.8/bin/nvcc
+    command: "bash -lc 'ls /usr/local/cuda-11.8/bin/nvcc'"
     expected_output_contains: "nvcc"

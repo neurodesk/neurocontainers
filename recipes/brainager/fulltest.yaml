@@ -68,53 +68,53 @@ tests:
   # ==========================================================================
   - name: Check SPM12 directory
     description: Verify SPM12 installation directory exists
-    command: ls -la /opt/spm12/ | head -5
+    command: "bash -lc 'ls -la /opt/spm12/ | head -5'"
     expected_output_contains: "spm12"
 
   - name: Check MATLAB MCR
     description: Verify MATLAB Compiler Runtime is installed
-    command: ls /opt/mcr/v93/
+    command: "bash -lc 'ls /opt/mcr/v93/'"
     expected_output_contains: "runtime"
 
   - name: Check brainageR directory
     description: Verify brainageR installation directory exists
-    command: ls /opt/brainageR/
+    command: "bash -lc 'ls /opt/brainageR/'"
     expected_output_contains: "brainager_segment.py"
 
   - name: Check GPR model file
     description: Verify GPR model file exists
-    command: ls -la /opt/brainageR/GPR_model_gm_wm_csf.RData
+    command: "bash -lc 'ls -la /opt/brainageR/GPR_model_gm_wm_csf.RData'"
     expected_output_contains: "GPR_model"
 
   - name: Check PCA files
     description: Verify PCA transformation files exist
-    command: ls /opt/brainageR/*.rds
+    command: bash -lc 'ls /opt/brainageR/*.rds'
     expected_output_contains: "pca_center.rds"
 
   - name: Check templates directory
     description: Verify DARTEL templates are available
-    command: ls /opt/brainageR/templates/
+    command: "bash -lc 'ls /opt/brainageR/templates/'"
     expected_output_contains: "Template_6.nii"
 
   - name: Check average tissue templates
     description: Verify average tissue probability maps exist
-    command: ls /opt/brainageR/templates/average_smwc*.nii
+    command: bash -lc 'ls /opt/brainageR/templates/average_smwc*.nii'
     expected_output_contains: "average_smwc1.nii"
 
   - name: Check SPM TPM
     description: Verify SPM tissue probability maps exist
-    command: ls /opt/spm12/spm12_mcr/spm/spm12/tpm/TPM.nii
+    command: "bash -lc 'ls /opt/spm12/spm12_mcr/spm/spm12/tpm/TPM.nii'"
     expected_output_contains: "TPM.nii"
     expected_exit_code: 0
 
   - name: Check R prediction script
     description: Verify R prediction script exists
-    command: ls /opt/brainageR/predict_new_data_gm_wm_csf.R
+    command: "bash -lc 'ls /opt/brainageR/predict_new_data_gm_wm_csf.R'"
     expected_output_contains: "predict_new_data"
 
   - name: Check batch template
     description: Verify SPM batch template exists
-    command: ls /opt/brainageR/brainager_batch.m
+    command: "bash -lc 'ls /opt/brainageR/brainager_batch.m'"
     expected_output_contains: "brainager_batch.m"
 
   # ==========================================================================
@@ -178,12 +178,12 @@ tests:
   # ==========================================================================
   - name: Check example T1 in container
     description: Verify example T1 image exists in container
-    command: ls -la /opt/brainageR/chris_t1.nii.gz
+    command: "bash -lc 'ls -la /opt/brainageR/chris_t1.nii.gz'"
     expected_output_contains: "chris_t1.nii.gz"
 
   - name: Copy example T1 to test directory
     description: Copy the bundled example T1 to test output directory
-    command: cp /opt/brainageR/chris_t1.nii.gz ${output_dir}/
+    command: "bash -lc 'cp /opt/brainageR/chris_t1.nii.gz ${output_dir}/'"
     validate:
       - output_exists: ${output_dir}/chris_t1.nii.gz
 
@@ -288,7 +288,7 @@ tests:
 
   - name: Check SPM environment variables
     description: Verify SPM-related environment variables are set
-    command: env | grep -E "SPM|MCR" | head -5
+    command: "bash -lc 'env | grep -E \"SPM|MCR\" | head -5'"
     expected_output_contains: "SPM"
 
   # ==========================================================================
@@ -296,12 +296,12 @@ tests:
   # ==========================================================================
   - name: Test NIfTI header reading
     description: Verify R can read NIfTI headers
-    command: Rscript -e "library(RNifti); img <- readNifti('/opt/brainageR/chris_t1.nii.gz'); cat('Dimensions:', dim(img), '\n')"
+    command: "bash -lc 'Rscript -e \"library(RNifti); img <- readNifti('\"'\"'/opt/brainageR/chris_t1.nii.gz'\"'\"'); cat('\"'\"'Dimensions:'\"'\"', dim(img), '\"'\"'\\n'\"'\"')\"'"
     expected_output_contains: "Dimensions:"
 
   - name: Test template dimensions
     description: Verify template image dimensions match expected MNI space
-    command: Rscript -e "library(RNifti); img <- readNifti('/opt/brainageR/templates/Template_6.nii'); cat('Template dims:', dim(img), '\n')"
+    command: "bash -lc 'Rscript -e \"library(RNifti); img <- readNifti('\"'\"'/opt/brainageR/templates/Template_6.nii'\"'\"'); cat('\"'\"'Template dims:'\"'\"', dim(img), '\"'\"'\\n'\"'\"')\"'"
     expected_output_contains: "Template dims:"
 
   # ==========================================================================
@@ -309,17 +309,17 @@ tests:
   # ==========================================================================
   - name: Model file checksum
     description: Verify GPR model file integrity
-    command: md5sum /opt/brainageR/GPR_model_gm_wm_csf.RData | cut -d' ' -f1
+    command: "bash -lc 'md5sum /opt/brainageR/GPR_model_gm_wm_csf.RData | cut -d'\"'\"' '\"'\"' -f1'"
     expected_exit_code: 0
 
   - name: PCA center checksum
     description: Verify PCA center file integrity
-    command: md5sum /opt/brainageR/pca_center.rds | cut -d' ' -f1
+    command: "bash -lc 'md5sum /opt/brainageR/pca_center.rds | cut -d'\"'\"' '\"'\"' -f1'"
     expected_exit_code: 0
 
   - name: Training labels check
     description: Verify training labels file exists and has content
-    command: wc -l /opt/brainageR/brains.train_labels.csv
+    command: "bash -lc 'wc -l /opt/brainageR/brains.train_labels.csv'"
     expected_output_contains: "brains.train_labels.csv"
 
   # ==========================================================================
@@ -327,12 +327,12 @@ tests:
   # ==========================================================================
   - name: Batch template check
     description: Verify batch processing template scripts exist
-    command: ls /opt/brainageR/*template*.sh 2>/dev/null | head -3
+    command: bash -lc 'ls /opt/brainageR/*template*.sh 2>/dev/null | head -3'
     expected_output_contains: "template"
 
   - name: Collate script check
     description: Verify result collation script exists
-    command: ls /opt/brainageR/collate_brain_ages.sh
+    command: "bash -lc 'ls /opt/brainageR/collate_brain_ages.sh'"
     expected_output_contains: "collate_brain_ages.sh"
 
 cleanup:

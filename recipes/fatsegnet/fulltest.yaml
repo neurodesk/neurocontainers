@@ -63,12 +63,12 @@ tests:
 
   - name: Verify container labels
     description: Check Singularity/Apptainer labels exist
-    command: cat /.singularity.d/labels.json
+    command: "bash -lc 'cat /.singularity.d/labels.json'"
     expected_output_contains: "GITHUB"
 
   - name: Verify CUDA version in labels
     description: Check CUDA version information
-    command: cat /.singularity.d/labels.json
+    command: "bash -lc 'cat /.singularity.d/labels.json'"
     expected_output_contains: "cuda"
 
   # ==========================================================================
@@ -94,7 +94,7 @@ tests:
   # ==========================================================================
   - name: FatSegNet directory exists
     description: Verify FatSegNet is installed in /opt
-    command: ls -la /opt/FatSegNet/
+    command: "bash -lc 'ls -la /opt/FatSegNet/'"
     expected_output_contains: "README.md"
 
   - name: FatSegNet tool directory exists
@@ -157,27 +157,27 @@ tests:
   # ==========================================================================
   - name: Example data folder exists
     description: Verify example data directory
-    command: ls -la /opt/FatSegNet/example_data_folder/
+    command: "bash -lc 'ls -la /opt/FatSegNet/example_data_folder/'"
     expected_output_contains: "participants.csv"
 
   - name: Example participants file exists
     description: Verify sample participants CSV
-    command: cat /opt/FatSegNet/example_data_folder/participants.csv
+    command: "bash -lc 'cat /opt/FatSegNet/example_data_folder/participants.csv'"
     expected_output_contains: "subject_1"
 
   - name: Example subject directories exist
     description: Verify subject folder structure
-    command: ls /opt/FatSegNet/example_data_folder/
+    command: "bash -lc 'ls /opt/FatSegNet/example_data_folder/'"
     expected_output_contains: "subject_1"
 
   - name: Example fat image exists
     description: Verify example fat image file
-    command: ls /opt/FatSegNet/example_data_folder/subject_1/
+    command: "bash -lc 'ls /opt/FatSegNet/example_data_folder/subject_1/'"
     expected_output_contains: "FatImaging_F.nii.gz"
 
   - name: Example water image exists
     description: Verify example water image file
-    command: ls /opt/FatSegNet/example_data_folder/subject_1/
+    command: "bash -lc 'ls /opt/FatSegNet/example_data_folder/subject_1/'"
     expected_output_contains: "FatImaging_W.nii.gz"
 
   # ==========================================================================
@@ -564,32 +564,32 @@ tests:
   # ==========================================================================
   - name: FatSegNet README has usage instructions
     description: Verify detailed documentation exists
-    command: grep -c "Usage" /opt/FatSegNet/README.md
+    command: "bash -lc 'grep -c \"Usage\" /opt/FatSegNet/README.md'"
     expected_exit_code: 0
 
   - name: FatSegNet README has input format description
     description: Verify input data format is documented
-    command: grep "Input Data format" /opt/FatSegNet/README.md
+    command: "bash -lc 'grep \"Input Data format\" /opt/FatSegNet/README.md'"
     expected_output_contains: "Input"
 
   - name: FatSegNet README has output format description
     description: Verify output data format is documented
-    command: grep "Output Data format" /opt/FatSegNet/README.md
+    command: "bash -lc 'grep \"Output Data format\" /opt/FatSegNet/README.md'"
     expected_output_contains: "Output"
 
   - name: FatSegNet README documents arguments
     description: Verify command arguments are documented
-    command: grep "Arguments" /opt/FatSegNet/README.md
+    command: "bash -lc 'grep \"Arguments\" /opt/FatSegNet/README.md'"
     expected_output_contains: "Arguments"
 
   - name: FatSegNet README has citation
     description: Verify citation is provided
-    command: grep "cite" /opt/FatSegNet/README.md
+    command: "bash -lc 'grep \"cite\" /opt/FatSegNet/README.md'"
     expected_output_contains: "cite"
 
   - name: FatSegNet variables PDF exists
     description: Verify variables documentation PDF
-    command: ls -la /opt/FatSegNet/FatSegNet_Variables.pdf
+    command: "bash -lc 'ls -la /opt/FatSegNet/FatSegNet_Variables.pdf'"
     expected_output_contains: "FatSegNet_Variables.pdf"
 
   # ==========================================================================

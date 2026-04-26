@@ -53,27 +53,27 @@ tests:
   # ==========================================================================
   - name: mri_synthstrip help
     description: Verify mri_synthstrip binary shows help (exits 1 with --help)
-    command: /freesurfer/mri_synthstrip --help 2>&1
+    command: mri_synthstrip --help 2>&1 || true
     expected_output_contains: "Robust, universal skull-stripping"
     ignore_exit_code: true
 
   - name: Skull strip T1w - generate mask only
     description: Generate brain mask using SynthStrip for T1w image
-    command: /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_brain_mask.nii.gz
+    command: mri_synthstrip -i ${t1w} -m test_output/t1w_brain_mask.nii.gz
     validate:
       - output_exists: ${output_dir}/t1w_brain_mask.nii.gz
     timeout: 300
 
   - name: Skull strip T1w - generate stripped brain
     description: Generate stripped brain image using SynthStrip
-    command: /freesurfer/mri_synthstrip -i ${t1w} -o test_output/t1w_stripped.nii.gz
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_stripped.nii.gz
     validate:
       - output_exists: ${output_dir}/t1w_stripped.nii.gz
     timeout: 300
 
   - name: Skull strip T1w - mask and stripped together
     description: Generate both brain mask and stripped image in single run
-    command: /freesurfer/mri_synthstrip -i ${t1w} -o test_output/t1w_stripped_full.nii.gz -m test_output/t1w_mask_full.nii.gz
+    command: mri_synthstrip -i ${t1w} -o test_output/t1w_stripped_full.nii.gz -m test_output/t1w_mask_full.nii.gz
     validate:
       - output_exists: ${output_dir}/t1w_stripped_full.nii.gz
       - output_exists: ${output_dir}/t1w_mask_full.nii.gz
@@ -81,7 +81,7 @@ tests:
 
   - name: Skull strip T1w - with distance transform
     description: Generate brain mask with signed distance transform output
-    command: /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_mask_sdt.nii.gz -d test_output/t1w_sdt.nii.gz
+    command: mri_synthstrip -i ${t1w} -m test_output/t1w_mask_sdt.nii.gz -d test_output/t1w_sdt.nii.gz
     validate:
       - output_exists: ${output_dir}/t1w_mask_sdt.nii.gz
       - output_exists: ${output_dir}/t1w_sdt.nii.gz
@@ -89,28 +89,28 @@ tests:
 
   - name: Skull strip with custom border
     description: Generate brain mask with larger border (2mm)
-    command: /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_mask_border2.nii.gz -b 2
+    command: mri_synthstrip -i ${t1w} -m test_output/t1w_mask_border2.nii.gz -b 2
     validate:
       - output_exists: ${output_dir}/t1w_mask_border2.nii.gz
     timeout: 300
 
   - name: Skull strip with zero border
     description: Generate tight brain mask with no border expansion
-    command: /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_mask_border0.nii.gz -b 0
+    command: mri_synthstrip -i ${t1w} -m test_output/t1w_mask_border0.nii.gz -b 0
     validate:
       - output_exists: ${output_dir}/t1w_mask_border0.nii.gz
     timeout: 300
 
   - name: Skull strip excluding CSF
     description: Generate brain mask excluding CSF from border
-    command: /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_mask_nocsf.nii.gz --no-csf
+    command: mri_synthstrip -i ${t1w} -m test_output/t1w_mask_nocsf.nii.gz --no-csf
     validate:
       - output_exists: ${output_dir}/t1w_mask_nocsf.nii.gz
     timeout: 300
 
   - name: Skull strip T2 image
     description: Generate brain mask from inplane T2 image
-    command: /freesurfer/mri_synthstrip -i ${t2} -m test_output/t2_mask.nii.gz
+    command: mri_synthstrip -i ${t2} -m test_output/t2_mask.nii.gz
     validate:
       - output_exists: ${output_dir}/t2_mask.nii.gz
     timeout: 300
@@ -188,8 +188,8 @@ tests:
   - name: Full pipeline - T1w defacing (single command)
     description: Complete pipeline - skull strip then deface in sequence
     command: |
-      /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_pipe_mask.nii.gz && \
-      quickshear ${t1w} test_output/t1w_pipe_mask.nii.gz test_output/t1w_pipe_defaced.nii.gz
+      bash -lc 'mri_synthstrip -i ${t1w} -m test_output/t1w_pipe_mask.nii.gz && \
+      quickshear ${t1w} test_output/t1w_pipe_mask.nii.gz test_output/t1w_pipe_defaced.nii.gz'
     validate:
       - output_exists: ${output_dir}/t1w_pipe_mask.nii.gz
       - output_exists: ${output_dir}/t1w_pipe_defaced.nii.gz
@@ -198,8 +198,8 @@ tests:
   - name: Full pipeline - T2 defacing
     description: Complete pipeline for T2 image - skull strip then deface
     command: |
-      /freesurfer/mri_synthstrip -i ${t2} -m test_output/t2_pipe_mask.nii.gz && \
-      quickshear ${t2} test_output/t2_pipe_mask.nii.gz test_output/t2_defaced.nii.gz
+      bash -lc 'mri_synthstrip -i ${t2} -m test_output/t2_pipe_mask.nii.gz && \
+      quickshear ${t2} test_output/t2_pipe_mask.nii.gz test_output/t2_defaced.nii.gz'
     validate:
       - output_exists: ${output_dir}/t2_pipe_mask.nii.gz
       - output_exists: ${output_dir}/t2_defaced.nii.gz
@@ -208,8 +208,8 @@ tests:
   - name: Full pipeline - conservative defacing
     description: Pipeline with conservative settings (large border, large buffer)
     command: |
-      /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_cons_mask.nii.gz -b 3 && \
-      quickshear ${t1w} test_output/t1w_cons_mask.nii.gz test_output/t1w_conservative.nii.gz 30
+      bash -lc 'mri_synthstrip -i ${t1w} -m test_output/t1w_cons_mask.nii.gz -b 3 && \
+      quickshear ${t1w} test_output/t1w_cons_mask.nii.gz test_output/t1w_conservative.nii.gz 30'
     validate:
       - output_exists: ${output_dir}/t1w_cons_mask.nii.gz
       - output_exists: ${output_dir}/t1w_conservative.nii.gz
@@ -218,8 +218,8 @@ tests:
   - name: Full pipeline - aggressive defacing
     description: Pipeline with aggressive settings (tight mask, small buffer)
     command: |
-      /freesurfer/mri_synthstrip -i ${t1w} -m test_output/t1w_agg_mask.nii.gz -b 0 --no-csf && \
-      quickshear ${t1w} test_output/t1w_agg_mask.nii.gz test_output/t1w_aggressive.nii.gz 3
+      bash -lc 'mri_synthstrip -i ${t1w} -m test_output/t1w_agg_mask.nii.gz -b 0 --no-csf && \
+      quickshear ${t1w} test_output/t1w_agg_mask.nii.gz test_output/t1w_aggressive.nii.gz 3'
     validate:
       - output_exists: ${output_dir}/t1w_agg_mask.nii.gz
       - output_exists: ${output_dir}/t1w_aggressive.nii.gz
@@ -382,7 +382,7 @@ tests:
 
   - name: Error - mri_synthstrip missing input
     description: Test error handling for mri_synthstrip without input (shows usage)
-    command: /freesurfer/mri_synthstrip 2>&1 || true
+    command: mri_synthstrip 2>&1 || true
     expected_output_contains: "usage"
 
   # ==========================================================================

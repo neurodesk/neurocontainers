@@ -41,6 +41,7 @@ tests:
   - name: AFNI version check
     description: Verify AFNI installation and version
     command: afni -ver 2>&1 | head -5
+    timeout: 900
     expected_output_contains: "AFNI"
 
   - name: 3dinfo version check

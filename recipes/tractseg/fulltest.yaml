@@ -724,22 +724,22 @@ tests:
   # ==========================================================================
   - name: TractSeg weights directory
     description: Verify pretrained weights are installed
-    command: ls -la /opt/miniconda/share/TractSeg/weights/ | head -10
+    command: "bash -lc 'ls -la /opt/miniconda/share/TractSeg/weights/ | head -10'"
     expected_exit_code: 0
 
   - name: TractSeg bundle segmentation weights
     description: Check bundle segmentation model exists
-    command: ls /opt/miniconda/share/TractSeg/weights/ | grep tract_segmentation
+    command: "bash -lc 'ls /opt/miniconda/share/TractSeg/weights/ | grep tract_segmentation'"
     expected_exit_code: 0
 
   - name: TractSeg endings weights
     description: Check endings segmentation model exists
-    command: ls /opt/miniconda/share/TractSeg/weights/ | grep -i ending
+    command: "bash -lc 'ls /opt/miniconda/share/TractSeg/weights/ | grep -i ending'"
     expected_exit_code: 0
 
   - name: TractSeg TOM weights
     description: Check TOM model exists
-    command: ls /opt/miniconda/share/TractSeg/weights/ | grep peak_regression
+    command: "bash -lc 'ls /opt/miniconda/share/TractSeg/weights/ | grep peak_regression'"
     expected_exit_code: 0
 
   # ==========================================================================

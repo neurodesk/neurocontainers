@@ -355,68 +355,68 @@ tests:
   # ==========================================================================
   - name: Convert3D version
     description: Verify Convert3D (c3d) is available
-    command: /opt/convert3d-nightly/bin/c3d -version 2>&1
+    command: bash -lc '/opt/convert3d-nightly/bin/c3d -version 2>&1'
     expected_output_contains: "Version"
 
   - name: Convert3D image info
     description: Test c3d for displaying image info
-    command: /opt/convert3d-nightly/bin/c3d ${t1w} -info 2>&1
+    command: bash -lc '/opt/convert3d-nightly/bin/c3d ${t1w} -info 2>&1'
     expected_output_contains: "dim"
 
   - name: Convert3D resample
     description: Test c3d for resampling image
-    command: /opt/convert3d-nightly/bin/c3d ${t1w} -resample 50% -o test_output/t1w_c3d_resample.nii.gz 2>&1
+    command: bash -lc '/opt/convert3d-nightly/bin/c3d ${t1w} -resample 50% -o test_output/t1w_c3d_resample.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_c3d_resample.nii.gz
 
   - name: Convert3D smooth
     description: Test c3d for Gaussian smoothing
-    command: /opt/convert3d-nightly/bin/c3d ${t1w} -smooth 2mm -o test_output/t1w_c3d_smooth.nii.gz 2>&1
+    command: bash -lc '/opt/convert3d-nightly/bin/c3d ${t1w} -smooth 2mm -o test_output/t1w_c3d_smooth.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_c3d_smooth.nii.gz
 
   - name: Convert3D threshold
     description: Test c3d for thresholding
-    command: /opt/convert3d-nightly/bin/c3d ${t1w} -threshold 100 inf 1 0 -o test_output/t1w_c3d_thresh.nii.gz 2>&1
+    command: bash -lc '/opt/convert3d-nightly/bin/c3d ${t1w} -threshold 100 inf 1 0 -o test_output/t1w_c3d_thresh.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_c3d_thresh.nii.gz
 
   - name: Convert3D arithmetic
     description: Test c3d for voxelwise arithmetic
-    command: /opt/convert3d-nightly/bin/c3d ${t1w} -scale 2 -o test_output/t1w_c3d_scale.nii.gz 2>&1
+    command: bash -lc '/opt/convert3d-nightly/bin/c3d ${t1w} -scale 2 -o test_output/t1w_c3d_scale.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_c3d_scale.nii.gz
 
   - name: Convert3D statistics
     description: Test c3d for computing voxel statistics
-    command: /opt/convert3d-nightly/bin/c3d ${t1w} -voxel-sum 2>&1
+    command: bash -lc '/opt/convert3d-nightly/bin/c3d ${t1w} -voxel-sum 2>&1'
     expected_exit_code: 0
 
   - name: Convert3D pad
     description: Test c3d for image padding
-    command: /opt/convert3d-nightly/bin/c3d ${t1w} -pad 5x5x5 5x5x5 0 -o test_output/t1w_c3d_pad.nii.gz 2>&1
+    command: bash -lc '/opt/convert3d-nightly/bin/c3d ${t1w} -pad 5x5x5 5x5x5 0 -o test_output/t1w_c3d_pad.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_c3d_pad.nii.gz
 
   - name: Convert3D trim
     description: Test c3d for automatic trimming
-    command: /opt/convert3d-nightly/bin/c3d ${t1w} -trim 10vox -o test_output/t1w_c3d_trim.nii.gz 2>&1
+    command: bash -lc '/opt/convert3d-nightly/bin/c3d ${t1w} -trim 10vox -o test_output/t1w_c3d_trim.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_c3d_trim.nii.gz
 
   - name: Convert3D dilate
     description: Test c3d for morphological dilation
     command: |
-      /opt/convert3d-nightly/bin/c3d ${t1w} -threshold 100 inf 1 0 \
-      -dilate 1 3x3x3vox -o test_output/t1w_c3d_dilate.nii.gz 2>&1
+      bash -lc '/opt/convert3d-nightly/bin/c3d ${t1w} -threshold 100 inf 1 0 \
+      -dilate 1 3x3x3vox -o test_output/t1w_c3d_dilate.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_c3d_dilate.nii.gz
 
   - name: Convert3D erode
     description: Test c3d for morphological erosion
     command: |
-      /opt/convert3d-nightly/bin/c3d ${t1w} -threshold 100 inf 1 0 \
-      -erode 1 3x3x3vox -o test_output/t1w_c3d_erode.nii.gz 2>&1
+      bash -lc '/opt/convert3d-nightly/bin/c3d ${t1w} -threshold 100 inf 1 0 \
+      -erode 1 3x3x3vox -o test_output/t1w_c3d_erode.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_c3d_erode.nii.gz
 
@@ -425,12 +425,12 @@ tests:
   # ==========================================================================
   - name: FreeSurfer mri_info help
     description: Verify FreeSurfer mri_info is available
-    command: /opt/freesurfer/bin/mri_info --help 2>&1 | head -10
+    command: bash -lc '/opt/freesurfer/bin/mri_info --help 2>&1 | head -10'
     expected_output_contains: "mri_info"
 
   - name: FreeSurfer mri_convert help
     description: Verify FreeSurfer mri_convert is available
-    command: /opt/freesurfer/bin/mri_convert --help 2>&1 | head -10
+    command: bash -lc '/opt/freesurfer/bin/mri_convert --help 2>&1 | head -10'
     expected_output_contains: "mri_convert"
 
   # ==========================================================================
@@ -438,7 +438,7 @@ tests:
   # ==========================================================================
   - name: 3Tissue ss3t_csd_beta1 help
     description: Verify 3Tissue single-shell 3-tissue CSD is available
-    command: /opt/3Tissue/bin/ss3t_csd_beta1 --help 2>&1 | head -10
+    command: bash -lc '/opt/3Tissue/bin/ss3t_csd_beta1 --help 2>&1 | head -10'
     expected_output_contains: "ss3t"
 
   # ==========================================================================
@@ -473,12 +473,12 @@ tests:
   - name: Convert3D pipeline - preprocess structural
     description: Chain c3d operations for basic preprocessing
     command: |
-      /opt/convert3d-nightly/bin/c3d ${t1w} \
+      bash -lc '/opt/convert3d-nightly/bin/c3d ${t1w} \
       -smooth 1mm \
       -threshold 50 inf 1 0 \
       -dilate 1 2x2x2vox \
       -erode 1 2x2x2vox \
-      -o test_output/t1w_c3d_pipeline.nii.gz 2>&1
+      -o test_output/t1w_c3d_pipeline.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_c3d_pipeline.nii.gz
 
@@ -503,8 +503,8 @@ tests:
   - name: Cross-tool - c3d to AFNI
     description: Resample with c3d, process with AFNI
     command: |
-      /opt/convert3d-nightly/bin/c3d ${t1w} -resample 64x64x64 -o test_output/t1w_c3d_64.nii.gz 2>&1 && \
-      3dcalc -a test_output/t1w_c3d_64.nii.gz -expr 'a/1000' -prefix test_output/t1w_cross_scaled.nii.gz 2>&1
+      bash -lc '/opt/convert3d-nightly/bin/c3d ${t1w} -resample 64x64x64 -o test_output/t1w_c3d_64.nii.gz 2>&1 && \
+      3dcalc -a test_output/t1w_c3d_64.nii.gz -expr '\''a/1000'\'' -prefix test_output/t1w_cross_scaled.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_cross_scaled.nii.gz
 
@@ -570,7 +570,7 @@ tests:
 
   - name: Convert3D 4D operations
     description: Extract single volume from 4D using c3d (c3d cannot write 4D slices - ITK region mismatch)
-    command: /opt/convert3d-nightly/bin/c3d ${bold} -slice w 0 -o test_output/bold_c3d_vol0.nii.gz 2>&1
+    command: bash -lc '/opt/convert3d-nightly/bin/c3d ${bold} -slice w 0 -o test_output/bold_c3d_vol0.nii.gz 2>&1'
     expected_exit_code: 255
 
   # ==========================================================================
@@ -590,7 +590,7 @@ tests:
 
   - name: Convert3D reorient
     description: Reorient image using c3d
-    command: /opt/convert3d-nightly/bin/c3d ${t1w} -orient RAI -o test_output/t1w_c3d_rai.nii.gz 2>&1
+    command: bash -lc '/opt/convert3d-nightly/bin/c3d ${t1w} -orient RAI -o test_output/t1w_c3d_rai.nii.gz 2>&1'
     validate:
       - output_exists: ${output_dir}/t1w_c3d_rai.nii.gz
 

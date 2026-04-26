@@ -48,42 +48,42 @@ tests:
   # ==========================================================================
   - name: Version check
     description: Verify SPM BIDS App reports version information
-    command: /opt/spm12/run.sh --version 2>&1
+    command: bash -lc '/opt/spm12/run.sh --version 2>&1'
     expected_output_contains: "SPM12"
 
   - name: Version check - MATLAB runtime
     description: Verify MATLAB runtime version is reported
-    command: /opt/spm12/run.sh --version 2>&1
+    command: bash -lc '/opt/spm12/run.sh --version 2>&1'
     expected_output_contains: "MATLAB"
 
   - name: Version check - SPM revision
     description: Verify SPM revision number
-    command: /opt/spm12/run.sh --version 2>&1
+    command: bash -lc '/opt/spm12/run.sh --version 2>&1'
     expected_output_contains: "7771"
 
   - name: Help output
     description: Verify help documentation is displayed
-    command: /opt/spm12/run.sh --help 2>&1
+    command: bash -lc '/opt/spm12/run.sh --help 2>&1'
     expected_output_contains: "Usage: bids/spm BIDS_DIR OUTPUT_DIR LEVEL"
 
   - name: Help shows participant option
     description: Verify participant_label option is documented
-    command: /opt/spm12/run.sh --help 2>&1
+    command: bash -lc '/opt/spm12/run.sh --help 2>&1'
     expected_output_contains: "--participant_label"
 
   - name: Help shows config option
     description: Verify config file option is documented
-    command: /opt/spm12/run.sh --help 2>&1
+    command: bash -lc '/opt/spm12/run.sh --help 2>&1'
     expected_output_contains: "--config"
 
   - name: Help shows skip-bids-validator option
     description: Verify skip-bids-validator option is documented
-    command: /opt/spm12/run.sh --help 2>&1
+    command: bash -lc '/opt/spm12/run.sh --help 2>&1'
     expected_output_contains: "--skip-bids-validator"
 
   - name: Help shows analysis levels
     description: Verify participant and group levels are documented
-    command: /opt/spm12/run.sh --help 2>&1
+    command: bash -lc '/opt/spm12/run.sh --help 2>&1'
     expected_output_contains: "{participant,group}"
 
   # ==========================================================================
@@ -91,22 +91,22 @@ tests:
   # ==========================================================================
   - name: SPM executable exists
     description: Verify SPM12 compiled executable is present
-    command: ls -la /opt/spm12/spm12
+    command: "bash -lc 'ls -la /opt/spm12/spm12'"
     expected_output_contains: "spm12"
 
   - name: SPM CTF archive exists
     description: Verify SPM12 component technology file archive is present
-    command: ls -la /opt/spm12/spm12.ctf
+    command: "bash -lc 'ls -la /opt/spm12/spm12.ctf'"
     expected_output_contains: "spm12.ctf"
 
   - name: Run script exists
     description: Verify main run.sh script is present and executable
-    command: ls -la /opt/spm12/run.sh
+    command: "bash -lc 'ls -la /opt/spm12/run.sh'"
     expected_output_contains: "rwx"
 
   - name: MCR directory exists
     description: Verify MATLAB Compiler Runtime is installed
-    command: ls -d /opt/mcr/v97
+    command: "bash -lc 'ls -d /opt/mcr/v97'"
     expected_output_contains: "/opt/mcr/v97"
 
   - name: SPM_DIR environment variable
@@ -134,17 +134,17 @@ tests:
   # ==========================================================================
   - name: Participant pipeline exists
     description: Verify default participant-level pipeline configuration
-    command: ls -la /opt/spm12/pipeline_participant.m
+    command: "bash -lc 'ls -la /opt/spm12/pipeline_participant.m'"
     expected_output_contains: "pipeline_participant.m"
 
   - name: Group pipeline exists
     description: Verify default group-level pipeline configuration
-    command: ls -la /opt/spm12/pipeline_group.m
+    command: "bash -lc 'ls -la /opt/spm12/pipeline_group.m'"
     expected_output_contains: "pipeline_group.m"
 
   - name: BIDS App main script exists
     description: Verify spm_BIDS_App.m is present
-    command: ls -la /opt/spm12/spm_BIDS_App.m
+    command: "bash -lc 'ls -la /opt/spm12/spm_BIDS_App.m'"
     expected_output_contains: "spm_BIDS_App.m"
 
   # ==========================================================================
@@ -152,22 +152,22 @@ tests:
   # ==========================================================================
   - name: Error on missing BIDS directory
     description: Verify error when BIDS directory does not exist
-    command: /opt/spm12/run.sh /nonexistent/path ${output_dir}/bidsappspm participant 2>&1 || true
+    command: bash -lc '/opt/spm12/run.sh /nonexistent/path ${output_dir}/bidsappspm participant 2>&1 || true'
     expected_output_contains: "does not exist"
 
   - name: Error on missing output directory for group level
     description: Verify error when output directory missing for group analysis
-    command: /opt/spm12/run.sh ${bids_dir} /nonexistent/output group 2>&1 || true
+    command: bash -lc '/opt/spm12/run.sh ${bids_dir} /nonexistent/output group 2>&1 || true'
     expected_output_contains: "does not exist"
 
   - name: Error on invalid analysis level
     description: Verify error on unknown analysis level
-    command: /opt/spm12/run.sh ${bids_dir} ${output_dir}/bidsappspm invalid_level 2>&1 || true
+    command: bash -lc '/opt/spm12/run.sh ${bids_dir} ${output_dir}/bidsappspm invalid_level 2>&1 || true'
     expected_output_contains: "Unknown analysis level"
 
   - name: Error on missing participant
     description: Verify error when specified participant does not exist
-    command: /opt/spm12/run.sh ${bids_dir} ${output_dir}/bidsappspm participant --participant_label 99 --skip-bids-validator 2>&1 || true
+    command: bash -lc '/opt/spm12/run.sh ${bids_dir} ${output_dir}/bidsappspm participant --participant_label 99 --skip-bids-validator 2>&1 || true'
     expected_output_contains: "does not exist"
 
   # ==========================================================================
@@ -203,12 +203,12 @@ tests:
   # ==========================================================================
   - name: SPM MCR toolbox directory
     description: Verify SPM toolbox directory structure
-    command: ls /opt/spm12/spm12_mcr/toolbox/
+    command: "bash -lc 'ls /opt/spm12/spm12_mcr/toolbox/'"
     expected_exit_code: 0
 
   - name: SPM MCR spm12 directory
     description: Verify SPM12 MCR subdirectory exists
-    command: ls /opt/spm12/spm12_mcr/spm12/
+    command: "bash -lc 'ls /opt/spm12/spm12_mcr/spm12/'"
     expected_output_contains: "spm12"
 
   # ==========================================================================
@@ -217,8 +217,8 @@ tests:
   - name: Participant level dry run syntax
     description: Verify participant level command parses correctly (check syntax only)
     command: |
-      # Just verify the command structure is valid by checking help
-      /opt/spm12/run.sh --help 2>&1 | grep -q "participant" && echo "Command syntax valid"
+      bash -lc '# Just verify the command structure is valid by checking help
+      /opt/spm12/run.sh --help 2>&1 | grep -q "participant" && echo "Command syntax valid"'
     expected_output_contains: "Command syntax valid"
 
   # ==========================================================================
@@ -229,9 +229,9 @@ tests:
   - name: Participant preprocessing - single subject
     description: Run full fMRI preprocessing pipeline for one subject
     command: |
-      /opt/spm12/run.sh ${bids_dir} ${output_dir}/bidsappspm_participant participant \
+      bash -lc '/opt/spm12/run.sh ${bids_dir} ${output_dir}/bidsappspm_participant participant \
         --participant_label 02 \
-        --skip-bids-validator 2>&1
+        --skip-bids-validator 2>&1'
     timeout: 1800
     validate:
       - output_exists: ${output_dir}/bidsappspm_participant/sub-02
@@ -314,8 +314,8 @@ tests:
     description: Run group-level analysis (mean T1w computation)
     depends_on: Participant preprocessing - single subject
     command: |
-      /opt/spm12/run.sh ${bids_dir} ${output_dir}/bidsappspm_participant group \
-        --skip-bids-validator 2>&1
+      bash -lc '/opt/spm12/run.sh ${bids_dir} ${output_dir}/bidsappspm_participant group \
+        --skip-bids-validator 2>&1'
     timeout: 600
     ignore_exit_code: true
     expected_output_contains: "SPM"
@@ -334,9 +334,9 @@ tests:
   - name: Multi-subject preprocessing
     description: Process multiple subjects in parallel
     command: |
-      /opt/spm12/run.sh ${bids_dir} ${output_dir}/bidsappspm_multi participant \
+      bash -lc '/opt/spm12/run.sh ${bids_dir} ${output_dir}/bidsappspm_multi participant \
         --participant_label 02 03 \
-        --skip-bids-validator 2>&1
+        --skip-bids-validator 2>&1'
     timeout: 3600
     validate:
       - output_exists: ${output_dir}/bidsappspm_multi/sub-02
@@ -349,9 +349,9 @@ tests:
   - name: Handle missing T1w gracefully
     description: Check error handling when T1w is missing (sub-01)
     command: |
-      /opt/spm12/run.sh ${bids_dir} ${output_dir}/bidsappspm_error participant \
+      bash -lc '/opt/spm12/run.sh ${bids_dir} ${output_dir}/bidsappspm_error participant \
         --participant_label 01 \
-        --skip-bids-validator 2>&1 || true
+        --skip-bids-validator 2>&1 || true'
     expected_output_contains: "does not exist"
     tags: [error_handling]
 
@@ -367,12 +367,12 @@ tests:
   # ==========================================================================
   - name: MCR runtime libraries
     description: Verify MCR runtime libraries are accessible
-    command: ls /opt/mcr/v97/runtime/glnxa64/
+    command: "bash -lc 'ls /opt/mcr/v97/runtime/glnxa64/'"
     expected_output_contains: "."
 
   - name: MCR bin libraries
     description: Verify MCR bin libraries are accessible
-    command: ls /opt/mcr/v97/bin/glnxa64/
+    command: "bash -lc 'ls /opt/mcr/v97/bin/glnxa64/'"
     expected_output_contains: "."
 
   - name: LD_LIBRARY_PATH includes MCR
@@ -398,7 +398,7 @@ tests:
   # ==========================================================================
   - name: SPM GUI option exists
     description: Verify --gui option is available (cannot run in headless mode)
-    command: /opt/spm12/run.sh --help 2>&1 || true
+    command: bash -lc '/opt/spm12/run.sh --help 2>&1 || true'
     # Note: --gui option triggers SPM GUI which requires display
     # This test just verifies the container can parse GUI-related requests
     expected_output_contains: "Usage"
@@ -419,7 +419,7 @@ tests:
   # ==========================================================================
   - name: Container size check
     description: Report container size for resource planning
-    command: ls -lh /opt/spm12/spm12.ctf | awk '{print "CTF archive size:", $5}'
+    command: "bash -lc 'ls -lh /opt/spm12/spm12.ctf | awk '\"'\"'{print \"CTF archive size:\", $5}'\"'\"''"
     expected_output_contains: "CTF archive size"
 
 cleanup:
