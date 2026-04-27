@@ -200,15 +200,7 @@ tests:
 
   - name: nibabel get_fdata
     description: Test nibabel data extraction (container demo data has CRC corruption - container bug)
-    command: |
-      python3 << 'PYEOF'
-      import nibabel as nib
-      import numpy as np
-      data = np.random.rand(32, 32, 32).astype(np.float64)
-      img = nib.Nifti1Image(data, np.eye(4))
-      loaded_data = img.get_fdata()
-      print("Data dtype:", loaded_data.dtype, "ndim:", loaded_data.ndim)
-      PYEOF
+    command: python3 -c "import nibabel as nib, numpy as np; data = np.random.rand(32, 32, 32).astype(np.float64); img = nib.Nifti1Image(data, np.eye(4)); loaded = img.get_fdata(); print('Data dtype:', loaded.dtype, 'ndim:', loaded.ndim)"
     expected_output_contains: "ndim: 3"
 
   - name: nibabel affine extraction

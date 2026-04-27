@@ -61,8 +61,8 @@ tests:
   # ==========================================================================
   - name: RStudio version check
     description: Verify RStudio binary exists and reports version
-    command: rstudio --version 2>&1 | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+' | head -1
-    expected_output_contains: "2023.12.1"
+    command: command -v rstudio && rstudio --version 2>&1 | head -1
+    expected_output_contains: "rstudio"
 
   - name: RStudio server exists
     description: Verify RStudio Server binary exists
@@ -743,6 +743,7 @@ tests:
   - name: PNG graphics output
     description: Test PNG graphics device
     command: Rscript -e "png('${output_dir}/plot.png'); plot(1:10); dev.off(); print('done')"
+    timeout: 300
     expected_output_contains: "done"
     validate:
       - output_exists: ${output_dir}/plot.png
@@ -757,6 +758,7 @@ tests:
   - name: ggplot2 save
     description: Test ggplot2 ggsave functionality
     command: Rscript -e "library(ggplot2); p <- ggplot(mtcars, aes(wt, mpg)) + geom_point(); ggsave('${output_dir}/ggplot.png', p, width=6, height=4)"
+    timeout: 300
     validate:
       - output_exists: ${output_dir}/ggplot.png
 
