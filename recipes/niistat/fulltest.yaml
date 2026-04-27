@@ -45,7 +45,7 @@ tests:
   # ==========================================================================
   - name: Octave version check
     description: Verify Octave is installed and reports version
-    command: octave --version 2>/dev/null | head -1
+    command: octave --version 2>&1 | grep -m1 "GNU Octave"
     expected_output_contains: "GNU Octave"
     expected_exit_code: 0
 

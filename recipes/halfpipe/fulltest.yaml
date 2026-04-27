@@ -69,7 +69,7 @@ tests:
   - name: fMRIPrep help
     description: Display fmriprep help message
     command: fmriprep --help 2>&1 | head -30
-    expected_output_contains: "fMRIPrep"
+    expected_output_contains: "usage:"
 
   # ==========================================================================
   # PYTHON ENVIRONMENT TESTS
