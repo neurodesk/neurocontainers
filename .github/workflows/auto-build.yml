@@ -63,22 +63,14 @@ jobs:
           echo "app_list=${app_list}" >> $GITHUB_OUTPUT
       - name: Select runner
         id: select_runner
-        env:
-          NEUROCONTAINERS_RUNNER: ${{ vars.NEUROCONTAINERS_RUNNER }}
         run: |
-          # Forks: always github-hosted (no access to ARC or legacy self-hosted).
-          # Main repo: read NEUROCONTAINERS_RUNNER variable for the gate;
-          # fall back to legacy self-hosted if unset (preserves prior behavior).
+          # Main repo auto-builds always go to ARC. Forks fall back to
+          # github-hosted (no access to the runner-neurocontainers group).
           # Output is JSON-encoded so build-app.yml can fromJSON() it into runs-on.
-          if [ "${{ github.repository }}" != "neurodesk/neurocontainers" ]; then
-            runner='"ubuntu-22.04"'
-          elif [ -z "$NEUROCONTAINERS_RUNNER" ]; then
-            runner='"self-hosted"'
-          elif ! echo "$NEUROCONTAINERS_RUNNER" | jq -e . >/dev/null 2>&1; then
-            echo "::error::NEUROCONTAINERS_RUNNER is not valid JSON: $NEUROCONTAINERS_RUNNER"
-            exit 1
+          if [ "${{ github.repository }}" = "neurodesk/neurocontainers" ]; then
+            runner='{"group":"runner-neurocontainers"}'
           else
-            runner="$NEUROCONTAINERS_RUNNER"
+            runner='"ubuntu-22.04"'
           fi
           echo "runner=${runner}" >> "$GITHUB_OUTPUT"
 

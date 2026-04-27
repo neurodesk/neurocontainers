@@ -14,15 +14,14 @@ on:
         required: true
         type: string
       runner:
-        description: 'Runner ("default" defers to NEUROCONTAINERS_RUNNER variable; explicit picks override)'
+        description: 'Runner pool to use'
         required: true
         type: choice
         options:
-        - "default"
+        - "runner-neurocontainers"
         - "ubuntu-22.04"
         - "self-hosted"
-        - "runner-neurocontainers"
-        default: "default"
+        default: "runner-neurocontainers"
       disable_auto_upload:
         description: 'Disable auto upload to registries'
         required: false
@@ -81,22 +80,10 @@ jobs:
       id: select_runner
       env:
         CHOICE: ${{ github.event.inputs.runner }}
-        NEUROCONTAINERS_RUNNER: ${{ vars.NEUROCONTAINERS_RUNNER }}
       run: |
-        # Convert the dispatch choice to a JSON-encoded payload that
-        # build-app.yml can fromJSON() into a runs-on value.
-        # "default" defers to the NEUROCONTAINERS_RUNNER repo variable.
+        # Map the dispatch choice to a JSON-encoded payload for
+        # build-app.yml's fromJSON(inputs.runner) -> runs-on.
         case "$CHOICE" in
-          "default")
-            if [ -z "$NEUROCONTAINERS_RUNNER" ]; then
-              runner='"self-hosted"'
-            elif ! echo "$NEUROCONTAINERS_RUNNER" | jq -e . >/dev/null 2>&1; then
-              echo "::error::NEUROCONTAINERS_RUNNER is not valid JSON: $NEUROCONTAINERS_RUNNER"
-              exit 1
-            else
-              runner="$NEUROCONTAINERS_RUNNER"
-            fi
-            ;;
           "runner-neurocontainers")
             runner='{"group":"runner-neurocontainers"}'
             ;;
