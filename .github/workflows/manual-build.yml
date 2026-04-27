@@ -14,12 +14,15 @@ on:
         required: true
         type: string
       runner:
-        description: 'Runner'
+        description: 'Runner ("default" defers to NEUROCONTAINERS_RUNNER variable; explicit picks override)'
         required: true
         type: choice
-        options: 
+        options:
+        - "default"
         - "ubuntu-22.04"
         - "self-hosted"
+        - "runner-neurocontainers"
+        default: "default"
       disable_auto_upload:
         description: 'Disable auto upload to registries'
         required: false
@@ -76,10 +79,37 @@ jobs:
         echo "app_list=${app_list}" >> $GITHUB_OUTPUT
     - name: Select runner
       id: select_runner
+      env:
+        CHOICE: ${{ github.event.inputs.runner }}
+        NEUROCONTAINERS_RUNNER: ${{ vars.NEUROCONTAINERS_RUNNER }}
       run: |
-        runner="${{ github.event.inputs.runner }}"
+        # Convert the dispatch choice to a JSON-encoded payload that
+        # build-app.yml can fromJSON() into a runs-on value.
+        # "default" defers to the NEUROCONTAINERS_RUNNER repo variable.
+        case "$CHOICE" in
+          "default")
+            if [ -z "$NEUROCONTAINERS_RUNNER" ]; then
+              runner='"self-hosted"'
+            elif ! echo "$NEUROCONTAINERS_RUNNER" | jq -e . >/dev/null 2>&1; then
+              echo "::error::NEUROCONTAINERS_RUNNER is not valid JSON: $NEUROCONTAINERS_RUNNER"
+              exit 1
+            else
+              runner="$NEUROCONTAINERS_RUNNER"
+            fi
+            ;;
+          "runner-neurocontainers")
+            runner='{"group":"runner-neurocontainers"}'
+            ;;
+          "ubuntu-22.04"|"self-hosted")
+            runner="\"$CHOICE\""
+            ;;
+          *)
+            echo "::error::Unknown runner choice: $CHOICE"
+            exit 1
+            ;;
+        esac
         echo "runner=${runner}"
-        echo "runner=${runner}" >> $GITHUB_OUTPUT
+        echo "runner=${runner}" >> "$GITHUB_OUTPUT"
 
   build-app:
     needs: list-apps

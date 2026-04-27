@@ -14,6 +14,7 @@ on:
       - "!recipes/**/test.yaml"
     branches:
       - main
+      - arc-runner
 
 jobs:
   list-apps:
@@ -62,12 +63,24 @@ jobs:
           echo "app_list=${app_list}" >> $GITHUB_OUTPUT
       - name: Select runner
         id: select_runner
+        env:
+          NEUROCONTAINERS_RUNNER: ${{ vars.NEUROCONTAINERS_RUNNER }}
         run: |
-          if [ "${{ github.repository }}" = "neurodesk/neurocontainers" ]; then
-            echo "runner=self-hosted" >> $GITHUB_OUTPUT
+          # Forks: always github-hosted (no access to ARC or legacy self-hosted).
+          # Main repo: read NEUROCONTAINERS_RUNNER variable for the gate;
+          # fall back to legacy self-hosted if unset (preserves prior behavior).
+          # Output is JSON-encoded so build-app.yml can fromJSON() it into runs-on.
+          if [ "${{ github.repository }}" != "neurodesk/neurocontainers" ]; then
+            runner='"ubuntu-22.04"'
+          elif [ -z "$NEUROCONTAINERS_RUNNER" ]; then
+            runner='"self-hosted"'
+          elif ! echo "$NEUROCONTAINERS_RUNNER" | jq -e . >/dev/null 2>&1; then
+            echo "::error::NEUROCONTAINERS_RUNNER is not valid JSON: $NEUROCONTAINERS_RUNNER"
+            exit 1
           else
-            echo "runner=ubuntu-22.04" >> $GITHUB_OUTPUT
+            runner="$NEUROCONTAINERS_RUNNER"
           fi
+          echo "runner=${runner}" >> "$GITHUB_OUTPUT"
 
   build-app:
     needs: list-apps
