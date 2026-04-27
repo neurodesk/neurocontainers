@@ -789,7 +789,7 @@ tests:
 
   - name: Container LASHiS directory structure
     description: Verify LASHiS directory structure
-    command: ls /LASHiS/ | wc -l
+    command: bash -lc 'ls /LASHiS/ | wc -l'
     expected_exit_code: 0
 
   - name: Container experiment files

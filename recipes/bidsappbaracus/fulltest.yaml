@@ -469,12 +469,12 @@ tests:
 
   - name: FreeSurfer subjects directory
     description: Check FreeSurfer subjects directory exists
-    command: ls -la $FREESURFER_HOME/subjects/ | head -10
+    command: bash -lc 'ls -la $FREESURFER_HOME/subjects/ | head -10'
     expected_output_contains: "fsaverage"
 
   - name: FreeSurfer fsaverage4 exists
     description: Verify fsaverage4 template (required for BARACUS)
-    command: ls -la $FREESURFER_HOME/subjects/fsaverage4/
+    command: bash -lc 'ls -la $FREESURFER_HOME/subjects/fsaverage4/'
     expected_output_contains:
       - "surf"
       - "label"
@@ -652,27 +652,27 @@ tests:
   # ==========================================================================
   - name: fsaverage4 lh thickness surface exists
     description: Verify left hemisphere thickness template exists
-    command: ls $FREESURFER_HOME/subjects/fsaverage4/surf/lh.thickness
+    command: bash -lc 'ls $FREESURFER_HOME/subjects/fsaverage4/surf/lh.thickness'
     expected_exit_code: 0
 
   - name: fsaverage4 rh thickness surface exists
     description: Verify right hemisphere thickness template exists
-    command: ls $FREESURFER_HOME/subjects/fsaverage4/surf/rh.thickness
+    command: bash -lc 'ls $FREESURFER_HOME/subjects/fsaverage4/surf/rh.thickness'
     expected_exit_code: 0
 
   - name: fsaverage4 lh pial surface exists
     description: Verify left hemisphere pial surface exists
-    command: ls $FREESURFER_HOME/subjects/fsaverage4/surf/lh.pial
+    command: bash -lc 'ls $FREESURFER_HOME/subjects/fsaverage4/surf/lh.pial'
     expected_exit_code: 0
 
   - name: fsaverage4 rh pial surface exists
     description: Verify right hemisphere pial surface exists
-    command: ls $FREESURFER_HOME/subjects/fsaverage4/surf/rh.pial
+    command: bash -lc 'ls $FREESURFER_HOME/subjects/fsaverage4/surf/rh.pial'
     expected_exit_code: 0
 
   - name: fsaverage4 sphere reg exists
     description: Verify sphere registration template for both hemispheres
-    command: ls $FREESURFER_HOME/subjects/fsaverage4/surf/?h.sphere.reg | wc -l
+    command: bash -lc 'ls $FREESURFER_HOME/subjects/fsaverage4/surf/?h.sphere.reg | wc -l'
     expected_output_contains: "2"
 
 cleanup:
