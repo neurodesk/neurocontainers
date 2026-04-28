@@ -105,6 +105,14 @@ def _analysis_choices():
     raise AssertionError("OpenReconLabel.json does not define an analysis parameter")
 
 
+def _label_parameter(parameter_id):
+    label = json.loads(LABEL_PATH.read_text())
+    for parameter in label["parameters"]:
+        if parameter["id"] == parameter_id:
+            return parameter
+    raise AssertionError(f"OpenReconLabel.json does not define a {parameter_id} parameter")
+
+
 def _function_names():
     tree = ast.parse(WRAPPER_PATH.read_text())
     return {
@@ -136,6 +144,20 @@ def test_openrecon_exposes_combined_analysis_bundles():
     assert "_resolve_requested_analyses" in wrapper_source
     assert "_sct_output_to_mrd_images" in wrapper_source
     assert "precomputed_outputs" in wrapper_source
+
+
+def test_openrecon_exposes_segmentation_colourmap_lut_toggle():
+    parameter = _label_parameter("segmentationcolormap")
+    assert parameter["type"] == "boolean"
+    assert parameter["default"] is False
+
+    defaults = _module_assignment("OPENRECON_DEFAULTS")
+    assert defaults["segmentationcolormap"] is False
+
+    wrapper_source = WRAPPER_PATH.read_text()
+    assert 'tmpMeta["LUTFileName"] = "MicroDeltaHotMetal.pal"' in wrapper_source
+    assert 'boolean_checker(\n        "segmentationcolormap"' in wrapper_source
+    assert "segmentation_colormap=segmentation_colormap" in wrapper_source
 
 
 def test_wrapper_avoids_hardcoded_sct_install_version_paths():
@@ -173,4 +195,5 @@ def test_wrapper_can_generate_openrecon_configs_for_batch_processing_cases():
     assert "write_openrecon_batch_processing_test_configs" in function_names
     assert "--write-openrecon-batch-processing-test-configs" in wrapper_source
     assert "_openrecon_config_for_analysis(case[\"analysis\"])" in wrapper_source
+    assert '"segmentationcolormap": OPENRECON_DEFAULTS["segmentationcolormap"]' in wrapper_source
     assert "sct_deepseg_gm" in wrapper_source

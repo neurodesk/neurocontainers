@@ -88,6 +88,7 @@ SCT_ANALYSIS_BUNDLES = {
 OPENRECON_DEFAULTS = {
     "config": "spinalcordtoolbox",
     "sendoriginal": True,
+    "segmentationcolormap": False,
     "analysis": "sct_deepseg_spinalcord",
 }
 
@@ -623,7 +624,14 @@ def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
     raise ValueError(f"Unsupported SCT analysis kind: {analysis_config['kind']}")
 
 
-def _sct_output_to_mrd_images(output_path, analysis, head, meta, output_series_index):
+def _sct_output_to_mrd_images(
+    output_path,
+    analysis,
+    head,
+    meta,
+    output_series_index,
+    segmentation_colormap=False,
+):
     output_identity = _build_sct_output_identity(meta[0], analysis)
     img = nib.load(str(output_path))
     data = img.get_fdata(dtype=np.float32)
@@ -710,6 +718,9 @@ def _sct_output_to_mrd_images(output_path, analysis, head, meta, output_series_i
                 "{:.18f}".format(oldHeader.phase_dir[2]),
             ]
 
+        if segmentation_colormap:
+            tmpMeta["LUTFileName"] = "MicroDeltaHotMetal.pal"
+
         imagesOut[iImg].attribute_string = tmpMeta.serialize()
 
     return imagesOut
@@ -720,6 +731,7 @@ def _openrecon_config_for_analysis(analysis, sendoriginal=False):
         "parameters": {
             "config": OPENRECON_DEFAULTS["config"],
             "sendoriginal": bool(sendoriginal),
+            "segmentationcolormap": OPENRECON_DEFAULTS["segmentationcolormap"],
             "analysis": analysis,
         }
     }
@@ -795,6 +807,10 @@ def process_image(imgGroup, connection, config, metadata):
         "sendoriginal",
         default_val=OPENRECON_DEFAULTS["sendoriginal"],
     )
+    segmentation_colormap = boolean_checker(
+        "segmentationcolormap",
+        default_val=OPENRECON_DEFAULTS["segmentationcolormap"],
+    )
     called_from_raw = traceback.extract_stack()[-2].name == "process_raw"
     original_images = []
     if send_original and not called_from_raw:
@@ -809,10 +825,11 @@ def process_image(imgGroup, connection, config, metadata):
     requested_analysis = analysis
     analyses = _resolve_requested_analyses(requested_analysis)
     logging.info(
-        "SCT parameters: analysis=%s resolved_analyses=%s sendoriginal=%s",
+        "SCT parameters: analysis=%s resolved_analyses=%s sendoriginal=%s segmentationcolormap=%s",
         requested_analysis,
         ",".join(analyses),
         send_original,
+        segmentation_colormap,
     )
 
     unsorted_head = [img.getHead() for img in imgGroup]
@@ -937,6 +954,7 @@ def process_image(imgGroup, connection, config, metadata):
                 head,
                 meta,
                 output_series_index + analysis_index,
+                segmentation_colormap=segmentation_colormap,
             )
         )
 
