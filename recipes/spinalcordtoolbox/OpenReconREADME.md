@@ -2,6 +2,14 @@
 
 This OpenRecon app runs Spinal Cord Toolbox (SCT) image-processing steps. It is an image-in/image-out app: it expects already reconstructed magnitude images and returns the derived segmentation or labeling series.
 
+This OpenRecon tool is based on the spinalcordtoolbox Toolbox (https://github.com/spinalcordtoolbox/spinalcordtoolbox)
+
+SCT tools process MRI data (NIfTI files) and can do fully automatic tasks such as:
+  - Segmentation of the spinal cord and gray matter
+  - Segmentation of pathologies (eg. multiple sclerosis lesions)
+
+Reference: Jan Valošek, Julien Cohen-Adad, Reproducible Spinal Cord Quantitative MRI Analysis with the Spinal Cord Toolbox, Magnetic Resonance in Medical Sciences, 2024, Volume 23, Issue 3, Pages 307-315, Released on J-STAGE July 01, 2024, Advance online publication March 12, 2024, Online ISSN 1880-2206, Print ISSN 1347-3182, https://doi.org/10.2463/mrms.rev.2023-0159, https://www.jstage.jst.go.jp/article/mrms/23/3/23_rev.2023-0159/_article/-char/en,
+
 ## Parameters
 
 | Parameter id | Type | Default | Description |
