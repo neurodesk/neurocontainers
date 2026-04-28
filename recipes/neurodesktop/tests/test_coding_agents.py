@@ -482,7 +482,7 @@ def test_opencode_rejected_neurodesk_key_refreshes_before_mixed_model_picker(tmp
     )
     assert "API key verified with llm.neurodesk.org." in output
     assert "Local Ollama" in output
-    assert "llm.neurodesk.org" in output
+    assert "API key verified with llm.neurodesk.org." in output
     assert "1) local-model:latest" in output
     assert "2) model-alpha" in output
     assert "3) openai/gpt-4.1-mini" in output
