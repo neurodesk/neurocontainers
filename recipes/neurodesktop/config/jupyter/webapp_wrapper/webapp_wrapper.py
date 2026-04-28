@@ -918,6 +918,13 @@ class WebappHandler(http.server.BaseHTTPRequestHandler):
             return f"{base_path}{path}"
         return location
 
+    def _sanitize_header_value(self, value):
+        """Sanitize header value to prevent response-splitting/header injection."""
+        if value is None:
+            return ""
+        value = str(value).replace("\r", "").replace("\n", "")
+        return "".join(ch for ch in value if ch == "\t" or ord(ch) >= 32)
+
     def _send_status(self, method, is_close=False):
         """Send current status as JSON (GET) or heartbeat ack (POST)."""
         if method == "POST":
@@ -1110,6 +1117,7 @@ class WebappHandler(http.server.BaseHTTPRequestHandler):
             if header.lower() not in skip:
                 if header.lower() == "location":
                     value = self._rewrite_location(value, target_port)
+                value = self._sanitize_header_value(value)
                 self.send_header(header, value)
 
     def _send_streamed_response(self, response, target_port):
