@@ -999,8 +999,13 @@ class BuildContext(object):
                         not self.skip_file_population
                         and not os_module.path.exists(build_file_path)
                     ):
+                        os_module.makedirs(
+                            os_module.path.dirname(build_file_path), exist_ok=True
+                        )
                         if file_info is not None and "cached_path" in file_info:
                             link_or_copy_file(file_info["cached_path"], build_file_path)
+                        elif os_module.path.isdir(recipe_file_path):
+                            shutil.copytree(recipe_file_path, build_file_path)
                         elif os_module.path.exists(recipe_file_path):
                             shutil.copy2(recipe_file_path, build_file_path)
 
