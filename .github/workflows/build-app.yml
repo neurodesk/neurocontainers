@@ -84,15 +84,12 @@ jobs:
           set -x
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends --no-upgrade \
-            ca-certificates curl gpg
-          UBUNTU_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
-          curl -fsSL "https://launchpad.net/~apptainer/+archive/ubuntu/ppa/+archivepubkey" \
-            | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/apptainer.gpg
-          echo "deb [signed-by=/etc/apt/trusted.gpg.d/apptainer.gpg] https://ppa.launchpadcontent.net/apptainer/ppa/ubuntu ${UBUNTU_CODENAME} main" \
-            | sudo tee /etc/apt/sources.list.d/apptainer.list
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends --no-upgrade \
-            apptainer docker.io git gh jq python3 python3-pip python3-venv unzip
+            ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
+          APPTAINER_VERSION=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
+            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
+          curl -fsSLO "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VERSION}/apptainer_${APPTAINER_VERSION}_amd64.deb"
+          sudo dpkg -i "apptainer_${APPTAINER_VERSION}_amd64.deb"
+          rm "apptainer_${APPTAINER_VERSION}_amd64.deb"
           sudo python3 -m pip install --break-system-packages \
             python-swiftclient python-keystoneclient
           # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
@@ -234,15 +231,12 @@ jobs:
           set -x
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends --no-upgrade \
-            ca-certificates curl gpg
-          UBUNTU_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
-          curl -fsSL "https://launchpad.net/~apptainer/+archive/ubuntu/ppa/+archivepubkey" \
-            | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/apptainer.gpg
-          echo "deb [signed-by=/etc/apt/trusted.gpg.d/apptainer.gpg] https://ppa.launchpadcontent.net/apptainer/ppa/ubuntu ${UBUNTU_CODENAME} main" \
-            | sudo tee /etc/apt/sources.list.d/apptainer.list
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends --no-upgrade \
-            apptainer docker.io git gh jq python3 python3-pip python3-venv unzip
+            ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
+          APPTAINER_VERSION=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
+            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
+          curl -fsSLO "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VERSION}/apptainer_${APPTAINER_VERSION}_amd64.deb"
+          sudo dpkg -i "apptainer_${APPTAINER_VERSION}_amd64.deb"
+          rm "apptainer_${APPTAINER_VERSION}_amd64.deb"
           sudo python3 -m pip install --break-system-packages \
             python-swiftclient python-keystoneclient
           # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
@@ -631,15 +625,12 @@ jobs:
           set -x
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends --no-upgrade \
-            ca-certificates curl gpg
-          UBUNTU_CODENAME=$(. /etc/os-release && echo "$VERSION_CODENAME")
-          curl -fsSL "https://launchpad.net/~apptainer/+archive/ubuntu/ppa/+archivepubkey" \
-            | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/apptainer.gpg
-          echo "deb [signed-by=/etc/apt/trusted.gpg.d/apptainer.gpg] https://ppa.launchpadcontent.net/apptainer/ppa/ubuntu ${UBUNTU_CODENAME} main" \
-            | sudo tee /etc/apt/sources.list.d/apptainer.list
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends --no-upgrade \
-            apptainer docker.io git gh jq python3 python3-pip python3-venv unzip
+            ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
+          APPTAINER_VERSION=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
+            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
+          curl -fsSLO "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VERSION}/apptainer_${APPTAINER_VERSION}_amd64.deb"
+          sudo dpkg -i "apptainer_${APPTAINER_VERSION}_amd64.deb"
+          rm "apptainer_${APPTAINER_VERSION}_amd64.deb"
           sudo python3 -m pip install --break-system-packages \
             python-swiftclient python-keystoneclient
           # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
