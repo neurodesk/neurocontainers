@@ -18,10 +18,10 @@ on:
         required: true
         type: choice
         options:
-        - "runner-neurocontainers"
+        - "neurodesk-arcrunner-neurocontainers"
         - "ubuntu-22.04"
         - "self-hosted"
-        default: "runner-neurocontainers"
+        default: "neurodesk-arcrunner-neurocontainers"
       disable_auto_upload:
         description: 'Disable auto upload to registries'
         required: false
@@ -84,8 +84,8 @@ jobs:
         # Map the dispatch choice to a JSON-encoded payload for
         # build-app.yml's fromJSON(inputs.runner) -> runs-on.
         case "$CHOICE" in
-          "runner-neurocontainers")
-            runner='{"group":"runner-neurocontainers"}'
+          "neurodesk-arcrunner-neurocontainers")
+            runner='"neurodesk-arcrunner-neurocontainers"'
             ;;
           "ubuntu-22.04"|"self-hosted")
             runner="\"$CHOICE\""

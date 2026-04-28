@@ -68,7 +68,7 @@ jobs:
           # github-hosted (no access to the runner-neurocontainers group).
           # Output is JSON-encoded so build-app.yml can fromJSON() it into runs-on.
           if [ "${{ github.repository }}" = "neurodesk/neurocontainers" ]; then
-            runner='{"group":"runner-neurocontainers"}'
+            runner='"neurodesk-arcrunner-neurocontainers"'
           else
             runner='"ubuntu-22.04"'
           fi
