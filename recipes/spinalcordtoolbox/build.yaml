@@ -1,5 +1,5 @@
 name: spinalcordtoolbox
-version: "7.2"
+version: "7.1"
 copyright:
   - license: LGPL-3.0
     url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE
@@ -52,7 +52,7 @@ build:
         - sct_deepseg tumor_t2 -install 
         - sct_deepseg rootlets -install
         - sct_deepseg sc_canal_t2 -install
-        - sct_deepseg spine -install
+        - sct_deepseg totalspineseg -install
     - run:
         - sct_check_dependencies
     - user: root

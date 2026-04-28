@@ -46,3 +46,4 @@ actionlint
 vesselboost_openrecon_parameter_matrix_outputs
 *.dat
 *.mrd
+openrecon_test_*
