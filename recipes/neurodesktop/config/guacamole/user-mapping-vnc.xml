@@ -1,0 +1,13 @@
+<user-mapping>
+    <authorize username="jovyan" password="password">
+        <connection name="Desktop VNC - 1280x720px or change resolution by running lxrandr on a terminal">
+            <protocol>vnc</protocol>
+            <param name="hostname">localhost</param>
+            <param name="username">jovyan</param>
+            <param name="password">password</param>
+            <param name="port">5901</param>
+            <param name="disable-display-resize">true</param>
+            <param name="enable-sftp">false</param>
+        </connection>
+    </authorize>
+</user-mapping>

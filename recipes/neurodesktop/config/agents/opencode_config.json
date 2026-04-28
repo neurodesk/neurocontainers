@@ -1,0 +1,67 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "instructions": [
+    "/opt/AGENTS.md"
+  ],
+  "model": "neurodesk/gpt-oss",
+  "provider": {
+    "neurodesk": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Neurodesk LiteLLM",
+      "options": {
+        "baseURL": "https://llm.neurodesk.org/openai",
+        "apiKey": "{env:NEURODESK_API_KEY}"
+      },
+      "models": {
+        "gpt-oss": {
+          "name": "gpt-oss",
+          "limit": {
+            "context": 131000,
+            "output": 8192
+          }
+        }
+      }
+    },
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Local Ollama",
+      "options": {
+        "baseURL": "http://127.0.0.1:11434/v1"
+      },
+      "models": {
+        "devstral-16k:latest": {
+          "name": "devstral-16k:latest",
+          "limit": {
+            "context": 16384,
+            "output": 8192
+          }
+        }
+      }
+    },
+    "jetstream": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "JetStream",
+      "options": {
+        "baseURL": "https://llm.jetstream-cloud.org/v1"
+      },
+      "models": {
+        "gpt-oss-120b": {
+          "name": "gpt-oss-120b"
+        }
+      }
+    },
+    "jetstream-deepseek": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "JetStream DeepSeek",
+      "options": {
+        "baseURL": "https://llm.jetstream-cloud.org/sglang/v1"
+      },
+      "models": {
+        "DeepSeek-R1": {
+          "name": "DeepSeek-R1"
+        }
+      }
+    }
+  }
+}

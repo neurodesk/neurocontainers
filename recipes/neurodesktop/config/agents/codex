@@ -1,0 +1,155 @@
+#!/bin/bash
+# OpenAI Codex CLI wrapper script
+# Copies AGENTS.md to current directory as AGENTS.md, then starts Codex CLI
+
+CODEX_HOME_DIR="${CODEX_HOME:-${HOME}/.codex}"
+CODEX_CONFIG_TOML="${CODEX_HOME_DIR}/config.toml"
+CODEX_DEFAULT_CONFIG_TOML="/opt/jovyan_defaults/.codex/config.toml"
+
+load_br_mcp_token_from_bashrc() {
+    local bashrc_file="${HOME}/.bashrc"
+    local token_from_bashrc
+
+    if [ -n "${BR_MCP_TOKEN:-}" ]; then
+        export BR_MCP_TOKEN
+        return 0
+    fi
+
+    if [ ! -f "${bashrc_file}" ]; then
+        return 0
+    fi
+
+    token_from_bashrc=$(sed -nE \
+        -e "s/^[[:space:]]*export[[:space:]]+BR_MCP_TOKEN='([^']+)'[[:space:]]*$/\1/p" \
+        -e 's/^[[:space:]]*export[[:space:]]+BR_MCP_TOKEN="([^"]+)"[[:space:]]*$/\1/p' \
+        -e 's/^[[:space:]]*export[[:space:]]+BR_MCP_TOKEN=([^[:space:]#]+)[[:space:]]*$/\1/p' \
+        "${bashrc_file}" | tail -n 1)
+
+    if [ -n "${token_from_bashrc}" ]; then
+        export BR_MCP_TOKEN="${token_from_bashrc}"
+    fi
+}
+
+# Copy AGENTS.md from /opt to current directory as AGENTS.md (Codex uses AGENTS.md)
+if [ ! -f ./AGENTS.md ]; then
+    cp /opt/AGENTS.md ./AGENTS.md
+fi
+
+# Ensure ~/.codex/config.toml exists, seeding it from the baked-in default if
+# the user hasn't created one yet. Codex CLI only reads TOML from CODEX_HOME —
+# the legacy ./.codex/config.json path was never read by Codex.
+mkdir -p "${CODEX_HOME_DIR}"
+if [ ! -f "${CODEX_CONFIG_TOML}" ] && [ -f "${CODEX_DEFAULT_CONFIG_TOML}" ]; then
+    cp "${CODEX_DEFAULT_CONFIG_TOML}" "${CODEX_CONFIG_TOML}"
+fi
+
+load_br_mcp_token_from_bashrc
+
+# Merge / remove the brain-researcher MCP server entry in
+# ~/.codex/config.toml based on whether BR_MCP_TOKEN is set. We use a small
+# Python helper to keep the rest of the TOML intact.
+if command -v python3 >/dev/null 2>&1; then
+    BR_MCP_WANT_ENABLED=$([ -n "${BR_MCP_TOKEN:-}" ] && echo 1 || echo 0) \
+    CODEX_CONFIG_TOML="${CODEX_CONFIG_TOML}" \
+    python3 - <<'PY' || true
+import os
+import re
+
+config_path = os.environ.get("CODEX_CONFIG_TOML")
+want_enabled = os.environ.get("BR_MCP_WANT_ENABLED", "0") == "1"
+
+if not config_path:
+    raise SystemExit(0)
+
+try:
+    with open(config_path, "r", encoding="utf-8") as f:
+        text = f.read()
+except FileNotFoundError:
+    text = ""
+
+# Remove any previous [mcp_servers.brain-researcher] block we may have written.
+pattern = re.compile(
+    r"(?ms)^\s*#\s*BEGIN brain-researcher MCP\s*\n.*?^\s*#\s*END brain-researcher MCP\s*\n?"
+)
+text = pattern.sub("", text)
+
+if want_enabled:
+    block = (
+        "\n"
+        "# BEGIN brain-researcher MCP\n"
+        "[mcp_servers.brain-researcher]\n"
+        'url = "https://brain-researcher.com/mcp"\n'
+        'bearer_token_env_var = "BR_MCP_TOKEN"\n'
+        "enabled = true\n"
+        "# END brain-researcher MCP\n"
+    )
+    if text and not text.endswith("\n"):
+        text += "\n"
+    text += block
+
+os.makedirs(os.path.dirname(config_path), exist_ok=True)
+tmp_path = f"{config_path}.tmp"
+with open(tmp_path, "w", encoding="utf-8") as f:
+    f.write(text)
+os.replace(tmp_path, config_path)
+PY
+fi
+
+if [ -n "${BR_MCP_TOKEN:-}" ]; then
+    echo "Brain Researcher MCP server: ACTIVE (using BR_MCP_TOKEN from env/~/.bashrc)"
+else
+    echo "Brain Researcher MCP server: inactive (run 'opencode' to set BR_MCP_TOKEN)"
+fi
+
+# In browser-proxied environments (e.g., code-server behind Jupyter),
+# localhost OAuth callbacks can fail. Default `codex login` to device auth
+# unless the caller already requested an explicit auth mode.
+if [ "${1:-}" = "login" ]; then
+    shift
+    for arg in "$@"; do
+        if [ "$arg" = "--device-auth" ] || [ "$arg" = "--with-api-key" ]; then
+            exec /usr/bin/codex login "$@"
+        fi
+    done
+    exec /usr/bin/codex login --device-auth "$@"
+fi
+
+# Default to no approval prompts and no Codex-managed sandbox. Neurodesktop
+# already runs Codex inside the container boundary, and Linux sandbox startup
+# can emit bubblewrap prerequisite warnings in environments without bwrap on
+# PATH. Respect explicit approval or sandbox flags from the caller.
+has_yolo_or_bypass=0
+has_full_auto=0
+has_approval_policy=0
+has_sandbox_mode=0
+for arg in "$@"; do
+    case "$arg" in
+        --yolo|--dangerously-bypass-approvals-and-sandbox)
+            has_yolo_or_bypass=1
+            ;;
+        --full-auto)
+            has_full_auto=1
+            ;;
+        -a|-a=*|--ask-for-approval|--ask-for-approval=*)
+            has_approval_policy=1
+            ;;
+        -s|-s=*|--sandbox|--sandbox=*)
+            has_sandbox_mode=1
+            ;;
+    esac
+done
+
+# Start Codex CLI using the actual binary path (not this wrapper)
+if [ "${has_yolo_or_bypass}" -eq 1 ] || [ "${has_full_auto}" -eq 1 ]; then
+    exec /usr/bin/codex "$@"
+fi
+
+codex_args=()
+if [ "${has_approval_policy}" -eq 0 ]; then
+    codex_args+=(--ask-for-approval never)
+fi
+if [ "${has_sandbox_mode}" -eq 0 ]; then
+    codex_args+=(--sandbox danger-full-access)
+fi
+
+exec /usr/bin/codex "${codex_args[@]}" "$@"

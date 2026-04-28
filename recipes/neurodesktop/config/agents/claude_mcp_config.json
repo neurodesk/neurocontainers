@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "brain-researcher": {
+      "type": "http",
+      "url": "https://brain-researcher.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${BR_MCP_TOKEN}"
+      }
+    }
+  }
+}
