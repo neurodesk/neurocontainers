@@ -128,7 +128,7 @@ jobs:
 
       - name: Install builder dependencies
         run: |
-          pip install -r requirements.txt
+          pip install --break-system-packages -r requirements.txt
 
       - name: Generate Dockerfile and Release file
         id: generate
@@ -255,7 +255,7 @@ jobs:
 
       - name: Install builder dependencies
         run: |
-          pip install -r requirements.txt
+          pip install --break-system-packages -r requirements.txt
 
       - name: Generate Dockerfile and Release file
         id: generate
