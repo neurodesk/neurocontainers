@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "petprep 0.0.5": {
+      "version": "20260325",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "quantitative imaging",
+    "structural imaging"
+  ]
+}
