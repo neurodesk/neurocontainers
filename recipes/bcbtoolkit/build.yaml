@@ -6,23 +6,30 @@ copyright:
 architectures:
   - x86_64
 structured_readme:
-  description: Several tools to indirectly assess brain disconnections
+  description: |-
+    Tools to indirectly assess brain disconnections from lesion masks in MNI
+    space. Provides disconnectome maps (run_disco.sh), Tractotron probability
+    of disconnection (tractotron_cli.sh), and a Java GUI launcher
+    (BCBToolKit.sh). Bundles a stripped FSL plus a Java runtime — there is no
+    Python package to import.
   example: |-
-    # Example usage
+    # Disconnectome maps from a folder of MNI-space lesion masks
+    run_disco.sh -l /data/lesions -o /data/disco_out
 
-    ```bash
-    # Run Python interactively (assuming you are already inside the container)
-    python
+    # Or in BIDS mode — discovers *lesion*.nii.gz under any anat/ dir
+    run_disco.sh -B /data/bids_root
 
-    # Execute a Python script
-    python /path/to/your/script.py
+    # Custom filename pattern (e.g. Linda's "Lesion_in_MNI.nii.gz")
+    run_disco.sh -B /data/bids_root -p "Lesion_in_MNI.nii.gz"
 
-    # Test that the package is available
-    python -c "import bcbtoolkit; print('bcbtoolkit is available!')"
+    # Tractotron — probability of disconnection per individual tract
+    tractotron_cli.sh -l /data/lesions -o /data/tractotron_out
 
-    ```
+    # Java GUI (requires X forwarding)
+    BCBToolKit.sh
   documentation: https://www.dropbox.com/scl/fi/crlns14gd7flckow067ig/USER_MANUALBCB.pdf?rlkey=49vnztok9brqaa769d42zey2w&e=1&dl=0
   citation: |-
+    Foulon C. et al. (2018) Advanced lesion symptom mapping analyses and implementation as BCBtoolkit. GigaScience 7, 1–17.
     Thiebaut de Schotten M. et al. (2014) Damage to white matter pathways in subacute and chronic spatial neglect: a group study and 2 single-case studies with complete virtual "in vivo" tractography dissection. Cereb Cortex 24, 691–706.
     Thiebaut de Schotten M. et al. (2011) Atlasing location, asymmetry and inter-subject variability of white matter tracts in the human brain with MR diffusion tractography. Neuroimage 54, 49–59.
     Thiebaut de Schotten M. et al. (2012) Monkey to human comparative anatomy of the frontal lobe association tracts. Cortex 48, 82–96.
@@ -31,29 +38,35 @@ readme: |-
   ----------------------------------
   ## bcbtoolkit/{{ context.version }} ##
 
-  Several tools to indirectly assess brain disconnections
+  Tools to indirectly assess brain disconnections from lesion masks in MNI
+  space. Provides disconnectome maps (`run_disco.sh`), Tractotron probability
+  of disconnection (`tractotron_cli.sh`), and a Java GUI launcher
+  (`BCBToolKit.sh`). Bundles a stripped FSL plus a Java runtime — there is no
+  Python package to import.
 
   Example:
-  ```
-  # Example usage
-
   ```bash
-  # Run Python interactively (assuming you are already inside the container)
-  python
+  # Disconnectome maps from a folder of MNI-space lesion masks
+  run_disco.sh -l /data/lesions -o /data/disco_out
 
-  # Execute a Python script
-  python /path/to/your/script.py
+  # Or in BIDS mode — discovers *lesion*.nii.gz under any anat/ dir
+  run_disco.sh -B /data/bids_root
 
-  # Test that the package is available
-  python -c "import bcbtoolkit; print('bcbtoolkit is available!')"
+  # Custom filename pattern (e.g. Linda's "Lesion_in_MNI.nii.gz")
+  run_disco.sh -B /data/bids_root -p "Lesion_in_MNI.nii.gz"
 
+  # Tractotron — probability of disconnection per individual tract
+  tractotron_cli.sh -l /data/lesions -o /data/tractotron_out
+
+  # Java GUI (requires X forwarding)
+  BCBToolKit.sh
   ```
-  ```
 
-  More documentation can be found here: https://www.dropbox.com/scl/fi/crlns14gd7flckow067ig/USER_MANUALBCB.pdf?rlkey=49vnztok9brqaa769d42zey2w&e=1&dl=0
+  More documentation: https://www.dropbox.com/scl/fi/crlns14gd7flckow067ig/USER_MANUALBCB.pdf?rlkey=49vnztok9brqaa769d42zey2w&e=1&dl=0
 
   Citation:
   ```
+  Foulon C. et al. (2018) Advanced lesion symptom mapping analyses and implementation as BCBtoolkit. GigaScience 7, 1–17.
   Thiebaut de Schotten M. et al. (2014) Damage to white matter pathways in subacute and chronic spatial neglect: a group study and 2 single-case studies with complete virtual "in vivo" tractography dissection. Cereb Cortex 24, 691–706.
   Thiebaut de Schotten M. et al. (2011) Atlasing location, asymmetry and inter-subject variability of white matter tracts in the human brain with MR diffusion tractography. Neuroimage 54, 49–59.
   Thiebaut de Schotten M. et al. (2012) Monkey to human comparative anatomy of the frontal lobe association tracts. Cortex 48, 82–96.
@@ -69,6 +82,25 @@ build:
   pkg-manager: apt
   directives:
     - install: libxt6 libglu1-mesa libgl1-mesa-glx curl ca-certificates
+
+    # ---------------------------------------------------------------------
+    # Bundled-FSL environment.
+    #
+    # BCBToolKit ships a stripped FSL split across two trees:
+    #   /opt/BCBToolKit/Tools/binaries/   (fslhd, flirt, fslmaths, track_vis…)
+    #   /opt/BCBToolKit/Tools/libraries/  (libfslio.so, libniftiio.so, …)
+    #
+    # Without these three vars set, every internal FSL call fails with either
+    # "libfslio.so: cannot open shared object file" or "FSLOUTPUTTYPE not set".
+    # The disco/tractotron pipelines do not check exit codes from their inner
+    # FSL calls, so they silently produce no output while still reporting
+    # "Completed successfully". These ENVs are the fix.
+    # ---------------------------------------------------------------------
+    - environment:
+        FSLDIR: /opt/BCBToolKit/Tools/binaries
+        LD_LIBRARY_PATH: /opt/BCBToolKit/Tools/libraries/lib
+        FSLOUTPUTTYPE: NIFTI_GZ
+
     - run:
         - |-
           mkdir -p /opt/BCBToolKit && cd /opt/BCBToolKit \
@@ -82,6 +114,7 @@ build:
             && chmod +x /opt/BCBToolKit/BCBToolKit.sh \
                         /opt/BCBToolKit/run_disco.sh \
                         /opt/BCBToolKit/tractotron_cli.sh
+
     - deploy:
         bins:
           - BCBToolKit.sh
@@ -89,11 +122,12 @@ build:
           - tractotron_cli.sh
         path:
           - /opt/BCBToolKit
+
     - test:
         name: verify_installation
         script: |-
           #!/bin/bash
-          set -e
+          set -euo pipefail
 
           # Files that must exist after install
           test -x /opt/BCBToolKit/BCBToolKit.sh
@@ -102,17 +136,41 @@ build:
           test -f /opt/BCBToolKit/sources.jar
           test -x /opt/BCBToolKit/jre/bin/java
 
-          # CLIs respond (no GUI, no FSL data needed for -h)
-          run_disco.sh -h       >/dev/null 2>&1 || run_disco.sh --help       >/dev/null 2>&1 || true
-          tractotron_cli.sh -h  >/dev/null 2>&1 || tractotron_cli.sh --help  >/dev/null 2>&1 || true
+          # The bundled-FSL env trio MUST be set by the image. If any is
+          # missing, the disco/tractotron pipelines silently produce no output.
+          test -n "${FSLDIR:-}"        || { echo "FSLDIR not set in image";        exit 1; }
+          test -n "${FSLOUTPUTTYPE:-}" || { echo "FSLOUTPUTTYPE not set in image"; exit 1; }
+          test -x "$FSLDIR/bin/fslhd"  || { echo "fslhd missing at $FSLDIR/bin";    exit 1; }
+          test -f /opt/BCBToolKit/Tools/libraries/lib/libfslio.so \
+              || { echo "libfslio.so missing — LD_LIBRARY_PATH target wrong"; exit 1; }
+
+          # Real FSL smoke test: fslinfo on the bundled MNI152 template.
+          # If FSLDIR / LD_LIBRARY_PATH / FSLOUTPUTTYPE are wrong, this fails
+          # with a shared-library or env-var error.
+          "$FSLDIR/bin/fslinfo" /opt/BCBToolKit/Tools/extraFiles/MNI152.nii.gz \
+              | grep -q '^dim1' \
+              || { echo "fslinfo failed on bundled MNI152 template"; exit 1; }
+
+          # flirt must load its shared libs (uses different libs than fslhd).
+          flirt_out="$("$FSLDIR/bin/flirt" 2>&1 || true)"
+          if echo "$flirt_out" | grep -qi "error while loading shared libraries"; then
+              echo "flirt cannot load shared libs — LD_LIBRARY_PATH is wrong"
+              exit 1
+          fi
+
+          # run_disco.sh must run far enough to print its usage block.
+          # No "|| true" — if this regresses, we want the build to fail.
+          run_disco.sh 2>&1 | grep -q -iE 'synopsis|usage' \
+              || { echo "run_disco.sh did not print usage"; exit 1; }
 
           # Bundled JRE actually runs
           /opt/BCBToolKit/jre/bin/java -version
 
           echo "BCBToolKit installation verified"
+
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
 categories:
   - structural imaging
-icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAE6klEQVR4AWRVa0yWZRi+nvf7Pg5DCUtabSHiIKYpjhEyqh+5clQMW9mfDhN1LeastZVtZqwtc9hha6SbrjZoQAqVhYIUWwgJHaQglKjRGkTU4lBmmqAcvu/pvu6X5xMm43rv673u43O/j+KFmn6wMSd6bajxrA01nLGh4z0+jn1vQ/XdNvhJlw19/J0NHv3Wx0edNvjhaRv84BtFoPYrGxQEjnxpA4c7bOD9dhuoOWUD1V8oPGMt+GPkQYgBqBHy4jRajZ3TxaVx1BlPn3J1XH14VhLmg8HzYSMRebVRCNHCzs7PJYfEOx+5x67sTpGcNtpfmlMjqDmrMeJTTazTtQ7FefDchEyKcpnCcU5FzmmiXIo67mzULz7lrCHc02ZC2IA8Oo28KKdPuP4KdxqnNVNXgAvngSuX/bVJEHUxYBy5p4UlEZMTCB85iJmHb8fMplzMPLJOEd75BCLHa2B/7tVCVopFer5GeP/LWLa3BAVN72BpaTEiVeXAyDB4Wj2V1KT1G7AlIRequroadDhEfvsF5w+W4b7OBkTaP4P9tA73/3QKl1pPYGBgAE1NTRgdHUXPW68grvYg8OcQjKxHiugpPBZyO5NzwhiD6elppKamIi0tDRs2bEBsbCy0cWsD0s+2o7GxEYODg0hJSUF8fDxKSkqQlZWF5gNvwrY2wl66KKXk5kkjvUUcnjuDnICcTYeHhzE0NISWlhb09/cjJiYG9tw4Dh06hHA4jLy8PPxhg5jKuwfvHq1HWVkZJicnYX/tBy78ow1Yy5u/M1GpIRQKoaKiApWVlWhvb8fatWv1BJApMjIytPHlFasQeHYvzONPwzzwKEpLS1FQUABwevme3ArXpCeQPC3sHp7nYePGjSgqKkJOTo7K2dnZwOwMEhISMDExAdxwIxCfABMIwixZqjH6+GsEduI/mdUqPK6Dp/A7agimpqaQnJysYMHt27cjPz8fq5anYmxsDJmZmZAg2PAsrDS1/55DYWEh6urqgMVJQDAkw8s3kJu08Ba5j+D3iT6bm5uVr1+/Hn19fYiLi8PKiyNAZxvsj92wp0+ivLxcV4nrlsAkLIIxBkay/AbSSVrKkUSRX66I+yR27dqFrq4ucVtUVVVhx44dmJ2dRVtbG+74vRdLa/fjvd3PIz09HXv27AGWpcMmXq/x3Iwn9aSwvy9yrowfmVMT+/bt0xtUXFyMiZuX4+/kFGzduhVJSUno6OjA+Pg4tmzZos1r64/BZN8Js2gxS/knYBdpJ8vxd7Z582YYYxYgMTERNZ+3AQ+Kb9M2HD7Tr/c/NzdX/51wZWxiNj0JZKyRWgb8phxWbxEb8DZ4OXfBe+ENeDuJ18UKnnsN3u63EXixHN5KuUnLM2Ge2g37zKvovjUPJ+NvwvRD2+C9dAAm/14gJlan14e18G+RECvXDWmSvGYdTJaAdnUusEaQsRp2cZJMJmkSq9fzthyYu4uAwscAsfaWFbBeABx2PvQvmhxIMgHDZCz8oU918ZFrsguZ01QXzVmNEZ9IcyeQ/zPczrg35aKR8xvRMinK6SOkCH3UNYfvomvsHPdvEVvNQacVzmkcZ4JiThcD9ZNIIRqFcOqMZS65x84UFNJdJ5JAZ1WXd2edrlbine6s6hLv7LUnkFHYnQmcgFYk/1cS6VNdFGc1RnwiXT2ZvDD2fwAAAP//8l8sFQAAAAZJREFUAwDi9kPped+rpQAAAABJRU5ErkJggg==
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAE6klEQVR4AWRVa0yWZRi+nvf7Pg5DCUtabSHiIKYpjhEyqh+5clQMW9mfDhN1LeastZVtZqwtc9hha6SbrjZoQAqVhYIUWwgJHaQglKjRGkTU4lBmmqAcvu/pvu6X5xMm43rv673u43O/j+KFmn6wMSd6bajxrA01nLGh4z0+jn1vQ/XdNvhJlw19/J0NHv3Wx0edNvjhaRv84BtFoPYrGxQEjnxpA4c7bOD9dhuoOWUD1V8oPGMt+GPkQYgBqBHy4jRajZ3TxaVx1BlPn3J1XH14VhLmg8HzYSMRebVRCNHCzs7PJYfEOx+5x67sTpGcNtpfmlMjqDmrMeJTTazTtQ7FefDchEyKcpnCcU5FzmmiXIo67mzULz7lrCHc02ZC2IA8Oo28KKdPuP4KdxqnNVNXgAvngSuX/bVJEHUxYBy5p4UlEZMTCB85iJmHb8fMplzMPLJOEd75BCLHa2B/7tVCVopFer5GeP/LWLa3BAVN72BpaTEiVeXAyDB4Wj2V1KT1G7AlIRequroadDhEfvsF5w+W4b7OBkTaP4P9tA73/3QKl1pPYGBgAE1NTRgdHUXPW68grvYg8OcQjKxHiugpPBZyO5NzwhiD6elppKamIi0tDRs2bEBsbCy0cWsD0s+2o7GxEYODg0hJSUF8fDxKSkqQlZWF5gNvwrY2wl66KKXk5kkjvUUcnjuDnICcTYeHhzE0NISWlhb09/cjJiYG9tw4Dh06hHA4jLy8PPxhg5jKuwfvHq1HWVkZJicnYX/tBy78ow1Yy5u/M1GpIRQKoaKiApWVlWhvb8fatWv1BJApMjIytPHlFasQeHYvzONPwzzwKEpLS1FQUABwevme3ArXpCeQPC3sHp7nYePGjSgqKkJOTo7K2dnZwOwMEhISMDExAdxwIxCfABMIwixZqjH6+GsEduI/mdUqPK6Dp/A7agimpqaQnJysYMHt27cjPz8fq5anYmxsDJmZmZAg2PAsrDS1/55DYWEh6urqgMVJQDAkw8s3kJu08Ba5j+D3iT6bm5uVr1+/Hn19fYiLi8PKiyNAZxvsj92wp0+ivLxcV4nrlsAkLIIxBkay/AbSSVrKkUSRX65I+yR27dqFrq4ucVtUVVVhx44dmJ2dRVtbG+74vRdLa/fjvd3PIz09HXv27AGWpcMmXq/x3Iwn9aSwvy9yrowfmVMT+/bt0xtUXFyMiZuX4+/kFGzduhVJSUno6OjA+Pg4tmzZos1r64/BZN8Js2gxS/knYBdpJ8vxd7Z582YYYxYgMTERNZ+3AQ+Kb9M2HD7Tr/c/NzdX/51wZWxiNj0JZKyRWgb8phxWbxEb8DZ4OXfBe+ENeDuJ18UKnnsN3u63EXixHN5KuUnLM2Ge2g37zKvovjUPJ+NvwvRD2+C9dAAm/14gJlan14e18G+RECvXDWmSvGYdTJaAdnUusEaQsRp2cZJMJmkSq9fzthyYu4uAwscAsfaWFbBeABx2PvQvmhxIMgHDZCz8oU918ZFrsguZ01QXzVmNEZ9IcyeQ/zPczrg35aKR8xvRMinK6SOkCH3UNYfvomvsHPdvEVvNQacVzmkcZ4JiThcD9ZNIIRqFcOqMZS65x84UFNJdJ5JAZ1WXd2edrlbine6s6hLv7LUnkFHYnQmcgFYk/1cS6VNdFGc1RnwiXT2ZvDD2fwAAAP//8l8sFQAAAAZJREFUAwDi9kPped+rpQAAAABJRU5ErkJggg==
