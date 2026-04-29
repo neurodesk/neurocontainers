@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "bcbtoolkit 0.0.0": {
+      "version": "20260429",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging"
+  ]
+}
