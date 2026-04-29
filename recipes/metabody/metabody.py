@@ -189,10 +189,11 @@ def process_image(images, connection, config, metadata):
     rep_diff = np.nansum(np.diff(repetitions)[:5])
     # If the sum of the first few differences in slice indices is 0,
     # then we can assume that slices are stacked within repetitions
-    if slice_diff == 0 and rep_diff > 0:
+    logging.debug(f'Slices: {slices[:10]} (sum: {slice_diff}); Repetitions: {repetitions[:10]} (sum: {rep_diff})')
+    if slice_diff > 0 and rep_diff == 0:
         logging.info("Detected repetition-major ordering of images (stack all slices of repetition 0, then all slices of repetition 1, etc)")
         orderinfo = 'slices'
-    elif slice_diff > 0 and rep_diff == 0:
+    elif slice_diff == 0 and rep_diff > 0:
         logging.info("Detected slice-major ordering of images (stack all repetitions of slice 0, then all repetitions of slice 1, etc)")
         orderinfo = 'repetitions'
     else:
@@ -309,7 +310,7 @@ def process_image(images, connection, config, metadata):
 
             # Create a copy of the original fixed header and update the data_type
             # (we changed it to int16 from all other types)
-            logging.debug("Head index for img %d is %d (out of %d headers)", img_idx, head_meta_idx, len(head))
+            # logging.debug("Head index for img %d is %d (out of %d headers)", img_idx, head_meta_idx, len(head))
             oldHeader = head[head_meta_idx]
             oldHeader.data_type = imagesOut[img_idx].data_type
 
@@ -349,7 +350,7 @@ def process_image(images, connection, config, metadata):
 
             metaXml = tmpMeta.serialize()
             # logging.debug("Image MetaAttributes: %s", xml.dom.minidom.parseString(metaXml).toprettyxml())
-            logging.debug("Image data has %d elements", imagesOut[img_idx].data.size)
+            # logging.debug("Image data has %d elements", imagesOut[img_idx].data.size)
 
             imagesOut[img_idx].attribute_string = metaXml
 
