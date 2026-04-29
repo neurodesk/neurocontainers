@@ -1,0 +1,115 @@
+#!/bin/bash
+# Claude Code wrapper script
+# Copies ~/AGENTS.md and settings.local.json to current directory, then starts Claude Code
+
+CLAUDE_DEFAULT_MCP_CONFIG="/opt/jovyan_defaults/.claude/mcp_config.json"
+
+is_apptainer_runtime() {
+    [ -n "${SINGULARITY_NAME:-}" ] || \
+    [ -n "${APPTAINER_NAME:-}" ] || \
+    [ -n "${APPTAINER_CONTAINER:-}" ] || \
+    [ -n "${SINGULARITY_CONTAINER:-}" ] || \
+    [ -n "${APPTAINER_COMMAND:-}" ] || \
+    [ -n "${SINGULARITY_COMMAND:-}" ] || \
+    [ -d "/.apptainer.d" ] || \
+    [ -d "/.singularity.d" ]
+}
+
+load_br_mcp_token_from_bashrc() {
+    local bashrc_file="${HOME}/.bashrc"
+    local token_from_bashrc
+
+    if [ -n "${BR_MCP_TOKEN:-}" ]; then
+        export BR_MCP_TOKEN
+        return 0
+    fi
+
+    if [ ! -f "${bashrc_file}" ]; then
+        return 0
+    fi
+
+    token_from_bashrc=$(sed -nE \
+        -e "s/^[[:space:]]*export[[:space:]]+BR_MCP_TOKEN='([^']+)'[[:space:]]*$/\1/p" \
+        -e 's/^[[:space:]]*export[[:space:]]+BR_MCP_TOKEN="([^"]+)"[[:space:]]*$/\1/p' \
+        -e 's/^[[:space:]]*export[[:space:]]+BR_MCP_TOKEN=([^[:space:]#]+)[[:space:]]*$/\1/p' \
+        "${bashrc_file}" | tail -n 1)
+
+    if [ -n "${token_from_bashrc}" ]; then
+        export BR_MCP_TOKEN="${token_from_bashrc}"
+    fi
+}
+
+# Neurodesktop ships a pinned Claude CLI build; auto-updates are managed
+# centrally by the container image, so disable the in-process updater.
+export DISABLE_AUTOUPDATER=1
+
+# Copy AGENTS.md from home directory to current directory as CLAUDE.md
+if [ ! -f ./CLAUDE.md ]; then
+    cp /opt/AGENTS.md ./CLAUDE.md
+fi
+
+# Copy settings.local.json from home directory to current directory's .claude folder
+if [ ! -f ./.claude/settings.local.json ]; then
+    mkdir -p ./.claude
+    cp /opt/jovyan_defaults/.claude/settings.local.json ./.claude/settings.local.json
+fi
+
+load_br_mcp_token_from_bashrc
+
+if [ -n "${BR_MCP_TOKEN:-}" ]; then
+    echo "Brain Researcher MCP server: ACTIVE (using BR_MCP_TOKEN from env/~/.bashrc)"
+else
+    echo "Brain Researcher MCP server: inactive (run 'opencode' to set BR_MCP_TOKEN)"
+fi
+
+# Start Claude Code from the standard user-local path.
+CLAUDE_BIN="${HOME}/.local/bin/claude"
+DEFAULT_CLAUDE_BIN="/opt/jovyan_defaults/.local/bin/claude"
+
+# If the user path is a dangling symlink, remove it before restore.
+# cp refuses to overwrite dangling links and will otherwise fail.
+if [ -L "${CLAUDE_BIN}" ] && [ ! -e "${CLAUDE_BIN}" ]; then
+    rm -f "${CLAUDE_BIN}" 2>/dev/null || true
+fi
+
+if [ ! -x "${CLAUDE_BIN}" ] && [ -x "${DEFAULT_CLAUDE_BIN}" ]; then
+    mkdir -p "${HOME}/.local/bin" 2>/dev/null || true
+    cp -p "${DEFAULT_CLAUDE_BIN}" "${CLAUDE_BIN}" 2>/dev/null || true
+fi
+
+if [ ! -x "${CLAUDE_BIN}" ]; then
+    echo "Claude binary not found at ${CLAUDE_BIN}. Restore from ${DEFAULT_CLAUDE_BIN} also failed." >&2
+    exit 127
+fi
+
+extra_args=()
+has_mcp_config_arg=0
+has_strict_mcp_config_arg=0
+
+for arg in "$@"; do
+    case "$arg" in
+        --mcp-config|--mcp-config=*)
+            has_mcp_config_arg=1
+            ;;
+        --strict-mcp-config)
+            has_strict_mcp_config_arg=1
+            ;;
+    esac
+done
+
+if is_apptainer_runtime; then
+    if [ "${has_strict_mcp_config_arg}" -eq 0 ]; then
+        extra_args+=(--strict-mcp-config)
+    fi
+    if [ "${has_mcp_config_arg}" -eq 0 ]; then
+        if [ -n "${BR_MCP_TOKEN:-}" ] && [ -f "${CLAUDE_DEFAULT_MCP_CONFIG}" ]; then
+            extra_args+=(--mcp-config "${CLAUDE_DEFAULT_MCP_CONFIG}")
+        else
+            extra_args+=(--mcp-config '{"mcpServers":{}}')
+        fi
+    fi
+elif [ "${has_mcp_config_arg}" -eq 0 ] && [ -n "${BR_MCP_TOKEN:-}" ] && [ -f "${CLAUDE_DEFAULT_MCP_CONFIG}" ]; then
+    extra_args+=(--mcp-config "${CLAUDE_DEFAULT_MCP_CONFIG}")
+fi
+
+exec "${CLAUDE_BIN}" --allow-dangerously-skip-permissions "${extra_args[@]}" "$@"

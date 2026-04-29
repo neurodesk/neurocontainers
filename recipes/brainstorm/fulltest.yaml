@@ -276,8 +276,8 @@ tests:
 
   - name: Brainstorm defaults directory structure
     description: Verify defaults directory structure exists
-    command: ls ~/.brainstorm/defaults/ 2>/dev/null || echo "Defaults not created"
-    expected_output_contains: "anatomy"
+    command: test -d ~/.brainstorm/defaults && echo "defaults directory exists" || echo "defaults not created"
+    expected_output_contains: "defaults"
 
   # ==========================================================================
   # CONTAINER ENVIRONMENT

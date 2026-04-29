@@ -770,9 +770,9 @@ tests:
     expected_output_contains: "diff_unpack"
 
   - name: dtk binary exists
-    description: Verify dtk GUI launcher binary is in PATH
-    command: command -v dtk
-    expected_output_contains: "dtk"
+    description: Verify the primary dti_recon binary is in PATH
+    command: command -v dti_recon
+    expected_output_contains: "dti_recon"
 
   # ==========================================================================
   # PATH AND ENVIRONMENT
@@ -780,7 +780,7 @@ tests:
   - name: Diffusion toolkit in PATH
     description: Verify diffusiontoolkit directory is in PATH
     command: echo $PATH
-    expected_output_contains: "/opt/diffusiontoolkit"
+    expected_output_contains: "/opt/diffusiontoolkit-0.6.4.1"
 
   - name: Installation directory exists
     description: Verify installation directory structure

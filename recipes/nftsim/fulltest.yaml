@@ -77,7 +77,7 @@ tests:
 
   - name: Check config file exists
     description: Verify default config file is accessible
-    command: ls -la ${eirs_corticothalamic}
+    command: bash -lc 'ls -la ${eirs_corticothalamic}'
     expected_exit_code: 0
 
   # ==========================================================================
@@ -286,12 +286,12 @@ tests:
   # ==========================================================================
   - name: Abeysuriya 2014 Figure 1 config check
     description: Verify Abeysuriya 2014 Figure 1 config file is valid and readable
-    command: cat ${abeysuriya_figure1} | head -5
+    command: bash -lc 'cat ${abeysuriya_figure1} | head -5'
     expected_output_contains: "Connection"
 
   - name: Abeysuriya 2014 Figure 2 config check
     description: Verify Abeysuriya 2014 Figure 2 config file is valid and readable
-    command: cat ${abeysuriya_figure2} | head -5
+    command: bash -lc 'cat ${abeysuriya_figure2} | head -5'
     expected_output_contains: "Connection"
 
   # ==========================================================================

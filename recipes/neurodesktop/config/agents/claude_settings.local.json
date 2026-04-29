@@ -1,0 +1,12 @@
+{
+  "env": {
+    "DISABLE_AUTOUPDATER": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write"
+    ]
+  }
+}

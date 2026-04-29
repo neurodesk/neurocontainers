@@ -650,13 +650,13 @@ tests:
   # ENVIRONMENT AND PATH VERIFICATION
   # ==========================================================================
   - name: Deploy bins environment
-    description: Verify DEPLOY_BINS is set correctly
-    command: echo $DEPLOY_BINS
+    description: Verify deployed samsrfx command is available
+    command: command -v samsrfx
     expected_output_contains: "samsrfx"
 
   - name: PATH includes samsrfx
-    description: Verify PATH includes samsrfx directory
-    command: echo $PATH
+    description: Verify PATH resolves samsrfx from the expected installation
+    command: command -v samsrfx
     expected_output_contains: "/opt/samsrfx-v10.004/"
 
   - name: Samsrfx directory structure

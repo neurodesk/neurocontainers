@@ -1,0 +1,1555 @@
+#!/bin/bash
+# OpenCode wrapper script
+# Copies AGENTS.md, discovers working model backends, updates OpenCode config,
+# lets the user choose a default model, then starts OpenCode.
+
+OPENCODE_CONFIG_DIR="${HOME}/.config/opencode"
+OPENCODE_CONFIG_FILE="${OPENCODE_CONFIG_DIR}/opencode.json"
+OPENCODE_DEFAULT_CONFIG_FILE="/opt/jovyan_defaults/.config/opencode/opencode.json"
+
+JETSTREAM_BASE_URL="https://llm.jetstream-cloud.org/v1"
+JETSTREAM_MODEL_ID="gpt-oss-120b"
+NEURODESK_BASE_URL="https://llm.neurodesk.org/openai"
+NEURODESK_BASE_URL="${NEURODESK_BASE_URL%/}"
+NEURODESK_DEFAULT_MODEL_ID="gpt-oss"
+BRAIN_RESEARCHER_MCP_URL="https://brain-researcher.com/mcp"
+BRAIN_RESEARCHER_SIGNUP_URL="https://brain-researcher.com/settings"
+OPENCODE_STARTUP_VERBOSE="${OPENCODE_STARTUP_VERBOSE:-0}"
+OPENCODE_COLOR_ENABLED=0
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then
+    OPENCODE_COLOR_ENABLED=1
+fi
+
+OLLAMA_HOST_CLEAN="${OLLAMA_HOST:-http://127.0.0.1:11434}"
+OLLAMA_HOST_CLEAN="${OLLAMA_HOST_CLEAN%/}"
+OLLAMA_HOST_CLEAN="${OLLAMA_HOST_CLEAN%/v1}"
+
+JETSTREAM_STATUS="not checked"
+OLLAMA_RUNNING=0
+OLLAMA_STATUS="not checked"
+NEURODESK_RUNNING=0
+NEURODESK_REQUIRES_KEY=0
+NEURODESK_MODELS_FROM_SERVER=0
+NEURODESK_STATUS="not checked"
+NEURODESK_API_KEY_WAS_PROMPTED=0
+OLLAMA_MODEL_CONTEXTS_JSON="{}"
+OLLAMA_DEFAULT_CONTEXT_LIMIT=32768
+OLLAMA_DEFAULT_OUTPUT_LIMIT=8192
+
+JETSTREAM_MODELS=()
+OLLAMA_MODELS=()
+NEURODESK_MODELS=()
+
+WORKING_MODELS=()
+WORKING_MODEL_LABELS=()
+SELECTED_MODEL=""
+
+# Copy AGENTS.md from /opt to current directory.
+if [ ! -f ./AGENTS.md ]; then
+    cp /opt/AGENTS.md ./AGENTS.md
+fi
+
+ensure_opencode_config_file() {
+    mkdir -p "${OPENCODE_CONFIG_DIR}"
+    if [ ! -f "${OPENCODE_CONFIG_FILE}" ] && [ -f "${OPENCODE_DEFAULT_CONFIG_FILE}" ]; then
+        cp "${OPENCODE_DEFAULT_CONFIG_FILE}" "${OPENCODE_CONFIG_FILE}"
+    fi
+}
+
+array_contains() {
+    local needle="$1"
+    shift
+    local value
+    for value in "$@"; do
+        if [ "${value}" = "${needle}" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+json_array_from_args() {
+    python3 - "$@" <<'PY'
+import json
+import sys
+
+print(json.dumps(sys.argv[1:]))
+PY
+}
+
+opencode_flag_enabled() {
+    case "${1:-}" in
+        1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+opencode_startup_verbose_enabled() {
+    opencode_flag_enabled "${OPENCODE_STARTUP_VERBOSE}"
+}
+
+opencode_color_enabled() {
+    [ "${OPENCODE_COLOR_ENABLED:-0}" = "1" ]
+}
+
+colorize_status() {
+    local style="$1"
+    local text="$2"
+    local code=""
+
+    case "${style}" in
+        available)
+            code="32"
+            ;;
+        warning)
+            code="33"
+            ;;
+        unavailable)
+            code="31"
+            ;;
+    esac
+
+    if [ -n "${code}" ] && opencode_color_enabled; then
+        printf "\033[%sm%s\033[0m" "${code}" "${text}"
+    else
+        printf "%s" "${text}"
+    fi
+}
+
+model_count_label() {
+    local count="$1"
+
+    if [ "${count}" -eq 1 ]; then
+        printf "1 model"
+    else
+        printf "%d models" "${count}"
+    fi
+}
+
+http_status_detail() {
+    local status="$1"
+
+    if [[ "${status}" =~ HTTP[[:space:]]+([0-9]+) ]]; then
+        printf "HTTP %s" "${BASH_REMATCH[1]}"
+        return 0
+    fi
+
+    return 1
+}
+
+print_provider_status_row() {
+    local provider="$1"
+    local style="$2"
+    local summary="$3"
+    local detail="${4:-}"
+    local status_text
+
+    status_text=$(colorize_status "${style}" "${summary}")
+    if [ -n "${detail}" ]; then
+        status_text="${status_text}: ${detail}"
+    fi
+
+    printf "  %-18s %s\n" "${provider}" "${status_text}"
+}
+
+print_jetstream_status_row() {
+    local detail
+
+    if [ "${#JETSTREAM_MODELS[@]}" -gt 0 ]; then
+        print_provider_status_row "Jetstream" "available" "available" "$(model_count_label "${#JETSTREAM_MODELS[@]}")"
+        return 0
+    fi
+
+    if [[ "${JETSTREAM_STATUS}" == *"permission denied"* ]]; then
+        detail="permission denied for ${JETSTREAM_MODEL_ID}"
+    elif detail=$(http_status_detail "${JETSTREAM_STATUS}"); then
+        :
+    else
+        detail="${JETSTREAM_STATUS}"
+    fi
+
+    print_provider_status_row "Jetstream" "unavailable" "unavailable" "${detail}"
+}
+
+print_ollama_status_row() {
+    local detail
+
+    if [ "${OLLAMA_RUNNING}" -eq 1 ] && [ "${#OLLAMA_MODELS[@]}" -gt 0 ]; then
+        print_provider_status_row "Local Ollama" "available" "available" "$(model_count_label "${#OLLAMA_MODELS[@]}")"
+        return 0
+    fi
+
+    if [ "${OLLAMA_RUNNING}" -eq 1 ]; then
+        print_provider_status_row "Local Ollama" "unavailable" "unavailable" "no local models"
+        return 0
+    fi
+
+    if detail=$(http_status_detail "${OLLAMA_STATUS}"); then
+        detail="not running or unreachable (${detail})"
+    elif [ "${OLLAMA_STATUS}" = "curl not found" ]; then
+        detail="curl not found"
+    else
+        detail="not running or unreachable"
+    fi
+
+    print_provider_status_row "Local Ollama" "unavailable" "unavailable" "${detail}"
+}
+
+print_neurodesk_status_row() {
+    local detail
+    local model_count="${#NEURODESK_MODELS[@]}"
+
+    if [ "${NEURODESK_RUNNING}" -eq 1 ]; then
+        if [ "${NEURODESK_REQUIRES_KEY}" -eq 1 ] && [ -n "${NEURODESK_API_KEY:-}" ]; then
+            print_provider_status_row "llm.neurodesk.org" "warning" "needs API key" "current key rejected"
+            return 0
+        fi
+
+        if [ "${NEURODESK_REQUIRES_KEY}" -eq 1 ]; then
+            print_provider_status_row "llm.neurodesk.org" "warning" "needs API key"
+            return 0
+        fi
+
+        if [ "${model_count}" -gt 0 ]; then
+            if [ "${NEURODESK_MODELS_FROM_SERVER}" -eq 1 ]; then
+                detail="$(model_count_label "${model_count}")"
+            else
+                detail="using ${NEURODESK_MODELS[0]}"
+            fi
+            print_provider_status_row "llm.neurodesk.org" "available" "available" "${detail}"
+            return 0
+        fi
+    fi
+
+    if detail=$(http_status_detail "${NEURODESK_STATUS}"); then
+        :
+    elif [[ "${NEURODESK_STATUS}" == *"unreachable"* ]]; then
+        detail="unreachable"
+    else
+        detail="${NEURODESK_STATUS}"
+    fi
+
+    print_provider_status_row "llm.neurodesk.org" "unavailable" "unavailable" "${detail}"
+}
+
+print_provider_status_table() {
+    echo
+    echo "Provider status"
+    printf "  %-18s %s\n" "Provider" "Status"
+    printf "  %-18s %s\n" "--------" "------"
+    print_jetstream_status_row
+    print_ollama_status_row
+    print_neurodesk_status_row
+    echo
+
+    if ! opencode_startup_verbose_enabled; then
+        echo "Set OPENCODE_STARTUP_VERBOSE=1 to show endpoint probe details."
+    fi
+}
+
+print_provider_probe_details() {
+    echo
+    echo "Provider probe details"
+    printf "  %-18s %s\n" "Jetstream" "${JETSTREAM_STATUS}"
+    printf "  %-18s %s\n" "Local Ollama" "${OLLAMA_STATUS}"
+    printf "  %-18s %s\n" "llm.neurodesk.org" "${NEURODESK_STATUS}"
+}
+
+model_choice_suffix() {
+    local full_label="$1"
+
+    case "${full_label}" in
+        *" (requires API key setup)")
+            printf " (requires API key setup)"
+            ;;
+        *" (requires a valid API key)")
+            printf " (requires a valid API key)"
+            ;;
+    esac
+}
+
+model_choice_name() {
+    local model_ref="$1"
+
+    case "${model_ref}" in
+        jetstream/*)
+            printf "%s" "${model_ref#jetstream/}"
+            ;;
+        ollama/*)
+            printf "%s" "${model_ref#ollama/}"
+            ;;
+        neurodesk/*)
+            printf "%s" "${model_ref#neurodesk/}"
+            ;;
+        *)
+            printf "%s" "${model_ref}"
+            ;;
+    esac
+}
+
+model_choice_label() {
+    local model_ref="$1"
+    local full_label="$2"
+    local provider_key="${model_ref%%/*}"
+
+    if [ "${provider_key}" = "neurodesk" ] \
+        && [ "${NEURODESK_REQUIRES_KEY}" -eq 1 ] \
+        && [ "${NEURODESK_MODELS_FROM_SERVER}" -ne 1 ]; then
+        if [ -n "${NEURODESK_API_KEY:-}" ]; then
+            printf "Set up a valid API key to list models"
+        else
+            printf "Set up API key to list models"
+        fi
+        return 0
+    fi
+
+    printf "%s%s" "$(model_choice_name "${model_ref}")" "$(model_choice_suffix "${full_label}")"
+}
+
+print_model_choice_group() {
+    local provider_key="$1"
+    local provider_label="$2"
+    local idx
+    local model_label
+    local model_ref
+    local printed=0
+
+    for idx in "${!WORKING_MODELS[@]}"; do
+        model_ref="${WORKING_MODELS[$idx]}"
+        case "${model_ref}" in
+            "${provider_key}"/*)
+                ;;
+            *)
+                continue
+                ;;
+        esac
+
+        if [ "${printed}" -eq 0 ]; then
+            echo
+            echo "${provider_label}"
+            printed=1
+        fi
+
+        model_label="$(model_choice_label "${model_ref}" "${WORKING_MODEL_LABELS[$idx]}")"
+        printf "  %2d) %s\n" "$((idx + 1))" "${model_label}"
+    done
+}
+
+print_grouped_model_choices() {
+    echo
+    echo "Choose a default OpenCode model."
+    print_model_choice_group "jetstream" "Jetstream"
+    print_model_choice_group "ollama" "Local Ollama"
+    print_model_choice_group "neurodesk" "llm.neurodesk.org"
+    echo
+    echo "Tip: set OPENCODE_MODEL_PROFILE=ollama, neurodesk, jetstream, or provider/model to skip this prompt."
+    echo
+}
+
+sanitize_neurodesk_api_key() {
+    local raw_key="$1"
+    local sanitized_key
+
+    # Remove control characters that can break headers/config parsing.
+    sanitized_key=$(printf "%s" "${raw_key}" | tr -d '\000-\010\013\014\016-\037\177')
+    # Normalize CRLF/newline artifacts and trim surrounding whitespace.
+    sanitized_key="${sanitized_key//$'\r'/}"
+    sanitized_key="${sanitized_key//$'\n'/}"
+    sanitized_key=$(printf "%s" "${sanitized_key}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+    printf "%s" "${sanitized_key}"
+}
+
+load_neurodesk_api_key_from_bashrc() {
+    local bashrc_file="${HOME}/.bashrc"
+    local key_from_bashrc
+
+    if [ -n "${NEURODESK_API_KEY:-}" ]; then
+        NEURODESK_API_KEY=$(sanitize_neurodesk_api_key "${NEURODESK_API_KEY}")
+        export NEURODESK_API_KEY
+        return 0
+    fi
+
+    if [ ! -f "${bashrc_file}" ]; then
+        return 0
+    fi
+
+    key_from_bashrc=$(sed -nE \
+        -e "s/^[[:space:]]*export[[:space:]]+NEURODESK_API_KEY='([^']+)'[[:space:]]*$/\1/p" \
+        -e 's/^[[:space:]]*export[[:space:]]+NEURODESK_API_KEY="([^"]+)"[[:space:]]*$/\1/p' \
+        -e 's/^[[:space:]]*export[[:space:]]+NEURODESK_API_KEY=([^[:space:]#]+)[[:space:]]*$/\1/p' \
+        "${bashrc_file}" | tail -n 1)
+
+    key_from_bashrc=$(sanitize_neurodesk_api_key "${key_from_bashrc}")
+
+    if [ -n "${key_from_bashrc}" ]; then
+        export NEURODESK_API_KEY="${key_from_bashrc}"
+    fi
+}
+
+persist_neurodesk_api_key_to_bashrc() {
+    local key="$1"
+    local escaped_key
+    local bashrc_file="${HOME}/.bashrc"
+    local tmp_bashrc
+
+    escaped_key=$(printf "%s" "${key}" | sed "s/'/'\"'\"'/g")
+
+    touch "${bashrc_file}"
+    tmp_bashrc=$(mktemp) || return 1
+
+    grep -vE '^[[:space:]]*export[[:space:]]+NEURODESK_API_KEY=|^[[:space:]]*#[[:space:]]*Neurodesk API key for OpenCode[[:space:]]*$' "${bashrc_file}" > "${tmp_bashrc}" || true
+    {
+        echo ""
+        echo "# Neurodesk API key for OpenCode"
+        printf "export NEURODESK_API_KEY='%s'\n" "${escaped_key}"
+    } >> "${tmp_bashrc}"
+
+    mv "${tmp_bashrc}" "${bashrc_file}"
+}
+
+sanitize_br_mcp_token() {
+    local raw_token="$1"
+    local sanitized_token
+
+    sanitized_token=$(printf "%s" "${raw_token}" | tr -d '\000-\010\013\014\016-\037\177')
+    sanitized_token="${sanitized_token//$'\r'/}"
+    sanitized_token="${sanitized_token//$'\n'/}"
+    sanitized_token=$(printf "%s" "${sanitized_token}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+    printf "%s" "${sanitized_token}"
+}
+
+load_br_mcp_token_from_bashrc() {
+    local bashrc_file="${HOME}/.bashrc"
+    local token_from_bashrc
+
+    if [ -n "${BR_MCP_TOKEN:-}" ]; then
+        BR_MCP_TOKEN=$(sanitize_br_mcp_token "${BR_MCP_TOKEN}")
+        export BR_MCP_TOKEN
+        return 0
+    fi
+
+    if [ ! -f "${bashrc_file}" ]; then
+        return 0
+    fi
+
+    token_from_bashrc=$(sed -nE \
+        -e "s/^[[:space:]]*export[[:space:]]+BR_MCP_TOKEN='([^']+)'[[:space:]]*$/\1/p" \
+        -e 's/^[[:space:]]*export[[:space:]]+BR_MCP_TOKEN="([^"]+)"[[:space:]]*$/\1/p' \
+        -e 's/^[[:space:]]*export[[:space:]]+BR_MCP_TOKEN=([^[:space:]#]+)[[:space:]]*$/\1/p' \
+        "${bashrc_file}" | tail -n 1)
+
+    token_from_bashrc=$(sanitize_br_mcp_token "${token_from_bashrc}")
+
+    if [ -n "${token_from_bashrc}" ]; then
+        export BR_MCP_TOKEN="${token_from_bashrc}"
+    fi
+}
+
+br_mcp_setup_already_recorded() {
+    local bashrc_file="${HOME}/.bashrc"
+    if [ ! -f "${bashrc_file}" ]; then
+        return 1
+    fi
+    grep -qE '^[[:space:]]*(export[[:space:]]+)?BR_MCP_TOKEN=' "${bashrc_file}" && return 0
+    grep -qE '^[[:space:]]*#[[:space:]]*BR_MCP_DECLINED[[:space:]]*$' "${bashrc_file}" && return 0
+    return 1
+}
+
+persist_br_mcp_token_to_bashrc() {
+    local token="$1"
+    local escaped_token
+    local bashrc_file="${HOME}/.bashrc"
+    local tmp_bashrc
+
+    escaped_token=$(printf "%s" "${token}" | sed "s/'/'\"'\"'/g")
+
+    touch "${bashrc_file}"
+    tmp_bashrc=$(mktemp) || return 1
+
+    grep -vE '^[[:space:]]*export[[:space:]]+BR_MCP_TOKEN=|^[[:space:]]*#[[:space:]]*BR_MCP_DECLINED[[:space:]]*$|^[[:space:]]*#[[:space:]]*Brain Researcher MCP token[[:space:]]*$' "${bashrc_file}" > "${tmp_bashrc}" || true
+    {
+        echo ""
+        echo "# Brain Researcher MCP token"
+        printf "export BR_MCP_TOKEN='%s'\n" "${escaped_token}"
+    } >> "${tmp_bashrc}"
+
+    mv "${tmp_bashrc}" "${bashrc_file}"
+}
+
+persist_br_mcp_decline_to_bashrc() {
+    local bashrc_file="${HOME}/.bashrc"
+    local tmp_bashrc
+
+    touch "${bashrc_file}"
+    tmp_bashrc=$(mktemp) || return 1
+
+    grep -vE '^[[:space:]]*#[[:space:]]*BR_MCP_DECLINED[[:space:]]*$' "${bashrc_file}" > "${tmp_bashrc}" || true
+    {
+        echo ""
+        echo "# BR_MCP_DECLINED"
+    } >> "${tmp_bashrc}"
+
+    mv "${tmp_bashrc}" "${bashrc_file}"
+}
+
+# Step 1: Check if Jetstream's gpt-oss-120b model API call works.
+check_jetstream_model_api() {
+    local endpoint="${JETSTREAM_BASE_URL}/chat/completions"
+    local response_file
+    local http_code
+
+    JETSTREAM_MODELS=()
+
+    if ! command -v curl >/dev/null 2>&1; then
+        JETSTREAM_STATUS="curl not found"
+        return 1
+    fi
+
+    response_file=$(mktemp) || {
+        JETSTREAM_STATUS="failed to create temporary file"
+        return 1
+    }
+
+    http_code=$(curl -sS -m 12 -o "${response_file}" -w "%{http_code}" \
+        -H "Content-Type: application/json" \
+        -d '{"model":"gpt-oss-120b","messages":[{"role":"user","content":"ping"}],"max_tokens":1,"temperature":0}' \
+        "${endpoint}" 2>/dev/null || true)
+
+    if [ "${http_code}" = "200" ]; then
+        JETSTREAM_MODELS=("${JETSTREAM_MODEL_ID}")
+        JETSTREAM_STATUS="working (${JETSTREAM_MODEL_ID})"
+        rm -f "${response_file}"
+        return 0
+    fi
+
+    if grep -Eiq 'permission[[:space:]_-]*denied|permission_denied' "${response_file}"; then
+        JETSTREAM_STATUS="reachable but permission denied for ${JETSTREAM_MODEL_ID}"
+    elif [ -n "${http_code}" ] && [ "${http_code}" != "000" ]; then
+        JETSTREAM_STATUS="unavailable (HTTP ${http_code})"
+    else
+        JETSTREAM_STATUS="unreachable"
+    fi
+
+    rm -f "${response_file}"
+    return 1
+}
+
+# Step 2: Check local Ollama and list available local models.
+check_local_ollama_models() {
+    local response_file
+    local http_code
+    local model_name
+
+    OLLAMA_RUNNING=0
+    OLLAMA_MODELS=()
+    OLLAMA_MODEL_CONTEXTS_JSON="{}"
+
+    if ! command -v curl >/dev/null 2>&1; then
+        OLLAMA_STATUS="curl not found"
+        return 1
+    fi
+
+    response_file=$(mktemp) || {
+        OLLAMA_STATUS="failed to create temporary file"
+        return 1
+    }
+
+    http_code=$(curl -sS -m 8 -o "${response_file}" -w "%{http_code}" \
+        "${OLLAMA_HOST_CLEAN}/api/tags" 2>/dev/null || true)
+
+    if [ "${http_code}" = "200" ]; then
+        OLLAMA_RUNNING=1
+
+        if command -v python3 >/dev/null 2>&1; then
+            while IFS= read -r model_name; do
+                if [ -n "${model_name}" ]; then
+                    OLLAMA_MODELS+=("${model_name}")
+                fi
+            done < <(python3 - "${response_file}" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        payload = json.load(f)
+except Exception:
+    raise SystemExit(0)
+
+for model in payload.get("models", []):
+    name = model.get("name")
+    if isinstance(name, str) and name:
+        print(name)
+PY
+            )
+
+            if [ "${#OLLAMA_MODELS[@]}" -gt 0 ]; then
+                OLLAMA_MODEL_CONTEXTS_JSON=$(python3 - "${OLLAMA_HOST_CLEAN}" "${OLLAMA_DEFAULT_CONTEXT_LIMIT}" "${OLLAMA_MODELS[@]}" <<'PY'
+import json
+import re
+import sys
+from urllib import error, request
+
+base_url = sys.argv[1].rstrip("/")
+fallback_context = int(sys.argv[2])
+model_ids = sys.argv[3:]
+
+def positive_int(value):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+def extract_context(payload):
+    if not isinstance(payload, dict):
+        return None
+
+    candidates = []
+
+    for field in ("context_length", "num_ctx", "max_context_length", "max_sequence_length"):
+        candidates.append(payload.get(field))
+
+    details = payload.get("details")
+    if isinstance(details, dict):
+        for field in ("context_length", "num_ctx", "max_context_length", "max_sequence_length"):
+            candidates.append(details.get(field))
+
+    model_info = payload.get("model_info")
+    if isinstance(model_info, dict):
+        for key, value in model_info.items():
+            if key in ("context_length", "num_ctx", "max_context_length", "max_sequence_length"):
+                candidates.append(value)
+                continue
+            if isinstance(key, str) and key.endswith(".context_length"):
+                candidates.append(value)
+
+    for raw in (payload.get("parameters"), payload.get("modelfile")):
+        if not isinstance(raw, str):
+            continue
+        match = re.search(r"(?im)^\\s*(?:parameter\\s+)?(?:num_ctx|context_length)\\s+([0-9]+)\\s*$", raw)
+        if match:
+            candidates.append(match.group(1))
+
+    for value in candidates:
+        parsed = positive_int(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+def fetch_show_payload(model_id):
+    endpoint = f"{base_url}/api/show"
+    body = json.dumps({"name": model_id}).encode("utf-8")
+    req = request.Request(endpoint, data=body, method="POST")
+    req.add_header("Content-Type", "application/json")
+    with request.urlopen(req, timeout=6) as resp:
+        if resp.status != 200:
+            return None
+        data = resp.read()
+    return json.loads(data.decode("utf-8"))
+
+contexts = {}
+for model_id in model_ids:
+    if not isinstance(model_id, str) or not model_id:
+        continue
+    context_limit = None
+    try:
+        show_payload = fetch_show_payload(model_id)
+        context_limit = extract_context(show_payload)
+    except (error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        context_limit = None
+
+    parsed_context = positive_int(context_limit)
+    if parsed_context is None:
+        parsed_context = fallback_context
+
+    contexts[model_id] = parsed_context
+
+print(json.dumps(contexts))
+PY
+                )
+            fi
+        fi
+
+        if [ "${#OLLAMA_MODELS[@]}" -gt 0 ]; then
+            OLLAMA_STATUS="running with ${#OLLAMA_MODELS[@]} model(s): ${OLLAMA_MODELS[*]}"
+        else
+            OLLAMA_STATUS="running but no local models are available"
+        fi
+
+        rm -f "${response_file}"
+        return 0
+    fi
+
+    if [ -n "${http_code}" ] && [ "${http_code}" != "000" ]; then
+        OLLAMA_STATUS="not running or unreachable at ${OLLAMA_HOST_CLEAN} (HTTP ${http_code})"
+    else
+        OLLAMA_STATUS="not running or unreachable at ${OLLAMA_HOST_CLEAN}"
+    fi
+
+    rm -f "${response_file}"
+    return 1
+}
+
+# Step 3: Check llm.neurodesk.org endpoint status.
+check_neurodesk_server() {
+    local endpoint="${NEURODESK_BASE_URL}/models"
+    local response_file
+    local http_code
+    local model_name
+    local model_count
+
+    NEURODESK_RUNNING=0
+    NEURODESK_REQUIRES_KEY=0
+    NEURODESK_MODELS_FROM_SERVER=0
+    NEURODESK_MODELS=()
+
+    if ! command -v curl >/dev/null 2>&1; then
+        NEURODESK_STATUS="curl not found"
+        return 1
+    fi
+
+    response_file=$(mktemp) || {
+        NEURODESK_STATUS="failed to create temporary file"
+        return 1
+    }
+
+    if [ -n "${NEURODESK_API_KEY:-}" ]; then
+        http_code=$(curl -sS -m 10 -o "${response_file}" -w "%{http_code}" \
+            -H "Authorization: Bearer ${NEURODESK_API_KEY}" \
+            "${endpoint}" 2>/dev/null || true)
+    else
+        http_code=$(curl -sS -m 10 -o "${response_file}" -w "%{http_code}" \
+            "${endpoint}" 2>/dev/null || true)
+    fi
+
+    if [ "${http_code}" = "200" ]; then
+        NEURODESK_RUNNING=1
+        if command -v python3 >/dev/null 2>&1; then
+            while IFS= read -r model_name; do
+                if [ -n "${model_name}" ]; then
+                    NEURODESK_MODELS+=("${model_name}")
+                fi
+            done < <(python3 - "${response_file}" <<'PY'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as f:
+        payload = json.load(f)
+except Exception:
+    raise SystemExit(0)
+
+for model in payload.get("data", []):
+    model_id = model.get("id")
+    if isinstance(model_id, str) and model_id:
+        print(model_id)
+PY
+            )
+        fi
+
+        model_count="${#NEURODESK_MODELS[@]}"
+        if [ "${model_count}" -gt 0 ]; then
+            NEURODESK_MODELS_FROM_SERVER=1
+        else
+            NEURODESK_MODELS=("${NEURODESK_DEFAULT_MODEL_ID}")
+        fi
+
+        if [ "${model_count}" -gt 0 ]; then
+            NEURODESK_STATUS="running with ${model_count} model(s)"
+        else
+            NEURODESK_STATUS="running, but no models were returned; using ${NEURODESK_DEFAULT_MODEL_ID}"
+        fi
+        rm -f "${response_file}"
+        return 0
+    fi
+
+    if [ "${http_code}" = "404" ]; then
+        NEURODESK_RUNNING=1
+        NEURODESK_MODELS=("${NEURODESK_DEFAULT_MODEL_ID}")
+
+        if [ -n "${NEURODESK_API_KEY:-}" ]; then
+            NEURODESK_REQUIRES_KEY=0
+            NEURODESK_STATUS="running, but model listing is hidden at ${endpoint} (HTTP ${http_code}); using ${NEURODESK_DEFAULT_MODEL_ID}"
+        else
+            NEURODESK_REQUIRES_KEY=1
+            NEURODESK_STATUS="running, API key required or model list is hidden at ${endpoint} (HTTP ${http_code})"
+        fi
+
+        rm -f "${response_file}"
+        return 0
+    fi
+
+    if [ "${http_code}" = "401" ] || [ "${http_code}" = "403" ]; then
+        NEURODESK_RUNNING=1
+        NEURODESK_REQUIRES_KEY=1
+        NEURODESK_MODELS=("${NEURODESK_DEFAULT_MODEL_ID}")
+
+        if [ -n "${NEURODESK_API_KEY:-}" ]; then
+            NEURODESK_STATUS="running, but the current NEURODESK_API_KEY is rejected (HTTP ${http_code})"
+        else
+            NEURODESK_STATUS="running, API key required (HTTP ${http_code})"
+        fi
+
+        rm -f "${response_file}"
+        return 0
+    fi
+
+    if [ -n "${http_code}" ] && [ "${http_code}" != "000" ]; then
+        NEURODESK_STATUS="OpenAI-compatible API unavailable at ${endpoint} (HTTP ${http_code}); the web UI may still be reachable"
+    else
+        NEURODESK_STATUS="OpenAI-compatible API unreachable at ${endpoint}"
+    fi
+
+    rm -f "${response_file}"
+    return 1
+}
+
+validate_neurodesk_api_key_candidate() {
+    local candidate_key="$1"
+    local previous_key=""
+    local had_previous_key=0
+
+    if [ -n "${NEURODESK_API_KEY:-}" ]; then
+        previous_key="${NEURODESK_API_KEY}"
+        had_previous_key=1
+    fi
+
+    export NEURODESK_API_KEY="${candidate_key}"
+    check_neurodesk_server
+
+    if [ "${NEURODESK_RUNNING}" -eq 1 ] && [ "${NEURODESK_REQUIRES_KEY}" -eq 1 ]; then
+        if [ "${had_previous_key}" -eq 1 ]; then
+            export NEURODESK_API_KEY="${previous_key}"
+        else
+            unset NEURODESK_API_KEY
+        fi
+        return 1
+    fi
+
+    return 0
+}
+
+build_working_model_choices() {
+    local model_name
+    local neurodesk_suffix=""
+
+    WORKING_MODELS=()
+    WORKING_MODEL_LABELS=()
+
+    for model_name in "${JETSTREAM_MODELS[@]}"; do
+        WORKING_MODELS+=("jetstream/${model_name}")
+        WORKING_MODEL_LABELS+=("Jetstream / ${model_name}")
+    done
+
+    if [ "${OLLAMA_RUNNING}" -eq 1 ]; then
+        for model_name in "${OLLAMA_MODELS[@]}"; do
+            WORKING_MODELS+=("ollama/${model_name}")
+            WORKING_MODEL_LABELS+=("Local Ollama / ${model_name}")
+        done
+    fi
+
+    if [ "${NEURODESK_RUNNING}" -eq 1 ] && [ "${#NEURODESK_MODELS[@]}" -gt 0 ]; then
+        if [ "${NEURODESK_REQUIRES_KEY}" -eq 1 ] && [ -z "${NEURODESK_API_KEY:-}" ]; then
+            neurodesk_suffix=" (requires API key setup)"
+        elif [ "${NEURODESK_REQUIRES_KEY}" -eq 1 ]; then
+            neurodesk_suffix=" (requires a valid API key)"
+        fi
+
+        for model_name in "${NEURODESK_MODELS[@]}"; do
+            WORKING_MODELS+=("neurodesk/${model_name}")
+            WORKING_MODEL_LABELS+=("llm.neurodesk.org / ${model_name}${neurodesk_suffix}")
+        done
+    fi
+}
+
+# Step 4 and Step 6: Update possible models in config and optionally set default model.
+update_opencode_config() {
+    local selected_model="${1:-}"
+    local jetstream_models_json
+    local ollama_models_json
+    local ollama_model_contexts_json
+    local neurodesk_models_json
+
+    ensure_opencode_config_file
+    if [ ! -f "${OPENCODE_CONFIG_FILE}" ]; then
+        return 0
+    fi
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "Warning: python3 not found; cannot update OpenCode config." >&2
+        return 1
+    fi
+
+    jetstream_models_json=$(json_array_from_args "${JETSTREAM_MODELS[@]}")
+    ollama_models_json=$(json_array_from_args "${OLLAMA_MODELS[@]}")
+    ollama_model_contexts_json="${OLLAMA_MODEL_CONTEXTS_JSON:-{}}"
+    neurodesk_models_json=$(json_array_from_args "${NEURODESK_MODELS[@]}")
+
+    JETSTREAM_MODELS_JSON="${jetstream_models_json}" \
+    OLLAMA_MODELS_JSON="${ollama_models_json}" \
+    OLLAMA_MODEL_CONTEXTS_JSON="${ollama_model_contexts_json}" \
+    OLLAMA_DEFAULT_CONTEXT_LIMIT="${OLLAMA_DEFAULT_CONTEXT_LIMIT}" \
+    OLLAMA_DEFAULT_OUTPUT_LIMIT="${OLLAMA_DEFAULT_OUTPUT_LIMIT}" \
+    NEURODESK_MODELS_JSON="${neurodesk_models_json}" \
+    OLLAMA_BASE_URL="${OLLAMA_HOST_CLEAN}/v1" \
+    JETSTREAM_BASE_URL="${JETSTREAM_BASE_URL}" \
+    NEURODESK_BASE_URL="${NEURODESK_BASE_URL}" \
+    python3 - "${OPENCODE_CONFIG_FILE}" "${OPENCODE_DEFAULT_CONFIG_FILE}" "${selected_model}" <<'PY'
+import copy
+import json
+import os
+import sys
+
+config_path, default_path, selected_model = sys.argv[1:4]
+
+with open(config_path, "r", encoding="utf-8") as f:
+    cfg = json.load(f)
+
+default_cfg = {}
+if os.path.exists(default_path):
+    with open(default_path, "r", encoding="utf-8") as f:
+        default_cfg = json.load(f)
+
+providers = cfg.get("provider")
+if not isinstance(providers, dict):
+    providers = {}
+
+default_providers = default_cfg.get("provider")
+if not isinstance(default_providers, dict):
+    default_providers = {}
+
+def load_json_env(name, default):
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return copy.deepcopy(default)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Recover from accidental concatenated payloads (e.g. "<json><json>" or trailing junk).
+        try:
+            parsed, _ = json.JSONDecoder().raw_decode(raw.lstrip())
+            return parsed
+        except json.JSONDecodeError:
+            return copy.deepcopy(default)
+
+jetstream_models = load_json_env("JETSTREAM_MODELS_JSON", [])
+ollama_models = load_json_env("OLLAMA_MODELS_JSON", [])
+ollama_model_contexts = load_json_env("OLLAMA_MODEL_CONTEXTS_JSON", {})
+neurodesk_models = load_json_env("NEURODESK_MODELS_JSON", [])
+ollama_base_url = os.environ.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+jetstream_base_url = os.environ.get("JETSTREAM_BASE_URL", "https://llm.jetstream-cloud.org/v1")
+neurodesk_base_url = os.environ.get("NEURODESK_BASE_URL", "https://llm.neurodesk.org/openai")
+ollama_default_context_limit = os.environ.get("OLLAMA_DEFAULT_CONTEXT_LIMIT", "16384")
+ollama_default_output_limit = os.environ.get("OLLAMA_DEFAULT_OUTPUT_LIMIT", "8192")
+
+if not isinstance(ollama_model_contexts, dict):
+    ollama_model_contexts = {}
+
+def positive_int(value):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+OLLAMA_DEFAULT_CONTEXT_LIMIT = positive_int(ollama_default_context_limit) or 16384
+OLLAMA_DEFAULT_OUTPUT_LIMIT = positive_int(ollama_default_output_limit) or 8192
+
+fallbacks = {
+    "neurodesk": {
+        "npm": "@ai-sdk/openai-compatible",
+        "name": "Neurodesk LLMs",
+        "options": {
+            "baseURL": neurodesk_base_url,
+            "apiKey": "{env:NEURODESK_API_KEY}",
+        },
+        "models": {},
+    },
+    "jetstream": {
+        "npm": "@ai-sdk/openai-compatible",
+        "name": "JetStream",
+        "options": {
+            "baseURL": jetstream_base_url,
+        },
+        "models": {},
+    },
+    "ollama": {
+        "npm": "@ai-sdk/openai-compatible",
+        "name": "Local Ollama",
+        "options": {
+            "baseURL": ollama_base_url,
+        },
+        "models": {},
+    },
+}
+
+def ensure_provider(provider_key: str):
+    existing = providers.get(provider_key)
+    if isinstance(existing, dict):
+        return existing
+
+    default_provider = default_providers.get(provider_key)
+    if isinstance(default_provider, dict):
+        providers[provider_key] = copy.deepcopy(default_provider)
+        return providers[provider_key]
+
+    providers[provider_key] = copy.deepcopy(fallbacks[provider_key])
+    return providers[provider_key]
+
+def apply_models(provider_key: str, model_ids):
+    provider_cfg = ensure_provider(provider_key)
+    options = provider_cfg.get("options")
+    if not isinstance(options, dict):
+        options = {}
+        provider_cfg["options"] = options
+
+    if provider_key == "ollama":
+        options["baseURL"] = ollama_base_url
+    elif provider_key == "jetstream":
+        options["baseURL"] = jetstream_base_url
+    elif provider_key == "neurodesk":
+        provider_cfg["name"] = "Neurodesk LLMs"
+        options["baseURL"] = neurodesk_base_url
+        options.setdefault("apiKey", "{env:NEURODESK_API_KEY}")
+
+    existing_models = provider_cfg.get("models")
+    if not isinstance(existing_models, dict):
+        existing_models = {}
+
+    default_models = (
+        default_providers.get(provider_key, {}).get("models", {})
+        if isinstance(default_providers.get(provider_key), dict)
+        else {}
+    )
+    if not isinstance(default_models, dict):
+        default_models = {}
+
+    updated_models = {}
+    for model_id in model_ids:
+        if not isinstance(model_id, str) or not model_id:
+            continue
+
+        model_cfg = existing_models.get(model_id)
+        if isinstance(model_cfg, dict):
+            model_cfg = copy.deepcopy(model_cfg)
+        else:
+            default_model_cfg = default_models.get(model_id)
+            if isinstance(default_model_cfg, dict):
+                model_cfg = copy.deepcopy(default_model_cfg)
+            else:
+                model_cfg = {"name": model_id}
+
+        model_cfg.setdefault("name", model_id)
+
+        if provider_key == "ollama":
+            limit_cfg = model_cfg.get("limit")
+            if not isinstance(limit_cfg, dict):
+                limit_cfg = {}
+
+            context_limit = positive_int(limit_cfg.get("context"))
+            if context_limit is None:
+                context_limit = positive_int(ollama_model_contexts.get(model_id))
+            if context_limit is None:
+                context_limit = OLLAMA_DEFAULT_CONTEXT_LIMIT
+
+            output_limit = positive_int(limit_cfg.get("output"))
+            if output_limit is None:
+                output_limit = OLLAMA_DEFAULT_OUTPUT_LIMIT
+            if output_limit > context_limit:
+                output_limit = context_limit
+
+            limit_cfg["context"] = context_limit
+            limit_cfg["output"] = output_limit
+            model_cfg["limit"] = limit_cfg
+
+        updated_models[model_id] = model_cfg
+
+    provider_cfg["models"] = updated_models
+
+apply_models("jetstream", jetstream_models)
+apply_models("ollama", ollama_models)
+apply_models("neurodesk", neurodesk_models)
+
+cfg["provider"] = providers
+
+def model_exists(model_ref):
+    if not isinstance(model_ref, str) or "/" not in model_ref:
+        return False
+
+    provider_key, model_id = model_ref.split("/", 1)
+    provider_cfg = providers.get(provider_key)
+    if not isinstance(provider_cfg, dict):
+        return False
+
+    models_cfg = provider_cfg.get("models")
+    if not isinstance(models_cfg, dict):
+        return False
+
+    return model_id in models_cfg
+
+if selected_model and model_exists(selected_model):
+    cfg["model"] = selected_model
+else:
+    current_model = cfg.get("model")
+    if not model_exists(current_model):
+        for provider_key in ("jetstream", "ollama", "neurodesk"):
+            models_cfg = providers.get(provider_key, {}).get("models", {})
+            if isinstance(models_cfg, dict) and models_cfg:
+                first_model_id = next(iter(models_cfg.keys()))
+                cfg["model"] = f"{provider_key}/{first_model_id}"
+                break
+
+tmp_path = f"{config_path}.tmp"
+with open(tmp_path, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, indent=2)
+    f.write("\n")
+os.replace(tmp_path, config_path)
+PY
+}
+
+resolve_requested_model_override() {
+    local requested="${OPENCODE_MODEL_PROFILE:-}"
+    local model_ref
+
+    if [ -z "${requested}" ]; then
+        return 1
+    fi
+
+    case "${requested}" in
+        neurodesk|jetstream|ollama)
+            for model_ref in "${WORKING_MODELS[@]}"; do
+                case "${model_ref}" in
+                    "${requested}/"*)
+                        SELECTED_MODEL="${model_ref}"
+                        echo "OPENCODE_MODEL_PROFILE=${requested} requested; using ${SELECTED_MODEL}."
+                        return 0
+                        ;;
+                esac
+            done
+            echo "OPENCODE_MODEL_PROFILE=${requested} requested, but no working model for ${requested} is available." >&2
+            return 1
+            ;;
+        */*)
+            if array_contains "${requested}" "${WORKING_MODELS[@]}"; then
+                SELECTED_MODEL="${requested}"
+                echo "OPENCODE_MODEL_PROFILE=${requested} requested; using it."
+                return 0
+            fi
+            echo "OPENCODE_MODEL_PROFILE=${requested} requested, but this model is not currently working." >&2
+            return 1
+            ;;
+        *)
+            echo "Invalid OPENCODE_MODEL_PROFILE='${requested}'. Use neurodesk, jetstream, ollama, or provider/model." >&2
+            return 1
+            ;;
+    esac
+}
+
+# Step 5: Ask the user which working model should become the default.
+choose_default_model() {
+    local idx
+    local choice
+
+    SELECTED_MODEL=""
+
+    if resolve_requested_model_override; then
+        return 0
+    fi
+
+    if [ "${#WORKING_MODELS[@]}" -eq 0 ]; then
+        return 1
+    fi
+
+    if [ "${#WORKING_MODELS[@]}" -eq 1 ] || [ ! -t 0 ]; then
+        SELECTED_MODEL="${WORKING_MODELS[0]}"
+        return 0
+    fi
+
+    print_grouped_model_choices
+
+    while true; do
+        read -r -p "Enter model number [1-${#WORKING_MODELS[@]}]: " choice
+        case "${choice}" in
+            ''|*[!0-9]*)
+                echo "Invalid choice. Enter a number."
+                ;;
+            *)
+                if [ "${choice}" -ge 1 ] && [ "${choice}" -le "${#WORKING_MODELS[@]}" ]; then
+                    SELECTED_MODEL="${WORKING_MODELS[$((choice - 1))]}"
+                    return 0
+                fi
+                echo "Invalid choice. Enter a number between 1 and ${#WORKING_MODELS[@]}."
+                ;;
+        esac
+    done
+}
+
+# Show Neurodesk LLMs and let first-time key setup choose a real model.
+choose_neurodesk_llm_model() {
+    local idx
+    local choice
+    local default_idx=1
+    local selected_neurodesk_model=""
+
+    if [ "${#NEURODESK_MODELS[@]}" -eq 0 ]; then
+        return 1
+    fi
+
+    if [ "${NEURODESK_MODELS_FROM_SERVER}" -ne 1 ]; then
+        return 1
+    fi
+
+    case "${SELECTED_MODEL}" in
+        neurodesk/*)
+            selected_neurodesk_model="${SELECTED_MODEL#neurodesk/}"
+            ;;
+    esac
+
+    echo "Available llm.neurodesk.org models:"
+    for idx in "${!NEURODESK_MODELS[@]}"; do
+        printf "%d) %s\n" "$((idx + 1))" "${NEURODESK_MODELS[$idx]}"
+        if [ "${NEURODESK_MODELS[$idx]}" = "${selected_neurodesk_model}" ]; then
+            default_idx=$((idx + 1))
+        fi
+    done
+
+    if [ "${#NEURODESK_MODELS[@]}" -eq 1 ]; then
+        SELECTED_MODEL="neurodesk/${NEURODESK_MODELS[0]}"
+        return 0
+    fi
+
+    if [ ! -t 0 ]; then
+        SELECTED_MODEL="neurodesk/${NEURODESK_MODELS[$((default_idx - 1))]}"
+        return 0
+    fi
+
+    while true; do
+        read -r -p "Enter model number [1-${#NEURODESK_MODELS[@]}]: " choice
+        case "${choice}" in
+            ''|*[!0-9]*)
+                echo "Invalid choice. Enter a number."
+                ;;
+            *)
+                if [ "${choice}" -ge 1 ] && [ "${choice}" -le "${#NEURODESK_MODELS[@]}" ]; then
+                    SELECTED_MODEL="neurodesk/${NEURODESK_MODELS[$((choice - 1))]}"
+                    return 0
+                fi
+                echo "Invalid choice. Enter a number between 1 and ${#NEURODESK_MODELS[@]}."
+                ;;
+        esac
+    done
+}
+
+# Step 7: If user chose llm.neurodesk.org, guide them through API key setup/export.
+ensure_neurodesk_api_key_for_selection() {
+    local entered_key=""
+
+    case "${SELECTED_MODEL}" in
+        neurodesk/*)
+            ;;
+        *)
+            return 0
+            ;;
+    esac
+
+    NEURODESK_API_KEY_WAS_PROMPTED=0
+    load_neurodesk_api_key_from_bashrc
+    if [ -n "${NEURODESK_API_KEY:-}" ] && [ "${NEURODESK_REQUIRES_KEY}" -eq 0 ]; then
+        return 0
+    fi
+
+    if [ ! -t 0 ]; then
+        if [ -n "${NEURODESK_API_KEY:-}" ] && [ "${NEURODESK_REQUIRES_KEY}" -eq 1 ]; then
+            echo "Selected ${SELECTED_MODEL}, but the current NEURODESK_API_KEY was rejected by llm.neurodesk.org." >&2
+            echo "Generate a new API key at https://llm.neurodesk.org and export it as NEURODESK_API_KEY." >&2
+            echo 'In the web app, click your user avatar -> Settings -> Account, then scroll to the "API Keys" section and use "Create new secret key" / "Show".' >&2
+            return 1
+        fi
+        echo "Selected ${SELECTED_MODEL}, but NEURODESK_API_KEY is not set and no interactive prompt is possible." >&2
+        return 1
+    fi
+
+    if [ -n "${NEURODESK_API_KEY:-}" ] && [ "${NEURODESK_REQUIRES_KEY}" -eq 1 ]; then
+        echo "The existing NEURODESK_API_KEY was rejected by llm.neurodesk.org."
+        echo "Please generate a new API key at https://llm.neurodesk.org and paste it below."
+    fi
+
+    echo "Configuring llm.neurodesk.org."
+    echo "1) Open https://llm.neurodesk.org and create an account (if needed)."
+    echo "2) Click your user avatar -> Settings -> Account."
+    echo '3) Scroll to the "API Keys" section, then click "Create new secret key" / "Show" to reveal or generate a key.'
+    echo "4) Paste the key below; input is hidden and this wrapper will save it to ~/.bashrc."
+
+    while true; do
+        read -r -s -p "Paste Neurodesk API key (input hidden, press Enter when done): " entered_key
+        echo
+        entered_key=$(sanitize_neurodesk_api_key "${entered_key}")
+        if [ -z "${entered_key}" ]; then
+            echo "API key cannot be empty. Please try again."
+            continue
+        fi
+
+        if ! validate_neurodesk_api_key_candidate "${entered_key}"; then
+            echo "That API key was rejected by llm.neurodesk.org. Please paste a correct key."
+            entered_key=""
+            continue
+        fi
+
+        if [ "${NEURODESK_RUNNING}" -eq 1 ]; then
+            echo "API key verified with llm.neurodesk.org."
+        else
+            echo "API key received, but llm.neurodesk.org could not be reached to verify it right now."
+        fi
+        break
+    done
+
+    export NEURODESK_API_KEY="${entered_key}"
+    if persist_neurodesk_api_key_to_bashrc "${entered_key}"; then
+        echo "Saved NEURODESK_API_KEY to ${HOME}/.bashrc and exported it for this session."
+    else
+        echo "Warning: failed to save key to ${HOME}/.bashrc, but it is exported for this session." >&2
+    fi
+
+    NEURODESK_API_KEY_WAS_PROMPTED=1
+    return 0
+}
+
+apply_brain_researcher_mcp_to_opencode_config() {
+    ensure_opencode_config_file
+    if [ ! -f "${OPENCODE_CONFIG_FILE}" ]; then
+        return 0
+    fi
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        return 0
+    fi
+
+    local want_enabled=0
+    if [ -n "${BR_MCP_TOKEN:-}" ]; then
+        want_enabled=1
+    fi
+
+    BR_MCP_WANT_ENABLED="${want_enabled}" \
+    BR_MCP_URL="${BRAIN_RESEARCHER_MCP_URL}" \
+    python3 - "${OPENCODE_CONFIG_FILE}" <<'PY'
+import json
+import os
+import sys
+
+config_path = sys.argv[1]
+want_enabled = os.environ.get("BR_MCP_WANT_ENABLED", "0") == "1"
+mcp_url = os.environ.get("BR_MCP_URL", "https://brain-researcher.com/mcp")
+
+try:
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+except (OSError, json.JSONDecodeError):
+    sys.exit(0)
+
+mcp = cfg.get("mcp")
+if not isinstance(mcp, dict):
+    mcp = {}
+
+if want_enabled:
+    mcp["brain-researcher"] = {
+        "type": "remote",
+        "url": mcp_url,
+        "enabled": True,
+        "oauth": False,
+        "headers": {
+            "Authorization": "Bearer {env:BR_MCP_TOKEN}"
+        }
+    }
+    cfg["mcp"] = mcp
+else:
+    existing = mcp.get("brain-researcher")
+    if isinstance(existing, dict):
+        existing["enabled"] = False
+        cfg["mcp"] = mcp
+
+tmp_path = f"{config_path}.tmp"
+with open(tmp_path, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, indent=2)
+    f.write("\n")
+os.replace(tmp_path, config_path)
+PY
+}
+
+# Ask the user whether to enable the Brain Researcher MCP server and collect a token.
+prompt_brain_researcher_mcp_setup() {
+    local entered_token=""
+    local answer=""
+
+    load_br_mcp_token_from_bashrc
+
+    if [ -n "${BR_MCP_TOKEN:-}" ]; then
+        return 0
+    fi
+
+    if br_mcp_setup_already_recorded; then
+        return 0
+    fi
+
+    if [ ! -t 0 ]; then
+        return 0
+    fi
+
+    echo ""
+    echo "Brain Researcher MCP server setup"
+    echo "The Brain Researcher MCP server provides neuroimaging research tools to the coding agents."
+    echo "You can connect to it with a personal token from ${BRAIN_RESEARCHER_SIGNUP_URL}."
+
+    while true; do
+        read -r -p "Enable the Brain Researcher MCP server for Claude Code, Codex, and OpenCode? [y/N]: " answer
+        case "${answer}" in
+            [Yy]|[Yy][Ee][Ss])
+                break
+                ;;
+            ''|[Nn]|[Nn][Oo])
+                echo "Skipping Brain Researcher MCP setup. Run 'opencode' again to revisit."
+                persist_br_mcp_decline_to_bashrc || true
+                return 0
+                ;;
+            *)
+                echo "Please answer 'y' or 'n'."
+                ;;
+        esac
+    done
+
+    echo "1) Open ${BRAIN_RESEARCHER_SIGNUP_URL} and sign in."
+    echo "2) Under 'Integration', generate a BR_MCP_TOKEN."
+    echo "3) Paste the token below; input is hidden and this wrapper will save it to ~/.bashrc."
+
+    while [ -z "${entered_token}" ]; do
+        read -r -s -p "Paste Brain Researcher MCP token (input hidden, press Enter when done): " entered_token
+        echo
+        entered_token=$(sanitize_br_mcp_token "${entered_token}")
+        if [ -z "${entered_token}" ]; then
+            echo "Token cannot be empty. Please try again."
+        else
+            echo "Brain Researcher MCP token received (input hidden)."
+        fi
+    done
+
+    export BR_MCP_TOKEN="${entered_token}"
+    if persist_br_mcp_token_to_bashrc "${entered_token}"; then
+        echo "Saved BR_MCP_TOKEN to ${HOME}/.bashrc and exported it for this session."
+    else
+        echo "Warning: failed to save token to ${HOME}/.bashrc, but it is exported for this session." >&2
+    fi
+    return 0
+}
+
+ensure_opencode_model_selection() {
+    local selected_neurodesk_model=""
+
+    ensure_opencode_config_file
+    if [ ! -f "${OPENCODE_CONFIG_FILE}" ]; then
+        echo "Warning: OpenCode config not found at ${OPENCODE_CONFIG_FILE}; skipping model setup." >&2
+        return 0
+    fi
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "Warning: python3 not found; skipping OpenCode model setup." >&2
+        return 0
+    fi
+
+    load_neurodesk_api_key_from_bashrc
+
+    echo "OpenCode model setup"
+    if opencode_startup_verbose_enabled; then
+        echo "Checking Jetstream model API (${JETSTREAM_MODEL_ID})..."
+    else
+        echo "Checking model providers..."
+    fi
+    check_jetstream_model_api
+
+    if opencode_startup_verbose_enabled; then
+        echo "Checking local Ollama at ${OLLAMA_HOST_CLEAN}..."
+    fi
+    check_local_ollama_models
+
+    if opencode_startup_verbose_enabled; then
+        echo "Checking llm.neurodesk.org API at ${NEURODESK_BASE_URL}/models..."
+    fi
+    check_neurodesk_server
+
+    print_provider_status_table
+    if opencode_startup_verbose_enabled; then
+        print_provider_probe_details
+    fi
+
+    if [ "${NEURODESK_REQUIRES_KEY}" -eq 1 ] && [ -n "${NEURODESK_API_KEY:-}" ]; then
+        SELECTED_MODEL="neurodesk/${NEURODESK_DEFAULT_MODEL_ID}"
+        if ensure_neurodesk_api_key_for_selection; then
+            echo "Rechecking llm.neurodesk.org with the new API key..."
+            check_neurodesk_server
+            print_neurodesk_status_row
+            if opencode_startup_verbose_enabled; then
+                printf "  %-18s %s\n" "llm.neurodesk.org detail" "${NEURODESK_STATUS}"
+            fi
+        else
+            echo "Neurodesk API key refresh was not completed. Continuing with other available models." >&2
+        fi
+        SELECTED_MODEL=""
+        NEURODESK_API_KEY_WAS_PROMPTED=0
+    fi
+
+    build_working_model_choices
+
+    # Step 4: Always refresh OpenCode providers/models using detected possibilities.
+    update_opencode_config ""
+
+    if [ "${#WORKING_MODELS[@]}" -eq 0 ]; then
+        echo "No working models detected. Keeping the current OpenCode default model." >&2
+        return 0
+    fi
+
+    if ! choose_default_model; then
+        echo "Could not determine a model selection. Keeping the current OpenCode default model." >&2
+        return 0
+    fi
+
+    if ! ensure_neurodesk_api_key_for_selection; then
+        echo "Neurodesk key setup was not completed. Keeping the current OpenCode default model." >&2
+        return 0
+    fi
+
+    if [[ "${SELECTED_MODEL}" == neurodesk/* ]]; then
+        selected_neurodesk_model="${SELECTED_MODEL#neurodesk/}"
+        check_neurodesk_server
+        if [ "${NEURODESK_API_KEY_WAS_PROMPTED}" -eq 1 ]; then
+            if ! choose_neurodesk_llm_model; then
+                echo "No Neurodesk LLMs were returned for this key. Keeping ${SELECTED_MODEL}." >&2
+            fi
+            selected_neurodesk_model="${SELECTED_MODEL#neurodesk/}"
+        fi
+        if ! array_contains "${selected_neurodesk_model}" "${NEURODESK_MODELS[@]}"; then
+            NEURODESK_MODELS=("${selected_neurodesk_model}" "${NEURODESK_MODELS[@]}")
+        fi
+    fi
+
+    # Step 6: Set selected model as default.
+    update_opencode_config "${SELECTED_MODEL}"
+    echo "OpenCode default model set to ${SELECTED_MODEL}."
+}
+
+ensure_opencode_model_selection
+prompt_brain_researcher_mcp_setup
+apply_brain_researcher_mcp_to_opencode_config
+
+if [ -n "${BR_MCP_TOKEN:-}" ]; then
+    echo "Brain Researcher MCP server: ACTIVE (using BR_MCP_TOKEN from env/~/.bashrc)"
+else
+    echo "Brain Researcher MCP server: inactive (decline recorded or token not set)"
+fi
+
+# Start OpenCode using the actual binary path (not this wrapper).
+export TERM=xterm-direct
+exec /usr/bin/opencode "$@"

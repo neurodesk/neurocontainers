@@ -82,6 +82,13 @@ def _parse_bool_argument(value: str | bool) -> bool:
     raise argparse.ArgumentTypeError("expected true/false, yes/no, on/off, or 1/0")
 
 
+def _dockerfile_requires_buildkit(dockerfile_path: str | Path) -> bool:
+    try:
+        return "--mount=type=" in Path(dockerfile_path).read_text()
+    except OSError:
+        return False
+
+
 def add_offline_mode_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--offline-mode",
@@ -999,8 +1006,13 @@ class BuildContext(object):
                         not self.skip_file_population
                         and not os_module.path.exists(build_file_path)
                     ):
+                        os_module.makedirs(
+                            os_module.path.dirname(build_file_path), exist_ok=True
+                        )
                         if file_info is not None and "cached_path" in file_info:
                             link_or_copy_file(file_info["cached_path"], build_file_path)
+                        elif os_module.path.isdir(recipe_file_path):
+                            shutil.copytree(recipe_file_path, build_file_path)
                         elif os_module.path.exists(recipe_file_path):
                             shutil.copy2(recipe_file_path, build_file_path)
 
@@ -2395,6 +2407,11 @@ def build_and_run_container(
     # Shell out to Docker/Podman.
     # docker-py does not support using BuildKit.
     build_cmd = docker_args + ["."]
+    build_env = os.environ.copy()
+    dockerfile_path = os.path.join(build_directory, dockerfile_name)
+    dockerfile_requires_buildkit = _dockerfile_requires_buildkit(dockerfile_path)
+    if not use_podman and build_env.get("DOCKER_BUILDKIT", "").strip() == "":
+        build_env["DOCKER_BUILDKIT"] = "1"
     docker_build_retries_raw = os.environ.get("DOCKER_BUILD_RETRIES", "2")
     docker_build_retry_delay_raw = os.environ.get("DOCKER_BUILD_RETRY_DELAY", "15")
 
@@ -2414,6 +2431,7 @@ def build_and_run_container(
             subprocess.check_call(
                 build_cmd,
                 cwd=build_directory,
+                env=build_env,
             )
             build_error = None
             break
@@ -2443,6 +2461,7 @@ def build_and_run_container(
         docker_buildkit_enabled = os.environ.get("DOCKER_BUILDKIT", "").strip() != "0"
         should_retry_with_legacy = (
             not use_podman and allow_legacy_fallback and docker_buildkit_enabled
+            and not dockerfile_requires_buildkit
         )
 
         if not should_retry_with_legacy:

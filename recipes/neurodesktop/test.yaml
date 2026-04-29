@@ -1,0 +1,11 @@
+tests:
+  - name: Neurodesktop launchers are installed
+    script: |
+      command -v start-neurodesktop-jupyterlab
+      command -v start-neurodesktop-guacamole
+
+  - name: Core runtime commands are available
+    script: |
+      command -v jupyter
+      command -v guacd
+      command -v Xvnc

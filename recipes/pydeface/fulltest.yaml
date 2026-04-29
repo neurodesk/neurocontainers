@@ -421,22 +421,22 @@ tests:
   # ==========================================================================
   - name: Check default template exists
     description: Verify default registration template is present
-    command: "bash -lc 'ls -la /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/mean_reg2mean.nii.gz'"
+    command: "python -c \"import pathlib, pydeface; path = pathlib.Path(pydeface.__file__).parent / 'data' / 'mean_reg2mean.nii.gz'; print(path); raise SystemExit(0 if path.is_file() else 1)\""
     expected_output_contains: "mean_reg2mean.nii.gz"
 
   - name: Check default facemask exists
     description: Verify default face mask is present
-    command: "bash -lc 'ls -la /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/facemask.nii.gz'"
+    command: "python -c \"import pathlib, pydeface; path = pathlib.Path(pydeface.__file__).parent / 'data' / 'facemask.nii.gz'; print(path); raise SystemExit(0 if path.is_file() else 1)\""
     expected_output_contains: "facemask.nii.gz"
 
   - name: Inspect default template
     description: Get info about default template image
-    command: "bash -lc 'nib-ls /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/mean_reg2mean.nii.gz'"
+    command: "python -c \"import pathlib, pydeface, subprocess, sys; path = pathlib.Path(pydeface.__file__).parent / 'data' / 'mean_reg2mean.nii.gz'; sys.exit(subprocess.call(['nib-ls', str(path)]))\""
     expected_output_contains: ""
 
   - name: Inspect default facemask
     description: Get info about default face mask image
-    command: "bash -lc 'nib-ls /opt/miniconda-4.6.14/lib/python3.7/site-packages/pydeface/data/facemask.nii.gz'"
+    command: "python -c \"import pathlib, pydeface, subprocess, sys; path = pathlib.Path(pydeface.__file__).parent / 'data' / 'facemask.nii.gz'; sys.exit(subprocess.call(['nib-ls', str(path)]))\""
     expected_output_contains: ""
 
   # ==========================================================================

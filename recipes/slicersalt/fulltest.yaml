@@ -26,12 +26,7 @@ test_data:
   output_dir: test_output
 
 setup:
-  script: |
-    #!/usr/bin/env bash
-    set -e
-    mkdir -p test_output
-    # Copy sample mesh to working directory for testing
-    cp /opt/SlicerSALT-3.0.0-linux-amd64/share/SlicerSALT-4.11/OrientationMarkers/Human.vtp test_output/sample_mesh.vtp
+  script: bash -lc 'mkdir -p test_output && cp /opt/SlicerSALT-3.0.0-linux-amd64/share/SlicerSALT-4.11/OrientationMarkers/Human.vtp test_output/sample_mesh.vtp'
 
 tests:
   # ==========================================================================
