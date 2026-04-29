@@ -75,6 +75,10 @@ build:
             && curl -L -o bcb.tar.gz "https://www.dropbox.com/s/ug93rp9oouryqj3/BCBToolKitLINUX.tar.gz?dl=1" \
             && tar -xzf bcb.tar.gz --strip-components=1 \
             && rm bcb.tar.gz \
+            && curl -L -o /opt/BCBToolKit/run_disco.sh \
+                 https://raw.githubusercontent.com/chrisfoulon/BCBToolKit/master/run_disco.sh \
+            && curl -L -o /opt/BCBToolKit/tractotron_cli.sh \
+                 https://raw.githubusercontent.com/chrisfoulon/BCBToolKit/master/tractotron_cli.sh \
             && chmod +x /opt/BCBToolKit/BCBToolKit.sh \
                         /opt/BCBToolKit/run_disco.sh \
                         /opt/BCBToolKit/tractotron_cli.sh
