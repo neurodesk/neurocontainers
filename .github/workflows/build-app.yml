@@ -89,7 +89,7 @@ jobs:
             | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
           curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_amd64.deb" \
             -o /tmp/apptainer.deb
-          sudo dpkg -i /tmp/apptainer.deb
+          sudo apt-get install -y /tmp/apptainer.deb
           rm /tmp/apptainer.deb
           sudo python3 -m pip install --break-system-packages \
             python-swiftclient python-keystoneclient
@@ -237,7 +237,7 @@ jobs:
             | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
           curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_amd64.deb" \
             -o /tmp/apptainer.deb
-          sudo dpkg -i /tmp/apptainer.deb
+          sudo apt-get install -y /tmp/apptainer.deb
           rm /tmp/apptainer.deb
           sudo python3 -m pip install --break-system-packages \
             python-swiftclient python-keystoneclient
@@ -632,7 +632,7 @@ jobs:
             | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
           curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_amd64.deb" \
             -o /tmp/apptainer.deb
-          sudo dpkg -i /tmp/apptainer.deb
+          sudo apt-get install -y /tmp/apptainer.deb
           rm /tmp/apptainer.deb
           sudo python3 -m pip install --break-system-packages \
             python-swiftclient python-keystoneclient
