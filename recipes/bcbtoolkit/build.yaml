@@ -113,7 +113,21 @@ build:
                  https://raw.githubusercontent.com/chrisfoulon/BCBToolKit/master/tractotron_cli.sh \
             && chmod +x /opt/BCBToolKit/BCBToolKit.sh \
                         /opt/BCBToolKit/run_disco.sh \
-                        /opt/BCBToolKit/tractotron_cli.sh
+                        /opt/BCBToolKit/tractotron_cli.sh \
+            && printf '%s\n' \
+                 '1.000000 0.000000 0.000000 0.000000' \
+                 '0.000000 1.000000 0.000000 0.000000' \
+                 '0.000000 0.000000 1.000000 0.000000' \
+                 '0.000000 0.000000 0.000000 1.000000' \
+                 > /opt/BCBToolKit/Tools/extraFiles/nulldeform.mat
+          # ^ The BCBToolKitLINUX.tar.gz from Dropbox is missing
+          #   Tools/extraFiles/nulldeform.mat — an identity 4x4 affine that
+          #   run_disco.sh feeds to flirt -applyxfm -init when it has to
+          #   reslice between the SPM 181x217x181 MNI grid and the FSL
+          #   182x218x182 MNI grid (and back). Without it the reslice fails
+          #   with "Could not open matrix file ... nulldeform.mat", every
+          #   track_vis call then fails on the missing resliced ROI, and the
+          #   output is empty while the script still reports success.
 
     - deploy:
         bins:
@@ -135,6 +149,11 @@ build:
           test -x /opt/BCBToolKit/tractotron_cli.sh
           test -f /opt/BCBToolKit/sources.jar
           test -x /opt/BCBToolKit/jre/bin/java
+
+          # Identity transform required for SPM<->FSL MNI reslicing.
+          # Missing from the upstream tarball — recipe creates it.
+          test -f /opt/BCBToolKit/Tools/extraFiles/nulldeform.mat \
+              || { echo "nulldeform.mat missing — SPM<->FSL reslice will fail"; exit 1; }
 
           # The bundled-FSL env trio MUST be set by the image. If any is
           # missing, the disco/tractotron pipelines silently produce no output.
@@ -158,6 +177,22 @@ build:
               exit 1
           fi
 
+          # Real reslice smoke test using the identity matrix — proves the
+          # whole 181<->182 MNI auto-reslice path works end-to-end. This is
+          # the exact failure mode that produced empty output + false
+          # "Completed successfully" banner before the recipe was hardened.
+          tmpd="$(mktemp -d)"
+          "$FSLDIR/bin/flirt" \
+              -in  /opt/BCBToolKit/Tools/extraFiles/MNI152.nii.gz \
+              -ref /opt/BCBToolKit/Tools/extraFiles/MNI152.nii.gz \
+              -out "$tmpd/identity_reslice" \
+              -applyxfm -init /opt/BCBToolKit/Tools/extraFiles/nulldeform.mat \
+              -interp nearestneighbour \
+              || { echo "flirt identity reslice failed"; exit 1; }
+          test -s "$tmpd/identity_reslice.nii.gz" \
+              || { echo "flirt produced no output"; exit 1; }
+          rm -rf "$tmpd"
+
           # run_disco.sh must run far enough to print its usage block.
           # No "|| true" — if this regresses, we want the build to fail.
           run_disco.sh 2>&1 | grep -q -iE 'synopsis|usage' \
@@ -173,4 +208,4 @@ build:
         builtin: test_deploy.sh
 categories:
   - structural imaging
-icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAE6klEQVR4AWRVa0yWZRi+nvf7Pg5DCUtabSHiIKYpjhEyqh+5clQMW9mfDhN1LeastZVtZqwtc9hha6SbrjZoQAqVhYIUWwgJHaQglKjRGkTU4lBmmqAcvu/pvu6X5xMm43rv673u43O/j+KFmn6wMSd6bajxrA01nLGh4z0+jn1vQ/XdNvhJlw19/J0NHv3Wx0edNvjhaRv84BtFoPYrGxQEjnxpA4c7bOD9dhuoOWUD1V8oPGMt+GPkQYgBqBHy4jRajZ3TxaVx1BlPn3J1XH14VhLmg8HzYSMRebVRCNHCzs7PJYfEOx+5x67sTpGcNtpfmlMjqDmrMeJTTazTtQ7FefDchEyKcpnCcU5FzmmiXIo67mzULz7lrCHc02ZC2IA8Oo28KKdPuP4KdxqnNVNXgAvngSuX/bVJEHUxYBy5p4UlEZMTCB85iJmHb8fMplzMPLJOEd75BCLHa2B/7tVCVopFer5GeP/LWLa3BAVN72BpaTEiVeXAyDB4Wj2V1KT1G7AlIRequroadDhEfvsF5w+W4b7OBkTaP4P9tA73/3QKl1pPYGBgAE1NTRgdHUXPW68grvYg8OcQjKxHiugpPBZyO5NzwhiD6elppKamIi0tDRs2bEBsbCy0cWsD0s+2o7GxEYODg0hJSUF8fDxKSkqQlZWF5gNvwrY2wl66KKXk5kkjvUUcnjuDnICcTYeHhzE0NISWlhb09/cjJiYG9tw4Dh06hHA4jLy8PPxhg5jKuwfvHq1HWVkZJicnYX/tBy78ow1Yy5u/M1GpIRQKoaKiApWVlWhvb8fatWv1BJApMjIytPHlFasQeHYvzONPwzzwKEpLS1FQUABwevme3ArXpCeQPC3sHp7nYePGjSgqKkJOTo7K2dnZwOwMEhISMDExAdxwIxCfABMIwixZqjH6+GsEduI/mdUqPK6Dp/A7agimpqaQnJysYMHt27cjPz8fq5anYmxsDJmZmZAg2PAsrDS1/55DYWEh6urqgMVJQDAkw8s3kJu08Ba5j+D3iT6bm5uVr1+/Hn19fYiLi8PKiyNAZxvsj92wp0+ivLxcV4nrlsAkLIIxBkay/AbSSVrKkUSRX65I+yR27dqFrq4ucVtUVVVhx44dmJ2dRVtbG+74vRdLa/fjvd3PIz09HXv27AGWpcMmXq/x3Iwn9aSwvy9yrowfmVMT+/bt0xtUXFyMiZuX4+/kFGzduhVJSUno6OjA+Pg4tmzZos1r64/BZN8Js2gxS/knYBdpJ8vxd7Z582YYYxYgMTERNZ+3AQ+Kb9M2HD7Tr/c/NzdX/51wZWxiNj0JZKyRWgb8phxWbxEb8DZ4OXfBe+ENeDuJ18UKnnsN3u63EXixHN5KuUnLM2Ge2g37zKvovjUPJ+NvwvRD2+C9dAAm/14gJlan14e18G+RECvXDWmSvGYdTJaAdnUusEaQsRp2cZJMJmkSq9fzthyYu4uAwscAsfaWFbBeABx2PvQvmhxIMgHDZCz8oU918ZFrsguZ01QXzVmNEZ9IcyeQ/zPczrg35aKR8xvRMinK6SOkCH3UNYfvomvsHPdvEVvNQacVzmkcZ4JiThcD9ZNIIRqFcOqMZS65x84UFNJdJ5JAZ1WXd2edrlbine6s6hLv7LUnkFHYnQmcgFYk/1cS6VNdFGc1RnwiXT2ZvDD2fwAAAP//8l8sFQAAAAZJREFUAwDi9kPped+rpQAAAABJRU5ErkJggg==
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAE6klEQVR4AWRVa0yWZRi+nvf7Pg5DCUtabSHiIKYpjhEyqh+5clQMW9mfDhN1LeastZVtZqwtc9hha6SbrjZoQAqVhYIUWwgJHaQglKjRGkTU4lBmmqAcvu/pvu6X5xMm43rv673u43O/j+KFmn6wMSd6bajxrA01nLGh4z0+jn1vQ/XdNvhJlw19/J0NHv3Wx0edNvjhaRv84BtFoPYrGxQEjnxpA4c7bOD9dhuoOWUD1V8oPGMt+GPkQYgBqBHy4jRajZ3TxaVx1BlPn3J1XH14VhLmg8HzYSMRebVRCNHCzs7PJYfEOx+5x67sTpGcNtpfmlMjqDmrMeJTTazTtQ7FefDchEyKcpnCcU5FzmmiXIo67mzULz7lrCHc02ZC2IA8Oo28KKdPuP4KdxqnNVNXgAvngSuX/bVJEHUxYBy5p4UlEZMTCB85iJmHb8fMplzMPLJOEd75BCLHa2B/7tVCVopFer5GeP/LWLa3BAVN72BpaTEiVeXAyDB4Wj2V1KT1G7AlIRequroadDhEfvsF5w+W4b7OBkTaP4P9tA73/3QKl1pPYGBgAE1NTRgdHUXPW68grvYg8OcQjKxHiugpPBZyO5NzwhiD6elppKamIi0tDRs2bEBsbCy0cWsD0s+2o7GxEYODg0hJSUF8fDxKSkqQlZWF5gNvwrY2wl66KKXk5kkjvUUcnjuDnICcTYeHhzE0NISWlhb09/cjJiYG9tw4Dh06hHA4jLy8PPxhg5jKuwfvHq1HWVkZJicnYX/tBy78ow1Yy5u/M1GpIRQKoaKiApWVlWhvb8fatWv1BJApMjIytPHlFasQeHYvzONPwzzwKEpLS1FQUABwevme3ArXpCeQPC3sHp7nYePGjSgqKkJOTo7K2dnZwOwMEhISMDExAdxwIxCfABMIwixZqjH6+GsEduI/mdUqPK6Dp/A7agimpqaQnJysYMHt27cjPz8fq5anYmxsDJmZmZAg2PAsrDS1/55DYWEh6urqgMVJQDAkw8s3kJu08Ba5j+D3iT6bm5uVr1+/Hn19fYiLi8PKiyNAZxvsj92wp0+ivLxcV4nrlsAkLIIxBkay/AbSSVrKkUSRX65I+yR27dqFrq4ucVtUVVVhx44dmJ2dXVtbG+74vRdLa/fjvd3PIz09HXv27AGWpcMmXq/x3Iwn9aSwvy9yrowfmVMT+/bt0xtUXFyMiZuX4+/kFGzduhVJSUno6OjA+Pg4tmzZos1r64/BZN8Js2gxS/knYBdpJ8vxd7Z582YYYxYgMTERNZ+3AQ+Kb9M2HD7Tr/c/NzdX/51wZWxiNj0JZKyRWgb8phxWbxEb8DZ4OXfBe+ENeDuJ18UKnnsN3u63EXixHN5KuUnLM2Ge2g37zKvovjUPJ+NvwvRD2+C9dAAm/14gJlan14e18G+RECvXDWmSvGYdTJaAdnUusEaQsRp2cZJMJmkSq9fzthyYu4uAwscAsfaWFbBeABx2PvQvmhxIMgHDZCz8oU918ZFrsguZ01QXzVmNEZ9IcyeQ/zPczrg35aKR8xvRMinK6SOkCH3UNYfvomvsHPdvEVvNQacVzmkcZ4JiThcD9ZNIIRqFcOqMZS65x84UFNJdJ5JAZ1WXd2edrlbine6s6hLv7LUnkFHYnQmcgFYk/1cS6VNdFGc1RnwiXT2ZvDD2fwAAAP//8l8sFQAAAAZJREFUAwDi9kPped+rpQAAAABJRU5ErkJggg==
