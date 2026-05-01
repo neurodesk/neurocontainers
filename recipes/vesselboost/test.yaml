@@ -241,6 +241,18 @@ tests:
             last_image = dataset.read_image(image_group, image_count - 1)
             header = image.getHead()
             last_header = last_image.getHead()
+            headers = [
+                dataset.read_image(image_group, index).getHead()
+                for index in range(image_count)
+            ]
+            image_indices = [
+                int(getattr(image_header, "image_index", 0))
+                for image_header in headers
+            ]
+            slice_indices = [
+                int(getattr(image_header, "slice", 0))
+                for image_header in headers
+            ]
             meta = ismrmrd.Meta.deserialize(image.attribute_string)
             ice_minihead = get_text(meta, "IceMiniHead")
             if ice_minihead:
@@ -252,7 +264,10 @@ tests:
                     "series_index": int(getattr(header, "image_series_index", 0)),
                     "image_index": int(getattr(header, "image_index", 0)),
                     "last_image_index": int(getattr(last_header, "image_index", 0)),
+                    "first_slice": int(getattr(header, "slice", 0)),
                     "last_slice": int(getattr(last_header, "slice", 0)),
+                    "image_indices": image_indices,
+                    "slice_indices": slice_indices,
                     "series_description": get_text(meta, "SeriesDescription"),
                     "sequence_description": get_text(meta, "SequenceDescription"),
                     "sequence_description_additional": get_text(meta, "SequenceDescriptionAdditional"),
@@ -327,6 +342,13 @@ tests:
             assert derived["image_index"] == 0, derived
             assert derived["last_image_index"] == derived["image_count"] - 1, derived
             assert derived["last_slice"] == derived["image_count"] - 1, derived
+            source_slice_count = derived["image_count"]
+            for reformat in (sagittal, coronal):
+                assert reformat["image_indices"] == list(range(reformat["image_count"])), reformat
+                assert min(reformat["slice_indices"]) >= 0, reformat
+                assert max(reformat["slice_indices"]) < source_slice_count, reformat
+                assert reformat["first_slice"] == 0, reformat
+                assert reformat["last_slice"] == (reformat["image_count"] - 1) % source_slice_count, reformat
             assert sagittal["sequence_description_additional"] == "", sagittal
             assert coronal["sequence_description_additional"] == "", coronal
             assert sagittal["keep_image_geometry"] == "0", sagittal

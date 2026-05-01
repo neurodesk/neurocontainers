@@ -15,6 +15,7 @@ import json
 import datetime
 import re
 import tempfile
+import filecmp
 from pathlib import Path
 
 # add the parent directory to the path to import builder modules
@@ -60,6 +61,7 @@ CONTAINER_TESTER_IMAGE = "neurocontainers/container-tester:latest"
 CONTAINER_TESTER_BINARY_NAME = "tester"
 CONTAINER_TESTER_MOUNT_PATH = "/tmp/neurocontainers-container-tester"
 NEURODOCKER_PIP_PACKAGE = "neurodocker"
+NEUROCONTAINER_CACHE_CONTEXT_NAME = "neurocontainer-cache"
 
 
 def _env_truthy(name: str, default: bool = False) -> bool:
@@ -85,6 +87,16 @@ def _parse_bool_argument(value: str | bool) -> bool:
 def _dockerfile_requires_buildkit(dockerfile_path: str | Path) -> bool:
     try:
         return "--mount=type=" in Path(dockerfile_path).read_text()
+    except OSError:
+        return False
+
+
+def _dockerfile_uses_file_cache_context(dockerfile_path: str | Path) -> bool:
+    try:
+        return (
+            f"from={NEUROCONTAINER_CACHE_CONTEXT_NAME}"
+            in Path(dockerfile_path).read_text()
+        )
     except OSError:
         return False
 
@@ -160,6 +172,25 @@ def get_cache_dir() -> str:
         os.makedirs(cache_dir)
 
     return cache_dir
+
+
+def get_build_context_cache_dir() -> str:
+    cache_dir = os.path.join(get_cache_dir(), "build-context")
+    os.makedirs(cache_dir, exist_ok=True)
+    return cache_dir
+
+
+def same_file_or_content(source: str, destination: str) -> bool:
+    try:
+        if os.path.samefile(source, destination):
+            return True
+    except OSError:
+        pass
+
+    try:
+        return filecmp.cmp(source, destination, shallow=False)
+    except OSError:
+        return False
 
 
 def get_recipe_commit_date(recipe_path: str) -> str:
@@ -465,12 +496,10 @@ class LocalBuildContext(object):
         if self.mounted_cache:
             return target
 
-        cache_dir = self.context.get_context_cache_dir(self.cache_id)
-
-        cache_relpath = os.path.relpath(cache_dir, self.context.build_directory)
-
         self.run_args.append(
-            f"--mount=type=bind,source={cache_relpath},target={target},readonly"
+            "--mount=type=bind,"
+            f"from={NEUROCONTAINER_CACHE_CONTEXT_NAME},"
+            f"source=/{self.cache_id},target={target},readonly"
         )
         self.mounted_cache = True
 
@@ -493,11 +522,8 @@ class LocalBuildContext(object):
 
         cached_file = os.path.join(context_cache_dir, resolved_guest_filename)
         if os.path.exists(cached_file):
-            try:
-                if os.path.samefile(cache_filename, cached_file):
-                    return resolved_guest_filename
-            except OSError:
-                pass
+            if same_file_or_content(cache_filename, cached_file):
+                return resolved_guest_filename
 
             stem, ext = os.path.splitext(guest_filename)
             suffix = hashlib.sha256(cache_filename.encode("utf-8")).hexdigest()[:12]
@@ -505,11 +531,8 @@ class LocalBuildContext(object):
             cached_file = os.path.join(context_cache_dir, resolved_guest_filename)
 
             if os.path.exists(cached_file):
-                try:
-                    if os.path.samefile(cache_filename, cached_file):
-                        return resolved_guest_filename
-                except OSError:
-                    pass
+                if same_file_or_content(cache_filename, cached_file):
+                    return resolved_guest_filename
 
         try:
             import sys
@@ -616,6 +639,10 @@ class BuildContext(object):
         }
 
     def add_local_context(self, key, local_path):
+        if key == NEUROCONTAINER_CACHE_CONTEXT_NAME:
+            raise ValueError(
+                f"Local context name {key!r} is reserved for declared recipe files."
+            )
         self.local_context[key] = local_path
 
     def has_local(self, key):
@@ -646,10 +673,7 @@ class BuildContext(object):
         self.max_parallel_jobs = max_parallel_jobs
 
     def get_context_cache_dir(self, cache_id):
-        if self.build_directory is None:
-            raise ValueError("Build directory not set.")
-
-        cache_dir = os.path.join(self.build_directory, "cache", cache_id)
+        cache_dir = os.path.join(get_build_context_cache_dir(), cache_id)
         if not os.path.exists(cache_dir) and not self.skip_file_population:
             os.makedirs(cache_dir)
 
@@ -2303,9 +2327,22 @@ def build_and_run_container(
                 f"type=docker,name={tag}",
             ]
 
+            dockerfile_path = os.path.join(build_directory, dockerfile_name)
+            if _dockerfile_uses_file_cache_context(dockerfile_path):
+                buildctl_cmd.extend(
+                    [
+                        "--local",
+                        f"{NEUROCONTAINER_CACHE_CONTEXT_NAME}={get_build_context_cache_dir()}",
+                    ]
+                )
+
             # Support additional named local build contexts (for RUN --mount=from=<key>)
             if local_context is not None:
                 key, value = local_context.split("=", 1)
+                if key == NEUROCONTAINER_CACHE_CONTEXT_NAME:
+                    raise ValueError(
+                        f"Local context name {key!r} is reserved for declared recipe files."
+                    )
                 value = os.path.abspath(value)
                 buildctl_cmd.extend(["--local", f"{key}={value}"])
 
@@ -2399,8 +2436,19 @@ def build_and_run_container(
         tag,
     ]
 
+    dockerfile_path = os.path.join(build_directory, dockerfile_name)
+    if _dockerfile_uses_file_cache_context(dockerfile_path):
+        docker_args += [
+            "--build-context",
+            f"{NEUROCONTAINER_CACHE_CONTEXT_NAME}={get_build_context_cache_dir()}",
+        ]
+
     if local_context is not None:
         key, value = local_context.split("=", 1)
+        if key == NEUROCONTAINER_CACHE_CONTEXT_NAME:
+            raise ValueError(
+                f"Local context name {key!r} is reserved for declared recipe files."
+            )
         value = os.path.abspath(value)
         docker_args += ["--build-context", key + "=" + value]
 
@@ -2408,7 +2456,6 @@ def build_and_run_container(
     # docker-py does not support using BuildKit.
     build_cmd = docker_args + ["."]
     build_env = os.environ.copy()
-    dockerfile_path = os.path.join(build_directory, dockerfile_name)
     dockerfile_requires_buildkit = _dockerfile_requires_buildkit(dockerfile_path)
     if not use_podman and build_env.get("DOCKER_BUILDKIT", "").strip() == "":
         build_env["DOCKER_BUILDKIT"] = "1"

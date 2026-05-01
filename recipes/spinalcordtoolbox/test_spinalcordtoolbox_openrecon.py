@@ -122,6 +122,30 @@ def _function_names():
     }
 
 
+def _load_helper_for_test(helper_name):
+    tree = ast.parse(WRAPPER_PATH.read_text())
+    helper_nodes = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            names = {
+                target.id
+                for target in node.targets
+                if isinstance(target, ast.Name)
+            }
+            if names & {
+                "SOURCE_PARENT_REFERENCE_META_KEYS",
+                "SOURCE_PARENT_REFERENCE_META_PREFIXES",
+            }:
+                helper_nodes.append(node)
+        elif isinstance(node, ast.FunctionDef) and node.name == helper_name:
+            helper_nodes.append(node)
+
+    namespace = {"logging": type("Logger", (), {"warning": staticmethod(lambda *args, **kwargs: None)})}
+    ast.fix_missing_locations(ast.Module(body=helper_nodes, type_ignores=[]))
+    exec(compile(ast.Module(body=helper_nodes, type_ignores=[]), str(WRAPPER_PATH), "exec"), namespace)
+    return namespace[helper_name]
+
+
 def test_openrecon_exposes_all_supported_deepseg_tasks():
     deepseg_tasks = set(_module_assignment("SCT_DEEPSEG_TASKS"))
     assert deepseg_tasks == EXPECTED_DEEPSEG_TASKS
@@ -174,6 +198,73 @@ def test_wrapper_preserves_nifti2mrd_axis_order_for_sct():
     assert "new_img.set_sform(affine, code=1)" in wrapper_source
     assert "data_nifti = np.asarray(data)" in wrapper_source
     assert "data_nifti = np.asarray(data.transpose((1, 0, 2)))" not in wrapper_source
+
+
+def test_wrapper_sends_openrecon_images_in_series_preserving_batches():
+    wrapper_source = WRAPPER_PATH.read_text()
+    function_names = _function_names()
+    assert "_send_images_by_series" in function_names
+    assert "OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96" in wrapper_source
+    assert "Sending %s batch: series_index=%s chunk=%d-%d/%d image_count=%d" in wrapper_source
+    assert "connection.send_image(chunk)" in wrapper_source
+    assert 'connection.send_image(image)' not in wrapper_source
+
+
+def test_wrapper_logs_sct_output_statistics_before_mrd_conversion():
+    wrapper_source = WRAPPER_PATH.read_text()
+    assert "SCT output voxel statistics before MRD conversion" in wrapper_source
+    assert "np.count_nonzero(data)" in wrapper_source
+    assert "np.unique(data)" in wrapper_source
+
+
+def test_wrapper_patches_openrecon_derived_series_identity_like_musclemap():
+    wrapper_source = WRAPPER_PATH.read_text()
+    function_names = _function_names()
+    assert "_build_derived_series_instance_uid" in function_names
+    assert "_patch_ice_minihead" in function_names
+    assert "_replace_or_append_minihead_long_param" in function_names
+    assert 'tmpMeta["ProtocolName"] = output_identity["sequence_description"]' in wrapper_source
+    assert 'tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]' in wrapper_source
+    assert 'tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)' in wrapper_source
+    assert '"ProtocolName", sequence_description' in wrapper_source
+    assert '"SeriesInstanceUID", series_instance_uid' in wrapper_source
+    assert 'oldHeader.image_index = iImg + 1' in wrapper_source
+    assert 'oldHeader.slice = iImg' in wrapper_source
+    assert 'oldHeader.image_index = source_image_index' not in wrapper_source
+    assert '_set_meta_scalar(tmpMeta, "NumberInSeries", iImg + 1)' in wrapper_source
+    assert '"ChronSliceNo", iImg' in wrapper_source
+    assert '"ProtocolSliceNumber", iImg' in wrapper_source
+    assert 'tmpMeta["ImageSliceNormDir"]' in wrapper_source
+
+
+def test_wrapper_strips_source_parent_references_from_derived_meta():
+    strip_source_parent_refs = _load_helper_for_test("_strip_source_parent_refs")
+    meta = {
+        "MultiFrameSOPInstanceUID": "source-mf",
+        "PSMultiFrameSOPInstanceUID": "source-ps-mf",
+        "PSSeriesInstanceUID": "source-ps-series",
+        "MFInstanceNumber": "1",
+        "DicomEngineDimString": "source-dim",
+        "ReferencedGSPS.0.ReferencedImageSequence.0.ReferencedSOPClassUID": "source-gsps",
+        "ReferencedImageSequence.0.ReferencedSOPInstanceUID": "source-sop",
+        "ReferencedImageSequence.0.ReferencedSeriesInstanceUID": "source-series",
+        "ReferencedImageSequence.0.ReferencedFrameNumber": "1",
+        "SeriesInstanceUID": "derived-series",
+        "ImageType": "DERIVED\\PRIMARY\\M\\SCT_DEEPSEG_SPINALCORD",
+    }
+
+    strip_source_parent_refs(meta)
+
+    assert "MultiFrameSOPInstanceUID" not in meta
+    assert "PSMultiFrameSOPInstanceUID" not in meta
+    assert "PSSeriesInstanceUID" not in meta
+    assert "MFInstanceNumber" not in meta
+    assert "DicomEngineDimString" not in meta
+    assert not any(key.startswith("ReferencedGSPS") for key in meta)
+    assert not any("Referenced" in key and "UID" in key for key in meta)
+    assert not any("Referenced" in key and "FrameNumber" in key for key in meta)
+    assert meta["SeriesInstanceUID"] == "derived-series"
+    assert meta["ImageType"] == "DERIVED\\PRIMARY\\M\\SCT_DEEPSEG_SPINALCORD"
 
 
 def test_batch_processing_openrecon_cases_are_declared_and_exposed():

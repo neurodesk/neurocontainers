@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import time
 from time import perf_counter
 import traceback
 import xml.dom.minidom
@@ -968,6 +969,35 @@ def _ice_compatible_target_shape(
     return adjusted_shape
 
 
+def _diagnostic_reformat_target_shape(
+    target_shape: tuple[int, int],
+    target_spacing: float,
+    orientation: str,
+) -> tuple[tuple[int, int], float]:
+    downsample_factor = _env_positive_float(OPENRECON_REFORMAT_DOWNSAMPLE_ENV, 1.0)
+    if downsample_factor == 1.0:
+        return target_shape, target_spacing
+
+    adjusted_shape = (
+        max(1, int(round(target_shape[0] / downsample_factor))),
+        max(1, int(round(target_shape[1] / downsample_factor))),
+    )
+    adjusted_shape = _ice_compatible_target_shape(adjusted_shape, orientation)
+    adjusted_spacing = float(target_spacing) * downsample_factor
+    logging.info(
+        "Applying diagnostic %s=%.3f for %s reformat: target_shape %s -> %s, "
+        "target_spacing %.4f -> %.4f",
+        OPENRECON_REFORMAT_DOWNSAMPLE_ENV,
+        downsample_factor,
+        orientation,
+        target_shape,
+        adjusted_shape,
+        target_spacing,
+        adjusted_spacing,
+    )
+    return adjusted_shape, adjusted_spacing
+
+
 def _resize_2d_nearest(
     data: np.ndarray,
     target_shape: tuple[int, int],
@@ -1054,17 +1084,25 @@ def _build_reformatted_images(
         target_inplane_shape,
         orientation,
     )
+    target_inplane_shape, target_inplane_spacing = _diagnostic_reformat_target_shape(
+        target_inplane_shape,
+        target_inplane_spacing,
+        orientation,
+    )
     new_fov = (
         float(target_inplane_shape[1] * target_inplane_spacing),
         float(target_inplane_shape[0] * target_inplane_spacing),
         orthogonal_fov,
     )
 
+    source_slice_count = max(1, int(N_z))
     logging.info(
-        "Building %s reformat: n_slices=%d slice_spacing=%.4f new_fov=%s "
+        "Building %s reformat: n_slices=%d source_slice_count=%d "
+        "slice_policy=modulo_source_slice_count slice_spacing=%.4f new_fov=%s "
         "series_index=%d target_shape=%s target_spacing=%.4f",
         orientation,
         n_slices,
+        source_slice_count,
         slice_spacing,
         new_fov,
         series_index,
@@ -1101,9 +1139,25 @@ def _build_reformatted_images(
             ctypes.c_float(new_fov[1]),
             ctypes.c_float(new_fov[2]),
         )
+        reformat_slice_counter = j % source_slice_count
         new_header.image_index = j
         new_header.image_series_index = series_index
-        new_header.slice = j
+        new_header.slice = reformat_slice_counter
+
+        if j < 5 or j >= n_slices - 5:
+            logging.info(
+                "%s reformat image header sample: image_index=%d slice=%d "
+                "series_index=%d position=%s read_dir0=%.6f phase_dir0=%.6f "
+                "slice_dir0=%.6f",
+                orientation,
+                j,
+                reformat_slice_counter,
+                series_index,
+                [round(float(v), 6) for v in slice_position],
+                float(new_read_dir[0]),
+                float(new_phase_dir[0]),
+                float(new_slice_dir[0]),
+            )
 
         for attr in (
             "measurement_uid",
@@ -1181,6 +1235,133 @@ def _build_reformatted_images(
 
 
 OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96
+OPENRECON_SEND_CHUNK_SIZE_ENV = "VESSELBOOST_OPENRECON_SEND_IMAGE_CHUNK_SIZE"
+OPENRECON_REFORMAT_DOWNSAMPLE_ENV = "VESSELBOOST_OPENRECON_REFORMAT_DOWNSAMPLE_FACTOR"
+OPENRECON_DELAY_BEFORE_SERIES_ENV = "VESSELBOOST_OPENRECON_DELAY_BEFORE_SERIES"
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    raw_value = os.environ.get(name)
+    if raw_value is None or raw_value == "":
+        return default
+
+    try:
+        value = int(raw_value)
+    except ValueError:
+        logging.warning(
+            "Ignoring invalid %s=%r; expected a positive integer",
+            name,
+            raw_value,
+        )
+        return default
+
+    if value <= 0:
+        logging.warning(
+            "Ignoring invalid %s=%r; expected a positive integer",
+            name,
+            raw_value,
+        )
+        return default
+
+    return value
+
+
+def _env_positive_float(name: str, default: float) -> float:
+    raw_value = os.environ.get(name)
+    if raw_value is None or raw_value == "":
+        return default
+
+    try:
+        value = float(raw_value)
+    except ValueError:
+        logging.warning(
+            "Ignoring invalid %s=%r; expected a positive number",
+            name,
+            raw_value,
+        )
+        return default
+
+    if value <= 0:
+        logging.warning(
+            "Ignoring invalid %s=%r; expected a positive number",
+            name,
+            raw_value,
+        )
+        return default
+
+    return value
+
+
+def _series_send_delay_seconds(series_index: int) -> float:
+    """Return an optional diagnostic delay before sending a series.
+
+    Format: VESSELBOOST_OPENRECON_DELAY_BEFORE_SERIES="3:5,4:5".
+    This is intentionally opt-in so normal OpenRecon behavior is unchanged.
+    """
+    raw_value = os.environ.get(OPENRECON_DELAY_BEFORE_SERIES_ENV, "")
+    if not raw_value:
+        return 0.0
+
+    for entry in raw_value.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            raw_series, raw_delay = entry.split(":", 1)
+            candidate_series = int(raw_series.strip())
+            delay_seconds = float(raw_delay.strip())
+        except ValueError:
+            logging.warning(
+                "Ignoring invalid %s entry %r; expected '<series>:<seconds>'",
+                OPENRECON_DELAY_BEFORE_SERIES_ENV,
+                entry,
+            )
+            continue
+        if candidate_series == series_index:
+            return max(0.0, delay_seconds)
+
+    return 0.0
+
+
+def _image_payload_bytes(image) -> int:
+    try:
+        return int(np.asarray(image.data).nbytes)
+    except Exception:
+        return 0
+
+
+def _image_header_field(image, name: str, default=None):
+    try:
+        header = image.getHead()
+        return getattr(header, name, default)
+    except Exception:
+        return getattr(image, name, default)
+
+
+def _format_chunk_image_summary(chunk) -> dict:
+    if not chunk:
+        return {}
+
+    first = chunk[0]
+    last = chunk[-1]
+    try:
+        matrix = tuple(int(v) for v in _image_header_field(first, "matrix_size", [])[:])
+    except Exception:
+        matrix = None
+    try:
+        dtype = str(np.asarray(first.data).dtype)
+    except Exception:
+        dtype = "unknown"
+
+    return {
+        "matrix": matrix,
+        "dtype": dtype,
+        "payload_bytes": sum(_image_payload_bytes(image) for image in chunk),
+        "first_image_index": int(_image_header_field(first, "image_index", -1)),
+        "last_image_index": int(_image_header_field(last, "image_index", -1)),
+        "first_slice": int(_image_header_field(first, "slice", -1)),
+        "last_slice": int(_image_header_field(last, "slice", -1)),
+    }
 
 
 def _send_images_by_series(connection, images, context: str = "images") -> None:
@@ -1196,23 +1377,82 @@ def _send_images_by_series(connection, images, context: str = "images") -> None:
 
     batch = []
     batch_series = None
+    delayed_series = set()
+    chunk_size = _env_positive_int(
+        OPENRECON_SEND_CHUNK_SIZE_ENV,
+        OPENRECON_SEND_IMAGE_CHUNK_SIZE,
+    )
+    if chunk_size != OPENRECON_SEND_IMAGE_CHUNK_SIZE:
+        logging.info(
+            "Using diagnostic OpenRecon send chunk size %d from %s",
+            chunk_size,
+            OPENRECON_SEND_CHUNK_SIZE_ENV,
+        )
 
     def flush_batch():
         nonlocal batch, batch_series
         if not batch:
             return
-        for chunk_start in range(0, len(batch), OPENRECON_SEND_IMAGE_CHUNK_SIZE):
-            chunk = batch[chunk_start:chunk_start + OPENRECON_SEND_IMAGE_CHUNK_SIZE]
+        if batch_series not in delayed_series:
+            delay_seconds = _series_send_delay_seconds(batch_series)
+            if delay_seconds > 0:
+                logging.info(
+                    "Applying diagnostic delay before sending series_index=%s: %.3f seconds",
+                    batch_series,
+                    delay_seconds,
+                )
+                time.sleep(delay_seconds)
+            delayed_series.add(batch_series)
+
+        for chunk_start in range(0, len(batch), chunk_size):
+            chunk = batch[chunk_start:chunk_start + chunk_size]
+            chunk_summary = _format_chunk_image_summary(chunk)
             logging.info(
-                "Sending %s batch: series_index=%s chunk=%d-%d/%d image_count=%d",
+                "Sending %s batch: series_index=%s chunk=%d-%d/%d "
+                "image_count=%d matrix=%s dtype=%s payload_bytes=%d "
+                "first_image_index=%d last_image_index=%d first_slice=%d last_slice=%d",
                 context,
                 batch_series,
                 chunk_start + 1,
                 chunk_start + len(chunk),
                 len(batch),
                 len(chunk),
+                chunk_summary.get("matrix"),
+                chunk_summary.get("dtype", "unknown"),
+                chunk_summary.get("payload_bytes", 0),
+                chunk_summary.get("first_image_index", -1),
+                chunk_summary.get("last_image_index", -1),
+                chunk_summary.get("first_slice", -1),
+                chunk_summary.get("last_slice", -1),
             )
-            connection.send_image(chunk)
+            send_start = perf_counter()
+            try:
+                connection.send_image(chunk)
+            except Exception:
+                logging.error(
+                    "Failed sending %s batch: series_index=%s chunk=%d-%d/%d "
+                    "image_count=%d matrix=%s payload_bytes=%d elapsed_seconds=%.3f",
+                    context,
+                    batch_series,
+                    chunk_start + 1,
+                    chunk_start + len(chunk),
+                    len(batch),
+                    len(chunk),
+                    chunk_summary.get("matrix"),
+                    chunk_summary.get("payload_bytes", 0),
+                    perf_counter() - send_start,
+                )
+                raise
+            logging.info(
+                "Finished sending %s batch: series_index=%s chunk=%d-%d/%d "
+                "elapsed_seconds=%.3f",
+                context,
+                batch_series,
+                chunk_start + 1,
+                chunk_start + len(chunk),
+                len(batch),
+                perf_counter() - send_start,
+            )
         batch = []
         batch_series = None
 

@@ -2,6 +2,8 @@ tests:
   - name: Test metabody
     manual: true
     script: |
+      source .venv/bin/activate
+      ./builder/build.py generate metabody --recreate --build --login --architecture x86_64
 
 
       # === TEST PREDICTION WITH OPENRECON ===

@@ -16,6 +16,8 @@ import builder.build as build_module
 from builder.build import (
     BuildContext,
     LocalBuildContext,
+    NEUROCONTAINER_CACHE_CONTEXT_NAME,
+    build_and_run_container,
     generate_from_description,
     get_guest_filename,
     get_repo_path,
@@ -66,10 +68,18 @@ def test_generated_dockerfile_preserves_downloaded_file_basename():
         with open(downloaded_file, "wb") as f:
             f.write(b"deb payload")
 
-        with mock.patch.object(
-            build_module,
-            "download_with_cache",
-            lambda *args, **kwargs: downloaded_file,
+        persistent_cache = os.path.join(tmpdir, "persistent-cache")
+        with (
+            mock.patch.object(
+                build_module,
+                "download_with_cache",
+                lambda *args, **kwargs: downloaded_file,
+            ),
+            mock.patch.object(
+                build_module,
+                "get_cache_dir",
+                lambda: persistent_cache,
+            ),
         ):
             build_dir = os.path.join(tmpdir, "build")
             ctx = generate_from_description(
@@ -92,6 +102,8 @@ def test_generated_dockerfile_preserves_downloaded_file_basename():
 
         assert "sample-package_1.2.3_amd64.deb" in dockerfile_content
         assert "/.neurocontainer-cache/" in dockerfile_content
+        assert f"from={NEUROCONTAINER_CACHE_CONTEXT_NAME}" in dockerfile_content
+        assert "source=cache/" not in dockerfile_content
 
 
 def test_context_cache_disambiguates_duplicate_download_basenames():
@@ -129,18 +141,26 @@ def test_context_cache_disambiguates_duplicate_download_basenames():
             },
         }
 
-        local = LocalBuildContext(ctx, "cache-id")
-        first_path = local.get_file("first")
-        second_path = local.get_file("second")
+        persistent_cache = os.path.join(tmpdir, "persistent-cache")
+        with mock.patch.object(
+            build_module,
+            "get_cache_dir",
+            lambda: persistent_cache,
+        ):
+            local = LocalBuildContext(ctx, "cache-id")
+            first_path = local.get_file("first")
+            second_path = local.get_file("second")
 
         assert first_path.endswith("/shared-name.deb")
         assert second_path.endswith(".deb")
         assert second_path != first_path
 
-        first_cached = os.path.join(build_dir, "cache", "cache-id", "shared-name.deb")
+        first_cached = os.path.join(
+            persistent_cache, "build-context", "cache-id", "shared-name.deb"
+        )
         second_cached = os.path.join(
-            build_dir,
-            "cache",
+            persistent_cache,
+            "build-context",
             "cache-id",
             os.path.basename(second_path),
         )
@@ -149,3 +169,53 @@ def test_context_cache_disambiguates_duplicate_download_basenames():
             assert f.read() == b"first"
         with open(second_cached, "rb") as f:
             assert f.read() == b"second"
+
+
+def test_docker_build_receives_file_cache_named_context():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dockerfile_name = "Dockerfile"
+        dockerfile_path = os.path.join(tmpdir, dockerfile_name)
+        with open(dockerfile_path, "w") as f:
+            f.write(
+                "FROM scratch\n"
+                f"RUN --mount=type=bind,from={NEUROCONTAINER_CACHE_CONTEXT_NAME},"
+                "source=/cache-id,target=/.neurocontainer-cache/cache-id,readonly true\n"
+            )
+
+        calls = []
+
+        def record_check_call(cmd, *args, **kwargs):
+            calls.append(cmd)
+
+        persistent_cache = os.path.join(tmpdir, "persistent-cache")
+        with (
+            mock.patch.object(
+                build_module.shutil,
+                "which",
+                lambda name: f"/usr/bin/{name}",
+            ),
+            mock.patch.object(build_module.subprocess, "check_call", record_check_call),
+            mock.patch.object(
+                build_module,
+                "run_container_tester",
+                lambda *args, **kwargs: None,
+            ),
+            mock.patch.object(build_module, "get_cache_dir", lambda: persistent_cache),
+        ):
+            build_and_run_container(
+                dockerfile_name=dockerfile_name,
+                name="test-app",
+                version="1.0.0",
+                tag="test-app:1.0.0",
+                architecture="x86_64",
+                recipe_path=tmpdir,
+                build_directory=tmpdir,
+            )
+
+        assert calls
+        build_cmd = calls[0]
+        assert "--build-context" in build_cmd
+        assert (
+            f"{NEUROCONTAINER_CACHE_CONTEXT_NAME}="
+            f"{os.path.join(persistent_cache, 'build-context')}"
+        ) in build_cmd

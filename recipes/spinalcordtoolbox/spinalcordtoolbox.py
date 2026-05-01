@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import traceback
+import uuid
 from pathlib import Path
 from time import perf_counter
 import xml.dom.minidom
@@ -91,6 +92,20 @@ OPENRECON_DEFAULTS = {
     "segmentationcolormap": False,
     "analysis": "sct_deepseg_spinalcord",
 }
+
+OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96
+
+SOURCE_PARENT_REFERENCE_META_KEYS = {
+    "DicomEngineDimString",
+    "MFInstanceNumber",
+    "MultiFrameSOPInstanceUID",
+    "PSMultiFrameSOPInstanceUID",
+    "PSSeriesInstanceUID",
+}
+
+SOURCE_PARENT_REFERENCE_META_PREFIXES = (
+    "ReferencedGSPS",
+)
 
 SCT_BATCH_PROCESSING_OPENRECON_CASES = (
     {
@@ -186,7 +201,7 @@ def process(connection, config, metadata):
                 if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
                     logging.info("Processing a group of k-space data")
                     # image = process_raw(acqGroup, connection, config, metadata)
-                    connection.send_image(image)
+                    _send_images_by_series(connection, image, "processed raw output")
                     acqGroup = []
 
             # ----------------------------------------------------------
@@ -200,7 +215,7 @@ def process(connection, config, metadata):
                     logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
                     currentSeries = item.image_series_index
                     image = process_image(imgGroup, connection, config, metadata)
-                    connection.send_image(image)
+                    _send_images_by_series(connection, image, "processed image output")
                     imgGroup = []
 
                 # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
@@ -229,7 +244,7 @@ def process(connection, config, metadata):
         if len(imgGroup) > 0:
             logging.info("Processing a group of images (untriggered)")
             image = process_image(imgGroup, connection, config, metadata)
-            connection.send_image(image)
+            _send_images_by_series(connection, image, "processed image output after input drain")
             imgGroup = []
 
     except Exception as e:
@@ -458,6 +473,48 @@ def _clone_mrd_image(image):
     return image_copy
 
 
+def _send_images_by_series(connection, images, context):
+    if images is None:
+        return
+    if isinstance(images, ismrmrd.Image):
+        images = [images]
+    images = list(images)
+    if not images:
+        logging.info("Skipping send for %s because there are no images", context)
+        return
+
+    batch = []
+    batch_series = None
+
+    def flush_batch():
+        nonlocal batch, batch_series
+        if not batch:
+            return
+        for chunk_start in range(0, len(batch), OPENRECON_SEND_IMAGE_CHUNK_SIZE):
+            chunk = batch[chunk_start:chunk_start + OPENRECON_SEND_IMAGE_CHUNK_SIZE]
+            logging.info(
+                "Sending %s batch: series_index=%s chunk=%d-%d/%d image_count=%d",
+                context,
+                batch_series,
+                chunk_start + 1,
+                chunk_start + len(chunk),
+                len(batch),
+                len(chunk),
+            )
+            connection.send_image(chunk)
+        batch = []
+        batch_series = None
+
+    for image in images:
+        series_index = int(getattr(image, "image_series_index", 0))
+        if batch and series_index != batch_series:
+            flush_batch()
+        batch.append(image)
+        batch_series = series_index
+
+    flush_batch()
+
+
 def _copy_meta(meta_obj):
     try:
         return ismrmrd.Meta.deserialize(meta_obj.serialize())
@@ -469,6 +526,33 @@ def _copy_meta(meta_obj):
             except Exception:
                 pass
         return meta_copy
+
+
+def _strip_source_parent_refs(meta_obj):
+    try:
+        meta_keys = list(meta_obj.keys())
+    except Exception:
+        return meta_obj
+
+    for key in meta_keys:
+        key_text = str(key)
+        remove_key = key_text in SOURCE_PARENT_REFERENCE_META_KEYS
+        remove_key = remove_key or any(
+            key_text == prefix or key_text.startswith(f"{prefix}.")
+            for prefix in SOURCE_PARENT_REFERENCE_META_PREFIXES
+        )
+        remove_key = remove_key or (
+            "Referenced" in key_text
+            and any(token in key_text for token in ("SOP", "Series", "Frame"))
+            and any(token in key_text for token in ("UID", "Number"))
+        )
+        if remove_key:
+            try:
+                del meta_obj[key]
+            except Exception:
+                logging.warning("Could not remove source parent metadata key %s", key_text)
+
+    return meta_obj
 
 
 def _first_non_empty_text(*values):
@@ -494,6 +578,248 @@ def _get_meta_text(meta_obj, key):
         return ""
 
 
+def _decode_ice_minihead(meta_obj):
+    try:
+        encoded = meta_obj.get("IceMiniHead")
+        if encoded is None:
+            return ""
+        if isinstance(encoded, (list, tuple)):
+            encoded = encoded[0] if encoded else None
+        if not encoded:
+            return ""
+        return base64.b64decode(encoded).decode("utf-8")
+    except Exception:
+        return ""
+
+
+def _encode_ice_minihead(minihead_text):
+    return base64.b64encode(minihead_text.encode("utf-8")).decode("ascii")
+
+
+def _extract_minihead_string_value(minihead_text, name):
+    if not minihead_text:
+        return ""
+
+    try:
+        return _first_non_empty_text(mrdhelper.extract_minihead_string_param(minihead_text, name))
+    except Exception:
+        pass
+
+    match = re.search(
+        rf'<ParamString\."{re.escape(name)}">\s*\{{\s*"([^"]*)"\s*\}}',
+        minihead_text,
+    )
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def _extract_minihead_array_tokens(minihead_text, name):
+    if not minihead_text:
+        return []
+
+    block_match = re.search(
+        rf'<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}',
+        minihead_text,
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    if not block_match:
+        return []
+
+    return [token.strip() for token in re.findall(r'\{\s*"([^"]+)"\s*\}', block_match.group(0))]
+
+
+def _sanitize_minihead_param_value(value):
+    text = _first_non_empty_text(value)
+    if not text:
+        return ""
+    return (
+        text.replace("\\", "/")
+        .replace('"', "'")
+        .replace("\r", " ")
+        .replace("\n", " ")
+    )
+
+
+def _replace_or_append_minihead_string_param(minihead_text, name, value):
+    value = _sanitize_minihead_param_value(value)
+    if not minihead_text or not value:
+        return minihead_text, False
+
+    pattern = re.compile(
+        rf'(<ParamString\."{re.escape(name)}">\s*\{{\s*")([^"]*)("\s*\}})'
+    )
+    match = pattern.search(minihead_text)
+    if match:
+        if match.group(2) == value:
+            return minihead_text, False
+        replacement = f"{match.group(1)}{value}{match.group(3)}"
+        return minihead_text[:match.start()] + replacement + minihead_text[match.end():], True
+
+    appended_param = f'\n<ParamString."{name}">\t{{ "{value}" }}\n'
+    return minihead_text.rstrip() + appended_param, True
+
+
+def _replace_minihead_array_token(minihead_text, name, source_token, target_token):
+    if not minihead_text or not target_token:
+        return minihead_text, False
+
+    block_pattern = re.compile(
+        rf'<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    block_match = block_pattern.search(minihead_text)
+    if not block_match:
+        return minihead_text, False
+
+    block_text = block_match.group(0)
+    tokens = [token.strip() for token in re.findall(r'\{\s*"([^"]+)"\s*\}', block_text)]
+    if not tokens:
+        return minihead_text, False
+    if any(token.upper() == target_token.upper() for token in tokens):
+        return minihead_text, False
+
+    replacement_source = ""
+    source_token = (source_token or "").strip().upper()
+    for token in tokens:
+        if token.upper() == source_token:
+            replacement_source = token
+            break
+    if not replacement_source:
+        reserved_tokens = {"NORM", "DIS2D", "DIS3D"}
+        for token in tokens:
+            if token.upper() not in reserved_tokens:
+                replacement_source = token
+                break
+    if not replacement_source:
+        return minihead_text, False
+
+    token_pattern = re.compile(rf'(\{{\s*"){re.escape(replacement_source)}("\s*\}})')
+    token_match = token_pattern.search(block_text)
+    if not token_match:
+        return minihead_text, False
+
+    replaced_block = (
+        block_text[:token_match.start()]
+        + f'{token_match.group(1)}{target_token}{token_match.group(2)}'
+        + block_text[token_match.end():]
+    )
+    return (
+        minihead_text[:block_match.start()] + replaced_block + minihead_text[block_match.end():],
+        True,
+    )
+
+
+def _replace_or_append_minihead_array_token(minihead_text, name, source_token, target_token):
+    current_text, did_change = _replace_minihead_array_token(
+        minihead_text,
+        name,
+        source_token,
+        target_token,
+    )
+    if did_change or not current_text or not target_token:
+        return current_text, did_change
+    if _extract_minihead_array_tokens(current_text, name):
+        return current_text, False
+
+    target_token = _sanitize_minihead_param_value(target_token)
+    appended_param = f'\n<ParamArray."{name}">\t{{\n\t{{ "{target_token}" }}\n}}\n'
+    return current_text.rstrip() + appended_param, True
+
+
+def _replace_or_append_minihead_long_param(minihead_text, name, value):
+    if not minihead_text or value is None:
+        return minihead_text, False
+
+    value = int(value)
+    pattern = re.compile(
+        rf'(<ParamLong\."{re.escape(name)}">\s*\{{\s*)(-?\d*)?(\s*\}})'
+    )
+    match = pattern.search(minihead_text)
+    if match:
+        current_value = (match.group(2) or "").strip()
+        if current_value == str(value):
+            return minihead_text, False
+        replacement = f"{match.group(1)}{value}{match.group(3)}"
+        return minihead_text[:match.start()] + replacement + minihead_text[match.end():], True
+
+    appended_param = f'\n<ParamLong."{name}">\t{{ {value} }}\n'
+    return minihead_text.rstrip() + appended_param, True
+
+
+def _patch_ice_minihead(
+    minihead_text,
+    sequence_description,
+    series_grouping,
+    series_instance_uid,
+    source_type_token,
+    target_type_token,
+    target_display_token=None,
+):
+    if not minihead_text:
+        return minihead_text, False
+
+    changed = False
+    current_text = minihead_text
+    target_display_token = target_display_token or target_type_token
+
+    for param_name, param_value in (
+        ("SequenceDescription", sequence_description),
+        ("ProtocolName", sequence_description),
+        ("SeriesNumberRangeNameUID", series_grouping),
+        ("SeriesInstanceUID", series_instance_uid),
+        ("ImageType", f"DERIVED\\PRIMARY\\M\\{target_type_token}"),
+        ("ImageTypeValue3", "M"),
+        ("ComplexImageComponent", "MAGNITUDE"),
+    ):
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            param_name,
+            param_value,
+        )
+        changed = changed or did_change
+
+    current_text, did_change = _replace_or_append_minihead_array_token(
+        current_text,
+        "ImageTypeValue4",
+        source_type_token,
+        target_display_token,
+    )
+    changed = changed or did_change
+
+    return current_text, changed
+
+
+def _set_meta_scalar(meta_obj, name, value):
+    meta_obj[name] = str(int(value))
+
+
+def _build_derived_series_instance_uid(
+    source_series_instance_uid,
+    analysis,
+    output_series_index,
+    series_grouping,
+    series_description,
+):
+    stable_source_uid = _first_non_empty_text(source_series_instance_uid)
+    if stable_source_uid:
+        seed_text = json.dumps(
+            {
+                "source_series_instance_uid": stable_source_uid,
+                "analysis": _first_non_empty_text(analysis),
+                "output_series_index": int(output_series_index) if output_series_index is not None else None,
+                "series_grouping": _first_non_empty_text(series_grouping),
+                "series_description": _first_non_empty_text(series_description),
+            },
+            sort_keys=True,
+        )
+        derived_uuid = uuid.uuid5(uuid.NAMESPACE_OID, seed_text)
+    else:
+        derived_uuid = uuid.uuid4()
+
+    return f"2.25.{derived_uuid.int}"
+
+
 def _supported_analysis_ids():
     return sorted(set(SCT_ANALYSIS_REGISTRY) | set(SCT_ANALYSIS_BUNDLES))
 
@@ -507,18 +833,42 @@ def _resolve_requested_analyses(analysis):
     raise ValueError(f"Unsupported SCT analysis '{analysis}'. Supported analyses: {supported}")
 
 
-def _build_sct_output_identity(source_meta, analysis):
+def _build_sct_output_identity(source_meta, analysis, output_series_index):
+    source_minihead = _decode_ice_minihead(source_meta)
     source_series = _first_non_empty_text(
         _get_meta_text(source_meta, "SeriesDescription"),
         _get_meta_text(source_meta, "SequenceDescription"),
+        _extract_minihead_string_value(source_minihead, "SequenceDescription"),
+    )
+    source_grouping = _first_non_empty_text(
+        _get_meta_text(source_meta, "SeriesNumberRangeNameUID"),
+        _extract_minihead_string_value(source_minihead, "SeriesNumberRangeNameUID"),
+        source_series,
+    )
+    source_series_instance_uid = _first_non_empty_text(
+        _get_meta_text(source_meta, "SeriesInstanceUID"),
+        _extract_minihead_string_value(source_minihead, "SeriesInstanceUID"),
+    )
+    source_type_token = _first_non_empty_text(
+        _get_meta_text(source_meta, "ImageTypeValue4"),
+        _extract_minihead_array_tokens(source_minihead, "ImageTypeValue4"),
     )
     suffix = SCT_ANALYSIS_REGISTRY[analysis]["series_suffix"]
     series_description = f"{source_series}_{suffix}" if source_series else suffix
+    grouping = f"{source_grouping}_{suffix}" if source_grouping else series_description
     type_token = suffix.upper()
     return {
         "series_description": series_description,
         "sequence_description": series_description,
-        "grouping": series_description,
+        "grouping": grouping,
+        "series_instance_uid": _build_derived_series_instance_uid(
+            source_series_instance_uid=source_series_instance_uid,
+            analysis=analysis,
+            output_series_index=output_series_index,
+            series_grouping=grouping,
+            series_description=series_description,
+        ),
+        "source_type_token": source_type_token,
         "type_token": type_token,
         "display_token": suffix,
         "image_comment": suffix,
@@ -632,7 +982,7 @@ def _sct_output_to_mrd_images(
     output_series_index,
     segmentation_colormap=False,
 ):
-    output_identity = _build_sct_output_identity(meta[0], analysis)
+    output_identity = _build_sct_output_identity(meta[0], analysis, output_series_index)
     img = nib.load(str(output_path))
     data = img.get_fdata(dtype=np.float32)
     logging.info("Loaded SCT output %s with shape=%s", output_path, data.shape)
@@ -648,6 +998,20 @@ def _sct_output_to_mrd_images(
         )
 
     data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+    unique_values = np.unique(data)
+    if unique_values.size <= 16:
+        unique_summary = ", ".join(f"{float(value):.6g}" for value in unique_values)
+    else:
+        unique_summary = f"{unique_values.size} unique values"
+    logging.info(
+        "SCT output voxel statistics before MRD conversion: min=%.6g max=%.6g "
+        "nonzero=%d/%d unique=%s",
+        float(np.min(data)) if data.size else 0.0,
+        float(np.max(data)) if data.size else 0.0,
+        int(np.count_nonzero(data)),
+        int(data.size),
+        unique_summary,
+    )
     if np.min(data) < 0:
         logging.warning("Negative values detected in SCT output; clipping to zero.")
         data = np.clip(data, 0, None)
@@ -678,18 +1042,21 @@ def _sct_output_to_mrd_images(
         else:
             oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
         oldHeader.image_series_index = output_series_index
-        oldHeader.image_index = iImg
+        oldHeader.image_index = iImg + 1
         oldHeader.slice = iImg
         imagesOut[iImg].setHead(oldHeader)
 
         tmpMeta = _copy_meta(meta[iImg])
+        _strip_source_parent_refs(tmpMeta)
         tmpMeta["DataRole"] = "Image"
         tmpMeta["ImageProcessingHistory"] = ["PYTHON", "SPINALCORDTOOLBOX"]
         tmpMeta["WindowCenter"] = str((maxVal + 1) / 2)
         tmpMeta["WindowWidth"] = str(maxVal + 1)
         tmpMeta["SeriesDescription"] = output_identity["series_description"]
         tmpMeta["SequenceDescription"] = output_identity["sequence_description"]
+        tmpMeta["ProtocolName"] = output_identity["sequence_description"]
         tmpMeta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
+        tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]
         tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
         tmpMeta["ImageTypeValue3"] = "M"
         tmpMeta["ImageTypeValue4"] = output_identity["display_token"]
@@ -703,20 +1070,66 @@ def _sct_output_to_mrd_images(
             except Exception:
                 tmpMeta["SequenceDescriptionAdditional"] = ""
         tmpMeta["Keep_image_geometry"] = 1
+        _set_meta_scalar(tmpMeta, "NumberInSeries", iImg + 1)
+        _set_meta_scalar(tmpMeta, "SliceNo", iImg)
+        _set_meta_scalar(tmpMeta, "AnatomicalSliceNo", iImg)
+        _set_meta_scalar(tmpMeta, "ChronSliceNo", iImg)
+        _set_meta_scalar(tmpMeta, "ProtocolSliceNumber", iImg)
+        _set_meta_scalar(tmpMeta, "IsmrmrdSliceNo", iImg)
 
-        if tmpMeta.get("ImageRowDir") is None:
-            tmpMeta["ImageRowDir"] = [
-                "{:.18f}".format(oldHeader.read_dir[0]),
-                "{:.18f}".format(oldHeader.read_dir[1]),
-                "{:.18f}".format(oldHeader.read_dir[2]),
-            ]
+        minihead_text = _decode_ice_minihead(tmpMeta)
+        if minihead_text:
+            patched_minihead_text, minihead_changed = _patch_ice_minihead(
+                minihead_text,
+                output_identity["sequence_description"],
+                output_identity["grouping"],
+                output_identity["series_instance_uid"],
+                output_identity["source_type_token"],
+                output_identity["type_token"],
+                target_display_token=output_identity["display_token"],
+            )
+            if minihead_changed:
+                tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
+            else:
+                logging.warning(
+                    "IceMiniHead was present but not updated for SCT output slice %d",
+                    iImg,
+                )
+            for long_param_name, long_param_value in (
+                ("Actual3DImagePartNumber", iImg),
+                ("AnatomicalPartitionNo", iImg),
+                ("AnatomicalSliceNo", iImg),
+                ("ChronSliceNo", iImg),
+                ("NumberInSeries", iImg + 1),
+                ("ProtocolSliceNumber", iImg),
+                ("SliceNo", iImg),
+            ):
+                patched_minihead_text, did_change = _replace_or_append_minihead_long_param(
+                    patched_minihead_text,
+                    long_param_name,
+                    long_param_value,
+                )
+                minihead_changed = minihead_changed or did_change
+            if minihead_changed:
+                tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
 
-        if tmpMeta.get("ImageColumnDir") is None:
-            tmpMeta["ImageColumnDir"] = [
-                "{:.18f}".format(oldHeader.phase_dir[0]),
-                "{:.18f}".format(oldHeader.phase_dir[1]),
-                "{:.18f}".format(oldHeader.phase_dir[2]),
-            ]
+        tmpMeta["ImageRowDir"] = [
+            "{:.18f}".format(oldHeader.read_dir[0]),
+            "{:.18f}".format(oldHeader.read_dir[1]),
+            "{:.18f}".format(oldHeader.read_dir[2]),
+        ]
+
+        tmpMeta["ImageColumnDir"] = [
+            "{:.18f}".format(oldHeader.phase_dir[0]),
+            "{:.18f}".format(oldHeader.phase_dir[1]),
+            "{:.18f}".format(oldHeader.phase_dir[2]),
+        ]
+
+        tmpMeta["ImageSliceNormDir"] = [
+            "{:.18f}".format(oldHeader.slice_dir[0]),
+            "{:.18f}".format(oldHeader.slice_dir[1]),
+            "{:.18f}".format(oldHeader.slice_dir[2]),
+        ]
 
         if segmentation_colormap:
             tmpMeta["LUTFileName"] = "MicroDeltaHotMetal.pal"
