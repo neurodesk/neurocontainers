@@ -12,16 +12,15 @@ tests:
       config_json=/opt/sodiumnufft/sodiumnufft.json
 
       rm -f "${input_mrd}"
-      python3 /opt/code/python-ismrmrd-server/twix2mrd.py \
+      python3 /opt/code/python-ismrmrd-server/siemens_twix2mrd.py \
         -f "${input_dat}" \
-        -o "${input_mrd}" \
-        --matrix-size 128 \
-        --fov-mm 220
+        -o "${input_mrd}"
 
       printf '%s\n' \
         '{' \
         '  "parameters": {' \
-        '    "maxworkers": 1' \
+        '    "matrixsize": 128,' \
+        '    "maxworkers": 10' \
         '  }' \
         '}' > "${config_json}"
 

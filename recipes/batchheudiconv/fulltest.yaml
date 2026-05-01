@@ -114,17 +114,17 @@ tests:
   # ==========================================================================
   - name: bh_fix_intendedfor.py help
     description: Display help for IntendedFor fix utility
-    command: python3 /opt/batch-heudiconv/bh_fix_intendedfor.py --help 2>&1
+    command: "bash -lc 'python3 /opt/batch-heudiconv/bh_fix_intendedfor.py --help 2>&1'"
     expected_output_contains: "Fix IntendedFor field"
 
   - name: bh_dcm_sort_dir.py exists
     description: Verify DICOM sorting Python script exists
-    command: ls -la /opt/batch-heudiconv/bh_dcm_sort_dir.py
+    command: "bash -lc 'ls -la /opt/batch-heudiconv/bh_dcm_sort_dir.py'"
     expected_output_contains: "bh_dcm_sort_dir.py"
 
   - name: bh_reorganize_fieldmaps.py exists
     description: Verify fieldmap reorganization script exists
-    command: ls -la /opt/batch-heudiconv/bh_reorganize_fieldmaps.py
+    command: "bash -lc 'ls -la /opt/batch-heudiconv/bh_reorganize_fieldmaps.py'"
     expected_output_contains: "bh_reorganize_fieldmaps.py"
 
   # ==========================================================================
@@ -132,17 +132,17 @@ tests:
   # ==========================================================================
   - name: List heuristic templates
     description: List available heuristic template files
-    command: ls /opt/batch-heudiconv/code/
+    command: "bash -lc 'ls /opt/batch-heudiconv/code/'"
     expected_output_contains: "heuristic_template.py"
 
   - name: Verify heuristic template content
     description: Check that heuristic template contains proper BIDS keys
-    command: cat /opt/batch-heudiconv/code/heuristic_template.py | head -50
+    command: "bash -lc 'cat /opt/batch-heudiconv/code/heuristic_template.py | head -50'"
     expected_output_contains: "create_key"
 
   - name: Verify HARP heuristic
     description: Check HARP-specific heuristic file
-    command: ls /opt/batch-heudiconv/code/heuristic_HARP.py
+    command: "bash -lc 'ls /opt/batch-heudiconv/code/heuristic_HARP.py'"
     expected_output_contains: "heuristic_HARP.py"
 
   # ==========================================================================
@@ -711,7 +711,7 @@ tests:
 
   - name: List all batch-heudiconv scripts
     description: List all available batch-heudiconv scripts
-    command: ls -la /opt/batch-heudiconv/*.sh
+    command: bash -lc 'ls -la /opt/batch-heudiconv/*.sh'
     expected_output_contains: "bh01_prep_dir.sh"
 
 cleanup:

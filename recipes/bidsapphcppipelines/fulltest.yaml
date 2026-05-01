@@ -63,12 +63,12 @@ tests:
   # ==========================================================================
   - name: HCP Pipelines version file
     description: Check HCP Pipelines version
-    command: cat /opt/HCP-Pipelines/version.txt
+    command: "bash -lc 'cat /opt/HCP-Pipelines/version.txt'"
     expected_output_contains: "v4.3.0"
 
   - name: HCP Pipelines show_version script
     description: Run HCP show_version script
-    command: /opt/HCP-Pipelines/show_version
+    command: bash -lc '/opt/HCP-Pipelines/show_version'
     expected_exit_code: 0
 
   # ==========================================================================
@@ -395,27 +395,27 @@ tests:
   # ==========================================================================
   - name: MNI152 1mm template exists
     description: Verify MNI152 1mm template
-    command: ls -la /opt/HCP-Pipelines/global/templates/MNI152_T1_1mm.nii.gz
+    command: "bash -lc 'ls -la /opt/HCP-Pipelines/global/templates/MNI152_T1_1mm.nii.gz'"
     expected_exit_code: 0
 
   - name: MNI152 2mm template exists
     description: Verify MNI152 2mm template
-    command: ls -la /opt/HCP-Pipelines/global/templates/MNI152_T1_2mm.nii.gz
+    command: "bash -lc 'ls -la /opt/HCP-Pipelines/global/templates/MNI152_T1_2mm.nii.gz'"
     expected_exit_code: 0
 
   - name: MNI152 T2 template exists
     description: Verify MNI152 T2 template
-    command: ls -la /opt/HCP-Pipelines/global/templates/MNI152_T2_1mm.nii.gz
+    command: "bash -lc 'ls -la /opt/HCP-Pipelines/global/templates/MNI152_T2_1mm.nii.gz'"
     expected_exit_code: 0
 
   - name: MNI152 brain mask exists
     description: Verify MNI brain mask template
-    command: ls -la /opt/HCP-Pipelines/global/templates/MNI152_T1_1mm_brain_mask.nii.gz
+    command: "bash -lc 'ls -la /opt/HCP-Pipelines/global/templates/MNI152_T1_1mm_brain_mask.nii.gz'"
     expected_exit_code: 0
 
   - name: Standard mesh atlases exist
     description: Verify standard mesh atlases directory
-    command: ls /opt/HCP-Pipelines/global/templates/standard_mesh_atlases/
+    command: "bash -lc 'ls /opt/HCP-Pipelines/global/templates/standard_mesh_atlases/'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -423,27 +423,27 @@ tests:
   # ==========================================================================
   - name: PreFreeSurfer pipeline exists
     description: Verify PreFreeSurfer pipeline script
-    command: ls -la /opt/HCP-Pipelines/PreFreeSurfer/PreFreeSurferPipeline.sh
+    command: "bash -lc 'ls -la /opt/HCP-Pipelines/PreFreeSurfer/PreFreeSurferPipeline.sh'"
     expected_exit_code: 0
 
   - name: FreeSurfer pipeline exists
     description: Verify FreeSurfer pipeline script
-    command: ls -la /opt/HCP-Pipelines/FreeSurfer/FreeSurferPipeline.sh
+    command: "bash -lc 'ls -la /opt/HCP-Pipelines/FreeSurfer/FreeSurferPipeline.sh'"
     expected_exit_code: 0
 
   - name: PostFreeSurfer pipeline exists
     description: Verify PostFreeSurfer pipeline script
-    command: ls -la /opt/HCP-Pipelines/PostFreeSurfer/PostFreeSurferPipeline.sh
+    command: "bash -lc 'ls -la /opt/HCP-Pipelines/PostFreeSurfer/PostFreeSurferPipeline.sh'"
     expected_exit_code: 0
 
   - name: fMRIVolume pipeline exists
     description: Verify fMRIVolume pipeline script
-    command: ls -la /opt/HCP-Pipelines/fMRIVolume/GenericfMRIVolumeProcessingPipeline.sh
+    command: "bash -lc 'ls -la /opt/HCP-Pipelines/fMRIVolume/GenericfMRIVolumeProcessingPipeline.sh'"
     expected_exit_code: 0
 
   - name: fMRISurface pipeline exists
     description: Verify fMRISurface pipeline script
-    command: ls -la /opt/HCP-Pipelines/fMRISurface/GenericfMRISurfaceProcessingPipeline.sh
+    command: "bash -lc 'ls -la /opt/HCP-Pipelines/fMRISurface/GenericfMRISurfaceProcessingPipeline.sh'"
     expected_exit_code: 0
 
   # ==========================================================================
@@ -451,17 +451,17 @@ tests:
   # ==========================================================================
   - name: TopupPreprocessing script exists
     description: Verify Topup preprocessing script
-    command: ls -la /opt/HCP-Pipelines/global/scripts/TopupPreprocessingAll.sh
+    command: "bash -lc 'ls -la /opt/HCP-Pipelines/global/scripts/TopupPreprocessingAll.sh'"
     expected_exit_code: 0
 
   - name: FieldMapPreprocessing script exists
     description: Verify FieldMap preprocessing script
-    command: ls -la /opt/HCP-Pipelines/global/scripts/FieldMapPreprocessingAll.sh
+    command: "bash -lc 'ls -la /opt/HCP-Pipelines/global/scripts/FieldMapPreprocessingAll.sh'"
     expected_exit_code: 0
 
   - name: GradientDistortionUnwarp script exists
     description: Verify gradient distortion correction script
-    command: ls -la /opt/HCP-Pipelines/global/scripts/GradientDistortionUnwarp.sh
+    command: "bash -lc 'ls -la /opt/HCP-Pipelines/global/scripts/GradientDistortionUnwarp.sh'"
     expected_exit_code: 0
 
   # ==========================================================================

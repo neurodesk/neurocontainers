@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import time
 from time import perf_counter
 import traceback
 import xml.dom.minidom
@@ -30,8 +31,9 @@ OPENRECON_OUTPUT_NAME_PARAM = "vboutputname"
 OPENRECON_MODULE_DEFAULT = "prediction"
 OPENRECON_MODULE_VALUES = (OPENRECON_MODULE_DEFAULT,)
 VESSELBOOST_SEGMENTATION_LABEL = "vesselboost_segmentation"
-VESSELBOOST_DISPLAY_LABEL = "vesselboost"
 VESSELBOOST_SEGMENTATION_TYPE_TOKEN = VESSELBOOST_SEGMENTATION_LABEL.upper()
+VESSELBOOST_SOURCE_COPY_LABEL = "vesselboost_source_copy"
+VESSELBOOST_SOURCE_COPY_TYPE_TOKEN = VESSELBOOST_SOURCE_COPY_LABEL.upper()
 
 # Keep this overview aligned with recipes/vesselboost/OpenReconLabel.json.
 # Tests can import it to build a minimal OpenRecon config payload.
@@ -711,7 +713,10 @@ def _resolve_source_series_identity(meta_obj):
     )
 
     return {
-        "series_description": series_description,
+        "series_description": _first_non_empty_text(
+            series_description,
+            parent_sequence,
+        ),
         "parent_sequence": parent_sequence,
         "parent_grouping": parent_grouping,
         "source_type_token": source_type_token,
@@ -721,9 +726,9 @@ def _resolve_source_series_identity(meta_obj):
 def _build_vesselboost_series_name(source_series_description, suffix=""):
     source_series_description = _first_non_empty_text(source_series_description)
     if source_series_description:
-        name = f"{source_series_description}_{VESSELBOOST_DISPLAY_LABEL}"
+        name = f"{source_series_description}_{VESSELBOOST_SEGMENTATION_LABEL}"
     else:
-        name = VESSELBOOST_DISPLAY_LABEL
+        name = VESSELBOOST_SEGMENTATION_LABEL
     if suffix:
         name = f"{name}_{suffix}"
     return name
@@ -732,7 +737,7 @@ def _build_vesselboost_series_name(source_series_description, suffix=""):
 def _build_vesselboost_grouping(source_parent_grouping, fallback_series_name, suffix=""):
     source_parent_grouping = _first_non_empty_text(source_parent_grouping)
     if source_parent_grouping:
-        grouping = f"{source_parent_grouping}_{VESSELBOOST_DISPLAY_LABEL}"
+        grouping = f"{source_parent_grouping}_{VESSELBOOST_SEGMENTATION_LABEL}"
     else:
         grouping = fallback_series_name
     if suffix:
@@ -756,18 +761,189 @@ def _build_openrecon_output_identity(source_identity, orientation=None):
     )
     grouping = f"{base_grouping}_{orientation}" if orientation else base_grouping
     image_comment = (
-        f"{VESSELBOOST_DISPLAY_LABEL}_{orientation}"
+        f"{VESSELBOOST_SEGMENTATION_LABEL}_{orientation}"
         if orientation
-        else VESSELBOOST_DISPLAY_LABEL
+        else VESSELBOOST_SEGMENTATION_LABEL
     )
     return {
         "series_description": series_description,
         "sequence_description": series_description,
         "grouping": grouping,
-        "display_token": VESSELBOOST_DISPLAY_LABEL,
+        "display_token": VESSELBOOST_SEGMENTATION_LABEL,
         "type_token": VESSELBOOST_SEGMENTATION_TYPE_TOKEN,
         "image_comment": image_comment,
     }
+
+
+def _build_vesselboost_source_copy_identity(source_identity):
+    source_series_description = _first_non_empty_text(
+        source_identity.get("series_description", ""),
+        "source",
+    )
+    source_parent_grouping = _first_non_empty_text(
+        source_identity.get("parent_grouping", ""),
+        source_series_description,
+    )
+    series_description = f"{source_series_description}_{VESSELBOOST_SOURCE_COPY_LABEL}"
+    grouping = f"{source_parent_grouping}_{VESSELBOOST_SOURCE_COPY_LABEL}"
+    return {
+        "series_description": series_description,
+        "sequence_description": series_description,
+        "grouping": grouping,
+        "display_token": VESSELBOOST_SOURCE_COPY_LABEL,
+        "type_token": VESSELBOOST_SOURCE_COPY_TYPE_TOKEN,
+        "image_comment": VESSELBOOST_SOURCE_COPY_LABEL,
+    }
+
+
+def _apply_vesselboost_output_identity(
+    image,
+    output_identity,
+    source_type_token,
+    processing_history,
+):
+    header = image.getHead()
+    header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    image.setHead(header)
+
+    tmp_meta = ismrmrd.Meta.deserialize(image.attribute_string)
+    tmp_meta["DataRole"] = "Image"
+    tmp_meta["ImageProcessingHistory"] = processing_history
+    tmp_meta["SeriesDescription"] = output_identity["series_description"]
+    tmp_meta["SequenceDescription"] = output_identity["sequence_description"]
+    tmp_meta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
+    tmp_meta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+    tmp_meta["ImageTypeValue3"] = "M"
+    tmp_meta["ImageTypeValue4"] = output_identity["display_token"]
+    tmp_meta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+    tmp_meta["ComplexImageComponent"] = "MAGNITUDE"
+    tmp_meta["ImageComments"] = output_identity["image_comment"]
+    tmp_meta["ImageComment"] = output_identity["image_comment"]
+    if "SequenceDescriptionAdditional" in tmp_meta:
+        try:
+            del tmp_meta["SequenceDescriptionAdditional"]
+        except Exception:
+            tmp_meta["SequenceDescriptionAdditional"] = ""
+
+    minihead_text = _decode_ice_minihead(tmp_meta)
+    if minihead_text:
+        patched_minihead_text, minihead_changed = _patch_ice_minihead(
+            minihead_text,
+            output_identity["sequence_description"],
+            output_identity["grouping"],
+            source_type_token,
+            output_identity["type_token"],
+            target_display_token=output_identity["display_token"],
+        )
+        if minihead_changed:
+            tmp_meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
+        else:
+            logging.warning(
+                "IceMiniHead was present but not updated for %s",
+                output_identity["series_description"],
+            )
+
+    tmp_meta["Keep_image_geometry"] = 1
+    image.attribute_string = tmp_meta.serialize()
+
+
+def _validate_vesselboost_output_contract(
+    images,
+    source_series_indices,
+    source_identity,
+    context,
+):
+    # This runs before any send. Raising here makes OpenRecon log the error and
+    # close cleanly instead of partially returning images with unsafe identity.
+    source_series_indices = {int(index) for index in source_series_indices}
+    source_series_description = _first_non_empty_text(
+        source_identity.get("series_description", "")
+    )
+    source_grouping = _first_non_empty_text(source_identity.get("parent_grouping", ""))
+    source_sequence = _first_non_empty_text(source_identity.get("parent_sequence", ""))
+
+    errors = []
+    for index, image in enumerate(_as_image_list(images)):
+        series_index = int(getattr(image, "image_series_index", 0))
+        try:
+            meta_obj = ismrmrd.Meta.deserialize(image.attribute_string)
+        except Exception as exc:
+            errors.append(f"image {index}: invalid MRD Meta attributes: {exc}")
+            continue
+
+        minihead_text = _decode_ice_minihead(meta_obj)
+        meta_series_description = _get_meta_text(meta_obj, "SeriesDescription")
+        minihead_series_description = _extract_minihead_string_value(
+            minihead_text,
+            "SeriesDescription",
+        )
+        meta_grouping = _get_meta_text(meta_obj, "SeriesNumberRangeNameUID")
+        minihead_grouping = _extract_minihead_string_value(
+            minihead_text,
+            "SeriesNumberRangeNameUID",
+        )
+        grouping = _first_non_empty_text(meta_grouping, minihead_grouping)
+        meta_sequence = _get_meta_text(meta_obj, "SequenceDescription")
+        minihead_sequence = _extract_minihead_string_value(
+            minihead_text,
+            "SequenceDescription",
+        )
+        sequence = _first_non_empty_text(meta_sequence, minihead_sequence)
+        image_type_value4 = _first_non_empty_text(
+            _get_meta_text(meta_obj, "ImageTypeValue4"),
+            _extract_minihead_array_tokens(minihead_text, "ImageTypeValue4"),
+        )
+
+        if series_index in source_series_indices:
+            errors.append(
+                f"image {index}: output still uses source image_series_index={series_index}"
+            )
+        if (
+            source_series_description
+            and meta_series_description == source_series_description
+        ):
+            errors.append(
+                f"image {index}: output Meta still uses source "
+                f"SeriesDescription={meta_series_description}"
+            )
+        if (
+            source_series_description
+            and minihead_series_description == source_series_description
+        ):
+            errors.append(
+                f"image {index}: output IceMiniHead still uses source "
+                f"SeriesDescription={minihead_series_description}"
+            )
+        if source_grouping and meta_grouping == source_grouping:
+            errors.append(
+                f"image {index}: output Meta still uses source "
+                f"SeriesNumberRangeNameUID={meta_grouping}"
+            )
+        if source_grouping and minihead_grouping == source_grouping:
+            errors.append(
+                f"image {index}: output IceMiniHead still uses source "
+                f"SeriesNumberRangeNameUID={minihead_grouping}"
+            )
+        if source_sequence and meta_sequence == source_sequence:
+            errors.append(
+                f"image {index}: output Meta still uses source "
+                f"SequenceDescription={meta_sequence}"
+            )
+        if source_sequence and minihead_sequence == source_sequence:
+            errors.append(
+                f"image {index}: output IceMiniHead still uses source "
+                f"SequenceDescription={minihead_sequence}"
+            )
+        if not grouping:
+            errors.append(f"image {index}: output is missing SeriesNumberRangeNameUID")
+        if not image_type_value4:
+            errors.append(f"image {index}: output is missing ImageTypeValue4")
+
+    if errors:
+        raise ValueError(
+            f"Invalid VesselBoost output identity contract for {context}: "
+            + "; ".join(errors[:10])
+        )
 
 
 def _derive_prep_mode(bias_field_correction: bool, denoising: bool) -> int:
@@ -943,6 +1119,58 @@ def _square_pixel_target_shape(
     return (target_rows, target_cols), target_spacing
 
 
+def _ice_compatible_target_shape(
+    target_shape: tuple[int, int],
+    orientation: str,
+) -> tuple[int, int]:
+    """Keep reformat image dimensions acceptable to Siemens ICE orientation code."""
+    rows, cols = target_shape
+    if rows % 2 == cols % 2:
+        return target_shape
+
+    adjusted_shape = (
+        rows + (rows % 2),
+        cols + (cols % 2),
+    )
+    logging.info(
+        "Adjusted %s reformat target_shape from %s to %s so row/column "
+        "dimensions have matching parity for ICE orientation handling",
+        orientation,
+        target_shape,
+        adjusted_shape,
+    )
+    return adjusted_shape
+
+
+def _diagnostic_reformat_target_shape(
+    target_shape: tuple[int, int],
+    target_spacing: float,
+    orientation: str,
+) -> tuple[tuple[int, int], float]:
+    downsample_factor = _env_positive_float(OPENRECON_REFORMAT_DOWNSAMPLE_ENV, 1.0)
+    if downsample_factor == 1.0:
+        return target_shape, target_spacing
+
+    adjusted_shape = (
+        max(1, int(round(target_shape[0] / downsample_factor))),
+        max(1, int(round(target_shape[1] / downsample_factor))),
+    )
+    adjusted_shape = _ice_compatible_target_shape(adjusted_shape, orientation)
+    adjusted_spacing = float(target_spacing) * downsample_factor
+    logging.info(
+        "Applying diagnostic %s=%.3f for %s reformat: target_shape %s -> %s, "
+        "target_spacing %.4f -> %.4f",
+        OPENRECON_REFORMAT_DOWNSAMPLE_ENV,
+        downsample_factor,
+        orientation,
+        target_shape,
+        adjusted_shape,
+        target_spacing,
+        adjusted_spacing,
+    )
+    return adjusted_shape, adjusted_spacing
+
+
 def _resize_2d_nearest(
     data: np.ndarray,
     target_shape: tuple[int, int],
@@ -1025,17 +1253,29 @@ def _build_reformatted_images(
         row_spacing=inplane_row_spacing,
         col_spacing=inplane_col_spacing,
     )
+    target_inplane_shape = _ice_compatible_target_shape(
+        target_inplane_shape,
+        orientation,
+    )
+    target_inplane_shape, target_inplane_spacing = _diagnostic_reformat_target_shape(
+        target_inplane_shape,
+        target_inplane_spacing,
+        orientation,
+    )
     new_fov = (
         float(target_inplane_shape[1] * target_inplane_spacing),
         float(target_inplane_shape[0] * target_inplane_spacing),
         orthogonal_fov,
     )
 
+    source_slice_count = max(1, int(N_z))
     logging.info(
-        "Building %s reformat: n_slices=%d slice_spacing=%.4f new_fov=%s "
+        "Building %s reformat: n_slices=%d source_slice_count=%d "
+        "slice_policy=modulo_source_slice_count slice_spacing=%.4f new_fov=%s "
         "series_index=%d target_shape=%s target_spacing=%.4f",
         orientation,
         n_slices,
+        source_slice_count,
         slice_spacing,
         new_fov,
         series_index,
@@ -1072,9 +1312,25 @@ def _build_reformatted_images(
             ctypes.c_float(new_fov[1]),
             ctypes.c_float(new_fov[2]),
         )
+        reformat_slice_counter = j % source_slice_count
         new_header.image_index = j
         new_header.image_series_index = series_index
-        new_header.slice = j
+        new_header.slice = reformat_slice_counter
+
+        if j < 5 or j >= n_slices - 5:
+            logging.info(
+                "%s reformat image header sample: image_index=%d slice=%d "
+                "series_index=%d position=%s read_dir0=%.6f phase_dir0=%.6f "
+                "slice_dir0=%.6f",
+                orientation,
+                j,
+                reformat_slice_counter,
+                series_index,
+                [round(float(v), 6) for v in slice_position],
+                float(new_read_dir[0]),
+                float(new_phase_dir[0]),
+                float(new_slice_dir[0]),
+            )
 
         for attr in (
             "measurement_uid",
@@ -1124,13 +1380,9 @@ def _build_reformatted_images(
                 del tmp_meta["SequenceDescriptionAdditional"]
             except Exception:
                 tmp_meta["SequenceDescriptionAdditional"] = ""
-        # Reformatted outputs have their own geometry and slice count, so they
-        # must not request reuse of the incoming axial geometry.
-        if "Keep_image_geometry" in tmp_meta:
-            try:
-                del tmp_meta["Keep_image_geometry"]
-            except Exception:
-                tmp_meta["Keep_image_geometry"] = ""
+        # The host requires this attribute to be present, but reformatted
+        # outputs must use the explicit geometry set on the MRD header.
+        tmp_meta["Keep_image_geometry"] = "0"
         tmp_meta["ImageRowDir"] = [
             "{:.18f}".format(new_read_dir[0]),
             "{:.18f}".format(new_read_dir[1]),
@@ -1141,22 +1393,258 @@ def _build_reformatted_images(
             "{:.18f}".format(new_phase_dir[1]),
             "{:.18f}".format(new_phase_dir[2]),
         ]
-        minihead_text = _decode_ice_minihead(tmp_meta)
-        if minihead_text:
-            patched_minihead_text, minihead_changed = _patch_ice_minihead(
-                minihead_text,
-                output_identity["sequence_description"],
-                output_identity["grouping"],
-                source_type_token,
-                output_identity["type_token"],
-                target_display_token=output_identity["display_token"],
-            )
-            if minihead_changed:
-                tmp_meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
+        if "IceMiniHead" in tmp_meta:
+            # The source miniheader contains original stack geometry and slice
+            # counts. Reusing it on reformats makes ICE treat sagittal/coronal
+            # outputs like the original axial series.
+            try:
+                del tmp_meta["IceMiniHead"]
+            except Exception:
+                tmp_meta["IceMiniHead"] = ""
         mrd_image.attribute_string = tmp_meta.serialize()
         images_out.append(mrd_image)
 
     return images_out
+
+
+OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96
+OPENRECON_SEND_CHUNK_SIZE_ENV = "VESSELBOOST_OPENRECON_SEND_IMAGE_CHUNK_SIZE"
+OPENRECON_REFORMAT_DOWNSAMPLE_ENV = "VESSELBOOST_OPENRECON_REFORMAT_DOWNSAMPLE_FACTOR"
+OPENRECON_DELAY_BEFORE_SERIES_ENV = "VESSELBOOST_OPENRECON_DELAY_BEFORE_SERIES"
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    raw_value = os.environ.get(name)
+    if raw_value is None or raw_value == "":
+        return default
+
+    try:
+        value = int(raw_value)
+    except ValueError:
+        logging.warning(
+            "Ignoring invalid %s=%r; expected a positive integer",
+            name,
+            raw_value,
+        )
+        return default
+
+    if value <= 0:
+        logging.warning(
+            "Ignoring invalid %s=%r; expected a positive integer",
+            name,
+            raw_value,
+        )
+        return default
+
+    return value
+
+
+def _env_positive_float(name: str, default: float) -> float:
+    raw_value = os.environ.get(name)
+    if raw_value is None or raw_value == "":
+        return default
+
+    try:
+        value = float(raw_value)
+    except ValueError:
+        logging.warning(
+            "Ignoring invalid %s=%r; expected a positive number",
+            name,
+            raw_value,
+        )
+        return default
+
+    if value <= 0:
+        logging.warning(
+            "Ignoring invalid %s=%r; expected a positive number",
+            name,
+            raw_value,
+        )
+        return default
+
+    return value
+
+
+def _series_send_delay_seconds(series_index: int) -> float:
+    """Return an optional diagnostic delay before sending a series.
+
+    Format: VESSELBOOST_OPENRECON_DELAY_BEFORE_SERIES="3:5,4:5".
+    This is intentionally opt-in so normal OpenRecon behavior is unchanged.
+    """
+    raw_value = os.environ.get(OPENRECON_DELAY_BEFORE_SERIES_ENV, "")
+    if not raw_value:
+        return 0.0
+
+    for entry in raw_value.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        try:
+            raw_series, raw_delay = entry.split(":", 1)
+            candidate_series = int(raw_series.strip())
+            delay_seconds = float(raw_delay.strip())
+        except ValueError:
+            logging.warning(
+                "Ignoring invalid %s entry %r; expected '<series>:<seconds>'",
+                OPENRECON_DELAY_BEFORE_SERIES_ENV,
+                entry,
+            )
+            continue
+        if candidate_series == series_index:
+            return max(0.0, delay_seconds)
+
+    return 0.0
+
+
+def _image_payload_bytes(image) -> int:
+    try:
+        return int(np.asarray(image.data).nbytes)
+    except Exception:
+        return 0
+
+
+def _image_header_field(image, name: str, default=None):
+    try:
+        header = image.getHead()
+        return getattr(header, name, default)
+    except Exception:
+        return getattr(image, name, default)
+
+
+def _format_chunk_image_summary(chunk) -> dict:
+    if not chunk:
+        return {}
+
+    first = chunk[0]
+    last = chunk[-1]
+    try:
+        matrix = tuple(int(v) for v in _image_header_field(first, "matrix_size", [])[:])
+    except Exception:
+        matrix = None
+    try:
+        dtype = str(np.asarray(first.data).dtype)
+    except Exception:
+        dtype = "unknown"
+
+    return {
+        "matrix": matrix,
+        "dtype": dtype,
+        "payload_bytes": sum(_image_payload_bytes(image) for image in chunk),
+        "first_image_index": int(_image_header_field(first, "image_index", -1)),
+        "last_image_index": int(_image_header_field(last, "image_index", -1)),
+        "first_slice": int(_image_header_field(first, "slice", -1)),
+        "last_slice": int(_image_header_field(last, "slice", -1)),
+    }
+
+
+def _send_images_by_series(connection, images, context: str = "images") -> None:
+    """Send MRD images in series-preserving chunks."""
+    if images is None:
+        return
+    if isinstance(images, ismrmrd.Image):
+        images = [images]
+    images = list(images)
+    if not images:
+        logging.info("Skipping send for %s because there are no images", context)
+        return
+
+    batch = []
+    batch_series = None
+    delayed_series = set()
+    chunk_size = _env_positive_int(
+        OPENRECON_SEND_CHUNK_SIZE_ENV,
+        OPENRECON_SEND_IMAGE_CHUNK_SIZE,
+    )
+    if chunk_size != OPENRECON_SEND_IMAGE_CHUNK_SIZE:
+        logging.info(
+            "Using diagnostic OpenRecon send chunk size %d from %s",
+            chunk_size,
+            OPENRECON_SEND_CHUNK_SIZE_ENV,
+        )
+
+    def flush_batch():
+        nonlocal batch, batch_series
+        if not batch:
+            return
+        if batch_series not in delayed_series:
+            delay_seconds = _series_send_delay_seconds(batch_series)
+            if delay_seconds > 0:
+                logging.info(
+                    "Applying diagnostic delay before sending series_index=%s: %.3f seconds",
+                    batch_series,
+                    delay_seconds,
+                )
+                time.sleep(delay_seconds)
+            delayed_series.add(batch_series)
+
+        for chunk_start in range(0, len(batch), chunk_size):
+            chunk = batch[chunk_start:chunk_start + chunk_size]
+            chunk_summary = _format_chunk_image_summary(chunk)
+            logging.info(
+                "Sending %s batch: series_index=%s chunk=%d-%d/%d "
+                "image_count=%d matrix=%s dtype=%s payload_bytes=%d "
+                "first_image_index=%d last_image_index=%d first_slice=%d last_slice=%d",
+                context,
+                batch_series,
+                chunk_start + 1,
+                chunk_start + len(chunk),
+                len(batch),
+                len(chunk),
+                chunk_summary.get("matrix"),
+                chunk_summary.get("dtype", "unknown"),
+                chunk_summary.get("payload_bytes", 0),
+                chunk_summary.get("first_image_index", -1),
+                chunk_summary.get("last_image_index", -1),
+                chunk_summary.get("first_slice", -1),
+                chunk_summary.get("last_slice", -1),
+            )
+            send_start = perf_counter()
+            try:
+                connection.send_image(chunk)
+            except Exception:
+                logging.error(
+                    "Failed sending %s batch: series_index=%s chunk=%d-%d/%d "
+                    "image_count=%d matrix=%s payload_bytes=%d elapsed_seconds=%.3f",
+                    context,
+                    batch_series,
+                    chunk_start + 1,
+                    chunk_start + len(chunk),
+                    len(batch),
+                    len(chunk),
+                    chunk_summary.get("matrix"),
+                    chunk_summary.get("payload_bytes", 0),
+                    perf_counter() - send_start,
+                )
+                raise
+            logging.info(
+                "Finished sending %s batch: series_index=%s chunk=%d-%d/%d "
+                "elapsed_seconds=%.3f",
+                context,
+                batch_series,
+                chunk_start + 1,
+                chunk_start + len(chunk),
+                len(batch),
+                perf_counter() - send_start,
+            )
+        batch = []
+        batch_series = None
+
+    for image in images:
+        series_index = int(getattr(image, "image_series_index", 0))
+        if batch and series_index != batch_series:
+            flush_batch()
+        batch.append(image)
+        batch_series = series_index
+
+    flush_batch()
+
+
+def _as_image_list(images):
+    if images is None:
+        return []
+    if isinstance(images, ismrmrd.Image):
+        return [images]
+    return list(images)
 
 
 def process(connection, config, metadata):
@@ -1183,9 +1671,9 @@ def process(connection, config, metadata):
         logging.info("Improperly formatted metadata: \n%s", metadata)
 
     # Continuously parse incoming data parsed from MRD messages
-    currentSeries = 0
     acqGroup = []
-    imgGroup = []
+    imageGroups = {}
+    passthroughImages = []
     waveformGroup = []
     try:
         for item in connection:
@@ -1205,32 +1693,22 @@ def process(connection, config, metadata):
                 if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
                     logging.info("Processing a group of k-space data")
                     image = process_raw(acqGroup, connection, config, metadata)
-                    connection.send_image(image)
+                    _send_images_by_series(connection, image, "processed raw output")
                     acqGroup = []
 
             # ----------------------------------------------------------
             # Image data messages
             # ----------------------------------------------------------
             elif isinstance(item, ismrmrd.Image):
-                # When this criteria is met, run process_group() on the accumulated
-                # data, which returns images that are sent back to the client.
-                # e.g. when the series number changes:
-                if item.image_series_index != currentSeries:
-                    logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
-                    currentSeries = item.image_series_index
-                    image = process_image(imgGroup, connection, config, metadata)
-                    connection.send_image(image)
-                    imgGroup = []
-
                 # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
                 if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
-                    imgGroup.append(item)
+                    imageGroups.setdefault(int(item.image_series_index), []).append(item)
                 else:
                     tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
                     tmpMeta['Keep_image_geometry']    = 1
                     item.attribute_string = tmpMeta.serialize()
 
-                    connection.send_image(item)
+                    passthroughImages.append(item)
                     continue
 
             # ----------------------------------------------------------
@@ -1245,6 +1723,37 @@ def process(connection, config, metadata):
             else:
                 logging.error("Unsupported data type %s", type(item).__name__)
 
+        logging.info(
+            "Input stream drained before VesselBoost image processing: "
+            "processable_series=%d processable_images=%d passthrough_images=%d",
+            len(imageGroups),
+            sum(len(group) for group in imageGroups.values()),
+            len(passthroughImages),
+        )
+
+        if passthroughImages:
+            _send_images_by_series(
+                connection,
+                passthroughImages,
+                "passthrough image after input drain",
+            )
+
+        for series_index, images in imageGroups.items():
+            logging.info(
+                "Processing buffered VesselBoost image series after input drain: "
+                "series_index=%d images=%d",
+                series_index,
+                len(images),
+            )
+            image = process_image(images, connection, config, metadata)
+            _send_images_by_series(
+                connection,
+                image,
+                "processed image output after input drain",
+            )
+
+        imageGroups.clear()
+
         # Extract raw ECG waveform data. Basic sorting to make sure that data 
         # is time-ordered, but no additional checking for missing data.
         # ecgData has shape (5 x timepoints)
@@ -1253,21 +1762,13 @@ def process(connection, config, metadata):
             ecgData = [item.data for item in waveformGroup if item.waveform_id == 0]
             ecgData = np.concatenate(ecgData,1)
 
-        # Process any remaining groups of raw or image data.  This can 
+        # Process any remaining groups of raw data.  This can
         # happen if the trigger condition for these groups are not met.
-        # This is also a fallback for handling image data, as the last
-        # image in a series is typically not separately flagged.
         if len(acqGroup) > 0:
             logging.info("Processing a group of k-space data (untriggered)")
             image = process_raw(acqGroup, connection, config, metadata)
-            connection.send_image(image)
+            _send_images_by_series(connection, image, "processed raw output")
             acqGroup = []
-
-        if len(imgGroup) > 0:
-            logging.info("Processing a group of images (untriggered)")
-            image = process_image(imgGroup, connection, config, metadata)
-            connection.send_image(image)
-            imgGroup = []
 
     except Exception as e:
         logging.error(traceback.format_exc())
@@ -1987,17 +2488,44 @@ def process_image(images, connection, config, metadata):
                 "sendoriginal is true, but input was raw data, so no original images to return."
             )
         else:
+            source_copy_identity = _build_vesselboost_source_copy_identity(source_identity)
+            used_output_series_indices = [
+                int(getattr(image.getHead(), "image_series_index", 0))
+                for image in imagesOut
+            ]
+            source_copy_series_index = max(
+                used_output_series_indices + source_series_indices,
+                default=segmentation_series_index,
+            ) + 1
             logging.info(
-                "Sending original MRA images with their source series grouping preserved"
+                "Sending original MRA images as derived source-copy series "
+                "(series_index=%d, name=%s)",
+                source_copy_series_index,
+                source_copy_identity["series_description"],
             )
             ordered_original_images = [
                 original_images[index] for index in slice_sort_indices
             ]
-            for original_image in reversed(ordered_original_images):
-                tmpMeta = ismrmrd.Meta.deserialize(original_image.attribute_string)
-                tmpMeta['Keep_image_geometry'] = 1
-                original_image.attribute_string = tmpMeta.serialize()
-                imagesOut.insert(0, original_image)
+            for iImg, original_image in enumerate(ordered_original_images):
+                original_header = original_image.getHead()
+                original_header.image_series_index = source_copy_series_index
+                original_header.image_index = iImg
+                original_header.slice = iImg
+                original_image.setHead(original_header)
+                _apply_vesselboost_output_identity(
+                    original_image,
+                    source_copy_identity,
+                    source_identity["source_type_token"],
+                    ["PYTHON", "VESSELBOOST", "SOURCE_COPY"],
+                )
+                imagesOut.append(original_image)
+
+    _validate_vesselboost_output_contract(
+        imagesOut,
+        source_series_indices,
+        source_identity,
+        "processed image output",
+    )
 
     return imagesOut
 

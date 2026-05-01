@@ -31,6 +31,7 @@ mmMetricsOutputDir = "/tmp/musclemap_metrics"
 mmMetricsMethod = "average"
 muscleMapDisplayLabel = "Musclemap"
 muscleMapImageTypeToken = "MUSCLEMAP"
+reservedScannerSeriesIndices = {99}
 
 
 def process(connection, config, metadata):
@@ -61,8 +62,10 @@ def process(connection, config, metadata):
     # Continuously parse incoming data parsed from MRD messages
     acqGroup = []
     imgGroup = []
-    currentImageVolumeKey = None
+    processableImageGroups = {}
     inputVolumeSummaries = {}
+    passthroughImages = []
+    inputImagesForSeriesRegistry = []
     sentImagesForSummary = []
     waveformGroup = []
     try:
@@ -93,22 +96,7 @@ def process(connection, config, metadata):
             # ----------------------------------------------------------
             elif isinstance(item, ismrmrd.Image):
                 itemVolumeKey = _build_image_volume_key(item)
-                if imgGroup and currentImageVolumeKey is not None and itemVolumeKey != currentImageVolumeKey:
-                    logging.info(
-                        "Processing a group of images because volume key changed from %s to %s",
-                        currentImageVolumeKey,
-                        itemVolumeKey,
-                    )
-                    image = process_image(imgGroup, connection, config, metadata)
-                    _send_images_with_summary(
-                        connection,
-                        image,
-                        "processed_volume_key_change",
-                        sentImagesForSummary,
-                        log_now=False,
-                    )
-                    imgGroup = []
-                    currentImageVolumeKey = None
+                inputImagesForSeriesRegistry.append(item)
 
                 # Only process magnitude Water images -- send phase images and non-Water images back without modification
                 tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
@@ -152,19 +140,11 @@ def process(connection, config, metadata):
                 )
                 
                 if shouldProcess:
-                    currentImageVolumeKey = itemVolumeKey
-                    imgGroup.append(item)
+                    processableImageGroups.setdefault(itemVolumeKey, []).append(item)
                 else:
                     tmpMeta["Keep_image_geometry"] = 1
                     item.attribute_string = tmpMeta.serialize()
-
-                    _send_images_with_summary(
-                        connection,
-                        item,
-                        "passthrough_not_processed",
-                        sentImagesForSummary,
-                        log_now=False,
-                    )
+                    passthroughImages.append(item)
                     continue
 
             # ----------------------------------------------------------
@@ -179,17 +159,49 @@ def process(connection, config, metadata):
             else:
                 logging.error("Unsupported data type %s", type(item).__name__)
 
-        if len(imgGroup) > 0:
-            logging.info("Processing a group of images (untriggered)")
-            image = process_image(imgGroup, connection, config, metadata)
+        logging.info(
+            "Input stream drained before MuscleMap processing: passthrough_images=%d processable_volumes=%d processable_images=%d",
+            len(passthroughImages),
+            len(processableImageGroups),
+            sum(len(group) for group in processableImageGroups.values()),
+        )
+
+        derivedSeriesAllocator = _build_connection_series_allocator(inputImagesForSeriesRegistry)
+        outputImagesForSend = []
+        if passthroughImages:
+            logging.info("Buffering %d passthrough image(s) until output contract validation", len(passthroughImages))
+            outputImagesForSend.extend(passthroughImages)
+
+        for volume_key, imgGroup in processableImageGroups.items():
+            logging.info(
+                "Processing buffered image volume after input drain: volume_key=%s images=%d",
+                volume_key,
+                len(imgGroup),
+            )
+            image = process_image(
+                imgGroup,
+                connection,
+                config,
+                metadata,
+                derived_series_allocator=derivedSeriesAllocator,
+            )
+            outputImagesForSend.extend(_as_image_list(image))
+
+        if outputImagesForSend:
+            _log_and_validate_output_series_contract(
+                outputImagesForSend,
+                inputImagesForSeriesRegistry,
+                context="before_connection_send",
+            )
             _send_images_with_summary(
                 connection,
-                image,
-                "processed_untriggered",
+                outputImagesForSend,
+                "validated_connection_output",
                 sentImagesForSummary,
                 log_now=False,
             )
-            imgGroup = []
+
+        processableImageGroups.clear()
 
     except Exception as e:
         logging.error(traceback.format_exc())
@@ -712,6 +724,7 @@ def _patch_ice_minihead(
 
     for param_name, param_value in (
         ("SequenceDescription", parent_sequence),
+        ("ProtocolName", parent_sequence),
         ("SeriesNumberRangeNameUID", parent_grouping),
         ("SeriesInstanceUID", series_instance_uid),
         ("ImageType", f"DERIVED\\PRIMARY\\{target_image_type_value3}\\{target_type_token}"),
@@ -1328,6 +1341,253 @@ def _increment_group(group_map, key):
     group_map[group_key] = group_map.get(group_key, 0) + 1
 
 
+class ConnectionSeriesAllocator:
+    def __init__(self, observed_indices=None, reserved_indices=None):
+        self.observed_indices = set(observed_indices or [])
+        self.reserved_indices = set(reserved_indices or [])
+        self.allocations = []
+
+    def allocate(self, role):
+        role = _first_non_empty_text(role).upper()
+        if not role:
+            role = "DERIVED"
+
+        # Allocation is monotonic from the highest actually observed or
+        # previously allocated series index. Reserved indices below that floor
+        # are unreachable by construction; reserved indices at/above the next
+        # candidate are skipped.
+        allocated_values = {allocation["index"] for allocation in self.allocations}
+        candidate = max(self.observed_indices | allocated_values | {0}) + 1
+        while candidate in self.reserved_indices:
+            candidate += 1
+
+        allocation = {
+            "role": role,
+            "index": candidate,
+            "ordinal": len(self.allocations) + 1,
+        }
+        self.allocations.append(allocation)
+        _log_json_event(
+            "DERIVED_SERIES_ALLOCATION",
+            {
+                "role": role,
+                "allocated_index": candidate,
+                "allocation_ordinal": allocation["ordinal"],
+                "observed_indices": sorted(self.observed_indices),
+                "reserved_indices": sorted(self.reserved_indices),
+                "allocation_count": len(self.allocations),
+            },
+        )
+        return candidate
+
+
+def _build_connection_series_allocator(images):
+    observed_indices = set()
+    reserved_indices = set(reservedScannerSeriesIndices)
+    registry = []
+    for image in _as_image_list(images):
+        series_index = _get_image_series_index(image)
+        observed_indices.add(series_index)
+        registry.append(_series_contract_entry(image, source="input"))
+
+    allocator = ConnectionSeriesAllocator(
+        observed_indices=observed_indices,
+        reserved_indices=reserved_indices,
+    )
+    _log_json_event(
+        "INPUT_SERIES_REGISTRY",
+        {
+            "observed_indices": sorted(observed_indices),
+            "reserved_indices": sorted(reserved_indices),
+            "series": registry,
+        },
+    )
+    return allocator
+
+
+def _series_contract_role(meta_obj, minihead_text):
+    image_type_value4 = _first_non_empty_text(
+        _get_meta_text(meta_obj, "ImageTypeValue4"),
+        _get_dicom_image_type_value(meta_obj, 3),
+        _extract_minihead_array_tokens(minihead_text, "ImageTypeValue4"),
+    ).upper()
+    if image_type_value4:
+        return image_type_value4
+
+    sequence_description = _first_non_empty_text(
+        _get_meta_text(meta_obj, "SequenceDescription"),
+        _extract_minihead_string_value(minihead_text, "SequenceDescription"),
+    ).upper()
+    if "MUSCLEMAP" in sequence_description and "METRICS" in sequence_description:
+        return "METRICS"
+    if "MUSCLEMAP" in sequence_description:
+        return muscleMapImageTypeToken
+    return sequence_description or "UNKNOWN"
+
+
+def _series_contract_entry(image, source="output"):
+    try:
+        meta_obj = ismrmrd.Meta.deserialize(image.attribute_string)
+    except Exception:
+        meta_obj = ismrmrd.Meta()
+    minihead_text = _decode_ice_minihead(meta_obj)
+    meta_uid = _get_meta_text(meta_obj, "SeriesInstanceUID")
+    minihead_uid = _extract_minihead_string_value(minihead_text, "SeriesInstanceUID")
+    meta_grouping = _get_meta_text(meta_obj, "SeriesNumberRangeNameUID")
+    minihead_grouping = _extract_minihead_string_value(minihead_text, "SeriesNumberRangeNameUID")
+    meta_protocol_name = _get_meta_text(meta_obj, "ProtocolName")
+    minihead_protocol_name = _extract_minihead_string_value(minihead_text, "ProtocolName")
+    return {
+        "source": source,
+        "role": _series_contract_role(meta_obj, minihead_text),
+        "image_series_index": _get_image_series_index(image),
+        "series_instance_uid": _first_non_empty_text(meta_uid, minihead_uid),
+        "meta_series_instance_uid": meta_uid or "N/A",
+        "minihead_series_instance_uid": minihead_uid or "N/A",
+        "series_grouping": _first_non_empty_text(meta_grouping, minihead_grouping) or "N/A",
+        "meta_series_grouping": meta_grouping or "N/A",
+        "minihead_series_grouping": minihead_grouping or "N/A",
+        "meta_protocol_name": meta_protocol_name or "N/A",
+        "minihead_protocol_name": minihead_protocol_name or "N/A",
+        "sequence_description": _first_non_empty_text(
+            _get_meta_text(meta_obj, "SequenceDescription"),
+            _extract_minihead_string_value(minihead_text, "SequenceDescription"),
+        ) or "N/A",
+        "protocol_name": _first_non_empty_text(
+            meta_protocol_name,
+            minihead_protocol_name,
+        ) or "N/A",
+        "series_description": _get_meta_text(meta_obj, "SeriesDescription") or "N/A",
+    }
+
+
+def _series_contract_summary(images, source="output"):
+    grouped = {}
+    for image in _as_image_list(images):
+        entry = _series_contract_entry(image, source=source)
+        key = (
+            entry["source"],
+            entry["image_series_index"],
+            entry["role"],
+            entry["series_instance_uid"],
+            entry["series_grouping"],
+        )
+        if key not in grouped:
+            grouped[key] = dict(entry)
+            grouped[key]["count"] = 0
+        grouped[key]["count"] += 1
+    return list(grouped.values())
+
+
+def _log_and_validate_output_series_contract(output_images, input_images, context):
+    output_summary = _series_contract_summary(output_images, source="output")
+    input_summary = _series_contract_summary(input_images, source="input")
+    payload = {
+        "context": context,
+        "input_series": input_summary,
+        "output_series": output_summary,
+        "reserved_indices": sorted(reservedScannerSeriesIndices),
+    }
+    _log_json_event("OUTPUT_SERIES_CONTRACT", payload)
+    _validate_output_series_contract(output_summary, input_summary)
+
+
+def _validate_output_series_contract(output_summary, input_summary):
+    # This deliberately raises before any image is sent. The caller catches the
+    # exception, reports an MRD logging error, and closes ImageComm cleanly so a
+    # scanner-side identity collision becomes a hard OpenRecon failure instead
+    # of a silent missing series.
+    errors = []
+    roles_by_index = {}
+    derived_series_by_uid = {}
+    # Keep this list aligned with every derived output kind created by this
+    # OpenRecon app. These roles are held to the stricter Siemens identity
+    # contract because scanner storage/composer may key on IceMiniHead fields.
+    derived_roles = {muscleMapImageTypeToken, "METRICS"}
+    input_uids = {
+        entry["series_instance_uid"]
+        for entry in input_summary
+        if _first_non_empty_text(entry.get("series_instance_uid"))
+    }
+
+    for entry in output_summary:
+        role = _first_non_empty_text(entry.get("role")).upper()
+        series_index = int(entry.get("image_series_index", 0))
+        uid = _first_non_empty_text(entry.get("series_instance_uid"))
+        meta_uid = _first_non_empty_text(entry.get("meta_series_instance_uid"))
+        minihead_uid = _first_non_empty_text(entry.get("minihead_series_instance_uid"))
+        meta_grouping = _first_non_empty_text(entry.get("meta_series_grouping"))
+        minihead_grouping = _first_non_empty_text(entry.get("minihead_series_grouping"))
+        meta_protocol = _first_non_empty_text(entry.get("meta_protocol_name"))
+        minihead_protocol = _first_non_empty_text(entry.get("minihead_protocol_name"))
+
+        roles_by_index.setdefault(series_index, set()).add(role)
+
+        is_derived_role = role in derived_roles
+        if is_derived_role:
+            if uid:
+                derived_series_by_uid.setdefault(uid, set()).add(
+                    (
+                        role,
+                        series_index,
+                        _first_non_empty_text(entry.get("series_grouping")) or "N/A",
+                    )
+                )
+            if series_index in reservedScannerSeriesIndices:
+                errors.append(f"derived role {role} uses reserved scanner series index {series_index}")
+            if uid in input_uids:
+                errors.append(f"derived role {role} reuses input SeriesInstanceUID {uid}")
+            if not meta_uid:
+                errors.append(f"derived role {role} is missing Meta SeriesInstanceUID")
+            if not minihead_uid:
+                errors.append(f"derived role {role} is missing IceMiniHead SeriesInstanceUID")
+            if meta_uid and minihead_uid and meta_uid != minihead_uid:
+                errors.append(
+                    f"derived role {role} has Meta/IceMiniHead SeriesInstanceUID mismatch: "
+                    f"{meta_uid} != {minihead_uid}"
+                )
+            if not meta_grouping:
+                errors.append(f"derived role {role} is missing Meta SeriesNumberRangeNameUID")
+            if not minihead_grouping:
+                errors.append(f"derived role {role} is missing IceMiniHead SeriesNumberRangeNameUID")
+            if meta_grouping and minihead_grouping and meta_grouping != minihead_grouping:
+                errors.append(
+                    f"derived role {role} has Meta/IceMiniHead SeriesNumberRangeNameUID mismatch: "
+                    f"{meta_grouping} != {minihead_grouping}"
+                )
+            if not meta_protocol:
+                errors.append(f"derived role {role} is missing Meta ProtocolName")
+            if not minihead_protocol:
+                errors.append(f"derived role {role} is missing IceMiniHead ProtocolName")
+            if meta_protocol and minihead_protocol and meta_protocol != minihead_protocol:
+                errors.append(
+                    f"derived role {role} has Meta/IceMiniHead ProtocolName mismatch: "
+                    f"{meta_protocol} != {minihead_protocol}"
+                )
+
+    for series_index, roles in sorted(roles_by_index.items()):
+        if len(roles) > 1 and any(role in derived_roles for role in roles):
+            errors.append(
+                f"image_series_index {series_index} is shared by multiple roles: {sorted(roles)}"
+            )
+        elif len(roles) > 1:
+            logging.warning(
+                "Input/pass-through roles share image_series_index %d but no derived role is involved: %s",
+                series_index,
+                sorted(roles),
+            )
+
+    for uid, derived_series in sorted(derived_series_by_uid.items()):
+        if len(derived_series) > 1:
+            errors.append(
+                f"derived SeriesInstanceUID {uid} is shared by multiple derived series: "
+                f"{sorted(derived_series)}"
+            )
+
+    if errors:
+        raise ValueError("Invalid output series contract before send: " + "; ".join(errors))
+
+
 def _log_send_batch_summary(images, context):
     if images is None:
         images = []
@@ -1384,13 +1644,53 @@ def _as_image_list(images):
     return [images]
 
 
+def _get_image_series_index(image):
+    try:
+        return int(getattr(image.getHead(), "image_series_index", 0))
+    except Exception:
+        return 0
+
+
+def _send_images_by_series(connection, images, context):
+    image_list = _as_image_list(images)
+    if not image_list:
+        logging.info("Skipping send for %s because there are no images", context)
+        return
+
+    batch = []
+    batch_series = None
+
+    def flush_batch():
+        nonlocal batch, batch_series
+        if not batch:
+            return
+        logging.info(
+            "Sending %s batch: series_index=%s image_count=%d",
+            context,
+            batch_series,
+            len(batch),
+        )
+        connection.send_image(batch)
+        batch = []
+        batch_series = None
+
+    for image in image_list:
+        series_index = _get_image_series_index(image)
+        if batch and series_index != batch_series:
+            flush_batch()
+        batch.append(image)
+        batch_series = series_index
+
+    flush_batch()
+
+
 def _send_images_with_summary(connection, images, context, sent_images=None, log_now=True):
     image_list = _as_image_list(images)
     if sent_images is not None:
         sent_images.extend(image_list)
     if log_now:
         _log_send_batch_summary(image_list, context)
-    connection.send_image(images)
+    _send_images_by_series(connection, image_list, context)
 
 
 def _parse_mm_segment_chunksize(value):
@@ -1944,6 +2244,7 @@ def _build_metrics_report_images(
         report_meta["WindowWidth"] = "4080"
         report_meta["SeriesDescription"] = report_identity["series_description"]
         report_meta["SequenceDescription"] = report_identity["sequence_description"]
+        report_meta["ProtocolName"] = report_identity["sequence_description"]
         report_meta["SeriesNumberRangeNameUID"] = report_parent_grouping
         report_meta["SeriesInstanceUID"] = report_series_instance_uid
         report_meta["ImageType"] = "METRICS"
@@ -2028,6 +2329,59 @@ def _build_mm_segment_retry_chunks(chunksize, image_depth, output_text):
     return candidates
 
 
+_mm_segment_help_text = None
+
+
+def _get_mm_segment_help_text():
+    global _mm_segment_help_text
+    if _mm_segment_help_text is not None:
+        return _mm_segment_help_text
+
+    try:
+        result = subprocess.run(
+            ["mm_segment", "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        _mm_segment_help_text = "\n".join(
+            part for part in (result.stdout, result.stderr) if part
+        )
+    except Exception:
+        logging.warning("Unable to inspect mm_segment --help; assuming current CLI supports chunk options")
+        _mm_segment_help_text = ""
+
+    return _mm_segment_help_text
+
+
+def _mm_segment_supports_option(*option_names):
+    help_text = _get_mm_segment_help_text()
+    if not help_text:
+        return True
+    return any(option_name in help_text for option_name in option_names)
+
+
+def _build_mm_segment_command(bodyregion, chunksize, spatialoverlap):
+    command = [
+        "mm_segment",
+        "-i", mmSegmentInputPath,
+        "-r", bodyregion,
+    ]
+
+    if _mm_segment_supports_option("-c", "--chunksize"):
+        command.extend(["-c", str(chunksize)])
+    else:
+        logging.warning("Installed mm_segment does not advertise -c/--chunksize; omitting chunk size option")
+
+    if _mm_segment_supports_option("-s", "--spatialoverlap"):
+        command.extend(["-s", str(spatialoverlap)])
+    else:
+        logging.warning("Installed mm_segment does not advertise -s/--spatialoverlap; omitting spatial overlap option")
+
+    command.extend(["-g", "Y"])
+    return command
+
+
 def _run_mm_segment(bodyregion, chunksize, spatialoverlap, image_depth):
     attempt_chunks = [chunksize]
     seen_chunks = set()
@@ -2039,14 +2393,7 @@ def _run_mm_segment(bodyregion, chunksize, spatialoverlap, image_depth):
             continue
         seen_chunks.add(chunk_label)
 
-        mm_segment_cmd = [
-            "mm_segment",
-            "-i", mmSegmentInputPath,
-            "-r", bodyregion,
-            "-c", chunk_label,
-            "-s", str(spatialoverlap),
-            "-g", "Y",
-        ]
+        mm_segment_cmd = _build_mm_segment_command(bodyregion, chunk_label, spatialoverlap)
 
         if os.path.exists(mmSegmentOutputPath):
             os.remove(mmSegmentOutputPath)
@@ -2110,9 +2457,14 @@ def _run_mm_segment(bodyregion, chunksize, spatialoverlap, image_depth):
     raise RuntimeError("mm_segment did not complete successfully")
 
 
-def process_image(imgGroup, connection, config, metadata):
+def process_image(imgGroup, connection, config, metadata, derived_series_allocator=None):
     if len(imgGroup) == 0:
         return []
+    if derived_series_allocator is None:
+        logging.warning(
+            "No connection-level series allocator supplied; building fallback allocator from this image group only"
+        )
+        derived_series_allocator = _build_connection_series_allocator(imgGroup)
 
     segmentation_colormap = _as_config_bool(
         mrdhelper.get_json_config_param(config, 'segmentationcolormap', default=False, type='bool')
@@ -2554,14 +2906,7 @@ def process_image(imgGroup, connection, config, metadata):
         int(getattr(image_header, "image_series_index", 0))
         for image_header in head
     ]
-    known_series_floor = max(source_series_indices, default=0)
-    for meta_obj in meta:
-        contrast_count = _get_first_meta_int(meta_obj, ["contrast_count", "ContrastCount"])
-        if contrast_count is not None:
-            known_series_floor = max(known_series_floor, contrast_count)
-    segmentation_series_index = known_series_floor + 1
-    if segmentation_series_index == 99:
-        segmentation_series_index += 1
+    segmentation_series_index = derived_series_allocator.allocate("MUSCLEMAP")
     segmentation_identity = _build_derived_series_identity(
         source_series_identity,
         series_description=muscleMapDisplayLabel,
@@ -2572,10 +2917,9 @@ def process_image(imgGroup, connection, config, metadata):
     )
     logging.info(
         "Using image_series_index=%d for MuscleMap segmentation "
-        "(source series indices=%s, known_series_floor=%d, derived_grouping=%s, derived_series_uid=%s)",
+        "(source series indices=%s, derived_grouping=%s, derived_series_uid=%s)",
         segmentation_series_index,
         sorted(set(source_series_indices)),
-        known_series_floor,
         segmentation_identity["grouping"],
         segmentation_identity["series_instance_uid"],
     )
@@ -2672,12 +3016,13 @@ def process_image(imgGroup, connection, config, metadata):
         tmpMeta["WindowWidth"] = str((maxVal + 1))
         tmpMeta["SeriesDescription"] = segmentation_identity["series_description"]
         tmpMeta["SequenceDescription"] = segmentation_identity["sequence_description"]
+        tmpMeta["ProtocolName"] = segmentation_identity["sequence_description"]
         tmpMeta["SeriesNumberRangeNameUID"] = segmentation_identity["grouping"]
         tmpMeta["SeriesInstanceUID"] = segmentation_identity["series_instance_uid"]
-        tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\DIXON\\{source_dicom_image_type_value4}"
+        tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{muscleMapImageTypeToken}"
         tmpMeta["ImageTypeValue3"] = "M"
-        tmpMeta["ImageTypeValue4"] = source_image_type_value4
-        tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\DIXON\\{source_dicom_image_type_value4}"
+        tmpMeta["ImageTypeValue4"] = muscleMapImageTypeToken
+        tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{muscleMapImageTypeToken}"
         tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
         tmpMeta["partition_count"] = str(data.shape[-1])
         if metrics_in_comments and metrics_comment:
@@ -2704,10 +3049,10 @@ def process_image(imgGroup, connection, config, metadata):
                 segmentation_identity["grouping"],
                 segmentation_identity["series_instance_uid"],
                 _source_type_value,
-                source_dicom_image_type_value4,
+                muscleMapImageTypeToken,
                 metrics_text=metrics_minihead_text if metrics_in_minihead and metrics_minihead_text else None,
-                target_display_token=source_image_type_value4,
-                target_image_type_value3="DIXON",
+                target_display_token=muscleMapImageTypeToken,
+                target_image_type_value3="M",
             )
             if minihead_changed:
                 minihead_text = patched_minihead_text
@@ -2822,9 +3167,7 @@ def process_image(imgGroup, connection, config, metadata):
     )
 
     if metrics_burn_series and _metrics_rows(metrics_result):
-        metrics_series_index = segmentation_series_index + 1
-        if metrics_series_index == 99:
-            metrics_series_index += 1
+        metrics_series_index = derived_series_allocator.allocate("METRICS")
         report_images = _build_metrics_report_images(
             metrics_result=metrics_result,
             source_headers=head,

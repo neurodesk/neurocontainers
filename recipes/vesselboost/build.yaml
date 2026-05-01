@@ -1,5 +1,5 @@
 name: vesselboost
-version: 2.0.29
+version: 2.0.37
 copyright:
   - license: MIT
     url: https://github.com/KMarshallX/VesselBoost/blob/master/LICENSE
@@ -10,11 +10,23 @@ variables:
   vesselboost_source_version: v2.0.2
   vesselboost_archive_url: "https://github.com/KMarshallX/VesselBoost/archive/refs/tags/{{ context.vesselboost_source_version }}.zip"
   synthstrip_weights_url: "https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.1.pt"
+  manual_0429_url: "https://osf.io/download/gw5cj/"
+  omelette1_0429_url: "https://osf.io/download/47b6d/"
+  omelette2_0429_url: "https://osf.io/download/7mzbf/"
+  t2s_mod_ep1k2_0728_url: "https://osf.io/download/jbgyf/"
 files:
   - name: vesselboost_zip
     url: "{{ context.vesselboost_archive_url }}"
   - name: synthstrip_weights
     url: "{{ context.synthstrip_weights_url }}"
+  - name: manual_0429
+    url: "{{ context.manual_0429_url }}"
+  - name: omelette1_0429
+    url: "{{ context.omelette1_0429_url }}"
+  - name: omelette2_0429
+    url: "{{ context.omelette2_0429_url }}"
+  - name: t2s_mod_ep1k2_0728
+    url: "{{ context.t2s_mod_ep1k2_0728_url }}"
 build:
   kind: neurodocker
   base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime
@@ -44,14 +56,10 @@ build:
     - workdir: /opt/VesselBoost/saved_models
     - run:
         - cp {{ get_file("synthstrip_weights") }} synthstrip.1.pt
-    - run:
-        - osf -p abk4p fetch osfstorage/pretrained_models/manual_0429
-    - run:
-        - osf -p abk4p fetch osfstorage/pretrained_models/omelette1_0429
-    - run:
-        - osf -p abk4p fetch osfstorage/pretrained_models/omelette2_0429
-    - run:
-        - osf -p abk4p fetch osfstorage/pretrained_models/t2s_mod_ep1k2_0728
+        - cp {{ get_file("manual_0429") }} manual_0429
+        - cp {{ get_file("omelette1_0429") }} omelette1_0429
+        - cp {{ get_file("omelette2_0429") }} omelette2_0429
+        - cp {{ get_file("t2s_mod_ep1k2_0728") }} t2s_mod_ep1k2_0728
     - workdir: /opt/VesselBoost/
     - environment:
         PATH: $PATH:/opt/VesselBoost/

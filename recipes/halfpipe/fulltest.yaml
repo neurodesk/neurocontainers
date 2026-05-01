@@ -69,7 +69,7 @@ tests:
   - name: fMRIPrep help
     description: Display fmriprep help message
     command: fmriprep --help 2>&1 | head -30
-    expected_output_contains: "fMRIPrep"
+    expected_output_contains: "usage:"
 
   # ==========================================================================
   # PYTHON ENVIRONMENT TESTS
@@ -389,7 +389,7 @@ tests:
 
   - name: FreeSurfer environment check
     description: Check FreeSurfer environment variables
-    command: echo "FREESURFER_HOME=${FREESURFER_HOME:-/opt/freesurfer}"
+    command: "bash -lc 'echo \"FREESURFER_HOME=${FREESURFER_HOME:-/opt/freesurfer}\"'"
     expected_output_contains: "FREESURFER_HOME"
 
   # ==========================================================================
@@ -397,12 +397,12 @@ tests:
   # ==========================================================================
   - name: ICA-AROMA files check
     description: Verify ICA-AROMA files are present
-    command: ls -la /opt/ICA-AROMA/
+    command: "bash -lc 'ls -la /opt/ICA-AROMA/'"
     expected_output_contains: "ICA_AROMA.py"
 
   - name: ICA-AROMA help
     description: Check ICA-AROMA help (requires specific environment)
-    command: python3 /opt/ICA-AROMA/ICA_AROMA.py --help 2>&1 | head -20 || echo "ICA-AROMA available"
+    command: "bash -lc 'python3 /opt/ICA-AROMA/ICA_AROMA.py --help 2>&1 | head -20 || echo \"ICA-AROMA available\"'"
     expected_exit_code: 0
 
   # ==========================================================================

@@ -118,12 +118,12 @@ tests:
 
   - name: Python environment check
     description: Verify ilastik Python environment is configured
-    command: ls /opt/ilastik-1.4.0-Linux/bin/python 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/bin/python 2>&1'"
     expected_output_contains: "python"
 
   - name: Ilastik binary exists
     description: Verify ilastik entry point script exists
-    command: ls /opt/ilastik-1.4.0-Linux/bin/ilastik 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/bin/ilastik 2>&1'"
     expected_output_contains: "ilastik"
 
   # ==========================================================================
@@ -150,47 +150,47 @@ tests:
   # ==========================================================================
   - name: Pixel Classification workflow available
     description: Verify Pixel Classification workflow module exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/pixelClassification/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/pixelClassification/ 2>&1'"
     expected_output_contains: "pixelClassificationWorkflow.py"
 
   - name: Object Classification workflow available
     description: Verify Object Classification workflow module exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/objectClassification/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/objectClassification/ 2>&1'"
     expected_output_contains: "objectClassificationWorkflow.py"
 
   - name: Autocontext workflow available
     description: Verify Autocontext workflow module exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/newAutocontext/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/newAutocontext/ 2>&1'"
     expected_output_contains: "newAutocontextWorkflow.py"
 
   - name: Counting workflow available
     description: Verify Counting workflow module exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/counting/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/counting/ 2>&1'"
     expected_output_contains: "countingWorkflow.py"
 
   - name: Carving workflow available
     description: Verify Carving workflow module exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/carving/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/carving/ 2>&1'"
     expected_output_contains: "carvingWorkflow.py"
 
   - name: Tracking workflow available
     description: Verify Tracking workflow modules exist
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/tracking/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/tracking/ 2>&1'"
     expected_output_contains: "manual"
 
   - name: Multicut workflow available
     description: Verify Edge Training with Multicut workflow exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/edgeTrainingWithMulticut/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/edgeTrainingWithMulticut/ 2>&1'"
     expected_output_contains: "edgeTrainingWithMulticutWorkflow.py"
 
   - name: Neural Network workflow available
     description: Verify Neural Network workflow modules exist
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/neuralNetwork/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/neuralNetwork/ 2>&1'"
     expected_output_contains: "_nnWorkflowBase.py"
 
   - name: Data Conversion workflow available
     description: Verify Data Conversion workflow exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/examples/dataConversion/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/examples/dataConversion/ 2>&1'"
     expected_output_contains: "dataConversionWorkflow.py"
 
   # ==========================================================================
@@ -198,77 +198,77 @@ tests:
   # ==========================================================================
   - name: Data Selection applet available
     description: Verify Data Selection applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/dataSelection/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/dataSelection/ 2>&1'"
     expected_output_contains: "dataSelectionApplet.py"
 
   - name: Feature Selection applet available
     description: Verify Feature Selection applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/featureSelection/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/featureSelection/ 2>&1'"
     expected_output_contains: "featureSelectionApplet.py"
 
   - name: Pixel Classification applet available
     description: Verify Pixel Classification applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/pixelClassification/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/pixelClassification/ 2>&1'"
     expected_output_contains: "pixelClassificationApplet.py"
 
   - name: Object Classification applet available
     description: Verify Object Classification applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/objectClassification/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/objectClassification/ 2>&1'"
     expected_output_contains: "objectClassificationApplet.py"
 
   - name: Object Extraction applet available
     description: Verify Object Extraction applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/objectExtraction/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/objectExtraction/ 2>&1'"
     expected_output_contains: "objectExtractionApplet.py"
 
   - name: Data Export applet available
     description: Verify Data Export applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/dataExport/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/dataExport/ 2>&1'"
     expected_output_contains: "dataExportApplet.py"
 
   - name: Batch Processing applet available
     description: Verify Batch Processing applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/batchProcessing/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/batchProcessing/ 2>&1'"
     expected_output_contains: "batchProcessingApplet.py"
 
   - name: Labeling applet available
     description: Verify Labeling applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/labeling/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/labeling/ 2>&1'"
     expected_output_contains: "labelingApplet.py"
 
   - name: Threshold applet available
     description: Verify Threshold Two Levels applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/thresholdTwoLevels/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/thresholdTwoLevels/ 2>&1'"
     expected_output_contains: "thresholdTwoLevelsApplet.py"
 
   - name: Counting applet available
     description: Verify Counting applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/counting/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/counting/ 2>&1'"
     expected_output_contains: "countingApplet.py"
 
   - name: Neural Network applet available
     description: Verify Neural Network applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/neuralNetwork/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/neuralNetwork/ 2>&1'"
     expected_output_contains: "nnClassApplet"
 
   - name: Tracking applet available
     description: Verify Tracking feature extraction applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/trackingFeatureExtraction/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/trackingFeatureExtraction/ 2>&1'"
     expected_output_contains: ""
 
   - name: Multicut applet available
     description: Verify Multicut applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/multicut/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/multicut/ 2>&1'"
     expected_output_contains: "multicutApplet.py"
 
   - name: Edge Training applet available
     description: Verify Edge Training applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/edgeTraining/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/edgeTraining/ 2>&1'"
     expected_output_contains: "edgeTrainingApplet.py"
 
   - name: WSDT applet available
     description: Verify Watershed applet exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/wsdt/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/wsdt/ 2>&1'"
     expected_output_contains: "wsdtApplet.py"
 
   # ==========================================================================
@@ -276,47 +276,47 @@ tests:
   # ==========================================================================
   - name: Vigra library available
     description: Verify vigra image processing library is available
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/vigra/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/vigra/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   - name: Lazyflow library available
     description: Verify lazyflow framework is available
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   - name: NumPy available
     description: Verify NumPy is available
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/numpy/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/numpy/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   - name: H5py available
     description: Verify HDF5 Python library is available
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/h5py/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/h5py/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   - name: Scikit-learn available
     description: Verify scikit-learn is available
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/sklearn/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/sklearn/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   - name: Z5py available for N5 support
     description: Verify z5py library for N5 format support
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/z5py/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/z5py/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   - name: Tifffile available
     description: Verify tifffile library for TIFF support
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/tifffile/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/tifffile/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   - name: BioImageIO available
     description: Verify BioImage.IO model spec support via Python import
-    command: /opt/ilastik-1.4.0-Linux/bin/python -c "import bioimageio; print('bioimageio available')" 2>&1
+    command: bash -lc '/opt/ilastik-1.4.0-Linux/bin/python -c "import bioimageio; print('\''bioimageio available'\'')" 2>&1'
     expected_output_contains: "bioimageio available"
 
   - name: ONNX runtime check
     description: Check if ONNX support is available (not installed in this build)
-    command: /opt/ilastik-1.4.0-Linux/bin/python -c "import onnxruntime; print('onnx available')" 2>&1 || echo "ONNX not installed in this build"
+    command: bash -lc '/opt/ilastik-1.4.0-Linux/bin/python -c "import onnxruntime; print('\''onnx available'\'')" 2>&1 || echo "ONNX not installed in this build"'
     expected_output_contains: "ONNX not installed"
 
   # ==========================================================================
@@ -324,27 +324,27 @@ tests:
   # ==========================================================================
   - name: HDF5 format export support
     description: Verify HDF5 export is supported
-    command: grep -r "hdf5" /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/ioOperators/opExportSlot.py 2>&1 | head -1
+    command: "bash -lc 'grep -r \"hdf5\" /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/ioOperators/opExportSlot.py 2>&1 | head -1'"
     expected_output_contains: "hdf5"
 
   - name: N5 format export support
     description: Verify N5 export is supported
-    command: grep -r '"n5"' /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/ioOperators/opExportSlot.py 2>&1 | head -1
+    command: "bash -lc 'grep -r '\"'\"'\"n5\"'\"'\"' /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/ioOperators/opExportSlot.py 2>&1 | head -1'"
     expected_output_contains: "n5"
 
   - name: TIFF format export support
     description: Verify TIFF export is supported
-    command: grep -r "tiff" /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/ioOperators/opExportSlot.py 2>&1 | head -1
+    command: "bash -lc 'grep -r \"tiff\" /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/ioOperators/opExportSlot.py 2>&1 | head -1'"
     expected_output_contains: "tiff"
 
   - name: NumPy format export support
     description: Verify NumPy export is supported
-    command: grep -r '"numpy"' /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/ioOperators/opExportSlot.py 2>&1 | head -1
+    command: "bash -lc 'grep -r '\"'\"'\"numpy\"'\"'\"' /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/ioOperators/opExportSlot.py 2>&1 | head -1'"
     expected_output_contains: "numpy"
 
   - name: PNG format support via vigra
     description: Verify PNG is in supported extensions
-    command: ls /opt/ilastik-1.4.0-Linux/lib/libpng*.so* 2>&1 | head -1
+    command: bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/libpng*.so* 2>&1 | head -1'
     expected_output_contains: "libpng"
 
   # ==========================================================================
@@ -352,12 +352,12 @@ tests:
   # ==========================================================================
   - name: Plugin manager available
     description: Verify ilastik plugin system is importable
-    command: /opt/ilastik-1.4.0-Linux/bin/python -c "import ilastik.plugins; print('plugins module available')" 2>&1
+    command: bash -lc '/opt/ilastik-1.4.0-Linux/bin/python -c "import ilastik.plugins; print('\''plugins module available'\'')" 2>&1'
     expected_output_contains: "plugins module available"
 
   - name: Feature plugin base available
     description: Verify ilastik applets can be imported
-    command: /opt/ilastik-1.4.0-Linux/bin/python -c "import ilastik.applets; print('applets module available')" 2>&1
+    command: bash -lc '/opt/ilastik-1.4.0-Linux/bin/python -c "import ilastik.applets; print('\''applets module available'\'')" 2>&1'
     expected_output_contains: "applets module available"
 
   # ==========================================================================
@@ -365,12 +365,12 @@ tests:
   # ==========================================================================
   - name: Config module available
     description: Verify ilastik config module exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/config.py 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/config.py 2>&1'"
     expected_output_contains: "config.py"
 
   - name: Shell module available
     description: Verify ilastik shell module exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/shell/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/shell/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   # ==========================================================================
@@ -378,22 +378,22 @@ tests:
   # ==========================================================================
   - name: Ilastik tools module available
     description: Verify ilastiktools package exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastiktools/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastiktools/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   - name: Ilastik RAG module available
     description: Verify ilastikrag (region adjacency graph) package exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastikrag/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastikrag/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   - name: Ilastik feature selection module available
     description: Verify ilastik feature selection package exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik_feature_selection/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik_feature_selection/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   - name: ELF ilastik integration available
     description: Verify ELF (EMBL Segmentation Library) ilastik integration
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/elf/ilastik/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/elf/ilastik/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   # ==========================================================================
@@ -406,7 +406,7 @@ tests:
 
   - name: License file available
     description: Verify license file exists
-    command: ls /opt/ilastik-1.4.0-Linux/LICENSE.txt 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/LICENSE.txt 2>&1'"
     expected_output_contains: "LICENSE.txt"
 
   # ==========================================================================
@@ -437,12 +437,12 @@ tests:
   # ==========================================================================
   - name: Feature Selection operator available
     description: Verify feature selection operator exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/featureSelection/opFeatureSelection.py 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/featureSelection/opFeatureSelection.py 2>&1'"
     expected_output_contains: "opFeatureSelection.py"
 
   - name: Gaussian smoothing features available
     description: Verify Gaussian smoothing feature computation
-    command: grep -l "GaussianSmoothing" /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/featureSelection/*.py 2>&1 | head -1
+    command: bash -lc 'grep -l "GaussianSmoothing" /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/featureSelection/*.py 2>&1 | head -1'
     expected_output_contains: ".py"
 
   # ==========================================================================
@@ -450,7 +450,7 @@ tests:
   # ==========================================================================
   - name: Random Forest classifier available
     description: Verify Vigra Random Forest is available
-    command: grep -l "RandomForest" /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/pixelClassification/*.py 2>&1 | head -1
+    command: bash -lc 'grep -l "RandomForest" /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/pixelClassification/*.py 2>&1 | head -1'
     expected_output_contains: ".py"
 
   # ==========================================================================
@@ -458,17 +458,17 @@ tests:
   # ==========================================================================
   - name: Lazyflow operators available
     description: Verify lazyflow operator infrastructure
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   - name: IO operators available
     description: Verify I/O operators for file handling
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/ioOperators/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/ioOperators/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   - name: Generic operators available
     description: Verify generic operators
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/generic.py 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/lazyflow/operators/generic.py 2>&1'"
     expected_output_contains: "generic.py"
 
   # ==========================================================================
@@ -476,12 +476,12 @@ tests:
   # ==========================================================================
   - name: Project serializer available
     description: Verify project serialization module exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/dataSelection/dataSelectionSerializer.py 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/dataSelection/dataSelectionSerializer.py 2>&1'"
     expected_output_contains: "dataSelectionSerializer.py"
 
   - name: Data export serializer available
     description: Verify data export serialization
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/dataExport/dataExportSerializer.py 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/applets/dataExport/dataExportSerializer.py 2>&1'"
     expected_output_contains: "dataExportSerializer.py"
 
   # ==========================================================================
@@ -489,22 +489,22 @@ tests:
   # ==========================================================================
   - name: Conservation tracking available
     description: Verify conservation tracking workflow exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/tracking/conservation/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/tracking/conservation/ 2>&1'"
     expected_output_contains: "conservationTrackingWorkflow.py"
 
   - name: Animal tracking available
     description: Verify animal conservation tracking workflow exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/tracking/conservation/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/tracking/conservation/ 2>&1'"
     expected_output_contains: "animalConservationTrackingWorkflow.py"
 
   - name: Manual tracking available
     description: Verify manual tracking workflow exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/tracking/manual/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/tracking/manual/ 2>&1'"
     expected_output_contains: "manualTrackingWorkflow.py"
 
   - name: Structured tracking available
     description: Verify structured tracking workflow exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/tracking/structured/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/workflows/tracking/structured/ 2>&1'"
     expected_output_contains: "structuredTrackingWorkflow.py"
 
   # ==========================================================================
@@ -512,12 +512,12 @@ tests:
   # ==========================================================================
   - name: Qt libraries available
     description: Verify Qt libraries are available
-    command: ls /opt/ilastik-1.4.0-Linux/plugins/platforms/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/plugins/platforms/ 2>&1'"
     expected_output_contains: ""
 
   - name: GUI shell available
     description: Verify ilastik GUI shell module exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/shell/gui/ 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/shell/gui/ 2>&1'"
     expected_output_contains: "__init__.py"
 
   # ==========================================================================
@@ -525,12 +525,12 @@ tests:
   # ==========================================================================
   - name: Command line processing utilities available
     description: Verify CLI processing utilities exist
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/utility/commandLineProcessing.py 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/utility/commandLineProcessing.py 2>&1'"
     expected_output_contains: "commandLineProcessing.py"
 
   - name: OpMultiLaneWrapper available
     description: Verify multi-lane operator wrapper exists
-    command: ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/utility/opMultiLaneWrapper.py 2>&1
+    command: "bash -lc 'ls /opt/ilastik-1.4.0-Linux/lib/python3.7/site-packages/ilastik/utility/opMultiLaneWrapper.py 2>&1'"
     expected_output_contains: "opMultiLaneWrapper.py"
 
 cleanup:

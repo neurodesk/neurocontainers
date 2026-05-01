@@ -250,7 +250,7 @@ tests:
 
   - name: flirt to MNI template
     description: Register T1w to MNI152 template
-    command: flirt -in ${t1w} -ref /usr/local/fsl/data/standard/MNI152_T1_2mm_brain.nii.gz -out test_output/t1w_mni.nii.gz -omat test_output/t1w_to_mni.mat -dof 12
+    command: "bash -lc 'flirt -in ${t1w} -ref /usr/local/fsl/data/standard/MNI152_T1_2mm_brain.nii.gz -out test_output/t1w_mni.nii.gz -omat test_output/t1w_to_mni.mat -dof 12'"
     validate:
       - output_exists: ${output_dir}/t1w_mni.nii.gz
       - output_exists: ${output_dir}/t1w_to_mni.mat
@@ -266,14 +266,14 @@ tests:
   # ==========================================================================
   - name: ROBEX brain extraction
     description: Extract brain from T1w using ROBEX
-    command: /ROBEX/runROBEX.sh ${t1w} test_output/t1w_brain_robex.nii.gz test_output/t1w_brain_mask_robex.nii.gz
+    command: bash -lc '/ROBEX/runROBEX.sh ${t1w} test_output/t1w_brain_robex.nii.gz test_output/t1w_brain_mask_robex.nii.gz'
     validate:
       - output_exists: ${output_dir}/t1w_brain_robex.nii.gz
       - output_exists: ${output_dir}/t1w_brain_mask_robex.nii.gz
 
   - name: ROBEX brain only
     description: Extract brain without saving mask
-    command: /ROBEX/runROBEX.sh ${t1w} test_output/t1w_brain_only.nii.gz
+    command: bash -lc '/ROBEX/runROBEX.sh ${t1w} test_output/t1w_brain_only.nii.gz'
     validate:
       - output_exists: ${output_dir}/t1w_brain_only.nii.gz
 
@@ -592,10 +592,10 @@ tests:
   - name: Complete T1w processing pipeline
     description: Full pipeline - reorient (nibabel), brain extract, register to MNI
     command: |
-      python3 -c "import nibabel as nib; img = nib.load('${t1w}'); nib.save(nib.as_closest_canonical(img), 'test_output/pipeline_reoriented.nii.gz')" && \
+      bash -lc 'python3 -c "import nibabel as nib; img = nib.load('\''${t1w}'\''); nib.save(nib.as_closest_canonical(img), '\''test_output/pipeline_reoriented.nii.gz'\'')" && \
       /ROBEX/runROBEX.sh test_output/pipeline_reoriented.nii.gz test_output/pipeline_brain.nii.gz test_output/pipeline_mask.nii.gz && \
       flirt -in test_output/pipeline_brain.nii.gz -ref /usr/local/fsl/data/standard/MNI152_T1_2mm_brain.nii.gz -out test_output/pipeline_mni.nii.gz -dof 12 && \
-      echo "Pipeline complete"
+      echo "Pipeline complete"'
     validate:
       - output_exists: ${output_dir}/pipeline_reoriented.nii.gz
       - output_exists: ${output_dir}/pipeline_brain.nii.gz
@@ -605,9 +605,9 @@ tests:
   - name: Brain extraction and defacing pipeline
     description: Extract brain, then deface original using mask
     command: |
-      /ROBEX/runROBEX.sh ${t1w} test_output/pipeline2_brain.nii.gz test_output/pipeline2_mask.nii.gz && \
+      bash -lc '/ROBEX/runROBEX.sh ${t1w} test_output/pipeline2_brain.nii.gz test_output/pipeline2_mask.nii.gz && \
       quickshear ${t1w} test_output/pipeline2_mask.nii.gz test_output/pipeline2_defaced.nii.gz && \
-      echo "Defacing pipeline complete"
+      echo "Defacing pipeline complete"'
     validate:
       - output_exists: ${output_dir}/pipeline2_brain.nii.gz
       - output_exists: ${output_dir}/pipeline2_mask.nii.gz
@@ -703,7 +703,7 @@ tests:
 
   - name: MNI template exists
     description: Verify MNI152 template is available
-    command: ls -la /usr/local/fsl/data/standard/MNI152_T1_2mm_brain.nii.gz
+    command: "bash -lc 'ls -la /usr/local/fsl/data/standard/MNI152_T1_2mm_brain.nii.gz'"
     expected_output_contains: "MNI152"
 
 cleanup:

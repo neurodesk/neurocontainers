@@ -1,0 +1,613 @@
+name: neurodesktop
+version: 20260428
+
+copyright:
+  - license: MIT
+    url: https://github.com/NeuroDesk/neurodesktop/blob/main/LICENSE
+  - license: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  guacamole_version: "1.6.0"
+  tomcat_rel: "9"
+  tomcat_version: "9.0.116"
+  code_server_version: "4.104.2"
+  code_server_arch:
+    try:
+      - value: amd64
+        condition: arch=="x86_64"
+      - value: arm64
+        condition: arch=="aarch64"
+  code_server_file:
+    try:
+      - value: code_server_amd64
+        condition: arch=="x86_64"
+      - value: code_server_arm64
+        condition: arch=="aarch64"
+  strace_file:
+    try:
+      - value: strace_x86_64
+        condition: arch=="x86_64"
+      - value: strace_aarch64
+        condition: arch=="aarch64"
+
+build:
+  kind: neurodocker
+  base-image: quay.io/jupyter/base-notebook:2026-03-23
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        LANG: ""
+        LANGUAGE: ""
+        LC_ALL: ""
+        NF_NEURO_MODULES_DIR: /opt/nf-neuro/modules
+        NF_TEST_HOME: /opt/nf-test
+        DONT_PROMPT_WSL_INSTALL: "1"
+        LMOD_CMD: /usr/share/lmod/lmod/libexec/lmod
+        NEURODESKTOP_VERSION: "{{ context.version }}"
+
+    - install:
+        - acl
+        - apt-transport-https
+        - aria2
+        - autofs
+        - bc
+        - build-essential
+        - ca-certificates
+        - curl
+        - davfs2
+        - dbus-x11
+        - dirmngr
+        - dnsutils
+        - freerdp2-dev
+        - fuse
+        - g++
+        - gcc
+        - gedit
+        - gh
+        - git
+        - git-annex
+        - gnome-keyring
+        - gnupg
+        - gpg
+        - gpg-agent
+        - graphviz
+        - htop
+        - imagemagick
+        - iproute2
+        - iputils-ping
+        - less
+        - libcairo2-dev
+        - libfreerdp-client2-2t64
+        - libfreerdp2-2t64
+        - libgfortran5
+        - libgpgme-dev
+        - libjpeg-turbo8-dev
+        - libossp-uuid-dev
+        - libpango1.0-dev
+        - libpci3
+        - libpng-dev
+        - libssh2-1-dev
+        - libssl-dev
+        - libtool-bin
+        - libvncclient1
+        - libvncserver-dev
+        - libwebp-dev
+        - libwinpr2-2t64
+        - libreoffice-core
+        - lmod
+        - lua-bit32
+        - lua-filesystem
+        - lua-json
+        - lua-lpeg
+        - lua-posix
+        - lua-term
+        - lua5.2
+        - lxde
+        - lxtask
+        - make
+        - man-db
+        - mariadb-server
+        - munge
+        - nano
+        - nextcloud-desktop
+        - openjdk-21-jre-headless
+        - openssh-client
+        - openssh-server
+        - owncloud-client
+        - pciutils
+        - python3-setuptools
+        - qdirstat
+        - rclone
+        - rsync
+        - s3fs
+        - screen
+        - slurm-client
+        - slurm-wlm-basic-plugins
+        - slurmctld
+        - slurmd
+        - slurmdbd
+        - software-properties-common
+        - sshfs
+        - tcllib
+        - tcsh
+        - tigervnc-common
+        - tigervnc-standalone-server
+        - tigervnc-tools
+        - tk
+        - tmux
+        - tree
+        - uidmap
+        - unzip
+        - uuid-dev
+        - vim
+        - wget
+        - xdg-utils
+        - xorgxrdp
+        - xrdp
+        - xz-utils
+        - zip
+
+    - run:
+        - usermod -a -G ssl-cert xrdp
+        - bash {{ get_file("nodesource_setup") }}
+        - apt-get update --yes
+        - apt-get install --yes --no-install-recommends nodejs yarn
+        - apt-get clean
+        - rm -rf /var/lib/apt/lists/*
+
+    - run:
+        - cp {{ get_file("guacamole_server") }} /tmp/guacamole-server.tar.gz
+        - tar -xzf /tmp/guacamole-server.tar.gz -C /tmp
+        - rm /tmp/guacamole-server.tar.gz
+        - cd /tmp/guacamole-server-{{ context.guacamole_version }} && ./configure --with-init-dir=/etc/init.d
+        - cd /tmp/guacamole-server-{{ context.guacamole_version }} && make -j{{ parallel_jobs }}
+        - cd /tmp/guacamole-server-{{ context.guacamole_version }} && make install
+        - ldconfig
+        - rm -rf /tmp/guacamole-server-{{ context.guacamole_version }}
+
+    - run:
+        - cp {{ get_file(context.code_server_file) }} /tmp/code-server.tar.gz
+        - tar -xzf /tmp/code-server.tar.gz -C /tmp
+        - rm -rf /opt/code-server
+        - mv /tmp/code-server-{{ context.code_server_version }}-linux-{{ context.code_server_arch }} /opt/code-server
+        - cd /opt/code-server && npm update --no-audit --no-fund basic-ftp
+        - ln -sf /opt/code-server/bin/code-server /usr/local/bin/code-server
+        - rm -f /tmp/code-server.tar.gz
+        - npm cache clean --force
+
+    - run:
+        - mkdir -p /opt/strace
+        - tar -xzf {{ get_file(context.strace_file) }} -C /opt/strace --strip-components=1
+        - if [ -e /opt/strace/bin/strace ]; then chmod +x /opt/strace/bin/strace; elif [ -e /opt/strace/strace ]; then chmod +x /opt/strace/strace; fi
+
+    - run:
+        - add-apt-repository -y ppa:apptainer/ppa
+        - apt-get update --yes
+        - apt-get install --yes --no-install-recommends apptainer
+        - apt-get clean
+        - rm -rf /var/lib/apt/lists/* /root/.cache /home/${NB_USER}/.cache
+
+    - run:
+        - cp {{ get_file("tomcat") }} /tmp/apache-tomcat.tar.gz
+        - tar -xf /tmp/apache-tomcat.tar.gz -C /tmp
+        - rm -rf /tmp/apache-tomcat.tar.gz
+        - mv /tmp/apache-tomcat-{{ context.tomcat_version }} /usr/local/tomcat
+        - mv /usr/local/tomcat/webapps /usr/local/tomcat/webapps.dist
+        - mkdir /usr/local/tomcat/webapps
+        - sed -i '/<Connector port="8080" protocol="HTTP\/1\.1"/,/^[[:space:]]*\/>/ s|/>|maxHttpRequestHeaderSize="65536" />|' /usr/local/tomcat/conf/server.xml
+        - sed -i 's|<Connector port="8080"|<Connector port="${port.http}"|' /usr/local/tomcat/conf/server.xml
+        - echo "port.http=8080" >> /usr/local/tomcat/conf/catalina.properties
+        - sed -i 's|<Context>|<Context sessionCookiePath="/">|' /usr/local/tomcat/conf/context.xml
+        - sed -i '/<Context sessionCookiePath/a\    <CookieProcessor className="org.apache.tomcat.util.http.Rfc6265CookieProcessor" sameSiteCookies="Lax" />' /usr/local/tomcat/conf/context.xml
+        - sed -i '/<session-config>/,/<\/session-config>/c\    <session-config>\n        <session-timeout>30</session-timeout>\n        <cookie-config>\n            <max-age>86400</max-age>\n            <http-only>true</http-only>\n        </cookie-config>\n    </session-config>' /usr/local/tomcat/conf/web.xml
+        - chmod +x /usr/local/tomcat/bin/*.sh
+        - cp {{ get_file("guacamole_war") }} /usr/local/tomcat/webapps/ROOT.war
+        - unzip -q /usr/local/tomcat/webapps/ROOT.war -d /usr/local/tomcat/webapps/ROOT
+        - rm /usr/local/tomcat/webapps/ROOT.war
+        - sed -i '/<session-config>/,/<\/session-config>/c\    <session-config>\n        <session-timeout>30</session-timeout>\n        <cookie-config>\n            <max-age>86400</max-age>\n            <http-only>true</http-only>\n        </cookie-config>\n    </session-config>' /usr/local/tomcat/webapps/ROOT/WEB-INF/web.xml
+
+    - run:
+        - mv /usr/bin/systemctl /usr/bin/systemctl.orig
+        - printf '%s\n' '#!/bin/bash' 'echo "systemctl is disabled in this container"' > /usr/bin/systemctl
+        - chmod +x /usr/bin/systemctl
+        - cp {{ get_file("cvmfs_release_deb") }} /tmp/cvmfs-release-latest_all.deb
+        - dpkg -i /tmp/cvmfs-release-latest_all.deb
+        - rm /tmp/cvmfs-release-latest_all.deb
+        - apt-get update --yes
+        - apt-get install --yes --no-install-recommends cvmfs
+        - apt-get clean
+        - rm -rf /var/lib/apt/lists/*
+
+    - run:
+        - HOME=/root bash {{ get_file("tinytex_install") }}
+        - mv /root/.TinyTeX /opt/TinyTeX
+        - tlmgr_path="$(echo /opt/TinyTeX/bin/*/tlmgr)"; "$tlmgr_path" option sys_bin /usr/local/bin >/dev/null; "$tlmgr_path" path add >/dev/null; "$tlmgr_path" install tcolorbox parskip caption float geometry amsmath amsfonts latex upquote eurosym fontspec unicode-math fancyvrb grffile adjustbox hyperref titling tools booktabs enumitem ulem soul jknapltx rsfs graphics iftex xcolor pdfcol
+        - rm -rf /root/.cache /root/.local
+
+    - run:
+        - mkdir -p "${NF_TEST_HOME}"
+        - cp {{ get_file("nextflow_install") }} /tmp/get-nextflow.sh
+        - cd /tmp && bash /tmp/get-nextflow.sh
+        - mv /tmp/nextflow /usr/local/bin/nextflow
+        - chmod 755 /usr/local/bin/nextflow
+        - bash {{ get_file("nf_test_install") }} 0.9.5
+        - cp -a "${HOME}/.nf-test/." "${NF_TEST_HOME}/"
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' 'exec java -jar /opt/nf-test/nf-test.jar "$@"' > /usr/local/bin/nf-test
+        - chmod 755 /usr/local/bin/nf-test
+        - mkdir -p /opt/nf-neuro
+        - tar -xzf {{ get_file("nf_neuro_modules") }} -C /opt/nf-neuro --strip-components=1
+        - chown -R ${NB_UID}:${NB_GID} /opt/nf-neuro "${NF_TEST_HOME}" "${HOME}/.nextflow"
+        - rm -rf /root/.cache "${HOME}/.nf-test" /tmp/nf-test /tmp/nextflow /tmp/get-nextflow.sh
+
+    - run:
+        - npm install -g @openai/codex
+        - rm -rf /root/.npm
+        - su - "${NB_USER}" -c 'bash {{ get_file("claude_install") }} stable'
+        - mkdir -p /opt/jovyan_defaults/.local/bin
+        - if [ -x /home/jovyan/.local/bin/claude ]; then cp -L /home/jovyan/.local/bin/claude /opt/jovyan_defaults/.local/bin/claude; else cp -L /home/jovyan/.local/share/claude/versions/* /opt/jovyan_defaults/.local/bin/claude; fi
+        - chmod +x /opt/jovyan_defaults/.local/bin/claude
+        - bash {{ get_file("opencode_install") }}
+        - mv /home/jovyan/.opencode/bin/opencode /usr/bin/opencode
+        - rm -rf /home/${NB_USER}/.cache /home/${NB_USER}/.local
+
+    - run:
+        - add-apt-repository ppa:mozillateam/ppa
+        - apt-get update --yes
+        - apt-get install --yes --no-install-recommends --target-release 'o=LP-PPA-mozillateam' firefox
+        - apt-get clean
+        - rm -rf /var/lib/apt/lists/* /home/${NB_USER}/.cache /home/${NB_USER}/.local
+
+    - user: ${NB_USER}
+
+    - run:
+        - conda install -c conda-forge nb_conda_kernels
+        - conda clean --all -f -y
+        - conda config --system --prepend envs_dirs '~/conda-environments'
+        - rm -rf /home/${NB_USER}/.cache
+
+    - run:
+        - /opt/conda/bin/pip install datalad nipype nbdev nf-core snakemake pydra==1.0a7 nipoppy matplotlib datalad-container datalad-osf osfclient watermark ipyniivue jupyter-server-proxy jupyterlmod jupyterlab-git notebook_intelligence jupyterlab_rise jupyterlab-niivue==0.2.5 jupyterlab_myst jupyter-sshd-proxy papermill ipycanvas jupyter-resource-usage jupyter_scheduler jupyterlab-slurm@git+https://github.com/NERSC/jupyterlab-slurm.git@main httpx ipywidgets==7.8.5 ipyvolume jupyterlab_widgets nbgitpuller xnat pytest "requests>=2.32.3" "chardet<6"
+        - /opt/conda/bin/jupyter labextension disable @jupyterlab/apputils-extension:announcements
+        - rm -rf /home/${NB_USER}/.cache
+
+    - user: root
+
+    - copy:
+        - config
+        - /tmp/config
+
+    - copy:
+        - scripts
+        - /tmp/scripts
+
+    - copy:
+        - tests
+        - /tmp/tests
+
+    - copy:
+        - extensions/neurodesk-launcher
+        - /tmp/neurodesk-launcher
+
+    - run:
+        - install -m 0644 /tmp/config/firefox/mozillateamppa /etc/apt/preferences.d/mozillateamppa
+        - install -m 0644 /tmp/config/firefox/syspref.js /etc/firefox/syspref.js
+        - install -D -m 0644 /tmp/config/jupyter/neurodesk_brain_logo.svg /opt/neurodesk_brain_logo.svg
+        - install -D -m 0644 /tmp/config/jupyter/neurodesk_brain_icon.svg /opt/neurodesk_brain_icon.svg
+        - install -D -m 0644 /tmp/config/jupyter/vscode_logo.svg /opt/vscode_logo.svg
+        - install -D -m 0644 /tmp/config/lxde/background.png /usr/share/lxde/wallpapers/desktop_wallpaper.png
+        - install -D -m 0644 /tmp/config/lxde/pcmanfm.conf /etc/xdg/pcmanfm/LXDE/pcmanfm.conf
+        - install -D -m 0644 /tmp/config/lxde/lxterminal.conf /usr/share/lxterminal/lxterminal.conf
+        - install -D -m 0644 /tmp/config/lmod/module.sh /usr/share/module.sh
+        - install -D -m 0644 /tmp/config/lxde/rc.xml /etc/xdg/openbox/rc.xml
+        - sed -i 's/#user_allow_other/user_allow_other/g' /etc/fuse.conf
+        - rm -f /usr/bin/lxpolkit
+        - chmod +x /usr/bin/fusermount
+        - mkdir -p /usr/local/bin/start-notebook.d /usr/local/bin/before-notebook.d /opt/neurodesktop/scripts /opt/neurodesktop/webapp_wrapper
+        - install -m 0755 /tmp/config/jupyter/start_notebook.sh /usr/local/bin/start-notebook.d/start_notebook.sh
+        - install -m 0755 /tmp/config/jupyter/before_notebook.sh /usr/local/bin/before-notebook.d/before_notebook.sh
+        - install -m 0755 /tmp/config/jupyter/jupyterlab_startup.sh /opt/neurodesktop/jupyterlab_startup.sh
+        - install -m 0755 /tmp/config/jupyter/deferred_startup.sh /opt/neurodesktop/deferred_startup.sh
+        - install -m 0755 /tmp/config/guacamole/guacamole.sh /opt/neurodesktop/guacamole.sh
+        - install -m 0755 /tmp/config/guacamole/init_secrets.sh /opt/neurodesktop/init_secrets.sh
+        - install -m 0755 /tmp/config/guacamole/ensure_rdp_backend.sh /opt/neurodesktop/ensure_rdp_backend.sh
+        - install -m 0755 /tmp/config/jupyter/environment_variables.sh /opt/neurodesktop/environment_variables.sh
+        - install -m 0755 /tmp/config/jupyter/kernel_wrapper.sh /opt/neurodesktop/kernel_wrapper.sh
+        - install -m 0755 /tmp/config/jupyter/jupyterlmod_modulepath.py /opt/neurodesktop/jupyterlmod_modulepath.py
+        - install -m 0755 /tmp/config/ssh/ensure_sftp_sshd.sh /opt/neurodesktop/ensure_sftp_sshd.sh
+        - install -m 0755 /tmp/config/slurm/setup_and_start_slurm.sh /opt/neurodesktop/setup_and_start_slurm.sh
+        - cp -a /tmp/tests /opt/tests
+        - install -m 0755 /tmp/scripts/generate_jupyter_config.py /opt/neurodesktop/scripts/generate_jupyter_config.py
+        - cp -a /tmp/config/jupyter/webapp_wrapper/. /opt/neurodesktop/webapp_wrapper/
+        - install -m 0755 /tmp/config/jupyter/webapp_launcher.sh /opt/neurodesktop/webapp_launcher.sh
+        - install -m 0644 /tmp/config/jupyter/jupyter_notebook_config.py.template /opt/neurodesktop/jupyter_notebook_config.py.template
+        - cp {{ get_file("webapps_json") }} /opt/neurodesktop/webapps.json
+        - python3 /opt/neurodesktop/scripts/generate_jupyter_config.py /opt/neurodesktop/webapps.json /opt/neurodesktop/jupyter_notebook_config.py.template /etc/jupyter/jupyter_notebook_config.py
+        - chmod +rx /etc/jupyter/jupyter_notebook_config.py /opt/neurodesktop/webapp_wrapper/webapp_wrapper.py
+        - chmod +r /opt/neurodesktop/webapp_wrapper/splash_template.html /opt/neurodesktop/webapps.json
+        - mkdir -p /etc/guacamole
+        - "printf '%s\\n%s\\n%s\\n' 'user-mapping: /etc/guacamole/user-mapping.xml' 'guacd-hostname: 127.0.0.1' 'guacd-port: 4822' > /etc/guacamole/guacamole.properties"
+        - printf '%s\n%s\n' '[server]' 'bind_host = 127.0.0.1' > /etc/guacamole/guacd.conf
+        - printf '%s\n' 'bind_port = 4822' >> /etc/guacamole/guacd.conf
+        - install -m 0644 -o ${NB_UID} -g ${NB_GID} /tmp/config/guacamole/user-mapping-vnc.xml /etc/guacamole/user-mapping-vnc.xml
+        - install -m 0644 -o ${NB_UID} -g ${NB_GID} /tmp/config/guacamole/user-mapping-vnc-rdp.xml /etc/guacamole/user-mapping-vnc-rdp.xml
+        - ln -sf /etc/guacamole/user-mapping-vnc.xml /etc/guacamole/user-mapping.xml
+        - chown -R ${NB_UID}:${NB_GID} /etc/guacamole /usr/local/tomcat
+        - chmod -R a+rX /usr/local/tomcat /etc/guacamole
+
+    - user: ${NB_USER}
+
+    - run:
+        - cd /tmp/neurodesk-launcher && /opt/conda/bin/pip install .
+        - /opt/conda/bin/jupyter labextension disable @jupyterhub/jupyter-server-proxy
+        - rm -rf /home/${NB_USER}/.cache
+
+    - user: root
+
+    - copy:
+        - start-neurodesktop-jupyterlab
+        - /usr/local/bin/start-neurodesktop-jupyterlab
+
+    - copy:
+        - start-neurodesktop-guacamole
+        - /usr/local/bin/start-neurodesktop-guacamole
+
+    - run:
+        - chmod +x /usr/local/bin/start-neurodesktop-jupyterlab /usr/local/bin/start-neurodesktop-guacamole
+        - DEBIAN_FRONTEND=noninteractive apt-get purge --yes --auto-remove libgpgme-dev libjpeg-turbo8-dev libossp-uuid-dev libpango1.0-dev libpng-dev libssh2-1-dev libssl-dev libtool-bin libvncserver-dev libwebp-dev build-essential
+        - apt-get clean
+        - rm -rf /var/lib/apt/lists/*
+        - printf '%s\n%s\n' 'password' 'password' | passwd ${NB_USER}
+        - usermod --shell /bin/bash ${NB_USER}
+        - sed -i 's/c.FileContentsManager.delete_to_trash = False/c.FileContentsManager.always_delete_dir = True/g' /etc/jupyter/jupyter_server_config.py
+        - printf '\n# Detect dead WebSocket clients quickly (tab closed/network gone)\nc.ServerApp.websocket_ping_interval = 30\nc.ServerApp.websocket_ping_timeout = 60\n' >> /etc/jupyter/jupyter_server_config.py
+
+    - run:
+        - python3 /opt/neurodesktop/jupyterlmod_modulepath.py || true
+        - python3 {{ get_file("wrap_kernels") }}
+        - cat {{ get_file("bashrc_append") }} >> /etc/bash.bashrc
+
+    - run:
+        - mkdir -p /opt/jovyan_defaults/.itksnap.org/ITK-SNAP /opt/jovyan_defaults/.config/lxpanel/LXDE/panels /opt/jovyan_defaults/.local/share/code-server/User /opt/jovyan_defaults/.config/libfm /opt/jovyan_defaults/.config/opencode /opt/jovyan_defaults/.local/bin /opt/jovyan_defaults/.vnc /opt/jovyan_defaults/.claude /opt/jovyan_defaults/.codex /opt/jovyan_defaults/.ssh /opt/jovyan_defaults/.jupyter/labconfig /opt/jovyan_defaults/.jupyter/nbi/rules
+        - install -m 0644 /tmp/config/itksnap/UserPreferences.xml /opt/jovyan_defaults/.itksnap.org/ITK-SNAP/UserPreferences.xml
+        - install -m 0644 /tmp/config/lxde/mimeapps.list /opt/jovyan_defaults/.config/mimeapps.list
+        - install -m 0644 /tmp/config/lxde/panel /opt/jovyan_defaults/.config/lxpanel/LXDE/panels/panel
+        - install -m 0644 /tmp/config/vscode/settings.json /opt/jovyan_defaults/.local/share/code-server/User/settings.json
+        - install -m 0644 /tmp/config/lxde/libfm.conf /opt/jovyan_defaults/.config/libfm/libfm.conf
+        - install -m 0755 /tmp/config/lxde/xstartup /opt/jovyan_defaults/.vnc/xstartup
+        - install -m 0644 /tmp/config/conda/conda-readme.md /opt/jovyan_defaults/conda-readme.md
+        - install -m 0644 /tmp/config/agents/claude_settings.local.json /opt/jovyan_defaults/.claude/settings.local.json
+        - install -m 0644 /tmp/config/agents/claude_mcp_config.json /opt/jovyan_defaults/.claude/mcp_config.json
+        - install -m 0644 /tmp/config/agents/opencode_config.json /opt/jovyan_defaults/.config/opencode/opencode.json
+        - install -m 0644 /tmp/config/agents/codex_config.toml /opt/jovyan_defaults/.codex/config.toml
+        - install -m 0644 /tmp/config/ssh/sshd_config /opt/jovyan_defaults/.ssh/sshd_config
+        - install -m 0644 /tmp/config/jupyter/page_config.json /opt/jovyan_defaults/.jupyter/labconfig/page_config.json
+        - install -m 0644 /tmp/config/agents/AGENTS_nbi.md /opt/jovyan_defaults/.jupyter/nbi/rules/neurodesk.md
+        - install -m 0644 /tmp/config/agents/nbi_config.json /opt/jovyan_defaults/.jupyter/nbi/config.json
+        - install -m 0644 /tmp/config/agents/nbi_mcp.json /opt/jovyan_defaults/.jupyter/nbi/mcp.json
+        - install -m 0755 /tmp/config/agents/nbi_setup.sh /opt/neurodesktop/nbi_setup.sh
+        - install -m 0644 /tmp/config/lxde/.bashrc /opt/jovyan_defaults/.bashrc_append
+        - printf '%s\n%s\n%s\n' 'password' 'password' 'n' | vncpasswd /opt/jovyan_defaults/.vnc/passwd
+        - chown root:users /opt/jovyan_defaults/.vnc/passwd
+        - chmod 640 /opt/jovyan_defaults/.vnc/passwd
+        - install -m 0755 -o root -g users /tmp/config/jupyter/restore_home_defaults.sh /opt/neurodesktop/restore_home_defaults.sh
+        - install -m 0755 -o root -g users /tmp/config/jupyter/update_page_config.py /opt/neurodesktop/update_page_config.py
+        - install -D -m 0644 /tmp/config/agents/AGENTS.md /opt/AGENTS.md
+        - install -m 0755 -o root -g root /tmp/config/agents/claude /usr/local/sbin/claude
+        - install -m 0755 -o root -g root /tmp/config/agents/opencode /usr/local/sbin/opencode
+        - install -m 0755 -o root -g root /tmp/config/agents/codex /usr/local/sbin/codex
+        - mkdir -p /etc/cvmfs/keys/ardc.edu.au /data /neurodesktop-storage
+        - chown ${NB_UID}:${NB_GID} /neurodesktop-storage
+        - chmod 0777 /neurodesktop-storage
+        - install -m 0644 /tmp/config/cvmfs/neurodesk.ardc.edu.au.pub /etc/cvmfs/keys/ardc.edu.au/neurodesk.ardc.edu.au.pub
+        - cp /tmp/config/cvmfs/neurodesk.ardc.edu.au.conf* /etc/cvmfs/config.d/
+        - chmod 0644 /etc/cvmfs/config.d/neurodesk.ardc.edu.au.conf*
+        - install -m 0644 /tmp/config/cvmfs/default.local /etc/cvmfs/default.local
+        - rm -rf /tmp/config /tmp/scripts /tmp/tests /tmp/neurodesk-launcher
+
+    - run:
+        - mkdir -p /tmp/neurocommand
+        - tar -xzf {{ get_file("neurocommand") }} -C /tmp/neurocommand --strip-components=1
+        - mv /tmp/neurocommand /neurocommand
+        - cd /neurocommand && sed -i 's|CONTAINER_PATH=${PATH_PREFIX}/containers|CONTAINER_PATH=${NEURODESKTOP_LOCAL_CONTAINERS:-${PATH_PREFIX}/containers}|g' neurodesk/fetch_containers.sh
+        - cd /neurocommand && sed -i 's|export CONTAINER_PATH="${_base}"/containers|export CONTAINER_PATH="${NEURODESKTOP_LOCAL_CONTAINERS:-${_base}/containers}"|g' neurodesk/fetch_and_run.sh
+        - cd /neurocommand && sed -i 's|CONTAINER_PATH="${_base}"/containers|CONTAINER_PATH="${NEURODESKTOP_LOCAL_CONTAINERS:-${_base}/containers}"|g' neurodesk/fetch_and_run.sh
+        - cd /neurocommand && bash build.sh --lxde --edit
+        - cd /neurocommand && bash install.sh
+        - ln -s /neurodesktop-storage/containers /neurocommand/local/containers
+        - rm -rf /root/.cache /home/${NB_USER}/.cache
+
+    - workdir: /home/${NB_USER}
+
+deploy:
+  bins:
+    - start-neurodesktop-jupyterlab
+    - start-neurodesktop-guacamole
+
+categories:
+  - programming
+  - visualization
+  - data management
+
+readme: |-
+  ----------------------------------
+  ## neurodesktop/{{ context.version }} ##
+  Neurodesktop provides a browser-based JupyterLab and LXDE desktop environment with Guacamole, VNC/RDP support, CVMFS-backed NeuroDesk tooling, and workflow utilities.
+
+  Launchers:
+  ```
+  start-neurodesktop-jupyterlab
+  start-neurodesktop-guacamole
+  ```
+
+  The JupyterLab launcher uses `${NEURODESK_WEBAPP_PORT:-8888}`. The Guacamole launcher delegates to Neurodesktop's Guacamole startup script.
+
+  More documentation can be found here: https://www.neurodesk.org/
+
+  ----------------------------------
+
+files:
+  - name: guacamole_server
+    url: https://archive.apache.org/dist/guacamole/{{ context.guacamole_version }}/source/guacamole-server-{{ context.guacamole_version }}.tar.gz
+    retry: 5
+
+  - name: guacamole_war
+    url: https://archive.apache.org/dist/guacamole/{{ context.guacamole_version }}/binary/guacamole-{{ context.guacamole_version }}.war
+    retry: 5
+
+  - name: tomcat
+    url: https://archive.apache.org/dist/tomcat/tomcat-{{ context.tomcat_rel }}/v{{ context.tomcat_version }}/bin/apache-tomcat-{{ context.tomcat_version }}.tar.gz
+    retry: 5
+
+  - name: code_server_amd64
+    url: https://github.com/coder/code-server/releases/download/v{{ context.code_server_version }}/code-server-{{ context.code_server_version }}-linux-amd64.tar.gz
+    condition: arch=="x86_64"
+    retry: 5
+
+  - name: code_server_arm64
+    url: https://github.com/coder/code-server/releases/download/v{{ context.code_server_version }}/code-server-{{ context.code_server_version }}-linux-arm64.tar.gz
+    condition: arch=="aarch64"
+    retry: 5
+
+  - name: strace_x86_64
+    url: https://github.com/JuliaBinaryWrappers/strace_jll.jl/releases/download/strace-v6.7.0%2B1/strace.v6.7.0.x86_64-linux-gnu.tar.gz
+    condition: arch=="x86_64"
+    retry: 5
+
+  - name: strace_aarch64
+    url: https://github.com/JuliaBinaryWrappers/strace_jll.jl/releases/download/strace-v6.7.0%2B1/strace.v6.7.0.aarch64-linux-gnu.tar.gz
+    condition: arch=="aarch64"
+    retry: 5
+
+  - name: cvmfs_release_deb
+    url: https://cvmrepo.s3.cern.ch/cvmrepo/apt/cvmfs-release-latest_all.deb
+    retry: 5
+
+  - name: nodesource_setup
+    url: https://deb.nodesource.com/setup_20.x
+    retry: 5
+
+  - name: tinytex_install
+    url: https://yihui.org/tinytex/install-bin-unix.sh
+    retry: 5
+
+  - name: nextflow_install
+    url: https://get.nextflow.io
+    retry: 5
+
+  - name: nf_test_install
+    url: https://get.nf-test.com
+    retry: 5
+
+  - name: nf_neuro_modules
+    url: https://github.com/nf-neuro/modules/archive/refs/heads/main.tar.gz
+    retry: 5
+
+  - name: claude_install
+    url: https://claude.ai/install.sh
+    retry: 5
+
+  - name: opencode_install
+    url: https://opencode.ai/install
+    retry: 5
+
+  - name: neurocommand
+    url: https://github.com/neurodesk/neurocommand/archive/refs/heads/main.tar.gz
+    retry: 5
+
+  - name: webapps_json
+    url: https://raw.githubusercontent.com/neurodesk/neurocommand/main/neurodesk/webapps.json
+    retry: 5
+
+  - name: wrap_kernels
+    contents: |
+      #!/usr/bin/env python3
+      import json
+      from pathlib import Path
+
+      wrapper = "/opt/neurodesktop/kernel_wrapper.sh"
+      search_roots = [
+          Path("/opt/conda/share/jupyter/kernels"),
+          Path("/usr/local/share/jupyter/kernels"),
+          Path("/usr/share/jupyter/kernels"),
+      ]
+
+      for root in search_roots:
+          if not root.is_dir():
+              continue
+          for spec_file in root.glob("*/kernel.json"):
+              try:
+                  spec = json.loads(spec_file.read_text())
+              except (json.JSONDecodeError, OSError) as exc:
+                  print(f"[WARN] Skipping {spec_file}: {exc}")
+                  continue
+              argv = spec.get("argv")
+              if not isinstance(argv, list) or not argv or argv[0] == wrapper:
+                  continue
+              spec["argv"] = [wrapper] + argv
+              spec_file.write_text(json.dumps(spec, indent=1))
+              print(f"[INFO] Wrapped kernel spec: {spec_file}")
+
+  - name: bashrc_append
+    contents: |
+      source /opt/neurodesktop/environment_variables.sh
+
+      # Neurodesk persistent bash history
+      if [[ $- == *i* ]]; then
+          shopt -s histappend
+
+          if [ -d "${HOME}/neurodesktop-storage" ] && [ -w "${HOME}/neurodesktop-storage" ]; then
+              export HISTFILE="${HOME}/neurodesktop-storage/.bash_history"
+          elif [ -d "/neurodesktop-storage" ] && [ -w "/neurodesktop-storage" ]; then
+              export HISTFILE="/neurodesktop-storage/.bash_history"
+          else
+              export HISTFILE="${HISTFILE:-$HOME/.bash_history}"
+          fi
+
+          export HISTSIZE=100000
+          export HISTFILESIZE=200000
+          export HISTCONTROL=ignoredups:erasedups
+
+          if [[ "${PROMPT_COMMAND:-}" != *"history -a"* ]]; then
+              if [ -n "${PROMPT_COMMAND:-}" ]; then
+                  export PROMPT_COMMAND="history -a; history -n; ${PROMPT_COMMAND}"
+              else
+                  export PROMPT_COMMAND="history -a; history -n"
+              fi
+          fi
+      fi
+
+  - name: start-neurodesktop-jupyterlab
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      export JUPYTER_TOKEN="${JUPYTER_TOKEN:-}"
+      export JUPYTER_PASSWORD="${JUPYTER_PASSWORD:-}"
+      export NEURODESKTOP_JUPYTER_PORT="${NEURODESK_WEBAPP_PORT:-${NEURODESKTOP_JUPYTER_PORT:-8888}}"
+
+      if [ -x /opt/neurodesktop/jupyterlab_startup.sh ]; then
+          /opt/neurodesktop/jupyterlab_startup.sh
+      fi
+
+      exec jupyter lab \
+          --ip=0.0.0.0 \
+          --port="${NEURODESKTOP_JUPYTER_PORT}" \
+          --no-browser \
+          --ServerApp.token="${JUPYTER_TOKEN}" \
+          --ServerApp.password="${JUPYTER_PASSWORD}"
+
+  - name: start-neurodesktop-guacamole
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      if [ -n "${NEURODESK_WEBAPP_PORT:-}" ] && [ -z "${NEURODESKTOP_TOMCAT_PORT:-}" ]; then
+          export NEURODESKTOP_TOMCAT_PORT="${NEURODESK_WEBAPP_PORT}"
+      fi
+      exec /opt/neurodesktop/guacamole.sh

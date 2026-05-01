@@ -210,7 +210,8 @@ tests:
         output_path = sys.argv[1]
         scenario = sys.argv[2]
         expected_source = "tof_fl3d_tra"
-        expected_derived = "tof_fl3d_tra_vesselboost"
+        expected_derived = "tof_fl3d_tra_vesselboost_segmentation"
+        expected_source_copy = f"{expected_source}_vesselboost_source_copy"
         expected_sagittal = f"{expected_derived}_sagittal"
         expected_coronal = f"{expected_derived}_coronal"
 
@@ -241,6 +242,18 @@ tests:
             last_image = dataset.read_image(image_group, image_count - 1)
             header = image.getHead()
             last_header = last_image.getHead()
+            headers = [
+                dataset.read_image(image_group, index).getHead()
+                for index in range(image_count)
+            ]
+            image_indices = [
+                int(getattr(image_header, "image_index", 0))
+                for image_header in headers
+            ]
+            slice_indices = [
+                int(getattr(image_header, "slice", 0))
+                for image_header in headers
+            ]
             meta = ismrmrd.Meta.deserialize(image.attribute_string)
             ice_minihead = get_text(meta, "IceMiniHead")
             if ice_minihead:
@@ -252,7 +265,10 @@ tests:
                     "series_index": int(getattr(header, "image_series_index", 0)),
                     "image_index": int(getattr(header, "image_index", 0)),
                     "last_image_index": int(getattr(last_header, "image_index", 0)),
+                    "first_slice": int(getattr(header, "slice", 0)),
                     "last_slice": int(getattr(last_header, "slice", 0)),
+                    "image_indices": image_indices,
+                    "slice_indices": slice_indices,
                     "series_description": get_text(meta, "SeriesDescription"),
                     "sequence_description": get_text(meta, "SequenceDescription"),
                     "sequence_description_additional": get_text(meta, "SequenceDescriptionAdditional"),
@@ -263,6 +279,8 @@ tests:
                     "image_comments": get_text(meta, "ImageComments"),
                     "image_comment": get_text(meta, "ImageComment"),
                     "keep_image_geometry": get_text(meta, "Keep_image_geometry"),
+                    "matrix_x": int(header.matrix_size[0]),
+                    "matrix_y": int(header.matrix_size[1]),
                     "pixel_spacing_x": float(header.field_of_view[0]) / float(header.matrix_size[0]),
                     "pixel_spacing_y": float(header.field_of_view[1]) / float(header.matrix_size[1]),
                     "ice_minihead": ice_minihead,
@@ -272,27 +290,37 @@ tests:
 
         if scenario == "default":
             assert len(summaries) == 2, summaries
-            original, derived = summaries
-            assert original["series_index"] == 1, original
-            assert original["series_description"] == expected_source, original
-            assert original["grouping"] == expected_source, original
-            assert expected_source in original["ice_minihead"], original["ice_minihead"]
+            derived, source_copy = summaries
             assert derived["series_index"] == 2, derived
             assert derived["series_description"] == expected_derived, derived
             assert derived["sequence_description"] == expected_derived, derived
             assert derived["grouping"] == expected_derived, derived
-            assert derived["grouping"] != original["grouping"], summaries
+            assert derived["grouping"] != source_copy["grouping"], summaries
             assert derived["image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST_SEGMENTATION", derived
             assert derived["dicom_image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST_SEGMENTATION", derived
-            assert derived["image_type_value4"] == "vesselboost", derived
-            assert derived["image_comments"] == "vesselboost", derived
-            assert derived["image_comment"] == "vesselboost", derived
+            assert derived["image_type_value4"] == "vesselboost_segmentation", derived
+            assert derived["image_comments"] == "vesselboost_segmentation", derived
+            assert derived["image_comment"] == "vesselboost_segmentation", derived
             assert derived["image_index"] == 0, derived
             assert derived["last_image_index"] == derived["image_count"] - 1, derived
             assert derived["last_slice"] == derived["image_count"] - 1, derived
             assert expected_derived in derived["ice_minihead"], derived["ice_minihead"]
             assert "SequenceDescription" in derived["ice_minihead"], derived["ice_minihead"]
             assert "SeriesNumberRangeNameUID" in derived["ice_minihead"], derived["ice_minihead"]
+            assert source_copy["series_index"] == 3, source_copy
+            assert source_copy["series_description"] == expected_source_copy, source_copy
+            assert source_copy["sequence_description"] == expected_source_copy, source_copy
+            assert source_copy["grouping"] == expected_source_copy, source_copy
+            assert source_copy["image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST_SOURCE_COPY", source_copy
+            assert source_copy["dicom_image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST_SOURCE_COPY", source_copy
+            assert source_copy["image_type_value4"] == "vesselboost_source_copy", source_copy
+            assert source_copy["image_comments"] == "vesselboost_source_copy", source_copy
+            assert source_copy["image_comment"] == "vesselboost_source_copy", source_copy
+            assert expected_source_copy in source_copy["ice_minihead"], source_copy["ice_minihead"]
+            assert source_copy["grouping"] != expected_source, source_copy
+            assert source_copy["image_index"] == 0, source_copy
+            assert source_copy["last_image_index"] == source_copy["image_count"] - 1, source_copy
+            assert source_copy["last_slice"] == source_copy["image_count"] - 1, source_copy
         elif scenario == "sendoriginal_false":
             assert len(summaries) == 1, summaries
             derived = summaries[0]
@@ -300,35 +328,49 @@ tests:
             assert derived["series_description"] == expected_derived, derived
             assert derived["sequence_description"] == expected_derived, derived
             assert derived["grouping"] == expected_derived, derived
-            assert derived["image_type_value4"] == "vesselboost", derived
+            assert derived["image_type_value4"] == "vesselboost_segmentation", derived
             assert derived["image_index"] == 0, derived
             assert derived["last_image_index"] == derived["image_count"] - 1, derived
             assert derived["last_slice"] == derived["image_count"] - 1, derived
         elif scenario == "reslice":
             assert len(summaries) == 4, summaries
-            assert [summary["series_index"] for summary in summaries] == [1, 2, 3, 4], summaries
+            assert [summary["series_index"] for summary in summaries] == [2, 3, 4, 5], summaries
             assert [summary["series_description"] for summary in summaries] == [
-                expected_source,
                 expected_derived,
                 expected_sagittal,
                 expected_coronal,
+                expected_source_copy,
             ], summaries
             assert [summary["grouping"] for summary in summaries] == [
-                expected_source,
                 expected_derived,
                 expected_sagittal,
                 expected_coronal,
+                expected_source_copy,
             ], summaries
-            sagittal = summaries[2]
-            coronal = summaries[3]
-            derived = summaries[1]
+            derived = summaries[0]
+            sagittal = summaries[1]
+            coronal = summaries[2]
+            source_copy = summaries[3]
             assert derived["image_index"] == 0, derived
             assert derived["last_image_index"] == derived["image_count"] - 1, derived
             assert derived["last_slice"] == derived["image_count"] - 1, derived
+            assert source_copy["image_type_value4"] == "vesselboost_source_copy", source_copy
+            assert expected_source_copy in source_copy["ice_minihead"], source_copy["ice_minihead"]
+            source_slice_count = derived["image_count"]
+            for reformat in (sagittal, coronal):
+                assert reformat["image_indices"] == list(range(reformat["image_count"])), reformat
+                assert min(reformat["slice_indices"]) >= 0, reformat
+                assert max(reformat["slice_indices"]) < source_slice_count, reformat
+                assert reformat["first_slice"] == 0, reformat
+                assert reformat["last_slice"] == (reformat["image_count"] - 1) % source_slice_count, reformat
             assert sagittal["sequence_description_additional"] == "", sagittal
             assert coronal["sequence_description_additional"] == "", coronal
-            assert sagittal["keep_image_geometry"] == "", sagittal
-            assert coronal["keep_image_geometry"] == "", coronal
+            assert sagittal["keep_image_geometry"] == "0", sagittal
+            assert coronal["keep_image_geometry"] == "0", coronal
+            assert not sagittal["ice_minihead"], sagittal
+            assert not coronal["ice_minihead"], coronal
+            assert sagittal["matrix_x"] % 2 == sagittal["matrix_y"] % 2, sagittal
+            assert coronal["matrix_x"] % 2 == coronal["matrix_y"] % 2, coronal
             assert abs(sagittal["pixel_spacing_x"] - sagittal["pixel_spacing_y"]) < 1e-3, sagittal
             assert abs(coronal["pixel_spacing_x"] - coronal["pixel_spacing_y"]) < 1e-3, coronal
         else:

@@ -295,47 +295,47 @@ tests:
   # ==========================================================================
   - name: DSURQE template exists
     description: Verify DSURQE mouse atlas template is available
-    command: ls -la /opt/rabies/share/rabies/DSURQE_40micron_average.nii.gz 2>&1
+    command: "bash -lc 'ls -la /opt/rabies/share/rabies/DSURQE_40micron_average.nii.gz 2>&1'"
     expected_output_contains: "DSURQE_40micron_average.nii.gz"
 
   - name: DSURQE brain mask exists
     description: Verify DSURQE brain mask is available
-    command: ls -la /opt/rabies/share/rabies/DSURQE_40micron_mask.nii.gz 2>&1
+    command: "bash -lc 'ls -la /opt/rabies/share/rabies/DSURQE_40micron_mask.nii.gz 2>&1'"
     expected_output_contains: "DSURQE_40micron_mask.nii.gz"
 
   - name: DSURQE labels exist
     description: Verify DSURQE atlas labels are available
-    command: ls -la /opt/rabies/share/rabies/DSURQE_40micron_labels.nii.gz 2>&1
+    command: "bash -lc 'ls -la /opt/rabies/share/rabies/DSURQE_40micron_labels.nii.gz 2>&1'"
     expected_output_contains: "DSURQE_40micron_labels.nii.gz"
 
   - name: WM mask exists
     description: Verify white matter mask is available
-    command: ls -la /opt/rabies/share/rabies/DSURQE_40micron_eroded_WM_mask.nii.gz 2>&1
+    command: "bash -lc 'ls -la /opt/rabies/share/rabies/DSURQE_40micron_eroded_WM_mask.nii.gz 2>&1'"
     expected_output_contains: "DSURQE_40micron_eroded_WM_mask.nii.gz"
 
   - name: CSF mask exists
     description: Verify CSF mask is available
-    command: ls -la /opt/rabies/share/rabies/DSURQE_40micron_eroded_CSF_mask.nii.gz 2>&1
+    command: "bash -lc 'ls -la /opt/rabies/share/rabies/DSURQE_40micron_eroded_CSF_mask.nii.gz 2>&1'"
     expected_output_contains: "DSURQE_40micron_eroded_CSF_mask.nii.gz"
 
   - name: Vascular mask exists
     description: Verify vascular mask is available
-    command: ls -la /opt/rabies/share/rabies/vascular_mask.nii.gz 2>&1
+    command: "bash -lc 'ls -la /opt/rabies/share/rabies/vascular_mask.nii.gz 2>&1'"
     expected_output_contains: "vascular_mask.nii.gz"
 
   - name: EPI template exists
     description: Verify EPI reference template is available
-    command: ls -la /opt/rabies/share/rabies/EPI_template.nii.gz 2>&1
+    command: "bash -lc 'ls -la /opt/rabies/share/rabies/EPI_template.nii.gz 2>&1'"
     expected_output_contains: "EPI_template.nii.gz"
 
   - name: Melodic ICA priors exist
     description: Verify ICA prior maps for dual regression
-    command: ls -la /opt/rabies/share/rabies/melodic_IC.nii.gz 2>&1
+    command: "bash -lc 'ls -la /opt/rabies/share/rabies/melodic_IC.nii.gz 2>&1'"
     expected_output_contains: "melodic_IC.nii.gz"
 
   - name: ROI mapping CSV exists
     description: Verify ROI label mapping file is available
-    command: ls -la /opt/rabies/share/rabies/DSURQE_40micron_R_mapping.csv 2>&1
+    command: "bash -lc 'ls -la /opt/rabies/share/rabies/DSURQE_40micron_R_mapping.csv 2>&1'"
     expected_output_contains: "DSURQE_40micron_R_mapping.csv"
 
   # ==========================================================================
@@ -541,49 +541,22 @@ tests:
   # ==========================================================================
   - name: Load DSURQE template
     description: Verify DSURQE template can be loaded
-    command: |
-      python -c "
-      import nibabel as nib
-      img = nib.load('/opt/rabies/share/rabies/DSURQE_40micron_average.nii.gz')
-      print('Template shape:', img.shape)
-      print('Voxel size:', img.header.get_zooms())
-      " 2>&1
+    command: "bash -lc 'python -c \"\nimport nibabel as nib\nimg = nib.load('\"'\"'/opt/rabies/share/rabies/DSURQE_40micron_average.nii.gz'\"'\"')\nprint('\"'\"'Template shape:'\"'\"', img.shape)\nprint('\"'\"'Voxel size:'\"'\"', img.header.get_zooms())\n\" 2>&1'"
     expected_output_contains: "Template shape:"
 
   - name: Load DSURQE labels
     description: Verify DSURQE atlas labels
-    command: |
-      python -c "
-      import nibabel as nib
-      import numpy as np
-      img = nib.load('/opt/rabies/share/rabies/DSURQE_40micron_labels.nii.gz')
-      labels = img.get_fdata()
-      unique_labels = np.unique(labels)
-      print('Labels shape:', img.shape)
-      print('Number of unique labels:', len(unique_labels))
-      " 2>&1
+    command: "bash -lc 'python -c \"\nimport nibabel as nib\nimport numpy as np\nimg = nib.load('\"'\"'/opt/rabies/share/rabies/DSURQE_40micron_labels.nii.gz'\"'\"')\nlabels = img.get_fdata()\nunique_labels = np.unique(labels)\nprint('\"'\"'Labels shape:'\"'\"', img.shape)\nprint('\"'\"'Number of unique labels:'\"'\"', len(unique_labels))\n\" 2>&1'"
     expected_output_contains: "Number of unique labels:"
 
   - name: Read ROI mapping
     description: Verify ROI mapping CSV can be read
-    command: |
-      python -c "
-      import pandas as pd
-      df = pd.read_csv('/opt/rabies/share/rabies/DSURQE_40micron_R_mapping.csv')
-      print('ROI mapping columns:', list(df.columns))
-      print('Number of ROIs:', len(df))
-      " 2>&1
+    command: "bash -lc 'python -c \"\nimport pandas as pd\ndf = pd.read_csv('\"'\"'/opt/rabies/share/rabies/DSURQE_40micron_R_mapping.csv'\"'\"')\nprint('\"'\"'ROI mapping columns:'\"'\"', list(df.columns))\nprint('\"'\"'Number of ROIs:'\"'\"', len(df))\n\" 2>&1'"
     expected_output_contains: "Number of ROIs:"
 
   - name: Load melodic ICA priors
     description: Verify ICA prior maps for dual regression
-    command: |
-      python -c "
-      import nibabel as nib
-      img = nib.load('/opt/rabies/share/rabies/melodic_IC.nii.gz')
-      print('ICA priors shape:', img.shape)
-      print('Number of components:', img.shape[3] if len(img.shape) > 3 else 1)
-      " 2>&1
+    command: "bash -lc 'python -c \"\nimport nibabel as nib\nimg = nib.load('\"'\"'/opt/rabies/share/rabies/melodic_IC.nii.gz'\"'\"')\nprint('\"'\"'ICA priors shape:'\"'\"', img.shape)\nprint('\"'\"'Number of components:'\"'\"', img.shape[3] if len(img.shape) > 3 else 1)\n\" 2>&1'"
     expected_output_contains: "ICA priors shape:"
 
   # ==========================================================================

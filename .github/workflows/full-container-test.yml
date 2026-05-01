@@ -19,6 +19,9 @@ permissions:
   contents: read
   issues: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   prepare-matrix:
     runs-on: ubuntu-latest
@@ -32,7 +35,7 @@ jobs:
       missing_targets: ${{ steps.collect.outputs.missing_targets }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Discover released containers
         id: collect
@@ -187,10 +190,10 @@ jobs:
       ARCHITECTURE: ${{ github.event.inputs.architecture || 'x86_64' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -500,7 +503,7 @@ jobs:
     if: always()
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download all test artifacts
         if: always()

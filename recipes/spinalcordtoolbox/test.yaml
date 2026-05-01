@@ -2,7 +2,7 @@ tests:
   - name: Test spinalcordtoolbox
     manual: true
     script: |
-      bash /opt/spinalcordtoolbox-7.2/batch_processing.sh
+      bash /opt/spinalcordtoolbox-7.1/batch_processing.sh
   - name: Test spinalcordtoolbox for OpenRecon
     manual: true
     script: |
@@ -34,6 +34,31 @@ tests:
         -o /buildhostdirectory/output.h5 \
         /buildhostdirectory/input_fromNIFTI_lesion.h5 \
         -c spinalcordtoolbox
+
+      # Generate OpenRecon configs covering the SCT batch_processing.sh
+      # segmentation/labeling scenarios plus every exposed OpenRecon analysis.
+      batch_config_dir=/tmp/spinalcordtoolbox_openrecon_batch_processing_configs
+      batch_output_dir=/buildhostdirectory/spinalcordtoolbox_openrecon_batch_processing_outputs
+      rm -rf "${batch_config_dir}" "${batch_output_dir}"
+      mkdir -p "${batch_output_dir}"
+      python3 /opt/code/python-ismrmrd-server/spinalcordtoolbox.py \
+        --write-openrecon-batch-processing-test-configs "${batch_config_dir}"
+
+      if [ "${SCT_OPENRECON_RUN_BATCH_PROCESSING_CASES:-0}" = "1" ]; then
+        for config_file in "${batch_config_dir}"/*.json; do
+          test_name=$(basename "${config_file}" .json)
+          test_output_dir="${batch_output_dir}/${test_name}"
+          mkdir -p "${test_output_dir}"
+          cp "${config_file}" "${test_output_dir}/config.json"
+          cp "${config_file}" spinalcordtoolbox.json
+          python3 /opt/code/python-ismrmrd-server/client.py \
+            -G dataset \
+            -o "${test_output_dir}/output.h5" \
+            /buildhostdirectory/input_fromNIFTI_lesion.h5 \
+            -c spinalcordtoolbox
+        done
+        rm -f spinalcordtoolbox.json
+      fi
 
       # Check output h5 data in "H5Web" VS code plugin viewer
 

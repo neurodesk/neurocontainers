@@ -58,7 +58,7 @@ tests:
 
   - name: Container labels check
     description: Verify container metadata labels exist
-    command: cat /.singularity.d/labels.json
+    command: "bash -lc 'cat /.singularity.d/labels.json'"
     expected_output_contains: "NeuroDesk"
 
   # ==========================================================================

@@ -40,6 +40,9 @@ on:
         required: false
         type: string
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Workflow needs the following set in GitHub
 # - secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION
 # - secrets.GH_REGISTRY
@@ -61,7 +64,7 @@ jobs:
       ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
 
@@ -253,7 +256,7 @@ jobs:
           gh --version && jq --version && swift --version
 
       - name: Checkout repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        uses: actions/checkout@v5
         with:
           token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
 
@@ -319,7 +322,8 @@ jobs:
           else
             echo "Cache image ${CACHE_IMAGE} is unavailable; building without --cache-from"
           fi
-          docker build . --file ${DOCKERFILE} --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ${CACHE_FROM_ARGS} --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+          mkdir -p "$HOME/.cache/neurocontainers/build-context"
+          docker build . --file ${DOCKERFILE} --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --build-context neurocontainer-cache="$HOME/.cache/neurocontainers/build-context" ${CACHE_FROM_ARGS} --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
           
       - name: Debug storage
         run: |
@@ -727,7 +731,7 @@ jobs:
       IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
     steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+    - uses: actions/checkout@v5
       with:
         token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
     - name: Install Builder Dependencies

@@ -195,36 +195,17 @@ tests:
   # ==========================================================================
   - name: nibabel NIfTI reading
     description: Test nibabel can read demo NIfTI file
-    command: |
-      python3 << 'PYEOF'
-      import nibabel as nib
-      img = nib.load("/opt/vessel-app/demo_data/img_patch.nii.gz")
-      print("Image shape:", img.shape)
-      PYEOF
+    command: "bash -lc 'python3 << '\"'\"'PYEOF'\"'\"'\nimport nibabel as nib\nimg = nib.load(\"/opt/vessel-app/demo_data/img_patch.nii.gz\")\nprint(\"Image shape:\", img.shape)\nPYEOF'"
     expected_output_contains: "Image shape:"
 
   - name: nibabel get_fdata
     description: Test nibabel data extraction (container demo data has CRC corruption - container bug)
-    command: |
-      python3 << 'PYEOF'
-      import nibabel as nib
-      import numpy as np
-      data = np.random.rand(32, 32, 32).astype(np.float64)
-      img = nib.Nifti1Image(data, np.eye(4))
-      loaded_data = img.get_fdata()
-      print("Data dtype:", loaded_data.dtype, "ndim:", loaded_data.ndim)
-      PYEOF
+    command: python3 -c "import nibabel as nib, numpy as np; data = np.random.rand(32, 32, 32).astype(np.float64); img = nib.Nifti1Image(data, np.eye(4)); loaded = img.get_fdata(); print('Data dtype:', loaded.dtype, 'ndim:', loaded.ndim)"
     expected_output_contains: "ndim: 3"
 
   - name: nibabel affine extraction
     description: Test nibabel affine matrix extraction
-    command: |
-      python3 << 'PYEOF'
-      import nibabel as nib
-      img = nib.load("/opt/vessel-app/demo_data/img_patch.nii.gz")
-      affine = img.affine
-      print("Affine shape:", affine.shape)
-      PYEOF
+    command: "bash -lc 'python3 << '\"'\"'PYEOF'\"'\"'\nimport nibabel as nib\nimg = nib.load(\"/opt/vessel-app/demo_data/img_patch.nii.gz\")\naffine = img.affine\nprint(\"Affine shape:\", affine.shape)\nPYEOF'"
     expected_output_contains: "Affine shape: (4, 4)"
 
   - name: nibabel NIfTI creation and save
@@ -235,13 +216,7 @@ tests:
 
   - name: nibabel header inspection
     description: Test nibabel header reading
-    command: |
-      python3 << 'PYEOF'
-      import nibabel as nib
-      img = nib.load("/opt/vessel-app/demo_data/img_patch.nii.gz")
-      hdr = img.header
-      print("Data type:", hdr.get_data_dtype())
-      PYEOF
+    command: "bash -lc 'python3 << '\"'\"'PYEOF'\"'\"'\nimport nibabel as nib\nimg = nib.load(\"/opt/vessel-app/demo_data/img_patch.nii.gz\")\nhdr = img.header\nprint(\"Data type:\", hdr.get_data_dtype())\nPYEOF'"
     expected_output_contains: "Data type:"
 
   # ==========================================================================
@@ -277,72 +252,72 @@ tests:
   # ==========================================================================
   - name: VesselApp directory exists
     description: Verify vessel-app directory is present
-    command: ls -la /opt/vessel-app/backend/
+    command: "bash -lc 'ls -la /opt/vessel-app/backend/'"
     expected_output_contains: "serve.py"
 
   - name: VesselApp demo data exists
     description: Verify demo data files exist
-    command: ls -la /opt/vessel-app/demo_data/
+    command: "bash -lc 'ls -la /opt/vessel-app/demo_data/'"
     expected_output_contains: "img_patch.nii.gz"
 
   - name: VesselApp UNet model import
     description: Test importing 3D UNet model
-    command: "cd /opt/vessel-app/backend && python3 -c \"from implementations.dl_models.unet import UNet3D; model = UNet3D(filters=[16, 32, 64, 128], c_in=1, c_out=2); print('UNet3D created with', sum(p.numel() for p in model.parameters()), 'parameters')\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"from implementations.dl_models.unet import UNet3D; model = UNet3D(filters=[16, 32, 64, 128], c_in=1, c_out=2); print('\"'\"'UNet3D created with'\"'\"', sum(p.numel() for p in model.parameters()), '\"'\"'parameters'\"'\"')\"'"
     expected_output_contains: "UNet3D created with"
 
   - name: VesselApp ASPP CNN model import
     description: Test importing ASPP CNN model
-    command: "cd /opt/vessel-app/backend && python3 -c \"from implementations.dl_models.aspp_cnn import AsppCnn3D; model = AsppCnn3D(c=16, c_in=1, c_out=2, dilation_rates=[1, 2, 3, 5, 7]); print('AsppCnn3D created with', sum(p.numel() for p in model.parameters()), 'parameters')\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"from implementations.dl_models.aspp_cnn import AsppCnn3D; model = AsppCnn3D(c=16, c_in=1, c_out=2, dilation_rates=[1, 2, 3, 5, 7]); print('\"'\"'AsppCnn3D created with'\"'\"', sum(p.numel() for p in model.parameters()), '\"'\"'parameters'\"'\"')\"'"
     expected_output_contains: "AsppCnn3D created with"
 
   - name: VesselApp UNet forward pass
     description: Test UNet forward pass with random input
-    command: "cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.dl_models.unet import UNet3D; model = UNet3D(filters=[16, 32, 64, 128], c_in=1, c_out=2); model.eval(); x = torch.randn(1, 1, 32, 32, 32); y = model(x); print('Output shape:', y.shape)\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.dl_models.unet import UNet3D; model = UNet3D(filters=[16, 32, 64, 128], c_in=1, c_out=2); model.eval(); x = torch.randn(1, 1, 32, 32, 32); y = model(x); print('\"'\"'Output shape:'\"'\"', y.shape)\"'"
     expected_output_contains: "Output shape: torch.Size([1, 2, 32, 32, 32])"
 
   - name: VesselApp ASPP CNN forward pass
     description: Test ASPP CNN forward pass with random input
-    command: "cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.dl_models.aspp_cnn import AsppCnn3D; model = AsppCnn3D(c=16, c_in=1, c_out=2, dilation_rates=[1, 2, 3, 5, 7]); model.eval(); x = torch.randn(1, 1, 32, 32, 32); y = model(x); print('Output shape:', y.shape)\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.dl_models.aspp_cnn import AsppCnn3D; model = AsppCnn3D(c=16, c_in=1, c_out=2, dilation_rates=[1, 2, 3, 5, 7]); model.eval(); x = torch.randn(1, 1, 32, 32, 32); y = model(x); print('\"'\"'Output shape:'\"'\"', y.shape)\"'"
     expected_output_contains: "Output shape: torch.Size([1, 2, 32, 32, 32])"
 
   - name: VesselApp intensity standardization
     description: Test intensity standardization function
-    command: "cd /opt/vessel-app/backend && python3 -c \"import numpy as np; from implementations.functions.intensity import IntensityStandardisation; arr = np.random.rand(32, 32, 32) * 100 + 50; std = IntensityStandardisation(); result = std(arr); print('Mean:', round(result.mean(), 4), 'Std:', round(result.std(), 4))\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import numpy as np; from implementations.functions.intensity import IntensityStandardisation; arr = np.random.rand(32, 32, 32) * 100 + 50; std = IntensityStandardisation(); result = std(arr); print('\"'\"'Mean:'\"'\"', round(result.mean(), 4), '\"'\"'Std:'\"'\"', round(result.std(), 4))\"'"
     expected_output_contains: "Std: 1.0"
 
   - name: VesselApp simple thresholding
     description: Test simple thresholding segmentation
-    command: "cd /opt/vessel-app/backend && python3 -c \"import numpy as np; from implementations.functions.segmentation import SimpleThresholding; arr = np.random.rand(32, 32, 32) * 1000; thresh = SimpleThresholding(lower=500, upper=800); result = thresh(arr); print('Mask unique values:', np.unique(result))\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import numpy as np; from implementations.functions.segmentation import SimpleThresholding; arr = np.random.rand(32, 32, 32) * 1000; thresh = SimpleThresholding(lower=500, upper=800); result = thresh(arr); print('\"'\"'Mask unique values:'\"'\"', np.unique(result))\"'"
     expected_output_contains: "Mask unique values:"
 
   - name: VesselApp remove small objects
     description: Test small object removal function
-    command: "cd /opt/vessel-app/backend && python3 -c \"import numpy as np; from implementations.functions.cleanup import RemoveSmallObjectsFromBinaryArray; mask = np.zeros((32, 32, 32), dtype=np.uint8); mask[5:8, 5:8, 5:8] = 1; mask[15:25, 15:25, 15:25] = 1; cleanup = RemoveSmallObjectsFromBinaryArray(min_size=50); result = cleanup(mask); print('Cleaned mask sum:', result.sum())\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import numpy as np; from implementations.functions.cleanup import RemoveSmallObjectsFromBinaryArray; mask = np.zeros((32, 32, 32), dtype=np.uint8); mask[5:8, 5:8, 5:8] = 1; mask[15:25, 15:25, 15:25] = 1; cleanup = RemoveSmallObjectsFromBinaryArray(min_size=50); result = cleanup(mask); print('\"'\"'Cleaned mask sum:'\"'\"', result.sum())\"'"
     expected_output_contains: "Cleaned mask sum:"
 
   - name: VesselApp operation pipeline
     description: Test operation pipeline chaining
-    command: "cd /opt/vessel-app/backend && python3 -c \"from implementations.functions.operation import Operation; from implementations.functions.intensity import IntensityStandardisation; import numpy as np; op = Operation(IntensityStandardisation()); arr = np.random.rand(16, 16, 16) * 100; result = op(arr); print('Pipeline executed, result shape:', result.shape)\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"from implementations.functions.operation import Operation; from implementations.functions.intensity import IntensityStandardisation; import numpy as np; op = Operation(IntensityStandardisation()); arr = np.random.rand(16, 16, 16) * 100; result = op(arr); print('\"'\"'Pipeline executed, result shape:'\"'\"', result.shape)\"'"
     expected_output_contains: "Pipeline executed, result shape: (16, 16, 16)"
 
   - name: VesselApp torch tensor conversion
     description: Test numpy to torch tensor conversion
-    command: "cd /opt/vessel-app/backend && python3 -c \"import numpy as np; from implementations.functions.torch_ops import NumpyArray2TorchTensor; arr = np.random.rand(16, 16, 16).astype(np.float32); converter = NumpyArray2TorchTensor(); result = converter(arr); print('Tensor type:', type(result).__name__, 'dtype:', result.dtype)\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import numpy as np; from implementations.functions.torch_ops import NumpyArray2TorchTensor; arr = np.random.rand(16, 16, 16).astype(np.float32); converter = NumpyArray2TorchTensor(); result = converter(arr); print('\"'\"'Tensor type:'\"'\"', type(result).__name__, '\"'\"'dtype:'\"'\"', result.dtype)\"'"
     expected_output_contains: "Tensor type: Tensor"
 
   - name: VesselApp WHD to NCWHD conversion
     description: Test tensor dimension expansion
-    command: "cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.functions.torch_ops import WHDTensor2NCWHD; tensor = torch.randn(16, 16, 16); converter = WHDTensor2NCWHD(); result = converter(tensor); print('Expanded shape:', result.shape)\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.functions.torch_ops import WHDTensor2NCWHD; tensor = torch.randn(16, 16, 16); converter = WHDTensor2NCWHD(); result = converter(tensor); print('\"'\"'Expanded shape:'\"'\"', result.shape)\"'"
     expected_output_contains: "Expanded shape: torch.Size([1, 1, 16, 16, 16])"
 
   - name: VesselApp tensor interpolation
     description: Test 3D tensor interpolation
-    command: "cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.functions.torch_ops import NCWHDTensorInterpolation; tensor = torch.randn(1, 1, 16, 16, 16); interp = NCWHDTensorInterpolation(target_size=[32, 32, 32], modes=['trilinear']); result = interp(tensor); print('Interpolated shape:', result.shape)\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.functions.torch_ops import NCWHDTensorInterpolation; tensor = torch.randn(1, 1, 16, 16, 16); interp = NCWHDTensorInterpolation(target_size=[32, 32, 32], modes=['\"'\"'trilinear'\"'\"']); result = interp(tensor); print('\"'\"'Interpolated shape:'\"'\"', result.shape)\"'"
     expected_output_contains: "Interpolated shape: torch.Size([1, 1, 32, 32, 32])"
 
   - name: VesselApp one-hot encoding
     description: Test one-hot encoding for segmentation labels
-    command: "cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.functions.torch_ops import N1WHDTensor2NCWHDOnehot; tensor = torch.randint(0, 2, (1, 1, 8, 8, 8)); onehot = N1WHDTensor2NCWHDOnehot(num_classes=2); result = onehot(tensor); print('One-hot shape:', result.shape)\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.functions.torch_ops import N1WHDTensor2NCWHDOnehot; tensor = torch.randint(0, 2, (1, 1, 8, 8, 8)); onehot = N1WHDTensor2NCWHDOnehot(num_classes=2); result = onehot(tensor); print('\"'\"'One-hot shape:'\"'\"', result.shape)\"'"
     expected_output_contains: "One-hot shape: torch.Size([1, 2, 8, 8, 8])"
 
   # ==========================================================================
@@ -350,12 +325,12 @@ tests:
   # ==========================================================================
   - name: VesselApp Dice coefficient computation
     description: Test per-channel Dice score computation
-    command: "cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.dl_training_pipelins.losses import compute_per_channel_dice; pred = torch.rand(2, 2, 8, 8, 8); target = torch.randint(0, 2, (2, 2, 8, 8, 8)).float(); dice = compute_per_channel_dice(pred, target); print('Dice score:', round(dice.item(), 4))\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.dl_training_pipelins.losses import compute_per_channel_dice; pred = torch.rand(2, 2, 8, 8, 8); target = torch.randint(0, 2, (2, 2, 8, 8, 8)).float(); dice = compute_per_channel_dice(pred, target); print('\"'\"'Dice score:'\"'\"', round(dice.item(), 4))\"'"
     expected_output_contains: "Dice score:"
 
   - name: VesselApp accuracy computation
     description: Test accuracy metric computation
-    command: "cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.dl_training_pipelins.losses import compute_acc; pred = torch.tensor([1, 0, 1, 1]); target = torch.tensor([1, 0, 0, 1]); acc = compute_acc(pred, target); print('Accuracy:', round(acc.item(), 4))\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import torch; from implementations.dl_training_pipelins.losses import compute_acc; pred = torch.tensor([1, 0, 1, 1]); target = torch.tensor([1, 0, 0, 1]); acc = compute_acc(pred, target); print('\"'\"'Accuracy:'\"'\"', round(acc.item(), 4))\"'"
     expected_output_contains: "Accuracy: 0.75"
 
   # ==========================================================================
@@ -363,17 +338,17 @@ tests:
   # ==========================================================================
   - name: VesselApp save as nifti
     description: Test saving numpy array as NIfTI
-    command: "cd /opt/vessel-app/backend && python3 -c \"import numpy as np; from utilities.img_utils import save_as_nifti; data = np.random.rand(16, 16, 16).astype(np.float32); save_as_nifti('/tmp/test_vessel_output.nii.gz', data); print('NIfTI saved successfully')\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import numpy as np; from utilities.img_utils import save_as_nifti; data = np.random.rand(16, 16, 16).astype(np.float32); save_as_nifti('\"'\"'/tmp/test_vessel_output.nii.gz'\"'\"', data); print('\"'\"'NIfTI saved successfully'\"'\"')\"'"
     expected_output_contains: "NIfTI saved successfully"
 
   - name: VesselApp save with middle slice
     description: Test saving NIfTI with middle slice visualization
-    command: "cd /opt/vessel-app/backend && python3 -c \"import numpy as np; from utilities.img_utils import save_as_nifti; data = np.random.rand(16, 16, 16).astype(np.float32); mid_dir, mip_dir, nii_path = save_as_nifti('/tmp/test_vessel_mid.nii.gz', data, middle_slice_index=2); print('Middle slice saved:', mid_dir is not None)\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import numpy as np; from utilities.img_utils import save_as_nifti; data = np.random.rand(16, 16, 16).astype(np.float32); mid_dir, mip_dir, nii_path = save_as_nifti('\"'\"'/tmp/test_vessel_mid.nii.gz'\"'\"', data, middle_slice_index=2); print('\"'\"'Middle slice saved:'\"'\"', mid_dir is not None)\"'"
     expected_output_contains: "Middle slice saved: True"
 
   - name: VesselApp torch tensor to nifti
     description: Test saving PyTorch tensor as NIfTI
-    command: "cd /opt/vessel-app/backend && python3 -c \"import torch; from utilities.img_utils import save_as_nifti; data = torch.rand(16, 16, 16); save_as_nifti('/tmp/test_vessel_torch.nii.gz', data); print('Torch tensor saved as NIfTI successfully')\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"import torch; from utilities.img_utils import save_as_nifti; data = torch.rand(16, 16, 16); save_as_nifti('\"'\"'/tmp/test_vessel_torch.nii.gz'\"'\"', data); print('\"'\"'Torch tensor saved as NIfTI successfully'\"'\"')\"'"
     expected_output_contains: "Torch tensor saved as NIfTI successfully"
 
   # ==========================================================================
@@ -381,12 +356,12 @@ tests:
   # ==========================================================================
   - name: VesselApp data pipeline import
     description: Test data pipeline module import
-    command: cd /opt/vessel-app/backend && python3 -c "from implementations.dl_data_pipelines.single_sample_patch_based import SingleSamplePatchBased; print('SingleSamplePatchBased imported successfully')"
+    command: bash -lc 'cd /opt/vessel-app/backend && python3 -c "from implementations.dl_data_pipelines.single_sample_patch_based import SingleSamplePatchBased; print('\''SingleSamplePatchBased imported successfully'\'')"'
     expected_output_contains: "SingleSamplePatchBased imported successfully"
 
   - name: VesselApp training pipeline import
     description: Test training pipeline module import
-    command: cd /opt/vessel-app/backend && python3 -c "from implementations.dl_training_pipelins.standard_segmentation import StandardSegmentation; print('StandardSegmentation imported successfully')"
+    command: bash -lc 'cd /opt/vessel-app/backend && python3 -c "from implementations.dl_training_pipelins.standard_segmentation import StandardSegmentation; print('\''StandardSegmentation imported successfully'\'')"'
     expected_output_contains: "StandardSegmentation imported successfully"
 
   # ==========================================================================
@@ -394,17 +369,17 @@ tests:
   # ==========================================================================
   - name: VesselApp API endpoints
     description: Test API endpoint constants
-    command: "cd /opt/vessel-app/backend && python3 -c \"from apis.register import ENDPOINTS; print('Models endpoint:', ENDPOINTS.get_models)\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"from apis.register import ENDPOINTS; print('\"'\"'Models endpoint:'\"'\"', ENDPOINTS.get_models)\"'"
     expected_output_contains: "Models endpoint: /get_models"
 
   - name: VesselApp exposed objects
     description: Test exposed objects registry
-    command: "cd /opt/vessel-app/backend && python3 -c \"from apis.export import get_exposed_objects, exposed_objects; from implementations import *; funcs = get_exposed_objects('/get_functions'); print('Number of exposed functions:', len(funcs))\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"from apis.export import get_exposed_objects, exposed_objects; from implementations import *; funcs = get_exposed_objects('\"'\"'/get_functions'\"'\"'); print('\"'\"'Number of exposed functions:'\"'\"', len(funcs))\"'"
     expected_output_contains: "Number of exposed functions:"
 
   - name: VesselApp get models
     description: Test getting exposed models
-    command: "cd /opt/vessel-app/backend && python3 -c \"from apis.export import get_exposed_objects; from implementations import *; models = get_exposed_objects('/get_models'); print('Number of exposed models:', len(models))\""
+    command: "bash -lc 'cd /opt/vessel-app/backend && python3 -c \"from apis.export import get_exposed_objects; from implementations import *; models = get_exposed_objects('\"'\"'/get_models'\"'\"'); print('\"'\"'Number of exposed models:'\"'\"', len(models))\"'"
     expected_output_contains: "Number of exposed models:"
 
   # ==========================================================================
@@ -458,7 +433,7 @@ tests:
   - name: End-to-end intensity preprocessing
     description: Test complete intensity preprocessing pipeline (uses synthetic data - demo data has CRC corruption)
     command: |
-      cd /opt/vessel-app/backend && python3 << 'PYEOF'
+      bash -lc 'cd /opt/vessel-app/backend && python3 << '\''PYEOF'\''
       import numpy as np
       from implementations.functions.intensity import IntensityStandardisation
 
@@ -471,13 +446,13 @@ tests:
 
       print("Original mean:", round(data.mean(), 2), "std:", round(data.std(), 2))
       print("Normalized mean:", round(normalized.mean(), 4), "std:", round(normalized.std(), 4))
-      PYEOF
+      PYEOF'
     expected_output_contains: "Normalized mean:"
 
   - name: End-to-end thresholding pipeline
     description: Test complete thresholding segmentation (uses synthetic data - demo data has CRC corruption)
     command: |
-      cd /opt/vessel-app/backend && python3 << 'PYEOF'
+      bash -lc 'cd /opt/vessel-app/backend && python3 << '\''PYEOF'\''
       import numpy as np
       from implementations.functions.segmentation import SimpleThresholding
 
@@ -494,13 +469,13 @@ tests:
 
       print("Mask shape:", mask.shape)
       print("Vessel voxels:", int(mask.sum()))
-      PYEOF
+      PYEOF'
     expected_output_contains: "Mask shape:"
 
   - name: End-to-end model inference
     description: Test complete model inference on demo data
     command: |
-      cd /opt/vessel-app/backend && python3 << 'PYEOF'
+      bash -lc 'cd /opt/vessel-app/backend && python3 << '\''PYEOF'\''
       import torch
       import nibabel as nib
       import numpy as np
@@ -521,7 +496,7 @@ tests:
       print("Input shape:", tuple(x.shape))
       print("Output shape:", tuple(output.shape))
       print("Prediction shape:", tuple(pred.shape))
-      PYEOF
+      PYEOF'
     expected_output_contains: "Prediction shape: (1, 32, 32, 32)"
 
 cleanup:

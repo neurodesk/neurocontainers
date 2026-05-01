@@ -1,6 +1,6 @@
 # VesselBoost OpenRecon
 
-VesselBoost runs a deep learning pipeline for vessel segmentation of high-resolution time-of-flight magnetic resonance angiography (TOF-MRA). It uses a UNet3D-based segmentation workflow designed to be sensitive to small vessels. The OpenRecon configuration exposes the prediction workflow and returns a derived series named `<source>_vesselboost`.
+VesselBoost runs a deep learning pipeline for vessel segmentation of high-resolution time-of-flight magnetic resonance angiography (TOF-MRA). It uses a UNet3D-based segmentation workflow designed to be sensitive to small vessels. The OpenRecon configuration exposes the prediction workflow and returns a derived series named `<source>_vesselboost_segmentation`.
 
 The normal VesselBoost software suite includes three command-line modules: prediction, test-time adaptation, and boost. In this OpenRecon application, the scanner GUI only makes the VesselBoost prediction pipeline available.
 
@@ -8,7 +8,7 @@ The normal VesselBoost software suite includes three command-line modules: predi
 
 Use this reconstruction pipeline on 3D TOF-MRA image data.
 
-The main derived output is named `<source>_vesselboost`, where `<source>` is the incoming source `SeriesDescription`. If the source series has no description, the fallback name is `vesselboost`. By default, OpenRecon also returns the original MRA images before the derived output. Optional sagittal and coronal reformat series are named `<source>_vesselboost_sagittal` and `<source>_vesselboost_coronal`.
+The main derived output is named `<source>_vesselboost_segmentation`, where `<source>` is the incoming source `SeriesDescription` or, when that is absent, the incoming `SequenceDescription`. If neither source name is available, the fallback name is `vesselboost_segmentation`. By default, OpenRecon also returns the original MRA images before the derived output. Optional sagittal and coronal reformat series are named `<source>_vesselboost_segmentation_sagittal` and `<source>_vesselboost_segmentation_coronal`.
 
 ## GUI Parameters
 

@@ -57,6 +57,13 @@
       "default": true
     },
     {
+      "id": "segmentationcolormap",
+      "label": { "en": "Segmentation color map" },
+      "type": "boolean",
+      "information": { "en": "Show spinalcordtoolbox segmentation using a color lookup table when supported by the viewer." },
+      "default": false
+    },
+    {
       "id": "analysis",
       "label": { "en": "Analysis" },
       "type": "choice",
@@ -66,12 +73,92 @@
           "name": { "en": "sct_deepseg_spinalcord" }
         },
         {
-          "id": "sct_label_vertebrae",
-          "name": { "en": "sct_label_vertebrae" }
+          "id": "sct_deepseg_sc_epi",
+          "name": { "en": "sct_deepseg_sc_epi" }
+        },
+        {
+          "id": "sct_deepseg_sc_lumbar_t2",
+          "name": { "en": "sct_deepseg_sc_lumbar_t2" }
+        },
+        {
+          "id": "sct_deepseg_sc_mouse_t1",
+          "name": { "en": "sct_deepseg_sc_mouse_t1" }
+        },
+        {
+          "id": "sct_deepseg_graymatter",
+          "name": { "en": "sct_deepseg_graymatter" }
+        },
+        {
+          "id": "sct_deepseg_gm_sc_7t_t2star",
+          "name": { "en": "sct_deepseg_gm_sc_7t_t2star" }
+        },
+        {
+          "id": "sct_deepseg_gm_wm_exvivo_t2",
+          "name": { "en": "sct_deepseg_gm_wm_exvivo_t2" }
+        },
+        {
+          "id": "sct_deepseg_gm_mouse_t1",
+          "name": { "en": "sct_deepseg_gm_mouse_t1" }
+        },
+        {
+          "id": "sct_deepseg_gm_wm_mouse_t1",
+          "name": { "en": "sct_deepseg_gm_wm_mouse_t1" }
         },
         {
           "id": "sct_deepseg_lesion_sci_t2",
           "name": { "en": "sct_deepseg_lesion_sci_t2" }
+        },
+        {
+          "id": "sct_deepseg_lesion_ms",
+          "name": { "en": "sct_deepseg_lesion_ms" }
+        },
+        {
+          "id": "sct_deepseg_lesion_ms_axial_t2",
+          "name": { "en": "sct_deepseg_lesion_ms_axial_t2" }
+        },
+        {
+          "id": "sct_deepseg_lesion_ms_mp2rage",
+          "name": { "en": "sct_deepseg_lesion_ms_mp2rage" }
+        },
+        {
+          "id": "sct_deepseg_tumor_edema_cavity_t1_t2",
+          "name": { "en": "sct_deepseg_tumor_edema_cavity_t1_t2" }
+        },
+        {
+          "id": "sct_deepseg_tumor_t2",
+          "name": { "en": "sct_deepseg_tumor_t2" }
+        },
+        {
+          "id": "sct_deepseg_rootlets",
+          "name": { "en": "sct_deepseg_rootlets" }
+        },
+        {
+          "id": "sct_deepseg_sc_canal_t2",
+          "name": { "en": "sct_deepseg_sc_canal_t2" }
+        },
+        {
+          "id": "sct_deepseg_totalspineseg",
+          "name": { "en": "sct_deepseg_totalspineseg" }
+        },
+        {
+          "id": "sct_bundle_t2_anatomy",
+          "name": { "en": "sct_bundle_t2_anatomy" }
+        },
+        {
+          "id": "sct_bundle_t2_ms",
+          "name": { "en": "sct_bundle_t2_ms" }
+        },
+        {
+          "id": "sct_bundle_t2s_gm",
+          "name": { "en": "sct_bundle_t2s_gm" }
+        },
+        {
+          "id": "sct_bundle_mouse_t1",
+          "name": { "en": "sct_bundle_mouse_t1" }
+        },
+        {
+          "id": "sct_label_vertebrae",
+          "name": { "en": "sct_label_vertebrae" }
         }
       ],
       "default": "sct_deepseg_spinalcord",

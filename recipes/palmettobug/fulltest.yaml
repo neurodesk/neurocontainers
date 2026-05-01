@@ -702,7 +702,7 @@ tests:
 
   - name: Palmettobug package files
     description: List palmettobug package contents
-    command: ls /opt/miniconda-latest/lib/python3.9/site-packages/palmettobug/
+    command: "bash -lc 'ls /opt/miniconda-latest/lib/python3.9/site-packages/palmettobug/'"
     expected_output_contains: "Executable.py"
     expected_exit_code: 0
 

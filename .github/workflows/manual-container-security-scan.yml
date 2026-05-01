@@ -44,6 +44,7 @@ on:
         default: "all"
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   SCAN_OUTPUT_DIR: scan_results
   TEMP_DIR: temp_scan
 
@@ -61,10 +62,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
