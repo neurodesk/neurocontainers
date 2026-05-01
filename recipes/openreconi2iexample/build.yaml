@@ -55,7 +55,6 @@ readme: |-
 
   Build and validate:
   ```bash
-  python builder/build.py generate openreconi2iexample --recreate --check-only
   python builder/build.py generate openreconi2iexample --recreate --build --test --architecture x86_64
   ```
 
