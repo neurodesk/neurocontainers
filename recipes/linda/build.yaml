@@ -271,6 +271,178 @@ build:
         executable: true
         addToPath: true
         makeDeployBin: true
+    - group:
+        - file:
+            name: linda_predict_with_mask.sh
+            contents: |-
+              #!/bin/bash
+              # linda_predict_with_mask.sh
+              #
+              # Calls linda_predict() in R with a pre-computed brain mask
+              # so LINDA's internal n4_skull_strip() is bypassed.
+              # Useful for stroke patients where template-based brain
+              # extraction over-strips cortex near the lesion. Pass an
+              # HD-BET (or SynthStrip) mask and LINDA will use it as-is.
+              #
+              # Usage:
+              #   linda_predict_with_mask.sh \
+              #       --t1     /path/to/T1.nii.gz       \
+              #       --mask   /path/to/brain_mask.nii.gz \
+              #       --outdir /path/to/output [--quiet] [--no-cache]
+
+              set -e
+
+              # ---- arg parse ----
+              T1=""; MASK=""; OUTDIR=""; VERBOSE=TRUE; CACHE=TRUE
+              while [ $# -gt 0 ]; do
+                  case "$1" in
+                      --t1)        T1="$2"; shift 2 ;;
+                      --mask)      MASK="$2"; shift 2 ;;
+                      --outdir)    OUTDIR="$2"; shift 2 ;;
+                      --quiet)     VERBOSE=FALSE; shift ;;
+                      --verbose)   VERBOSE=TRUE; shift ;;
+                      --no-cache)  CACHE=FALSE; shift ;;
+                      -h|--help)
+                          echo "Usage: $0 --t1 <T1.nii.gz> --mask <brain_mask.nii.gz> --outdir <dir> [--quiet] [--no-cache]"
+                          exit 0 ;;
+                      *) echo "Unknown arg: $1" >&2; exit 1 ;;
+                  esac
+              done
+
+              [ -z "$T1" ] || [ -z "$MASK" ] || [ -z "$OUTDIR" ] && {
+                  echo "Need --t1, --mask, and --outdir" >&2; exit 1; }
+              [ ! -f "$T1" ]   && { echo "T1 not found: $T1" >&2; exit 3; }
+              [ ! -f "$MASK" ] && { echo "Mask not found: $MASK" >&2; exit 3; }
+              mkdir -p "$OUTDIR"
+
+              # Resolve to absolute paths so LINDA isn't confused by cwd
+              T1=$(realpath "$T1")
+              MASK=$(realpath "$MASK")
+              OUTDIR=$(realpath "$OUTDIR")
+
+              echo "[linda_predict_with_mask] T1     = $T1"
+              echo "[linda_predict_with_mask] mask   = $MASK"
+              echo "[linda_predict_with_mask] outdir = $OUTDIR"
+              echo "[linda_predict_with_mask] LINDA's internal skull-stripping is bypassed."
+
+              # ---- generate + run R script ----
+              TEMP_R_SCRIPT=$(mktemp /tmp/linda_mask_XXXXXX.R)
+              cat > "$TEMP_R_SCRIPT" << EOF
+              suppressPackageStartupMessages(library(LINDA))
+              outputs <- linda_predict(
+                  file       = '$T1',
+                  brain_mask = '$MASK',
+                  outdir     = '$OUTDIR',
+                  verbose    = $VERBOSE,
+                  cache      = $CACHE
+              )
+              cat("Linda prediction (with bypass) completed.\n")
+              cat("Output directory:", '$OUTDIR', "\n")
+              save(outputs, file = file.path('$OUTDIR', "linda_outputs.RData"))
+              EOF
+
+              Rscript "$TEMP_R_SCRIPT"
+              rc=$?
+              rm -f "$TEMP_R_SCRIPT"
+
+              if [ $rc -ne 0 ]; then
+                  echo "ERROR: linda_predict() (with mask bypass) failed (rc=$rc)" >&2
+                  exit 4
+              fi
+
+              echo "[linda_predict_with_mask] DONE — outputs in: $OUTDIR"
+        - run:
+            - cp {{ get_file("linda_predict_with_mask.sh") }} /usr/local/bin/linda_predict_with_mask.sh
+            - chmod +x /usr/local/bin/linda_predict_with_mask.sh
+        - environment:
+            PATH: $PATH:/usr/local/bin
+        - deploy:
+            bins:
+              - linda_predict_with_mask.sh
+      custom: shellScript
+      customParams:
+        name: linda_predict_with_mask.sh
+        path: /usr/local/bin
+        content: |-
+              #!/bin/bash
+              # linda_predict_with_mask.sh
+              #
+              # Calls linda_predict() in R with a pre-computed brain mask
+              # so LINDA's internal n4_skull_strip() is bypassed.
+              # Useful for stroke patients where template-based brain
+              # extraction over-strips cortex near the lesion. Pass an
+              # HD-BET (or SynthStrip) mask and LINDA will use it as-is.
+              #
+              # Usage:
+              #   linda_predict_with_mask.sh \
+              #       --t1     /path/to/T1.nii.gz       \
+              #       --mask   /path/to/brain_mask.nii.gz \
+              #       --outdir /path/to/output [--quiet] [--no-cache]
+
+              set -e
+
+              # ---- arg parse ----
+              T1=""; MASK=""; OUTDIR=""; VERBOSE=TRUE; CACHE=TRUE
+              while [ $# -gt 0 ]; do
+                  case "$1" in
+                      --t1)        T1="$2"; shift 2 ;;
+                      --mask)      MASK="$2"; shift 2 ;;
+                      --outdir)    OUTDIR="$2"; shift 2 ;;
+                      --quiet)     VERBOSE=FALSE; shift ;;
+                      --verbose)   VERBOSE=TRUE; shift ;;
+                      --no-cache)  CACHE=FALSE; shift ;;
+                      -h|--help)
+                          echo "Usage: $0 --t1 <T1.nii.gz> --mask <brain_mask.nii.gz> --outdir <dir> [--quiet] [--no-cache]"
+                          exit 0 ;;
+                      *) echo "Unknown arg: $1" >&2; exit 1 ;;
+                  esac
+              done
+
+              [ -z "$T1" ] || [ -z "$MASK" ] || [ -z "$OUTDIR" ] && {
+                  echo "Need --t1, --mask, and --outdir" >&2; exit 1; }
+              [ ! -f "$T1" ]   && { echo "T1 not found: $T1" >&2; exit 3; }
+              [ ! -f "$MASK" ] && { echo "Mask not found: $MASK" >&2; exit 3; }
+              mkdir -p "$OUTDIR"
+
+              # Resolve to absolute paths so LINDA isn't confused by cwd
+              T1=$(realpath "$T1")
+              MASK=$(realpath "$MASK")
+              OUTDIR=$(realpath "$OUTDIR")
+
+              echo "[linda_predict_with_mask] T1     = $T1"
+              echo "[linda_predict_with_mask] mask   = $MASK"
+              echo "[linda_predict_with_mask] outdir = $OUTDIR"
+              echo "[linda_predict_with_mask] LINDA's internal skull-stripping is bypassed."
+
+              # ---- generate + run R script ----
+              TEMP_R_SCRIPT=$(mktemp /tmp/linda_mask_XXXXXX.R)
+              cat > "$TEMP_R_SCRIPT" << EOF
+              suppressPackageStartupMessages(library(LINDA))
+              outputs <- linda_predict(
+                  file       = '$T1',
+                  brain_mask = '$MASK',
+                  outdir     = '$OUTDIR',
+                  verbose    = $VERBOSE,
+                  cache      = $CACHE
+              )
+              cat("Linda prediction (with bypass) completed.\n")
+              cat("Output directory:", '$OUTDIR', "\n")
+              save(outputs, file = file.path('$OUTDIR', "linda_outputs.RData"))
+              EOF
+
+              Rscript "$TEMP_R_SCRIPT"
+              rc=$?
+              rm -f "$TEMP_R_SCRIPT"
+
+              if [ $rc -ne 0 ]; then
+                  echo "ERROR: linda_predict() (with mask bypass) failed (rc=$rc)" >&2
+                  exit 4
+              fi
+
+              echo "[linda_predict_with_mask] DONE — outputs in: $OUTDIR"
+        executable: true
+        addToPath: true
+        makeDeployBin: true
     - test:
         name: testScript
         script: R
@@ -286,15 +458,21 @@ readme: |-
 
   Example:
   ```
-  In R Kernel
-  R
-  library(LINDA)
-  filename = '/path/to/patient/T1.nii.gz'
-  outputs = linda_predict(filename)
+    In R Kernel
+    R
+    library(LINDA)
+    filename = '/path/to/patient/T1.nii.gz'
+    outputs = linda_predict(filename)
 
-  In command line
-  ./linda_predict.sh /path/to/patient/T1.nii.gz
-  ./linda_predict.sh /path/to/patient/T1.nii.gz /custom/output/directory
+    In command line
+    ./linda_predict.sh /path/to/patient/T1.nii.gz
+    ./linda_predict.sh /path/to/patient/T1.nii.gz /custom/output/directory
+
+    With a pre-computed brain mask (e.g. from HD-BET) — bypasses LINDA's internal skull stripping, useful for stroke patients where template-based brain extraction over-strips cortex near the lesion:
+    ./linda_predict_with_mask.sh --t1 /path/to/T1.nii.gz \
+        --mask /path/to/brain_mask.nii.gz \
+        --outdir /custom/output/directory
+
   ```
 
   More documentation can be found here: https://github.com/dorianps/LINDA
