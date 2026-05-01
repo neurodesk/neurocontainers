@@ -1,0 +1,31 @@
+tests:
+  - name: Manual OpenRecon image-to-image smoke test
+    manual: true
+    script: |
+      # Build from the repository root:
+      python builder/build.py generate openreconi2iexample --recreate --build --test --architecture x86_64
+
+      set -eux
+      input_h5=/buildhostdirectory/input_image_dataset.h5
+      output_h5=/buildhostdirectory/openreconi2iexample_output.h5
+
+      if [ ! -f "${input_h5}" ]; then
+        echo "Place an MRD image dataset at ${input_h5} before running this manual test."
+        exit 1
+      fi
+
+      python3 /opt/code/python-ismrmrd-server/main.py \
+        -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
+      server_pid=$!
+      trap 'kill ${server_pid} || true' EXIT
+      sleep 2
+
+      rm -f "${output_h5}"
+      python3 /opt/code/python-ismrmrd-server/client.py \
+        -G dataset \
+        -o "${output_h5}" \
+        "${input_h5}" \
+        -c openreconi2iexample
+
+      test -s "${output_h5}"
+      echo "Inspect ${output_h5} with an HDF5 viewer and check the OpenRecon logs for OPENRECONI2I_OUTPUT_SERIES_CONTRACT."

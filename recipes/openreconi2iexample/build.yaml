@@ -1,0 +1,62 @@
+name: openreconi2iexample
+version: 1.0.0
+architectures:
+  - x86_64
+
+copyright:
+  - license: MIT
+    url: https://opensource.org/license/mit/
+
+files:
+  - name: openreconi2iexample.py
+    filename: openreconi2iexample.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install: bzip2 ca-certificates git build-essential python3-pip python-is-python3
+
+    - include: macros/openrecon/neurodocker.yaml
+
+    - copy: openreconi2iexample.py /opt/code/python-ismrmrd-server/openreconi2iexample.py
+    - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
+    - run:
+        - mkdir -p /tmp/share/debug
+        - chmod 1777 /tmp/share /tmp/share/debug
+
+deploy:
+  path:
+    - /opt/code/python-ismrmrd-server
+
+categories:
+  - image reconstruction
+
+readme: |-
+  ----------------------------------
+  ## openreconi2iexample/{{ context.version }} ##
+
+  Lightweight OpenRecon image-to-image example for scanner-safe derived image output.
+  The container buffers incoming MRD images until the connection is drained, allocates
+  derived image series at connection scope, thresholds image volumes into simple label
+  outputs, validates Meta/IceMiniHead series identity before sending, and writes runtime
+  debug content only under /tmp/share/debug.
+
+  OpenRecon runtime notes are documented in
+  `recipes/openreconi2iexample/OpenReconREADME.md`.
+
+  Build and validate:
+  ```bash
+  python builder/build.py generate openreconi2iexample --recreate --check-only
+  python builder/build.py generate openreconi2iexample --recreate --build --test --architecture x86_64
+  ```
+
+  ----------------------------------
