@@ -244,7 +244,8 @@ jobs:
           else
             echo "Cache image ${CACHE_IMAGE} is unavailable; building without --cache-from"
           fi
-          docker build . --file ${DOCKERFILE} --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ${CACHE_FROM_ARGS} --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+          mkdir -p "$HOME/.cache/neurocontainers/build-context"
+          docker build . --file ${DOCKERFILE} --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --build-context neurocontainer-cache="$HOME/.cache/neurocontainers/build-context" ${CACHE_FROM_ARGS} --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
           
       - name: Debug storage
         run: |
