@@ -41,8 +41,6 @@ build:
 deploy:
   bins:
     - openreconi2iexample
-  path:
-    - /opt/code/python-ismrmrd-server
 
 categories:
   - image reconstruction
