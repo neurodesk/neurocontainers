@@ -32,6 +32,8 @@ OPENRECON_MODULE_DEFAULT = "prediction"
 OPENRECON_MODULE_VALUES = (OPENRECON_MODULE_DEFAULT,)
 VESSELBOOST_SEGMENTATION_LABEL = "vesselboost_segmentation"
 VESSELBOOST_SEGMENTATION_TYPE_TOKEN = VESSELBOOST_SEGMENTATION_LABEL.upper()
+VESSELBOOST_SOURCE_COPY_LABEL = "vesselboost_source_copy"
+VESSELBOOST_SOURCE_COPY_TYPE_TOKEN = VESSELBOOST_SOURCE_COPY_LABEL.upper()
 
 # Keep this overview aligned with recipes/vesselboost/OpenReconLabel.json.
 # Tests can import it to build a minimal OpenRecon config payload.
@@ -771,6 +773,177 @@ def _build_openrecon_output_identity(source_identity, orientation=None):
         "type_token": VESSELBOOST_SEGMENTATION_TYPE_TOKEN,
         "image_comment": image_comment,
     }
+
+
+def _build_vesselboost_source_copy_identity(source_identity):
+    source_series_description = _first_non_empty_text(
+        source_identity.get("series_description", ""),
+        "source",
+    )
+    source_parent_grouping = _first_non_empty_text(
+        source_identity.get("parent_grouping", ""),
+        source_series_description,
+    )
+    series_description = f"{source_series_description}_{VESSELBOOST_SOURCE_COPY_LABEL}"
+    grouping = f"{source_parent_grouping}_{VESSELBOOST_SOURCE_COPY_LABEL}"
+    return {
+        "series_description": series_description,
+        "sequence_description": series_description,
+        "grouping": grouping,
+        "display_token": VESSELBOOST_SOURCE_COPY_LABEL,
+        "type_token": VESSELBOOST_SOURCE_COPY_TYPE_TOKEN,
+        "image_comment": VESSELBOOST_SOURCE_COPY_LABEL,
+    }
+
+
+def _apply_vesselboost_output_identity(
+    image,
+    output_identity,
+    source_type_token,
+    processing_history,
+):
+    header = image.getHead()
+    header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    image.setHead(header)
+
+    tmp_meta = ismrmrd.Meta.deserialize(image.attribute_string)
+    tmp_meta["DataRole"] = "Image"
+    tmp_meta["ImageProcessingHistory"] = processing_history
+    tmp_meta["SeriesDescription"] = output_identity["series_description"]
+    tmp_meta["SequenceDescription"] = output_identity["sequence_description"]
+    tmp_meta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
+    tmp_meta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+    tmp_meta["ImageTypeValue3"] = "M"
+    tmp_meta["ImageTypeValue4"] = output_identity["display_token"]
+    tmp_meta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+    tmp_meta["ComplexImageComponent"] = "MAGNITUDE"
+    tmp_meta["ImageComments"] = output_identity["image_comment"]
+    tmp_meta["ImageComment"] = output_identity["image_comment"]
+    if "SequenceDescriptionAdditional" in tmp_meta:
+        try:
+            del tmp_meta["SequenceDescriptionAdditional"]
+        except Exception:
+            tmp_meta["SequenceDescriptionAdditional"] = ""
+
+    minihead_text = _decode_ice_minihead(tmp_meta)
+    if minihead_text:
+        patched_minihead_text, minihead_changed = _patch_ice_minihead(
+            minihead_text,
+            output_identity["sequence_description"],
+            output_identity["grouping"],
+            source_type_token,
+            output_identity["type_token"],
+            target_display_token=output_identity["display_token"],
+        )
+        if minihead_changed:
+            tmp_meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
+        else:
+            logging.warning(
+                "IceMiniHead was present but not updated for %s",
+                output_identity["series_description"],
+            )
+
+    tmp_meta["Keep_image_geometry"] = 1
+    image.attribute_string = tmp_meta.serialize()
+
+
+def _validate_vesselboost_output_contract(
+    images,
+    source_series_indices,
+    source_identity,
+    context,
+):
+    # This runs before any send. Raising here makes OpenRecon log the error and
+    # close cleanly instead of partially returning images with unsafe identity.
+    source_series_indices = {int(index) for index in source_series_indices}
+    source_series_description = _first_non_empty_text(
+        source_identity.get("series_description", "")
+    )
+    source_grouping = _first_non_empty_text(source_identity.get("parent_grouping", ""))
+    source_sequence = _first_non_empty_text(source_identity.get("parent_sequence", ""))
+
+    errors = []
+    for index, image in enumerate(_as_image_list(images)):
+        series_index = int(getattr(image, "image_series_index", 0))
+        try:
+            meta_obj = ismrmrd.Meta.deserialize(image.attribute_string)
+        except Exception as exc:
+            errors.append(f"image {index}: invalid MRD Meta attributes: {exc}")
+            continue
+
+        minihead_text = _decode_ice_minihead(meta_obj)
+        meta_series_description = _get_meta_text(meta_obj, "SeriesDescription")
+        minihead_series_description = _extract_minihead_string_value(
+            minihead_text,
+            "SeriesDescription",
+        )
+        meta_grouping = _get_meta_text(meta_obj, "SeriesNumberRangeNameUID")
+        minihead_grouping = _extract_minihead_string_value(
+            minihead_text,
+            "SeriesNumberRangeNameUID",
+        )
+        grouping = _first_non_empty_text(meta_grouping, minihead_grouping)
+        meta_sequence = _get_meta_text(meta_obj, "SequenceDescription")
+        minihead_sequence = _extract_minihead_string_value(
+            minihead_text,
+            "SequenceDescription",
+        )
+        sequence = _first_non_empty_text(meta_sequence, minihead_sequence)
+        image_type_value4 = _first_non_empty_text(
+            _get_meta_text(meta_obj, "ImageTypeValue4"),
+            _extract_minihead_array_tokens(minihead_text, "ImageTypeValue4"),
+        )
+
+        if series_index in source_series_indices:
+            errors.append(
+                f"image {index}: output still uses source image_series_index={series_index}"
+            )
+        if (
+            source_series_description
+            and meta_series_description == source_series_description
+        ):
+            errors.append(
+                f"image {index}: output Meta still uses source "
+                f"SeriesDescription={meta_series_description}"
+            )
+        if (
+            source_series_description
+            and minihead_series_description == source_series_description
+        ):
+            errors.append(
+                f"image {index}: output IceMiniHead still uses source "
+                f"SeriesDescription={minihead_series_description}"
+            )
+        if source_grouping and meta_grouping == source_grouping:
+            errors.append(
+                f"image {index}: output Meta still uses source "
+                f"SeriesNumberRangeNameUID={meta_grouping}"
+            )
+        if source_grouping and minihead_grouping == source_grouping:
+            errors.append(
+                f"image {index}: output IceMiniHead still uses source "
+                f"SeriesNumberRangeNameUID={minihead_grouping}"
+            )
+        if source_sequence and meta_sequence == source_sequence:
+            errors.append(
+                f"image {index}: output Meta still uses source "
+                f"SequenceDescription={meta_sequence}"
+            )
+        if source_sequence and minihead_sequence == source_sequence:
+            errors.append(
+                f"image {index}: output IceMiniHead still uses source "
+                f"SequenceDescription={minihead_sequence}"
+            )
+        if not grouping:
+            errors.append(f"image {index}: output is missing SeriesNumberRangeNameUID")
+        if not image_type_value4:
+            errors.append(f"image {index}: output is missing ImageTypeValue4")
+
+    if errors:
+        raise ValueError(
+            f"Invalid VesselBoost output identity contract for {context}: "
+            + "; ".join(errors[:10])
+        )
 
 
 def _derive_prep_mode(bias_field_correction: bool, denoising: bool) -> int:
@@ -2315,17 +2488,44 @@ def process_image(images, connection, config, metadata):
                 "sendoriginal is true, but input was raw data, so no original images to return."
             )
         else:
+            source_copy_identity = _build_vesselboost_source_copy_identity(source_identity)
+            used_output_series_indices = [
+                int(getattr(image.getHead(), "image_series_index", 0))
+                for image in imagesOut
+            ]
+            source_copy_series_index = max(
+                used_output_series_indices + source_series_indices,
+                default=segmentation_series_index,
+            ) + 1
             logging.info(
-                "Sending original MRA images with their source series grouping preserved"
+                "Sending original MRA images as derived source-copy series "
+                "(series_index=%d, name=%s)",
+                source_copy_series_index,
+                source_copy_identity["series_description"],
             )
             ordered_original_images = [
                 original_images[index] for index in slice_sort_indices
             ]
-            for original_image in reversed(ordered_original_images):
-                tmpMeta = ismrmrd.Meta.deserialize(original_image.attribute_string)
-                tmpMeta['Keep_image_geometry'] = 1
-                original_image.attribute_string = tmpMeta.serialize()
-                imagesOut.insert(0, original_image)
+            for iImg, original_image in enumerate(ordered_original_images):
+                original_header = original_image.getHead()
+                original_header.image_series_index = source_copy_series_index
+                original_header.image_index = iImg
+                original_header.slice = iImg
+                original_image.setHead(original_header)
+                _apply_vesselboost_output_identity(
+                    original_image,
+                    source_copy_identity,
+                    source_identity["source_type_token"],
+                    ["PYTHON", "VESSELBOOST", "SOURCE_COPY"],
+                )
+                imagesOut.append(original_image)
+
+    _validate_vesselboost_output_contract(
+        imagesOut,
+        source_series_indices,
+        source_identity,
+        "processed image output",
+    )
 
     return imagesOut
 

@@ -211,6 +211,7 @@ tests:
         scenario = sys.argv[2]
         expected_source = "tof_fl3d_tra"
         expected_derived = "tof_fl3d_tra_vesselboost_segmentation"
+        expected_source_copy = f"{expected_source}_vesselboost_source_copy"
         expected_sagittal = f"{expected_derived}_sagittal"
         expected_coronal = f"{expected_derived}_coronal"
 
@@ -289,16 +290,12 @@ tests:
 
         if scenario == "default":
             assert len(summaries) == 2, summaries
-            original, derived = summaries
-            assert original["series_index"] == 1, original
-            assert original["series_description"] == expected_source, original
-            assert original["grouping"] == expected_source, original
-            assert expected_source in original["ice_minihead"], original["ice_minihead"]
+            derived, source_copy = summaries
             assert derived["series_index"] == 2, derived
             assert derived["series_description"] == expected_derived, derived
             assert derived["sequence_description"] == expected_derived, derived
             assert derived["grouping"] == expected_derived, derived
-            assert derived["grouping"] != original["grouping"], summaries
+            assert derived["grouping"] != source_copy["grouping"], summaries
             assert derived["image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST_SEGMENTATION", derived
             assert derived["dicom_image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST_SEGMENTATION", derived
             assert derived["image_type_value4"] == "vesselboost_segmentation", derived
@@ -310,6 +307,20 @@ tests:
             assert expected_derived in derived["ice_minihead"], derived["ice_minihead"]
             assert "SequenceDescription" in derived["ice_minihead"], derived["ice_minihead"]
             assert "SeriesNumberRangeNameUID" in derived["ice_minihead"], derived["ice_minihead"]
+            assert source_copy["series_index"] == 3, source_copy
+            assert source_copy["series_description"] == expected_source_copy, source_copy
+            assert source_copy["sequence_description"] == expected_source_copy, source_copy
+            assert source_copy["grouping"] == expected_source_copy, source_copy
+            assert source_copy["image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST_SOURCE_COPY", source_copy
+            assert source_copy["dicom_image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST_SOURCE_COPY", source_copy
+            assert source_copy["image_type_value4"] == "vesselboost_source_copy", source_copy
+            assert source_copy["image_comments"] == "vesselboost_source_copy", source_copy
+            assert source_copy["image_comment"] == "vesselboost_source_copy", source_copy
+            assert expected_source_copy in source_copy["ice_minihead"], source_copy["ice_minihead"]
+            assert source_copy["grouping"] != expected_source, source_copy
+            assert source_copy["image_index"] == 0, source_copy
+            assert source_copy["last_image_index"] == source_copy["image_count"] - 1, source_copy
+            assert source_copy["last_slice"] == source_copy["image_count"] - 1, source_copy
         elif scenario == "sendoriginal_false":
             assert len(summaries) == 1, summaries
             derived = summaries[0]
@@ -323,25 +334,28 @@ tests:
             assert derived["last_slice"] == derived["image_count"] - 1, derived
         elif scenario == "reslice":
             assert len(summaries) == 4, summaries
-            assert [summary["series_index"] for summary in summaries] == [1, 2, 3, 4], summaries
+            assert [summary["series_index"] for summary in summaries] == [2, 3, 4, 5], summaries
             assert [summary["series_description"] for summary in summaries] == [
-                expected_source,
                 expected_derived,
                 expected_sagittal,
                 expected_coronal,
+                expected_source_copy,
             ], summaries
             assert [summary["grouping"] for summary in summaries] == [
-                expected_source,
                 expected_derived,
                 expected_sagittal,
                 expected_coronal,
+                expected_source_copy,
             ], summaries
-            sagittal = summaries[2]
-            coronal = summaries[3]
-            derived = summaries[1]
+            derived = summaries[0]
+            sagittal = summaries[1]
+            coronal = summaries[2]
+            source_copy = summaries[3]
             assert derived["image_index"] == 0, derived
             assert derived["last_image_index"] == derived["image_count"] - 1, derived
             assert derived["last_slice"] == derived["image_count"] - 1, derived
+            assert source_copy["image_type_value4"] == "vesselboost_source_copy", source_copy
+            assert expected_source_copy in source_copy["ice_minihead"], source_copy["ice_minihead"]
             source_slice_count = derived["image_count"]
             for reformat in (sagittal, coronal):
                 assert reformat["image_indices"] == list(range(reformat["image_count"])), reformat

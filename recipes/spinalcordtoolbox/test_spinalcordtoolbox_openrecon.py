@@ -1,6 +1,9 @@
 import ast
+import copy
 import json
 from pathlib import Path
+
+import numpy as np
 
 
 RECIPE_DIR = Path(__file__).resolve().parent
@@ -146,6 +149,91 @@ def _load_helper_for_test(helper_name):
     return namespace[helper_name]
 
 
+def _load_runtime_helpers_for_test(function_names, assignments=()):
+    tree = ast.parse(WRAPPER_PATH.read_text())
+    helper_nodes = []
+    wanted = set(function_names)
+    wanted_assignments = set(assignments)
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            names = {
+                target.id
+                for target in node.targets
+                if isinstance(target, ast.Name)
+            }
+            if names & wanted_assignments:
+                helper_nodes.append(node)
+        elif isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name in wanted:
+            helper_nodes.append(node)
+
+    class FakeMeta(dict):
+        def serialize(self):
+            return json.dumps(dict(self))
+
+        @staticmethod
+        def deserialize(value):
+            if isinstance(value, FakeMeta):
+                return FakeMeta(value)
+            if isinstance(value, dict):
+                return FakeMeta(value)
+            return FakeMeta(json.loads(value or "{}"))
+
+    class FakeHead:
+        def __init__(self, image_series_index=1, image_index=9, slice=8):
+            self.image_series_index = image_series_index
+            self.image_index = image_index
+            self.slice = slice
+            self.contrast = 0
+            self.image_type = 1
+
+    class FakeImage:
+        def __init__(self, data):
+            self.data = np.array(data, copy=True)
+            self._head = FakeHead()
+            self.attribute_string = "{}"
+
+        @staticmethod
+        def from_array(data, transpose=False):
+            return FakeImage(data)
+
+        def setHead(self, head):
+            self._head = copy.deepcopy(head)
+
+        def getHead(self):
+            return self._head
+
+    class FakeIsmrmrd:
+        Image = FakeImage
+        Meta = FakeMeta
+        IMTYPE_MAGNITUDE = 1
+
+    namespace = {
+        "base64": __import__("base64"),
+        "copy": copy,
+        "ismrmrd": FakeIsmrmrd,
+        "json": json,
+        "logging": type(
+            "Logger",
+            (),
+            {
+                "INFO": 20,
+                "warning": staticmethod(lambda *args, **kwargs: None),
+                "info": staticmethod(lambda *args, **kwargs: None),
+                "log": staticmethod(lambda *args, **kwargs: None),
+            },
+        ),
+        "np": np,
+        "re": __import__("re"),
+        "uuid": __import__("uuid"),
+    }
+    ast.fix_missing_locations(ast.Module(body=helper_nodes, type_ignores=[]))
+    exec(compile(ast.Module(body=helper_nodes, type_ignores=[]), str(WRAPPER_PATH), "exec"), namespace)
+    namespace["FakeHead"] = FakeHead
+    namespace["FakeImage"] = FakeImage
+    namespace["FakeMeta"] = FakeMeta
+    return namespace
+
+
 def test_openrecon_exposes_all_supported_deepseg_tasks():
     deepseg_tasks = set(_module_assignment("SCT_DEEPSEG_TASKS"))
     assert deepseg_tasks == EXPECTED_DEEPSEG_TASKS
@@ -210,6 +298,137 @@ def test_wrapper_sends_openrecon_images_in_series_preserving_batches():
     assert 'connection.send_image(image)' not in wrapper_source
 
 
+def test_wrapper_validates_output_series_contract_like_musclemap():
+    wrapper_source = WRAPPER_PATH.read_text()
+    function_names = _function_names()
+    assert "ConnectionSeriesAllocator" in wrapper_source
+    assert "_build_connection_series_allocator" in function_names
+    assert "_log_and_validate_output_series_contract" in function_names
+    assert "_validate_output_series_contract" in function_names
+    assert "SCT_OUTPUT_SERIES_CONTRACT" in wrapper_source
+    assert "Invalid SCT output series contract before send" in wrapper_source
+    assert "derived role {role} reuses input SeriesInstanceUID" in wrapper_source
+    assert "output role {role} reuses input image_series_index" in wrapper_source
+    assert "derived role {role} has Meta/IceMiniHead SeriesInstanceUID mismatch" in wrapper_source
+    assert "derived_series_allocator.allocate(member_analysis)" in wrapper_source
+    assert 'derived_series_allocator.allocate("ORIGINAL")' in wrapper_source
+    assert 'derived_series_allocator.allocate("PASSTHROUGH")' in wrapper_source
+    assert "_restamp_passthrough_images" in function_names
+    assert "_log_and_validate_output_series_contract(\n                output_images" in wrapper_source
+
+
+def test_passthrough_restamp_uses_fresh_series_identity():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_as_image_list",
+            "_build_derived_series_instance_uid",
+            "_build_passthrough_output_identity",
+            "_clone_mrd_image",
+            "_copy_meta",
+            "_decode_ice_minihead",
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_get_meta_text",
+            "_json_log_default",
+            "_log_json_event",
+            "_restamp_passthrough_images",
+            "_set_meta_scalar",
+            "_strip_source_parent_refs",
+        ],
+        assignments=[
+            "SOURCE_PARENT_REFERENCE_META_KEYS",
+            "SOURCE_PARENT_REFERENCE_META_PREFIXES",
+        ],
+    )
+    image = helpers["FakeImage"](np.zeros((1, 2, 2), dtype=np.int16))
+    image.getHead().image_series_index = 1
+    image.getHead().image_index = 9
+    image.getHead().slice = 8
+    image.attribute_string = helpers["FakeMeta"]({
+        "SeriesDescription": "source",
+        "SeriesInstanceUID": "1.2.3",
+        "SeriesNumberRangeNameUID": "source_group",
+        "ImageTypeValue4": "M",
+        "CONTROL.PSMultiFrameSOPInstanceUID": "source-parent",
+    }).serialize()
+
+    restamped = helpers["_restamp_passthrough_images"]([image], "ORIGINAL", 2)
+
+    assert image.getHead().image_series_index == 1
+    assert len(restamped) == 1
+    output = restamped[0]
+    output_meta = helpers["FakeMeta"].deserialize(output.attribute_string)
+    assert output.getHead().image_series_index == 2
+    assert output.getHead().image_index == 1
+    assert output.getHead().slice == 0
+    assert output_meta["SeriesInstanceUID"] != "1.2.3"
+    assert output_meta["SeriesNumberRangeNameUID"] == "source_group_original"
+    assert output_meta["ImageTypeValue4"] == "ORIGINAL"
+    assert "CONTROL.PSMultiFrameSOPInstanceUID" not in output_meta
+
+
+def test_output_series_contract_rejects_input_series_index_reuse():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_first_non_empty_text",
+            "_sct_derived_roles",
+            "_validate_output_series_contract",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_deepseg_spinalcord": {"series_suffix": "sct_deepseg_spinalcord"}
+    }
+    helpers["RESERVED_SCANNER_SERIES_INDICES"] = {99}
+    input_summary = [
+        {
+            "role": "M",
+            "image_series_index": 1,
+            "series_instance_uid": "1.2.3",
+            "minihead_series_instance_uid": "1.2.3",
+            "minihead_series_grouping": "source",
+            "minihead_protocol_name": "source",
+        }
+    ]
+    output_summary = [
+        {
+            "role": "ORIGINAL",
+            "image_series_index": 1,
+            "series_instance_uid": "2.25.4",
+            "meta_series_instance_uid": "2.25.4",
+            "minihead_series_instance_uid": "2.25.4",
+            "meta_series_grouping": "source_original",
+            "minihead_series_grouping": "source_original",
+            "meta_protocol_name": "source_original",
+            "minihead_protocol_name": "source_original",
+        }
+    ]
+
+    try:
+        helpers["_validate_output_series_contract"](output_summary, input_summary)
+    except ValueError as exc:
+        assert "output role ORIGINAL reuses input image_series_index 1" in str(exc)
+    else:
+        raise AssertionError("Expected validator to reject output series index reuse")
+
+
+def test_get_image_series_index_logs_malformed_header_fallback():
+    warnings = []
+    helpers = _load_runtime_helpers_for_test(["_get_image_series_index"])
+    helpers["logging"].warning = staticmethod(
+        lambda *args, **kwargs: warnings.append((args, kwargs))
+    )
+
+    class BrokenImage:
+        def getHead(self):
+            raise RuntimeError("garbled header")
+
+    assert helpers["_get_image_series_index"](BrokenImage()) == 0
+    assert warnings
+    assert "Could not read image_series_index" in warnings[0][0][0]
+    assert warnings[0][1]["exc_info"] is True
+
+
 def test_wrapper_logs_sct_output_statistics_before_mrd_conversion():
     wrapper_source = WRAPPER_PATH.read_text()
     assert "SCT output voxel statistics before MRD conversion" in wrapper_source
@@ -245,6 +464,9 @@ def test_wrapper_strips_source_parent_references_from_derived_meta():
         "PSSeriesInstanceUID": "source-ps-series",
         "MFInstanceNumber": "1",
         "DicomEngineDimString": "source-dim",
+        "CONTROL.MultiFrameSOPInstanceUID": "source-control-mf",
+        "CONTROL.PSMultiFrameSOPInstanceUID": "source-control-ps-mf",
+        "CONTROL.PSSeriesInstanceUID": "source-control-ps-series",
         "ReferencedGSPS.0.ReferencedImageSequence.0.ReferencedSOPClassUID": "source-gsps",
         "ReferencedImageSequence.0.ReferencedSOPInstanceUID": "source-sop",
         "ReferencedImageSequence.0.ReferencedSeriesInstanceUID": "source-series",
@@ -260,6 +482,9 @@ def test_wrapper_strips_source_parent_references_from_derived_meta():
     assert "PSSeriesInstanceUID" not in meta
     assert "MFInstanceNumber" not in meta
     assert "DicomEngineDimString" not in meta
+    assert "CONTROL.MultiFrameSOPInstanceUID" not in meta
+    assert "CONTROL.PSMultiFrameSOPInstanceUID" not in meta
+    assert "CONTROL.PSSeriesInstanceUID" not in meta
     assert not any(key.startswith("ReferencedGSPS") for key in meta)
     assert not any("Referenced" in key and "UID" in key for key in meta)
     assert not any("Referenced" in key and "FrameNumber" in key for key in meta)

@@ -94,6 +94,7 @@ OPENRECON_DEFAULTS = {
 }
 
 OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96
+RESERVED_SCANNER_SERIES_INDICES = {99}
 
 SOURCE_PARENT_REFERENCE_META_KEYS = {
     "DicomEngineDimString",
@@ -177,9 +178,10 @@ def process(connection, config, metadata):
         logging.info("Improperly formatted metadata: \n%s", metadata)
 
     # Continuously parse incoming data parsed from MRD messages
-    currentSeries = 0
     acqGroup = []
-    imgGroup = []
+    image_groups = {}
+    passthrough_images = []
+    input_images_for_series_registry = []
     waveformGroup = []
     try:
         for item in connection:
@@ -201,33 +203,19 @@ def process(connection, config, metadata):
                 if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
                     logging.info("Processing a group of k-space data")
                     # image = process_raw(acqGroup, connection, config, metadata)
-                    _send_images_by_series(connection, image, "processed raw output")
                     acqGroup = []
 
             # ----------------------------------------------------------
             # Image data messages
             # ----------------------------------------------------------
             elif isinstance(item, ismrmrd.Image):
-                # When this criteria is met, run process_group() on the accumulated
-                # data, which returns images that are sent back to the client.
-                # e.g. when the series number changes:
-                if item.image_series_index != currentSeries:
-                    logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
-                    currentSeries = item.image_series_index
-                    image = process_image(imgGroup, connection, config, metadata)
-                    _send_images_by_series(connection, image, "processed image output")
-                    imgGroup = []
+                input_images_for_series_registry.append(item)
 
                 # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
                 if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
-                    imgGroup.append(item)
+                    image_groups.setdefault(_get_image_series_index(item), []).append(item)
                 else:
-                    tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
-                    tmpMeta["Keep_image_geometry"] = 1
-                    item.attribute_string = tmpMeta.serialize()
-
-                    connection.send_image(item)
-                    continue
+                    passthrough_images.append(item)
 
             # ----------------------------------------------------------
             # Waveform data messages
@@ -241,11 +229,47 @@ def process(connection, config, metadata):
             else:
                 logging.error("Unsupported data type %s", type(item).__name__)
 
-        if len(imgGroup) > 0:
-            logging.info("Processing a group of images (untriggered)")
-            image = process_image(imgGroup, connection, config, metadata)
-            _send_images_by_series(connection, image, "processed image output after input drain")
-            imgGroup = []
+        derived_series_allocator = _build_connection_series_allocator(input_images_for_series_registry)
+        output_images = []
+        logging.info(
+            "Input stream drained before SCT processing: passthrough_images=%d processable_series=%d processable_images=%d",
+            len(passthrough_images),
+            len(image_groups),
+            sum(len(group) for group in image_groups.values()),
+        )
+
+        if passthrough_images:
+            passthrough_series_index = derived_series_allocator.allocate("PASSTHROUGH")
+            output_images.extend(
+                _restamp_passthrough_images(
+                    passthrough_images,
+                    "PASSTHROUGH",
+                    passthrough_series_index,
+                )
+            )
+
+        for series_index, imgGroup in sorted(image_groups.items()):
+            logging.info(
+                "Processing buffered SCT image series after input drain: image_series_index=%d images=%d",
+                series_index,
+                len(imgGroup),
+            )
+            image = process_image(
+                imgGroup,
+                connection,
+                config,
+                metadata,
+                derived_series_allocator=derived_series_allocator,
+            )
+            output_images.extend(_as_image_list(image))
+
+        if output_images:
+            _log_and_validate_output_series_contract(
+                output_images,
+                input_images_for_series_registry,
+                context="before_connection_send",
+            )
+            _send_images_by_series(connection, output_images, "validated SCT output")
 
     except Exception as e:
         logging.error(traceback.format_exc())
@@ -468,17 +492,32 @@ def _clone_mrd_image(image):
         np.array(image.data, copy=True),
         transpose=False,
     )
-    image_copy.setHead(image.getHead())
+    image_copy.setHead(copy.deepcopy(image.getHead()))
     image_copy.attribute_string = image.attribute_string
     return image_copy
 
 
-def _send_images_by_series(connection, images, context):
+def _as_image_list(images):
     if images is None:
-        return
+        return []
     if isinstance(images, ismrmrd.Image):
-        images = [images]
-    images = list(images)
+        return [images]
+    return list(images)
+
+
+def _get_image_series_index(image):
+    try:
+        return int(getattr(image.getHead(), "image_series_index", 0))
+    except Exception:
+        logging.warning(
+            "Could not read image_series_index from header; bucketing as 0",
+            exc_info=True,
+        )
+        return 0
+
+
+def _send_images_by_series(connection, images, context):
+    images = _as_image_list(images)
     if not images:
         logging.info("Skipping send for %s because there are no images", context)
         return
@@ -515,6 +554,18 @@ def _send_images_by_series(connection, images, context):
     flush_batch()
 
 
+def _json_log_default(value):
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, (bytes, bytearray)):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _log_json_event(event_name, payload, level=logging.INFO):
+    logging.log(level, "%s %s", event_name, json.dumps(payload, sort_keys=True, default=_json_log_default))
+
+
 def _copy_meta(meta_obj):
     try:
         return ismrmrd.Meta.deserialize(meta_obj.serialize())
@@ -536,7 +587,9 @@ def _strip_source_parent_refs(meta_obj):
 
     for key in meta_keys:
         key_text = str(key)
+        key_leaf = key_text.rsplit(".", 1)[-1]
         remove_key = key_text in SOURCE_PARENT_REFERENCE_META_KEYS
+        remove_key = remove_key or key_leaf in SOURCE_PARENT_REFERENCE_META_KEYS
         remove_key = remove_key or any(
             key_text == prefix or key_text.startswith(f"{prefix}.")
             for prefix in SOURCE_PARENT_REFERENCE_META_PREFIXES
@@ -553,6 +606,240 @@ def _strip_source_parent_refs(meta_obj):
                 logging.warning("Could not remove source parent metadata key %s", key_text)
 
     return meta_obj
+
+
+class ConnectionSeriesAllocator:
+    def __init__(self, observed_indices=None, reserved_indices=None):
+        self.observed_indices = set(observed_indices or [])
+        self.reserved_indices = set(reserved_indices or [])
+        self.allocations = []
+
+    def allocate(self, role):
+        role = _first_non_empty_text(role).upper() or "DERIVED"
+        allocated_values = {allocation["index"] for allocation in self.allocations}
+        candidate = max(self.observed_indices | allocated_values | {0}) + 1
+        while candidate in self.reserved_indices:
+            candidate += 1
+        allocation = {
+            "role": role,
+            "index": candidate,
+            "ordinal": len(self.allocations) + 1,
+        }
+        self.allocations.append(allocation)
+        _log_json_event(
+            "SCT_DERIVED_SERIES_ALLOCATION",
+            {
+                "role": role,
+                "allocated_index": candidate,
+                "allocation_ordinal": allocation["ordinal"],
+                "observed_indices": sorted(self.observed_indices),
+                "reserved_indices": sorted(self.reserved_indices),
+            },
+        )
+        return candidate
+
+
+def _build_connection_series_allocator(images):
+    observed_indices = set()
+    registry = []
+    for image in _as_image_list(images):
+        observed_indices.add(_get_image_series_index(image))
+        registry.append(_series_contract_entry(image, source="input"))
+
+    allocator = ConnectionSeriesAllocator(
+        observed_indices=observed_indices,
+        reserved_indices=RESERVED_SCANNER_SERIES_INDICES,
+    )
+    _log_json_event(
+        "SCT_INPUT_SERIES_REGISTRY",
+        {
+            "observed_indices": sorted(observed_indices),
+            "reserved_indices": sorted(RESERVED_SCANNER_SERIES_INDICES),
+            "series": registry,
+        },
+    )
+    return allocator
+
+
+def _series_contract_role(meta_obj, minihead_text):
+    image_type_value4 = _first_non_empty_text(
+        _get_meta_text(meta_obj, "ImageTypeValue4"),
+        _extract_minihead_array_tokens(minihead_text, "ImageTypeValue4"),
+    ).upper()
+    if image_type_value4:
+        return image_type_value4
+
+    sequence_description = _first_non_empty_text(
+        _get_meta_text(meta_obj, "SequenceDescription"),
+        _extract_minihead_string_value(minihead_text, "SequenceDescription"),
+    ).upper()
+    return sequence_description or "UNKNOWN"
+
+
+def _series_contract_entry(image, source="output"):
+    try:
+        meta_obj = ismrmrd.Meta.deserialize(image.attribute_string)
+    except Exception:
+        meta_obj = ismrmrd.Meta()
+    minihead_text = _decode_ice_minihead(meta_obj)
+    meta_uid = _get_meta_text(meta_obj, "SeriesInstanceUID")
+    minihead_uid = _extract_minihead_string_value(minihead_text, "SeriesInstanceUID")
+    meta_grouping = _get_meta_text(meta_obj, "SeriesNumberRangeNameUID")
+    minihead_grouping = _extract_minihead_string_value(minihead_text, "SeriesNumberRangeNameUID")
+    meta_protocol_name = _get_meta_text(meta_obj, "ProtocolName")
+    minihead_protocol_name = _extract_minihead_string_value(minihead_text, "ProtocolName")
+    return {
+        "source": source,
+        "role": _series_contract_role(meta_obj, minihead_text),
+        "image_series_index": _get_image_series_index(image),
+        "series_instance_uid": _first_non_empty_text(meta_uid, minihead_uid),
+        "meta_series_instance_uid": meta_uid or "N/A",
+        "minihead_series_instance_uid": minihead_uid or "N/A",
+        "series_grouping": _first_non_empty_text(meta_grouping, minihead_grouping) or "N/A",
+        "meta_series_grouping": meta_grouping or "N/A",
+        "minihead_series_grouping": minihead_grouping or "N/A",
+        "meta_protocol_name": meta_protocol_name or "N/A",
+        "minihead_protocol_name": minihead_protocol_name or "N/A",
+        "sequence_description": _first_non_empty_text(
+            _get_meta_text(meta_obj, "SequenceDescription"),
+            _extract_minihead_string_value(minihead_text, "SequenceDescription"),
+        ) or "N/A",
+        "protocol_name": _first_non_empty_text(meta_protocol_name, minihead_protocol_name) or "N/A",
+        "series_description": _get_meta_text(meta_obj, "SeriesDescription") or "N/A",
+    }
+
+
+def _series_contract_summary(images, source="output"):
+    grouped = {}
+    for image in _as_image_list(images):
+        entry = _series_contract_entry(image, source=source)
+        key = (
+            entry["source"],
+            entry["image_series_index"],
+            entry["role"],
+            entry["series_instance_uid"],
+            entry["series_grouping"],
+        )
+        if key not in grouped:
+            grouped[key] = dict(entry)
+            grouped[key]["count"] = 0
+        grouped[key]["count"] += 1
+    return list(grouped.values())
+
+
+def _sct_derived_roles():
+    return {
+        config["series_suffix"].upper()
+        for config in SCT_ANALYSIS_REGISTRY.values()
+    } | {"ORIGINAL", "PASSTHROUGH"}
+
+
+def _log_and_validate_output_series_contract(output_images, input_images, context):
+    output_summary = _series_contract_summary(output_images, source="output")
+    input_summary = _series_contract_summary(input_images, source="input")
+    payload = {
+        "context": context,
+        "input_series": input_summary,
+        "output_series": output_summary,
+        "reserved_indices": sorted(RESERVED_SCANNER_SERIES_INDICES),
+    }
+    _log_json_event("SCT_OUTPUT_SERIES_CONTRACT", payload)
+    _validate_output_series_contract(output_summary, input_summary)
+
+
+def _validate_output_series_contract(output_summary, input_summary):
+    errors = []
+    roles_by_index = {}
+    derived_series_by_uid = {}
+    derived_roles = _sct_derived_roles()
+    input_uids = {
+        entry["series_instance_uid"]
+        for entry in input_summary
+        if _first_non_empty_text(entry.get("series_instance_uid"))
+    }
+    input_series_indices = {
+        int(entry["image_series_index"])
+        for entry in input_summary
+        if entry.get("image_series_index") is not None
+    }
+    input_has_minihead_identity = any(
+        _first_non_empty_text(entry.get("minihead_series_instance_uid"))
+        or _first_non_empty_text(entry.get("minihead_series_grouping"))
+        or _first_non_empty_text(entry.get("minihead_protocol_name"))
+        for entry in input_summary
+    )
+
+    for entry in output_summary:
+        role = _first_non_empty_text(entry.get("role")).upper()
+        series_index = int(entry.get("image_series_index", 0))
+        uid = _first_non_empty_text(entry.get("series_instance_uid"))
+        meta_uid = _first_non_empty_text(entry.get("meta_series_instance_uid"))
+        minihead_uid = _first_non_empty_text(entry.get("minihead_series_instance_uid"))
+        meta_grouping = _first_non_empty_text(entry.get("meta_series_grouping"))
+        minihead_grouping = _first_non_empty_text(entry.get("minihead_series_grouping"))
+        meta_protocol = _first_non_empty_text(entry.get("meta_protocol_name"))
+        minihead_protocol = _first_non_empty_text(entry.get("minihead_protocol_name"))
+
+        roles_by_index.setdefault(series_index, set()).add(role)
+        if series_index in input_series_indices:
+            errors.append(f"output role {role} reuses input image_series_index {series_index}")
+
+        if role in derived_roles:
+            if uid:
+                derived_series_by_uid.setdefault(uid, set()).add(
+                    (
+                        role,
+                        series_index,
+                        _first_non_empty_text(entry.get("series_grouping")) or "N/A",
+                    )
+                )
+            if series_index in RESERVED_SCANNER_SERIES_INDICES:
+                errors.append(f"derived role {role} uses reserved scanner series index {series_index}")
+            if uid in input_uids:
+                errors.append(f"derived role {role} reuses input SeriesInstanceUID {uid}")
+            if not meta_uid:
+                errors.append(f"derived role {role} is missing Meta SeriesInstanceUID")
+            if input_has_minihead_identity and not minihead_uid:
+                errors.append(f"derived role {role} is missing IceMiniHead SeriesInstanceUID")
+            if meta_uid and minihead_uid and meta_uid != minihead_uid:
+                errors.append(
+                    f"derived role {role} has Meta/IceMiniHead SeriesInstanceUID mismatch: "
+                    f"{meta_uid} != {minihead_uid}"
+                )
+            if not meta_grouping:
+                errors.append(f"derived role {role} is missing Meta SeriesNumberRangeNameUID")
+            if input_has_minihead_identity and not minihead_grouping:
+                errors.append(f"derived role {role} is missing IceMiniHead SeriesNumberRangeNameUID")
+            if meta_grouping and minihead_grouping and meta_grouping != minihead_grouping:
+                errors.append(
+                    f"derived role {role} has Meta/IceMiniHead SeriesNumberRangeNameUID mismatch: "
+                    f"{meta_grouping} != {minihead_grouping}"
+                )
+            if not meta_protocol:
+                errors.append(f"derived role {role} is missing Meta ProtocolName")
+            if input_has_minihead_identity and not minihead_protocol:
+                errors.append(f"derived role {role} is missing IceMiniHead ProtocolName")
+            if meta_protocol and minihead_protocol and meta_protocol != minihead_protocol:
+                errors.append(
+                    f"derived role {role} has Meta/IceMiniHead ProtocolName mismatch: "
+                    f"{meta_protocol} != {minihead_protocol}"
+                )
+
+    for series_index, roles in sorted(roles_by_index.items()):
+        if len(roles) > 1 and any(role in derived_roles for role in roles):
+            errors.append(
+                f"image_series_index {series_index} is shared by multiple roles: {sorted(roles)}"
+            )
+
+    for uid, derived_series in sorted(derived_series_by_uid.items()):
+        if len(derived_series) > 1:
+            errors.append(
+                f"derived SeriesInstanceUID {uid} is shared by multiple derived series: "
+                f"{sorted(derived_series)}"
+            )
+
+    if errors:
+        raise ValueError("Invalid SCT output series contract before send: " + "; ".join(errors))
 
 
 def _first_non_empty_text(*values):
@@ -873,6 +1160,121 @@ def _build_sct_output_identity(source_meta, analysis, output_series_index):
         "display_token": suffix,
         "image_comment": suffix,
     }
+
+
+def _build_passthrough_output_identity(source_meta, role, output_series_index):
+    role = _first_non_empty_text(role).upper() or "PASSTHROUGH"
+    source_minihead = _decode_ice_minihead(source_meta)
+    source_series = _first_non_empty_text(
+        _get_meta_text(source_meta, "SeriesDescription"),
+        _get_meta_text(source_meta, "SequenceDescription"),
+        _extract_minihead_string_value(source_minihead, "SequenceDescription"),
+    )
+    source_grouping = _first_non_empty_text(
+        _get_meta_text(source_meta, "SeriesNumberRangeNameUID"),
+        _extract_minihead_string_value(source_minihead, "SeriesNumberRangeNameUID"),
+        source_series,
+    )
+    source_series_instance_uid = _first_non_empty_text(
+        _get_meta_text(source_meta, "SeriesInstanceUID"),
+        _extract_minihead_string_value(source_minihead, "SeriesInstanceUID"),
+    )
+    source_type_token = _first_non_empty_text(
+        _get_meta_text(source_meta, "ImageTypeValue4"),
+        _extract_minihead_array_tokens(source_minihead, "ImageTypeValue4"),
+    )
+    suffix = role.lower()
+    series_description = f"{source_series}_{suffix}" if source_series else suffix
+    grouping = f"{source_grouping}_{suffix}" if source_grouping else series_description
+    return {
+        "series_description": series_description,
+        "sequence_description": series_description,
+        "grouping": grouping,
+        "series_instance_uid": _build_derived_series_instance_uid(
+            source_series_instance_uid=source_series_instance_uid,
+            analysis=role,
+            output_series_index=output_series_index,
+            series_grouping=grouping,
+            series_description=series_description,
+        ),
+        "source_type_token": source_type_token,
+        "type_token": role,
+        "display_token": role,
+        "image_comment": suffix,
+    }
+
+
+def _restamp_passthrough_images(images, role, output_series_index):
+    restamped_images = []
+    image_list = _as_image_list(images)
+    for iImg, image in enumerate(image_list):
+        output_image = _clone_mrd_image(image)
+        oldHeader = copy.deepcopy(output_image.getHead())
+        oldHeader.image_series_index = output_series_index
+        oldHeader.image_index = iImg + 1
+        oldHeader.slice = iImg
+        oldHeader.contrast = 0
+        oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
+        output_image.setHead(oldHeader)
+
+        tmpMeta = _copy_meta(ismrmrd.Meta.deserialize(image.attribute_string))
+        _strip_source_parent_refs(tmpMeta)
+        output_identity = _build_passthrough_output_identity(tmpMeta, role, output_series_index)
+        tmpMeta["DataRole"] = "Image"
+        tmpMeta["ImageProcessingHistory"] = ["PYTHON", "SPINALCORDTOOLBOX", output_identity["type_token"]]
+        tmpMeta["SeriesDescription"] = output_identity["series_description"]
+        tmpMeta["SequenceDescription"] = output_identity["sequence_description"]
+        tmpMeta["ProtocolName"] = output_identity["sequence_description"]
+        tmpMeta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
+        tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]
+        tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+        tmpMeta["ImageTypeValue3"] = "M"
+        tmpMeta["ImageTypeValue4"] = output_identity["display_token"]
+        tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+        tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
+        tmpMeta["ImageComments"] = output_identity["image_comment"]
+        tmpMeta["ImageComment"] = output_identity["image_comment"]
+        tmpMeta["Keep_image_geometry"] = 1
+        _set_meta_scalar(tmpMeta, "NumberInSeries", iImg + 1)
+        _set_meta_scalar(tmpMeta, "SliceNo", iImg)
+        _set_meta_scalar(tmpMeta, "AnatomicalSliceNo", iImg)
+        _set_meta_scalar(tmpMeta, "ChronSliceNo", iImg)
+        _set_meta_scalar(tmpMeta, "ProtocolSliceNumber", iImg)
+        _set_meta_scalar(tmpMeta, "IsmrmrdSliceNo", iImg)
+
+        minihead_text = _decode_ice_minihead(tmpMeta)
+        if minihead_text:
+            patched_minihead_text, minihead_changed = _patch_ice_minihead(
+                minihead_text,
+                output_identity["sequence_description"],
+                output_identity["grouping"],
+                output_identity["series_instance_uid"],
+                output_identity["source_type_token"],
+                output_identity["type_token"],
+                target_display_token=output_identity["display_token"],
+            )
+            for long_param_name, long_param_value in (
+                ("Actual3DImagePartNumber", iImg),
+                ("AnatomicalPartitionNo", iImg),
+                ("AnatomicalSliceNo", iImg),
+                ("ChronSliceNo", iImg),
+                ("NumberInSeries", iImg + 1),
+                ("ProtocolSliceNumber", iImg),
+                ("SliceNo", iImg),
+            ):
+                patched_minihead_text, did_change = _replace_or_append_minihead_long_param(
+                    patched_minihead_text,
+                    long_param_name,
+                    long_param_value,
+                )
+                minihead_changed = minihead_changed or did_change
+            if minihead_changed:
+                tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
+
+        output_image.attribute_string = tmpMeta.serialize()
+        restamped_images.append(output_image)
+
+    return restamped_images
 
 
 def _run_command(command, cwd):
@@ -1204,7 +1606,7 @@ def _main(argv=None):
     return 0
 
 
-def process_image(imgGroup, connection, config, metadata):
+def process_image(imgGroup, connection, config, metadata, derived_series_allocator=None):
     if len(imgGroup) == 0:
         return []
 
@@ -1254,11 +1656,11 @@ def process_image(imgGroup, connection, config, metadata):
     data = np.stack([img.data for img in ordered_images])
     head = [unsorted_head[index] for index in slice_sort_indices]
     meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in ordered_images]
-    source_series_indices = [
-        int(getattr(image_header, "image_series_index", 0))
-        for image_header in head
-    ]
-    output_series_index = max(source_series_indices, default=0) + 1
+    if derived_series_allocator is None:
+        logging.warning(
+            "No connection-level series allocator supplied; building fallback allocator from this image group only"
+        )
+        derived_series_allocator = _build_connection_series_allocator(imgGroup)
 
     _log_slice_geometry(
         "Sorted SCT source",
@@ -1348,7 +1750,8 @@ def process_image(imgGroup, connection, config, metadata):
 
     imagesOut = []
     precomputed_outputs = {}
-    for analysis_index, member_analysis in enumerate(analyses):
+    for member_analysis in analyses:
+        output_series_index = derived_series_allocator.allocate(member_analysis)
         member_work_dir = request_work_dir
         if len(analyses) > 1:
             member_work_dir = request_work_dir / member_analysis
@@ -1366,7 +1769,7 @@ def process_image(imgGroup, connection, config, metadata):
                 member_analysis,
                 head,
                 meta,
-                output_series_index + analysis_index,
+                output_series_index,
                 segmentation_colormap=segmentation_colormap,
             )
         )
@@ -1375,15 +1778,20 @@ def process_image(imgGroup, connection, config, metadata):
         if called_from_raw:
             logging.warning("sendoriginal is true, but input was raw data, so no original images to return.")
         else:
-            logging.info("Sending original SCT source images with their source series grouping preserved")
+            original_passthrough_index = derived_series_allocator.allocate("ORIGINAL")
+            logging.info(
+                "Sending original SCT source images as derived passthrough series_index=%d",
+                original_passthrough_index,
+            )
             ordered_original_images = [
                 original_images[index] for index in slice_sort_indices
             ]
-            for original_image in reversed(ordered_original_images):
-                tmpMeta = ismrmrd.Meta.deserialize(original_image.attribute_string)
-                tmpMeta["Keep_image_geometry"] = 1
-                original_image.attribute_string = tmpMeta.serialize()
-                imagesOut.insert(0, original_image)
+            original_passthrough_images = _restamp_passthrough_images(
+                ordered_original_images,
+                "ORIGINAL",
+                original_passthrough_index,
+            )
+            imagesOut = original_passthrough_images + imagesOut
 
     return imagesOut
 
