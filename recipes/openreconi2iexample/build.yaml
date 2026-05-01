@@ -14,6 +14,10 @@ files:
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
+  - name: openreconi2iexample
+    contents: |-
+      #!/usr/bin/env bash
+      printf 'openreconi2iexample {{ context.version }}\n'
 
 build:
   kind: neurodocker
@@ -30,10 +34,13 @@ build:
     - copy: openreconi2iexample.py /opt/code/python-ismrmrd-server/openreconi2iexample.py
     - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
     - run:
+        - install -m 0755 {{ get_file("openreconi2iexample") }} /usr/local/bin/openreconi2iexample
         - mkdir -p /tmp/share/debug
         - chmod 1777 /tmp/share /tmp/share/debug
 
 deploy:
+  bins:
+    - openreconi2iexample
   path:
     - /opt/code/python-ismrmrd-server
 
