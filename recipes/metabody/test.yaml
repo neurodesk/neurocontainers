@@ -6,10 +6,26 @@ tests:
 
       # === TEST PREDICTION WITH OPENRECON ===
 
+      # Create test data directory and download test data if they don't
+      # exist.
+      # Data are downloaded from:
+      # Sai Ma, Taicheng Huang, Yukun Qu, Xiayu Chen, Yajie Zhang, and
+      # Zonglei Zhen (2022). WholebodySomatotopicMapping. OpenNeuro.
+      # [Dataset] doi: doi:10.18112/openneuro.ds004044.v2.0.2
+      mkdir -p /buildhostdirectory/test-data
+      if [ ! -f /buildhostdirectory/test-data/test-bold.nii.gz ]; then
+        echo "Downloading test data..."
+        wget \
+          https://s3.amazonaws.com/openneuro.org/ds004044/sub-01/ses-1/func/sub-01_ses-1_task-motor_run-01_bold.nii.gz?versionId=Huf812OnJ_Bp2eoaMZJ4Sb_JdgmDY1DU \
+          -O /buildhostdirectory/test-data/test_bold.nii.gz
+      else
+        echo "Test data already exists, skipping download."
+      fi
+
       # Convert input DICOMs to ISMRMRD format
       python /opt/code/python-ismrmrd-server/nifti2mrd.py \
         -o /buildhostdirectory/input.h5 \
-        -i /buildhostdirectory/dicoms/dicom.nii
+        -i /buildhostdirectory/test-data/test_bold.nii.gz
 
       # Start OpenRecon server
       python3 /opt/code/python-ismrmrd-server/main.py -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &

@@ -1,5 +1,5 @@
 name: metabody
-version: 1.0.1
+version: 1.0.2
 architectures:
     - x86_64
 
@@ -140,7 +140,7 @@ build:
         - copy: afni_processing.sh /opt/code/afni_processing.sh
         - run:
               - mkdir -p /opt/code/stim_times
-              - git clone https://github.com/thomshaw92/BodyLocaliser.git /opt/code/BodyLocaliser
+              - git clone --branch 1.0.0 https://github.com/thomshaw92/BodyLocaliser.git /opt/code/BodyLocaliser
               - cp /opt/code/BodyLocaliser/sub-1_TBS/sub-1_run-1*.1D /opt/code/stim_times/
 
         # install small pip packages

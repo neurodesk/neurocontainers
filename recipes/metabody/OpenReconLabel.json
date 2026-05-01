@@ -31,7 +31,7 @@
     "can_use_gpu": false,
     "min_count_required_gpus": 0,
     "min_required_gpu_memory": 2048,
-    "min_required_memory": 4096,
+    "min_required_memory": 8192,
     "min_count_required_cpu_cores": 1,
     "content_qualification_type": "RESEARCH"
   },
