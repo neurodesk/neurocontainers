@@ -53,7 +53,7 @@ env:
 
 jobs:
   config:
-    runs-on: self-hosted
+    runs-on: ${{ fromJSON(inputs.runner) }}
     outputs:
       APPLICATION: ${{ steps.envars.outputs.APPLICATION }}
       BUILDDATE: ${{ steps.envars.outputs.BUILDDATE }}
@@ -67,6 +67,45 @@ jobs:
         uses: actions/checkout@v5
         with:
           token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+
+      - name: Bootstrap build tooling
+        shell: bash
+        run: |
+          set -eu
+          # Idempotency check: skip when everything's already pre-baked
+          # (legacy self-hosted VMs). Runs in full on ARC pods and partially
+          # on github-hosted runners (forks).
+          if command -v docker >/dev/null 2>&1 \
+            && command -v apptainer >/dev/null 2>&1 \
+            && command -v aws >/dev/null 2>&1 \
+            && command -v swift >/dev/null 2>&1 \
+            && command -v gh >/dev/null 2>&1 \
+            && command -v jq >/dev/null 2>&1; then
+            echo "All build tooling already present; skipping bootstrap."
+            exit 0
+          fi
+          set -x
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends --no-upgrade \
+            ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
+          APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
+            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
+          curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_amd64.deb" \
+            -o /tmp/apptainer.deb
+          sudo apt-get install -y /tmp/apptainer.deb
+          rm /tmp/apptainer.deb
+          sudo python3 -m pip install --break-system-packages \
+            python-swiftclient python-keystoneclient
+          # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
+          if ! command -v aws >/dev/null 2>&1; then
+            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
+              -o /tmp/awscliv2.zip
+            unzip -q /tmp/awscliv2.zip -d /tmp
+            sudo /tmp/aws/install
+            rm -rf /tmp/aws /tmp/awscliv2.zip
+          fi
+          docker --version && apptainer --version && aws --version
+          gh --version && jq --version && swift --version
 
       - name: Set environment variables
         id: envars
@@ -94,7 +133,7 @@ jobs:
 
       - name: Install builder dependencies
         run: |
-          pip install -r requirements.txt
+          pip install --break-system-packages -r requirements.txt
 
       - name: Generate Dockerfile and Release file
         id: generate
@@ -140,7 +179,7 @@ jobs:
 
   build-image:
     needs: config
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     outputs:
       IMGDIFFERS: ${{ steps.imgcompare.outputs.IMGDIFFERS }}
 
@@ -177,6 +216,45 @@ jobs:
           printf '{"data-root": "%s"}\n' "$BASE_PATH/docker" | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
 
+      - name: Bootstrap build tooling
+        shell: bash
+        run: |
+          set -eu
+          # Idempotency check: skip when everything's already pre-baked
+          # (legacy self-hosted VMs). Runs in full on ARC pods and partially
+          # on github-hosted runners (forks).
+          if command -v docker >/dev/null 2>&1 \
+            && command -v apptainer >/dev/null 2>&1 \
+            && command -v aws >/dev/null 2>&1 \
+            && command -v swift >/dev/null 2>&1 \
+            && command -v gh >/dev/null 2>&1 \
+            && command -v jq >/dev/null 2>&1; then
+            echo "All build tooling already present; skipping bootstrap."
+            exit 0
+          fi
+          set -x
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends --no-upgrade \
+            ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
+          APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
+            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
+          curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_amd64.deb" \
+            -o /tmp/apptainer.deb
+          sudo apt-get install -y /tmp/apptainer.deb
+          rm /tmp/apptainer.deb
+          sudo python3 -m pip install --break-system-packages \
+            python-swiftclient python-keystoneclient
+          # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
+          if ! command -v aws >/dev/null 2>&1; then
+            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
+              -o /tmp/awscliv2.zip
+            unzip -q /tmp/awscliv2.zip -d /tmp
+            sudo /tmp/aws/install
+            rm -rf /tmp/aws /tmp/awscliv2.zip
+          fi
+          docker --version && apptainer --version && aws --version
+          gh --version && jq --version && swift --version
+
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
@@ -184,7 +262,7 @@ jobs:
 
       - name: Install builder dependencies
         run: |
-          pip install -r requirements.txt
+          pip install --break-system-packages -r requirements.txt
 
       - name: Generate Dockerfile and Release file
         id: generate
@@ -531,27 +609,55 @@ jobs:
   upload-nectar:
     needs: [config, build-image, build-simg]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' }}
-    runs-on: self-hosted
+    runs-on: ${{ fromJSON(inputs.runner) }}
     permissions:
       packages: write
 
     steps:
-      - name: Configure runner
+      - name: Bootstrap build tooling
+        shell: bash
         run: |
-          sudo mkdir -p /mnt/tmp
-          sudo chown $USER /mnt/tmp
-          # Install python-swiftclient for parallel segmented uploads
-          if ! command -v swift &>/dev/null; then
-            echo "[DEBUG] Installing python-swiftclient"
-            pip install python-swiftclient python-keystoneclient
+          set -eu
+          # Idempotency check: skip when everything's already pre-baked
+          # (legacy self-hosted VMs). Runs in full on ARC pods.
+          if command -v docker >/dev/null 2>&1 \
+            && command -v apptainer >/dev/null 2>&1 \
+            && command -v aws >/dev/null 2>&1 \
+            && command -v swift >/dev/null 2>&1 \
+            && command -v gh >/dev/null 2>&1 \
+            && command -v jq >/dev/null 2>&1; then
+            echo "All build tooling already present; skipping bootstrap."
+            exit 0
           fi
-          
+          set -x
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends --no-upgrade \
+            ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
+          APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
+            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
+          curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_amd64.deb" \
+            -o /tmp/apptainer.deb
+          sudo apt-get install -y /tmp/apptainer.deb
+          rm /tmp/apptainer.deb
+          sudo python3 -m pip install --break-system-packages \
+            python-swiftclient python-keystoneclient
+          # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
+          if ! command -v aws >/dev/null 2>&1; then
+            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
+              -o /tmp/awscliv2.zip
+            unzip -q /tmp/awscliv2.zip -d /tmp
+            sudo /tmp/aws/install
+            rm -rf /tmp/aws /tmp/awscliv2.zip
+          fi
+          docker --version && apptainer --version && aws --version
+          gh --version && jq --version && swift --version
+
       - name: Download simg artifact
         if: inputs.skip_simg_build != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
-          path: /mnt/tmp/
+          path: ${{ runner.temp }}/
 
       - name: Upload simg to Nectar
         env:
@@ -563,7 +669,7 @@ jobs:
         run: |
           echo "[DEBUG] Attempting upload to Nectar Object Storage:"
           swift upload neurodesk \
-            "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" \
+            "${RUNNER_TEMP}/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" \
             --object-name "${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" \
             --segment-size 1073741824 \
             --segment-threads 10

@@ -14,12 +14,14 @@ on:
         required: true
         type: string
       runner:
-        description: 'Runner'
+        description: 'Runner pool to use'
         required: true
         type: choice
-        options: 
+        options:
+        - "neurodesk-arcrunner-neurocontainers"
         - "ubuntu-22.04"
         - "self-hosted"
+        default: "neurodesk-arcrunner-neurocontainers"
       disable_auto_upload:
         description: 'Disable auto upload to registries'
         required: false
@@ -76,10 +78,25 @@ jobs:
         echo "app_list=${app_list}" >> $GITHUB_OUTPUT
     - name: Select runner
       id: select_runner
+      env:
+        CHOICE: ${{ github.event.inputs.runner }}
       run: |
-        runner="${{ github.event.inputs.runner }}"
+        # Map the dispatch choice to a JSON-encoded payload for
+        # build-app.yml's fromJSON(inputs.runner) -> runs-on.
+        case "$CHOICE" in
+          "neurodesk-arcrunner-neurocontainers")
+            runner='"neurodesk-arcrunner-neurocontainers"'
+            ;;
+          "ubuntu-22.04"|"self-hosted")
+            runner="\"$CHOICE\""
+            ;;
+          *)
+            echo "::error::Unknown runner choice: $CHOICE"
+            exit 1
+            ;;
+        esac
         echo "runner=${runner}"
-        echo "runner=${runner}" >> $GITHUB_OUTPUT
+        echo "runner=${runner}" >> "$GITHUB_OUTPUT"
 
   build-app:
     needs: list-apps

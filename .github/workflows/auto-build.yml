@@ -66,11 +66,15 @@ jobs:
       - name: Select runner
         id: select_runner
         run: |
+          # Main repo auto-builds always go to ARC. Forks fall back to
+          # github-hosted (no access to the runner-neurocontainers group).
+          # Output is JSON-encoded so build-app.yml can fromJSON() it into runs-on.
           if [ "${{ github.repository }}" = "neurodesk/neurocontainers" ]; then
-            echo "runner=self-hosted" >> $GITHUB_OUTPUT
+            runner='"neurodesk-arcrunner-neurocontainers"'
           else
-            echo "runner=ubuntu-22.04" >> $GITHUB_OUTPUT
+            runner='"ubuntu-22.04"'
           fi
+          echo "runner=${runner}" >> "$GITHUB_OUTPUT"
 
   build-app:
     needs: list-apps
