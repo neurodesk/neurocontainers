@@ -339,6 +339,7 @@ build:
         - install -m 0644 -o ${NB_UID} -g ${NB_GID} /tmp/config/guacamole/user-mapping-vnc-rdp.xml /etc/guacamole/user-mapping-vnc-rdp.xml
         - ln -sf /etc/guacamole/user-mapping-vnc.xml /etc/guacamole/user-mapping.xml
         - chown -R ${NB_UID}:${NB_GID} /etc/guacamole /usr/local/tomcat
+        - chown -R ${NB_UID}:${NB_GID} /tmp/neurodesk-launcher
         - chmod -R a+rX /usr/local/tomcat /etc/guacamole
 
     - user: ${NB_USER}
