@@ -55,12 +55,9 @@ jobs:
   config:
     runs-on: ${{ fromJSON(inputs.runner) }}
     outputs:
-      APPLICATION: ${{ steps.envars.outputs.APPLICATION }}
       BUILDDATE: ${{ steps.envars.outputs.BUILDDATE }}
       SHORT_SHA: ${{ steps.envars.outputs.SHORT_SHA }}
       IMAGETAG: ${{ steps.envars.outputs.IMAGETAG }}
-      IMAGENAME: ${{ steps.imgvars.outputs.IMAGENAME }}
-      DOCKERFILE: ${{ steps.imgvars.outputs.DOCKERFILE }}
       ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
     steps:
       - name: Checkout repository
@@ -120,7 +117,6 @@ jobs:
             BUILDDATE=`date +%Y%m%d`
           fi
           echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
-          echo "APPLICATION=$APPLICATION" >> $GITHUB_OUTPUT
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
           echo "BUILDDATE=$BUILDDATE" >> $GITHUB_ENV
@@ -156,9 +152,7 @@ jobs:
           IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
           echo "DOCKERFILE: $DOCKERFILE"
           echo "IMAGENAME: $IMAGENAME"
-          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_OUTPUT
           echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_ENV
-          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
           echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
 
       - name: Login to GHCR
@@ -188,10 +182,8 @@ jobs:
       id-token: write
       contents: write
     env:
-      APPLICATION: ${{ needs.config.outputs.APPLICATION }}
+      APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      DOCKERFILE: ${{ needs.config.outputs.DOCKERFILE }}
-      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
       ROOTFS_CACHE: ${{ needs.config.outputs.ROOTFS_CACHE }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
@@ -443,6 +435,10 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       packages: write
+    env:
+      APPLICATION: ${{ inputs.application }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
 
     steps:
       - name: Configure GitHub-hosted runner
@@ -468,7 +464,7 @@ jobs:
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          docker pull ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }}
+          docker pull ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}
 
       # - name: Download image artifact
       #   uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -490,9 +486,9 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
           DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
         run: |
-          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }}
-          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}:latest
-          docker push --all-tags ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}
+          docker tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ${DOCKERHUB_ORG}/${IMAGENAME}:${BUILDDATE}
+          docker tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ${DOCKERHUB_ORG}/${IMAGENAME}:latest
+          docker push --all-tags ${DOCKERHUB_ORG}/${IMAGENAME}
 
   build-simg:
     needs: [config, build-image]
@@ -500,6 +496,11 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       packages: write
+    env:
+      APPLICATION: ${{ inputs.application }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
 
     steps:
       - name: Set runner base path
@@ -582,8 +583,8 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           echo "[DEBUG] building singularity image from docker image:"
-          SIMG_PATH="$BASE_PATH/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg"
-          IMAGE_REF="docker://ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.IMAGETAG }}"
+          SIMG_PATH="$BASE_PATH/tmp/${IMAGENAME}_${BUILDDATE}.simg"
+          IMAGE_REF="docker://ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${IMAGETAG}"
           time singularity build "$SIMG_PATH" "$IMAGE_REF"
           echo "[DEBUG] done building singularity image from docker image!"
           # Verify the image was created successfully
@@ -601,7 +602,8 @@ jobs:
         if: inputs.skip_simg_build != 'true'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          path: ${{ steps.base-path.outputs.base_path }}/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          name: ${{ env.IMAGENAME }}_${{ env.BUILDDATE }}.simg
+          path: ${{ steps.base-path.outputs.base_path }}/tmp/${{ env.IMAGENAME }}_${{ env.BUILDDATE }}.simg
           # Upload the single SIF/Singularity image as a raw file to avoid zip/unzip overhead.
           archive: false
           retention-days: 7
@@ -612,6 +614,10 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     permissions:
       packages: write
+    env:
+      APPLICATION: ${{ inputs.application }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
 
     steps:
       - name: Bootstrap build tooling
@@ -656,7 +662,7 @@ jobs:
         if: inputs.skip_simg_build != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          name: ${{ env.IMAGENAME }}_${{ env.BUILDDATE }}.simg
           path: ${{ runner.temp }}/
 
       - name: Upload simg to Nectar
@@ -669,8 +675,8 @@ jobs:
         run: |
           echo "[DEBUG] Attempting upload to Nectar Object Storage:"
           swift upload neurodesk \
-            "${RUNNER_TEMP}/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" \
-            --object-name "${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" \
+            "${RUNNER_TEMP}/${IMAGENAME}_${BUILDDATE}.simg" \
+            --object-name "${IMAGENAME}_${BUILDDATE}.simg" \
             --segment-size 1073741824 \
             --segment-threads 10
           echo "[DEBUG] Done with uploading to Nectar Object Storage!"
@@ -682,6 +688,10 @@ jobs:
     permissions:
       packages: write
       id-token: write
+    env:
+      APPLICATION: ${{ inputs.application }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
     steps:
       - name: Configure runner
         run: |
@@ -698,7 +708,7 @@ jobs:
         if: inputs.skip_simg_build != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          name: ${{ env.IMAGENAME }}_${{ env.BUILDDATE }}.simg
           path: /mnt/tmp/
 
       - name: Install AWS CLI
@@ -710,8 +720,8 @@ jobs:
 
       - name: Upload to AWS S3
         run: |
-          aws s3 cp "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" "s3://neurocontainers/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg"
-          if ! aws s3api head-object --bucket neurocontainers --key "${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" > /dev/null 2>&1; then
+          aws s3 cp "/mnt/tmp/${IMAGENAME}_${BUILDDATE}.simg" "s3://neurocontainers/${IMAGENAME}_${BUILDDATE}.simg"
+          if ! aws s3api head-object --bucket neurocontainers --key "${IMAGENAME}_${BUILDDATE}.simg" > /dev/null 2>&1; then
             echo "::error::File verification failed. The file was not found in S3."
             exit 1
           else
@@ -727,9 +737,9 @@ jobs:
       id-token: write
       contents: read
     env:
-      APPLICATION: ${{ needs.config.outputs.APPLICATION }}
+      APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
     steps:
     - uses: actions/checkout@v5
