@@ -1402,6 +1402,17 @@ def _require_sct_output_specs(analysis, output_specs):
     return output_specs
 
 
+def _nifti_output_stem(path):
+    name = Path(path).name
+    if name.endswith(".nii.gz"):
+        return name[:-7]
+    return Path(name).stem
+
+
+def _sct_label_vertebrae_output_path(seg_path, work_dir):
+    return Path(work_dir) / f"{_nifti_output_stem(seg_path)}_labeled.nii.gz"
+
+
 def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
     if analysis not in SCT_ANALYSIS_REGISTRY:
         supported = ", ".join(_supported_analysis_ids())
@@ -1478,7 +1489,7 @@ def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
             ],
             cwd=work_dir,
         )
-        labeled_path = work_dir / "input_seg_labeled.nii.gz"
+        labeled_path = _sct_label_vertebrae_output_path(seg_path, work_dir)
         if not labeled_path.exists():
             raise FileNotFoundError(f"Could not find SCT vertebral labeling output: {labeled_path}")
         return _expected_sct_output_specs(analysis, labeled_path)

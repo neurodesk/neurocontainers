@@ -31,6 +31,11 @@ EXPECTED_DEEPSEG_TASKS = {
     "totalspineseg",
 }
 
+EXPECTED_HIDDEN_ANALYSIS_CHOICES = {
+    "sct_deepseg_gm_wm_mouse_t1",
+    "sct_deepseg_tumor_edema_cavity_t1_t2",
+}
+
 EXPECTED_BATCH_PROCESSING_OPENRECON_CASES = {
     "batch_t2_deepseg_spinalcord": (
         "sct_deepseg_spinalcord",
@@ -315,8 +320,11 @@ def test_openrecon_exposes_all_supported_deepseg_tasks():
 
     choices = _analysis_choices()
     for task in deepseg_tasks:
-        assert f"sct_deepseg_{task}" in choices
-    assert "sct_deepseg_tumor_edema_cavity_t1_t2" not in choices
+        analysis_id = f"sct_deepseg_{task}"
+        if analysis_id not in EXPECTED_HIDDEN_ANALYSIS_CHOICES:
+            assert analysis_id in choices
+    for analysis_id in EXPECTED_HIDDEN_ANALYSIS_CHOICES:
+        assert analysis_id not in choices
     assert "sct_label_vertebrae" in choices
 
 
@@ -581,6 +589,25 @@ def test_openrecon_requires_generated_multiclass_files(tmp_path):
             assert expected_outputs[0]["filename"] in str(exc)
         else:
             raise AssertionError(f"Expected missing SCT output to fail for {analysis}")
+
+
+def test_label_vertebrae_output_path_follows_segmentation_filename():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_nifti_output_stem",
+            "_sct_label_vertebrae_output_path",
+        ],
+    )
+    output_path = helpers["_sct_label_vertebrae_output_path"]
+
+    assert output_path(
+        Path("/tmp/openrecon/input_seg.nii.gz"),
+        Path("/tmp/openrecon"),
+    ) == Path("/tmp/openrecon/input_seg_labeled.nii.gz")
+    assert output_path(
+        Path("/tmp/openrecon/sct_deepseg_spinalcord/output.nii.gz"),
+        Path("/tmp/openrecon/sct_label_vertebrae"),
+    ) == Path("/tmp/openrecon/sct_label_vertebrae/output_labeled.nii.gz")
 
 
 def test_wrapper_patches_openrecon_derived_series_identity_like_musclemap():

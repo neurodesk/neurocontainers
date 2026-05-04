@@ -30,7 +30,6 @@ Reference: Jan Valošek, Julien Cohen-Adad, Reproducible Spinal Cord Quantitativ
 | `sct_deepseg_gm_sc_7t_t2star` | `sct_deepseg gm_sc_7t_t2star` | 7T T2*-weighted spinal cord image for cord/gray matter segmentation. |
 | `sct_deepseg_gm_wm_exvivo_t2` | `sct_deepseg gm_wm_exvivo_t2` | Ex vivo human T2-weighted spinal cord image for gray/white matter segmentation. |
 | `sct_deepseg_gm_mouse_t1` | `sct_deepseg gm_mouse_t1` | Mouse spinal cord MRI for gray matter segmentation. |
-| `sct_deepseg_gm_wm_mouse_t1` | `sct_deepseg gm_wm_mouse_t1` | Ex vivo mouse T1-weighted image for gray/white matter segmentation. |
 | `sct_deepseg_lesion_ms` | `sct_deepseg lesion_ms` | Spinal cord MRI with multiple-sclerosis lesions. |
 | `sct_deepseg_lesion_ms_axial_t2` | `sct_deepseg lesion_ms_axial_t2` | Axial T2-weighted spinal cord MRI with intramedullary MS lesions. |
 | `sct_deepseg_lesion_ms_mp2rage` | `sct_deepseg lesion_ms_mp2rage` | Cropped MP2RAGE spinal cord data for MS lesion segmentation. |
@@ -61,3 +60,4 @@ The app returns one derived MRD image series for a single selected analysis, or 
 - The selected SCT model or bundle determines the required image contrast and anatomy. Sending the wrong contrast can produce poor or empty segmentations even if the OpenRecon run succeeds.
 - `sct_label_vertebrae` currently uses the wrapper's built-in T2 mode (`-c t2`). Use T2-weighted source images for that analysis.
 - SCT's `tumor_edema_cavity_t1_t2` task is not exposed in OpenRecon because it requires separate T1/T2 input images and contrast labels, while this wrapper currently accepts one MRD image series.
+- SCT's `gm_wm_mouse_t1` task is not exposed in OpenRecon because the current test sweep did not identify a valid official mouse T1 dataset for this task.
