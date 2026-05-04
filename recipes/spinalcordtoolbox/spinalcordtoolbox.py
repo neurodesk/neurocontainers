@@ -41,7 +41,6 @@ SCT_DEEPSEG_TASKS = (
     "lesion_ms_axial_t2",
     "lesion_ms_mp2rage",
     "lesion_sci_t2",
-    "tumor_edema_cavity_t1_t2",
     "tumor_t2",
     "rootlets",
     "sc_canal_t2",
@@ -63,6 +62,81 @@ SCT_ANALYSIS_REGISTRY = {
     },
 }
 SCT_ANALYSIS_REGISTRY["sct_deepseg_graymatter"]["kind"] = "deepseg_gm"
+
+SCT_ANALYSIS_OUTPUTS = {
+    "sct_deepseg_gm_sc_7t_t2star": (
+        {
+            "filename": "output_7t_multiclass_sc.nii.gz",
+            "series_suffix": "sct_deepseg_gm_sc_7t_t2star_7t_multiclass_sc",
+        },
+        {
+            "filename": "output_7t_multiclass_gm.nii.gz",
+            "series_suffix": "sct_deepseg_gm_sc_7t_t2star_7t_multiclass_gm",
+        },
+    ),
+    "sct_deepseg_gm_wm_exvivo_t2": (
+        {
+            "filename": "output_gmseg.nii.gz",
+            "series_suffix": "sct_deepseg_gm_wm_exvivo_t2_gmseg",
+        },
+        {
+            "filename": "output_wmseg.nii.gz",
+            "series_suffix": "sct_deepseg_gm_wm_exvivo_t2_wmseg",
+        },
+    ),
+    "sct_deepseg_gm_wm_mouse_t1": (
+        {
+            "filename": "output_GM_seg.nii.gz",
+            "series_suffix": "sct_deepseg_gm_wm_mouse_t1_gm_seg",
+        },
+        {
+            "filename": "output_WM_seg.nii.gz",
+            "series_suffix": "sct_deepseg_gm_wm_mouse_t1_wm_seg",
+        },
+    ),
+    "sct_deepseg_lesion_ms_axial_t2": (
+        {
+            "filename": "output_sc_seg.nii.gz",
+            "series_suffix": "sct_deepseg_lesion_ms_axial_t2_sc_seg",
+        },
+        {
+            "filename": "output_lesion_seg.nii.gz",
+            "series_suffix": "sct_deepseg_lesion_ms_axial_t2_lesion_seg",
+        },
+    ),
+    "sct_deepseg_lesion_sci_t2": (
+        {
+            "filename": "output_lesion_seg.nii.gz",
+            "series_suffix": "sct_deepseg_lesion_sci_t2_lesion_seg",
+        },
+        {
+            "filename": "output_sc_seg.nii.gz",
+            "series_suffix": "sct_deepseg_lesion_sci_t2_sc_seg",
+        },
+    ),
+    "sct_deepseg_totalspineseg": (
+        {
+            "filename": "output_step1_canal.nii.gz",
+            "series_suffix": "sct_deepseg_totalspineseg_step1_canal",
+        },
+        {
+            "filename": "output_step1_cord.nii.gz",
+            "series_suffix": "sct_deepseg_totalspineseg_step1_cord",
+        },
+        {
+            "filename": "output_step1_levels.nii.gz",
+            "series_suffix": "sct_deepseg_totalspineseg_step1_levels",
+        },
+        {
+            "filename": "output_step1_output.nii.gz",
+            "series_suffix": "sct_deepseg_totalspineseg_step1_output",
+        },
+        {
+            "filename": "output_step2_output.nii.gz",
+            "series_suffix": "sct_deepseg_totalspineseg_step2_output",
+        },
+    ),
+}
 
 SCT_ANALYSIS_BUNDLES = {
     "sct_bundle_t2_anatomy": (
@@ -728,10 +802,16 @@ def _series_contract_summary(images, source="output"):
 
 
 def _sct_derived_roles():
-    return {
+    analysis_roles = {
         config["series_suffix"].upper()
         for config in SCT_ANALYSIS_REGISTRY.values()
-    } | {"ORIGINAL", "PASSTHROUGH"}
+    }
+    output_roles = {
+        output["series_suffix"].upper()
+        for outputs in SCT_ANALYSIS_OUTPUTS.values()
+        for output in outputs
+    }
+    return analysis_roles | output_roles | {"ORIGINAL", "PASSTHROUGH"}
 
 
 def _log_and_validate_output_series_contract(output_images, input_images, context):
@@ -1120,7 +1200,7 @@ def _resolve_requested_analyses(analysis):
     raise ValueError(f"Unsupported SCT analysis '{analysis}'. Supported analyses: {supported}")
 
 
-def _build_sct_output_identity(source_meta, analysis, output_series_index):
+def _build_sct_output_identity(source_meta, analysis, output_series_index, series_suffix=None):
     source_minihead = _decode_ice_minihead(source_meta)
     source_series = _first_non_empty_text(
         _get_meta_text(source_meta, "SeriesDescription"),
@@ -1140,7 +1220,7 @@ def _build_sct_output_identity(source_meta, analysis, output_series_index):
         _get_meta_text(source_meta, "ImageTypeValue4"),
         _extract_minihead_array_tokens(source_minihead, "ImageTypeValue4"),
     )
-    suffix = SCT_ANALYSIS_REGISTRY[analysis]["series_suffix"]
+    suffix = series_suffix or SCT_ANALYSIS_REGISTRY[analysis]["series_suffix"]
     series_description = f"{source_series}_{suffix}" if source_series else suffix
     grouping = f"{source_grouping}_{suffix}" if source_grouping else series_description
     type_token = suffix.upper()
@@ -1293,6 +1373,35 @@ def _run_command(command, cwd):
         )
 
 
+def _expected_sct_output_specs(analysis, output_path):
+    output_path = Path(output_path)
+    outputs = SCT_ANALYSIS_OUTPUTS.get(analysis)
+    if not outputs:
+        return (
+            {
+                "path": output_path,
+                "series_suffix": SCT_ANALYSIS_REGISTRY[analysis]["series_suffix"],
+            },
+        )
+
+    return tuple(
+        {
+            "path": output_path.with_name(output["filename"]),
+            "series_suffix": output["series_suffix"],
+        }
+        for output in outputs
+    )
+
+
+def _require_sct_output_specs(analysis, output_specs):
+    missing = [str(output["path"]) for output in output_specs if not output["path"].exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"Could not find expected SCT output(s) for {analysis}: {', '.join(missing)}"
+        )
+    return output_specs
+
+
 def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
     if analysis not in SCT_ANALYSIS_REGISTRY:
         supported = ", ".join(_supported_analysis_ids())
@@ -1303,6 +1412,7 @@ def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
     analysis_config = SCT_ANALYSIS_REGISTRY[analysis]
     qc_dir = work_dir / "qc_singleSubj"
     output_path = work_dir / "output.nii.gz"
+    output_specs = _expected_sct_output_specs(analysis, output_path)
 
     if analysis_config["kind"] == "deepseg":
         _run_command(
@@ -1318,7 +1428,7 @@ def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
             ],
             cwd=work_dir,
         )
-        return output_path
+        return _require_sct_output_specs(analysis, output_specs)
 
     if analysis_config["kind"] == "deepseg_gm":
         _run_command(
@@ -1333,7 +1443,7 @@ def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
             ],
             cwd=work_dir,
         )
-        return output_path
+        return _require_sct_output_specs(analysis, output_specs)
 
     if analysis_config["kind"] == "label_vertebrae":
         seg_path = precomputed_outputs.get("sct_deepseg_spinalcord")
@@ -1371,7 +1481,7 @@ def _run_sct_analysis(analysis, input_path, work_dir, precomputed_outputs=None):
         labeled_path = work_dir / "input_seg_labeled.nii.gz"
         if not labeled_path.exists():
             raise FileNotFoundError(f"Could not find SCT vertebral labeling output: {labeled_path}")
-        return labeled_path
+        return _expected_sct_output_specs(analysis, labeled_path)
 
     raise ValueError(f"Unsupported SCT analysis kind: {analysis_config['kind']}")
 
@@ -1383,8 +1493,14 @@ def _sct_output_to_mrd_images(
     meta,
     output_series_index,
     segmentation_colormap=False,
+    series_suffix=None,
 ):
-    output_identity = _build_sct_output_identity(meta[0], analysis, output_series_index)
+    output_identity = _build_sct_output_identity(
+        meta[0],
+        analysis,
+        output_series_index,
+        series_suffix=series_suffix,
+    )
     img = nib.load(str(output_path))
     data = img.get_fdata(dtype=np.float32)
     logging.info("Loaded SCT output %s with shape=%s", output_path, data.shape)
@@ -1751,28 +1867,30 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
     imagesOut = []
     precomputed_outputs = {}
     for member_analysis in analyses:
-        output_series_index = derived_series_allocator.allocate(member_analysis)
         member_work_dir = request_work_dir
         if len(analyses) > 1:
             member_work_dir = request_work_dir / member_analysis
         member_work_dir.mkdir(parents=True, exist_ok=True)
-        output_path = _run_sct_analysis(
+        output_specs = _run_sct_analysis(
             member_analysis,
             input_path,
             member_work_dir,
             precomputed_outputs=precomputed_outputs,
         )
-        precomputed_outputs[member_analysis] = output_path
-        imagesOut.extend(
-            _sct_output_to_mrd_images(
-                output_path,
-                member_analysis,
-                head,
-                meta,
-                output_series_index,
-                segmentation_colormap=segmentation_colormap,
+        precomputed_outputs[member_analysis] = output_specs[0]["path"]
+        for output_spec in output_specs:
+            output_series_index = derived_series_allocator.allocate(output_spec["series_suffix"])
+            imagesOut.extend(
+                _sct_output_to_mrd_images(
+                    output_spec["path"],
+                    member_analysis,
+                    head,
+                    meta,
+                    output_series_index,
+                    segmentation_colormap=segmentation_colormap,
+                    series_suffix=output_spec["series_suffix"],
+                )
             )
-        )
 
     if send_original:
         if called_from_raw:
