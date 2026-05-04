@@ -234,7 +234,7 @@ build:
     - run:
         - mkdir -p "${NF_TEST_HOME}"
         - cp {{ get_file("nextflow_install") }} /tmp/get-nextflow.sh
-        - cd /tmp && bash /tmp/get-nextflow.sh
+        - cd /tmp && bash < /tmp/get-nextflow.sh
         - mv /tmp/nextflow /usr/local/bin/nextflow
         - chmod 755 /usr/local/bin/nextflow
         - bash {{ get_file("nf_test_install") }} 0.9.5
