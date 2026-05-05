@@ -92,7 +92,11 @@ jobs:
             -o /tmp/apptainer.deb
           sudo apt-get install -y /tmp/apptainer.deb
           rm /tmp/apptainer.deb
-          sudo python3 -m pip install --break-system-packages \
+          PIP_BREAK_SYSTEM_PACKAGES=""
+          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
+            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          fi
+          sudo python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} \
             python-swiftclient python-keystoneclient
           # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
           if ! command -v aws >/dev/null 2>&1; then
@@ -130,7 +134,11 @@ jobs:
 
       - name: Install builder dependencies
         run: |
-          pip install --break-system-packages -r requirements.txt
+          PIP_BREAK_SYSTEM_PACKAGES=""
+          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
+            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          fi
+          python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} -r requirements.txt
 
       - name: Generate Dockerfile and Release file
         id: generate
@@ -236,7 +244,11 @@ jobs:
             -o /tmp/apptainer.deb
           sudo apt-get install -y /tmp/apptainer.deb
           rm /tmp/apptainer.deb
-          sudo python3 -m pip install --break-system-packages \
+          PIP_BREAK_SYSTEM_PACKAGES=""
+          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
+            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          fi
+          sudo python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} \
             python-swiftclient python-keystoneclient
           # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
           if ! command -v aws >/dev/null 2>&1; then
@@ -256,7 +268,11 @@ jobs:
 
       - name: Install builder dependencies
         run: |
-          pip install --break-system-packages -r requirements.txt
+          PIP_BREAK_SYSTEM_PACKAGES=""
+          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
+            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          fi
+          python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} -r requirements.txt
 
       - name: Generate Dockerfile and Release file
         id: generate
@@ -651,7 +667,11 @@ jobs:
             -o /tmp/apptainer.deb
           sudo apt-get install -y /tmp/apptainer.deb
           rm /tmp/apptainer.deb
-          sudo python3 -m pip install --break-system-packages \
+          PIP_BREAK_SYSTEM_PACKAGES=""
+          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
+            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          fi
+          sudo python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} \
             python-swiftclient python-keystoneclient
           # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
           if ! command -v aws >/dev/null 2>&1; then
