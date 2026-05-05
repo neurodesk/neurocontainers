@@ -2,8 +2,8 @@
 
 `openreconi2iexample` is a lightweight OpenRecon image-in/image-out example.
 It expects already reconstructed MRD image messages and returns simple derived
-label series. It is intended as a readable reference for scanner-safe output
-series handling, not as a clinical segmentation algorithm.
+label and downsampled image series. It is intended as a readable reference for
+scanner-safe output series handling, not as a clinical segmentation algorithm.
 
 ## What It Demonstrates
 
@@ -15,9 +15,11 @@ series handling, not as a clinical segmentation algorithm.
 5. Allocate all derived output series from one connection-level allocator after
    input drain.
 6. Create three simple label outputs by thresholding the input volume.
-7. Stamp each derived output with coherent MRD header, Meta, and IceMiniHead
+7. Create an interpolated downsampled image output with lower in-plane matrix
+   size and fewer slices than the source series.
+8. Stamp each derived output with coherent MRD header, Meta, and IceMiniHead
    identity.
-8. Validate the output series contract before any image is sent back.
+9. Validate the output series contract before any image is sent back.
 
 The hard pre-send validation is deliberate: if derived series identity is
 ambiguous or collides with the input, the app fails loudly instead of returning
@@ -35,17 +37,21 @@ slice count is compatible with the MRD header and logs the measured geometry.
 
 ## Outputs
 
-For each processable input series, the app returns these derived label series:
+For each processable input series, the app returns these derived series:
 
 | Output role | Rule | Label value |
 | --- | --- | --- |
 | `THRESH_LOW` | voxel intensity greater than the series mean | `1` |
 | `THRESH_MID` | voxel intensity greater than mean plus half a standard deviation | `2` |
 | `THRESH_HIGH` | voxel intensity greater than mean plus one standard deviation | `3` |
+| `DOWNSAMPLED` | linear interpolation to half the in-plane matrix and half the slice count where possible | source intensity |
 
-Each output is sent as one MRD image per source slice. Source position and
-orientation are preserved, while the output pixels are stored as unsigned
-integer labels.
+The threshold outputs are sent as one MRD image per source slice. The
+`DOWNSAMPLED` output is sent as its own derived series with its own smaller
+matrix, thicker slice spacing, and fewer MRD image messages where the source
+series has more than one slice. Source orientation and physical field of view
+are preserved. Threshold output pixels are stored as unsigned integer labels;
+the downsampled output keeps source image intensities.
 
 ## Parameters
 
@@ -72,5 +78,5 @@ roles collide, reuse input identity, or disagree between Meta and IceMiniHead.
 - Runtime debug paths use `/tmp/share/debug` or `/tmp`; no runtime files are
   expected under `/home`.
 - This example does not download models or external tools.
-- The threshold outputs are intentionally simple so the recipe stays useful as
-  an OpenRecon integration template.
+- The threshold and downsampled outputs are intentionally simple so the recipe
+  stays useful as an OpenRecon integration template.

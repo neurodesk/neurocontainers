@@ -14,7 +14,15 @@ import numpy as np
 
 DEBUG_FOLDER = "/tmp/share/debug"
 RESERVED_SCANNER_SERIES_INDICES = {0, 999, 1000, 1001}
-DERIVED_ROLES = {"THRESH_LOW", "THRESH_MID", "THRESH_HIGH", "ORIGINAL"}
+DOWNSAMPLED_ROLE = "DOWNSAMPLED"
+DOWNSAMPLE_FACTOR = 2
+DERIVED_ROLES = {
+    "THRESH_LOW",
+    "THRESH_MID",
+    "THRESH_HIGH",
+    DOWNSAMPLED_ROLE,
+    "ORIGINAL",
+}
 OUTPUT_SERIES_CONTRACT_EVENT = "OPENRECONI2I_OUTPUT_SERIES_CONTRACT"
 INPUT_SERIES_REGISTRY_EVENT = "OPENRECONI2I_INPUT_SERIES_REGISTRY"
 SEND_IMAGE_CHUNK_SIZE = 96
@@ -135,7 +143,8 @@ def _threshold_outputs_for_series(images, allocator):
 
     output_images = []
     logging.info(
-        "Creating threshold outputs for input series=%s slices=%d mean=%.6g std=%.6g",
+        "Creating threshold and downsampled outputs for input series=%s "
+        "slices=%d mean=%.6g std=%.6g",
         geometry["series_index"],
         len(ordered_images),
         mean_value,
@@ -153,6 +162,21 @@ def _threshold_outputs_for_series(images, allocator):
                 geometry,
             )
         )
+
+    downsampled_volume, downsampled_geometry = _downsample_volume_and_geometry(
+        volume,
+        geometry,
+    )
+    output_series_index = allocator.allocate(DOWNSAMPLED_ROLE)
+    output_images.extend(
+        _volume_to_mrd_images(
+            downsampled_volume,
+            ordered_images,
+            DOWNSAMPLED_ROLE,
+            output_series_index,
+            downsampled_geometry,
+        )
+    )
     return output_images
 
 
@@ -274,20 +298,150 @@ def _images_to_volume(images):
     return np.stack(slices, axis=0)
 
 
-def _volume_to_mrd_images(label_volume, source_images, role, output_series_index, geometry):
+def _downsample_volume_and_geometry(volume, geometry):
+    source_shape = tuple(int(size) for size in volume.shape)
+    target_shape = tuple(_downsampled_size(size) for size in source_shape)
+    source_slice_coordinates = _resample_center_coordinates(source_shape[0], target_shape[0])
+    downsampled_volume = _resize_volume_linear(volume, target_shape).astype(np.float32, copy=False)
+
+    output_geometry = copy.deepcopy(geometry)
+    output_matrix = [
+        int(target_shape[2]),
+        int(target_shape[1]),
+        int(target_shape[0]),
+    ]
+    output_fov = list(output_geometry["fov"])
+    output_slice_spacing = float(output_fov[2]) / float(target_shape[0])
+    output_geometry["matrix"] = output_matrix
+    output_geometry["slice_spacing"] = output_slice_spacing
+    output_geometry["voxel_size"] = [
+        float(output_fov[0]) / float(output_matrix[0]),
+        float(output_fov[1]) / float(output_matrix[1]),
+        output_slice_spacing,
+    ]
+    output_geometry["source_slice_spacing"] = float(geometry["slice_spacing"])
+    output_geometry["source_slice_coordinates"] = [
+        float(value) for value in source_slice_coordinates
+    ]
+
+    _log_json_event(
+        "OPENRECONI2I_DOWNSAMPLE_GEOMETRY",
+        {
+            "input_shape_zyx": list(source_shape),
+            "output_shape_zyx": list(target_shape),
+            "input_voxel_size": geometry["voxel_size"],
+            "output_voxel_size": output_geometry["voxel_size"],
+            "source_slice_coordinates": output_geometry["source_slice_coordinates"],
+        },
+    )
+    return downsampled_volume, output_geometry
+
+
+def _downsampled_size(size):
+    size = int(size)
+    if size <= 1:
+        return 1
+    return max(1, size // DOWNSAMPLE_FACTOR)
+
+
+def _resize_volume_linear(volume, target_shape):
+    resized = np.asarray(volume, dtype=np.float32)
+    if resized.ndim != 3:
+        raise ValueError(
+            f"Expected a 3D volume for downsampling, got shape={resized.shape}"
+        )
+    for axis, target_size in enumerate(target_shape):
+        resized = _resize_axis_linear(resized, axis, int(target_size))
+    return resized
+
+
+def _resize_axis_linear(data, axis, target_size):
+    source_size = int(data.shape[axis])
+    if target_size <= 0:
+        raise ValueError(f"Invalid target size {target_size} for axis {axis}")
+    if source_size == target_size:
+        return data
+
+    coordinates = _resample_center_coordinates(source_size, target_size)
+    lower = np.floor(coordinates).astype(np.int64)
+    upper = np.clip(lower + 1, 0, source_size - 1)
+    weight = (coordinates - lower).astype(np.float32)
+
+    lower_values = np.take(data, lower, axis=axis)
+    upper_values = np.take(data, upper, axis=axis)
+    weight_shape = [1] * data.ndim
+    weight_shape[axis] = target_size
+    weight = weight.reshape(weight_shape)
+    return lower_values * (1.0 - weight) + upper_values * weight
+
+
+def _resample_center_coordinates(source_size, target_size):
+    source_size = int(source_size)
+    target_size = int(target_size)
+    if source_size <= 0 or target_size <= 0:
+        raise ValueError(
+            f"Cannot resample with source_size={source_size} target_size={target_size}"
+        )
+    if source_size == 1:
+        return np.zeros(target_size, dtype=np.float32)
+    coordinates = (np.arange(target_size, dtype=np.float32) + 0.5) * (
+        float(source_size) / float(target_size)
+    ) - 0.5
+    return np.clip(coordinates, 0.0, float(source_size - 1))
+
+
+def _volume_to_mrd_images(image_volume, source_images, role, output_series_index, geometry):
     output_images = []
+    image_volume = np.asarray(image_volume)
+    if image_volume.ndim != 3:
+        raise ValueError(
+            f"Output volume for role {role} must be 3D, got shape={image_volume.shape}"
+        )
     source_meta = ismrmrd.Meta.deserialize(source_images[0].attribute_string)
     output_identity = _build_output_identity(source_meta, role, output_series_index)
+    output_slice_count, output_rows, output_cols = image_volume.shape
+    source_slice_coordinates = geometry.get("source_slice_coordinates")
+    has_resampled_slice_coordinates = source_slice_coordinates is not None
+    if not has_resampled_slice_coordinates:
+        source_slice_coordinates = list(range(output_slice_count))
+    if len(source_slice_coordinates) != output_slice_count:
+        raise ValueError(
+            f"Output role {role} has {output_slice_count} slices but "
+            f"{len(source_slice_coordinates)} source coordinates"
+        )
 
-    for slice_index, source_image in enumerate(source_images):
-        output_image = ismrmrd.Image.from_array(label_volume[slice_index], transpose=False)
+    for slice_index, source_coordinate in enumerate(source_slice_coordinates):
+        source_image = source_images[
+            int(np.clip(round(float(source_coordinate)), 0, len(source_images) - 1))
+        ]
+        output_image = ismrmrd.Image.from_array(image_volume[slice_index], transpose=False)
         header = copy.deepcopy(source_image.getHead())
+        header.data_type = output_image.data_type
         header.image_series_index = int(output_series_index)
         header.image_index = slice_index + 1
         header.slice = slice_index
         header.contrast = 0
         header.image_type = ismrmrd.IMTYPE_MAGNITUDE
-        header.field_of_view[2] = float(geometry["slice_spacing"])
+        _set_header_sequence_field(
+            header,
+            "matrix_size",
+            [int(output_cols), int(output_rows), 1],
+        )
+        _set_header_sequence_field(
+            header,
+            "field_of_view",
+            [
+                float(geometry["fov"][0]),
+                float(geometry["fov"][1]),
+                float(geometry["slice_spacing"]),
+            ],
+        )
+        if has_resampled_slice_coordinates:
+            _set_header_sequence_field(
+                header,
+                "position",
+                _position_for_source_slice_coordinate(geometry, source_coordinate),
+            )
         output_image.setHead(header)
 
         tmp_meta = _copy_meta(ismrmrd.Meta.deserialize(source_image.attribute_string))
@@ -298,6 +452,30 @@ def _volume_to_mrd_images(label_volume, source_images, role, output_series_index
         output_images.append(output_image)
 
     return output_images
+
+
+def _position_for_source_slice_coordinate(geometry, source_coordinate):
+    first_position = np.array(geometry["first_position"], dtype=float)
+    slice_dir = np.array(geometry["slice_dir"], dtype=float)
+    source_slice_spacing = float(
+        geometry.get("source_slice_spacing", geometry["slice_spacing"])
+    )
+    norm = np.linalg.norm(slice_dir)
+    if norm <= 0:
+        return first_position.tolist()
+    return (
+        first_position
+        + float(source_coordinate) * source_slice_spacing * (slice_dir / norm)
+    ).tolist()
+
+
+def _set_header_sequence_field(image_header, field_name, values):
+    values = list(values)
+    current_value = getattr(image_header, field_name)
+    try:
+        current_value[:] = values
+    except Exception:
+        setattr(image_header, field_name, tuple(values))
 
 
 def _restamp_passthrough_images(images, role, output_series_index):

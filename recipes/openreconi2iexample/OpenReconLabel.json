@@ -3,7 +3,7 @@
     "name": { "en": "openreconi2iexample" },
     "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
-    "information": { "en": "Lightweight OpenRecon image-to-image thresholding example" },
+    "information": { "en": "Lightweight OpenRecon image-to-image thresholding and downsampling example" },
     "id": "openreconi2iexample",
     "regulatory_information": {
       "device_trade_name": "openreconi2iexample",
@@ -15,7 +15,7 @@
       "gtin": "00860000171212",
       "udi": "(01)00860000171212(21)1.3.0",
       "safety_advices": "",
-      "special_operating_instructions": "OpenRecon image-to-image thresholding example",
+      "special_operating_instructions": "OpenRecon image-to-image thresholding and downsampling example",
       "additional_relevant_information": ""
     }
   },

@@ -1,17 +1,19 @@
 tests:
-  - name: Manual OpenRecon image-to-image smoke test
-    manual: true
-    script: |
-      # Build from the repository root:
-      python builder/build.py generate openreconi2iexample --recreate --build --test --architecture x86_64
+ - name: Manual OpenRecon image-to-image smoke test
+   manual: true
+   script: |
+      source .venv/bin/activate
+      ./builder/build.py generate openreconi2iexample --recreate --build --login --architecture x86_64 --offline_mode true
 
+      # check that the CUDA version is valid for MARS: has to be CUDA 11.x
+      python -c "import torch; print(torch.version.cuda)"
       set -eux
       input_h5=/buildhostdirectory/input_image_dataset.h5
       output_h5=/buildhostdirectory/openreconi2iexample_output.h5
 
       if [ ! -f "${input_h5}" ]; then
-        echo "Place an MRD image dataset at ${input_h5} before running this manual test."
-        exit 1
+        echo "Manual test skipped: place an MRD image dataset at ${input_h5} to run it."
+        exit 0
       fi
 
       python3 /opt/code/python-ismrmrd-server/main.py \
@@ -28,4 +30,97 @@ tests:
         -c openreconi2iexample
 
       test -s "${output_h5}"
-      echo "Inspect ${output_h5} with an HDF5 viewer and check the OpenRecon logs for OPENRECONI2I_OUTPUT_SERIES_CONTRACT."
+      echo "Inspect ${output_h5} with an HDF5 viewer and check the OpenRecon logs for DOWNSAMPLED in OPENRECONI2I_OUTPUT_SERIES_CONTRACT."
+  
+
+ - name: Test downsampled derived OpenRecon series geometry
+   manual: true
+   script: |
+      python3 - <<'PY'
+      import importlib.util
+      import sys
+      from pathlib import Path
+
+      import ismrmrd
+      import numpy as np
+
+      wrapper_path = Path("/opt/code/python-ismrmrd-server/openreconi2iexample.py")
+      sys.path.insert(0, str(wrapper_path.parent))
+      spec = importlib.util.spec_from_file_location("openreconi2iexample", wrapper_path)
+      module = importlib.util.module_from_spec(spec)
+      spec.loader.exec_module(module)
+
+      def set_header_field(header, field_name, values):
+          module._set_header_sequence_field(header, field_name, values)
+
+      def make_image(slice_index):
+          data = (
+              np.arange(64, dtype=np.float32).reshape(8, 8)
+              + slice_index * 100.0
+          )
+          image = ismrmrd.Image.from_array(data, transpose=False)
+          header = image.getHead()
+          header.image_series_index = 7
+          header.image_index = slice_index + 1
+          header.slice = slice_index
+          header.contrast = 0
+          header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+          set_header_field(header, "matrix_size", [8, 8, 1])
+          set_header_field(header, "field_of_view", [8.0, 8.0, 1.0])
+          set_header_field(header, "read_dir", [1.0, 0.0, 0.0])
+          set_header_field(header, "phase_dir", [0.0, 1.0, 0.0])
+          set_header_field(header, "slice_dir", [0.0, 0.0, 1.0])
+          set_header_field(header, "position", [0.0, 0.0, float(slice_index)])
+          image.setHead(header)
+          image.image_series_index = 7
+          image.image_type = ismrmrd.IMTYPE_MAGNITUDE
+
+          meta = ismrmrd.Meta()
+          meta["SeriesDescription"] = "synthetic"
+          meta["SequenceDescription"] = "synthetic"
+          meta["ProtocolName"] = "synthetic"
+          meta["SeriesNumberRangeNameUID"] = "synthetic_group"
+          meta["SeriesInstanceUID"] = "1.2.826.0.1.3680043.10.999.1"
+          image.attribute_string = meta.serialize()
+          return image
+
+      images = [make_image(slice_index) for slice_index in range(4)]
+      allocator = module.ConnectionSeriesAllocator(
+          observed_indices={7},
+          reserved_indices=module.RESERVED_SCANNER_SERIES_INDICES,
+      )
+      outputs = module._threshold_outputs_for_series(images, allocator)
+      output_summary = module._series_contract_summary(outputs, source="output")
+      input_summary = module._series_contract_summary(images, source="input")
+      module._validate_output_series_contract(output_summary, input_summary)
+
+      role_counts = {
+          entry["role"]: entry["count"]
+          for entry in output_summary
+      }
+      assert role_counts["THRESH_LOW"] == 4, role_counts
+      assert role_counts["THRESH_MID"] == 4, role_counts
+      assert role_counts["THRESH_HIGH"] == 4, role_counts
+      assert role_counts["DOWNSAMPLED"] == 2, role_counts
+
+      downsampled = [
+          image
+          for image in outputs
+          if module._series_contract_entry(image)["role"] == "DOWNSAMPLED"
+      ]
+      downsampled.sort(key=lambda image: image.getHead().slice)
+      assert len(downsampled) == 2
+
+      first_header = downsampled[0].getHead()
+      second_header = downsampled[1].getHead()
+      assert [int(value) for value in first_header.matrix_size[:]] == [4, 4, 1]
+      assert np.squeeze(downsampled[0].data).shape == (4, 4)
+      assert np.isclose(float(first_header.field_of_view[0]), 8.0)
+      assert np.isclose(float(first_header.field_of_view[1]), 8.0)
+      assert np.isclose(float(first_header.field_of_view[2]), 2.0)
+      assert np.isclose(float(first_header.position[2]), 0.5)
+      assert np.isclose(float(second_header.position[2]), 2.5)
+      assert np.isclose(float(np.squeeze(downsampled[0].data)[0, 0]), 54.5)
+      PY
+
+ 

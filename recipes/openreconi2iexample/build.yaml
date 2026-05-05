@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.0
+version: 1.0.1
 architectures:
   - x86_64
 
@@ -52,8 +52,9 @@ readme: |-
   Lightweight OpenRecon image-to-image example for scanner-safe derived image output.
   The container buffers incoming MRD images until the connection is drained, allocates
   derived image series at connection scope, thresholds image volumes into simple label
-  outputs, validates Meta/IceMiniHead series identity before sending, and writes runtime
-  debug content only under /tmp/share/debug.
+  outputs, emits an interpolated downsampled image series with fewer slices, validates
+  Meta/IceMiniHead series identity before sending, and writes runtime debug content only
+  under /tmp/share/debug.
 
   OpenRecon runtime notes are documented in
   `recipes/openreconi2iexample/OpenReconREADME.md`.
