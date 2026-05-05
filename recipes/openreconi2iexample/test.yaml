@@ -280,6 +280,66 @@ tests:
           [SOURCE_TOKEN, "NORM", "DIS2D", "FIL"],
           case_id=2,
       )
+
+      single_images = [
+          make_image(
+              slice_index,
+              ["NORM", "DIS2D", "FM3_2", "FIL"],
+              case_id=3,
+              include_minihead_image_type=False,
+          )
+          for slice_index in range(4)
+      ]
+      single_allocator = module.ConnectionSeriesAllocator(
+          observed_indices={7},
+          reserved_indices=module.RESERVED_SCANNER_SERIES_INDICES,
+      )
+      single_outputs = module._threshold_outputs_for_series(
+          single_images,
+          single_allocator,
+          output_mode=module.OUTPUT_MODE_SINGLE_SERIES,
+      )
+      single_summary = module._series_contract_summary(
+          single_outputs,
+          source="output",
+      )
+      module._validate_output_series_contract(
+          single_summary,
+          module._series_contract_summary(single_images, source="input"),
+      )
+      module._validate_output_image_instance_contract(
+          single_outputs,
+          single_images,
+      )
+      single_counts = {
+          entry["role"]: entry["count"]
+          for entry in single_summary
+      }
+      assert single_counts == {"THRESH_MID": 4}, single_counts
+      assert len(single_outputs) == 4, len(single_outputs)
+      assert len({image.getHead().image_series_index for image in single_outputs}) == 1
+
+      assert module._configured_output_mode({"parameters": {}}) == module.OUTPUT_MODE_SINGLE_SERIES
+      assert module._configured_output_mode(
+          {"parameters": {"outputmode": "multi_series"}}
+      ) == module.OUTPUT_MODE_MULTI_SERIES
+      assert module._configured_output_mode(
+          {"parameters": {"output_mode": "single-threshold"}}
+      ) == module.OUTPUT_MODE_SINGLE_SERIES
+      module.os.environ[module.OUTPUT_MODE_ENV] = "multi"
+      assert module._configured_output_mode(
+          {"parameters": {"outputmode": "single_series"}}
+      ) == module.OUTPUT_MODE_MULTI_SERIES
+      del module.os.environ[module.OUTPUT_MODE_ENV]
+      assert not module._send_original_enabled(
+          {"parameters": {"sendoriginal": "True"}}
+      )
+      module.os.environ[module.ALLOW_SENDORIGINAL_ENV] = "1"
+      assert module._send_original_enabled(
+          {"parameters": {"sendoriginal": "True"}}
+      )
+      del module.os.environ[module.ALLOW_SENDORIGINAL_ENV]
+
       assert np.isclose(
           module._close_drain_delay_seconds(67),
           min(module.CLOSE_DRAIN_SECONDS_MAX, 67 * module.CLOSE_DRAIN_SECONDS_PER_IMAGE),

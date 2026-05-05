@@ -50,10 +50,31 @@
       "information": { "en": "Define the config to be executed by MRD server" }
     },
     {
+      "id": "outputmode",
+      "label": { "en": "Output mode" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "single_series",
+          "name": { "en": "Diagnostic single series" }
+        },
+        {
+          "id": "multi_series",
+          "name": { "en": "Multi-series example" }
+        }
+      ],
+      "default": "single_series",
+      "information": {
+        "en": "single_series emits only THRESH_MID to validate scanner output handling; multi_series emits all threshold and downsampled example series"
+      }
+    },
+    {
       "id": "sendoriginal",
       "label": { "en": "Send original images" },
       "type": "boolean",
-      "information": { "en": "Send scanner-safe restamped copies of original images back too" },
+      "information": {
+        "en": "Send scanner-safe restamped copies of original images back too; ignored unless OPENRECONI2I_ALLOW_SENDORIGINAL=1 is set in the container environment"
+      },
       "default": false
     }
   ]

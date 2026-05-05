@@ -19,6 +19,10 @@ RESERVED_SCANNER_SERIES_INDICES = {0, 999, 1000, 1001}
 DOWNSAMPLED_ROLE = "DOWNSAMPLED"
 PASSTHROUGH_ROLE = "PASSTHROUGH"
 DOWNSAMPLE_FACTOR = 2
+OUTPUT_MODE_SINGLE_SERIES = "single_series"
+OUTPUT_MODE_MULTI_SERIES = "multi_series"
+DEFAULT_OUTPUT_MODE = OUTPUT_MODE_SINGLE_SERIES
+DIAGNOSTIC_SINGLE_SERIES_ROLE = "THRESH_MID"
 DERIVED_ROLES = {
     "THRESH_LOW",
     "THRESH_MID",
@@ -36,6 +40,8 @@ CLOSE_DRAIN_SECONDS_MAX = 30.0
 SEND_SERIES_DRAIN_SECONDS_ENV = "OPENRECONI2I_SEND_SERIES_DRAIN_SECONDS"
 CLOSE_DRAIN_SECONDS_ENV = "OPENRECONI2I_CLOSE_DRAIN_SECONDS"
 CLOSE_DRAIN_SECONDS_MAX_ENV = "OPENRECONI2I_CLOSE_DRAIN_SECONDS_MAX"
+OUTPUT_MODE_ENV = "OPENRECONI2I_OUTPUT_MODE"
+ALLOW_SENDORIGINAL_ENV = "OPENRECONI2I_ALLOW_SENDORIGINAL"
 
 
 def process(connection, config, metadata):
@@ -88,34 +94,49 @@ def process(connection, config, metadata):
             logging.warning("No image messages were received; closing without output")
             return
 
+        output_mode = _configured_output_mode(config)
+        logging.info("OpenRecon i2i output mode resolved to %s", output_mode)
+        send_original = _send_original_enabled(config)
         derived_series_allocator = _build_connection_series_allocator(all_images)
         output_images = []
 
         for series_index in sorted(processable_images_by_series):
             input_group = processable_images_by_series[series_index]
             output_images.extend(
-                _threshold_outputs_for_series(input_group, derived_series_allocator)
+                _threshold_outputs_for_series(
+                    input_group,
+                    derived_series_allocator,
+                    output_mode=output_mode,
+                )
             )
 
-            if _config_boolean(config, "sendoriginal", False):
+            if send_original:
                 original_index = derived_series_allocator.allocate("ORIGINAL")
                 output_images.extend(
                     _restamp_passthrough_images(input_group, "ORIGINAL", original_index)
                 )
 
         if passthrough_images:
-            logging.info(
-                "Returning %d unsupported/non-magnitude images on a fresh passthrough series",
-                len(passthrough_images),
-            )
-            passthrough_index = derived_series_allocator.allocate(PASSTHROUGH_ROLE)
-            output_images.extend(
-                _restamp_passthrough_images(
-                    passthrough_images,
-                    PASSTHROUGH_ROLE,
-                    passthrough_index,
+            if output_mode == OUTPUT_MODE_MULTI_SERIES:
+                logging.info(
+                    "Returning %d unsupported/non-magnitude images on a fresh passthrough series",
+                    len(passthrough_images),
                 )
-            )
+                passthrough_index = derived_series_allocator.allocate(PASSTHROUGH_ROLE)
+                output_images.extend(
+                    _restamp_passthrough_images(
+                        passthrough_images,
+                        PASSTHROUGH_ROLE,
+                        passthrough_index,
+                    )
+                )
+            else:
+                logging.warning(
+                    "Suppressing %d passthrough image(s) in %s mode so the diagnostic "
+                    "scanner run does not add passthrough output series",
+                    len(passthrough_images),
+                    output_mode,
+                )
 
         _log_and_validate_output_series_contract(output_images, all_images, "before_send")
         _send_images_by_series(connection, output_images, "validated openreconi2i output")
@@ -150,7 +171,11 @@ def _log_metadata_summary(metadata):
         logging.info("Incoming metadata was not a standard MRD header: %s", metadata)
 
 
-def _threshold_outputs_for_series(images, allocator):
+def _threshold_outputs_for_series(
+    images,
+    allocator,
+    output_mode=OUTPUT_MODE_MULTI_SERIES,
+):
     ordered_images, geometry = _prepare_input_series(images)
     volume = _images_to_volume(ordered_images)
     mean_value = float(np.mean(volume))
@@ -160,16 +185,34 @@ def _threshold_outputs_for_series(images, allocator):
         ("THRESH_MID", mean_value + 0.5 * std_value, 2),
         ("THRESH_HIGH", mean_value + std_value, 3),
     ]
+    output_mode = _normalise_output_mode(output_mode, DEFAULT_OUTPUT_MODE)
+    if output_mode == OUTPUT_MODE_SINGLE_SERIES:
+        thresholds = [
+            threshold
+            for threshold in thresholds
+            if threshold[0] == DIAGNOSTIC_SINGLE_SERIES_ROLE
+        ]
 
     output_images = []
-    logging.info(
-        "Creating threshold and downsampled outputs for input series=%s "
-        "slices=%d mean=%.6g std=%.6g",
-        geometry["series_index"],
-        len(ordered_images),
-        mean_value,
-        std_value,
-    )
+    if output_mode == OUTPUT_MODE_SINGLE_SERIES:
+        logging.info(
+            "Creating diagnostic single-series threshold output for input series=%s "
+            "role=%s slices=%d mean=%.6g std=%.6g",
+            geometry["series_index"],
+            DIAGNOSTIC_SINGLE_SERIES_ROLE,
+            len(ordered_images),
+            mean_value,
+            std_value,
+        )
+    else:
+        logging.info(
+            "Creating threshold and downsampled outputs for input series=%s "
+            "slices=%d mean=%.6g std=%.6g",
+            geometry["series_index"],
+            len(ordered_images),
+            mean_value,
+            std_value,
+        )
     for role, threshold, label_value in thresholds:
         label_volume = np.where(volume > threshold, label_value, 0).astype(np.uint16)
         output_series_index = allocator.allocate(role)
@@ -182,6 +225,9 @@ def _threshold_outputs_for_series(images, allocator):
                 geometry,
             )
         )
+
+    if output_mode == OUTPUT_MODE_SINGLE_SERIES:
+        return output_images
 
     downsampled_volume, downsampled_geometry = _downsample_volume_and_geometry(
         volume,
@@ -1607,6 +1653,91 @@ def _config_boolean(config, key, default=False):
             return True
         if text in {"false", "0", "no", "off"}:
             return False
+    return default
+
+
+def _config_text(config, key, default=""):
+    candidates = []
+    if isinstance(config, dict):
+        candidates.append(config.get(key))
+        parameters = config.get("parameters")
+        if isinstance(parameters, dict):
+            candidates.append(parameters.get(key))
+    else:
+        try:
+            candidates.append(getattr(config, key))
+            parameters = getattr(config, "parameters", None)
+            if isinstance(parameters, dict):
+                candidates.append(parameters.get(key))
+        except Exception:
+            pass
+
+    for value in candidates:
+        text = _first_non_empty_text(value)
+        if text:
+            return text
+    return default
+
+
+def _configured_output_mode(config):
+    configured = _first_non_empty_text(
+        os.environ.get(OUTPUT_MODE_ENV),
+        _config_text(config, "outputmode"),
+        _config_text(config, "output_mode"),
+        DEFAULT_OUTPUT_MODE,
+    )
+    return _normalise_output_mode(configured, DEFAULT_OUTPUT_MODE)
+
+
+def _normalise_output_mode(value, default):
+    text = _first_non_empty_text(value).strip().lower().replace("-", "_")
+    aliases = {
+        OUTPUT_MODE_SINGLE_SERIES: OUTPUT_MODE_SINGLE_SERIES,
+        "single": OUTPUT_MODE_SINGLE_SERIES,
+        "single_threshold": OUTPUT_MODE_SINGLE_SERIES,
+        "diagnostic_single": OUTPUT_MODE_SINGLE_SERIES,
+        OUTPUT_MODE_MULTI_SERIES: OUTPUT_MODE_MULTI_SERIES,
+        "multi": OUTPUT_MODE_MULTI_SERIES,
+        "legacy": OUTPUT_MODE_MULTI_SERIES,
+    }
+    if text in aliases:
+        return aliases[text]
+
+    logging.warning(
+        "Ignoring invalid output mode %r; using %s",
+        value,
+        default,
+    )
+    return default
+
+
+def _send_original_enabled(config):
+    if not _config_boolean(config, "sendoriginal", False):
+        return False
+    if _env_boolean(ALLOW_SENDORIGINAL_ENV, False):
+        return True
+    logging.warning(
+        "Ignoring sendoriginal=True because %s is not enabled; this prevents stale "
+        "scanner protocols from expanding diagnostic output volume",
+        ALLOW_SENDORIGINAL_ENV,
+    )
+    return False
+
+
+def _env_boolean(name, default=False):
+    raw_value = os.environ.get(name)
+    if raw_value is None or str(raw_value).strip() == "":
+        return default
+    text = str(raw_value).strip().lower()
+    if text in {"true", "1", "yes", "on"}:
+        return True
+    if text in {"false", "0", "no", "off"}:
+        return False
+    logging.warning(
+        "Ignoring invalid %s=%r; expected boolean true/false",
+        name,
+        raw_value,
+    )
     return default
 
 
