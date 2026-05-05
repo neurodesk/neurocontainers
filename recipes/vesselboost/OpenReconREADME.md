@@ -8,7 +8,7 @@ The normal VesselBoost software suite includes three command-line modules: predi
 
 Use this reconstruction pipeline on 3D TOF-MRA image data.
 
-The main derived output is named `<source>_vesselboost_segmentation`, where `<source>` is the incoming source `SeriesDescription` or, when that is absent, the incoming `SequenceDescription`. If neither source name is available, the fallback name is `vesselboost_segmentation`. By default, OpenRecon also returns the original MRA images before the derived output. Optional sagittal and coronal reformat series are named `<source>_vesselboost_segmentation_sagittal` and `<source>_vesselboost_segmentation_coronal`.
+The main derived output is named `<source>_vesselboost_segmentation`, where `<source>` is the incoming source `SeriesDescription` or, when that is absent, the incoming `SequenceDescription`. If neither source name is available, the fallback name is `vesselboost_segmentation`. By default, OpenRecon also returns the original MRA images as `<source>_original`. Optional sagittal and coronal reformat series are named `<source>_vesselboost_segmentation_sagittal` and `<source>_vesselboost_segmentation_coronal`.
 
 ## GUI Parameters
 
