@@ -290,4 +290,7 @@ tests:
       assert module._series_drain_delay_seconds() == 0.0
       del module.os.environ[module.CLOSE_DRAIN_SECONDS_ENV]
       del module.os.environ[module.SEND_SERIES_DRAIN_SECONDS_ENV]
+      module.os.environ[module.CLOSE_DRAIN_SECONDS_MAX_ENV] = "60"
+      assert np.isclose(module._close_drain_delay_seconds(240), 60.0)
+      del module.os.environ[module.CLOSE_DRAIN_SECONDS_MAX_ENV]
       PY

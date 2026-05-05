@@ -35,6 +35,7 @@ CLOSE_DRAIN_SECONDS_PER_IMAGE = 0.25
 CLOSE_DRAIN_SECONDS_MAX = 30.0
 SEND_SERIES_DRAIN_SECONDS_ENV = "OPENRECONI2I_SEND_SERIES_DRAIN_SECONDS"
 CLOSE_DRAIN_SECONDS_ENV = "OPENRECONI2I_CLOSE_DRAIN_SECONDS"
+CLOSE_DRAIN_SECONDS_MAX_ENV = "OPENRECONI2I_CLOSE_DRAIN_SECONDS_MAX"
 
 
 def process(connection, config, metadata):
@@ -1050,8 +1051,13 @@ def _series_drain_delay_seconds():
 
 def _close_drain_delay_seconds(sent_output_image_count):
     image_count = max(0, int(sent_output_image_count or 0))
-    default_delay = min(
+    max_delay = _env_float(
+        CLOSE_DRAIN_SECONDS_MAX_ENV,
         CLOSE_DRAIN_SECONDS_MAX,
+        minimum=0.0,
+    )
+    default_delay = min(
+        max_delay,
         image_count * CLOSE_DRAIN_SECONDS_PER_IMAGE,
     )
     return _env_float(
@@ -1375,6 +1381,11 @@ def _replace_or_append_minihead_string_param_in_map(
 
     span = _find_minihead_param_map_span(minihead_text, map_name)
     if span is None:
+        logging.warning(
+            'ParamMap.%s not found in source IceMiniHead; falling back to root-level %s',
+            map_name,
+            name,
+        )
         return _replace_or_append_minihead_string_param(minihead_text, name, value)
 
     escaped_value = value.replace('"', '\\"')
@@ -1532,6 +1543,11 @@ def _replace_or_append_minihead_long_param_in_map(
     value = int(value)
     span = _find_minihead_param_map_span(minihead_text, map_name)
     if span is None:
+        logging.warning(
+            'ParamMap.%s not found in source IceMiniHead; falling back to root-level %s',
+            map_name,
+            name,
+        )
         return _replace_or_append_minihead_long_param(minihead_text, name, value)
 
     pattern = re.compile(rf'(<ParamLong\."{re.escape(name)}">\s*\{{\s*)(-?\d*)?(\s*\}})')

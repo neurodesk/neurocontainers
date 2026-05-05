@@ -87,4 +87,6 @@ roles collide, reuse input identity, or disagree between Meta and IceMiniHead.
 - The wrapper waits briefly between output series and before `MRD_MESSAGE_CLOSE`
   so the scanner-side DICOM pipeline can drain multi-series output. Set
   `OPENRECONI2I_SEND_SERIES_DRAIN_SECONDS` or
-  `OPENRECONI2I_CLOSE_DRAIN_SECONDS` to tune or disable those waits.
+  `OPENRECONI2I_CLOSE_DRAIN_SECONDS` to tune or disable those waits. Set
+  `OPENRECONI2I_CLOSE_DRAIN_SECONDS_MAX` to raise or lower the automatic
+  close-drain cap.
