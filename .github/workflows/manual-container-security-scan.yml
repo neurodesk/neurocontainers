@@ -107,7 +107,7 @@ jobs:
 
       - name: Login to GitHub Container Registry
         if: contains(inputs.container_image, 'ghcr.io')
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -421,7 +421,7 @@ jobs:
 
       - name: Upload scan results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security-scan-results
           path: |
@@ -431,7 +431,7 @@ jobs:
       - name: Create GitHub Issue
         if: steps.summary.outputs.summary_created == 'true'
         continue-on-error: true
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');

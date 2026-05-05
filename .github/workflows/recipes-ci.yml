@@ -41,7 +41,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install Apptainer
-        uses: eWaterCycle/setup-apptainer@v2
+        uses: ./.github/actions/setup-apptainer
         with:
           apptainer-version: 1.4.3
 
@@ -59,7 +59,7 @@ jobs:
           sf-make builder --ignore-architectures --architecture "${ARCH}" --use-docker
 
       - name: Upload builder SIF artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: builder-sif
           path: sifs/*.sif
@@ -115,12 +115,12 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Install Apptainer
-        uses: eWaterCycle/setup-apptainer@v2
+        uses: ./.github/actions/setup-apptainer
         with:
           apptainer-version: 1.4.3
 
       - name: Download builder SIF artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: builder-sif
           path: sifs

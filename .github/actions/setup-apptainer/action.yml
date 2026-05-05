@@ -1,0 +1,45 @@
+name: Setup Apptainer
+description: Install a pinned Apptainer release package without a JavaScript action runtime.
+
+inputs:
+  apptainer-version:
+    description: Apptainer version to install.
+    required: true
+
+outputs:
+  apptainer-version:
+    description: Installed Apptainer version.
+    value: ${{ steps.install.outputs.apptainer-version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Apptainer
+      id: install
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        version="${{ inputs.apptainer-version }}"
+        if [[ "$(uname -s)" != "Linux" ]]; then
+          echo "Apptainer is only supported on Linux runners." >&2
+          exit 1
+        fi
+
+        arch="$(dpkg --print-architecture)"
+        if [[ "$arch" != "amd64" ]]; then
+          echo "Apptainer ${version} release packages are only available for amd64 runners; found ${arch}." >&2
+          exit 1
+        fi
+
+        cache_dir="${RUNNER_TEMP:-/tmp}/apptainer/${version}/${arch}"
+        deb_path="${cache_dir}/apptainer.deb"
+        mkdir -p "$cache_dir"
+
+        if [[ ! -s "$deb_path" ]]; then
+          url="https://github.com/apptainer/apptainer/releases/download/v${version}/apptainer_${version}_${arch}.deb"
+          curl -fsSL "$url" -o "$deb_path"
+        fi
+
+        sudo apt-get install -y "$deb_path"
+        echo "apptainer-version=$version" >> "$GITHUB_OUTPUT"

@@ -85,7 +85,7 @@ jobs:
     steps:
       - name: Open tracking issue
         id: issue
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           CONTAINERS: ${{ needs.prepare-matrix.outputs.containers }}
           ARCHITECTURE: ${{ github.event.inputs.architecture || 'x86_64' }}
@@ -155,7 +155,7 @@ jobs:
 
       - name: Create skip summary comment
         id: skip-comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           ISSUE_NUMBER: ${{ steps.issue.outputs.issue-number }}
         with:
@@ -197,7 +197,7 @@ jobs:
         with:
           python-version: "3.11"
 
-      - uses: eWaterCycle/setup-apptainer@v2
+      - uses: ./.github/actions/setup-apptainer
         with:
           apptainer-version: 1.4.3
 
@@ -347,7 +347,7 @@ jobs:
 
       - name: Acquire skip/no-test comment lock
         if: ${{ steps.classify.outputs.update_shared_comment == 'true' }}
-        uses: softprops/turnstyle@v1
+        uses: softprops/turnstyle@v3.2.4
         with:
           same-branch-only: false
         env:
@@ -355,7 +355,7 @@ jobs:
 
       - name: Update shared skip comment
         if: ${{ steps.classify.outputs.update_shared_comment == 'true' }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           COMMENT_ID: ${{ env.SKIP_COMMENT_ID }}
           UPDATE_FILE: ${{ steps.classify.outputs.update_file }}
@@ -468,7 +468,7 @@ jobs:
 
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ matrix.container.recipe }}
           path: |
@@ -477,7 +477,7 @@ jobs:
 
       - name: Post comment to tracking issue
         if: ${{ steps.classify.outputs.update_shared_comment != 'true' }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           ISSUE_NUMBER: ${{ env.ISSUE_NUMBER }}
           RECIPE: ${{ matrix.container.recipe }}
@@ -508,7 +508,7 @@ jobs:
       - name: Download all test artifacts
         if: always()
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: test-results-*
           merge-multiple: true
@@ -533,7 +533,7 @@ jobs:
 
       - name: Post summary comment
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           ISSUE_NUMBER: ${{ needs.create-issue.outputs.issue-number }}
         with:
@@ -553,7 +553,7 @@ jobs:
 
       - name: Update issue body
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           ISSUE_NUMBER: ${{ needs.create-issue.outputs.issue-number }}
         with:
