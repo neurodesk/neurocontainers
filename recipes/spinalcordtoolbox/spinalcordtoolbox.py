@@ -967,18 +967,42 @@ def _extract_minihead_string_value(minihead_text, name):
     if not minihead_text:
         return ""
 
-    try:
-        return _first_non_empty_text(mrdhelper.extract_minihead_string_param(minihead_text, name))
-    except Exception:
-        pass
+    def clean_helper_value(value):
+        text = _first_non_empty_text(value)
+        if not text:
+            return ""
+        text = text.strip()
+        wrapped_string = re.fullmatch(r'\{\s*"([^"]*)"\s*\}', text)
+        if wrapped_string:
+            return wrapped_string.group(1).strip()
+        wrapped_value = re.fullmatch(r'\{\s*([^{}"]*)\s*\}', text)
+        if wrapped_value:
+            return wrapped_value.group(1).strip()
+        if text.startswith('{ "'):
+            text = text[1:].lstrip()
+            text = text[1:] if text.startswith('"') else text
+            text = text[:-1].rstrip() if text.endswith("}") else text
+            text = text[:-1] if text.endswith('"') else text
+        return text.strip()
 
-    match = re.search(
+    string_match = re.search(
         rf'<ParamString\."{re.escape(name)}">\s*\{{\s*"([^"]*)"\s*\}}',
         minihead_text,
     )
-    if match:
-        return match.group(1).strip()
-    return ""
+    if string_match:
+        return string_match.group(1).strip()
+
+    long_match = re.search(
+        rf'<ParamLong\."{re.escape(name)}">\s*\{{\s*([^}}]*)\s*\}}',
+        minihead_text,
+    )
+    if long_match:
+        return long_match.group(1).strip()
+
+    try:
+        return clean_helper_value(mrdhelper.extract_minihead_string_param(minihead_text, name))
+    except Exception:
+        return ""
 
 
 def _extract_minihead_array_tokens(minihead_text, name):

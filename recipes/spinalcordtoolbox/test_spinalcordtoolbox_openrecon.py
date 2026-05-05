@@ -497,6 +497,35 @@ def test_output_series_contract_rejects_input_series_index_reuse():
         raise AssertionError("Expected validator to reject output series index reuse")
 
 
+def test_minihead_string_extraction_prefers_writer_format_and_cleans_helper_prefix():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+        ],
+    )
+
+    class BrokenMrdHelper:
+        @staticmethod
+        def extract_minihead_string_param(minihead_text, name):
+            return '{ "t2_tse_sag_spine_original'
+
+    helpers["mrdhelper"] = BrokenMrdHelper
+    minihead_text = '<ParamString."ProtocolName"> { "t2_tse_sag_}_spine_original" }'
+
+    assert (
+        helpers["_extract_minihead_string_value"](minihead_text, "ProtocolName")
+        == "t2_tse_sag_}_spine_original"
+    )
+    assert (
+        helpers["_extract_minihead_string_value"](
+            "<XProtocol></XProtocol>",
+            "ProtocolName",
+        )
+        == "t2_tse_sag_spine_original"
+    )
+
+
 def test_get_image_series_index_logs_malformed_header_fallback():
     warnings = []
     helpers = _load_runtime_helpers_for_test(["_get_image_series_index"])
