@@ -58,6 +58,7 @@ jobs:
       BUILDDATE: ${{ steps.envars.outputs.BUILDDATE }}
       SHORT_SHA: ${{ steps.envars.outputs.SHORT_SHA }}
       IMAGETAG: ${{ steps.envars.outputs.IMAGETAG }}
+      IMAGENAME: ${{ steps.imgvars.outputs.IMAGENAME }}
       ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
     steps:
       - name: Checkout repository
@@ -152,8 +153,9 @@ jobs:
           IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
           echo "DOCKERFILE: $DOCKERFILE"
           echo "IMAGENAME: $IMAGENAME"
-          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_ENV
-          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
+          echo "DOCKERFILE=$DOCKERFILE" >> "$GITHUB_ENV"
+          echo "IMAGENAME=$IMAGENAME" >> "$GITHUB_ENV"
+          echo "IMAGENAME=$IMAGENAME" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
@@ -438,7 +440,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
 
     steps:
       - name: Configure GitHub-hosted runner
@@ -500,7 +502,7 @@ jobs:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
 
     steps:
       - name: Set runner base path
@@ -617,7 +619,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
 
     steps:
       - name: Bootstrap build tooling
@@ -691,7 +693,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
     steps:
       - name: Configure runner
         run: |
@@ -739,7 +741,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
     steps:
     - uses: actions/checkout@v5
