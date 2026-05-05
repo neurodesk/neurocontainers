@@ -2,7 +2,9 @@ import base64
 import copy
 import json
 import logging
+import os
 import re
+import time
 import traceback
 import uuid
 from collections import defaultdict
@@ -15,6 +17,7 @@ import numpy as np
 DEBUG_FOLDER = "/tmp/share/debug"
 RESERVED_SCANNER_SERIES_INDICES = {0, 999, 1000, 1001}
 DOWNSAMPLED_ROLE = "DOWNSAMPLED"
+PASSTHROUGH_ROLE = "PASSTHROUGH"
 DOWNSAMPLE_FACTOR = 2
 DERIVED_ROLES = {
     "THRESH_LOW",
@@ -22,10 +25,16 @@ DERIVED_ROLES = {
     "THRESH_HIGH",
     DOWNSAMPLED_ROLE,
     "ORIGINAL",
+    PASSTHROUGH_ROLE,
 }
 OUTPUT_SERIES_CONTRACT_EVENT = "OPENRECONI2I_OUTPUT_SERIES_CONTRACT"
 INPUT_SERIES_REGISTRY_EVENT = "OPENRECONI2I_INPUT_SERIES_REGISTRY"
 SEND_IMAGE_CHUNK_SIZE = 96
+SEND_SERIES_DRAIN_SECONDS = 0.25
+CLOSE_DRAIN_SECONDS_PER_IMAGE = 0.25
+CLOSE_DRAIN_SECONDS_MAX = 30.0
+SEND_SERIES_DRAIN_SECONDS_ENV = "OPENRECONI2I_SEND_SERIES_DRAIN_SECONDS"
+CLOSE_DRAIN_SECONDS_ENV = "OPENRECONI2I_CLOSE_DRAIN_SECONDS"
 
 
 def process(connection, config, metadata):
@@ -37,6 +46,7 @@ def process(connection, config, metadata):
     passthrough_images = []
     waveform_count = 0
     acquisition_count = 0
+    sent_output_image_count = 0
 
     try:
         for item in connection:
@@ -94,19 +104,28 @@ def process(connection, config, metadata):
 
         if passthrough_images:
             logging.info(
-                "Returning %d unsupported/non-magnitude images with original series identity",
+                "Returning %d unsupported/non-magnitude images on a fresh passthrough series",
                 len(passthrough_images),
             )
-            output_images.extend(passthrough_images)
+            passthrough_index = derived_series_allocator.allocate(PASSTHROUGH_ROLE)
+            output_images.extend(
+                _restamp_passthrough_images(
+                    passthrough_images,
+                    PASSTHROUGH_ROLE,
+                    passthrough_index,
+                )
+            )
 
         _log_and_validate_output_series_contract(output_images, all_images, "before_send")
         _send_images_by_series(connection, output_images, "validated openreconi2i output")
+        sent_output_image_count = len(output_images)
 
     except Exception:
         error_text = traceback.format_exc()
         logging.error(error_text)
         connection.send_logging(constants.MRD_LOGGING_ERROR, error_text)
     finally:
+        _wait_for_downstream_drain_before_close(sent_output_image_count)
         connection.send_close()
 
 
@@ -551,6 +570,7 @@ def _build_connection_series_allocator(images):
 def _build_output_identity(source_meta, role, output_series_index):
     role = _first_non_empty_text(role).upper() or "DERIVED"
     source_minihead = _decode_ice_minihead(source_meta)
+    source_type_token = _source_image_type_value4_token(source_meta, source_minihead)
     source_series = _first_non_empty_text(
         _get_meta_text(source_meta, "SeriesDescription"),
         _get_meta_text(source_meta, "SequenceDescription"),
@@ -591,10 +611,12 @@ def _build_output_identity(source_meta, role, output_series_index):
         "grouping": grouping,
         "series_instance_uid": f"2.25.{derived_uuid.int}",
         "image_type": f"DERIVED\\PRIMARY\\M\\{role}",
+        "source_type_token": source_type_token,
     }
 
 
 def _stamp_output_meta(meta_obj, output_identity, role, slice_index):
+    sop_instance_uid = _sop_instance_uid_for_slice(output_identity, slice_index)
     meta_obj["DataRole"] = "Segmentation" if role.startswith("THRESH_") else "Image"
     meta_obj["ImageProcessingHistory"] = ["PYTHON", "OPENRECONI2IEXAMPLE", role]
     meta_obj["SeriesDescription"] = output_identity["series_description"]
@@ -602,6 +624,7 @@ def _stamp_output_meta(meta_obj, output_identity, role, slice_index):
     meta_obj["ProtocolName"] = output_identity["protocol_name"]
     meta_obj["SeriesNumberRangeNameUID"] = output_identity["grouping"]
     meta_obj["SeriesInstanceUID"] = output_identity["series_instance_uid"]
+    meta_obj["SOPInstanceUID"] = sop_instance_uid
     meta_obj["ImageType"] = output_identity["image_type"]
     meta_obj["DicomImageType"] = output_identity["image_type"]
     meta_obj["ImageTypeValue3"] = "M"
@@ -610,6 +633,11 @@ def _stamp_output_meta(meta_obj, output_identity, role, slice_index):
     meta_obj["ImageComments"] = role
     meta_obj["ImageComment"] = role
     meta_obj["Keep_image_geometry"] = 1
+    if "SequenceDescriptionAdditional" in meta_obj:
+        try:
+            del meta_obj["SequenceDescriptionAdditional"]
+        except Exception:
+            meta_obj["SequenceDescriptionAdditional"] = ""
     for key, value in _slice_number_fields(slice_index):
         meta_obj[key] = str(int(value))
 
@@ -620,31 +648,61 @@ def _patch_meta_ice_minihead(meta_obj, output_identity, role, slice_index):
         return
 
     changed = False
+    sop_instance_uid = _sop_instance_uid_for_slice(output_identity, slice_index)
     for param_name, param_value in (
-        ("SeriesInstanceUID", output_identity["series_instance_uid"]),
+        ("SOPInstanceUID", sop_instance_uid),
         ("SeriesNumberRangeNameUID", output_identity["grouping"]),
         ("ProtocolName", output_identity["protocol_name"]),
         ("SequenceDescription", output_identity["sequence_description"]),
         ("SeriesDescription", output_identity["series_description"]),
         ("ImageType", output_identity["image_type"]),
+        ("DicomImageType", output_identity["image_type"]),
         ("ImageTypeValue3", "M"),
-        ("ImageTypeValue4", role),
         ("ComplexImageComponent", "MAGNITUDE"),
     ):
-        minihead_text, did_change = _replace_or_append_minihead_string_param(
+        minihead_text, did_change = _replace_or_append_minihead_string_param_in_map(
             minihead_text,
+            "DICOM",
             param_name,
             param_value,
         )
         changed = changed or did_change
 
+    minihead_text, did_change = _replace_or_append_minihead_string_param_in_map(
+        minihead_text,
+        "CONTROL",
+        "SeriesInstanceUID",
+        output_identity["series_instance_uid"],
+    )
+    changed = changed or did_change
+
+    minihead_text, did_change = _replace_or_append_minihead_array_token(
+        minihead_text,
+        "ImageTypeValue4",
+        output_identity.get("source_type_token"),
+        role,
+    )
+    changed = changed or did_change
+
     for param_name, param_value in _slice_number_fields(slice_index):
-        minihead_text, did_change = _replace_or_append_minihead_long_param(
+        target_map = (
+            "CONTROL"
+            if param_name in {"AnatomicalSliceNo", "ChronSliceNo", "IsmrmrdSliceNo"}
+            else "DICOM"
+        )
+        minihead_text, did_change = _replace_or_append_minihead_long_param_in_map(
             minihead_text,
+            target_map,
             param_name,
             param_value,
         )
         changed = changed or did_change
+
+    if role.upper() in {
+        token.upper()
+        for token in _extract_minihead_array_tokens(minihead_text, "ImageTypeValue4")
+    }:
+        _delete_meta_key(meta_obj, "ImageTypeValue4")
 
     if changed:
         meta_obj["IceMiniHead"] = _encode_ice_minihead(minihead_text)
@@ -675,9 +733,21 @@ def _series_contract_entry(image, source="output"):
     minihead_grouping = _extract_minihead_string_value(minihead_text, "SeriesNumberRangeNameUID")
     meta_protocol_name = _get_meta_text(meta_obj, "ProtocolName")
     minihead_protocol_name = _extract_minihead_string_value(minihead_text, "ProtocolName")
+    meta_sop_uid = _get_meta_text(meta_obj, "SOPInstanceUID")
+    minihead_sop_uid = _extract_minihead_string_value(minihead_text, "SOPInstanceUID")
+    minihead_image_type_value4_tokens = _minihead_image_type_value4_tokens(
+        minihead_text
+    )
     role = _first_non_empty_text(
         _get_meta_text(meta_obj, "ImageTypeValue4"),
-        _extract_minihead_string_value(minihead_text, "ImageTypeValue4"),
+        _image_type_value4_from_text(_get_meta_text(meta_obj, "DicomImageType")),
+        _image_type_value4_from_text(_get_meta_text(meta_obj, "ImageType")),
+        _image_type_value4_from_text(
+            _extract_minihead_string_value(minihead_text, "ImageType")
+        ),
+        _first_non_reserved_image_type_token(minihead_image_type_value4_tokens),
+        _get_meta_text(meta_obj, "ImageComments"),
+        _get_meta_text(meta_obj, "ImageComment"),
         _get_meta_text(meta_obj, "DataRole"),
     ).upper() or "UNKNOWN"
     return {
@@ -687,6 +757,9 @@ def _series_contract_entry(image, source="output"):
         "series_instance_uid": _first_non_empty_text(meta_uid, minihead_uid),
         "meta_series_instance_uid": meta_uid,
         "minihead_series_instance_uid": minihead_uid,
+        "sop_instance_uid": _first_non_empty_text(meta_sop_uid, minihead_sop_uid),
+        "meta_sop_instance_uid": meta_sop_uid,
+        "minihead_sop_instance_uid": minihead_sop_uid,
         "series_grouping": _first_non_empty_text(meta_grouping, minihead_grouping),
         "meta_series_grouping": meta_grouping,
         "minihead_series_grouping": minihead_grouping,
@@ -698,7 +771,20 @@ def _series_contract_entry(image, source="output"):
             _extract_minihead_string_value(minihead_text, "SequenceDescription"),
         ),
         "series_description": _get_meta_text(meta_obj, "SeriesDescription"),
+        "minihead_image_type_value4_tokens": minihead_image_type_value4_tokens,
     }
+
+
+def _image_sop_instance_uids(image):
+    try:
+        meta_obj = ismrmrd.Meta.deserialize(image.attribute_string)
+    except Exception:
+        meta_obj = ismrmrd.Meta()
+    minihead_text = _decode_ice_minihead(meta_obj)
+    return (
+        _get_meta_text(meta_obj, "SOPInstanceUID"),
+        _extract_minihead_string_value(minihead_text, "SOPInstanceUID"),
+    )
 
 
 def _series_contract_summary(images, source="output"):
@@ -730,6 +816,7 @@ def _log_and_validate_output_series_contract(output_images, input_images, contex
     }
     _log_json_event(OUTPUT_SERIES_CONTRACT_EVENT, payload)
     _validate_output_series_contract(output_summary, input_summary)
+    _validate_output_image_instance_contract(output_images, input_images)
 
 
 def _validate_output_series_contract(output_summary, input_summary):
@@ -750,6 +837,7 @@ def _validate_output_series_contract(output_summary, input_summary):
         _first_non_empty_text(entry.get("minihead_series_instance_uid"))
         or _first_non_empty_text(entry.get("minihead_series_grouping"))
         or _first_non_empty_text(entry.get("minihead_protocol_name"))
+        or entry.get("minihead_image_type_value4_tokens")
         for entry in input_summary
     )
 
@@ -763,6 +851,11 @@ def _validate_output_series_contract(output_summary, input_summary):
         minihead_grouping = _first_non_empty_text(entry.get("minihead_series_grouping"))
         meta_protocol = _first_non_empty_text(entry.get("meta_protocol_name"))
         minihead_protocol = _first_non_empty_text(entry.get("minihead_protocol_name"))
+        minihead_type_tokens = {
+            _first_non_empty_text(token).upper()
+            for token in entry.get("minihead_image_type_value4_tokens", [])
+            if _first_non_empty_text(token)
+        }
 
         roles_by_index[series_index].add(role)
         if role in DERIVED_ROLES:
@@ -801,6 +894,17 @@ def _validate_output_series_contract(output_summary, input_summary):
                     f"derived role {role} has Meta/IceMiniHead ProtocolName mismatch: "
                     f"{meta_protocol} != {minihead_protocol}"
                 )
+            if input_has_minihead_identity and not minihead_type_tokens:
+                errors.append(f"derived role {role} is missing IceMiniHead ImageTypeValue4")
+            if (
+                input_has_minihead_identity
+                and minihead_type_tokens
+                and role not in minihead_type_tokens
+            ):
+                errors.append(
+                    f"derived role {role} is missing from IceMiniHead ImageTypeValue4 "
+                    f"tokens {sorted(minihead_type_tokens)}"
+                )
 
     for series_index, roles in sorted(roles_by_index.items()):
         derived_roles = sorted(role for role in roles if role in DERIVED_ROLES)
@@ -823,6 +927,54 @@ def _validate_output_series_contract(output_summary, input_summary):
         )
 
 
+def _validate_output_image_instance_contract(output_images, input_images):
+    errors = []
+    input_sop_uids = set()
+    for image in _as_image_list(input_images):
+        meta_sop, minihead_sop = _image_sop_instance_uids(image)
+        input_sop_uids.update(
+            uid for uid in (meta_sop, minihead_sop) if _first_non_empty_text(uid)
+        )
+
+    seen_output_sops = {}
+    input_has_minihead_sop = any(
+        _image_sop_instance_uids(image)[1] for image in _as_image_list(input_images)
+    )
+
+    for index, image in enumerate(_as_image_list(output_images)):
+        entry = _series_contract_entry(image)
+        role = _first_non_empty_text(entry.get("role")).upper()
+        if role not in DERIVED_ROLES:
+            continue
+
+        meta_sop, minihead_sop = _image_sop_instance_uids(image)
+        sop = _first_non_empty_text(meta_sop, minihead_sop)
+        if not meta_sop:
+            errors.append(f"image {index} role {role} is missing Meta SOPInstanceUID")
+        if input_has_minihead_sop and not minihead_sop:
+            errors.append(f"image {index} role {role} is missing IceMiniHead SOPInstanceUID")
+        if meta_sop and minihead_sop and meta_sop != minihead_sop:
+            errors.append(
+                f"image {index} role {role} has Meta/IceMiniHead SOPInstanceUID mismatch: "
+                f"{meta_sop} != {minihead_sop}"
+            )
+        if sop and sop in input_sop_uids:
+            errors.append(f"image {index} role {role} reuses input SOPInstanceUID {sop}")
+        if sop in seen_output_sops:
+            errors.append(
+                f"image {index} role {role} reuses output SOPInstanceUID {sop} "
+                f"from image {seen_output_sops[sop]}"
+            )
+        elif sop:
+            seen_output_sops[sop] = index
+
+    if errors:
+        raise ValueError(
+            "Invalid openreconi2iexample per-image identity contract before send: "
+            + "; ".join(errors[:20])
+        )
+
+
 def _send_images_by_series(connection, images, context):
     images = _as_image_list(images)
     if not images:
@@ -831,11 +983,24 @@ def _send_images_by_series(connection, images, context):
 
     batch = []
     batch_series = None
+    delayed_series = set()
+    sent_series_count = 0
 
     def flush():
-        nonlocal batch, batch_series
+        nonlocal batch, batch_series, sent_series_count
         if not batch:
             return
+        if sent_series_count > 0 and batch_series not in delayed_series:
+            delay_seconds = _series_drain_delay_seconds()
+            if delay_seconds > 0:
+                logging.info(
+                    "Waiting %.3f seconds before sending series_index=%s "
+                    "to let the scanner drain prior output",
+                    delay_seconds,
+                    batch_series,
+                )
+                time.sleep(delay_seconds)
+            delayed_series.add(batch_series)
         for start in range(0, len(batch), SEND_IMAGE_CHUNK_SIZE):
             chunk = batch[start:start + SEND_IMAGE_CHUNK_SIZE]
             logging.info(
@@ -848,6 +1013,7 @@ def _send_images_by_series(connection, images, context):
                 len(chunk),
             )
             connection.send_image(chunk)
+        sent_series_count += 1
         batch = []
         batch_series = None
 
@@ -859,6 +1025,64 @@ def _send_images_by_series(connection, images, context):
             batch_series = series_index
         batch.append(image)
     flush()
+
+
+def _wait_for_downstream_drain_before_close(sent_output_image_count):
+    delay_seconds = _close_drain_delay_seconds(sent_output_image_count)
+    if delay_seconds <= 0:
+        return
+    logging.info(
+        "Waiting %.3f seconds before MRD close so scanner-side DICOM output can drain "
+        "sent_output_image_count=%d",
+        delay_seconds,
+        sent_output_image_count,
+    )
+    time.sleep(delay_seconds)
+
+
+def _series_drain_delay_seconds():
+    return _env_float(
+        SEND_SERIES_DRAIN_SECONDS_ENV,
+        SEND_SERIES_DRAIN_SECONDS,
+        minimum=0.0,
+    )
+
+
+def _close_drain_delay_seconds(sent_output_image_count):
+    image_count = max(0, int(sent_output_image_count or 0))
+    default_delay = min(
+        CLOSE_DRAIN_SECONDS_MAX,
+        image_count * CLOSE_DRAIN_SECONDS_PER_IMAGE,
+    )
+    return _env_float(
+        CLOSE_DRAIN_SECONDS_ENV,
+        default_delay,
+        minimum=0.0,
+    )
+
+
+def _env_float(name, default, minimum=None):
+    raw_value = os.environ.get(name)
+    if raw_value is None or str(raw_value).strip() == "":
+        return float(default)
+    try:
+        value = float(raw_value)
+    except ValueError:
+        logging.warning(
+            "Ignoring invalid %s=%r; expected a numeric value",
+            name,
+            raw_value,
+        )
+        return float(default)
+    if minimum is not None and value < minimum:
+        logging.warning(
+            "Ignoring invalid %s=%r; expected value >= %.3f",
+            name,
+            raw_value,
+            minimum,
+        )
+        return float(default)
+    return value
 
 
 def _clone_mrd_image(image):
@@ -921,6 +1145,50 @@ def _first_non_empty_text(*values):
     return ""
 
 
+def _source_image_type_value4_token(meta_obj, minihead_text):
+    return _first_non_empty_text(
+        _get_meta_text(meta_obj, "ImageTypeValue4"),
+        _first_non_reserved_image_type_token(
+            _extract_minihead_array_tokens(minihead_text, "ImageTypeValue4")
+        ),
+        _extract_minihead_string_value(minihead_text, "ImageTypeValue4"),
+        _image_type_value4_from_text(_get_meta_text(meta_obj, "DicomImageType")),
+        _image_type_value4_from_text(_get_meta_text(meta_obj, "ImageType")),
+    )
+
+
+def _first_non_reserved_image_type_token(tokens):
+    reserved_tokens = {"NORM", "DIS2D", "DIS3D", "FM3_2", "FIL"}
+    for token in tokens or []:
+        text = _first_non_empty_text(token)
+        if text and text.upper() not in reserved_tokens:
+            return text
+    return ""
+
+
+def _image_type_value4_from_text(value):
+    text = _first_non_empty_text(value)
+    if not text or "\\" not in text:
+        return ""
+    parts = [part.strip() for part in text.split("\\") if part.strip()]
+    if len(parts) >= 4:
+        return parts[3]
+    return ""
+
+
+def _sop_instance_uid_for_slice(output_identity, slice_index):
+    # Deterministic per-slice SOPs keep outputs reproducible without reusing input instances.
+    seed = json.dumps(
+        {
+            "series_instance_uid": output_identity["series_instance_uid"],
+            "role": output_identity["role"],
+            "slice_index": int(slice_index),
+        },
+        sort_keys=True,
+    )
+    return f"2.25.{uuid.uuid5(uuid.NAMESPACE_OID, seed).int}"
+
+
 def _get_meta_text(meta_obj, key):
     try:
         return _first_non_empty_text(meta_obj.get(key))
@@ -953,8 +1221,80 @@ def _extract_minihead_string_value(minihead_text, name):
     return match.group(1).strip().strip('"')
 
 
+def _extract_minihead_array_tokens(minihead_text, name):
+    if not minihead_text:
+        return []
+
+    block_match = re.search(
+        rf'<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}',
+        minihead_text,
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    if not block_match:
+        return []
+
+    return [
+        token.strip()
+        for token in re.findall(r'\{\s*"([^"]+)"\s*\}', block_match.group(0))
+    ]
+
+
+def _minihead_image_type_value4_tokens(minihead_text):
+    tokens = [
+        _image_type_value4_from_text(
+            _extract_minihead_string_value(minihead_text, "ImageType")
+        ),
+        _image_type_value4_from_text(
+            _extract_minihead_string_value(minihead_text, "DicomImageType")
+        ),
+    ]
+    tokens.extend(_extract_minihead_array_tokens(minihead_text, "ImageTypeValue4"))
+    tokens.append(_extract_minihead_string_value(minihead_text, "ImageTypeValue4"))
+    return _unique_non_empty_tokens(tokens)
+
+
+def _unique_non_empty_tokens(tokens):
+    unique_tokens = []
+    seen = set()
+    for token in tokens or []:
+        text = _first_non_empty_text(token)
+        if not text:
+            continue
+        key = text.upper()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_tokens.append(text)
+    return unique_tokens
+
+
+def _delete_meta_key(meta_obj, key):
+    try:
+        if key in meta_obj:
+            del meta_obj[key]
+            return True
+        return False
+    except Exception:
+        pass
+
+    try:
+        meta_obj[key] = ""
+        return True
+    except Exception:
+        return False
+
+
+def _sanitize_minihead_param_value(value):
+    text = _first_non_empty_text(value)
+    if not text:
+        return ""
+    return text.replace("\r", " ").replace("\n", " ")
+
+
 def _replace_or_append_minihead_string_param(minihead_text, name, value):
-    value = _first_non_empty_text(value)
+    value = _sanitize_minihead_param_value(value)
+    if not minihead_text or not value:
+        return minihead_text, False
     escaped_value = value.replace('"', '\\"')
     pattern = re.compile(
         rf'(<ParamString\."{re.escape(name)}">\s*\{{\s*)"?[^"}}]*"?(\s*\}})'
@@ -970,6 +1310,204 @@ def _replace_or_append_minihead_string_param(minihead_text, name, value):
     return minihead_text.rstrip() + appended_param, True
 
 
+def _find_minihead_param_map_span(minihead_text, map_name):
+    if not minihead_text:
+        return None
+
+    tag_match = re.search(
+        rf'<ParamMap\."{re.escape(map_name)}">\s*\{{',
+        minihead_text,
+    )
+    if not tag_match:
+        return None
+
+    open_brace = minihead_text.find("{", tag_match.start(), tag_match.end())
+    if open_brace < 0:
+        return None
+
+    close_brace = _find_matching_minihead_brace(minihead_text, open_brace)
+    if close_brace is None:
+        return None
+
+    return (tag_match.start(), close_brace + 1, open_brace + 1, close_brace)
+
+
+def _find_matching_minihead_brace(text, open_brace):
+    depth = 0
+    in_quote = False
+    for index in range(open_brace, len(text)):
+        char = text[index]
+        if in_quote:
+            if char == '"' and not _is_escaped_quote(text, index):
+                in_quote = False
+            continue
+        if char == '"':
+            in_quote = True
+            continue
+        if char == "{":
+            depth += 1
+            continue
+        if char == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def _is_escaped_quote(text, quote_index):
+    backslash_count = 0
+    index = quote_index - 1
+    while index >= 0 and text[index] == "\\":
+        backslash_count += 1
+        index -= 1
+    return backslash_count % 2 == 1
+
+
+def _replace_or_append_minihead_string_param_in_map(
+    minihead_text,
+    map_name,
+    name,
+    value,
+):
+    value = _sanitize_minihead_param_value(value)
+    if not minihead_text or not value:
+        return minihead_text, False
+
+    span = _find_minihead_param_map_span(minihead_text, map_name)
+    if span is None:
+        return _replace_or_append_minihead_string_param(minihead_text, name, value)
+
+    escaped_value = value.replace('"', '\\"')
+    pattern = re.compile(
+        rf'(<ParamString\."{re.escape(name)}">\s*\{{\s*)"?[^"}}]*"?(\s*\}})'
+    )
+    match = pattern.search(minihead_text, span[2], span[3])
+    replacement_value = f'"{escaped_value}"'
+    if match:
+        replacement = f"{match.group(1)}{replacement_value}{match.group(2)}"
+        new_text = minihead_text[:match.start()] + replacement + minihead_text[match.end():]
+        return new_text, new_text != minihead_text
+
+    return _insert_minihead_param_line_before_scope_close(
+        minihead_text,
+        span[3],
+        f'<ParamString."{name}">\t{{ {replacement_value} }}',
+    )
+
+
+def _replace_minihead_array_token(minihead_text, name, source_token, target_token):
+    if not minihead_text or not target_token:
+        return minihead_text, False
+
+    block_pattern = re.compile(
+        rf'<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    block_match = block_pattern.search(minihead_text)
+    if not block_match:
+        return minihead_text, False
+
+    block_text = block_match.group(0)
+    tokens = [
+        token.strip()
+        for token in re.findall(r'\{\s*"([^"]+)"\s*\}', block_text)
+    ]
+    if not tokens:
+        return minihead_text, False
+
+    if any(token.upper() == target_token.upper() for token in tokens):
+        return minihead_text, False
+
+    replacement_source = ""
+    source_token = (source_token or "").strip().upper()
+    for token in tokens:
+        if token.upper() == source_token:
+            replacement_source = token
+            break
+
+    if not replacement_source:
+        replacement_source = _first_non_reserved_image_type_token(tokens)
+
+    if not replacement_source:
+        target_token = _sanitize_minihead_param_value(target_token)
+        escaped_target = target_token.replace('"', '\\"')
+        token_matches = list(re.finditer(r'\{\s*"[^"]+"\s*\}', block_text))
+        if not token_matches:
+            return minihead_text, False
+
+        last_token = token_matches[-1]
+        replaced_block = (
+            block_text[:last_token.end()]
+            + f'{{ "{escaped_target}" }}'
+            + block_text[last_token.end():]
+        )
+
+        target_size = len(tokens) + 1
+        replaced_block = re.sub(
+            r'(<DefaultSize>\s*)(\d+)',
+            lambda match: (
+                f"{match.group(1)}{target_size}"
+                if int(match.group(2)) < target_size
+                else match.group(0)
+            ),
+            replaced_block,
+            count=1,
+        )
+        return (
+            minihead_text[:block_match.start()]
+            + replaced_block
+            + minihead_text[block_match.end():],
+            True,
+        )
+
+    token_pattern = re.compile(rf'(\{{\s*"){re.escape(replacement_source)}("\s*\}})')
+    token_match = token_pattern.search(block_text)
+    if not token_match:
+        return minihead_text, False
+
+    replaced_block = (
+        block_text[:token_match.start()]
+        + f'{token_match.group(1)}{target_token}{token_match.group(2)}'
+        + block_text[token_match.end():]
+    )
+    return (
+        minihead_text[:block_match.start()]
+        + replaced_block
+        + minihead_text[block_match.end():],
+        True,
+    )
+
+
+def _replace_or_append_minihead_array_token(
+    minihead_text,
+    name,
+    source_token,
+    target_token,
+):
+    current_text, did_change = _replace_minihead_array_token(
+        minihead_text,
+        name,
+        source_token,
+        target_token,
+    )
+    if did_change or not current_text or not target_token:
+        return current_text, did_change
+    if _extract_minihead_array_tokens(current_text, name):
+        return current_text, False
+
+    target_token = _sanitize_minihead_param_value(target_token)
+    escaped_target = target_token.replace('"', '\\"')
+    appended_param = (
+        f'\n<ParamArray."{name}">\t{{\n'
+        "  <DefaultSize> 1\n"
+        "  <MaxSize> 2147483647\n"
+        '  <Default> <ParamString."">{ }\n'
+        f'  {{ "{escaped_target}" }}\n'
+        "}\n"
+    )
+    return current_text.rstrip() + appended_param, True
+
+
 def _replace_or_append_minihead_long_param(minihead_text, name, value):
     value = int(value)
     pattern = re.compile(rf'(<ParamLong\."{re.escape(name)}">\s*\{{\s*)(-?\d*)?(\s*\}})')
@@ -983,6 +1521,48 @@ def _replace_or_append_minihead_long_param(minihead_text, name, value):
 
     appended_param = f'\n<ParamLong."{name}">\t{{ {value} }}\n'
     return minihead_text.rstrip() + appended_param, True
+
+
+def _replace_or_append_minihead_long_param_in_map(
+    minihead_text,
+    map_name,
+    name,
+    value,
+):
+    value = int(value)
+    span = _find_minihead_param_map_span(minihead_text, map_name)
+    if span is None:
+        return _replace_or_append_minihead_long_param(minihead_text, name, value)
+
+    pattern = re.compile(rf'(<ParamLong\."{re.escape(name)}">\s*\{{\s*)(-?\d*)?(\s*\}})')
+    match = pattern.search(minihead_text, span[2], span[3])
+    if match:
+        current_value = (match.group(2) or "").strip()
+        if current_value == str(value):
+            return minihead_text, False
+        replacement = f"{match.group(1)}{value}{match.group(3)}"
+        return minihead_text[:match.start()] + replacement + minihead_text[match.end():], True
+
+    return _insert_minihead_param_line_before_scope_close(
+        minihead_text,
+        span[3],
+        f'<ParamLong."{name}">\t{{ {value} }}',
+    )
+
+
+def _insert_minihead_param_line_before_scope_close(minihead_text, closing_brace, line):
+    line_start = minihead_text.rfind("\n", 0, closing_brace) + 1
+    closing_indent = minihead_text[line_start:closing_brace]
+    if closing_indent.strip():
+        closing_indent = ""
+    param_indent = closing_indent + "  "
+    insertion = f"{param_indent}{line}\n"
+    return (
+        minihead_text[:line_start]
+        + insertion
+        + minihead_text[line_start:],
+        True,
+    )
 
 
 def _config_boolean(config, key, default=False):

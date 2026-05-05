@@ -65,11 +65,15 @@ the downsampled output keeps source image intensities.
 Every derived output role receives a fresh `image_series_index` that is distinct
 from observed input series indices and reserved scanner indices. The wrapper
 sets a unique `SeriesInstanceUID`, a stable `SeriesNumberRangeNameUID`,
-`ProtocolName`, `SequenceDescription`, `SeriesDescription`, `ImageTypeValue4`,
-and `DataRole` for each derived role.
+`ProtocolName`, `SequenceDescription`, `SeriesDescription`, `ImageType`,
+`DicomImageType`, and `DataRole` for each derived role. When an `IceMiniHead`
+`ImageTypeValue4` array is present, the derived role is carried there and the
+top-level MRD Meta `ImageTypeValue4` field is omitted to avoid scanner-side
+duplicate tokens.
 
 If source images include an `IceMiniHead`, the same identity fields and slice
-numbering fields are patched there as well. Before sending, the wrapper logs an
+numbering fields are patched inside the owning `ParamMap` blocks rather than
+appended at the minihead root. Before sending, the wrapper logs an
 `OPENRECONI2I_OUTPUT_SERIES_CONTRACT` summary and raises an error if derived
 roles collide, reuse input identity, or disagree between Meta and IceMiniHead.
 
@@ -80,3 +84,7 @@ roles collide, reuse input identity, or disagree between Meta and IceMiniHead.
 - This example does not download models or external tools.
 - The threshold and downsampled outputs are intentionally simple so the recipe
   stays useful as an OpenRecon integration template.
+- The wrapper waits briefly between output series and before `MRD_MESSAGE_CLOSE`
+  so the scanner-side DICOM pipeline can drain multi-series output. Set
+  `OPENRECONI2I_SEND_SERIES_DRAIN_SECONDS` or
+  `OPENRECONI2I_CLOSE_DRAIN_SECONDS` to tune or disable those waits.
