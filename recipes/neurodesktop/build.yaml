@@ -15,7 +15,15 @@ variables:
   guacamole_version: "1.6.0"
   tomcat_rel: "9"
   tomcat_version: "9.0.116"
+  apptainer_version: "1.4.4"
+  firefox_version: "150.0.1"
   code_server_version: "4.104.2"
+  firefox_arch:
+    try:
+      - value: linux-x86_64
+        condition: arch=="x86_64"
+      - value: linux-aarch64
+        condition: arch=="aarch64"
   code_server_arch:
     try:
       - value: amd64
@@ -188,11 +196,19 @@ build:
         - if [ -e /opt/strace/bin/strace ]; then chmod +x /opt/strace/bin/strace; elif [ -e /opt/strace/strace ]; then chmod +x /opt/strace/strace; fi
 
     - run:
+        - apt-get update --yes
+        - apt-get install --yes --no-install-recommends {{ get_file("apptainer_deb") }}
+        - apt-get clean
+        - rm -rf /var/lib/apt/lists/* /root/.cache /home/${NB_USER}/.cache
+      condition: arch=="x86_64"
+
+    - run:
         - add-apt-repository -y ppa:apptainer/ppa
         - apt-get update --yes
         - apt-get install --yes --no-install-recommends apptainer
         - apt-get clean
         - rm -rf /var/lib/apt/lists/* /root/.cache /home/${NB_USER}/.cache
+      condition: arch=="aarch64"
 
     - run:
         - cp {{ get_file("tomcat") }} /tmp/apache-tomcat.tar.gz
@@ -258,11 +274,11 @@ build:
         - rm -rf /home/${NB_USER}/.cache /home/${NB_USER}/.local
 
     - run:
-        - add-apt-repository ppa:mozillateam/ppa
-        - apt-get update --yes
-        - apt-get install --yes --no-install-recommends --target-release 'o=LP-PPA-mozillateam' firefox
-        - apt-get clean
-        - rm -rf /var/lib/apt/lists/* /home/${NB_USER}/.cache /home/${NB_USER}/.local
+        - mkdir -p /opt/firefox /etc/firefox
+        - tar -xf {{ get_file("firefox_tar") }} -C /opt
+        - ln -sf /opt/firefox/firefox /usr/local/bin/firefox
+        - ln -sf /opt/firefox/firefox /usr/bin/firefox
+        - rm -rf /home/${NB_USER}/.cache /home/${NB_USER}/.local
 
     - user: ${NB_USER}
 
@@ -484,6 +500,15 @@ files:
   - name: strace_aarch64
     url: https://github.com/JuliaBinaryWrappers/strace_jll.jl/releases/download/strace-v6.7.0%2B1/strace.v6.7.0.aarch64-linux-gnu.tar.gz
     condition: arch=="aarch64"
+    retry: 5
+
+  - name: apptainer_deb
+    url: https://github.com/apptainer/apptainer/releases/download/v{{ context.apptainer_version }}/apptainer_{{ context.apptainer_version }}_amd64.deb
+    condition: arch=="x86_64"
+    retry: 5
+
+  - name: firefox_tar
+    url: https://download-installer.cdn.mozilla.net/pub/firefox/releases/{{ context.firefox_version }}/{{ context.firefox_arch }}/en-US/firefox-{{ context.firefox_version }}.tar.xz
     retry: 5
 
   - name: cvmfs_release_deb
