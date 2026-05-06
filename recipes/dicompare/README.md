@@ -5,6 +5,7 @@ dicompare is an MRI protocol validation tool that helps researchers validate the
 ## Usage
 
 Launch the webapp in Neurodesk JupyterLab, then drag and drop your DICOM files to validate them against protocol definitions.
+dicompare is also hosted live at https://dicompare.neurodesk.org/.
 
 ## Documentation
 
