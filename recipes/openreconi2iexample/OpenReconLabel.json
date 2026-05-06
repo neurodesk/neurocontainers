@@ -74,7 +74,14 @@
       "id": "segment",
       "label": { "en": "Segment" },
       "type": "boolean",
-      "information": { "en": "Threshold each slice and send a segmentation with a colourmap" },
+      "information": { "en": "Segment the brightest foreground object and send a segmentation" },
+      "default": false
+    },
+    {
+      "id": "segmentationcolormap",
+      "label": { "en": "Segmentation colourmap" },
+      "type": "boolean",
+      "information": { "en": "Add MicroDeltaHotMetal.pal LUT metadata to segmentation outputs" },
       "default": false
     },
     {

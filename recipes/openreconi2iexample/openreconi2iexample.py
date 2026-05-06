@@ -35,6 +35,7 @@ SOURCE_PARENT_REFERENCE_META_PREFIXES = (
     "ReferencedImageSequence",
 )
 SCANNER_PARTITION_INDEX = 0
+SLICE_POSITION_TOLERANCE_MM = 1e-4
 
 
 def process(connection, config, metadata):
@@ -69,6 +70,11 @@ def process(connection, config, metadata):
             ("segment", "sendsegment", "sendthreshold"),
             default=False,
         )
+        use_segmentation_colormap = _config_bool_any(
+            config,
+            ("segmentationcolormap", "sendsegmentationcolormap"),
+            default=False,
+        )
         send_mip = _config_bool_any(
             config,
             ("mip", "sendmip", "sendthresholdmip"),
@@ -81,7 +87,10 @@ def process(connection, config, metadata):
             output_images.extend(inverted_images)
         segment_images = []
         if send_segment:
-            segment_images = _segment_images(magnitude_images)
+            segment_images = _segment_images(
+                magnitude_images,
+                use_colormap=use_segmentation_colormap,
+            )
             output_images.extend(segment_images)
         upsampled_images = []
         if send_upsampled:
@@ -97,11 +106,13 @@ def process(connection, config, metadata):
             output_images.extend(original_images)
 
         logging.info(
-            "Configured outputs: original=%s invert=%s upsampled=%s segment=%s mip=%s",
+            "Configured outputs: original=%s invert=%s upsampled=%s segment=%s "
+            "segmentationcolormap=%s mip=%s",
             send_original,
             send_invert,
             send_upsampled,
             send_segment,
+            use_segmentation_colormap,
             send_mip,
         )
         logging.info(
@@ -137,6 +148,12 @@ def _invert_images(images):
     window_width = max(data_max - data_min, 1.0)
     window_center = data_min + window_width / 2.0
 
+    series_identity = _build_output_series_identity(
+        images[0],
+        INVERT_SERIES_INDEX,
+        "inverted",
+        INVERT_SERIES_NAME,
+    )
     outputs = []
     for output_index, source_image in enumerate(images):
         source_data = np.asarray(source_image.data)
@@ -155,7 +172,7 @@ def _invert_images(images):
             source_image,
             INVERT_SERIES_INDEX,
             output_index,
-            _derived_series_name(source_image, "inverted"),
+            series_identity["series_name"],
             "Image",
             INVERT_SERIES_NAME,
             ["PYTHON", "OPENRECON_INVERT"],
@@ -163,48 +180,145 @@ def _invert_images(images):
                 "WindowCenter": str(window_center),
                 "WindowWidth": str(window_width),
             },
+            series_identity=series_identity,
         )
         outputs.append(output)
 
     return outputs
 
 
-def _segment_images(images):
+def _segment_images(images, use_colormap=False):
     if not images:
         return []
 
+    threshold = _bright_foreground_threshold(images)
+    series_identity = _build_output_series_identity(
+        images[0],
+        SEGMENT_SERIES_INDEX,
+        "segment",
+        SEGMENT_SERIES_NAME,
+    )
     outputs = []
     for output_index, source_image in enumerate(images):
         source_data = np.asarray(source_image.data)
-        threshold = float(np.mean(source_data))
-        segmentation = (source_data > threshold).astype(np.uint16)
+        foreground = source_data.astype(np.float32) >= threshold
+        segmentation = _largest_connected_component_per_plane(foreground).astype(
+            np.uint16
+        )
 
         output = ismrmrd.Image.from_array(segmentation, transpose=False)
         header = source_image.getHead()
         header.data_type = output.data_type
         output.setHead(header)
+        extra_meta = {
+            "WindowCenter": "0.5",
+            "WindowWidth": "1",
+        }
+        if use_colormap:
+            extra_meta["LUTFileName"] = SEGMENTATION_LUT
         _stamp_output_image(
             output,
             source_image,
             SEGMENT_SERIES_INDEX,
             output_index,
-            _derived_series_name(source_image, "segment", SEGMENT_SERIES_NAME),
+            series_identity["series_name"],
             "Segmentation",
             SEGMENT_SERIES_NAME,
             ["PYTHON", "OPENRECON_SEGMENT"],
-            {
-                "LUTFileName": SEGMENTATION_LUT,
-                "WindowCenter": "0.5",
-                "WindowWidth": "1",
-            },
+            extra_meta,
+            series_identity=series_identity,
         )
         outputs.append(output)
 
     logging.info(
-        "Created %d threshold segmentation image(s)",
+        "Created %d foreground segmentation image(s) with threshold %.6g "
+        "and segmentationcolormap=%s",
         len(outputs),
+        threshold,
+        use_colormap,
     )
     return outputs
+
+
+def _bright_foreground_threshold(images):
+    values = []
+    for image in images:
+        data = np.asarray(image.data, dtype=np.float32)
+        values.append(data[np.isfinite(data)])
+    finite_values = np.concatenate(values) if values else np.asarray([], dtype=np.float32)
+    if finite_values.size == 0:
+        return np.inf
+
+    data_min = float(np.min(finite_values))
+    data_max = float(np.max(finite_values))
+    if data_max <= data_min:
+        return np.inf
+
+    background = float(np.percentile(finite_values, 50))
+    upper = float(np.percentile(finite_values, 95))
+    if upper <= background:
+        upper = data_max
+
+    threshold = background + 0.5 * (upper - background)
+    if threshold >= data_max:
+        threshold = background + 0.5 * (data_max - background)
+    return threshold
+
+
+def _largest_connected_component_per_plane(mask):
+    mask = np.asarray(mask, dtype=bool)
+    if mask.ndim < 2:
+        return _largest_connected_component_2d(mask.reshape(1, -1)).reshape(mask.shape)
+
+    result = np.zeros(mask.shape, dtype=bool)
+    planes = mask.reshape((-1,) + mask.shape[-2:])
+    result_planes = result.reshape((-1,) + mask.shape[-2:])
+    for index, plane in enumerate(planes):
+        result_planes[index] = _largest_connected_component_2d(plane)
+    return result
+
+
+def _largest_connected_component_2d(mask):
+    mask = np.asarray(mask, dtype=bool)
+    height, width = mask.shape
+    foreground = mask.ravel()
+    foreground_indices = np.flatnonzero(foreground)
+    if foreground_indices.size == 0:
+        return np.zeros(mask.shape, dtype=bool)
+
+    visited = np.zeros(foreground.size, dtype=bool)
+    best_component = []
+    for seed in foreground_indices:
+        if visited[seed]:
+            continue
+
+        component = []
+        stack = [int(seed)]
+        visited[seed] = True
+        while stack:
+            current = stack.pop()
+            component.append(current)
+            row, col = divmod(current, width)
+            neighbors = []
+            if row > 0:
+                neighbors.append(current - width)
+            if row + 1 < height:
+                neighbors.append(current + width)
+            if col > 0:
+                neighbors.append(current - 1)
+            if col + 1 < width:
+                neighbors.append(current + 1)
+            for neighbor in neighbors:
+                if foreground[neighbor] and not visited[neighbor]:
+                    visited[neighbor] = True
+                    stack.append(neighbor)
+
+        if len(component) > len(best_component):
+            best_component = component
+
+    result = np.zeros(foreground.size, dtype=bool)
+    result[best_component] = True
+    return result.reshape(mask.shape)
 
 
 def _mip_image(images):
@@ -222,15 +336,22 @@ def _mip_image(images):
     header = images[0].getHead()
     header.data_type = output.data_type
     output.setHead(header)
+    series_identity = _build_output_series_identity(
+        images[0],
+        MIP_SERIES_INDEX,
+        "mip",
+        MIP_SERIES_NAME,
+    )
     _stamp_output_image(
         output,
         images[0],
         MIP_SERIES_INDEX,
         0,
-        _derived_series_name(images[0], "mip", MIP_SERIES_NAME),
+        series_identity["series_name"],
         "Image",
         MIP_SERIES_NAME,
         ["PYTHON", "OPENRECON_MIP"],
+        series_identity=series_identity,
     )
     logging.info(
         "Created maximum intensity projection from %d image(s)",
@@ -243,30 +364,78 @@ def _upsampled_images(images):
     if not images:
         return []
 
-    half_step = _interpolated_half_step(images)
+    images, slice_axis = _ordered_upsample_sources(images)
+    series_identity = _build_output_series_identity(
+        images[0],
+        UPSAMPLED_SERIES_INDEX,
+        "upsampled",
+        UPSAMPLED_SERIES_NAME,
+    )
+    fallback_half_step = _interpolated_half_step(images)
+    output_slice_count = 2 * len(images)
+    source_slice_count_hint = _source_slice_count_hint(images)
+    logging.info(
+        "upsampled: input_slices=%d output_slices=%d source_slice_count_hint=%s",
+        len(images),
+        output_slice_count,
+        source_slice_count_hint if source_slice_count_hint is not None else "unknown",
+    )
+    if (
+        source_slice_count_hint is not None
+        and output_slice_count > source_slice_count_hint
+    ):
+        logging.warning(
+            "upsampled output_slices=%d exceeds source slice_count hint=%d; "
+            "using explicit output geometry",
+            output_slice_count,
+            source_slice_count_hint,
+        )
+    origin = _header_position(images[0].getHead())
+    last_pair_half_step = None
     outputs = []
     for index, image in enumerate(images):
+        current_position = _project_position_on_slice_axis(
+            _header_position(image.getHead()),
+            origin,
+            slice_axis,
+        )
+        if index + 1 < len(images):
+            next_image = images[index + 1]
+            next_position = _project_position_on_slice_axis(
+                _header_position(next_image.getHead()),
+                origin,
+                slice_axis,
+            )
+            local_half_step = 0.5 * (next_position - current_position)
+            last_pair_half_step = local_half_step
+            midpoint = 0.5 * (
+                np.asarray(image.data, dtype=np.float32)
+                + np.asarray(next_image.data, dtype=np.float32)
+            )
+            midpoint_position = current_position + local_half_step
+        else:
+            local_half_step = (
+                last_pair_half_step
+                if last_pair_half_step is not None
+                else _half_step_on_slice_axis(fallback_half_step, slice_axis)
+            )
+            midpoint = np.asarray(image.data)
+            midpoint_position = current_position + local_half_step
+
+        slice_thickness = float(np.linalg.norm(local_half_step))
         outputs.append(
             _make_upsampled_image(
                 image,
                 np.asarray(image.data),
                 2 * index,
-                _header_position(image.getHead()),
-                half_step,
+                current_position,
+                local_half_step,
+                output_slice_count,
+                slice_axis=slice_axis,
+                slice_thickness=slice_thickness,
+                series_identity=series_identity,
             )
         )
-
-        if index + 1 < len(images):
-            next_image = images[index + 1]
-            next_position = _header_position(next_image.getHead())
-            midpoint = 0.5 * (
-                np.asarray(image.data, dtype=np.float32)
-                + np.asarray(next_image.data, dtype=np.float32)
-            )
-            midpoint_position = 0.5 * (_header_position(image.getHead()) + next_position)
-        else:
-            midpoint = np.asarray(image.data)
-            midpoint_position = _header_position(image.getHead()) + half_step
 
         outputs.append(
             _make_upsampled_image(
@@ -274,7 +443,11 @@ def _upsampled_images(images):
                 _cast_like(midpoint, np.asarray(image.data)),
                 2 * index + 1,
                 midpoint_position,
-                half_step,
+                local_half_step,
+                output_slice_count,
+                slice_axis=slice_axis,
+                slice_thickness=slice_thickness,
+                series_identity=series_identity,
             )
         )
 
@@ -283,6 +456,7 @@ def _upsampled_images(images):
         len(outputs),
         len(images),
     )
+    _validate_unique_projected_positions(outputs, slice_axis, "upsampled output")
     return outputs
 
 
@@ -290,7 +464,18 @@ def _interpolated_images(images):
     return _upsampled_images(images)
 
 
-def _make_upsampled_image(source_image, data, output_index, position, half_step):
+def _make_upsampled_image(
+    source_image,
+    data,
+    output_index,
+    position,
+    half_step,
+    output_slice_count=None,
+    slice_axis=None,
+    slice_thickness=None,
+    series_identity=None,
+):
+    output_slice_count = _require_output_slice_count(output_slice_count)
     output = ismrmrd.Image.from_array(data, transpose=False)
     header = source_image.getHead()
     header.data_type = output.data_type
@@ -299,31 +484,93 @@ def _make_upsampled_image(source_image, data, output_index, position, half_step)
     header.slice = output_index
 
     fov = [float(value) for value in header.field_of_view]
-    step_length = float(np.linalg.norm(half_step))
+    if slice_axis is None:
+        slice_axis = _normalize_vector(half_step)
+    if slice_axis is None:
+        slice_axis = _infer_slice_axis([header])
+
+    step_length = (
+        float(slice_thickness)
+        if slice_thickness is not None
+        else float(np.linalg.norm(half_step))
+    )
     if step_length > 0:
         fov[2] = step_length
     _set_header_sequence_field(header, "field_of_view", fov)
-    _set_header_sequence_field(header, "position", [float(value) for value in position])
+    _set_header_sequence_field(
+        header,
+        "position",
+        [float(value) for value in position],
+    )
+    _set_header_sequence_field(
+        header,
+        "slice_dir",
+        [float(value) for value in slice_axis],
+    )
 
     output.setHead(header)
+    geometry_meta = _explicit_header_geometry_meta(header)
+    extra_meta = {
+        "Keep_image_geometry": str(int(0)),
+        "partition_count": str(int(1)),
+        "slice_count": str(int(output_slice_count)),
+    }
+    extra_meta.update(geometry_meta)
     _stamp_output_image(
         output,
         source_image,
         UPSAMPLED_SERIES_INDEX,
         output_index,
-        _derived_series_name(source_image, "upsampled", UPSAMPLED_SERIES_NAME),
+        (
+            series_identity["series_name"]
+            if series_identity
+            else _derived_series_name(
+                source_image,
+                "upsampled",
+                UPSAMPLED_SERIES_NAME,
+            )
+        ),
         "Image",
         UPSAMPLED_SERIES_NAME,
         ["PYTHON", "OPENRECON_UPSAMPLED"],
+        # The source MiniHead can carry the original SLC bounds; explicit
+        # geometry lets the host accept the larger upsampled slice range.
+        extra_meta=extra_meta,
+        patch_minihead=False,
+        series_identity=series_identity,
     )
     return output
 
 
-def _make_interpolated_image(source_image, data, output_index, position, half_step):
-    return _make_upsampled_image(source_image, data, output_index, position, half_step)
+def _make_interpolated_image(
+    source_image,
+    data,
+    output_index,
+    position,
+    half_step,
+    output_slice_count=None,
+):
+    output_slice_count = _require_output_slice_count(output_slice_count)
+    return _make_upsampled_image(
+        source_image,
+        data,
+        output_index,
+        position,
+        half_step,
+        output_slice_count,
+    )
 
 
 def _restamp_originals(images):
+    if not images:
+        return []
+
+    series_identity = _build_output_series_identity(
+        images[0],
+        ORIGINAL_SERIES_INDEX,
+        "original",
+        ORIGINAL_SERIES_NAME,
+    )
     outputs = []
     for output_index, source_image in enumerate(images):
         output = ismrmrd.Image.from_array(
@@ -338,10 +585,11 @@ def _restamp_originals(images):
             source_image,
             ORIGINAL_SERIES_INDEX,
             output_index,
-            _derived_series_name(source_image, "original", ORIGINAL_SERIES_NAME),
+            series_identity["series_name"],
             "Image",
             ORIGINAL_SERIES_NAME,
             ["PYTHON", "OPENRECON_ORIGINAL_COPY"],
+            series_identity=series_identity,
         )
         outputs.append(output)
     return outputs
@@ -357,6 +605,8 @@ def _stamp_output_image(
     image_type_token,
     history,
     extra_meta=None,
+    patch_minihead=True,
+    series_identity=None,
 ):
     header = output.getHead()
     header.image_series_index = series_index
@@ -378,6 +628,8 @@ def _stamp_output_image(
         image_type_token,
         history,
         extra_meta or {},
+        patch_minihead,
+        series_identity,
     ).serialize()
     return output
 
@@ -391,17 +643,27 @@ def _output_meta(
     image_type_token,
     history,
     extra_meta,
+    patch_minihead,
+    series_identity,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
-    series_uid = _derived_series_uid(source_image, series_index, series_name)
+    if series_identity is None:
+        series_identity = _build_output_series_identity_from_name(
+            source_image,
+            series_index,
+            series_name,
+        )
+    series_name = series_identity["series_name"]
+    series_uid = series_identity["series_uid"]
+    series_grouping = series_identity["series_grouping"]
     sop_uid = _derived_instance_uid(
         source_image,
         series_index,
         series_name,
         output_index,
+        series_uid,
     )
-    series_grouping = _derived_series_grouping(series_name, series_index)
     image_type = f"DERIVED\\PRIMARY\\M\\{image_type_token}"
     meta["DataRole"] = data_role
     meta["ImageProcessingHistory"] = history
@@ -419,10 +681,16 @@ def _output_meta(
     meta["ImageTypeValue4"] = image_type_token
     meta["ComplexImageComponent"] = "MAGNITUDE"
     _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
-    meta["Keep_image_geometry"] = 1
+    _set_meta_scalar(meta, "Keep_image_geometry", 1)
     _set_output_position_meta(meta, output_index)
     for key, value in extra_meta.items():
-        meta[key] = value
+        if value is not None:
+            meta[key] = value
+
+    if not patch_minihead:
+        if "IceMiniHead" in meta:
+            del meta["IceMiniHead"]
+        return meta
 
     minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
     if minihead:
@@ -477,6 +745,27 @@ def _derived_series_name(source_image, suffix, fallback_base=INVERT_SERIES_NAME)
     return f"{fallback_base}-{suffix}"
 
 
+def _build_output_series_identity(
+    anchor_image,
+    series_index,
+    suffix,
+    fallback_base,
+):
+    return _build_output_series_identity_from_name(
+        anchor_image,
+        series_index,
+        _derived_series_name(anchor_image, suffix, fallback_base),
+    )
+
+
+def _build_output_series_identity_from_name(anchor_image, series_index, series_name):
+    return {
+        "series_name": series_name,
+        "series_grouping": _derived_series_grouping(series_name, series_index),
+        "series_uid": _derived_series_uid(anchor_image, series_index, series_name),
+    }
+
+
 def _derived_series_grouping(series_name, series_index):
     return f"{_sanitize_identity_text(series_name)}_{series_index}"
 
@@ -499,17 +788,25 @@ def _derived_series_uid(source_image, series_index, series_name):
     return f"2.25.{uuid.uuid5(uuid.NAMESPACE_URL, seed).int}"
 
 
-def _derived_instance_uid(source_image, series_index, series_name, output_index):
+def _derived_instance_uid(
+    source_image,
+    series_index,
+    series_name,
+    output_index,
+    series_uid=None,
+):
     meta = _meta_from_image(source_image)
     minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
     source_instance_uid = _meta_text(meta, "SOPInstanceUID")
     if not source_instance_uid and minihead:
         source_instance_uid = _minihead_string_value(minihead, "SOPInstanceUID")
+    if series_uid is None:
+        series_uid = _derived_series_uid(source_image, series_index, series_name)
 
     seed = "|".join(
         [
             "openreconi2iexample-instance",
-            _derived_series_uid(source_image, series_index, series_name),
+            series_uid,
             source_instance_uid or str(output_index),
             str(output_index),
         ]
@@ -781,7 +1078,8 @@ def _validate_output_images(output_images, input_images):
 
         meta = _meta_from_image(image)
         minihead = _image_minihead(image)
-        if input_has_minihead and not minihead:
+        keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
+        if input_has_minihead and not minihead and keep_image_geometry != 0:
             errors.append(f"image {index} is missing IceMiniHead")
 
         identity = {
@@ -824,7 +1122,9 @@ def _validate_output_images(output_images, input_images):
         previous_identity = series_identity.setdefault(series_key, comparable_identity)
         if previous_identity != comparable_identity:
             errors.append(
-                f"image_series_index {series_key} has inconsistent identity values"
+                f"image {index} in image_series_index {series_key} has "
+                f"inconsistent identity values: {comparable_identity} != "
+                f"{previous_identity}"
             )
         series_uid = identity["series_uid"]
         if series_uid:
@@ -936,6 +1236,33 @@ def _validate_storage_fields(
                 f"expected {expected}"
             )
 
+    keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
+    if keep_image_geometry is None:
+        errors.append(f"image {index} is missing Meta Keep_image_geometry")
+    elif keep_image_geometry == 0:
+        partition_count = _meta_int(meta, "partition_count")
+        if partition_count is None:
+            errors.append(f"image {index} is missing Meta partition_count")
+        elif partition_count < 1:
+            errors.append(
+                f"image {index} has Meta partition_count={partition_count}, "
+                "expected at least 1"
+            )
+
+        slice_count = _meta_int(meta, "slice_count")
+        if slice_count is None:
+            errors.append(f"image {index} is missing Meta slice_count")
+        elif series_slice_limit and slice_count != series_slice_limit:
+            errors.append(
+                f"image {index} has Meta slice_count={slice_count}, "
+                f"expected {series_slice_limit}"
+            )
+        elif header_slice >= slice_count:
+            errors.append(
+                f"image {index} has slice {header_slice} outside explicit "
+                f"slice_count {slice_count}"
+            )
+
     sop_uid = _meta_text(meta, "SOPInstanceUID")
     minihead_sop_uid = _minihead_string_value(minihead, "SOPInstanceUID")
     if sop_uid:
@@ -1026,6 +1353,151 @@ def _image_minihead(image):
     return _decode_ice_minihead(_meta_text(_meta_from_image(image), "IceMiniHead"))
 
 
+def _ordered_upsample_sources(images):
+    images = list(images)
+    if len(images) < 2:
+        return images, _infer_slice_axis([image.getHead() for image in images])
+
+    headers = [image.getHead() for image in images]
+    slice_axis = _infer_slice_axis(headers)
+    projections = np.asarray(
+        [_projected_position(image, slice_axis) for image in images],
+        dtype=float,
+    )
+    duplicate_positions = _duplicate_projected_position_count(projections)
+    median_spacing = _median_projected_spacing(projections)
+    increasing = _is_projected_order_monotonic(projections, increasing=True)
+    decreasing = _is_projected_order_monotonic(projections, increasing=False)
+    logging.info(
+        "upsampled source geometry: count=%d axis=%s projected_range=[%.6f, %.6f] "
+        "median_spacing=%.6f duplicate_positions=%d receive_order_monotonic=%s",
+        len(images),
+        _format_vector(slice_axis),
+        float(np.min(projections)),
+        float(np.max(projections)),
+        median_spacing,
+        duplicate_positions,
+        increasing or decreasing,
+    )
+    if duplicate_positions:
+        logging.warning(
+            "upsampled source geometry has %d duplicate projected slice position(s)",
+            duplicate_positions,
+        )
+    if increasing:
+        return images, slice_axis
+
+    sort_indices = sorted(
+        range(len(images)),
+        key=lambda index: (
+            round(float(projections[index]), 4),
+            int(headers[index].slice),
+            int(headers[index].image_index),
+            index,
+        ),
+    )
+    order_reason = (
+        "decreasing in physical position"
+        if decreasing
+        else "not monotonic in physical position"
+    )
+    logging.warning(
+        "upsampled source slices are %s; "
+        "sorting by projected position before interpolation: first mappings %s",
+        order_reason,
+        ", ".join(
+            f"out{output_index}->in{input_index}"
+            for output_index, input_index in enumerate(sort_indices[:24])
+        ),
+    )
+    if len(sort_indices) > 24:
+        logging.warning(
+            "upsampled source sort mapping omitted %d additional slice(s)",
+            len(sort_indices) - 24,
+        )
+    return [images[index] for index in sort_indices], slice_axis
+
+
+def _validate_unique_projected_positions(images, slice_axis, label):
+    if len(images) < 2:
+        return
+
+    projections = np.asarray(
+        [_projected_position(image, slice_axis) for image in images],
+        dtype=float,
+    )
+    sort_indices = sorted(range(len(images)), key=lambda index: projections[index])
+    duplicates = []
+    for previous_index, current_index in zip(sort_indices, sort_indices[1:]):
+        if (
+            abs(projections[current_index] - projections[previous_index])
+            <= SLICE_POSITION_TOLERANCE_MM
+        ):
+            duplicates.append((previous_index, current_index, projections[current_index]))
+
+    if duplicates:
+        details = ", ".join(
+            f"{previous}/{current}@{projection:.6f}"
+            for previous, current, projection in duplicates[:8]
+        )
+        if len(duplicates) > 8:
+            details += f", ... {len(duplicates) - 8} more"
+        raise ValueError(
+            f"{label} has duplicate projected slice position(s): {details}"
+        )
+
+    sorted_projections = projections[sort_indices]
+    sorted_diffs = np.diff(sorted_projections)
+    current_increasing = _is_projected_order_monotonic(
+        projections,
+        increasing=True,
+    )
+    current_decreasing = _is_projected_order_monotonic(
+        projections,
+        increasing=False,
+    )
+    logging.info(
+        "%s geometry: count=%d projected_range=[%.6f, %.6f] min_spacing=%.6f "
+        "output_order_monotonic=%s",
+        label,
+        len(images),
+        float(np.min(projections)),
+        float(np.max(projections)),
+        float(np.min(np.abs(sorted_diffs))) if sorted_diffs.size else 0.0,
+        current_increasing or current_decreasing,
+    )
+    if not (current_increasing or current_decreasing):
+        logging.warning("%s positions are not monotonic in output order", label)
+
+
+def _duplicate_projected_position_count(projections):
+    if len(projections) < 2:
+        return 0
+    sorted_diffs = np.diff(np.sort(np.asarray(projections, dtype=float)))
+    return int(np.sum(np.abs(sorted_diffs) <= SLICE_POSITION_TOLERANCE_MM))
+
+
+def _median_projected_spacing(projections):
+    if len(projections) < 2:
+        return 0.0
+    sorted_diffs = np.diff(np.sort(np.asarray(projections, dtype=float)))
+    nonzero_diffs = np.abs(
+        sorted_diffs[np.abs(sorted_diffs) > SLICE_POSITION_TOLERANCE_MM]
+    )
+    if nonzero_diffs.size == 0:
+        return 0.0
+    return float(np.median(nonzero_diffs))
+
+
+def _is_projected_order_monotonic(projections, increasing):
+    if len(projections) < 2:
+        return True
+    diffs = np.diff(np.asarray(projections, dtype=float))
+    if increasing:
+        return bool(np.all(diffs > SLICE_POSITION_TOLERANCE_MM))
+    return bool(np.all(diffs < -SLICE_POSITION_TOLERANCE_MM))
+
+
 def _log_output_images(output_images):
     for index, image in enumerate(output_images):
         header = image.getHead()
@@ -1033,12 +1505,19 @@ def _log_output_images(output_images):
         minihead = _image_minihead(image)
         logging.info(
             "OPENRECONI2I_OUTPUT index=%d series=%d image_index=%d slice=%d "
-            "name=%s series_uid=%s sop_uid=%s minihead_slice=%s "
-            "minihead_chron_slice=%s minihead_sop_uid=%s",
+            "position=%s fov=%s meta_slice_pos=%s keep_geometry=%s "
+            "partition_count=%s slice_count=%s name=%s series_uid=%s sop_uid=%s "
+            "minihead_slice=%s minihead_chron_slice=%s minihead_sop_uid=%s",
             index,
             int(image.image_series_index),
             int(header.image_index),
             int(header.slice),
+            _format_vector(_header_vector(header, "position")),
+            _format_vector(_header_vector(header, "field_of_view")),
+            _meta_vector_text(meta, "SlicePosLightMarker"),
+            _meta_text(meta, "Keep_image_geometry"),
+            _meta_text(meta, "partition_count"),
+            _meta_text(meta, "slice_count"),
             _meta_text(meta, "SeriesDescription"),
             _meta_text(meta, "SeriesInstanceUID"),
             _meta_text(meta, "SOPInstanceUID"),
@@ -1046,6 +1525,90 @@ def _log_output_images(output_images):
             _minihead_long_value(minihead, "ChronSliceNo"),
             _minihead_string_value(minihead, "SOPInstanceUID"),
         )
+
+
+def _explicit_header_geometry_meta(header):
+    # The MRD ImageHeader is the geometry contract; these Meta copies are kept
+    # aligned for scanner-side consumers and log/debug inspection.
+    return {
+        "ImageRowDir": _meta_vector(_header_vector(header, "read_dir")),
+        "ImageColumnDir": _meta_vector(_header_vector(header, "phase_dir")),
+        "ImageSliceNormDir": _meta_vector(_header_vector(header, "slice_dir")),
+        "SlicePosLightMarker": _meta_vector(_header_vector(header, "position")),
+    }
+
+
+def _infer_slice_axis(headers):
+    for header in headers:
+        axis = _normalize_vector(_header_vector(header, "slice_dir"))
+        if axis is not None:
+            return axis
+
+    if len(headers) > 1:
+        axis = _normalize_vector(
+            _header_vector(headers[-1], "position")
+            - _header_vector(headers[0], "position")
+        )
+        if axis is not None:
+            return axis
+
+    return np.array([0.0, 0.0, 1.0], dtype=float)
+
+
+def _projected_position(image, slice_axis):
+    return float(np.dot(_header_position(image.getHead()), slice_axis))
+
+
+def _project_position_on_slice_axis(position, origin, slice_axis):
+    position = np.asarray(position, dtype=float)
+    origin = np.asarray(origin, dtype=float)
+    offset = position - origin
+    return origin + float(np.dot(offset, slice_axis)) * slice_axis
+
+
+def _half_step_on_slice_axis(half_step, slice_axis):
+    half_step = np.asarray(half_step, dtype=float)
+    signed_length = float(np.dot(half_step, slice_axis))
+    if abs(signed_length) <= SLICE_POSITION_TOLERANCE_MM:
+        signed_length = float(np.linalg.norm(half_step))
+    return signed_length * slice_axis
+
+
+def _header_vector(header, field_name):
+    try:
+        values = np.asarray(getattr(header, field_name), dtype=float)
+    except Exception:
+        return np.zeros(3, dtype=float)
+    if values.size < 3:
+        padded = np.zeros(3, dtype=float)
+        padded[: values.size] = values
+        return padded
+    return values[:3]
+
+
+def _normalize_vector(vector):
+    vector = np.asarray(vector, dtype=float)
+    norm = float(np.linalg.norm(vector))
+    if norm <= 1e-8:
+        return None
+    return vector / norm
+
+
+def _format_vector(vector):
+    return "[" + ", ".join(f"{float(value):.6f}" for value in vector) + "]"
+
+
+def _meta_vector(values):
+    return [f"{float(value):.18f}" for value in values]
+
+
+def _meta_vector_text(meta, key):
+    value = meta.get(key)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(str(item) for item in value) + "]"
+    if value is None:
+        return ""
+    return str(value)
 
 
 def _interpolated_half_step(images):
@@ -1070,6 +1633,41 @@ def _interpolated_half_step(images):
 
 def _header_position(header):
     return np.asarray(header.position, dtype=float)
+
+
+def _source_slice_count_hint(images):
+    meta_keys = ("slice_count", "SliceCount", "NumberOfSlices", "NoOfSlices")
+    minihead_keys = meta_keys + ("ImagesInAcquisition", "sSliceArray.lSize")
+    for image in images:
+        meta = _meta_from_image(image)
+        for key in meta_keys:
+            value = _meta_int(meta, key)
+            if value is not None and value > 0:
+                return value
+
+        minihead = _image_minihead(image)
+        for key in minihead_keys:
+            value = _minihead_long_value(minihead, key)
+            if value is not None and value > 0:
+                return value
+
+    return None
+
+
+def _require_output_slice_count(output_slice_count):
+    if output_slice_count is None:
+        raise ValueError("output_slice_count is required for explicit output geometry")
+    try:
+        output_slice_count = int(output_slice_count)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "output_slice_count must be a positive integer for explicit output geometry"
+        ) from exc
+    if output_slice_count < 1:
+        raise ValueError(
+            "output_slice_count must be a positive integer for explicit output geometry"
+        )
+    return output_slice_count
 
 
 def _set_header_sequence_field(image_header, field_name, values):
