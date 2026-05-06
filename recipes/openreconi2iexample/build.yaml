@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.10
+version: 1.0.15
 architectures:
   - x86_64
 
@@ -50,13 +50,14 @@ readme: |-
   ## openreconi2iexample/{{ context.version }} ##
 
   Minimal OpenRecon image-to-image reference. Receives reconstructed MRD
-  magnitude images, returns inverted copies as `<source>-inverted` on
-  `image_series_index = 99`, and can re-emit the original scan as
-  `<source>-original` on `image_series_index = 100` with the `sendoriginal`
-  OpenRecon option. The
-  `sendthresholdmip` option adds one `<source>-mip` segmentation MIP slice on
-  `image_series_index = 101`. The `sendinterpolated` option adds a
-  double-slice-count `<source>-upsampled` series on `image_series_index = 102`.
+  image messages and sends no output by default. Enable `sendoriginal` to
+  re-emit the original scan as `<source>-original` on `image_series_index = 100`.
+  Enable `invert` to return inverted magnitude images as `<source>-inverted` on
+  `image_series_index = 99`. Enable `segment` to threshold each slice and send
+  `<source>-segment` with a colourmap on `image_series_index = 101`. Enable
+  `upsampled` to send a double-slice-count `<source>-upsampled` image series on
+  `image_series_index = 102`. Enable `mip` to send one `<source>-mip` maximum
+  intensity projection image on `image_series_index = 103`.
 
   OpenRecon runtime notes: `recipes/openreconi2iexample/OpenReconREADME.md`.
 

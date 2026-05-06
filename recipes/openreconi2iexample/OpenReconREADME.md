@@ -1,51 +1,59 @@
-# OpenRecon Image-to-Image Invert Example
+# OpenRecon Image-to-Image Example
 
 `openreconi2iexample` is a minimal OpenRecon image-in/image-out reference. It
-receives reconstructed MRD image messages, creates inverted copies of magnitude
-images, and names those copies from the source scan plus `-inverted`. It also
-re-emits the original scan as a copied `<source>-original` output series when
-`sendoriginal` is enabled. When
-`sendthresholdmip` is enabled, it thresholds the magnitude volume and sends one
-segmentation maximum intensity projection slice. When `sendinterpolated` is
-enabled, it sends a double-slice-count through-plane interpolated image series.
+receives reconstructed MRD image messages and sends no outputs unless one or
+more output options are enabled. It can re-emit the original scan, invert
+magnitude images, upsample the slice direction, threshold each slice into a
+segmentation with a colourmap, and compute a maximum intensity projection.
 
 ## Inputs
 
 - Reconstructed MRD `ismrmrd.Image` messages.
-- Magnitude images (`IMTYPE_MAGNITUDE` or unset image type) are inverted.
-- Magnitude images are thresholded for the segmentation MIP when
-  `sendthresholdmip` is enabled.
-- Magnitude images are interpolated between slices when `sendinterpolated` is
-  enabled.
-- All image messages can be returned as copied original images.
+- All image messages can be returned as copied original images when
+  `sendoriginal` is enabled.
+- Magnitude images (`IMTYPE_MAGNITUDE` or unset image type) are processed by
+  `invert`, `upsampled`, `segment`, and `mip`.
 
 ## Outputs
 
-- `<source>-inverted`: inverted magnitude images on `image_series_index = 99`.
+- No output is sent by default.
+- `<source>-inverted`: inverted magnitude images on `image_series_index = 99`
+  when `invert` is true.
 - `<source>-original`: copied input images on `image_series_index = 100` when
   `sendoriginal` is true.
-- `<source>-mip`: one thresholded segmentation maximum intensity projection
-  slice on `image_series_index = 101` when `sendthresholdmip` is true.
+- `<source>-segment`: thresholded segmentation images on
+  `image_series_index = 101` when `segment` is true. These outputs set
+  `LUTFileName = MicroDeltaHotMetal.pal`.
 - `<source>-upsampled`: twice as many magnitude images on
-  `image_series_index = 102` when `sendinterpolated` is true.
+  `image_series_index = 102` when `upsampled` is true.
+- `<source>-mip`: one maximum intensity projection image on
+  `image_series_index = 103` when `mip` is true.
 
 The inverted images keep the source geometry and use the input intensity range:
 `inverted = min(input) + max(input) - input`.
-The threshold MIP uses `mean(input) + 0.5 * std(input)` as the cutoff, then
-projects the binary segmentation across the source image slices.
-The interpolated output keeps the in-plane matrix unchanged and doubles the
+The segment output thresholds each slice at that slice's mean intensity and
+stores the result as a binary `uint16` segmentation.
+The upsampled output keeps the in-plane matrix unchanged and doubles the
 through-plane sample count by inserting midpoint slices between acquired slices.
 The final edge slice is duplicated so the output count is exactly `2 * N`.
+The MIP output projects the source magnitude stack across all source slices.
 
 ## Scanner Notes
 
-- `sendoriginal` is exposed in `OpenReconLabel.json` and defaults to true.
-- `sendthresholdmip` is exposed in `OpenReconLabel.json` and defaults to false.
-- `sendinterpolated` is exposed in `OpenReconLabel.json` and defaults to false.
+- `sendoriginal`, `invert`, `upsampled`, `segment`, and `mip` are exposed in
+  `OpenReconLabel.json` and all default to false.
+- Scanner protocols saved before these parameters were added may need the OpenRecon algorithm
+  reselected once so the parameter schema refreshes.
 - Output names are written to `SeriesDescription`, `SequenceDescription`,
   `ProtocolName`, `ImageComments`, `SeriesNumberRangeNameUID`, and
   `SeriesInstanceUID`, and matching values are patched into `IceMiniHead` when
   source images include one.
+- Copied originals are returned as derived scanner outputs, not as reused source
+  slices. The wrapper restamps `SOPInstanceUID`, `NumberInSeries`, `SliceNo`,
+  `AnatomicalSliceNo`, and `ChronSliceNo` in both MRD Meta and `IceMiniHead`
+  before sending.
+- Scanner partition counters such as `Actual3DImagePartNumber` and
+  `AnatomicalPartitionNo` are kept at zero for returned 2D image series.
 - Derived outputs set `SequenceDescriptionAdditional` to `openrecon` so
   scanners do not append `_None` to the display name.
 - `Keep_image_geometry = 1` is set on all returned image outputs.

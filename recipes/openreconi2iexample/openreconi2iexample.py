@@ -1,4 +1,4 @@
-"""Minimal OpenRecon image-to-image inversion example."""
+"""Minimal configurable OpenRecon image-to-image example."""
 import base64
 import json
 import logging
@@ -13,12 +13,28 @@ import numpy as np
 
 INVERT_SERIES_INDEX = 99
 ORIGINAL_SERIES_INDEX = 100
-THRESHOLD_MIP_SERIES_INDEX = 101
-INTERPOLATED_SERIES_INDEX = 102
+SEGMENT_SERIES_INDEX = 101
+UPSAMPLED_SERIES_INDEX = 102
+MIP_SERIES_INDEX = 103
 INVERT_SERIES_NAME = "openrecon_invert"
 ORIGINAL_SERIES_NAME = "openrecon_original"
-THRESHOLD_MIP_SERIES_NAME = "openrecon_threshold_mip"
-INTERPOLATED_SERIES_NAME = "openrecon_interpolated"
+SEGMENT_SERIES_NAME = "openrecon_segment"
+UPSAMPLED_SERIES_NAME = "openrecon_upsampled"
+MIP_SERIES_NAME = "openrecon_mip"
+SEGMENTATION_LUT = "MicroDeltaHotMetal.pal"
+SOURCE_PARENT_REFERENCE_META_KEYS = {
+    "DicomEngineDimString",
+    "MFInstanceNumber",
+    "MultiFrameSOPInstanceUID",
+    "PSMultiFrameSOPInstanceUID",
+    "PSSeriesInstanceUID",
+    "SOPInstanceUID",
+}
+SOURCE_PARENT_REFERENCE_META_PREFIXES = (
+    "ReferencedGSPS",
+    "ReferencedImageSequence",
+)
+SCANNER_PARTITION_INDEX = 0
 
 
 def process(connection, config, metadata):
@@ -41,28 +57,68 @@ def process(connection, config, metadata):
             logging.warning("No image messages received; closing without output")
             return
 
-        send_original = _config_bool(config, "sendoriginal", default=True)
-        send_threshold_mip = _config_bool(config, "sendthresholdmip", default=False)
-        send_interpolated = _config_bool(config, "sendinterpolated", default=False)
-        output_images = []
-        output_images.extend(_invert_images(magnitude_images))
-        if send_threshold_mip:
-            output_images.extend(_threshold_mip_image(magnitude_images))
-        if send_interpolated:
-            output_images.extend(_interpolated_images(magnitude_images))
-        if send_original:
-            output_images.extend(_restamp_originals(input_images))
-
-        interpolated_count = len(magnitude_images) * 2 if send_interpolated else 0
-        logging.info(
-            "Sending %d inverted image(s), %d threshold MIP image(s), "
-            "%d interpolated image(s), and %d original image(s)",
-            len(magnitude_images),
-            1 if send_threshold_mip and magnitude_images else 0,
-            interpolated_count,
-            len(input_images) if send_original else 0,
+        send_original = _config_bool(config, "sendoriginal", default=False)
+        send_invert = _config_bool_any(config, ("invert", "sendinvert"), default=False)
+        send_upsampled = _config_bool_any(
+            config,
+            ("upsampled", "sendupsampled", "sendinterpolated"),
+            default=False,
         )
+        send_segment = _config_bool_any(
+            config,
+            ("segment", "sendsegment", "sendthreshold"),
+            default=False,
+        )
+        send_mip = _config_bool_any(
+            config,
+            ("mip", "sendmip", "sendthresholdmip"),
+            default=False,
+        )
+        output_images = []
+        inverted_images = []
+        if send_invert:
+            inverted_images = _invert_images(magnitude_images)
+            output_images.extend(inverted_images)
+        segment_images = []
+        if send_segment:
+            segment_images = _segment_images(magnitude_images)
+            output_images.extend(segment_images)
+        upsampled_images = []
+        if send_upsampled:
+            upsampled_images = _upsampled_images(magnitude_images)
+            output_images.extend(upsampled_images)
+        mip_images = []
+        if send_mip:
+            mip_images = _mip_image(magnitude_images)
+            output_images.extend(mip_images)
+        original_images = []
+        if send_original:
+            original_images = _restamp_originals(input_images)
+            output_images.extend(original_images)
+
+        logging.info(
+            "Configured outputs: original=%s invert=%s upsampled=%s segment=%s mip=%s",
+            send_original,
+            send_invert,
+            send_upsampled,
+            send_segment,
+            send_mip,
+        )
+        logging.info(
+            "Sending %d original image(s), %d inverted image(s), "
+            "%d upsampled image(s), %d segmentation image(s), and %d MIP image(s)",
+            len(original_images),
+            len(inverted_images),
+            len(upsampled_images),
+            len(segment_images),
+            len(mip_images),
+        )
+        if not output_images:
+            logging.info("No output options enabled; closing without output")
+            return
+
         _validate_output_images(output_images, input_images)
+        _log_output_images(output_images)
         connection.send_image(output_images)
 
     except Exception:
@@ -113,18 +169,54 @@ def _invert_images(images):
     return outputs
 
 
-def _threshold_mip_image(images):
+def _segment_images(images):
+    if not images:
+        return []
+
+    outputs = []
+    for output_index, source_image in enumerate(images):
+        source_data = np.asarray(source_image.data)
+        threshold = float(np.mean(source_data))
+        segmentation = (source_data > threshold).astype(np.uint16)
+
+        output = ismrmrd.Image.from_array(segmentation, transpose=False)
+        header = source_image.getHead()
+        header.data_type = output.data_type
+        output.setHead(header)
+        _stamp_output_image(
+            output,
+            source_image,
+            SEGMENT_SERIES_INDEX,
+            output_index,
+            _derived_series_name(source_image, "segment", SEGMENT_SERIES_NAME),
+            "Segmentation",
+            SEGMENT_SERIES_NAME,
+            ["PYTHON", "OPENRECON_SEGMENT"],
+            {
+                "LUTFileName": SEGMENTATION_LUT,
+                "WindowCenter": "0.5",
+                "WindowWidth": "1",
+            },
+        )
+        outputs.append(output)
+
+    logging.info(
+        "Created %d threshold segmentation image(s)",
+        len(outputs),
+    )
+    return outputs
+
+
+def _mip_image(images):
     if not images:
         return []
 
     stack = np.stack([np.asarray(image.data) for image in images])
-    threshold = float(np.mean(stack) + 0.5 * np.std(stack))
-    segmentation = stack > threshold
-
     # Stack shape is [image, cha, z, y, x]. Collapse source slices and any
     # per-image z dimension to one projected output slice.
-    mip = segmentation.max(axis=(0, 2)).astype(np.uint16)
+    mip = stack.max(axis=(0, 2))
     mip = mip[:, np.newaxis, :, :]
+    mip = _cast_like(mip, np.asarray(images[0].data))
 
     output = ismrmrd.Image.from_array(mip, transpose=False)
     header = images[0].getHead()
@@ -133,26 +225,21 @@ def _threshold_mip_image(images):
     _stamp_output_image(
         output,
         images[0],
-        THRESHOLD_MIP_SERIES_INDEX,
+        MIP_SERIES_INDEX,
         0,
-        _derived_series_name(images[0], "mip", THRESHOLD_MIP_SERIES_NAME),
-        "Segmentation",
-        THRESHOLD_MIP_SERIES_NAME,
-        ["PYTHON", "OPENRECON_THRESHOLD_MIP"],
-        {
-            "WindowCenter": "0.5",
-            "WindowWidth": "1",
-        },
+        _derived_series_name(images[0], "mip", MIP_SERIES_NAME),
+        "Image",
+        MIP_SERIES_NAME,
+        ["PYTHON", "OPENRECON_MIP"],
     )
     logging.info(
-        "Created threshold MIP segmentation with threshold %.6g from %d image(s)",
-        threshold,
+        "Created maximum intensity projection from %d image(s)",
         len(images),
     )
     return [output]
 
 
-def _interpolated_images(images):
+def _upsampled_images(images):
     if not images:
         return []
 
@@ -160,7 +247,7 @@ def _interpolated_images(images):
     outputs = []
     for index, image in enumerate(images):
         outputs.append(
-            _make_interpolated_image(
+            _make_upsampled_image(
                 image,
                 np.asarray(image.data),
                 2 * index,
@@ -182,7 +269,7 @@ def _interpolated_images(images):
             midpoint_position = _header_position(image.getHead()) + half_step
 
         outputs.append(
-            _make_interpolated_image(
+            _make_upsampled_image(
                 image,
                 _cast_like(midpoint, np.asarray(image.data)),
                 2 * index + 1,
@@ -192,14 +279,18 @@ def _interpolated_images(images):
         )
 
     logging.info(
-        "Created %d interpolated image(s) from %d source image(s)",
+        "Created %d upsampled image(s) from %d source image(s)",
         len(outputs),
         len(images),
     )
     return outputs
 
 
-def _make_interpolated_image(source_image, data, output_index, position, half_step):
+def _interpolated_images(images):
+    return _upsampled_images(images)
+
+
+def _make_upsampled_image(source_image, data, output_index, position, half_step):
     output = ismrmrd.Image.from_array(data, transpose=False)
     header = source_image.getHead()
     header.data_type = output.data_type
@@ -218,14 +309,18 @@ def _make_interpolated_image(source_image, data, output_index, position, half_st
     _stamp_output_image(
         output,
         source_image,
-        INTERPOLATED_SERIES_INDEX,
+        UPSAMPLED_SERIES_INDEX,
         output_index,
-        _derived_series_name(source_image, "upsampled", INTERPOLATED_SERIES_NAME),
+        _derived_series_name(source_image, "upsampled", UPSAMPLED_SERIES_NAME),
         "Image",
-        INTERPOLATED_SERIES_NAME,
-        ["PYTHON", "OPENRECON_INTERPOLATED"],
+        UPSAMPLED_SERIES_NAME,
+        ["PYTHON", "OPENRECON_UPSAMPLED"],
     )
     return output
+
+
+def _make_interpolated_image(source_image, data, output_index, position, half_step):
+    return _make_upsampled_image(source_image, data, output_index, position, half_step)
 
 
 def _restamp_originals(images):
@@ -264,13 +359,20 @@ def _stamp_output_image(
     extra_meta=None,
 ):
     header = output.getHead()
+    header.image_series_index = series_index
     header.image_index = output_index + 1
     header.slice = output_index
+    header.contrast = 0
+    if output.data_type in (ismrmrd.DATATYPE_CXFLOAT, ismrmrd.DATATYPE_CXDOUBLE):
+        header.image_type = ismrmrd.IMTYPE_COMPLEX
+    else:
+        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
     output.setHead(header)
     output.image_series_index = series_index
     output.attribute_string = _output_meta(
         source_image,
         series_index,
+        output_index,
         series_name,
         data_role,
         image_type_token,
@@ -283,6 +385,7 @@ def _stamp_output_image(
 def _output_meta(
     source_image,
     series_index,
+    output_index,
     series_name,
     data_role,
     image_type_token,
@@ -290,7 +393,14 @@ def _output_meta(
     extra_meta,
 ):
     meta = _meta_from_image(source_image)
+    _strip_source_parent_refs(meta)
     series_uid = _derived_series_uid(source_image, series_index, series_name)
+    sop_uid = _derived_instance_uid(
+        source_image,
+        series_index,
+        series_name,
+        output_index,
+    )
     series_grouping = _derived_series_grouping(series_name, series_index)
     image_type = f"DERIVED\\PRIMARY\\M\\{image_type_token}"
     meta["DataRole"] = data_role
@@ -301,10 +411,16 @@ def _output_meta(
     meta["SequenceDescription"] = series_name
     meta["ProtocolName"] = series_name
     meta["ImageComments"] = series_name
+    meta["ImageComment"] = series_name
     meta["SeriesInstanceUID"] = series_uid
+    meta["SOPInstanceUID"] = sop_uid
     meta["SeriesNumberRangeNameUID"] = series_grouping
+    meta["ImageTypeValue3"] = "M"
+    meta["ImageTypeValue4"] = image_type_token
+    meta["ComplexImageComponent"] = "MAGNITUDE"
     _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
     meta["Keep_image_geometry"] = 1
+    _set_output_position_meta(meta, output_index)
     for key, value in extra_meta.items():
         meta[key] = value
 
@@ -315,11 +431,37 @@ def _output_meta(
             series_name,
             series_grouping,
             series_uid,
+            sop_uid,
             image_type,
+            image_type_token,
+            output_index,
         )
         if changed:
             meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
     return meta
+
+
+def _strip_source_parent_refs(meta):
+    for key in list(meta.keys()):
+        if key in SOURCE_PARENT_REFERENCE_META_KEYS:
+            del meta[key]
+            continue
+        if any(key.startswith(prefix) for prefix in SOURCE_PARENT_REFERENCE_META_PREFIXES):
+            del meta[key]
+
+
+def _set_output_position_meta(meta, output_index):
+    for key in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
+        _set_meta_scalar(meta, key, SCANNER_PARTITION_INDEX)
+    for key, value in (
+        ("AnatomicalSliceNo", output_index),
+        ("ChronSliceNo", output_index),
+        ("NumberInSeries", output_index + 1),
+        ("ProtocolSliceNumber", output_index),
+        ("SliceNo", output_index),
+        ("IsmrmrdSliceNo", output_index),
+    ):
+        _set_meta_scalar(meta, key, value)
 
 
 def _meta_from_image(image):
@@ -352,6 +494,24 @@ def _derived_series_uid(source_image, series_index, series_name):
             base_uid or _source_series_name(source_image) or "source",
             str(series_index),
             series_name,
+        ]
+    )
+    return f"2.25.{uuid.uuid5(uuid.NAMESPACE_URL, seed).int}"
+
+
+def _derived_instance_uid(source_image, series_index, series_name, output_index):
+    meta = _meta_from_image(source_image)
+    minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    source_instance_uid = _meta_text(meta, "SOPInstanceUID")
+    if not source_instance_uid and minihead:
+        source_instance_uid = _minihead_string_value(minihead, "SOPInstanceUID")
+
+    seed = "|".join(
+        [
+            "openreconi2iexample-instance",
+            _derived_series_uid(source_image, series_index, series_name),
+            source_instance_uid or str(output_index),
+            str(output_index),
         ]
     )
     return f"2.25.{uuid.uuid5(uuid.NAMESPACE_URL, seed).int}"
@@ -403,12 +563,38 @@ def _minihead_string_value(minihead, key):
     return match.group(1).strip() if match else ""
 
 
+def _minihead_long_value(minihead, key):
+    match = re.search(
+        rf'<ParamLong\."{re.escape(key)}">\s*{{\s*(-?\d*)\s*}}',
+        minihead,
+    )
+    value = match.group(1).strip() if match else ""
+    return int(value) if value not in {"", "-"} else None
+
+
+def _minihead_array_tokens(minihead, key):
+    block_match = re.search(
+        rf'<ParamArray\."{re.escape(key)}">\s*{{.*?^\s*}}',
+        minihead,
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    if not block_match:
+        return []
+    return [
+        token.strip()
+        for token in re.findall(r'\{\s*"([^"]+)"\s*\}', block_match.group(0))
+    ]
+
+
 def _patch_ice_minihead(
     minihead_text,
     series_name,
     series_grouping,
     series_uid,
+    sop_uid,
     image_type,
+    image_type_token,
+    output_index,
 ):
     current_text = minihead_text
     changed = False
@@ -418,11 +604,38 @@ def _patch_ice_minihead(
         ("ProtocolName", series_name),
         ("SeriesNumberRangeNameUID", series_grouping),
         ("SeriesInstanceUID", series_uid),
+        ("SOPInstanceUID", sop_uid),
         ("ImageType", image_type),
         ("ImageTypeValue3", "M"),
         ("ComplexImageComponent", "MAGNITUDE"),
     ):
         current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            name,
+            value,
+        )
+        changed = changed or did_change
+    current_text, did_change = _replace_or_append_minihead_array_token(
+        current_text,
+        "ImageTypeValue4",
+        image_type_token,
+    )
+    changed = changed or did_change
+    for name in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
+        current_text, did_change = _replace_or_append_minihead_long_param(
+            current_text,
+            name,
+            SCANNER_PARTITION_INDEX,
+        )
+        changed = changed or did_change
+    for name, value in (
+        ("AnatomicalSliceNo", output_index),
+        ("ChronSliceNo", output_index),
+        ("NumberInSeries", output_index + 1),
+        ("ProtocolSliceNumber", output_index),
+        ("SliceNo", output_index),
+    ):
+        current_text, did_change = _replace_or_append_minihead_long_param(
             current_text,
             name,
             value,
@@ -439,18 +652,87 @@ def _replace_or_append_minihead_string_param(minihead_text, name, value):
     pattern = re.compile(
         rf'(<ParamString\."{re.escape(name)}">\s*\{{\s*")([^"]*)("\s*\}})'
     )
-    match = pattern.search(minihead_text)
-    if match:
-        if match.group(2) == value:
+    matches = list(pattern.finditer(minihead_text))
+    if matches:
+        if all(match.group(2) == value for match in matches):
             return minihead_text, False
-        replacement = f"{match.group(1)}{value}{match.group(3)}"
         return (
-            minihead_text[:match.start()] + replacement + minihead_text[match.end():],
+            pattern.sub(
+                lambda match: f"{match.group(1)}{value}{match.group(3)}",
+                minihead_text,
+            ),
             True,
         )
 
     appended_param = f'\n<ParamString."{name}">\t{{ "{value}" }}\n'
     return minihead_text.rstrip() + appended_param, True
+
+
+def _replace_or_append_minihead_long_param(minihead_text, name, value):
+    if value is None:
+        return minihead_text, False
+
+    value = int(value)
+    pattern = re.compile(
+        rf'(<ParamLong\."{re.escape(name)}">\s*\{{\s*)(-?\d*)?(\s*\}})'
+    )
+    matches = list(pattern.finditer(minihead_text))
+    if matches:
+        if all((match.group(2) or "").strip() == str(value) for match in matches):
+            return minihead_text, False
+        return (
+            pattern.sub(
+                lambda match: f"{match.group(1)}{value}{match.group(3)}",
+                minihead_text,
+            ),
+            True,
+        )
+
+    appended_param = f'\n<ParamLong."{name}">\t{{ {value} }}\n'
+    return minihead_text.rstrip() + appended_param, True
+
+
+def _replace_or_append_minihead_array_token(minihead_text, name, target_token):
+    target_token = _sanitize_identity_text(target_token)
+    if not target_token:
+        return minihead_text, False
+
+    block_pattern = re.compile(
+        rf'(<ParamArray\."{re.escape(name)}">\s*\{{)(.*?)(^\s*\}})',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    block_match = block_pattern.search(minihead_text)
+    if not block_match:
+        appended_param = (
+            f'\n<ParamArray."{name}">\t{{\n\t{{ "{target_token}" }}\n}}\n'
+        )
+        return minihead_text.rstrip() + appended_param, True
+
+    block_text = block_match.group(0)
+    tokens = _minihead_array_tokens(block_text, name)
+    if tokens == [target_token]:
+        return minihead_text, False
+
+    token_pattern = re.compile(r'\{\s*"[^"]*"\s*\}')
+    token_matches = list(token_pattern.finditer(block_text))
+    if not token_matches:
+        replacement_block = (
+            block_text.rstrip()[:-1] + f'\n\t{{ "{target_token}" }}\n}}'
+        )
+    else:
+        first_token = token_matches[0]
+        last_token = token_matches[-1]
+        replacement_block = (
+            block_text[:first_token.start()]
+            + f'{{ "{target_token}" }}'
+            + block_text[last_token.end():]
+        )
+    return (
+        minihead_text[:block_match.start()]
+        + replacement_block
+        + minihead_text[block_match.end():],
+        True,
+    )
 
 
 def _sanitize_identity_text(value):
@@ -467,9 +749,16 @@ def _set_meta_field(meta, key, value):
     meta[key] = value
 
 
+def _set_meta_scalar(meta, key, value):
+    meta[key] = str(int(value))
+
+
 def _validate_output_images(output_images, input_images):
     errors = []
     seen_image_keys = {}
+    seen_storage_keys = {}
+    seen_sop_uids = {}
+    source_slice_count = len(input_images)
     input_identity = _identity_values(input_images)
     input_has_minihead = any(_image_minihead(image) for image in input_images)
     series_identity = {}
@@ -501,6 +790,7 @@ def _validate_output_images(output_images, input_images):
             "protocol_name": _meta_text(meta, "ProtocolName"),
             "series_grouping": _meta_text(meta, "SeriesNumberRangeNameUID"),
             "series_uid": _meta_text(meta, "SeriesInstanceUID"),
+            "sop_uid": _meta_text(meta, "SOPInstanceUID"),
             "minihead_sequence_description": _minihead_string_value(
                 minihead, "SequenceDescription"
             ),
@@ -509,8 +799,20 @@ def _validate_output_images(output_images, input_images):
                 minihead, "SeriesNumberRangeNameUID"
             ),
             "minihead_series_uid": _minihead_string_value(minihead, "SeriesInstanceUID"),
+            "minihead_sop_uid": _minihead_string_value(minihead, "SOPInstanceUID"),
         }
         _validate_identity_fields(index, identity, input_identity, errors)
+        _validate_storage_fields(
+            index,
+            image,
+            meta,
+            minihead,
+            input_identity,
+            seen_storage_keys,
+            seen_sop_uids,
+            _series_slice_limit(int(image.image_series_index), source_slice_count),
+            errors,
+        )
 
         series_key = int(image.image_series_index)
         comparable_identity = (
@@ -547,6 +849,7 @@ def _validate_identity_fields(index, identity, input_identity, errors):
         "protocol_name",
         "series_grouping",
         "series_uid",
+        "sop_uid",
     )
     for key in required:
         if not identity[key]:
@@ -557,6 +860,7 @@ def _validate_identity_fields(index, identity, input_identity, errors):
         ("protocol_name", "minihead_protocol_name"),
         ("series_grouping", "minihead_series_grouping"),
         ("series_uid", "minihead_series_uid"),
+        ("sop_uid", "minihead_sop_uid"),
     ):
         meta_value = identity[meta_key]
         minihead_value = identity[minihead_key]
@@ -575,10 +879,115 @@ def _validate_identity_fields(index, identity, input_identity, errors):
         "minihead_protocol_name",
         "minihead_series_grouping",
         "minihead_series_uid",
+        "sop_uid",
+        "minihead_sop_uid",
     ):
         value = identity[key]
         if value and value in input_identity:
             errors.append(f"image {index} reuses input identity {key}={value}")
+
+
+def _validate_storage_fields(
+    index,
+    image,
+    meta,
+    minihead,
+    input_identity,
+    seen_storage_keys,
+    seen_sop_uids,
+    series_slice_limit,
+    errors,
+):
+    header = image.getHead()
+    header_slice = int(header.slice)
+    if series_slice_limit and not 0 <= header_slice < series_slice_limit:
+        errors.append(
+            f"image {index} has slice {header_slice} outside source image "
+            f"bounds [0..{series_slice_limit})"
+        )
+
+    expected_position_fields = {
+        "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
+        "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+        "AnatomicalSliceNo": header_slice,
+        "ChronSliceNo": header_slice,
+        "NumberInSeries": int(header.image_index),
+        "ProtocolSliceNumber": header_slice,
+        "SliceNo": header_slice,
+        "IsmrmrdSliceNo": header_slice,
+    }
+
+    for field, expected in expected_position_fields.items():
+        meta_value = _meta_int(meta, field)
+        if meta_value is None:
+            errors.append(f"image {index} is missing Meta {field}")
+        elif meta_value != expected:
+            errors.append(
+                f"image {index} has Meta {field}={meta_value}, expected {expected}"
+            )
+        if field == "IsmrmrdSliceNo":
+            continue
+        minihead_value = _minihead_long_value(minihead, field)
+        if minihead and minihead_value is None:
+            errors.append(f"image {index} is missing IceMiniHead {field}")
+        elif minihead_value is not None and minihead_value != expected:
+            errors.append(
+                f"image {index} has IceMiniHead {field}={minihead_value}, "
+                f"expected {expected}"
+            )
+
+    sop_uid = _meta_text(meta, "SOPInstanceUID")
+    minihead_sop_uid = _minihead_string_value(minihead, "SOPInstanceUID")
+    if sop_uid:
+        previous_index = seen_sop_uids.setdefault(sop_uid, index)
+        if previous_index != index:
+            errors.append(
+                f"SOPInstanceUID {sop_uid} is shared by output images "
+                f"{previous_index} and {index}"
+            )
+    if minihead_sop_uid:
+        previous_index = seen_sop_uids.setdefault(minihead_sop_uid, index)
+        if previous_index != index:
+            errors.append(
+                f"IceMiniHead SOPInstanceUID {minihead_sop_uid} is shared by "
+                f"output images {previous_index} and {index}"
+            )
+    image_type_value4 = _meta_text(meta, "ImageTypeValue4")
+    minihead_image_type_value4 = _minihead_array_tokens(minihead, "ImageTypeValue4")
+    if not image_type_value4:
+        errors.append(f"image {index} is missing Meta ImageTypeValue4")
+    if minihead and image_type_value4 not in minihead_image_type_value4:
+        errors.append(
+            f"image {index} has IceMiniHead ImageTypeValue4 "
+            f"{minihead_image_type_value4}, expected {image_type_value4}"
+        )
+
+    storage_key = (
+        _meta_text(meta, "SeriesInstanceUID"),
+        _meta_int(meta, "SliceNo"),
+        _meta_int(meta, "ChronSliceNo"),
+        _meta_int(meta, "NumberInSeries"),
+    )
+    previous_index = seen_storage_keys.setdefault(storage_key, index)
+    if previous_index != index:
+        errors.append(
+            f"image {index} duplicates scanner storage key {storage_key} "
+            f"from image {previous_index}"
+        )
+    for field in ("SOPInstanceUID",):
+        value = _meta_text(meta, field)
+        if value and value in input_identity:
+            errors.append(f"image {index} reuses input storage identity {field}={value}")
+
+
+def _series_slice_limit(series_index, source_slice_count):
+    if source_slice_count <= 0:
+        return 0
+    if series_index == UPSAMPLED_SERIES_INDEX:
+        return 2 * source_slice_count
+    if series_index == MIP_SERIES_INDEX:
+        return 1
+    return source_slice_count
 
 
 def _identity_values(images):
@@ -592,6 +1001,7 @@ def _identity_values(images):
             "ProtocolName",
             "SeriesNumberRangeNameUID",
             "SeriesInstanceUID",
+            "SOPInstanceUID",
         ):
             value = _meta_text(meta, key)
             if value:
@@ -602,8 +1012,40 @@ def _identity_values(images):
     return values
 
 
+def _meta_int(meta, key):
+    text = _meta_text(meta, key)
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
 def _image_minihead(image):
     return _decode_ice_minihead(_meta_text(_meta_from_image(image), "IceMiniHead"))
+
+
+def _log_output_images(output_images):
+    for index, image in enumerate(output_images):
+        header = image.getHead()
+        meta = _meta_from_image(image)
+        minihead = _image_minihead(image)
+        logging.info(
+            "OPENRECONI2I_OUTPUT index=%d series=%d image_index=%d slice=%d "
+            "name=%s series_uid=%s sop_uid=%s minihead_slice=%s "
+            "minihead_chron_slice=%s minihead_sop_uid=%s",
+            index,
+            int(image.image_series_index),
+            int(header.image_index),
+            int(header.slice),
+            _meta_text(meta, "SeriesDescription"),
+            _meta_text(meta, "SeriesInstanceUID"),
+            _meta_text(meta, "SOPInstanceUID"),
+            _minihead_long_value(minihead, "SliceNo"),
+            _minihead_long_value(minihead, "ChronSliceNo"),
+            _minihead_string_value(minihead, "SOPInstanceUID"),
+        )
 
 
 def _interpolated_half_step(images):
@@ -672,4 +1114,12 @@ def _config_bool(config, key, default=False):
         return True
     if text in {"false", "0", "no", "off"}:
         return False
+    return default
+
+
+def _config_bool_any(config, keys, default=False):
+    for key in keys:
+        value = _config_bool(config, key, default=None)
+        if value is not None:
+            return value
     return default

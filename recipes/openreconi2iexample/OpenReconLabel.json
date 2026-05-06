@@ -3,7 +3,7 @@
     "name": { "en": "openreconi2iexample" },
     "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
-    "information": { "en": "Minimal OpenRecon image-to-image inversion example" },
+    "information": { "en": "Minimal configurable OpenRecon image-to-image example" },
     "id": "openreconi2iexample",
     "regulatory_information": {
       "device_trade_name": "openreconi2iexample",
@@ -15,7 +15,7 @@
       "gtin": "00860000171212",
       "udi": "(01)00860000171212(21)1.3.0",
       "safety_advices": "",
-      "special_operating_instructions": "OpenRecon image-to-image inversion example",
+      "special_operating_instructions": "OpenRecon configurable image-to-image example",
       "additional_relevant_information": ""
     }
   },
@@ -54,20 +54,34 @@
       "label": { "en": "Send original images" },
       "type": "boolean",
       "information": { "en": "Send a copy of original unmodified images back too" },
-      "default": true
-    },
-    {
-      "id": "sendthresholdmip",
-      "label": { "en": "Send threshold MIP" },
-      "type": "boolean",
-      "information": { "en": "Threshold the image volume and send one maximum-intensity-projection segmentation slice" },
       "default": false
     },
     {
-      "id": "sendinterpolated",
-      "label": { "en": "Send interpolated series" },
+      "id": "invert",
+      "label": { "en": "Invert" },
       "type": "boolean",
-      "information": { "en": "Interpolate between slices and send a double-slice-count higher-resolution image series" },
+      "information": { "en": "Send inverted magnitude images" },
+      "default": false
+    },
+    {
+      "id": "upsampled",
+      "label": { "en": "Upsampled" },
+      "type": "boolean",
+      "information": { "en": "Interpolate between slices and send twice as many images" },
+      "default": false
+    },
+    {
+      "id": "segment",
+      "label": { "en": "Segment" },
+      "type": "boolean",
+      "information": { "en": "Threshold each slice and send a segmentation with a colourmap" },
+      "default": false
+    },
+    {
+      "id": "mip",
+      "label": { "en": "MIP" },
+      "type": "boolean",
+      "information": { "en": "Compute and send one maximum intensity projection image" },
       "default": false
     }
   ]
