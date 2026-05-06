@@ -101,7 +101,7 @@ tests:
           assert first(meta.get("SequenceDescription")) == "i2i_example_send_org-inverted"
           assert first(meta.get("ProtocolName")) == "i2i_example_send_org-inverted"
           assert first(meta.get("ImageComments")) == "i2i_example_send_org-inverted"
-          assert first(meta.get("SequenceDescriptionAdditional")) == ""
+          assert first(meta.get("SequenceDescriptionAdditional")) == "openrecon"
           assert "None" not in img.attribute_string
           assert int(first(meta.get("Keep_image_geometry"))) == 1
           assert img.image_series_index == module.INVERT_SERIES_INDEX
@@ -120,7 +120,7 @@ tests:
       assert first(meta.get("SequenceDescription")) == "i2i_example_send_org-mip"
       assert first(meta.get("ProtocolName")) == "i2i_example_send_org-mip"
       assert first(meta.get("ImageComments")) == "i2i_example_send_org-mip"
-      assert first(meta.get("SequenceDescriptionAdditional")) == ""
+      assert first(meta.get("SequenceDescriptionAdditional")) == "openrecon"
       assert "None" not in mip.attribute_string
       assert int(first(meta.get("Keep_image_geometry"))) == 1
       assert mip.image_series_index == module.THRESHOLD_MIP_SERIES_INDEX
@@ -140,7 +140,7 @@ tests:
       assert first(interp_meta.get("SequenceDescription")) == "i2i_example_send_org-upsampled"
       assert first(interp_meta.get("ProtocolName")) == "i2i_example_send_org-upsampled"
       assert first(interp_meta.get("ImageComments")) == "i2i_example_send_org-upsampled"
-      assert first(interp_meta.get("SequenceDescriptionAdditional")) == ""
+      assert first(interp_meta.get("SequenceDescriptionAdditional")) == "openrecon"
       assert "None" not in interpolated[0].attribute_string
       assert int(first(interp_meta.get("Keep_image_geometry"))) == 1
       assert np.allclose(np.asarray(interpolated[1].data), np.asarray(images[0].data) + 50.0)

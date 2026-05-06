@@ -43,6 +43,6 @@ The final edge slice is duplicated so the output count is exactly `2 * N`.
 - `sendinterpolated` is exposed in `OpenReconLabel.json` and defaults to false.
 - Output names are written to `SeriesDescription`, `SequenceDescription`,
   `ProtocolName`, and `ImageComments`.
-- Derived outputs set `SequenceDescriptionAdditional` to an explicit blank
-  value so scanners do not append `_None` or duplicate the display name.
+- Derived outputs set `SequenceDescriptionAdditional` to `openrecon` so
+  scanners do not append `_None` to the display name.
 - `Keep_image_geometry = 1` is set on all returned image outputs.

@@ -216,7 +216,7 @@ def _invert_meta(source_image, window_center, window_width):
     meta["SequenceDescription"] = series_name
     meta["ProtocolName"] = series_name
     meta["ImageComments"] = series_name
-    _clear_meta_field(meta, "SequenceDescriptionAdditional")
+    _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
     meta["WindowCenter"] = str(window_center)
     meta["WindowWidth"] = str(window_width)
     meta["Keep_image_geometry"] = 1
@@ -234,7 +234,7 @@ def _interpolated_meta(source_image):
     meta["SequenceDescription"] = series_name
     meta["ProtocolName"] = series_name
     meta["ImageComments"] = series_name
-    _clear_meta_field(meta, "SequenceDescriptionAdditional")
+    _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
     meta["Keep_image_geometry"] = 1
     return meta
 
@@ -250,7 +250,7 @@ def _threshold_mip_meta(source_image):
     meta["SequenceDescription"] = series_name
     meta["ProtocolName"] = series_name
     meta["ImageComments"] = series_name
-    _clear_meta_field(meta, "SequenceDescriptionAdditional")
+    _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
     meta["WindowCenter"] = "0.5"
     meta["WindowWidth"] = "1"
     meta["Keep_image_geometry"] = 1
@@ -312,8 +312,8 @@ def _minihead_string_value(minihead, key):
     return match.group(1).strip() if match else ""
 
 
-def _clear_meta_field(meta, key):
-    meta[key] = ""
+def _set_meta_field(meta, key, value):
+    meta[key] = value
 
 
 def _interpolated_half_step(images):
