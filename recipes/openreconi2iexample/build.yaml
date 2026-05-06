@@ -51,8 +51,9 @@ readme: |-
 
   Minimal OpenRecon image-to-image reference. Receives reconstructed MRD
   magnitude images, returns inverted copies as `<source>-inverted` on
-  `image_series_index = 99`, and can re-emit the original scan on
-  `image_series_index = 100` with the `sendoriginal` OpenRecon option. The
+  `image_series_index = 99`, and can re-emit the original scan as
+  `<source>-original` on `image_series_index = 100` with the `sendoriginal`
+  OpenRecon option. The
   `sendthresholdmip` option adds one `<source>-mip` segmentation MIP slice on
   `image_series_index = 101`. The `sendinterpolated` option adds a
   double-slice-count `<source>-upsampled` series on `image_series_index = 102`.

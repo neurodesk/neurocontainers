@@ -28,12 +28,13 @@ tests:
         -c openreconi2iexample
 
       test -s "${output_h5}"
-      echo "Inspect ${output_h5} with an HDF5 viewer; output series 99 should be named openrecon_invert, series 100 should contain the original scan when sendoriginal is true, series 101 should contain one openrecon_threshold_mip slice when sendthresholdmip is true, and series 102 should contain openrecon_interpolated when sendinterpolated is true."
+      echo "Inspect ${output_h5} with an HDF5 viewer; output series 99 should be named <source>-inverted, series 100 should be named <source>-original when sendoriginal is true, series 101 should contain one <source>-mip slice when sendthresholdmip is true, and series 102 should be named <source>-upsampled when sendinterpolated is true."
 
  - name: Invert optional original threshold MIP and interpolation unit smoke test
    manual: true
    script: |
       python3 - <<'PY'
+      import base64
       import importlib.util
       import sys
       from pathlib import Path
@@ -46,6 +47,41 @@ tests:
       module = importlib.util.module_from_spec(spec)
       sys.modules["openreconi2iexample"] = module
       spec.loader.exec_module(module)
+
+      def first(value):
+          return value[0] if isinstance(value, list) else value
+
+      def make_minihead(series_name):
+          minihead = f'''
+      <ParamString."SeriesDescription">\t{{ "{series_name}" }}
+      <ParamString."SequenceDescription">\t{{ "{series_name}" }}
+      <ParamString."ProtocolName">\t{{ "{series_name}" }}
+      <ParamString."SeriesNumberRangeNameUID">\t{{ "source_group" }}
+      <ParamString."SeriesInstanceUID">\t{{ "1.2.3.4" }}
+      <ParamString."ImageType">\t{{ "ORIGINAL\\PRIMARY\\M" }}
+      '''
+          return base64.b64encode(minihead.encode("utf-8")).decode("ascii")
+
+      def minihead_value(image, key):
+          meta = ismrmrd.Meta.deserialize(image.attribute_string)
+          minihead = base64.b64decode(first(meta.get("IceMiniHead"))).decode("utf-8")
+          return module._minihead_string_value(minihead, key)
+
+      def assert_output_identity(image, expected_name, expected_series_index):
+          meta = ismrmrd.Meta.deserialize(image.attribute_string)
+          assert first(meta.get("SeriesDescription")) == expected_name
+          assert first(meta.get("SequenceDescription")) == expected_name
+          assert first(meta.get("ProtocolName")) == expected_name
+          assert first(meta.get("ImageComments")) == expected_name
+          assert first(meta.get("SeriesNumberRangeNameUID")) == f"{expected_name}_{expected_series_index}"
+          assert first(meta.get("SeriesInstanceUID")).startswith("2.25.")
+          assert first(meta.get("SeriesInstanceUID")) != "1.2.3.4"
+          assert minihead_value(image, "SeriesDescription") == expected_name
+          assert minihead_value(image, "SequenceDescription") == expected_name
+          assert minihead_value(image, "ProtocolName") == expected_name
+          assert minihead_value(image, "SeriesNumberRangeNameUID") == f"{expected_name}_{expected_series_index}"
+          assert minihead_value(image, "SeriesInstanceUID") == first(meta.get("SeriesInstanceUID"))
+          assert image.image_series_index == expected_series_index
 
       def make_image(slice_index):
           gradient = np.arange(64, dtype=np.float32).reshape(8, 8)
@@ -64,7 +100,10 @@ tests:
           meta["SeriesDescription"] = "i2i_example_send_org"
           meta["SequenceDescription"] = "i2i_example_send_org"
           meta["ProtocolName"] = "i2i_example_send_org"
+          meta["SeriesNumberRangeNameUID"] = "source_group"
+          meta["SeriesInstanceUID"] = "1.2.3.4"
           meta["SequenceDescriptionAdditional"] = "source_extra"
+          meta["IceMiniHead"] = make_minihead("i2i_example_send_org")
           image.attribute_string = meta.serialize()
           return image
 
@@ -83,6 +122,9 @@ tests:
           meta["SeriesDescription"] = "i2i_example_send_org"
           meta["SequenceDescription"] = "i2i_example_send_org"
           meta["ProtocolName"] = "i2i_example_send_org"
+          meta["SeriesNumberRangeNameUID"] = "source_group"
+          meta["SeriesInstanceUID"] = "1.2.3.4"
+          meta["IceMiniHead"] = make_minihead("i2i_example_send_org")
           image.attribute_string = meta.serialize()
           return image
 
@@ -90,21 +132,16 @@ tests:
       outputs = module._invert_images(images)
       assert len(outputs) == 4
 
-      def first(value):
-          return value[0] if isinstance(value, list) else value
-
-      for img in outputs:
+      for index, img in enumerate(outputs):
           meta = ismrmrd.Meta.deserialize(img.attribute_string)
           assert first(meta.get("DataRole")) == "Image"
           assert first(meta.get("ImageType")) == "DERIVED\\PRIMARY\\M\\openrecon_invert"
-          assert first(meta.get("SeriesDescription")) == "i2i_example_send_org-inverted"
-          assert first(meta.get("SequenceDescription")) == "i2i_example_send_org-inverted"
-          assert first(meta.get("ProtocolName")) == "i2i_example_send_org-inverted"
-          assert first(meta.get("ImageComments")) == "i2i_example_send_org-inverted"
+          assert_output_identity(img, "i2i_example_send_org-inverted", module.INVERT_SERIES_INDEX)
           assert first(meta.get("SequenceDescriptionAdditional")) == "openrecon"
           assert "None" not in img.attribute_string
           assert int(first(meta.get("Keep_image_geometry"))) == 1
-          assert img.image_series_index == module.INVERT_SERIES_INDEX
+          assert img.getHead().image_index == index + 1
+          assert img.getHead().slice == index
 
       source = np.asarray(images[0].data)
       inverted = np.asarray(outputs[0].data)
@@ -116,14 +153,10 @@ tests:
       meta = ismrmrd.Meta.deserialize(mip.attribute_string)
       assert first(meta.get("DataRole")) == "Segmentation"
       assert first(meta.get("ImageType")) == "DERIVED\\PRIMARY\\M\\openrecon_threshold_mip"
-      assert first(meta.get("SeriesDescription")) == "i2i_example_send_org-mip"
-      assert first(meta.get("SequenceDescription")) == "i2i_example_send_org-mip"
-      assert first(meta.get("ProtocolName")) == "i2i_example_send_org-mip"
-      assert first(meta.get("ImageComments")) == "i2i_example_send_org-mip"
+      assert_output_identity(mip, "i2i_example_send_org-mip", module.THRESHOLD_MIP_SERIES_INDEX)
       assert first(meta.get("SequenceDescriptionAdditional")) == "openrecon"
       assert "None" not in mip.attribute_string
       assert int(first(meta.get("Keep_image_geometry"))) == 1
-      assert mip.image_series_index == module.THRESHOLD_MIP_SERIES_INDEX
       mip_data = np.asarray(mip.data)
       assert mip_data.shape == (1, 1, 8, 8), mip_data.shape
       assert set(np.unique(mip_data).tolist()) == {0, 1}
@@ -136,10 +169,7 @@ tests:
       interp_meta = ismrmrd.Meta.deserialize(interpolated[0].attribute_string)
       assert first(interp_meta.get("DataRole")) == "Image"
       assert first(interp_meta.get("ImageType")) == "DERIVED\\PRIMARY\\M\\openrecon_interpolated"
-      assert first(interp_meta.get("SeriesDescription")) == "i2i_example_send_org-upsampled"
-      assert first(interp_meta.get("SequenceDescription")) == "i2i_example_send_org-upsampled"
-      assert first(interp_meta.get("ProtocolName")) == "i2i_example_send_org-upsampled"
-      assert first(interp_meta.get("ImageComments")) == "i2i_example_send_org-upsampled"
+      assert_output_identity(interpolated[0], "i2i_example_send_org-upsampled", module.INTERPOLATED_SERIES_INDEX)
       assert first(interp_meta.get("SequenceDescriptionAdditional")) == "openrecon"
       assert "None" not in interpolated[0].attribute_string
       assert int(first(interp_meta.get("Keep_image_geometry"))) == 1
@@ -151,10 +181,19 @@ tests:
 
       originals = module._restamp_originals(images)
       assert len(originals) == 4
-      for img in originals:
+      for index, img in enumerate(originals):
           meta = ismrmrd.Meta.deserialize(img.attribute_string)
+          assert img is not images[index]
+          assert np.allclose(np.asarray(img.data), np.asarray(images[index].data))
+          assert_output_identity(img, "i2i_example_send_org-original", module.ORIGINAL_SERIES_INDEX)
           assert int(first(meta.get("Keep_image_geometry"))) == 1
-          assert img.image_series_index == module.ORIGINAL_SERIES_INDEX
+          assert img.getHead().image_index == index + 1
+          assert img.getHead().slice == index
+
+      module._validate_output_images(
+          outputs + mip_outputs + interpolated + originals,
+          images,
+      )
 
       assert module._config_bool({"parameters": {}}, "sendoriginal", default=True) is True
       assert module._config_bool({"parameters": {"sendoriginal": True}}, "sendoriginal", default=True) is True

@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import traceback
+import uuid
 
 import constants
 import ismrmrd
@@ -15,6 +16,7 @@ ORIGINAL_SERIES_INDEX = 100
 THRESHOLD_MIP_SERIES_INDEX = 101
 INTERPOLATED_SERIES_INDEX = 102
 INVERT_SERIES_NAME = "openrecon_invert"
+ORIGINAL_SERIES_NAME = "openrecon_original"
 THRESHOLD_MIP_SERIES_NAME = "openrecon_threshold_mip"
 INTERPOLATED_SERIES_NAME = "openrecon_interpolated"
 
@@ -60,6 +62,7 @@ def process(connection, config, metadata):
             interpolated_count,
             len(input_images) if send_original else 0,
         )
+        _validate_output_images(output_images, input_images)
         connection.send_image(output_images)
 
     except Exception:
@@ -79,7 +82,7 @@ def _invert_images(images):
     window_center = data_min + window_width / 2.0
 
     outputs = []
-    for source_image in images:
+    for output_index, source_image in enumerate(images):
         source_data = np.asarray(source_image.data)
         inverted = data_min + data_max - source_data.astype(np.float32)
         if np.issubdtype(source_data.dtype, np.integer):
@@ -91,8 +94,20 @@ def _invert_images(images):
         header = source_image.getHead()
         header.data_type = output.data_type
         output.setHead(header)
-        output.image_series_index = INVERT_SERIES_INDEX
-        output.attribute_string = _invert_meta(source_image, window_center, window_width).serialize()
+        _stamp_output_image(
+            output,
+            source_image,
+            INVERT_SERIES_INDEX,
+            output_index,
+            _derived_series_name(source_image, "inverted"),
+            "Image",
+            INVERT_SERIES_NAME,
+            ["PYTHON", "OPENRECON_INVERT"],
+            {
+                "WindowCenter": str(window_center),
+                "WindowWidth": str(window_width),
+            },
+        )
         outputs.append(output)
 
     return outputs
@@ -114,10 +129,21 @@ def _threshold_mip_image(images):
     output = ismrmrd.Image.from_array(mip, transpose=False)
     header = images[0].getHead()
     header.data_type = output.data_type
-    header.slice = 0
     output.setHead(header)
-    output.image_series_index = THRESHOLD_MIP_SERIES_INDEX
-    output.attribute_string = _threshold_mip_meta(images[0]).serialize()
+    _stamp_output_image(
+        output,
+        images[0],
+        THRESHOLD_MIP_SERIES_INDEX,
+        0,
+        _derived_series_name(images[0], "mip", THRESHOLD_MIP_SERIES_NAME),
+        "Segmentation",
+        THRESHOLD_MIP_SERIES_NAME,
+        ["PYTHON", "OPENRECON_THRESHOLD_MIP"],
+        {
+            "WindowCenter": "0.5",
+            "WindowWidth": "1",
+        },
+    )
     logging.info(
         "Created threshold MIP segmentation with threshold %.6g from %d image(s)",
         threshold,
@@ -189,71 +215,110 @@ def _make_interpolated_image(source_image, data, output_index, position, half_st
     _set_header_sequence_field(header, "position", [float(value) for value in position])
 
     output.setHead(header)
-    output.image_series_index = INTERPOLATED_SERIES_INDEX
-    output.attribute_string = _interpolated_meta(source_image).serialize()
+    _stamp_output_image(
+        output,
+        source_image,
+        INTERPOLATED_SERIES_INDEX,
+        output_index,
+        _derived_series_name(source_image, "upsampled", INTERPOLATED_SERIES_NAME),
+        "Image",
+        INTERPOLATED_SERIES_NAME,
+        ["PYTHON", "OPENRECON_INTERPOLATED"],
+    )
     return output
 
 
 def _restamp_originals(images):
     outputs = []
-    for image in images:
-        meta = _meta_from_image(image)
-        meta["Keep_image_geometry"] = 1
-        image.attribute_string = meta.serialize()
-        image.image_series_index = ORIGINAL_SERIES_INDEX
-        outputs.append(image)
+    for output_index, source_image in enumerate(images):
+        output = ismrmrd.Image.from_array(
+            np.asarray(source_image.data).copy(),
+            transpose=False,
+        )
+        header = source_image.getHead()
+        header.data_type = output.data_type
+        output.setHead(header)
+        _stamp_output_image(
+            output,
+            source_image,
+            ORIGINAL_SERIES_INDEX,
+            output_index,
+            _derived_series_name(source_image, "original", ORIGINAL_SERIES_NAME),
+            "Image",
+            ORIGINAL_SERIES_NAME,
+            ["PYTHON", "OPENRECON_ORIGINAL_COPY"],
+        )
+        outputs.append(output)
     return outputs
 
 
-def _invert_meta(source_image, window_center, window_width):
+def _stamp_output_image(
+    output,
+    source_image,
+    series_index,
+    output_index,
+    series_name,
+    data_role,
+    image_type_token,
+    history,
+    extra_meta=None,
+):
+    header = output.getHead()
+    header.image_index = output_index + 1
+    header.slice = output_index
+    output.setHead(header)
+    output.image_series_index = series_index
+    output.attribute_string = _output_meta(
+        source_image,
+        series_index,
+        series_name,
+        data_role,
+        image_type_token,
+        history,
+        extra_meta or {},
+    ).serialize()
+    return output
+
+
+def _output_meta(
+    source_image,
+    series_index,
+    series_name,
+    data_role,
+    image_type_token,
+    history,
+    extra_meta,
+):
     meta = _meta_from_image(source_image)
-    series_name = _derived_series_name(source_image, "inverted")
-    meta["DataRole"] = "Image"
-    meta["ImageProcessingHistory"] = ["PYTHON", "OPENRECON_INVERT"]
-    meta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{INVERT_SERIES_NAME}"
-    meta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{INVERT_SERIES_NAME}"
+    series_uid = _derived_series_uid(source_image, series_index, series_name)
+    series_grouping = _derived_series_grouping(series_name, series_index)
+    image_type = f"DERIVED\\PRIMARY\\M\\{image_type_token}"
+    meta["DataRole"] = data_role
+    meta["ImageProcessingHistory"] = history
+    meta["ImageType"] = image_type
+    meta["DicomImageType"] = image_type
     meta["SeriesDescription"] = series_name
     meta["SequenceDescription"] = series_name
     meta["ProtocolName"] = series_name
     meta["ImageComments"] = series_name
-    _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
-    meta["WindowCenter"] = str(window_center)
-    meta["WindowWidth"] = str(window_width)
-    meta["Keep_image_geometry"] = 1
-    return meta
-
-
-def _interpolated_meta(source_image):
-    meta = _meta_from_image(source_image)
-    series_name = _derived_series_name(source_image, "upsampled", INTERPOLATED_SERIES_NAME)
-    meta["DataRole"] = "Image"
-    meta["ImageProcessingHistory"] = ["PYTHON", "OPENRECON_INTERPOLATED"]
-    meta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{INTERPOLATED_SERIES_NAME}"
-    meta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{INTERPOLATED_SERIES_NAME}"
-    meta["SeriesDescription"] = series_name
-    meta["SequenceDescription"] = series_name
-    meta["ProtocolName"] = series_name
-    meta["ImageComments"] = series_name
+    meta["SeriesInstanceUID"] = series_uid
+    meta["SeriesNumberRangeNameUID"] = series_grouping
     _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
     meta["Keep_image_geometry"] = 1
-    return meta
+    for key, value in extra_meta.items():
+        meta[key] = value
 
-
-def _threshold_mip_meta(source_image):
-    meta = _meta_from_image(source_image)
-    series_name = _derived_series_name(source_image, "mip", THRESHOLD_MIP_SERIES_NAME)
-    meta["DataRole"] = "Segmentation"
-    meta["ImageProcessingHistory"] = ["PYTHON", "OPENRECON_THRESHOLD_MIP"]
-    meta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{THRESHOLD_MIP_SERIES_NAME}"
-    meta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{THRESHOLD_MIP_SERIES_NAME}"
-    meta["SeriesDescription"] = series_name
-    meta["SequenceDescription"] = series_name
-    meta["ProtocolName"] = series_name
-    meta["ImageComments"] = series_name
-    _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
-    meta["WindowCenter"] = "0.5"
-    meta["WindowWidth"] = "1"
-    meta["Keep_image_geometry"] = 1
+    minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    if minihead:
+        patched_minihead, changed = _patch_ice_minihead(
+            minihead,
+            series_name,
+            series_grouping,
+            series_uid,
+            image_type,
+        )
+        if changed:
+            meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
     return meta
 
 
@@ -268,6 +333,28 @@ def _derived_series_name(source_image, suffix, fallback_base=INVERT_SERIES_NAME)
     if source_name:
         return f"{source_name}-{suffix}"
     return f"{fallback_base}-{suffix}"
+
+
+def _derived_series_grouping(series_name, series_index):
+    return f"{_sanitize_identity_text(series_name)}_{series_index}"
+
+
+def _derived_series_uid(source_image, series_index, series_name):
+    meta = _meta_from_image(source_image)
+    base_uid = _meta_text(meta, "SeriesInstanceUID")
+    minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    if not base_uid and minihead:
+        base_uid = _minihead_string_value(minihead, "SeriesInstanceUID")
+
+    seed = "|".join(
+        [
+            "openreconi2iexample",
+            base_uid or _source_series_name(source_image) or "source",
+            str(series_index),
+            series_name,
+        ]
+    )
+    return f"2.25.{uuid.uuid5(uuid.NAMESPACE_URL, seed).int}"
 
 
 def _source_series_name(source_image):
@@ -304,6 +391,10 @@ def _decode_ice_minihead(value):
         return ""
 
 
+def _encode_ice_minihead(minihead_text):
+    return base64.b64encode(minihead_text.encode("utf-8")).decode("ascii")
+
+
 def _minihead_string_value(minihead, key):
     match = re.search(
         rf'<ParamString\."{re.escape(key)}">\s*{{\s*"([^"]*)"',
@@ -312,8 +403,207 @@ def _minihead_string_value(minihead, key):
     return match.group(1).strip() if match else ""
 
 
+def _patch_ice_minihead(
+    minihead_text,
+    series_name,
+    series_grouping,
+    series_uid,
+    image_type,
+):
+    current_text = minihead_text
+    changed = False
+    for name, value in (
+        ("SeriesDescription", series_name),
+        ("SequenceDescription", series_name),
+        ("ProtocolName", series_name),
+        ("SeriesNumberRangeNameUID", series_grouping),
+        ("SeriesInstanceUID", series_uid),
+        ("ImageType", image_type),
+        ("ImageTypeValue3", "M"),
+        ("ComplexImageComponent", "MAGNITUDE"),
+    ):
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            name,
+            value,
+        )
+        changed = changed or did_change
+    return current_text, changed
+
+
+def _replace_or_append_minihead_string_param(minihead_text, name, value):
+    value = _sanitize_identity_text(value)
+    if not value:
+        return minihead_text, False
+
+    pattern = re.compile(
+        rf'(<ParamString\."{re.escape(name)}">\s*\{{\s*")([^"]*)("\s*\}})'
+    )
+    match = pattern.search(minihead_text)
+    if match:
+        if match.group(2) == value:
+            return minihead_text, False
+        replacement = f"{match.group(1)}{value}{match.group(3)}"
+        return (
+            minihead_text[:match.start()] + replacement + minihead_text[match.end():],
+            True,
+        )
+
+    appended_param = f'\n<ParamString."{name}">\t{{ "{value}" }}\n'
+    return minihead_text.rstrip() + appended_param, True
+
+
+def _sanitize_identity_text(value):
+    return (
+        str(value or "")
+        .strip()
+        .replace('"', "'")
+        .replace("\r", " ")
+        .replace("\n", " ")
+    )
+
+
 def _set_meta_field(meta, key, value):
     meta[key] = value
+
+
+def _validate_output_images(output_images, input_images):
+    errors = []
+    seen_image_keys = {}
+    input_identity = _identity_values(input_images)
+    input_has_minihead = any(_image_minihead(image) for image in input_images)
+    series_identity = {}
+    series_by_uid = {}
+
+    for index, image in enumerate(output_images):
+        header = image.getHead()
+        image_key = (
+            int(image.image_series_index),
+            int(header.slice),
+            int(header.image_index),
+        )
+        if image_key in seen_image_keys:
+            errors.append(
+                f"image {index} duplicates output image key {image_key} "
+                f"from image {seen_image_keys[image_key]}"
+            )
+        else:
+            seen_image_keys[image_key] = index
+
+        meta = _meta_from_image(image)
+        minihead = _image_minihead(image)
+        if input_has_minihead and not minihead:
+            errors.append(f"image {index} is missing IceMiniHead")
+
+        identity = {
+            "series_description": _meta_text(meta, "SeriesDescription"),
+            "sequence_description": _meta_text(meta, "SequenceDescription"),
+            "protocol_name": _meta_text(meta, "ProtocolName"),
+            "series_grouping": _meta_text(meta, "SeriesNumberRangeNameUID"),
+            "series_uid": _meta_text(meta, "SeriesInstanceUID"),
+            "minihead_sequence_description": _minihead_string_value(
+                minihead, "SequenceDescription"
+            ),
+            "minihead_protocol_name": _minihead_string_value(minihead, "ProtocolName"),
+            "minihead_series_grouping": _minihead_string_value(
+                minihead, "SeriesNumberRangeNameUID"
+            ),
+            "minihead_series_uid": _minihead_string_value(minihead, "SeriesInstanceUID"),
+        }
+        _validate_identity_fields(index, identity, input_identity, errors)
+
+        series_key = int(image.image_series_index)
+        comparable_identity = (
+            identity["sequence_description"],
+            identity["protocol_name"],
+            identity["series_grouping"],
+            identity["series_uid"],
+        )
+        previous_identity = series_identity.setdefault(series_key, comparable_identity)
+        if previous_identity != comparable_identity:
+            errors.append(
+                f"image_series_index {series_key} has inconsistent identity values"
+            )
+        series_uid = identity["series_uid"]
+        if series_uid:
+            previous_series = series_by_uid.setdefault(series_uid, series_key)
+            if previous_series != series_key:
+                errors.append(
+                    f"SeriesInstanceUID {series_uid} is shared by "
+                    f"image_series_index {previous_series} and {series_key}"
+                )
+
+    if errors:
+        raise ValueError(
+            "Invalid openreconi2iexample output series contract before send: "
+            + "; ".join(errors)
+        )
+
+
+def _validate_identity_fields(index, identity, input_identity, errors):
+    required = (
+        "series_description",
+        "sequence_description",
+        "protocol_name",
+        "series_grouping",
+        "series_uid",
+    )
+    for key in required:
+        if not identity[key]:
+            errors.append(f"image {index} is missing Meta {key}")
+
+    for meta_key, minihead_key in (
+        ("sequence_description", "minihead_sequence_description"),
+        ("protocol_name", "minihead_protocol_name"),
+        ("series_grouping", "minihead_series_grouping"),
+        ("series_uid", "minihead_series_uid"),
+    ):
+        meta_value = identity[meta_key]
+        minihead_value = identity[minihead_key]
+        if minihead_value and meta_value != minihead_value:
+            errors.append(
+                f"image {index} has Meta/IceMiniHead {meta_key} mismatch: "
+                f"{meta_value} != {minihead_value}"
+            )
+
+    for key in (
+        "sequence_description",
+        "protocol_name",
+        "series_grouping",
+        "series_uid",
+        "minihead_sequence_description",
+        "minihead_protocol_name",
+        "minihead_series_grouping",
+        "minihead_series_uid",
+    ):
+        value = identity[key]
+        if value and value in input_identity:
+            errors.append(f"image {index} reuses input identity {key}={value}")
+
+
+def _identity_values(images):
+    values = set()
+    for image in images:
+        meta = _meta_from_image(image)
+        minihead = _image_minihead(image)
+        for key in (
+            "SeriesDescription",
+            "SequenceDescription",
+            "ProtocolName",
+            "SeriesNumberRangeNameUID",
+            "SeriesInstanceUID",
+        ):
+            value = _meta_text(meta, key)
+            if value:
+                values.add(value)
+            minihead_value = _minihead_string_value(minihead, key)
+            if minihead_value:
+                values.add(minihead_value)
+    return values
+
+
+def _image_minihead(image):
+    return _decode_ice_minihead(_meta_text(_meta_from_image(image), "IceMiniHead"))
 
 
 def _interpolated_half_step(images):

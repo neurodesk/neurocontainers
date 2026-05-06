@@ -3,7 +3,8 @@
 `openreconi2iexample` is a minimal OpenRecon image-in/image-out reference. It
 receives reconstructed MRD image messages, creates inverted copies of magnitude
 images, and names those copies from the source scan plus `-inverted`. It also
-re-emits the original scan when `sendoriginal` is enabled. When
+re-emits the original scan as a copied `<source>-original` output series when
+`sendoriginal` is enabled. When
 `sendthresholdmip` is enabled, it thresholds the magnitude volume and sends one
 segmentation maximum intensity projection slice. When `sendinterpolated` is
 enabled, it sends a double-slice-count through-plane interpolated image series.
@@ -16,12 +17,12 @@ enabled, it sends a double-slice-count through-plane interpolated image series.
   `sendthresholdmip` is enabled.
 - Magnitude images are interpolated between slices when `sendinterpolated` is
   enabled.
-- All image messages can be returned as the original scan.
+- All image messages can be returned as copied original images.
 
 ## Outputs
 
 - `<source>-inverted`: inverted magnitude images on `image_series_index = 99`.
-- Original scan: unmodified input images on `image_series_index = 100` when
+- `<source>-original`: copied input images on `image_series_index = 100` when
   `sendoriginal` is true.
 - `<source>-mip`: one thresholded segmentation maximum intensity projection
   slice on `image_series_index = 101` when `sendthresholdmip` is true.
@@ -42,7 +43,9 @@ The final edge slice is duplicated so the output count is exactly `2 * N`.
 - `sendthresholdmip` is exposed in `OpenReconLabel.json` and defaults to false.
 - `sendinterpolated` is exposed in `OpenReconLabel.json` and defaults to false.
 - Output names are written to `SeriesDescription`, `SequenceDescription`,
-  `ProtocolName`, and `ImageComments`.
+  `ProtocolName`, `ImageComments`, `SeriesNumberRangeNameUID`, and
+  `SeriesInstanceUID`, and matching values are patched into `IceMiniHead` when
+  source images include one.
 - Derived outputs set `SequenceDescriptionAdditional` to `openrecon` so
   scanners do not append `_None` to the display name.
 - `Keep_image_geometry = 1` is set on all returned image outputs.
