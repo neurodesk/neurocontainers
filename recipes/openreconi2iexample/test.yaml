@@ -353,7 +353,7 @@ tests:
       meta = ismrmrd.Meta.deserialize(segment.attribute_string)
       assert first(meta.get("DataRole")) == "Segmentation"
       assert first(meta.get("ImageType")) == "DERIVED\\PRIMARY\\M\\openrecon_segment"
-      assert first(meta.get("LUTFileName")) == module.SEGMENTATION_LUT
+      assert first(meta.get("LUTFileName")) is None
       assert_output_identity(
           segment,
           "i2i_example_send_org-segment",
@@ -371,6 +371,18 @@ tests:
       assert int(segment_data[0, 0, 3, 3]) == 1
       assert int(segment_data[0, 0, 6, 6]) == 0
       assert int(np.sum(segment_data)) == 4
+
+      colormap_sources = [make_sparse_image(i) for i in range(4)]
+      segment_outputs_with_colormap = module._segment_images(
+          colormap_sources,
+          use_colormap=True,
+      )
+      assert len(segment_outputs_with_colormap) == 4
+      colormap_meta = ismrmrd.Meta.deserialize(
+          segment_outputs_with_colormap[2].attribute_string
+      )
+      assert first(colormap_meta.get("LUTFileName")) == module.SEGMENTATION_LUT
+      module._validate_output_images(segment_outputs_with_colormap, colormap_sources)
 
       mip_outputs = module._mip_image([make_sparse_image(i) for i in range(4)])
       assert len(mip_outputs) == 1
@@ -685,6 +697,30 @@ tests:
       assert default_connection.sent_images == []
       assert default_connection.closed is True
 
+      segment_connection = FakeConnection(
+          [make_sparse_image(i) for i in range(4)] + [None]
+      )
+      module.process(segment_connection, {"parameters": {"segment": True}}, None)
+      assert len(segment_connection.sent_images) == 1
+      segment_meta = ismrmrd.Meta.deserialize(
+          segment_connection.sent_images[0][0].attribute_string
+      )
+      assert first(segment_meta.get("LUTFileName")) is None
+
+      colormap_connection = FakeConnection(
+          [make_sparse_image(i) for i in range(4)] + [None]
+      )
+      module.process(
+          colormap_connection,
+          {"parameters": {"segment": True, "segmentationcolormap": True}},
+          None,
+      )
+      assert len(colormap_connection.sent_images) == 1
+      colormap_meta = ismrmrd.Meta.deserialize(
+          colormap_connection.sent_images[0][0].attribute_string
+      )
+      assert first(colormap_meta.get("LUTFileName")) == module.SEGMENTATION_LUT
+
       assert module._config_bool({"parameters": {}}, "sendoriginal", default=False) is False
       assert module._config_bool({"parameters": {"sendoriginal": True}}, "sendoriginal", default=False) is True
       assert module._config_bool({"parameters": {"sendoriginal": "false"}}, "sendoriginal", default=True) is False
@@ -693,6 +729,11 @@ tests:
       assert module._config_bool_any({"parameters": {"invert": "true"}}, ("invert", "sendinvert"), default=False) is True
       assert module._config_bool_any({"parameters": {"sendinterpolated": "true"}}, ("upsampled", "sendinterpolated"), default=False) is True
       assert module._config_bool_any({"parameters": {"segment": "true"}}, ("segment", "sendsegment"), default=False) is True
+      assert module._config_bool_any(
+          {"parameters": {"segmentationcolormap": "true"}},
+          ("segmentationcolormap", "sendsegmentationcolormap"),
+          default=False,
+      ) is True
       assert module._config_bool_any({"parameters": {"sendthresholdmip": "true"}}, ("mip", "sendthresholdmip"), default=False) is True
 
       print("optional original invert segment MIP and upsample tests passed")

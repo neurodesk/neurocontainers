@@ -4,7 +4,8 @@
 receives reconstructed MRD image messages and sends no outputs unless one or
 more output options are enabled. It can re-emit the original scan, invert
 magnitude images, upsample the slice direction, threshold each slice into a
-segmentation with a colourmap, and compute a maximum intensity projection.
+segmentation, optionally add a segmentation colourmap, and compute a maximum
+intensity projection.
 
 ## Inputs
 
@@ -23,7 +24,8 @@ segmentation with a colourmap, and compute a maximum intensity projection.
   `sendoriginal` is true.
 - `<source>-segment`: thresholded segmentation images on
   `image_series_index = 101` when `segment` is true. These outputs set
-  `LUTFileName = MicroDeltaHotMetal.pal`.
+  `LUTFileName = MicroDeltaHotMetal.pal` only when `segmentationcolormap` is
+  true.
 - `<source>-upsampled`: twice as many magnitude images on
   `image_series_index = 102` when `upsampled` is true.
 - `<source>-mip`: one maximum intensity projection image on
@@ -33,7 +35,7 @@ The inverted images keep the source geometry and use the input intensity range:
 `inverted = min(input) + max(input) - input`.
 The segment output estimates a bright-foreground threshold across the received
 image stack, keeps the largest connected foreground object in each slice, and
-stores the result as a colour-mapped binary `uint16` segmentation.
+stores the result as a binary `uint16` segmentation.
 The upsampled output keeps the in-plane matrix unchanged and doubles the
 through-plane sample count by sorting source images by physical slice position
 and inserting midpoint slices between acquired slices. The final edge slice is
@@ -42,8 +44,8 @@ The MIP output projects the source magnitude stack across all source slices.
 
 ## Scanner Notes
 
-- `sendoriginal`, `invert`, `upsampled`, `segment`, and `mip` are exposed in
-  `OpenReconLabel.json` and all default to false.
+- `sendoriginal`, `invert`, `upsampled`, `segment`, `segmentationcolormap`, and
+  `mip` are exposed in `OpenReconLabel.json` and all default to false.
 - Scanner protocols saved before these parameters were added may need the OpenRecon algorithm
   reselected once so the parameter schema refreshes.
 - Output names are written to `SeriesDescription`, `SequenceDescription`,
