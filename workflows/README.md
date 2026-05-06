@@ -21,6 +21,11 @@ python workflows/full_container_test.py [options]
 - `--location` — container location argument forwarded to the runner. Defaults to `auto`.
 - `--no-clean` — keep previous artifacts under `builder/` (legacy artifact location).
 - `--no-cleanup` — keep downloaded containers instead of removing them at the end.
+- `--docker-to-simg` — pull release Docker images from GHCR, convert them with
+  `docker-save-to-simg`, and test the generated SIMG files with Apptainer.
+- `--docker-registry` — GHCR namespace used with `--docker-to-simg`. Defaults to `neurodesk`.
+- `--docker-save-to-simg` — path to the converter Go source. Defaults to
+  `builder/docker-save-to-simg.go`.
 
 ### What it does
 

@@ -5,10 +5,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from workflows.reporting import (
     build_aggregate_summary,
@@ -27,7 +32,6 @@ from workflows.test_runner import (
 )
 from workflows.test_utils import discover_test_config, find_latest_release_file
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
 RECIPES_DIR = REPO_ROOT / "recipes"
 RELEASES_DIR = REPO_ROOT / "releases"
 ARTIFACTS_DIR = REPO_ROOT / "builder"
@@ -261,6 +265,21 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Keep downloaded containers instead of removing them after tests.",
     )
     parser.add_argument(
+        "--docker-to-simg",
+        action="store_true",
+        help="Pull each release Docker image, convert it to SIMG, then run full tests.",
+    )
+    parser.add_argument(
+        "--docker-registry",
+        default="neurodesk",
+        help="Registry namespace for --docker-to-simg images (default: neurodesk).",
+    )
+    parser.add_argument(
+        "--docker-save-to-simg",
+        default="builder/docker-save-to-simg.go",
+        help="Path to the docker-save-to-simg Go source used by --docker-to-simg.",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose runner output.",
@@ -306,6 +325,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             location=args.location,
             cleanup=not args.no_cleanup,
             auto_cleanup=False,
+            docker_to_simg=args.docker_to_simg,
+            docker_registry=args.docker_registry,
+            docker_save_to_simg=args.docker_save_to_simg,
             verbose=args.verbose,
             allow_missing_release=not spec.has_release,
             output_dir=ARTIFACTS_DIR,
