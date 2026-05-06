@@ -601,6 +601,31 @@ class DockerToSimgConverter:
         return output_path
 
 
+def build_release_docker_image_ref(
+    name: str,
+    version: str,
+    build_date: str,
+    docker_registry: str = "neurodesk",
+) -> str:
+    """Return the release Docker image ref for a NeuroContainers build."""
+
+    image_name = f"{name}_{version}".lower()
+    registry_namespace = docker_registry.strip().strip("/") or "neurodesk"
+    if "://" in registry_namespace:
+        parsed = urllib.parse.urlsplit(registry_namespace)
+        if parsed.scheme != "https":
+            raise RuntimeError("Docker registry URLs must use https")
+        registry_namespace = f"{parsed.netloc}{parsed.path}".strip("/")
+
+    registry_parts = registry_namespace.split("/")
+    if registry_parts[0].lower() in {"ghcr.io", "docker.io"}:
+        registry_path = registry_namespace
+    else:
+        registry_path = f"ghcr.io/{registry_namespace}"
+
+    return f"{registry_path}/{image_name}:{build_date}"
+
+
 class ContainerTester:
     """Main container testing orchestrator"""
 
@@ -705,21 +730,12 @@ class ContainerTester:
                 "Docker-to-SIMG conversion requires release metadata with a build date"
             )
 
-        image_name = f"{name}_{version}".lower()
-        registry_namespace = docker_registry.strip().strip("/") or "neurodesk"
-        if "://" in registry_namespace:
-            parsed = urllib.parse.urlsplit(registry_namespace)
-            if parsed.scheme != "https":
-                raise RuntimeError("Docker registry URLs must use https")
-            registry_namespace = f"{parsed.netloc}{parsed.path}".strip("/")
-
-        registry_parts = registry_namespace.split("/")
-        if registry_parts[0].lower() in {"ghcr.io", "docker.io"}:
-            registry_path = registry_namespace
-        else:
-            registry_path = f"ghcr.io/{registry_namespace}"
-
-        image_ref = f"{registry_path}/{image_name}:{build_date}"
+        image_ref = build_release_docker_image_ref(
+            name,
+            version,
+            build_date,
+            docker_registry=docker_registry,
+        )
 
         if converter_source:
             self.docker_to_simg.converter_source = converter_source
