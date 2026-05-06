@@ -561,10 +561,18 @@ class DockerToSimgConverter:
 
         binary = self._ensure_binary(verbose=verbose)
         output_path = os.path.join(self.cache_dir, output_name)
-        if os.path.exists(output_path):
+        if (
+            os.path.exists(output_path)
+            and os.path.getsize(output_path) > 0
+            and os.path.getmtime(output_path) >= os.path.getmtime(binary)
+        ):
             if verbose:
                 print(f"Using cached docker-converted container: {output_path}")
             return output_path
+        if os.path.exists(output_path):
+            if verbose:
+                print(f"Rebuilding stale docker-converted container: {output_path}")
+            os.remove(output_path)
 
         print(f"Pulling Docker image: {image_ref}")
         subprocess.run(["docker", "pull", image_ref], check=True)
@@ -604,7 +612,7 @@ class DockerToSimgConverter:
 def build_release_docker_image_ref(
     name: str,
     version: str,
-    build_date: str,
+    image_tag: str,
     docker_registry: str = "neurodesk",
 ) -> str:
     """Return the release Docker image ref for a NeuroContainers build."""
@@ -623,7 +631,32 @@ def build_release_docker_image_ref(
     else:
         registry_path = f"ghcr.io/{registry_namespace}"
 
-    return f"{registry_path}/{image_name}:{build_date}"
+    return f"{registry_path}/{image_name}:{image_tag}"
+
+
+def build_release_docker_image_ref_candidates(
+    name: str,
+    version: str,
+    build_date: str,
+    docker_registry: str = "neurodesk",
+) -> List[str]:
+    """Return candidate release Docker refs, most-specific first."""
+
+    tags = [build_date]
+    if build_date != "latest":
+        tags.append("latest")
+
+    candidates: List[str] = []
+    for tag in tags:
+        ref = build_release_docker_image_ref(
+            name,
+            version,
+            tag,
+            docker_registry=docker_registry,
+        )
+        if ref not in candidates:
+            candidates.append(ref)
+    return candidates
 
 
 class ContainerTester:
@@ -730,7 +763,7 @@ class ContainerTester:
                 "Docker-to-SIMG conversion requires release metadata with a build date"
             )
 
-        image_ref = build_release_docker_image_ref(
+        image_refs = build_release_docker_image_ref_candidates(
             name,
             version,
             build_date,
@@ -741,11 +774,20 @@ class ContainerTester:
             self.docker_to_simg.converter_source = converter_source
 
         output_name = f"{name}_{version}_{build_date}.docker.simg"
-        converted_path = self.docker_to_simg.convert(
-            image_ref,
-            output_name,
-            verbose=verbose,
-        )
+        errors: List[str] = []
+        for image_ref in image_refs:
+            try:
+                converted_path = self.docker_to_simg.convert(
+                    image_ref,
+                    output_name,
+                    verbose=verbose,
+                )
+                break
+            except Exception as exc:
+                errors.append(f"{image_ref}: {exc}")
+        else:
+            raise RuntimeError("; ".join(errors))
+
         self.downloaded_container_path = converted_path
         return converted_path
 

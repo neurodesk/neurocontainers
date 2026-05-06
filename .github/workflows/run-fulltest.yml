@@ -164,7 +164,7 @@ jobs:
           from workflows.container_tester import (
               DockerToSimgConverter,
               ReleaseContainerDownloader,
-              build_release_docker_image_ref,
+              build_release_docker_image_ref_candidates,
           )
           from workflows.test_utils import find_latest_release_file
 
@@ -214,7 +214,7 @@ jobs:
               sys.exit(1)
 
           if docker_to_simg:
-              image_ref = build_release_docker_image_ref(
+              image_refs = build_release_docker_image_ref_candidates(
                   suite,
                   release_version,
                   build_date,
@@ -224,14 +224,21 @@ jobs:
                   cache_dir=str(containers_dir),
                   converter_source=converter_source,
               )
-              try:
-                  container_file = converter.convert(
-                      image_ref,
-                      f"{suite}_{release_version}_{build_date}.docker.simg",
-                      verbose=True,
-                  )
-              except Exception as exc:
-                  print(f"Failed to convert Docker image {image_ref}: {exc}", file=sys.stderr)
+              errors = []
+              for image_ref in image_refs:
+                  try:
+                      container_file = converter.convert(
+                          image_ref,
+                          f"{suite}_{release_version}_{build_date}.docker.simg",
+                          verbose=True,
+                      )
+                      break
+                  except Exception as exc:
+                      errors.append(f"{image_ref}: {exc}")
+              else:
+                  print("Failed to convert any Docker image candidate:", file=sys.stderr)
+                  for error in errors:
+                      print(f"  - {error}", file=sys.stderr)
                   sys.exit(1)
           else:
               downloader = ReleaseContainerDownloader(cache_dir=str(containers_dir))

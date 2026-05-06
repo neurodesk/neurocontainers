@@ -717,7 +717,7 @@ func assignInodeTypesAndSizes(inodes []*node) {
 			n.inodeType = squashInodeBasicDir
 			n.inodeSize = 32
 		case nodeRegular:
-			if n.size > 0xffffffff {
+			if n.size > 0xffffffff || n.fileStartRel > 0xffffffff {
 				n.inodeType = squashInodeLongFile
 				n.inodeSize = 56 + len(n.fileBlocks)*4
 			} else {
