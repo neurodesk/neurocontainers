@@ -8,6 +8,7 @@ This document describes how container tests are defined, executed locally, and a
 - **`workflows/test_runner.py`** provides the high-level `ContainerTestRunner` used by local commands, the full-matrix script, and GitHub Actions. Internally it relies on `workflows/container_tester.py`, which handles runtime selection, container discovery, and test execution. Key flags you will see in CI:
   - `--runtime apptainer` forces the Apptainer/Singularity backend.
   - `--location auto` searches CVMFS first, then local `./sifs`, then downloads via release metadata, and finally falls back to Docker tags.
+  - `--docker-to-simg` bypasses the normal SIF lookup, pulls `ghcr.io/<registry>/<name>_<version>:<build_date>`, converts `docker save` output with `docker-save-to-simg`, and tests the generated `.simg` with Apptainer.
   - `--release-file …` injects build-date information so downloads come from the correct storage path.
   - `--cleanup` deletes any downloaded artifacts after tests finish; `--output` writes a JSON summary used for reporting.
 - **`workflows/generate_test_report.py`** turns the JSON summary into a PR-friendly Markdown report. GitHub Actions uploads both the JSON and Markdown outputs as artifacts and uses the Markdown for inline comments.
@@ -36,7 +37,7 @@ This manually triggered workflow validates every recipe that has a published rel
 
 1. **`prepare-matrix` job** builds a catalog of recipes, pairing each with the newest `releases/<recipe>/<version>.json` by comparing the embedded build date. Recipes without a release are kept in the matrix and marked for skip reporting. If the optional `recipes` filter is provided, the catalog is trimmed to those names; missing entries are called out in the tracking issue for visibility.
 2. **`create-issue` job** opens a tracking GitHub Issue summarising how many recipes will run versus skip and captures the runner architecture from the dispatch input.
-3. **`test-containers` job** fans out across the matrix. When a release exists, it downloads the published SIF via `container_tester.py --release-file … --cleanup`, executes the recipe’s tests, converts the JSON output to Markdown with `format_test_results.py`, and posts the result as a comment on the tracking issue. Recipes without tests or without releases generate skipped-result comments instead.
+3. **`test-containers` job** fans out across the matrix. When a release exists, it downloads the published SIF via `container_tester.py --release-file … --cleanup`, executes the recipe’s tests, converts the JSON output to Markdown with `format_test_results.py`, and posts the result as a comment on the tracking issue. If the dispatch input `docker_to_simg` is enabled, the job builds `builder/docker-save-to-simg.go`, pulls the matching GHCR Docker image, converts it to `.simg`, and tests that file. Recipes without tests or without releases generate skipped-result comments instead.
 4. **`finalize` job** gathers every JSON artifact, posts an aggregated summary comment, and updates the issue body with pass/fail/skipped totals.
 
 ### On-Demand Recipe Matrix – `.github/workflows/recipes-ci.yml`
@@ -72,6 +73,14 @@ While not a runtime test, this workflow protects the builder tooling whenever fi
      --cleanup
    ```
    This mirrors the invocation inside `test-release-pr.yml` and produces the same artifacts.
+   To exercise the Docker-to-SIMG conversion path locally, add:
+   ```bash
+   python workflows/full_container_test.py \
+     --recipes dcm2niix \
+     --docker-to-simg \
+     --runtime apptainer \
+     --verbose
+   ```
 3. **Recipe-focused check** (simulates `recipes-ci` when `run-tests=true`):
    ```bash
    sf-test-remote <name> --version <version> --location local --runtime apptainer --cleanup
