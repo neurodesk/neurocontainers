@@ -4,13 +4,13 @@ QSMbly is a browser-based Quantitative Susceptibility Mapping (QSM) tool built w
 
 ## Usage
 
-Launch the webapp in Neurodesk JupyterLab to access the QSMbly interface. Load NIfTI files and configure the QSM processing pipeline directly in the browser.
+Launch the webapp in Neurodesk JupyterLab to access the QSMbly interface. Load NIfTI files and configure the QSM processing pipeline directly in the browser. QSMbly is also hosted live at https://qsmbly.neurodesk.org/.
 
 ## Documentation
 
-https://github.com/astewartau/qsm-wasm
+https://github.com/astewartau/qsmbly
 
 ## Citation
 
 If you use QSMbly in your research, please cite the repository:
-https://github.com/astewartau/qsm-wasm
+https://github.com/astewartau/qsmbly
