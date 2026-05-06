@@ -5,9 +5,6 @@ tests:
       source .venv/bin/activate
       ./builder/build.py generate openreconi2iexample --recreate --build --login --architecture x86_64 --offline_mode true
 
-      # check that the CUDA version is valid for MARS: has to be CUDA 11.x
-      python -c "import torch; print(torch.version.cuda)"
-
       set -eux
       input_h5=/buildhostdirectory/input_image_dataset.h5
       output_h5=/buildhostdirectory/openreconi2iexample_output.h5
@@ -31,16 +28,13 @@ tests:
         -c openreconi2iexample
 
       test -s "${output_h5}"
-      echo "Inspect ${output_h5} with an HDF5 viewer and check the OpenRecon logs for DOWNSAMPLED in OPENRECONI2I_OUTPUT_SERIES_CONTRACT."
-  
+      echo "Inspect ${output_h5} with an HDF5 viewer; output series 99 should be named openrecon_invert, series 100 should contain the original scan when sendoriginal is true, series 101 should contain one openrecon_threshold_mip slice when sendthresholdmip is true, and series 102 should contain openrecon_interpolated when sendinterpolated is true."
 
- - name: Test downsampled derived OpenRecon series geometry
+ - name: Invert optional original threshold MIP and interpolation unit smoke test
    manual: true
    script: |
       python3 - <<'PY'
-      import base64
       import importlib.util
-      import re
       import sys
       from pathlib import Path
 
@@ -48,309 +42,128 @@ tests:
       import numpy as np
 
       wrapper_path = Path("/opt/code/python-ismrmrd-server/openreconi2iexample.py")
-      sys.path.insert(0, str(wrapper_path.parent))
       spec = importlib.util.spec_from_file_location("openreconi2iexample", wrapper_path)
       module = importlib.util.module_from_spec(spec)
+      sys.modules["openreconi2iexample"] = module
       spec.loader.exec_module(module)
 
-      def set_header_field(header, field_name, values):
-          module._set_header_sequence_field(header, field_name, values)
-
-      SOURCE_TOKEN = "OPENRECONI2IEXAM"
-
-      def make_minihead(
-          slice_index,
-          image_type_value4_tokens,
-          case_id,
-          include_image_type=True,
-      ):
-          source_sop_uid = f"1.2.826.0.1.3680043.10.999.{case_id}.90.{slice_index + 1}"
-          source_series_uid = f"1.2.826.0.1.3680043.10.999.{case_id}.1"
-          token_lines = "\n".join(
-              f'            {{ "{token}" }}'
-              for token in image_type_value4_tokens
-          )
-          image_type_line = (
-              '          <ParamString."ImageType"> '
-              '{ "ORIGINAL\\PRIMARY\\M\\OPENRECONI2IEXAM" }\n'
-              if include_image_type
-              else ""
-          )
-          minihead = f'''
-      <XProtocol>
-      {{
-        <ParamMap."DICOM">
-        {{
-          <ParamString."SOPInstanceUID"> {{ "{source_sop_uid}" }}
-          <ParamString."SequenceDescription"> {{ "synthetic" }}
-          <ParamString."SeriesNumberRangeNameUID"> {{ "synthetic_group" }}
-      {image_type_line.rstrip()}
-          <ParamString."ImageTypeValue3"> {{ "M" }}
-          <ParamArray."ImageTypeValue4">
-          {{
-            <DefaultSize> {len(image_type_value4_tokens)}
-            <MaxSize> 2147483647
-            <Default> <ParamString."">{{ }}
-      {token_lines}
-          }}
-        }}
-        <ParamMap."CONTROL">
-        {{
-          <ParamString."SeriesInstanceUID"> {{ "{source_series_uid}" }}
-        }}
-      }}
-      '''
-          return base64.b64encode(minihead.encode("utf-8")).decode("ascii")
-
-      def make_image(
-          slice_index,
-          image_type_value4_tokens,
-          case_id,
-          include_minihead_image_type=True,
-      ):
-          data = (
-              np.arange(64, dtype=np.float32).reshape(8, 8)
-              + slice_index * 100.0
-          )
+      def make_image(slice_index):
+          gradient = np.arange(64, dtype=np.float32).reshape(8, 8)
+          data = (gradient + slice_index * 100.0).reshape(1, 1, 8, 8)
           image = ismrmrd.Image.from_array(data, transpose=False)
           header = image.getHead()
-          header.image_series_index = 7
-          header.image_index = slice_index + 1
-          header.slice = slice_index
-          header.contrast = 0
           header.image_type = ismrmrd.IMTYPE_MAGNITUDE
-          set_header_field(header, "matrix_size", [8, 8, 1])
-          set_header_field(header, "field_of_view", [8.0, 8.0, 1.0])
-          set_header_field(header, "read_dir", [1.0, 0.0, 0.0])
-          set_header_field(header, "phase_dir", [0.0, 1.0, 0.0])
-          set_header_field(header, "slice_dir", [0.0, 0.0, 1.0])
-          set_header_field(header, "position", [0.0, 0.0, float(slice_index)])
+          header.image_series_index = 1
+          header.slice = slice_index
+          header.position = (0.0, 0.0, float(slice_index * 2))
+          header.slice_dir = (0.0, 0.0, 1.0)
+          header.field_of_view = (8.0, 8.0, 2.0)
           image.setHead(header)
-          image.image_series_index = 7
-          image.image_type = ismrmrd.IMTYPE_MAGNITUDE
-
           meta = ismrmrd.Meta()
-          meta["SeriesDescription"] = "synthetic"
-          meta["SequenceDescription"] = "synthetic"
-          meta["ProtocolName"] = "synthetic"
-          meta["SeriesNumberRangeNameUID"] = "synthetic_group"
-          meta["SeriesInstanceUID"] = f"1.2.826.0.1.3680043.10.999.{case_id}.1"
-          meta["SOPInstanceUID"] = f"1.2.826.0.1.3680043.10.999.{case_id}.90.{slice_index + 1}"
-          meta["DicomImageType"] = (
-              f"ORIGINAL\\PRIMARY\\M\\{SOURCE_TOKEN}\\NORM\\DIS2D\\FM3_2\\FIL"
-          )
-          meta["IceMiniHead"] = make_minihead(
-              slice_index,
-              image_type_value4_tokens,
-              case_id,
-              include_minihead_image_type,
-          )
+          meta["DataRole"] = "Image"
+          meta["SeriesDescription"] = "i2i_example_send_org"
+          meta["SequenceDescription"] = "i2i_example_send_org"
+          meta["ProtocolName"] = "i2i_example_send_org"
+          meta["SequenceDescriptionAdditional"] = "source_extra"
           image.attribute_string = meta.serialize()
           return image
 
-      def minihead_map(minihead, map_name):
-          span = module._find_minihead_param_map_span(minihead, map_name)
-          assert span is not None, (map_name, minihead)
-          return minihead[span[0]:span[1]], span
+      def make_sparse_image(slice_index):
+          data = np.zeros((1, 1, 8, 8), dtype=np.float32)
+          if slice_index == 2:
+              data[0, 0, 3, 4] = 10.0
+          image = ismrmrd.Image.from_array(data, transpose=False)
+          header = image.getHead()
+          header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+          header.image_series_index = 1
+          header.slice = slice_index
+          image.setHead(header)
+          meta = ismrmrd.Meta()
+          meta["DataRole"] = "Image"
+          meta["SeriesDescription"] = "i2i_example_send_org"
+          meta["SequenceDescription"] = "i2i_example_send_org"
+          meta["ProtocolName"] = "i2i_example_send_org"
+          image.attribute_string = meta.serialize()
+          return image
 
-      def assert_output_case(
-          case_name,
-          image_type_value4_tokens,
-          case_id,
-          include_minihead_image_type=True,
-          check_geometry=False,
-      ):
-          images = [
-              make_image(
-                  slice_index,
-                  image_type_value4_tokens,
-                  case_id,
-                  include_minihead_image_type,
-              )
-              for slice_index in range(4)
-          ]
-          source_meta = ismrmrd.Meta.deserialize(images[0].attribute_string)
-          assert module._source_image_type_value4_token(
-              source_meta,
-              module._decode_ice_minihead(source_meta),
-          ) == SOURCE_TOKEN
-          allocator = module.ConnectionSeriesAllocator(
-              observed_indices={7},
-              reserved_indices=module.RESERVED_SCANNER_SERIES_INDICES,
-          )
-          outputs = module._threshold_outputs_for_series(images, allocator)
-          output_summary = module._series_contract_summary(outputs, source="output")
-          input_summary = module._series_contract_summary(images, source="input")
-          module._validate_output_series_contract(output_summary, input_summary)
-          module._validate_output_image_instance_contract(outputs, images)
+      images = [make_image(i) for i in range(4)]
+      outputs = module._invert_images(images)
+      assert len(outputs) == 4
 
-          role_counts = {
-              entry["role"]: entry["count"]
-              for entry in output_summary
-          }
-          assert role_counts["THRESH_LOW"] == 4, (case_name, role_counts)
-          assert role_counts["THRESH_MID"] == 4, (case_name, role_counts)
-          assert role_counts["THRESH_HIGH"] == 4, (case_name, role_counts)
-          assert role_counts["DOWNSAMPLED"] == 2, (case_name, role_counts)
+      def first(value):
+          return value[0] if isinstance(value, list) else value
 
-          downsampled = [
-              image
-              for image in outputs
-              if module._series_contract_entry(image)["role"] == "DOWNSAMPLED"
-          ]
-          downsampled.sort(key=lambda image: image.getHead().slice)
-          assert len(downsampled) == 2, case_name
+      for img in outputs:
+          meta = ismrmrd.Meta.deserialize(img.attribute_string)
+          assert first(meta.get("DataRole")) == "Image"
+          assert first(meta.get("ImageType")) == "DERIVED\\PRIMARY\\M\\openrecon_invert"
+          assert first(meta.get("SeriesDescription")) == "i2i_example_send_org-inverted"
+          assert first(meta.get("SequenceDescription")) == "i2i_example_send_org-inverted"
+          assert first(meta.get("ProtocolName")) == "i2i_example_send_org-inverted"
+          assert first(meta.get("ImageComments")) == "i2i_example_send_org-inverted"
+          assert first(meta.get("SequenceDescriptionAdditional")) == ""
+          assert "None" not in img.attribute_string
+          assert int(first(meta.get("Keep_image_geometry"))) == 1
+          assert img.image_series_index == module.INVERT_SERIES_INDEX
 
-          if check_geometry:
-              first_header = downsampled[0].getHead()
-              second_header = downsampled[1].getHead()
-              assert [int(value) for value in first_header.matrix_size[:]] == [4, 4, 1]
-              assert np.squeeze(downsampled[0].data).shape == (4, 4)
-              assert np.isclose(float(first_header.field_of_view[0]), 8.0)
-              assert np.isclose(float(first_header.field_of_view[1]), 8.0)
-              assert np.isclose(float(first_header.field_of_view[2]), 2.0)
-              assert np.isclose(float(first_header.position[2]), 0.5)
-              assert np.isclose(float(second_header.position[2]), 2.5)
-              assert np.isclose(float(np.squeeze(downsampled[0].data)[0, 0]), 54.5)
+      source = np.asarray(images[0].data)
+      inverted = np.asarray(outputs[0].data)
+      assert np.allclose(inverted, 363.0 - source)
 
-          source_sop_uids = {
-              module._get_meta_text(
-                  ismrmrd.Meta.deserialize(image.attribute_string),
-                  "SOPInstanceUID",
-              )
-              for image in images
-          }
-          source_token_in_array = SOURCE_TOKEN in image_type_value4_tokens
-          expected_token_count = len(image_type_value4_tokens)
-          if not source_token_in_array:
-              expected_token_count += 1
+      mip_outputs = module._threshold_mip_image([make_sparse_image(i) for i in range(4)])
+      assert len(mip_outputs) == 1
+      mip = mip_outputs[0]
+      meta = ismrmrd.Meta.deserialize(mip.attribute_string)
+      assert first(meta.get("DataRole")) == "Segmentation"
+      assert first(meta.get("ImageType")) == "DERIVED\\PRIMARY\\M\\openrecon_threshold_mip"
+      assert first(meta.get("SeriesDescription")) == "i2i_example_send_org-mip"
+      assert first(meta.get("SequenceDescription")) == "i2i_example_send_org-mip"
+      assert first(meta.get("ProtocolName")) == "i2i_example_send_org-mip"
+      assert first(meta.get("ImageComments")) == "i2i_example_send_org-mip"
+      assert first(meta.get("SequenceDescriptionAdditional")) == ""
+      assert "None" not in mip.attribute_string
+      assert int(first(meta.get("Keep_image_geometry"))) == 1
+      assert mip.image_series_index == module.THRESHOLD_MIP_SERIES_INDEX
+      mip_data = np.asarray(mip.data)
+      assert mip_data.shape == (1, 1, 8, 8), mip_data.shape
+      assert set(np.unique(mip_data).tolist()) == {0, 1}
+      assert int(mip_data[0, 0, 3, 4]) == 1
+      assert int(np.sum(mip_data)) == 1
 
-          for output in outputs:
-              meta = ismrmrd.Meta.deserialize(output.attribute_string)
-              minihead = base64.b64decode(
-                  module._get_meta_text(meta, "IceMiniHead")
-              ).decode("utf-8")
-              entry = module._series_contract_entry(output)
-              role = entry["role"]
-              tokens = module._extract_minihead_array_tokens(minihead, "ImageTypeValue4")
-              effective_tokens = module._minihead_image_type_value4_tokens(minihead)
-              default_size = int(re.search(r"<DefaultSize>\s*(\d+)", minihead).group(1))
-              dicom_map, dicom_span = minihead_map(minihead, "DICOM")
-              control_map, _ = minihead_map(minihead, "CONTROL")
-              minihead_image_type = module._extract_minihead_string_value(
-                  dicom_map,
-                  "ImageType",
-              )
-              meta_sop = module._get_meta_text(meta, "SOPInstanceUID")
-              minihead_sop = module._extract_minihead_string_value(dicom_map, "SOPInstanceUID")
-              minihead_series_uid = module._extract_minihead_string_value(
-                  control_map,
-                  "SeriesInstanceUID",
-              )
-              assert role in tokens, (case_name, role, tokens)
-              assert effective_tokens.count(role) == 1, (case_name, role, effective_tokens)
-              assert len(tokens) == expected_token_count, (case_name, role, tokens)
-              assert default_size == expected_token_count, (case_name, role, default_size, tokens)
-              if source_token_in_array:
-                  assert SOURCE_TOKEN not in tokens, (case_name, role, tokens)
-              assert minihead_image_type == f"DERIVED\\PRIMARY\\M\\{role}", minihead_image_type
-              assert module._extract_minihead_string_value(
-                  dicom_map,
-                  "ProtocolName",
-              ) == f"synthetic_{role.lower()}"
-              assert module._extract_minihead_string_value(
-                  dicom_map,
-                  "SeriesDescription",
-              ) == f"synthetic_{role.lower()}"
-              assert '<ParamString."ImageType">' not in minihead[dicom_span[1]:]
-              assert not module._get_meta_text(meta, "ImageTypeValue4"), meta.serialize()
-              assert meta_sop == minihead_sop, (role, meta_sop, minihead_sop)
-              assert module._get_meta_text(meta, "SeriesInstanceUID") == minihead_series_uid
-              assert meta_sop not in source_sop_uids, (role, meta_sop)
+      interpolated = module._interpolated_images(images)
+      assert len(interpolated) == 8
+      assert [img.image_series_index for img in interpolated] == [module.INTERPOLATED_SERIES_INDEX] * 8
+      interp_meta = ismrmrd.Meta.deserialize(interpolated[0].attribute_string)
+      assert first(interp_meta.get("DataRole")) == "Image"
+      assert first(interp_meta.get("ImageType")) == "DERIVED\\PRIMARY\\M\\openrecon_interpolated"
+      assert first(interp_meta.get("SeriesDescription")) == "i2i_example_send_org-upsampled"
+      assert first(interp_meta.get("SequenceDescription")) == "i2i_example_send_org-upsampled"
+      assert first(interp_meta.get("ProtocolName")) == "i2i_example_send_org-upsampled"
+      assert first(interp_meta.get("ImageComments")) == "i2i_example_send_org-upsampled"
+      assert first(interp_meta.get("SequenceDescriptionAdditional")) == ""
+      assert "None" not in interpolated[0].attribute_string
+      assert int(first(interp_meta.get("Keep_image_geometry"))) == 1
+      assert np.allclose(np.asarray(interpolated[1].data), np.asarray(images[0].data) + 50.0)
+      assert np.allclose(np.asarray(interpolated[-1].data), np.asarray(images[-1].data))
+      assert np.isclose(float(interpolated[1].getHead().position[2]), 1.0)
+      assert np.isclose(float(interpolated[-1].getHead().position[2]), 7.0)
+      assert np.isclose(float(interpolated[1].getHead().field_of_view[2]), 1.0)
 
-      assert_output_case(
-          "append_filter_only_array",
-          ["NORM", "DIS2D", "FM3_2", "FIL"],
-          case_id=1,
-          include_minihead_image_type=False,
-          check_geometry=True,
-      )
-      assert_output_case(
-          "replace_source_token_array",
-          [SOURCE_TOKEN, "NORM", "DIS2D", "FIL"],
-          case_id=2,
-      )
+      originals = module._restamp_originals(images)
+      assert len(originals) == 4
+      for img in originals:
+          meta = ismrmrd.Meta.deserialize(img.attribute_string)
+          assert int(first(meta.get("Keep_image_geometry"))) == 1
+          assert img.image_series_index == module.ORIGINAL_SERIES_INDEX
 
-      single_images = [
-          make_image(
-              slice_index,
-              ["NORM", "DIS2D", "FM3_2", "FIL"],
-              case_id=3,
-              include_minihead_image_type=False,
-          )
-          for slice_index in range(4)
-      ]
-      single_allocator = module.ConnectionSeriesAllocator(
-          observed_indices={7},
-          reserved_indices=module.RESERVED_SCANNER_SERIES_INDICES,
-      )
-      single_outputs = module._threshold_outputs_for_series(
-          single_images,
-          single_allocator,
-          output_mode=module.OUTPUT_MODE_SINGLE_SERIES,
-      )
-      single_summary = module._series_contract_summary(
-          single_outputs,
-          source="output",
-      )
-      module._validate_output_series_contract(
-          single_summary,
-          module._series_contract_summary(single_images, source="input"),
-      )
-      module._validate_output_image_instance_contract(
-          single_outputs,
-          single_images,
-      )
-      single_counts = {
-          entry["role"]: entry["count"]
-          for entry in single_summary
-      }
-      assert single_counts == {"THRESH_MID": 4}, single_counts
-      assert len(single_outputs) == 4, len(single_outputs)
-      assert len({image.getHead().image_series_index for image in single_outputs}) == 1
+      assert module._config_bool({"parameters": {}}, "sendoriginal", default=True) is True
+      assert module._config_bool({"parameters": {"sendoriginal": True}}, "sendoriginal", default=True) is True
+      assert module._config_bool({"parameters": {"sendoriginal": "false"}}, "sendoriginal", default=True) is False
+      assert module._config_bool('{"parameters": {"sendoriginal": false}}', "sendoriginal", default=True) is False
+      assert module._config_bool({"parameters": {}}, "sendthresholdmip", default=False) is False
+      assert module._config_bool({"parameters": {"sendthresholdmip": "true"}}, "sendthresholdmip", default=False) is True
+      assert module._config_bool({"parameters": {}}, "sendinterpolated", default=False) is False
+      assert module._config_bool({"parameters": {"sendinterpolated": "true"}}, "sendinterpolated", default=False) is True
 
-      assert module._configured_output_mode({"parameters": {}}) == module.OUTPUT_MODE_SINGLE_SERIES
-      assert module._configured_output_mode(
-          {"parameters": {"outputmode": "multi_series"}}
-      ) == module.OUTPUT_MODE_MULTI_SERIES
-      assert module._configured_output_mode(
-          {"parameters": {"output_mode": "single-threshold"}}
-      ) == module.OUTPUT_MODE_SINGLE_SERIES
-      module.os.environ[module.OUTPUT_MODE_ENV] = "multi"
-      assert module._configured_output_mode(
-          {"parameters": {"outputmode": "single_series"}}
-      ) == module.OUTPUT_MODE_MULTI_SERIES
-      del module.os.environ[module.OUTPUT_MODE_ENV]
-      assert not module._send_original_enabled(
-          {"parameters": {"sendoriginal": "True"}}
-      )
-      module.os.environ[module.ALLOW_SENDORIGINAL_ENV] = "1"
-      assert module._send_original_enabled(
-          {"parameters": {"sendoriginal": "True"}}
-      )
-      del module.os.environ[module.ALLOW_SENDORIGINAL_ENV]
-
-      assert np.isclose(
-          module._close_drain_delay_seconds(67),
-          min(module.CLOSE_DRAIN_SECONDS_MAX, 67 * module.CLOSE_DRAIN_SECONDS_PER_IMAGE),
-      )
-      module.os.environ[module.CLOSE_DRAIN_SECONDS_ENV] = "0"
-      module.os.environ[module.SEND_SERIES_DRAIN_SECONDS_ENV] = "0"
-      assert module._close_drain_delay_seconds(67) == 0.0
-      assert module._series_drain_delay_seconds() == 0.0
-      del module.os.environ[module.CLOSE_DRAIN_SECONDS_ENV]
-      del module.os.environ[module.SEND_SERIES_DRAIN_SECONDS_ENV]
-      module.os.environ[module.CLOSE_DRAIN_SECONDS_MAX_ENV] = "60"
-      assert np.isclose(module._close_drain_delay_seconds(240), 60.0)
-      del module.os.environ[module.CLOSE_DRAIN_SECONDS_MAX_ENV]
+      print("invert optional original threshold MIP and interpolation tests passed")
       PY

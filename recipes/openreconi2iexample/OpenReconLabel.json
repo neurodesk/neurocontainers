@@ -3,7 +3,7 @@
     "name": { "en": "openreconi2iexample" },
     "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
     "vendor": "neurodesk",
-    "information": { "en": "Lightweight OpenRecon image-to-image thresholding and downsampling example" },
+    "information": { "en": "Minimal OpenRecon image-to-image inversion example" },
     "id": "openreconi2iexample",
     "regulatory_information": {
       "device_trade_name": "openreconi2iexample",
@@ -15,7 +15,7 @@
       "gtin": "00860000171212",
       "udi": "(01)00860000171212(21)1.3.0",
       "safety_advices": "",
-      "special_operating_instructions": "OpenRecon image-to-image thresholding and downsampling example",
+      "special_operating_instructions": "OpenRecon image-to-image inversion example",
       "additional_relevant_information": ""
     }
   },
@@ -50,31 +50,24 @@
       "information": { "en": "Define the config to be executed by MRD server" }
     },
     {
-      "id": "outputmode",
-      "label": { "en": "Output mode" },
-      "type": "choice",
-      "values": [
-        {
-          "id": "single_series",
-          "name": { "en": "Diagnostic single series" }
-        },
-        {
-          "id": "multi_series",
-          "name": { "en": "Multi-series example" }
-        }
-      ],
-      "default": "single_series",
-      "information": {
-        "en": "single_series emits only THRESH_MID to validate scanner output handling; multi_series emits all threshold and downsampled example series"
-      }
-    },
-    {
       "id": "sendoriginal",
       "label": { "en": "Send original images" },
       "type": "boolean",
-      "information": {
-        "en": "Send scanner-safe restamped copies of original images back too; ignored unless OPENRECONI2I_ALLOW_SENDORIGINAL=1 is set in the container environment"
-      },
+      "information": { "en": "Send a copy of original unmodified images back too" },
+      "default": true
+    },
+    {
+      "id": "sendthresholdmip",
+      "label": { "en": "Send threshold MIP" },
+      "type": "boolean",
+      "information": { "en": "Threshold the image volume and send one maximum-intensity-projection segmentation slice" },
+      "default": false
+    },
+    {
+      "id": "sendinterpolated",
+      "label": { "en": "Send interpolated series" },
+      "type": "boolean",
+      "information": { "en": "Interpolate between slices and send a double-slice-count higher-resolution image series" },
       "default": false
     }
   ]

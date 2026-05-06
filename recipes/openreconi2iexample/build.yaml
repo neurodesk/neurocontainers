@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.4
+version: 1.0.9
 architectures:
   - x86_64
 
@@ -49,15 +49,15 @@ readme: |-
   ----------------------------------
   ## openreconi2iexample/{{ context.version }} ##
 
-  Lightweight OpenRecon image-to-image example for scanner-safe derived image output.
-  The container buffers incoming MRD images until the connection is drained, allocates
-  derived image series at connection scope, thresholds image volumes into simple label
-  outputs, emits an interpolated downsampled image series with fewer slices, validates
-  Meta/IceMiniHead series identity before sending, and writes runtime debug content only
-  under /tmp/share/debug.
+  Minimal OpenRecon image-to-image reference. Receives reconstructed MRD
+  magnitude images, returns inverted copies as `<source>-inverted` on
+  `image_series_index = 99`, and can re-emit the original scan on
+  `image_series_index = 100` with the `sendoriginal` OpenRecon option. The
+  `sendthresholdmip` option adds one `<source>-mip` segmentation MIP slice on
+  `image_series_index = 101`. The `sendinterpolated` option adds a
+  double-slice-count `<source>-upsampled` series on `image_series_index = 102`.
 
-  OpenRecon runtime notes are documented in
-  `recipes/openreconi2iexample/OpenReconREADME.md`.
+  OpenRecon runtime notes: `recipes/openreconi2iexample/OpenReconREADME.md`.
 
   Build and validate:
   ```bash
