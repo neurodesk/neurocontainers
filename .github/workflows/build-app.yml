@@ -85,11 +85,6 @@ jobs:
             exit 0
           fi
           set -x
-          sudo sed -i \
-            -e 's|//archive\.ubuntu\.com|//au.archive.ubuntu.com|g' \
-            -e 's|//security\.ubuntu\.com|//au.archive.ubuntu.com|g' \
-            /etc/apt/sources.list /etc/apt/sources.list.d/*.list \
-            /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends --no-upgrade \
             ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
@@ -233,8 +228,11 @@ jobs:
           # Don't fail the job on probe errors — diagnostic only.
           set +e
 
-          # Install diagnostic tools (mtr for TCP traceroute).
-          command -v mtr >/dev/null 2>&1 || sudo apt-get install -y --no-install-recommends mtr-tiny
+          # Install diagnostic tools (mtr for TCP traceroute). apt lists may not be
+          # populated yet on a fresh ARC pod, so refresh quietly first; failure here
+          # is non-fatal — probe just runs without mtr.
+          sudo apt-get update -qq 2>/dev/null
+          command -v mtr >/dev/null 2>&1 || sudo apt-get install -y --no-install-recommends mtr-tiny 2>/dev/null
 
           SAMPLES=5
           # ~30-50 MB file present on every Ubuntu mirror — large enough to escape
@@ -274,8 +272,11 @@ jobs:
           probe_endpoint "au-archive" "" "http://au.archive.ubuntu.com${LARGE_FILE_PATH}"
 
           echo ""
-          echo "--- ppa.launchpadcontent.net (git-core/ppa Sources file, no .gz) ---"
-          probe_endpoint "ppa" "" "https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/dists/noble/main/source/Sources"
+          echo "--- ppa.launchpadcontent.net (git-core PPA Release file, real existing URL) ---"
+          # Release file is tiny (~5 KB) so this is connection-time-dominated, not a
+          # bandwidth measurement. Compare with archive-canonical-legacy (above) which
+          # is the actual bandwidth signal for the same /16 routing path.
+          probe_endpoint "ppa-release" "" "https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/dists/noble/Release"
 
           echo ""
           echo "=== TCP traceroute to Canonical legacy IPs (port 80) ==="
@@ -305,11 +306,6 @@ jobs:
             exit 0
           fi
           set -x
-          sudo sed -i \
-            -e 's|//archive\.ubuntu\.com|//au.archive.ubuntu.com|g' \
-            -e 's|//security\.ubuntu\.com|//au.archive.ubuntu.com|g' \
-            /etc/apt/sources.list /etc/apt/sources.list.d/*.list \
-            /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends --no-upgrade \
             ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
@@ -722,11 +718,6 @@ jobs:
             exit 0
           fi
           set -x
-          sudo sed -i \
-            -e 's|//archive\.ubuntu\.com|//au.archive.ubuntu.com|g' \
-            -e 's|//security\.ubuntu\.com|//au.archive.ubuntu.com|g' \
-            /etc/apt/sources.list /etc/apt/sources.list.d/*.list \
-            /etc/apt/sources.list.d/*.sources 2>/dev/null || true
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends --no-upgrade \
             ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
