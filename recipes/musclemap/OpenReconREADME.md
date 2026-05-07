@@ -24,11 +24,19 @@ https://doi.org/10.3390/jimaging10110262
 
 | ID | Label | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `sendoriginal` | Send original images | boolean | `true` | Send a copy of original unmodified images back too |
+| `sendoriginal` | Send original images | boolean | `true` | Return restamped derived copies of the original source images with the MuscleMap output |
 | `labeltransform` | Scale labels to lower integer range for DICOM 12BIT | boolean | `true` | Applying label transformation: 3 * (label_in // 10) + (label_in % 10) |
 | `bodyregion` | Body Region | choice | `wholebody, abdomen, pelvis, thigh, leg` | Select the body region for segmentation |
 | `chunksize` | Chunk Size | string | `100` | Chunk size between 5 and 200 - change for memory optimization on GPU |
 | `spatialoverlap` | Spatial Overlap | int | `50` | Spatial overlap percentage |
+
+# Scanner output handling
+
+MuscleMap buffers the incoming image stream before returning anything to the
+scanner. The segmentation, optional metrics report, optional original copies,
+and non-processed passthrough images are all sent as derived output series with
+fresh series identity, fresh SOP identity, and sequential scanner slice fields.
+This avoids reusing the source scanner storage identity for returned images.
 
 # Labels
 

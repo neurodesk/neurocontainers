@@ -32,6 +32,19 @@ mmMetricsMethod = "average"
 muscleMapDisplayLabel = "Musclemap"
 muscleMapImageTypeToken = "MUSCLEMAP"
 reservedScannerSeriesIndices = {99}
+scannerPartitionIndex = 0
+sourceParentReferenceMetaKeys = {
+    "DicomEngineDimString",
+    "MFInstanceNumber",
+    "MultiFrameSOPInstanceUID",
+    "PSMultiFrameSOPInstanceUID",
+    "PSSeriesInstanceUID",
+    "SOPInstanceUID",
+}
+sourceParentReferenceMetaPrefixes = (
+    "ReferencedGSPS",
+    "ReferencedImageSequence",
+)
 
 
 def process(connection, config, metadata):
@@ -88,7 +101,6 @@ def process(connection, config, metadata):
                 if item.is_flag_set(ismrmrd.ACQ_LAST_IN_SLICE):
                     logging.info("Processing a group of k-space data")
                     # image = process_raw(acqGroup, connection, config, metadata)
-                    _send_images_with_summary(connection, image, "raw_group", sentImagesForSummary, log_now=False)
                     acqGroup = []
 
             # ----------------------------------------------------------
@@ -169,8 +181,19 @@ def process(connection, config, metadata):
         derivedSeriesAllocator = _build_connection_series_allocator(inputImagesForSeriesRegistry)
         outputImagesForSend = []
         if passthroughImages:
-            logging.info("Buffering %d passthrough image(s) until output contract validation", len(passthroughImages))
-            outputImagesForSend.extend(passthroughImages)
+            passthrough_series_index = derivedSeriesAllocator.allocate("PASSTHROUGH")
+            logging.info(
+                "Restamping %d passthrough image(s) as derived passthrough series_index=%d",
+                len(passthroughImages),
+                passthrough_series_index,
+            )
+            outputImagesForSend.extend(
+                _restamp_passthrough_images(
+                    passthroughImages,
+                    "PASSTHROUGH",
+                    passthrough_series_index,
+                )
+            )
 
         for volume_key, imgGroup in processableImageGroups.items():
             logging.info(
@@ -493,6 +516,292 @@ def _build_derived_series_identity(
     }
 
 
+def _build_derived_sop_instance_uid(
+    source_meta,
+    series_identity,
+    derived_series_index,
+    output_index,
+    derived_kind,
+):
+    source_minihead = _decode_ice_minihead(source_meta)
+    source_sop_instance_uid = _first_non_empty_text(
+        _get_meta_text(source_meta, "SOPInstanceUID"),
+        _extract_minihead_string_value(source_minihead, "SOPInstanceUID"),
+    )
+    seed_text = json.dumps(
+        {
+            "series_instance_uid": _first_non_empty_text(
+                series_identity.get("series_instance_uid")
+            ),
+            "source_sop_instance_uid": source_sop_instance_uid,
+            "derived_kind": _first_non_empty_text(derived_kind),
+            "derived_series_index": int(derived_series_index) if derived_series_index is not None else None,
+            "output_index": int(output_index),
+        },
+        sort_keys=True,
+    )
+    return f"2.25.{uuid.uuid5(uuid.NAMESPACE_OID, seed_text).int}"
+
+
+def _strip_source_parent_refs(meta_obj):
+    for key in list(meta_obj.keys()):
+        if key in sourceParentReferenceMetaKeys:
+            del meta_obj[key]
+            continue
+        if any(key.startswith(prefix) for prefix in sourceParentReferenceMetaPrefixes):
+            del meta_obj[key]
+
+
+def _set_meta_scalar(meta_obj, key, value):
+    meta_obj[key] = str(int(value))
+
+
+def _set_output_storage_meta(meta_obj, output_index):
+    for key in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
+        _set_meta_scalar(meta_obj, key, scannerPartitionIndex)
+    for key, value in (
+        ("AnatomicalSliceNo", output_index),
+        ("ChronSliceNo", output_index),
+        ("NumberInSeries", output_index + 1),
+        ("ProtocolSliceNumber", output_index),
+        ("SliceNo", output_index),
+        ("IsmrmrdSliceNo", output_index),
+    ):
+        _set_meta_scalar(meta_obj, key, value)
+
+
+def _patch_output_minihead_storage(minihead_text, output_index):
+    current_text = minihead_text
+    changed = False
+    for long_param_name, long_param_value in (
+        ("Actual3DImagePartNumber", scannerPartitionIndex),
+        ("AnatomicalPartitionNo", scannerPartitionIndex),
+        ("AnatomicalSliceNo", output_index),
+        ("ChronSliceNo", output_index),
+        ("NumberInSeries", output_index + 1),
+        ("ProtocolSliceNumber", output_index),
+        ("SliceNo", output_index),
+    ):
+        current_text, did_change = _replace_or_append_minihead_long_param(
+            current_text,
+            long_param_name,
+            long_param_value,
+        )
+        changed = changed or did_change
+    return current_text, changed
+
+
+def _clone_mrd_image(image):
+    output_image = ismrmrd.Image.from_array(
+        np.array(image.data, copy=True),
+        transpose=False,
+    )
+    output_image.setHead(copy.deepcopy(image.getHead()))
+    output_image.attribute_string = image.attribute_string
+    return output_image
+
+
+def _build_passthrough_output_identity(source_meta, role, output_series_index):
+    role = _first_non_empty_text(role).upper() or "PASSTHROUGH"
+    source_minihead = _decode_ice_minihead(source_meta)
+    source_identity = _resolve_source_series_identity(source_meta, source_minihead)
+    source_series = _first_non_empty_text(
+        source_identity["series_description"],
+        source_identity["parent_sequence"],
+        role.lower(),
+    )
+    source_grouping = _first_non_empty_text(
+        source_identity["parent_grouping"],
+        source_series,
+    )
+    source_type_token = _first_non_empty_text(
+        _get_meta_text(source_meta, "ImageTypeValue4"),
+        _get_dicom_image_type_value(source_meta, 3),
+        _extract_minihead_array_tokens(source_minihead, "ImageTypeValue4"),
+    )
+    suffix = role.lower()
+    series_description = f"{source_series}_{suffix}" if source_series else suffix
+    grouping = f"{source_grouping}_{suffix}" if source_grouping else series_description
+    return {
+        "series_description": series_description,
+        "sequence_description": series_description,
+        "grouping": grouping,
+        "series_instance_uid": _build_derived_series_instance_uid(
+            source_series_instance_uid=source_identity["series_instance_uid"],
+            derived_kind=role,
+            derived_series_index=output_series_index,
+            series_grouping=grouping,
+            series_description=series_description,
+        ),
+        "source_type_token": source_type_token,
+        "type_token": role,
+        "display_token": role,
+        "image_comment": suffix,
+    }
+
+
+def _stamp_output_header(output_image, output_header, output_series_index, output_index):
+    output_header.image_series_index = output_series_index
+    output_header.image_index = output_index + 1
+    output_header.slice = output_index
+    output_header.contrast = 0
+    if output_image.data_type in (ismrmrd.DATATYPE_CXFLOAT, ismrmrd.DATATYPE_CXDOUBLE):
+        output_header.image_type = ismrmrd.IMTYPE_COMPLEX
+    else:
+        output_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    output_image.setHead(output_header)
+    output_image.image_series_index = output_series_index
+
+
+def _output_meta(
+    source_meta,
+    output_identity,
+    output_series_index,
+    output_index,
+    type_token,
+    history,
+    *,
+    data_role="Image",
+    image_comment=None,
+    extra_meta=None,
+    source_type_token=None,
+    metrics_text=None,
+    target_image_type_value3="M",
+):
+    source_meta = _copy_meta(source_meta)
+    source_minihead = _decode_ice_minihead(source_meta)
+    source_type_token = _first_non_empty_text(
+        source_type_token,
+        output_identity.get("source_type_token"),
+        _get_meta_text(source_meta, "ImageTypeValue4"),
+        _get_dicom_image_type_value(source_meta, 3),
+        _extract_minihead_array_tokens(source_minihead, "ImageTypeValue4"),
+    )
+    sop_instance_uid = _build_derived_sop_instance_uid(
+        source_meta,
+        output_identity,
+        output_series_index,
+        output_index,
+        type_token,
+    )
+
+    meta_obj = _copy_meta(source_meta)
+    _strip_source_parent_refs(meta_obj)
+    sequence_description = output_identity["sequence_description"]
+    series_description = output_identity["series_description"]
+    series_instance_uid = output_identity["series_instance_uid"]
+    series_grouping = output_identity["grouping"]
+    display_token = _first_non_empty_text(
+        output_identity.get("display_token"),
+        type_token,
+    )
+    image_comment = _first_non_empty_text(
+        image_comment,
+        output_identity.get("image_comment"),
+        series_description,
+    )
+    image_type = f"DERIVED\\PRIMARY\\{target_image_type_value3}\\{type_token}"
+
+    meta_obj["DataRole"] = data_role
+    meta_obj["ImageProcessingHistory"] = list(history)
+    meta_obj["SeriesDescription"] = series_description
+    meta_obj["SequenceDescription"] = sequence_description
+    meta_obj["ProtocolName"] = sequence_description
+    meta_obj["SeriesNumberRangeNameUID"] = series_grouping
+    meta_obj["SeriesInstanceUID"] = series_instance_uid
+    meta_obj["SOPInstanceUID"] = sop_instance_uid
+    meta_obj["ImageType"] = image_type
+    meta_obj["ImageTypeValue3"] = target_image_type_value3
+    meta_obj["ImageTypeValue4"] = display_token
+    meta_obj["DicomImageType"] = image_type
+    meta_obj["ComplexImageComponent"] = "MAGNITUDE"
+    meta_obj["ImageComments"] = image_comment
+    meta_obj["ImageComment"] = image_comment
+    meta_obj["SequenceDescriptionAdditional"] = "openrecon"
+    meta_obj["Keep_image_geometry"] = 1
+    _set_output_storage_meta(meta_obj, output_index)
+
+    for key, value in (extra_meta or {}).items():
+        if value is not None:
+            meta_obj[key] = value
+
+    minihead_text = _decode_ice_minihead(meta_obj)
+    if minihead_text:
+        patched_minihead_text, minihead_changed = _patch_ice_minihead(
+            minihead_text,
+            sequence_description,
+            series_grouping,
+            series_instance_uid,
+            source_type_token,
+            type_token,
+            metrics_text=metrics_text,
+            target_display_token=display_token,
+            target_image_type_value3=target_image_type_value3,
+            series_description=series_description,
+            sop_instance_uid=sop_instance_uid,
+        )
+        patched_minihead_text, storage_changed = _patch_output_minihead_storage(
+            patched_minihead_text,
+            output_index,
+        )
+        if minihead_changed or storage_changed:
+            meta_obj["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
+
+    return meta_obj
+
+
+def _stamp_output_image(
+    output_image,
+    output_header,
+    source_meta,
+    output_identity,
+    output_series_index,
+    output_index,
+    type_token,
+    history,
+    **meta_kwargs,
+):
+    _stamp_output_header(output_image, output_header, output_series_index, output_index)
+    output_image.attribute_string = _output_meta(
+        source_meta,
+        output_identity,
+        output_series_index,
+        output_index,
+        type_token,
+        history,
+        **meta_kwargs,
+    ).serialize()
+    return output_image
+
+
+def _restamp_passthrough_images(images, role, output_series_index):
+    image_list = _as_image_list(images)
+    if not image_list:
+        return []
+
+    base_meta = _copy_meta(ismrmrd.Meta.deserialize(image_list[0].attribute_string))
+    output_identity = _build_passthrough_output_identity(base_meta, role, output_series_index)
+    restamped_images = []
+    for output_index, image in enumerate(image_list):
+        output_image = _clone_mrd_image(image)
+        output_header = copy.deepcopy(output_image.getHead())
+        restamped_images.append(
+            _stamp_output_image(
+                output_image,
+                output_header,
+                ismrmrd.Meta.deserialize(image.attribute_string),
+                output_identity,
+                output_series_index,
+                output_index,
+                output_identity["type_token"],
+                ["OPENRECON", "MUSCLEMAP", output_identity["type_token"]],
+                image_comment=output_identity["image_comment"],
+            )
+        )
+
+    return restamped_images
+
+
 def _format_dixon_image_label(image_type_value):
     label_map = {
         "WATER": "Water",
@@ -588,8 +897,7 @@ def _sanitize_minihead_param_value(value):
     if not text:
         return ""
     return (
-        text.replace("\\", "/")
-        .replace('"', "'")
+        text.replace('"', "'")
         .replace("\r", " ")
         .replace("\n", " ")
     )
@@ -716,6 +1024,8 @@ def _patch_ice_minihead(
     metrics_text=None,
     target_display_token=None,
     target_image_type_value3="M",
+    series_description=None,
+    sop_instance_uid=None,
 ):
     if not minihead_text:
         return minihead_text, False
@@ -723,12 +1033,15 @@ def _patch_ice_minihead(
     changed = False
     current_text = minihead_text
     target_display_token = target_display_token or target_type_token
+    series_description = _first_non_empty_text(series_description, parent_sequence)
 
     for param_name, param_value in (
+        ("SeriesDescription", series_description),
         ("SequenceDescription", parent_sequence),
         ("ProtocolName", parent_sequence),
         ("SeriesNumberRangeNameUID", parent_grouping),
         ("SeriesInstanceUID", series_instance_uid),
+        ("SOPInstanceUID", sop_instance_uid),
         ("ImageType", f"DERIVED\\PRIMARY\\{target_image_type_value3}\\{target_type_token}"),
         ("ImageTypeValue3", "M"),
         ("ComplexImageComponent", "MAGNITUDE"),
@@ -1505,7 +1818,11 @@ def _validate_output_series_contract(output_summary, input_summary):
     # Keep this list aligned with every derived output kind created by this
     # OpenRecon app. These roles are held to the stricter Siemens identity
     # contract because scanner storage/composer may key on IceMiniHead fields.
-    derived_roles = {muscleMapImageTypeToken, "METRICS"}
+    derived_roles = {muscleMapImageTypeToken, "METRICS", "ORIGINAL", "PASSTHROUGH"}
+    input_indices = {
+        int(entry.get("image_series_index", 0))
+        for entry in input_summary
+    }
     input_uids = {
         entry["series_instance_uid"]
         for entry in input_summary
@@ -1537,6 +1854,8 @@ def _validate_output_series_contract(output_summary, input_summary):
                 )
             if series_index in reservedScannerSeriesIndices:
                 errors.append(f"derived role {role} uses reserved scanner series index {series_index}")
+            if series_index in input_indices:
+                errors.append(f"derived role {role} reuses input image_series_index {series_index}")
             if uid in input_uids:
                 errors.append(f"derived role {role} reuses input SeriesInstanceUID {uid}")
             if not meta_uid:
@@ -2211,9 +2530,6 @@ def _build_metrics_report_images(
         derived_series_index=metrics_series_index,
         derived_kind="metrics",
     )
-    report_parent_grouping = report_identity["grouping"]
-    report_series_instance_uid = report_identity["series_instance_uid"]
-
     report_images = []
     for page_index, page_array in enumerate(report_pages):
         page_height = int(page_array.shape[0]) if page_array.ndim >= 1 else report_height
@@ -2233,56 +2549,35 @@ def _build_metrics_report_images(
             "position",
             [float(value) for value in (base_position + page_index * report_spacing * slice_dir)],
         )
-        report_header.image_index = page_index + 1
-        report_header.slice = page_index
-        report_header.image_series_index = metrics_series_index
-        report_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
-        report_image.setHead(report_header)
-
-        report_meta = _copy_meta(base_meta)
-        report_meta["DataRole"] = "Image"
-        report_meta["ImageProcessingHistory"] = ["OPENRECON", "MUSCLEMAP", "METRICS"]
-        report_meta["WindowCenter"] = "2040"
-        report_meta["WindowWidth"] = "4080"
-        report_meta["SeriesDescription"] = report_identity["series_description"]
-        report_meta["SequenceDescription"] = report_identity["sequence_description"]
-        report_meta["ProtocolName"] = report_identity["sequence_description"]
-        report_meta["SeriesNumberRangeNameUID"] = report_parent_grouping
-        report_meta["SeriesInstanceUID"] = report_series_instance_uid
-        report_meta["ImageType"] = "METRICS"
-        report_meta["ImageTypeValue3"] = "M"
-        report_meta["ImageTypeValue4"] = "METRICS"
-        report_meta["DicomImageType"] = "DERIVED\\SECONDARY\\M\\METRICS"
-        report_meta["ComplexImageComponent"] = "MAGNITUDE"
-        report_meta["ImageComments"] = metrics_comment
-        report_meta["Keep_image_geometry"] = 1
-        report_meta["ImageRowDir"] = [
-            "{:.18f}".format(report_header.read_dir[0]),
-            "{:.18f}".format(report_header.read_dir[1]),
-            "{:.18f}".format(report_header.read_dir[2]),
-        ]
-        report_meta["ImageColumnDir"] = [
-            "{:.18f}".format(report_header.phase_dir[0]),
-            "{:.18f}".format(report_header.phase_dir[1]),
-            "{:.18f}".format(report_header.phase_dir[2]),
-        ]
-
-        minihead_text = _decode_ice_minihead(report_meta)
-        if minihead_text:
-            patched_minihead_text, minihead_changed = _patch_ice_minihead(
-                minihead_text,
-                report_identity["sequence_description"],
-                report_parent_grouping,
-                report_series_instance_uid,
-                source_type_token,
+        report_images.append(
+            _stamp_output_image(
+                report_image,
+                report_header,
+                base_meta,
+                report_identity,
+                metrics_series_index,
+                page_index,
                 "METRICS",
+                ["OPENRECON", "MUSCLEMAP", "METRICS"],
+                image_comment=metrics_comment,
+                source_type_token=source_type_token,
                 metrics_text=metrics_minihead_text if include_minihead_metrics else None,
+                extra_meta={
+                    "WindowCenter": "2040",
+                    "WindowWidth": "4080",
+                    "ImageRowDir": [
+                        "{:.18f}".format(report_header.read_dir[0]),
+                        "{:.18f}".format(report_header.read_dir[1]),
+                        "{:.18f}".format(report_header.read_dir[2]),
+                    ],
+                    "ImageColumnDir": [
+                        "{:.18f}".format(report_header.phase_dir[0]),
+                        "{:.18f}".format(report_header.phase_dir[1]),
+                        "{:.18f}".format(report_header.phase_dir[2]),
+                    ],
+                },
             )
-            if minihead_changed:
-                report_meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
-
-        report_image.attribute_string = report_meta.serialize()
-        report_images.append(report_image)
+        )
 
     logging.info(
         "Created %d MuscleMap metrics report image(s) in image_series_index=%d",
@@ -2967,11 +3262,6 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
                 "slice_dir",
                 [float(value) for value in slice_axis],
             )
-        oldHeader.image_index = source_image_index
-        oldHeader.slice = source_slice_index
-        oldHeader.contrast = segmentation_series_index - 1
-        oldHeader.image_series_index = segmentation_series_index
-
         print(f"Image {iImg}: data_type = {imagesOut[iImg].data_type}")
 
         # Supported ISMRMRD Data Types:
@@ -2991,12 +3281,6 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
             logging.error(f"Unsupported data type {imagesOut[iImg].data_type} in output image {iImg}. Supported types are: uint16, int16, float32, complex float32.")
             raise ValueError(f"Unsupported data type {imagesOut[iImg].data_type} in output image {iImg}. Supported types are: uint16, int16, float32, complex float32.")
 
-        # Set the image_type to match the data_type for complex data
-        if (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXFLOAT) or (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXDOUBLE):
-            oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
-        else:
-            oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
-
         # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
         if mrdhelper.get_meta_value(meta[iImg], "IceMiniHead") is not None:
             if (
@@ -3007,98 +3291,52 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
             ):
                 currentSeries += 1
 
-        imagesOut[iImg].setHead(oldHeader)
-
-        # Create a copy of the original ISMRMRD Meta attributes and update
-        tmpMeta = _copy_meta(meta[iImg])
-
-        tmpMeta["DataRole"] = "Image"
-        tmpMeta["ImageProcessingHistory"] = ["OPENRECON", "MUSCLEMAP"]
-        tmpMeta["WindowCenter"] = str((maxVal + 1) / 2)
-        tmpMeta["WindowWidth"] = str((maxVal + 1))
-        tmpMeta["SeriesDescription"] = segmentation_identity["series_description"]
-        tmpMeta["SequenceDescription"] = segmentation_identity["sequence_description"]
-        tmpMeta["ProtocolName"] = segmentation_identity["sequence_description"]
-        tmpMeta["SeriesNumberRangeNameUID"] = segmentation_identity["grouping"]
-        tmpMeta["SeriesInstanceUID"] = segmentation_identity["series_instance_uid"]
-        tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{muscleMapImageTypeToken}"
-        tmpMeta["ImageTypeValue3"] = "M"
-        tmpMeta["ImageTypeValue4"] = muscleMapImageTypeToken
-        tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{muscleMapImageTypeToken}"
-        tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
-        tmpMeta["partition_count"] = str(data.shape[-1])
         if metrics_in_comments and metrics_comment:
             image_comment = _join_image_comment(source_image_label, metrics_comment)
         else:
             image_comment = source_image_label
-        tmpMeta["ImageComments"] = image_comment
-        tmpMeta["ImageComment"] = image_comment
-        tmpMeta["MuscleMapSourceInputIndex"] = str(source_record["input_index"])
-        tmpMeta["MuscleMapSourceImageIndex"] = str(source_image_index)
-        tmpMeta["MuscleMapSourceSlice"] = str(source_slice_index)
-        tmpMeta["MuscleMapSourceProjectedPosition"] = f"{source_record['projected_position']:.6f}"
-        if "SequenceDescriptionAdditional" in tmpMeta:
-            try:
-                del tmpMeta["SequenceDescriptionAdditional"]
-            except Exception:
-                tmpMeta["SequenceDescriptionAdditional"] = ""
 
-        minihead_text = _decode_ice_minihead(tmpMeta)
-        if minihead_text:
-            patched_minihead_text, minihead_changed = _patch_ice_minihead(
-                minihead_text,
-                segmentation_identity["sequence_description"],
-                segmentation_identity["grouping"],
-                segmentation_identity["series_instance_uid"],
-                _source_type_value,
-                muscleMapImageTypeToken,
-                metrics_text=metrics_minihead_text if metrics_in_minihead and metrics_minihead_text else None,
-                target_display_token=muscleMapImageTypeToken,
-                target_image_type_value3="M",
-            )
-            if minihead_changed:
-                minihead_text = patched_minihead_text
-            else:
-                logging.warning(
-                    "IceMiniHead was present but not updated for segmentation output slice %d",
-                    iImg,
-                )
-            for long_param_name, long_param_value in (
-                ("Actual3DImagePartNumber", source_slice_index),
-                ("AnatomicalPartitionNo", source_slice_index),
-                ("ChronSliceNo", source_slice_index),
-                ("NumberInSeries", iImg + 1),
-            ):
-                minihead_text, did_change = _replace_or_append_minihead_long_param(
-                    minihead_text,
-                    long_param_name,
-                    long_param_value,
-                )
-                minihead_changed = minihead_changed or did_change
-            if minihead_changed:
-                tmpMeta["IceMiniHead"] = _encode_ice_minihead(minihead_text)
-        tmpMeta["Keep_image_geometry"] = 1
-
-        tmpMeta["ImageRowDir"] = [
-            "{:.18f}".format(oldHeader.read_dir[0]),
-            "{:.18f}".format(oldHeader.read_dir[1]),
-            "{:.18f}".format(oldHeader.read_dir[2]),
-        ]
-
-        tmpMeta["ImageColumnDir"] = [
-            "{:.18f}".format(oldHeader.phase_dir[0]),
-            "{:.18f}".format(oldHeader.phase_dir[1]),
-            "{:.18f}".format(oldHeader.phase_dir[2]),
-        ]
-
+        segmentation_extra_meta = {
+            "WindowCenter": str((maxVal + 1) / 2),
+            "WindowWidth": str(maxVal + 1),
+            "partition_count": "1",
+            "slice_count": str(data.shape[-1]),
+            "MuscleMapSourceInputIndex": str(source_record["input_index"]),
+            "MuscleMapSourceImageIndex": str(source_image_index),
+            "MuscleMapSourceSlice": str(source_slice_index),
+            "MuscleMapSourceProjectedPosition": f"{source_record['projected_position']:.6f}",
+            "ImageRowDir": [
+                "{:.18f}".format(oldHeader.read_dir[0]),
+                "{:.18f}".format(oldHeader.read_dir[1]),
+                "{:.18f}".format(oldHeader.read_dir[2]),
+            ],
+            "ImageColumnDir": [
+                "{:.18f}".format(oldHeader.phase_dir[0]),
+                "{:.18f}".format(oldHeader.phase_dir[1]),
+                "{:.18f}".format(oldHeader.phase_dir[2]),
+            ],
+        }
         if segmentation_colormap:
-            tmpMeta["LUTFileName"] = "MicroDeltaHotMetal.pal"
+            segmentation_extra_meta["LUTFileName"] = "MicroDeltaHotMetal.pal"
 
-        metaXml = tmpMeta.serialize()
+        _stamp_output_image(
+            imagesOut[iImg],
+            oldHeader,
+            meta[iImg],
+            segmentation_identity,
+            segmentation_series_index,
+            iImg,
+            muscleMapImageTypeToken,
+            ["OPENRECON", "MUSCLEMAP"],
+            image_comment=image_comment,
+            source_type_token=_source_type_value,
+            metrics_text=metrics_minihead_text if metrics_in_minihead and metrics_minihead_text else None,
+            extra_meta=segmentation_extra_meta,
+        )
+
+        metaXml = imagesOut[iImg].attribute_string
         # logging.debug("Image MetaAttributes: %s", xml.dom.minidom.parseString(metaXml).toprettyxml())
         # logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
-
-        imagesOut[iImg].attribute_string = metaXml
 
         if iImg in set(_sample_indices(data.shape[-1], edge_count=6)):
             final_meta = ismrmrd.Meta.deserialize(metaXml)
@@ -3195,49 +3433,17 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
         if stack[-2].name == 'process_raw':
             logging.warning('sendOriginal is true, but input was raw data, so no original images to return!')
         else:
-            logging.info('Sending a copy of original unmodified images due to sendOriginal set to True')
-            # In reverse order so that they'll be in correct order as we insert them to the front of the list
-            original_sample_indices = set(_sample_indices(len(imgGroup), edge_count=6))
-            allowed_original_changes = {"meta.Keep_image_geometry"}
-            for i, image in enumerate(reversed(imgGroup)):
-                source_index = len(imgGroup) - 1 - i
-                before_identity = _image_identity(image)
-
-                # Create a copy to not modify the original inputs.
-                tmpImg = ismrmrd.Image.from_array(np.array(image.data, copy=True), transpose=False)
-                tmpHeader = copy.deepcopy(image.getHead())
-                tmpImg.setHead(tmpHeader)
-
-                # Ensure Keep_image_geometry is set to not reverse image orientation
-                tmpMeta = _copy_meta(ismrmrd.Meta.deserialize(image.attribute_string))
-                tmpMeta['Keep_image_geometry'] = 1
-                tmpImg.attribute_string = tmpMeta.serialize()
-
-                after_identity = _image_identity(tmpImg, tmpMeta)
-                changed_fields = _identity_changed_fields(before_identity, after_identity)
-                unexpected_changed_fields = [
-                    field
-                    for field in changed_fields
-                    if field not in allowed_original_changes
-                ]
-                if source_index in original_sample_indices or unexpected_changed_fields:
-                    _log_json_event(
-                        "ORIGINAL_PASSTHROUGH_IDENTITY",
-                        {
-                            "slice_sample": source_index,
-                            "before": before_identity,
-                            "after": after_identity,
-                            "changed_fields": changed_fields,
-                        },
-                        level=logging.warning if unexpected_changed_fields else logging.info,
-                    )
-                if unexpected_changed_fields:
-                    raise ValueError(
-                        "Original passthrough changed naming/grouping field(s): "
-                        + ", ".join(unexpected_changed_fields)
-                    )
-
-                imagesOut.insert(0, tmpImg)
+            original_series_index = derived_series_allocator.allocate("ORIGINAL")
+            logging.info(
+                "Sending original MuscleMap source images as derived original series_index=%d",
+                original_series_index,
+            )
+            original_images = _restamp_passthrough_images(
+                ordered_img_group,
+                "ORIGINAL",
+                original_series_index,
+            )
+            imagesOut = original_images + imagesOut
 
     _log_send_batch_summary(imagesOut, "process_image_return")
     return imagesOut
