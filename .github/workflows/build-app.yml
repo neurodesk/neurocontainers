@@ -58,6 +58,7 @@ jobs:
       BUILDDATE: ${{ steps.envars.outputs.BUILDDATE }}
       SHORT_SHA: ${{ steps.envars.outputs.SHORT_SHA }}
       IMAGETAG: ${{ steps.envars.outputs.IMAGETAG }}
+      VERSION: ${{ steps.envars.outputs.VERSION }}
       ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
     steps:
       - name: Checkout repository
@@ -113,6 +114,11 @@ jobs:
         run: |
           APPLICATION=${{ inputs.application }}
           SHORT_SHA=$(git rev-parse --short $GITHUB_SHA)
+          VERSION=$(sed -n 's/^version:[[:space:]]*//p' "recipes/${APPLICATION}/build.yaml" | head -1 | tr -d "\"'")
+          if [ -z "$VERSION" ]; then
+            echo "Recipe version not found for $APPLICATION"
+            exit 1
+          fi
           # Get the commit date of the recipe's build.yaml file
           # This ensures consistent build dates based on when the recipe was last modified
           BUILDDATE=$(git log -1 --format=%ad --date=format:%Y%m%d -- recipes/${APPLICATION}/build.yaml)
@@ -123,6 +129,8 @@ jobs:
           echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "BUILDDATE=$BUILDDATE" >> $GITHUB_ENV
           echo "BUILDDATE=$BUILDDATE" >> $GITHUB_OUTPUT
           if [ "${{ inputs.skip_docker_build }}" = "true" ]; then
@@ -454,7 +462,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
 
     steps:
       - name: Configure GitHub-hosted runner
@@ -516,7 +524,7 @@ jobs:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
 
     steps:
       - name: Set runner base path
@@ -637,7 +645,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
 
     steps:
       - name: Bootstrap build tooling
@@ -715,7 +723,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
     steps:
       - name: Configure runner
         run: |
@@ -763,7 +771,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
     steps:
     - uses: actions/checkout@v5
