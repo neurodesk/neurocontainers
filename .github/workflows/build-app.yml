@@ -93,10 +93,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends --no-upgrade \
             ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
-          APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
-            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_amd64.deb" \
-            -o /tmp/apptainer.deb
+          # Find the most recent non-prerelease apptainer that actually has an
+          # uploaded amd64.deb asset. `releases/latest` alone is unsafe — upstream
+          # has tagged releases with empty asset arrays (e.g. v1.5.0 on 2026-05-07).
+          APPTAINER_DEB_URL=$(curl -fsSL "https://api.github.com/repos/apptainer/apptainer/releases?per_page=20" \
+            | jq -r 'first(.[] | select(.prerelease == false) | .assets[] | select(.name | test("^apptainer_[0-9.]+_amd64\\.deb$")) | .browser_download_url)')
+          if [ -z "$APPTAINER_DEB_URL" ] || [ "$APPTAINER_DEB_URL" = "null" ]; then
+            echo "ERROR: no apptainer .deb found in last 20 non-prerelease GitHub releases" >&2
+            exit 1
+          fi
+          echo "Installing apptainer from: $APPTAINER_DEB_URL"
+          curl -fsSL "$APPTAINER_DEB_URL" -o /tmp/apptainer.deb
           sudo apt-get install -y /tmp/apptainer.deb
           rm /tmp/apptainer.deb
           sudo python3 -m pip install --break-system-packages \
@@ -223,23 +230,63 @@ jobs:
 
       - name: Network routing probe
         run: |
-          echo "=== DNS resolution (Cloudflare CDN vs Canonical legacy IPs) ==="
-          for h in archive.ubuntu.com security.ubuntu.com ppa.launchpadcontent.net; do
+          # Don't fail the job on probe errors — diagnostic only.
+          set +e
+
+          # Install diagnostic tools (mtr for TCP traceroute).
+          command -v mtr >/dev/null 2>&1 || sudo apt-get install -y --no-install-recommends mtr-tiny
+
+          SAMPLES=5
+          # ~30-50 MB file present on every Ubuntu mirror — large enough to escape
+          # TCP slow-start and yield real bandwidth numbers (not handshake artifacts).
+          LARGE_FILE_PATH="/ubuntu/dists/noble/Contents-amd64.gz"
+
+          echo "=== DNS resolution ==="
+          for h in archive.ubuntu.com security.ubuntu.com ppa.launchpadcontent.net au.archive.ubuntu.com; do
             ips=$(getent ahostsv4 "$h" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ')
             echo "DNS $h -> $ips"
           done
+
+          probe_endpoint() {
+            local label="$1" resolve_arg="$2" url="$3"
+            for i in $(seq 1 $SAMPLES); do
+              result=$(curl -m 30 $resolve_arg --range 0-10485760 \
+                -w "sample=$i tcp_connect=%{time_connect}s xfer_total=%{time_total}s bytes=%{size_download} speed=%{speed_download}B/s ip=%{remote_ip} http=%{http_code}" \
+                -o /dev/null -sS "$url" 2>&1)
+              echo "PROBE $label $result"
+            done
+          }
+
           echo ""
-          echo "=== Throughput probe (diagnosing QRIScloud routing vs Canonical-side) ==="
-          for entry in \
-            "archive.ubuntu.com|http://archive.ubuntu.com/ubuntu/dists/noble/Release" \
-            "au.archive.ubuntu.com|http://au.archive.ubuntu.com/ubuntu/dists/noble/Release" \
-            "ppa.launchpadcontent.net|https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/dists/noble/main/binary-amd64/Packages.gz"; do
-            label="${entry%%|*}"
-            url="${entry##*|}"
-            result=$(curl -m 30 -w "speed=%{speed_download}B/s ip=%{remote_ip} http=%{http_code} time=%{time_total}s" \
-              -o /dev/null -sS "$url" 2>&1 || echo "FAILED/TIMEOUT")
-            echo "PROBE $label -> $result"
+          echo "=== A/B bandwidth probe — same content, different routes ==="
+          echo "(Forcing --resolve so we measure routing to specific IPs, not DNS lottery)"
+
+          echo ""
+          echo "--- archive.ubuntu.com via default DNS (likely Cloudflare today) ---"
+          probe_endpoint "archive-default" "" "http://archive.ubuntu.com${LARGE_FILE_PATH}"
+
+          echo ""
+          echo "--- archive.ubuntu.com forced to Canonical legacy 91.189.91.81 (US Internap path) ---"
+          probe_endpoint "archive-canonical-legacy" "--resolve archive.ubuntu.com:80:91.189.91.81" "http://archive.ubuntu.com${LARGE_FILE_PATH}"
+
+          echo ""
+          echo "--- au.archive.ubuntu.com via default DNS (AARNet, control) ---"
+          probe_endpoint "au-archive" "" "http://au.archive.ubuntu.com${LARGE_FILE_PATH}"
+
+          echo ""
+          echo "--- ppa.launchpadcontent.net (git-core/ppa Sources file, no .gz) ---"
+          probe_endpoint "ppa" "" "https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/dists/noble/main/source/Sources"
+
+          echo ""
+          echo "=== TCP traceroute to Canonical legacy IPs (port 80) ==="
+          for ip in 91.189.91.81 185.125.189.186; do
+            echo ""
+            echo "--- mtr -T -P 80 to $ip ---"
+            sudo mtr --report --report-cycles 5 --tcp --port 80 --no-dns --wide "$ip" 2>&1 | head -40
           done
+
+          # Re-enable strict mode for downstream steps (this is a step-local set +e)
+          set -e
 
       - name: Bootstrap build tooling
         shell: bash
@@ -266,10 +313,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends --no-upgrade \
             ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
-          APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
-            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_amd64.deb" \
-            -o /tmp/apptainer.deb
+          # Find the most recent non-prerelease apptainer that actually has an
+          # uploaded amd64.deb asset. `releases/latest` alone is unsafe — upstream
+          # has tagged releases with empty asset arrays (e.g. v1.5.0 on 2026-05-07).
+          APPTAINER_DEB_URL=$(curl -fsSL "https://api.github.com/repos/apptainer/apptainer/releases?per_page=20" \
+            | jq -r 'first(.[] | select(.prerelease == false) | .assets[] | select(.name | test("^apptainer_[0-9.]+_amd64\\.deb$")) | .browser_download_url)')
+          if [ -z "$APPTAINER_DEB_URL" ] || [ "$APPTAINER_DEB_URL" = "null" ]; then
+            echo "ERROR: no apptainer .deb found in last 20 non-prerelease GitHub releases" >&2
+            exit 1
+          fi
+          echo "Installing apptainer from: $APPTAINER_DEB_URL"
+          curl -fsSL "$APPTAINER_DEB_URL" -o /tmp/apptainer.deb
           sudo apt-get install -y /tmp/apptainer.deb
           rm /tmp/apptainer.deb
           sudo python3 -m pip install --break-system-packages \
@@ -567,10 +621,17 @@ jobs:
           SINGULARITY_TMPDIR="$BASE_PATH/apptainer/tmp"
           echo "SINGULARITY_TMPDIR=$SINGULARITY_TMPDIR" >> "$GITHUB_ENV"
 
-          APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
-            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_amd64.deb" \
-            -o /tmp/apptainer.deb
+          # Find the most recent non-prerelease apptainer that actually has an
+          # uploaded amd64.deb asset. `releases/latest` alone is unsafe — upstream
+          # has tagged releases with empty asset arrays (e.g. v1.5.0 on 2026-05-07).
+          APPTAINER_DEB_URL=$(curl -fsSL "https://api.github.com/repos/apptainer/apptainer/releases?per_page=20" \
+            | jq -r 'first(.[] | select(.prerelease == false) | .assets[] | select(.name | test("^apptainer_[0-9.]+_amd64\\.deb$")) | .browser_download_url)')
+          if [ -z "$APPTAINER_DEB_URL" ] || [ "$APPTAINER_DEB_URL" = "null" ]; then
+            echo "ERROR: no apptainer .deb found in last 20 non-prerelease GitHub releases" >&2
+            exit 1
+          fi
+          echo "Installing apptainer from: $APPTAINER_DEB_URL"
+          curl -fsSL "$APPTAINER_DEB_URL" -o /tmp/apptainer.deb
           sudo apt-get install -y /tmp/apptainer.deb
           rm /tmp/apptainer.deb
 
@@ -669,10 +730,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends --no-upgrade \
             ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
-          APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
-            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_amd64.deb" \
-            -o /tmp/apptainer.deb
+          # Find the most recent non-prerelease apptainer that actually has an
+          # uploaded amd64.deb asset. `releases/latest` alone is unsafe — upstream
+          # has tagged releases with empty asset arrays (e.g. v1.5.0 on 2026-05-07).
+          APPTAINER_DEB_URL=$(curl -fsSL "https://api.github.com/repos/apptainer/apptainer/releases?per_page=20" \
+            | jq -r 'first(.[] | select(.prerelease == false) | .assets[] | select(.name | test("^apptainer_[0-9.]+_amd64\\.deb$")) | .browser_download_url)')
+          if [ -z "$APPTAINER_DEB_URL" ] || [ "$APPTAINER_DEB_URL" = "null" ]; then
+            echo "ERROR: no apptainer .deb found in last 20 non-prerelease GitHub releases" >&2
+            exit 1
+          fi
+          echo "Installing apptainer from: $APPTAINER_DEB_URL"
+          curl -fsSL "$APPTAINER_DEB_URL" -o /tmp/apptainer.deb
           sudo apt-get install -y /tmp/apptainer.deb
           rm /tmp/apptainer.deb
           sudo python3 -m pip install --break-system-packages \
