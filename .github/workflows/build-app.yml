@@ -476,13 +476,20 @@ jobs:
       #     retention-days: 7
         
       - name: Push to GHCR
-        if: steps.imgcompare.outputs.IMGDIFFERS == 'true'
+        if: inputs.skip_docker_build != 'true'
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          docker tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest
+          # Always push :BUILDDATE so build-simg can pull it. GHCR dedupes
+          # identical manifests, so pushing an unchanged image is essentially
+          # free. Without this, no-change rebuilds leave :BUILDDATE missing
+          # and build-simg fails with MANIFEST_UNKNOWN.
           docker push ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}
-          docker push ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest
+          # Only advance :latest when the image actually changed (or forced).
+          if [ "${{ steps.imgcompare.outputs.IMGDIFFERS }}" = "true" ] || [ "${{ inputs.force_push_ghcr }}" = "true" ]; then
+            docker tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest
+            docker push ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest
+          fi
 
   # push-ghcr:
   #   needs: [config, build-image]
