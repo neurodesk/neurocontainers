@@ -98,6 +98,24 @@ jobs:
           release_pattern = re.compile(r"^releases/([^/]+)/([^/]+)\.json$")
           test_pattern = re.compile(r"^recipes/([^/]+)/test\.yaml$")
 
+          release_files = [path for path in changed_files if release_pattern.match(path)]
+          unrelated_to_release = [
+              path
+              for path in changed_files
+              if not release_pattern.match(path) and not test_pattern.match(path)
+          ]
+
+          if release_files and unrelated_to_release:
+              print(
+                  "Release metadata changes must be isolated from unrelated files. "
+                  "Move the release JSON change to its own generated release PR or "
+                  "remove it from this branch.",
+                  file=sys.stderr,
+              )
+              print("Release files:", ", ".join(release_files), file=sys.stderr)
+              print("Unrelated files:", ", ".join(unrelated_to_release), file=sys.stderr)
+              raise SystemExit(1)
+
           entries = {}
 
           for path in changed_files:
