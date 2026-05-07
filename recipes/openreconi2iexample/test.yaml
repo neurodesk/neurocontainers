@@ -1,0 +1,740 @@
+tests:
+ - name: Manual OpenRecon image-to-image smoke test
+   manual: true
+   script: |
+      source .venv/bin/activate
+      ./builder/build.py generate openreconi2iexample --recreate --build --login --architecture x86_64 --offline_mode true
+
+      set -eux
+      input_h5=/buildhostdirectory/input_image_dataset.h5
+      output_h5=/buildhostdirectory/openreconi2iexample_output.h5
+      upsampled_output_h5=/buildhostdirectory/openreconi2iexample_upsampled_output.h5
+
+      if [ ! -f "${input_h5}" ]; then
+        echo "Manual test skipped: place an MRD image dataset at ${input_h5} to run it."
+        exit 0
+      fi
+
+      python3 /opt/code/python-ismrmrd-server/main.py \
+        -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
+      server_pid=$!
+      trap 'kill ${server_pid} || true' EXIT
+      sleep 2
+
+      rm -f "${output_h5}"
+      python3 /opt/code/python-ismrmrd-server/client.py \
+        -G dataset \
+        -o "${output_h5}" \
+        "${input_h5}" \
+        -c openreconi2iexample
+
+      test -s "${output_h5}"
+      printf '%s\n' \
+        '{' \
+        '  "parameters": {' \
+        '    "config": "openreconi2iexample",' \
+        '    "upsampled": true' \
+        '  }' \
+        '}' > openreconi2iexample.json
+      rm -f "${upsampled_output_h5}"
+      python3 /opt/code/python-ismrmrd-server/client.py \
+        -G dataset \
+        -o "${upsampled_output_h5}" \
+        "${input_h5}" \
+        -c openreconi2iexample
+
+      test -s "${upsampled_output_h5}"
+      python3 - "${input_h5}" "${upsampled_output_h5}" <<'PY'
+      import sys
+
+      import ismrmrd
+
+      upsampled_series_index = 102
+
+      def first(value):
+          return value[0] if isinstance(value, list) else value
+
+      def read_images(path):
+          dataset = ismrmrd.Dataset(path, "dataset")
+          try:
+              groups = sorted(
+                  name for name in dataset._file["dataset"].keys()
+                  if name.startswith("image_")
+              )
+              for group in groups:
+                  for index in range(dataset.number_of_images(group)):
+                      yield dataset.read_image(group, index)
+          finally:
+              dataset.close()
+
+      input_images = [
+          image for image in read_images(sys.argv[1])
+          if image.image_type in (ismrmrd.IMTYPE_MAGNITUDE, 0)
+      ]
+      upsampled = [
+          image for image in read_images(sys.argv[2])
+          if int(image.image_series_index) == upsampled_series_index
+      ]
+      assert len(upsampled) == 2 * len(input_images), (
+          len(upsampled),
+          len(input_images),
+      )
+      last_two_positions = [
+          tuple(round(float(value), 6) for value in image.getHead().position)
+          for image in upsampled[-2:]
+      ]
+      assert last_two_positions[0] != last_two_positions[1], last_two_positions
+      all_positions = [
+          tuple(round(float(value), 6) for value in image.getHead().position)
+          for image in upsampled
+      ]
+      assert len(set(all_positions)) == len(all_positions), all_positions
+      for image in upsampled:
+          meta = ismrmrd.Meta.deserialize(image.attribute_string)
+          assert int(first(meta.get("Keep_image_geometry"))) == 0
+          assert int(first(meta.get("partition_count"))) == 1
+          assert int(first(meta.get("slice_count"))) == len(upsampled)
+          assert not first(meta.get("IceMiniHead"))
+          meta_position = tuple(
+              round(float(value), 6)
+              for value in meta.get("SlicePosLightMarker")
+          )
+          header_position = tuple(
+              round(float(value), 6)
+              for value in image.getHead().position
+          )
+          assert meta_position == header_position, (meta_position, header_position)
+      PY
+      rm -f openreconi2iexample.json
+      echo "Inspect ${output_h5} with an HDF5 viewer; with options enabled, series 99 should be named <source>-inverted, series 100 should be named <source>-original, series 101 should be named <source>-segment, series 102 should be named <source>-upsampled, and series 103 should be named <source>-mip."
+
+ - name: Optional original invert segment MIP and upsample unit smoke test
+   manual: true
+   script: |
+      python3 - <<'PY'
+      import base64
+      import importlib.util
+      import sys
+      from pathlib import Path
+
+      import ismrmrd
+      import numpy as np
+
+      wrapper_path = Path("/opt/code/python-ismrmrd-server/openreconi2iexample.py")
+      spec = importlib.util.spec_from_file_location("openreconi2iexample", wrapper_path)
+      module = importlib.util.module_from_spec(spec)
+      sys.modules["openreconi2iexample"] = module
+      spec.loader.exec_module(module)
+
+      def first(value):
+          return value[0] if isinstance(value, list) else value
+
+      def make_minihead(
+          series_name,
+          slice_index,
+          series_uid="1.2.3.4",
+          series_group="source_group",
+      ):
+          minihead = f'''
+      <ParamMap."DICOM">
+      {{
+      <ParamLong."Actual3DImagePartNumber">{{ 7 }}
+      <ParamLong."NumberOfSlices">{{ 4 }}
+      <ParamLong."NumberInSeries">{{ {slice_index + 11} }}
+      <ParamLong."SliceNo">{{ 1 }}
+      <ParamString."SeriesDescription">\t{{ "{series_name}" }}
+      <ParamString."SequenceDescription">\t{{ "{series_name}" }}
+      <ParamString."ProtocolName">\t{{ "{series_name}" }}
+      <ParamString."SeriesNumberRangeNameUID">\t{{ "{series_group}" }}
+      <ParamString."SOPInstanceUID">\t{{ "{series_uid}.5.{slice_index}" }}
+      <ParamString."ImageType">\t{{ "ORIGINAL\\PRIMARY\\M" }}
+      <ParamString."ImageTypeValue3">\t{{ "M" }}
+      <ParamString."ComplexImageComponent">\t{{ "MAGNITUDE" }}
+      <ParamArray."ImageTypeValue4">
+      {{
+      <DefaultSize> 2
+      <MaxSize> 2147483647
+      <Default> <ParamString."">{{ }}
+      {{ "NORM" }}{{ "DIS2D" }}
+      }}
+      }}
+      <ParamMap."CONTROL">
+      {{
+      <ParamLong."AnatomicalPartitionNo">{{ 5 }}
+      <ParamLong."AnatomicalSliceNo">{{ {slice_index + 17} }}
+      <ParamLong."ChronSliceNo">{{ {slice_index + 36} }}
+      <ParamString."SeriesInstanceUID">\t{{ "{series_uid}" }}
+      }}
+      '''
+          return base64.b64encode(minihead.encode("utf-8")).decode("ascii")
+
+      def minihead_value(image, key):
+          meta = ismrmrd.Meta.deserialize(image.attribute_string)
+          minihead = base64.b64decode(first(meta.get("IceMiniHead"))).decode("utf-8")
+          return module._minihead_string_value(minihead, key)
+
+      def minihead_long(image, key):
+          meta = ismrmrd.Meta.deserialize(image.attribute_string)
+          minihead = base64.b64decode(first(meta.get("IceMiniHead"))).decode("utf-8")
+          return module._minihead_long_value(minihead, key)
+
+      def minihead_array_tokens(image, key):
+          meta = ismrmrd.Meta.deserialize(image.attribute_string)
+          minihead = base64.b64decode(first(meta.get("IceMiniHead"))).decode("utf-8")
+          return module._minihead_array_tokens(minihead, key)
+
+      def assert_output_identity(
+          image,
+          expected_name,
+          expected_series_index,
+          expected_type_token,
+          index,
+          expect_minihead=True,
+      ):
+          meta = ismrmrd.Meta.deserialize(image.attribute_string)
+          assert first(meta.get("SeriesDescription")) == expected_name
+          assert first(meta.get("SequenceDescription")) == expected_name
+          assert first(meta.get("ProtocolName")) == expected_name
+          assert first(meta.get("ImageComments")) == expected_name
+          assert first(meta.get("ImageComment")) == expected_name
+          assert first(meta.get("SeriesNumberRangeNameUID")) == f"{expected_name}_{expected_series_index}"
+          assert first(meta.get("SeriesInstanceUID")).startswith("2.25.")
+          assert first(meta.get("SeriesInstanceUID")) != "1.2.3.4"
+          assert first(meta.get("SOPInstanceUID")).startswith("2.25.")
+          assert first(meta.get("SOPInstanceUID")) != f"1.2.3.4.5.{index}"
+          assert first(meta.get("ImageTypeValue3")) == "M"
+          assert first(meta.get("ImageTypeValue4")) == expected_type_token
+          assert first(meta.get("ComplexImageComponent")) == "MAGNITUDE"
+          assert int(first(meta.get("Actual3DImagePartNumber"))) == module.SCANNER_PARTITION_INDEX
+          assert int(first(meta.get("AnatomicalPartitionNo"))) == module.SCANNER_PARTITION_INDEX
+          assert int(first(meta.get("NumberInSeries"))) == index + 1
+          assert int(first(meta.get("SliceNo"))) == index
+          assert int(first(meta.get("AnatomicalSliceNo"))) == index
+          assert int(first(meta.get("ChronSliceNo"))) == index
+          assert int(first(meta.get("ProtocolSliceNumber"))) == index
+          assert int(first(meta.get("IsmrmrdSliceNo"))) == index
+          if not expect_minihead:
+              assert not first(meta.get("IceMiniHead"))
+              assert image.image_series_index == expected_series_index
+              assert image.getHead().image_series_index == expected_series_index
+              return
+          assert minihead_value(image, "SeriesDescription") == expected_name
+          assert minihead_value(image, "SequenceDescription") == expected_name
+          assert minihead_value(image, "ProtocolName") == expected_name
+          assert minihead_value(image, "SeriesNumberRangeNameUID") == f"{expected_name}_{expected_series_index}"
+          assert minihead_value(image, "SeriesInstanceUID") == first(meta.get("SeriesInstanceUID"))
+          assert minihead_value(image, "SOPInstanceUID") == first(meta.get("SOPInstanceUID"))
+          assert minihead_value(image, "ImageTypeValue3") == "M"
+          assert minihead_value(image, "ComplexImageComponent") == "MAGNITUDE"
+          assert minihead_long(image, "Actual3DImagePartNumber") == module.SCANNER_PARTITION_INDEX
+          assert minihead_long(image, "AnatomicalPartitionNo") == module.SCANNER_PARTITION_INDEX
+          assert minihead_long(image, "NumberInSeries") == index + 1
+          assert minihead_long(image, "SliceNo") == index
+          assert minihead_long(image, "AnatomicalSliceNo") == index
+          assert minihead_long(image, "ChronSliceNo") == index
+          assert minihead_long(image, "ProtocolSliceNumber") == index
+          assert minihead_array_tokens(image, "ImageTypeValue4") == [expected_type_token]
+          assert image.image_series_index == expected_series_index
+          assert image.getHead().image_series_index == expected_series_index
+
+      def assert_one_series_identity(images_to_check):
+          identities = []
+          sop_uids = set()
+          for image in images_to_check:
+              meta = ismrmrd.Meta.deserialize(image.attribute_string)
+              identities.append(
+                  (
+                      first(meta.get("SeriesDescription")),
+                      first(meta.get("SequenceDescription")),
+                      first(meta.get("ProtocolName")),
+                      first(meta.get("SeriesNumberRangeNameUID")),
+                      first(meta.get("SeriesInstanceUID")),
+                  )
+              )
+              sop_uids.add(first(meta.get("SOPInstanceUID")))
+          assert len(set(identities)) == 1, identities
+          assert len(sop_uids) == len(images_to_check), sop_uids
+
+      def make_image(
+          slice_index,
+          position=None,
+          slice_dir=(0.0, 0.0, 1.0),
+          series_name="i2i_example_send_org",
+          series_uid="1.2.3.4",
+          series_group="source_group",
+      ):
+          gradient = np.arange(64, dtype=np.float32).reshape(8, 8)
+          data = (gradient + slice_index * 100.0).reshape(1, 1, 8, 8)
+          image = ismrmrd.Image.from_array(data, transpose=False)
+          header = image.getHead()
+          header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+          header.image_series_index = 1
+          header.slice = slice_index
+          header.position = position or (0.0, 0.0, float(slice_index * 2))
+          header.slice_dir = slice_dir
+          header.field_of_view = (8.0, 8.0, 2.0)
+          image.setHead(header)
+          meta = ismrmrd.Meta()
+          meta["DataRole"] = "Image"
+          meta["SeriesDescription"] = series_name
+          meta["SequenceDescription"] = series_name
+          meta["ProtocolName"] = series_name
+          meta["SeriesNumberRangeNameUID"] = series_group
+          meta["SeriesInstanceUID"] = series_uid
+          meta["SOPInstanceUID"] = f"{series_uid}.5.{slice_index}"
+          meta["SequenceDescriptionAdditional"] = "source_extra"
+          meta["Actual3DImagePartNumber"] = "7"
+          meta["AnatomicalPartitionNo"] = "5"
+          meta["NumberInSeries"] = str(slice_index + 11)
+          meta["SliceNo"] = "1"
+          meta["AnatomicalSliceNo"] = str(slice_index + 17)
+          meta["ChronSliceNo"] = str(slice_index + 36)
+          meta["IceMiniHead"] = make_minihead(
+              series_name,
+              slice_index,
+              series_uid,
+              series_group,
+          )
+          image.attribute_string = meta.serialize()
+          return image
+
+      def make_sparse_image(slice_index):
+          data = np.zeros((1, 1, 8, 8), dtype=np.float32)
+          if slice_index == 2:
+              data[0, 0, 2:4, 2:4] = 50.0
+              data[0, 0, 6, 6] = 100.0
+          image = ismrmrd.Image.from_array(data, transpose=False)
+          header = image.getHead()
+          header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+          header.image_series_index = 1
+          header.slice = slice_index
+          image.setHead(header)
+          meta = ismrmrd.Meta()
+          meta["DataRole"] = "Image"
+          meta["SeriesDescription"] = "i2i_example_send_org"
+          meta["SequenceDescription"] = "i2i_example_send_org"
+          meta["ProtocolName"] = "i2i_example_send_org"
+          meta["SeriesNumberRangeNameUID"] = "source_group"
+          meta["SeriesInstanceUID"] = "1.2.3.4"
+          meta["SOPInstanceUID"] = f"1.2.3.4.5.{slice_index}"
+          meta["IceMiniHead"] = make_minihead("i2i_example_send_org", slice_index)
+          image.attribute_string = meta.serialize()
+          return image
+
+      images = [make_image(i) for i in range(4)]
+      assert module._source_slice_count_hint(images) == len(images)
+      outputs = module._invert_images(images)
+      assert len(outputs) == 4
+
+      for index, img in enumerate(outputs):
+          meta = ismrmrd.Meta.deserialize(img.attribute_string)
+          assert first(meta.get("DataRole")) == "Image"
+          assert first(meta.get("ImageType")) == "DERIVED\\PRIMARY\\M\\openrecon_invert"
+          assert_output_identity(
+              img,
+              "i2i_example_send_org-inverted",
+              module.INVERT_SERIES_INDEX,
+              module.INVERT_SERIES_NAME,
+              index,
+          )
+          assert first(meta.get("SequenceDescriptionAdditional")) == "openrecon"
+          assert "None" not in img.attribute_string
+          assert int(first(meta.get("Keep_image_geometry"))) == 1
+          assert img.getHead().image_index == index + 1
+          assert img.getHead().slice == index
+
+      source = np.asarray(images[0].data)
+      inverted = np.asarray(outputs[0].data)
+      assert np.allclose(inverted, 363.0 - source)
+
+      segment_outputs = module._segment_images([make_sparse_image(i) for i in range(4)])
+      assert len(segment_outputs) == 4
+      segment = segment_outputs[2]
+      meta = ismrmrd.Meta.deserialize(segment.attribute_string)
+      assert first(meta.get("DataRole")) == "Segmentation"
+      assert first(meta.get("ImageType")) == "DERIVED\\PRIMARY\\M\\openrecon_segment"
+      assert first(meta.get("LUTFileName")) is None
+      assert_output_identity(
+          segment,
+          "i2i_example_send_org-segment",
+          module.SEGMENT_SERIES_INDEX,
+          module.SEGMENT_SERIES_NAME,
+          2,
+      )
+      assert first(meta.get("SequenceDescriptionAdditional")) == "openrecon"
+      assert "None" not in segment.attribute_string
+      assert int(first(meta.get("Keep_image_geometry"))) == 1
+      segment_data = np.asarray(segment.data)
+      assert segment_data.shape == (1, 1, 8, 8), segment_data.shape
+      assert set(np.unique(segment_data).tolist()) == {0, 1}
+      assert int(segment_data[0, 0, 2, 2]) == 1
+      assert int(segment_data[0, 0, 3, 3]) == 1
+      assert int(segment_data[0, 0, 6, 6]) == 0
+      assert int(np.sum(segment_data)) == 4
+
+      colormap_sources = [make_sparse_image(i) for i in range(4)]
+      segment_outputs_with_colormap = module._segment_images(
+          colormap_sources,
+          use_colormap=True,
+      )
+      assert len(segment_outputs_with_colormap) == 4
+      colormap_meta = ismrmrd.Meta.deserialize(
+          segment_outputs_with_colormap[2].attribute_string
+      )
+      assert first(colormap_meta.get("LUTFileName")) == module.SEGMENTATION_LUT
+      module._validate_output_images(segment_outputs_with_colormap, colormap_sources)
+
+      mip_outputs = module._mip_image([make_sparse_image(i) for i in range(4)])
+      assert len(mip_outputs) == 1
+      mip = mip_outputs[0]
+      meta = ismrmrd.Meta.deserialize(mip.attribute_string)
+      assert first(meta.get("DataRole")) == "Image"
+      assert first(meta.get("ImageType")) == "DERIVED\\PRIMARY\\M\\openrecon_mip"
+      assert_output_identity(
+          mip,
+          "i2i_example_send_org-mip",
+          module.MIP_SERIES_INDEX,
+          module.MIP_SERIES_NAME,
+          0,
+      )
+      assert first(meta.get("SequenceDescriptionAdditional")) == "openrecon"
+      assert "None" not in mip.attribute_string
+      assert int(first(meta.get("Keep_image_geometry"))) == 1
+      mip_data = np.asarray(mip.data)
+      assert mip_data.shape == (1, 1, 8, 8), mip_data.shape
+      assert float(mip_data[0, 0, 2, 2]) == 50.0
+      assert float(mip_data[0, 0, 6, 6]) == 100.0
+      assert float(np.sum(mip_data)) == 300.0
+
+      upsampled = module._upsampled_images(images)
+      assert len(upsampled) == 2 * len(images)
+      assert [img.image_series_index for img in upsampled] == [module.UPSAMPLED_SERIES_INDEX] * len(upsampled)
+      assert [int(img.getHead().slice) for img in upsampled] == list(range(2 * len(images)))
+      upsampled_meta = ismrmrd.Meta.deserialize(upsampled[0].attribute_string)
+      assert first(upsampled_meta.get("DataRole")) == "Image"
+      assert first(upsampled_meta.get("ImageType")) == "DERIVED\\PRIMARY\\M\\openrecon_upsampled"
+      assert_output_identity(
+          upsampled[0],
+          "i2i_example_send_org-upsampled",
+          module.UPSAMPLED_SERIES_INDEX,
+          module.UPSAMPLED_SERIES_NAME,
+          0,
+          expect_minihead=False,
+      )
+      assert first(upsampled_meta.get("SequenceDescriptionAdditional")) == "openrecon"
+      assert "None" not in upsampled[0].attribute_string
+      assert int(first(upsampled_meta.get("Keep_image_geometry"))) == 0
+      assert int(first(upsampled_meta.get("partition_count"))) == 1
+      assert int(first(upsampled_meta.get("slice_count"))) == 2 * len(images)
+      assert not first(upsampled_meta.get("IceMiniHead"))
+      for img in upsampled:
+          meta = ismrmrd.Meta.deserialize(img.attribute_string)
+          assert int(first(meta.get("Keep_image_geometry"))) == 0
+          assert int(first(meta.get("partition_count"))) == 1
+          assert int(first(meta.get("slice_count"))) == 2 * len(images)
+          assert not first(meta.get("IceMiniHead"))
+      assert np.allclose(np.asarray(upsampled[0].data), np.asarray(images[0].data))
+      assert np.allclose(np.asarray(upsampled[1].data), np.asarray(images[0].data) + 50.0)
+      assert np.allclose(np.asarray(upsampled[2].data), np.asarray(images[1].data))
+      assert np.allclose(np.asarray(upsampled[3].data), np.asarray(images[1].data) + 50.0)
+      assert np.allclose(np.asarray(upsampled[-2].data), np.asarray(images[-1].data))
+      assert np.allclose(np.asarray(upsampled[-1].data), np.asarray(images[-1].data))
+      assert np.isclose(float(upsampled[0].getHead().position[2]), 0.0)
+      assert np.isclose(float(upsampled[1].getHead().position[2]), 1.0)
+      assert np.isclose(float(upsampled[-2].getHead().position[2]), 6.0)
+      assert np.isclose(float(upsampled[-1].getHead().position[2]), 7.0)
+      assert [
+          float(img.getHead().field_of_view[2])
+          for img in upsampled
+      ] == [1.0] * 8
+      for img in upsampled:
+          meta = ismrmrd.Meta.deserialize(img.attribute_string)
+          assert [
+              round(float(value), 6)
+              for value in meta.get("SlicePosLightMarker")
+          ] == [
+              round(float(value), 6)
+              for value in img.getHead().position
+          ]
+
+      wrapped_source_order = [make_image(index) for index in (2, 3, 0, 1)]
+      wrapped_upsampled = module._upsampled_images(wrapped_source_order)
+      wrapped_positions = [
+          round(float(img.getHead().position[2]), 6)
+          for img in wrapped_upsampled
+      ]
+      assert wrapped_positions == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], wrapped_positions
+      assert len(set(wrapped_positions)) == len(wrapped_positions)
+      assert np.allclose(np.asarray(wrapped_upsampled[0].data), np.asarray(make_image(0).data))
+      assert np.allclose(np.asarray(wrapped_upsampled[1].data), np.asarray(make_image(0).data) + 50.0)
+      assert np.allclose(np.asarray(wrapped_upsampled[-2].data), np.asarray(make_image(3).data))
+      assert np.allclose(np.asarray(wrapped_upsampled[-1].data), np.asarray(make_image(3).data))
+      for img in wrapped_upsampled:
+          meta = ismrmrd.Meta.deserialize(img.attribute_string)
+          assert [
+              round(float(value), 6)
+              for value in meta.get("SlicePosLightMarker")
+          ] == [
+              round(float(value), 6)
+              for value in img.getHead().position
+          ]
+
+      oblique_axis = np.asarray((0.6, 0.0, 0.8), dtype=float)
+      oblique_axis = oblique_axis / np.linalg.norm(oblique_axis)
+      oblique_distances = [0.0, 2.0, 5.0, 9.0]
+      off_axis_noise = [0.0, 0.02, -0.01, 0.03]
+      oblique_images = [
+          make_image(
+              index,
+              position=tuple(oblique_axis * distance + np.asarray((0.0, off_axis_noise[index], 0.0))),
+              slice_dir=tuple(oblique_axis),
+          )
+          for index, distance in enumerate(oblique_distances)
+      ]
+      oblique_upsampled = module._upsampled_images(oblique_images)
+      oblique_origin = np.asarray(oblique_upsampled[0].getHead().position, dtype=float)
+      oblique_projected = [
+          round(float(np.dot(np.asarray(img.getHead().position, dtype=float) - oblique_origin, oblique_axis)), 6)
+          for img in oblique_upsampled
+      ]
+      assert oblique_projected == [0.0, 1.0, 2.0, 3.5, 5.0, 7.0, 9.0, 11.0], oblique_projected
+      assert [
+          round(float(img.getHead().field_of_view[2]), 6)
+          for img in oblique_upsampled
+      ] == [1.0, 1.0, 1.5, 1.5, 2.0, 2.0, 2.0, 2.0]
+      for img in oblique_upsampled:
+          header = img.getHead()
+          position = np.asarray(header.position, dtype=float)
+          residual = (position - oblique_origin) - np.dot(position - oblique_origin, oblique_axis) * oblique_axis
+          assert np.linalg.norm(residual) < 1e-6, residual
+          assert np.allclose(np.asarray(header.slice_dir, dtype=float), oblique_axis)
+          meta = ismrmrd.Meta.deserialize(img.attribute_string)
+          assert [
+              round(float(value), 6)
+              for value in meta.get("ImageSliceNormDir")
+          ] == [
+              round(float(value), 6)
+              for value in oblique_axis
+          ]
+          assert [
+              round(float(value), 6)
+              for value in meta.get("SlicePosLightMarker")
+          ] == [
+              round(float(value), 6)
+              for value in header.position
+          ]
+
+      try:
+          module._upsampled_images([make_image(0), make_image(0)])
+      except ValueError as exc:
+          assert "duplicate projected slice position" in str(exc), str(exc)
+      else:
+          raise AssertionError("expected duplicate output position validation failure")
+
+      originals = module._restamp_originals(images)
+      assert len(originals) == 4
+      for index, img in enumerate(originals):
+          meta = ismrmrd.Meta.deserialize(img.attribute_string)
+          assert img is not images[index]
+          assert np.allclose(np.asarray(img.data), np.asarray(images[index].data))
+          assert_output_identity(
+              img,
+              "i2i_example_send_org-original",
+              module.ORIGINAL_SERIES_INDEX,
+              module.ORIGINAL_SERIES_NAME,
+              index,
+          )
+          assert int(first(meta.get("Keep_image_geometry"))) == 1
+          assert img.getHead().image_index == index + 1
+          assert img.getHead().slice == index
+
+      module._validate_output_images(
+          outputs + segment_outputs + upsampled + mip_outputs + originals,
+          images,
+      )
+
+      mixed_images = [
+          make_image(
+              0,
+              series_name="mixed_water",
+              series_uid="1.2.3.4.10",
+              series_group="source_water_group",
+          ),
+          make_image(
+              1,
+              series_name="mixed_fat",
+              series_uid="1.2.3.4.20",
+              series_group="source_fat_group",
+          ),
+          make_image(
+              2,
+              series_name="mixed_in_phase",
+              series_uid="1.2.3.4.30",
+              series_group="source_in_phase_group",
+          ),
+      ]
+      mixed_inverted = module._invert_images(mixed_images)
+      mixed_segment = module._segment_images(mixed_images)
+      mixed_upsampled = module._upsampled_images(mixed_images)
+      mixed_mip = module._mip_image(mixed_images)
+      mixed_originals = module._restamp_originals(mixed_images)
+      for output_series in (
+          mixed_inverted,
+          mixed_segment,
+          mixed_upsampled,
+          mixed_mip,
+          mixed_originals,
+      ):
+          assert_one_series_identity(output_series)
+      assert_output_identity(
+          mixed_inverted[1],
+          "mixed_water-inverted",
+          module.INVERT_SERIES_INDEX,
+          module.INVERT_SERIES_NAME,
+          1,
+      )
+      assert_output_identity(
+          mixed_segment[1],
+          "mixed_water-segment",
+          module.SEGMENT_SERIES_INDEX,
+          module.SEGMENT_SERIES_NAME,
+          1,
+      )
+      assert_output_identity(
+          mixed_upsampled[1],
+          "mixed_water-upsampled",
+          module.UPSAMPLED_SERIES_INDEX,
+          module.UPSAMPLED_SERIES_NAME,
+          1,
+          expect_minihead=False,
+      )
+      assert_output_identity(
+          mixed_originals[1],
+          "mixed_water-original",
+          module.ORIGINAL_SERIES_INDEX,
+          module.ORIGINAL_SERIES_NAME,
+          1,
+      )
+      module._validate_output_images(
+          mixed_inverted
+          + mixed_segment
+          + mixed_upsampled
+          + mixed_mip
+          + mixed_originals,
+          mixed_images,
+      )
+
+      for make_output in (
+          module._make_upsampled_image,
+          module._make_interpolated_image,
+      ):
+          try:
+              make_output(
+                  images[0],
+                  np.asarray(images[0].data),
+                  0,
+                  module._header_position(images[0].getHead()),
+                  module._interpolated_half_step(images),
+                  None,
+              )
+          except ValueError as exc:
+              assert "output_slice_count is required" in str(exc), str(exc)
+          else:
+              raise AssertionError("expected missing output_slice_count failure")
+
+      out_of_bounds = module._make_upsampled_image(
+          images[-1],
+          np.asarray(images[-1].data),
+          2 * len(images),
+          module._header_position(images[-1].getHead()),
+          module._interpolated_half_step(images),
+          2 * len(images),
+      )
+      try:
+          module._validate_output_images([out_of_bounds], images)
+      except ValueError as exc:
+          assert "outside source image bounds" in str(exc), str(exc)
+      else:
+          raise AssertionError("expected source slice bounds validation failure")
+
+      bad_originals = module._restamp_originals(images)
+      bad_meta = ismrmrd.Meta.deserialize(bad_originals[1].attribute_string)
+      bad_minihead = base64.b64decode(first(bad_meta.get("IceMiniHead"))).decode("utf-8")
+      bad_minihead, _ = module._replace_or_append_minihead_long_param(bad_minihead, "SliceNo", 0)
+      bad_meta["IceMiniHead"] = base64.b64encode(bad_minihead.encode("utf-8")).decode("ascii")
+      bad_originals[1].attribute_string = bad_meta.serialize()
+      try:
+          module._validate_output_images(bad_originals, images)
+      except ValueError as exc:
+          assert "IceMiniHead SliceNo" in str(exc), str(exc)
+      else:
+          raise AssertionError("expected duplicate/mismatched MiniHead slice validation failure")
+
+      class FakeConnection:
+          def __init__(self, items):
+              self.items = iter(items)
+              self.sent_images = []
+              self.logging = []
+              self.closed = False
+
+          def __iter__(self):
+              return self
+
+          def __next__(self):
+              return next(self.items)
+
+          def send_image(self, images_to_send):
+              self.sent_images.append(images_to_send)
+
+          def send_logging(self, level, message):
+              self.logging.append((level, message))
+
+          def send_close(self):
+              self.closed = True
+
+      default_connection = FakeConnection(images + [None])
+      module.process(default_connection, {"parameters": {}}, None)
+      assert default_connection.sent_images == []
+      assert default_connection.closed is True
+
+      segment_connection = FakeConnection(
+          [make_sparse_image(i) for i in range(4)] + [None]
+      )
+      module.process(segment_connection, {"parameters": {"segment": True}}, None)
+      assert len(segment_connection.sent_images) == 1
+      segment_meta = ismrmrd.Meta.deserialize(
+          segment_connection.sent_images[0][0].attribute_string
+      )
+      assert first(segment_meta.get("LUTFileName")) is None
+
+      colormap_connection = FakeConnection(
+          [make_sparse_image(i) for i in range(4)] + [None]
+      )
+      module.process(
+          colormap_connection,
+          {"parameters": {"segment": True, "segmentationcolormap": True}},
+          None,
+      )
+      assert len(colormap_connection.sent_images) == 1
+      colormap_meta = ismrmrd.Meta.deserialize(
+          colormap_connection.sent_images[0][0].attribute_string
+      )
+      assert first(colormap_meta.get("LUTFileName")) == module.SEGMENTATION_LUT
+
+      assert module._config_bool({"parameters": {}}, "sendoriginal", default=False) is False
+      assert module._config_bool({"parameters": {"sendoriginal": True}}, "sendoriginal", default=False) is True
+      assert module._config_bool({"parameters": {"sendoriginal": "false"}}, "sendoriginal", default=True) is False
+      assert module._config_bool('{"parameters": {"sendoriginal": false}}', "sendoriginal", default=True) is False
+      assert module._config_bool_any({"parameters": {}}, ("invert", "sendinvert"), default=False) is False
+      assert module._config_bool_any({"parameters": {"invert": "true"}}, ("invert", "sendinvert"), default=False) is True
+      assert module._config_bool_any({"parameters": {"sendinterpolated": "true"}}, ("upsampled", "sendinterpolated"), default=False) is True
+      assert module._config_bool_any({"parameters": {"segment": "true"}}, ("segment", "sendsegment"), default=False) is True
+      assert module._config_bool_any(
+          {"parameters": {"segmentationcolormap": "true"}},
+          ("segmentationcolormap", "sendsegmentationcolormap"),
+          default=False,
+      ) is True
+      assert module._config_bool_any({"parameters": {"sendthresholdmip": "true"}}, ("mip", "sendthresholdmip"), default=False) is True
+
+      print("optional original invert segment MIP and upsample tests passed")
+      PY

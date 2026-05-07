@@ -47,3 +47,4 @@ vesselboost_openrecon_parameter_matrix_outputs
 *.dat
 *.mrd
 openrecon_test_*
+bug_*

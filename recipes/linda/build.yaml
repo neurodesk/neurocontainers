@@ -24,7 +24,6 @@ build:
     - deploy:
         bins:
           - R
-          - rstudio
     - group:
         - file:
             name: linda_predict.sh

@@ -1,0 +1,70 @@
+name: openreconi2iexample
+version: 1.0.19
+architectures:
+  - x86_64
+
+copyright:
+  - license: MIT
+    url: https://opensource.org/license/mit/
+
+files:
+  - name: openreconi2iexample.py
+    filename: openreconi2iexample.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
+  - name: openreconi2iexample
+    contents: |-
+      #!/usr/bin/env bash
+      printf 'openreconi2iexample {{ context.version }}\n'
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install: bzip2 ca-certificates git build-essential python3-pip python-is-python3
+
+    - include: macros/openrecon/neurodocker.yaml
+
+    - copy: openreconi2iexample.py /opt/code/python-ismrmrd-server/openreconi2iexample.py
+    - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
+    - run:
+        - install -m 0755 {{ get_file("openreconi2iexample") }} /usr/local/bin/openreconi2iexample
+        - mkdir -p /tmp/share/debug
+        - chmod 1777 /tmp/share /tmp/share/debug
+
+deploy:
+  bins:
+    - openreconi2iexample
+
+categories:
+  - image reconstruction
+
+readme: |-
+  ----------------------------------
+  ## openreconi2iexample/{{ context.version }} ##
+
+  Minimal OpenRecon image-to-image reference. Receives reconstructed MRD
+  image messages and sends no output by default. Enable `sendoriginal` to
+  re-emit the original scan as `<source>-original` on `image_series_index = 100`.
+  Enable `invert` to return inverted magnitude images as `<source>-inverted` on
+  `image_series_index = 99`. Enable `segment` to extract the brightest foreground
+  object and send `<source>-segment` on `image_series_index = 101`. Enable
+  `segmentationcolormap` with `segment` to add `MicroDeltaHotMetal.pal` LUT
+  metadata to segmentation outputs. Enable `upsampled` to send a
+  double-slice-count `<source>-upsampled` image series on `image_series_index =
+  102`. Enable `mip` to send one `<source>-mip` maximum intensity projection
+  image on `image_series_index = 103`.
+
+  OpenRecon runtime notes: `recipes/openreconi2iexample/OpenReconREADME.md`.
+
+  Build and validate:
+  ```bash
+  python builder/build.py generate openreconi2iexample --recreate --build --test --architecture x86_64
+  ```
+  ----------------------------------

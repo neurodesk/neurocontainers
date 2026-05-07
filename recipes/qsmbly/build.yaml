@@ -1,12 +1,12 @@
 name: qsmbly
-version: 0.8.4
+version: 0.11.1
 
 categories:
   - "structural imaging"
 
 copyright:
   - license: MIT
-    url: https://github.com/astewartau/qsm-wasm/blob/main/LICENSE
+    url: https://github.com/astewartau/qsmbly/blob/main/LICENSE
 
 architectures:
   - x86_64
@@ -53,7 +53,7 @@ build:
 
     # Clone source and build WASM
     - run:
-        - git clone --branch v{{ context.version }} --depth 1 https://github.com/astewartau/qsm-wasm.git /opt/qsmbly-src
+        - git clone --branch v{{ context.version }} --depth 1 https://github.com/astewartau/qsmbly.git /opt/qsmbly-src
         - . /root/.cargo/env && cd /opt/qsmbly-src/rust-wasm && wasm-pack build --target web --release
 
     # Assemble deployment directory

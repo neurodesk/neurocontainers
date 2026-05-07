@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -492,6 +493,172 @@ class ReleaseContainerDownloader:
         return removed_count
 
 
+class DockerToSimgConverter:
+    """Convert a registry Docker image to a local SIMG via docker save."""
+
+    def __init__(
+        self,
+        cache_dir: str = None,
+        converter_source: str = "builder/docker-save-to-simg.go",
+    ):
+        self.cache_dir = cache_dir or os.path.join(
+            os.path.expanduser("~"), ".cache", "neurocontainers"
+        )
+        self.converter_source = converter_source
+        self.binary_path = os.path.join(self.cache_dir, "docker-save-to-simg")
+        os.makedirs(self.cache_dir, exist_ok=True)
+
+    def _resolve_converter_source(self) -> str:
+        source = Path(self.converter_source).expanduser()
+        if source.is_file():
+            return str(source)
+
+        repo_relative = Path(__file__).resolve().parent.parent / self.converter_source
+        if repo_relative.is_file():
+            return str(repo_relative)
+
+        raise FileNotFoundError(
+            f"docker-save-to-simg source not found at {self.converter_source}"
+        )
+
+    def _ensure_binary(self, verbose: bool = False) -> str:
+        source = self._resolve_converter_source()
+        source_mtime = os.path.getmtime(source)
+
+        if (
+            os.path.exists(self.binary_path)
+            and os.path.getmtime(self.binary_path) >= source_mtime
+        ):
+            return self.binary_path
+
+        if shutil.which("go") is None:
+            raise RuntimeError("Go is required to build docker-save-to-simg")
+
+        cmd = [
+            "go",
+            "build",
+            "-trimpath",
+            "-ldflags=-s -w",
+            "-o",
+            self.binary_path,
+            source,
+        ]
+        env = os.environ.copy()
+        env["CGO_ENABLED"] = "0"
+        if verbose:
+            print(f"Building docker-save-to-simg from {source}")
+        subprocess.run(cmd, check=True, env=env)
+        return self.binary_path
+
+    def convert(
+        self,
+        image_ref: str,
+        output_name: str,
+        verbose: bool = False,
+    ) -> str:
+        if shutil.which("docker") is None:
+            raise RuntimeError("Docker is required to pull and save images")
+
+        binary = self._ensure_binary(verbose=verbose)
+        output_path = os.path.join(self.cache_dir, output_name)
+        if (
+            os.path.exists(output_path)
+            and os.path.getsize(output_path) > 0
+            and os.path.getmtime(output_path) >= os.path.getmtime(binary)
+        ):
+            if verbose:
+                print(f"Using cached docker-converted container: {output_path}")
+            return output_path
+        if os.path.exists(output_path):
+            if verbose:
+                print(f"Rebuilding stale docker-converted container: {output_path}")
+            os.remove(output_path)
+
+        print(f"Pulling Docker image: {image_ref}")
+        subprocess.run(["docker", "pull", image_ref], check=True)
+
+        tmp_output = output_path + ".tmp"
+        if os.path.exists(tmp_output):
+            os.remove(tmp_output)
+
+        print(f"Converting Docker image to SIMG: {output_path}")
+        save_proc = subprocess.Popen(
+            ["docker", "save", image_ref],
+            stdout=subprocess.PIPE,
+        )
+        try:
+            convert_proc = subprocess.run(
+                [binary, "-", tmp_output],
+                stdin=save_proc.stdout,
+                check=False,
+            )
+        finally:
+            if save_proc.stdout is not None:
+                save_proc.stdout.close()
+
+        save_returncode = save_proc.wait()
+        if convert_proc.returncode != 0 or save_returncode != 0:
+            if os.path.exists(tmp_output):
+                os.remove(tmp_output)
+            raise RuntimeError(
+                "Docker image conversion failed "
+                f"(docker save={save_returncode}, converter={convert_proc.returncode})"
+            )
+
+        os.replace(tmp_output, output_path)
+        return output_path
+
+
+def build_release_docker_image_ref(
+    name: str,
+    version: str,
+    image_tag: str,
+    docker_registry: str = "neurodesk",
+) -> str:
+    """Return the release Docker image ref for a NeuroContainers build."""
+
+    image_name = f"{name}_{version}".lower()
+    registry_namespace = docker_registry.strip().strip("/") or "neurodesk"
+    if "://" in registry_namespace:
+        parsed = urllib.parse.urlsplit(registry_namespace)
+        if parsed.scheme != "https":
+            raise RuntimeError("Docker registry URLs must use https")
+        registry_namespace = f"{parsed.netloc}{parsed.path}".strip("/")
+
+    registry_parts = registry_namespace.split("/")
+    if registry_parts[0].lower() in {"ghcr.io", "docker.io"}:
+        registry_path = registry_namespace
+    else:
+        registry_path = f"ghcr.io/{registry_namespace}"
+
+    return f"{registry_path}/{image_name}:{image_tag}"
+
+
+def build_release_docker_image_ref_candidates(
+    name: str,
+    version: str,
+    build_date: str,
+    docker_registry: str = "neurodesk",
+) -> List[str]:
+    """Return candidate release Docker refs, most-specific first."""
+
+    tags = [build_date]
+    if build_date != "latest":
+        tags.append("latest")
+
+    candidates: List[str] = []
+    for tag in tags:
+        ref = build_release_docker_image_ref(
+            name,
+            version,
+            tag,
+            docker_registry=docker_registry,
+        )
+        if ref not in candidates:
+            candidates.append(ref)
+    return candidates
+
+
 class ContainerTester:
     """Main container testing orchestrator"""
 
@@ -499,6 +666,9 @@ class ContainerTester:
         self.runtimes = [DockerRuntime(), ApptainerRuntime()]
         self.cvmfs = CVMFSContainerLocator()
         self.release_downloader = ReleaseContainerDownloader()
+        self.docker_to_simg = DockerToSimgConverter(
+            cache_dir=self.release_downloader.cache_dir
+        )
         self.test_extractor = None
         self.selected_runtime = None
         self.downloaded_container_path = None  # Track downloaded containers for cleanup
@@ -571,6 +741,55 @@ class ContainerTester:
             return f"{name}:{version}"
 
         return None
+
+    def convert_docker_image_to_simg(
+        self,
+        name: str,
+        version: str,
+        *,
+        release_file: str = None,
+        docker_registry: str = "neurodesk",
+        converter_source: str = None,
+        verbose: bool = False,
+    ) -> str:
+        build_date = None
+        if release_file and os.path.exists(release_file):
+            build_date = self.release_downloader.extract_build_date_from_release(
+                release_file
+            )
+
+        if not build_date:
+            raise RuntimeError(
+                "Docker-to-SIMG conversion requires release metadata with a build date"
+            )
+
+        image_refs = build_release_docker_image_ref_candidates(
+            name,
+            version,
+            build_date,
+            docker_registry=docker_registry,
+        )
+
+        if converter_source:
+            self.docker_to_simg.converter_source = converter_source
+
+        output_name = f"{name}_{version}_{build_date}.docker.simg"
+        errors: List[str] = []
+        for image_ref in image_refs:
+            try:
+                converted_path = self.docker_to_simg.convert(
+                    image_ref,
+                    output_name,
+                    verbose=verbose,
+                )
+                break
+            except Exception as exc:
+                errors.append(f"{image_ref}: {exc}")
+        else:
+            raise RuntimeError("; ".join(errors))
+
+        self.downloaded_container_path = converted_path
+        return converted_path
 
     def run_test_suite(
         self,
@@ -883,6 +1102,21 @@ Examples:
         action="store_true",
         help="Automatically cleanup downloaded containers on exit (even if tests fail)",
     )
+    parser.add_argument(
+        "--docker-to-simg",
+        action="store_true",
+        help="Pull the release Docker image, convert it to SIMG, then test with Apptainer.",
+    )
+    parser.add_argument(
+        "--docker-registry",
+        default="neurodesk",
+        help="Registry namespace for docker-to-simg images (default: neurodesk).",
+    )
+    parser.add_argument(
+        "--docker-save-to-simg",
+        default="builder/docker-save-to-simg.go",
+        help="Path to docker-save-to-simg Go source used by --docker-to-simg.",
+    )
 
     args = parser.parse_args()
 
@@ -929,6 +1163,13 @@ def run_tests(args, tester):
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
+    if args.docker_to_simg and runtime.name != "apptainer":
+        print(
+            "Error: --docker-to-simg must be tested with Apptainer/Singularity",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     # Parse container reference if provided
     if args.container:
         # Check if it's a file path
@@ -967,9 +1208,19 @@ def run_tests(args, tester):
     # Find container (skip if just listing and if not already found)
     if not args.list_containers:
         if container_ref is None:
-            container_ref = tester.find_container(
-                name, version, args.location, args.release_file
-            )
+            if args.docker_to_simg:
+                container_ref = tester.convert_docker_image_to_simg(
+                    name,
+                    version,
+                    release_file=args.release_file,
+                    docker_registry=args.docker_registry,
+                    converter_source=args.docker_save_to_simg,
+                    verbose=args.verbose,
+                )
+            else:
+                container_ref = tester.find_container(
+                    name, version, args.location, args.release_file
+                )
         if not container_ref:
             print(f"Error: Container {name}:{version} not found", file=sys.stderr)
             sys.exit(1)

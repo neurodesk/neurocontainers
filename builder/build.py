@@ -3490,6 +3490,21 @@ def test_remote_main():
         help="Automatically remove downloaded container even if tests fail",
     )
     root.add_argument(
+        "--docker-to-simg",
+        action="store_true",
+        help="Pull the release Docker image, convert it to SIMG, then test with Apptainer.",
+    )
+    root.add_argument(
+        "--docker-registry",
+        default="neurodesk",
+        help="Registry namespace for --docker-to-simg images (default: neurodesk).",
+    )
+    root.add_argument(
+        "--docker-save-to-simg",
+        default="builder/docker-save-to-simg.go",
+        help="Path to docker-save-to-simg Go source used by --docker-to-simg.",
+    )
+    root.add_argument(
         "--cleanup-all",
         action="store_true",
         help="Remove all cached containers and exit",
@@ -3528,6 +3543,9 @@ def test_remote_main():
         gpu=args.gpu,
         cleanup=args.cleanup,
         auto_cleanup=args.auto_cleanup,
+        docker_to_simg=args.docker_to_simg,
+        docker_registry=args.docker_registry,
+        docker_save_to_simg=args.docker_save_to_simg,
         verbose=args.verbose,
         allow_missing_tests=False,
         output_dir=output_dir,

@@ -539,18 +539,18 @@ def _extract_minihead_string_value(minihead_text, name):
     if not minihead_text:
         return ""
 
-    try:
-        return _first_non_empty_text(mrdhelper.extract_minihead_string_param(minihead_text, name))
-    except Exception:
-        pass
-
     match = re.search(
-        rf'<ParamString\."{re.escape(name)}">\s*\{{\s*"([^"]*)"\s*\}}',
+        rf'<Param(?:String|Long)\."{re.escape(name)}">\s*\{{\s*"?([^"}}]*)"?\s*\}}',
         minihead_text,
     )
     if match:
-        return match.group(1).strip()
-    return ""
+        return match.group(1).strip().strip('"')
+
+    try:
+        value = _first_non_empty_text(mrdhelper.extract_minihead_string_param(minihead_text, name))
+    except Exception:
+        return ""
+    return value.strip().strip("{}").strip().strip('"').strip()
 
 
 def _extract_minihead_array_tokens(minihead_text, name):
@@ -601,16 +601,18 @@ def _replace_or_append_minihead_string_param(minihead_text, name, value):
         return minihead_text, False
 
     pattern = re.compile(
-        rf'(<ParamString\."{re.escape(name)}">\s*\{{\s*")([^"]*)("\s*\}})'
+        rf'(<ParamString\."{re.escape(name)}">\s*\{{\s*)"?[^"}}]*"?(\s*\}})'
     )
     match = pattern.search(minihead_text)
+    replacement_value = f'"{value}"'
     if match:
-        if match.group(2) == value:
+        current_value = _extract_minihead_string_value(match.group(0), name)
+        if current_value == value:
             return minihead_text, False
-        replacement = f"{match.group(1)}{value}{match.group(3)}"
+        replacement = f"{match.group(1)}{replacement_value}{match.group(2)}"
         return minihead_text[:match.start()] + replacement + minihead_text[match.end():], True
 
-    appended_param = f'\n<ParamString."{name}">\t{{ "{value}" }}\n'
+    appended_param = f'\n<ParamString."{name}">\t{{ {replacement_value} }}\n'
     return minihead_text.rstrip() + appended_param, True
 
 

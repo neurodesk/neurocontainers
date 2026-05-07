@@ -14,10 +14,19 @@ on:
         description: "Comma-separated recipe names to test (leave blank for all)"
         type: string
         default: ""
+      docker_to_simg:
+        description: "Pull Docker images and convert them to SIMG before testing"
+        type: boolean
+        default: false
+      docker_registry:
+        description: "GHCR namespace for Docker images"
+        type: string
+        default: "neurodesk"
 
 permissions:
   contents: read
   issues: write
+  packages: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -85,7 +94,7 @@ jobs:
     steps:
       - name: Open tracking issue
         id: issue
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           CONTAINERS: ${{ needs.prepare-matrix.outputs.containers }}
           ARCHITECTURE: ${{ github.event.inputs.architecture || 'x86_64' }}
@@ -155,7 +164,7 @@ jobs:
 
       - name: Create skip summary comment
         id: skip-comment
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           ISSUE_NUMBER: ${{ steps.issue.outputs.issue-number }}
         with:
@@ -197,9 +206,23 @@ jobs:
         with:
           python-version: "3.11"
 
-      - uses: eWaterCycle/setup-apptainer@v2
+      - uses: ./.github/actions/setup-apptainer
         with:
           apptainer-version: 1.4.3
+
+      - name: Set up Go
+        if: ${{ github.event.inputs.docker_to_simg == 'true' }}
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.5"
+
+      - name: Login to GHCR
+        if: ${{ github.event.inputs.docker_to_simg == 'true' }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
 
       - name: Install builder dependencies
         run: |
@@ -234,6 +257,9 @@ jobs:
           RELEASE_FILE: ${{ matrix.container.release_file }}
           HAS_RELEASE: ${{ matrix.container.has_release }}
           TEST_CONFIG: ${{ steps.meta.outputs.test_config }}
+          DOCKER_TO_SIMG: ${{ github.event.inputs.docker_to_simg || 'false' }}
+          DOCKER_REGISTRY: ${{ github.event.inputs.docker_registry || 'neurodesk' }}
+          DOCKER_SAVE_TO_SIMG: builder/docker-save-to-simg.go
         run: |
           mkdir -p builder
           python - <<'PY'
@@ -248,6 +274,7 @@ jobs:
           release_file = os.environ.get('RELEASE_FILE') or None
           has_release = os.environ.get('HAS_RELEASE', 'false').lower() == 'true'
           test_config = os.environ.get('TEST_CONFIG') or None
+          docker_to_simg = os.environ.get('DOCKER_TO_SIMG', 'false').lower() == 'true'
 
           runner = ContainerTestRunner()
           request = TestRequest(
@@ -259,6 +286,9 @@ jobs:
               location='auto',
               cleanup=True,
               auto_cleanup=False,
+              docker_to_simg=docker_to_simg,
+              docker_registry=os.environ.get('DOCKER_REGISTRY', 'neurodesk') or 'neurodesk',
+              docker_save_to_simg=os.environ.get('DOCKER_SAVE_TO_SIMG', 'builder/docker-save-to-simg.go'),
               verbose=True,
               allow_missing_release=not has_release,
               allow_missing_tests=True,
@@ -347,7 +377,7 @@ jobs:
 
       - name: Acquire skip/no-test comment lock
         if: ${{ steps.classify.outputs.update_shared_comment == 'true' }}
-        uses: softprops/turnstyle@v1
+        uses: softprops/turnstyle@v3.2.4
         with:
           same-branch-only: false
         env:
@@ -355,7 +385,7 @@ jobs:
 
       - name: Update shared skip comment
         if: ${{ steps.classify.outputs.update_shared_comment == 'true' }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           COMMENT_ID: ${{ env.SKIP_COMMENT_ID }}
           UPDATE_FILE: ${{ steps.classify.outputs.update_file }}
@@ -468,7 +498,7 @@ jobs:
 
       - name: Upload test artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ matrix.container.recipe }}
           path: |
@@ -477,7 +507,7 @@ jobs:
 
       - name: Post comment to tracking issue
         if: ${{ steps.classify.outputs.update_shared_comment != 'true' }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           ISSUE_NUMBER: ${{ env.ISSUE_NUMBER }}
           RECIPE: ${{ matrix.container.recipe }}
@@ -508,7 +538,7 @@ jobs:
       - name: Download all test artifacts
         if: always()
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: test-results-*
           merge-multiple: true
@@ -533,7 +563,7 @@ jobs:
 
       - name: Post summary comment
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           ISSUE_NUMBER: ${{ needs.create-issue.outputs.issue-number }}
         with:
@@ -553,7 +583,7 @@ jobs:
 
       - name: Update issue body
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           ISSUE_NUMBER: ${{ needs.create-issue.outputs.issue-number }}
         with:

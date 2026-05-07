@@ -1,7 +1,7 @@
 {
   "apps": {
-    "linda 0.5.1": {
-      "version": "20260502",
+    "qsmbly 0.11.0": {
+      "version": "20260506",
       "exec": "",
       "apptainer_args": []
     }

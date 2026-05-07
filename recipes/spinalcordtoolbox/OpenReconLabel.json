@@ -101,10 +101,6 @@
           "name": { "en": "sct_deepseg_gm_mouse_t1" }
         },
         {
-          "id": "sct_deepseg_gm_wm_mouse_t1",
-          "name": { "en": "sct_deepseg_gm_wm_mouse_t1" }
-        },
-        {
           "id": "sct_deepseg_lesion_sci_t2",
           "name": { "en": "sct_deepseg_lesion_sci_t2" }
         },
@@ -119,10 +115,6 @@
         {
           "id": "sct_deepseg_lesion_ms_mp2rage",
           "name": { "en": "sct_deepseg_lesion_ms_mp2rage" }
-        },
-        {
-          "id": "sct_deepseg_tumor_edema_cavity_t1_t2",
-          "name": { "en": "sct_deepseg_tumor_edema_cavity_t1_t2" }
         },
         {
           "id": "sct_deepseg_tumor_t2",

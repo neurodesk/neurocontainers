@@ -31,6 +31,9 @@ class TestRequest:
     gpu: bool = False
     cleanup: bool = False
     auto_cleanup: bool = False
+    docker_to_simg: bool = False
+    docker_registry: str = "neurodesk"
+    docker_save_to_simg: str = "builder/docker-save-to-simg.go"
     verbose: bool = False
     allow_missing_release: bool = False
     allow_missing_tests: bool = True
@@ -130,15 +133,45 @@ class ContainerTestRunner:
             )
             return self._finalise(request, results, version, release_file, str(exc))
 
+        if request.docker_to_simg and runtime.name != "apptainer":
+            message = "Docker-to-SIMG conversion must be tested with Apptainer/Singularity"
+            results = self._build_stub_result(
+                request.recipe,
+                version,
+                status="failed",
+                message=message,
+            )
+            return self._finalise(request, results, version, release_file, message)
+
         if request.verbose:
             print(f"Selected runtime: {runtime.name}")
 
-        container_ref = self.tester.find_container(
-            request.recipe,
-            version,
-            location=request.location,
-            release_file=str(release_file) if release_file else None,
-        )
+        if request.docker_to_simg:
+            try:
+                container_ref = self.tester.convert_docker_image_to_simg(
+                    request.recipe,
+                    version,
+                    release_file=str(release_file) if release_file else None,
+                    docker_registry=request.docker_registry,
+                    converter_source=request.docker_save_to_simg,
+                    verbose=request.verbose,
+                )
+            except Exception as exc:
+                message = f"Unable to convert Docker image to SIMG: {exc}"
+                results = self._build_stub_result(
+                    request.recipe,
+                    version,
+                    status="failed",
+                    message=message,
+                )
+                return self._finalise(request, results, version, release_file, message)
+        else:
+            container_ref = self.tester.find_container(
+                request.recipe,
+                version,
+                location=request.location,
+                release_file=str(release_file) if release_file else None,
+            )
 
         if not container_ref:
             message = (

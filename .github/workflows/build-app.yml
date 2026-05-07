@@ -55,12 +55,10 @@ jobs:
   config:
     runs-on: ${{ fromJSON(inputs.runner) }}
     outputs:
-      APPLICATION: ${{ steps.envars.outputs.APPLICATION }}
       BUILDDATE: ${{ steps.envars.outputs.BUILDDATE }}
       SHORT_SHA: ${{ steps.envars.outputs.SHORT_SHA }}
       IMAGETAG: ${{ steps.envars.outputs.IMAGETAG }}
       IMAGENAME: ${{ steps.imgvars.outputs.IMAGENAME }}
-      DOCKERFILE: ${{ steps.imgvars.outputs.DOCKERFILE }}
       ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
     steps:
       - name: Checkout repository
@@ -101,7 +99,11 @@ jobs:
           curl -fsSL "$APPTAINER_DEB_URL" -o /tmp/apptainer.deb
           sudo apt-get install -y /tmp/apptainer.deb
           rm /tmp/apptainer.deb
-          sudo python3 -m pip install --break-system-packages \
+          PIP_BREAK_SYSTEM_PACKAGES=""
+          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
+            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          fi
+          sudo python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} \
             python-swiftclient python-keystoneclient
           # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
           if ! command -v aws >/dev/null 2>&1; then
@@ -127,7 +129,6 @@ jobs:
             BUILDDATE=`date +%Y%m%d`
           fi
           echo "APPLICATION=$APPLICATION" >> $GITHUB_ENV
-          echo "APPLICATION=$APPLICATION" >> $GITHUB_OUTPUT
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_ENV
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
           echo "BUILDDATE=$BUILDDATE" >> $GITHUB_ENV
@@ -140,7 +141,11 @@ jobs:
 
       - name: Install builder dependencies
         run: |
-          pip install --break-system-packages -r requirements.txt
+          PIP_BREAK_SYSTEM_PACKAGES=""
+          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
+            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          fi
+          python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} -r requirements.txt
 
       - name: Generate Dockerfile and Release file
         id: generate
@@ -163,13 +168,12 @@ jobs:
           IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
           echo "DOCKERFILE: $DOCKERFILE"
           echo "IMAGENAME: $IMAGENAME"
-          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_OUTPUT
-          echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_ENV
-          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_OUTPUT
-          echo "IMAGENAME=$IMAGENAME" >> $GITHUB_ENV
+          echo "DOCKERFILE=$DOCKERFILE" >> "$GITHUB_ENV"
+          echo "IMAGENAME=$IMAGENAME" >> "$GITHUB_ENV"
+          echo "IMAGENAME=$IMAGENAME" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -195,10 +199,8 @@ jobs:
       id-token: write
       contents: write
     env:
-      APPLICATION: ${{ needs.config.outputs.APPLICATION }}
+      APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      DOCKERFILE: ${{ needs.config.outputs.DOCKERFILE }}
-      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
       ROOTFS_CACHE: ${{ needs.config.outputs.ROOTFS_CACHE }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
@@ -322,7 +324,11 @@ jobs:
           curl -fsSL "$APPTAINER_DEB_URL" -o /tmp/apptainer.deb
           sudo apt-get install -y /tmp/apptainer.deb
           rm /tmp/apptainer.deb
-          sudo python3 -m pip install --break-system-packages \
+          PIP_BREAK_SYSTEM_PACKAGES=""
+          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
+            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          fi
+          sudo python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} \
             python-swiftclient python-keystoneclient
           # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
           if ! command -v aws >/dev/null 2>&1; then
@@ -342,7 +348,11 @@ jobs:
 
       - name: Install builder dependencies
         run: |
-          pip install --break-system-packages -r requirements.txt
+          PIP_BREAK_SYSTEM_PACKAGES=""
+          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
+            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          fi
+          python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} -r requirements.txt
 
       - name: Generate Dockerfile and Release file
         id: generate
@@ -371,7 +381,7 @@ jobs:
           echo "test command: bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE"
 
       - name: Login to GHCR
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -504,7 +514,7 @@ jobs:
   #       run: docker load --input /tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
 
   #     - name: Login to GHCR
-  #       uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+  #       uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
   #       with:
   #         registry: ghcr.io
   #         username: ${{ github.repository_owner }}
@@ -523,6 +533,10 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       packages: write
+    env:
+      APPLICATION: ${{ inputs.application }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
 
     steps:
       - name: Configure GitHub-hosted runner
@@ -538,7 +552,7 @@ jobs:
           sudo systemctl restart docker
 
       - name: Login to GHCR
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -548,7 +562,7 @@ jobs:
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          docker pull ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }}
+          docker pull ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}
 
       # - name: Download image artifact
       #   uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -561,7 +575,7 @@ jobs:
       #   run: docker load --input /tmp/${{ needs.config.outputs.IMAGENAME }}-${{ needs.config.outputs.BUILDDATE }}.tar
 
       - name: Login to DockerHub
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_PASSWORD }}
@@ -570,9 +584,9 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
           DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
         run: |
-          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }}
-          docker tag ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.BUILDDATE }} ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}:latest
-          docker push --all-tags ${DOCKERHUB_ORG}/${{ needs.config.outputs.IMAGENAME }}
+          docker tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ${DOCKERHUB_ORG}/${IMAGENAME}:${BUILDDATE}
+          docker tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ${DOCKERHUB_ORG}/${IMAGENAME}:latest
+          docker push --all-tags ${DOCKERHUB_ORG}/${IMAGENAME}
 
   build-simg:
     needs: [config, build-image]
@@ -580,6 +594,11 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       packages: write
+    env:
+      APPLICATION: ${{ inputs.application }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
 
     steps:
       - name: Set runner base path
@@ -617,20 +636,6 @@ jobs:
           SINGULARITY_TMPDIR="$BASE_PATH/apptainer/tmp"
           echo "SINGULARITY_TMPDIR=$SINGULARITY_TMPDIR" >> "$GITHUB_ENV"
 
-          # Find the most recent non-prerelease apptainer that actually has an
-          # uploaded amd64.deb asset. `releases/latest` alone is unsafe — upstream
-          # has tagged releases with empty asset arrays (e.g. v1.5.0 on 2026-05-07).
-          APPTAINER_DEB_URL=$(curl -fsSL "https://api.github.com/repos/apptainer/apptainer/releases?per_page=20" \
-            | jq -r 'first(.[] | select(.prerelease == false) | .assets[] | select(.name | test("^apptainer_[0-9.]+_amd64\\.deb$")) | .browser_download_url)')
-          if [ -z "$APPTAINER_DEB_URL" ] || [ "$APPTAINER_DEB_URL" = "null" ]; then
-            echo "ERROR: no apptainer .deb found in last 20 non-prerelease GitHub releases" >&2
-            exit 1
-          fi
-          echo "Installing apptainer from: $APPTAINER_DEB_URL"
-          curl -fsSL "$APPTAINER_DEB_URL" -o /tmp/apptainer.deb
-          sudo apt-get install -y /tmp/apptainer.deb
-          rm /tmp/apptainer.deb
-
           # sudo mkdir -p /mnt/apptainer
           # sudo chown $USER /mnt/apptainer
           # git clone https://github.com/apptainer/apptainer.git /mnt/apptainer
@@ -641,8 +646,18 @@ jobs:
           # export PATH="/mnt/apptainer/bin:$PATH"
           # echo "/mnt/apptainer/bin" >> $GITHUB_PATH
 
+      - name: Checkout repository
+        if: ${{ runner.environment == 'github-hosted' }}
+        uses: actions/checkout@v5
+
+      - name: Install Apptainer
+        if: ${{ runner.environment == 'github-hosted' }}
+        uses: ./.github/actions/setup-apptainer
+        with:
+          apptainer-version: 1.4.3
+
       - name: Login to GHCR
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -670,8 +685,8 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           echo "[DEBUG] building singularity image from docker image:"
-          SIMG_PATH="$BASE_PATH/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg"
-          IMAGE_REF="docker://ghcr.io/${GH_REGISTRY}/${{ needs.config.outputs.IMAGENAME }}:${{ needs.config.outputs.IMAGETAG }}"
+          SIMG_PATH="$BASE_PATH/tmp/${IMAGENAME}_${BUILDDATE}.simg"
+          IMAGE_REF="docker://ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${IMAGETAG}"
           time singularity build "$SIMG_PATH" "$IMAGE_REF"
           echo "[DEBUG] done building singularity image from docker image!"
           # Verify the image was created successfully
@@ -689,7 +704,8 @@ jobs:
         if: inputs.skip_simg_build != 'true'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
-          path: ${{ steps.base-path.outputs.base_path }}/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          name: ${{ env.IMAGENAME }}_${{ env.BUILDDATE }}.simg
+          path: ${{ steps.base-path.outputs.base_path }}/tmp/${{ env.IMAGENAME }}_${{ env.BUILDDATE }}.simg
           # Upload the single SIF/Singularity image as a raw file to avoid zip/unzip overhead.
           archive: false
           retention-days: 7
@@ -700,6 +716,10 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     permissions:
       packages: write
+    env:
+      APPLICATION: ${{ inputs.application }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
 
     steps:
       - name: Bootstrap build tooling
@@ -734,7 +754,11 @@ jobs:
           curl -fsSL "$APPTAINER_DEB_URL" -o /tmp/apptainer.deb
           sudo apt-get install -y /tmp/apptainer.deb
           rm /tmp/apptainer.deb
-          sudo python3 -m pip install --break-system-packages \
+          PIP_BREAK_SYSTEM_PACKAGES=""
+          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
+            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          fi
+          sudo python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} \
             python-swiftclient python-keystoneclient
           # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
           if ! command -v aws >/dev/null 2>&1; then
@@ -751,7 +775,7 @@ jobs:
         if: inputs.skip_simg_build != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          name: ${{ env.IMAGENAME }}_${{ env.BUILDDATE }}.simg
           path: ${{ runner.temp }}/
 
       - name: Upload simg to Nectar
@@ -764,8 +788,8 @@ jobs:
         run: |
           echo "[DEBUG] Attempting upload to Nectar Object Storage:"
           swift upload neurodesk \
-            "${RUNNER_TEMP}/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" \
-            --object-name "${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" \
+            "${RUNNER_TEMP}/${IMAGENAME}_${BUILDDATE}.simg" \
+            --object-name "${IMAGENAME}_${BUILDDATE}.simg" \
             --segment-size 1073741824 \
             --segment-threads 10
           echo "[DEBUG] Done with uploading to Nectar Object Storage!"
@@ -777,6 +801,10 @@ jobs:
     permissions:
       packages: write
       id-token: write
+    env:
+      APPLICATION: ${{ inputs.application }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
     steps:
       - name: Configure runner
         run: |
@@ -785,7 +813,7 @@ jobs:
           sudo chown $USER /mnt/tmp
 
       - name: Configure aws credentials
-        uses: aws-actions/configure-aws-credentials@ececac1a45f3b08a01d2dd070d28d111c5fe6722
+        uses: aws-actions/configure-aws-credentials@ec61189d14ec14c8efccab744f656cffd0e33f37
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-2
@@ -793,7 +821,7 @@ jobs:
         if: inputs.skip_simg_build != 'true'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: ${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg
+          name: ${{ env.IMAGENAME }}_${{ env.BUILDDATE }}.simg
           path: /mnt/tmp/
 
       - name: Install AWS CLI
@@ -805,8 +833,8 @@ jobs:
 
       - name: Upload to AWS S3
         run: |
-          aws s3 cp "/mnt/tmp/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" "s3://neurocontainers/${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg"
-          if ! aws s3api head-object --bucket neurocontainers --key "${{ needs.config.outputs.IMAGENAME }}_${{ needs.config.outputs.BUILDDATE }}.simg" > /dev/null 2>&1; then
+          aws s3 cp "/mnt/tmp/${IMAGENAME}_${BUILDDATE}.simg" "s3://neurocontainers/${IMAGENAME}_${BUILDDATE}.simg"
+          if ! aws s3api head-object --bucket neurocontainers --key "${IMAGENAME}_${BUILDDATE}.simg" > /dev/null 2>&1; then
             echo "::error::File verification failed. The file was not found in S3."
             exit 1
           else
@@ -822,7 +850,7 @@ jobs:
       id-token: write
       contents: read
     env:
-      APPLICATION: ${{ needs.config.outputs.APPLICATION }}
+      APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
       IMAGENAME: ${{ needs.config.outputs.IMAGENAME }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
@@ -997,15 +1025,23 @@ jobs:
           "recipes/${CONTAINER_NAME}/params.sh"
         )
         OPENRECON_README_CHANGE_NOTE=""
+        OPENRECON_BOOTSTRAP_CHANGE_NOTE=""
 
         if [ ! -d "$TARGET_RECIPE_DIR" ]; then
-          echo "::warning::OpenRecon recipe directory not found: ${TARGET_RECIPE_DIR}. Skipping OpenRecon PR."
-          exit 0
+          mkdir -p "$TARGET_RECIPE_DIR"
+          OPENRECON_BOOTSTRAP_CHANGE_NOTE="- Create \`recipes/${CONTAINER_NAME}\` in OpenRecon because it did not exist yet"
+          echo "Created OpenRecon recipe directory: ${TARGET_RECIPE_DIR}"
         fi
 
         if [ ! -f "$TARGET_PARAMS_FILE" ]; then
-          echo "::warning::OpenRecon params.sh not found: ${TARGET_PARAMS_FILE}. Skipping OpenRecon PR."
-          exit 0
+          {
+            echo '#!/bin/bash'
+            echo '# Auto-generated by neurocontainers CI.'
+            echo "export toolName=${CONTAINER_NAME}"
+            echo "export version=${CONTAINER_VERSION}"
+            echo "export baseDockerImage=vnmd/\${toolName}_\${version}"
+          } > "$TARGET_PARAMS_FILE"
+          echo "Created OpenRecon params file: ${TARGET_PARAMS_FILE}"
         fi
 
         cp "$SOURCE_LABEL_FILE" "$TARGET_LABEL_FILE"
@@ -1072,6 +1108,7 @@ jobs:
 
         - Update \`recipes/${CONTAINER_NAME}/OpenReconLabel.json\` from neurocontainers
         - Set \`recipes/${CONTAINER_NAME}/params.sh\` version to \`${CONTAINER_VERSION}\`
+        ${OPENRECON_BOOTSTRAP_CHANGE_NOTE}
         ${OPENRECON_README_CHANGE_NOTE}
 
         🤖 Generated by neurocontainers CI | Created by @${GITHUB_ACTOR}" \

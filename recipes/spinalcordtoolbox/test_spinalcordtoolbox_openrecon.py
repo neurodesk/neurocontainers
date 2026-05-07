@@ -25,11 +25,15 @@ EXPECTED_DEEPSEG_TASKS = {
     "lesion_ms_axial_t2",
     "lesion_ms_mp2rage",
     "lesion_sci_t2",
-    "tumor_edema_cavity_t1_t2",
     "tumor_t2",
     "rootlets",
     "sc_canal_t2",
     "totalspineseg",
+}
+
+EXPECTED_HIDDEN_ANALYSIS_CHOICES = {
+    "sct_deepseg_gm_wm_mouse_t1",
+    "sct_deepseg_tumor_edema_cavity_t1_t2",
 }
 
 EXPECTED_BATCH_PROCESSING_OPENRECON_CASES = {
@@ -86,6 +90,81 @@ EXPECTED_ANALYSIS_BUNDLES = {
     "sct_bundle_mouse_t1": (
         "sct_deepseg_sc_mouse_t1",
         "sct_deepseg_gm_mouse_t1",
+    ),
+}
+
+EXPECTED_ANALYSIS_OUTPUTS = {
+    "sct_deepseg_gm_sc_7t_t2star": (
+        {
+            "filename": "output_7t_multiclass_sc.nii.gz",
+            "series_suffix": "sct_deepseg_gm_sc_7t_t2star_7t_multiclass_sc",
+        },
+        {
+            "filename": "output_7t_multiclass_gm.nii.gz",
+            "series_suffix": "sct_deepseg_gm_sc_7t_t2star_7t_multiclass_gm",
+        },
+    ),
+    "sct_deepseg_gm_wm_exvivo_t2": (
+        {
+            "filename": "output_gmseg.nii.gz",
+            "series_suffix": "sct_deepseg_gm_wm_exvivo_t2_gmseg",
+        },
+        {
+            "filename": "output_wmseg.nii.gz",
+            "series_suffix": "sct_deepseg_gm_wm_exvivo_t2_wmseg",
+        },
+    ),
+    "sct_deepseg_gm_wm_mouse_t1": (
+        {
+            "filename": "output_GM_seg.nii.gz",
+            "series_suffix": "sct_deepseg_gm_wm_mouse_t1_gm_seg",
+        },
+        {
+            "filename": "output_WM_seg.nii.gz",
+            "series_suffix": "sct_deepseg_gm_wm_mouse_t1_wm_seg",
+        },
+    ),
+    "sct_deepseg_lesion_ms_axial_t2": (
+        {
+            "filename": "output_sc_seg.nii.gz",
+            "series_suffix": "sct_deepseg_lesion_ms_axial_t2_sc_seg",
+        },
+        {
+            "filename": "output_lesion_seg.nii.gz",
+            "series_suffix": "sct_deepseg_lesion_ms_axial_t2_lesion_seg",
+        },
+    ),
+    "sct_deepseg_lesion_sci_t2": (
+        {
+            "filename": "output_lesion_seg.nii.gz",
+            "series_suffix": "sct_deepseg_lesion_sci_t2_lesion_seg",
+        },
+        {
+            "filename": "output_sc_seg.nii.gz",
+            "series_suffix": "sct_deepseg_lesion_sci_t2_sc_seg",
+        },
+    ),
+    "sct_deepseg_totalspineseg": (
+        {
+            "filename": "output_step1_canal.nii.gz",
+            "series_suffix": "sct_deepseg_totalspineseg_step1_canal",
+        },
+        {
+            "filename": "output_step1_cord.nii.gz",
+            "series_suffix": "sct_deepseg_totalspineseg_step1_cord",
+        },
+        {
+            "filename": "output_step1_levels.nii.gz",
+            "series_suffix": "sct_deepseg_totalspineseg_step1_levels",
+        },
+        {
+            "filename": "output_step1_output.nii.gz",
+            "series_suffix": "sct_deepseg_totalspineseg_step1_output",
+        },
+        {
+            "filename": "output_step2_output.nii.gz",
+            "series_suffix": "sct_deepseg_totalspineseg_step2_output",
+        },
     ),
 }
 
@@ -223,6 +302,7 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
             },
         ),
         "np": np,
+        "Path": Path,
         "re": __import__("re"),
         "uuid": __import__("uuid"),
     }
@@ -240,7 +320,11 @@ def test_openrecon_exposes_all_supported_deepseg_tasks():
 
     choices = _analysis_choices()
     for task in deepseg_tasks:
-        assert f"sct_deepseg_{task}" in choices
+        analysis_id = f"sct_deepseg_{task}"
+        if analysis_id not in EXPECTED_HIDDEN_ANALYSIS_CHOICES:
+            assert analysis_id in choices
+    for analysis_id in EXPECTED_HIDDEN_ANALYSIS_CHOICES:
+        assert analysis_id not in choices
     assert "sct_label_vertebrae" in choices
 
 
@@ -310,7 +394,7 @@ def test_wrapper_validates_output_series_contract_like_musclemap():
     assert "derived role {role} reuses input SeriesInstanceUID" in wrapper_source
     assert "output role {role} reuses input image_series_index" in wrapper_source
     assert "derived role {role} has Meta/IceMiniHead SeriesInstanceUID mismatch" in wrapper_source
-    assert "derived_series_allocator.allocate(member_analysis)" in wrapper_source
+    assert 'derived_series_allocator.allocate(output_spec["series_suffix"])' in wrapper_source
     assert 'derived_series_allocator.allocate("ORIGINAL")' in wrapper_source
     assert 'derived_series_allocator.allocate("PASSTHROUGH")' in wrapper_source
     assert "_restamp_passthrough_images" in function_names
@@ -379,6 +463,7 @@ def test_output_series_contract_rejects_input_series_index_reuse():
     helpers["SCT_ANALYSIS_REGISTRY"] = {
         "sct_deepseg_spinalcord": {"series_suffix": "sct_deepseg_spinalcord"}
     }
+    helpers["SCT_ANALYSIS_OUTPUTS"] = {}
     helpers["RESERVED_SCANNER_SERIES_INDICES"] = {99}
     input_summary = [
         {
@@ -412,6 +497,35 @@ def test_output_series_contract_rejects_input_series_index_reuse():
         raise AssertionError("Expected validator to reject output series index reuse")
 
 
+def test_minihead_string_extraction_prefers_writer_format_and_cleans_helper_prefix():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+        ],
+    )
+
+    class BrokenMrdHelper:
+        @staticmethod
+        def extract_minihead_string_param(minihead_text, name):
+            return '{ "t2_tse_sag_spine_original'
+
+    helpers["mrdhelper"] = BrokenMrdHelper
+    minihead_text = '<ParamString."ProtocolName"> { "t2_tse_sag_}_spine_original" }'
+
+    assert (
+        helpers["_extract_minihead_string_value"](minihead_text, "ProtocolName")
+        == "t2_tse_sag_}_spine_original"
+    )
+    assert (
+        helpers["_extract_minihead_string_value"](
+            "<XProtocol></XProtocol>",
+            "ProtocolName",
+        )
+        == "t2_tse_sag_spine_original"
+    )
+
+
 def test_get_image_series_index_logs_malformed_header_fallback():
     warnings = []
     helpers = _load_runtime_helpers_for_test(["_get_image_series_index"])
@@ -434,6 +548,95 @@ def test_wrapper_logs_sct_output_statistics_before_mrd_conversion():
     assert "SCT output voxel statistics before MRD conversion" in wrapper_source
     assert "np.count_nonzero(data)" in wrapper_source
     assert "np.unique(data)" in wrapper_source
+
+
+def test_openrecon_declares_multiclass_output_series():
+    assert _module_assignment("SCT_ANALYSIS_OUTPUTS") == EXPECTED_ANALYSIS_OUTPUTS
+
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_expected_sct_output_specs",
+            "_sct_derived_roles",
+        ],
+        assignments=[
+            "SCT_ANALYSIS_OUTPUTS",
+            "SCT_ANALYSIS_REGISTRY",
+            "SCT_DEEPSEG_TASKS",
+        ],
+    )
+    roles = helpers["_sct_derived_roles"]()
+    for analysis, expected_outputs in EXPECTED_ANALYSIS_OUTPUTS.items():
+        specs = helpers["_expected_sct_output_specs"](
+            analysis,
+            Path("/tmp/sct/output.nii.gz"),
+        )
+        assert tuple(
+            (spec["path"].name, spec["series_suffix"])
+            for spec in specs
+        ) == tuple(
+            (output["filename"], output["series_suffix"])
+            for output in expected_outputs
+        )
+        for output in expected_outputs:
+            assert output["series_suffix"].upper() in roles
+
+
+def test_openrecon_requires_generated_multiclass_files(tmp_path):
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_expected_sct_output_specs",
+            "_require_sct_output_specs",
+        ],
+        assignments=[
+            "SCT_ANALYSIS_OUTPUTS",
+            "SCT_ANALYSIS_REGISTRY",
+            "SCT_DEEPSEG_TASKS",
+        ],
+    )
+    for analysis, expected_outputs in EXPECTED_ANALYSIS_OUTPUTS.items():
+        analysis_dir = tmp_path / analysis
+        analysis_dir.mkdir()
+        specs = helpers["_expected_sct_output_specs"](
+            analysis,
+            analysis_dir / "output.nii.gz",
+        )
+        for spec in specs:
+            spec["path"].write_bytes(b"nii")
+
+        assert helpers["_require_sct_output_specs"](
+            analysis,
+            specs,
+        ) == specs
+
+        specs[0]["path"].unlink()
+        try:
+            helpers["_require_sct_output_specs"](
+                analysis,
+                specs,
+            )
+        except FileNotFoundError as exc:
+            assert expected_outputs[0]["filename"] in str(exc)
+        else:
+            raise AssertionError(f"Expected missing SCT output to fail for {analysis}")
+
+
+def test_label_vertebrae_output_path_follows_segmentation_filename():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_nifti_output_stem",
+            "_sct_label_vertebrae_output_path",
+        ],
+    )
+    output_path = helpers["_sct_label_vertebrae_output_path"]
+
+    assert output_path(
+        Path("/tmp/openrecon/input_seg.nii.gz"),
+        Path("/tmp/openrecon"),
+    ) == Path("/tmp/openrecon/input_seg_labeled.nii.gz")
+    assert output_path(
+        Path("/tmp/openrecon/sct_deepseg_spinalcord/output.nii.gz"),
+        Path("/tmp/openrecon/sct_label_vertebrae"),
+    ) == Path("/tmp/openrecon/sct_label_vertebrae/output_labeled.nii.gz")
 
 
 def test_wrapper_patches_openrecon_derived_series_identity_like_musclemap():

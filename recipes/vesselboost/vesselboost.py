@@ -32,8 +32,8 @@ OPENRECON_MODULE_DEFAULT = "prediction"
 OPENRECON_MODULE_VALUES = (OPENRECON_MODULE_DEFAULT,)
 VESSELBOOST_SEGMENTATION_LABEL = "vesselboost_segmentation"
 VESSELBOOST_SEGMENTATION_TYPE_TOKEN = VESSELBOOST_SEGMENTATION_LABEL.upper()
-VESSELBOOST_SOURCE_COPY_LABEL = "vesselboost_source_copy"
-VESSELBOOST_SOURCE_COPY_TYPE_TOKEN = VESSELBOOST_SOURCE_COPY_LABEL.upper()
+VESSELBOOST_ORIGINAL_LABEL = "original"
+VESSELBOOST_ORIGINAL_TYPE_TOKEN = VESSELBOOST_ORIGINAL_LABEL.upper()
 
 # Keep this overview aligned with recipes/vesselboost/OpenReconLabel.json.
 # Tests can import it to build a minimal OpenRecon config payload.
@@ -775,7 +775,7 @@ def _build_openrecon_output_identity(source_identity, orientation=None):
     }
 
 
-def _build_vesselboost_source_copy_identity(source_identity):
+def _build_vesselboost_original_identity(source_identity):
     source_series_description = _first_non_empty_text(
         source_identity.get("series_description", ""),
         "source",
@@ -784,15 +784,15 @@ def _build_vesselboost_source_copy_identity(source_identity):
         source_identity.get("parent_grouping", ""),
         source_series_description,
     )
-    series_description = f"{source_series_description}_{VESSELBOOST_SOURCE_COPY_LABEL}"
-    grouping = f"{source_parent_grouping}_{VESSELBOOST_SOURCE_COPY_LABEL}"
+    series_description = f"{source_series_description}_{VESSELBOOST_ORIGINAL_LABEL}"
+    grouping = f"{source_parent_grouping}_{VESSELBOOST_ORIGINAL_LABEL}"
     return {
         "series_description": series_description,
         "sequence_description": series_description,
         "grouping": grouping,
-        "display_token": VESSELBOOST_SOURCE_COPY_LABEL,
-        "type_token": VESSELBOOST_SOURCE_COPY_TYPE_TOKEN,
-        "image_comment": VESSELBOOST_SOURCE_COPY_LABEL,
+        "display_token": VESSELBOOST_ORIGINAL_LABEL,
+        "type_token": VESSELBOOST_ORIGINAL_TYPE_TOKEN,
+        "image_comment": VESSELBOOST_ORIGINAL_LABEL,
     }
 
 
@@ -1268,14 +1268,12 @@ def _build_reformatted_images(
         orthogonal_fov,
     )
 
-    source_slice_count = max(1, int(N_z))
     logging.info(
-        "Building %s reformat: n_slices=%d source_slice_count=%d "
-        "slice_policy=modulo_source_slice_count slice_spacing=%.4f new_fov=%s "
-        "series_index=%d target_shape=%s target_spacing=%.4f",
+        "Building %s reformat: n_slices=%d slice_policy=unique_slice_counter "
+        "slice_spacing=%.4f new_fov=%s series_index=%d target_shape=%s "
+        "target_spacing=%.4f",
         orientation,
         n_slices,
-        source_slice_count,
         slice_spacing,
         new_fov,
         series_index,
@@ -1312,10 +1310,9 @@ def _build_reformatted_images(
             ctypes.c_float(new_fov[1]),
             ctypes.c_float(new_fov[2]),
         )
-        reformat_slice_counter = j % source_slice_count
         new_header.image_index = j
         new_header.image_series_index = series_index
-        new_header.slice = reformat_slice_counter
+        new_header.slice = j
 
         if j < 5 or j >= n_slices - 5:
             logging.info(
@@ -1324,7 +1321,7 @@ def _build_reformatted_images(
                 "slice_dir0=%.6f",
                 orientation,
                 j,
-                reformat_slice_counter,
+                j,
                 series_index,
                 [round(float(v), 6) for v in slice_position],
                 float(new_read_dir[0]),
@@ -2488,35 +2485,35 @@ def process_image(images, connection, config, metadata):
                 "sendoriginal is true, but input was raw data, so no original images to return."
             )
         else:
-            source_copy_identity = _build_vesselboost_source_copy_identity(source_identity)
+            original_identity = _build_vesselboost_original_identity(source_identity)
             used_output_series_indices = [
                 int(getattr(image.getHead(), "image_series_index", 0))
                 for image in imagesOut
             ]
-            source_copy_series_index = max(
+            original_series_index = max(
                 used_output_series_indices + source_series_indices,
                 default=segmentation_series_index,
             ) + 1
             logging.info(
-                "Sending original MRA images as derived source-copy series "
+                "Sending original MRA images as derived original series "
                 "(series_index=%d, name=%s)",
-                source_copy_series_index,
-                source_copy_identity["series_description"],
+                original_series_index,
+                original_identity["series_description"],
             )
             ordered_original_images = [
                 original_images[index] for index in slice_sort_indices
             ]
             for iImg, original_image in enumerate(ordered_original_images):
                 original_header = original_image.getHead()
-                original_header.image_series_index = source_copy_series_index
+                original_header.image_series_index = original_series_index
                 original_header.image_index = iImg
                 original_header.slice = iImg
                 original_image.setHead(original_header)
                 _apply_vesselboost_output_identity(
                     original_image,
-                    source_copy_identity,
+                    original_identity,
                     source_identity["source_type_token"],
-                    ["PYTHON", "VESSELBOOST", "SOURCE_COPY"],
+                    ["PYTHON", "VESSELBOOST", "ORIGINAL"],
                 )
                 imagesOut.append(original_image)
 
