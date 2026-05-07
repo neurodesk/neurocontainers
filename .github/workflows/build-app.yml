@@ -314,8 +314,9 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # - name: Set up Docker Buildx
-      #   uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+      - name: Set up Docker Buildx
+        if: inputs.skip_docker_build != 'true'
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
 
       - name: Debug Dockerfile
         run: cat ./build/${APPLICATION}/${DOCKERFILE}
@@ -328,19 +329,34 @@ jobs:
       - name: Build new image
         if: inputs.skip_docker_build != 'true'
         env:
+          DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          cd ./build/${APPLICATION}
-          CACHE_IMAGE=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest
-          CACHE_FROM_ARGS=""
-          if docker pull "${CACHE_IMAGE}"; then
-            echo "Using cache image ${CACHE_IMAGE}"
-            CACHE_FROM_ARGS="--cache-from ${CACHE_IMAGE}"
+          cd "./build/${APPLICATION}"
+          CACHE_REF=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:buildcache
+          CACHE_FROM_ARGS=()
+          CACHE_TO_ARGS=(--cache-to type=inline)
+          if docker buildx imagetools inspect "${CACHE_REF}" >/dev/null 2>&1; then
+            echo "Using cache image ${CACHE_REF}"
+            CACHE_FROM_ARGS=(--cache-from "type=registry,ref=${CACHE_REF}")
           else
-            echo "Cache image ${CACHE_IMAGE} is unavailable; building without --cache-from"
+            echo "Cache image ${CACHE_REF} is unavailable; building without --cache-from"
+          fi
+          if [ "${DISABLE_AUTO_UPLOAD}" != "true" ]; then
+            CACHE_TO_ARGS+=(--cache-to "type=registry,ref=${CACHE_REF},mode=max")
+          else
+            echo "Auto-upload is disabled. Skipping registry cache export."
           fi
           mkdir -p "$HOME/.cache/neurocontainers/build-context"
-          docker build . --file ${DOCKERFILE} --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --build-context neurocontainer-cache="$HOME/.cache/neurocontainers/build-context" ${CACHE_FROM_ARGS} --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+          docker buildx build . \
+            --load \
+            --file "${DOCKERFILE}" \
+            --tag "ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}" \
+            --build-context "neurocontainer-cache=$HOME/.cache/neurocontainers/build-context" \
+            "${CACHE_FROM_ARGS[@]}" \
+            "${CACHE_TO_ARGS[@]}" \
+            --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" \
+            --label "GITHUB_SHA=${SHORT_SHA}"
           
       - name: Debug storage
         run: |

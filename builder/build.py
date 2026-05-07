@@ -101,6 +101,23 @@ def _dockerfile_uses_file_cache_context(dockerfile_path: str | Path) -> bool:
         return False
 
 
+def _docker_buildx_available() -> bool:
+    if not shutil.which("docker"):
+        return False
+
+    try:
+        result = subprocess.run(
+            ["docker", "buildx", "version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+    return result.returncode == 0
+
+
 def add_offline_mode_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--offline-mode",
@@ -176,6 +193,13 @@ def get_cache_dir() -> str:
 
 def get_build_context_cache_dir() -> str:
     cache_dir = os.path.join(get_cache_dir(), "build-context")
+    os.makedirs(cache_dir, exist_ok=True)
+    return cache_dir
+
+
+def get_docker_buildx_cache_dir(tag: str, architecture: str) -> str:
+    cache_key = sha256(f"{tag}-{get_build_platform(architecture)}".encode("utf-8"))
+    cache_dir = os.path.join(get_cache_dir(), "docker-buildx", cache_key)
     os.makedirs(cache_dir, exist_ok=True)
     return cache_dir
 
@@ -2425,18 +2449,45 @@ def build_and_run_container(
         if not shutil.which("docker"):
             raise ValueError("Docker not found in PATH.")
 
-    docker_args = [
-        "docker" if not use_podman else "podman",
-        "build",
-        "--platform",
-        get_build_platform(architecture),
-        "-f",
-        dockerfile_name,
-        "-t",
-        tag,
-    ]
-
     dockerfile_path = os.path.join(build_directory, dockerfile_name)
+    dockerfile_requires_buildkit = _dockerfile_requires_buildkit(dockerfile_path)
+    use_docker_buildx_cache = (
+        not use_podman
+        and dockerfile_requires_buildkit
+        and _env_truthy("NEUROCONTAINERS_DOCKER_BUILDX_CACHE", default=True)
+        and _docker_buildx_available()
+    )
+
+    if use_docker_buildx_cache:
+        docker_buildx_cache_dir = get_docker_buildx_cache_dir(tag, architecture)
+        docker_args = [
+            "docker",
+            "buildx",
+            "build",
+            "--load",
+            "--platform",
+            get_build_platform(architecture),
+            "-f",
+            dockerfile_name,
+            "-t",
+            tag,
+            "--cache-from",
+            f"type=local,src={docker_buildx_cache_dir}",
+            "--cache-to",
+            f"type=local,dest={docker_buildx_cache_dir},mode=max",
+        ]
+    else:
+        docker_args = [
+            "docker" if not use_podman else "podman",
+            "build",
+            "--platform",
+            get_build_platform(architecture),
+            "-f",
+            dockerfile_name,
+            "-t",
+            tag,
+        ]
+
     if _dockerfile_uses_file_cache_context(dockerfile_path):
         docker_args += [
             "--build-context",
@@ -2456,7 +2507,6 @@ def build_and_run_container(
     # docker-py does not support using BuildKit.
     build_cmd = docker_args + ["."]
     build_env = os.environ.copy()
-    dockerfile_requires_buildkit = _dockerfile_requires_buildkit(dockerfile_path)
     if not use_podman and build_env.get("DOCKER_BUILDKIT", "").strip() == "":
         build_env["DOCKER_BUILDKIT"] = "1"
     docker_build_retries_raw = os.environ.get("DOCKER_BUILD_RETRIES", "2")
@@ -2508,6 +2558,7 @@ def build_and_run_container(
         docker_buildkit_enabled = os.environ.get("DOCKER_BUILDKIT", "").strip() != "0"
         should_retry_with_legacy = (
             not use_podman and allow_legacy_fallback and docker_buildkit_enabled
+            and not use_docker_buildx_cache
             and not dockerfile_requires_buildkit
         )
 

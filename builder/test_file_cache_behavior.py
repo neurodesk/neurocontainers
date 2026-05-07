@@ -195,6 +195,7 @@ def test_docker_build_receives_file_cache_named_context():
                 lambda name: f"/usr/bin/{name}",
             ),
             mock.patch.object(build_module.subprocess, "check_call", record_check_call),
+            mock.patch.object(build_module, "_docker_buildx_available", lambda: True),
             mock.patch.object(
                 build_module,
                 "run_container_tester",
@@ -214,6 +215,19 @@ def test_docker_build_receives_file_cache_named_context():
 
         assert calls
         build_cmd = calls[0]
+        assert build_cmd[:3] == ["docker", "buildx", "build"]
+        assert "--load" in build_cmd
+        assert "--cache-from" in build_cmd
+        assert "--cache-to" in build_cmd
+        cache_from = build_cmd[build_cmd.index("--cache-from") + 1]
+        cache_to = build_cmd[build_cmd.index("--cache-to") + 1]
+        assert cache_from.startswith(
+            f"type=local,src={os.path.join(persistent_cache, 'docker-buildx')}"
+        )
+        assert cache_to.startswith(
+            f"type=local,dest={os.path.join(persistent_cache, 'docker-buildx')}"
+        )
+        assert cache_to.endswith(",mode=max")
         assert "--build-context" in build_cmd
         assert (
             f"{NEUROCONTAINER_CACHE_CONTEXT_NAME}="
