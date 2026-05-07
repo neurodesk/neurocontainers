@@ -1,0 +1,414 @@
+# neurodesktop container test suite
+# Tests for neurodesktop 20260428 - browser-based JupyterLab and LXDE desktop
+# environment with Guacamole, CVMFS-backed NeuroDesk tooling, and workflow
+# utilities.
+
+name: neurodesktop
+version: 20260428
+container: neurodesktop_20260428_*.simg
+default_timeout: 120
+
+test_data:
+  output_dir: test_output
+
+env_setup: |
+  export JUPYTER_TOKEN="${JUPYTER_TOKEN:-}"
+  export JUPYTER_PASSWORD="${JUPYTER_PASSWORD:-}"
+  export NEURODESKTOP_CVMFS_STARTUP_MODE="${NEURODESKTOP_CVMFS_STARTUP_MODE:-lazy}"
+  export NEURODESKTOP_SLURM_STARTUP_MODE="${NEURODESKTOP_SLURM_STARTUP_MODE:-lazy}"
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "${output_dir}"
+
+tests:
+  # ==========================================================================
+  # LAUNCHERS AND CORE ENTRYPOINTS
+  # ==========================================================================
+  - name: Neurodesktop launchers are installed
+    description: Verify the public Neurodesktop launcher commands are on PATH
+    command: |
+      bash -lc '
+        set -euo pipefail
+        command -v start-neurodesktop-jupyterlab
+        command -v start-neurodesktop-guacamole
+      '
+    expected_output_contains:
+      - "start-neurodesktop-jupyterlab"
+      - "start-neurodesktop-guacamole"
+
+  - name: Core runtime commands are available
+    description: Verify Jupyter, Guacamole, desktop, and service commands exist
+    command: |
+      bash -lc '
+        set -euo pipefail
+        command -v jupyter
+        command -v guacd
+        command -v Xvnc
+        command -v vncserver
+        command -v code-server
+        command -v apptainer
+      '
+    expected_output_contains:
+      - "jupyter"
+      - "guacd"
+      - "Xvnc"
+      - "vncserver"
+      - "code-server"
+      - "apptainer"
+
+  - name: Neurodesktop version environment
+    description: Verify the image exposes the recipe version
+    command: bash -lc 'echo "NEURODESKTOP_VERSION=${NEURODESKTOP_VERSION:-missing}"'
+    expected_output_contains: "NEURODESKTOP_VERSION=20260428"
+
+  - name: Launcher scripts are executable
+    description: Verify installed launcher and startup scripts have execute bits
+    command: |
+      bash -lc '
+        set -euo pipefail
+        for path in \
+          /usr/local/bin/start-neurodesktop-jupyterlab \
+          /usr/local/bin/start-neurodesktop-guacamole \
+          /opt/neurodesktop/jupyterlab_startup.sh \
+          /opt/neurodesktop/guacamole.sh \
+          /opt/neurodesktop/init_secrets.sh \
+          /opt/neurodesktop/deferred_startup.sh \
+          /opt/neurodesktop/environment_variables.sh
+        do
+          test -x "$path"
+          echo "executable:$path"
+        done
+      '
+    expected_output_contains:
+      - "executable:/usr/local/bin/start-neurodesktop-jupyterlab"
+      - "executable:/opt/neurodesktop/guacamole.sh"
+
+  # ==========================================================================
+  # JUPYTERLAB AND WEBAPP CONFIGURATION
+  # ==========================================================================
+  - name: JupyterLab version check
+    description: Verify JupyterLab and Jupyter Server are installed
+    command: |
+      bash -lc '
+        set -euo pipefail
+        echo "lab=$(jupyter lab --version)"
+        echo "server=$(jupyter server --version)"
+      '
+    expected_output_contains:
+      - "lab="
+      - "server="
+
+  - name: Jupyter config files are installed
+    description: Verify generated Jupyter config and Neurodesktop assets exist
+    command: |
+      bash -lc '
+        set -euo pipefail
+        test -r /etc/jupyter/jupyter_notebook_config.py
+        test -r /etc/jupyter/jupyter_server_config.py
+        test -r /opt/neurodesktop/jupyter_notebook_config.py.template
+        test -r /opt/neurodesktop/webapps.json
+        test -r /opt/neurodesktop/webapp_wrapper/webapp_wrapper.py
+        test -r /opt/neurodesk_brain_logo.svg
+        echo "jupyter-config-ok"
+      '
+    expected_output_contains: "jupyter-config-ok"
+
+  - name: Webapps JSON is valid
+    description: Verify Neurodesktop webapp launcher metadata parses as JSON
+    command: |
+      python3 - <<'PY'
+      import json
+      from pathlib import Path
+      path = Path("/opt/neurodesktop/webapps.json")
+      payload = json.loads(path.read_text())
+      assert isinstance(payload, dict), type(payload)
+      assert payload, "webapps.json is empty"
+      print("webapps-json-ok", len(payload))
+      PY
+    expected_output_contains: "webapps-json-ok"
+
+  - name: JupyterLab launcher starts
+    description: Start JupyterLab briefly and verify it reaches the ready state
+    timeout: 90
+    command: |
+      bash -lc '
+        set -euo pipefail
+        tmp_home="$(mktemp -d)"
+        port="$(python3 - <<'"'"'PY'"'"'
+      import socket
+      s = socket.socket()
+      s.bind(("127.0.0.1", 0))
+      print(s.getsockname()[1])
+      s.close()
+      PY
+      )"
+        log="${output_dir}/jupyter-smoke.log"
+        HOME="$tmp_home" \
+        NEURODESK_WEBAPP_PORT="$port" \
+        JUPYTER_TOKEN= \
+        JUPYTER_PASSWORD= \
+          start-neurodesktop-jupyterlab >"$log" 2>&1 &
+        pid=$!
+        cleanup() {
+          kill "$pid" >/dev/null 2>&1 || true
+          wait "$pid" >/dev/null 2>&1 || true
+          rm -rf "$tmp_home"
+        }
+        trap cleanup EXIT
+        deadline=$((SECONDS + 60))
+        while [ "$SECONDS" -lt "$deadline" ]; do
+          if curl -fsS "http://127.0.0.1:${port}/api/status" >"${output_dir}/jupyter-status.json"; then
+            cat "${output_dir}/jupyter-status.json"
+            echo "jupyter-launcher-ok"
+            exit 0
+          fi
+          if grep -q "Jupyter Server .* is running at:" "$log"; then
+            tail -40 "$log"
+            echo "jupyter-launcher-ok"
+            exit 0
+          fi
+          if ! kill -0 "$pid" >/dev/null 2>&1; then
+            echo "Jupyter launcher exited early"
+            tail -80 "$log" || true
+            exit 1
+          fi
+          sleep 1
+        done
+        echo "Jupyter launcher did not become ready"
+        tail -120 "$log" || true
+        exit 1
+      '
+    expected_output_contains: "jupyter-launcher-ok"
+
+  # ==========================================================================
+  # GUACAMOLE, DESKTOP, AND STORAGE CONFIGURATION
+  # ==========================================================================
+  - name: Guacamole and Tomcat files are installed
+    description: Verify Guacamole webapp, Tomcat config, and mapping templates
+    command: |
+      bash -lc '
+        set -euo pipefail
+        test -r /usr/local/tomcat/webapps/ROOT/WEB-INF/web.xml
+        test -x /usr/local/tomcat/bin/startup.sh
+        test -r /usr/local/tomcat/conf/server.xml
+        test -r /usr/local/tomcat/conf/context.xml
+        test -r /etc/guacamole/guacamole.properties
+        test -r /etc/guacamole/user-mapping.xml
+        grep -q "maxHttpRequestHeaderSize=\"65536\"" /usr/local/tomcat/conf/server.xml
+        grep -q "sessionCookiePath=\"/\"" /usr/local/tomcat/conf/context.xml
+        echo "guacamole-config-ok"
+      '
+    expected_output_contains: "guacamole-config-ok"
+
+  - name: VNC desktop defaults are installed
+    description: Verify LXDE/VNC default user files required by Guacamole exist
+    command: |
+      bash -lc '
+        set -euo pipefail
+        test -x /opt/jovyan_defaults/.vnc/xstartup
+        test -r /opt/jovyan_defaults/.vnc/passwd
+        test -r /usr/share/lxde/wallpapers/desktop_wallpaper.png
+        test -r /opt/jovyan_defaults/.config/lxpanel/LXDE/panels/panel
+        echo "vnc-desktop-defaults-ok"
+      '
+    expected_output_contains: "vnc-desktop-defaults-ok"
+
+  - name: Neurodesktop storage directory exists
+    description: Verify the persistent storage mount point exists
+    command: |
+      bash -lc '
+        set -euo pipefail
+        test -d /neurodesktop-storage
+        echo "neurodesktop-storage-ok"
+      '
+    expected_output_contains: "neurodesktop-storage-ok"
+
+  - name: Guacamole secrets rotate defaults
+    description: Verify generated Guacamole/VNC secrets are not the literal default
+    command: |
+      bash -lc '
+        set -euo pipefail
+        tmp_home="$(mktemp -d)"
+        cleanup() { rm -rf "$tmp_home"; }
+        trap cleanup EXIT
+        HOME="$tmp_home" NB_USER=jovyan /opt/neurodesktop/init_secrets.sh
+        web_password="$(cat "$tmp_home/.neurodesk/secrets/guacamole_web_password")"
+        vnc_password="$(cat "$tmp_home/.neurodesk/secrets/vnc_password")"
+        test -n "$web_password"
+        test -n "$vnc_password"
+        test "$web_password" != password
+        test "$vnc_password" != password
+        ! grep -q "password=\"password\"" "$tmp_home/.neurodesk/guacamole/user-mapping.xml"
+        echo "guacamole-secrets-rotated"
+      '
+    expected_output_contains: "guacamole-secrets-rotated"
+
+  # ==========================================================================
+  # CVMFS AND NEUROCOMMAND INTEGRATION
+  # ==========================================================================
+  - name: CVMFS runtime packages and config are present
+    description: Verify CVMFS client, autofs, and Neurodesk repo config remain installed
+    command: |
+      bash -lc '
+        set -euo pipefail
+        dpkg-query -W cvmfs autofs uuid-dev >/dev/null
+        command -v cvmfs_config
+        test -r /etc/cvmfs/default.local
+        test -r /etc/cvmfs/keys/ardc.edu.au/neurodesk.ardc.edu.au.pub
+        ls /etc/cvmfs/config.d/neurodesk.ardc.edu.au.conf* >/dev/null
+        grep -q "CVMFS_HTTP_PROXY" /etc/cvmfs/default.local
+        echo "cvmfs-runtime-ok"
+      '
+    expected_output_contains: "cvmfs-runtime-ok"
+
+  - name: Neurocommand installation is present
+    description: Verify neurocommand and Neurodesk module setup files exist
+    command: |
+      bash -lc '
+        set -euo pipefail
+        test -d /neurocommand
+        test -L /neurocommand/local/containers
+        test -r /usr/share/module.sh
+        test -x /usr/share/lmod/lmod/libexec/lmod
+        echo "neurocommand-ok"
+      '
+    expected_output_contains: "neurocommand-ok"
+
+  - name: CVMFS repository is usable when mounted
+    description: Verify mounted CVMFS contains Neurodesk modules and containers when available
+    command: |
+      bash -lc '
+        set -euo pipefail
+        if [ "${CVMFS_DISABLE:-false}" = "true" ] || [ "${CVMFS_DISABLE:-false}" = "1" ]; then
+          echo "cvmfs-skipped-disabled"
+          exit 0
+        fi
+        if [ ! -d /cvmfs/neurodesk.ardc.edu.au ]; then
+          echo "cvmfs-skipped-not-mounted"
+          exit 0
+        fi
+        test -d /cvmfs/neurodesk.ardc.edu.au/neurodesk-modules
+        test -d /cvmfs/neurodesk.ardc.edu.au/containers
+        echo "cvmfs-mounted-ok"
+      '
+    expected_output_contains: "cvmfs-"
+
+  # ==========================================================================
+  # WORKFLOW AND DEVELOPMENT TOOLS
+  # ==========================================================================
+  - name: Code server version check
+    description: Verify code-server is installed and runnable
+    command: code-server --version 2>&1 | sed -n '1,3p'
+    expected_output_contains: "Code"
+
+  - name: Apptainer version check
+    description: Verify Apptainer is installed in the desktop image
+    command: apptainer --version
+    expected_output_contains: "apptainer version"
+
+  - name: Nextflow launcher is installed
+    description: Verify the Nextflow launcher is installed without requiring network bootstrap
+    command: |
+      bash -lc '
+        set -euo pipefail
+        command -v nextflow
+        test -x "$(command -v nextflow)"
+        head -1 "$(command -v nextflow)" | grep -q "bash"
+        echo "nextflow-launcher-ok"
+      '
+    expected_output_contains: "nextflow-launcher-ok"
+
+  - name: nf-test version check
+    description: Verify nf-test wrapper is installed and runnable
+    timeout: 180
+    command: nf-test version 2>&1
+    expected_output_contains: "nf-test 0.9.5"
+
+  - name: Python workflow packages are installed
+    description: Verify key Python workflow/Jupyter packages are installed
+    command: |
+      python3 - <<'PY'
+      import importlib.util
+
+      packages = [
+          "datalad",
+          "nipype",
+          "snakemake",
+          "jupyter_server_proxy",
+          "jupyterlmod",
+          "notebook_intelligence",
+      ]
+      missing = [name for name in packages if importlib.util.find_spec(name) is None]
+      assert not missing, missing
+      print("python-workflow-packages-ok")
+      PY
+    expected_output_contains: "python-workflow-packages-ok"
+
+  - name: Notebook PDF export works
+    description: Verify bundled TinyTeX supports nbconvert PDF export
+    timeout: 180
+    command: |
+      bash -lc '
+        set -euo pipefail
+        notebook="${output_dir}/neurodesktop_pdf_smoke.ipynb"
+        NOTEBOOK_PATH="$notebook" python3 - <<'"'"'PY'"'"'
+      import json
+      import os
+
+      notebook_payload = {
+          "cells": [
+              {
+                  "cell_type": "markdown",
+                  "id": "neurodesktop-pdf-markdown",
+                  "metadata": {},
+                  "source": ["# Neurodesktop PDF export\n", "Fulltest smoke notebook.\n"],
+              },
+              {
+                  "cell_type": "code",
+                  "id": "neurodesktop-pdf-code",
+                  "execution_count": None,
+                  "metadata": {},
+                  "outputs": [],
+                  "source": ["print(42)\n"],
+              },
+          ],
+          "metadata": {
+              "kernelspec": {
+                  "display_name": "Python 3",
+                  "language": "python",
+                  "name": "python3",
+              },
+              "language_info": {
+                  "name": "python",
+                  "version": "3",
+              },
+          },
+          "nbformat": 4,
+          "nbformat_minor": 5,
+      }
+      with open(os.environ["NOTEBOOK_PATH"], "w", encoding="utf-8") as fp:
+          json.dump(notebook_payload, fp)
+      PY
+        command -v xelatex
+        jupyter nbconvert --to pdf "$notebook" --output neurodesktop_pdf_smoke --output-dir "${output_dir}"
+        echo "nbconvert-pdf-ok"
+      '
+    expected_output_contains: "nbconvert-pdf-ok"
+    validate:
+      - output_exists: ${output_dir}/neurodesktop_pdf_smoke.pdf
+
+  - name: Build-only toolchain was removed
+    description: Verify broad build-only metapackage is not retained
+    command: |
+      bash -lc '
+        set -euo pipefail
+        if dpkg-query -W -f='"'"'${Status}'"'"' build-essential 2>/dev/null; then
+          echo "build-essential should have been removed"
+          exit 1
+        fi
+        echo "build-toolchain-removed"
+      '
+    expected_output_contains: "build-toolchain-removed"
