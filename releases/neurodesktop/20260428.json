@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "neurodesktop 20260428": {
+      "version": "20260507",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "programming",
+    "visualization",
+    "data management"
+  ]
+}
