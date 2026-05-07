@@ -54,7 +54,7 @@
       "label": { "en": "Keep original images" },
       "type": "boolean",
       "default": true,
-      "information": { "en": "Return the original MRA images with the vesselboost_segmentation output." }
+      "information": { "en": "Return restamped original MRA images with the vesselboost_segmentation output." }
     },
     {
       "id": "vbuseblending",

@@ -8,14 +8,14 @@ The normal VesselBoost software suite includes three command-line modules: predi
 
 Use this reconstruction pipeline on 3D TOF-MRA image data.
 
-The main derived output is named `<source>_vesselboost_segmentation`, where `<source>` is the incoming source `SeriesDescription` or, when that is absent, the incoming `SequenceDescription`. If neither source name is available, the fallback name is `vesselboost_segmentation`. By default, OpenRecon also returns the original MRA images as `<source>_original`. Optional sagittal and coronal reformat series are named `<source>_vesselboost_segmentation_sagittal` and `<source>_vesselboost_segmentation_coronal`.
+The main derived output is named `<source>_vesselboost_segmentation`, where `<source>` is the incoming source `SeriesDescription` or, when that is absent, the incoming `SequenceDescription`. If neither source name is available, the fallback name is `vesselboost_segmentation`. By default, OpenRecon also returns restamped original MRA images as `<source>_original`. Optional sagittal and coronal reformat series are named `<source>_vesselboost_segmentation_sagittal` and `<source>_vesselboost_segmentation_coronal`.
 
 ## GUI Parameters
 
 | GUI label | Parameter id | Type | Default | Description |
 | --- | --- | --- | --- | --- |
 | config | `config` | choice | `vesselboost` | Selects the MRD server configuration. The available GUI option is `vesselboost`. |
-| Keep original images | `sendoriginal` | boolean | `true` | Return the original MRA images together with the `vesselboost_segmentation` output. Disable this to return only derived VesselBoost output series. |
+| Keep original images | `sendoriginal` | boolean | `true` | Return restamped original MRA images together with the `vesselboost_segmentation` output. Disable this to return only derived VesselBoost output series. |
 | Gaussian blending | `vbuseblending` | boolean | `false` | Experimental option that enables Gaussian blending across inference patches. This can smooth patch boundaries, but substantially increases runtime. |
 | Blend overlap % | `vboverlap` | integer | `50` | Patch overlap percentage used only when Gaussian blending is enabled. Valid GUI range: 0 to 99. |
 | N4 bias field correction | `vbbiasfieldcorrection` | boolean | `true` | Enable N4 bias field correction before VesselBoost inference. |
@@ -42,6 +42,8 @@ Brain masking is applied during preprocessing. If both N4 bias field correction 
 Gaussian blending is marked experimental in the OpenRecon label. Use it only when smoother patch boundaries are worth the longer reconstruction time.
 
 The OpenRecon label declares GPU support and requests at least 1 GPU, 10048 MB GPU memory, 40096 MB system memory, and 32 CPU cores.
+
+Returned images are always emitted as new derived scanner series. The wrapper writes the same source-derived name, series UID, SOP UID, image counters, and slice counters into the MRD header, MRD Meta attributes, and `IceMiniHead` when a source miniheader is present. Reformatted sagittal and coronal outputs use explicit MRD header geometry, remove the source `IceMiniHead`, and set `Keep_image_geometry = 0`, `partition_count = 1`, and the output `slice_count`.
 
 ## Citation
 
