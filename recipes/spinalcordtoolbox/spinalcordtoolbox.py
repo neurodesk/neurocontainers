@@ -169,6 +169,8 @@ OPENRECON_DEFAULTS = {
 
 OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96
 RESERVED_SCANNER_SERIES_INDICES = {99}
+# SCT currently sends 2D slice stacks; revisit this if 3D slab images are emitted.
+SCANNER_PARTITION_INDEX = 0
 
 SOURCE_PARENT_REFERENCE_META_KEYS = {
     "DicomEngineDimString",
@@ -176,10 +178,12 @@ SOURCE_PARENT_REFERENCE_META_KEYS = {
     "MultiFrameSOPInstanceUID",
     "PSMultiFrameSOPInstanceUID",
     "PSSeriesInstanceUID",
+    "SOPInstanceUID",
 }
 
 SOURCE_PARENT_REFERENCE_META_PREFIXES = (
     "ReferencedGSPS",
+    "ReferencedImageSequence",
 )
 
 SCT_BATCH_PROCESSING_OPENRECON_CASES = (
@@ -758,6 +762,8 @@ def _series_contract_entry(image, source="output"):
     minihead_text = _decode_ice_minihead(meta_obj)
     meta_uid = _get_meta_text(meta_obj, "SeriesInstanceUID")
     minihead_uid = _extract_minihead_string_value(minihead_text, "SeriesInstanceUID")
+    meta_sop_uid = _get_meta_text(meta_obj, "SOPInstanceUID")
+    minihead_sop_uid = _extract_minihead_string_value(minihead_text, "SOPInstanceUID")
     meta_grouping = _get_meta_text(meta_obj, "SeriesNumberRangeNameUID")
     minihead_grouping = _extract_minihead_string_value(minihead_text, "SeriesNumberRangeNameUID")
     meta_protocol_name = _get_meta_text(meta_obj, "ProtocolName")
@@ -769,6 +775,9 @@ def _series_contract_entry(image, source="output"):
         "series_instance_uid": _first_non_empty_text(meta_uid, minihead_uid),
         "meta_series_instance_uid": meta_uid or "N/A",
         "minihead_series_instance_uid": minihead_uid or "N/A",
+        "sop_instance_uid": _first_non_empty_text(meta_sop_uid, minihead_sop_uid),
+        "meta_sop_instance_uid": meta_sop_uid or "N/A",
+        "minihead_sop_instance_uid": minihead_sop_uid or "N/A",
         "series_grouping": _first_non_empty_text(meta_grouping, minihead_grouping) or "N/A",
         "meta_series_grouping": meta_grouping or "N/A",
         "minihead_series_grouping": minihead_grouping or "N/A",
@@ -797,7 +806,18 @@ def _series_contract_summary(images, source="output"):
         if key not in grouped:
             grouped[key] = dict(entry)
             grouped[key]["count"] = 0
+            grouped[key]["sop_instance_uids"] = []
+            grouped[key]["meta_sop_instance_uids"] = []
+            grouped[key]["minihead_sop_instance_uids"] = []
         grouped[key]["count"] += 1
+        for field_name, list_name in (
+            ("sop_instance_uid", "sop_instance_uids"),
+            ("meta_sop_instance_uid", "meta_sop_instance_uids"),
+            ("minihead_sop_instance_uid", "minihead_sop_instance_uids"),
+        ):
+            value = _first_non_empty_text(entry.get(field_name))
+            if value:
+                grouped[key][list_name].append(value)
     return list(grouped.values())
 
 
@@ -837,6 +857,11 @@ def _validate_output_series_contract(output_summary, input_summary):
         for entry in input_summary
         if _first_non_empty_text(entry.get("series_instance_uid"))
     }
+    input_sop_uids = {
+        value
+        for entry in input_summary
+        for value in _non_empty_values(entry.get("sop_instance_uids"), entry.get("sop_instance_uid"))
+    }
     input_series_indices = {
         int(entry["image_series_index"])
         for entry in input_summary
@@ -855,6 +880,14 @@ def _validate_output_series_contract(output_summary, input_summary):
         uid = _first_non_empty_text(entry.get("series_instance_uid"))
         meta_uid = _first_non_empty_text(entry.get("meta_series_instance_uid"))
         minihead_uid = _first_non_empty_text(entry.get("minihead_series_instance_uid"))
+        meta_sop_uids = _non_empty_values(
+            entry.get("meta_sop_instance_uids"),
+            entry.get("meta_sop_instance_uid"),
+        )
+        minihead_sop_uids = _non_empty_values(
+            entry.get("minihead_sop_instance_uids"),
+            entry.get("minihead_sop_instance_uid"),
+        )
         meta_grouping = _first_non_empty_text(entry.get("meta_series_grouping"))
         minihead_grouping = _first_non_empty_text(entry.get("minihead_series_grouping"))
         meta_protocol = _first_non_empty_text(entry.get("meta_protocol_name"))
@@ -886,6 +919,27 @@ def _validate_output_series_contract(output_summary, input_summary):
                     f"derived role {role} has Meta/IceMiniHead SeriesInstanceUID mismatch: "
                     f"{meta_uid} != {minihead_uid}"
                 )
+            if not meta_sop_uids:
+                errors.append(f"derived role {role} is missing Meta SOPInstanceUID")
+            if input_has_minihead_identity and not minihead_sop_uids:
+                errors.append(f"derived role {role} is missing IceMiniHead SOPInstanceUID")
+            if len(meta_sop_uids) != len(set(meta_sop_uids)):
+                errors.append(f"derived role {role} has duplicate Meta SOPInstanceUID values")
+            if len(minihead_sop_uids) != len(set(minihead_sop_uids)):
+                errors.append(f"derived role {role} has duplicate IceMiniHead SOPInstanceUID values")
+            if meta_sop_uids and len(meta_sop_uids) != int(entry.get("count", len(meta_sop_uids))):
+                errors.append(f"derived role {role} does not have one Meta SOPInstanceUID per image")
+            if (
+                input_has_minihead_identity
+                and minihead_sop_uids
+                and len(minihead_sop_uids) != int(entry.get("count", len(minihead_sop_uids)))
+            ):
+                errors.append(f"derived role {role} does not have one IceMiniHead SOPInstanceUID per image")
+            if meta_sop_uids and minihead_sop_uids and set(meta_sop_uids) != set(minihead_sop_uids):
+                errors.append(f"derived role {role} has Meta/IceMiniHead SOPInstanceUID mismatch")
+            reused_sop_uids = sorted((set(meta_sop_uids) | set(minihead_sop_uids)) & input_sop_uids)
+            if reused_sop_uids:
+                errors.append(f"derived role {role} reuses input SOPInstanceUID(s): {reused_sop_uids}")
             if not meta_grouping:
                 errors.append(f"derived role {role} is missing Meta SeriesNumberRangeNameUID")
             if input_has_minihead_identity and not minihead_grouping:
@@ -936,6 +990,21 @@ def _first_non_empty_text(*values):
         if text and text.upper() != "N/A":
             return text
     return ""
+
+
+def _non_empty_values(*values):
+    collected = []
+    for value in values:
+        if isinstance(value, (list, tuple, set)):
+            for item in value:
+                text = _first_non_empty_text(item)
+                if text:
+                    collected.append(text)
+            continue
+        text = _first_non_empty_text(value)
+        if text:
+            collected.append(text)
+    return collected
 
 
 def _get_meta_text(meta_obj, key):
@@ -1025,8 +1094,7 @@ def _sanitize_minihead_param_value(value):
     if not text:
         return ""
     return (
-        text.replace("\\", "/")
-        .replace('"', "'")
+        text.replace('"', "'")
         .replace("\r", " ")
         .replace("\n", " ")
     )
@@ -1143,9 +1211,11 @@ def _patch_ice_minihead(
     sequence_description,
     series_grouping,
     series_instance_uid,
+    sop_instance_uid,
     source_type_token,
     target_type_token,
     target_display_token=None,
+    output_index=0,
 ):
     if not minihead_text:
         return minihead_text, False
@@ -1159,6 +1229,7 @@ def _patch_ice_minihead(
         ("ProtocolName", sequence_description),
         ("SeriesNumberRangeNameUID", series_grouping),
         ("SeriesInstanceUID", series_instance_uid),
+        ("SOPInstanceUID", sop_instance_uid),
         ("ImageType", f"DERIVED\\PRIMARY\\M\\{target_type_token}"),
         ("ImageTypeValue3", "M"),
         ("ComplexImageComponent", "MAGNITUDE"),
@@ -1178,11 +1249,41 @@ def _patch_ice_minihead(
     )
     changed = changed or did_change
 
+    for long_param_name, long_param_value in (
+        ("Actual3DImagePartNumber", SCANNER_PARTITION_INDEX),
+        ("AnatomicalPartitionNo", SCANNER_PARTITION_INDEX),
+        ("AnatomicalSliceNo", output_index),
+        ("ChronSliceNo", output_index),
+        ("NumberInSeries", output_index + 1),
+        ("ProtocolSliceNumber", output_index),
+        ("SliceNo", output_index),
+    ):
+        current_text, did_change = _replace_or_append_minihead_long_param(
+            current_text,
+            long_param_name,
+            long_param_value,
+        )
+        changed = changed or did_change
+
     return current_text, changed
 
 
 def _set_meta_scalar(meta_obj, name, value):
     meta_obj[name] = str(int(value))
+
+
+def _set_output_position_meta(meta_obj, output_index):
+    for key in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
+        _set_meta_scalar(meta_obj, key, SCANNER_PARTITION_INDEX)
+    for key, value in (
+        ("AnatomicalSliceNo", output_index),
+        ("ChronSliceNo", output_index),
+        ("NumberInSeries", output_index + 1),
+        ("ProtocolSliceNumber", output_index),
+        ("SliceNo", output_index),
+        ("IsmrmrdSliceNo", output_index),
+    ):
+        _set_meta_scalar(meta_obj, key, value)
 
 
 def _build_derived_series_instance_uid(
@@ -1208,6 +1309,32 @@ def _build_derived_series_instance_uid(
     else:
         derived_uuid = uuid.uuid4()
 
+    return f"2.25.{derived_uuid.int}"
+
+
+def _build_derived_sop_instance_uid(
+    source_meta,
+    analysis,
+    output_series_index,
+    output_image_index,
+    series_instance_uid,
+):
+    source_minihead = _decode_ice_minihead(source_meta)
+    source_sop_instance_uid = _first_non_empty_text(
+        _get_meta_text(source_meta, "SOPInstanceUID"),
+        _extract_minihead_string_value(source_minihead, "SOPInstanceUID"),
+    )
+    seed_text = json.dumps(
+        {
+            "series_instance_uid": _first_non_empty_text(series_instance_uid),
+            "source_sop_instance_uid": source_sop_instance_uid,
+            "analysis": _first_non_empty_text(analysis),
+            "output_series_index": int(output_series_index) if output_series_index is not None else None,
+            "output_image_index": int(output_image_index),
+        },
+        sort_keys=True,
+    )
+    derived_uuid = uuid.uuid5(uuid.NAMESPACE_OID, seed_text)
     return f"2.25.{derived_uuid.int}"
 
 
@@ -1321,9 +1448,17 @@ def _restamp_passthrough_images(images, role, output_series_index):
         oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
         output_image.setHead(oldHeader)
 
-        tmpMeta = _copy_meta(ismrmrd.Meta.deserialize(image.attribute_string))
+        source_meta = _copy_meta(ismrmrd.Meta.deserialize(image.attribute_string))
+        tmpMeta = _copy_meta(source_meta)
         _strip_source_parent_refs(tmpMeta)
         output_identity = _build_passthrough_output_identity(tmpMeta, role, output_series_index)
+        sop_instance_uid = _build_derived_sop_instance_uid(
+            source_meta,
+            role,
+            output_series_index,
+            iImg,
+            output_identity["series_instance_uid"],
+        )
         tmpMeta["DataRole"] = "Image"
         tmpMeta["ImageProcessingHistory"] = ["PYTHON", "SPINALCORDTOOLBOX", output_identity["type_token"]]
         tmpMeta["SeriesDescription"] = output_identity["series_description"]
@@ -1331,6 +1466,7 @@ def _restamp_passthrough_images(images, role, output_series_index):
         tmpMeta["ProtocolName"] = output_identity["sequence_description"]
         tmpMeta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
         tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]
+        tmpMeta["SOPInstanceUID"] = sop_instance_uid
         tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
         tmpMeta["ImageTypeValue3"] = "M"
         tmpMeta["ImageTypeValue4"] = output_identity["display_token"]
@@ -1338,13 +1474,9 @@ def _restamp_passthrough_images(images, role, output_series_index):
         tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
         tmpMeta["ImageComments"] = output_identity["image_comment"]
         tmpMeta["ImageComment"] = output_identity["image_comment"]
+        tmpMeta["SequenceDescriptionAdditional"] = "openrecon"
         tmpMeta["Keep_image_geometry"] = 1
-        _set_meta_scalar(tmpMeta, "NumberInSeries", iImg + 1)
-        _set_meta_scalar(tmpMeta, "SliceNo", iImg)
-        _set_meta_scalar(tmpMeta, "AnatomicalSliceNo", iImg)
-        _set_meta_scalar(tmpMeta, "ChronSliceNo", iImg)
-        _set_meta_scalar(tmpMeta, "ProtocolSliceNumber", iImg)
-        _set_meta_scalar(tmpMeta, "IsmrmrdSliceNo", iImg)
+        _set_output_position_meta(tmpMeta, iImg)
 
         minihead_text = _decode_ice_minihead(tmpMeta)
         if minihead_text:
@@ -1353,25 +1485,12 @@ def _restamp_passthrough_images(images, role, output_series_index):
                 output_identity["sequence_description"],
                 output_identity["grouping"],
                 output_identity["series_instance_uid"],
+                sop_instance_uid,
                 output_identity["source_type_token"],
                 output_identity["type_token"],
                 target_display_token=output_identity["display_token"],
+                output_index=iImg,
             )
-            for long_param_name, long_param_value in (
-                ("Actual3DImagePartNumber", iImg),
-                ("AnatomicalPartitionNo", iImg),
-                ("AnatomicalSliceNo", iImg),
-                ("ChronSliceNo", iImg),
-                ("NumberInSeries", iImg + 1),
-                ("ProtocolSliceNumber", iImg),
-                ("SliceNo", iImg),
-            ):
-                patched_minihead_text, did_change = _replace_or_append_minihead_long_param(
-                    patched_minihead_text,
-                    long_param_name,
-                    long_param_value,
-                )
-                minihead_changed = minihead_changed or did_change
             if minihead_changed:
                 tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
 
@@ -1599,8 +1718,16 @@ def _sct_output_to_mrd_images(
         oldHeader.slice = iImg
         imagesOut[iImg].setHead(oldHeader)
 
-        tmpMeta = _copy_meta(meta[iImg])
+        source_meta = meta[iImg]
+        tmpMeta = _copy_meta(source_meta)
         _strip_source_parent_refs(tmpMeta)
+        sop_instance_uid = _build_derived_sop_instance_uid(
+            source_meta,
+            series_suffix or analysis,
+            output_series_index,
+            iImg,
+            output_identity["series_instance_uid"],
+        )
         tmpMeta["DataRole"] = "Image"
         tmpMeta["ImageProcessingHistory"] = ["PYTHON", "SPINALCORDTOOLBOX"]
         tmpMeta["WindowCenter"] = str((maxVal + 1) / 2)
@@ -1610,6 +1737,7 @@ def _sct_output_to_mrd_images(
         tmpMeta["ProtocolName"] = output_identity["sequence_description"]
         tmpMeta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
         tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]
+        tmpMeta["SOPInstanceUID"] = sop_instance_uid
         tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
         tmpMeta["ImageTypeValue3"] = "M"
         tmpMeta["ImageTypeValue4"] = output_identity["display_token"]
@@ -1617,18 +1745,9 @@ def _sct_output_to_mrd_images(
         tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
         tmpMeta["ImageComments"] = output_identity["image_comment"]
         tmpMeta["ImageComment"] = output_identity["image_comment"]
-        if "SequenceDescriptionAdditional" in tmpMeta:
-            try:
-                del tmpMeta["SequenceDescriptionAdditional"]
-            except Exception:
-                tmpMeta["SequenceDescriptionAdditional"] = ""
+        tmpMeta["SequenceDescriptionAdditional"] = "openrecon"
         tmpMeta["Keep_image_geometry"] = 1
-        _set_meta_scalar(tmpMeta, "NumberInSeries", iImg + 1)
-        _set_meta_scalar(tmpMeta, "SliceNo", iImg)
-        _set_meta_scalar(tmpMeta, "AnatomicalSliceNo", iImg)
-        _set_meta_scalar(tmpMeta, "ChronSliceNo", iImg)
-        _set_meta_scalar(tmpMeta, "ProtocolSliceNumber", iImg)
-        _set_meta_scalar(tmpMeta, "IsmrmrdSliceNo", iImg)
+        _set_output_position_meta(tmpMeta, iImg)
 
         minihead_text = _decode_ice_minihead(tmpMeta)
         if minihead_text:
@@ -1637,9 +1756,11 @@ def _sct_output_to_mrd_images(
                 output_identity["sequence_description"],
                 output_identity["grouping"],
                 output_identity["series_instance_uid"],
+                sop_instance_uid,
                 output_identity["source_type_token"],
                 output_identity["type_token"],
                 target_display_token=output_identity["display_token"],
+                output_index=iImg,
             )
             if minihead_changed:
                 tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
@@ -1648,24 +1769,6 @@ def _sct_output_to_mrd_images(
                     "IceMiniHead was present but not updated for SCT output slice %d",
                     iImg,
                 )
-            for long_param_name, long_param_value in (
-                ("Actual3DImagePartNumber", iImg),
-                ("AnatomicalPartitionNo", iImg),
-                ("AnatomicalSliceNo", iImg),
-                ("ChronSliceNo", iImg),
-                ("NumberInSeries", iImg + 1),
-                ("ProtocolSliceNumber", iImg),
-                ("SliceNo", iImg),
-            ):
-                patched_minihead_text, did_change = _replace_or_append_minihead_long_param(
-                    patched_minihead_text,
-                    long_param_name,
-                    long_param_value,
-                )
-                minihead_changed = minihead_changed or did_change
-            if minihead_changed:
-                tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
-
         tmpMeta["ImageRowDir"] = [
             "{:.18f}".format(oldHeader.read_dir[0]),
             "{:.18f}".format(oldHeader.read_dir[1]),

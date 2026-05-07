@@ -406,6 +406,7 @@ def test_passthrough_restamp_uses_fresh_series_identity():
         [
             "_as_image_list",
             "_build_derived_series_instance_uid",
+            "_build_derived_sop_instance_uid",
             "_build_passthrough_output_identity",
             "_clone_mrd_image",
             "_copy_meta",
@@ -418,9 +419,11 @@ def test_passthrough_restamp_uses_fresh_series_identity():
             "_log_json_event",
             "_restamp_passthrough_images",
             "_set_meta_scalar",
+            "_set_output_position_meta",
             "_strip_source_parent_refs",
         ],
         assignments=[
+            "SCANNER_PARTITION_INDEX",
             "SOURCE_PARENT_REFERENCE_META_KEYS",
             "SOURCE_PARENT_REFERENCE_META_PREFIXES",
         ],
@@ -432,6 +435,7 @@ def test_passthrough_restamp_uses_fresh_series_identity():
     image.attribute_string = helpers["FakeMeta"]({
         "SeriesDescription": "source",
         "SeriesInstanceUID": "1.2.3",
+        "SOPInstanceUID": "1.2.3.4.5",
         "SeriesNumberRangeNameUID": "source_group",
         "ImageTypeValue4": "M",
         "CONTROL.PSMultiFrameSOPInstanceUID": "source-parent",
@@ -447,8 +451,14 @@ def test_passthrough_restamp_uses_fresh_series_identity():
     assert output.getHead().image_index == 1
     assert output.getHead().slice == 0
     assert output_meta["SeriesInstanceUID"] != "1.2.3"
+    assert output_meta["SOPInstanceUID"].startswith("2.25.")
+    assert output_meta["SOPInstanceUID"] != "1.2.3.4.5"
     assert output_meta["SeriesNumberRangeNameUID"] == "source_group_original"
     assert output_meta["ImageTypeValue4"] == "ORIGINAL"
+    assert output_meta["SequenceDescriptionAdditional"] == "openrecon"
+    assert output_meta["Actual3DImagePartNumber"] == "0"
+    assert output_meta["AnatomicalPartitionNo"] == "0"
+    assert output_meta["SliceNo"] == "0"
     assert "CONTROL.PSMultiFrameSOPInstanceUID" not in output_meta
 
 
@@ -456,6 +466,7 @@ def test_output_series_contract_rejects_input_series_index_reuse():
     helpers = _load_runtime_helpers_for_test(
         [
             "_first_non_empty_text",
+            "_non_empty_values",
             "_sct_derived_roles",
             "_validate_output_series_contract",
         ],
@@ -497,6 +508,136 @@ def test_output_series_contract_rejects_input_series_index_reuse():
         raise AssertionError("Expected validator to reject output series index reuse")
 
 
+def _load_output_contract_validator_helpers():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_first_non_empty_text",
+            "_non_empty_values",
+            "_sct_derived_roles",
+            "_validate_output_series_contract",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_deepseg_spinalcord": {"series_suffix": "sct_deepseg_spinalcord"}
+    }
+    helpers["SCT_ANALYSIS_OUTPUTS"] = {}
+    helpers["RESERVED_SCANNER_SERIES_INDICES"] = {99}
+    return helpers
+
+
+def _valid_sop_contract_input_summary():
+    return [
+        {
+            "role": "M",
+            "image_series_index": 1,
+            "series_instance_uid": "1.2.3",
+            "sop_instance_uids": ["1.2.3.4.1", "1.2.3.4.2"],
+            "minihead_series_instance_uid": "1.2.3",
+            "minihead_series_grouping": "source",
+            "minihead_protocol_name": "source",
+        }
+    ]
+
+
+def _valid_sop_contract_output_summary():
+    return [
+        {
+            "role": "SCT_DEEPSEG_SPINALCORD",
+            "image_series_index": 2,
+            "series_instance_uid": "2.25.4",
+            "meta_series_instance_uid": "2.25.4",
+            "minihead_series_instance_uid": "2.25.4",
+            "meta_sop_instance_uids": ["2.25.4.1", "2.25.4.2"],
+            "minihead_sop_instance_uids": ["2.25.4.1", "2.25.4.2"],
+            "series_grouping": "source_sct_deepseg_spinalcord",
+            "meta_series_grouping": "source_sct_deepseg_spinalcord",
+            "minihead_series_grouping": "source_sct_deepseg_spinalcord",
+            "meta_protocol_name": "source_sct_deepseg_spinalcord",
+            "minihead_protocol_name": "source_sct_deepseg_spinalcord",
+            "count": 2,
+        }
+    ]
+
+
+def _assert_output_contract_rejects(output_summary, expected_error):
+    helpers = _load_output_contract_validator_helpers()
+    try:
+        helpers["_validate_output_series_contract"](
+            output_summary,
+            _valid_sop_contract_input_summary(),
+        )
+    except ValueError as exc:
+        assert expected_error in str(exc)
+    else:
+        raise AssertionError("Expected validator to reject invalid SOPInstanceUID contract")
+
+
+def test_output_series_contract_rejects_missing_meta_sop_instance_uid():
+    output_summary = _valid_sop_contract_output_summary()
+    output_summary[0]["meta_sop_instance_uids"] = []
+
+    _assert_output_contract_rejects(
+        output_summary,
+        "derived role SCT_DEEPSEG_SPINALCORD is missing Meta SOPInstanceUID",
+    )
+
+
+def test_output_series_contract_rejects_missing_minihead_sop_instance_uid():
+    output_summary = _valid_sop_contract_output_summary()
+    output_summary[0]["minihead_sop_instance_uids"] = []
+
+    _assert_output_contract_rejects(
+        output_summary,
+        "derived role SCT_DEEPSEG_SPINALCORD is missing IceMiniHead SOPInstanceUID",
+    )
+
+
+def test_output_series_contract_rejects_duplicate_sop_instance_uids():
+    output_summary = _valid_sop_contract_output_summary()
+    output_summary[0]["meta_sop_instance_uids"] = ["2.25.4.1", "2.25.4.1"]
+    output_summary[0]["minihead_sop_instance_uids"] = ["2.25.4.1", "2.25.4.1"]
+
+    helpers = _load_output_contract_validator_helpers()
+    try:
+        helpers["_validate_output_series_contract"](
+            output_summary,
+            _valid_sop_contract_input_summary(),
+        )
+    except ValueError as exc:
+        message = str(exc)
+        assert (
+            "derived role SCT_DEEPSEG_SPINALCORD has duplicate Meta SOPInstanceUID values"
+            in message
+        )
+        assert (
+            "derived role SCT_DEEPSEG_SPINALCORD has duplicate IceMiniHead SOPInstanceUID values"
+            in message
+        )
+    else:
+        raise AssertionError("Expected validator to reject duplicate SOPInstanceUID values")
+
+
+def test_output_series_contract_rejects_meta_minihead_sop_instance_uid_mismatch():
+    output_summary = _valid_sop_contract_output_summary()
+    output_summary[0]["minihead_sop_instance_uids"] = ["2.25.4.1", "2.25.4.3"]
+
+    _assert_output_contract_rejects(
+        output_summary,
+        "derived role SCT_DEEPSEG_SPINALCORD has Meta/IceMiniHead SOPInstanceUID mismatch",
+    )
+
+
+def test_output_series_contract_rejects_input_sop_instance_uid_collision():
+    output_summary = _valid_sop_contract_output_summary()
+    output_summary[0]["meta_sop_instance_uids"] = ["1.2.3.4.1", "2.25.4.2"]
+    output_summary[0]["minihead_sop_instance_uids"] = ["1.2.3.4.1", "2.25.4.2"]
+
+    _assert_output_contract_rejects(
+        output_summary,
+        "derived role SCT_DEEPSEG_SPINALCORD reuses input SOPInstanceUID(s): ['1.2.3.4.1']",
+    )
+
+
 def test_minihead_string_extraction_prefers_writer_format_and_cleans_helper_prefix():
     helpers = _load_runtime_helpers_for_test(
         [
@@ -524,6 +665,65 @@ def test_minihead_string_extraction_prefers_writer_format_and_cleans_helper_pref
         )
         == "t2_tse_sag_spine_original"
     )
+
+
+def test_patch_minihead_replaces_sop_identity_and_keeps_partition_constant():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_patch_ice_minihead",
+            "_replace_minihead_array_token",
+            "_replace_or_append_minihead_array_token",
+            "_replace_or_append_minihead_long_param",
+            "_replace_or_append_minihead_string_param",
+            "_sanitize_minihead_param_value",
+        ],
+        assignments=["SCANNER_PARTITION_INDEX"],
+    )
+    minihead_text = """
+<ParamString."SequenceDescription">{ "source" }
+<ParamString."ProtocolName">{ "source" }
+<ParamString."SeriesNumberRangeNameUID">{ "source_group" }
+<ParamString."SeriesInstanceUID">{ "source-series" }
+<ParamString."SOPInstanceUID">{ "source-sop" }
+<ParamString."ImageType">{ "ORIGINAL\\PRIMARY\\M\\NORM" }
+<ParamArray."ImageTypeValue4">
+{
+  { "NORM" }{ "DIS2D" }
+}
+<ParamLong."Actual3DImagePartNumber">{ 7 }
+<ParamLong."AnatomicalPartitionNo">{ 7 }
+<ParamLong."SliceNo">{ 7 }
+"""
+
+    patched, changed = helpers["_patch_ice_minihead"](
+        minihead_text,
+        "source_sct_deepseg_spinalcord",
+        "source_group_sct_deepseg_spinalcord",
+        "2.25.1",
+        "2.25.1.4",
+        "NORM",
+        "SCT_DEEPSEG_SPINALCORD",
+        target_display_token="sct_deepseg_spinalcord",
+        output_index=4,
+    )
+
+    assert changed is True
+    assert helpers["_extract_minihead_string_value"](patched, "SOPInstanceUID") == "2.25.1.4"
+    assert "source-sop" not in patched
+    assert helpers["_extract_minihead_string_value"](
+        patched,
+        "ImageType",
+    ) == "DERIVED\\PRIMARY\\M\\SCT_DEEPSEG_SPINALCORD"
+    assert "sct_deepseg_spinalcord" in helpers["_extract_minihead_array_tokens"](
+        patched,
+        "ImageTypeValue4",
+    )
+    assert '<ParamLong."Actual3DImagePartNumber">{ 0 }' in patched
+    assert '<ParamLong."AnatomicalPartitionNo">{ 0 }' in patched
+    assert '<ParamLong."SliceNo">{ 4 }' in patched
 
 
 def test_get_image_series_index_logs_malformed_header_fallback():
@@ -643,24 +843,33 @@ def test_wrapper_patches_openrecon_derived_series_identity_like_musclemap():
     wrapper_source = WRAPPER_PATH.read_text()
     function_names = _function_names()
     assert "_build_derived_series_instance_uid" in function_names
+    assert "_build_derived_sop_instance_uid" in function_names
     assert "_patch_ice_minihead" in function_names
     assert "_replace_or_append_minihead_long_param" in function_names
     assert 'tmpMeta["ProtocolName"] = output_identity["sequence_description"]' in wrapper_source
     assert 'tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]' in wrapper_source
+    assert 'tmpMeta["SOPInstanceUID"] = sop_instance_uid' in wrapper_source
+    assert 'tmpMeta["SequenceDescriptionAdditional"] = "openrecon"' in wrapper_source
     assert 'tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)' in wrapper_source
     assert '"ProtocolName", sequence_description' in wrapper_source
     assert '"SeriesInstanceUID", series_instance_uid' in wrapper_source
+    assert '"SOPInstanceUID", sop_instance_uid' in wrapper_source
     assert 'oldHeader.image_index = iImg + 1' in wrapper_source
     assert 'oldHeader.slice = iImg' in wrapper_source
     assert 'oldHeader.image_index = source_image_index' not in wrapper_source
-    assert '_set_meta_scalar(tmpMeta, "NumberInSeries", iImg + 1)' in wrapper_source
-    assert '"ChronSliceNo", iImg' in wrapper_source
-    assert '"ProtocolSliceNumber", iImg' in wrapper_source
+    assert "_set_output_position_meta(tmpMeta, iImg)" in wrapper_source
+    assert "SCT currently sends 2D slice stacks" in wrapper_source
+    assert "SCANNER_PARTITION_INDEX = 0" in wrapper_source
+    assert '"Actual3DImagePartNumber", SCANNER_PARTITION_INDEX' in wrapper_source
+    assert '"ChronSliceNo", output_index' in wrapper_source
+    assert '"ProtocolSliceNumber", output_index' in wrapper_source
     assert 'tmpMeta["ImageSliceNormDir"]' in wrapper_source
+    assert 'text.replace("\\\\", "/")' not in wrapper_source
 
 
 def test_wrapper_strips_source_parent_references_from_derived_meta():
     strip_source_parent_refs = _load_helper_for_test("_strip_source_parent_refs")
+    prefixes = _module_assignment("SOURCE_PARENT_REFERENCE_META_PREFIXES")
     meta = {
         "MultiFrameSOPInstanceUID": "source-mf",
         "PSMultiFrameSOPInstanceUID": "source-ps-mf",
@@ -677,6 +886,8 @@ def test_wrapper_strips_source_parent_references_from_derived_meta():
         "SeriesInstanceUID": "derived-series",
         "ImageType": "DERIVED\\PRIMARY\\M\\SCT_DEEPSEG_SPINALCORD",
     }
+
+    assert "ReferencedImageSequence" in prefixes
 
     strip_source_parent_refs(meta)
 
