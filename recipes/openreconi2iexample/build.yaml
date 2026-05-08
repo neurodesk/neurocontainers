@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.19
+version: 1.0.20
 architectures:
   - x86_64
 
@@ -56,8 +56,8 @@ readme: |-
   `image_series_index = 99`. Enable `segment` to extract the brightest foreground
   object and send `<source>-segment` on `image_series_index = 101`. Enable
   `segmentationcolormap` with `segment` to add `MicroDeltaHotMetal.pal` LUT
-  metadata to segmentation outputs. Enable `upsampled` to send a
-  double-slice-count `<source>-upsampled` image series on `image_series_index =
+  metadata to segmentation outputs. Enable `upsampled` to send one
+  double-slice-count `<source>-upsampled` volume on `image_series_index =
   102`. Enable `mip` to send one `<source>-mip` maximum intensity projection
   image on `image_series_index = 103`.
 

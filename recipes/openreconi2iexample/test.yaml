@@ -48,6 +48,7 @@ tests:
       import sys
 
       import ismrmrd
+      import numpy as np
 
       upsampled_series_index = 102
 
@@ -75,35 +76,34 @@ tests:
           image for image in read_images(sys.argv[2])
           if int(image.image_series_index) == upsampled_series_index
       ]
-      assert len(upsampled) == 2 * len(input_images), (
-          len(upsampled),
+      assert len(upsampled) == 1, len(upsampled)
+      upsampled_volume = upsampled[0]
+      upsampled_header = upsampled_volume.getHead()
+      assert int(upsampled_header.matrix_size[2]) == 2 * len(input_images), (
+          list(upsampled_header.matrix_size),
           len(input_images),
       )
-      last_two_positions = [
-          tuple(round(float(value), 6) for value in image.getHead().position)
-          for image in upsampled[-2:]
-      ]
-      assert last_two_positions[0] != last_two_positions[1], last_two_positions
-      all_positions = [
-          tuple(round(float(value), 6) for value in image.getHead().position)
-          for image in upsampled
-      ]
-      assert len(set(all_positions)) == len(all_positions), all_positions
-      for image in upsampled:
-          meta = ismrmrd.Meta.deserialize(image.attribute_string)
-          assert int(first(meta.get("Keep_image_geometry"))) == 0
-          assert int(first(meta.get("partition_count"))) == 1
-          assert int(first(meta.get("slice_count"))) == len(upsampled)
-          assert not first(meta.get("IceMiniHead"))
-          meta_position = tuple(
-              round(float(value), 6)
-              for value in meta.get("SlicePosLightMarker")
-          )
-          header_position = tuple(
-              round(float(value), 6)
-              for value in image.getHead().position
-          )
-          assert meta_position == header_position, (meta_position, header_position)
+      assert int(upsampled_header.image_index) == 1
+      assert int(upsampled_header.slice) == 0
+      assert np.asarray(upsampled_volume.data).shape[1] == 2 * len(input_images), (
+          np.asarray(upsampled_volume.data).shape,
+          len(input_images),
+      )
+      meta = ismrmrd.Meta.deserialize(upsampled_volume.attribute_string)
+      assert int(first(meta.get("Keep_image_geometry"))) == 0
+      assert int(first(meta.get("partition_count"))) == 1
+      assert int(first(meta.get("slice_count"))) == 2 * len(input_images)
+      assert int(first(meta.get("NumberOfSlices"))) == 2 * len(input_images)
+      assert not first(meta.get("IceMiniHead"))
+      meta_position = tuple(
+          round(float(value), 6)
+          for value in meta.get("SlicePosLightMarker")
+      )
+      header_position = tuple(
+          round(float(value), 6)
+          for value in upsampled_header.position
+      )
+      assert meta_position == header_position, (meta_position, header_position)
       PY
       rm -f openreconi2iexample.json
       echo "Inspect ${output_h5} with an HDF5 viewer; with options enabled, series 99 should be named <source>-inverted, series 100 should be named <source>-original, series 101 should be named <source>-segment, series 102 should be named <source>-upsampled, and series 103 should be named <source>-mip."
@@ -407,14 +407,20 @@ tests:
       assert float(np.sum(mip_data)) == 300.0
 
       upsampled = module._upsampled_images(images)
-      assert len(upsampled) == 2 * len(images)
-      assert [img.image_series_index for img in upsampled] == [module.UPSAMPLED_SERIES_INDEX] * len(upsampled)
-      assert [int(img.getHead().slice) for img in upsampled] == list(range(2 * len(images)))
-      upsampled_meta = ismrmrd.Meta.deserialize(upsampled[0].attribute_string)
+      assert len(upsampled) == 1
+      upsampled_volume = upsampled[0]
+      upsampled_header = upsampled_volume.getHead()
+      assert upsampled_volume.image_series_index == module.UPSAMPLED_SERIES_INDEX
+      assert upsampled_header.image_series_index == module.UPSAMPLED_SERIES_INDEX
+      assert int(upsampled_header.image_index) == 1
+      assert int(upsampled_header.slice) == 0
+      assert list(upsampled_header.matrix_size) == [8, 8, 8]
+      assert np.asarray(upsampled_volume.data).shape == (1, 8, 8, 8)
+      upsampled_meta = ismrmrd.Meta.deserialize(upsampled_volume.attribute_string)
       assert first(upsampled_meta.get("DataRole")) == "Image"
       assert first(upsampled_meta.get("ImageType")) == "DERIVED\\PRIMARY\\M\\openrecon_upsampled"
       assert_output_identity(
-          upsampled[0],
+          upsampled_volume,
           "i2i_example_send_org-upsampled",
           module.UPSAMPLED_SERIES_INDEX,
           module.UPSAMPLED_SERIES_NAME,
@@ -422,62 +428,43 @@ tests:
           expect_minihead=False,
       )
       assert first(upsampled_meta.get("SequenceDescriptionAdditional")) == "openrecon"
-      assert "None" not in upsampled[0].attribute_string
+      assert "None" not in upsampled_volume.attribute_string
       assert int(first(upsampled_meta.get("Keep_image_geometry"))) == 0
       assert int(first(upsampled_meta.get("partition_count"))) == 1
       assert int(first(upsampled_meta.get("slice_count"))) == 2 * len(images)
+      assert int(first(upsampled_meta.get("NumberOfSlices"))) == 2 * len(images)
+      assert int(first(upsampled_meta.get("ImagesInAcquisition"))) == 2 * len(images)
       assert not first(upsampled_meta.get("IceMiniHead"))
-      for img in upsampled:
-          meta = ismrmrd.Meta.deserialize(img.attribute_string)
-          assert int(first(meta.get("Keep_image_geometry"))) == 0
-          assert int(first(meta.get("partition_count"))) == 1
-          assert int(first(meta.get("slice_count"))) == 2 * len(images)
-          assert not first(meta.get("IceMiniHead"))
-      assert np.allclose(np.asarray(upsampled[0].data), np.asarray(images[0].data))
-      assert np.allclose(np.asarray(upsampled[1].data), np.asarray(images[0].data) + 50.0)
-      assert np.allclose(np.asarray(upsampled[2].data), np.asarray(images[1].data))
-      assert np.allclose(np.asarray(upsampled[3].data), np.asarray(images[1].data) + 50.0)
-      assert np.allclose(np.asarray(upsampled[-2].data), np.asarray(images[-1].data))
-      assert np.allclose(np.asarray(upsampled[-1].data), np.asarray(images[-1].data))
-      assert np.isclose(float(upsampled[0].getHead().position[2]), 0.0)
-      assert np.isclose(float(upsampled[1].getHead().position[2]), 1.0)
-      assert np.isclose(float(upsampled[-2].getHead().position[2]), 6.0)
-      assert np.isclose(float(upsampled[-1].getHead().position[2]), 7.0)
+      upsampled_slices = np.asarray(upsampled_volume.data)[0]
+      assert np.allclose(upsampled_slices[0], np.asarray(images[0].data)[0, 0])
+      assert np.allclose(upsampled_slices[1], np.asarray(images[0].data)[0, 0] + 50.0)
+      assert np.allclose(upsampled_slices[2], np.asarray(images[1].data)[0, 0])
+      assert np.allclose(upsampled_slices[3], np.asarray(images[1].data)[0, 0] + 50.0)
+      assert np.allclose(upsampled_slices[-2], np.asarray(images[-1].data)[0, 0])
+      assert np.allclose(upsampled_slices[-1], np.asarray(images[-1].data)[0, 0])
+      assert np.isclose(float(upsampled_header.position[2]), 0.0)
+      assert np.isclose(float(upsampled_header.field_of_view[2]), 8.0)
       assert [
-          float(img.getHead().field_of_view[2])
-          for img in upsampled
-      ] == [1.0] * 8
-      for img in upsampled:
-          meta = ismrmrd.Meta.deserialize(img.attribute_string)
-          assert [
-              round(float(value), 6)
-              for value in meta.get("SlicePosLightMarker")
-          ] == [
-              round(float(value), 6)
-              for value in img.getHead().position
-          ]
+          round(float(value), 6)
+          for value in upsampled_meta.get("SlicePosLightMarker")
+      ] == [
+          round(float(value), 6)
+          for value in upsampled_header.position
+      ]
 
       wrapped_source_order = [make_image(index) for index in (2, 3, 0, 1)]
       wrapped_upsampled = module._upsampled_images(wrapped_source_order)
-      wrapped_positions = [
-          round(float(img.getHead().position[2]), 6)
-          for img in wrapped_upsampled
-      ]
-      assert wrapped_positions == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], wrapped_positions
-      assert len(set(wrapped_positions)) == len(wrapped_positions)
-      assert np.allclose(np.asarray(wrapped_upsampled[0].data), np.asarray(make_image(0).data))
-      assert np.allclose(np.asarray(wrapped_upsampled[1].data), np.asarray(make_image(0).data) + 50.0)
-      assert np.allclose(np.asarray(wrapped_upsampled[-2].data), np.asarray(make_image(3).data))
-      assert np.allclose(np.asarray(wrapped_upsampled[-1].data), np.asarray(make_image(3).data))
-      for img in wrapped_upsampled:
-          meta = ismrmrd.Meta.deserialize(img.attribute_string)
-          assert [
-              round(float(value), 6)
-              for value in meta.get("SlicePosLightMarker")
-          ] == [
-              round(float(value), 6)
-              for value in img.getHead().position
-          ]
+      assert len(wrapped_upsampled) == 1
+      wrapped_volume = wrapped_upsampled[0]
+      wrapped_header = wrapped_volume.getHead()
+      assert list(wrapped_header.matrix_size) == [8, 8, 8]
+      assert np.isclose(float(wrapped_header.position[2]), 0.0)
+      assert np.isclose(float(wrapped_header.field_of_view[2]), 8.0)
+      wrapped_slices = np.asarray(wrapped_volume.data)[0]
+      assert np.allclose(wrapped_slices[0], np.asarray(make_image(0).data)[0, 0])
+      assert np.allclose(wrapped_slices[1], np.asarray(make_image(0).data)[0, 0] + 50.0)
+      assert np.allclose(wrapped_slices[-2], np.asarray(make_image(3).data)[0, 0])
+      assert np.allclose(wrapped_slices[-1], np.asarray(make_image(3).data)[0, 0])
 
       oblique_axis = np.asarray((0.6, 0.0, 0.8), dtype=float)
       oblique_axis = oblique_axis / np.linalg.norm(oblique_axis)
@@ -492,37 +479,32 @@ tests:
           for index, distance in enumerate(oblique_distances)
       ]
       oblique_upsampled = module._upsampled_images(oblique_images)
-      oblique_origin = np.asarray(oblique_upsampled[0].getHead().position, dtype=float)
-      oblique_projected = [
-          round(float(np.dot(np.asarray(img.getHead().position, dtype=float) - oblique_origin, oblique_axis)), 6)
-          for img in oblique_upsampled
-      ]
-      assert oblique_projected == [0.0, 1.0, 2.0, 3.5, 5.0, 7.0, 9.0, 11.0], oblique_projected
+      assert len(oblique_upsampled) == 1
+      oblique_header = oblique_upsampled[0].getHead()
+      oblique_meta = ismrmrd.Meta.deserialize(oblique_upsampled[0].attribute_string)
+      oblique_origin = np.asarray(oblique_header.position, dtype=float)
+      residual = (
+          oblique_origin
+          - np.dot(oblique_origin, oblique_axis) * oblique_axis
+      )
+      assert np.linalg.norm(residual) < 1e-6, residual
+      assert np.allclose(np.asarray(oblique_header.slice_dir, dtype=float), oblique_axis)
+      assert list(oblique_header.matrix_size) == [8, 8, 8]
+      assert round(float(oblique_header.field_of_view[2]), 6) == 12.0
       assert [
-          round(float(img.getHead().field_of_view[2]), 6)
-          for img in oblique_upsampled
-      ] == [1.0, 1.0, 1.5, 1.5, 2.0, 2.0, 2.0, 2.0]
-      for img in oblique_upsampled:
-          header = img.getHead()
-          position = np.asarray(header.position, dtype=float)
-          residual = (position - oblique_origin) - np.dot(position - oblique_origin, oblique_axis) * oblique_axis
-          assert np.linalg.norm(residual) < 1e-6, residual
-          assert np.allclose(np.asarray(header.slice_dir, dtype=float), oblique_axis)
-          meta = ismrmrd.Meta.deserialize(img.attribute_string)
-          assert [
-              round(float(value), 6)
-              for value in meta.get("ImageSliceNormDir")
-          ] == [
-              round(float(value), 6)
-              for value in oblique_axis
-          ]
-          assert [
-              round(float(value), 6)
-              for value in meta.get("SlicePosLightMarker")
-          ] == [
-              round(float(value), 6)
-              for value in header.position
-          ]
+          round(float(value), 6)
+          for value in oblique_meta.get("ImageSliceNormDir")
+      ] == [
+          round(float(value), 6)
+          for value in oblique_axis
+      ]
+      assert [
+          round(float(value), 6)
+          for value in oblique_meta.get("SlicePosLightMarker")
+      ] == [
+          round(float(value), 6)
+          for value in oblique_header.position
+      ]
 
       try:
           module._upsampled_images([make_image(0), make_image(0)])
@@ -601,11 +583,11 @@ tests:
           1,
       )
       assert_output_identity(
-          mixed_upsampled[1],
+          mixed_upsampled[0],
           "mixed_water-upsampled",
           module.UPSAMPLED_SERIES_INDEX,
           module.UPSAMPLED_SERIES_NAME,
-          1,
+          0,
           expect_minihead=False,
       )
       assert_output_identity(

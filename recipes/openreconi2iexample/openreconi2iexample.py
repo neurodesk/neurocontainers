@@ -373,11 +373,15 @@ def _upsampled_images(images):
     )
     fallback_half_step = _interpolated_half_step(images)
     output_slice_count = 2 * len(images)
+    output_spacing = _upsampled_output_spacing(images, slice_axis, fallback_half_step)
+    output_half_step = output_spacing * slice_axis
     source_slice_count_hint = _source_slice_count_hint(images)
     logging.info(
-        "upsampled: input_slices=%d output_slices=%d source_slice_count_hint=%s",
+        "upsampled: input_slices=%d output_slices=%d output_spacing=%.6f "
+        "source_slice_count_hint=%s",
         len(images),
         output_slice_count,
+        output_spacing,
         source_slice_count_hint if source_slice_count_hint is not None else "unknown",
     )
     if (
@@ -391,73 +395,69 @@ def _upsampled_images(images):
             source_slice_count_hint,
         )
     origin = _header_position(images[0].getHead())
-    last_pair_half_step = None
-    outputs = []
+    slice_images = []
     for index, image in enumerate(images):
-        current_position = _project_position_on_slice_axis(
-            _header_position(image.getHead()),
-            origin,
-            slice_axis,
-        )
+        current_position = origin + (2 * index * output_spacing * slice_axis)
         if index + 1 < len(images):
             next_image = images[index + 1]
-            next_position = _project_position_on_slice_axis(
-                _header_position(next_image.getHead()),
-                origin,
-                slice_axis,
-            )
-            local_half_step = 0.5 * (next_position - current_position)
-            last_pair_half_step = local_half_step
             midpoint = 0.5 * (
                 np.asarray(image.data, dtype=np.float32)
                 + np.asarray(next_image.data, dtype=np.float32)
             )
-            midpoint_position = current_position + local_half_step
         else:
-            local_half_step = (
-                last_pair_half_step
-                if last_pair_half_step is not None
-                else _half_step_on_slice_axis(fallback_half_step, slice_axis)
-            )
             midpoint = np.asarray(image.data)
-            midpoint_position = current_position + local_half_step
+        midpoint_position = current_position + output_half_step
 
-        slice_thickness = float(np.linalg.norm(local_half_step))
-        outputs.append(
+        slice_images.append(
             _make_upsampled_image(
                 image,
                 np.asarray(image.data),
                 2 * index,
                 current_position,
-                local_half_step,
+                output_half_step,
                 output_slice_count,
                 slice_axis=slice_axis,
-                slice_thickness=slice_thickness,
+                slice_thickness=output_spacing,
                 series_identity=series_identity,
             )
         )
 
-        outputs.append(
+        slice_images.append(
             _make_upsampled_image(
                 image,
                 _cast_like(midpoint, np.asarray(image.data)),
                 2 * index + 1,
                 midpoint_position,
-                local_half_step,
+                output_half_step,
                 output_slice_count,
                 slice_axis=slice_axis,
-                slice_thickness=slice_thickness,
+                slice_thickness=output_spacing,
                 series_identity=series_identity,
             )
         )
 
     logging.info(
-        "Created %d upsampled image(s) from %d source image(s)",
-        len(outputs),
+        "Created %d upsampled slice(s) from %d source image(s)",
+        len(slice_images),
         len(images),
     )
-    _validate_unique_projected_positions(outputs, slice_axis, "upsampled output")
-    return outputs
+    _validate_unique_projected_positions(slice_images, slice_axis, "upsampled output")
+    output = _pack_upsampled_volume(
+        slice_images,
+        images[0],
+        output_slice_count,
+        output_spacing,
+        slice_axis,
+        series_identity,
+    )
+    logging.info(
+        "Packed %d upsampled slice(s) into one volume image with matrix_size=%s "
+        "and field_of_view=%s",
+        output_slice_count,
+        _format_vector(output.getHead().matrix_size),
+        _format_vector(output.getHead().field_of_view),
+    )
+    return [output]
 
 
 def _interpolated_images(images):
@@ -559,6 +559,91 @@ def _make_interpolated_image(
         half_step,
         output_slice_count,
     )
+
+
+def _pack_upsampled_volume(
+    slice_images,
+    source_image,
+    output_slice_count,
+    output_spacing,
+    slice_axis,
+    series_identity,
+):
+    output_slice_count = _require_output_slice_count(output_slice_count)
+    if len(slice_images) != output_slice_count:
+        raise ValueError(
+            "upsampled volume slice count mismatch: "
+            f"{len(slice_images)} != {output_slice_count}"
+        )
+
+    volume_slices = []
+    for index, image in enumerate(slice_images):
+        data = np.asarray(image.data)
+        if data.ndim != 4 or data.shape[0] != 1 or data.shape[1] != 1:
+            raise ValueError(
+                "upsampled slice images must be single-channel 2D images; "
+                f"slice {index} has shape {data.shape}"
+            )
+        volume_slices.append(data[0, 0])
+
+    volume_data = np.stack(volume_slices, axis=0)
+    output = ismrmrd.Image.from_array(volume_data, transpose=False)
+    header = slice_images[0].getHead()
+    header.data_type = output.data_type
+    header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    header.image_index = 1
+    header.slice = 0
+    _set_header_sequence_field(
+        header,
+        "matrix_size",
+        [int(value) for value in output.getHead().matrix_size],
+    )
+
+    fov = [float(value) for value in header.field_of_view]
+    fov[2] = float(output_spacing * output_slice_count)
+    _set_header_sequence_field(header, "field_of_view", fov)
+    _set_header_sequence_field(
+        header,
+        "position",
+        [float(value) for value in _header_position(slice_images[0].getHead())],
+    )
+    _set_header_sequence_field(
+        header,
+        "slice_dir",
+        [float(value) for value in slice_axis],
+    )
+    output.setHead(header)
+
+    extra_meta = {
+        "Keep_image_geometry": str(int(0)),
+        "partition_count": str(int(1)),
+        "slice_count": str(int(output_slice_count)),
+        "NumberOfSlices": str(int(output_slice_count)),
+        "ImagesInAcquisition": str(int(output_slice_count)),
+    }
+    extra_meta.update(_explicit_header_geometry_meta(header))
+    _stamp_output_image(
+        output,
+        source_image,
+        UPSAMPLED_SERIES_INDEX,
+        0,
+        (
+            series_identity["series_name"]
+            if series_identity
+            else _derived_series_name(
+                source_image,
+                "upsampled",
+                UPSAMPLED_SERIES_NAME,
+            )
+        ),
+        "Image",
+        UPSAMPLED_SERIES_NAME,
+        ["PYTHON", "OPENRECON_UPSAMPLED_VOLUME"],
+        extra_meta=extra_meta,
+        patch_minihead=False,
+        series_identity=series_identity,
+    )
+    return output
 
 
 def _restamp_originals(images):
@@ -1200,6 +1285,7 @@ def _validate_storage_fields(
 ):
     header = image.getHead()
     header_slice = int(header.slice)
+    header_matrix_z = int(header.matrix_size[2])
     if series_slice_limit and not 0 <= header_slice < series_slice_limit:
         errors.append(
             f"image {index} has slice {header_slice} outside source image "
@@ -1261,6 +1347,18 @@ def _validate_storage_fields(
             errors.append(
                 f"image {index} has slice {header_slice} outside explicit "
                 f"slice_count {slice_count}"
+            )
+        elif header_matrix_z > 1 and header_matrix_z != slice_count:
+            errors.append(
+                f"image {index} has matrix_size[2]={header_matrix_z}, "
+                f"expected explicit slice_count {slice_count}"
+            )
+
+        number_of_slices = _meta_int(meta, "NumberOfSlices")
+        if header_matrix_z > 1 and number_of_slices != slice_count:
+            errors.append(
+                f"image {index} has Meta NumberOfSlices={number_of_slices}, "
+                f"expected {slice_count}"
             )
 
     sop_uid = _meta_text(meta, "SOPInstanceUID")
@@ -1384,6 +1482,9 @@ def _ordered_upsample_sources(images):
             "upsampled source geometry has %d duplicate projected slice position(s)",
             duplicate_positions,
         )
+        raise ValueError(
+            "upsampled source geometry has duplicate projected slice position(s)"
+        )
     if increasing:
         return images, slice_axis
 
@@ -1505,13 +1606,14 @@ def _log_output_images(output_images):
         minihead = _image_minihead(image)
         logging.info(
             "OPENRECONI2I_OUTPUT index=%d series=%d image_index=%d slice=%d "
-            "position=%s fov=%s meta_slice_pos=%s keep_geometry=%s "
+            "matrix_size=%s position=%s fov=%s meta_slice_pos=%s keep_geometry=%s "
             "partition_count=%s slice_count=%s name=%s series_uid=%s sop_uid=%s "
             "minihead_slice=%s minihead_chron_slice=%s minihead_sop_uid=%s",
             index,
             int(image.image_series_index),
             int(header.image_index),
             int(header.slice),
+            _format_vector(header.matrix_size),
             _format_vector(_header_vector(header, "position")),
             _format_vector(_header_vector(header, "field_of_view")),
             _meta_vector_text(meta, "SlicePosLightMarker"),
@@ -1609,6 +1711,20 @@ def _meta_vector_text(meta, key):
     if value is None:
         return ""
     return str(value)
+
+
+def _upsampled_output_spacing(images, slice_axis, fallback_half_step):
+    if len(images) > 1:
+        source_spacing = _median_projected_spacing(
+            [_projected_position(image, slice_axis) for image in images]
+        )
+        if source_spacing > SLICE_POSITION_TOLERANCE_MM:
+            return 0.5 * source_spacing
+
+    fallback_spacing = float(np.linalg.norm(fallback_half_step))
+    if fallback_spacing > SLICE_POSITION_TOLERANCE_MM:
+        return fallback_spacing
+    return 1.0
 
 
 def _interpolated_half_step(images):

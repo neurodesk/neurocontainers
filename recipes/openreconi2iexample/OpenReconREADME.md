@@ -26,7 +26,7 @@ intensity projection.
   `image_series_index = 101` when `segment` is true. These outputs set
   `LUTFileName = MicroDeltaHotMetal.pal` only when `segmentationcolormap` is
   true.
-- `<source>-upsampled`: twice as many magnitude images on
+- `<source>-upsampled`: one volume image with twice as many slices on
   `image_series_index = 102` when `upsampled` is true.
 - `<source>-mip`: one maximum intensity projection image on
   `image_series_index = 103` when `mip` is true.
@@ -39,7 +39,8 @@ stores the result as a binary `uint16` segmentation.
 The upsampled output keeps the in-plane matrix unchanged and doubles the
 through-plane sample count by sorting source images by physical slice position
 and inserting midpoint slices between acquired slices. The final edge slice is
-duplicated so the output count is exactly `2 * N`.
+duplicated so the output volume contains exactly `2 * N` slices in one MRD
+image message.
 The MIP output projects the source magnitude stack across all source slices.
 
 ## Scanner Notes
@@ -57,16 +58,17 @@ The MIP output projects the source magnitude stack across all source slices.
   `AnatomicalSliceNo`, and `ChronSliceNo` in both MRD Meta and `IceMiniHead`
   before sending.
 - Scanner partition counters such as `Actual3DImagePartNumber` and
-  `AnatomicalPartitionNo` are kept at zero for returned 2D image series.
+  `AnatomicalPartitionNo` are kept at zero for returned image series.
 - Derived outputs set `SequenceDescriptionAdditional` to `openrecon` so
   scanners do not append `_None` to the display name.
 - `Keep_image_geometry = 1` is set on source-geometry outputs. OpenRecon's
   marshaller can size the SLC dimension from the source `IceMiniHead` unless
   explicit `slice_count` and `partition_count` Meta entries are present with
   `Keep_image_geometry = 0`. The upsampled output changes the slice count, so it
-  removes the source `IceMiniHead` and sends explicit `slice_count = 2 * N` and
-  `partition_count = 1` before send.
-- The upsampled series writes position and direction on the MRD `ImageHeader`.
-  Matching Meta entries such as `SlicePosLightMarker`, `ImageRowDir`,
-  `ImageColumnDir`, and `ImageSliceNormDir` are diagnostic copies and must match
-  the header values.
+  removes the source `IceMiniHead`, sends one MRD volume image with
+  `matrix_size[2] = 2 * N`, and stamps `slice_count = NumberOfSlices = 2 * N`
+  plus `partition_count = 1` before send.
+- The upsampled volume writes origin, direction, and full through-plane field of
+  view on the MRD `ImageHeader`. Matching Meta entries such as
+  `SlicePosLightMarker`, `ImageRowDir`, `ImageColumnDir`, and
+  `ImageSliceNormDir` are diagnostic copies and must match the header values.

@@ -67,7 +67,7 @@
       "id": "upsampled",
       "label": { "en": "Upsampled" },
       "type": "boolean",
-      "information": { "en": "Interpolate between slices and send twice as many images" },
+      "information": { "en": "Interpolate between slices and send one volume with twice as many slices" },
       "default": false
     },
     {
