@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.22
+version: 1.0.23
 architectures:
   - x86_64
 
@@ -64,11 +64,9 @@ readme: |-
   When a scanner sequence sends more images than its source slice/partition
   geometry advertises, inverted and segmentation outputs are packed into one
   explicit volume image instead of returned as out-of-range source-geometry
-  frames. Original copies are first split by source series so scanner-generated
-  processed inputs such as MIP images remain separate returned series; only
-  oversized source groups are packed. When processing is enabled and extra
-  scanner-generated source groups are injected alongside the primary volume,
-  those auxiliary groups are preserved automatically.
+  frames. Original copies are always returned as individual 2D image messages
+  split by source series so scanner-side downstream processing still sees a
+  normal image stream.
 
   OpenRecon runtime notes: `recipes/openreconi2iexample/OpenReconREADME.md`.
 

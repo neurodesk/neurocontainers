@@ -25,13 +25,8 @@ intensity projection.
   frames.
 - `<source>-original`: copied input images on `image_series_index = 100` when
   `sendoriginal` is true. Received images are split by their source series
-  before restamping, so scanner-generated processed inputs such as inline MIP
-  images are returned as their own derived copies instead of being folded into
-  a larger source volume. The same explicit-volume fallback is used per source
-  group when that group's geometry cannot safely hold every received image.
-  When a processing output is enabled and the scanner injects additional source
-  groups besides the primary volume group, those auxiliary groups are preserved
-  automatically even if `sendoriginal` is false.
+  before restamping, so separate received source groups are returned as their
+  own derived 2D copies instead of being folded into a larger source volume.
 - `<source>-segment`: thresholded segmentation images on
   `image_series_index = 101` when `segment` is true. These outputs set
   `LUTFileName = MicroDeltaHotMetal.pal` only when `segmentationcolormap` is
@@ -68,24 +63,20 @@ The MIP output projects the source magnitude stack across all source slices.
 - Copied originals are returned as derived scanner outputs, not as reused source
   slices. If `sendoriginal` receives multiple source series, additional groups
   are assigned separate derived `image_series_index` values so the scanner can
-  store them as independent returned series. For source-geometry outputs, the
-  wrapper restamps `SOPInstanceUID`, `NumberInSeries`, `SliceNo`,
-  `AnatomicalSliceNo`, and `ChronSliceNo` in both MRD Meta and `IceMiniHead`
-  before sending.
-- Derived processing uses the unique largest received magnitude source group as
-  the primary volume when auxiliary scanner-generated groups are present. The
-  auxiliary groups are copied back unchanged except for derived output identity
-  fields. If there is no unique primary group, all magnitude images are processed
-  together as before and no automatic auxiliary split is applied.
+  store them as independent returned series. Original pass-through outputs stay
+  as individual 2D image messages and preserve the source slice, partition, and
+  numbering geometry while receiving new derived series and instance identity.
 - Scanner partition counters such as `Actual3DImagePartNumber` and
-  `AnatomicalPartitionNo` are kept at zero for returned image series.
+  `AnatomicalPartitionNo` are kept at zero for non-original derived image
+  series. Original pass-through outputs preserve the source values.
 - Derived outputs set `SequenceDescriptionAdditional` to `openrecon` so
   scanners do not append `_None` to the display name.
 - `Keep_image_geometry = 1` is set on source-geometry outputs only when the
   output frame count fits within the source slice or partition count. If a
   scanner sequence sends more images than the advertised source geometry slots,
   `invert` and `segment` are packed into one explicit volume image, while
-  `original` is split by source group and only the oversized group is packed.
+  `original` stays as a 2D pass-through series for scanner-side downstream
+  processing.
   Packed explicit-volume outputs use `Keep_image_geometry = 0`,
   `matrix_size[2] = N`, `slice_count = NumberOfSlices = N`, and
   `partition_count = 1`. This prevents the marshaller from receiving invented

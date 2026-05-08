@@ -81,48 +81,29 @@ def process(connection, config, metadata):
             ("mip", "sendmip", "sendthresholdmip"),
             default=False,
         )
-        processing_requested = (
-            send_invert
-            or send_upsampled
-            or send_segment
-            or send_mip
-        )
-        processing_images, auxiliary_input_images = (
-            _processing_and_auxiliary_images(input_images, magnitude_images)
-            if processing_requested
-            else (magnitude_images, [])
-        )
         output_images = []
         inverted_images = []
         if send_invert:
-            inverted_images = _invert_images(processing_images)
+            inverted_images = _invert_images(magnitude_images)
             output_images.extend(inverted_images)
         segment_images = []
         if send_segment:
             segment_images = _segment_images(
-                processing_images,
+                magnitude_images,
                 use_colormap=use_segmentation_colormap,
             )
             output_images.extend(segment_images)
         upsampled_images = []
         if send_upsampled:
-            upsampled_images = _upsampled_images(processing_images)
+            upsampled_images = _upsampled_images(magnitude_images)
             output_images.extend(upsampled_images)
         mip_images = []
         if send_mip:
-            mip_images = _mip_image(processing_images)
+            mip_images = _mip_image(magnitude_images)
             output_images.extend(mip_images)
         original_images = []
         if send_original:
             original_images = _restamp_originals(input_images)
-            output_images.extend(original_images)
-        elif processing_requested and auxiliary_input_images:
-            logging.info(
-                "Preserving %d auxiliary scanner input image(s) outside the "
-                "primary processing source group",
-                len(auxiliary_input_images),
-            )
-            original_images = _restamp_originals(auxiliary_input_images)
             output_images.extend(original_images)
 
         logging.info(
@@ -581,6 +562,8 @@ def _make_upsampled_image(
         "Keep_image_geometry": str(int(0)),
         "partition_count": str(int(1)),
         "slice_count": str(int(output_slice_count)),
+        "NumberOfSlices": str(int(output_slice_count)),
+        "ImagesInAcquisition": str(int(output_slice_count)),
     }
     extra_meta.update(geometry_meta)
     _stamp_output_image(
@@ -738,20 +721,6 @@ def _restamp_originals(images):
             (source_image, np.asarray(source_image.data).copy())
             for source_image in group_images
         ]
-        if _source_geometry_needs_explicit_volume(group_images):
-            outputs.append(
-                _pack_explicit_volume(
-                    original_items,
-                    series_index,
-                    series_identity,
-                    "Image",
-                    ORIGINAL_SERIES_NAME,
-                    ["PYTHON", "OPENRECON_ORIGINAL_VOLUME"],
-                    {},
-                    "original output",
-                )
-            )
-            continue
 
         for output_index, (source_image, source_data) in enumerate(original_items):
             output = ismrmrd.Image.from_array(
@@ -761,72 +730,17 @@ def _restamp_originals(images):
             header = source_image.getHead()
             header.data_type = output.data_type
             output.setHead(header)
-            _stamp_output_image(
+            _stamp_original_image(
                 output,
                 source_image,
                 series_index,
                 output_index,
                 series_identity["series_name"],
-                "Image",
-                ORIGINAL_SERIES_NAME,
-                ["PYTHON", "OPENRECON_ORIGINAL_COPY"],
                 series_identity=series_identity,
             )
             outputs.append(output)
 
     return outputs
-
-
-def _processing_and_auxiliary_images(input_images, magnitude_images):
-    if not input_images or not magnitude_images:
-        return magnitude_images, []
-
-    source_groups = _source_image_groups(input_images)
-    if len(source_groups) <= 1:
-        return magnitude_images, []
-
-    magnitude_ids = {id(image) for image in magnitude_images}
-    candidate_groups = [
-        (index, group)
-        for index, group in enumerate(source_groups)
-        if any(id(image) in magnitude_ids for image in group)
-    ]
-    if len(candidate_groups) <= 1:
-        return magnitude_images, []
-
-    largest_count = max(len(group) for _index, group in candidate_groups)
-    largest_groups = [
-        (index, group)
-        for index, group in candidate_groups
-        if len(group) == largest_count
-    ]
-    if largest_count < 2 or len(largest_groups) != 1:
-        logging.info(
-            "Received %d source group(s), but no unique primary volume group "
-            "could be selected for derived processing: %s",
-            len(source_groups),
-            "; ".join(_source_group_summary(group) for group in source_groups),
-        )
-        return magnitude_images, []
-
-    primary_index, primary_group = largest_groups[0]
-    primary_ids = {id(image) for image in primary_group}
-    processing_images = [
-        image for image in magnitude_images
-        if id(image) in primary_ids
-    ]
-    auxiliary_images = [
-        image for image in input_images
-        if id(image) not in primary_ids
-    ]
-    logging.info(
-        "Selected source group %d for derived processing and kept %d "
-        "auxiliary scanner input image(s): %s",
-        primary_index,
-        len(auxiliary_images),
-        "; ".join(_source_group_summary(group) for group in source_groups),
-    )
-    return processing_images, auxiliary_images
 
 
 def _source_image_groups(images):
@@ -869,20 +783,6 @@ def _source_group_key(image):
         source_name,
         image_type,
         data_shape,
-    )
-
-
-def _source_group_summary(group):
-    if not group:
-        return "count=0"
-    image = group[0]
-    meta = _meta_from_image(image)
-    return (
-        f"count={len(group)} "
-        f"name={_source_series_name(image) or '<unnamed>'} "
-        f"series_uid={_meta_text(meta, 'SeriesInstanceUID') or '<none>'} "
-        f"image_type={_meta_text(meta, 'ImageType') or int(image.image_type)} "
-        f"shape={tuple(int(value) for value in np.asarray(image.data).shape)}"
     )
 
 
@@ -1021,6 +921,35 @@ def _stamp_output_image(
         extra_meta or {},
         patch_minihead,
         series_identity,
+        preserve_source_geometry=False,
+    ).serialize()
+    return output
+
+
+def _stamp_original_image(
+    output,
+    source_image,
+    series_index,
+    output_index,
+    series_name,
+    series_identity=None,
+):
+    header = output.getHead()
+    header.image_series_index = series_index
+    output.setHead(header)
+    output.image_series_index = series_index
+    output.attribute_string = _output_meta(
+        source_image,
+        series_index,
+        output_index,
+        series_name,
+        "Image",
+        ORIGINAL_SERIES_NAME,
+        ["PYTHON", "OPENRECON_ORIGINAL_COPY"],
+        {},
+        True,
+        series_identity,
+        preserve_source_geometry=True,
     ).serialize()
     return output
 
@@ -1036,6 +965,7 @@ def _output_meta(
     extra_meta,
     patch_minihead,
     series_identity,
+    preserve_source_geometry=False,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
@@ -1073,7 +1003,10 @@ def _output_meta(
     meta["ComplexImageComponent"] = "MAGNITUDE"
     _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
     _set_meta_scalar(meta, "Keep_image_geometry", 1)
-    _set_output_position_meta(meta, output_index)
+    if preserve_source_geometry:
+        _set_meta_scalar(meta, "OriginalGeometryPassThrough", 1)
+    else:
+        _set_output_position_meta(meta, output_index)
     for key, value in extra_meta.items():
         if value is not None:
             meta[key] = value
@@ -1094,6 +1027,7 @@ def _output_meta(
             image_type,
             image_type_token,
             output_index,
+            preserve_source_geometry=preserve_source_geometry,
         )
         if changed:
             meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
@@ -1283,6 +1217,7 @@ def _patch_ice_minihead(
     image_type,
     image_type_token,
     output_index,
+    preserve_source_geometry=False,
 ):
     current_text = minihead_text
     changed = False
@@ -1309,26 +1244,27 @@ def _patch_ice_minihead(
         image_type_token,
     )
     changed = changed or did_change
-    for name in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
-        current_text, did_change = _replace_or_append_minihead_long_param(
-            current_text,
-            name,
-            SCANNER_PARTITION_INDEX,
-        )
-        changed = changed or did_change
-    for name, value in (
-        ("AnatomicalSliceNo", output_index),
-        ("ChronSliceNo", output_index),
-        ("NumberInSeries", output_index + 1),
-        ("ProtocolSliceNumber", output_index),
-        ("SliceNo", output_index),
-    ):
-        current_text, did_change = _replace_or_append_minihead_long_param(
-            current_text,
-            name,
-            value,
-        )
-        changed = changed or did_change
+    if not preserve_source_geometry:
+        for name in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
+            current_text, did_change = _replace_or_append_minihead_long_param(
+                current_text,
+                name,
+                SCANNER_PARTITION_INDEX,
+            )
+            changed = changed or did_change
+        for name, value in (
+            ("AnatomicalSliceNo", output_index),
+            ("ChronSliceNo", output_index),
+            ("NumberInSeries", output_index + 1),
+            ("ProtocolSliceNumber", output_index),
+            ("SliceNo", output_index),
+        ):
+            current_text, did_change = _replace_or_append_minihead_long_param(
+                current_text,
+                name,
+                value,
+            )
+            changed = changed or did_change
     return current_text, changed
 
 
@@ -1471,7 +1407,13 @@ def _validate_output_images(output_images, input_images):
         meta = _meta_from_image(image)
         minihead = _image_minihead(image)
         keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
-        if input_has_minihead and not minihead and keep_image_geometry != 0:
+        original_pass_through = _meta_int(meta, "OriginalGeometryPassThrough") == 1
+        if (
+            input_has_minihead
+            and not minihead
+            and keep_image_geometry != 0
+            and not original_pass_through
+        ):
             errors.append(f"image {index} is missing IceMiniHead")
 
         identity = {
@@ -1597,43 +1539,57 @@ def _validate_storage_fields(
     header = image.getHead()
     header_slice = int(header.slice)
     header_matrix_z = int(header.matrix_size[2])
-    if series_slice_limit and not 0 <= header_slice < series_slice_limit:
+    keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
+    image_type_value4 = _meta_text(meta, "ImageTypeValue4")
+    preserves_source_geometry = _meta_int(meta, "OriginalGeometryPassThrough") == 1
+
+    if (
+        not preserves_source_geometry
+        and series_slice_limit
+        and not 0 <= header_slice < series_slice_limit
+    ):
         errors.append(
             f"image {index} has slice {header_slice} outside source image "
             f"bounds [0..{series_slice_limit})"
         )
 
-    expected_position_fields = {
-        "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
-        "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
-        "AnatomicalSliceNo": header_slice,
-        "ChronSliceNo": header_slice,
-        "NumberInSeries": int(header.image_index),
-        "ProtocolSliceNumber": header_slice,
-        "SliceNo": header_slice,
-        "IsmrmrdSliceNo": header_slice,
-    }
-
-    for field, expected in expected_position_fields.items():
-        meta_value = _meta_int(meta, field)
-        if meta_value is None:
-            errors.append(f"image {index} is missing Meta {field}")
-        elif meta_value != expected:
+    if preserves_source_geometry:
+        if header_matrix_z != 1:
             errors.append(
-                f"image {index} has Meta {field}={meta_value}, expected {expected}"
+                f"original pass-through image {index} has matrix_size[2]="
+                f"{header_matrix_z}; expected a 2D image"
             )
-        if field == "IsmrmrdSliceNo":
-            continue
-        minihead_value = _minihead_long_value(minihead, field)
-        if minihead and minihead_value is None:
-            errors.append(f"image {index} is missing IceMiniHead {field}")
-        elif minihead_value is not None and minihead_value != expected:
-            errors.append(
-                f"image {index} has IceMiniHead {field}={minihead_value}, "
-                f"expected {expected}"
-            )
+    else:
+        expected_position_fields = {
+            "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
+            "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+            "AnatomicalSliceNo": header_slice,
+            "ChronSliceNo": header_slice,
+            "NumberInSeries": int(header.image_index),
+            "ProtocolSliceNumber": header_slice,
+            "SliceNo": header_slice,
+            "IsmrmrdSliceNo": header_slice,
+        }
 
-    keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
+        for field, expected in expected_position_fields.items():
+            meta_value = _meta_int(meta, field)
+            if meta_value is None:
+                errors.append(f"image {index} is missing Meta {field}")
+            elif meta_value != expected:
+                errors.append(
+                    f"image {index} has Meta {field}={meta_value}, expected {expected}"
+                )
+            if field == "IsmrmrdSliceNo":
+                continue
+            minihead_value = _minihead_long_value(minihead, field)
+            if minihead and minihead_value is None:
+                errors.append(f"image {index} is missing IceMiniHead {field}")
+            elif minihead_value is not None and minihead_value != expected:
+                errors.append(
+                    f"image {index} has IceMiniHead {field}={minihead_value}, "
+                    f"expected {expected}"
+                )
+
     if keep_image_geometry is None:
         errors.append(f"image {index} is missing Meta Keep_image_geometry")
     elif keep_image_geometry == 0:
@@ -1683,7 +1639,6 @@ def _validate_storage_fields(
                 f"IceMiniHead SOPInstanceUID {minihead_sop_uid} is shared by "
                 f"output images {previous_index} and {index}"
             )
-    image_type_value4 = _meta_text(meta, "ImageTypeValue4")
     minihead_image_type_value4 = _minihead_array_tokens(minihead, "ImageTypeValue4")
     if not image_type_value4:
         errors.append(f"image {index} is missing Meta ImageTypeValue4")
