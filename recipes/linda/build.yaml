@@ -12,8 +12,13 @@ structured_readme:
     outputs = linda_predict(filename)
 
     In command line
-    ./linda_predict.sh /path/to/patient/T1.nii.gz
-    ./linda_predict.sh /path/to/patient/T1.nii.gz /custom/output/directory
+    linda_predict.sh /path/to/patient/T1.nii.gz
+    linda_predict.sh /path/to/patient/T1.nii.gz /custom/output/directory
+
+    With a pre-computed brain mask (e.g. from HD-BET) — bypasses LINDA's internal skull stripping, useful for stroke patients where template-based brain extraction over-strips cortex near the lesion:
+    linda_predict_with_mask.sh --t1 /path/to/T1.nii.gz \
+        --mask /path/to/brain_mask.nii.gz \
+        --outdir /custom/output/directory
   documentation: https://github.com/dorianps/LINDA
   citation: "Pustina, D., Coslett, H. B., Turkeltaub, P. E., Tustison, N., Schwartz, M. F., & Avants, B. (2016). Automated segmentation of chronic stroke lesions using LINDA: Lesion identification with neighborhood data analysis. Hum Brain Mapp, 37(4), 1405-1421. https://doi.org/10.1002/hbm.23110 "
 build:
@@ -464,11 +469,11 @@ readme: |-
     outputs = linda_predict(filename)
 
     In command line
-    ./linda_predict.sh /path/to/patient/T1.nii.gz
-    ./linda_predict.sh /path/to/patient/T1.nii.gz /custom/output/directory
+    linda_predict.sh /path/to/patient/T1.nii.gz
+    linda_predict.sh /path/to/patient/T1.nii.gz /custom/output/directory
 
     With a pre-computed brain mask (e.g. from HD-BET) — bypasses LINDA's internal skull stripping, useful for stroke patients where template-based brain extraction over-strips cortex near the lesion:
-    ./linda_predict_with_mask.sh --t1 /path/to/T1.nii.gz \
+    linda_predict_with_mask.sh --t1 /path/to/T1.nii.gz \
         --mask /path/to/brain_mask.nii.gz \
         --outdir /custom/output/directory
 
