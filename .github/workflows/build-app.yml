@@ -2,6 +2,7 @@ name: build-app
 
 permissions:
   contents: write
+  issues: write
   pull-requests: write
   packages: write
   id-token: write
@@ -198,6 +199,7 @@ jobs:
       packages: write
       id-token: write
       contents: write
+      issues: write
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
@@ -410,6 +412,114 @@ jobs:
           else
             echo "ERROR: Image ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} does not exist. Build failed."
             exit 1
+          fi
+
+      - name: Analyze image layer waste with Dive
+        id: dive
+        if: inputs.skip_docker_build != 'true' && steps.imgcompare.outputs.IMGDIFFERS == 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+          DIVE_IMAGE: wagoodman/dive:v0.13.1
+          DIVE_LOWEST_EFFICIENCY: "0.90"
+          DIVE_HIGHEST_USER_WASTED_PERCENT: "0.10"
+        run: |
+          set +e
+          IMAGE="ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}"
+          RAW_REPORT="${RUNNER_TEMP}/dive-${APPLICATION}-${BUILDDATE}.raw.txt"
+          REPORT="${RUNNER_TEMP}/dive-${APPLICATION}-${BUILDDATE}.txt"
+
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            "${DIVE_IMAGE}" \
+            --ci \
+            --lowestEfficiency "${DIVE_LOWEST_EFFICIENCY}" \
+            --highestUserWastedPercent "${DIVE_HIGHEST_USER_WASTED_PERCENT}" \
+            "${IMAGE}" > "${RAW_REPORT}" 2>&1
+          DIVE_STATUS=$?
+
+          sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g' "${RAW_REPORT}" > "${REPORT}" 2>/dev/null || cp "${RAW_REPORT}" "${REPORT}"
+          cat "${REPORT}"
+
+          {
+            echo "image=${IMAGE}"
+            echo "report_path=${REPORT}"
+            echo "exit_code=${DIVE_STATUS}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Dive image layer waste analysis"
+            echo ""
+            echo "- Image: \`${IMAGE}\`"
+            echo "- Dive image: \`${DIVE_IMAGE}\`"
+            echo "- Exit code: \`${DIVE_STATUS}\`"
+            echo "- Thresholds: lowest efficiency \`${DIVE_LOWEST_EFFICIENCY}\`, highest user wasted percent \`${DIVE_HIGHEST_USER_WASTED_PERCENT}\`"
+            echo ""
+            echo '```text'
+            cat "${REPORT}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          WASTED_SPACE=false
+          if grep -q "Result:FAIL" "${REPORT}"; then
+            WASTED_SPACE=true
+          else
+            if [ "${DIVE_STATUS}" -ne 0 ]; then
+              echo "::warning::Dive analysis failed before producing a CI failure result. See the step log for details."
+            fi
+          fi
+          echo "wasted_space=${WASTED_SPACE}" >> "$GITHUB_OUTPUT"
+
+      - name: Open issue for Dive wasted space
+        if: steps.dive.outputs.wasted_space == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+          DIVE_IMAGE_REF: ${{ steps.dive.outputs.image }}
+          DIVE_REPORT_PATH: ${{ steps.dive.outputs.report_path }}
+          DIVE_EXIT_CODE: ${{ steps.dive.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          TITLE="Dive wasted space detected for ${IMAGENAME}"
+          BODY="${RUNNER_TEMP}/dive-issue-${APPLICATION}-${BUILDDATE}.md"
+          WORKFLOW_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          {
+            echo "## Summary"
+            echo ""
+            echo "Dive reported wasted Docker image space for \`${DIVE_IMAGE_REF}\`."
+            echo ""
+            echo "- Application: \`${APPLICATION}\`"
+            echo "- Image: \`${DIVE_IMAGE_REF}\`"
+            echo "- Build date: \`${BUILDDATE}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Workflow run: ${WORKFLOW_URL}"
+            echo "- Dive exit code: \`${DIVE_EXIT_CODE}\`"
+            echo "- Thresholds: lowest efficiency \`0.90\`, highest user wasted percent \`0.10\`"
+            echo ""
+            echo "## Dive Output"
+            echo ""
+            echo '```text'
+            head -c 50000 "${DIVE_REPORT_PATH}"
+            echo ""
+            echo '```'
+          } > "${BODY}"
+
+          EXISTING_ISSUE="$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --search "${TITLE} in:title" \
+            --json number \
+            --jq '.[0].number // ""')"
+
+          if [ -n "${EXISTING_ISSUE}" ]; then
+            gh issue comment "${EXISTING_ISSUE}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body-file "${BODY}"
+            echo "Updated existing Dive wasted-space issue #${EXISTING_ISSUE}."
+          else
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${TITLE}" \
+              --body-file "${BODY}"
           fi
 
       # - name: Upload new image as build artifact
