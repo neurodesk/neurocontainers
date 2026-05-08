@@ -29,6 +29,9 @@ intensity projection.
   images are returned as their own derived copies instead of being folded into
   a larger source volume. The same explicit-volume fallback is used per source
   group when that group's geometry cannot safely hold every received image.
+  When a processing output is enabled and the scanner injects additional source
+  groups besides the primary volume group, those auxiliary groups are preserved
+  automatically even if `sendoriginal` is false.
 - `<source>-segment`: thresholded segmentation images on
   `image_series_index = 101` when `segment` is true. These outputs set
   `LUTFileName = MicroDeltaHotMetal.pal` only when `segmentationcolormap` is
@@ -69,6 +72,11 @@ The MIP output projects the source magnitude stack across all source slices.
   wrapper restamps `SOPInstanceUID`, `NumberInSeries`, `SliceNo`,
   `AnatomicalSliceNo`, and `ChronSliceNo` in both MRD Meta and `IceMiniHead`
   before sending.
+- Derived processing uses the unique largest received magnitude source group as
+  the primary volume when auxiliary scanner-generated groups are present. The
+  auxiliary groups are copied back unchanged except for derived output identity
+  fields. If there is no unique primary group, all magnitude images are processed
+  together as before and no automatic auxiliary split is applied.
 - Scanner partition counters such as `Actual3DImagePartNumber` and
   `AnatomicalPartitionNo` are kept at zero for returned image series.
 - Derived outputs set `SequenceDescriptionAdditional` to `openrecon` so

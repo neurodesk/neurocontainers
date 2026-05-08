@@ -855,6 +855,41 @@ tests:
           def send_close(self):
               self.closed = True
 
+      processing_sources, auxiliary_sources = module._processing_and_auxiliary_images(
+          images + [scanner_mip_image],
+          images + [scanner_mip_image],
+      )
+      assert processing_sources == images
+      assert auxiliary_sources == [scanner_mip_image]
+
+      upsample_with_aux_connection = FakeConnection(
+          images + [scanner_mip_image, None]
+      )
+      module.process(
+          upsample_with_aux_connection,
+          {"parameters": {"upsampled": True}},
+          None,
+      )
+      assert len(upsample_with_aux_connection.sent_images) == 1
+      upsample_with_aux_outputs = upsample_with_aux_connection.sent_images[0]
+      assert len(upsample_with_aux_outputs) == 2
+      upsample_with_aux_originals = [
+          image for image in upsample_with_aux_outputs
+          if int(image.image_series_index) == module.ORIGINAL_SERIES_INDEX
+      ]
+      assert len(upsample_with_aux_originals) == 1
+      assert_output_identity(
+          upsample_with_aux_originals[0],
+          "wholebody_i2i_seg+org_W_MIP_SAG-original",
+          module.ORIGINAL_SERIES_INDEX,
+          module.ORIGINAL_SERIES_NAME,
+          0,
+      )
+      assert np.allclose(
+          np.asarray(upsample_with_aux_originals[0].data),
+          np.asarray(scanner_mip_image.data),
+      )
+
       default_connection = FakeConnection(images + [None])
       module.process(default_connection, {"parameters": {}}, None)
       assert default_connection.sent_images == []

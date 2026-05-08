@@ -81,29 +81,48 @@ def process(connection, config, metadata):
             ("mip", "sendmip", "sendthresholdmip"),
             default=False,
         )
+        processing_requested = (
+            send_invert
+            or send_upsampled
+            or send_segment
+            or send_mip
+        )
+        processing_images, auxiliary_input_images = (
+            _processing_and_auxiliary_images(input_images, magnitude_images)
+            if processing_requested
+            else (magnitude_images, [])
+        )
         output_images = []
         inverted_images = []
         if send_invert:
-            inverted_images = _invert_images(magnitude_images)
+            inverted_images = _invert_images(processing_images)
             output_images.extend(inverted_images)
         segment_images = []
         if send_segment:
             segment_images = _segment_images(
-                magnitude_images,
+                processing_images,
                 use_colormap=use_segmentation_colormap,
             )
             output_images.extend(segment_images)
         upsampled_images = []
         if send_upsampled:
-            upsampled_images = _upsampled_images(magnitude_images)
+            upsampled_images = _upsampled_images(processing_images)
             output_images.extend(upsampled_images)
         mip_images = []
         if send_mip:
-            mip_images = _mip_image(magnitude_images)
+            mip_images = _mip_image(processing_images)
             output_images.extend(mip_images)
         original_images = []
         if send_original:
             original_images = _restamp_originals(input_images)
+            output_images.extend(original_images)
+        elif processing_requested and auxiliary_input_images:
+            logging.info(
+                "Preserving %d auxiliary scanner input image(s) outside the "
+                "primary processing source group",
+                len(auxiliary_input_images),
+            )
+            original_images = _restamp_originals(auxiliary_input_images)
             output_images.extend(original_images)
 
         logging.info(
@@ -758,6 +777,58 @@ def _restamp_originals(images):
     return outputs
 
 
+def _processing_and_auxiliary_images(input_images, magnitude_images):
+    if not input_images or not magnitude_images:
+        return magnitude_images, []
+
+    source_groups = _source_image_groups(input_images)
+    if len(source_groups) <= 1:
+        return magnitude_images, []
+
+    magnitude_ids = {id(image) for image in magnitude_images}
+    candidate_groups = [
+        (index, group)
+        for index, group in enumerate(source_groups)
+        if any(id(image) in magnitude_ids for image in group)
+    ]
+    if len(candidate_groups) <= 1:
+        return magnitude_images, []
+
+    largest_count = max(len(group) for _index, group in candidate_groups)
+    largest_groups = [
+        (index, group)
+        for index, group in candidate_groups
+        if len(group) == largest_count
+    ]
+    if largest_count < 2 or len(largest_groups) != 1:
+        logging.info(
+            "Received %d source group(s), but no unique primary volume group "
+            "could be selected for derived processing: %s",
+            len(source_groups),
+            "; ".join(_source_group_summary(group) for group in source_groups),
+        )
+        return magnitude_images, []
+
+    primary_index, primary_group = largest_groups[0]
+    primary_ids = {id(image) for image in primary_group}
+    processing_images = [
+        image for image in magnitude_images
+        if id(image) in primary_ids
+    ]
+    auxiliary_images = [
+        image for image in input_images
+        if id(image) not in primary_ids
+    ]
+    logging.info(
+        "Selected source group %d for derived processing and kept %d "
+        "auxiliary scanner input image(s): %s",
+        primary_index,
+        len(auxiliary_images),
+        "; ".join(_source_group_summary(group) for group in source_groups),
+    )
+    return processing_images, auxiliary_images
+
+
 def _source_image_groups(images):
     groups = []
     group_index_by_key = {}
@@ -798,6 +869,20 @@ def _source_group_key(image):
         source_name,
         image_type,
         data_shape,
+    )
+
+
+def _source_group_summary(group):
+    if not group:
+        return "count=0"
+    image = group[0]
+    meta = _meta_from_image(image)
+    return (
+        f"count={len(group)} "
+        f"name={_source_series_name(image) or '<unnamed>'} "
+        f"series_uid={_meta_text(meta, 'SeriesInstanceUID') or '<none>'} "
+        f"image_type={_meta_text(meta, 'ImageType') or int(image.image_type)} "
+        f"shape={tuple(int(value) for value in np.asarray(image.data).shape)}"
     )
 
 
