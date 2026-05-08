@@ -37,17 +37,121 @@
   },
   "parameters": [
     {
-      "id": "config",
-      "label": { "en": "config" },
+      "id": "sendOriginal",
+      "label": { "en": "Send original images" },
+      "type": "boolean",
+      "information": { "en": "Send back unmodified original images (the ones that the container recevied)." },
+      "default": true
+    },
+    {
+      "id": "participantId",
+      "label": { "en": "Participant ID" },
+      "type": "int",
+      "information": { "en": "ID of the participant (e.g., 1, 2, 3, etc.). This will be used to generate stimulus times." },
+      "default": 1
+    },
+    {
+      "id": "colormap",
+      "label": { "en": "Colormap name" },
       "type": "choice",
       "values": [
         {
-          "id": "metabody",
-          "name": { "en": "metabody" }
+          "id": "none",
+          "name": { "en": "none" }
+        },
+        {
+          "id": "seismic",
+          "name": { "en": "seismic" }
+        },
+        {
+          "id": "jet",
+          "name": { "en": "jet" }
+        },
+        {
+          "id": "grayscale",
+          "name": { "en": "grayscale" }
+        },
+        {
+          "id": "coolwarm",
+          "name": { "en": "coolwarm" }
+        },
+        {
+          "id": "bwr",
+          "name": { "en": "bwr" }
         }
       ],
-      "default": "metabody",
-      "information": { "en": "Define the config to be executed by MRD server" }
+      "default": "seismic",
+      "information": { "en": "Matplotlib colormap to use" }
+    },
+    {
+      "id": "condition-1",
+      "label": { "en":"Condition 1" },
+      "type": "string",
+      "default": "",
+      "information": { "en": "Name of the first condition/what was moved (e.g., 'left_arm'). These labels will appear in the image comments in the output." }
+    },
+    {
+      "id": "condition-2",
+      "label": { "en":"Condition 2" },
+      "type": "string",
+      "default": "",
+      "information": { "en": "Name of the second condition/what was moved (e.g., 'right_arm'). These labels will appear in the image comments in the output." }
+    },
+    {
+      "id": "condition-3",
+      "label": { "en":"Condition 3" },
+      "type": "string",
+      "default": "",
+      "information": { "en": "Name of the third condition/what was moved (e.g., 'left_hand'). These labels will appear in the image comments in the output." }
+    },
+    {
+      "id": "condition-4",
+      "label": { "en":"Condition 4" },
+      "type": "string",
+      "default": "",
+      "information": { "en": "Name of the fourth condition/what was moved (e.g., 'right_hand'). These labels will appear in the image comments in the output." }
+    },
+    {
+      "id": "condition-5",
+      "label": { "en":"Condition 5" },
+      "type": "string",
+      "default": "",
+      "information": { "en": "Name of the fifth condition/what was moved (e.g., 'left_foot'). These labels will appear in the image comments in the output." }
+    },
+    {
+      "id": "condition-6",
+      "label": { "en":"Condition 6" },
+      "type": "string",
+      "default": "",
+      "information": { "en": "Name of the sixth condition/what was moved (e.g., 'right_foot'). These labels will appear in the image comments in the output." }
+    },
+    {
+      "id": "condition-7",
+      "label": { "en":"Condition 7" },
+      "type": "string",
+      "default": "",
+      "information": { "en": "Name of the seventh condition/what was moved (e.g., 'lips'). These labels will appear in the image comments in the output." }
+    },
+    {
+      "id": "condition-8",
+      "label": { "en":"Condition 8" },
+      "type": "string",
+      "default": "",
+      "information": { "en": "Name of the eighth condition/what was moved (e.g., 'eyes'). These labels will appear in the image comments in the output." }
+    },
+    {
+      "id": "condition-9",
+      "label": { "en":"Condition 9" },
+      "type": "string",
+      "default": "",
+      "information": { "en": "Name of the ninth condition/what was moved (e.g., 'tongue'). These labels will appear in the image comments in the output." }
+    },
+    {
+      "id": "condition-10",
+      "label": { "en":"Condition 10" },
+      "type": "string",
+      "default": "",
+      "information": { "en": "Name of the tenth condition/what was moved (e.g., 'finger'). These labels will appear in the image comments in the output." }
     }
   ]
 }

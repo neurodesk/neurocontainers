@@ -7,6 +7,7 @@ import mrdhelper
 import constants
 import nibabel as nib
 import subprocess
+import matplotlib.pyplot as plt
 
 from skimage.segmentation import find_boundaries
 import SimpleITK as sitk
@@ -139,6 +140,10 @@ def process_image(images, connection, config, metadata):
     if len(images) == 0:
         return []
 
+    send_originals = mrdhelper.get_json_config_param(config, 'sendOriginal', default=False)
+    colormap = mrdhelper.get_json_config_param(config, 'colormap', default='none')
+    do_rgb = colormap != 'none'
+
     # Create folder, if necessary
     # if not os.path.exists(debugFolder):
     #     os.makedirs(debugFolder)
@@ -232,6 +237,9 @@ def process_image(images, connection, config, metadata):
     nib.save(new_img, 'nifti_from_h5.nii')
     logging.info('Saved NIfTI image for AFNI processing')
 
+    ## TODO: Figure out stimulus times onsets.
+    stim_labels = get_stim_labels(config)
+
     ## WRITE AFNI SCRIPTS HERE!!!!
     logging.info('Running AFNI processing')
     subprocess.run(["/opt/code/afni_processing.sh", "--input", "nifti_from_h5.nii", "--output", "output_afni"])
@@ -247,6 +255,12 @@ def process_image(images, connection, config, metadata):
     # data_img = nib.load('output_image.nii')
     # data = data_img.get_fdata()
     stat_data = stat_img.get_fdata()
+    n_stats = stat_data.shape[-1]
+
+    if not send_originals:
+        logging.debug('`sendOriginal` is false')
+    else:
+        logging.debug('`sendOriginal` is true')
     data = np.concatenate([stat_data, data], axis=-1)
     logging.info("Output image data shape before transposing: %s", data.shape)
 
@@ -271,7 +285,35 @@ def process_image(images, connection, config, metadata):
     data = data.astype(np.float64)
     data *= maxVal/data.max()
     data = np.around(data)
-    data = data.astype(np.int16)
+    # data = data.astype(np.int16)
+
+    if do_rgb:
+        logging.info(f'Converting data into RGB using colormap "{colormap}"')
+        # if data.shape[3] != 1:
+        #     logging.error("Multi-channel data is not supported")
+        #     return []
+
+        # Normalize to (0.0, 1.0) as expected by get_cmap()
+        data = data.astype(np.float64)
+        data -= data.min()
+        data *= 1/data.max()
+
+        # Apply colormap
+        cmap = plt.get_cmap(colormap)
+        rgb = cmap(data)
+
+        # Remove alpha channel. The input shape is
+        # [cha x y rep slice 4] where the last dimension is RGBA.
+        # `cha` can be replaced by RGB and become `z` (see the required
+        # shape when creating the ISMRMRD Image with `cha` below).
+        rgb = rgb[...,0:-1]
+        rgb = rgb.transpose((5, 0, 1, 2, 3, 4))
+        rgb = rgb.squeeze(5)
+
+        # MRD RGB images must be uint16 in range (0, 255)
+        rgb *= 255
+        data = rgb.astype(np.uint16)
+        # np.save(debugFolder + "/" + "imgRGB.npy", data)
 
     currentSeries = 0
 
@@ -283,6 +325,11 @@ def process_image(images, connection, config, metadata):
         get_idx = lambda i, j: j + i * n_slices
         get_data = lambda data, i, j: data[..., i, j]
         get_rep = lambda i, j: i
+        # For stats images use the first repetition's headers/metas.
+        # This makes sure that the headers for stats images contain the
+        # correct orientation and position values. This is needed for
+        # `dcm2niix` to work correctly, for example.
+        get_header_idx = lambda i, j: j if (i - n_stats) < 0 else j + ((i - n_stats) * n_slices)
     else:
         # Stack all repetitions of slice 0, then all repetitions of slice 1, etc
         outer_range = range(n_slices)
@@ -290,15 +337,27 @@ def process_image(images, connection, config, metadata):
         get_idx = lambda i, j: j + i * n_reps
         get_data = lambda data, i, j: data[..., j, i]
         get_rep = lambda i, j: j
+        # For stats images use the first repetition's headers/metas.
+        # This makes sure that the headers for stats images contain the
+        # correct orientation and position values. This is needed for
+        # `dcm2niix` to work correctly, for example.
+        get_header_idx = lambda i, j: i if (j - n_stats) < 0 else (j - n_stats) + i * n_reps
 
-    # Re-slice image data back into 2D images
+    # Re-slice image data back into 2D images.
+    # Preallocate outputs for speed and efficiency.
     imagesOut = [None] * (n_reps * n_slices)
+    image_details = {
+        'slice': [None] * (n_reps * n_slices),
+        'repetition': [None] * (n_reps * n_slices),
+        'x': [None] * (n_reps * n_slices),
+        'y': [None] * (n_reps * n_slices)
+    }
     for i in outer_range:
         for j in inner_range:
             img_idx = get_idx(i, j)
             # Make sure that index that gets headers and meta stays in
-            # range. Use the first header/meta for stats images
-            head_meta_idx = 0 if ((n_reps * n_slices) - img_idx) > len(head) else len(head) - ((n_reps * n_slices) - img_idx)
+            # range. Use the first repetition's headers/metas for stats images
+            head_meta_idx = get_header_idx(i, j)
             # Create new MRD instance for the final image
             # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
             # from_array() should be called with 'transpose=False' to avoid warnings, and when called
@@ -353,6 +412,43 @@ def process_image(images, connection, config, metadata):
             # logging.debug("Image data has %d elements", imagesOut[img_idx].data.size)
 
             imagesOut[img_idx].attribute_string = metaXml
+            # For debugging and troubleshooting.
+            image_details['slice'][img_idx] = i
+            image_details['repetition'][img_idx] = j
+            image_details['x'][img_idx] = imagesOut[img_idx].data.shape[0]
+            image_details['y'][img_idx] = imagesOut[img_idx].data.shape[1]
+
+    # # Send a copy of original (unmodified) images back too
+    # if send_originals:
+    #     stack = traceback.extract_stack()
+    #     if stack[-2].name == 'process_raw':
+    #         logging.warning('sendOriginal is true, but input was raw data, so no original images to return!')
+    #     else:
+    #         logging.info('Sending a copy of original unmodified images due to sendOriginal set to True')
+    #         # In reverse order so that they'll be in correct order as we insert them to the front of the list
+    #         for image in reversed(images):
+    #             # Create a copy to not modify the original inputs
+    #             tmpImg = image
+
+    #             # Change the series_index to have a different series
+    #             tmpImg.image_series_index = 99
+
+    #             # Ensure Keep_image_geometry is set to not reverse image orientation
+    #             tmpMeta = ismrmrd.Meta.deserialize(tmpImg.attribute_string)
+    #             tmpMeta['Keep_image_geometry'] = 1
+    #             tmpImg.attribute_string = tmpMeta.serialize()
+
+    #             imagesOut.insert(0, tmpImg)
+
+    n_out_imgs = len(imagesOut)
+    x_not_same = np.any(np.diff(image_details['x']) != 0)
+    y_not_same = np.any(np.diff(image_details['y']) != 0)
+    logging.debug(f'Outputting {n_out_imgs} images with shape ({image_details["x"][0]}, {image_details["y"][0]})')
+    logging.debug(f'Slices: {image_details["slice"][:10]}; Repetitions: {image_details["repetition"][:10]}')
+    if x_not_same:
+        logging.warning('Output images have different x dimensions!')
+    if y_not_same:
+        logging.warning('Output images have different y dimensions!')
 
     return imagesOut
 
@@ -432,4 +528,15 @@ def normalise_data(data):
 
     return normalized_data
 
-    
+
+def get_stim_labels(config):
+    stim_labels = []
+    # Choose a sufficiently high number so to get all possible
+    # conditions.
+    for ii in range(1, 50):
+        condition = mrdhelper.get_json_config_param(config, f'condition-{ii}', default=None)
+        if condition is None or condition == '':
+            break
+        stim_labels.append(condition)
+    logging.info(f'Extracted stimulus labels from config: {stim_labels}')
+    return stim_labels
