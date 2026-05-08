@@ -36,6 +36,7 @@ SOURCE_PARENT_REFERENCE_META_PREFIXES = (
 )
 SCANNER_PARTITION_INDEX = 0
 SLICE_POSITION_TOLERANCE_MM = 1e-4
+EXTRA_ORIGINAL_SERIES_INDEX_START = 104
 
 
 def process(connection, config, metadata):
@@ -154,15 +155,35 @@ def _invert_images(images):
         "inverted",
         INVERT_SERIES_NAME,
     )
-    outputs = []
-    for output_index, source_image in enumerate(images):
+    inverted_items = []
+    for source_image in images:
         source_data = np.asarray(source_image.data)
         inverted = data_min + data_max - source_data.astype(np.float32)
         if np.issubdtype(source_data.dtype, np.integer):
             inverted = np.rint(inverted).astype(source_data.dtype)
         else:
             inverted = inverted.astype(source_data.dtype)
+        inverted_items.append((source_image, inverted))
 
+    if _source_geometry_needs_explicit_volume(images):
+        return [
+            _pack_explicit_volume(
+                inverted_items,
+                INVERT_SERIES_INDEX,
+                series_identity,
+                "Image",
+                INVERT_SERIES_NAME,
+                ["PYTHON", "OPENRECON_INVERT_VOLUME"],
+                {
+                    "WindowCenter": str(window_center),
+                    "WindowWidth": str(window_width),
+                },
+                "inverted output",
+            )
+        ]
+
+    outputs = []
+    for output_index, (source_image, inverted) in enumerate(inverted_items):
         output = ismrmrd.Image.from_array(inverted, transpose=False)
         header = source_image.getHead()
         header.data_type = output.data_type
@@ -198,24 +219,51 @@ def _segment_images(images, use_colormap=False):
         "segment",
         SEGMENT_SERIES_NAME,
     )
-    outputs = []
-    for output_index, source_image in enumerate(images):
+    segment_items = []
+    for source_image in images:
         source_data = np.asarray(source_image.data)
         foreground = source_data.astype(np.float32) >= threshold
         segmentation = _largest_connected_component_per_plane(foreground).astype(
             np.uint16
         )
+        segment_items.append((source_image, segmentation))
 
+    extra_meta = {
+        "WindowCenter": "0.5",
+        "WindowWidth": "1",
+    }
+    if use_colormap:
+        extra_meta["LUTFileName"] = SEGMENTATION_LUT
+
+    if _source_geometry_needs_explicit_volume(images):
+        outputs = [
+            _pack_explicit_volume(
+                segment_items,
+                SEGMENT_SERIES_INDEX,
+                series_identity,
+                "Segmentation",
+                SEGMENT_SERIES_NAME,
+                ["PYTHON", "OPENRECON_SEGMENT_VOLUME"],
+                extra_meta,
+                "segmentation output",
+            )
+        ]
+        logging.info(
+            "Created %d foreground segmentation volume image(s) from %d source "
+            "image(s) with threshold %.6g and segmentationcolormap=%s",
+            len(outputs),
+            len(images),
+            threshold,
+            use_colormap,
+        )
+        return outputs
+
+    outputs = []
+    for output_index, (source_image, segmentation) in enumerate(segment_items):
         output = ismrmrd.Image.from_array(segmentation, transpose=False)
         header = source_image.getHead()
         header.data_type = output.data_type
         output.setHead(header)
-        extra_meta = {
-            "WindowCenter": "0.5",
-            "WindowWidth": "1",
-        }
-        if use_colormap:
-            extra_meta["LUTFileName"] = SEGMENTATION_LUT
         _stamp_output_image(
             output,
             source_image,
@@ -650,34 +698,207 @@ def _restamp_originals(images):
     if not images:
         return []
 
-    series_identity = _build_output_series_identity(
-        images[0],
-        ORIGINAL_SERIES_INDEX,
-        "original",
-        ORIGINAL_SERIES_NAME,
-    )
     outputs = []
-    for output_index, source_image in enumerate(images):
-        output = ismrmrd.Image.from_array(
-            np.asarray(source_image.data).copy(),
-            transpose=False,
+    source_groups = _source_image_groups(images)
+    if len(source_groups) > 1:
+        logging.info(
+            "sendoriginal split %d received image(s) into %d source group(s)",
+            len(images),
+            len(source_groups),
         )
-        header = source_image.getHead()
-        header.data_type = output.data_type
-        output.setHead(header)
-        _stamp_output_image(
-            output,
-            source_image,
-            ORIGINAL_SERIES_INDEX,
-            output_index,
-            series_identity["series_name"],
-            "Image",
+
+    for group_index, group_images in enumerate(source_groups):
+        series_index = _grouped_series_index(ORIGINAL_SERIES_INDEX, group_index)
+        series_identity = _build_output_series_identity(
+            group_images[0],
+            series_index,
+            "original",
             ORIGINAL_SERIES_NAME,
-            ["PYTHON", "OPENRECON_ORIGINAL_COPY"],
-            series_identity=series_identity,
         )
-        outputs.append(output)
+        original_items = [
+            (source_image, np.asarray(source_image.data).copy())
+            for source_image in group_images
+        ]
+        if _source_geometry_needs_explicit_volume(group_images):
+            outputs.append(
+                _pack_explicit_volume(
+                    original_items,
+                    series_index,
+                    series_identity,
+                    "Image",
+                    ORIGINAL_SERIES_NAME,
+                    ["PYTHON", "OPENRECON_ORIGINAL_VOLUME"],
+                    {},
+                    "original output",
+                )
+            )
+            continue
+
+        for output_index, (source_image, source_data) in enumerate(original_items):
+            output = ismrmrd.Image.from_array(
+                source_data,
+                transpose=False,
+            )
+            header = source_image.getHead()
+            header.data_type = output.data_type
+            output.setHead(header)
+            _stamp_output_image(
+                output,
+                source_image,
+                series_index,
+                output_index,
+                series_identity["series_name"],
+                "Image",
+                ORIGINAL_SERIES_NAME,
+                ["PYTHON", "OPENRECON_ORIGINAL_COPY"],
+                series_identity=series_identity,
+            )
+            outputs.append(output)
+
     return outputs
+
+
+def _source_image_groups(images):
+    groups = []
+    group_index_by_key = {}
+    for image in images:
+        key = _source_group_key(image)
+        group_index = group_index_by_key.get(key)
+        if group_index is None:
+            group_index = len(groups)
+            group_index_by_key[key] = group_index
+            groups.append([])
+        groups[group_index].append(image)
+    return groups
+
+
+def _source_group_key(image):
+    meta = _meta_from_image(image)
+    minihead = _image_minihead(image)
+    source_name = _source_series_name(image)
+    series_uid = _meta_text(meta, "SeriesInstanceUID") or _minihead_string_value(
+        minihead,
+        "SeriesInstanceUID",
+    )
+    series_grouping = _meta_text(
+        meta,
+        "SeriesNumberRangeNameUID",
+    ) or _minihead_string_value(
+        minihead,
+        "SeriesNumberRangeNameUID",
+    )
+    image_type = _meta_text(meta, "ImageType") or _minihead_string_value(
+        minihead,
+        "ImageType",
+    )
+    data_shape = tuple(int(value) for value in np.asarray(image.data).shape)
+    return (
+        series_uid,
+        series_grouping,
+        source_name,
+        image_type,
+        data_shape,
+    )
+
+
+def _grouped_series_index(base_series_index, group_index):
+    if group_index == 0:
+        return base_series_index
+    return EXTRA_ORIGINAL_SERIES_INDEX_START + group_index - 1
+
+
+def _pack_explicit_volume(
+    source_items,
+    series_index,
+    series_identity,
+    data_role,
+    image_type_token,
+    history,
+    extra_meta=None,
+    label="explicit output",
+):
+    source_items = list(source_items)
+    if not source_items:
+        raise ValueError(f"{label} has no source images to pack")
+
+    ordered_items, slice_axis = _ordered_volume_items(source_items, label)
+    output_slice_count = len(ordered_items)
+    output_spacing = _explicit_volume_output_spacing(
+        [source_image for source_image, _data in ordered_items],
+        slice_axis,
+    )
+
+    volume_slices = []
+    for index, (_source_image, data) in enumerate(ordered_items):
+        data = np.asarray(data)
+        if data.ndim != 4 or data.shape[0] != 1 or data.shape[1] != 1:
+            raise ValueError(
+                f"{label} explicit volume requires single-channel 2D source "
+                f"images; image {index} has shape {data.shape}"
+            )
+        volume_slices.append(data[0, 0])
+
+    volume_data = np.stack(volume_slices, axis=0)
+    output = ismrmrd.Image.from_array(volume_data, transpose=False)
+    source_image = ordered_items[0][0]
+    header = source_image.getHead()
+    header.data_type = output.data_type
+    header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    header.image_index = 1
+    header.slice = 0
+    header.contrast = 0
+    _set_header_sequence_field(
+        header,
+        "matrix_size",
+        [int(value) for value in output.getHead().matrix_size],
+    )
+
+    fov = [float(value) for value in header.field_of_view]
+    fov[2] = float(output_spacing * output_slice_count)
+    _set_header_sequence_field(header, "field_of_view", fov)
+    _set_header_sequence_field(
+        header,
+        "position",
+        [float(value) for value in _header_position(source_image.getHead())],
+    )
+    _set_header_sequence_field(
+        header,
+        "slice_dir",
+        [float(value) for value in slice_axis],
+    )
+    output.setHead(header)
+
+    explicit_meta = {
+        "Keep_image_geometry": str(int(0)),
+        "partition_count": str(int(1)),
+        "slice_count": str(int(output_slice_count)),
+        "NumberOfSlices": str(int(output_slice_count)),
+        "ImagesInAcquisition": str(int(output_slice_count)),
+    }
+    explicit_meta.update(_explicit_header_geometry_meta(header))
+    explicit_meta.update(extra_meta or {})
+    _stamp_output_image(
+        output,
+        source_image,
+        series_index,
+        0,
+        series_identity["series_name"],
+        data_role,
+        image_type_token,
+        history,
+        extra_meta=explicit_meta,
+        patch_minihead=False,
+        series_identity=series_identity,
+    )
+    logging.info(
+        "Packed %d %s image(s) into one explicit volume with matrix_size=%s "
+        "and field_of_view=%s",
+        output_slice_count,
+        label,
+        _format_vector(output.getHead().matrix_size),
+        _format_vector(output.getHead().field_of_view),
+    )
+    return output
 
 
 def _stamp_output_image(
@@ -1140,7 +1361,8 @@ def _validate_output_images(output_images, input_images):
     seen_image_keys = {}
     seen_storage_keys = {}
     seen_sop_uids = {}
-    source_slice_count = len(input_images)
+    source_image_count = len(input_images)
+    source_slice_count = _source_geometry_slice_limit(input_images) or source_image_count
     input_identity = _identity_values(input_images)
     input_has_minihead = any(_image_minihead(image) for image in input_images)
     series_identity = {}
@@ -1193,7 +1415,11 @@ def _validate_output_images(output_images, input_images):
             input_identity,
             seen_storage_keys,
             seen_sop_uids,
-            _series_slice_limit(int(image.image_series_index), source_slice_count),
+            _series_slice_limit(
+                int(image.image_series_index),
+                source_slice_count,
+                source_image_count,
+            ),
             errors,
         )
 
@@ -1338,11 +1564,6 @@ def _validate_storage_fields(
         slice_count = _meta_int(meta, "slice_count")
         if slice_count is None:
             errors.append(f"image {index} is missing Meta slice_count")
-        elif series_slice_limit and slice_count != series_slice_limit:
-            errors.append(
-                f"image {index} has Meta slice_count={slice_count}, "
-                f"expected {series_slice_limit}"
-            )
         elif header_slice >= slice_count:
             errors.append(
                 f"image {index} has slice {header_slice} outside explicit "
@@ -1405,11 +1626,11 @@ def _validate_storage_fields(
             errors.append(f"image {index} reuses input storage identity {field}={value}")
 
 
-def _series_slice_limit(series_index, source_slice_count):
+def _series_slice_limit(series_index, source_slice_count, source_image_count):
     if source_slice_count <= 0:
         return 0
     if series_index == UPSAMPLED_SERIES_INDEX:
-        return 2 * source_slice_count
+        return 2 * source_image_count
     if series_index == MIP_SERIES_INDEX:
         return 1
     return source_slice_count
@@ -1517,6 +1738,76 @@ def _ordered_upsample_sources(images):
             len(sort_indices) - 24,
         )
     return [images[index] for index in sort_indices], slice_axis
+
+
+def _ordered_volume_items(source_items, label):
+    source_items = list(source_items)
+    if len(source_items) < 2:
+        images = [source_image for source_image, _data in source_items]
+        return source_items, _infer_slice_axis([image.getHead() for image in images])
+
+    images = [source_image for source_image, _data in source_items]
+    headers = [image.getHead() for image in images]
+    slice_axis = _infer_slice_axis(headers)
+    projections = np.asarray(
+        [_projected_position(image, slice_axis) for image in images],
+        dtype=float,
+    )
+    duplicate_positions = _duplicate_projected_position_count(projections)
+    median_spacing = _median_projected_spacing(projections)
+    increasing = _is_projected_order_monotonic(projections, increasing=True)
+    decreasing = _is_projected_order_monotonic(projections, increasing=False)
+    logging.info(
+        "%s source geometry: count=%d axis=%s projected_range=[%.6f, %.6f] "
+        "median_spacing=%.6f duplicate_positions=%d receive_order_monotonic=%s",
+        label,
+        len(source_items),
+        _format_vector(slice_axis),
+        float(np.min(projections)),
+        float(np.max(projections)),
+        median_spacing,
+        duplicate_positions,
+        increasing or decreasing,
+    )
+    if duplicate_positions:
+        raise ValueError(
+            f"{label} source geometry has duplicate projected slice position(s); "
+            "cannot pack a safe explicit volume"
+        )
+    if increasing:
+        return source_items, slice_axis
+
+    sort_indices = sorted(
+        range(len(source_items)),
+        key=lambda index: (
+            round(float(projections[index]), 4),
+            int(headers[index].slice),
+            int(headers[index].image_index),
+            index,
+        ),
+    )
+    order_reason = (
+        "decreasing in physical position"
+        if decreasing
+        else "not monotonic in physical position"
+    )
+    logging.warning(
+        "%s source slices are %s; sorting by projected position before "
+        "packing explicit volume: first mappings %s",
+        label,
+        order_reason,
+        ", ".join(
+            f"out{output_index}->in{input_index}"
+            for output_index, input_index in enumerate(sort_indices[:24])
+        ),
+    )
+    if len(sort_indices) > 24:
+        logging.warning(
+            "%s source sort mapping omitted %d additional slice(s)",
+            label,
+            len(sort_indices) - 24,
+        )
+    return [source_items[index] for index in sort_indices], slice_axis
 
 
 def _validate_unique_projected_positions(images, slice_axis, label):
@@ -1727,6 +2018,21 @@ def _upsampled_output_spacing(images, slice_axis, fallback_half_step):
     return 1.0
 
 
+def _explicit_volume_output_spacing(images, slice_axis):
+    if len(images) > 1:
+        source_spacing = _median_projected_spacing(
+            [_projected_position(image, slice_axis) for image in images]
+        )
+        if source_spacing > SLICE_POSITION_TOLERANCE_MM:
+            return source_spacing
+
+    header = images[0].getHead()
+    source_spacing = float(header.field_of_view[2]) if header.field_of_view[2] else 0.0
+    if source_spacing > SLICE_POSITION_TOLERANCE_MM:
+        return source_spacing
+    return 1.0
+
+
 def _interpolated_half_step(images):
     if len(images) > 1:
         first = _header_position(images[0].getHead())
@@ -1753,7 +2059,47 @@ def _header_position(header):
 
 def _source_slice_count_hint(images):
     meta_keys = ("slice_count", "SliceCount", "NumberOfSlices", "NoOfSlices")
-    minihead_keys = meta_keys + ("ImagesInAcquisition", "sSliceArray.lSize")
+    minihead_keys = meta_keys + ("sSliceArray.lSize",)
+    return _first_positive_source_hint(images, meta_keys, minihead_keys)
+
+
+def _source_partition_count_hint(images):
+    meta_keys = ("partition_count", "PartitionCount", "NoOfPartitions")
+    return _first_positive_source_hint(images, meta_keys, meta_keys)
+
+
+def _source_geometry_slice_limit(images):
+    slice_hint = _source_slice_count_hint(images)
+    partition_hint = _source_partition_count_hint(images)
+    if (
+        partition_hint is not None
+        and partition_hint > 1
+        and len(images) > partition_hint
+        and (slice_hint is None or slice_hint >= len(images))
+    ):
+        return partition_hint
+    if slice_hint is not None:
+        return slice_hint
+    if partition_hint is not None and partition_hint > 1:
+        return partition_hint
+    return None
+
+
+def _source_geometry_needs_explicit_volume(images):
+    source_slice_count = _source_geometry_slice_limit(images)
+    if source_slice_count is None or len(images) <= source_slice_count:
+        return False
+    logging.warning(
+        "source geometry advertises %d slice/partition slot(s), but %d image(s) "
+        "were received; packing output as explicit volume geometry",
+        source_slice_count,
+        len(images),
+    )
+    return True
+
+
+def _first_positive_source_hint(images, meta_keys, minihead_keys=None):
+    minihead_keys = minihead_keys or meta_keys
     for image in images:
         meta = _meta_from_image(image)
         for key in meta_keys:
