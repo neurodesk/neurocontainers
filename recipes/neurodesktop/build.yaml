@@ -330,6 +330,7 @@ build:
         - install -m 0755 /tmp/config/jupyter/before_notebook.sh /usr/local/bin/before-notebook.d/before_notebook.sh
         - install -m 0755 /tmp/config/jupyter/jupyterlab_startup.sh /opt/neurodesktop/jupyterlab_startup.sh
         - install -m 0755 /tmp/config/jupyter/deferred_startup.sh /opt/neurodesktop/deferred_startup.sh
+        - install -m 0755 /tmp/config/jupyter/nested_container_runtime.sh /opt/neurodesktop/nested_container_runtime.sh
         - install -m 0755 /tmp/config/guacamole/guacamole.sh /opt/neurodesktop/guacamole.sh
         - install -m 0755 /tmp/config/guacamole/init_secrets.sh /opt/neurodesktop/init_secrets.sh
         - install -m 0755 /tmp/config/guacamole/ensure_rdp_backend.sh /opt/neurodesktop/ensure_rdp_backend.sh
@@ -464,6 +465,8 @@ readme: |-
   ```
 
   The JupyterLab launcher uses `${NEURODESK_WEBAPP_PORT:-8888}`. The Guacamole launcher delegates to Neurodesktop's Guacamole startup script.
+
+  When Neurodesktop is launched from Apptainer/Singularity and is expected to run Neurodesk app containers from inside the desktop, the outer runtime must allow nested container setup. If the outer container has `NoNewPrivs=1`, inner app launches can fail during user namespace setup. For setuid-capable deployments, bind a host Singularity runtime to `/opt/host-singularity-bin/singularity`; Neurodesktop will detect it automatically and put it first on `PATH` for app wrappers. Set `NEURODESKTOP_NESTED_CONTAINER_RUNTIME=host|image|auto` to force or disable this behavior.
 
   More documentation can be found here: https://www.neurodesk.org/
 
