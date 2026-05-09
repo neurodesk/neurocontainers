@@ -291,8 +291,13 @@ case "${NEURODESKTOP_SLURM_MODE}" in
                 ;;
 esac
 
-# This is needed to make containers writable as a workaround for macos with Apple Silicon. We need to do it here for the desktop
-# and in the dockerfile for the jupyter notebook
+# This is needed to make app containers writable as a workaround for macos with Apple Silicon.
+# We need to do it here for the desktop and in the dockerfile for the jupyter notebook.
+#
+# Host note: some setuid Singularity installations reject directory overlays for
+# non-root users. If /tmp/apptainer_overlay fails on a host, use a rootless
+# launch mode, a writable overlay image, or the host-runtime nested container
+# path documented in /opt/neurodesktop/nested_container_runtime.sh.
 export neurodesk_singularity_opts=" --overlay /tmp/apptainer_overlay "
 # export neurodesk_singularity_opts=" -w " THIS DOES NOT WORK FOR SIMG FILES IN OFFLINE MODE
 # There is a small delay in using --overlay in comparison to -w - maybe it would be faster to use a fixed size overlay file instead?
