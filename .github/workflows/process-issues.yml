@@ -43,7 +43,7 @@ jobs:
             const issueBody = context.payload.issue.body;
 
             // Extract base64 encoded content from issue body
-            const base64Regex = /```base64\n([\s\S]*?)\n```/;
+            const base64Regex = /```base64\r?\n([\s\S]*?)(?:\r?\n)?```/;
             const match = issueBody.match(base64Regex);
 
             if (!match) {
