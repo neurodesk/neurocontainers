@@ -67,9 +67,12 @@ if [ -z "$NEURODESKTOP_MSG_SHOWN" ] && [ -f '/usr/share/module.sh' ]; then
         fi
 fi
 
-# This also needs to be set in the Dockerfile, so it is available in a jupyter notebook
-export APPTAINER_BINDPATH=/data,/mnt,/neurodesktop-storage,/tmp,/cvmfs
-# This also needs to be set in the Dockerfile, so it is available in a jupyter notebook
+if [ -r /opt/neurodesktop/nested_container_runtime.sh ]; then
+        source /opt/neurodesktop/nested_container_runtime.sh
+else
+        export APPTAINER_BINDPATH="${APPTAINER_BINDPATH:-/data,/mnt,/neurodesktop-storage,/tmp,/cvmfs}"
+        export SINGULARITY_BINDPATH="${SINGULARITY_BINDPATH:-${APPTAINER_BINDPATH}}"
+fi
 
 export APPTAINERENV_SUBJECTS_DIR=${HOME}/freesurfer-subjects-dir
 export MPLCONFIGDIR=${HOME}/.config/matplotlib-mpldir
