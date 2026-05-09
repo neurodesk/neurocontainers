@@ -2,6 +2,15 @@
 
 # Configure the runtime used by Neurodesk app wrappers when Neurodesktop is
 # itself running inside Apptainer/Singularity.
+#
+# Host note: Ubuntu AppArmor can restrict unprivileged user namespaces. When
+# that policy is active, the bundled rootless Apptainer runtime may fail before
+# an app container starts with errors such as:
+#   Could not write info to setgroups: Permission denied
+# This is a host security-policy limitation, not an app-container failure. Use
+# an environment that permits nested rootless containers, disable the relevant
+# AppArmor userns restriction for the deployment, or bind a host setuid
+# Singularity runtime and set NEURODESKTOP_NESTED_CONTAINER_RUNTIME=host.
 
 neurodesktop_path_prepend_once() {
         local dir="$1"
