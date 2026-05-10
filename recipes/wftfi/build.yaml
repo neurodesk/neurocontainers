@@ -1,0 +1,65 @@
+name: wftfi
+version: 1.0.0
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:16.04
+  pkg-manager: apt
+
+  directives:
+    - run:
+        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
+        - chmod +x /usr/bin/ll
+        - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
+
+    - install:
+        - git
+        - curl
+        - ca-certificates
+
+    - workdir: /opt
+
+    - run:
+        - git clone https://gitlab.com/thomshaw92/wftfi.git
+
+    - copy: environment.yml /opt/wftfi/
+
+    - workdir: /opt/wftfi
+
+    - template:
+        name: miniconda
+        version: 4.7.12.1
+        env_name: wfTFI
+        yaml_file: /opt/wftfi/environment.yml
+
+    - environment:
+        DEPLOY_BINS: wfTFI
+
+    - copy: README.md /README.md
+
+deploy:
+  bins:
+    - wfTFI
+
+categories:
+  - quantitative imaging
+  - phase processing
+
+readme: |-
+  ----------------------------------
+  ## wftfi/{{ context.version }} ##
+
+  Example source code to perform water-fat total field inversion (wfTFI) quantitative susceptibility mapping.
+
+  Example:
+  ```
+  ml wftfi/{{ context.version }}
+  wfTFI
+  ```
+
+  More documentation can be found here: https://gitlab.com/christofboehm/wftfi
+
+  ----------------------------------
