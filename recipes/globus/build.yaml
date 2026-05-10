@@ -1,0 +1,59 @@
+name: globus
+version: 3.2.2
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: fedora:37
+  pkg-manager: yum
+
+  directives:
+    - run:
+        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
+        - chmod +x /usr/bin/ll
+        - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
+
+    - install:
+        - wget
+        - ca-certificates
+        - tk
+        - tcllib
+        - glibc
+        - libxcrypt-compat
+        - libXScrnSaver
+
+    - workdir: /opt
+
+    - run:
+        - wget https://downloads.globus.org/globus-connect-personal/linux/stable/globusconnectpersonal-latest.tgz
+        - tar xzf globusconnectpersonal-latest.tgz
+        - rm -rf globusconnectpersonal-latest.tgz
+
+    - environment:
+        DEPLOY_PATH: /opt/globusconnectpersonal-{{ context.version }}/
+        PATH: $PATH:/opt/globusconnectpersonal-{{ context.version }}/
+
+    - copy: README.md /README.md
+
+deploy:
+  path:
+    - /opt/globusconnectpersonal-{{ context.version }}/
+
+categories:
+  - data organisation
+
+readme: |-
+  ----------------------------------
+  ## globus/{{ context.version }} ##
+
+  Globus Connect Personal provides command-line tools for managing Globus endpoints.
+
+  Example:
+  ```
+  ml globus/{{ context.version }}
+  globusconnectpersonal -help
+  ```
+
+  ----------------------------------
