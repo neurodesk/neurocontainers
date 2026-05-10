@@ -1,0 +1,57 @@
+name: fatsegnet
+version: 1.0.gpu
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: tensorflow/tensorflow:1.6.0-gpu-py3
+  pkg-manager: apt
+
+  directives:
+    - run:
+        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
+        - chmod +x /usr/bin/ll
+        - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
+
+    - install:
+        - git
+        - python3-tk
+
+    - workdir: /opt
+
+    - run:
+        - git clone https://github.com/Deep-MI/FatSegNet.git
+
+    - workdir: /opt/FatSegNet
+
+    - run:
+        - mv tool /tool
+        - pip3 --no-cache-dir install pandas==0.21.0 scikit-learn==0.19.1 scipy==1.1. scikit-image==0.15.0 SimpleITK==1.1.0 nibabel==2.2.1 keras==2.2.4 numpy==1.15.4
+
+    - workdir: /tool
+
+    - run:
+        - bash /tool/bash_profile
+
+    - copy: README.md /README.md
+
+categories:
+  - image segmentation
+  - machine learning
+
+readme: |-
+  ----------------------------------
+  ## fatsegnet/{{ context.version }} ##
+
+  FatSegNet is a deep learning pipeline for adipose tissue segmentation on abdominal Dixon MRI.
+
+  Example:
+  ```
+  python3 tool/run_FatSegNet.py -i /YOUR_INPUT_FOLDER -outp /YOUR_OUTPUT_FOLDER -loc
+  ```
+
+  More documentation can be found here: https://github.com/Deep-MI/FatSegNet
+
+  ----------------------------------
