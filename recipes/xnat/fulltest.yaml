@@ -109,12 +109,12 @@ tests:
   # ==========================================================================
   - name: Tomcat version check
     description: Verify Apache Tomcat 9 is installed
-    command: bash -lc '/usr/share/tomcat9/bin/version.sh 2>&1'
+    command: bash -lc 'unset JAVA_HOME JRE_HOME; /usr/share/tomcat9/bin/version.sh 2>&1'
     expected_output_contains: "Apache Tomcat/9"
 
   - name: Tomcat server number
     description: Verify Tomcat server version number
-    command: bash -lc '/usr/share/tomcat9/bin/version.sh 2>&1'
+    command: bash -lc 'unset JAVA_HOME JRE_HOME; /usr/share/tomcat9/bin/version.sh 2>&1'
     expected_output_contains: "9.0.31"
 
   - name: Tomcat catalina script
