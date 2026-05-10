@@ -47,41 +47,51 @@ setup:
 
     # Create a Python script to generate test connectivity matrices
     cat > test_output/mfcsc/generate_test_data.py << 'PYTHON_SCRIPT'
-    import numpy as np
-    import os
+    import random
 
-    np.random.seed(42)  # For reproducibility
+    random.seed(42)  # For reproducibility
 
     n_regions = 10  # 5 regions per hemisphere
     n_subjects = 3
 
+    def symmetric_matrix(value_fn, diagonal):
+        matrix = [[0.0 for _ in range(n_regions)] for _ in range(n_regions)]
+        for i in range(n_regions):
+            matrix[i][i] = diagonal
+            for j in range(i + 1, n_regions):
+                value = value_fn(i, j)
+                matrix[i][j] = value
+                matrix[j][i] = value
+        return matrix
+
+    def write_csv(path, matrix):
+        with open(path, 'w') as f:
+            for row in matrix:
+                f.write(','.join(f'{value:.6f}' for value in row) + '\n')
+
     # Generate FC and SC matrices for multiple subjects
     for subj in range(1, n_subjects + 1):
-        # Generate random symmetric FC matrix (correlation-like values between -1 and 1)
-        fc_raw = np.random.uniform(-0.5, 0.8, (n_regions, n_regions))
-        fc = (fc_raw + fc_raw.T) / 2  # Make symmetric
-        np.fill_diagonal(fc, 1.0)  # Diagonal is 1 for correlations
+        # Generate symmetric FC matrix (correlation-like values between -1 and 1)
+        fc = symmetric_matrix(lambda _i, _j: random.uniform(-0.5, 0.8), 1.0)
 
-        # Generate random symmetric SC matrix (streamline counts, positive values)
-        sc_raw = np.random.exponential(scale=50, size=(n_regions, n_regions))
-        sc = (sc_raw + sc_raw.T) / 2  # Make symmetric
-        np.fill_diagonal(sc, 0)  # No self-connections in SC
+        # Generate symmetric SC matrix (streamline counts, positive values)
+        def sc_value(i, j):
+            value = random.expovariate(1 / 50)
+            # Add some structure - stronger ipsilateral than contralateral connections
+            # Left hemisphere: regions 0-4, Right hemisphere: regions 5-9
+            if (i < 5 and j < 5) or (i >= 5 and j >= 5):
+                value *= 1.5
+            return value
 
-        # Add some structure - stronger ipsilateral than contralateral connections
-        # Left hemisphere: regions 0-4, Right hemisphere: regions 5-9
-        for i in range(5):
-            for j in range(5):
-                if i != j:
-                    sc[i, j] *= 1.5  # Boost left-left connections
-                    sc[i+5, j+5] *= 1.5  # Boost right-right connections
+        sc = symmetric_matrix(sc_value, 0.0)
 
         # Save FC matrix
         fc_file = f'test_output/mfcsc/FC/subject{subj:02d}_fc.csv'
-        np.savetxt(fc_file, fc, delimiter=',', fmt='%.6f')
+        write_csv(fc_file, fc)
 
         # Save SC matrix
         sc_file = f'test_output/mfcsc/SC/subject{subj:02d}_sc.csv'
-        np.savetxt(sc_file, sc, delimiter=',', fmt='%.6f')
+        write_csv(sc_file, sc)
 
     print(f"Generated {n_subjects} FC and SC matrices with {n_regions} regions each")
     PYTHON_SCRIPT
@@ -91,9 +101,9 @@ setup:
 
     # Create the FC_SC_LIST file (tab-separated matching file)
     # List FC files in first column, matching SC files in second column
-    paste <(ls test_output/mfcsc/FC/*.csv | xargs -n1 basename | sort) \
-          <(ls test_output/mfcsc/SC/*.csv | xargs -n1 basename | sort) \
-          > test_output/mfcsc/fc_sc_list.txt
+    ls test_output/mfcsc/FC/*.csv | xargs -n1 basename | sort > test_output/mfcsc/fc_files.txt
+    ls test_output/mfcsc/SC/*.csv | xargs -n1 basename | sort > test_output/mfcsc/sc_files.txt
+    paste test_output/mfcsc/fc_files.txt test_output/mfcsc/sc_files.txt > test_output/mfcsc/fc_sc_list.txt
 
     echo "Test data setup complete"
     echo "FC_SC_LIST contents:"

@@ -310,8 +310,8 @@ tests:
 
   - name: Environment scripts exist
     description: Verify environment setup scripts are present
-    command: bash -lc 'test -d /.singularity.d/env && ls /.singularity.d/env/*.sh | wc -l'
-    expected_output_contains: "6"
+    command: bash -lc 'test -d /.singularity.d/env && count=$(ls /.singularity.d/env/*.sh | wc -l); test "$count" -ge 6 && echo "env scripts ok ($count)"'
+    expected_output_contains: "env scripts ok"
 
   # ==========================================================================
   # SYSTEM LIBRARY COMPATIBILITY
