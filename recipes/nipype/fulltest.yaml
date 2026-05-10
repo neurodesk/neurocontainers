@@ -262,13 +262,15 @@ tests:
     description: Test SelectFiles for template-based file selection
     command: |
       python -c "
+      from pathlib import Path
       from nipype.interfaces.io import SelectFiles
       templates = {'anat': 'sub-{subject}/anat/*_T1w.nii.gz',
                    'func': 'sub-{subject}/func/*_bold.nii.gz'}
       sf = SelectFiles(templates)
-      sf.inputs.base_directory = 'ds000001'
+      sf.inputs.base_directory = str(Path('${t1w}').parents[2])
       sf.inputs.subject = '01'
       print('SelectFiles configured with templates')
+      print('Base directory:', sf.inputs.base_directory)
       print('Anat template:', templates['anat'])
       "
     expected_output_contains: "T1w.nii.gz"
@@ -323,7 +325,7 @@ tests:
       python -c "
       from nipype.interfaces.fsl import BET
       bet = BET()
-      bet.inputs.in_file = 'ds000001/sub-01/anat/sub-01_T1w.nii.gz'
+      bet.inputs.in_file = '${t1w}'
       bet.inputs.frac = 0.5
       bet.inputs.mask = True
       bet.inputs.out_file = 'test_output/brain.nii.gz'
@@ -357,7 +359,7 @@ tests:
       python -c "
       from nipype.interfaces.fsl import MCFLIRT
       mc = MCFLIRT()
-      mc.inputs.in_file = 'ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz'
+      mc.inputs.in_file = '${bold}'
       mc.inputs.ref_vol = 0
       mc.inputs.save_plots = True
       mc.inputs.save_mats = True
