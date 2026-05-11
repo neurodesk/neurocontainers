@@ -261,13 +261,13 @@ jobs:
             done
           }
 
-          probe_endpoint "archive-default" """ "http://archive.ubuntu.com${LARGE_FILE_PATH}"
+          probe_endpoint "archive-default" "" "http://archive.ubuntu.com${LARGE_FILE_PATH}"
           probe_endpoint "archive-canonical-legacy" "--resolve archive.ubuntu.com:80:91.189.91.81" "http://archive.ubuntu.com${LARGE_FILE_PATH}"
-          probe_endpoint "au-archive" """ "http://au.archive.ubuntu.com${LARGE_FILE_PATH}"
-          probe_endpoint "ppa-release" """ "https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/dists/noble/Release"
+          probe_endpoint "au-archive" "" "http://au.archive.ubuntu.com${LARGE_FILE_PATH}"
+          probe_endpoint "ppa-release" "" "https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/dists/noble/Release"
 
           for ip in 91.189.91.81 185.125.189.186; do
-            sudo mtr --report --report-cycles 5 --tcp --port 80 --no-dns --wide "$ip" 2>&1 | head -40
+            sudo mtr --report --report-cycles 5 --tcp --port 80 --no-dns --report-wide "$ip" 2>&1 | head -40
           done
 
           set -e

@@ -11,9 +11,14 @@ on:
   workflow_dispatch:
     inputs:
       applications:
-        description: 'Applications (comma separated)'
+        description: 'Applications (comma separated). When network_probe_only=true, any placeholder works.'
         required: true
         type: string
+      network_probe_only:
+        description: 'Run only the network probe (no Docker build). Diagnostic.'
+        required: false
+        type: boolean
+        default: false
       runner:
         description: 'Runner pool to use'
         required: true
@@ -65,7 +70,15 @@ on:
         default: false
 
 jobs:
+  network-probe:
+    if: ${{ github.event.inputs.network_probe_only == 'true' }}
+    uses: ./.github/workflows/network-probe.yml
+    with:
+      runner: ${{ github.event.inputs.runner }}
+      samples: "5"
+
   list-apps:
+    if: ${{ github.event.inputs.network_probe_only != 'true' }}
     runs-on: ubuntu-22.04
     outputs:
       app_list: ${{ steps.process_app_list.outputs.app_list }}

@@ -1,0 +1,87 @@
+name: network-probe
+
+# Standalone, diagnostic-only workflow for the QRIScloud routing investigation.
+# Mirrors the probe step from build-app.yml but runs without a Docker build,
+# so it can be dispatched cheaply on any runner pool for A/B comparison.
+#
+# Delete this file once the routing investigation closes.
+
+permissions:
+  contents: read
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Runner pool to probe from'
+        required: true
+        type: string
+      samples:
+        description: 'Samples per endpoint'
+        required: false
+        type: string
+        default: "5"
+
+jobs:
+  probe:
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Runner identity
+        run: |
+          echo "=== Runner identity ==="
+          echo "runner.environment = ${{ runner.environment }}"
+          echo "runner.name        = ${{ runner.name }}"
+          echo "runner.os          = ${{ runner.os }}"
+          echo "runner.arch        = ${{ runner.arch }}"
+          echo "input.runner       = ${{ inputs.runner }}"
+          echo "samples            = ${{ inputs.samples }}"
+          echo "hostname           = $(hostname)"
+          echo "date_utc           = $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "kernel             = $(uname -r)"
+          echo
+          echo "=== Egress public IP ==="
+          curl -fsS --max-time 10 https://api.ipify.org || echo "(ipify unreachable)"
+          echo
+          curl -fsS --max-time 10 https://ifconfig.me || echo "(ifconfig.me unreachable)"
+          echo
+
+      - name: Network routing probe
+        run: |
+          # Don't fail the job on probe errors - diagnostic only.
+          set +e
+
+          sudo apt-get update -qq 2>/dev/null
+          command -v mtr >/dev/null 2>&1 || sudo apt-get install -y --no-install-recommends mtr-tiny 2>/dev/null
+
+          SAMPLES=${{ inputs.samples }}
+          LARGE_FILE_PATH="/ubuntu/dists/noble/Contents-amd64.gz"
+
+          echo "=== DNS resolution ==="
+          for h in archive.ubuntu.com security.ubuntu.com ppa.launchpadcontent.net au.archive.ubuntu.com; do
+            ips=$(getent ahostsv4 "$h" 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ')
+            echo "DNS $h -> $ips"
+          done
+
+          probe_endpoint() {
+            local label="$1" resolve_arg="$2" url="$3"
+            for i in $(seq 1 $SAMPLES); do
+              result=$(curl -m 30 $resolve_arg --range 0-10485760 \
+                -w "sample=$i tcp_connect=%{time_connect}s xfer_total=%{time_total}s bytes=%{size_download} speed=%{speed_download}B/s ip=%{remote_ip} http=%{http_code}" \
+                -o /dev/null -sS "$url" 2>&1)
+              echo "PROBE $label $result"
+            done
+          }
+
+          echo "=== Bandwidth probes ==="
+          probe_endpoint "archive-default" "" "http://archive.ubuntu.com${LARGE_FILE_PATH}"
+          probe_endpoint "archive-canonical-legacy" "--resolve archive.ubuntu.com:80:91.189.91.81" "http://archive.ubuntu.com${LARGE_FILE_PATH}"
+          probe_endpoint "au-archive" "" "http://au.archive.ubuntu.com${LARGE_FILE_PATH}"
+          probe_endpoint "ppa-release" "" "https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/dists/noble/Release"
+
+          echo "=== mtr (TCP/80, 5 cycles) ==="
+          for ip in 91.189.91.81 185.125.189.186; do
+            echo "--- mtr to $ip ---"
+            sudo mtr --report --report-cycles 5 --tcp --port 80 --no-dns --report-wide "$ip" 2>&1 | head -40
+          done
+
+          set -e
