@@ -1,0 +1,24 @@
+name: conditional
+version: "1.0"
+architectures:
+  - x86_64
+variables:
+  package_name:
+    try:
+      - condition: arch == "x86_64"
+        value: curl
+      - condition: arch == "aarch64"
+        value: wget
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - "{{ context.package_name }}"
+    - environment:
+        SELECTED_PACKAGE: "{{ context.package_name }}"
+deploy:
+  bins:
+    - "{{ context.package_name }}"
+readme: conditional

@@ -1,0 +1,4 @@
+/.pytest_cache/
+/local/
+__pycache__/
+*.py[cod]
