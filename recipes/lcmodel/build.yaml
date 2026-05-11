@@ -1,0 +1,89 @@
+name: lcmodel
+version: "6.3"
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:16.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - curl
+        - ca-certificates
+        - libxft2
+        - libxss1
+        - libtk8.5
+        - libnet-ifconfig-wrapper-perl
+        - vim
+        - nano
+        - unzip
+        - gv
+        - unrar
+    - workdir: /opt/lcmodel-{{ context.version }}/
+    - run:
+        - curl -o /opt/lcm-64.tar http://www.lcmodel.com/pub/LCModel/programs/lcm-64.tar && tar xf /opt/lcm-64.tar && rm -rf /opt/lcm-64.tar
+        - gunzip -c lcm-core.tar.gz | tar xf -
+        - rm -rf lcm-core.tar.gz
+    - workdir: /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets
+    - run:
+        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/3t.zip http://www.s-provencher.com/pub/LCModel/3t.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/3t.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/3t.zip
+        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/1.5t.zip http://www.s-provencher.com/pub/LCModel/1.5t.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/1.5t.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/1.5t.zip
+        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/7t.zip http://www.s-provencher.com/pub/LCModel/7t.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/7t.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/7t.zip
+        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/9.4t.zip http://www.s-provencher.com/pub/LCModel/9.4t.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/9.4t.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/9.4t.zip
+        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/basisset_LCModel.zip https://www.ismrm.org/workshops/Spectroscopy16/mrs_fitting_challenge/basisset_LCModel.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/basisset_LCModel.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/basisset_LCModel.zip
+        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_4000_NPts_2048.zip http://juchem.bme.columbia.edu/sites/default/files/2021-01/RawBasis_for_sLASERSiemens_TE_20_BW_4000_NPts_2048.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_4000_NPts_2048.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_4000_NPts_2048.zip
+        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024.zip http://juchem.bme.columbia.edu/sites/default/files/2021-01/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024.zip
+    - copy:
+        - license
+        - /opt/lcmodel-{{ context.version }}/.lcmodel/license
+    - workdir: /opt/datasets
+    - run:
+        - curl -o /opt/datasets/testdata.rar https://zenodo.org/record/3904443/files/Spectra_hippocampus%28rat%29_TE02.rar?download=1 && unrar x /opt/datasets/testdata.rar && rm -rf /opt/datasets/testdata.rar
+        - curl -o /opt/lcmodel-{{ context.version }}/manual.pdf http://www.lcmodel.com/pub/LCModel/manual/manual.pdf
+    - copy:
+        - setup_lcmodel.sh
+        - /opt/lcmodel-{{ context.version }}/.lcmodel/bin/setup_lcmodel.sh
+    - workdir: /opt/lcmodel-{{ context.version }}/.lcmodel/profiles/1/control-defaults
+    - copy:
+        - controlfiledefault
+        - /opt/lcmodel-{{ context.version }}/.lcmodel/profiles/1/control-defaults/controlfiledefault
+    - copy:
+        - gui-defaults
+        - /opt/lcmodel-{{ context.version }}/.lcmodel/profiles/1/gui-defaults
+    - run:
+        - chmod a+rwx /opt/lcmodel-{{ context.version }} -R
+    - environment:
+        PATH: /opt/lcmodel-{{ context.version }}/.lcmodel/bin/:/opt/lcmodel-{{ context.version }}/.lcmodel/:$PATH
+
+deploy:
+  path:
+    - /opt/lcmodel-{{ context.version }}/.lcmodel/bin/
+    - /opt/lcmodel-{{ context.version }}/.lcmodel/
+
+readme: |-
+  
+  ----------------------------------
+  ## lcmodel/6.3 ##
+  Automatic quantification of in vivo proton MR spectra. 
+  
+  When using this for the first time, run:
+  ```
+  setup_lcmodel.sh
+  ```
+  
+  Example:
+  ```
+  lcmgui
+  ```
+  
+  More documentation can be found here: http://www.lcmodel.com/lcmodel.shtml
+  The manual contains a lot of useful information: http://www.lcmodel.com/pub/LCModel/manual/manual.pdf (or /opt/lcmodel-6.3/manual.pdf)
+  
+  To run container outside of this environment: ml lcmodel/6.3
+  
+  ----------------------------------
+
+categories:
+  - spectroscopy
