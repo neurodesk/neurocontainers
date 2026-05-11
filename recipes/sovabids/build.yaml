@@ -1,0 +1,99 @@
+name: sovabids
+version: 0.3.1a0
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: debian:9
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - midori
+        - xdg-utils
+        - python-pyqt5
+        - unzip
+        - git
+        - apt-transport-https
+        - ca-certificates
+        - coreutils
+        - curl
+        - gnome-keyring
+        - gnupg
+        - libnotify4
+        - wget
+        - libnss3
+        - libxkbfile1
+        - libsecret-1-0
+        - libgtk-3-0
+        - libxss1
+        - libgbm1
+        - libxshmfence1
+        - libasound2
+        - libglu1-mesa
+        - libgl1-mesa-dri
+        - mesa-utils
+        - libgl1-mesa-glx
+        - spyder
+    - copy: sovabids.yml /opt/sovabids.yml
+    - template:
+        name: miniconda
+        version: 4.7.12
+        env_name: sovabids
+        yaml_file: /opt/sovabids.yml
+        pip_install: |
+          bids_validator
+          fastapi-jsonrpc
+          git+https://github.com/yjmantilla/bidscoin.git@sovabids
+          git+https://github.com/yjmantilla/sovabids.git@v0.3.1-alpha
+    - run:
+        - wget -O vscode.deb 'https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64' && apt install ./vscode.deb && rm -rf ./vscode.deb
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.python && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.vscode-pylance && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-keymap && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-renderers
+    - environment:
+        DONT_PROMPT_WSL_INSTALL: "1"
+    - workdir: /opt/
+    - run:
+        - curl -fsSL https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz | tar xz
+        - chmod a+rwx /opt/mne-bids-pipeline-main -R
+    - copy: code /usr/local/sbin/code
+    - run:
+        - chmod a+x /usr/local/sbin/code
+        - chmod a+rwx /opt/vscode-extensions -R
+    - environment:
+        XDG_RUNTIME_DIR: /neurodesktop-storage
+        RUNLEVEL: "3"
+    - user: neuro
+
+deploy:
+  bins:
+    - code
+
+readme: |-
+  
+  ----------------------------------
+  ## sovabids/0.3.1a0 ##
+  Python sovabids environment with VScode 
+  
+  This environment contains sovabids, a package for eeg to bids conversion.
+  
+  Example:
+  ```
+  source /opt/miniconda-4.7.12/etc/profile.d/conda.sh
+  conda activate sovabids
+  python
+  >>from sovabids.heuristics import from_io_example
+  >>sourcepath='data/lemon/V001/resting/010002.vhdr'
+  >>targetpath='data_bids/sub-010002/ses-001/eeg/sub-010002_ses-001_task-resting_eeg.vhdr'
+  >>print(from_io_example(sourcepath,targetpath))
+  ```
+  
+  More documentation can be found here: https://sovabids.readthedocs.io/en/latest/
+  
+  ----------------------------------
+
+categories:
+  - electrophysiology
+  - bids apps
