@@ -2,6 +2,7 @@ name: build-app
 
 permissions:
   contents: write
+  issues: write
   pull-requests: write
   packages: write
   id-token: write
@@ -65,6 +66,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           token: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+          fetch-depth: 0
 
       - name: Bootstrap build tooling
         shell: bash
@@ -87,7 +89,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends --no-upgrade \
             ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
           # Find the most recent non-prerelease apptainer that actually has an
-          # uploaded amd64.deb asset. `releases/latest` alone is unsafe — upstream
+          # uploaded amd64.deb asset. `releases/latest` alone is unsafe -- upstream
           # has tagged releases with empty asset arrays (e.g. v1.5.0 on 2026-05-07).
           APPTAINER_DEB_URL=$(curl -fsSL "https://api.github.com/repos/apptainer/apptainer/releases?per_page=20" \
             | jq -r 'first(.[] | select(.prerelease == false) | .assets[] | select(.name | test("^apptainer_[0-9.]+_amd64\\.deb$")) | .browser_download_url)')
@@ -204,6 +206,7 @@ jobs:
       packages: write
       id-token: write
       contents: write
+      issues: write
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
@@ -230,21 +233,16 @@ jobs:
           sudo mkdir -p "$BASE_PATH/docker"
           printf '{"data-root": "%s"}\n' "$BASE_PATH/docker" | sudo tee /etc/docker/daemon.json
           sudo systemctl restart docker
-
       - name: Network routing probe
+        if: runner.environment != 'github-hosted'
         run: |
-          # Don't fail the job on probe errors — diagnostic only.
+          # Don't fail the job on probe errors - diagnostic only.
           set +e
 
-          # Install diagnostic tools (mtr for TCP traceroute). apt lists may not be
-          # populated yet on a fresh ARC pod, so refresh quietly first; failure here
-          # is non-fatal — probe just runs without mtr.
           sudo apt-get update -qq 2>/dev/null
           command -v mtr >/dev/null 2>&1 || sudo apt-get install -y --no-install-recommends mtr-tiny 2>/dev/null
 
           SAMPLES=5
-          # ~30-50 MB file present on every Ubuntu mirror — large enough to escape
-          # TCP slow-start and yield real bandwidth numbers (not handshake artifacts).
           LARGE_FILE_PATH="/ubuntu/dists/noble/Contents-amd64.gz"
 
           echo "=== DNS resolution ==="
@@ -263,40 +261,16 @@ jobs:
             done
           }
 
-          echo ""
-          echo "=== A/B bandwidth probe — same content, different routes ==="
-          echo "(Forcing --resolve so we measure routing to specific IPs, not DNS lottery)"
-
-          echo ""
-          echo "--- archive.ubuntu.com via default DNS (likely Cloudflare today) ---"
-          probe_endpoint "archive-default" "" "http://archive.ubuntu.com${LARGE_FILE_PATH}"
-
-          echo ""
-          echo "--- archive.ubuntu.com forced to Canonical legacy 91.189.91.81 (US Internap path) ---"
+          probe_endpoint "archive-default" """ "http://archive.ubuntu.com${LARGE_FILE_PATH}"
           probe_endpoint "archive-canonical-legacy" "--resolve archive.ubuntu.com:80:91.189.91.81" "http://archive.ubuntu.com${LARGE_FILE_PATH}"
+          probe_endpoint "au-archive" """ "http://au.archive.ubuntu.com${LARGE_FILE_PATH}"
+          probe_endpoint "ppa-release" """ "https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/dists/noble/Release"
 
-          echo ""
-          echo "--- au.archive.ubuntu.com via default DNS (AARNet, control) ---"
-          probe_endpoint "au-archive" "" "http://au.archive.ubuntu.com${LARGE_FILE_PATH}"
-
-          echo ""
-          echo "--- ppa.launchpadcontent.net (git-core PPA Release file, real existing URL) ---"
-          # Release file is tiny (~5 KB) so this is connection-time-dominated, not a
-          # bandwidth measurement. Compare with archive-canonical-legacy (above) which
-          # is the actual bandwidth signal for the same /16 routing path.
-          probe_endpoint "ppa-release" "" "https://ppa.launchpadcontent.net/git-core/ppa/ubuntu/dists/noble/Release"
-
-          echo ""
-          echo "=== TCP traceroute to Canonical legacy IPs (port 80) ==="
           for ip in 91.189.91.81 185.125.189.186; do
-            echo ""
-            echo "--- mtr -T -P 80 to $ip ---"
             sudo mtr --report --report-cycles 5 --tcp --port 80 --no-dns --wide "$ip" 2>&1 | head -40
           done
 
-          # Re-enable strict mode for downstream steps (this is a step-local set +e)
           set -e
-
       - name: Bootstrap build tooling
         shell: bash
         run: |
@@ -318,7 +292,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends --no-upgrade \
             ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
           # Find the most recent non-prerelease apptainer that actually has an
-          # uploaded amd64.deb asset. `releases/latest` alone is unsafe — upstream
+          # uploaded amd64.deb asset. `releases/latest` alone is unsafe -- upstream
           # has tagged releases with empty asset arrays (e.g. v1.5.0 on 2026-05-07).
           APPTAINER_DEB_URL=$(curl -fsSL "https://api.github.com/repos/apptainer/apptainer/releases?per_page=20" \
             | jq -r 'first(.[] | select(.prerelease == false) | .assets[] | select(.name | test("^apptainer_[0-9.]+_amd64\\.deb$")) | .browser_download_url)')
@@ -393,8 +367,9 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # - name: Set up Docker Buildx
-      #   uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+      - name: Set up Docker Buildx
+        if: inputs.skip_docker_build != 'true'
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
 
       - name: Debug Dockerfile
         run: cat ./build/${APPLICATION}/${DOCKERFILE}
@@ -407,19 +382,34 @@ jobs:
       - name: Build new image
         if: inputs.skip_docker_build != 'true'
         env:
+          DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          cd ./build/${APPLICATION}
-          CACHE_IMAGE=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:latest
-          CACHE_FROM_ARGS=""
-          if docker pull "${CACHE_IMAGE}"; then
-            echo "Using cache image ${CACHE_IMAGE}"
-            CACHE_FROM_ARGS="--cache-from ${CACHE_IMAGE}"
+          cd "./build/${APPLICATION}"
+          CACHE_REF=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:buildcache
+          CACHE_FROM_ARGS=()
+          CACHE_TO_ARGS=(--cache-to type=inline)
+          if docker buildx imagetools inspect "${CACHE_REF}" >/dev/null 2>&1; then
+            echo "Using cache image ${CACHE_REF}"
+            CACHE_FROM_ARGS=(--cache-from "type=registry,ref=${CACHE_REF}")
           else
-            echo "Cache image ${CACHE_IMAGE} is unavailable; building without --cache-from"
+            echo "Cache image ${CACHE_REF} is unavailable; building without --cache-from"
+          fi
+          if [ "${DISABLE_AUTO_UPLOAD}" != "true" ]; then
+            CACHE_TO_ARGS+=(--cache-to "type=registry,ref=${CACHE_REF},mode=max")
+          else
+            echo "Auto-upload is disabled. Skipping registry cache export."
           fi
           mkdir -p "$HOME/.cache/neurocontainers/build-context"
-          docker build . --file ${DOCKERFILE} --tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} --build-context neurocontainer-cache="$HOME/.cache/neurocontainers/build-context" ${CACHE_FROM_ARGS} --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" --label "GITHUB_SHA=${SHORT_SHA}"
+          docker buildx build . \
+            --load \
+            --file "${DOCKERFILE}" \
+            --tag "ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}" \
+            --build-context "neurocontainer-cache=$HOME/.cache/neurocontainers/build-context" \
+            "${CACHE_FROM_ARGS[@]}" \
+            "${CACHE_TO_ARGS[@]}" \
+            --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" \
+            --label "GITHUB_SHA=${SHORT_SHA}"
           
       - name: Debug storage
         run: |
@@ -475,6 +465,114 @@ jobs:
             exit 1
           fi
 
+      - name: Analyze image layer waste with Dive
+        id: dive
+        if: inputs.skip_docker_build != 'true' && steps.imgcompare.outputs.IMGDIFFERS == 'true'
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+          DIVE_IMAGE: wagoodman/dive:v0.13.1
+          DIVE_LOWEST_EFFICIENCY: "0.90"
+          DIVE_HIGHEST_USER_WASTED_PERCENT: "0.10"
+        run: |
+          set +e
+          IMAGE="ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}"
+          RAW_REPORT="${RUNNER_TEMP}/dive-${APPLICATION}-${BUILDDATE}.raw.txt"
+          REPORT="${RUNNER_TEMP}/dive-${APPLICATION}-${BUILDDATE}.txt"
+
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            "${DIVE_IMAGE}" \
+            --ci \
+            --lowestEfficiency "${DIVE_LOWEST_EFFICIENCY}" \
+            --highestUserWastedPercent "${DIVE_HIGHEST_USER_WASTED_PERCENT}" \
+            "${IMAGE}" > "${RAW_REPORT}" 2>&1
+          DIVE_STATUS=$?
+
+          sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g' "${RAW_REPORT}" > "${REPORT}" 2>/dev/null || cp "${RAW_REPORT}" "${REPORT}"
+          cat "${REPORT}"
+
+          {
+            echo "image=${IMAGE}"
+            echo "report_path=${REPORT}"
+            echo "exit_code=${DIVE_STATUS}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Dive image layer waste analysis"
+            echo ""
+            echo "- Image: \`${IMAGE}\`"
+            echo "- Dive image: \`${DIVE_IMAGE}\`"
+            echo "- Exit code: \`${DIVE_STATUS}\`"
+            echo "- Thresholds: lowest efficiency \`${DIVE_LOWEST_EFFICIENCY}\`, highest user wasted percent \`${DIVE_HIGHEST_USER_WASTED_PERCENT}\`"
+            echo ""
+            echo '```text'
+            cat "${REPORT}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          WASTED_SPACE=false
+          if grep -q "Result:FAIL" "${REPORT}"; then
+            WASTED_SPACE=true
+          else
+            if [ "${DIVE_STATUS}" -ne 0 ]; then
+              echo "::warning::Dive analysis failed before producing a CI failure result. See the step log for details."
+            fi
+          fi
+          echo "wasted_space=${WASTED_SPACE}" >> "$GITHUB_OUTPUT"
+
+      - name: Open issue for Dive wasted space
+        if: steps.dive.outputs.wasted_space == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION }}
+          DIVE_IMAGE_REF: ${{ steps.dive.outputs.image }}
+          DIVE_REPORT_PATH: ${{ steps.dive.outputs.report_path }}
+          DIVE_EXIT_CODE: ${{ steps.dive.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          TITLE="Dive wasted space detected for ${IMAGENAME}"
+          BODY="${RUNNER_TEMP}/dive-issue-${APPLICATION}-${BUILDDATE}.md"
+          WORKFLOW_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          {
+            echo "## Summary"
+            echo ""
+            echo "Dive reported wasted Docker image space for \`${DIVE_IMAGE_REF}\`."
+            echo ""
+            echo "- Application: \`${APPLICATION}\`"
+            echo "- Image: \`${DIVE_IMAGE_REF}\`"
+            echo "- Build date: \`${BUILDDATE}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Workflow run: ${WORKFLOW_URL}"
+            echo "- Dive exit code: \`${DIVE_EXIT_CODE}\`"
+            echo "- Thresholds: lowest efficiency \`0.90\`, highest user wasted percent \`0.10\`"
+            echo ""
+            echo "## Dive Output"
+            echo ""
+            echo '```text'
+            head -c 50000 "${DIVE_REPORT_PATH}"
+            echo ""
+            echo '```'
+          } > "${BODY}"
+
+          EXISTING_ISSUE="$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --search "${TITLE} in:title" \
+            --json number \
+            --jq '.[0].number // ""')"
+
+          if [ -n "${EXISTING_ISSUE}" ]; then
+            gh issue comment "${EXISTING_ISSUE}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body-file "${BODY}"
+            echo "Updated existing Dive wasted-space issue #${EXISTING_ISSUE}."
+          else
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${TITLE}" \
+              --body-file "${BODY}"
+          fi
+
       # - name: Upload new image as build artifact
       #   if: inputs.skip_docker_build != 'true'
       #   uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -484,7 +582,7 @@ jobs:
       #     retention-days: 7
         
       - name: Push to GHCR
-        if: inputs.skip_docker_build != 'true'
+        if: inputs.skip_docker_build != 'true' && inputs.disable_auto_upload != 'true'
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
@@ -755,7 +853,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends --no-upgrade \
             ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
           # Find the most recent non-prerelease apptainer that actually has an
-          # uploaded amd64.deb asset. `releases/latest` alone is unsafe — upstream
+          # uploaded amd64.deb asset. `releases/latest` alone is unsafe -- upstream
           # has tagged releases with empty asset arrays (e.g. v1.5.0 on 2026-05-07).
           APPTAINER_DEB_URL=$(curl -fsSL "https://api.github.com/repos/apptainer/apptainer/releases?per_page=20" \
             | jq -r 'first(.[] | select(.prerelease == false) | .assets[] | select(.name | test("^apptainer_[0-9.]+_amd64\\.deb$")) | .browser_download_url)')
