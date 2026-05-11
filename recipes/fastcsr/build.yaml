@@ -1,0 +1,90 @@
+name: fastcsr
+version: "1.0"
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - git
+        - software-properties-common
+        - wget
+        - openjdk-11-jdk
+        - bc
+        - binutils
+        - libgomp1
+        - perl
+        - psmisc
+        - sudo
+        - tar
+        - tcsh
+        - unzip
+        - uuid-dev
+        - vim-common
+        - libjpeg62-dev
+        - python3-pip
+    - template:
+        name: freesurfer
+        version: 6.0.0
+    - copy:
+        - fs_license.txt
+        - /opt/freesurfer-6.0.0/license.txt
+    - environment:
+        LD_LIBRARY_PATH: /usr/lib/jvm/java-11-openjdk-amd64/lib:/usr/lib/jvm/java-11-openjdk-amd64/lib/server
+    - run:
+        - wget https://github.com/IndiLab/FastCSR/blob/main/docker/nighres-1.5.0-cp38-cp38-linux_x86_64.whl?raw=true -O /opt/nighres-1.5.0-cp38-cp38-linux_x86_64.whl && pip3 install /opt/nighres-1.5.0-cp38-cp38-linux_x86_64.whl && rm -rf /opt/nighres-1.5.0-cp38-cp38-linux_x86_64.whl
+        - pip install nighres==1.5.0
+        - pip install -U numpy
+        - pip install torch==1.9.1+cpu torchvision==0.10.1+cpu torchaudio==0.9.1 -f https://download.pytorch.org/whl/torch_stable.html
+    - environment:
+        SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL: "True"
+    - run:
+        - pip install nnunet==1.7.1 antspyx sh
+    - workdir: /opt
+    - run:
+        - git clone https://github.com/IndiLab/FastCSR.git
+    - workdir: /opt/FastCSR/
+    - run:
+        - wget "https://drive.usercontent.google.com/download?id=1qATJ2PT8e6RhBnfJviU6qTtBicVO9_Qr&export=download&authuser=0&confirm=t&uuid=ba0ee838-2af9-48be-8a27-39e5475e4802&at=APZUnTWLoGPK9o4jOoHb5vxdbqCf:1698212871026" -O /opt/FastCSR/model.zip && unzip /opt/FastCSR/model.zip && rm /opt/FastCSR/model.zip
+        - wget "https://drive.usercontent.google.com/download?id=1Ypw25hbpCloQzlbWhg1XWB-HuxIVlHH7&export=download&authuser=0&confirm=t&uuid=e00becd7-c885-4748-8099-04f472d7ccdd&at=APZUnTX9F-JDE6TLLHxD2NuSF0pA:1698212916237" -O /opt/FastCSR/data.zip && unzip /opt/FastCSR/data.zip && rm /opt/FastCSR/data.zip
+    - copy:
+        - license.txt
+        - /license.txt
+
+deploy:
+  path:
+    - /opt/FastCSR
+
+readme: |-
+  
+  ----------------------------------
+  ## fastcsr/{{ context.version }} ##
+   Reconstructing cortical surfaces from structural magnetic resonance imaging (MRI) is a prerequisite for surface-based functional and anatomical image analyses. Conventional algorithms for cortical surface construction are computationally inefficient and typically take several hours for each subject, causing a bottleneck in applications when fast turnaround time is needed. To address this challenge, here we proposed a fast cortical surface reconstruction (FastCSR) pipeline based on deep machine learning. 
+  
+  Example:
+  ```
+  cp /opt/FastCSR/ ~/ -r
+  cd ~/FastCSR/ 
+  python3 pipeline.py --sd ./data --sid sub-001  --t1 ./data/sub-001.nii.gz --parallel_scheduling off --verbose --optimizing_surface off
+  ```
+  
+  More documentation can be found here:  https://github.com/IndiLab/FastCSR/blob/main/README.md
+  
+  To make the executables and scripts inside this container transparently available in the command line of environments where Neurocommand is installed: ml fastcsr/{{ context.version }}
+  
+  Citation:
+  ```
+  Ren, J., Hu, Q., Wang, W. et al. Fast cortical surface reconstruction from MRI using deep learning. Brain Inf. 9, 6 (2022). https://doi.org/10.1186/s40708-022-00155-7
+  ```
+  
+  ----------------------------------
+
+categories:
+  - image segmentation
+  - machine learning
