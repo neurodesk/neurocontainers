@@ -2,6 +2,7 @@ name: arfiproc
 version: 1.0.0
 architectures:
     - x86_64
+    - aarch64
 
 files:
     - name: arfiproc.py
@@ -51,7 +52,7 @@ readme: |-
 
     you can build this recipe with:
     ```bash
-    sf-login arfiproc --architecture x86_64
+    python builder/build.py generate arfiproc --recreate --build --login --architecture x86_64
     ```
 
     ----------------------------------
