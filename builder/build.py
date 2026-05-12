@@ -294,6 +294,7 @@ def generate_release_file(
     version: str,
     recipe: dict,
     recipe_path: str = None,
+    architecture: str | None = None,
 ) -> None:
     """
     Generate a release JSON file for the built container.
@@ -322,28 +323,53 @@ def generate_release_file(
         # Fallback: check environment variable first, then current date
         build_date = os.environ.get("BUILDDATE", datetime.datetime.now().strftime("%Y%m%d"))
     
-    cli_app_name = f"{name} {version}"
+    normalized_architecture = ARCHITECTURES.get(architecture or "x86_64", architecture or "x86_64")
+    is_arm64 = normalized_architecture == "aarch64"
+    release_version = f"{version}-arm64" if is_arm64 else version
+    app_version = f"{version} arm64" if is_arm64 else version
+    image_suffix = "_arm64" if is_arm64 else ""
+
+    cli_app_name = f"{name} {app_version}"
 
     # Create release data structure
+    cli_app_data = {
+        "version": build_date,
+        "exec": "",
+        "apptainer_args": apptainer_args,
+    }
+    if is_arm64:
+        cli_app_data.update(
+            {
+                "architecture": normalized_architecture,
+                "image": f"{name}_{version}{image_suffix}",
+            }
+        )
+
     release_data = {
         "apps": {
-            cli_app_name: {
-                "version": build_date,
-                "exec": "",
-                "apptainer_args": apptainer_args,
-            }
+            cli_app_name: cli_app_data
         },
         "categories": categories,
     }
+    if is_arm64:
+        release_data["architecture"] = normalized_architecture
 
     # Add GUI apps from build.yaml
     for gui_app in gui_apps:
-        gui_app_name = f"{gui_app['name']}-{name} {version}"
-        release_data["apps"][gui_app_name] = {
+        gui_app_name = f"{gui_app['name']}-{name} {app_version}"
+        gui_app_data = {
             "version": build_date,
             "exec": gui_app["exec"],
             "apptainer_args": apptainer_args,
         }
+        if is_arm64:
+            gui_app_data.update(
+                {
+                    "architecture": normalized_architecture,
+                    "image": f"{name}_{version}{image_suffix}",
+                }
+            )
+        release_data["apps"][gui_app_name] = gui_app_data
 
     # Convert to JSON string for potential GitHub Actions use
     release_json = json.dumps(release_data, indent=2)
@@ -355,10 +381,10 @@ def generate_release_file(
         if github_output:
             with open(github_output, "a") as f:
                 f.write(f"container_name={name}\n")
-                f.write(f"container_version={version}\n")
+                f.write(f"container_version={release_version}\n")
                 # For multiline output, use heredoc format
                 f.write(f"release_file_content<<EOF\n{release_json}\nEOF\n")
-        print(f"Generated release data for {name} {version} (GitHub Actions mode)")
+        print(f"Generated release data for {name} {release_version} (GitHub Actions mode)")
     else:
         # Local development mode - write file directly
         repo_path = get_repo_path()
@@ -366,7 +392,7 @@ def generate_release_file(
         os.makedirs(releases_dir, exist_ok=True)
 
         # Write release file
-        release_file = os.path.join(releases_dir, f"{version}.json")
+        release_file = os.path.join(releases_dir, f"{release_version}.json")
         with open(release_file, "w") as f:
             f.write(release_json)
 
@@ -2591,7 +2617,13 @@ def build_and_run_container(
 
     # Generate release file if in CI or auto-build mode
     if should_generate_release_file(generate_release):
-        generate_release_file(name, version, load_description_file(recipe_path), recipe_path)
+        generate_release_file(
+            name,
+            version,
+            load_description_file(recipe_path),
+            recipe_path,
+            architecture=architecture,
+        )
 
     if login:
         abs_path = os.path.abspath(recipe_path)
@@ -3852,6 +3884,7 @@ def main(args):
                 ctx.version,
                 recipe,
                 recipe_path,
+                architecture=args.architecture,
             )
 
         if args.build:

@@ -27,10 +27,13 @@ runs:
         fi
 
         arch="$(dpkg --print-architecture)"
-        if [[ "$arch" != "amd64" ]]; then
-          echo "Apptainer ${version} release packages are only available for amd64 runners; found ${arch}." >&2
-          exit 1
-        fi
+        case "$arch" in
+          amd64|arm64) ;;
+          *)
+            echo "Apptainer ${version} release packages are not configured for ${arch} runners." >&2
+            exit 1
+            ;;
+        esac
 
         cache_dir="${RUNNER_TEMP:-/tmp}/apptainer/${version}/${arch}"
         deb_path="${cache_dir}/apptainer.deb"

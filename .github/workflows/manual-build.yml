@@ -6,7 +6,7 @@ permissions:
   pull-requests: write
   packages: write
   id-token: write
-  
+
 on:
   workflow_dispatch:
     inputs:
@@ -20,6 +20,8 @@ on:
         type: choice
         options:
         - "neurodesk-arcrunner-neurocontainers"
+        - "blacksmith-8vcpu-ubuntu-2404"
+        - "blacksmith-8vcpu-ubuntu-2404-arm"
         - "ubuntu-22.04"
         - "self-hosted"
         default: "neurodesk-arcrunner-neurocontainers"
@@ -88,7 +90,7 @@ jobs:
           "neurodesk-arcrunner-neurocontainers")
             runner='"neurodesk-arcrunner-neurocontainers"'
             ;;
-          "ubuntu-22.04"|"self-hosted")
+          "blacksmith-8vcpu-ubuntu-2404"|"blacksmith-8vcpu-ubuntu-2404-arm"|"ubuntu-22.04"|"self-hosted")
             runner="\"$CHOICE\""
             ;;
           *)
