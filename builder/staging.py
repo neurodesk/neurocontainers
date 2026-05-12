@@ -18,9 +18,15 @@ class DeclaredFile:
 
 
 @dataclass
+class CopySource:
+    source: str
+    declared_name: str | None = None
+
+
+@dataclass
 class StagingPlan:
     files: dict[str, DeclaredFile] = field(default_factory=dict)
-    copy_sources: list[str] = field(default_factory=list)
+    copy_sources: list[CopySource] = field(default_factory=list)
     cache_mounts: dict[str, dict[str, str]] = field(default_factory=dict)
 
     def add_file(self, file: DeclaredFile) -> None:
@@ -119,8 +125,15 @@ def materialize_plan(
             link_or_copy(source, target)
 
     for source in plan.copy_sources:
-        source_path = recipe_dir / source
-        target = build_dir / source
+        target = build_dir / source.source
+        if source.declared_name is not None:
+            source_path = materialized.get(source.declared_name)
+            if source_path is None:
+                raise FileNotFoundError(f"declared copy source not materialized: {source.declared_name}")
+            link_or_copy(source_path, target)
+            continue
+
+        source_path = recipe_dir / source.source
         if source_path.is_dir():
             if target.exists():
                 shutil.rmtree(target)

@@ -61,3 +61,18 @@ def test_fixture_stages_filename_and_contents(tmp_path: Path) -> None:
     )
     assert (cache_dir / "inline.txt").read_text() == "hello inline"
     assert (cache_dir / "copied.txt").read_text() == "hello copied\n"
+
+
+def test_declared_copy_sources_are_staged_into_build_context(tmp_path: Path) -> None:
+    fixture = Path(__file__).resolve().parent / "fixtures" / "copy_declared_files"
+    compiled = compile_recipe(fixture, architecture="x86_64")
+    build_dir = tmp_path / "build"
+    materialize_plan(
+        compiled.staging_plan,
+        fixture,
+        build_dir,
+        http_cache_dir=tmp_path / "httpcache",
+        download=False,
+    )
+    assert (build_dir / "inline.txt").read_text() == "hello inline"
+    assert (build_dir / "copied.txt").read_text() == "hello copied\n"
