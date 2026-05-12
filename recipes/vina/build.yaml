@@ -7,11 +7,12 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
 
-  base-image: ghcr.io/metaphorme/vina-all:release
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
@@ -19,13 +20,17 @@ build:
         DEBIAN_FRONTEND: noninteractive
 
     - install:
-        - libxml2
+        - autodock
+        - autodock-vina
+        - ca-certificates
 
     - copy: test.sh /test.sh
 
 deploy:
-  path:
-    - /opt/AutoDock-Vina/build/linux/release/,/opt/adfr/bin
+  bins:
+    - autodock4
+    - vina
+    - vina_split
 
 readme: |-
   ----------------------------------
