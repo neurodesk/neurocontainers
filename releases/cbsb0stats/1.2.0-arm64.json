@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "cbsb0stats 1.2.0 arm64": {
+      "version": "20260513",
+      "exec": "",
+      "apptainer_args": [],
+      "architecture": "aarch64",
+      "image": "cbsb0stats_1.2.0_arm64"
+    }
+  },
+  "categories": [
+    "functional imaging"
+  ],
+  "architecture": "aarch64"
+}
