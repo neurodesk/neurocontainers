@@ -1,0 +1,38 @@
+# workshopdemo container test suite
+# Tests for workshopdemo v1.0.0 - Minimal hello-world workshop example
+#
+# This container includes:
+#   - hello: GNU hello example program
+#
+# Tests focus on the packaged runtime and documented example command.
+
+name: workshopdemo
+version: 1.0.0
+container: workshopdemo_1.0.0.simg
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/workshopdemo
+
+tests:
+  - name: hello on PATH
+    description: Verify the hello binary is available
+    command: command -v hello
+    expected_output_contains: "/usr/bin/hello"
+
+  - name: hello output
+    description: Verify the documented example command works
+    command: hello
+    expected_output_contains: "Hello, world!"
+
+  - name: hello version
+    description: Verify hello reports its version information
+    command: hello --version
+    expected_output_contains: "hello"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    echo "Test outputs preserved in test_output/workshopdemo/"
