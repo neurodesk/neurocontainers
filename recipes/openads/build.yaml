@@ -1,61 +1,127 @@
 name: openads
 version: 1.0.0
+
 copyright:
-  - license: MIT
+  - license: JHU Non-Profit Research Software License Agreement
     url: https://github.com/farialab/OpenADS/blob/main/LICENSE
+
 architectures:
   - x86_64
+
 structured_readme:
-  description: OpenADS is an all-in-one end-to-end stroke imaging analysis pipeline for diffusion-weighted (DWI) and perfusion-weighted (PWI) MRI. It provides preprocessing, registration, segmentation, and reporting workflows, and supports CLI, API, and GUI interfaces.
+  description: OpenADS is a multi-task stroke imaging analysis pipeline for diffusion-weighted (DWI) and perfusion-weighted (PWI) MRI. It provides preprocessing, registration, segmentation, and reporting workflows for acute stroke MRI, and supports CLI, API, and GUI interfaces.
   example: |-
-    ### Example usage
-
-    Run a DWI pipeline using the container:
+    Check the command-line interface:
 
     ```bash
-    docker run --rm -it \
-      --user "$(id -u):$(id -g)" \
-      -v "$(pwd)/docker_ads_output:/app/output" \
-      openads:gpu \
-      dwi \
+    ads --help
+    ```
+
+    Run the DWI workflow:
+
+    ```bash
+    ads dwi --subject-path /app/assets/examples/dwi/sub-02e8eb42 --all --gpu 1
+    ```
+
+    Run selected DWI stages:
+
+    ```bash
+    ads dwi \
       --subject-path /app/assets/examples/dwi/sub-02e8eb42 \
-      --all \
+      --stages prepdata,gen_mask,skull_strip,registration,inference,report \
       --gpu 1
     ```
 
-    Run a PWI pipeline:
+    Run the PWI workflow:
 
     ```bash
-    docker run --rm -it \
-      --user "$(id -u):$(id -g)" \
-      -v "$(pwd)/docker_ads_output:/app/output" \
-      openads:gpu \
-      pwi \
+    ads pwi --subject-path /app/assets/examples/pwi/sub-02e8eb42 --all --gpu 1
+    ```
+
+    Run selected PWI stages:
+
+    ```bash
+    ads pwi \
       --subject-path /app/assets/examples/pwi/sub-02e8eb42 \
+      --stages prepdata,gen_mask,skull_strip,gen_ttp,registration,ttpadc_coreg,inference,report \
+      --gpu 1
+    ```
+
+    Run the combined DWI plus PWI workflow:
+
+    ```bash
+    ads combined \
+      --dwi-subject-path /app/assets/examples/dwi/sub-02e8eb42 \
+      --pwi-subject-path /app/assets/examples/pwi/sub-02e8eb42 \
       --all \
       --gpu 1
     ```
+
+    Run the API backend:
+
+    ```bash
+    ads api
+    ```
+
+    Run the GUI launcher, if display forwarding is available:
+
+    ```bash
+    ads gui
+    ```
+  documentation: https://github.com/farialab/OpenADS
+  citation: |-
+    Liu CF, Hsu J, Xu X, Ramachandran S, Wang V, Miller MI, Hillis AE, Faria AV. Deep learning-based detection and segmentation of diffusion abnormalities in acute ischemic stroke. Communications Medicine, 2021. https://doi.org/10.1038/s43856-021-00062-8
+
+    Liu CF, Li J, Kim G, Miller MI, Hillis AE, Faria AV. Automatic comprehensive ASPECTS reports in clinical acute stroke MRIs. Scientific Reports, 2023. https://doi.org/10.1038/s41598-023-30242-6
+
+    Liu CF, Zhao Y, Yedavalli V, Leigh R, Falcao V, Miller MI, Hillis AE, Faria AV. Automatic comprehensive radiological reports for clinical acute stroke MRIs. Communications Medicine, 2023. https://doi.org/10.1038/s43856-023-00327-4
+
+    Liu CF, Leigh R, Johnson B, Urrutia V, Hsu J, Xu X, Li X, Mori S, Hillis AE, Faria AV. A large public dataset of annotated clinical MRIs and metadata of patients with acute stroke. Scientific Data, 2023. https://doi.org/10.1038/s41597-023-02457-9
+
+    Faria AV. Annotated Clinical MRIs and Linked Metadata of Patients with Acute Stroke, Baltimore, Maryland, 2009-2019. ICPSR, 2022. https://doi.org/10.3886/ICPSR38464.v5
+
 build:
   kind: neurodocker
-  base-image: sljhlab/openads:1.0.0-gpu
+  base-image: docker.io/sljhlab/openads:{{ context.version }}-gpu
   pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
   directives:
+    - entrypoint: bash
+
+    - environment:
+        OPENADS_ENABLE_WEB_UI: "0"
+
+    - deploy:
+        path: []
+        bins:
+          - ads
+
     - test:
-        name: verify_installation
+        name: verify_openads_installation
         script: |-
           #!/usr/bin/env bash
           set -euo pipefail
 
-          echo "[1/3] Check ads binary"
+          echo "[1/4] Check ads binary"
           command -v ads
 
-          echo "[2/3] Check ads --help"
+          echo "[2/4] Check ads help"
           ads --help >/dev/null
 
-          echo "[3/3] Check python import"
+          echo "[3/4] Check Python import"
           python3 -c "import ads; print('import ads: OK')"
 
-          echo "OpenADS installation verified successfully."
+          echo "[4/4] Check PyTorch CUDA visibility"
+          python3 - <<'PY'
+          import torch
+          print("torch:", torch.__version__)
+          print("cuda_available:", torch.cuda.is_available())
+          print("device_count:", torch.cuda.device_count())
+          PY
+
+          echo "OpenADS GPU container smoke test completed."
+
 categories:
   - diffusion imaging
   - structural imaging
@@ -64,50 +130,33 @@ categories:
   - visualization
   - machine learning
   - workflows
-icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEXklEQVR4AbSVa0wUVxTHfzO7wLKACLg+EIriq0qwiYYsQlHQUmh8ALFqKsZ+aGIlJG1atKUxBISUDxja2AfaaIylin1ZDWlaralBpcREq7S6QDFgSrHQdhF2oTyy7EzvzC4YJUtJWm/mnDNzz+N/zrlncuWXdjnUqVL+K061Kn9IPbBjcMok85iXHLTor8cGMbjUhXx1zUECkm7/7yC2VCfvJdxDtrscnFv0EV3WbzGZpP8MFBQqoQWvibTTP6owfgYtT37DbxuOM326Z0tRRhke7mFkpA9VVaYErAX/NOMPtOBjDp5o3q/b5uv8uLqQ23eLOHUilo67L2L7OZvTnyfQZDvC3wO/U3frMHtPmCfQ8Z+2U2w5wtWRbm80j3gAoIKrw8H18lpK96xncLCXy5cvc+PGDXp7W8nPm039lbcYGLJTUFAgqlIfou8vHCa3rx33J++Do9cTXfBxALdzBMfpXzhXcYr09HRKS0sJCgoiNDSUQ4cOkZuby4GKnbR1/YAkec4qPj6euLg4UlJScDqdVFZW4nflHEp7C3jb6gHQsv/VwcxOA8nJyVRXV1NSUoI72oRfjIX8/Hzq6+vJysrC7mwXeXme5uZmmpqadF1hYSGyLLN+bSr82QVut26kA6huBVdnP6vjrPpmVVUV4XkrmPNBBtMOJrJ0Tzo1NTV65rOignUbjc2YMYOIiAhWrVpFWVkZiqJQW1sLAQEg6aG9U6SoKKJF0dHRaOuevZuAJRHIJiMYZXqChxkdHdVUhIeH61Jj3d3d2O12GhoaiI2Npby8nNH5S5CeWAiiGs1G1hiS4CJQS4vonXjdvnkbyqALs2xiZa+FxR1mcnJyhAYaGxt1qbF169aRmppKUlISgYGBFBUVYdiUixQ1DyQtKN4KBJoxIpC6ujq0tWXLFhYcu0/JvjA2lgzS+4UNq9VKX18fwUaXZqLTpUuXCGltZZkCWRs282x5Fcs3iET8RYt0CwHwXFcMRxvW8I7taeYp03SQhIQEdry+m1fvnGS/4zvePX1Mb01xcTELZomJ8Dpb/P3ZFRlJRbCZ48MOPrv4FRcr99Jw4WOqbXW80XoNef/RKJ6qc7PGPoccy0oyMzN1kLy8PDo7O2lra0NrhTYlX4oZXx6loqoPQLxY40IdGmLBrZtknD9LwdcnvS0SapPBj+fnWNk3fxNpaWmEhISQnZ1NYmIiBoOBDw9WsH+zP/Mskj7vkiSJSXQLz8kfzyF7bab7mXk5Zi3XVpdRGpPNYpuorMfC0a3J3Hw7kK1WI2nLDJx9zcSZ3Qs5LH6yWHG4sgDzhpggHgLQtAZJZr55JjujU3hz4UYKrdt4IbORyDAJowHiomTS4w1kJPfzzPIw5ppMmptPmgDwqKVf3PlHt/Rv1TWAcUWf/j4ZmxRAjjAjzz7j018KFxfKXDGjPi3EmE6iw1f2Yz5TqcJnBVr2xmV3xmL5lHoVYWE+9T4BtOyV+/9+V2tVGCY5i38AAAD//4ccfwIAAAAGSURBVAMA7OTCgedT6+gAAAAASUVORK5CYII=
+
 readme: |-
   ----------------------------------
   ## openads/{{ context.version }} ##
 
-  OpenADS is an all-in-one end-to-end stroke imaging analysis pipeline for diffusion-weighted (DWI) and perfusion-weighted (PWI) MRI. It provides preprocessing, registration, segmentation, and reporting workflows, and supports CLI, API, and GUI interfaces.
+  OpenADS is a multi-task stroke imaging analysis pipeline for diffusion-weighted (DWI) and perfusion-weighted (PWI) MRI. It provides preprocessing, registration, segmentation, and reporting workflows for acute stroke MRI, and supports CLI, API, and GUI interfaces.
 
   Example:
   ```
-  ### Example usage
+  ads --help
 
-  Run a DWI pipeline using the container:
+  ads dwi --subject-path /app/assets/examples/dwi/sub-02e8eb42 --all --gpu 1
 
-  ```bash
-  docker run --rm -it \
-    --user "$(id -u):$(id -g)" \
-    -v "$(pwd)/docker_ads_output:/app/output" \
-    openads:gpu \
-    dwi \
-    --subject-path /app/assets/examples/dwi/sub-02e8eb42 \
-    --all \
-    --gpu 1
+  ads dwi --subject-path /app/assets/examples/dwi/sub-02e8eb42 --stages prepdata,gen_mask,skull_strip,registration,inference,report --gpu 1
+
+  ads pwi --subject-path /app/assets/examples/pwi/sub-02e8eb42 --all --gpu 1
+
+  ads pwi --subject-path /app/assets/examples/pwi/sub-02e8eb42 --stages prepdata,gen_mask,skull_strip,gen_ttp,registration,ttpadc_coreg,inference,report --gpu 1
+
+  ads combined --dwi-subject-path /app/assets/examples/dwi/sub-02e8eb42 --pwi-subject-path /app/assets/examples/pwi/sub-02e8eb42 --all --gpu 1
   ```
 
-  Run a PWI pipeline:
+  More documentation can be found here: https://github.com/farialab/OpenADS
 
-  ```bash
-  docker run --rm -it \
-    --user "$(id -u):$(id -g)" \
-    -v "$(pwd)/docker_ads_output:/app/output" \
-    openads:gpu \
-    pwi \
-    --subject-path /app/assets/examples/pwi/sub-02e8eb42 \
-    --all \
-    --gpu 1
-  ```
-  ```
+  Citation metadata is included in this recipe's structured_readme section.
 
-  More documentation can be found here: 
-
-  Citation:
-  ```
-
-  ```
+  License: JHU Non-Profit Research Software License Agreement
 
   To run container outside of this environment: ml openads/{{ context.version }}
 
