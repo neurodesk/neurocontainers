@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "apptainer 1.4.4 arm64": {
+      "version": "20260512",
+      "exec": "",
+      "apptainer_args": [],
+      "architecture": "aarch64",
+      "image": "apptainer_1.4.4_arm64"
+    }
+  },
+  "categories": [
+    "programming"
+  ],
+  "architecture": "aarch64"
+}
