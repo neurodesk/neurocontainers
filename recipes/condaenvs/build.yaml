@@ -20,13 +20,11 @@ build:
         env_name: condaenvs
         env_exists: "false"
 
-    - install:
-        - git
-
     - workdir: /opt
 
     - run:
-        - GIT_TERMINAL_PROMPT=0 git -c credential.helper= clone https://github.com/NeuroDesk/condaenvs.git /opt/condaenvs
+        - mkdir -p /opt/condaenvs
+        - tar -xz -C /opt/condaenvs --strip-components 1 -f {{ get_file("condaenvs") }}
 
     - copy:
         - install_all.sh
@@ -58,6 +56,8 @@ readme: |
   ----------------------------------
 
 files:
+  - name: condaenvs
+    url: https://github.com/NeuroDesk/condaenvs/archive/62701ffbf9d38ea6110a84aa9787fc78de679b78.tar.gz
   - name: install_all.sh
     contents: |
       set -e
