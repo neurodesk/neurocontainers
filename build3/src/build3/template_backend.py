@@ -11,7 +11,7 @@ from .dockerfile import _install_command
 from .ir import Env, Install, Run
 
 
-_TEMPLATE_DIR = Path(__file__).with_name("neurodocker_templates")
+_TEMPLATE_DIR = Path(__file__).with_name("templates")
 _JINJA = jinja2.Environment()
 
 

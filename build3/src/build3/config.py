@@ -26,7 +26,7 @@ def default_config(start: Path | None = None) -> BuildConfig:
         repo_root=repo_root,
         recipe_roots=(repo_root / "recipes",),
         include_dirs=(repo_root,),
-        output_root=repo_root / "build3" / "local" / "build",
+        output_root=repo_root / "build",
     )
 
 

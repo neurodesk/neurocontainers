@@ -265,6 +265,7 @@ def compile_recipe(
     local_keys: set[str] | None = None,
     include_dirs: tuple[Path, ...] = (),
     parallel_jobs: int | None = None,
+    option_overrides: dict[str, bool] | None = None,
 ) -> CompiledRecipe:
     recipe_file = load_recipe_file(recipe_dir)
     recipe = recipe_file.data
@@ -279,9 +280,14 @@ def compile_recipe(
         for key, value in (recipe.get("options") or {}).items()
         if isinstance(value, dict)
     }
+    option_values.update(option_overrides or {})
+    version = str(recipe["version"])
+    for key, value in (recipe.get("options") or {}).items():
+        if option_values.get(str(key)) and isinstance(value, dict):
+            version += str(value.get("version_suffix") or "")
     context = RenderContext(
         name=recipe["name"],
-        version=recipe["version"],
+        version=version,
         original_version=recipe["version"],
         arch=arch,
         parallel_jobs=parallel_jobs or (os.cpu_count() or 1),
@@ -473,6 +479,14 @@ def compile_recipe(
     for directive in build.get("directives", []) or []:
         apply_directive(directive)
 
+    reverse_file_sources = {source: name for name, source in context.file_sources.items()}
+    for cache_id, files in context.cache_filenames.items():
+        plan.cache_mounts[cache_id] = {
+            reverse_file_sources[source]: guest
+            for guest, source in files.items()
+            if source in reverse_file_sources
+        }
+
     top_level_deploy = renderer.render_value(recipe.get("deploy") or {}, context)
     if not deploy_bins and isinstance(top_level_deploy, dict):
         bins = top_level_deploy.get("bins", [])
@@ -494,7 +508,7 @@ def compile_recipe(
         recipe=recipe,
         recipe_dir=recipe_dir,
         name=recipe["name"],
-        version=recipe["version"],
+        version=version,
         architecture=arch,
         readme=readme,
         definition=definition,

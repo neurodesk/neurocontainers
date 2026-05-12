@@ -7,12 +7,17 @@ requires-python = ">=3.10"
 dependencies = [
     "jinja2>=3.1.6",
     "pyyaml>=6.0.2",
-    "neurodocker>=2.0.2",
     "attrs>=23.0.0",
 ]
 
 [tool.setuptools]
-packages = ["builder"]
+packages = ["builder", "build3"]
+
+[tool.setuptools.package-dir]
+build3 = "build3/src/build3"
+
+[tool.setuptools.package-data]
+build3 = ["templates/*.yaml"]
 
 [tool.uv]
 package = true

@@ -30,6 +30,8 @@ def test_stage_dcm2niix_creates_placeholder_without_download(tmp_path: Path) -> 
         download=False,
     )
     assert (cache_dir / "dcm2niix_lnx.zip").exists()
+    mounted = list(cache_dir.glob("h*/dcm2niix_lnx.zip"))
+    assert mounted, "declared files used via get_file() must be staged under their cache mount id"
 
 
 def test_stage_literal_file(tmp_path: Path) -> None:

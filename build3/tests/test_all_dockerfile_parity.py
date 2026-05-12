@@ -31,6 +31,10 @@ def _python_executable() -> str:
 
 def _dockerfile_text(build_dir: Path, suffix: str) -> str:
     dockerfiles = sorted(build_dir.glob(f"*{suffix}"))
+    if not dockerfiles and suffix != suffix.lower():
+        dockerfiles = sorted(build_dir.glob(f"*{suffix.lower()}"))
+    if not dockerfiles and suffix == suffix.lower():
+        dockerfiles = sorted(build_dir.glob(f"*{suffix[:-len('.dockerfile')]}.Dockerfile"))
     if not dockerfiles:
         raise AssertionError(f"no {suffix} file written under {build_dir}")
     if len(dockerfiles) != 1:

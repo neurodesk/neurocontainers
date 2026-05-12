@@ -15,7 +15,7 @@ from .tester import ContainerTesterAdapter, TestRequest
 
 
 def dockerfile_name(name: str, version: str) -> str:
-    return f"{name}_{version.replace(':', '_')}.Dockerfile".lower()
+    return f"{name}_{version.replace(':', '_')}".lower() + ".Dockerfile"
 
 
 def write_build_files(
@@ -55,6 +55,19 @@ def add_common_recipe_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output-root", type=Path, default=None)
     parser.add_argument("--recreate", action="store_true")
     parser.add_argument("--local", action="append", default=[], help="Named local context KEY=PATH")
+    parser.add_argument("--option", action="append", default=[], help="Set recipe option KEY=VALUE")
+
+
+def local_contexts(values: list[str]) -> tuple[tuple[str, Path], ...]:
+    contexts: list[tuple[str, Path]] = []
+    for value in values:
+        key, separator, path = value.partition("=")
+        if not key:
+            continue
+        if separator != "=":
+            raise ValueError("--local must be in KEY=PATH form")
+        contexts.append((key, Path(path).resolve()))
+    return tuple(contexts)
 
 
 def local_keys(values: list[str]) -> set[str]:
@@ -66,6 +79,16 @@ def local_keys(values: list[str]) -> set[str]:
     return keys
 
 
+def option_overrides(values: list[str]) -> dict[str, bool]:
+    overrides: dict[str, bool] = {}
+    for value in values:
+        key, separator, raw = value.partition("=")
+        if not key or separator != "=":
+            raise ValueError("--option must be in KEY=VALUE form")
+        overrides[key] = raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+    return overrides
+
+
 def compile_from_args(args: argparse.Namespace):
     config = default_config()
     recipe_dir = resolve_recipe(config, args.recipe)
@@ -75,6 +98,7 @@ def compile_from_args(args: argparse.Namespace):
         ignore_architecture=args.ignore_architectures,
         local_keys=local_keys(args.local),
         include_dirs=config.include_dirs,
+        option_overrides=option_overrides(args.option),
     )
 
 
@@ -115,7 +139,12 @@ def cmd_release(args: argparse.Namespace) -> int:
     return 0
 
 
-def build_inputs(compiled, build_dir: Path, dockerfile_path: Path) -> BuildInputs:
+def build_inputs(
+    compiled,
+    build_dir: Path,
+    dockerfile_path: Path,
+    local_args: list[str] | None = None,
+) -> BuildInputs:
     return BuildInputs(
         name=compiled.name,
         version=compiled.version,
@@ -123,6 +152,7 @@ def build_inputs(compiled, build_dir: Path, dockerfile_path: Path) -> BuildInput
         architecture=compiled.architecture,
         build_dir=build_dir,
         dockerfile_path=dockerfile_path,
+        local_contexts=local_contexts(local_args or []),
     )
 
 
@@ -140,12 +170,12 @@ def cmd_build(args: argparse.Namespace) -> int:
     adapter = BuildKitAdapter() if args.method == "buildkit" else DockerAdapter()
     if args.method == "buildkit":
         command = adapter.run(
-            build_inputs(compiled, build_dir, dockerfile_path),
+            build_inputs(compiled, build_dir, dockerfile_path, args.local),
             build_dir / f"{compiled.name}_{compiled.version}.docker.tar",
             dry_run=args.dry_run,
         )
     else:
-        command = adapter.run(build_inputs(compiled, build_dir, dockerfile_path), dry_run=args.dry_run)
+        command = adapter.run(build_inputs(compiled, build_dir, dockerfile_path, args.local), dry_run=args.dry_run)
     print(" ".join(str(part) for part in command))
     return 0
 
@@ -162,7 +192,7 @@ def cmd_test(args: argparse.Namespace) -> int:
         download=args.build and not args.dry_run,
     )
     if args.build:
-        DockerAdapter().run(build_inputs(compiled, build_dir, dockerfile_path), dry_run=args.dry_run)
+        DockerAdapter().run(build_inputs(compiled, build_dir, dockerfile_path, args.local), dry_run=args.dry_run)
     command = ContainerTesterAdapter().run(
         TestRequest(tag=compiled.tag, architecture=compiled.architecture, offline_mode=args.offline_mode),
         dry_run=args.dry_run,
@@ -182,7 +212,7 @@ def cmd_make(args: argparse.Namespace) -> int:
         stage=True,
         download=not args.dry_run,
     )
-    inputs = build_inputs(compiled, build_dir, dockerfile_path)
+    inputs = build_inputs(compiled, build_dir, dockerfile_path, args.local)
     archive = build_dir / f"{compiled.name}_{compiled.version}.docker.tar"
     BuildKitAdapter().run(inputs, archive, dry_run=args.dry_run)
     sif_path = config.repo_root / "sifs" / f"{compiled.name}_{compiled.version}.sif"

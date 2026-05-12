@@ -21,6 +21,7 @@ class DeclaredFile:
 class StagingPlan:
     files: dict[str, DeclaredFile] = field(default_factory=dict)
     copy_sources: list[str] = field(default_factory=list)
+    cache_mounts: dict[str, dict[str, str]] = field(default_factory=dict)
 
     def add_file(self, file: DeclaredFile) -> None:
         if file.name in self.files:
@@ -63,6 +64,7 @@ def materialize_plan(
     cache_dir = build_dir / "cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
     http_cache = HttpCache(http_cache_dir)
+    materialized: dict[str, Path] = {}
 
     for file in plan.files.values():
         preferred = file.guest_filename or file.name
@@ -72,6 +74,7 @@ def materialize_plan(
             target.write_text(file.contents)
             if file.executable:
                 target.chmod(0o755)
+            materialized[file.name] = target
             continue
 
         if file.filename is not None:
@@ -85,6 +88,7 @@ def materialize_plan(
             link_or_copy(source, target)
             if file.executable:
                 target.chmod(0o755)
+            materialized[file.name] = target
             continue
 
         if file.url is not None:
@@ -99,9 +103,20 @@ def materialize_plan(
                 link_or_copy(source, target)
             if file.executable:
                 target.chmod(0o755)
+            materialized[file.name] = target
             continue
 
         raise ValueError(f"declared file {file.name!r} has no source")
+
+    for cache_id, files in plan.cache_mounts.items():
+        cache_mount_dir = cache_dir / cache_id
+        cache_mount_dir.mkdir(parents=True, exist_ok=True)
+        for file_name, guest_name in files.items():
+            source = materialized.get(file_name)
+            if source is None:
+                continue
+            target = cache_mount_dir / guest_name
+            link_or_copy(source, target)
 
     for source in plan.copy_sources:
         source_path = recipe_dir / source

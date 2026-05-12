@@ -23,11 +23,12 @@ class BuildInputs:
     architecture: str
     build_dir: Path
     dockerfile_path: Path
+    local_contexts: tuple[tuple[str, Path], ...] = ()
 
 
 class DockerAdapter:
     def command(self, inputs: BuildInputs) -> list[str]:
-        return [
+        command = [
             "docker",
             "buildx",
             "build",
@@ -39,9 +40,14 @@ class DockerAdapter:
             "-t",
             inputs.tag,
             "--build-context",
-            f"cache={inputs.build_dir / 'cache'}",
-            str(inputs.build_dir),
+            f"neurocontainer-cache={inputs.build_dir / 'cache'}",
         ]
+        for key, path in inputs.local_contexts:
+            if key == "neurocontainer-cache":
+                raise ValueError("local context name 'neurocontainer-cache' is reserved")
+            command.extend(["--build-context", f"{key}={path}"])
+        command.append(str(inputs.build_dir))
+        return command
 
     def run(self, inputs: BuildInputs, *, dry_run: bool = False) -> list[str]:
         command = self.command(inputs)
@@ -57,7 +63,7 @@ class DockerAdapter:
 
 class BuildKitAdapter:
     def command(self, inputs: BuildInputs, output_tar: Path) -> list[str]:
-        return [
+        command = [
             "buildctl",
             "build",
             "--frontend=dockerfile.v0",
@@ -74,6 +80,11 @@ class BuildKitAdapter:
             "--output",
             f"type=docker,name={inputs.tag},dest={output_tar}",
         ]
+        for key, path in inputs.local_contexts:
+            if key == "neurocontainer-cache":
+                raise ValueError("local context name 'neurocontainer-cache' is reserved")
+            command.extend(["--local", f"{key}={path}"])
+        return command
 
     def run(self, inputs: BuildInputs, output_tar: Path, *, dry_run: bool = False) -> list[str]:
         command = self.command(inputs, output_tar)

@@ -44,7 +44,7 @@ def test_conditional_fixture_resolves_arch_variable() -> None:
 
 
 def test_builtin_templates_are_native_directive_format() -> None:
-    template_dir = Path(__file__).resolve().parents[1] / "src" / "build3" / "neurodocker_templates"
+    template_dir = Path(__file__).resolve().parents[1] / "src" / "build3" / "templates"
     assert sorted(path.stem for path in template_dir.glob("*.yaml")) == [
         "afni",
         "ants",
@@ -65,6 +65,6 @@ def test_builtin_templates_are_native_directive_format() -> None:
             method_data = data.get(method)
             if not isinstance(method_data, dict):
                 continue
-            assert "env" not in method_data, f"{path.name}:{method} still uses neurodocker env"
-            assert "instructions" not in method_data, f"{path.name}:{method} still uses neurodocker instructions"
+            assert "env" not in method_data, f"{path.name}:{method} still uses legacy env"
+            assert "instructions" not in method_data, f"{path.name}:{method} still uses legacy instructions"
             assert isinstance(method_data.get("directives"), list), f"{path.name}:{method} has no directives"
