@@ -84,6 +84,9 @@ binaries:
             {% endfor %}
             {% endif -%}
             {% if self.pip_install -%}
+            if ! conda run --name {{ self.env_name }} python -m pip --version >/dev/null 2>&1; then
+              conda install -y {{ self.conda_opts|default("-q") }} --name {{ self.env_name }} python pip
+            fi
             bash -c "source activate {{ self.env_name }}
               python -m pip install --no-cache-dir {{ self.pip_opts }} \
               {%- for pkg in self.pip_install.split() %}
