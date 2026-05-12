@@ -69,3 +69,10 @@ def test_builtin_templates_are_native_directive_format() -> None:
             assert "env" not in method_data, f"{path.name}:{method} still uses legacy env"
             assert "instructions" not in method_data, f"{path.name}:{method} still uses legacy instructions"
             assert isinstance(method_data.get("directives"), list), f"{path.name}:{method} has no directives"
+
+
+def test_bids_validator_template_installs_setuptools_on_apt() -> None:
+    path = Path(__file__).resolve().parents[1] / "templates" / "bids_validator.yaml"
+    data = yaml.safe_load(path.read_text())
+    apt_dependencies = data["binaries"]["dependencies"]["apt"]
+    assert "python3-setuptools" in apt_dependencies
