@@ -1,0 +1,8 @@
+name: nipype-1.7.0
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3
+  - nipype=1.7.0
