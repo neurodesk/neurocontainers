@@ -18,7 +18,6 @@ from builder.validation import (
     DeployInfo,
     FileInfo
 )
-from builder.build import load_description_file
 
 
 def test_valid_minimal_recipe():
@@ -360,7 +359,8 @@ def test_two_digit_version_yaml_parsing():
             yaml.dump(recipe, f)
         
         # Load using the actual function
-        loaded = load_description_file(temp_dir)
+        with open(os.path.join(temp_dir, "build.yaml"), "r", encoding="utf-8") as handle:
+            loaded = yaml.safe_load(handle)
         
         # Version should be converted to string
         assert isinstance(loaded["version"], str), f"Version should be string, got {type(loaded['version'])}"

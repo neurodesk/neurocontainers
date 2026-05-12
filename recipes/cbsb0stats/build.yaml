@@ -64,7 +64,7 @@ readme: |-
   you can build this recipe with:
   ```bash
   source env/bin/activate
-  ./builder/build.py generate testing --recreate --build --login --architecture x86_64
+  sf-login testing --architecture x86_64
   ```
 
   or shorter: open the build.yaml file in the local terminal and run:

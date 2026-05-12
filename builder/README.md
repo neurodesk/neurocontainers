@@ -16,7 +16,7 @@ Run `sf-init <name> <version>` to create a new recipe.
 
 Run `sf-generate <name>` to generate a `Dockerfile`. If your in the same directory as a recipe the name is optional and automatically detected.
 
-Run `sf-build <name>` to generate and build the `Dockerfile`. This should be used instead of `docker build` since the context is generated in a separate `build` directory. After a successful build the builder automatically runs the Golang container tester inside the new image, building the tester helper image on-demand if it is missing locally.
+Run `sf-build <name>` to generate, stage, and build the Docker image. Use `sf-test <name> --build` when you also want to run the smoke test after building.
 
 Run `sf-make <recipe_dir>` to build a Singularity/Apptainer SIF using BuildKit without a Docker daemon. This generates a docker-archive and then builds a SIF (saved under `./sifs/`).
 
@@ -24,7 +24,7 @@ A common workflow involves building the container and running a command inside i
 
 ### Architecture Options
 
-All build commands (`sf-build`, `sf-login`, `sf-test`) support architecture options:
+All build commands (`sf-build`, `sf-login`, `sf-test`, `sf-make`) support architecture options:
 
 - `--architecture <arch>`: Specify the target architecture (e.g., `x86_64`, `aarch64`, `arm64`). Defaults to the current machine's architecture.
 - `--ignore-architectures`: Ignore architecture compatibility checks in the recipe.
@@ -186,11 +186,9 @@ build:
       - unzip -q {{ get_file("hello.zip") }} -d /tmp
 ```
 
-## NeuroDocker Builder
+## Build3 Builder
 
-[NeuroDocker](https://github.com/ReproNim/neurodocker) is a command line tool for easily generating Dockerfiles from a structured series of command line arguments.
-
-The YAML builder generates these command lines automatically so you don't need to manually run NeuroDocker.
+Build3 is the active local Python Dockerfile generator for NeuroContainers. It reads recipe YAML directly and does not shell out to NeuroDocker.
 
 The simplest way to explain the format is with a series of examples. More advanced directives are also supported but the following should be enough for most applications.
 
@@ -212,7 +210,7 @@ A do nothing build block looks like the above YAML. You need at least `kind`, `b
 
 The base image can be any Docker image based on Debian or Red Hat.
 
-NeuroDocker only accepts `apt` or `rpm` as the package manager.
+Build3 accepts `apt` or `rpm` as the package manager.
 
 ### Environment Directive
 
@@ -276,7 +274,7 @@ build:
 
 ### Template Directive
 
-NeuroDocker has a powerful set of templates for installing existing software. You should refer to the NeuroDocker documentation for a list and usage.
+Build3 includes local templates for the subset of template directives used by current NeuroContainers recipes.
 
 ```yaml
 build:

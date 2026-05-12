@@ -51,7 +51,7 @@ readme: |-
 
     you can build this recipe with:
     ```bash
-    ./builder/build.py generate arfiproc --recreate --build --login --architecture x86_64
+    sf-login arfiproc --architecture x86_64
     ```
 
     ----------------------------------

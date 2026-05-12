@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import sys
 from pathlib import Path
 
 from .adapters import BuildInputs, BuildKitAdapter, DockerAdapter, SifAdapter
@@ -49,7 +50,7 @@ def write_build_files(
 
 
 def add_common_recipe_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("recipe", help="Recipe name or recipe directory")
+    parser.add_argument("recipe", nargs="?", help="Recipe name or recipe directory")
     parser.add_argument("--architecture", default=None, help="Target architecture")
     parser.add_argument("--ignore-architectures", action="store_true")
     parser.add_argument("--output-root", type=Path, default=None)
@@ -91,7 +92,7 @@ def option_overrides(values: list[str]) -> dict[str, bool]:
 
 def compile_from_args(args: argparse.Namespace):
     config = default_config()
-    recipe_dir = resolve_recipe(config, args.recipe)
+    recipe_dir = resolve_recipe(config, args.recipe or str(Path.cwd()))
     return config, compile_recipe(
         recipe_dir,
         architecture=args.architecture,
@@ -177,6 +178,15 @@ def cmd_build(args: argparse.Namespace) -> int:
     else:
         command = adapter.run(build_inputs(compiled, build_dir, dockerfile_path, args.local), dry_run=args.dry_run)
     print(" ".join(str(part) for part in command))
+    if getattr(args, "generate_release", False) and not args.dry_run:
+        date = build_date_for_recipe(config.repo_root, compiled.recipe_dir)
+        path = write_release_file(
+            config.repo_root,
+            compiled.name,
+            compiled.version,
+            release_data(compiled.name, compiled.version, compiled.recipe, date),
+        )
+        print(f"Release file written: {path}")
     return 0
 
 
@@ -221,6 +231,79 @@ def cmd_make(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_init(args: argparse.Namespace) -> int:
+    config = default_config()
+    recipe_dir = config.repo_root / "recipes" / args.name
+    recipe_dir.mkdir(parents=True, exist_ok=True)
+    recipe_file = recipe_dir / "build.yaml"
+    if recipe_file.exists():
+        raise FileExistsError(f"recipe already exists: {recipe_file}")
+    recipe_file.write_text(
+        """name: {name}
+version: {version}
+
+architectures:
+  - x86_64
+
+copyright:
+  - license: TODO
+    url: TODO
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - file:
+        name: hello.txt
+        contents: Hello, world!
+    - run:
+        - cat {{{{ get_file("hello.txt") }}}}
+    - deploy:
+        bins:
+          - TODO
+
+readme: TODO
+""".format(name=args.name, version=args.version)
+    )
+    print(f"Recipe created: {recipe_file}")
+    return 0
+
+
+def cmd_cache(args: argparse.Namespace) -> int:
+    config = default_config()
+    cache_root = config.repo_root / "httpcache"
+    if args.all:
+        shutil.rmtree(cache_root, ignore_errors=True)
+        print(f"Removed cache directory: {cache_root}")
+        return 0
+    if args.temp_files:
+        count = 0
+        for path in cache_root.rglob("*.tmp") if cache_root.exists() else []:
+            path.unlink()
+            count += 1
+        print(f"Removed {count} temporary cache files")
+        return 0
+    print(cache_root)
+    return 0
+
+
+def cmd_login(args: argparse.Namespace) -> int:
+    cmd_build(args)
+    if args.dry_run:
+        return 0
+    config, compiled = compile_from_args(args)
+    command = ["docker", "run", "--rm", "-it"]
+    if args.offline_mode:
+        command.extend(["--network", "none"])
+    command.append(compiled.tag)
+    print(" ".join(command))
+    import subprocess
+
+    subprocess.check_call(command)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="build3 NeuroContainers builder prototype")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -242,6 +325,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_recipe_args(build)
     build.add_argument("--method", choices=["docker", "buildkit"], default="docker")
     build.add_argument("--dry-run", action="store_true", help="Print the build command without executing it")
+    build.add_argument("--generate-release", action="store_true", help="Write release metadata after a successful build")
     build.set_defaults(func=cmd_build)
 
     test = subparsers.add_parser("test", help="Run a built-container smoke test")
@@ -256,6 +340,24 @@ def build_parser() -> argparse.ArgumentParser:
     make.add_argument("--dry-run", action="store_true", help="Print commands without executing them")
     make.set_defaults(func=cmd_make)
 
+    init = subparsers.add_parser("init", help="Create a new recipe skeleton")
+    init.add_argument("name")
+    init.add_argument("version")
+    init.set_defaults(func=cmd_init)
+
+    cache = subparsers.add_parser("cache", help="Inspect or clean build3 cache files")
+    cache.add_argument("--temp-files", action="store_true")
+    cache.add_argument("--all", action="store_true")
+    cache.set_defaults(func=cmd_cache)
+
+    login = subparsers.add_parser("login", help="Build and open an interactive shell")
+    add_common_recipe_args(login)
+    login.add_argument("--method", choices=["docker", "buildkit"], default="docker")
+    login.add_argument("--dry-run", action="store_true", help="Print the build command without executing it")
+    login.add_argument("--offline-mode", action="store_true")
+    login.add_argument("--generate-release", action="store_true", help="Write release metadata after a successful build")
+    login.set_defaults(func=cmd_login)
+
     return parser
 
 
@@ -267,3 +369,84 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _run_with_default_command(command: str, argv: list[str] | None = None) -> int:
+    return main([command, *(argv if argv is not None else sys.argv[1:])])
+
+
+def sf_generate_main() -> None:
+    raise SystemExit(_run_with_default_command("generate"))
+
+
+def sf_build_main() -> None:
+    raise SystemExit(_run_with_default_command("build"))
+
+
+def sf_login_main() -> None:
+    raise SystemExit(_run_with_default_command("login"))
+
+
+def sf_test_main() -> None:
+    raise SystemExit(_run_with_default_command("test"))
+
+
+def sf_make_main() -> None:
+    raise SystemExit(_run_with_default_command("make"))
+
+
+def sf_init_main() -> None:
+    raise SystemExit(_run_with_default_command("init"))
+
+
+def sf_cache_main() -> None:
+    raise SystemExit(_run_with_default_command("cache"))
+
+
+def sf_test_remote_main() -> None:
+    from workflows.test_runner import ContainerTestRunner, TestRequest
+
+    parser = argparse.ArgumentParser(description="Run release container tests")
+    parser.add_argument("recipe")
+    parser.add_argument("--version")
+    parser.add_argument("--release-file")
+    parser.add_argument("--runtime", choices=["docker", "apptainer", "singularity"])
+    parser.add_argument("--location", choices=["auto", "cvmfs", "local", "release", "docker"], default="auto")
+    parser.add_argument("--test-config")
+    parser.add_argument("-o", "--output")
+    parser.add_argument("--gpu", action="store_true")
+    parser.add_argument("--cleanup", action="store_true")
+    parser.add_argument("--auto-cleanup", action="store_true")
+    parser.add_argument("--docker-to-simg", action="store_true")
+    parser.add_argument("--docker-registry", default="neurodesk")
+    parser.add_argument("--docker-save-to-simg", default="builder/docker-save-to-simg.go")
+    parser.add_argument("--cleanup-all", action="store_true")
+    parser.add_argument("-v", "--verbose", action="store_true")
+    args = parser.parse_args()
+    runner = ContainerTestRunner()
+    if args.cleanup_all:
+        print(f"Cleaned up {runner.cleanup_all(verbose=args.verbose)} cached container file(s)")
+        return
+    output_path = Path(args.output).resolve() if args.output else None
+    outcome = runner.run(
+        TestRequest(
+            recipe=args.recipe,
+            version=args.version,
+            release_file=args.release_file,
+            test_config=args.test_config,
+            runtime=args.runtime,
+            location=args.location,
+            gpu=args.gpu,
+            cleanup=args.cleanup,
+            auto_cleanup=args.auto_cleanup,
+            docker_to_simg=args.docker_to_simg,
+            docker_registry=args.docker_registry,
+            docker_save_to_simg=args.docker_save_to_simg,
+            verbose=args.verbose,
+            allow_missing_tests=False,
+            output_dir=output_path.parent if output_path else None,
+            results_path=output_path,
+        )
+    )
+    print(f"\nTest results written to {outcome.results_path}")
+    raise SystemExit(0 if outcome.status == "passed" else 1)

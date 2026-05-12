@@ -4,7 +4,7 @@ tests:
     script: |
       # build:
       source .venv/bin/activate
-      ./builder/build.py generate cbsb0stats --recreate --build --login --architecture x86_64
+      sf-login cbsb0stats --architecture x86_64
 
       # Convert input DICOMs to ISMRMRD format
       rm /buildhostdirectory/input_fromDCM.h5

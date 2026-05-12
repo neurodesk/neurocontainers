@@ -77,7 +77,7 @@ readme: |-
   Build the recipe with:
   ```bash
   source env/bin/activate
-  python builder/build.py generate sodiumnufft --recreate --check-only --architecture x86_64
+  python -m build3 generate sodiumnufft --recreate --architecture x86_64
   ```
 
   Full build:

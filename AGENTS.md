@@ -39,12 +39,12 @@ sf-build <name> --ignore-architectures    # Skip architecture checks
 sf-build <name> --generate-release        # Generate release JSON after build
 ```
 
-### Direct build.py Usage
+### Direct build3 Usage
 
 ```bash
-python builder/build.py generate <name> --recreate --check-only     # Validate only
-python builder/build.py generate <name> --recreate --build --test   # Full build+test
-python builder/build.py generate <name> --recreate --build --test --timeout 3600
+python -m build3 generate <name> --recreate       # Generate Dockerfile only
+python -m build3 stage <name> --recreate          # Generate Dockerfile + stage files
+python -m build3 test <name> --recreate --build   # Build + run smoke test
 ```
 
 ### Validation (Run Before Committing)
@@ -172,7 +172,7 @@ The validation schema matches the Zod schema from `neurocontainers-ui`.
 1. `sf-init <toolname> <version>` to scaffold
 2. Edit `recipes/<toolname>/build.yaml` with build instructions
 3. Optionally create `recipes/<toolname>/test.yaml`
-4. Validate: `python builder/build.py generate <toolname> --recreate --check-only`
+4. Validate: `python -m build3 generate <toolname> --recreate`
 5. Build and test: `sf-build <toolname>` or `sf-login <toolname>` for interactive debugging
 
 ### Update a Container Version
@@ -181,7 +181,7 @@ The validation schema matches the Zod schema from `neurocontainers-ui`.
 3. Validate and rebuild
 
 ### Debug a Failing Build
-1. `python builder/build.py generate <name> --recreate --check-only` to inspect generated Dockerfile
+1. `python -m build3 generate <name> --recreate` to inspect generated Dockerfile
 2. Read the Dockerfile at `build/<name>/<name>_<version>.Dockerfile`
 3. `sf-login <name>` to get an interactive shell in the built container
 4. For CI failures, check GitHub Actions logs
@@ -197,6 +197,6 @@ The validation schema matches the Zod schema from `neurocontainers-ui`.
 - Container builds can take 1-60+ minutes depending on complexity. Do not cancel prematurely.
 - Some existing recipes have known YAML issues or broken builds from upstream changes. Focus on your changes rather than fixing unrelated existing issues.
 - The `template` recipe (recipes/template/) serves as the reference example.
-- NeuroDocker templates exist for many common neuroscience tools - check NeuroDocker docs before writing custom install steps.
+- Build3 includes local templates for the subset used by NeuroContainers recipes.
 - The `deploy` section controls how tools appear as loadable modules in NeuroDesk via Transparent Singularity.
 - Release files in `releases/` are auto-generated; do not edit manually.

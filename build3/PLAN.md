@@ -14,7 +14,7 @@ implementation path.
 
 ## Non-Goals
 
-- Do not replace `builder/build.py` during the prototype phase.
+- `builder/build.py` has been removed; build3 is now the active builder backend.
 - Do not change existing `sf-*` console scripts yet.
 - Do not edit generated release files.
 - Do not rewrite recipes to fit the new builder unless a recipe exposes an existing ambiguity that needs a documented compatibility decision.
@@ -33,7 +33,7 @@ Must preserve:
 - `{{ get_file("filename") }}` for declared files.
 - `has_local()` and `get_local()` for optional local build contexts.
 - Top-level `files`, `deploy`, `variables`, `readme`, `readme_url`, `categories`, `gui_apps`, `apptainer_args`, and `options`.
-- Build directive forms currently accepted by `builder/build.py`.
+- Build directive forms currently accepted by build3.
 - Architecture checks for `x86_64` and `aarch64`.
 - Declared file caching/staging semantics, including downloaded file basename preservation where the current builder relies on it.
 - Generated release JSON shape used by workflows and `releases/`.
@@ -165,7 +165,7 @@ python -m pytest build3/tests/test_staging.py
 
 ## Phase 3: Parity Tests Against Existing Builder
 
-Create parity tests that compare behavior with `builder/build.py` on representative recipes.
+Historical parity tests compared build3 with the retired builder. New tests should validate build3 behavior directly.
 
 Initial recipe set:
 

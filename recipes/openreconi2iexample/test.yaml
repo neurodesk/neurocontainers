@@ -3,7 +3,7 @@ tests:
    manual: true
    script: |
       source .venv/bin/activate
-      ./builder/build.py generate openreconi2iexample --recreate --build --login --architecture x86_64 --offline_mode true
+      sf-login openreconi2iexample --architecture x86_64 --offline-mode
 
       set -eux
       input_h5=/buildhostdirectory/input_image_dataset.h5

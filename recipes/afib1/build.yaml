@@ -54,7 +54,7 @@ readme: |-
     you can build this recipe with:
     ```bash
     source .venv/bin/activate
-    ./builder/build.py generate afib1 --recreate --build --login --architecture x86_64
+    sf-login afib1 --architecture x86_64
     ```
 
     ----------------------------------
