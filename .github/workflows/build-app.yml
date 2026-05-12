@@ -79,7 +79,6 @@ jobs:
           # (legacy self-hosted VMs). Runs in full on ARC pods and partially
           # on github-hosted runners (forks).
           if command -v docker >/dev/null 2>&1 \
-            && command -v apptainer >/dev/null 2>&1 \
             && command -v aws >/dev/null 2>&1 \
             && command -v swift >/dev/null 2>&1 \
             && command -v gh >/dev/null 2>&1 \
@@ -96,11 +95,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends --no-upgrade "${APT_PACKAGES[@]}"
           case "$(uname -m)" in
             x86_64)
-              APPTAINER_ARCH=amd64
               AWSCLI_ARCH=x86_64
               ;;
             aarch64|arm64)
-              APPTAINER_ARCH=arm64
               AWSCLI_ARCH=aarch64
               ;;
             *)
@@ -108,19 +105,6 @@ jobs:
               exit 1
               ;;
           esac
-          APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
-            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          if [ "$APPTAINER_ARCH" = "arm64" ]; then
-            sudo apt-get install -y --no-install-recommends software-properties-common
-            sudo add-apt-repository -y ppa:apptainer/ppa
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends apptainer
-          else
-            curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
-              -o /tmp/apptainer.deb
-            sudo apt-get install -y /tmp/apptainer.deb
-            rm /tmp/apptainer.deb
-          fi
           python3 -m venv "$RUNNER_TEMP/openstack-client-venv"
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install \
@@ -135,7 +119,7 @@ jobs:
             sudo /tmp/aws/install
             rm -rf /tmp/aws /tmp/awscliv2.zip
           fi
-          docker --version && apptainer --version && aws --version
+          docker --version && aws --version
           gh --version && jq --version && swift --version
 
       - name: Set environment variables
@@ -279,7 +263,6 @@ jobs:
           # (legacy self-hosted VMs). Runs in full on ARC pods and partially
           # on github-hosted runners (forks).
           if command -v docker >/dev/null 2>&1 \
-            && command -v apptainer >/dev/null 2>&1 \
             && command -v aws >/dev/null 2>&1 \
             && command -v swift >/dev/null 2>&1 \
             && command -v gh >/dev/null 2>&1 \
@@ -296,11 +279,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends --no-upgrade "${APT_PACKAGES[@]}"
           case "$(uname -m)" in
             x86_64)
-              APPTAINER_ARCH=amd64
               AWSCLI_ARCH=x86_64
               ;;
             aarch64|arm64)
-              APPTAINER_ARCH=arm64
               AWSCLI_ARCH=aarch64
               ;;
             *)
@@ -308,19 +289,6 @@ jobs:
               exit 1
               ;;
           esac
-          APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
-            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          if [ "$APPTAINER_ARCH" = "arm64" ]; then
-            sudo apt-get install -y --no-install-recommends software-properties-common
-            sudo add-apt-repository -y ppa:apptainer/ppa
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends apptainer
-          else
-            curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
-              -o /tmp/apptainer.deb
-            sudo apt-get install -y /tmp/apptainer.deb
-            rm /tmp/apptainer.deb
-          fi
           python3 -m venv "$RUNNER_TEMP/openstack-client-venv"
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install \
@@ -335,7 +303,7 @@ jobs:
             sudo /tmp/aws/install
             rm -rf /tmp/aws /tmp/awscliv2.zip
           fi
-          docker --version && apptainer --version && aws --version
+          docker --version && aws --version
           gh --version && jq --version && swift --version
 
       - name: Checkout repository
@@ -861,7 +829,6 @@ jobs:
           # Idempotency check: skip when everything's already pre-baked
           # (legacy self-hosted VMs). Runs in full on ARC pods.
           if command -v docker >/dev/null 2>&1 \
-            && command -v apptainer >/dev/null 2>&1 \
             && command -v aws >/dev/null 2>&1 \
             && command -v swift >/dev/null 2>&1 \
             && command -v gh >/dev/null 2>&1 \
@@ -878,11 +845,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends --no-upgrade "${APT_PACKAGES[@]}"
           case "$(uname -m)" in
             x86_64)
-              APPTAINER_ARCH=amd64
               AWSCLI_ARCH=x86_64
               ;;
             aarch64|arm64)
-              APPTAINER_ARCH=arm64
               AWSCLI_ARCH=aarch64
               ;;
             *)
@@ -890,19 +855,6 @@ jobs:
               exit 1
               ;;
           esac
-          APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
-            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          if [ "$APPTAINER_ARCH" = "arm64" ]; then
-            sudo apt-get install -y --no-install-recommends software-properties-common
-            sudo add-apt-repository -y ppa:apptainer/ppa
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends apptainer
-          else
-            curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
-              -o /tmp/apptainer.deb
-            sudo apt-get install -y /tmp/apptainer.deb
-            rm /tmp/apptainer.deb
-          fi
           python3 -m venv "$RUNNER_TEMP/openstack-client-venv"
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install \
@@ -917,7 +869,7 @@ jobs:
             sudo /tmp/aws/install
             rm -rf /tmp/aws /tmp/awscliv2.zip
           fi
-          docker --version && apptainer --version && aws --version
+          docker --version && aws --version
           gh --version && jq --version && swift --version
 
       - name: Download simg artifact
