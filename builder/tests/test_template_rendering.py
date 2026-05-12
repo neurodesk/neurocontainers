@@ -5,8 +5,10 @@ from pathlib import Path
 import pytest
 import yaml
 
+from builder.ir import Run
 from builder.template import RenderContext, TemplateError, TemplateRenderer
 from builder.recipe import compile_recipe
+from builder.template_backend import apply_builtin_template
 
 
 def test_strict_context_rendering() -> None:
@@ -76,3 +78,23 @@ def test_bids_validator_template_installs_setuptools_on_apt() -> None:
     data = yaml.safe_load(path.read_text())
     apt_dependencies = data["binaries"]["dependencies"]["apt"]
     assert "python3-setuptools" in apt_dependencies
+
+
+def test_miniconda_template_bootstraps_python_and_pip_for_pip_install() -> None:
+    directives: list[Run] = []
+    apply_builtin_template(
+        "miniconda",
+        {
+            "version": "latest",
+            "env_name": "testenv",
+            "env_exists": "false",
+            "pip_install": "examplepkg",
+            "arch": "aarch64",
+        },
+        "apt",
+        directives.append,
+    )
+    command = "\n".join(item.command for item in directives if isinstance(item, Run))
+    assert "conda run --name testenv python -m pip --version" in command
+    assert "conda install -y" in command
+    assert "--name testenv python pip" in command
