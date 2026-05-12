@@ -3,7 +3,7 @@ tests:
     manual: true
     script: |
       source .venv/bin/activate
-      ./builder/build.py generate vesselboost --recreate --build --login --architecture x86_64 --offline_mode true
+      sf-login vesselboost --architecture x86_64 --offline-mode
 
       # check that the CUDA version is valid for MARS: has to be CUDA 11.x
       python -c "import torch; print(torch.version.cuda)"

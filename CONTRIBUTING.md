@@ -46,7 +46,7 @@ If you're using GitHub Copilot or other AI-powered coding assistants, comprehens
    source env/bin/activate && ./workflows/test_all.sh
    
    # Build and test specific containers
-   python builder/build.py generate <recipe-name> --recreate --build --test
+   python -m builder test <recipe-name> --recreate --build
    ```
 4. **Commit your changes** with clear, descriptive commit messages
 5. **Submit a pull request** with a detailed description of your changes
@@ -69,8 +69,8 @@ To add a new neuroscience tool to NeuroContainers:
 2. Edit `recipes/<toolname>/build.yaml` to define the container
 3. Validate and test:
    ```bash
-   python builder/build.py generate <toolname> --recreate --check-only
-   python builder/build.py generate <toolname> --recreate --build --test
+   python -m builder generate <toolname> --recreate
+   python -m builder test <toolname> --recreate --build
    ```
 
 For detailed instructions, see the [Recipe Development Guidelines](https://www.neurodesk.org/developers/new_tools/) and [`.github/copilot-instructions.md`](.github/copilot-instructions.md).

@@ -72,12 +72,12 @@ build:
           R --slave -e "
             # Check R version
             cat('R version:', R.version.string, '\n')
-            
+
             # Test main package
             tryCatch({
               library("mimosa")
               cat('Successfully loaded mimosa\n')
-              
+
               # Try to get package info
               pkg_info <- packageDescription('mimosa')
               if (!is.na(pkg_info)) {
@@ -85,12 +85,12 @@ build:
                 cat('Package title:', pkg_info[['Title']], '\n')
               }
             }, error = function(e) {
-              cat('Warning: Could not load mimosa:', 
+              cat('Warning: Could not load mimosa:',
                   e[['message']], '\n')
               cat('Installed packages:\n')
               print(installed.packages()[,c('Package', 'Version')])
             })
-            
+
             # List key installed packages
             key_packages <- c('ANTsRCore', 'dplyr', 'extrantsr', 'fslr', 'neurobase', 'oasis', 'rlist', 'WhiteStripe', 'covr', 'knitr', 'rmarkdown', 'spelling', 'testthat')
             if (length(key_packages) > 0) {

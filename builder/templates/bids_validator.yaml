@@ -1,0 +1,26 @@
+name: bids_validator
+url: https://github.com/bids-standard/bids-validator
+binaries:
+  builder: neurodocker
+  urls:
+    1.13.0: https://github.com/bids-standard/bids-validator/releases/tag/v1.13.0
+  arguments:
+    required:
+    - version
+    optional:
+      node_version: '20'
+  dependencies:
+    apt:
+    - ca-certificates
+    - curl
+    - apt-utils
+    - gnupg
+    yum:
+    - curl
+  directives:
+  - run: "if [ ! -z `which node` ] ; then \\\n  echo \"node is installed, skipping its install.\" ; \\\nelse \\\n  {{ self.install_dependencies()\
+      \ }}\n  {%- if self.pkg_manager == \"apt\" %}\n    curl -SLO https://deb.nodesource.com/nsolid_setup_deb.sh\n    chmod\
+      \ 500 nsolid_setup_deb.sh\n    ./nsolid_setup_deb.sh {{ self.node_version }}\n    {{ self.install([\"nodejs\"]) }} ;\
+      \ \\\n  {% elif self.pkg_manager == \"yum\" %}\n    curl -SLO https://rpm.nodesource.com/nsolid_setup_rpm.sh\n    chmod\
+      \ 500 nsolid_setup_rpm.sh\n    ./nsolid_setup_rpm.sh {{ self.node_version }}\n    {{ self.install([\"nodejs --setopt=nodesource-nodejs.module_hotfixes=1\"\
+      ]) }} ; \\\n  {% endif -%}\nfi\nnode --version\nnpm --version\nnpm install -g bids-validator@{{ self.version }}\n"

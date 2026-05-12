@@ -4,7 +4,7 @@ tests:
     script: |
       # build:
       source .venv/bin/activate
-      ./builder/build.py generate openreconexample --recreate --build --login --architecture x86_64
+      sf-login openreconexample --architecture x86_64
 
       # Convert input DICOMs to ISMRMRD format
       rm /buildhostdirectory/t1.h5

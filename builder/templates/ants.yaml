@@ -1,0 +1,89 @@
+name: ants
+url: http://stnava.github.io/ANTs/
+binaries:
+  builder: neurodocker
+  arguments:
+    required:
+    - version
+    optional:
+      install_path: /opt/ants-{{ self.version }}
+  urls:
+    2.6.2: https://github.com/ANTsX/ANTs/releases/download/v2.6.2/ants-2.6.2-centos7-X64-gcc.zip
+    2.5.1: https://github.com/ANTsX/ANTs/releases/download/v2.5.1/ants-2.5.1-centos7-X64-gcc.zip
+    2.4.3: https://github.com/ANTsX/ANTs/releases/download/v2.4.3/ants-2.4.3-centos7-X64-gcc.zip
+    2.3.1: https://dl.dropbox.com/s/1xfhydsf4t4qoxg/ants-Linux-centos6_x86_64-v2.3.1.tar.gz
+  dependencies:
+    apt:
+    - ca-certificates
+    - curl
+    - unzip
+    yum:
+    - curl
+    - unzip
+  directives:
+  - environment:
+      ANTSPATH: '{{ self.install_path }}/'
+      PATH: '{{ self.install_path }}:$PATH'
+  - run: '{{ self.install_dependencies() }}
+
+      echo "Downloading ANTs ..."
+
+      {% if self.urls[self.version].endswith(''.zip'') -%}
+
+      curl -fsSL -o ants.zip {{ self.urls[self.version] }}
+
+      unzip ants.zip -d /opt
+
+      mv {{ self.install_path }}/bin/* {{ self.install_path }}
+
+      rm ants.zip
+
+      {% elif self.version != "2.4.1" -%}
+
+      mkdir -p {{ self.install_path }}
+
+      curl -fsSL {{ self.urls[self.version] }} \
+
+      | tar -xz -C {{ self.install_path }} --strip-components 1
+
+      {% endif -%}
+
+      '
+source:
+  builder: neurodocker
+  arguments:
+    required:
+    - version
+    optional:
+      repo: https://github.com/ANTsX/ANTs.git
+      install_path: /opt/ants-{{ self.version }}
+      cmake_opts: -DCMAKE_INSTALL_PREFIX={{ self.install_path }} -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF
+      make_opts: -j1
+  dependencies:
+    apt:
+    - ca-certificates
+    - cmake
+    - g++
+    - gcc
+    - git
+    - make
+    - zlib1g-dev
+    yum:
+    - ca-certificates
+    - cmake
+    - gcc-c++
+    - git
+    - make
+    - zlib-devel
+  directives:
+  - environment:
+      ANTSPATH: '{{ self.install_path }}/bin'
+      PATH: '{{ self.install_path }}/bin:{{ self.install_path }}/Scripts:$PATH'
+      LD_LIBRARY_PATH: '{{ self.install_path }}/lib:$LD_LIBRARY_PATH'
+  - run: "{{ self.install_dependencies() }}\nmkdir -p /tmp/ants/build\ngit clone {{ self.repo }} /tmp/ants/source\n{% if self.version\
+      \ != \"master\" and self.version != \"latest\" -%}\ncd /tmp/ants/source\ngit fetch --tags\ngit -c advice.detachedHead=false\
+      \ checkout v{{ self.version }}\n{% endif -%}\ncd /tmp/ants/build\ncmake {{ self.cmake_opts }} /tmp/ants/source\nmake\
+      \ {{ self.make_opts }}\nmkdir -p {{ self.install_path }}\n# Recent versions of ants create ANTS-build.\nif [ -d ANTS-build\
+      \ ]; then \\\n  cd ANTS-build \\\n  && make install \\\n  && mv ../../source/Scripts/ {{ self.install_path }}; \\\n\
+      else \\\n  mv bin lib {{ self.install_path }}/ \\\n  mv ../Scripts/* {{ self.install_path }} ; \\\nfi\nrm -rf /tmp/ants\n\
+      chmod a+rx {{ self.install_path }} -R\n"

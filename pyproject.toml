@@ -7,22 +7,25 @@ requires-python = ">=3.10"
 dependencies = [
     "jinja2>=3.1.6",
     "pyyaml>=6.0.2",
-    "neurodocker>=2.0.2",
     "attrs>=23.0.0",
 ]
 
 [tool.setuptools]
-packages = ["builder"]
+packages = ["builder", "workflows"]
+
+[tool.setuptools.package-data]
+builder = ["templates/*.yaml"]
 
 [tool.uv]
 package = true
 
 [project.scripts]
-    sf-generate = "builder.build:generate_main"
-    sf-build = "builder.build:build_main"
-    sf-login = "builder.build:login_main"
-    sf-test = "builder.build:test_main"
-    sf-test-remote = "builder.build:test_remote_main"
-    sf-init = "builder.build:init_main"
-    sf-make = "builder.build:sf_make_main"
-    sf-cache = "builder.build:cache_main"
+builder = "builder.cli:main"
+sf-generate = "builder.cli:sf_generate_main"
+sf-build = "builder.cli:sf_build_main"
+sf-login = "builder.cli:sf_login_main"
+sf-test = "builder.cli:sf_test_main"
+sf-test-remote = "builder.cli:sf_test_remote_main"
+sf-init = "builder.cli:sf_init_main"
+sf-make = "builder.cli:sf_make_main"
+sf-cache = "builder.cli:sf_cache_main"

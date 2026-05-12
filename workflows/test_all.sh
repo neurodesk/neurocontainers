@@ -27,8 +27,8 @@ for dir in recipes/*/; do
         echo "  ✅ Validation passed for ${name}"
     fi
 
-    # Then run the existing check-only build
-    python3 builder/build.py generate $name --recreate --architecture x86_64 --check-only --auto-build
+    # Then run check-only Dockerfile generation
+    python3 -m builder generate "$name" --recreate --architecture x86_64 --ignore-architectures
 done
 
 if [[ "$VALIDATION_FAILED" == "true" ]]; then
