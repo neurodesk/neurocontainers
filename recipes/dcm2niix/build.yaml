@@ -10,7 +10,7 @@ architectures:
   - aarch64
 
 variables:
-  dcm2niix_source_dir: dcm2niix-{{ context.version }}
+  dcm2niix_source_dir: dcm2niix-{{ context.version | replace('v', '', 1) }}
 
 build:
   kind: neurodocker
