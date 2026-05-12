@@ -4,10 +4,6 @@ architectures:
     - x86_64
     - aarch64
 
-files:
-    - name: afib1.py
-      filename: afib1.py
-
 build:
     kind: neurodocker
     base-image: ubuntu:22.04
@@ -38,8 +34,7 @@ build:
               PATH: ${PATH}:/opt/code/FSL-BET2/bin
 
         #openrecon application
-        - run:
-              - cp {{ get_file("afib1.py") }} /opt/code/python-ismrmrd-server/afib1.py
+        - copy: afib1.py /opt/code/python-ismrmrd-server/afib1.py
 
 deploy:
     path:
