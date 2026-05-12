@@ -89,8 +89,11 @@ jobs:
           fi
           set -x
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends --no-upgrade \
-            ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
+          APT_PACKAGES=(ca-certificates curl git gh jq python3 python3-pip python3-venv unzip)
+          if ! command -v docker >/dev/null 2>&1; then
+            APT_PACKAGES+=(docker.io)
+          fi
+          sudo apt-get install -y --no-install-recommends --no-upgrade "${APT_PACKAGES[@]}"
           case "$(uname -m)" in
             x86_64)
               APPTAINER_ARCH=amd64
@@ -279,8 +282,11 @@ jobs:
           fi
           set -x
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends --no-upgrade \
-            ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
+          APT_PACKAGES=(ca-certificates curl git gh jq python3 python3-pip python3-venv unzip)
+          if ! command -v docker >/dev/null 2>&1; then
+            APT_PACKAGES+=(docker.io)
+          fi
+          sudo apt-get install -y --no-install-recommends --no-upgrade "${APT_PACKAGES[@]}"
           case "$(uname -m)" in
             x86_64)
               APPTAINER_ARCH=amd64
@@ -849,8 +855,11 @@ jobs:
           fi
           set -x
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends --no-upgrade \
-            ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
+          APT_PACKAGES=(ca-certificates curl git gh jq python3 python3-pip python3-venv unzip)
+          if ! command -v docker >/dev/null 2>&1; then
+            APT_PACKAGES+=(docker.io)
+          fi
+          sudo apt-get install -y --no-install-recommends --no-upgrade "${APT_PACKAGES[@]}"
           case "$(uname -m)" in
             x86_64)
               APPTAINER_ARCH=amd64
