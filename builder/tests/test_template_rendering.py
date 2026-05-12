@@ -95,6 +95,7 @@ def test_miniconda_template_bootstraps_python_and_pip_for_pip_install() -> None:
         directives.append,
     )
     command = "\n".join(item.command for item in directives if isinstance(item, Run))
-    assert "conda run --name testenv python -m pip --version" in command
+    assert 'bash -c "source activate testenv' in command
+    assert "if ! python -m pip --version >/dev/null 2>&1; then" in command
     assert "conda install -y" in command
     assert "--name testenv python pip" in command
