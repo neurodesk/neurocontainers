@@ -2,6 +2,8 @@ name: file_variants
 version: "1.0"
 architectures:
   - x86_64
+categories:
+  - workflows
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

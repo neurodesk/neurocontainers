@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from build3.config import default_config, resolve_recipe
-from build3.dockerfile import render_dockerfile
-from build3.recipe import compile_recipe
+from builder.config import default_config, resolve_recipe
+from builder.dockerfile import render_dockerfile
+from builder.recipe import compile_recipe
 
 
 def test_dockerfile_generation_without_neurodocker_dependency() -> None:

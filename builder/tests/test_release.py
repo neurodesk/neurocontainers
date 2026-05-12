@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from build3.config import default_config, resolve_recipe
-from build3.recipe import compile_recipe
-from build3.release import release_data
+from builder.config import default_config, resolve_recipe
+from builder.recipe import compile_recipe
+from builder.release import release_data
 
 
 def test_release_shape_matches_current_contract() -> None:

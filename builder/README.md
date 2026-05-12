@@ -186,9 +186,9 @@ build:
       - unzip -q {{ get_file("hello.zip") }} -d /tmp
 ```
 
-## Build3 Builder
+## NeuroContainers Builder
 
-Build3 is the active local Python Dockerfile generator for NeuroContainers. It reads recipe YAML directly and does not shell out to NeuroDocker.
+Builder is the active local Python Dockerfile generator for NeuroContainers. It reads recipe YAML directly and does not shell out to NeuroDocker.
 
 The simplest way to explain the format is with a series of examples. More advanced directives are also supported but the following should be enough for most applications.
 
@@ -210,7 +210,7 @@ A do nothing build block looks like the above YAML. You need at least `kind`, `b
 
 The base image can be any Docker image based on Debian or Red Hat.
 
-Build3 accepts `apt` or `rpm` as the package manager.
+Builder accepts `apt` or `rpm` as the package manager.
 
 ### Environment Directive
 
@@ -274,7 +274,7 @@ build:
 
 ### Template Directive
 
-Build3 includes local templates for the subset of template directives used by current NeuroContainers recipes.
+Builder includes local templates for the subset of template directives used by current NeuroContainers recipes.
 
 ```yaml
 build:

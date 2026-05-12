@@ -305,7 +305,7 @@ def cmd_login(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="build3 NeuroContainers builder prototype")
+    parser = argparse.ArgumentParser(description="NeuroContainers builder")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     generate = subparsers.add_parser("generate", help="Generate a Dockerfile")
@@ -345,7 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("version")
     init.set_defaults(func=cmd_init)
 
-    cache = subparsers.add_parser("cache", help="Inspect or clean build3 cache files")
+    cache = subparsers.add_parser("cache", help="Inspect or clean build cache files")
     cache.add_argument("--temp-files", action="store_true")
     cache.add_argument("--all", action="store_true")
     cache.set_defaults(func=cmd_cache)

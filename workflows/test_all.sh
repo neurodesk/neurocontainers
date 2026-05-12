@@ -28,7 +28,7 @@ for dir in recipes/*/; do
     fi
 
     # Then run check-only Dockerfile generation
-    python3 -m build3 generate "$name" --recreate --architecture x86_64 --ignore-architectures
+    python3 -m builder generate "$name" --recreate --architecture x86_64 --ignore-architectures
 done
 
 if [[ "$VALIDATION_FAILED" == "true" ]]; then

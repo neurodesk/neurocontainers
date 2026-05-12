@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from build3.config import default_config, resolve_recipe
-from build3.ir import Env, Run, RunWithMounts, Workdir
-from build3.recipe import compile_recipe
+from builder.config import default_config, resolve_recipe
+from builder.ir import Env, Run, RunWithMounts, Workdir
+from builder.recipe import compile_recipe
 
 
 def test_dcm2niix_ir_contains_expected_directives() -> None:

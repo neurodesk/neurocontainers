@@ -58,7 +58,7 @@ The workflow defaults to `debug=true` and `run-tests=false`, so full container t
 
 ### Builder Linting – `.github/workflows/test-builder.yml`
 
-While not a runtime test, this workflow protects the builder tooling whenever builder code changes. It creates a Python virtual environment, installs `requirements.txt`, and runs `./workflows/test_all.sh`. The script validates every recipe (`builder/validation.py`) and performs check-only Dockerfile generation via `python -m build3 generate …`. Failures here usually indicate malformed recipe metadata that would prevent the container tests from running downstream.
+While not a runtime test, this workflow protects the builder tooling whenever builder code changes. It creates a Python virtual environment, installs `requirements.txt`, and runs `./workflows/test_all.sh`. The script validates every recipe (`builder/validation.py`) and performs check-only Dockerfile generation via `python -m builder generate …`. Failures here usually indicate malformed recipe metadata that would prevent the container tests from running downstream.
 
 ## Reproducing CI Runs Locally
 

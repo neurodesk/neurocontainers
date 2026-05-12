@@ -142,7 +142,7 @@ def validate_condition_syntax(condition: Any, path: str):
 
 def validate_executable_template(value: Any, path: str):
     """
-    Validate syntax for values that build3 passes through the recipe renderer.
+    Validate syntax for values that builder passes through the recipe renderer.
     """
     if isinstance(value, str):
         validate_template_syntax(value, path)
@@ -249,7 +249,7 @@ def validate_directive_template_syntax(directive_dict: Dict[str, Any], path: str
 
 
 def validate_recipe_template_syntax(recipe_dict: Dict[str, Any]):
-    """Validate Jinja2 syntax in recipe fields rendered by build3."""
+    """Validate Jinja2 syntax in recipe fields rendered by builder."""
     if "readme" in recipe_dict:
         validate_template_syntax(recipe_dict["readme"], "readme")
 

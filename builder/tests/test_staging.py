@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from build3.cache import get_guest_filename
-from build3.config import default_config, resolve_recipe
-from build3.recipe import compile_recipe
-from build3.staging import DeclaredFile, StagingPlan, materialize_plan
+from builder.cache import get_guest_filename
+from builder.config import default_config, resolve_recipe
+from builder.recipe import compile_recipe
+from builder.staging import DeclaredFile, StagingPlan, materialize_plan
 
 
 def test_url_guest_filename_uses_url_basename() -> None:

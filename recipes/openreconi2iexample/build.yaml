@@ -72,6 +72,6 @@ readme: |-
 
   Build and validate:
   ```bash
-  python -m build3 test openreconi2iexample --recreate --build --architecture x86_64
+  python -m builder test openreconi2iexample --recreate --build --architecture x86_64
   ```
   ----------------------------------

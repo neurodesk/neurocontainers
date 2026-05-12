@@ -2,6 +2,8 @@ name: conditional
 version: "1.0"
 architectures:
   - x86_64
+categories:
+  - workflows
 variables:
   package_name:
     try:

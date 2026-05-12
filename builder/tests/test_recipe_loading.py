@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from build3.config import default_config, resolve_recipe
-from build3.recipe import RecipeFile, compile_recipe, load_recipe, load_recipe_file
+from builder.config import default_config, resolve_recipe
+from builder.recipe import RecipeFile, compile_recipe, load_recipe, load_recipe_file
 
 
 def test_loads_existing_recipe() -> None:

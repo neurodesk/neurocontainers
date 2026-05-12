@@ -11,24 +11,21 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["builder", "build3", "workflows"]
-
-[tool.setuptools.package-dir]
-build3 = "build3/src/build3"
+packages = ["builder", "workflows"]
 
 [tool.setuptools.package-data]
-build3 = ["templates/*.yaml"]
+builder = ["templates/*.yaml"]
 
 [tool.uv]
 package = true
 
 [project.scripts]
-    build3 = "build3.cli:main"
-    sf-generate = "build3.cli:sf_generate_main"
-    sf-build = "build3.cli:sf_build_main"
-    sf-login = "build3.cli:sf_login_main"
-    sf-test = "build3.cli:sf_test_main"
-    sf-test-remote = "build3.cli:sf_test_remote_main"
-    sf-init = "build3.cli:sf_init_main"
-    sf-make = "build3.cli:sf_make_main"
-    sf-cache = "build3.cli:sf_cache_main"
+builder = "builder.cli:main"
+sf-generate = "builder.cli:sf_generate_main"
+sf-build = "builder.cli:sf_build_main"
+sf-login = "builder.cli:sf_login_main"
+sf-test = "builder.cli:sf_test_main"
+sf-test-remote = "builder.cli:sf_test_remote_main"
+sf-init = "builder.cli:sf_init_main"
+sf-make = "builder.cli:sf_make_main"
+sf-cache = "builder.cli:sf_cache_main"

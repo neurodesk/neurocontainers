@@ -97,7 +97,7 @@ def _render_string(source: str, method: TemplateMethod) -> str:
 def _load_template(name: str) -> dict[str, Any]:
     path = _TEMPLATE_DIR / f"{name}.yaml"
     if not path.is_file():
-        raise NotImplementedError(f"build3 local template backend does not yet implement template {name!r}")
+        raise NotImplementedError(f"local template backend does not yet implement template {name!r}")
     data = yaml.safe_load(path.read_text())
     if not isinstance(data, dict):
         raise ValueError(f"template file must contain a mapping: {path}")
@@ -123,7 +123,7 @@ def apply_builtin_template(name: str, params: dict[str, Any], pkg_manager: str, 
     method_data = template.get(method_name)
     if not isinstance(method_data, dict):
         raise NotImplementedError(
-            f"build3 local template backend does not yet implement template {name!r} method {method_name!r}"
+            f"local template backend does not yet implement template {name!r} method {method_name!r}"
         )
 
     method = TemplateMethod(method_data, _method_values(method_data, params), pkg_manager)

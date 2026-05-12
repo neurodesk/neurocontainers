@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from build3.template import RenderContext, TemplateError, TemplateRenderer
-from build3.recipe import compile_recipe
+from builder.template import RenderContext, TemplateError, TemplateRenderer
+from builder.recipe import compile_recipe
 
 
 def test_strict_context_rendering() -> None:
@@ -44,7 +44,7 @@ def test_conditional_fixture_resolves_arch_variable() -> None:
 
 
 def test_builtin_templates_are_native_directive_format() -> None:
-    template_dir = Path(__file__).resolve().parents[1] / "src" / "build3" / "templates"
+    template_dir = Path(__file__).resolve().parents[1] / "templates"
     assert sorted(path.stem for path in template_dir.glob("*.yaml")) == [
         "afni",
         "ants",

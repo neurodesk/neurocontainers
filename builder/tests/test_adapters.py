@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from build3.adapters import BuildInputs, BuildKitAdapter, DockerAdapter, SifAdapter
-from build3.tester import ContainerTesterAdapter, TestRequest
+from builder.adapters import BuildInputs, BuildKitAdapter, DockerAdapter, SifAdapter
+from builder.tester import ContainerTesterAdapter, TestRequest
 
 
 def inputs(tmp_path: Path) -> BuildInputs:
