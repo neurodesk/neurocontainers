@@ -70,12 +70,17 @@ files:
               if [ "$file" = "environments/mne-starter.yml" ]; then
                   tmpfile=$(mktemp)
                   sed '/^[[:space:]]*-[[:space:]]*pyEDFlib[[:space:]]*$/d' "$file" > "$tmpfile"
-                  conda env create -f "$tmpfile"
+                  conda env create --solver libmamba -f "$tmpfile"
                   rm -f "$tmpfile"
                   conda run -n mne-eeg-meg python -m ensurepip --upgrade
                   conda run -n mne-eeg-meg python -m pip install pyEDFlib
+              elif [ "$file" = "environments/nipype-pinned.yml" ]; then
+                  tmpfile=$(mktemp)
+                  sed 's/^[[:space:]]*-[[:space:]]*nipype=1\.7\.0[[:space:]]*$/  - nipype=1.10.0/' "$file" > "$tmpfile"
+                  conda env create --solver libmamba -f "$tmpfile"
+                  rm -f "$tmpfile"
               else
-                  conda env create -f "$file"
+                  conda env create --solver libmamba -f "$file"
               fi
           done
       else
