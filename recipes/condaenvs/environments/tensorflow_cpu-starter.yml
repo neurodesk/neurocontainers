@@ -1,0 +1,7 @@
+name: tensorflow-cpu
+
+dependencies:
+  - tensorflow
+  - jupyter
+  - nb_conda_kernels
+  - seaborn

@@ -1,0 +1,7 @@
+name: tensorflow-gpu
+
+dependencies:
+  - tensorflow-gpu
+  - jupyter
+  - nb_conda_kernels
+  - seaborn
