@@ -1,0 +1,22 @@
+name: copy_declared_files
+version: "1.0"
+architectures:
+  - x86_64
+categories:
+  - workflows
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - copy: inline.txt /tmp/inline.txt
+    - copy: copied.txt /tmp/copied.txt
+deploy:
+  bins:
+    - cat
+readme: copy declared files
+files:
+  - name: inline.txt
+    contents: hello inline
+  - name: copied.txt
+    filename: copied.txt

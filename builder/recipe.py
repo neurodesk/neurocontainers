@@ -12,7 +12,7 @@ from typing import Any
 import yaml
 
 from .ir import Copy, Definition, Entrypoint, Env, From, Install, Run, RunWithMounts, User, Workdir
-from .staging import StagingPlan, declared_file_from_mapping
+from .staging import CopySource, StagingPlan, declared_file_from_mapping
 from .template import RenderContext, TemplateRenderer
 from .template_backend import apply_builtin_template
 from .validation import validate_recipe_dict
@@ -402,10 +402,16 @@ def compile_recipe(
                 parts = _copy_parts(renderer.render_value(directive["copy"], context))
                 if len(parts) < 2:
                     raise ValueError("copy directive requires source and destination")
+                resolved_sources: list[str] = []
                 for source in parts[:-1]:
                     if source not in context.file_paths:
-                        plan.copy_sources.append(source)
-                definition.add(Copy(tuple(parts[:-1]), parts[-1]))
+                        plan.copy_sources.append(CopySource(source=source))
+                        resolved_sources.append(source)
+                        continue
+                    resolved = context.file_paths[source]
+                    plan.copy_sources.append(CopySource(source=resolved, declared_name=source))
+                    resolved_sources.append(resolved)
+                definition.add(Copy(tuple(resolved_sources), parts[-1]))
             elif "variables" in directive:
                 values = directive["variables"]
                 if not isinstance(values, dict):
