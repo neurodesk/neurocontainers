@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "b0map 1.0.0 arm64": {
+      "version": "20260512",
+      "exec": "",
+      "apptainer_args": [],
+      "architecture": "aarch64",
+      "image": "b0map_1.0.0_arm64"
+    }
+  },
+  "categories": [
+    "image reconstruction"
+  ],
+  "architecture": "aarch64"
+}
