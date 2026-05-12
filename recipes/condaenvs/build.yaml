@@ -7,7 +7,7 @@ architectures:
 
 build:
   kind: neurodocker
-  base-image: ubuntu:22.04
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
