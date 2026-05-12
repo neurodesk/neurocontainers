@@ -7,17 +7,20 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
 
-  base-image: unfmontreal/dcm2bids:{{ context.version }}
+  base-image: python:3.11-slim-bookworm
   pkg-manager: apt
 
   directives:
+  - install:
+      - ca-certificates
+      - dcm2niix
   - run:
-      - chmod a+rwx /dcm2bids/dcm2bids -R 
-  - user: dcm2bidsuser
+      - python -m pip install --no-cache-dir dcm2bids=={{ context.version }}
 
 deploy:
   bins:
