@@ -5,6 +5,7 @@ copyright:
     url: https://www.r-project.org/Licenses/
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: R kernel in notebook
   example: |-
@@ -44,7 +45,7 @@ readme: |-
   ----------------------------------
 build:
   kind: neurodocker
-  base-image: quay.io/jupyter/minimal-notebook
+  base-image: quay.io/jupyter/minimal-notebook:latest
   pkg-manager: apt
   directives:
     - user: root
