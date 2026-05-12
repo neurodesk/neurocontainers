@@ -3,6 +3,7 @@ version: 1.1.0
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
@@ -23,6 +24,7 @@ build:
         - liboctave-dev
         - patch
         - make
+        - pkg-config
         - fonts-freefont-otf
         - units
 
