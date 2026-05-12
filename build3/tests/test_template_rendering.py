@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
 from build3.template import RenderContext, TemplateError, TemplateRenderer
 from build3.recipe import compile_recipe
@@ -40,3 +41,30 @@ def test_conditional_fixture_resolves_arch_variable() -> None:
         getattr(item, "values", {}).get("SELECTED_PACKAGE") == "curl"
         for item in compiled.definition.directives
     )
+
+
+def test_builtin_templates_are_native_directive_format() -> None:
+    template_dir = Path(__file__).resolve().parents[1] / "src" / "build3" / "neurodocker_templates"
+    assert sorted(path.stem for path in template_dir.glob("*.yaml")) == [
+        "afni",
+        "ants",
+        "bids_validator",
+        "convert3d",
+        "dcm2niix",
+        "freesurfer",
+        "fsl",
+        "matlabmcr",
+        "minc",
+        "miniconda",
+        "mrtrix3",
+        "spm12",
+    ]
+    for path in template_dir.glob("*.yaml"):
+        data = yaml.safe_load(path.read_text())
+        for method in ("binaries", "source"):
+            method_data = data.get(method)
+            if not isinstance(method_data, dict):
+                continue
+            assert "env" not in method_data, f"{path.name}:{method} still uses neurodocker env"
+            assert "instructions" not in method_data, f"{path.name}:{method} still uses neurodocker instructions"
+            assert isinstance(method_data.get("directives"), list), f"{path.name}:{method} has no directives"

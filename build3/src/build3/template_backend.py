@@ -8,11 +8,18 @@ import jinja2
 import yaml
 
 from .dockerfile import _install_command
-from .ir import Env, Run
+from .ir import Env, Install, Run
 
 
 _TEMPLATE_DIR = Path(__file__).with_name("neurodocker_templates")
 _JINJA = jinja2.Environment()
+
+
+def _raise_template_error(message: str) -> None:
+    raise ValueError(message)
+
+
+_JINJA.globals["raise"] = _raise_template_error
 
 
 def _apt_install_debs(urls: list[str], opts: str | None = None) -> str:
@@ -44,6 +51,12 @@ class TemplateMethod:
             return self.values[key]
         if key == "urls":
             return self.data.get("urls", {})
+        if key == "env":
+            env: dict[str, Any] = {}
+            for directive in self.data.get("directives", []):
+                if isinstance(directive, dict) and isinstance(directive.get("environment"), dict):
+                    env.update(directive["environment"])
+            return env
         raise AttributeError(key)
 
     def dependencies(self, pkg_manager: str) -> list[str]:
@@ -116,12 +129,39 @@ def apply_builtin_template(name: str, params: dict[str, Any], pkg_manager: str, 
     method = TemplateMethod(method_data, _method_values(method_data, params), pkg_manager)
     method.pkg_manager = pkg_manager
 
-    env = method_data.get("env", {})
-    if isinstance(env, dict) and env:
-        add(Env({str(_render_string(str(key), method)): _render_string(str(value), method) for key, value in env.items()}))
+    directives = method_data.get("directives")
+    if directives is None:
+        directives = []
+        env = method_data.get("env", {})
+        if isinstance(env, dict) and env:
+            directives.append({"environment": env})
+        instructions = method_data.get("instructions", "")
+        if instructions:
+            directives.append({"run": instructions})
+    if not isinstance(directives, list):
+        raise ValueError(f"template {name!r} method {method_name!r} directives must be a list")
 
-    instructions = method_data.get("instructions", "")
-    if instructions:
-        command = _render_string(str(instructions), method)
-        if command.strip():
-            add(Run(command))
+    for directive in directives:
+        if not isinstance(directive, dict):
+            raise ValueError(f"template directive must be a mapping: {directive!r}")
+        if "environment" in directive:
+            env = directive["environment"]
+            if not isinstance(env, dict):
+                raise ValueError("template environment directive must be a mapping")
+            if env:
+                add(Env({str(_render_string(str(key), method)): _render_string(str(value), method) for key, value in env.items()}))
+        elif "install" in directive:
+            packages = directive["install"]
+            if not isinstance(packages, list):
+                raise ValueError("template install directive must be a list")
+            add(Install(tuple(_render_string(str(package), method) for package in packages)))
+        elif "run" in directive:
+            run = directive["run"]
+            if isinstance(run, list):
+                command = " \\\n && ".join(_render_string(str(item), method) for item in run if item is not None)
+            else:
+                command = _render_string(str(run), method)
+            if command.strip():
+                add(Run(command))
+        else:
+            raise ValueError(f"unsupported template directive: {directive}")
