@@ -2,6 +2,7 @@ name: afib1
 version: 1.6.0
 architectures:
     - x86_64
+    - aarch64
 
 files:
     - name: afib1.py
@@ -37,7 +38,8 @@ build:
               PATH: ${PATH}:/opt/code/FSL-BET2/bin
 
         #openrecon application
-        - copy: afib1.py /opt/code/python-ismrmrd-server/afib1.py
+        - run:
+              - cp {{ get_file("afib1.py") }} /opt/code/python-ismrmrd-server/afib1.py
 
 deploy:
     path:
