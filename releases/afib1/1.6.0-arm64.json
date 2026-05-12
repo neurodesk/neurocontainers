@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "afib1 1.6.0 arm64": {
+      "version": "20260512",
+      "exec": "",
+      "apptainer_args": [],
+      "architecture": "aarch64",
+      "image": "afib1_1.6.0_arm64"
+    }
+  },
+  "categories": [
+    "image reconstruction"
+  ],
+  "architecture": "aarch64"
+}
