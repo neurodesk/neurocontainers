@@ -64,7 +64,7 @@ deploy:
 
 readme: |-
   ----------------------------------
-  ## dcm2niix/{{ context.version }}' ##
+  ## dcm2niix/{{ context.version }} ##
   dcm2niix is designed to convert neuroimaging data from the DICOM format to the NIfTI format. This web page hosts the developmental source code - a compiled version for Linux, MacOS, and Windows of the most recent stable release is included with MRIcroGL. A full manual for this software is available in the form of a NITRC wiki.
 
   Example:
