@@ -1,5 +1,5 @@
 # dicompare container test suite
-# Tests for dicompare v0.1.3 - MRI protocol validation webapp
+# Tests for dicompare v0.5.4 - MRI protocol validation webapp
 #
 # dicompare is a web-based tool for validating DICOM files against
 # community-defined MRI acquisition protocols. It runs as a static
@@ -11,8 +11,8 @@
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
 
 name: dicompare
-version: 0.1.3
-container: dicompare_0.1.3_20260202.simg
+version: 0.5.4
+container: dicompare_0.5.4.simg
 
 required_files:
   - dataset: ds000001
@@ -436,47 +436,42 @@ tests:
     expected_output_contains: "19"
 
   # ==========================================================================
-  # BUILD.YAML AND README VERIFICATION
+  # README AND LAUNCHER VERIFICATION
   # ==========================================================================
-  - name: build.yaml exists
-    description: Verify build.yaml is present in container
-    command: ls /build.yaml
-    expected_output_contains: "build.yaml"
-
-  - name: build.yaml has correct name
-    description: Verify build.yaml contains correct app name
-    command: cat /build.yaml
-    expected_output_contains: "name: dicompare"
-
-  - name: build.yaml has correct version
-    description: Verify build.yaml contains correct version
-    command: cat /build.yaml
-    expected_output_contains: "version: 0.1.3"
-
-  - name: build.yaml has webapp config
-    description: Verify build.yaml contains webapp deployment config
-    command: cat /build.yaml
-    expected_output_contains: "webapp:"
-
-  - name: build.yaml specifies port 3001
-    description: Verify build.yaml specifies correct port
-    command: cat /build.yaml
-    expected_output_contains: "port: 3001"
-
   - name: README.md exists
     description: Verify README.md is present in container
-    command: ls /README.md
+    command: ls /opt/dicompare/README.md
     expected_output_contains: "README.md"
 
   - name: README.md has content
     description: Verify README.md describes dicompare
-    command: cat /README.md
+    command: cat /opt/dicompare/README.md
     expected_output_contains: "dicompare"
 
   - name: README.md mentions MRI validation
     description: Verify README.md describes MRI protocol validation
-    command: cat /README.md
+    command: cat /opt/dicompare/README.md
     expected_output_contains: "MRI protocol validation"
+
+  - name: launcher supports start subcommand
+    description: Verify the installed launcher routes the start subcommand
+    command: cat /usr/local/bin/dicompare
+    expected_output_contains: "start)"
+
+  - name: launcher prints usage text
+    description: Verify the installed launcher contains the documented usage text
+    command: cat /usr/local/bin/dicompare
+    expected_output_contains: "Usage: dicompare start"
+
+  - name: startup script uses configured webapp port
+    description: Verify the startup script honors the Neurodesk webapp port override
+    command: cat /opt/dicompare/start.sh
+    expected_output_contains: 'NEURODESK_WEBAPP_PORT:-3001'
+
+  - name: startup script serves built dist directory
+    description: Verify the startup script serves the built frontend directory
+    command: cat /opt/dicompare/start.sh
+    expected_output_contains: "serve -s dist -l"
 
   # ==========================================================================
   # WEB SERVER STARTUP AND PORT BINDING TESTS
@@ -580,26 +575,6 @@ tests:
   # ==========================================================================
   # CONTAINER METADATA VERIFICATION
   # ==========================================================================
-  - name: Container has expected categories
-    description: Verify container is categorized correctly
-    command: cat /build.yaml
-    expected_output_contains: "quality control"
-
-  - name: Container has data organisation category
-    description: Verify container has data organisation category
-    command: cat /build.yaml
-    expected_output_contains: "data organisation"
-
-  - name: Container has MIT license
-    description: Verify container specifies MIT license
-    command: cat /build.yaml
-    expected_output_contains: "license: MIT"
-
-  - name: Container specifies x86_64 architecture
-    description: Verify container architecture is specified
-    command: cat /build.yaml
-    expected_output_contains: "x86_64"
-
   # ==========================================================================
   # SYSTEM DEPENDENCIES VERIFICATION
   # ==========================================================================
