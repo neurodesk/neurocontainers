@@ -924,7 +924,9 @@ tests:
   - name: Least squares
     description: Test overdetermined system
     command: julia -e 'A = [1.0 1.0; 1.0 2.0; 1.0 3.0]; b = [1.0, 2.0, 3.0]; x = A \ b; println(round.(x, digits=1))'
-    expected_output_contains: "[0.0, 1.0]"
+    expected_output_contains:
+      - "[-0.0, 1.0]"
+      - "[0.0, 1.0]"
     expected_exit_code: 0
 
 cleanup:
