@@ -38,10 +38,7 @@ build:
         - cp {{ get_file("2_model") }} /opt/HD-BET/hd-bet_params/2.model
         - cp {{ get_file("3_model") }} /opt/HD-BET/hd-bet_params/3.model
         - cp {{ get_file("4_model") }} /opt/HD-BET/hd-bet_params/4.model
-        - |
-          bash -lc "source activate hdbet
-          python -m pip install -e .
-          "
+        - /opt/miniconda-latest/envs/hdbet/bin/python -m pip install -e .
 
 deploy:
   bins:
