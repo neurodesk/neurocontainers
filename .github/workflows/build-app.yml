@@ -110,10 +110,17 @@ jobs:
           esac
           APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
             | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
-            -o /tmp/apptainer.deb
-          sudo apt-get install -y /tmp/apptainer.deb
-          rm /tmp/apptainer.deb
+          if [ "$APPTAINER_ARCH" = "arm64" ]; then
+            sudo apt-get install -y --no-install-recommends software-properties-common
+            sudo add-apt-repository -y ppa:apptainer/ppa
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends apptainer
+          else
+            curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
+              -o /tmp/apptainer.deb
+            sudo apt-get install -y /tmp/apptainer.deb
+            rm /tmp/apptainer.deb
+          fi
           python3 -m venv "$RUNNER_TEMP/openstack-client-venv"
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install \
@@ -303,10 +310,17 @@ jobs:
           esac
           APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
             | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
-            -o /tmp/apptainer.deb
-          sudo apt-get install -y /tmp/apptainer.deb
-          rm /tmp/apptainer.deb
+          if [ "$APPTAINER_ARCH" = "arm64" ]; then
+            sudo apt-get install -y --no-install-recommends software-properties-common
+            sudo add-apt-repository -y ppa:apptainer/ppa
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends apptainer
+          else
+            curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
+              -o /tmp/apptainer.deb
+            sudo apt-get install -y /tmp/apptainer.deb
+            rm /tmp/apptainer.deb
+          fi
           python3 -m venv "$RUNNER_TEMP/openstack-client-venv"
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install \
@@ -876,10 +890,17 @@ jobs:
           esac
           APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
             | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
-            -o /tmp/apptainer.deb
-          sudo apt-get install -y /tmp/apptainer.deb
-          rm /tmp/apptainer.deb
+          if [ "$APPTAINER_ARCH" = "arm64" ]; then
+            sudo apt-get install -y --no-install-recommends software-properties-common
+            sudo add-apt-repository -y ppa:apptainer/ppa
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends apptainer
+          else
+            curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
+              -o /tmp/apptainer.deb
+            sudo apt-get install -y /tmp/apptainer.deb
+            rm /tmp/apptainer.deb
+          fi
           python3 -m venv "$RUNNER_TEMP/openstack-client-venv"
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install \
