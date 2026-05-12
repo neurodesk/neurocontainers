@@ -28,6 +28,7 @@ build:
       install:
         - build-essential
         - cmake
+        - git
         - pkg-config
         - libjpeg-dev
         - libopenjp2-7-dev
