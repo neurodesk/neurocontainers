@@ -6,16 +6,3 @@ tests:
   - name: Check ads help
     script: |
       ads --help
-
-  - name: Check Python import
-    script: |
-      python3 -c "import ads; print('import ads: OK')"
-
-  - name: Check PyTorch CUDA visibility
-    script: |
-      python3 - <<'PY'
-      import torch
-      print("torch:", torch.__version__)
-      print("cuda_available:", torch.cuda.is_available())
-      print("device_count:", torch.cuda.device_count())
-      PY

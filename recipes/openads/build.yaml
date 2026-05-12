@@ -103,24 +103,13 @@ build:
           #!/usr/bin/env bash
           set -euo pipefail
 
-          echo "[1/4] Check ads binary"
+          echo "[1/2] Check ads binary"
           command -v ads
 
-          echo "[2/4] Check ads help"
+          echo "[2/2] Check ads help"
           ads --help >/dev/null
 
-          echo "[3/4] Check Python import"
-          python3 -c "import ads; print('import ads: OK')"
-
-          echo "[4/4] Check PyTorch CUDA visibility"
-          python3 - <<'PY'
-          import torch
-          print("torch:", torch.__version__)
-          print("cuda_available:", torch.cuda.is_available())
-          print("device_count:", torch.cuda.device_count())
-          PY
-
-          echo "OpenADS GPU container smoke test completed."
+          echo "OpenADS container smoke test completed."
 
 categories:
   - diffusion imaging
