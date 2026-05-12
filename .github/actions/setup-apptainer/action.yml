@@ -39,10 +39,19 @@ runs:
         deb_path="${cache_dir}/apptainer.deb"
         mkdir -p "$cache_dir"
 
-        if [[ ! -s "$deb_path" ]]; then
-          url="https://github.com/apptainer/apptainer/releases/download/v${version}/apptainer_${version}_${arch}.deb"
-          curl -fsSL "$url" -o "$deb_path"
+        if [[ "$arch" == "arm64" ]]; then
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends software-properties-common
+          sudo add-apt-repository -y ppa:apptainer/ppa
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends apptainer
+        else
+          if [[ ! -s "$deb_path" ]]; then
+            url="https://github.com/apptainer/apptainer/releases/download/v${version}/apptainer_${version}_${arch}.deb"
+            curl -fsSL "$url" -o "$deb_path"
+          fi
+
+          sudo apt-get install -y "$deb_path"
         fi
 
-        sudo apt-get install -y "$deb_path"
         echo "apptainer-version=$version" >> "$GITHUB_OUTPUT"
