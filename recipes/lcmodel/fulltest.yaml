@@ -15,7 +15,7 @@
 #   - Siemens, Philips, Bruker, GE, Varian, Marconi, Toshiba
 
 name: lcmodel
-version: 6.3
+version: "6.3"
 container: lcmodel_6.3_20220222.simg
 
 test_data:
