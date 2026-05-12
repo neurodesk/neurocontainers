@@ -5,6 +5,7 @@ copyright:
     url: https://github.com/wasserth/TotalSegmentator?tab=Apache-2.0-1-ov-file
 architectures:
   - x86_64
+  - aarch64
 structured_readme:
   description: "Tool for segmentation of most major anatomical structures in any CT or MR image. It was trained on a wide range of different CT and MR images (different scanners, institutions, protocols,...) and therefore works well on most images. A large part of the training dataset can be downloaded here: CT dataset (1228 subjects) and MR dataset (616 subjects). You can also try the tool online at totalsegmentator.com or as 3D Slicer extension."
   example: |-
@@ -65,8 +66,12 @@ build:
     - template:
         name: miniconda
         version: latest
+        env_name: totalsegmentator
+        env_exists: "false"
         conda_install: python=3.12
         pip_install: setuptools TotalSegmentator torch torchvision
+    - environment:
+        PATH: /opt/miniconda-latest/envs/totalsegmentator/bin:/opt/miniconda-latest/bin:$PATH
     - deploy:
         bins: []
     - test:
