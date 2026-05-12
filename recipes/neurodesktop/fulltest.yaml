@@ -4,7 +4,7 @@
 # utilities.
 
 name: neurodesktop
-version: 20260428
+version: "20260428"
 container: neurodesktop_20260428_*.simg
 default_timeout: 120
 

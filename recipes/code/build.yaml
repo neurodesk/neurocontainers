@@ -1,5 +1,5 @@
 name: code
-version: 240320
+version: "240320"
 
 architectures:
   - x86_64
