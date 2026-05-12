@@ -1,0 +1,41 @@
+# segmentator container test suite
+# Minimal no-rebuild verification for the shipped source tree payload.
+
+name: segmentator
+version: 1.6.1
+container: segmentator_1.6.1.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: Python runtime available
+    description: Verify the shipped Python runtime matches the image
+    command: python --version
+    expected_output_contains: "Python 3.10.18"
+
+  - name: Segmentator source tree present
+    description: Verify the built source tree exists under /opt
+    command: test -f /opt/segmentator/segmentator/__main__.py && echo "/opt/segmentator/segmentator/__main__.py"
+    expected_output_contains: "/opt/segmentator/segmentator/__main__.py"
+
+  - name: Segmentator setup metadata version
+    description: Verify the shipped source metadata still declares version 1.6.1
+    command: grep -n "version='1.6.1'" /opt/segmentator/setup.py
+    expected_output_contains: "version='1.6.1',"
+
+  - name: Segmentator entrypoint metadata
+    description: Verify the shipped setup metadata still declares the segmentator console entrypoint
+    command: grep -n "segmentator = segmentator.__main__:main" /opt/segmentator/setup.py
+    expected_output_contains: "segmentator = segmentator.__main__:main"
+
+  - name: Segmentator native extension payload
+    description: Verify the built native deriche extension is present for python 3.10 aarch64
+    command: test -f /opt/segmentator/segmentator/deriche_3D.cpython-310-aarch64-linux-gnu.so && echo "/opt/segmentator/segmentator/deriche_3D.cpython-310-aarch64-linux-gnu.so"
+    expected_output_contains: "/opt/segmentator/segmentator/deriche_3D.cpython-310-aarch64-linux-gnu.so"
