@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "batchheudiconv 1.0.0 arm64": {
+      "version": "20260512",
+      "exec": "",
+      "apptainer_args": [],
+      "architecture": "aarch64",
+      "image": "batchheudiconv_1.0.0_arm64"
+    }
+  },
+  "categories": [
+    "workflows",
+    "data organisation"
+  ],
+  "architecture": "aarch64"
+}
