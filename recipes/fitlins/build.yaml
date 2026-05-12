@@ -3,6 +3,7 @@ version: 0.11.0
 epoch: 1
 architectures:
   - x86_64
+  - aarch64
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -13,13 +14,13 @@ build:
         name: miniconda
         version: py39_25.5.1-0
         install_path: /opt/miniconda
+        env_name: fitlins
+        env_exists: "false"
         mamba: true
     - run:
-        - conda install mkl=2021.4 mkl-service=2.4 numpy=1.21 scipy=1.8 networkx=2.7 scikit-learn=1.0 scikit-image matplotlib=3.5 seaborn=0.11 pytables=3.6 pandas=1.3 pytest nbformat nb_conda traits=6.2
+        - conda install --override-channels -c conda-forge numpy=1.21 scipy=1.8 networkx=2.7 scikit-learn=1.0 scikit-image matplotlib=3.5 seaborn=0.11 pytables=3.6 pandas pytest nbformat nb_conda traits=6.2
     - run:
-        - pip install fitlins=0.11.0
-    - run: 
-        - conda install -c leej3 afni-minimal
+        - pip install fitlins==0.11.0
   add-default-template: true
 copyright:
   - license: Apache-2.0
