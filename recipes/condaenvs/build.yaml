@@ -61,16 +61,27 @@ files:
       set -e
 
       if [ "$(uname -m)" = "aarch64" ]; then
-          files="
-          environments/mne-starter.yml
-          environments/nipype-pinned.yml
-          environments/pytorch_cpu-starter.yml
-          "
+          for file in \
+              environments/mne-starter.yml \
+              environments/nipype-pinned.yml \
+              environments/pytorch_cpu-starter.yml
+          do
+              echo "$file"
+              if [ "$file" = "environments/mne-starter.yml" ]; then
+                  tmpfile=$(mktemp)
+                  sed '/^[[:space:]]*-[[:space:]]*pyEDFlib[[:space:]]*$/d' "$file" > "$tmpfile"
+                  conda env create -f "$tmpfile"
+                  rm -f "$tmpfile"
+                  conda run -n mne-eeg-meg python -m ensurepip --upgrade
+                  conda run -n mne-eeg-meg python -m pip install pyEDFlib
+              else
+                  conda env create -f "$file"
+              fi
+          done
       else
           files=$(ls environments/*-pinned.yml)
+          for file in $files; do
+              echo "$file"
+              conda env create -f "$file"
+          done
       fi
-
-      for file in $files; do
-          echo "$file"
-          conda env create -f "$file"
-      done
