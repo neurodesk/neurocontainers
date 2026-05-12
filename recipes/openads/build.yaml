@@ -82,7 +82,7 @@ structured_readme:
 
 build:
   kind: neurodocker
-  base-image: docker.io/sljhlab/openads:{{ context.version }}-gpu
+  base-image: docker.io/sljhlab/openads:gpu
   pkg-manager: apt
   add-default-template: false
   add-tzdata: false
