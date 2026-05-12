@@ -740,6 +740,8 @@ jobs:
           if [ -d /storage ]; then
             BASE_PATH=/storage
           fi
+          sudo mkdir -p "$BASE_PATH/tmp"
+          sudo chown "$USER" "$BASE_PATH/tmp"
           echo "BASE_PATH=$BASE_PATH" >> "$GITHUB_ENV"
           echo "base_path=$BASE_PATH" >> "$GITHUB_OUTPUT"
 
