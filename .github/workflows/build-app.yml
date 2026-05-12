@@ -428,12 +428,12 @@ jobs:
               echo "Auto-upload is disabled. Skipping registry cache export."
             fi
           fi
-          mkdir -p "$HOME/.cache/neurocontainers/build-context"
+          mkdir -p cache
           docker buildx build . \
             --load \
             --file "${DOCKERFILE}" \
             --tag "ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}" \
-            --build-context "neurocontainer-cache=$HOME/.cache/neurocontainers/build-context" \
+            --build-context "neurocontainer-cache=./cache" \
             "${CACHE_FROM_ARGS[@]}" \
             "${CACHE_TO_ARGS[@]}" \
             --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" \
