@@ -15,6 +15,7 @@ binaries:
     - curl
     - apt-utils
     - gnupg
+    - python3-setuptools
     yum:
     - curl
   directives:
