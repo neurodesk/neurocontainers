@@ -18,7 +18,7 @@
 # Documentation: https://neuroimage.usc.edu/brainstorm/Introduction
 
 name: brainstorm
-version: 3.211130
+version: "3.211130"
 container: brainstorm_3.211130_20211207.simg
 
 required_files:
