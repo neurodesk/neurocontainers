@@ -1,0 +1,41 @@
+# blastct container test suite
+# Minimal no-rebuild verification for the installed BLAST-CT Python package.
+
+name: blastct
+version: 2.0.0
+container: blastct_2.0.0.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: Python runtime available
+    description: Verify the Python runtime matches the shipped image
+    command: python3 --version
+    expected_output_contains: "Python 3.11.13"
+
+  - name: BLAST-CT package import
+    description: Verify the main blast_ct module imports successfully
+    command: python3 -c "import blast_ct; print(blast_ct.__name__)"
+    expected_output_contains: "blast_ct"
+
+  - name: BLAST-CT package metadata
+    description: Verify pip metadata reports the installed blast_ct package
+    command: python3 -m pip show blast_ct 2>&1 | sed -n '1,12p'
+    expected_output_contains: "Home-page: https://github.com/biomedia-mira/blast_ct"
+
+  - name: SimpleITK version
+    description: Verify the expected SimpleITK runtime is installed
+    command: python3 -c "import SimpleITK as sitk; print(sitk.Version_VersionString())"
+    expected_output_contains: "2.4.1"
+
+  - name: BLAST-CT install location
+    description: Verify the module is installed under the Miniconda site-packages tree
+    command: python3 -c "import blast_ct; print(blast_ct.__file__)"
+    expected_output_contains: "/opt/miniconda/lib/python3.11/site-packages/blast_ct/"
