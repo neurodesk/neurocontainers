@@ -1012,11 +1012,11 @@ jobs:
     - name: Install Builder Dependencies
       run: |
         pip install -r requirements.txt
-    - name: Generate Dockerfile and Release File
+    - name: Generate Release File
       id: generate
       run: |
         echo "APPLICATION: $APPLICATION"
-        python3 -m builder build "$APPLICATION" --recreate --generate-release --architecture "$ARCHITECTURE"
+        python3 -m builder release "$APPLICATION" --write --architecture "$ARCHITECTURE"
 
     - name: Create Release File Pull Request
       if: steps.generate.outputs.container_name
