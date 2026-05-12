@@ -61,8 +61,8 @@ build:
         version: 2.4.3
     - install: r-base r-base-dev cmake git build-essential libhdf5-dev libfftw3-dev libpng-dev libjpeg-dev zlib1g-dev libssl-dev libcurl4-openssl-dev libxml2-dev
     - run:
-        - R --slave -e " options(repos = c(CRAN = 'https://cloud.r-project.org')); pkgs <- c('ANTsRCore', 'dplyr', 'extrantsr', 'fslr', 'neurobase', 'oasis', 'rlist', 'WhiteStripe', 'covr', 'knitr', 'rmarkdown', 'spelling', 'testthat'); mis <- setdiff(pkgs, rownames(installed.packages())); if (length(mis)) install.packages(mis, dependencies = TRUE); cat('Installed CRAN packages:\n'); if (length(pkgs)) cat(paste(pkgs, collapse = ', '), '\n') "
-        - R --slave -e " options(repos = c(CRAN = 'https://cloud.r-project.org')); if (!requireNamespace('remotes', quietly = TRUE)) install.packages('remotes'); remotes::install_github('avalcarcel9/mimosa', dependencies = NA, upgrade = 'never', build_vignettes = FALSE); cat('Installed mimosa from GitHub (avalcarcel9/mimosa)\n') "
+        - R --slave -e " pkgs <- c('ANTsRCore', 'dplyr', 'extrantsr', 'fslr', 'neurobase', 'oasis', 'rlist', 'WhiteStripe', 'covr', 'knitr', 'rmarkdown', 'spelling', 'testthat'); mis <- setdiff(pkgs, rownames(installed.packages())); if (length(mis)) install.packages(mis, dependencies = TRUE); cat('Installed CRAN packages:\n'); if (length(pkgs)) cat(paste(pkgs, collapse = ', '), '\n') "
+        - R --slave -e " if (!requireNamespace('remotes', quietly = TRUE)) install.packages('remotes'); remotes::install_github('avalcarcel9/mimosa', dependencies = NA, upgrade = 'never', build_vignettes = FALSE); cat('Installed mimosa from GitHub (avalcarcel9/mimosa)\n') "
     - test:
         name: verify_r_installation
         script: |-
