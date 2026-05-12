@@ -3,6 +3,7 @@ version: 1.4.4
 
 architectures:
   - x86_64
+  - aarch64
 
 copyright:
   - license: BSD-3-Clause
@@ -10,12 +11,6 @@ copyright:
 
 categories:
   - programming
-
-variables:
-  apptainer_deb_url:
-    try:
-      - value: "https://github.com/apptainer/apptainer/releases/download/v{{ context.version }}/apptainer_{{ context.version }}_amd64.deb"
-        condition: arch == "x86_64"
 
 build:
   kind: neurodocker
@@ -34,15 +29,55 @@ build:
         - libseccomp2
         - squashfs-tools
         - uidmap
+        - wget
+
+    - condition: arch == "aarch64"
+      install:
+        - build-essential
+        - libseccomp-dev
+        - fakeroot
+        - cryptsetup
+        - tzdata
+        - dh-apparmor
+        - git
+        - libsubid-dev
+        - pkg-config
 
     - file:
         name: apptainer.deb
-        url: "{{ context.apptainer_deb_url }}"
+        url: "https://github.com/apptainer/apptainer/releases/download/v{{ context.version }}/apptainer_{{ context.version }}_amd64.deb"
+      condition: arch == "x86_64"
+
+    - file:
+        name: apptainer-src.tar.gz
+        url: "https://github.com/apptainer/apptainer/releases/download/v{{ context.version }}/apptainer-{{ context.version }}.tar.gz"
+      condition: arch == "aarch64"
+
+    - file:
+        name: go.tar.gz
+        url: "https://dl.google.com/go/go1.23.6.linux-arm64.tar.gz"
+      condition: arch == "aarch64"
 
     - run:
         - apt-get update
         - apt-get install -y {{ get_file("apptainer.deb") }}
         - rm -rf /var/lib/apt/lists/*
+      condition: arch == "x86_64"
+
+    - workdir: /tmp
+      condition: arch == "aarch64"
+
+    - run:
+        - rm -rf /usr/local/go
+        - tar -C /usr/local -xzf {{ get_file("go.tar.gz") }}
+        - tar -xzf {{ get_file("apptainer-src.tar.gz") }}
+        - cd apptainer-{{ context.version }}
+        - export PATH=/usr/local/go/bin:$PATH
+        - ./mconfig --without-suid
+        - cd builddir
+        - make -j2
+        - make install
+      condition: arch == "aarch64"
 
     - run:
         - apptainer --version
