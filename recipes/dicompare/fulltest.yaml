@@ -137,7 +137,7 @@ tests:
   - name: start.sh contains serve command
     description: Verify startup script runs serve
     command: "bash -lc 'cat /opt/dicompare/start.sh'"
-    expected_output_contains: "serve -s dist -l 3001"
+    expected_output_contains: "serve -s dist -l ${NEURODESK_WEBAPP_PORT:-3001}"
 
   # ==========================================================================
   # INDEX.HTML VERIFICATION
@@ -483,43 +483,43 @@ tests:
   # ==========================================================================
   - name: Web server can start
     description: Test that serve can start serving files
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3002 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/ || echo \"failed\"\npkill -f \"serve.*3002\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3002 >/tmp/dicompare-3002.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/ || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
   - name: Web server serves index.html
     description: Test that serve returns HTML content
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3003 &\nsleep 2\ncurl -s http://localhost:3003/ | head -1 || echo \"failed\"\npkill -f \"serve.*3003\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3003 >/tmp/dicompare-3003.log 2>&1 &\npid=$!\nsleep 2\ncurl -s http://localhost:3003/ | head -1 || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "<!DOCTYPE html>"
     timeout: 10
 
   - name: Web server serves favicon
     description: Test that serve returns favicon
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3004 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3004/favicon.ico || echo \"failed\"\npkill -f \"serve.*3004\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3004 >/tmp/dicompare-3004.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3004/favicon.ico || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
   - name: Web server serves manifest.json
     description: Test that serve returns manifest.json
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3005 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3005/manifest.json || echo \"failed\"\npkill -f \"serve.*3005\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3005 >/tmp/dicompare-3005.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3005/manifest.json || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
   - name: Web server serves schema files
     description: Test that serve returns schema index
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3006 &\nsleep 2\ncurl -s http://localhost:3006/schemas/index.json | head -1 || echo \"failed\"\npkill -f \"serve.*3006\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3006 >/tmp/dicompare-3006.log 2>&1 &\npid=$!\nsleep 2\ncurl -s http://localhost:3006/schemas/index.json | head -1 || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "["
     timeout: 10
 
   - name: Web server serves validation functions
     description: Test that serve returns validation function
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3007 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3007/validation-functions/validate_echo_count.json || echo \"failed\"\npkill -f \"serve.*3007\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3007 >/tmp/dicompare-3007.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3007/validation-functions/validate_echo_count.json || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
   - name: Web server single page mode works
     description: Test that SPA routing redirects to index.html
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3008 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3008/nonexistent/path || echo \"failed\"\npkill -f \"serve.*3008\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3008 >/tmp/dicompare-3008.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3008/nonexistent/path || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 

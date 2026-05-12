@@ -1,6 +1,7 @@
 name: dcm2niix
 url: https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage
 binaries:
+  builder: neurodocker
   arguments:
     required:
     - version
@@ -35,6 +36,7 @@ binaries:
 
       '
 source:
+  builder: neurodocker
   arguments:
     required:
     - version

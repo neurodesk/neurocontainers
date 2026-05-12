@@ -1,6 +1,7 @@
 name: minc
 url: https://github.com/BIC-MNI/minc-toolkit-v2
 binaries:
+  builder: neurodocker
   arguments:
     required:
     - version

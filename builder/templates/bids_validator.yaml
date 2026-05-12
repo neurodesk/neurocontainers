@@ -1,6 +1,7 @@
 name: bids_validator
 url: https://github.com/bids-standard/bids-validator
 binaries:
+  builder: neurodocker
   urls:
     1.13.0: https://github.com/bids-standard/bids-validator/releases/tag/v1.13.0
   arguments:

@@ -1,6 +1,7 @@
 name: ants
 url: http://stnava.github.io/ANTs/
 binaries:
+  builder: neurodocker
   arguments:
     required:
     - version
@@ -49,6 +50,7 @@ binaries:
 
       '
 source:
+  builder: neurodocker
   arguments:
     required:
     - version

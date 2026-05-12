@@ -274,7 +274,7 @@ build:
 
 ### Template Directive
 
-Builder includes local templates for the subset of template directives used by current NeuroContainers recipes.
+Builder includes local templates for the subset of template directives used by current NeuroContainers recipes. Template methods are stored as macro-style `builder: neurodocker` directive fragments, with method-specific arguments and URLs alongside the directives.
 
 ```yaml
 build:

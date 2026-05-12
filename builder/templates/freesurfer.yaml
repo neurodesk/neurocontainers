@@ -1,6 +1,7 @@
 name: freesurfer
 url: https://surfer.nmr.mgh.harvard.edu/
 binaries:
+  builder: neurodocker
   arguments:
     required:
     - version

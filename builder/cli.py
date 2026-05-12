@@ -10,7 +10,7 @@ from .adapters import BuildInputs, BuildKitAdapter, DockerAdapter, SifAdapter
 from .config import default_config, resolve_recipe
 from .dockerfile import render_dockerfile
 from .recipe import compile_recipe
-from .release import build_date_for_recipe, release_data, write_release_file
+from .release import build_date_for_recipe, release_data, release_version, write_github_release_outputs, write_release_file
 from .staging import materialize_plan
 from .tester import ContainerTesterAdapter, TestRequest
 
@@ -131,9 +131,11 @@ def cmd_stage(args: argparse.Namespace) -> int:
 def cmd_release(args: argparse.Namespace) -> int:
     config, compiled = compile_from_args(args)
     date = build_date_for_recipe(config.repo_root, compiled.recipe_dir)
-    data = release_data(compiled.name, compiled.version, compiled.recipe, date)
+    data = release_data(compiled.name, compiled.version, compiled.recipe, date, compiled.architecture)
+    version = release_version(compiled.version, compiled.architecture)
     if args.write:
-        path = write_release_file(config.repo_root, compiled.name, compiled.version, data)
+        path = write_release_file(config.repo_root, compiled.name, version, data)
+        write_github_release_outputs(compiled.name, version, data)
         print(f"Release file written: {path}")
     else:
         print(json.dumps(data, indent=2))
@@ -180,12 +182,15 @@ def cmd_build(args: argparse.Namespace) -> int:
     print(" ".join(str(part) for part in command))
     if getattr(args, "generate_release", False) and not args.dry_run:
         date = build_date_for_recipe(config.repo_root, compiled.recipe_dir)
+        version = release_version(compiled.version, compiled.architecture)
+        data = release_data(compiled.name, compiled.version, compiled.recipe, date, compiled.architecture)
         path = write_release_file(
             config.repo_root,
             compiled.name,
-            compiled.version,
-            release_data(compiled.name, compiled.version, compiled.recipe, date),
+            version,
+            data,
         )
+        write_github_release_outputs(compiled.name, version, data)
         print(f"Release file written: {path}")
     return 0
 

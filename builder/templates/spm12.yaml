@@ -1,6 +1,7 @@
 name: spm12
 url: https://www.fil.ion.ucl.ac.uk/spm/
 binaries:
+  builder: neurodocker
   arguments:
     required:
     - version

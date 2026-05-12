@@ -60,6 +60,9 @@ jobs:
       SHORT_SHA: ${{ steps.envars.outputs.SHORT_SHA }}
       IMAGETAG: ${{ steps.envars.outputs.IMAGETAG }}
       VERSION: ${{ steps.envars.outputs.VERSION }}
+      ARCHITECTURE: ${{ steps.envars.outputs.ARCHITECTURE }}
+      IMAGE_SUFFIX: ${{ steps.envars.outputs.IMAGE_SUFFIX }}
+      RELEASE_VERSION: ${{ steps.envars.outputs.RELEASE_VERSION }}
       ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
     steps:
       - name: Checkout repository
@@ -86,23 +89,47 @@ jobs:
           fi
           set -x
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends --no-upgrade \
-            ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
+          APT_PACKAGES=(ca-certificates curl git gh jq python3 python3-pip python3-venv unzip)
+          if ! command -v docker >/dev/null 2>&1; then
+            APT_PACKAGES+=(docker.io)
+          fi
+          sudo apt-get install -y --no-install-recommends --no-upgrade "${APT_PACKAGES[@]}"
+          case "$(uname -m)" in
+            x86_64)
+              APPTAINER_ARCH=amd64
+              AWSCLI_ARCH=x86_64
+              ;;
+            aarch64|arm64)
+              APPTAINER_ARCH=arm64
+              AWSCLI_ARCH=aarch64
+              ;;
+            *)
+              echo "Unsupported machine architecture: $(uname -m)"
+              exit 1
+              ;;
+          esac
           APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
             | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_amd64.deb" \
-            -o /tmp/apptainer.deb
-          sudo apt-get install -y /tmp/apptainer.deb
-          rm /tmp/apptainer.deb
-          PIP_BREAK_SYSTEM_PACKAGES=""
-          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
-            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          if [ "$APPTAINER_ARCH" = "arm64" ]; then
+            sudo apt-get install -y --no-install-recommends software-properties-common
+            sudo add-apt-repository -y ppa:apptainer/ppa
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends apptainer
+          else
+            curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
+              -o /tmp/apptainer.deb
+            sudo apt-get install -y /tmp/apptainer.deb
+            rm /tmp/apptainer.deb
           fi
-          sudo python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} \
+          python3 -m venv "$RUNNER_TEMP/openstack-client-venv"
+          "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install \
             python-swiftclient python-keystoneclient
+          echo "$RUNNER_TEMP/openstack-client-venv/bin" >> "$GITHUB_PATH"
+          export PATH="$RUNNER_TEMP/openstack-client-venv/bin:$PATH"
           # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
           if ! command -v aws >/dev/null 2>&1; then
-            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
+            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${AWSCLI_ARCH}.zip" \
               -o /tmp/awscliv2.zip
             unzip -q /tmp/awscliv2.zip -d /tmp
             sudo /tmp/aws/install
@@ -121,6 +148,14 @@ jobs:
             echo "Recipe version not found for $APPLICATION"
             exit 1
           fi
+          ARCHITECTURE="x86_64"
+          IMAGE_SUFFIX=""
+          RELEASE_VERSION="$VERSION"
+          if [[ "${{ inputs.runner }}" == *"arm"* ]]; then
+            ARCHITECTURE="aarch64"
+            IMAGE_SUFFIX="_arm64"
+            RELEASE_VERSION="${VERSION}-arm64"
+          fi
           # Get the commit date of the recipe's build.yaml file
           # This ensures consistent build dates based on when the recipe was last modified
           BUILDDATE=$(git log -1 --format=%ad --date=format:%Y%m%d -- recipes/${APPLICATION}/build.yaml)
@@ -133,6 +168,12 @@ jobs:
           echo "SHORT_SHA=$SHORT_SHA" >> $GITHUB_OUTPUT
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "ARCHITECTURE=$ARCHITECTURE" >> $GITHUB_ENV
+          echo "ARCHITECTURE=$ARCHITECTURE" >> $GITHUB_OUTPUT
+          echo "IMAGE_SUFFIX=$IMAGE_SUFFIX" >> $GITHUB_ENV
+          echo "IMAGE_SUFFIX=$IMAGE_SUFFIX" >> $GITHUB_OUTPUT
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> $GITHUB_ENV
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> $GITHUB_OUTPUT
           echo "BUILDDATE=$BUILDDATE" >> $GITHUB_ENV
           echo "BUILDDATE=$BUILDDATE" >> $GITHUB_OUTPUT
           if [ "${{ inputs.skip_docker_build }}" = "true" ]; then
@@ -153,7 +194,7 @@ jobs:
         id: generate
         run: |
           echo "APPLICATION: $APPLICATION"
-          ./builder/build.py generate $APPLICATION --recreate --auto-build --generate-release
+          python3 -m builder build "$APPLICATION" --recreate --generate-release
 
       - name: Set image variables
         id: imgvars
@@ -167,7 +208,8 @@ jobs:
             exit 1
           fi
           DOCKERFILE=$(basename "$DOCKERFILE_PATH")
-          IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
+          BASE_IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
+          IMAGENAME="${BASE_IMAGENAME}${IMAGE_SUFFIX}"
           echo "DOCKERFILE: $DOCKERFILE"
           echo "IMAGENAME: $IMAGENAME"
           echo "DOCKERFILE=$DOCKERFILE" >> "$GITHUB_ENV"
@@ -206,6 +248,8 @@ jobs:
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
       ROOTFS_CACHE: ${{ needs.config.outputs.ROOTFS_CACHE }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
+      ARCHITECTURE: ${{ needs.config.outputs.ARCHITECTURE }}
+      IMAGE_SUFFIX: ${{ needs.config.outputs.IMAGE_SUFFIX }}
     steps:
       - name: Set runner base path
         run: |
@@ -245,23 +289,47 @@ jobs:
           fi
           set -x
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends --no-upgrade \
-            ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
+          APT_PACKAGES=(ca-certificates curl git gh jq python3 python3-pip python3-venv unzip)
+          if ! command -v docker >/dev/null 2>&1; then
+            APT_PACKAGES+=(docker.io)
+          fi
+          sudo apt-get install -y --no-install-recommends --no-upgrade "${APT_PACKAGES[@]}"
+          case "$(uname -m)" in
+            x86_64)
+              APPTAINER_ARCH=amd64
+              AWSCLI_ARCH=x86_64
+              ;;
+            aarch64|arm64)
+              APPTAINER_ARCH=arm64
+              AWSCLI_ARCH=aarch64
+              ;;
+            *)
+              echo "Unsupported machine architecture: $(uname -m)"
+              exit 1
+              ;;
+          esac
           APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
             | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_amd64.deb" \
-            -o /tmp/apptainer.deb
-          sudo apt-get install -y /tmp/apptainer.deb
-          rm /tmp/apptainer.deb
-          PIP_BREAK_SYSTEM_PACKAGES=""
-          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
-            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          if [ "$APPTAINER_ARCH" = "arm64" ]; then
+            sudo apt-get install -y --no-install-recommends software-properties-common
+            sudo add-apt-repository -y ppa:apptainer/ppa
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends apptainer
+          else
+            curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
+              -o /tmp/apptainer.deb
+            sudo apt-get install -y /tmp/apptainer.deb
+            rm /tmp/apptainer.deb
           fi
-          sudo python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} \
+          python3 -m venv "$RUNNER_TEMP/openstack-client-venv"
+          "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install \
             python-swiftclient python-keystoneclient
+          echo "$RUNNER_TEMP/openstack-client-venv/bin" >> "$GITHUB_PATH"
+          export PATH="$RUNNER_TEMP/openstack-client-venv/bin:$PATH"
           # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
           if ! command -v aws >/dev/null 2>&1; then
-            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
+            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${AWSCLI_ARCH}.zip" \
               -o /tmp/awscliv2.zip
             unzip -q /tmp/awscliv2.zip -d /tmp
             sudo /tmp/aws/install
@@ -287,7 +355,7 @@ jobs:
         id: generate
         run: |
           echo "APPLICATION: $APPLICATION"
-          ./builder/build.py generate $APPLICATION --recreate --auto-build --generate-release
+          python3 -m builder build "$APPLICATION" --recreate --generate-release --architecture "$ARCHITECTURE"
 
       - name: Set image variables
         id: imgvars
@@ -301,7 +369,8 @@ jobs:
             exit 1
           fi
           DOCKERFILE=$(basename "$DOCKERFILE_PATH")
-          IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
+          BASE_IMAGENAME=$(echo "${DOCKERFILE%.*}" | tr '[:upper:]' '[:lower:]')
+          IMAGENAME="${BASE_IMAGENAME}${IMAGE_SUFFIX}"
           echo "DOCKERFILE: $DOCKERFILE"
           echo "IMAGENAME: $IMAGENAME"
           echo "DOCKERFILE=$DOCKERFILE" >> $GITHUB_ENV
@@ -317,8 +386,12 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        if: inputs.skip_docker_build != 'true'
+        if: ${{ inputs.skip_docker_build != 'true' && !contains(inputs.runner, 'blacksmith') }}
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435
+
+      - name: Set up Blacksmith Docker builder
+        if: ${{ inputs.skip_docker_build != 'true' && contains(inputs.runner, 'blacksmith') }}
+        uses: useblacksmith/setup-docker-builder@v1
 
       - name: Debug Dockerfile
         run: cat ./build/${APPLICATION}/${DOCKERFILE}
@@ -333,21 +406,27 @@ jobs:
         env:
           DISABLE_AUTO_UPLOAD: ${{ inputs.disable_auto_upload }}
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+          IS_BLACKSMITH_RUNNER: ${{ contains(inputs.runner, 'blacksmith') }}
         run: |
           cd "./build/${APPLICATION}"
           CACHE_REF=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:buildcache
           CACHE_FROM_ARGS=()
-          CACHE_TO_ARGS=(--cache-to type=inline)
-          if docker buildx imagetools inspect "${CACHE_REF}" >/dev/null 2>&1; then
-            echo "Using cache image ${CACHE_REF}"
-            CACHE_FROM_ARGS=(--cache-from "type=registry,ref=${CACHE_REF}")
+          CACHE_TO_ARGS=()
+          if [ "${IS_BLACKSMITH_RUNNER}" = "true" ]; then
+            echo "Using Blacksmith Docker layer cache"
           else
-            echo "Cache image ${CACHE_REF} is unavailable; building without --cache-from"
-          fi
-          if [ "${DISABLE_AUTO_UPLOAD}" != "true" ]; then
-            CACHE_TO_ARGS+=(--cache-to "type=registry,ref=${CACHE_REF},mode=max")
-          else
-            echo "Auto-upload is disabled. Skipping registry cache export."
+            CACHE_TO_ARGS=(--cache-to type=inline)
+            if docker buildx imagetools inspect "${CACHE_REF}" >/dev/null 2>&1; then
+              echo "Using cache image ${CACHE_REF}"
+              CACHE_FROM_ARGS=(--cache-from "type=registry,ref=${CACHE_REF}")
+            else
+              echo "Cache image ${CACHE_REF} is unavailable; building without --cache-from"
+            fi
+            if [ "${DISABLE_AUTO_UPLOAD}" != "true" ]; then
+              CACHE_TO_ARGS+=(--cache-to "type=registry,ref=${CACHE_REF},mode=max")
+            else
+              echo "Auto-upload is disabled. Skipping registry cache export."
+            fi
           fi
           mkdir -p "$HOME/.cache/neurocontainers/build-context"
           docker buildx build . \
@@ -359,25 +438,25 @@ jobs:
             "${CACHE_TO_ARGS[@]}" \
             --label "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}" \
             --label "GITHUB_SHA=${SHORT_SHA}"
-          
+
       - name: Debug storage
         run: |
           sudo df -ha
           sudo du -sh --exclude="$BASE_PATH/docker" "$BASE_PATH"
-          
+
       # - name: Save new image to file
       #   if: inputs.skip_docker_build != 'true'
       #   env:
       #     GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
       #   run: docker save ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} -o /tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
-          
+
       # - name: Debug storage
       #   run: |
       #     sudo df -ha
       #     sudo du -sh /mnt
       #     sudo du -sh /mnt/*
 
-      # - name: Build and save new image 
+      # - name: Build and save new image
       #   uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
       #   with:
       #     context: ./build/${{ env.APPLICATION }}
@@ -400,7 +479,7 @@ jobs:
           if docker inspect ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} >/dev/null 2>&1; then
             ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE})
             echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
-            
+
             if [ "$DISABLE_AUTO_UPLOAD" = "true" ]; then
               echo "Auto-upload is disabled. Skipping push to registry."
             elif [ "$ROOTFS_NEW" = "$ROOTFS_CACHE" ]; then
@@ -529,7 +608,7 @@ jobs:
       #     name: ${{ env.IMAGENAME }}-${{ env.BUILDDATE }}
       #     path: /tmp/${{ env.IMAGENAME }}-${{ env.BUILDDATE }}.tar
       #     retention-days: 7
-        
+
       - name: Push to GHCR
         if: steps.imgcompare.outputs.IMGDIFFERS == 'true'
         env:
@@ -589,7 +668,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
 
     steps:
       - name: Configure GitHub-hosted runner
@@ -644,14 +723,14 @@ jobs:
   build-simg:
     needs: [config, build-image]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false' }}
-    runs-on: ubuntu-22.04
+    runs-on: ${{ contains(inputs.runner, 'arm') && 'blacksmith-8vcpu-ubuntu-2404-arm' || 'ubuntu-22.04' }}
     permissions:
       packages: write
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
 
     steps:
       - name: Set runner base path
@@ -661,6 +740,8 @@ jobs:
           if [ -d /storage ]; then
             BASE_PATH=/storage
           fi
+          sudo mkdir -p "$BASE_PATH/tmp"
+          sudo chown "$USER" "$BASE_PATH/tmp"
           echo "BASE_PATH=$BASE_PATH" >> "$GITHUB_ENV"
           echo "base_path=$BASE_PATH" >> "$GITHUB_OUTPUT"
 
@@ -700,11 +781,9 @@ jobs:
           # echo "/mnt/apptainer/bin" >> $GITHUB_PATH
 
       - name: Checkout repository
-        if: ${{ runner.environment == 'github-hosted' }}
         uses: actions/checkout@v5
 
       - name: Install Apptainer
-        if: ${{ runner.environment == 'github-hosted' }}
         uses: ./.github/actions/setup-apptainer
         with:
           apptainer-version: 1.4.3
@@ -752,7 +831,7 @@ jobs:
         run: |
           sudo df -ha
           sudo du -sh --exclude="$BASE_PATH/docker" "$BASE_PATH"
-  
+
       - name: Upload simg artifact
         if: inputs.skip_simg_build != 'true'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
@@ -772,7 +851,7 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
 
     steps:
       - name: Bootstrap build tooling
@@ -792,23 +871,47 @@ jobs:
           fi
           set -x
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends --no-upgrade \
-            ca-certificates curl docker.io git gh jq python3 python3-pip python3-venv unzip
+          APT_PACKAGES=(ca-certificates curl git gh jq python3 python3-pip python3-venv unzip)
+          if ! command -v docker >/dev/null 2>&1; then
+            APT_PACKAGES+=(docker.io)
+          fi
+          sudo apt-get install -y --no-install-recommends --no-upgrade "${APT_PACKAGES[@]}"
+          case "$(uname -m)" in
+            x86_64)
+              APPTAINER_ARCH=amd64
+              AWSCLI_ARCH=x86_64
+              ;;
+            aarch64|arm64)
+              APPTAINER_ARCH=arm64
+              AWSCLI_ARCH=aarch64
+              ;;
+            *)
+              echo "Unsupported machine architecture: $(uname -m)"
+              exit 1
+              ;;
+          esac
           APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
             | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_amd64.deb" \
-            -o /tmp/apptainer.deb
-          sudo apt-get install -y /tmp/apptainer.deb
-          rm /tmp/apptainer.deb
-          PIP_BREAK_SYSTEM_PACKAGES=""
-          if python3 -m pip install --help | grep -q -- '--break-system-packages'; then
-            PIP_BREAK_SYSTEM_PACKAGES="--break-system-packages"
+          if [ "$APPTAINER_ARCH" = "arm64" ]; then
+            sudo apt-get install -y --no-install-recommends software-properties-common
+            sudo add-apt-repository -y ppa:apptainer/ppa
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends apptainer
+          else
+            curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
+              -o /tmp/apptainer.deb
+            sudo apt-get install -y /tmp/apptainer.deb
+            rm /tmp/apptainer.deb
           fi
-          sudo python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} \
+          python3 -m venv "$RUNNER_TEMP/openstack-client-venv"
+          "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install --upgrade pip
+          "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install \
             python-swiftclient python-keystoneclient
+          echo "$RUNNER_TEMP/openstack-client-venv/bin" >> "$GITHUB_PATH"
+          export PATH="$RUNNER_TEMP/openstack-client-venv/bin:$PATH"
           # AWS CLI v2 — guarded so a pre-existing install isn't clobbered.
           if ! command -v aws >/dev/null 2>&1; then
-            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
+            curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-${AWSCLI_ARCH}.zip" \
               -o /tmp/awscliv2.zip
             unzip -q /tmp/awscliv2.zip -d /tmp
             sudo /tmp/aws/install
@@ -839,7 +942,7 @@ jobs:
             --segment-size 1073741824 \
             --segment-threads 10
           echo "[DEBUG] Done with uploading to Nectar Object Storage!"
-  
+
   upload-s3:
     needs: [config, build-image, build-simg]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_s3 == 'true' }}
@@ -850,7 +953,8 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
+      AWSCLI_ARCH: x86_64
     steps:
       - name: Configure runner
         run: |
@@ -874,7 +978,7 @@ jobs:
         run: |
           if ! command -v aws &>/dev/null; then
             echo "[DEBUG] Installing AWS CLI"
-            curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install && rm -rf aws awscliv2.zip
+            curl "https://awscli.amazonaws.com/awscli-exe-linux-${AWSCLI_ARCH}.zip" -o "awscliv2.zip" && unzip awscliv2.zip && sudo ./aws/install && rm -rf aws awscliv2.zip
           fi
 
       - name: Upload to AWS S3
@@ -898,7 +1002,8 @@ jobs:
     env:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
-      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
+      ARCHITECTURE: ${{ needs.config.outputs.ARCHITECTURE }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
     steps:
     - uses: actions/checkout@v5
@@ -911,7 +1016,7 @@ jobs:
       id: generate
       run: |
         echo "APPLICATION: $APPLICATION"
-        ./builder/build.py generate $APPLICATION --recreate --auto-build --generate-release
+        python3 -m builder build "$APPLICATION" --recreate --generate-release --architecture "$ARCHITECTURE"
 
     - name: Create Release File Pull Request
       if: steps.generate.outputs.container_name
@@ -1026,7 +1131,7 @@ jobs:
         echo "✅ Pull request created for ${CONTAINER_NAME} ${CONTAINER_VERSION}"
     - name: Detect OpenReconLabel.json
       id: detect_openrecon
-      if: steps.generate.outputs.container_name
+      if: steps.generate.outputs.container_name && env.ARCHITECTURE == 'x86_64'
       env:
         CONTAINER_NAME: ${{ steps.generate.outputs.container_name }}
       run: |
@@ -1167,5 +1272,3 @@ jobs:
         echo "The container has been successfully build. To test the container, run this:" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
         echo "bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE" >> $GITHUB_STEP_SUMMARY
-
-

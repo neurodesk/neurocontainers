@@ -4,6 +4,7 @@
 name: convert3d
 url: http://www.itksnap.org/pmwiki/pmwiki.php?n=Convert3D.Convert3D
 binaries:
+    builder: neurodocker
     arguments:
         required:
         -   version

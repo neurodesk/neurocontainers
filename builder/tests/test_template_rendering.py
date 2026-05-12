@@ -65,6 +65,7 @@ def test_builtin_templates_are_native_directive_format() -> None:
             method_data = data.get(method)
             if not isinstance(method_data, dict):
                 continue
+            assert method_data.get("builder") == "neurodocker", f"{path.name}:{method} has no macro builder"
             assert "env" not in method_data, f"{path.name}:{method} still uses legacy env"
             assert "instructions" not in method_data, f"{path.name}:{method} still uses legacy instructions"
             assert isinstance(method_data.get("directives"), list), f"{path.name}:{method} has no directives"

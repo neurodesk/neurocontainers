@@ -125,6 +125,9 @@ def apply_builtin_template(name: str, params: dict[str, Any], pkg_manager: str, 
         raise NotImplementedError(
             f"local template backend does not yet implement template {name!r} method {method_name!r}"
         )
+    builder = method_data.get("builder", "neurodocker")
+    if builder != "neurodocker":
+        raise ValueError(f"template {name!r} method {method_name!r} uses unsupported builder {builder!r}")
 
     method = TemplateMethod(method_data, _method_values(method_data, params), pkg_manager)
     method.pkg_manager = pkg_manager

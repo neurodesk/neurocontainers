@@ -1,6 +1,7 @@
 name: mrtrix3
 url: https://www.mrtrix.org/
 binaries:
+  builder: neurodocker
   arguments:
     required:
     - version
@@ -39,6 +40,7 @@ binaries:
 
       '
 source:
+  builder: neurodocker
   arguments:
     required:
     - version

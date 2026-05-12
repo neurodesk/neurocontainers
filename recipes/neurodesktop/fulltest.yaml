@@ -76,6 +76,7 @@ tests:
           /opt/neurodesktop/guacamole.sh \
           /opt/neurodesktop/init_secrets.sh \
           /opt/neurodesktop/deferred_startup.sh \
+          /opt/neurodesktop/nested_container_runtime.sh \
           /opt/neurodesktop/environment_variables.sh
         do
           test -x "$path"
@@ -308,6 +309,31 @@ tests:
     description: Verify Apptainer is installed in the desktop image
     command: apptainer --version
     expected_output_contains: "apptainer version"
+
+  - name: Nested container runtime environment
+    description: Verify Neurodesk app-container runtime defaults and host runtime opt-in
+    command: |
+      bash -lc '
+        set -euo pipefail
+        NEURODESKTOP_HOST_SINGULARITY_BIN=/nonexistent \
+          source /opt/neurodesktop/environment_variables.sh >/dev/null 2>&1
+        test "${APPTAINER_BINDPATH:-}" = "/data,/mnt,/neurodesktop-storage,/tmp,/cvmfs"
+        test "${SINGULARITY_BINDPATH:-}" = "/data,/mnt,/neurodesktop-storage,/tmp,/cvmfs"
+        test "${NEURODESKTOP_NESTED_CONTAINER_RUNTIME_ACTIVE:-}" = "image"
+
+        tmpdir="$(mktemp -d)"
+        mkdir -p "$tmpdir/bin"
+        printf "%s\n" "#!/bin/sh" "exit 0" > "$tmpdir/bin/singularity"
+        chmod +x "$tmpdir/bin/singularity"
+        NEURODESKTOP_HOST_SINGULARITY_BIN="$tmpdir/bin/singularity" \
+          NEURODESKTOP_NESTED_CONTAINER_RUNTIME=auto \
+          APPTAINER_BINDPATH= \
+          SINGULARITY_BINDPATH= \
+          bash -lc "source /opt/neurodesktop/nested_container_runtime.sh; test \"\${NEURODESKTOP_NESTED_CONTAINER_RUNTIME_ACTIVE}\" = host; case \":\${PATH}:\" in *\":$tmpdir/bin:\"*) ;; *) exit 2 ;; esac"
+        rm -rf "$tmpdir"
+        echo "nested-runtime-env-ok"
+      '
+    expected_output_contains: "nested-runtime-env-ok"
 
   - name: Nextflow launcher is installed
     description: Verify the Nextflow launcher is installed without requiring network bootstrap

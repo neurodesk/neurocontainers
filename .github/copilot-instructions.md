@@ -23,19 +23,19 @@ pip install -e .
 Generate and build containers using the builder system:
 ```bash
 # Generate Dockerfile only (check syntax/validate recipe)
-python builder/build.py generate <recipe-name> --recreate --check-only
+python -m builder generate <recipe-name> --recreate
 
 # Build container and test it - NEVER CANCEL: builds take 1-45+ minutes depending on complexity
-python builder/build.py generate <recipe-name> --recreate --build --test --timeout 3600
+python -m builder test <recipe-name> --recreate --build
 
 # Quick build for simple containers (template: ~60 seconds)
-python builder/build.py generate template --recreate --build --test
+python -m builder test template --recreate --build
 
 # Complex neuroimaging tools can take 30+ minutes - be patient
-python builder/build.py generate afni --recreate --build --test
+python -m builder test afni --recreate --build
 
 # Generate release files after successful build
-python builder/build.py generate <recipe-name> --recreate --build --generate-release
+python -m builder build <recipe-name> --recreate --generate-release
 ```
 
 ### Command-Line Tools
@@ -78,7 +78,7 @@ codespell .
 source env/bin/activate && ./workflows/test_all.sh
 
 # Test specific recipe generation
-python builder/build.py generate <recipe-name> --recreate --check-only
+python -m builder generate <recipe-name> --recreate
 ```
 
 ## Timing Expectations and Critical Warnings
@@ -245,10 +245,10 @@ Set up the deploy section:
 #### Step 5: Validate and Test
 ```bash
 # Validate recipe syntax
-python builder/build.py generate <toolname> --recreate --check-only
+python -m builder generate <toolname> --recreate
 
 # Build and test locally
-python builder/build.py generate <toolname> --recreate --build --test
+python -m builder test <toolname> --recreate --build
 
 # Test interactively
 sf-login <toolname>
@@ -278,10 +278,10 @@ sf-login <toolname>
 Always test recipes thoroughly:
 ```bash
 # Basic validation
-python builder/build.py generate <recipe> --recreate --check-only
+python -m builder generate <recipe> --recreate
 
 # Full build with testing
-python builder/build.py generate <recipe> --recreate --build --test
+python -m builder test <recipe> --recreate --build
 
 # Interactive testing
 sf-login <recipe>
@@ -344,14 +344,14 @@ sf-init <toolname> <version>
 
 # Edit the generated recipes/<toolname>/build.yaml
 # Test the recipe
-python builder/build.py generate <toolname> --recreate --check-only
-python builder/build.py generate <toolname> --recreate --build --test
+python -m builder generate <toolname> --recreate
+python -m builder test <toolname> --recreate --build
 ```
 
 ### Debug Build Issues
 ```bash
 # Generate Dockerfile and examine it
-python builder/build.py generate <recipe> --recreate --check-only
+python -m builder generate <recipe> --recreate
 cat build/<recipe>/<recipe>_<version>.Dockerfile
 
 # Build with verbose Docker output
@@ -475,7 +475,7 @@ python workflows/pr_test_runner.py --verbose --report markdown
 After building containers, manually verify core functionality:
 ```bash
 # Build and test a container
-python builder/build.py generate <recipe> --recreate --build --test
+python -m builder test <recipe> --recreate --build
 
 # Verify the primary tools work
 docker run --rm <container>:<version> <primary-command> --help
@@ -553,7 +553,7 @@ codespell . && source env/bin/activate && ./workflows/test_all.sh
 
 # Recipe workflow
 sf-init <name> <version>                                           # Create new recipe
-python builder/build.py generate <name> --recreate --check-only    # Validate syntax
+python -m builder generate <name> --recreate    # Validate syntax
 sf-build <name>                                                    # Build and test
 sf-login <name>                                                    # Interactive debugging
 

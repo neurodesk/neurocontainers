@@ -6,6 +6,7 @@
 name: afni
 url: https://afni.nimh.nih.gov
 binaries:
+    builder: neurodocker
     arguments:
         optional:
             install_path: /opt/afni-{{ self.version }}

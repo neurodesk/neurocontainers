@@ -4,6 +4,7 @@
 name: miniconda
 url: https://docs.conda.io/projects/miniconda/en/latest/
 binaries:
+    builder: neurodocker
     urls:
         latest: https://repo.continuum.io/miniconda/Miniconda3-{{ self.version }}-Linux-{{ self.arch }}.sh
         '*': https://repo.continuum.io/miniconda/Miniconda3-{{ self.version }}-Linux-{{ self.arch }}.sh
