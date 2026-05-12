@@ -1,0 +1,47 @@
+# cbsb0stats container test suite
+# Tests for cbsb0stats v1.2.0 on ARM64.
+#
+# This suite validates the concrete runtime surface in the built image:
+# the installed BET2 binary, the bundled reconstruction script, and the
+# OpenRecon Python server/client entrypoints.
+
+name: cbsb0stats
+version: 1.2.0
+container: cbsb0stats_1.2.0.simg
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/cbsb0stats
+
+tests:
+  - name: bet2 binary exists
+    description: Verify the packaged BET2 binary is present at its installed path
+    command: ls /opt/code/FSL-BET2/bin/bet2
+    expected_output_contains: "/opt/code/FSL-BET2/bin/bet2"
+
+  - name: cbsb0stats script exists
+    description: Verify the recipe-specific reconstruction script is present
+    command: ls /opt/code/python-ismrmrd-server/cbsb0stats.py
+    expected_output_contains: "cbsb0stats.py"
+
+  - name: cbsb0stats script compiles
+    description: Verify the bundled reconstruction script compiles successfully
+    command: python3 -m py_compile /opt/code/python-ismrmrd-server/cbsb0stats.py
+    expected_exit_code: 0
+
+  - name: main server help
+    description: Verify the OpenRecon server entrypoint starts and prints help output
+    command: python3 /opt/code/python-ismrmrd-server/main.py --help
+    expected_output_contains: "Example server for MRD streaming format"
+
+  - name: client help
+    description: Verify the OpenRecon client entrypoint starts and prints help output
+    command: python3 /opt/code/python-ismrmrd-server/client.py --help
+    expected_output_contains: "Example client for MRD streaming format"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    echo "Test outputs preserved in test_output/cbsb0stats/"
