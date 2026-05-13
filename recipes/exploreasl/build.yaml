@@ -13,8 +13,8 @@ build:
   pkg-manager: apt
   directives:
     - run:
-        - echo '#!/bin/bash' > /usr/local/bin/ExploreASL &&
-        - echo '/opt/xasl/xASL_latest/run_xASL_latest.sh /opt/mcr/v97/ "$@"' >> /usr/local/bin/ExploreASL &&
+        - "echo '#!/bin/bash' > /usr/local/bin/ExploreASL"
+        - "echo '/opt/xasl/xASL_latest/run_xASL_latest.sh /opt/mcr/v97/ \"$@\"' >> /usr/local/bin/ExploreASL"
         - chmod +x /usr/local/bin/ExploreASL
     - deploy:
         path: []
