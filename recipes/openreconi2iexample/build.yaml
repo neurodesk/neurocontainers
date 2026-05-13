@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.31
+version: 1.0.36
 architectures:
   - x86_64
 
@@ -66,14 +66,20 @@ readme: |-
   Original copies are sent first as source-native 2D images with
   `Keep_image_geometry = 1`. The pass-through keeps the source protocol,
   sequence, image-type, MiniHead, slice, and partition metadata as intact as
-  possible while assigning new returned-series UIDs. If a source group cannot be
-  sent safely as a 2D stream, the job fails before send rather than packing the
-  originals, because scanner MIP/MPR postprocessing depends on the original
-  stream. Segmentation outputs are packed into explicit volume images with
-  `Keep_image_geometry = 0`. Outputs strip scalar scanner `ImageTypeValue3`
-  metadata and `IceMiniHead` string `ImageTypeValue3` because some sequences
-  reject that protocol field during OpenRecon conversion; MiniHead array values
-  are preserved on original pass-through images.
+  possible while assigning new returned-series UIDs. If the incoming MRD
+  `image_index` is zero, the returned copy uses a one-based per-series
+  `image_index`, and missing MiniHead storage counters are filled from source
+  metadata or the source slice number. If a source group cannot be sent safely
+  as a 2D stream, the job fails before send rather than packing the originals,
+  because scanner MIP/MPR postprocessing depends on the original stream.
+  Segmentation outputs are packed into explicit volume images with
+  `Keep_image_geometry = 0`. Derived outputs strip scalar scanner
+  `ImageTypeValue3` metadata and `IceMiniHead` string `ImageTypeValue3` because
+  some sequences reject that protocol field during OpenRecon conversion.
+  Original pass-through keeps source image-type metadata as intact as possible
+  but normalizes returned `ImageTypeValue3` values to `M` when that classifier
+  field exists, because Siemens fat-fraction source images can advertise `MAP`
+  there and the OpenRecon return converter treats that as an unknown image type.
 
   OpenRecon runtime notes: `recipes/openreconi2iexample/OpenReconREADME.md`.
 

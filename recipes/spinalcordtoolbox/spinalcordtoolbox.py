@@ -623,7 +623,7 @@ def _send_images_by_series(connection, images, context):
         batch_series = None
 
     for image in images:
-        series_index = int(getattr(image, "image_series_index", 0))
+        series_index = _get_image_series_index(image)
         if batch and series_index != batch_series:
             flush_batch()
         batch.append(image)
@@ -845,6 +845,14 @@ def _log_and_validate_output_series_contract(output_images, input_images, contex
     }
     _log_json_event("SCT_OUTPUT_SERIES_CONTRACT", payload)
     _validate_output_series_contract(output_summary, input_summary)
+    _validate_output_images(output_images, input_images)
+
+
+def _summary_uid_values(entry, list_name, scalar_name):
+    list_values = _non_empty_values(entry.get(list_name))
+    if list_values:
+        return list_values
+    return _non_empty_values(entry.get(scalar_name))
 
 
 def _validate_output_series_contract(output_summary, input_summary):
@@ -880,13 +888,15 @@ def _validate_output_series_contract(output_summary, input_summary):
         uid = _first_non_empty_text(entry.get("series_instance_uid"))
         meta_uid = _first_non_empty_text(entry.get("meta_series_instance_uid"))
         minihead_uid = _first_non_empty_text(entry.get("minihead_series_instance_uid"))
-        meta_sop_uids = _non_empty_values(
-            entry.get("meta_sop_instance_uids"),
-            entry.get("meta_sop_instance_uid"),
+        meta_sop_uids = _summary_uid_values(
+            entry,
+            "meta_sop_instance_uids",
+            "meta_sop_instance_uid",
         )
-        minihead_sop_uids = _non_empty_values(
-            entry.get("minihead_sop_instance_uids"),
-            entry.get("minihead_sop_instance_uid"),
+        minihead_sop_uids = _summary_uid_values(
+            entry,
+            "minihead_sop_instance_uids",
+            "minihead_sop_instance_uid",
         )
         meta_grouping = _first_non_empty_text(entry.get("meta_series_grouping"))
         minihead_grouping = _first_non_empty_text(entry.get("minihead_series_grouping"))
@@ -974,6 +984,391 @@ def _validate_output_series_contract(output_summary, input_summary):
 
     if errors:
         raise ValueError("Invalid SCT output series contract before send: " + "; ".join(errors))
+
+
+def _validate_output_images(output_images, input_images):
+    errors = []
+    seen_image_keys = {}
+    seen_storage_keys = {}
+    seen_sop_uids = {}
+    source_image_count = len(input_images)
+    source_slice_count = source_image_count
+    input_identity = _identity_values(input_images)
+    input_series_indices = {
+        _get_image_series_index(image)
+        for image in _as_image_list(input_images)
+    }
+    input_has_minihead = any(_image_minihead(image) for image in input_images)
+    series_identity = {}
+    series_by_uid = {}
+
+    for index, image in enumerate(_as_image_list(output_images)):
+        header = image.getHead()
+        series_index = _get_image_series_index(image)
+        image_key = (
+            series_index,
+            int(header.slice),
+            int(header.image_index),
+        )
+        if image_key in seen_image_keys:
+            errors.append(
+                f"image {index} duplicates output image key {image_key} "
+                f"from image {seen_image_keys[image_key]}"
+            )
+        else:
+            seen_image_keys[image_key] = index
+
+        if series_index in input_series_indices:
+            errors.append(f"output image {index} reuses input image_series_index {series_index}")
+
+        meta = _meta_from_image(image)
+        minihead = _image_minihead(image)
+        keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
+        is_original_output = _series_contract_role(meta, minihead) == "ORIGINAL"
+        if (
+            input_has_minihead
+            and not minihead
+            and keep_image_geometry != 0
+        ):
+            errors.append(f"image {index} is missing IceMiniHead")
+
+        identity = {
+            "series_description": _get_meta_text(meta, "SeriesDescription"),
+            "sequence_description": _get_meta_text(meta, "SequenceDescription"),
+            "protocol_name": _get_meta_text(meta, "ProtocolName"),
+            "series_grouping": _get_meta_text(meta, "SeriesNumberRangeNameUID"),
+            "series_uid": _get_meta_text(meta, "SeriesInstanceUID"),
+            "sop_uid": _get_meta_text(meta, "SOPInstanceUID"),
+            "minihead_sequence_description": _extract_minihead_string_value(
+                minihead, "SequenceDescription"
+            ),
+            "minihead_protocol_name": _extract_minihead_string_value(minihead, "ProtocolName"),
+            "minihead_series_grouping": _extract_minihead_string_value(
+                minihead, "SeriesNumberRangeNameUID"
+            ),
+            "minihead_series_uid": _extract_minihead_string_value(minihead, "SeriesInstanceUID"),
+            "minihead_sop_uid": _extract_minihead_string_value(minihead, "SOPInstanceUID"),
+        }
+        _validate_identity_fields(
+            index,
+            identity,
+            input_identity,
+            errors,
+            allow_reused_descriptors=is_original_output,
+        )
+        _validate_storage_fields(
+            index,
+            image,
+            meta,
+            minihead,
+            input_identity,
+            seen_storage_keys,
+            seen_sop_uids,
+            _series_slice_limit(series_index, source_slice_count, source_image_count),
+            errors,
+        )
+
+        comparable_identity = (
+            identity["sequence_description"],
+            identity["protocol_name"],
+            identity["series_grouping"],
+            identity["series_uid"],
+        )
+        previous_identity = series_identity.setdefault(series_index, comparable_identity)
+        if previous_identity != comparable_identity:
+            errors.append(
+                f"image {index} in image_series_index {series_index} has "
+                f"inconsistent identity values: {comparable_identity} != "
+                f"{previous_identity}"
+            )
+        series_uid = identity["series_uid"]
+        if series_uid:
+            previous_series = series_by_uid.setdefault(series_uid, series_index)
+            if previous_series != series_index:
+                errors.append(
+                    f"SeriesInstanceUID {series_uid} is shared by "
+                    f"image_series_index {previous_series} and {series_index}"
+                )
+
+    if errors:
+        raise ValueError(
+            "Invalid SCT output series contract before send: " + "; ".join(errors)
+        )
+
+
+def _validate_identity_fields(
+    index,
+    identity,
+    input_identity,
+    errors,
+    allow_reused_descriptors=False,
+):
+    required = (
+        "series_description",
+        "sequence_description",
+        "protocol_name",
+        "series_grouping",
+        "series_uid",
+        "sop_uid",
+    )
+    for key in required:
+        if not identity[key]:
+            errors.append(f"image {index} is missing Meta {key}")
+
+    for meta_key, minihead_key in (
+        ("sequence_description", "minihead_sequence_description"),
+        ("protocol_name", "minihead_protocol_name"),
+        ("series_grouping", "minihead_series_grouping"),
+        ("series_uid", "minihead_series_uid"),
+        ("sop_uid", "minihead_sop_uid"),
+    ):
+        meta_value = identity[meta_key]
+        minihead_value = identity[minihead_key]
+        if minihead_value and meta_value != minihead_value:
+            errors.append(
+                f"image {index} has Meta/IceMiniHead {meta_key} mismatch: "
+                f"{meta_value} != {minihead_value}"
+            )
+
+    for key in (
+        "sequence_description",
+        "protocol_name",
+        "series_grouping",
+        "series_uid",
+        "minihead_sequence_description",
+        "minihead_protocol_name",
+        "minihead_series_grouping",
+        "minihead_series_uid",
+        "sop_uid",
+        "minihead_sop_uid",
+    ):
+        if allow_reused_descriptors and key in (
+            "sequence_description",
+            "protocol_name",
+            "minihead_sequence_description",
+            "minihead_protocol_name",
+        ):
+            continue
+        value = identity[key]
+        if value and value in input_identity:
+            errors.append(f"image {index} reuses input identity {key}={value}")
+
+
+def _validate_storage_fields(
+    index,
+    image,
+    meta,
+    minihead,
+    input_identity,
+    seen_storage_keys,
+    seen_sop_uids,
+    series_slice_limit,
+    errors,
+):
+    header = image.getHead()
+    header_slice = int(header.slice)
+    header_image_index = int(header.image_index)
+    header_matrix_z = int(header.matrix_size[2])
+    keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
+    image_type_value4 = _get_meta_text(meta, "ImageTypeValue4")
+    is_original_output = _series_contract_role(meta, minihead) == "ORIGINAL"
+
+    if header_image_index < 1:
+        errors.append(
+            f"image {index} has image_index {header_image_index}, expected >= 1"
+        )
+
+    if (
+        series_slice_limit
+        and not 0 <= header_slice < series_slice_limit
+    ):
+        errors.append(
+            f"image {index} has slice {header_slice} outside source image "
+            f"bounds [0..{series_slice_limit})"
+        )
+
+    expected_position_fields = {
+        "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
+        "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+        "AnatomicalSliceNo": header_slice,
+        "ChronSliceNo": header_slice,
+        "NumberInSeries": int(header.image_index),
+        "ProtocolSliceNumber": header_slice,
+        "SliceNo": header_slice,
+        "IsmrmrdSliceNo": header_slice,
+    }
+
+    for field, expected in expected_position_fields.items():
+        meta_value = _meta_int(meta, field)
+        if meta_value is None:
+            errors.append(f"image {index} is missing Meta {field}")
+        elif meta_value != expected:
+            errors.append(
+                f"image {index} has Meta {field}={meta_value}, expected {expected}"
+            )
+        if field == "IsmrmrdSliceNo":
+            continue
+        minihead_value = _minihead_long_value(minihead, field)
+        if minihead and minihead_value is None:
+            errors.append(f"image {index} is missing IceMiniHead {field}")
+        elif minihead_value is not None and minihead_value != expected:
+            errors.append(
+                f"image {index} has IceMiniHead {field}={minihead_value}, "
+                f"expected {expected}"
+            )
+
+    if keep_image_geometry is None:
+        errors.append(f"image {index} is missing Meta Keep_image_geometry")
+    elif keep_image_geometry == 0:
+        partition_count = _meta_int(meta, "partition_count")
+        if partition_count is None:
+            errors.append(f"image {index} is missing Meta partition_count")
+        elif partition_count < 1:
+            errors.append(
+                f"image {index} has Meta partition_count={partition_count}, "
+                "expected at least 1"
+            )
+
+        slice_count = _meta_int(meta, "slice_count")
+        if slice_count is None:
+            errors.append(f"image {index} is missing Meta slice_count")
+        elif header_slice >= slice_count:
+            errors.append(
+                f"image {index} has slice {header_slice} outside explicit "
+                f"slice_count {slice_count}"
+            )
+        elif header_matrix_z > 1 and header_matrix_z != slice_count:
+            errors.append(
+                f"image {index} has matrix_size[2]={header_matrix_z}, "
+                f"expected explicit slice_count {slice_count}"
+            )
+
+        number_of_slices = _meta_int(meta, "NumberOfSlices")
+        if header_matrix_z > 1 and number_of_slices != slice_count:
+            errors.append(
+                f"image {index} has Meta NumberOfSlices={number_of_slices}, "
+                f"expected {slice_count}"
+            )
+
+    sop_uid = _get_meta_text(meta, "SOPInstanceUID")
+    minihead_sop_uid = _extract_minihead_string_value(minihead, "SOPInstanceUID")
+    if sop_uid:
+        previous_index = seen_sop_uids.setdefault(sop_uid, index)
+        if previous_index != index:
+            errors.append(
+                f"SOPInstanceUID {sop_uid} is shared by output images "
+                f"{previous_index} and {index}"
+            )
+    if minihead_sop_uid:
+        previous_index = seen_sop_uids.setdefault(minihead_sop_uid, index)
+        if previous_index != index:
+            errors.append(
+                f"IceMiniHead SOPInstanceUID {minihead_sop_uid} is shared by "
+                f"output images {previous_index} and {index}"
+            )
+
+    minihead_image_type_value4 = _extract_minihead_array_tokens(minihead, "ImageTypeValue4")
+    if not image_type_value4:
+        errors.append(f"image {index} is missing Meta ImageTypeValue4")
+    if minihead and image_type_value4 not in minihead_image_type_value4:
+        errors.append(
+            f"image {index} has IceMiniHead ImageTypeValue4 "
+            f"{minihead_image_type_value4}, expected {image_type_value4}"
+        )
+    if is_original_output:
+        for source, value in (
+            ("Meta", _get_meta_text(meta, "ImageTypeValue3")),
+            ("IceMiniHead", _extract_minihead_string_value(minihead, "ImageTypeValue3")),
+        ):
+            if value and value != "M":
+                errors.append(
+                    f"image {index} has original {source} ImageTypeValue3={value}, expected M"
+                )
+
+    storage_key = (
+        _get_meta_text(meta, "SeriesInstanceUID"),
+        _meta_int(meta, "SliceNo"),
+        _meta_int(meta, "ChronSliceNo"),
+        _meta_int(meta, "NumberInSeries"),
+    )
+    missing_storage_fields = [
+        field
+        for field, value in zip(
+            ("SeriesInstanceUID", "SliceNo", "ChronSliceNo", "NumberInSeries"),
+            storage_key,
+        )
+        if value is None
+    ]
+    if missing_storage_fields:
+        errors.append(
+            f"image {index} is missing scanner storage key field(s) "
+            f"{', '.join(missing_storage_fields)}"
+        )
+    previous_index = seen_storage_keys.setdefault(storage_key, index)
+    if previous_index != index:
+        errors.append(
+            f"image {index} duplicates scanner storage key {storage_key} "
+            f"from image {previous_index}"
+        )
+    if sop_uid and sop_uid in input_identity:
+        errors.append(f"image {index} reuses input storage identity SOPInstanceUID={sop_uid}")
+
+
+def _series_slice_limit(_series_index, source_slice_count, _source_image_count):
+    return max(int(source_slice_count), 0)
+
+
+def _identity_values(images):
+    values = set()
+    for image in _as_image_list(images):
+        meta = _meta_from_image(image)
+        minihead = _image_minihead(image)
+        for key in (
+            "SeriesDescription",
+            "SequenceDescription",
+            "ProtocolName",
+            "SeriesNumberRangeNameUID",
+            "SeriesInstanceUID",
+            "SOPInstanceUID",
+        ):
+            value = _get_meta_text(meta, key)
+            if value:
+                values.add(value)
+            minihead_value = _extract_minihead_string_value(minihead, key)
+            if minihead_value:
+                values.add(minihead_value)
+    return values
+
+
+def _meta_int(meta_obj, key):
+    text = _get_meta_text(meta_obj, key)
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
+def _meta_from_image(image):
+    try:
+        return ismrmrd.Meta.deserialize(image.attribute_string)
+    except Exception:
+        return ismrmrd.Meta()
+
+
+def _image_minihead(image):
+    return _decode_ice_minihead(_meta_from_image(image))
+
+
+def _minihead_long_value(minihead_text, key):
+    text = _extract_minihead_string_value(minihead_text, key)
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
 
 
 def _first_non_empty_text(*values):

@@ -37,6 +37,7 @@ SOURCE_PARENT_REFERENCE_META_PREFIXES = (
 SCANNER_WRITE_UNSAFE_META_KEYS = {
     "ImageTypeValue3",
 }
+ORIGINAL_IMAGE_TYPE_VALUE3 = "M"
 SCANNER_PARTITION_INDEX = 0
 SLICE_POSITION_TOLERANCE_MM = 1e-4
 EXTRA_ORIGINAL_SERIES_INDEX_START = 104
@@ -1132,8 +1133,11 @@ def _stamp_original_image(
     series_name,
     series_identity=None,
 ):
+    storage_fields = _original_storage_fields(source_image, output_index)
     header = output.getHead()
     header.image_series_index = series_index
+    if int(header.image_index) < 1:
+        header.image_index = output_index + 1
     output.setHead(header)
     output.image_series_index = series_index
     output.attribute_string = _original_passthrough_meta(
@@ -1142,6 +1146,7 @@ def _stamp_original_image(
         output_index,
         series_name,
         series_identity,
+        storage_fields,
     ).serialize()
     return output
 
@@ -1152,10 +1157,10 @@ def _original_passthrough_meta(
     output_index,
     series_name,
     series_identity,
+    storage_fields,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
-    _strip_scanner_write_unsafe_meta(meta)
     if series_identity is None:
         series_identity = _build_output_series_identity_from_name(
             source_image,
@@ -1179,19 +1184,18 @@ def _original_passthrough_meta(
     meta["SeriesInstanceUID"] = series_uid
     meta["SOPInstanceUID"] = sop_uid
     meta["SeriesNumberRangeNameUID"] = series_grouping
-    if not _meta_text(meta, "SequenceDescriptionAdditional"):
-        _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
     _set_meta_scalar(meta, "Keep_image_geometry", 1)
-    _ensure_original_storage_meta(meta, source_image, output_index)
-    _strip_scanner_write_unsafe_meta(meta)
+    _ensure_original_storage_meta(meta, source_image, output_index, storage_fields)
 
     minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    _normalize_original_meta_image_type_value3(meta, minihead)
     if minihead:
         patched_minihead, changed = _patch_original_ice_minihead(
             minihead,
             series_grouping,
             series_uid,
             sop_uid,
+            storage_fields,
         )
         if changed:
             meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
@@ -1303,13 +1307,14 @@ def _set_output_position_meta(meta, output_index):
         _set_meta_scalar(meta, key, value)
 
 
-def _ensure_original_storage_meta(meta, source_image, output_index):
+def _original_storage_fields(source_image, output_index):
     header = source_image.getHead()
     header_slice = int(header.slice)
     header_image_index = int(header.image_index)
     if header_image_index < 1:
         header_image_index = output_index + 1
-    minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    source_meta = _meta_from_image(source_image)
+    minihead = _decode_ice_minihead(_meta_text(source_meta, "IceMiniHead"))
     fallbacks = {
         "Actual3DImagePartNumber": header_slice,
         "AnatomicalPartitionNo": header_slice,
@@ -1320,13 +1325,43 @@ def _ensure_original_storage_meta(meta, source_image, output_index):
         "SliceNo": header_slice,
         "IsmrmrdSliceNo": header_slice,
     }
+    storage_fields = {}
     for key, fallback in fallbacks.items():
-        if _meta_int(meta, key) is not None:
-            continue
-        value = None
-        if key != "IsmrmrdSliceNo":
+        value = _meta_int(source_meta, key)
+        if key == "NumberInSeries" and value is not None and value < 1:
+            value = None
+        if value is None and key != "IsmrmrdSliceNo":
             value = _minihead_long_value(minihead, key)
-        _set_meta_scalar(meta, key, value if value is not None else fallback)
+        if key == "NumberInSeries" and value is not None and value < 1:
+            value = None
+        storage_fields[key] = value if value is not None else fallback
+    return storage_fields
+
+
+def _ensure_original_storage_meta(
+    meta,
+    source_image,
+    output_index,
+    storage_fields=None,
+):
+    if storage_fields is None:
+        storage_fields = _original_storage_fields(source_image, output_index)
+    for key in storage_fields:
+        current_value = _meta_int(meta, key)
+        if current_value is not None and not (
+            key == "NumberInSeries" and current_value < 1
+        ):
+            continue
+        _set_meta_scalar(meta, key, storage_fields[key])
+
+
+def _normalize_original_meta_image_type_value3(meta, minihead):
+    if (
+        "ImageTypeValue3" in meta
+        or _minihead_string_value(minihead, "ImageTypeValue3")
+        or _minihead_array_tokens(minihead, "ImageTypeValue3")
+    ):
+        meta["ImageTypeValue3"] = ORIGINAL_IMAGE_TYPE_VALUE3
 
 
 def _meta_from_image(image):
@@ -1545,12 +1580,14 @@ def _patch_original_ice_minihead(
     series_grouping,
     series_uid,
     sop_uid,
+    storage_fields,
 ):
     current_text = minihead_text
-    current_text, changed = _remove_minihead_string_param(
-        current_text,
-        "ImageTypeValue3",
+    changed = False
+    current_text, did_change = _normalize_original_minihead_image_type_value3(
+        current_text
     )
+    changed = changed or did_change
     for name, value in (
         ("SeriesNumberRangeNameUID", series_grouping),
         ("SeriesInstanceUID", series_uid),
@@ -1560,6 +1597,42 @@ def _patch_original_ice_minihead(
             current_text,
             name,
             value,
+        )
+        changed = changed or did_change
+    for name in (
+        "Actual3DImagePartNumber",
+        "AnatomicalPartitionNo",
+        "AnatomicalSliceNo",
+        "ChronSliceNo",
+        "NumberInSeries",
+        "ProtocolSliceNumber",
+        "SliceNo",
+    ):
+        current_text, did_change = _ensure_minihead_long_param(
+            current_text,
+            name,
+            storage_fields.get(name),
+            minimum=1 if name == "NumberInSeries" else None,
+        )
+        changed = changed or did_change
+    return current_text, changed
+
+
+def _normalize_original_minihead_image_type_value3(minihead_text):
+    current_text = minihead_text
+    changed = False
+    if re.search(r'<ParamString\."ImageTypeValue3">', current_text):
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            "ImageTypeValue3",
+            ORIGINAL_IMAGE_TYPE_VALUE3,
+        )
+        changed = changed or did_change
+    if _minihead_array_tokens(current_text, "ImageTypeValue3"):
+        current_text, did_change = _replace_or_append_minihead_array_token(
+            current_text,
+            "ImageTypeValue3",
+            ORIGINAL_IMAGE_TYPE_VALUE3,
         )
         changed = changed or did_change
     return current_text, changed
@@ -1620,6 +1693,15 @@ def _replace_or_append_minihead_long_param(minihead_text, name, value):
 
     appended_param = f'\n<ParamLong."{name}">\t{{ {value} }}\n'
     return minihead_text.rstrip() + appended_param, True
+
+
+def _ensure_minihead_long_param(minihead_text, name, value, minimum=None):
+    if value is None:
+        return minihead_text, False
+    current_value = _minihead_long_value(minihead_text, name)
+    if current_value is not None and (minimum is None or current_value >= minimum):
+        return minihead_text, False
+    return _replace_or_append_minihead_long_param(minihead_text, name, value)
 
 
 def _replace_or_append_minihead_array_token(minihead_text, name, target_token):
@@ -1863,10 +1945,16 @@ def _validate_storage_fields(
 ):
     header = image.getHead()
     header_slice = int(header.slice)
+    header_image_index = int(header.image_index)
     header_matrix_z = int(header.matrix_size[2])
     keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
     image_type_value4 = _meta_text(meta, "ImageTypeValue4")
     is_original_output = _is_original_series_index(int(image.image_series_index))
+
+    if header_image_index < 1:
+        errors.append(
+            f"image {index} has image_index {header_image_index}, expected >= 1"
+        )
 
     if (
         series_slice_limit
@@ -1971,11 +2059,68 @@ def _validate_storage_fields(
                 f"image {index} has IceMiniHead ImageTypeValue4 "
                 f"{minihead_image_type_value4}, expected {image_type_value4}"
             )
-    for field in SCANNER_WRITE_UNSAFE_META_KEYS:
-        if _meta_text(meta, field):
-            errors.append(f"image {index} has unsafe scanner Meta {field}")
-        if _minihead_string_value(minihead, field):
-            errors.append(f"image {index} has unsafe scanner IceMiniHead {field}")
+    else:
+        original_meta_image_type_value3 = _meta_text(meta, "ImageTypeValue3")
+        if (
+            original_meta_image_type_value3
+            and original_meta_image_type_value3 != ORIGINAL_IMAGE_TYPE_VALUE3
+        ):
+            errors.append(
+                f"image {index} has original Meta ImageTypeValue3="
+                f"{original_meta_image_type_value3}, expected "
+                f"{ORIGINAL_IMAGE_TYPE_VALUE3}"
+            )
+    if is_original_output and minihead:
+        original_minihead_image_type_value3 = _minihead_string_value(
+            minihead, "ImageTypeValue3"
+        )
+        if (
+            original_minihead_image_type_value3
+            and original_minihead_image_type_value3 != ORIGINAL_IMAGE_TYPE_VALUE3
+        ):
+            errors.append(
+                f"image {index} has original IceMiniHead ImageTypeValue3="
+                f"{original_minihead_image_type_value3}, expected "
+                f"{ORIGINAL_IMAGE_TYPE_VALUE3}"
+            )
+        original_minihead_image_type_value3_tokens = _minihead_array_tokens(
+            minihead, "ImageTypeValue3"
+        )
+        if (
+            original_minihead_image_type_value3_tokens
+            and original_minihead_image_type_value3_tokens
+            != [ORIGINAL_IMAGE_TYPE_VALUE3]
+        ):
+            errors.append(
+                f"image {index} has original IceMiniHead ImageTypeValue3 "
+                f"{original_minihead_image_type_value3_tokens}, expected "
+                f"{ORIGINAL_IMAGE_TYPE_VALUE3}"
+            )
+        for field in (
+            "Actual3DImagePartNumber",
+            "AnatomicalPartitionNo",
+            "AnatomicalSliceNo",
+            "ChronSliceNo",
+            "NumberInSeries",
+            "ProtocolSliceNumber",
+            "SliceNo",
+        ):
+            value = _minihead_long_value(minihead, field)
+            if value is None:
+                errors.append(
+                    f"image {index} is missing original IceMiniHead {field}"
+                )
+            elif field == "NumberInSeries" and value < 1:
+                errors.append(
+                    f"image {index} has original IceMiniHead {field}={value}, "
+                    "expected >= 1"
+                )
+    if not is_original_output:
+        for field in SCANNER_WRITE_UNSAFE_META_KEYS:
+            if _meta_text(meta, field):
+                errors.append(f"image {index} has unsafe scanner Meta {field}")
+            if _minihead_string_value(minihead, field):
+                errors.append(f"image {index} has unsafe scanner IceMiniHead {field}")
 
     storage_key = (
         _meta_text(meta, "SeriesInstanceUID"),

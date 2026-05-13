@@ -134,7 +134,27 @@ tests:
           slice_index,
           series_uid="1.2.3.4",
           series_group="source_group",
+          image_type="ORIGINAL\\PRIMARY\\M",
+          image_type_value3="M",
+          image_type_value3_array=False,
+          image_type_value4_tokens=("NORM", "DIS2D"),
       ):
+          if image_type_value3_array:
+              image_type_value3_text = f'''
+      <ParamArray."ImageTypeValue3">
+      {{
+      <DefaultSize> 1
+      <MaxSize> 2147483647
+      <Default> <ParamString."">{{ }}
+      {{ "{image_type_value3}" }}
+      }}
+      '''
+          else:
+              image_type_value3_text = f'''
+      <ParamString."ImageTypeValue3">\t{{ "{image_type_value3}" }}'''
+          image_type_value4_text = "".join(
+              f'{{ "{token}" }}' for token in image_type_value4_tokens
+          )
           minihead = f'''
       <ParamMap."DICOM">
       {{
@@ -147,15 +167,15 @@ tests:
       <ParamString."ProtocolName">\t{{ "{series_name}" }}
       <ParamString."SeriesNumberRangeNameUID">\t{{ "{series_group}" }}
       <ParamString."SOPInstanceUID">\t{{ "{series_uid}.5.{slice_index}" }}
-      <ParamString."ImageType">\t{{ "ORIGINAL\\PRIMARY\\M" }}
-      <ParamString."ImageTypeValue3">\t{{ "M" }}
+      <ParamString."ImageType">\t{{ "{image_type}" }}
+      {image_type_value3_text}
       <ParamString."ComplexImageComponent">\t{{ "MAGNITUDE" }}
       <ParamArray."ImageTypeValue4">
       {{
       <DefaultSize> 2
       <MaxSize> 2147483647
       <Default> <ParamString."">{{ }}
-      {{ "NORM" }}{{ "DIS2D" }}
+      {image_type_value4_text}
       }}
       }}
       <ParamMap."CONTROL">
@@ -243,11 +263,27 @@ tests:
           expected_name,
           expected_series_index,
           expect_minihead=True,
+          output_index=None,
       ):
           meta = ismrmrd.Meta.deserialize(image.attribute_string)
           source_meta = ismrmrd.Meta.deserialize(source_image.attribute_string)
           source_header = source_image.getHead()
           source_has_minihead = bool(first(source_meta.get("IceMiniHead")))
+          source_minihead_value3 = (
+              minihead_value(source_image, "ImageTypeValue3")
+              if source_has_minihead
+              else ""
+          )
+          source_minihead_value3_tokens = (
+              minihead_array_tokens(source_image, "ImageTypeValue3")
+              if source_has_minihead
+              else []
+          )
+          source_has_image_type_value3 = (
+              first(source_meta.get("ImageTypeValue3"))
+              or source_minihead_value3
+              or source_minihead_value3_tokens
+          )
           def expected_source_storage_int(key):
               value = first(source_meta.get(key))
               if value is not None:
@@ -260,6 +296,11 @@ tests:
                   return int(source_header.image_index)
               return int(source_header.slice)
 
+          expected_header_image_index = int(source_header.image_index)
+          if expected_header_image_index < 1:
+              assert output_index is not None
+              expected_header_image_index = output_index + 1
+
           assert first(meta.get("SeriesDescription")) == first(source_meta.get("SeriesDescription"))
           assert first(meta.get("SequenceDescription")) == first(source_meta.get("SequenceDescription"))
           assert first(meta.get("ProtocolName")) == first(source_meta.get("ProtocolName"))
@@ -270,13 +311,20 @@ tests:
           assert first(meta.get("SeriesInstanceUID")) != first(source_meta.get("SeriesInstanceUID"))
           assert first(meta.get("SOPInstanceUID")).startswith("2.25.")
           assert first(meta.get("SOPInstanceUID")) != first(source_meta.get("SOPInstanceUID"))
-          assert first(meta.get("ImageTypeValue3")) is None
+          if source_has_image_type_value3:
+              assert first(meta.get("ImageTypeValue3")) == module.ORIGINAL_IMAGE_TYPE_VALUE3
+          else:
+              assert first(meta.get("ImageTypeValue3")) is None
           assert first(meta.get("ImageTypeValue4")) == first(source_meta.get("ImageTypeValue4"))
+          assert first(meta.get("SequenceDescriptionAdditional")) == first(
+              source_meta.get("SequenceDescriptionAdditional")
+          )
           assert int(first(meta.get("Keep_image_geometry"))) == 1
           assert first(meta.get("OriginalGeometryPassThrough")) is None
           assert image.image_series_index == expected_series_index
           assert image.getHead().image_series_index == expected_series_index
-          assert int(image.getHead().image_index) == int(source_header.image_index)
+          assert int(image.getHead().image_index) == expected_header_image_index
+          assert int(image.getHead().image_index) >= 1
           assert int(image.getHead().slice) == int(source_header.slice)
           assert int(image.getHead().contrast) == int(source_header.contrast)
           assert int(image.getHead().matrix_size[2]) == int(source_image.getHead().matrix_size[2])
@@ -299,7 +347,16 @@ tests:
           assert minihead_value(image, "SeriesNumberRangeNameUID") == f"{expected_name}_{expected_series_index}"
           assert minihead_value(image, "SeriesInstanceUID") == first(meta.get("SeriesInstanceUID"))
           assert minihead_value(image, "SOPInstanceUID") == first(meta.get("SOPInstanceUID"))
-          assert not minihead_value(image, "ImageTypeValue3")
+          if source_minihead_value3:
+              assert minihead_value(image, "ImageTypeValue3") == module.ORIGINAL_IMAGE_TYPE_VALUE3
+          else:
+              assert not minihead_value(image, "ImageTypeValue3")
+          if source_minihead_value3_tokens:
+              assert minihead_array_tokens(image, "ImageTypeValue3") == [
+                  module.ORIGINAL_IMAGE_TYPE_VALUE3
+              ]
+          else:
+              assert not minihead_array_tokens(image, "ImageTypeValue3")
           assert minihead_value(image, "ComplexImageComponent") == "MAGNITUDE"
           for key in (
               "Actual3DImagePartNumber",
@@ -310,7 +367,14 @@ tests:
               "ChronSliceNo",
               "ProtocolSliceNumber",
           ):
-              assert minihead_long(image, key) == minihead_long(source_image, key), key
+              source_value = minihead_long(source_image, key)
+              expected_value = (
+                  source_value
+                  if source_value is not None
+                  and (key != "NumberInSeries" or source_value >= 1)
+                  else expected_source_storage_int(key)
+              )
+              assert minihead_long(image, key) == expected_value, key
           assert minihead_array_tokens(image, "ImageTypeValue4") == minihead_array_tokens(
               source_image,
               "ImageTypeValue4",
@@ -638,7 +702,57 @@ tests:
               images[index],
               "i2i_example_send_org-original",
               module.ORIGINAL_SERIES_INDEX,
+              output_index=index,
           )
+
+      dixon_fat_fraction = make_image(
+          0,
+          series_name="wholebody_i2i_seg+org_2ptFF",
+          series_uid="1.2.3.4.99",
+          series_group="wholebody_i2i_seg+org_2ptFF",
+      )
+      dixon_fat_fraction_meta = ismrmrd.Meta.deserialize(
+          dixon_fat_fraction.attribute_string
+      )
+      dixon_fat_fraction_meta["ImageType"] = "DERIVED\\PRIMARY\\DIXON\\FAT_FRAC"
+      dixon_fat_fraction_meta["IceMiniHead"] = make_minihead(
+          "wholebody_i2i_seg+org_2ptFF",
+          0,
+          "1.2.3.4.99",
+          "wholebody_i2i_seg+org_2ptFF",
+          image_type="DERIVED\\PRIMARY\\DIXON\\FAT_FRAC",
+          image_type_value3="MAP",
+          image_type_value3_array=True,
+          image_type_value4_tokens=("NORM", "FAT_FRAC", "DIS3D", "DIS2D"),
+      )
+      del dixon_fat_fraction_meta["ImageTypeValue3"]
+      del dixon_fat_fraction_meta["SequenceDescriptionAdditional"]
+      dixon_fat_fraction.attribute_string = dixon_fat_fraction_meta.serialize()
+      dixon_original = module._restamp_originals([dixon_fat_fraction])[0]
+      dixon_original_meta = ismrmrd.Meta.deserialize(dixon_original.attribute_string)
+      assert first(dixon_original_meta.get("ImageType")) == (
+          "DERIVED\\PRIMARY\\DIXON\\FAT_FRAC"
+      )
+      assert first(dixon_original_meta.get("ImageTypeValue3")) == (
+          module.ORIGINAL_IMAGE_TYPE_VALUE3
+      )
+      assert first(dixon_original_meta.get("SequenceDescriptionAdditional")) is None
+      assert minihead_array_tokens(dixon_original, "ImageTypeValue3") == [
+          module.ORIGINAL_IMAGE_TYPE_VALUE3
+      ]
+      assert minihead_array_tokens(dixon_original, "ImageTypeValue4") == [
+          "NORM",
+          "FAT_FRAC",
+          "DIS3D",
+          "DIS2D",
+      ]
+      assert_original_passthrough_identity(
+          dixon_original,
+          dixon_fat_fraction,
+          "wholebody_i2i_seg+org_2ptFF-original",
+          module.ORIGINAL_SERIES_INDEX,
+          output_index=0,
+      )
 
       wrapped_source_order = [2, 3, 0, 1]
       wrapped_sources = []
@@ -663,9 +777,10 @@ tests:
               source_image,
               "i2i_example_send_org-original",
               module.ORIGINAL_SERIES_INDEX,
+              output_index=index,
           )
           assert np.allclose(np.asarray(original.data), np.asarray(source_image.data))
-      assert [int(image.getHead().image_index) for image in wrapped_originals] == [0, 0, 0, 0]
+      assert [int(image.getHead().image_index) for image in wrapped_originals] == [1, 2, 3, 4]
       assert [int(image.getHead().slice) for image in wrapped_originals] == wrapped_source_order
       assert [minihead_long(image, "SliceNo") for image in wrapped_originals] == [
           minihead_long(image, "SliceNo") for image in wrapped_sources
@@ -673,6 +788,17 @@ tests:
       assert [minihead_long(image, "ChronSliceNo") for image in wrapped_originals] == [
           minihead_long(image, "ChronSliceNo") for image in wrapped_sources
       ]
+
+      invalid_index_originals = module._restamp_originals(wrapped_sources)
+      invalid_header = invalid_index_originals[0].getHead()
+      invalid_header.image_index = 0
+      invalid_index_originals[0].setHead(invalid_header)
+      try:
+          module._validate_output_images(invalid_index_originals, wrapped_sources)
+      except ValueError as exc:
+          assert "image_index 0, expected >= 1" in str(exc), str(exc)
+      else:
+          raise AssertionError("expected invalid original image_index validation failure")
 
       wide_geometry_images = []
       for index in range(8):
@@ -1037,22 +1163,64 @@ tests:
       else:
           raise AssertionError("expected mismatched MiniHead identity validation failure")
 
-      unsafe_meta_originals = module._restamp_originals(images)
+      bad_original_classifier = module._restamp_originals(images)
+      bad_original_classifier_meta = ismrmrd.Meta.deserialize(
+          bad_original_classifier[0].attribute_string
+      )
+      bad_original_classifier_meta["ImageTypeValue3"] = "MAP"
+      bad_original_classifier[0].attribute_string = (
+          bad_original_classifier_meta.serialize()
+      )
+      try:
+          module._validate_output_images(bad_original_classifier, images)
+      except ValueError as exc:
+          assert "original Meta ImageTypeValue3=MAP" in str(exc), str(exc)
+      else:
+          raise AssertionError("expected original Meta ImageTypeValue3 validation failure")
+
+      bad_original_minihead_classifier = module._restamp_originals(images)
+      bad_original_minihead_classifier_meta = ismrmrd.Meta.deserialize(
+          bad_original_minihead_classifier[0].attribute_string
+      )
+      bad_original_minihead = base64.b64decode(
+          first(bad_original_minihead_classifier_meta.get("IceMiniHead"))
+      ).decode("utf-8")
+      bad_original_minihead, _ = module._replace_or_append_minihead_array_token(
+          bad_original_minihead,
+          "ImageTypeValue3",
+          "MAP",
+      )
+      bad_original_minihead_classifier_meta["IceMiniHead"] = base64.b64encode(
+          bad_original_minihead.encode("utf-8")
+      ).decode("ascii")
+      bad_original_minihead_classifier[0].attribute_string = (
+          bad_original_minihead_classifier_meta.serialize()
+      )
+      try:
+          module._validate_output_images(bad_original_minihead_classifier, images)
+      except ValueError as exc:
+          assert "original IceMiniHead ImageTypeValue3" in str(exc), str(exc)
+      else:
+          raise AssertionError(
+              "expected original IceMiniHead ImageTypeValue3 validation failure"
+          )
+
+      unsafe_meta_outputs = module._invert_images(images)
       unsafe_meta = ismrmrd.Meta.deserialize(
-          unsafe_meta_originals[0].attribute_string
+          unsafe_meta_outputs[0].attribute_string
       )
       unsafe_meta["ImageTypeValue3"] = "M"
-      unsafe_meta_originals[0].attribute_string = unsafe_meta.serialize()
+      unsafe_meta_outputs[0].attribute_string = unsafe_meta.serialize()
       try:
-          module._validate_output_images(unsafe_meta_originals, images)
+          module._validate_output_images(unsafe_meta_outputs, images)
       except ValueError as exc:
           assert "unsafe scanner Meta ImageTypeValue3" in str(exc), str(exc)
       else:
           raise AssertionError("expected unsafe Meta ImageTypeValue3 validation failure")
 
-      unsafe_minihead_originals = module._restamp_originals(images)
+      unsafe_minihead_outputs = module._invert_images(images)
       unsafe_minihead_meta = ismrmrd.Meta.deserialize(
-          unsafe_minihead_originals[0].attribute_string
+          unsafe_minihead_outputs[0].attribute_string
       )
       unsafe_minihead = base64.b64decode(
           first(unsafe_minihead_meta.get("IceMiniHead"))
@@ -1066,11 +1234,11 @@ tests:
       unsafe_minihead_meta["IceMiniHead"] = base64.b64encode(
           unsafe_minihead.encode("utf-8")
       ).decode("ascii")
-      unsafe_minihead_originals[0].attribute_string = (
+      unsafe_minihead_outputs[0].attribute_string = (
           unsafe_minihead_meta.serialize()
       )
       try:
-          module._validate_output_images(unsafe_minihead_originals, images)
+          module._validate_output_images(unsafe_minihead_outputs, images)
       except ValueError as exc:
           assert "unsafe scanner IceMiniHead ImageTypeValue3" in str(exc), str(exc)
       else:
