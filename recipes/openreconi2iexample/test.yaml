@@ -106,7 +106,7 @@ tests:
       assert meta_position == header_position, (meta_position, header_position)
       PY
       rm -f openreconi2iexample.json
-      echo "Inspect ${output_h5} with an HDF5 viewer; with options enabled, series 99 should be named <source>-inverted, series 100 should be named <source>-original, series 101 should be named <source>-segment, series 102 should be named <source>-upsampled, and series 103 should be named <source>-mip."
+      echo "Inspect ${output_h5} with an HDF5 viewer; with options enabled, series 99 should be named <source>-inverted, series 100 should be named <source>-original, series 101 should be named <source>-segment, series 102 should be named <source>-upsampled, series 103 should be named <source>-mip, and series 120 should be named <source>-metrics."
 
  - name: Optional original invert segment MIP and upsample unit smoke test
    manual: true
@@ -562,6 +562,48 @@ tests:
       )
       assert first(colormap_meta.get("LUTFileName")) == module.SEGMENTATION_LUT
       module._validate_output_images(segment_outputs_with_colormap, colormap_sources)
+
+      metrics_sources = [make_sparse_image(i) for i in range(4)]
+      metrics_rows = []
+      segment_outputs_with_metrics = module._segment_images(
+          metrics_sources,
+          metrics_rows=metrics_rows,
+      )
+      assert len(segment_outputs_with_metrics) == 1
+      assert len(metrics_rows) == 1
+      assert metrics_rows[0]["voxels"] == 4
+      assert metrics_rows[0]["volume_mm3"] == 4.0
+      assert metrics_rows[0]["volume_ml"] == 0.004
+      metrics_segment_meta = ismrmrd.Meta.deserialize(
+          segment_outputs_with_metrics[0].attribute_string
+      )
+      metrics_segment_comment = first(metrics_segment_meta.get("ImageComments"))
+      assert "Region volume:" in metrics_segment_comment
+      assert "4 mm3" in metrics_segment_comment
+      assert "0.004 mL" in metrics_segment_comment
+      metrics_report = module._metrics_report_images(metrics_sources, metrics_rows)
+      assert len(metrics_report) == 1
+      metrics_report_meta = ismrmrd.Meta.deserialize(metrics_report[0].attribute_string)
+      assert first(metrics_report_meta.get("DataRole")) == "Image"
+      assert first(metrics_report_meta.get("ImageType")) == "DERIVED\\PRIMARY\\M\\openrecon_metrics"
+      assert first(metrics_report_meta.get("ImageTypeValue4")) == module.METRICS_SERIES_NAME
+      assert first(metrics_report_meta.get("SeriesDescription")) == "i2i_example_send_org-metrics"
+      assert first(metrics_report_meta.get("ImageComments")) == metrics_segment_comment
+      assert int(first(metrics_report_meta.get("Keep_image_geometry"))) == 0
+      assert int(first(metrics_report_meta.get("partition_count"))) == 1
+      assert int(first(metrics_report_meta.get("slice_count"))) == 1
+      assert int(first(metrics_report_meta.get("NumberOfSlices"))) == 1
+      assert int(first(metrics_report_meta.get("MetricsRows"))) == 1
+      assert not first(metrics_report_meta.get("IceMiniHead"))
+      assert metrics_report[0].image_series_index == module.METRICS_SERIES_INDEX
+      assert metrics_report[0].getHead().image_index == 1
+      assert metrics_report[0].getHead().slice == 0
+      assert np.asarray(metrics_report[0].data).size > 0
+      assert int(np.max(np.asarray(metrics_report[0].data))) > 0
+      module._validate_output_images(
+          segment_outputs_with_metrics + metrics_report,
+          metrics_sources,
+      )
 
       mip_outputs = module._mip_image([make_sparse_image(i) for i in range(4)])
       assert len(mip_outputs) == 1
@@ -1428,6 +1470,45 @@ tests:
       )
       assert first(colormap_meta.get("LUTFileName")) == module.SEGMENTATION_LUT
 
+      metrics_only_sources = [make_sparse_image(i) for i in range(4)]
+      metrics_only_connection = FakeConnection(metrics_only_sources + [None])
+      module.process(
+          metrics_only_connection,
+          {"parameters": {"sendmetrics": True}},
+          None,
+      )
+      assert metrics_only_connection.logging == []
+      assert len(metrics_only_connection.sent_images) == 1
+      metrics_only_outputs = metrics_only_connection.sent_images[0]
+      assert len(metrics_only_outputs) == 1
+      assert int(metrics_only_outputs[0].image_series_index) == module.METRICS_SERIES_INDEX
+      metrics_only_meta = ismrmrd.Meta.deserialize(metrics_only_outputs[0].attribute_string)
+      assert first(metrics_only_meta.get("SeriesDescription")) == "i2i_example_send_org-metrics"
+      assert "Region volume:" in first(metrics_only_meta.get("ImageComments"))
+      module._validate_output_images(metrics_only_outputs, metrics_only_sources)
+
+      metrics_segment_sources = [make_sparse_image(i) for i in range(4)]
+      metrics_segment_connection = FakeConnection(metrics_segment_sources + [None])
+      module.process(
+          metrics_segment_connection,
+          {"parameters": {"segment": True, "sendmetrics": True}},
+          None,
+      )
+      assert metrics_segment_connection.logging == []
+      assert len(metrics_segment_connection.sent_images) == 1
+      metrics_segment_outputs = metrics_segment_connection.sent_images[0]
+      assert [
+          int(image.image_series_index)
+          for image in metrics_segment_outputs
+      ] == [module.SEGMENT_SERIES_INDEX, module.METRICS_SERIES_INDEX]
+      assert "Region volume:" in first(
+          ismrmrd.Meta.deserialize(metrics_segment_outputs[0].attribute_string).get("ImageComments")
+      )
+      assert "Region volume:" in first(
+          ismrmrd.Meta.deserialize(metrics_segment_outputs[1].attribute_string).get("ImageComments")
+      )
+      module._validate_output_images(metrics_segment_outputs, metrics_segment_sources)
+
       duplicate_position_connection = FakeConnection(
           duplicate_position_images + [None]
       )
@@ -1458,6 +1539,7 @@ tests:
           default=False,
       ) is True
       assert module._config_bool_any({"parameters": {"sendthresholdmip": "true"}}, ("mip", "sendthresholdmip"), default=False) is True
+      assert module._config_bool_any({"parameters": {"sendmetrics": "true"}}, ("sendmetrics", "metrics"), default=False) is True
 
-      print("optional original invert segment MIP and upsample tests passed")
+      print("optional original invert segment MIP upsample and metrics tests passed")
       PY

@@ -5,7 +5,8 @@ receives reconstructed MRD image messages and sends no outputs unless one or
 more output options are enabled. It can re-emit the original scan, invert
 magnitude images, upsample the slice direction, threshold each slice into a
 segmentation, optionally add a segmentation colourmap, and compute a maximum
-intensity projection.
+intensity projection. It can also send foreground-region volume metrics when
+`sendmetrics` is enabled.
 
 ## Inputs
 
@@ -13,7 +14,7 @@ intensity projection.
 - All image messages can be returned as copied original images when
   `sendoriginal` is enabled.
 - Magnitude images (`IMTYPE_MAGNITUDE` or unset image type) are processed by
-  `invert`, `upsampled`, `segment`, and `mip`.
+  `invert`, `upsampled`, `segment`, `mip`, and `sendmetrics`.
 
 ## Outputs
 
@@ -42,6 +43,10 @@ intensity projection.
   `image_series_index = 102` when `upsampled` is true.
 - `<source>-mip`: one maximum intensity projection image on
   `image_series_index = 103` when `mip` is true.
+- `<source>-metrics`: one derived DICOM image-table page on
+  `image_series_index = 120` when `sendmetrics` is true. The table reports the
+  segmented foreground region, source name, voxel count, voxel volume, threshold,
+  and volume in `mm3` and `mL`.
 
 The inverted images normally keep the source geometry and use the input
 intensity range: `inverted = min(input) + max(input) - input`.
@@ -54,11 +59,15 @@ and inserting midpoint slices between acquired slices. The final edge slice is
 duplicated so the output volume contains exactly `2 * N` slices in one MRD
 image message.
 The MIP output projects the source magnitude stack across all source slices.
+The metrics output reuses the same foreground segmentation logic as `segment`.
+When `segment` and `sendmetrics` are both enabled, each segmentation output also
+writes the region volume into `ImageComments` and `ImageComment`.
 
 ## Scanner Notes
 
-- `sendoriginal`, `invert`, `upsampled`, `segment`, `segmentationcolormap`, and
-  `mip` are exposed in `OpenReconLabel.json` and all default to false.
+- `sendoriginal`, `invert`, `upsampled`, `segment`, `segmentationcolormap`,
+  `mip`, and `sendmetrics` are exposed in `OpenReconLabel.json` and all default
+  to false.
 - Scanner protocols saved before these parameters were added may need the OpenRecon algorithm
   reselected once so the parameter schema refreshes.
 - Derived output names are written to `SeriesDescription`, `SequenceDescription`,

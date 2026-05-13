@@ -280,7 +280,7 @@ def test_patched_minihead_protocol_name_round_trips_for_output_contract():
     helpers["_validate_output_series_contract"](output_summary, input_summary)
 
 
-def test_passthrough_restamp_uses_fresh_openrecon_series_identity():
+def test_original_restamp_preserves_source_native_geometry_and_processing_identity():
     helpers = _load_runtime_helpers_for_test(
         [
             "_as_image_list",
@@ -298,9 +298,17 @@ def test_passthrough_restamp_uses_fresh_openrecon_series_identity():
             "_extract_minihead_string_value",
             "_first_non_empty_text",
             "_get_dicom_image_type_value",
+            "_get_first_meta_int",
             "_get_meta_text",
+            "_ensure_minihead_long_param",
+            "_ensure_original_storage_meta",
             "_meta_text_values",
+            "_normalize_original_meta_image_type_value3",
+            "_normalize_original_minihead_image_type_value3",
+            "_original_passthrough_meta",
+            "_original_storage_fields",
             "_patch_ice_minihead",
+            "_patch_original_ice_minihead",
             "_patch_output_minihead_storage",
             "_output_meta",
             "_replace_minihead_array_token",
@@ -312,12 +320,14 @@ def test_passthrough_restamp_uses_fresh_openrecon_series_identity():
             "_sanitize_minihead_param_value",
             "_set_meta_scalar",
             "_set_output_storage_meta",
+            "_stamp_original_image",
             "_stamp_output_header",
             "_stamp_output_image",
             "_strip_dixon_series_suffix",
             "_strip_source_parent_refs",
         ],
         assignments=[
+            "originalImageTypeValue3",
             "scannerPartitionIndex",
             "sourceParentReferenceMetaKeys",
             "sourceParentReferenceMetaPrefixes",
@@ -354,35 +364,36 @@ def test_passthrough_restamp_uses_fresh_openrecon_series_identity():
 
     assert output.getHead().image_series_index == 2
     assert output.image_series_index == 2
-    assert output.getHead().image_index == 1
-    assert output.getHead().slice == 0
+    assert output.getHead().image_index == 9
+    assert output.getHead().slice == 8
     assert output.getHead().contrast == 0
-    assert output_meta["SeriesDescription"] == "source_original"
-    assert output_meta["SequenceDescription"] == "source_original"
-    assert output_meta["ProtocolName"] == "source_original"
+    assert output_meta["SeriesDescription"] == "source_W"
+    assert output_meta["SequenceDescription"] == "source_W"
+    assert output_meta["ProtocolName"] == "source_W"
     assert output_meta["SeriesNumberRangeNameUID"] == "source_group_original"
     assert output_meta["SeriesInstanceUID"].startswith("2.25.")
     assert output_meta["SeriesInstanceUID"] != "1.2.3"
     assert output_meta["SOPInstanceUID"].startswith("2.25.")
     assert output_meta["SOPInstanceUID"] != "1.2.3.5.8"
-    assert output_meta["ImageType"] == "DERIVED\\PRIMARY\\M\\ORIGINAL"
+    assert "ImageType" not in output_meta
     assert output_meta["ImageTypeValue3"] == "M"
-    assert output_meta["ImageTypeValue4"] == "ORIGINAL"
-    assert output_meta["DicomImageType"] == "DERIVED\\PRIMARY\\M\\ORIGINAL"
-    assert output_meta["SequenceDescriptionAdditional"] == "openrecon"
+    assert output_meta["ImageTypeValue4"] == "WATER"
+    assert "DicomImageType" not in output_meta
+    assert output_meta["SequenceDescriptionAdditional"] == "source_extra"
     assert output_meta["Keep_image_geometry"] == 1
-    assert output_meta["Actual3DImagePartNumber"] == "0"
-    assert output_meta["AnatomicalPartitionNo"] == "0"
-    assert output_meta["AnatomicalSliceNo"] == "0"
-    assert output_meta["ChronSliceNo"] == "0"
-    assert output_meta["NumberInSeries"] == "1"
-    assert output_meta["ProtocolSliceNumber"] == "0"
-    assert output_meta["SliceNo"] == "0"
-    assert output_meta["IsmrmrdSliceNo"] == "0"
+    assert output_meta["Actual3DImagePartNumber"] == "8"
+    assert output_meta["AnatomicalPartitionNo"] == "8"
+    assert output_meta["AnatomicalSliceNo"] == "8"
+    assert output_meta["ChronSliceNo"] == "8"
+    assert output_meta["NumberInSeries"] == "9"
+    assert output_meta["ProtocolSliceNumber"] == "8"
+    assert output_meta["SliceNo"] == "8"
+    assert output_meta["IsmrmrdSliceNo"] == "8"
     assert "PSSeriesInstanceUID" not in output_meta
     assert "ReferencedImageSequence.Item.SOPInstanceUID" not in output_meta
-    assert helpers["_extract_minihead_string_value"](minihead, "SeriesDescription") == "source_original"
-    assert helpers["_extract_minihead_string_value"](minihead, "ProtocolName") == "source_original"
+    assert helpers["_extract_minihead_string_value"](minihead, "SeriesDescription") == "source_W"
+    assert helpers["_extract_minihead_string_value"](minihead, "SequenceDescription") == "source_W"
+    assert helpers["_extract_minihead_string_value"](minihead, "ProtocolName") == "source_W"
     assert helpers["_extract_minihead_string_value"](
         minihead,
         "SeriesNumberRangeNameUID",
@@ -398,12 +409,13 @@ def test_passthrough_restamp_uses_fresh_openrecon_series_identity():
     assert helpers["_extract_minihead_string_value"](
         minihead,
         "ImageType",
-    ) == "DERIVED\\PRIMARY\\M\\ORIGINAL"
-    assert helpers["_extract_minihead_array_tokens"](minihead, "ImageTypeValue4") == ["ORIGINAL"]
-    assert helpers["_extract_minihead_long_value"](minihead, "Actual3DImagePartNumber") == 0
-    assert helpers["_extract_minihead_long_value"](minihead, "AnatomicalPartitionNo") == 0
-    assert helpers["_extract_minihead_long_value"](minihead, "SliceNo") == 0
-    assert helpers["_extract_minihead_long_value"](minihead, "NumberInSeries") == 1
+    ) == "ORIGINAL\\PRIMARY\\DIXON\\WATER"
+    assert helpers["_extract_minihead_string_value"](minihead, "ImageTypeValue3") == "M"
+    assert helpers["_extract_minihead_array_tokens"](minihead, "ImageTypeValue4") == ["WATER"]
+    assert helpers["_extract_minihead_long_value"](minihead, "Actual3DImagePartNumber") == 8
+    assert helpers["_extract_minihead_long_value"](minihead, "AnatomicalPartitionNo") == 8
+    assert helpers["_extract_minihead_long_value"](minihead, "SliceNo") == 8
+    assert helpers["_extract_minihead_long_value"](minihead, "NumberInSeries") == 9
 
 
 def test_output_series_contract_rejects_restamped_role_input_index_reuse():
@@ -426,7 +438,7 @@ def test_output_series_contract_rejects_restamped_role_input_index_reuse():
     ]
     output_summary = [
         {
-            "role": "ORIGINAL",
+            "role": "WATER",
             "image_series_index": 1,
             "series_instance_uid": "2.25.4",
             "meta_series_instance_uid": "2.25.4",
@@ -441,6 +453,41 @@ def test_output_series_contract_rejects_restamped_role_input_index_reuse():
     try:
         helpers["_validate_output_series_contract"](output_summary, input_summary)
     except ValueError as exc:
-        assert "derived role ORIGINAL reuses input image_series_index 1" in str(exc)
+        assert "output role WATER reuses input image_series_index 1" in str(exc)
     else:
         raise AssertionError("Expected validator to reject input image_series_index reuse")
+
+
+def test_output_storage_contract_rejects_duplicate_scanner_storage_key():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_as_image_list",
+            "_decode_ice_minihead",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_get_first_meta_int",
+            "_get_meta_text",
+            "_validate_output_storage_contract",
+        ],
+    )
+    images = [
+        helpers["FakeImage"](np.zeros((1, 2, 2), dtype=np.int16)),
+        helpers["FakeImage"](np.ones((1, 2, 2), dtype=np.int16)),
+    ]
+    for image in images:
+        image.attribute_string = helpers["FakeMeta"](
+            {
+                "SeriesInstanceUID": "2.25.4",
+                "SOPInstanceUID": "2.25.4.1",
+                "SliceNo": "8",
+                "ChronSliceNo": "8",
+                "NumberInSeries": "9",
+            }
+        ).serialize()
+
+    try:
+        helpers["_validate_output_storage_contract"](images)
+    except ValueError as exc:
+        assert "duplicates scanner storage key" in str(exc)
+    else:
+        raise AssertionError("Expected validator to reject duplicate scanner storage key")

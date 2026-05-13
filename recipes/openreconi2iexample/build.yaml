@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.36
+version: 1.0.37
 architectures:
   - x86_64
 
@@ -34,6 +34,8 @@ build:
     - copy: openreconi2iexample.py /opt/code/python-ismrmrd-server/openreconi2iexample.py
     - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
     - run:
+        - pip install pillow==10.4.0
+        - python -c "from PIL import Image, ImageDraw, ImageFont"
         - install -m 0755 {{ get_file("openreconi2iexample") }} /usr/local/bin/openreconi2iexample
         - mkdir -p /tmp/share/debug
         - chmod 1777 /tmp/share /tmp/share/debug
@@ -61,7 +63,9 @@ readme: |-
   LUT metadata to segmentation outputs. Enable
   `upsampled` to send one double-slice-count `<source>-upsampled` volume on
   `image_series_index = 102`. Enable `mip` to send one `<source>-mip` maximum
-  intensity projection image on `image_series_index = 103`.
+  intensity projection image on `image_series_index = 103`. Enable
+  `sendmetrics` to send segmented-region volume in image comments and a
+  `<source>-metrics` DICOM image table on `image_series_index = 120`.
 
   Original copies are sent first as source-native 2D images with
   `Keep_image_geometry = 1`. The pass-through keeps the source protocol,

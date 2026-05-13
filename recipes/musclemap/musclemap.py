@@ -31,6 +31,7 @@ mmMetricsOutputDir = "/tmp/musclemap_metrics"
 mmMetricsMethod = "average"
 muscleMapDisplayLabel = "Musclemap"
 muscleMapImageTypeToken = "MUSCLEMAP"
+originalImageTypeValue3 = "M"
 reservedScannerSeriesIndices = {99}
 scannerPartitionIndex = 0
 sourceParentReferenceMetaKeys = {
@@ -180,18 +181,31 @@ def process(connection, config, metadata):
 
         derivedSeriesAllocator = _build_connection_series_allocator(inputImagesForSeriesRegistry)
         outputImagesForSend = []
-        if passthroughImages:
-            passthrough_series_index = derivedSeriesAllocator.allocate("PASSTHROUGH")
+        opre_sendoriginal = _as_config_bool(
+            mrdhelper.get_json_config_param(config, 'sendoriginal', default=True, type='bool')
+        )
+        if opre_sendoriginal:
             logging.info(
-                "Restamping %d passthrough image(s) as derived passthrough series_index=%d",
-                len(passthroughImages),
-                passthrough_series_index,
+                "Restamping %d input image(s) as source-native original passthrough output before derived MuscleMap outputs",
+                len(inputImagesForSeriesRegistry),
             )
             outputImagesForSend.extend(
-                _restamp_passthrough_images(
+                _restamp_passthrough_groups(
+                    inputImagesForSeriesRegistry,
+                    "ORIGINAL",
+                    derivedSeriesAllocator,
+                )
+            )
+        elif passthroughImages:
+            logging.info(
+                "Restamping %d non-processed passthrough image(s) as source-native passthrough output",
+                len(passthroughImages),
+            )
+            outputImagesForSend.extend(
+                _restamp_passthrough_groups(
                     passthroughImages,
                     "PASSTHROUGH",
-                    passthrough_series_index,
+                    derivedSeriesAllocator,
                 )
             )
 
@@ -640,6 +654,269 @@ def _build_passthrough_output_identity(source_meta, role, output_series_index):
     }
 
 
+def _passthrough_source_group_key(image):
+    try:
+        source_meta = ismrmrd.Meta.deserialize(image.attribute_string)
+    except Exception:
+        source_meta = ismrmrd.Meta()
+    source_minihead = _decode_ice_minihead(source_meta)
+    source_identity = _resolve_source_series_identity(source_meta, source_minihead)
+    image_type = _first_non_empty_text(
+        _get_meta_text(source_meta, "ImageType"),
+        _get_meta_text(source_meta, "DicomImageType"),
+        _extract_minihead_string_value(source_minihead, "ImageType"),
+        _get_meta_text(source_meta, "ImageTypeValue4"),
+        _extract_minihead_array_tokens(source_minihead, "ImageTypeValue4"),
+    )
+    return (
+        source_identity["series_instance_uid"],
+        source_identity["parent_grouping"],
+        source_identity["series_description"],
+        source_identity["parent_sequence"],
+        image_type,
+        _build_image_volume_key(image),
+        tuple(int(value) for value in np.asarray(image.data).shape),
+    )
+
+
+def _passthrough_source_groups(images):
+    groups = []
+    group_index_by_key = {}
+    for image in _as_image_list(images):
+        key = _passthrough_source_group_key(image)
+        group_index = group_index_by_key.get(key)
+        if group_index is None:
+            group_index = len(groups)
+            group_index_by_key[key] = group_index
+            groups.append([])
+        groups[group_index].append(image)
+    return groups
+
+
+def _restamp_passthrough_groups(images, role, derived_series_allocator):
+    restamped_images = []
+    for group_index, group_images in enumerate(_passthrough_source_groups(images)):
+        output_series_index = derived_series_allocator.allocate(role)
+        logging.info(
+            "Restamping %d %s image(s) in source group %d as source-native passthrough image_series_index=%d",
+            len(group_images),
+            role.lower(),
+            group_index,
+            output_series_index,
+        )
+        restamped_images.extend(
+            _restamp_passthrough_images(group_images, role, output_series_index)
+        )
+    return restamped_images
+
+
+def _original_storage_fields(source_image, output_index):
+    header = source_image.getHead()
+    header_slice = int(getattr(header, "slice", 0))
+    header_image_index = int(getattr(header, "image_index", 0))
+    if header_image_index < 1:
+        header_image_index = output_index + 1
+
+    try:
+        source_meta = ismrmrd.Meta.deserialize(source_image.attribute_string)
+    except Exception:
+        source_meta = ismrmrd.Meta()
+    minihead_text = _decode_ice_minihead(source_meta)
+    fallbacks = {
+        "Actual3DImagePartNumber": header_slice,
+        "AnatomicalPartitionNo": header_slice,
+        "AnatomicalSliceNo": header_slice,
+        "ChronSliceNo": header_slice,
+        "NumberInSeries": header_image_index,
+        "ProtocolSliceNumber": header_slice,
+        "SliceNo": header_slice,
+        "IsmrmrdSliceNo": header_slice,
+    }
+
+    storage_fields = {}
+    for key, fallback in fallbacks.items():
+        value = _get_first_meta_int(source_meta, [key])
+        if key == "NumberInSeries" and value is not None and value < 1:
+            value = None
+        if value is None and key != "IsmrmrdSliceNo":
+            value = _extract_minihead_long_value(minihead_text, key)
+        if key == "NumberInSeries" and value is not None and value < 1:
+            value = None
+        storage_fields[key] = value if value is not None else fallback
+    return storage_fields
+
+
+def _ensure_original_storage_meta(meta_obj, source_image, output_index, storage_fields=None):
+    if storage_fields is None:
+        storage_fields = _original_storage_fields(source_image, output_index)
+    for key, value in storage_fields.items():
+        current_value = _get_first_meta_int(meta_obj, [key])
+        if current_value is not None and not (
+            key == "NumberInSeries" and current_value < 1
+        ):
+            continue
+        _set_meta_scalar(meta_obj, key, value)
+
+
+def _ensure_minihead_long_param(minihead_text, name, value, minimum=None):
+    current_value = _extract_minihead_long_value(minihead_text, name)
+    if current_value is not None and (minimum is None or current_value >= minimum):
+        return minihead_text, False
+    return _replace_or_append_minihead_long_param(minihead_text, name, value)
+
+
+def _normalize_original_meta_image_type_value3(meta_obj, minihead_text):
+    if (
+        "ImageTypeValue3" in meta_obj
+        or _extract_minihead_string_value(minihead_text, "ImageTypeValue3")
+        or _extract_minihead_array_tokens(minihead_text, "ImageTypeValue3")
+    ):
+        meta_obj["ImageTypeValue3"] = originalImageTypeValue3
+
+
+def _normalize_original_minihead_image_type_value3(minihead_text):
+    current_text = minihead_text
+    changed = False
+    if re.search(r'<ParamString\."ImageTypeValue3">', current_text):
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            "ImageTypeValue3",
+            originalImageTypeValue3,
+        )
+        changed = changed or did_change
+
+    image_type_value3_tokens = _extract_minihead_array_tokens(current_text, "ImageTypeValue3")
+    if image_type_value3_tokens:
+        current_text, did_change = _replace_or_append_minihead_array_token(
+            current_text,
+            "ImageTypeValue3",
+            image_type_value3_tokens[0],
+            originalImageTypeValue3,
+        )
+        changed = changed or did_change
+    return current_text, changed
+
+
+def _patch_original_ice_minihead(
+    minihead_text,
+    series_grouping,
+    series_instance_uid,
+    sop_instance_uid,
+    storage_fields,
+):
+    current_text = minihead_text
+    changed = False
+    current_text, did_change = _normalize_original_minihead_image_type_value3(
+        current_text
+    )
+    changed = changed or did_change
+
+    for param_name, param_value in (
+        ("SeriesNumberRangeNameUID", series_grouping),
+        ("SeriesInstanceUID", series_instance_uid),
+        ("SOPInstanceUID", sop_instance_uid),
+    ):
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            param_name,
+            param_value,
+        )
+        changed = changed or did_change
+
+    for param_name in (
+        "Actual3DImagePartNumber",
+        "AnatomicalPartitionNo",
+        "AnatomicalSliceNo",
+        "ChronSliceNo",
+        "NumberInSeries",
+        "ProtocolSliceNumber",
+        "SliceNo",
+    ):
+        current_text, did_change = _ensure_minihead_long_param(
+            current_text,
+            param_name,
+            storage_fields.get(param_name),
+            minimum=1 if param_name == "NumberInSeries" else None,
+        )
+        changed = changed or did_change
+
+    return current_text, changed
+
+
+def _original_passthrough_meta(
+    source_image,
+    output_identity,
+    output_series_index,
+    output_index,
+    storage_fields,
+):
+    source_meta = _copy_meta(ismrmrd.Meta.deserialize(source_image.attribute_string))
+    _strip_source_parent_refs(source_meta)
+    series_description = output_identity["series_description"]
+    series_grouping = output_identity["grouping"]
+    series_instance_uid = output_identity["series_instance_uid"]
+    sop_instance_uid = _build_derived_sop_instance_uid(
+        source_meta,
+        output_identity,
+        output_series_index,
+        output_index,
+        output_identity["type_token"],
+    )
+
+    for key in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
+        if not _get_meta_text(source_meta, key):
+            source_meta[key] = series_description
+    source_meta["SeriesNumberRangeNameUID"] = series_grouping
+    source_meta["SeriesInstanceUID"] = series_instance_uid
+    source_meta["SOPInstanceUID"] = sop_instance_uid
+    source_meta["Keep_image_geometry"] = 1
+    _ensure_original_storage_meta(
+        source_meta,
+        source_image,
+        output_index,
+        storage_fields,
+    )
+
+    minihead_text = _decode_ice_minihead(source_meta)
+    _normalize_original_meta_image_type_value3(source_meta, minihead_text)
+    if minihead_text:
+        patched_minihead_text, minihead_changed = _patch_original_ice_minihead(
+            minihead_text,
+            series_grouping,
+            series_instance_uid,
+            sop_instance_uid,
+            storage_fields,
+        )
+        if minihead_changed:
+            source_meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
+
+    return source_meta
+
+
+def _stamp_original_image(
+    output_image,
+    source_image,
+    output_series_index,
+    output_index,
+    output_identity,
+):
+    storage_fields = _original_storage_fields(source_image, output_index)
+    output_header = copy.deepcopy(output_image.getHead())
+    output_header.image_series_index = output_series_index
+    if int(getattr(output_header, "image_index", 0)) < 1:
+        output_header.image_index = output_index + 1
+    output_image.setHead(output_header)
+    output_image.image_series_index = output_series_index
+    output_image.attribute_string = _original_passthrough_meta(
+        source_image,
+        output_identity,
+        output_series_index,
+        output_index,
+        storage_fields,
+    ).serialize()
+    return output_image
+
+
 def _stamp_output_header(output_image, output_header, output_series_index, output_index):
     output_header.image_series_index = output_series_index
     output_header.image_index = output_index + 1
@@ -784,18 +1061,13 @@ def _restamp_passthrough_images(images, role, output_series_index):
     restamped_images = []
     for output_index, image in enumerate(image_list):
         output_image = _clone_mrd_image(image)
-        output_header = copy.deepcopy(output_image.getHead())
         restamped_images.append(
-            _stamp_output_image(
+            _stamp_original_image(
                 output_image,
-                output_header,
-                ismrmrd.Meta.deserialize(image.attribute_string),
-                output_identity,
+                image,
                 output_series_index,
                 output_index,
-                output_identity["type_token"],
-                ["OPENRECON", "MUSCLEMAP", output_identity["type_token"]],
-                image_comment=output_identity["image_comment"],
+                output_identity,
             )
         )
 
@@ -1805,6 +2077,68 @@ def _log_and_validate_output_series_contract(output_images, input_images, contex
     }
     _log_json_event("OUTPUT_SERIES_CONTRACT", payload)
     _validate_output_series_contract(output_summary, input_summary)
+    _validate_output_storage_contract(output_images)
+
+
+def _validate_output_storage_contract(output_images):
+    errors = []
+    seen_storage_keys = {}
+    seen_sop_uids = {}
+    for image_index, image in enumerate(_as_image_list(output_images)):
+        try:
+            meta_obj = ismrmrd.Meta.deserialize(image.attribute_string)
+        except Exception:
+            meta_obj = ismrmrd.Meta()
+        minihead_text = _decode_ice_minihead(meta_obj)
+
+        series_instance_uid = _get_meta_text(meta_obj, "SeriesInstanceUID")
+        storage_values = {
+            "SliceNo": _get_first_meta_int(meta_obj, ["SliceNo"]),
+            "ChronSliceNo": _get_first_meta_int(meta_obj, ["ChronSliceNo"]),
+            "NumberInSeries": _get_first_meta_int(meta_obj, ["NumberInSeries"]),
+        }
+        missing_storage_fields = [
+            key
+            for key, value in storage_values.items()
+            if value is None
+        ]
+        if not series_instance_uid:
+            missing_storage_fields.append("SeriesInstanceUID")
+        if missing_storage_fields:
+            errors.append(
+                f"image {image_index} is missing scanner storage key field(s) "
+                f"{', '.join(missing_storage_fields)}"
+            )
+            continue
+
+        storage_key = (
+            series_instance_uid,
+            storage_values["SliceNo"],
+            storage_values["ChronSliceNo"],
+            storage_values["NumberInSeries"],
+        )
+        previous_image_index = seen_storage_keys.setdefault(storage_key, image_index)
+        if previous_image_index != image_index:
+            errors.append(
+                f"image {image_index} duplicates scanner storage key {storage_key} "
+                f"from image {previous_image_index}"
+            )
+
+        for sop_source, sop_uid in (
+            ("Meta", _get_meta_text(meta_obj, "SOPInstanceUID")),
+            ("IceMiniHead", _extract_minihead_string_value(minihead_text, "SOPInstanceUID")),
+        ):
+            if not sop_uid:
+                continue
+            previous_image_index = seen_sop_uids.setdefault(sop_uid, image_index)
+            if previous_image_index != image_index:
+                errors.append(
+                    f"{sop_source} SOPInstanceUID {sop_uid} is shared by output images "
+                    f"{previous_image_index} and {image_index}"
+                )
+
+    if errors:
+        raise ValueError("Invalid output storage contract before send: " + "; ".join(errors))
 
 
 def _validate_output_series_contract(output_summary, input_summary):
@@ -1815,10 +2149,11 @@ def _validate_output_series_contract(output_summary, input_summary):
     errors = []
     roles_by_index = {}
     derived_series_by_uid = {}
-    # Keep this list aligned with every derived output kind created by this
-    # OpenRecon app. These roles are held to the stricter Siemens identity
-    # contract because scanner storage/composer may key on IceMiniHead fields.
-    derived_roles = {muscleMapImageTypeToken, "METRICS", "ORIGINAL", "PASSTHROUGH"}
+    # Keep this list aligned with every processed output kind created by this
+    # OpenRecon app. Source-native original/passthrough streams intentionally
+    # retain their source image type role and are validated by the generic
+    # returned-output identity checks below.
+    derived_roles = {muscleMapImageTypeToken, "METRICS"}
     input_indices = {
         int(entry.get("image_series_index", 0))
         for entry in input_summary
@@ -1842,6 +2177,34 @@ def _validate_output_series_contract(output_summary, input_summary):
 
         roles_by_index.setdefault(series_index, set()).add(role)
 
+        if series_index in reservedScannerSeriesIndices:
+            errors.append(f"output role {role} uses reserved scanner series index {series_index}")
+        if series_index in input_indices:
+            errors.append(f"output role {role} reuses input image_series_index {series_index}")
+        if uid in input_uids:
+            errors.append(f"output role {role} reuses input SeriesInstanceUID {uid}")
+        if not meta_uid:
+            errors.append(f"output role {role} is missing Meta SeriesInstanceUID")
+        if meta_uid and minihead_uid and meta_uid != minihead_uid:
+            errors.append(
+                f"output role {role} has Meta/IceMiniHead SeriesInstanceUID mismatch: "
+                f"{meta_uid} != {minihead_uid}"
+            )
+        if not meta_grouping:
+            errors.append(f"output role {role} is missing Meta SeriesNumberRangeNameUID")
+        if meta_grouping and minihead_grouping and meta_grouping != minihead_grouping:
+            errors.append(
+                f"output role {role} has Meta/IceMiniHead SeriesNumberRangeNameUID mismatch: "
+                f"{meta_grouping} != {minihead_grouping}"
+            )
+        if not meta_protocol:
+            errors.append(f"output role {role} is missing Meta ProtocolName")
+        if meta_protocol and minihead_protocol and meta_protocol != minihead_protocol:
+            errors.append(
+                f"output role {role} has Meta/IceMiniHead ProtocolName mismatch: "
+                f"{meta_protocol} != {minihead_protocol}"
+            )
+
         is_derived_role = role in derived_roles
         if is_derived_role:
             if uid:
@@ -1852,39 +2215,12 @@ def _validate_output_series_contract(output_summary, input_summary):
                         _first_non_empty_text(entry.get("series_grouping")) or "N/A",
                     )
                 )
-            if series_index in reservedScannerSeriesIndices:
-                errors.append(f"derived role {role} uses reserved scanner series index {series_index}")
-            if series_index in input_indices:
-                errors.append(f"derived role {role} reuses input image_series_index {series_index}")
-            if uid in input_uids:
-                errors.append(f"derived role {role} reuses input SeriesInstanceUID {uid}")
-            if not meta_uid:
-                errors.append(f"derived role {role} is missing Meta SeriesInstanceUID")
             if not minihead_uid:
                 errors.append(f"derived role {role} is missing IceMiniHead SeriesInstanceUID")
-            if meta_uid and minihead_uid and meta_uid != minihead_uid:
-                errors.append(
-                    f"derived role {role} has Meta/IceMiniHead SeriesInstanceUID mismatch: "
-                    f"{meta_uid} != {minihead_uid}"
-                )
-            if not meta_grouping:
-                errors.append(f"derived role {role} is missing Meta SeriesNumberRangeNameUID")
             if not minihead_grouping:
                 errors.append(f"derived role {role} is missing IceMiniHead SeriesNumberRangeNameUID")
-            if meta_grouping and minihead_grouping and meta_grouping != minihead_grouping:
-                errors.append(
-                    f"derived role {role} has Meta/IceMiniHead SeriesNumberRangeNameUID mismatch: "
-                    f"{meta_grouping} != {minihead_grouping}"
-                )
-            if not meta_protocol:
-                errors.append(f"derived role {role} is missing Meta ProtocolName")
             if not minihead_protocol:
                 errors.append(f"derived role {role} is missing IceMiniHead ProtocolName")
-            if meta_protocol and minihead_protocol and meta_protocol != minihead_protocol:
-                errors.append(
-                    f"derived role {role} has Meta/IceMiniHead ProtocolName mismatch: "
-                    f"{meta_protocol} != {minihead_protocol}"
-                )
 
     for series_index, roles in sorted(roles_by_index.items()):
         if len(roles) > 1 and any(role in derived_roles for role in roles):
@@ -2563,6 +2899,11 @@ def _build_metrics_report_images(
                 source_type_token=source_type_token,
                 metrics_text=metrics_minihead_text if include_minihead_metrics else None,
                 extra_meta={
+                    "Keep_image_geometry": "0",
+                    "partition_count": "1",
+                    "slice_count": str(len(report_pages)),
+                    "NumberOfSlices": str(len(report_pages)),
+                    "ImagesInAcquisition": str(len(report_pages)),
                     "WindowCenter": "2040",
                     "WindowWidth": "4080",
                     "ImageRowDir": [
@@ -3297,10 +3638,13 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
             image_comment = source_image_label
 
         segmentation_extra_meta = {
+            "Keep_image_geometry": "0",
             "WindowCenter": str((maxVal + 1) / 2),
             "WindowWidth": str(maxVal + 1),
             "partition_count": "1",
             "slice_count": str(data.shape[-1]),
+            "NumberOfSlices": str(data.shape[-1]),
+            "ImagesInAcquisition": str(data.shape[-1]),
             "MuscleMapSourceInputIndex": str(source_record["input_index"]),
             "MuscleMapSourceImageIndex": str(source_image_index),
             "MuscleMapSourceSlice": str(source_slice_index),
@@ -3423,27 +3767,6 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
         imagesOut.extend(report_images)
     elif metrics_burn_series and compute_metrics:
         logging.info("MuscleMap metrics report series requested but no metrics rows are available")
-
-    # Send a copy of original (unmodified) images back too if selected
-    opre_sendoriginal = _as_config_bool(
-        mrdhelper.get_json_config_param(config, 'sendoriginal', default=True, type='bool')
-    )
-    if opre_sendoriginal:
-        stack = traceback.extract_stack()
-        if stack[-2].name == 'process_raw':
-            logging.warning('sendOriginal is true, but input was raw data, so no original images to return!')
-        else:
-            original_series_index = derived_series_allocator.allocate("ORIGINAL")
-            logging.info(
-                "Sending original MuscleMap source images as derived original series_index=%d",
-                original_series_index,
-            )
-            original_images = _restamp_passthrough_images(
-                ordered_img_group,
-                "ORIGINAL",
-                original_series_index,
-            )
-            imagesOut = original_images + imagesOut
 
     _log_send_batch_summary(imagesOut, "process_image_return")
     return imagesOut

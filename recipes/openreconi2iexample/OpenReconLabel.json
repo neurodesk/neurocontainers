@@ -90,6 +90,13 @@
       "type": "boolean",
       "information": { "en": "Compute and send one maximum intensity projection image" },
       "default": false
+    },
+    {
+      "id": "sendmetrics",
+      "label": { "en": "Send metrics" },
+      "type": "boolean",
+      "information": { "en": "Send region volume in image comments and as a DICOM metrics table image" },
+      "default": false
     }
   ]
 }
