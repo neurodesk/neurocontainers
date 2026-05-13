@@ -53,7 +53,7 @@
       "id": "sendoriginal",
       "label": { "en": "Send original images" },
       "type": "boolean",
-      "information": { "en": "Send a copy of original unmodified images back too" },
+      "information": { "en": "Pass the original 2D image stream back for scanner postprocessing" },
       "default": false
     },
     {
@@ -74,7 +74,7 @@
       "id": "segment",
       "label": { "en": "Segment" },
       "type": "boolean",
-      "information": { "en": "Segment the brightest foreground object and send a segmentation" },
+      "information": { "en": "Segment the brightest foreground object and send explicit-volume segmentation output(s)" },
       "default": false
     },
     {

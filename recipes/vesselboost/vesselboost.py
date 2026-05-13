@@ -969,6 +969,7 @@ def _stamp_vesselboost_output_image(
     extra_meta=None,
     keep_image_geometry=1,
     patch_minihead=True,
+    data_role="Image",
 ):
     header = image.getHead()
     header.image_series_index = int(series_index)
@@ -995,7 +996,7 @@ def _stamp_vesselboost_output_image(
         output_index,
         series_uid=series_uid,
     )
-    tmp_meta["DataRole"] = "Image"
+    tmp_meta["DataRole"] = data_role
     tmp_meta["ImageProcessingHistory"] = processing_history
     tmp_meta["SeriesDescription"] = series_name
     tmp_meta["SequenceDescription"] = output_identity["sequence_description"]
@@ -1047,6 +1048,51 @@ def _stamp_vesselboost_output_image(
             )
 
     image.attribute_string = tmp_meta.serialize()
+
+
+def _build_vesselboost_original_images(
+    ordered_original_images,
+    ordered_source_images,
+    source_identity,
+    series_index,
+):
+    if len(ordered_original_images) != len(ordered_source_images):
+        raise ValueError(
+            "Original/source image count mismatch: "
+            f"{len(ordered_original_images)} != {len(ordered_source_images)}"
+        )
+
+    original_identity = _build_vesselboost_original_identity(
+        source_identity,
+        series_index=series_index,
+    )
+    logging.info(
+        "Preparing original MRA images as first derived original series "
+        "(series_index=%d, name=%s)",
+        series_index,
+        original_identity["series_description"],
+    )
+
+    outputs = []
+    for output_index, (original_image, source_image) in enumerate(
+        zip(ordered_original_images, ordered_source_images)
+    ):
+        _stamp_vesselboost_output_image(
+            original_image,
+            source_image,
+            original_identity,
+            source_identity,
+            series_index,
+            output_index,
+            source_identity["source_type_token"],
+            ["PYTHON", "VESSELBOOST", "ORIGINAL"],
+            extra_meta=_explicit_header_geometry_meta(original_image.getHead()),
+            keep_image_geometry=1,
+            patch_minihead=True,
+        )
+        outputs.append(original_image)
+
+    return outputs
 
 
 def _set_output_position_meta(meta_obj, output_index):
@@ -1216,6 +1262,7 @@ def _validate_vesselboost_output_contract(
         if keep_image_geometry is None:
             errors.append(f"image {index}: missing Keep_image_geometry")
         if keep_image_geometry == 0:
+            header_matrix_z = int(getattr(header, "matrix_size", [0, 0, 0])[2])
             if minihead_text:
                 errors.append(
                     f"image {index}: explicit-geometry output still carries IceMiniHead"
@@ -1232,6 +1279,29 @@ def _validate_vesselboost_output_contract(
                 errors.append(
                     f"image {index}: slice {int(getattr(header, 'slice', 0))} "
                     f"outside explicit slice_count={slice_count}"
+                )
+            elif header_matrix_z > 1 and header_matrix_z != slice_count:
+                errors.append(
+                    f"image {index}: matrix_size[2]={header_matrix_z}, "
+                    f"expected explicit slice_count={slice_count}"
+                )
+
+            number_of_slices = _get_meta_int(meta_obj, "NumberOfSlices")
+            if number_of_slices is None:
+                errors.append(f"image {index}: missing NumberOfSlices")
+            elif slice_count is not None and number_of_slices != slice_count:
+                errors.append(
+                    f"image {index}: NumberOfSlices={number_of_slices}, "
+                    f"expected {slice_count}"
+                )
+
+            images_in_acquisition = _get_meta_int(meta_obj, "ImagesInAcquisition")
+            if images_in_acquisition is None:
+                errors.append(f"image {index}: missing ImagesInAcquisition")
+            elif slice_count is not None and images_in_acquisition != slice_count:
+                errors.append(
+                    f"image {index}: ImagesInAcquisition={images_in_acquisition}, "
+                    f"expected {slice_count}"
                 )
 
         expected_position_fields = {
@@ -1590,7 +1660,7 @@ def _build_reformatted_images(
     series_index: int,
     max_val: int,
 ):
-    """Build MRD images for a sagittal or coronal reformat of the segmentation.
+    """Build one explicit 3D MRD volume for a sagittal or coronal reformat.
 
     volume_yxz is an int16 array with shape (N_y, N_x, N_z), where the axes map
     to the original axial phase_dir, read_dir and slice_dir respectively.
@@ -1650,7 +1720,7 @@ def _build_reformatted_images(
     )
 
     logging.info(
-        "Building %s reformat: n_slices=%d slice_policy=unique_slice_counter "
+        "Building %s reformat: n_slices=%d slice_policy=packed_3d_volume "
         "slice_spacing=%.4f new_fov=%s series_index=%d target_shape=%s "
         "target_spacing=%.4f",
         orientation,
@@ -1662,11 +1732,11 @@ def _build_reformatted_images(
         target_inplane_spacing,
     )
 
-    images_out = []
+    reformat_volume_zyx = np.empty(
+        (n_slices, target_inplane_shape[0], target_inplane_shape[1]),
+        dtype=volume_yxz.dtype,
+    )
     for j in range(n_slices):
-        offset = (j - 0.5 * (n_slices - 1)) * slice_spacing
-        slice_position = volume_center + offset * new_slice_dir
-
         if orientation == "sagittal":
             # volume_yxz[:, j, :] has shape (N_y, N_z) -> transpose to (N_z, N_y)
             # so rows = Z (phase_dir), cols = Y (read_dir).
@@ -1677,76 +1747,165 @@ def _build_reformatted_images(
             slice2d = np.ascontiguousarray(volume_yxz[j, :, :].T)
 
         slice2d = _resize_2d_nearest(slice2d, target_inplane_shape)
-        mrd_image = ismrmrd.Image.from_array(slice2d, transpose=False)
+        reformat_volume_zyx[j, :, :] = slice2d
 
-        new_header = mrd_image.getHead()
-        new_header.data_type = mrd_image.data_type
-        new_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
-        new_header.position = tuple(float(v) for v in slice_position)
-        new_header.read_dir = tuple(float(v) for v in new_read_dir)
-        new_header.phase_dir = tuple(float(v) for v in new_phase_dir)
-        new_header.slice_dir = tuple(float(v) for v in new_slice_dir)
-        new_header.field_of_view = (
-            ctypes.c_float(new_fov[0]),
-            ctypes.c_float(new_fov[1]),
-            ctypes.c_float(new_fov[2]),
+    mrd_image = ismrmrd.Image.from_array(
+        np.ascontiguousarray(reformat_volume_zyx),
+        transpose=False,
+    )
+
+    first_slice_position = (
+        volume_center - 0.5 * (n_slices - 1) * slice_spacing * new_slice_dir
+    )
+    new_header = mrd_image.getHead()
+    new_header.data_type = mrd_image.data_type
+    new_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    new_header.position = tuple(float(v) for v in first_slice_position)
+    new_header.read_dir = tuple(float(v) for v in new_read_dir)
+    new_header.phase_dir = tuple(float(v) for v in new_phase_dir)
+    new_header.slice_dir = tuple(float(v) for v in new_slice_dir)
+    new_header.field_of_view = (
+        ctypes.c_float(new_fov[0]),
+        ctypes.c_float(new_fov[1]),
+        ctypes.c_float(new_fov[2]),
+    )
+    new_header.image_index = 1
+    new_header.image_series_index = series_index
+    new_header.slice = 0
+    new_header.contrast = 0
+
+    for attr in (
+        "measurement_uid",
+        "patient_table_position",
+        "acquisition_time_stamp",
+        "physiology_time_stamp",
+        "user_int",
+        "user_float",
+    ):
+        try:
+            setattr(new_header, attr, getattr(head_template, attr))
+        except Exception:
+            pass
+    mrd_image.setHead(new_header)
+
+    extra_meta = {
+        "WindowCenter": str((max_val + 1) / 2),
+        "WindowWidth": str(max_val + 1),
+        "partition_count": "1",
+        "slice_count": str(n_slices),
+        "NumberOfSlices": str(n_slices),
+        "ImagesInAcquisition": str(n_slices),
+    }
+    extra_meta.update(_explicit_header_geometry_meta(new_header))
+    _stamp_vesselboost_output_image(
+        mrd_image,
+        source_image,
+        output_identity,
+        source_identity,
+        series_index,
+        0,
+        source_identity.get("source_type_token", ""),
+        ["PYTHON", "VESSELBOOST", f"RESLICE_{orientation.upper()}"],
+        extra_meta=extra_meta,
+        keep_image_geometry=0,
+        patch_minihead=False,
+    )
+
+    logging.info(
+        "Packed VesselBoost %s reformat into one explicit volume: "
+        "series_index=%d matrix_size=%s field_of_view=%s slice_count=%d "
+        "position=%s",
+        orientation,
+        series_index,
+        _format_vector(mrd_image.getHead().matrix_size),
+        _format_vector(mrd_image.getHead().field_of_view),
+        n_slices,
+        [round(float(v), 6) for v in first_slice_position],
+    )
+    return [mrd_image]
+
+
+def _build_vesselboost_segmentation_volume(
+    volume_yxz: np.ndarray,
+    head_template,
+    source_image,
+    source_identity: dict,
+    output_identity: dict,
+    fov: np.ndarray,
+    series_index: int,
+    max_val: int,
+):
+    """Build one explicit 3D MRD volume for the axial VesselBoost segmentation."""
+    if volume_yxz.ndim != 3:
+        raise ValueError(
+            "VesselBoost segmentation volume must be 3D, "
+            f"got shape {volume_yxz.shape}"
         )
-        new_header.image_index = j
-        new_header.image_series_index = series_index
-        new_header.slice = j
 
-        if j < 5 or j >= n_slices - 5:
-            logging.info(
-                "%s reformat image header sample: image_index=%d slice=%d "
-                "series_index=%d position=%s read_dir0=%.6f phase_dir0=%.6f "
-                "slice_dir0=%.6f",
-                orientation,
-                j,
-                j,
-                series_index,
-                [round(float(v), 6) for v in slice_position],
-                float(new_read_dir[0]),
-                float(new_phase_dir[0]),
-                float(new_slice_dir[0]),
-            )
+    output_slice_count = int(volume_yxz.shape[2])
+    volume_zyx = np.ascontiguousarray(volume_yxz.transpose((2, 0, 1)))
+    mrd_image = ismrmrd.Image.from_array(volume_zyx, transpose=False)
 
-        for attr in (
-            "measurement_uid",
-            "patient_table_position",
-            "acquisition_time_stamp",
-            "physiology_time_stamp",
-            "user_int",
-            "user_float",
-        ):
-            try:
-                setattr(new_header, attr, getattr(head_template, attr))
-            except Exception:
-                pass
-        mrd_image.setHead(new_header)
+    new_header = mrd_image.getHead()
+    new_header.data_type = mrd_image.data_type
+    new_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    new_header.position = tuple(float(v) for v in head_template.position)
+    new_header.read_dir = tuple(float(v) for v in head_template.read_dir)
+    new_header.phase_dir = tuple(float(v) for v in head_template.phase_dir)
+    new_header.slice_dir = tuple(float(v) for v in head_template.slice_dir)
+    new_header.field_of_view = tuple(ctypes.c_float(float(v)) for v in fov[:3])
+    new_header.image_index = 1
+    new_header.image_series_index = series_index
+    new_header.slice = 0
+    new_header.contrast = 0
 
-        extra_meta = {
-            "WindowCenter": str((max_val + 1) / 2),
-            "WindowWidth": str((max_val + 1)),
-            "partition_count": "1",
-            "slice_count": str(n_slices),
-        }
-        extra_meta.update(_explicit_header_geometry_meta(new_header))
-        _stamp_vesselboost_output_image(
-            mrd_image,
-            source_image,
-            output_identity,
-            source_identity,
-            series_index,
-            j,
-            source_identity.get("source_type_token", ""),
-            ["PYTHON", "VESSELBOOST", f"RESLICE_{orientation.upper()}"],
-            extra_meta=extra_meta,
-            keep_image_geometry=0,
-            patch_minihead=False,
-        )
-        images_out.append(mrd_image)
+    for attr in (
+        "measurement_uid",
+        "patient_table_position",
+        "acquisition_time_stamp",
+        "physiology_time_stamp",
+        "user_int",
+        "user_float",
+    ):
+        try:
+            setattr(new_header, attr, getattr(head_template, attr))
+        except Exception:
+            pass
+    mrd_image.setHead(new_header)
 
-    return images_out
+    extra_meta = {
+        "WindowCenter": str((max_val + 1) / 2),
+        "WindowWidth": str(max_val + 1),
+        "partition_count": "1",
+        "slice_count": str(output_slice_count),
+        "NumberOfSlices": str(output_slice_count),
+        "ImagesInAcquisition": str(output_slice_count),
+    }
+    extra_meta.update(_explicit_header_geometry_meta(new_header))
+    _stamp_vesselboost_output_image(
+        mrd_image,
+        source_image,
+        output_identity,
+        source_identity,
+        series_index,
+        0,
+        source_identity.get("source_type_token", ""),
+        ["PYTHON", "VESSELBOOST"],
+        extra_meta=extra_meta,
+        keep_image_geometry=0,
+        patch_minihead=False,
+        data_role="Segmentation",
+    )
+
+    logging.info(
+        "Packed VesselBoost axial segmentation into one explicit volume: "
+        "series_index=%d matrix_size=%s field_of_view=%s slice_count=%d",
+        series_index,
+        _format_vector(mrd_image.getHead().matrix_size),
+        _format_vector(mrd_image.getHead().field_of_view),
+        output_slice_count,
+    )
+    return mrd_image
 
 
 OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96
@@ -2280,7 +2439,17 @@ def process_image(images, connection, config, metadata):
         int(getattr(image_header, "image_series_index", 0))
         for image_header in head
     ]
-    segmentation_series_index = max(source_series_indices, default=0) + 1
+    first_output_series_index = max(source_series_indices, default=0) + 1
+    if send_original and not called_from_raw:
+        original_series_index = first_output_series_index
+        segmentation_series_index = first_output_series_index + 1
+    else:
+        original_series_index = None
+        segmentation_series_index = first_output_series_index
+        if send_original and called_from_raw:
+            logging.warning(
+                "sendoriginal is true, but input was raw data, so no original images to return."
+            )
     segmentation_identity = _build_openrecon_output_identity(
         source_identity,
         series_index=segmentation_series_index,
@@ -2304,6 +2473,20 @@ def process_image(images, connection, config, metadata):
         segmentation_series_index,
         sorted(set(source_series_indices)),
     )
+    imagesOut = []
+    if original_series_index is not None:
+        ordered_original_images = [
+            original_images[index] for index in slice_sort_indices
+        ]
+        imagesOut.extend(
+            _build_vesselboost_original_images(
+                ordered_original_images,
+                ordered_images,
+                source_identity,
+                original_series_index,
+            )
+        )
+
     legacy_option = None
     if isinstance(config, dict):
         parameters = config.get("parameters")
@@ -2666,52 +2849,18 @@ def process_image(images, connection, config, metadata):
         logging.warning("VesselBoost output is all zeros; returning a zero-valued image.")
         volume_yxz = np.zeros(data.shape, dtype=np.int16)
 
-    # Reshape the axial segmentation volume for the per-slice MRD loop.
-    data = volume_yxz[:, :, :, None, None]
-    data = data.transpose((0, 1, 4, 3, 2))
-
-    # Re-slice back into 2D images
-    imagesOut = [None] * data.shape[-1]
-    for iImg in range(data.shape[-1]):
-        # Create new MRD instance for the final image
-        # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
-        # from_array() should be called with 'transpose=False' to avoid warnings, and when called
-        # with this option, can take input as: [cha z y x], [z y x], or [y x]
-        # imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
-        imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
-
-        # Create a copy of the original fixed header and update the data_type
-        # (we changed it to int16 from all other types)
-        oldHeader = head[iImg]
-        oldHeader.data_type = imagesOut[iImg].data_type
-
-        # Set the image_type to match the data_type for complex data
-        if (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXFLOAT) or (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXDOUBLE):
-            oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
-        else:
-            oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
-
-        imagesOut[iImg].setHead(oldHeader)
-
-        extra_meta = {
-            "WindowCenter": str((maxVal + 1) / 2),
-            "WindowWidth": str(maxVal + 1),
-        }
-        extra_meta.update(_explicit_header_geometry_meta(oldHeader))
-        _stamp_vesselboost_output_image(
-            imagesOut[iImg],
-            ordered_images[iImg],
-            segmentation_identity,
-            source_identity,
-            segmentation_series_index,
-            iImg,
-            source_identity["source_type_token"],
-            ["PYTHON", "VESSELBOOST"],
-            extra_meta=extra_meta,
-            keep_image_geometry=1,
-            patch_minihead=True,
+    imagesOut.append(
+        _build_vesselboost_segmentation_volume(
+            volume_yxz=volume_yxz,
+            head_template=head[0],
+            source_image=ordered_images[0],
+            source_identity=source_identity,
+            output_identity=segmentation_identity,
+            fov=fov,
+            series_index=segmentation_series_index,
+            max_val=maxVal,
         )
-        logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
+    )
 
     if reslice_sagittal or reslice_coronal:
         base_series = segmentation_series_index + 1
@@ -2768,49 +2917,6 @@ def process_image(images, connection, config, metadata):
                     max_val=maxVal,
                 )
             )
-
-    if send_original:
-        if called_from_raw:
-            logging.warning(
-                "sendoriginal is true, but input was raw data, so no original images to return."
-            )
-        else:
-            used_output_series_indices = [
-                int(getattr(image.getHead(), "image_series_index", 0))
-                for image in imagesOut
-            ]
-            original_series_index = max(
-                used_output_series_indices + source_series_indices,
-                default=segmentation_series_index,
-            ) + 1
-            original_identity = _build_vesselboost_original_identity(
-                source_identity,
-                series_index=original_series_index,
-            )
-            logging.info(
-                "Sending original MRA images as derived original series "
-                "(series_index=%d, name=%s)",
-                original_series_index,
-                original_identity["series_description"],
-            )
-            ordered_original_images = [
-                original_images[index] for index in slice_sort_indices
-            ]
-            for iImg, original_image in enumerate(ordered_original_images):
-                _stamp_vesselboost_output_image(
-                    original_image,
-                    ordered_images[iImg],
-                    original_identity,
-                    source_identity,
-                    original_series_index,
-                    iImg,
-                    source_identity["source_type_token"],
-                    ["PYTHON", "VESSELBOOST", "ORIGINAL"],
-                    extra_meta=_explicit_header_geometry_meta(original_image.getHead()),
-                    keep_image_geometry=1,
-                    patch_minihead=True,
-                )
-                imagesOut.append(original_image)
 
     _validate_vesselboost_output_contract(
         imagesOut,

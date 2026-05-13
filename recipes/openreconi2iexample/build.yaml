@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.23
+version: 1.0.31
 architectures:
   - x86_64
 
@@ -51,22 +51,29 @@ readme: |-
 
   Minimal OpenRecon image-to-image reference. Receives reconstructed MRD
   image messages and sends no output by default. Enable `sendoriginal` to
-  re-emit the original scan as `<source>-original` on `image_series_index = 100`.
+  pass the original 2D image stream through on `image_series_index = 100`.
   Enable `invert` to return inverted magnitude images as `<source>-inverted` on
   `image_series_index = 99`. Enable `segment` to extract the brightest foreground
-  object and send `<source>-segment` on `image_series_index = 101`. Enable
-  `segmentationcolormap` with `segment` to add `MicroDeltaHotMetal.pal` LUT
-  metadata to segmentation outputs. Enable `upsampled` to send one
-  double-slice-count `<source>-upsampled` volume on `image_series_index =
-  102`. Enable `mip` to send one `<source>-mip` maximum intensity projection
-  image on `image_series_index = 103`.
+  object and send explicit-volume `<source>-segment` output(s) starting on
+  `image_series_index = 101`. Multi-contrast inputs with repeated slice
+  positions are split into one segmentation volume per source volume group.
+  Enable `segmentationcolormap` with `segment` to add `MicroDeltaHotMetal.pal`
+  LUT metadata to segmentation outputs. Enable
+  `upsampled` to send one double-slice-count `<source>-upsampled` volume on
+  `image_series_index = 102`. Enable `mip` to send one `<source>-mip` maximum
+  intensity projection image on `image_series_index = 103`.
 
-  When a scanner sequence sends more images than its source slice/partition
-  geometry advertises, inverted and segmentation outputs are packed into one
-  explicit volume image instead of returned as out-of-range source-geometry
-  frames. Original copies are always returned as individual 2D image messages
-  split by source series so scanner-side downstream processing still sees a
-  normal image stream.
+  Original copies are sent first as source-native 2D images with
+  `Keep_image_geometry = 1`. The pass-through keeps the source protocol,
+  sequence, image-type, MiniHead, slice, and partition metadata as intact as
+  possible while assigning new returned-series UIDs. If a source group cannot be
+  sent safely as a 2D stream, the job fails before send rather than packing the
+  originals, because scanner MIP/MPR postprocessing depends on the original
+  stream. Segmentation outputs are packed into explicit volume images with
+  `Keep_image_geometry = 0`. Outputs strip scalar scanner `ImageTypeValue3`
+  metadata and `IceMiniHead` string `ImageTypeValue3` because some sequences
+  reject that protocol field during OpenRecon conversion; MiniHead array values
+  are preserved on original pass-through images.
 
   OpenRecon runtime notes: `recipes/openreconi2iexample/OpenReconREADME.md`.
 

@@ -23,15 +23,21 @@ intensity projection.
   partition slots than the number of received images, these are packed into one
   explicit volume image instead of returned as individual source-geometry
   frames.
-- `<source>-original`: copied input images on `image_series_index = 100` when
-  `sendoriginal` is true. Received images are split by their source series
-  before restamping, so separate received source groups are returned as their
-  own derived 2D copies instead of being folded into a larger source volume.
-- `<source>-segment`: thresholded segmentation images on
-  `image_series_index = 101` when `segment` is true. These outputs set
+- original pass-through: copied input images on `image_series_index = 100` when
+  `sendoriginal` is true. Received images are split by source or source-volume
+  group and returned as independent 2D streams. The source protocol,
+  sequence, image-type, MiniHead, slice, partition, and pixel data are preserved
+  as much as possible; only returned-series identity and required safe storage
+  fields are changed.
+- `<source>-segment`: explicit-volume thresholded segmentation output(s)
+  starting on `image_series_index = 101` when `segment` is true. Each output sets
+  `Keep_image_geometry = 0` and removes the source `IceMiniHead`, so scanner
+  inline MIP handling is not attached to the segmentation when originals are
+  also returned. Inputs with repeated physical slice positions are split by
+  source volume fields such as MRD `contrast` before packing; additional
+  segmentation groups use separate derived series indices. Segmentations set
   `LUTFileName = MicroDeltaHotMetal.pal` only when `segmentationcolormap` is
-  true. The same explicit-volume fallback is used for source geometry that
-  cannot safely hold every received image.
+  true.
 - `<source>-upsampled`: one volume image with twice as many slices on
   `image_series_index = 102` when `upsampled` is true.
 - `<source>-mip`: one maximum intensity projection image on
@@ -39,9 +45,9 @@ intensity projection.
 
 The inverted images normally keep the source geometry and use the input
 intensity range: `inverted = min(input) + max(input) - input`.
-The segment output estimates a bright-foreground threshold across the received
-image stack, keeps the largest connected foreground object in each slice, and
-stores the result as a binary `uint16` segmentation.
+The segment output estimates a bright-foreground threshold per source volume
+group, keeps the largest connected foreground object in each slice, and stores
+the result as binary `uint16` explicit-volume segmentation image(s).
 The upsampled output keeps the in-plane matrix unchanged and doubles the
 through-plane sample count by sorting source images by physical slice position
 and inserting midpoint slices between acquired slices. The final edge slice is
@@ -55,36 +61,46 @@ The MIP output projects the source magnitude stack across all source slices.
   `mip` are exposed in `OpenReconLabel.json` and all default to false.
 - Scanner protocols saved before these parameters were added may need the OpenRecon algorithm
   reselected once so the parameter schema refreshes.
-- Output names are written to `SeriesDescription`, `SequenceDescription`,
+- Derived output names are written to `SeriesDescription`, `SequenceDescription`,
   `ProtocolName`, `ImageComments`, `SeriesNumberRangeNameUID`, and
-  `SeriesInstanceUID`. Source-geometry outputs patch matching values into
-  `IceMiniHead` when source images include one. Explicit-volume outputs remove
-  the source `IceMiniHead`.
-- Copied originals are returned as derived scanner outputs, not as reused source
-  slices. If `sendoriginal` receives multiple source series, additional groups
-  are assigned separate derived `image_series_index` values so the scanner can
-  store them as independent returned series. Original pass-through outputs stay
-  as individual 2D image messages and preserve the source slice, partition, and
-  numbering geometry while receiving new derived series and instance identity.
+  `SeriesInstanceUID`. Source-geometry derived outputs patch matching values
+  into `IceMiniHead` when source images include one. Explicit-volume outputs
+  remove the source `IceMiniHead`.
+- Copied originals are returned as source-native 2D pass-through images, not as
+  derived packed volumes. If `sendoriginal` receives multiple source or
+  source-volume groups, additional groups are assigned separate returned
+  `image_series_index`, `SeriesNumberRangeNameUID`, `SeriesInstanceUID`, and
+  `SOPInstanceUID` values so the scanner can store them as independent returned
+  series while scanner postprocessing still sees source-like images.
 - Scanner partition counters such as `Actual3DImagePartNumber` and
-  `AnatomicalPartitionNo` are kept at zero for non-original derived image
-  series. Original pass-through outputs preserve the source values.
+  `AnatomicalPartitionNo` are preserved for original pass-through images and
+  kept at zero for derived image series.
 - Derived outputs set `SequenceDescriptionAdditional` to `openrecon` so
   scanners do not append `_None` to the display name.
-- `Keep_image_geometry = 1` is set on source-geometry outputs only when the
-  output frame count fits within the source slice or partition count. If a
-  scanner sequence sends more images than the advertised source geometry slots,
-  `invert` and `segment` are packed into one explicit volume image, while
-  `original` stays as a 2D pass-through series for scanner-side downstream
-  processing.
-  Packed explicit-volume outputs use `Keep_image_geometry = 0`,
-  `matrix_size[2] = N`, `slice_count = NumberOfSlices = N`, and
-  `partition_count = 1`. This prevents the marshaller from receiving invented
-  source SLC indices such as `416..831` for a 416-partition sequence.
+- Outputs strip scanner `ImageTypeValue3` from both MRD metadata and
+  `IceMiniHead`. Some sequences reject that protocol node during OpenRecon
+  conversion. Output identity is carried by `ImageType`, `DicomImageType`,
+  `ComplexImageComponent`, and `ImageTypeValue4`.
+- `sendoriginal` outputs are emitted before derived outputs. This keeps scanner
+  inline MIP/MPR postprocessing attached to the original series when originals
+  and segmentations are enabled together.
+- `Keep_image_geometry = 1` is set on original pass-through images. If an
+  original source group has more images than the advertised source slice or
+  partition count can hold, the job fails before send rather than packing those
+  originals as a derived volume. This keeps scanner MIP/MPR postprocessing on
+  the same 2D contract as the scanner received.
+- `segment` and `upsampled` are always packed as explicit-volume outputs with
+  `Keep_image_geometry = 0`, `matrix_size[2] = N`,
+  `slice_count = NumberOfSlices = N`, and `partition_count = 1`. This prevents
+  the marshaller from receiving invented source SLC indices such as `416..831`
+  for a 416-partition sequence.
 - Explicit-volume packing requires unique projected MRD header positions. Inputs
-  with repeated header positions, such as multi-station or multi-contrast
-  wholebody data whose header `position` resets between chunks, fail before send
-  with a Python-side OpenRecon logging error instead of sending an unsafe output.
+  with repeated header positions are split by source volume fields before
+  segmentation packing. Multi-contrast wholebody data whose header `position`
+  repeats per contrast is returned as one explicit segmentation volume per
+  contrast. Inputs that still repeat positions inside one source volume group
+  fail before send with a Python-side OpenRecon logging error instead of sending
+  an unsafe output.
 - The upsampled output always changes the slice count, so it removes the source
   `IceMiniHead`, sends one MRD volume image with `matrix_size[2] = 2 * N`, and
   stamps `slice_count = NumberOfSlices = 2 * N` plus `partition_count = 1`
