@@ -93,6 +93,50 @@ tests:
       assert int(one_tx["mask"][0, 3, 3]) == 1
       assert int(one_tx["mask"][0, 0, 0]) == 0
 
+      converted_dicom_like_images = []
+      for image in one_tx_images:
+          copied = ismrmrd.Image.from_array(np.asarray(image.data).copy(), transpose=False)
+          header = image.getHead()
+          header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+          copied.setHead(header)
+          copied.attribute_string = image.attribute_string
+          converted_dicom_like_images.append(copied)
+      fallback_magnitude, fallback_phase = module._split_magnitude_phase_images(
+          converted_dicom_like_images
+      )
+      assert len(fallback_magnitude) == 5
+      assert len(fallback_phase) == 5
+      fallback_result = module.compute_bloch_siegert_maps(
+          converted_dicom_like_images,
+          settings,
+      )
+      assert np.allclose(fallback_result["b1"], one_tx["b1"], atol=1e-5)
+
+      volume_frame_images = []
+      for image in one_tx_images:
+          base = np.asarray(image.data)[0, 0]
+          volume_data = np.stack([base, base + 1.0, base + 2.0], axis=0)
+          copied = ismrmrd.Image.from_array(volume_data, transpose=False)
+          source_header = image.getHead()
+          header = copied.getHead()
+          header.image_type = source_header.image_type
+          header.image_series_index = source_header.image_series_index
+          header.image_index = source_header.image_index
+          header.slice = source_header.slice
+          header.position = source_header.position
+          header.slice_dir = source_header.slice_dir
+          header.field_of_view = (8.0, 8.0, 12.0)
+          copied.setHead(header)
+          copied.attribute_string = image.attribute_string
+          volume_frame_images.append(copied)
+      volume_result = module.compute_bloch_siegert_maps(volume_frame_images, settings)
+      assert volume_result["b1"].shape == (1, 3, 8, 8)
+      assert volume_result["b0"].shape == (3, 8, 8)
+      volume_outputs = module.build_output_images(volume_result, settings, volume_frame_images)
+      assert np.asarray(volume_outputs[0].data).shape == (1, 3, 8, 8)
+      assert list(volume_outputs[0].getHead().matrix_size) == [8, 8, 3]
+      module._validate_output_images(volume_outputs, volume_frame_images)
+
       outputs = module.build_output_images(one_tx, settings, one_tx_images)
       assert [int(image.image_series_index) for image in outputs] == [101, 120, 140, 160]
       module._validate_output_images(outputs, one_tx_images)
@@ -179,28 +223,36 @@ tests:
       print("Bloch-Siegert OpenRecon workflow tests passed")
       PY
 
-  - name: Manual OpenRecon replay smoke test
+  - name: Manual OpenRecon testData replay smoke test
     manual: true
     script: |
-      source .venv/bin/activate
-      sf-login blochsiegertb1mapping --architecture x86_64 --offline-mode
-
       set -eux
-      input_h5=/buildhostdirectory/blochsiegertb1mapping_input_image_dataset.h5
+      archive=/buildhostdirectory/testData.tgz
+      test_data_dir=/buildhostdirectory/blochsiegertb1mapping_testData
+      input_h5=/buildhostdirectory/blochsiegertb1mapping_input.h5
       output_h5=/buildhostdirectory/blochsiegertb1mapping_output.h5
+      saved_data_dir=/buildhostdirectory/blochsiegertb1mapping_saved_data
 
-      if [ ! -f "${input_h5}" ]; then
-        echo "Manual test skipped: place an MRD image dataset with magnitude and phase Bloch-Siegert frames at ${input_h5} to run it."
+      if [ ! -f "${archive}" ]; then
+        echo "Manual test skipped: place testData.tgz at ${archive} to run it."
         exit 0
       fi
 
+      rm -rf "${test_data_dir}" "${saved_data_dir}"
+      mkdir -p "${test_data_dir}" "${saved_data_dir}"
+      tar -xzf "${archive}" -C "${test_data_dir}"
+
+      rm -f "${input_h5}" "${output_h5}"
+      python3 /opt/code/python-ismrmrd-server/dicom2mrd.py \
+        -o "${input_h5}" \
+        "${test_data_dir}"
+
       python3 /opt/code/python-ismrmrd-server/main.py \
-        -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
+        -v -r -H=0.0.0.0 -p=9002 -s -S="${saved_data_dir}" &
       server_pid=$!
       trap 'kill ${server_pid} || true' EXIT
       sleep 2
 
-      rm -f "${output_h5}"
       python3 /opt/code/python-ismrmrd-server/client.py \
         -G dataset \
         -o "${output_h5}" \
@@ -208,4 +260,28 @@ tests:
         -c blochsiegertb1mapping
 
       test -s "${output_h5}"
-      echo "Inspect ${output_h5}; default outputs should include B1, BSp, PHSc, and B0 map series."
+      python3 - <<'PY'
+      import ismrmrd
+
+      output_h5 = "/buildhostdirectory/blochsiegertb1mapping_output.h5"
+      dataset = ismrmrd.Dataset(output_h5, "dataset")
+      try:
+          groups = sorted(
+              key for key in dataset._file["dataset"].keys() if key.startswith("image_")
+          )
+          assert groups == [
+              "image_101", "image_102", "image_103", "image_104",
+              "image_105", "image_106", "image_107", "image_108",
+              "image_120", "image_121", "image_122", "image_123",
+              "image_124", "image_125", "image_126", "image_127",
+              "image_140", "image_141", "image_142", "image_143",
+              "image_144", "image_145", "image_146", "image_147",
+              "image_160",
+          ]
+          for group in groups:
+              image = dataset.read_image(group, 0)
+              assert tuple(image.data.shape) == (1, 32, 48, 48)
+      finally:
+          dataset.close()
+      PY
+      echo "OpenRecon testData replay wrote ${output_h5}"

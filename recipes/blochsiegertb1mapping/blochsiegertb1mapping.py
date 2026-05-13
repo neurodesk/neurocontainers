@@ -129,11 +129,11 @@ def compute_bloch_siegert_maps(input_images, settings=None):
             )
         )
 
-    b1 = np.stack([item["b1"] for item in slice_results], axis=1)
-    bsp = np.stack([item["bsp"] for item in slice_results], axis=1)
-    phsc = np.stack([item["phsc"] for item in slice_results], axis=1)
-    b0 = np.stack([item["b0"] for item in slice_results], axis=0)
-    mask = np.stack([item["mask"] for item in slice_results], axis=0)
+    b1 = np.concatenate([item["b1"] for item in slice_results], axis=1)
+    bsp = np.concatenate([item["bsp"] for item in slice_results], axis=1)
+    phsc = np.concatenate([item["phsc"] for item in slice_results], axis=1)
+    b0 = np.concatenate([item["b0"] for item in slice_results], axis=0)
+    mask = np.concatenate([item["mask"] for item in slice_results], axis=0)
 
     return {
         "nframe": nframe,
@@ -246,8 +246,8 @@ def build_output_images(result, settings=None, input_images=None):
 
 
 def _compute_slice_maps(magnitude_images, phase_images, ntx, settings):
-    magnitude_stack = np.stack([_image_2d_data(image) for image in magnitude_images])
-    phase_stack = np.stack([_image_2d_data(image) for image in phase_images])
+    magnitude_stack = np.stack([_image_volume_data(image) for image in magnitude_images])
+    phase_stack = np.stack([_image_volume_data(image) for image in phase_images])
 
     magnitude_stack = np.nan_to_num(magnitude_stack.astype(np.float32), copy=False)
     phase_stack = np.nan_to_num(phase_stack.astype(np.float32), copy=False)
@@ -301,7 +301,7 @@ def _bloch_siegert_mask(magnitude_stack, ntx):
     else:
         threshold = float(np.mean(low_values) + 2.0 * np.std(low_values))
 
-    return _fill_holes_2d(mask_source > threshold)
+    return _fill_holes_per_slice(mask_source > threshold)
 
 
 def _phase_to_radians(phase_stack, phase_wrap):
@@ -320,7 +320,59 @@ def _split_magnitude_phase_images(images):
             magnitude_images.append(image)
         else:
             logging.info("Ignoring non-magnitude/non-phase image_type=%s", image.image_type)
+    if not phase_images:
+        fallback_magnitude, fallback_phase = _fallback_split_magnitude_phase_series(
+            magnitude_images
+        )
+        if fallback_phase:
+            logging.warning(
+                "No explicit phase MRD image_type was present; treating the first "
+                "of two equal-length image series as magnitude and the second as phase"
+            )
+            return fallback_magnitude, fallback_phase
     return magnitude_images, phase_images
+
+
+def _fallback_split_magnitude_phase_series(images):
+    series_groups = []
+    group_index_by_key = {}
+    for image in images:
+        key = _source_series_key(image)
+        group_index = group_index_by_key.get(key)
+        if group_index is None:
+            group_index = len(series_groups)
+            group_index_by_key[key] = group_index
+            series_groups.append([])
+        series_groups[group_index].append(image)
+
+    if len(series_groups) != 2 or len(series_groups[0]) != len(series_groups[1]):
+        return images, []
+
+    series_groups = sorted(series_groups, key=_series_group_sort_key)
+    frame_count = len(series_groups[0])
+    if frame_count < 5:
+        return images, []
+    return series_groups[0], series_groups[1]
+
+
+def _source_series_key(image):
+    meta = _meta_from_image(image)
+    return (
+        int(image.getHead().image_series_index),
+        _meta_text(meta, "SeriesInstanceUID"),
+        _meta_text(meta, "SeriesNumberRangeNameUID"),
+        _meta_text(meta, "SequenceDescription"),
+        _meta_text(meta, "ProtocolName"),
+    )
+
+
+def _series_group_sort_key(group):
+    first_image = group[0]
+    meta = _meta_from_image(first_image)
+    series_number = _dicom_json_numeric_value(meta, "00200011")
+    if series_number is None:
+        series_number = int(first_image.getHead().image_series_index)
+    return (series_number, int(first_image.getHead().image_series_index))
 
 
 def _is_magnitude_image(image):
@@ -357,6 +409,13 @@ def _is_phase_image(image):
 
 def _group_frames_by_slice(images):
     indexed = list(enumerate(images))
+    if indexed and all(_is_volume_frame_image(image) for _order, image in indexed):
+        logging.info(
+            "Grouped %d volume-frame image(s) into one Bloch-Siegert frame group",
+            len(indexed),
+        )
+        return [[image for _order, image in sorted(indexed, key=_frame_sort_key)]]
+
     candidates = []
     for name, key_func in (
         ("position", _position_group_key),
@@ -489,12 +548,22 @@ def _sequence_shape(frame_count):
     )
 
 
-def _image_2d_data(image):
+def _is_volume_frame_image(image):
     data = np.asarray(image.data)
+    return data.ndim == 4 and data.shape[0] == 1 and data.shape[1] > 1
+
+
+def _image_volume_data(image):
+    data = np.asarray(image.data)
+    if data.ndim == 4 and data.shape[0] == 1:
+        return data[0]
     data = np.squeeze(data)
-    if data.ndim != 2:
+    if data.ndim == 2:
+        return data[np.newaxis, :, :]
+    if data.ndim != 3:
         raise ValueError(
-            "Bloch-Siegert input images must be single-channel 2D frames; "
+            "Bloch-Siegert input images must be single-channel 2D frames or "
+            "single-channel 3D volume frames; "
             f"got data shape {np.asarray(image.data).shape}"
         )
     return data
@@ -514,8 +583,6 @@ def _map_to_mrd_image(
     window_width=None,
 ):
     volume = np.asarray(volume)
-    if volume.ndim == 2:
-        volume = volume[np.newaxis, :, :]
     if volume.ndim != 3:
         raise ValueError(f"Output map volume must be 3D, got shape {volume.shape}")
 
@@ -888,6 +955,15 @@ def _coerce_bool(value, default=False):
     return default
 
 
+def _fill_holes_per_slice(mask):
+    mask = np.asarray(mask, dtype=bool)
+    if mask.ndim == 2:
+        return _fill_holes_2d(mask)
+    if mask.ndim != 3:
+        raise ValueError(f"_fill_holes_per_slice expects 2D or 3D mask, got {mask.shape}")
+    return np.stack([_fill_holes_2d(slice_mask) for slice_mask in mask], axis=0)
+
+
 def _fill_holes_2d(mask):
     mask = np.asarray(mask, dtype=bool)
     if mask.ndim != 2:
@@ -1008,6 +1084,23 @@ def _meta_int(meta, key):
     try:
         return int(float(value))
     except ValueError:
+        return None
+
+
+def _dicom_json_numeric_value(meta, tag):
+    text = _meta_text(meta, "DicomJson")
+    if not text:
+        return None
+    try:
+        dicom_json = json.loads(base64.b64decode(text).decode("utf-8"))
+    except Exception:
+        return None
+    values = dicom_json.get(tag, {}).get("Value", [])
+    if not values:
+        return None
+    try:
+        return float(values[0])
+    except (TypeError, ValueError):
         return None
 
 

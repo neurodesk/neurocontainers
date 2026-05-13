@@ -65,10 +65,20 @@ already uses one of them.
 ## Scanner Notes
 
 The OpenRecon implementation does not read DICOM directories. The DICOM file
-loading in the MATLAB script is replaced by buffering the MRD image stream. Slice
-groups are detected from physical position when available, falling back to MRD
-slice counters or frame-count chunking. Each output volume is derived from sorted
-frame order within its slice group.
+loading in the MATLAB script is replaced by buffering the MRD image stream. The
+recipe includes `dicom2mrd.py` only for local replay tests such as
+`testData.tgz`.
+
+The runtime accepts either single-slice 2D image frames or single-channel 3D
+volume-frame images. This matters for the bundled replay data because the DICOM
+converter writes each Bloch-Siegert acquisition frame as one 32-slice MRD
+volume. If a converter marks both source series as magnitude images, the runtime
+can split two equal-length source series into magnitude then phase using their
+source-series ordering.
+
+Slice groups are detected from physical position when available, falling back to
+MRD slice counters or frame-count chunking. Each output volume is derived from
+sorted frame order within its slice group.
 
 The mask is computed because it is part of the MATLAB workflow, but it is not
 applied to the B1, BSp, PHSc, or B0 maps because the MATLAB code does not apply

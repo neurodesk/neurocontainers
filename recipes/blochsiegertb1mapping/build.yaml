@@ -10,6 +10,8 @@ copyright:
 files:
   - name: blochsiegertb1mapping.py
     filename: blochsiegertb1mapping.py
+  - name: dicom2mrd.py
+    filename: dicom2mrd.py
   - name: OpenReconLabel.json
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
@@ -32,6 +34,7 @@ build:
     - include: macros/openrecon/neurodocker.yaml
 
     - copy: blochsiegertb1mapping.py /opt/code/python-ismrmrd-server/blochsiegertb1mapping.py
+    - copy: dicom2mrd.py /opt/code/python-ismrmrd-server/dicom2mrd.py
     - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
     - run:
         - install -m 0755 {{ get_file("blochsiegertb1mapping") }} /usr/local/bin/blochsiegertb1mapping
