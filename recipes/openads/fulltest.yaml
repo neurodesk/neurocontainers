@@ -1,0 +1,80 @@
+name: openads
+version: 1.0.0
+container: openads_1.0.0.simg
+
+environment:
+  OPENADS_ENABLE_WEB_UI: "0"
+
+tests:
+  - name: Show ads help
+    script: |
+      set -e
+      ads --help
+
+  - name: Check Python import
+    script: |
+      set -e
+      python3 -c "import ads; print('import ads: OK')"
+
+  - name: Check PyTorch and CUDA state
+    script: |
+      set -e
+      python3 - <<'PY'
+      import torch
+      print("torch:", torch.__version__)
+      print("cuda_available:", torch.cuda.is_available())
+      print("device_count:", torch.cuda.device_count())
+      PY
+
+  - name: Run DWI example workflow
+    script: |
+      set -e
+      rm -rf /tmp/openads_test_output
+      mkdir -p /tmp/openads_test_output
+      ads dwi \
+        --subject-path /app/assets/examples/dwi/sub-02e8eb42 \
+        --all \
+        --gpu 1 \
+        --output-root /tmp/openads_test_output
+      test -d /tmp/openads_test_output/sub-02e8eb42/DWI
+
+  - name: Run PWI example workflow
+    script: |
+      set -e
+      rm -rf /tmp/openads_test_output
+      mkdir -p /tmp/openads_test_output
+      ads pwi \
+        --subject-path /app/assets/examples/pwi/sub-02e8eb42 \
+        --all \
+        --gpu 1 \
+        --output-root /tmp/openads_test_output
+      test -d /tmp/openads_test_output/sub-02e8eb42/PWI
+
+  - name: Run selected DWI stages
+    script: |
+      set -e
+      rm -rf /tmp/openads_test_output
+      mkdir -p /tmp/openads_test_output
+      ads dwi \
+        --subject-path /app/assets/examples/dwi/sub-02e8eb42 \
+        --stages prepdata,gen_mask,skull_strip,registration,inference,report \
+        --gpu 1 \
+        --output-root /tmp/openads_test_output
+      test -d /tmp/openads_test_output/sub-02e8eb42/DWI
+
+  - name: Run selected PWI stages
+    script: |
+      set -e
+      rm -rf /tmp/openads_test_output
+      mkdir -p /tmp/openads_test_output
+      ads pwi \
+        --subject-path /app/assets/examples/pwi/sub-02e8eb42 \
+        --stages prepdata,gen_mask,skull_strip,gen_ttp,registration,ttpadc_coreg,inference,report \
+        --gpu 1 \
+        --output-root /tmp/openads_test_output
+      test -d /tmp/openads_test_output/sub-02e8eb42/PWI
+
+cleanup:
+  script: |
+    rm -rf /tmp/openads_test_output
+    echo "OpenADS full test cleanup complete."
