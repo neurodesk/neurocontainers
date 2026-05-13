@@ -56,12 +56,9 @@ build:
     - template:
         name: fsl
         version: 6.0.7.16
-    - template:
-        name: ants
-        version: 2.4.3
     - install: r-base r-base-dev cmake git build-essential libhdf5-dev libfftw3-dev libpng-dev libjpeg-dev zlib1g-dev libssl-dev libcurl4-openssl-dev libxml2-dev
     - run:
-        - R --slave -e " pkgs <- c('mimosa', 'ANTsRCore', 'dplyr', 'extrantsr', 'fslr', 'neurobase', 'oasis', 'rlist', 'WhiteStripe', 'covr', 'knitr', 'rmarkdown', 'spelling', 'testthat'); mis <- setdiff(pkgs, rownames(installed.packages())); if (length(mis)) install.packages(mis, dependencies = TRUE); cat('Installed CRAN packages:\n'); if (length(pkgs)) cat(paste(pkgs, collapse = ', '), '\n') "
+        - R --slave -e " pkgs <- c('mimosa', 'ANTsRCore', 'dplyr', 'extrantsr', 'fslr', 'neurobase', 'oasis', 'rlist', 'WhiteStripe'); mis <- setdiff(pkgs, rownames(installed.packages())); if (length(mis)) install.packages(mis, dependencies = TRUE); cat('Installed CRAN packages:\n'); if (length(pkgs)) cat(paste(pkgs, collapse = ', '), '\n') "
     - test:
         name: verify_r_installation
         script: |-
@@ -91,7 +88,7 @@ build:
             })
 
             # List key installed packages
-            key_packages <- c('ANTsRCore', 'dplyr', 'extrantsr', 'fslr', 'neurobase', 'oasis', 'rlist', 'WhiteStripe', 'covr', 'knitr', 'rmarkdown', 'spelling', 'testthat')
+            key_packages <- c('mimosa', 'ANTsRCore', 'dplyr', 'extrantsr', 'fslr', 'neurobase', 'oasis', 'rlist', 'WhiteStripe')
             if (length(key_packages) > 0) {
               cat('Checking additional packages:\n')
               for (pkg in key_packages) {
