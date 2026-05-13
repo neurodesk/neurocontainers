@@ -12,9 +12,9 @@ architectures:
 variables:
   conda_install:
     try:
-      - value: "python=3.8 tensorflow"
+      - value: "python=3.8 numpy tensorflow"
         condition: arch=="x86_64"
-      - value: "python=3.8"
+      - value: "python=3.8 numpy"
         condition: arch=="aarch64"
   pip_install:
     try:
