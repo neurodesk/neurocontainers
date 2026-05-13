@@ -1,0 +1,8 @@
+tests:
+  - name: Check ads binary
+    script: |
+      command -v ads
+
+  - name: Check ads help
+    script: |
+      ads --help
