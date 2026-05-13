@@ -47,8 +47,6 @@ readme: |-
   ----------------------------------
 
 files:
-  - name: ss_noddi.zip
-    filename: https://github.com/CyclotronResearchCentre/NODDI_singularity/archive/refs/heads/main.zip
   - name: noddi_wrapper
     contents: |
       #!/usr/bin/env bash
@@ -97,11 +95,14 @@ build:
     - run:
         - mkdir -p /In_fold
         - mkdir -p /Out_fold
+    - install:
+        curl unzip
     - run:
         - mkdir -p /opt/ss_noddi
-        - unzip -q {{ get_file("ss_noddi.zip") }} -d /opt/ss_noddi_tmp
+        - curl -fsSL -o /tmp/ss_noddi.zip https://github.com/CyclotronResearchCentre/NODDI_singularity/archive/refs/heads/main.zip
+        - unzip -q /tmp/ss_noddi.zip -d /opt/ss_noddi_tmp
         - cp -r /opt/ss_noddi_tmp/NODDI_singularity-main/ss_noddi_App/* /opt/ss_noddi/
-        - rm -rf /opt/ss_noddi_tmp
+        - rm -rf /opt/ss_noddi_tmp /tmp/ss_noddi.zip
         - chmod +x /opt/ss_noddi/run_ss_noddi.sh
         - chmod +x /opt/ss_noddi/ss_noddi
     - copy:
