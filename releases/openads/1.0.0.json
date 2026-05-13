@@ -1,6 +1,6 @@
 {
   "apps": {
-    "openads": {
+    "openads 1.0.0": {
       "version": "20260513",
       "exec": "",
       "apptainer_args": []
