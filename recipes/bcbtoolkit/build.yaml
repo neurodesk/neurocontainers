@@ -114,6 +114,9 @@ build:
             && chmod +x /opt/BCBToolKit/BCBToolKit.sh \
                         /opt/BCBToolKit/run_disco.sh \
                         /opt/BCBToolKit/tractotron_cli.sh \
+            && ln -sf /opt/BCBToolKit/BCBToolKit.sh /usr/local/bin/BCBToolKit.sh \
+            && ln -sf /opt/BCBToolKit/run_disco.sh /usr/local/bin/run_disco.sh \
+            && ln -sf /opt/BCBToolKit/tractotron_cli.sh /usr/local/bin/tractotron_cli.sh \
             && printf '%s\n' \
                  '1.000000 0.000000 0.000000 0.000000' \
                  '0.000000 1.000000 0.000000 0.000000' \
