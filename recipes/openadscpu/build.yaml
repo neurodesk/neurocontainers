@@ -101,6 +101,7 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - install: git libgomp1
     - template:
         name: miniconda
         version: latest
