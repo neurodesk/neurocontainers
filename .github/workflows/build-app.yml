@@ -80,7 +80,7 @@ jobs:
           # on github-hosted runners (forks).
           if command -v docker >/dev/null 2>&1 \
             && command -v aws >/dev/null 2>&1 \
-            && command -v swift >/dev/null 2>&1 \
+            && python3 -c "import swiftclient" 2>/dev/null \
             && command -v gh >/dev/null 2>&1 \
             && command -v jq >/dev/null 2>&1; then
             echo "All build tooling already present; skipping bootstrap."
@@ -264,7 +264,7 @@ jobs:
           # on github-hosted runners (forks).
           if command -v docker >/dev/null 2>&1 \
             && command -v aws >/dev/null 2>&1 \
-            && command -v swift >/dev/null 2>&1 \
+            && python3 -c "import swiftclient" 2>/dev/null \
             && command -v gh >/dev/null 2>&1 \
             && command -v jq >/dev/null 2>&1; then
             echo "All build tooling already present; skipping bootstrap."
@@ -830,7 +830,7 @@ jobs:
           # (legacy self-hosted VMs). Runs in full on ARC pods.
           if command -v docker >/dev/null 2>&1 \
             && command -v aws >/dev/null 2>&1 \
-            && command -v swift >/dev/null 2>&1 \
+            && python3 -c "import swiftclient" 2>/dev/null \
             && command -v gh >/dev/null 2>&1 \
             && command -v jq >/dev/null 2>&1; then
             echo "All build tooling already present; skipping bootstrap."
