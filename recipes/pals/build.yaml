@@ -1,12 +1,16 @@
 name: pals
 version: 2.0.1
+
 copyright:
-  - name: custom
-    url: https://github.com/npnl/PALS
+  - license: custom
+    url: NO LICENSE FILE
+
 architectures:
   - x86_64
+
 readme: |
-  ## PALS - Pipeline for Analyzing Lesions After Stroke 
+  ## PALS - Pipeline for Analyzing Lesions After Stroke {{ context.version }}
+
   PALS is a flexible, scalable toolbox for image processing and quality analysis
   of stroke lesion MRI data. It is the preprocessing pipeline associated with the
   ATLAS v2.0 dataset (Liew et al., 2022, *Scientific Data*).
@@ -62,60 +66,68 @@ readme: |
   ### More information
 
   https://github.com/npnl/PALS
+
 build:
   kind: neurodocker
+
   base-image: ubuntu:22.04
   pkg-manager: apt
+
   directives:
-    - deploy:
-        path:
-          - /opt/pals-2.0.1
-          - /opt/ants-2.4.3/bin
-        bins:
-          - python3
     - environment:
         DEBIAN_FRONTEND: noninteractive
+
     - install:
         - git
         - wget
         - curl
         - bc
         - dc
-        - python3
-        - python3-pip
-        - python3-venv
         - libgomp1
+
+    # ── FSL 6.0.7.1 ─────────────────────────────────────────────────────────
     - template:
         name: fsl
-        version: 6.0.5.1
+        version: 6.0.7.1
+
+    # ── ANTs 2.4.3 (pre-built binaries) ─────────────────────────────────────
     - template:
         name: ants
         version: 2.4.3
         method: binaries
+
+    # ── Miniconda + Python packages ──────────────────────────────────────────
     - template:
         name: miniconda
         version: py310_25.5.1-0
         install_path: /opt/miniconda
-    - run:
-        - pip3 install --no-cache-dir "nibabel>=3.2" "numpy>=1.21" "scipy>=1.7" "matplotlib>=3.4" "pandas>=1.3" "Pillow>=8.0"
+        mamba: true
+        pip_install:
+          - nibabel>=3.2
+          - numpy>=1.21
+          - scipy>=1.7
+          - matplotlib>=3.4
+          - pandas>=1.3
+          - Pillow>=8.0
+
+    # ── PALS v2.0.1 ──────────────────────────────────────────────────────────
     - run:
         - git clone --depth 1 --branch main https://github.com/npnl/PALS /opt/pals-2.0.1
-        - pip3 install --no-cache-dir -r /opt/pals-2.0.1/requirements.txt
-        - |
-          python3 -c "
-          import json, os
-          presets = {
-            'ants_path': '/opt/ants-2.4.3/bin',
-            'fsl_path': os.environ.get('FSLDIR', '/opt/fsl-6.0.5.1') + '/bin',
-            'rois_path': '/opt/pals-2.0.1/ROIs',
-            'template_directory': '/opt/pals-2.0.1/templates'
-          }
-          with open('/opt/pals-2.0.1/presets.json', 'w') as f:
-              json.dump(presets, f, indent=4)
-          "
+        - /opt/miniconda/bin/pip install --no-cache-dir -r /opt/pals-2.0.1/requirements.txt
+        # Pre-populate presets.json with paths correct for this container
+        - /opt/miniconda/bin/python -c "import json, os; presets = {'ants_path': '/opt/ants-2.4.3/bin', 'fsl_path': os.environ.get('FSLDIR', '/opt/fsl-6.0.7.1') + '/bin', 'rois_path': '/opt/pals-2.0.1/ROIs', 'template_directory': '/opt/pals-2.0.1/templates'}; open('/opt/pals-2.0.1/presets.json', 'w').write(__import__('json').dumps(presets, indent=4))"
+
     - environment:
         PALS_DIR: /opt/pals-2.0.1
-        PATH: /opt/pals-2.0.1:/opt/ants-2.4.3/bin:$PATH
+        PATH: /opt/pals-2.0.1:/opt/ants-2.4.3/bin:/opt/miniconda/bin:$PATH
+
+deploy:
+  path:
+    - /opt/pals-2.0.1
+    - /opt/ants-2.4.3/bin
+    - /opt/miniconda/bin
+  bins:
+    - python
 categories:
   - image segmentation
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAErklEQVR4AWxUb0idVRj/ndc7vYqFpDVLmqZFf/yQtchGWsI2RJcM3acao7IPEQttaElCg6APVjNprT/LFAb9gUDI0A9+KBWDai6wWtaKaNO5Zpq63Yvertf36fmdc1+vlof39z6/c57z/D3nfb1oT5ZEPsiSq91ZcuX9LFk6mWmx+F6mLLybKX+/E5b5t8Myd8Lhr7fCMns8LJffzLC41JUhxMwb6XKxM12mj6XL1OvpcuG1bRaeiAFAIDkMuCaSnFqd03ONCDQBpyRg9yI5aGOgAUQdElBJkBPkgO+TE9hSL+rZgXrZsN9xDzp0jzVWui7/yzkPIFq1JCsU5UhmLnbNZY7k8FIZuojMxvexIRNyQjS46DqsXNPKFqKCxBrXHGhL0CdBrhVs1fNkeBUuKyX6BJwyGjP48mcfS8uqsI/LnDo71apEq9t0Bsyo5ZM48g6v4PpnYxbbm2IoeT6Gtk8T+OZ3H7G44MeLPhpOxNH0cQK7j8Ux9qsPVhRkLdoqZk9oABePbyqgypGREdsGbiCurvh4secnHD9bgY++9fHdecGjz7xs9/R8+BnO6HxllR4IdoRtJIe7RYxMiHpX//A8D5FIBKWlpRZ1dXUoKipCb28v+s6s4QttTWNjow1QXV2Nr7Wy2SVfz0csmBTBs7RnAO0XdNgKVPJZXV3F5OSkxeDgIPr7+1FYWIiZRQ+LacUoKChAR0cHwuEwcu+sxblZaJsMTTUwK3B8wy1SHdMnlHpaRW5uLvLy8tDQ0ICamhpMTU0hoWkdeeEoYrEY2tvbsby8jNbWVoz/IYjEJOmcAcgFnvra8snJycH8/Dzm5ubQ19dnHTU3NyOkFvX19RgaGrJ2w8PDqKiowPgFg0tLdGqX7YsdsYesSSV7x8hWh2g0iqqqKgueRX5+Pk6PfI67y3cjOzsbdXou8XgctbW1CIVC2LnnEM7OCOIJsb7ocz2Ac5lyzjmNR0dHURAbw96bzqF9XwjlxWZTW9ra2tDS0mKra2pqwvh54MoKrVPQCkT7RrgAyta1u0o8PF3l4cheT50Dv1z2UFlZiYGBAXR1da2D7SorK8MPf6ZjakG0AvqiTJ6B6BcnycOF3iif9SEYBvE1g4kpQeUjT9p28Pa8esDD90dDeGW/ZwMZY7D/4GFMTAP/JGhr9GWgt8hFc/dWo2ikKu09b5Dwu9D5fMTHV7/56O7uhjEG8dkJ3HUjkBEC7sgHpifH7HpnZydO622a13+Ur/8q+tQ7wQAO4W0GB+5Lw6mnQjjVGMJze9KQk2nUGDj0QBp6nwih5/E0vLTPw47rPHgGKM4ztoqTBz0Qj90PpFmvzuemM8gICe65Gai63eBhRfktBteGBduvAR68FXjoNsLg3h0GYd3LDDO3ATt1Xqn6ihJgl9rckE3nWr9WrwEMAIKL0EFOKLWP0UtA2IlyJ/lWe4oNcHZcFz1XqF8NIHrqDsyIYP+IgFMSPHsnud8ltHnOddEkHOgj2S3oYPRUptDoLovAEfX43xC9F8FiwCkJrustctGCTCipdJK6IAA5kZozQ7eXa9QR5AS5/Q6YGcF4hKuChpwFMuCpOW0IOiPICe4k6MfgXwAAAP//MuRVzgAAAAZJREFUAwC5uHHiZXUONQAAAABJRU5ErkJggg==
