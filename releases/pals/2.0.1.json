@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "pals 2.0.1": {
+      "version": "20260514",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation"
+  ]
+}
