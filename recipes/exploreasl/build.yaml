@@ -4,7 +4,7 @@ architectures:
   - x86_64
 structured_readme:
   description: ExploreASL is a pipeline and toolbox for image processing and statistics of arterial spin labeling perfusion MR images. It is designed as a multi-OS, open-source, collaborative framework that facilitates cross-pollination between image processing method developers and clinical investigators. This container contains Matlab MCR
-  example:   ExploreASL /path/to/dataset [import] [process] import:  0 = skip DICOM-to-BIDS import, 1 = run import process: 0 = skip processing, 1 = run processing
+  example:   example: "ExploreASL /path/to/dataset [import] [process] -- import: 0=skip, 1=run | process: 0=skip, 1=run"
   documentation: https://exploreasl.github.io/Documentation/1.11.0/
   citation: "Mutsaerts, H., & Petr, J. (2023). ExploreASL/ExploreASL: ExploreASL v1.10.1 (v1.11.0). Zenodo. https://doi.org/10.5281/zenodo.8326499"
 build:
