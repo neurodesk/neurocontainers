@@ -1,0 +1,91 @@
+name: qmrlab
+version: 2.4.2
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=
+
+copyright:
+  - license: MIT
+    url: https://github.com/qMRLab/qMRLab/blob/v2.4.2/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - octave
+        - octave-dev
+        - build-essential
+        - texinfo
+        - curl
+        - ca-certificates
+        - libopenblas-dev
+        - mesa-utils
+        - fonts-noto
+        - adwaita-icon-theme
+        - bash
+
+    - run:
+        - cp {{ get_file("octave_image") }} /tmp/image-2.14.0.tar.gz
+        - cp {{ get_file("octave_io") }} /tmp/io-2.6.0.tar.gz
+        - cp {{ get_file("octave_struct") }} /tmp/struct-1.0.18.tar.gz
+        - cp {{ get_file("octave_statistics") }} /tmp/statistics-1.6.7.tar.gz
+        - cp {{ get_file("octave_optim") }} /tmp/optim-1.6.2.tar.gz
+        - octave --no-gui --eval "pkg install /tmp/image-2.14.0.tar.gz /tmp/io-2.6.0.tar.gz /tmp/struct-1.0.18.tar.gz /tmp/statistics-1.6.7.tar.gz /tmp/optim-1.6.2.tar.gz"
+        - rm -f /tmp/image-2.14.0.tar.gz /tmp/io-2.6.0.tar.gz /tmp/struct-1.0.18.tar.gz /tmp/statistics-1.6.7.tar.gz /tmp/optim-1.6.2.tar.gz
+
+    - run:
+        - cp {{ get_file("qmrlab_archive") }} /tmp/qMRLab-2.4.2.tar.gz
+        - tar -xzf /tmp/qMRLab-2.4.2.tar.gz -C /
+        - rm /tmp/qMRLab-2.4.2.tar.gz
+
+    - run:
+        - /bin/sh -lc 'cd /qMRLab-2.4.2 && octave --no-gui --eval "qMRLabVer"'
+        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
+        - chmod +x /usr/bin/ll
+        - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
+
+    - copy: qMRLab.sh /usr/bin/qMRLab
+
+    - run:
+        - chmod +x /usr/bin/qMRLab
+
+    - entrypoint: /usr/bin/qMRLab
+
+deploy:
+  bins:
+    - qMRLab
+
+categories:
+  - quantitative imaging
+  - image reconstruction
+
+readme: |-
+  ----------------------------------
+  ## qmrlab/{{ context.version }} ##
+
+  qMRLab is an open-source software for quantitative MR image analysis.
+
+  Documentation: http://qmrlab.readthedocs.io/
+  Project: https://github.com/qMRLab/qMRLab
+
+  License: MIT License
+
+  ----------------------------------
+
+files:
+  - name: qmrlab_archive
+    url: https://github.com/qMRLab/qMRLab/archive/v2.4.2.tar.gz
+  - name: octave_image
+    url: https://downloads.sourceforge.net/project/octave/Octave%20Forge%20Packages/Individual%20Package%20Releases/image-2.14.0.tar.gz
+  - name: octave_io
+    url: https://downloads.sourceforge.net/project/octave/Octave%20Forge%20Packages/Individual%20Package%20Releases/io-2.6.0.tar.gz
+  - name: octave_struct
+    url: https://downloads.sourceforge.net/project/octave/Octave%20Forge%20Packages/Individual%20Package%20Releases/struct-1.0.18.tar.gz
+  - name: octave_statistics
+    url: https://github.com/gnu-octave/statistics/archive/refs/tags/release-1.6.7.tar.gz
+  - name: octave_optim
+    url: https://downloads.sourceforge.net/project/octave/Octave%20Forge%20Packages/Individual%20Package%20Releases/optim-1.6.2.tar.gz
