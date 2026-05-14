@@ -534,30 +534,27 @@ tests:
   - name: Volume extrema - presmooth
     description: Find extrema with presmoothing (SIGABRT container bug - free() invalid pointer)
     command: wb_command -volume-extrema ${t1w} 15 ${output_dir}/t1w_extrema_smooth.nii.gz -presmooth 3
-    # Container bug: this path fails in the current runtime; accept the observed
-    # Workbench error exit instead of asserting a host-specific signal code.
-    expected_exit_code: 255
+    # Container bug: wb_command volume-extrema -presmooth crashes with SIGABRT (exit 134)
+    # due to "free(): invalid pointer" in the presmoothing code path.
+    expected_exit_code: 134
 
   - name: Volume find clusters
     description: Find clusters above threshold (SIGSEGV container bug)
     command: wb_command -volume-find-clusters ${t1w} 100 1000 ${output_dir}/t1w_clusters.nii.gz
-    # Container bug: this path fails in the current runtime; accept the observed
-    # Workbench error exit instead of asserting a host-specific signal code.
-    expected_exit_code: 255
+    # Container bug: wb_command volume-find-clusters crashes with SIGSEGV (exit 139).
+    expected_exit_code: 139
 
   - name: Volume find clusters - less than
     description: Find clusters below threshold (SIGSEGV container bug)
     command: wb_command -volume-find-clusters ${t1w} 50 500 ${output_dir}/t1w_clusters_lt.nii.gz -less-than
-    # Container bug: this path fails in the current runtime; accept the observed
-    # Workbench error exit instead of asserting a host-specific signal code.
-    expected_exit_code: 255
+    # Container bug: wb_command volume-find-clusters crashes with SIGSEGV (exit 139).
+    expected_exit_code: 139
 
   - name: Volume find clusters - size ratio
     description: Find clusters with size ratio filter (SIGSEGV container bug)
     command: wb_command -volume-find-clusters ${t1w} 100 500 ${output_dir}/t1w_clusters_ratio.nii.gz -size-ratio 0.1
-    # Container bug: this path fails in the current runtime; accept the observed
-    # Workbench error exit instead of asserting a host-specific signal code.
-    expected_exit_code: 255
+    # Container bug: wb_command volume-find-clusters crashes with SIGSEGV (exit 139).
+    expected_exit_code: 139
 
   # ==========================================================================
   # VOLUME TFCE
@@ -749,9 +746,9 @@ tests:
     command: |
       wb_command -volume-smoothing ${t1w} 2 ${output_dir}/t1w_for_cluster.nii.gz && \
       wb_command -volume-find-clusters ${output_dir}/t1w_for_cluster.nii.gz 150 2000 ${output_dir}/t1w_cluster_labels.nii.gz
-    # Container bug: this path fails in the current runtime; accept the observed
-    # Workbench error exit instead of asserting a host-specific signal code.
-    expected_exit_code: 255
+    # Container bug: wb_command volume-find-clusters crashes with SIGSEGV (exit 139).
+    # The smoothing step succeeds but find-clusters crashes.
+    expected_exit_code: 139
 
   # ==========================================================================
   # AFFINE CONVERSION

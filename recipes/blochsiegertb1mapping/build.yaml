@@ -1,0 +1,73 @@
+name: blochsiegertb1mapping
+version: 1.0.0
+architectures:
+  - x86_64
+
+copyright:
+  - license: MIT
+    url: https://opensource.org/license/mit/
+
+files:
+  - name: blochsiegertb1mapping.py
+    filename: blochsiegertb1mapping.py
+  - name: dicom2mrd.py
+    filename: dicom2mrd.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
+  - name: blochsiegertb1mapping
+    contents: |-
+      #!/usr/bin/env bash
+      printf 'blochsiegertb1mapping {{ context.version }}\n'
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install: bzip2 ca-certificates git build-essential python3-pip python-is-python3
+
+    - include: macros/openrecon/neurodocker.yaml
+
+    - copy: blochsiegertb1mapping.py /opt/code/python-ismrmrd-server/blochsiegertb1mapping.py
+    - copy: dicom2mrd.py /opt/code/python-ismrmrd-server/dicom2mrd.py
+    - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
+    - run:
+        - install -m 0755 {{ get_file("blochsiegertb1mapping") }} /usr/local/bin/blochsiegertb1mapping
+        - mkdir -p /tmp/share/debug
+        - chmod 1777 /tmp/share /tmp/share/debug
+
+deploy:
+  bins:
+    - blochsiegertb1mapping
+
+categories:
+  - image reconstruction
+
+readme: |-
+  ----------------------------------
+  ## blochsiegertb1mapping/{{ context.version }} ##
+
+  OpenRecon Bloch-Siegert B1 mapping from reconstructed magnitude and phase
+  image messages. The runtime implements the workflow from
+  `ProcessBSS7T_OpenRecon.m`: detects 1Tx versus 8Tx from the frame count,
+  builds the magnitude mask, converts phase counts to radians, computes BSp,
+  measured B1, corrected phase, and B0, then sends selected maps as explicit
+  MRD volume images.
+
+  Default outputs are B1, BSp, PHSc, and B0 maps. Enable `sendmask` to also
+  return the computed QC mask. The default phase scaling is the MATLAB DICOM
+  conversion `phase * 2*pi/4096 - pi`; adjust `phasewrap` only if the incoming
+  phase images use a different scale.
+
+  OpenRecon runtime notes: `recipes/blochsiegertb1mapping/OpenReconREADME.md`.
+
+  Build and validate:
+  ```bash
+  python -m builder test blochsiegertb1mapping --recreate --build --architecture x86_64
+  ```
+  ----------------------------------

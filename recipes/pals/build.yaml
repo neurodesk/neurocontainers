@@ -1,0 +1,141 @@
+name: pals
+version: 2.0.1
+
+copyright:
+  - license: custom
+    url: https://github.com/npnl/PALS
+
+architectures:
+  - x86_64
+
+readme: |
+  ## PALS - Pipeline for Analyzing Lesions After Stroke {{ context.version }}
+
+  PALS is a flexible, scalable toolbox for image processing and quality analysis
+  of stroke lesion MRI data. It is the preprocessing pipeline associated with the
+  ATLAS v2.0 dataset (Liew et al., 2022, *Scientific Data*).
+
+  ### Pipeline steps
+
+  1. Reorientation to MNI standard space (FSL `fslreorient2std`)
+  2. Intensity inhomogeneity correction (ANTs `N4BiasFieldCorrection`)
+  3. Brain extraction (FSL `BET`)
+  4. Registration to MNI152 template (FSL `FLIRT`)
+  5. Lesion load calculation (overlap with atlas ROIs)
+  6. Quality-check GIF generation
+
+  ### Inputs
+
+  - T1-weighted MRI (NIfTI format)
+  - Stroke lesion segmentation mask (NIfTI format)
+
+  ### Usage
+
+  **Command-line (single scan):**
+  ```bash
+  python /opt/pals-{{ context.version }}/run_pals.py \
+      -s SESSION_ID \
+      -i /path/to/T1.nii.gz \
+      -l /path/to/lesion_mask.nii.gz \
+      -o /path/to/output_dir
+  ```
+
+  **Configuration file:**
+  ```bash
+  python /opt/pals-{{ context.version }}/run_pals.py -c /path/to/config.json
+  ```
+
+  **Before first use** — edit `/opt/pals-{{ context.version }}/presets.json` to set
+  `ants_path`, `fsl_path`, `rois_path`, and `template_directory`. Inside this
+  container these resolve to:
+  - `ants_path`: `/opt/ants-2.4.3/bin`
+  - `fsl_path`: `/opt/fsl-6.0.7.1/bin`
+  - `rois_path`: `/opt/pals-{{ context.version }}/ROIs`
+  - `template_directory`: `/opt/pals-{{ context.version }}/templates`
+
+  ### Citations
+
+  If you use PALS please cite:
+  - Liew S-L et al. (2022). A large, curated, open-source stroke neuroimaging
+    dataset to improve lesion segmentation algorithms. *Scientific Data*, 9, 320.
+    https://doi.org/10.1038/s41597-022-01401-7
+  - Ngo D et al. (2018). PALS: Pipeline for Analyzing Lesions after Stroke.
+    *Frontiers in Neuroinformatics*, 12, 63.
+    https://doi.org/10.3389/fninf.2018.00063
+
+  ### More information
+
+  https://github.com/npnl/PALS
+
+files:
+  - name: presets.json
+    contents: |
+      {
+          "ants_path": "/opt/ants-2.4.3/bin",
+          "fsl_path": "/opt/fsl-6.0.7.1/bin",
+          "rois_path": "/opt/pals-2.0.1/ROIs",
+          "template_directory": "/opt/pals-2.0.1/templates"
+      }
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - git
+        - wget
+        - curl
+        - bc
+        - dc
+        - libgomp1
+
+    # ── FSL 6.0.7.1 ─────────────────────────────────────────────────────────
+    - template:
+        name: fsl
+        version: 6.0.7.1
+
+    # ── ANTs 2.4.3 (pre-built binaries) ─────────────────────────────────────
+    - template:
+        name: ants
+        version: 2.4.3
+        method: binaries
+
+    # ── Miniconda + Python packages ──────────────────────────────────────────
+    - template:
+        name: miniconda
+        version: py310_23.3.1-0
+        install_path: /opt/miniconda
+        mamba: true
+
+    # ── PALS v2.0.1 ──────────────────────────────────────────────────────────
+    - run:
+        - /opt/miniconda/bin/pip install --no-cache-dir 'matplotlib>=3.5' 'nibabel>=3.2' 'numpy>=1.21' 'scipy>=1.7' 'pandas>=1.3' 'Pillow>=8.0'
+        - git clone --depth 1 --branch main https://github.com/npnl/PALS /opt/pals-2.0.1
+        - /opt/miniconda/bin/pip install --no-cache-dir -r /opt/pals-2.0.1/requirements.txt
+
+    # Copy pre-populated presets.json so PALS finds ANTs/FSL paths immediately
+    - copy:
+      - presets.json
+      - /opt/pals-2.0.1/presets.json
+
+    - environment:
+        PALS_DIR: /opt/pals-2.0.1
+        PATH: /opt/pals-2.0.1:/opt/fsl-6.0.7.1/bin:/opt/ants-2.4.3/bin:/opt/miniconda/bin:$PATH
+
+deploy:
+  path:
+    - /opt/pals-2.0.1
+    - /opt/ants-2.4.3/bin
+    - /opt/fsl-6.0.7.1/bin
+    - /opt/miniconda/bin
+  bins:
+    - python
+categories:
+  - image segmentation
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAErklEQVR4AWxUb0idVRj/ndc7vYqFpDVLmqZFf/yQtchGWsI2RJcM3acao7IPEQttaElCg6APVjNprT/LFAb9gUDI0A9+KBWDai6wWtaKaNO5Zpq63Yvertf36fmdc1+vlof39z6/c57z/D3nfb1oT5ZEPsiSq91ZcuX9LFk6mWmx+F6mLLybKX+/E5b5t8Myd8Lhr7fCMns8LJffzLC41JUhxMwb6XKxM12mj6XL1OvpcuG1bRaeiAFAIDkMuCaSnFqd03ONCDQBpyRg9yI5aGOgAUQdElBJkBPkgO+TE9hSL+rZgXrZsN9xDzp0jzVWui7/yzkPIFq1JCsU5UhmLnbNZY7k8FIZuojMxvexIRNyQjS46DqsXNPKFqKCxBrXHGhL0CdBrhVs1fNkeBUuKyX6BJwyGjP48mcfS8uqsI/LnDo71apEq9t0Bsyo5ZM48g6v4PpnYxbbm2IoeT6Gtk8T+OZ3H7G44MeLPhpOxNH0cQK7j8Ux9qsPVhRkLdoqZk9oABePbyqgypGREdsGbiCurvh4secnHD9bgY++9fHdecGjz7xs9/R8+BnO6HxllR4IdoRtJIe7RYxMiHpX//A8D5FIBKWlpRZ1dXUoKipCb28v+s6s4QttTWNjow1QXV2Nr7Wy2SVfz0csmBTBs7RnAO0XdNgKVPJZXV3F5OSkxeDgIPr7+1FYWIiZRQ+LacUoKChAR0cHwuEwcu+sxblZaJsMTTUwK3B8wy1SHdMnlHpaRW5uLvLy8tDQ0ICamhpMTU0hoWkdeeEoYrEY2tvbsby8jNbWVoz/IYjEJOmcAcgFnvra8snJycH8/Dzm5ubQ19dnHTU3NyOkFvX19RgaGrJ2w8PDqKiowPgFg0tLdGqX7YsdsYesSSV7x8hWh2g0iqqqKgueRX5+Pk6PfI67y3cjOzsbdXou8XgctbW1CIVC2LnnEM7OCOIJsb7ocz2Ac5lyzjmNR0dHURAbw96bzqF9XwjlxWZTW9ra2tDS0mKra2pqwvh54MoKrVPQCkT7RrgAyta1u0o8PF3l4cheT50Dv1z2UFlZiYGBAXR1da2D7SorK8MPf6ZjakG0AvqiTJ6B6BcnycOF3iif9SEYBvE1g4kpQeUjT9p28Pa8esDD90dDeGW/ZwMZY7D/4GFMTAP/JGhr9GWgt8hFc/dWo2ikKu09b5Dwu9D5fMTHV7/56O7uhjEG8dkJ3HUjkBEC7sgHpifH7HpnZydO622a13+Ur/8q+tQ7wQAO4W0GB+5Lw6mnQjjVGMJze9KQk2nUGDj0QBp6nwih5/E0vLTPw47rPHgGKM4ztoqTBz0Qj90PpFmvzuemM8gICe65Gai63eBhRfktBteGBduvAR68FXjoNsLg3h0GYd3LDDO3ATt1Xqn6ihJgl9rckE3nWr9WrwEMAIKL0EFOKLWP0UtA2IlyJ/lWe4oNcHZcFz1XqF8NIHrqDsyIYP+IgFMSPHsnud8ltHnOddEkHOgj2S3oYPRUptDoLovAEfX43xC9F8FiwCkJrustctGCTCipdJK6IAA5kZozQ7eXa9QR5AS5/Q6YGcF4hKuChpwFMuCpOW0IOiPICe4k6MfgXwAAAP//MuRVzgAAAAZJREFUAwC5uHHiZXUONQAAAABJRU5ErkJggg==

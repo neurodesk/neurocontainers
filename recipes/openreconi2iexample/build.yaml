@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.19
+version: 1.0.37
 architectures:
   - x86_64
 
@@ -34,6 +34,8 @@ build:
     - copy: openreconi2iexample.py /opt/code/python-ismrmrd-server/openreconi2iexample.py
     - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
     - run:
+        - pip install pillow==10.4.0
+        - python -c "from PIL import Image, ImageDraw, ImageFont"
         - install -m 0755 {{ get_file("openreconi2iexample") }} /usr/local/bin/openreconi2iexample
         - mkdir -p /tmp/share/debug
         - chmod 1777 /tmp/share /tmp/share/debug
@@ -51,20 +53,42 @@ readme: |-
 
   Minimal OpenRecon image-to-image reference. Receives reconstructed MRD
   image messages and sends no output by default. Enable `sendoriginal` to
-  re-emit the original scan as `<source>-original` on `image_series_index = 100`.
+  pass the original 2D image stream through on `image_series_index = 100`.
   Enable `invert` to return inverted magnitude images as `<source>-inverted` on
   `image_series_index = 99`. Enable `segment` to extract the brightest foreground
-  object and send `<source>-segment` on `image_series_index = 101`. Enable
-  `segmentationcolormap` with `segment` to add `MicroDeltaHotMetal.pal` LUT
-  metadata to segmentation outputs. Enable `upsampled` to send a
-  double-slice-count `<source>-upsampled` image series on `image_series_index =
-  102`. Enable `mip` to send one `<source>-mip` maximum intensity projection
-  image on `image_series_index = 103`.
+  object and send explicit-volume `<source>-segment` output(s) starting on
+  `image_series_index = 101`. Multi-contrast inputs with repeated slice
+  positions are split into one segmentation volume per source volume group.
+  Enable `segmentationcolormap` with `segment` to add `MicroDeltaHotMetal.pal`
+  LUT metadata to segmentation outputs. Enable
+  `upsampled` to send one double-slice-count `<source>-upsampled` volume on
+  `image_series_index = 102`. Enable `mip` to send one `<source>-mip` maximum
+  intensity projection image on `image_series_index = 103`. Enable
+  `sendmetrics` to send segmented-region volume in image comments and a
+  `<source>-metrics` DICOM image table on `image_series_index = 120`.
+
+  Original copies are sent first as source-native 2D images with
+  `Keep_image_geometry = 1`. The pass-through keeps the source protocol,
+  sequence, image-type, MiniHead, slice, and partition metadata as intact as
+  possible while assigning new returned-series UIDs. If the incoming MRD
+  `image_index` is zero, the returned copy uses a one-based per-series
+  `image_index`, and missing MiniHead storage counters are filled from source
+  metadata or the source slice number. If a source group cannot be sent safely
+  as a 2D stream, the job fails before send rather than packing the originals,
+  because scanner MIP/MPR postprocessing depends on the original stream.
+  Segmentation outputs are packed into explicit volume images with
+  `Keep_image_geometry = 0`. Derived outputs strip scalar scanner
+  `ImageTypeValue3` metadata and `IceMiniHead` string `ImageTypeValue3` because
+  some sequences reject that protocol field during OpenRecon conversion.
+  Original pass-through keeps source image-type metadata as intact as possible
+  but normalizes returned `ImageTypeValue3` values to `M` when that classifier
+  field exists, because Siemens fat-fraction source images can advertise `MAP`
+  there and the OpenRecon return converter treats that as an unknown image type.
 
   OpenRecon runtime notes: `recipes/openreconi2iexample/OpenReconREADME.md`.
 
   Build and validate:
   ```bash
-  python builder/build.py generate openreconi2iexample --recreate --build --test --architecture x86_64
+  python -m builder test openreconi2iexample --recreate --build --architecture x86_64
   ```
   ----------------------------------

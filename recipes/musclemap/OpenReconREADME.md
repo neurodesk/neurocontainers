@@ -24,11 +24,26 @@ https://doi.org/10.3390/jimaging10110262
 
 | ID | Label | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `sendoriginal` | Send original images | boolean | `true` | Send a copy of original unmodified images back too |
+| `sendoriginal` | Send original images | boolean | `true` | Return source-native 2D original images before the MuscleMap-derived outputs, with fresh scanner storage identity |
 | `labeltransform` | Scale labels to lower integer range for DICOM 12BIT | boolean | `true` | Applying label transformation: 3 * (label_in // 10) + (label_in % 10) |
 | `bodyregion` | Body Region | choice | `wholebody, abdomen, pelvis, thigh, leg` | Select the body region for segmentation |
 | `chunksize` | Chunk Size | string | `100` | Chunk size between 5 and 200 - change for memory optimization on GPU |
 | `spatialoverlap` | Spatial Overlap | int | `50` | Spatial overlap percentage |
+
+# Scanner output handling
+
+MuscleMap buffers the incoming image stream before returning anything to the
+scanner. When `sendoriginal` is enabled, all received source images are returned
+first as source-native 2D passthrough images: source protocol, sequence,
+image-type, slice, and numbering fields are preserved while series/storage UIDs
+are refreshed. If `sendoriginal` is disabled, non-processed input images are
+still returned with the same source-native passthrough handling.
+
+MuscleMap segmentation and optional metrics report images are sent after the
+source passthrough stream as derived outputs with fresh series identity, fresh
+SOP identity, `SequenceDescriptionAdditional = openrecon`, and
+`Keep_image_geometry = 0` so scanner-side post-processing remains attached to
+the original stream rather than the derived overlays.
 
 # Labels
 

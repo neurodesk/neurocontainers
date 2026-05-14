@@ -4,8 +4,8 @@
 # This container includes:
 #   - batchheudiconv scripts: bh01_prep_dir.sh, bh02_sort_dicom.sh, bh03_make_subjlist.sh,
 #     bh04_make_heuristic.sh, bh05_make_bids.sh and associated Python utilities
-#   - heudiconv v1.3.3: DICOM to BIDS converter
-#   - dcm2niix v1.0.20250505: DICOM to NIfTI converter
+#   - heudiconv v1.3.1: DICOM to BIDS converter
+#   - dcm2niix v1.0.20220720: DICOM to NIfTI converter
 #   - nibabel v5.3.2 utilities: nib-ls, nib-diff, nib-stats, nib-roi, nib-conform, nib-convert, nib-nifti-dx
 #   - pydicom v3.0.1: DICOM file inspection and manipulation
 #   - Python 3.10.12
@@ -114,17 +114,17 @@ tests:
   # ==========================================================================
   - name: bh_fix_intendedfor.py help
     description: Display help for IntendedFor fix utility
-    command: "bash -lc 'python3 /opt/batch-heudiconv/bh_fix_intendedfor.py --help 2>&1'"
+    command: python3 /opt/batch-heudiconv/bh_fix_intendedfor.py --help 2>&1
     expected_output_contains: "Fix IntendedFor field"
 
   - name: bh_dcm_sort_dir.py exists
     description: Verify DICOM sorting Python script exists
-    command: "bash -lc 'ls -la /opt/batch-heudiconv/bh_dcm_sort_dir.py'"
+    command: ls -la /opt/batch-heudiconv/bh_dcm_sort_dir.py
     expected_output_contains: "bh_dcm_sort_dir.py"
 
   - name: bh_reorganize_fieldmaps.py exists
     description: Verify fieldmap reorganization script exists
-    command: "bash -lc 'ls -la /opt/batch-heudiconv/bh_reorganize_fieldmaps.py'"
+    command: ls -la /opt/batch-heudiconv/bh_reorganize_fieldmaps.py
     expected_output_contains: "bh_reorganize_fieldmaps.py"
 
   # ==========================================================================
@@ -132,17 +132,17 @@ tests:
   # ==========================================================================
   - name: List heuristic templates
     description: List available heuristic template files
-    command: "bash -lc 'ls /opt/batch-heudiconv/code/'"
+    command: ls /opt/batch-heudiconv/code/
     expected_output_contains: "heuristic_template.py"
 
   - name: Verify heuristic template content
     description: Check that heuristic template contains proper BIDS keys
-    command: "bash -lc 'cat /opt/batch-heudiconv/code/heuristic_template.py | head -50'"
+    command: cat /opt/batch-heudiconv/code/heuristic_template.py | head -50
     expected_output_contains: "create_key"
 
   - name: Verify HARP heuristic
     description: Check HARP-specific heuristic file
-    command: "bash -lc 'ls /opt/batch-heudiconv/code/heuristic_HARP.py'"
+    command: ls /opt/batch-heudiconv/code/heuristic_HARP.py
     expected_output_contains: "heuristic_HARP.py"
 
   # ==========================================================================
@@ -151,7 +151,7 @@ tests:
   - name: Heudiconv version check
     description: Verify heudiconv binary runs and reports version
     command: heudiconv --version
-    expected_output_contains: "1.3.3"
+    expected_output_contains: "1.3.1"
 
   - name: Heudiconv help
     description: Display heudiconv help message
@@ -193,7 +193,7 @@ tests:
     description: Verify dcm2niix binary runs and reports version
     command: dcm2niix --version 2>&1
     expected_exit_code: 3  # dcm2niix exits with 3 for --version
-    expected_output_contains: "v1.0.20250505"
+    expected_output_contains: "v1.0.20220720"
 
   - name: dcm2niix help
     description: Display dcm2niix help message
@@ -702,7 +702,7 @@ tests:
   - name: Check dcm2niix installation
     description: Verify dcm2niix is properly installed
     command: which dcm2niix
-    expected_output_contains: "/usr/local/bin/dcm2niix"
+    expected_output_contains: "/usr/bin/dcm2niix"
 
   - name: Check heudiconv installation
     description: Verify heudiconv is properly installed
@@ -711,7 +711,7 @@ tests:
 
   - name: List all batch-heudiconv scripts
     description: List all available batch-heudiconv scripts
-    command: bash -lc 'ls -la /opt/batch-heudiconv/*.sh'
+    command: ls -la /opt/batch-heudiconv/*.sh
     expected_output_contains: "bh01_prep_dir.sh"
 
 cleanup:

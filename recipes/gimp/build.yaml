@@ -3,6 +3,7 @@ version: "2.10.18"
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker

@@ -1,0 +1,107 @@
+{
+  "general": {
+    "name": { "en": "blochsiegertb1mapping" },
+    "version": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+    "vendor": "neurodesk",
+    "information": { "en": "Bloch-Siegert B1 mapping from reconstructed magnitude and phase images" },
+    "id": "blochsiegertb1mapping",
+    "regulatory_information": {
+      "device_trade_name": "blochsiegertb1mapping",
+      "production_identifier": "VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "manufacturer_address": "Erlangen, Germany",
+      "made_in": "DE",
+      "manufacture_date": "2026/05/13",
+      "material_number": "blochsiegertb1mapping_VERSION_WILL_BE_REPLACED_BY_SCRIPT",
+      "gtin": "00860000171212",
+      "udi": "(01)00860000171212(21)1.0.0",
+      "safety_advices": "",
+      "special_operating_instructions": "OpenRecon Bloch-Siegert B1 mapping",
+      "additional_relevant_information": ""
+    }
+  },
+  "reconstruction": {
+    "transfer_protocol": {
+      "protocol": "ISMRMRD",
+      "version": "1.4.1"
+    },
+    "port": 9002,
+    "emitter": "image",
+    "injector": "image",
+    "can_process_adjustment_data": false,
+    "can_use_gpu": false,
+    "min_count_required_gpus": 0,
+    "min_required_gpu_memory": 0,
+    "min_required_memory": 4096,
+    "min_count_required_cpu_cores": 4,
+    "content_qualification_type": "RESEARCH"
+  },
+  "parameters": [
+    {
+      "id": "config",
+      "label": { "en": "config" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "blochsiegertb1mapping",
+          "name": { "en": "blochsiegertb1mapping" }
+        }
+      ],
+      "default": "blochsiegertb1mapping",
+      "information": { "en": "Define the config to be executed by MRD server" }
+    },
+    {
+      "id": "sendb1",
+      "label": { "en": "Send B1 map" },
+      "type": "boolean",
+      "information": { "en": "Send measured Bloch-Siegert B1 map output in uT" },
+      "default": true
+    },
+    {
+      "id": "sendbsp",
+      "label": { "en": "Send BS phase" },
+      "type": "boolean",
+      "information": { "en": "Send Bloch-Siegert phase difference map output in radians" },
+      "default": true
+    },
+    {
+      "id": "sendphsc",
+      "label": { "en": "Send corrected phase" },
+      "type": "boolean",
+      "information": { "en": "Send phase-corrected residual phase frames in radians" },
+      "default": true
+    },
+    {
+      "id": "sendb0",
+      "label": { "en": "Send B0 map" },
+      "type": "boolean",
+      "information": { "en": "Send B0 phase-difference map output in Hz" },
+      "default": true
+    },
+    {
+      "id": "sendmask",
+      "label": { "en": "Send mask" },
+      "type": "boolean",
+      "information": { "en": "Send the magnitude-threshold mask used by the MATLAB workflow for visual QC" },
+      "default": false
+    },
+    {
+      "id": "bspulsewidthms",
+      "label": { "en": "BS pulse width" },
+      "type": "double",
+      "information": { "en": "Bloch-Siegert pulse width used for KBS = 0.044 * pulse_width / 6" },
+      "minimum": 0.1,
+      "maximum": 100.0,
+      "default": 10.0,
+      "unit": { "en": "ms" }
+    },
+    {
+      "id": "phasewrap",
+      "label": { "en": "Phase wrap" },
+      "type": "double",
+      "information": { "en": "Raw phase scaling denominator; 4096 matches the source MATLAB DICOM phase conversion. Set 0 only when incoming phase images are already radians." },
+      "minimum": 0.0,
+      "maximum": 65536.0,
+      "default": 4096.0
+    }
+  ]
+}

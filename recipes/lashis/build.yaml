@@ -1,0 +1,118 @@
+name: lashis
+version: 2.0.0
+
+copyright:
+  - license: GPL-3.0-or-later
+    url: https://github.com/thomshaw92/LASHiS/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - ca-certificates
+        - curl
+        - git
+        - python3
+        - python3-pip
+        - unzip
+
+    # ANTs ≥ 2.5.x is required for antsJointLabelFusion + AMTC2.
+    - template:
+        name: ants
+        version: "2.6.2"
+        method: binaries
+
+    # FSL is consumed by ASHS internally (fslmaths, fslmerge, etc.).
+    - template:
+        name: fsl
+        version: "6.0.7.16"
+
+    # c3d (Convert3D) is used by both ASHS and the LASHiS stats node.
+    - template:
+        name: convert3d
+        version: "1.0.0"
+
+    # ASHS itself. The release tarball includes ext/Linux/bin/ with the
+    # NLMDenoise / ants_1042 / cmrep_vskel binaries ASHS shells out to,
+    # so no extra build steps are needed here.
+    - run:
+        - git clone --depth 1 --branch v2.0.0 https://github.com/pyushkevich/ashs.git /opt/ashs
+
+    - environment:
+        ASHS_ROOT: /opt/ashs
+        PATH: /opt/ashs/bin:$PATH
+
+    # The LASHiS Python package, pinned to the same version as this recipe.
+    - run:
+        - python3 -m pip install --no-cache-dir
+            "lashis @ git+https://github.com/thomshaw92/LASHiS.git@v{{ context.version }}"
+
+    - user: neuro
+
+deploy:
+  bins:
+    - lashis
+  path:
+    - /opt/ashs/bin
+
+categories:
+  - "image segmentation"
+  - "structural imaging"
+  - "hippocampus"
+
+readme: |
+  ----------------------------------
+  ## lashis/{{ context.version }} ##
+
+  Longitudinal Automatic Segmentation of Hippocampal Subfields (LASHiS) v2.
+  A Nipype workflow that combines cross-sectional ASHS segmentation per
+  timepoint with a multimodal single-subject template (SST), per-side
+  TSE chunk SSTs, and weighted joint label fusion or majority voting,
+  with optional Jacobian-penalised relabelling.
+
+  Validated on the TOMCAT 7T test–retest dataset
+  (https://osf.io/bt4ez/) — cross-session coefficient of variation is
+  4-7x lower than running cross-sectional ASHS independently per
+  timepoint. See https://github.com/thomshaw92/LASHiS for the
+  reproduction recipe.
+
+  An ASHS atlas (e.g. UMC Utrecht 7T from
+  https://www.nitrc.org/projects/ashs/) is required at runtime via
+  `-a /path/to/ashs_atlas_*` or `$ASHS_ATLAS`. The atlas is not bundled
+  here (license-restricted, registration required).
+
+  Example:
+
+  ```
+  lashis -o /data/out/sub-01 \
+      -a /data/atlas/ashs_atlas_umcutrecht_7t_20170810 \
+      --plugin MultiProc --n-procs 4 \
+      --fusion both --jacobian-penalise \
+      /data/sub-01/ses-01/anat/sub-01_ses-01_T1w.nii.gz \
+      /data/sub-01/ses-01/anat/sub-01_ses-01_acq-tse_desc-template_T2w.nii.gz \
+      /data/sub-01/ses-02/anat/sub-01_ses-02_T1w.nii.gz \
+      /data/sub-01/ses-02/anat/sub-01_ses-02_acq-tse_desc-template_T2w.nii.gz
+  ```
+
+  More documentation: https://github.com/thomshaw92/LASHiS
+
+  To run outside this environment: ml lashis/{{ context.version }}
+
+  Citation:
+  ```
+  Shaw T, Bollmann S, Atcheson NT, Strike L, Guo C, McMahon KL, Ngo GC,
+  et al. LASHiS: Longitudinal Automated Segmentation of Hippocampal
+  Subfields by multi-atlas belief propagation. NeuroImage. 2020;
+  218:116923. https://doi.org/10.1016/j.neuroimage.2020.116923
+  ```
+
+  License: GPL-3.0-or-later,
+  https://github.com/thomshaw92/LASHiS/blob/main/LICENSE
+  ----------------------------------

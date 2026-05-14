@@ -7,6 +7,21 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
+
+variables:
+  conda_install:
+    try:
+      - value: "python=3.8 numpy tensorflow"
+        condition: arch=="x86_64"
+      - value: "python=3.8 numpy pyqt=5.15"
+        condition: arch=="aarch64"
+  pip_install:
+    try:
+      - value: "pyradiomics dafne==1.8a4"
+        condition: arch=="x86_64"
+      - value: "tensorflow==2.13.1 pyradiomics dafne==1.8a4"
+        condition: arch=="aarch64"
 
 build:
   kind: neurodocker
@@ -33,9 +48,9 @@ build:
 
     - template:
         name: miniconda
-        conda_install: "python=3.8 tensorflow "
+        conda_install: "{{ context.conda_install }}"
         mamba: "true"
-        pip_install: pyradiomics dafne==1.8a4
+        pip_install: "{{ context.pip_install }}"
         version: py38_22.11.1-1
 
 deploy:

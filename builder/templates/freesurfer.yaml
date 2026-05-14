@@ -1,0 +1,83 @@
+name: freesurfer
+url: https://surfer.nmr.mgh.harvard.edu/
+binaries:
+  builder: neurodocker
+  arguments:
+    required:
+    - version
+    optional:
+      install_path: /opt/freesurfer-{{ self.version }}
+      exclude_paths: 'average/mult-comp-cor
+
+        lib/cuda
+
+        lib/qt
+
+        subjects/V1_average
+
+        subjects/bert
+
+        subjects/cvs_avg35
+
+        subjects/cvs_avg35_inMNI152
+
+        subjects/fsaverage3
+
+        subjects/fsaverage4
+
+        subjects/fsaverage5
+
+        subjects/fsaverage6
+
+        subjects/fsaverage_sym
+
+        trctrain
+
+        '
+  urls:
+    7.4.1: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/7.4.1/freesurfer-linux-centos7_x86_64-7.4.1.tar.gz
+    7.1.1: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/7.1.1/freesurfer-linux-centos6_x86_64-7.1.1.tar.gz
+  dependencies:
+    apt:
+    - bc
+    - ca-certificates
+    - curl
+    - libgomp1
+    - libxmu6
+    - libxt6
+    - tcsh
+    - perl
+    yum:
+    - bc
+    - curl
+    - libgomp
+    - libXmu
+    - libXt
+    - tcsh
+    - perl
+  directives:
+  - environment:
+      OS: Linux
+      PATH: '{{ self.install_path }}/bin:{{ self.install_path }}/fsfast/bin:{{ self.install_path }}/tktools:{{ self.install_path
+        }}/mni/bin:$PATH'
+      FREESURFER_HOME: '{{ self.install_path }}'
+      FREESURFER: '{{ self.install_path }}'
+      SUBJECTS_DIR: '{{ self.install_path }}/subjects'
+      LOCAL_DIR: '{{ self.install_path }}/local'
+      FSFAST_HOME: '{{ self.install_path }}/fsfast'
+      FMRI_ANALYSIS_DIR: '{{ self.install_path }}/fsfast'
+      FUNCTIONALS_DIR: '{{ self.install_path }}/sessions'
+      FS_OVERRIDE: '0'
+      FIX_VERTEX_AREA: ''
+      FSF_OUTPUT_FORMAT: nii.gz
+      MINC_BIN_DIR: '{{ self.install_path }}/mni/bin'
+      MINC_LIB_DIR: '{{ self.install_path }}/mni/lib'
+      MNI_DIR: '{{ self.install_path }}/mni'
+      MNI_DATAPATH: '{{ self.install_path }}/mni/data'
+      MNI_PERL5LIB: '{{ self.install_path }}/mni/share/perl5'
+      PERL5LIB: '{{ self.install_path }}/mni/share/perl5'
+  - run: "{{ self.install_dependencies() }}\necho \"Downloading FreeSurfer ...\"\nmkdir -p {{ self.install_path }}\ncurl -fL\
+      \ {{ self.urls[self.version] }} \\\n| tar -xz -C {{ self.install_path }} --owner root --group root --no-same-owner --transform='s,freesurfer/,,'\
+      \ {% if self.exclude_paths -%}\\\n{%- for exclude_path in self.exclude_paths.split() %}\n  {% if not loop.last -%}\n\
+      \  --exclude='{{ exclude_path }}' \\\n  {%- else -%}\n  --exclude='{{ exclude_path }}'\n  {%- endif -%}\n{%- endfor\
+      \ %}\n{%- endif %}\n"

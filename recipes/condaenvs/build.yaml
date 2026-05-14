@@ -3,10 +3,11 @@ version: 1.0.1
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
-  base-image: ubuntu:22.04
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
@@ -16,14 +17,14 @@ build:
     - template:
         name: miniconda
         version: latest
-
-    - install:
-        - git
+        env_name: condaenvs
+        env_exists: "false"
 
     - workdir: /opt
 
-    - run:
-        - git clone https://github.com/NeuroDesk/condaenvs
+    - copy:
+        - environments
+        - /opt/condaenvs/environments
 
     - copy:
         - install_all.sh
@@ -57,7 +58,35 @@ readme: |
 files:
   - name: install_all.sh
     contents: |
-      for file in \`ls environments/*-pinned.yml\`; do
-          echo \$file
-          conda env create -f \$file
-      done
+      set -e
+
+      if [ "$(uname -m)" = "aarch64" ]; then
+          for file in \
+              environments/mne-starter.yml \
+              environments/nipype-pinned.yml \
+              environments/pytorch_cpu-starter.yml
+          do
+              echo "$file"
+              if [ "$file" = "environments/mne-starter.yml" ]; then
+                  tmpfile=$(mktemp)
+                  sed '/^[[:space:]]*-[[:space:]]*pyEDFlib[[:space:]]*$/d' "$file" > "$tmpfile"
+                  conda env create --solver libmamba -f "$tmpfile"
+                  rm -f "$tmpfile"
+                  conda run -n mne-eeg-meg python -m ensurepip --upgrade
+                  conda run -n mne-eeg-meg python -m pip install pyEDFlib
+              elif [ "$file" = "environments/nipype-pinned.yml" ]; then
+                  tmpfile=$(mktemp)
+                  sed 's/^[[:space:]]*-[[:space:]]*nipype=1\.7\.0[[:space:]]*$/  - nipype=1.10.0/' "$file" > "$tmpfile"
+                  conda env create --solver libmamba -f "$tmpfile"
+                  rm -f "$tmpfile"
+              else
+                  conda env create --solver libmamba -f "$file"
+              fi
+          done
+      else
+          files=$(ls environments/*-pinned.yml)
+          for file in $files; do
+              echo "$file"
+              conda env create -f "$file"
+          done
+      fi

@@ -1,5 +1,5 @@
 # fmriprep container test suite
-# Tests for fmriprep v25.2.3 - fMRI preprocessing pipeline
+# Tests for fmriprep v25.2.5 - fMRI preprocessing pipeline
 #
 # fMRIPrep is a functional magnetic resonance imaging (fMRI) data preprocessing
 # pipeline designed to provide an easily accessible, state-of-the-art interface
@@ -13,8 +13,8 @@
 # compute resources. This test suite focuses on component tools and quick checks.
 
 name: fmriprep
-version: 25.2.3
-container: fmriprep_25.2.3_20260107.simg
+version: 25.2.5
+container: fmriprep_25.2.5_20260413.simg
 
 required_files:
   - dataset: ds000001
@@ -46,7 +46,7 @@ tests:
   - name: fmriprep version check
     description: Verify fmriprep binary runs and reports version
     command: fmriprep --version 2>&1
-    expected_output_contains: "fMRIPrep v25.2.3"
+    expected_output_contains: "fMRIPrep v25.2.5"
 
   - name: fmriprep help
     description: Verify fmriprep help is accessible
@@ -56,7 +56,7 @@ tests:
   - name: fmriprep BIDS validation skip test
     description: Test fmriprep can parse BIDS dataset with validation skip
     command: fmriprep ${bids_dir} test_output/fmriprep_out participant --participant-label 01 --skip-bids-validation --version 2>&1
-    expected_output_contains: "fMRIPrep v25.2.3"
+    expected_output_contains: "fMRIPrep v25.2.5"
 
   # ==========================================================================
   # ANTs TOOLS - BIAS FIELD CORRECTION

@@ -67,9 +67,12 @@ if [ -z "$NEURODESKTOP_MSG_SHOWN" ] && [ -f '/usr/share/module.sh' ]; then
         fi
 fi
 
-# This also needs to be set in the Dockerfile, so it is available in a jupyter notebook
-export APPTAINER_BINDPATH=/data,/mnt,/neurodesktop-storage,/tmp,/cvmfs
-# This also needs to be set in the Dockerfile, so it is available in a jupyter notebook
+if [ -r /opt/neurodesktop/nested_container_runtime.sh ]; then
+        source /opt/neurodesktop/nested_container_runtime.sh
+else
+        export APPTAINER_BINDPATH="${APPTAINER_BINDPATH:-/data,/mnt,/neurodesktop-storage,/tmp,/cvmfs}"
+        export SINGULARITY_BINDPATH="${SINGULARITY_BINDPATH:-${APPTAINER_BINDPATH}}"
+fi
 
 export APPTAINERENV_SUBJECTS_DIR=${HOME}/freesurfer-subjects-dir
 export MPLCONFIGDIR=${HOME}/.config/matplotlib-mpldir
@@ -288,8 +291,13 @@ case "${NEURODESKTOP_SLURM_MODE}" in
                 ;;
 esac
 
-# This is needed to make containers writable as a workaround for macos with Apple Silicon. We need to do it here for the desktop
-# and in the dockerfile for the jupyter notebook
+# This is needed to make app containers writable as a workaround for macos with Apple Silicon.
+# We need to do it here for the desktop and in the dockerfile for the jupyter notebook.
+#
+# Host note: some setuid Singularity installations reject directory overlays for
+# non-root users. If /tmp/apptainer_overlay fails on a host, use a rootless
+# launch mode, a writable overlay image, or the host-runtime nested container
+# path documented in /opt/neurodesktop/nested_container_runtime.sh.
 export neurodesk_singularity_opts=" --overlay /tmp/apptainer_overlay "
 # export neurodesk_singularity_opts=" -w " THIS DOES NOT WORK FOR SIMG FILES IN OFFLINE MODE
 # There is a small delay in using --overlay in comparison to -w - maybe it would be faster to use a fixed size overlay file instead?

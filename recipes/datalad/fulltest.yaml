@@ -1,0 +1,55 @@
+# datalad container test suite
+# Tests for DataLad CLI on the existing runtime image.
+
+name: datalad
+version: 1.3.1
+container: datalad_1.3.1.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+    git config --global user.email "user@neurodesk.github.io"
+    git config --global user.name "Neurodesk User"
+    if [ -e /tmp/datalad-fulltest-dataset ] || [ -L /tmp/datalad-fulltest-dataset ]; then
+      mv /tmp/datalad-fulltest-dataset "/tmp/datalad-fulltest-dataset.stale.$$" || true
+    fi
+    fresh_dataset_dir="$(mktemp -d /tmp/datalad-fulltest-dataset.XXXXXX)"
+    ln -sfn "${fresh_dataset_dir}" /tmp/datalad-fulltest-dataset
+
+tests:
+  - name: DataLad version check
+    description: Verify the datalad CLI version matches the shipped runtime
+    command: datalad --version
+    expected_output_contains: "datalad 1.1.5"
+
+  - name: DataLad help output
+    description: Verify the main help text renders
+    command: datalad --help 2>&1 | head -20
+    expected_output_contains: "Comprehensive data management solution"
+
+  - name: DataLad create dataset
+    description: Create a new dataset from scratch
+    command: datalad create /tmp/datalad-fulltest-dataset 2>&1
+    expected_output_contains: "create(ok)"
+
+  - name: DataLad save file
+    description: Save a tracked file into the dataset
+    command: |
+      cd /tmp/datalad-fulltest-dataset
+      printf 'hello\n' > note.txt
+      datalad save -m "add note" 2>&1
+    depends_on: DataLad create dataset
+    expected_output_contains: "save(ok)"
+
+  - name: DataLad clean status
+    description: Verify the dataset is clean after saving
+    command: |
+      cd /tmp/datalad-fulltest-dataset
+      datalad status 2>&1
+    depends_on: DataLad save file
+    expected_output_contains: "nothing to save, working tree clean"

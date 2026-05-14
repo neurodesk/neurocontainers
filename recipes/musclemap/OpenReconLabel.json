@@ -53,7 +53,7 @@
       "id": "sendoriginal",
       "label": { "en": "Send original images" },
       "type": "boolean",
-      "information": { "en": "Send a copy of original unmodified images back too" },
+      "information": { "en": "Return source-native 2D original images before the MuscleMap-derived outputs, with fresh scanner storage identity." },
       "default": true
     },
     {

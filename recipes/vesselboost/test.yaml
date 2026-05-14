@@ -3,7 +3,7 @@ tests:
     manual: true
     script: |
       source .venv/bin/activate
-      ./builder/build.py generate vesselboost --recreate --build --login --architecture x86_64 --offline_mode true
+      sf-login vesselboost --architecture x86_64 --offline-mode
 
       # check that the CUDA version is valid for MARS: has to be CUDA 11.x
       python -c "import torch; print(torch.version.cuda)"
@@ -210,7 +210,7 @@ tests:
         output_path = sys.argv[1]
         scenario = sys.argv[2]
         expected_source = "tof_fl3d_tra"
-        expected_derived = "tof_fl3d_tra_vesselboost_segmentation"
+        expected_derived = "tof_fl3d_tra_vesselboost"
         expected_original = f"{expected_source}_original"
         expected_sagittal = f"{expected_derived}_sagittal"
         expected_coronal = f"{expected_derived}_coronal"
@@ -229,6 +229,10 @@ tests:
             if value is None:
                 return ""
             return str(value).strip()
+
+        def get_int(meta_obj, key):
+            text = get_text(meta_obj, key)
+            return int(text) if text else None
 
         dataset = ismrmrd.Dataset(output_path, "dataset")
         image_groups = sorted(
@@ -269,6 +273,7 @@ tests:
                     "last_slice": int(getattr(last_header, "slice", 0)),
                     "image_indices": image_indices,
                     "slice_indices": slice_indices,
+                    "data_role": get_text(meta, "DataRole"),
                     "series_description": get_text(meta, "SeriesDescription"),
                     "sequence_description": get_text(meta, "SequenceDescription"),
                     "sequence_description_additional": get_text(meta, "SequenceDescriptionAdditional"),
@@ -281,6 +286,10 @@ tests:
                     "keep_image_geometry": get_text(meta, "Keep_image_geometry"),
                     "matrix_x": int(header.matrix_size[0]),
                     "matrix_y": int(header.matrix_size[1]),
+                    "matrix_z": int(header.matrix_size[2]),
+                    "slice_count": get_int(meta, "slice_count"),
+                    "number_of_slices": get_int(meta, "NumberOfSlices"),
+                    "images_in_acquisition": get_int(meta, "ImagesInAcquisition"),
                     "pixel_spacing_x": float(header.field_of_view[0]) / float(header.matrix_size[0]),
                     "pixel_spacing_y": float(header.field_of_view[1]) / float(header.matrix_size[1]),
                     "ice_minihead": ice_minihead,
@@ -290,24 +299,8 @@ tests:
 
         if scenario == "default":
             assert len(summaries) == 2, summaries
-            derived, original = summaries
-            assert derived["series_index"] == 2, derived
-            assert derived["series_description"] == expected_derived, derived
-            assert derived["sequence_description"] == expected_derived, derived
-            assert derived["grouping"] == expected_derived, derived
-            assert derived["grouping"] != original["grouping"], summaries
-            assert derived["image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST_SEGMENTATION", derived
-            assert derived["dicom_image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST_SEGMENTATION", derived
-            assert derived["image_type_value4"] == "vesselboost_segmentation", derived
-            assert derived["image_comments"] == "vesselboost_segmentation", derived
-            assert derived["image_comment"] == "vesselboost_segmentation", derived
-            assert derived["image_index"] == 0, derived
-            assert derived["last_image_index"] == derived["image_count"] - 1, derived
-            assert derived["last_slice"] == derived["image_count"] - 1, derived
-            assert expected_derived in derived["ice_minihead"], derived["ice_minihead"]
-            assert "SequenceDescription" in derived["ice_minihead"], derived["ice_minihead"]
-            assert "SeriesNumberRangeNameUID" in derived["ice_minihead"], derived["ice_minihead"]
-            assert original["series_index"] == 3, original
+            original, derived = summaries
+            assert original["series_index"] == 2, original
             assert original["series_description"] == expected_original, original
             assert original["sequence_description"] == expected_original, original
             assert original["grouping"] == expected_original, original
@@ -316,11 +309,32 @@ tests:
             assert original["image_type_value4"] == "original", original
             assert original["image_comments"] == "original", original
             assert original["image_comment"] == "original", original
+            assert original["sequence_description_additional"] == "OR", original
+            assert original["keep_image_geometry"] == "1", original
             assert expected_original in original["ice_minihead"], original["ice_minihead"]
             assert original["grouping"] != expected_source, original
-            assert original["image_index"] == 0, original
-            assert original["last_image_index"] == original["image_count"] - 1, original
+            assert original["image_index"] == 1, original
+            assert original["last_image_index"] == original["image_count"], original
             assert original["last_slice"] == original["image_count"] - 1, original
+            assert derived["series_index"] == 3, derived
+            assert derived["series_description"] == expected_derived, derived
+            assert derived["sequence_description"] == expected_derived, derived
+            assert derived["grouping"] == expected_derived, derived
+            assert derived["grouping"] != original["grouping"], summaries
+            assert derived["data_role"] == "Segmentation", derived
+            assert derived["image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST", derived
+            assert derived["dicom_image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\VESSELBOOST", derived
+            assert derived["image_type_value4"] == "vesselboost", derived
+            assert derived["image_comments"] == "vesselboost", derived
+            assert derived["image_comment"] == "vesselboost", derived
+            assert derived["sequence_description_additional"] == "OR", derived
+            assert derived["keep_image_geometry"] == "0", derived
+            assert not derived["ice_minihead"], derived
+            assert derived["image_count"] == 1, derived
+            assert derived["matrix_z"] == original["image_count"], summaries
+            assert derived["image_index"] == 1, derived
+            assert derived["last_image_index"] == 1, derived
+            assert derived["last_slice"] == 0, derived
         elif scenario == "sendoriginal_false":
             assert len(summaries) == 1, summaries
             derived = summaries[0]
@@ -328,41 +342,55 @@ tests:
             assert derived["series_description"] == expected_derived, derived
             assert derived["sequence_description"] == expected_derived, derived
             assert derived["grouping"] == expected_derived, derived
-            assert derived["image_type_value4"] == "vesselboost_segmentation", derived
-            assert derived["image_index"] == 0, derived
-            assert derived["last_image_index"] == derived["image_count"] - 1, derived
-            assert derived["last_slice"] == derived["image_count"] - 1, derived
+            assert derived["data_role"] == "Segmentation", derived
+            assert derived["image_type_value4"] == "vesselboost", derived
+            assert derived["keep_image_geometry"] == "0", derived
+            assert not derived["ice_minihead"], derived
+            assert derived["image_count"] == 1, derived
+            assert derived["image_index"] == 1, derived
+            assert derived["last_image_index"] == 1, derived
+            assert derived["last_slice"] == 0, derived
         elif scenario == "reslice":
             assert len(summaries) == 4, summaries
             assert [summary["series_index"] for summary in summaries] == [2, 3, 4, 5], summaries
             assert [summary["series_description"] for summary in summaries] == [
+                expected_original,
                 expected_derived,
                 expected_sagittal,
                 expected_coronal,
-                expected_original,
             ], summaries
             assert [summary["grouping"] for summary in summaries] == [
+                expected_original,
                 expected_derived,
                 expected_sagittal,
                 expected_coronal,
-                expected_original,
             ], summaries
-            derived = summaries[0]
-            sagittal = summaries[1]
-            coronal = summaries[2]
-            original = summaries[3]
-            assert derived["image_index"] == 0, derived
-            assert derived["last_image_index"] == derived["image_count"] - 1, derived
-            assert derived["last_slice"] == derived["image_count"] - 1, derived
+            original = summaries[0]
+            derived = summaries[1]
+            sagittal = summaries[2]
+            coronal = summaries[3]
+            assert derived["data_role"] == "Segmentation", derived
+            assert derived["image_index"] == 1, derived
+            assert derived["last_image_index"] == 1, derived
+            assert derived["last_slice"] == 0, derived
+            assert derived["keep_image_geometry"] == "0", derived
+            assert not derived["ice_minihead"], derived
             assert original["image_type_value4"] == "original", original
+            assert original["keep_image_geometry"] == "1", original
             assert expected_original in original["ice_minihead"], original["ice_minihead"]
             for reformat in (sagittal, coronal):
-                assert reformat["image_indices"] == list(range(reformat["image_count"])), reformat
-                assert reformat["slice_indices"] == list(range(reformat["image_count"])), reformat
+                assert reformat["data_role"] == "Segmentation", reformat
+                assert reformat["image_count"] == 1, reformat
+                assert reformat["image_indices"] == [1], reformat
+                assert reformat["slice_indices"] == [0], reformat
                 assert reformat["first_slice"] == 0, reformat
-                assert reformat["last_slice"] == reformat["image_count"] - 1, reformat
-            assert sagittal["sequence_description_additional"] == "", sagittal
-            assert coronal["sequence_description_additional"] == "", coronal
+                assert reformat["last_slice"] == 0, reformat
+                assert reformat["matrix_z"] > 1, reformat
+                assert reformat["slice_count"] == reformat["matrix_z"], reformat
+                assert reformat["number_of_slices"] == reformat["matrix_z"], reformat
+                assert reformat["images_in_acquisition"] == reformat["matrix_z"], reformat
+            assert sagittal["sequence_description_additional"] == "OR", sagittal
+            assert coronal["sequence_description_additional"] == "OR", coronal
             assert sagittal["keep_image_geometry"] == "0", sagittal
             assert coronal["keep_image_geometry"] == "0", coronal
             assert not sagittal["ice_minihead"], sagittal
@@ -389,3 +417,200 @@ tests:
       cp /data/tof.nii tof_input
       mkdir tof_output
       angiboost.py --ds_path tof_input --out_path tof_output --lb_path init_label --pretrained /opt/VesselBoost/saved_models/manual_0429 --outmo tof_output/outmo --ep 100 --lr 0.05 --prep_mode 4
+
+  - name: OpenRecon output metadata contract
+    script: |
+      python3 - <<'PY'
+      import base64
+      import importlib.util
+      import sys
+      from pathlib import Path
+
+      import ismrmrd
+      import numpy as np
+
+      wrapper_path = Path("/opt/code/python-ismrmrd-server/vesselboost.py")
+      spec = importlib.util.spec_from_file_location("vesselboost", wrapper_path)
+      module = importlib.util.module_from_spec(spec)
+      sys.modules["vesselboost"] = module
+      spec.loader.exec_module(module)
+
+      def first(value):
+          return value[0] if isinstance(value, list) else value
+
+      def make_minihead(series_name, series_uid, sop_uid, source_type, index):
+          minihead_text = "\n".join(
+              [
+                  f'<ParamString."SeriesDescription">\t{{ "{series_name}" }}',
+                  f'<ParamString."SequenceDescription">\t{{ "{series_name}" }}',
+                  f'<ParamString."ProtocolName">\t{{ "{series_name}" }}',
+                  f'<ParamString."SeriesNumberRangeNameUID">\t{{ "{series_name}" }}',
+                  f'<ParamString."SeriesInstanceUID">\t{{ "{series_uid}" }}',
+                  f'<ParamString."SOPInstanceUID">\t{{ "{sop_uid}" }}',
+                  f'<ParamString."ImageType">\t{{ "ORIGINAL\\PRIMARY\\M\\{source_type}" }}',
+                  '<ParamString."ImageTypeValue3">\t{ "M" }',
+                  '<ParamString."ComplexImageComponent">\t{ "MAGNITUDE" }',
+                  '<ParamArray."ImageTypeValue4">\t{',
+                  f'\t{{ "{source_type}" }}',
+                  '}',
+                  '<ParamLong."Actual3DImagePartNumber">\t{ 9 }',
+                  '<ParamLong."AnatomicalPartitionNo">\t{ 9 }',
+                  f'<ParamLong."AnatomicalSliceNo">\t{{ {index + 10} }}',
+                  f'<ParamLong."ChronSliceNo">\t{{ {index + 20} }}',
+                  f'<ParamLong."NumberInSeries">\t{{ {index + 30} }}',
+                  f'<ParamLong."ProtocolSliceNumber">\t{{ {index + 40} }}',
+                  f'<ParamLong."SliceNo">\t{{ {index + 50} }}',
+              ]
+          ) + "\n"
+          return base64.b64encode(minihead_text.encode("utf-8")).decode("ascii")
+
+      def make_source(index):
+          image = ismrmrd.Image.from_array(
+              np.ones((1, 1, 4, 4), dtype=np.float32) * (index + 1),
+              transpose=False,
+          )
+          header = image.getHead()
+          header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+          header.image_series_index = 1
+          header.image_index = index + 1
+          header.slice = index
+          header.position = (0.0, 0.0, float(index))
+          header.read_dir = (1.0, 0.0, 0.0)
+          header.phase_dir = (0.0, 1.0, 0.0)
+          header.slice_dir = (0.0, 0.0, 1.0)
+          header.field_of_view = (4.0, 4.0, 2.0)
+          image.setHead(header)
+
+          meta = ismrmrd.Meta()
+          meta["SeriesDescription"] = "tof_fl3d_tra"
+          meta["SequenceDescription"] = "tof_fl3d_tra"
+          meta["ProtocolName"] = "tof_fl3d_tra"
+          meta["SeriesNumberRangeNameUID"] = "tof_fl3d_tra"
+          meta["SeriesInstanceUID"] = "1.2.3.4"
+          meta["SOPInstanceUID"] = f"1.2.3.4.{index + 1}"
+          meta["ImageTypeValue4"] = "TOF"
+          meta["IceMiniHead"] = make_minihead(
+              "tof_fl3d_tra",
+              "1.2.3.4",
+              f"1.2.3.4.{index + 1}",
+              "TOF",
+              index,
+          )
+          image.attribute_string = meta.serialize()
+          return image
+
+      sources = [make_source(0), make_source(1)]
+      source_identity = module._resolve_source_series_identity(
+          module._meta_from_image(sources[0])
+      )
+      original_images = [
+          module._clone_mrd_image(source_image) for source_image in sources
+      ]
+      originals = module._build_vesselboost_original_images(
+          original_images,
+          sources,
+          source_identity,
+          2,
+      )
+      segmentation_identity = module._build_openrecon_output_identity(
+          source_identity,
+          series_index=3,
+      )
+      volume_yxz = np.stack(
+          [np.asarray(source_image.data)[0, 0] for source_image in sources],
+          axis=2,
+      ).astype(np.int16)
+      segmentation = module._build_vesselboost_segmentation_volume(
+          volume_yxz=volume_yxz,
+          head_template=sources[0].getHead(),
+          source_image=sources[0],
+          source_identity=source_identity,
+          output_identity=segmentation_identity,
+          fov=np.asarray([4.0, 4.0, 2.0], dtype=float),
+          series_index=3,
+          max_val=4095,
+      )
+      outputs = originals + [segmentation]
+
+      reformat_outputs = []
+      for orientation, series_index in (("sagittal", 4), ("coronal", 5)):
+          reformat_identity = module._build_openrecon_output_identity(
+              source_identity,
+              orientation=orientation,
+              series_index=series_index,
+          )
+          reformats = module._build_reformatted_images(
+              volume_yxz=volume_yxz,
+              head_template=sources[0].getHead(),
+              source_image=sources[0],
+              source_identity=source_identity,
+              output_identity=reformat_identity,
+              voxel_size=np.asarray([1.0, 1.0, 1.0], dtype=float),
+              fov=np.asarray([4.0, 4.0, 2.0], dtype=float),
+              orientation=orientation,
+              series_index=series_index,
+              max_val=4095,
+          )
+          assert len(reformats) == 1
+          reformat_outputs.append(reformats[0])
+      outputs.extend(reformat_outputs)
+
+      module._validate_vesselboost_output_contract(
+          outputs,
+          [1],
+          source_identity,
+          "unit smoke",
+      )
+      original_meta = ismrmrd.Meta.deserialize(outputs[0].attribute_string)
+      original_minihead_text = base64.b64decode(
+          first(original_meta.get("IceMiniHead"))
+      ).decode("utf-8")
+      assert first(original_meta.get("SeriesDescription")) == "tof_fl3d_tra_original"
+      assert first(original_meta.get("SequenceDescriptionAdditional")) == "OR"
+      assert first(original_meta.get("Keep_image_geometry")) == "1"
+      assert first(original_meta.get("ImageTypeValue4")) == "original"
+      assert first(original_meta.get("SeriesInstanceUID")).startswith("2.25.")
+      assert first(original_meta.get("SOPInstanceUID")).startswith("2.25.")
+      assert module._extract_minihead_long_value(original_minihead_text, "SliceNo") == 0
+
+      segmentation_meta = ismrmrd.Meta.deserialize(segmentation.attribute_string)
+      assert first(segmentation_meta.get("DataRole")) == "Segmentation"
+      assert first(segmentation_meta.get("SeriesDescription")) == "tof_fl3d_tra_vesselboost"
+      assert first(segmentation_meta.get("SequenceDescriptionAdditional")) == "OR"
+      assert first(segmentation_meta.get("Keep_image_geometry")) == "0"
+      assert first(segmentation_meta.get("slice_count")) == "2"
+      assert first(segmentation_meta.get("NumberOfSlices")) == "2"
+      assert first(segmentation_meta.get("ImagesInAcquisition")) == "2"
+      assert not first(segmentation_meta.get("IceMiniHead"))
+      assert int(segmentation.getHead().matrix_size[2]) == 2
+      assert (
+          module._extract_minihead_long_value(
+              '<ParamLong."EmptyLong">\t{ }',
+              "EmptyLong",
+          )
+          is None
+      )
+      patched_minihead, changed = module._replace_or_append_minihead_long_param(
+          '<ParamLong."EmptyLong">\t{ }',
+          "EmptyLong",
+          7,
+      )
+      assert changed
+      assert patched_minihead.count('ParamLong."EmptyLong"') == 1
+      assert module._extract_minihead_long_value(patched_minihead, "EmptyLong") == 7
+      assert module._extract_minihead_array_tokens(original_minihead_text, "ImageTypeValue4") == [
+          "original"
+      ]
+      for reformat in reformat_outputs:
+          reformat_meta = ismrmrd.Meta.deserialize(reformat.attribute_string)
+          assert first(reformat_meta.get("DataRole")) == "Segmentation"
+          assert not first(reformat_meta.get("IceMiniHead"))
+          assert first(reformat_meta.get("Keep_image_geometry")) == "0"
+          assert int(reformat.getHead().image_index) == 1
+          assert int(reformat.getHead().slice) == 0
+          assert int(reformat.getHead().matrix_size[2]) == 4
+          assert first(reformat_meta.get("slice_count")) == "4"
+          assert first(reformat_meta.get("NumberOfSlices")) == "4"
+          assert first(reformat_meta.get("ImagesInAcquisition")) == "4"
+      assert module.OPENRECON_DEFAULTS["sendoriginal"] is True
+      PY

@@ -1,0 +1,13 @@
+name: pytorch-cpu
+channels:
+  - pytorch
+  - defaults
+
+dependencies:
+  - python=3
+  - jupyter
+  - pytorch
+  - torchvision
+  - torchaudio
+  - cpuonly
+  - seaborn

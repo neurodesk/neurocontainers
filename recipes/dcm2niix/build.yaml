@@ -7,6 +7,11 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
+
+variables:
+  dcm2niix_source_dir: dcm2niix-{{ context.version | replace('v', '', 1) }}
+
 build:
   kind: neurodocker
 
@@ -15,18 +20,40 @@ build:
 
   directives:
     - install:
-        - git
         - ca-certificates
         - pigz
         - unzip
 
+    - condition: arch == "aarch64"
+      install:
+        - build-essential
+        - cmake
+        - git
+        - pkg-config
+        - libjpeg-dev
+        - libopenjp2-7-dev
+        - zlib1g-dev
+
     - workdir: /opt/dcm2niix-{{ context.version }}
 
-    - run:
+    - condition: arch == "x86_64"
+      run:
         - cp {{ get_file("downloaded_file") }} dcm2niix_lnx.zip
         - unzip dcm2niix_lnx.zip
         - chmod a+rwx /opt/dcm2niix-{{ context.version }}/dcm2niix
         - rm -rf dcm2niix_lnx.zip
+
+    - condition: arch == "aarch64"
+      run:
+        - tar -xzf {{ get_file("source_archive") }}
+        - cd {{ context.dcm2niix_source_dir }}
+        - mkdir build
+        - cd build
+        - cmake -DCMAKE_BUILD_TYPE=Release -DUSE_OPENJPEG=ON -DZLIB_IMPLEMENTATION=Cloudflare ..
+        - make -j"$(nproc)"
+        - cp bin/dcm2niix /opt/dcm2niix-{{ context.version }}/dcm2niix
+        - chmod a+rwx /opt/dcm2niix-{{ context.version }}/dcm2niix
+        - rm -rf /opt/dcm2niix-{{ context.version }}/{{ context.dcm2niix_source_dir }}
 
     - environment:
         PATH: $PATH:/opt/dcm2niix-{{ context.version }}
@@ -65,3 +92,5 @@ categories:
 files:
   - name: downloaded_file
     url: https://github.com/rordenlab/dcm2niix/releases/download/{{ context.version }}/dcm2niix_lnx.zip
+  - name: source_archive
+    url: https://github.com/rordenlab/dcm2niix/archive/refs/tags/{{ context.version }}.tar.gz

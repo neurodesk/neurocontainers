@@ -3,7 +3,7 @@ tests:
     manual: true
     script: |
       source env/bin/activate
-      python builder/build.py generate sodiumnufft --recreate --build --login --architecture x86_64 --offline_mode true
+      sf-login sodiumnufft --architecture x86_64 --offline-mode
 
       input_dat=/buildhostdirectory/meas_MID00126_FID18530_tpiTqf_HighSpoil_23Na_n50_TE05_Ref480.dat
       input_mrd=/buildhostdirectory/meas_MID00126_FID18530_tpiTqf_HighSpoil_23Na_n50_TE05_Ref480.mrd

@@ -2,6 +2,7 @@ name: bidsme
 version: 1.9.3
 architectures:
   - x86_64
+  - aarch64
 categories:
   - data organisation
 structured_readme:
@@ -13,11 +14,21 @@ structured_readme:
   citation: ''
 build:
   kind: neurodocker
-  base-image: bradley987/bidsme:1.9.3
+  base-image: python:3.11-slim-bookworm
   pkg-manager: apt
   directives:
     - environment:
         MPLCONFIGDIR: ~/.config/matplotlib-bidsme
+    - install:
+        - ca-certificates
+        - dcm2niix
+        - git
+        - tk
+    - workdir: /opt
+    - run:
+        - git clone --depth 1 --branch {{ context.version }} https://github.com/CyclotronResearchCentre/bidsme.git
+        - cd /opt/bidsme
+        - python -m pip install --no-cache-dir .[all]
     - test:
         name: testScript
         script: |-

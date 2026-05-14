@@ -1,5 +1,5 @@
 # dicompare container test suite
-# Tests for dicompare v0.1.3 - MRI protocol validation webapp
+# Tests for dicompare v0.5.4 - MRI protocol validation webapp
 #
 # dicompare is a web-based tool for validating DICOM files against
 # community-defined MRI acquisition protocols. It runs as a static
@@ -11,8 +11,8 @@
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
 
 name: dicompare
-version: 0.1.3
-container: dicompare_0.1.3_20260202.simg
+version: 0.5.4
+container: dicompare_0.5.4.simg
 
 required_files:
   - dataset: ds000001
@@ -137,7 +137,7 @@ tests:
   - name: start.sh contains serve command
     description: Verify startup script runs serve
     command: "bash -lc 'cat /opt/dicompare/start.sh'"
-    expected_output_contains: "serve -s dist -l 3001"
+    expected_output_contains: "serve -s dist -l ${NEURODESK_WEBAPP_PORT:-3001}"
 
   # ==========================================================================
   # INDEX.HTML VERIFICATION
@@ -436,90 +436,85 @@ tests:
     expected_output_contains: "19"
 
   # ==========================================================================
-  # BUILD.YAML AND README VERIFICATION
+  # README AND LAUNCHER VERIFICATION
   # ==========================================================================
-  - name: build.yaml exists
-    description: Verify build.yaml is present in container
-    command: ls /build.yaml
-    expected_output_contains: "build.yaml"
-
-  - name: build.yaml has correct name
-    description: Verify build.yaml contains correct app name
-    command: cat /build.yaml
-    expected_output_contains: "name: dicompare"
-
-  - name: build.yaml has correct version
-    description: Verify build.yaml contains correct version
-    command: cat /build.yaml
-    expected_output_contains: "version: 0.1.3"
-
-  - name: build.yaml has webapp config
-    description: Verify build.yaml contains webapp deployment config
-    command: cat /build.yaml
-    expected_output_contains: "webapp:"
-
-  - name: build.yaml specifies port 3001
-    description: Verify build.yaml specifies correct port
-    command: cat /build.yaml
-    expected_output_contains: "port: 3001"
-
   - name: README.md exists
     description: Verify README.md is present in container
-    command: ls /README.md
+    command: ls /opt/dicompare/README.md
     expected_output_contains: "README.md"
 
   - name: README.md has content
     description: Verify README.md describes dicompare
-    command: cat /README.md
+    command: cat /opt/dicompare/README.md
     expected_output_contains: "dicompare"
 
   - name: README.md mentions MRI validation
     description: Verify README.md describes MRI protocol validation
-    command: cat /README.md
+    command: cat /opt/dicompare/README.md
     expected_output_contains: "MRI protocol validation"
+
+  - name: launcher supports start subcommand
+    description: Verify the installed launcher routes the start subcommand
+    command: cat /usr/local/bin/dicompare
+    expected_output_contains: "start)"
+
+  - name: launcher prints usage text
+    description: Verify the installed launcher contains the documented usage text
+    command: cat /usr/local/bin/dicompare
+    expected_output_contains: "Usage: dicompare start"
+
+  - name: startup script uses configured webapp port
+    description: Verify the startup script honors the Neurodesk webapp port override
+    command: cat /opt/dicompare/start.sh
+    expected_output_contains: 'NEURODESK_WEBAPP_PORT:-3001'
+
+  - name: startup script serves built dist directory
+    description: Verify the startup script serves the built frontend directory
+    command: cat /opt/dicompare/start.sh
+    expected_output_contains: "serve -s dist -l"
 
   # ==========================================================================
   # WEB SERVER STARTUP AND PORT BINDING TESTS
   # ==========================================================================
   - name: Web server can start
     description: Test that serve can start serving files
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3002 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/ || echo \"failed\"\npkill -f \"serve.*3002\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3002 >/tmp/dicompare-3002.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/ || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
   - name: Web server serves index.html
     description: Test that serve returns HTML content
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3003 &\nsleep 2\ncurl -s http://localhost:3003/ | head -1 || echo \"failed\"\npkill -f \"serve.*3003\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3003 >/tmp/dicompare-3003.log 2>&1 &\npid=$!\nsleep 2\ncurl -s http://localhost:3003/ | head -1 || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "<!DOCTYPE html>"
     timeout: 10
 
   - name: Web server serves favicon
     description: Test that serve returns favicon
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3004 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3004/favicon.ico || echo \"failed\"\npkill -f \"serve.*3004\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3004 >/tmp/dicompare-3004.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3004/favicon.ico || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
   - name: Web server serves manifest.json
     description: Test that serve returns manifest.json
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3005 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3005/manifest.json || echo \"failed\"\npkill -f \"serve.*3005\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3005 >/tmp/dicompare-3005.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3005/manifest.json || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
   - name: Web server serves schema files
     description: Test that serve returns schema index
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3006 &\nsleep 2\ncurl -s http://localhost:3006/schemas/index.json | head -1 || echo \"failed\"\npkill -f \"serve.*3006\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3006 >/tmp/dicompare-3006.log 2>&1 &\npid=$!\nsleep 2\ncurl -s http://localhost:3006/schemas/index.json | head -1 || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "["
     timeout: 10
 
   - name: Web server serves validation functions
     description: Test that serve returns validation function
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3007 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3007/validation-functions/validate_echo_count.json || echo \"failed\"\npkill -f \"serve.*3007\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3007 >/tmp/dicompare-3007.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3007/validation-functions/validate_echo_count.json || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
   - name: Web server single page mode works
     description: Test that SPA routing redirects to index.html
-    command: "bash -lc 'timeout 5s serve -s /opt/dicompare/dist -l 3008 &\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3008/nonexistent/path || echo \"failed\"\npkill -f \"serve.*3008\" 2>/dev/null || true'"
+    command: "bash -lc 'serve -s /opt/dicompare/dist -l 3008 >/tmp/dicompare-3008.log 2>&1 &\npid=$!\nsleep 2\ncurl -s -o /dev/null -w \"%{http_code}\" http://localhost:3008/nonexistent/path || echo \"failed\"\nkill \"$pid\" 2>/dev/null || true\nwait \"$pid\" 2>/dev/null || true'"
     expected_output_contains: "200"
     timeout: 10
 
@@ -580,26 +575,6 @@ tests:
   # ==========================================================================
   # CONTAINER METADATA VERIFICATION
   # ==========================================================================
-  - name: Container has expected categories
-    description: Verify container is categorized correctly
-    command: cat /build.yaml
-    expected_output_contains: "quality control"
-
-  - name: Container has data organisation category
-    description: Verify container has data organisation category
-    command: cat /build.yaml
-    expected_output_contains: "data organisation"
-
-  - name: Container has MIT license
-    description: Verify container specifies MIT license
-    command: cat /build.yaml
-    expected_output_contains: "license: MIT"
-
-  - name: Container specifies x86_64 architecture
-    description: Verify container architecture is specified
-    command: cat /build.yaml
-    expected_output_contains: "x86_64"
-
   # ==========================================================================
   # SYSTEM DEPENDENCIES VERIFICATION
   # ==========================================================================

@@ -6,7 +6,8 @@ copyright:
     url: https://spdx.org/licenses/MIT.html
 
 architectures:
-- x86_64
+  - x86_64
+  - aarch64
 
 categories:
   - data management

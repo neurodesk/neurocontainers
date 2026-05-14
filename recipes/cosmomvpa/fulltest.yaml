@@ -1,0 +1,46 @@
+# cosmomvpa container test suite
+# Tests for cosmomvpa v1.1.0 - CoSMoMVPA toolbox for GNU Octave
+#
+# Tests focus on the packaged Octave runtime and the installed CoSMoMVPA
+# toolbox entrypoints that the image actually exposes.
+
+name: cosmomvpa
+version: 1.1.0
+container: cosmomvpa_1.1.0.simg
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p test_output/cosmomvpa
+
+tests:
+  - name: octave on PATH
+    description: Verify Octave is available in the image
+    command: command -v octave
+    expected_output_contains: "/usr/bin/octave"
+
+  - name: octave version
+    description: Verify Octave starts successfully
+    command: octave --version | head -1
+    expected_output_contains: "GNU Octave"
+
+  - name: CoSMoMVPA tree exists
+    description: Verify the CoSMoMVPA source tree was installed
+    command: ls -d /opt/cosmomvpa-1.1.0/CoSMoMVPA
+    expected_output_contains: "/opt/cosmomvpa-1.1.0/CoSMoMVPA"
+
+  - name: cosmo_wtf resolves
+    description: Verify Octave can resolve the main CoSMoMVPA diagnostic function
+    command: octave --no-gui --eval "addpath(genpath('/opt/cosmomvpa-1.1.0/CoSMoMVPA')); which cosmo_wtf"
+    expected_output_contains: "cosmo_wtf.m"
+
+  - name: cosmo_wtf runs
+    description: Verify the CoSMoMVPA diagnostic function executes
+    command: octave --no-gui --eval "addpath(genpath('/opt/cosmomvpa-1.1.0/CoSMoMVPA')); cosmo_wtf();"
+    expected_output_contains: "warning: Using cosmo_config"
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    echo "Test outputs preserved in test_output/cosmomvpa/"

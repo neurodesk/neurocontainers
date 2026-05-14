@@ -31,8 +31,8 @@
     "can_use_gpu": false,
     "min_count_required_gpus": 0,
     "min_required_gpu_memory": 0,
-    "min_required_memory": 2048,
-    "min_count_required_cpu_cores": 1,
+    "min_required_memory": 20048,
+    "min_count_required_cpu_cores": 5,
     "content_qualification_type": "RESEARCH"
   },
   "parameters": [
@@ -53,7 +53,7 @@
       "id": "sendoriginal",
       "label": { "en": "Send original images" },
       "type": "boolean",
-      "information": { "en": "Send a copy of original unmodified images back too" },
+      "information": { "en": "Pass the original 2D image stream back for scanner postprocessing" },
       "default": false
     },
     {
@@ -67,14 +67,14 @@
       "id": "upsampled",
       "label": { "en": "Upsampled" },
       "type": "boolean",
-      "information": { "en": "Interpolate between slices and send twice as many images" },
+      "information": { "en": "Interpolate between slices and send one volume with twice as many slices" },
       "default": false
     },
     {
       "id": "segment",
       "label": { "en": "Segment" },
       "type": "boolean",
-      "information": { "en": "Segment the brightest foreground object and send a segmentation" },
+      "information": { "en": "Segment the brightest foreground object and send explicit-volume segmentation output(s)" },
       "default": false
     },
     {
@@ -89,6 +89,13 @@
       "label": { "en": "MIP" },
       "type": "boolean",
       "information": { "en": "Compute and send one maximum intensity projection image" },
+      "default": false
+    },
+    {
+      "id": "sendmetrics",
+      "label": { "en": "Send metrics" },
+      "type": "boolean",
+      "information": { "en": "Send region volume in image comments and as a DICOM metrics table image" },
       "default": false
     }
   ]

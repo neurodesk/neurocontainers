@@ -1,0 +1,93 @@
+name: matlabmcr
+url: https://www.mathworks.com/products/compiler/matlab-runtime.html
+binaries:
+  builder: neurodocker
+  arguments:
+    required:
+    - version
+    optional:
+      curl_opts: ''
+      install_path: /opt/MCR-{{ self.version }}
+  urls:
+    2023b: https://ssd.mathworks.com/supportfiles/downloads/R2023b/Release/9/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2023b_Update_9_glnxa64.zip
+    2023a: https://ssd.mathworks.com/supportfiles/downloads/R2023a/Release/5/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2023a_Update_5_glnxa64.zip
+    2022a: https://ssd.mathworks.com/supportfiles/downloads/R2022a/Release/7/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2022a_Update_7_glnxa64.zip
+    2020b: https://ssd.mathworks.com/supportfiles/downloads/R2020b/Release/8/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2020b_Update_8_glnxa64.zip
+    2020a: https://ssd.mathworks.com/supportfiles/downloads/R2020a/Release/7/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2020a_Update_7_glnxa64.zip
+    2019b: https://ssd.mathworks.com/supportfiles/downloads/R2019b/Release/9/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2019b_Update_9_glnxa64.zip
+    2017b: https://ssd.mathworks.com/supportfiles/downloads/R2017b/deployment_files/R2017b/installers/glnxa64/MCR_R2017b_glnxa64_installer.zip
+    2014a: https://ssd.mathworks.com/supportfiles/downloads/R2014a/deployment_files/R2014a/installers/glnxa64/MCR_R2014a_glnxa64_installer.zip
+    2014b: https://ssd.mathworks.com/supportfiles/downloads/R2014b/deployment_files/R2014b/installers/glnxa64/MCR_R2014b_glnxa64_installer.zip
+  dependencies:
+    apt:
+    - bc
+    - curl
+    - libncurses5
+    - libxext6
+    - libxmu6
+    - libxpm-dev
+    - libxt6
+    - unzip
+    - openjdk-8-jre
+    - dbus-x11
+    yum:
+    - bc
+    - curl
+    - libXext.x86_64
+    - libXmu
+    - libXpm
+    - libXt.x86_64
+    - unzip
+    - java-1.8.0-openjdk
+    - dbus-x11
+  directives:
+  - environment:
+      LD_LIBRARY_PATH: '{% set versionTovXX = {"2023b": "v915", "2023a": "v914", "2022b": "v913", "2022a": "v912", "2021b":
+        "v911", "2021a": "v910", "2020b": "v99", "2020a": "v98", "2019b": "v97", "2019a": "v96", "2018b": "v95", "2018a":
+        "v94", "2017b": "v93", "2017a": "v92", "2016b": "v91", "2016a": "v901", "2015b": "v90", "2015aSP1": "v851", "2015a":
+        "v85", "2014b": "v84", "2014a": "v83", "2013b": "v82", "2013a": "v81", "2012b": "v80", "2012a": "v717"} -%}
+
+        $LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu:{{ self.install_path }}/{{ versionTovXX[self.version] }}/runtime/glnxa64:{{
+        self.install_path }}/{{ versionTovXX[self.version] }}/bin/glnxa64:{{ self.install_path }}/{{ versionTovXX[self.version]
+        }}/sys/os/glnxa64:{{ self.install_path }}/{{ versionTovXX[self.version] }}/extern/bin/glnxa64
+
+        '
+      MATLABCMD: '{{ self.install_path }}/{{ self.version }}/toolbox/matlab'
+      XAPPLRESDIR: '{% set versionTovXX = {"2023b": "v915", "2023a": "v914", "2022b": "v913", "2022a": "v912", "2021b": "v911",
+        "2021a": "v910", "2020b": "v99", "2020a": "v98", "2019b": "v97", "2019a": "v96", "2018b": "v95", "2018a": "v94", "2017b":
+        "v93", "2017a": "v92", "2016b": "v91", "2016a": "v901", "2015b": "v90", "2015aSP1": "v851", "2015a": "v85", "2014b":
+        "v84", "2014a": "v83", "2013b": "v82", "2013a": "v81", "2012b": "v80", "2012a": "v717"} -%}
+
+        /opt/{{ self.install_path }}/{{ versionTovXX[self.version] }}/x11/app-defaults
+
+        '
+      MCRROOT: '{{ self.install_path }}/{{ self.version }}'
+  - run: 'export TMPDIR="$(mktemp -d)"
+
+      {{ self.install_dependencies() }}
+
+      echo "Downloading MATLAB Compiler Runtime ..."
+
+      {% if self.version == "2010a" -%}
+
+      curl {{ self.curl_opts }} -o "$TMPDIR/MCRInstaller.bin" {{ self.urls[self.version] }}
+
+      chmod +x "$TMPDIR/MCRInstaller.bin"
+
+      "$TMPDIR/MCRInstaller.bin" -silent -P installLocation="{{ self.install_path }}"
+
+      {% else -%}
+
+      curl {{ self.curl_opts }} -o "$TMPDIR/mcr.zip" {{ self.urls[self.version] }}
+
+      unzip -q "$TMPDIR/mcr.zip" -d "$TMPDIR/mcrtmp"
+
+      "$TMPDIR/mcrtmp/install" -destinationFolder {{ self.install_path }} -mode silent -agreeToLicense yes
+
+      {% endif -%}
+
+      rm -rf "$TMPDIR"
+
+      unset TMPDIR
+
+      '

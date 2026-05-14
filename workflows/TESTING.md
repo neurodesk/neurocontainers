@@ -48,7 +48,7 @@ This manually triggered workflow supports large-scale or architecture-specific v
 2. **`build-builder-sif` job** builds the reusable `builder.sif` artifact:
    - Installs Apptainer on the GitHub-hosted runner.
   - Installs the repo as a Python package to expose `sf-*` entry points.
-  - Runs `sf-make builder --ignore-architectures --architecture <arch> --use-docker` and uploads the resulting SIF under `sifs/`.
+  - Runs `sf-make builder --ignore-architectures --architecture <arch>` and uploads the resulting SIF under `sifs/`.
 3. **`prepare-matrix` job** walks `recipes/*/build.yaml` (skipping the `builder` recipe) to produce the matrix of recipe names. In debug mode the list is reduced to speed iteration.
 4. **`build-or-test-recipe` job** runs per recipe:
    - Downloads the cached `builder.sif`, prepares a writable `/mnt/tmp`, and uses Apptainer + `sf-make` inside the SIF to build the target recipe SIF.
@@ -58,7 +58,7 @@ The workflow defaults to `debug=true` and `run-tests=false`, so full container t
 
 ### Builder Linting – `.github/workflows/test-builder.yml`
 
-While not a runtime test, this workflow protects the builder tooling whenever files under `builder/` change. It creates a Python virtual environment, installs `requirements.txt`, and runs `./workflows/test_all.sh`. The script validates every recipe (`builder/validation.py`) and performs a “check-only” build via `builder/build.py generate … --check-only`. Failures here usually indicate malformed recipe metadata that would prevent the container tests from running downstream.
+While not a runtime test, this workflow protects the builder tooling whenever builder code changes. It creates a Python virtual environment, installs `requirements.txt`, and runs `./workflows/test_all.sh`. The script validates every recipe (`builder/validation.py`) and performs check-only Dockerfile generation via `python -m builder generate …`. Failures here usually indicate malformed recipe metadata that would prevent the container tests from running downstream.
 
 ## Reproducing CI Runs Locally
 

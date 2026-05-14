@@ -1,0 +1,13 @@
+name: pytorch-gpu
+channels:
+  - pytorch
+  - defaults
+
+dependencies:
+  - python=3
+  - jupyter
+  - pytorch
+  - torchvision
+  - torchaudio
+  - cudatoolkit=10.2
+  - seaborn
