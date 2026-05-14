@@ -270,6 +270,7 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
     class FakeImage:
         def __init__(self, data):
             self.data = np.array(data, copy=True)
+            self.data_type = 0
             self._head = FakeHead()
             self.attribute_string = "{}"
 
@@ -286,6 +287,9 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
     class FakeIsmrmrd:
         Image = FakeImage
         Meta = FakeMeta
+        DATATYPE_CXFLOAT = 8
+        DATATYPE_CXDOUBLE = 9
+        IMTYPE_COMPLEX = 2
         IMTYPE_MAGNITUDE = 1
 
     namespace = {
@@ -356,6 +360,20 @@ def test_openrecon_exposes_segmentation_colourmap_lut_toggle():
     assert 'tmpMeta["LUTFileName"] = "MicroDeltaHotMetal.pal"' in wrapper_source
     assert 'boolean_checker(\n        "segmentationcolormap"' in wrapper_source
     assert "segmentation_colormap=segmentation_colormap" in wrapper_source
+
+
+def test_openrecon_exposes_segmentation_postprocessing_toggle():
+    parameter = _label_parameter("segmentpostprocessing")
+    assert parameter["type"] == "boolean"
+    assert parameter["default"] is True
+
+    defaults = _module_assignment("OPENRECON_DEFAULTS")
+    assert defaults["segmentpostprocessing"] is True
+
+    wrapper_source = WRAPPER_PATH.read_text()
+    assert 'boolean_checker(\n        "segmentpostprocessing"' in wrapper_source
+    assert "segment_postprocessing=segment_postprocessing" in wrapper_source
+    assert "source-geometry segmentation image(s)" in wrapper_source
 
 
 def test_wrapper_avoids_hardcoded_sct_install_version_paths():
@@ -464,6 +482,91 @@ def test_passthrough_restamp_uses_fresh_series_identity():
     assert output_meta["AnatomicalPartitionNo"] == "0"
     assert output_meta["SliceNo"] == "0"
     assert "CONTROL.PSMultiFrameSOPInstanceUID" not in output_meta
+
+
+def test_sct_segment_postprocessing_outputs_source_geometry_slices():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_as_image_list",
+            "_build_derived_series_instance_uid",
+            "_build_derived_sop_instance_uid",
+            "_build_sct_output_identity",
+            "_collect_non_empty_texts",
+            "_copy_meta",
+            "_decode_ice_minihead",
+            "_encode_ice_minihead",
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_get_meta_text",
+            "_patch_ice_minihead",
+            "_remove_minihead_array_param",
+            "_remove_minihead_string_param",
+            "_replace_minihead_array_token",
+            "_replace_or_append_minihead_array_token",
+            "_replace_or_append_minihead_long_param",
+            "_replace_or_append_minihead_string_param",
+            "_sanitize_minihead_param_value",
+            "_sct_output_to_source_geometry_images",
+            "_set_meta_scalar",
+            "_set_output_position_meta",
+            "_strip_scanner_write_unsafe_meta",
+            "_strip_source_parent_refs",
+        ],
+        assignments=[
+            "SCANNER_PARTITION_INDEX",
+            "SCANNER_WRITE_UNSAFE_META_KEYS",
+            "SOURCE_PARENT_REFERENCE_META_KEYS",
+            "SOURCE_PARENT_REFERENCE_META_PREFIXES",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_deepseg_spinalcord": {"series_suffix": "sct_deepseg_spinalcord"}
+    }
+    source_images = [
+        _contract_image(
+            helpers,
+            series_index=1,
+            role="NORM",
+            series_uid="1.2.3",
+            sop_uid=f"1.2.3.4.{slice_index + 1}",
+            slice_index=slice_index,
+            source=True,
+        )
+        for slice_index in range(3)
+    ]
+    data = np.zeros((2, 2, 3), dtype=np.int16)
+    data[:, :, 1] = 1
+
+    outputs = helpers["_sct_output_to_source_geometry_images"](
+        data,
+        "sct_deepseg_spinalcord",
+        source_images,
+        2,
+        1,
+        segmentation_colormap=True,
+        series_suffix="sct_deepseg_spinalcord",
+    )
+
+    assert len(outputs) == 3
+    seen_sop_uids = set()
+    for index, output in enumerate(outputs):
+        head = output.getHead()
+        meta = helpers["FakeMeta"].deserialize(output.attribute_string)
+        assert head.image_series_index == 2
+        assert head.image_index == index + 1
+        assert head.slice == index
+        assert meta["DataRole"] == "Segmentation"
+        assert meta["Keep_image_geometry"] == 1
+        assert meta["LUTFileName"] == "MicroDeltaHotMetal.pal"
+        assert meta["ImageTypeValue4"] == "sct_deepseg_spinalcord"
+        assert "ImageTypeValue3" not in meta
+        assert meta["SOPInstanceUID"].startswith("2.25.")
+        assert meta["SOPInstanceUID"] not in seen_sop_uids
+        seen_sop_uids.add(meta["SOPInstanceUID"])
+        minihead = base64.b64decode(meta["IceMiniHead"]).decode("utf-8")
+        assert "ImageTypeValue3" not in minihead
+        assert "sct_deepseg_spinalcord" in minihead
 
 
 def test_output_series_contract_rejects_input_series_index_reuse():
@@ -1192,8 +1295,9 @@ def test_wrapper_patches_openrecon_derived_series_identity_like_musclemap():
     assert 'oldHeader.slice = iImg' in wrapper_source
     assert 'oldHeader.image_index = source_image_index' not in wrapper_source
     assert "_set_output_position_meta(tmpMeta, iImg)" in wrapper_source
-    assert "processed SCT outputs are sent as explicit 3D volumes" in wrapper_source
+    assert "SCT segmentations default to source-geometry 2D" in wrapper_source
     assert 'tmpMeta["Keep_image_geometry"] = 0' in wrapper_source
+    assert 'tmpMeta["Keep_image_geometry"] = 1' in wrapper_source
     assert 'tmpMeta["partition_count"] = "1"' in wrapper_source
     assert 'if "IceMiniHead" in tmpMeta' in wrapper_source
     assert "Packed SCT output" in wrapper_source
@@ -1282,4 +1386,5 @@ def test_wrapper_can_generate_openrecon_configs_for_batch_processing_cases():
     assert "--write-openrecon-batch-processing-test-configs" in wrapper_source
     assert "_openrecon_config_for_analysis(case[\"analysis\"])" in wrapper_source
     assert '"segmentationcolormap": OPENRECON_DEFAULTS["segmentationcolormap"]' in wrapper_source
+    assert '"segmentpostprocessing": OPENRECON_DEFAULTS["segmentpostprocessing"]' in wrapper_source
     assert "sct_deepseg_gm" in wrapper_source

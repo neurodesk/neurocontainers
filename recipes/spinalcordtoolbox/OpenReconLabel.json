@@ -64,6 +64,13 @@
       "default": false
     },
     {
+      "id": "segmentpostprocessing",
+      "label": { "en": "Scanner postprocess segmentations" },
+      "type": "boolean",
+      "information": { "en": "Send SCT segmentations as source-geometry slices so scanner postprocessing can run." },
+      "default": true
+    },
+    {
       "id": "analysis",
       "label": { "en": "Analysis" },
       "type": "choice",

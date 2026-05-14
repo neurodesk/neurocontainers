@@ -78,6 +78,13 @@
       "default": false
     },
     {
+      "id": "segmentpostprocessing",
+      "label": { "en": "Scanner postprocess segmentations" },
+      "type": "boolean",
+      "information": { "en": "When Segment is enabled, send segmentation slices with source geometry for scanner postprocessing; this overrides Send original" },
+      "default": false
+    },
+    {
       "id": "segmentationcolormap",
       "label": { "en": "Segmentation colourmap" },
       "type": "boolean",

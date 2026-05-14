@@ -4,9 +4,10 @@
 receives reconstructed MRD image messages and sends no outputs unless one or
 more output options are enabled. It can re-emit the original scan, invert
 magnitude images, upsample the slice direction, threshold each slice into a
-segmentation, optionally add a segmentation colourmap, and compute a maximum
-intensity projection. It can also send foreground-region volume metrics when
-`sendmetrics` is enabled.
+segmentation, optionally send segmentations as source-geometry slices for
+scanner postprocessing, optionally add a segmentation colourmap, and compute a
+maximum intensity projection. It can also send foreground-region volume metrics
+when `sendmetrics` is enabled.
 
 ## Inputs
 
@@ -39,6 +40,17 @@ intensity projection. It can also send foreground-region volume metrics when
   segmentation groups use separate derived series indices. Segmentations set
   `LUTFileName = MicroDeltaHotMetal.pal` only when `segmentationcolormap` is
   true.
+- `<source>-segment`: source-geometry thresholded segmentation slice streams
+  starting on `image_series_index = 101` when `segment` and
+  `segmentpostprocessing` are both true. This opt-in mode sends one 2D
+  mask image per source image, sets `Keep_image_geometry = 1`, keeps the source
+  MRD slice geometry, and stamps the outputs as source-like `DataRole = Image`
+  images with a separate segment series identity in Meta and `IceMiniHead`. It
+  strips `ImageTypeValue3` because the scanner converter can reject that protocol
+  node on returned images. It replaces the explicit-volume segmentation output;
+  both forms are not sent together. If `sendoriginal` is also checked, the
+  original passthrough stream is skipped so the scanner Dixon composer sees only
+  one source-like stream per contrast.
 - `<source>-upsampled`: one volume image with twice as many slices on
   `image_series_index = 102` when `upsampled` is true.
 - `<source>-mip`: one maximum intensity projection image on
@@ -46,13 +58,19 @@ intensity projection. It can also send foreground-region volume metrics when
 - `<source>-metrics`: one derived DICOM image-table page on
   `image_series_index = 120` when `sendmetrics` is true. The table reports the
   segmented foreground region, source name, voxel count, voxel volume, threshold,
-  and volume in `mm3` and `mL`.
+  and volume in `mm3` and `mL`. It is sent in the same explicit derived-output
+  envelope as the segmentation volume so scanner inline postprocessing does not
+  attach to it. The rendered pixels are pre-oriented for scanner display and
+  use standalone identity geometry instead of inheriting scan orientation.
 
 The inverted images normally keep the source geometry and use the input
 intensity range: `inverted = min(input) + max(input) - input`.
 The segment output estimates a bright-foreground threshold per source volume
 group, keeps the largest connected foreground object in each slice, and stores
-the result as binary `uint16` explicit-volume segmentation image(s).
+the result as binary `uint16` segmentation data. By default those segmentations
+are explicit-volume image(s). With `segmentpostprocessing` enabled, the same
+binary masks are sent as source-like 2D image streams so scanner postprocessing
+can attach to them.
 The upsampled output keeps the in-plane matrix unchanged and doubles the
 through-plane sample count by sorting source images by physical slice position
 and inserting midpoint slices between acquired slices. The final edge slice is
@@ -65,9 +83,9 @@ writes the region volume into `ImageComments` and `ImageComment`.
 
 ## Scanner Notes
 
-- `sendoriginal`, `invert`, `upsampled`, `segment`, `segmentationcolormap`,
-  `mip`, and `sendmetrics` are exposed in `OpenReconLabel.json` and all default
-  to false.
+- `sendoriginal`, `invert`, `upsampled`, `segment`, `segmentpostprocessing`,
+  `segmentationcolormap`, `mip`, and `sendmetrics` are exposed in
+  `OpenReconLabel.json` and all default to false.
 - Scanner protocols saved before these parameters were added may need the OpenRecon algorithm
   reselected once so the parameter schema refreshes.
 - Derived output names are written to `SeriesDescription`, `SequenceDescription`,
@@ -82,37 +100,41 @@ writes the region volume into `ImageComments` and `ImageComment`.
   `SOPInstanceUID` values so the scanner can store them as independent returned
   series while scanner postprocessing still sees source-like images.
 - Original pass-through preserves the source MRD header geometry and pixel data.
-  If the incoming MRD `image_index` is zero, the returned copy uses a one-based
-  per-series `image_index`; missing `IceMiniHead` storage counters are filled
-  from source metadata or the source slice number.
+  Returned originals use a one-based per-series `image_index`. Scanner storage
+  counters in Meta and `IceMiniHead` are restamped consistently from the
+  returned stream: `NumberInSeries` follows `image_index`, `ChronSliceNo`
+  follows returned order, and `SliceNo` / `ProtocolSliceNumber` follow the
+  returned MRD slice.
 - Scanner partition counters such as `Actual3DImagePartNumber` and
   `AnatomicalPartitionNo` are kept at zero for original pass-through and derived
-  image series, while slice counters such as `SliceNo` and `ChronSliceNo` remain
-  source-like.
+  image series, while slice counters such as `SliceNo` and `ChronSliceNo` are
+  restamped for the returned stream.
 - Derived outputs set `SequenceDescriptionAdditional` to `openrecon` so
   scanners do not append `_None` to the display name. Original pass-through
   preserves the incoming value and does not synthesize an `openrecon` suffix.
-- Derived outputs strip scanner `ImageTypeValue3` from both MRD metadata and
+- Returned outputs strip scanner `ImageTypeValue3` from both MRD metadata and
   `IceMiniHead`. Some sequences reject that protocol node during OpenRecon
-  conversion. Original pass-through keeps source image-type metadata as intact
-  as possible but normalizes returned `ImageTypeValue3` values to `M` when that
-  classifier field exists. This preserves Dixon `ImageType` / `ImageTypeValue4`
-  subtype metadata while avoiding the scanner's unknown `MAP` classifier path on
-  returned fat-fraction originals. Derived output identity is carried by
-  `ImageType`, `DicomImageType`, `ComplexImageComponent`, and `ImageTypeValue4`.
-- `sendoriginal` outputs are emitted before derived outputs. This keeps scanner
-  inline MIP/MPR postprocessing attached to the original series when originals
-  and segmentations are enabled together.
+  conversion. Dixon subtype identity is preserved through `ImageType`,
+  `DicomImageType`, `ComplexImageComponent`, and `ImageTypeValue4`.
+- `sendoriginal` outputs are emitted before derived outputs. When
+  `segmentpostprocessing` is enabled with `segment`, the segment stream is the
+  scanner-postprocessing candidate and `sendoriginal` is ignored to avoid
+  duplicate Dixon compose inputs.
 - `Keep_image_geometry = 1` is set on original pass-through images. If an
   original source group has more images than the advertised source slice or
   partition count can hold, the job fails before send rather than packing those
   originals as a derived volume. This keeps scanner MIP/MPR postprocessing on
   the same 2D contract as the scanner received.
-- `segment` and `upsampled` are always packed as explicit-volume outputs with
-  `Keep_image_geometry = 0`, `matrix_size[2] = N`,
+- By default, `segment` and `upsampled` are packed as explicit-volume outputs
+  with `Keep_image_geometry = 0`, `matrix_size[2] = N`,
   `slice_count = NumberOfSlices = N`, and `partition_count = 1`. This prevents
   the marshaller from receiving invented source SLC indices such as `416..831`
   for a 416-partition sequence.
+- When `segmentpostprocessing` is enabled with `segment`, segmentations are not
+  packed as explicit volumes. They are emitted as one source-geometry 2D stream
+  per source volume group with the same returned-order storage counter rules as
+  original pass-through, so scanner inline postprocessing can process the
+  segmentation series.
 - Explicit-volume packing requires unique projected MRD header positions. Inputs
   with repeated header positions are split by source volume fields before
   segmentation packing. Multi-contrast wholebody data whose header `position`
