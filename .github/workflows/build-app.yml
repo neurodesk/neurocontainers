@@ -54,7 +54,6 @@ env:
 # - secrets.DOCKERHUB_PASSWORD
 # - secrets.DOCKERHUB_ORG
 # - secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY
-# - secrets.REGISTRY_RC_NECTAR_ORG_AU_USERNAME (optional; defaults to secrets.GH_REGISTRY)
 # - secrets.AWS_ROLE_ARN
 
 jobs:
@@ -696,6 +695,8 @@ jobs:
   push-nectar-registry:
     needs: [config, build-image]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_nectar_registry == 'true' }}
+    # Nectar is a best-effort mirror; outages must not block the release path.
+    continue-on-error: true
     runs-on: ubuntu-22.04
     permissions:
       packages: write
@@ -736,7 +737,7 @@ jobs:
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
         with:
           registry: registry.rc.nectar.org.au
-          username: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_USERNAME || secrets.GH_REGISTRY }}
+          username: s.bollmann@uq.edu.au
           password: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY }}
 
       - name: Push to Nectar Container Registry
@@ -874,6 +875,8 @@ jobs:
   upload-nectar:
     needs: [config, build-image, build-simg]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' }}
+    # Nectar object storage is a best-effort mirror; S3 remains the blocking upload.
+    continue-on-error: true
     runs-on: ${{ fromJSON(inputs.runner) }}
     permissions:
       packages: write
@@ -1005,7 +1008,7 @@ jobs:
           fi
 
   create-pr:
-    needs: [config, build-image, push-dockerhub, push-nectar-registry, upload-s3, upload-nectar]
+    needs: [config, build-image, push-dockerhub, upload-s3]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true'}}
     runs-on: ubuntu-22.04
     permissions:
