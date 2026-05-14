@@ -67,6 +67,16 @@ readme: |
 
   https://github.com/npnl/PALS
 
+files:
+  - name: presets.json
+    contents: |
+      {
+          "ants_path": "/opt/ants-2.4.3/bin",
+          "fsl_path": "/opt/fsl-6.0.7.1/bin",
+          "rois_path": "/opt/pals-2.0.1/ROIs",
+          "template_directory": "/opt/pals-2.0.1/templates"
+      }
+
 build:
   kind: neurodocker
 
@@ -114,8 +124,11 @@ build:
     - run:
         - git clone --depth 1 --branch main https://github.com/npnl/PALS /opt/pals-2.0.1
         - /opt/miniconda/bin/pip install --no-cache-dir -r /opt/pals-2.0.1/requirements.txt
-        # Pre-populate presets.json with paths correct for this container
-        - /opt/miniconda/bin/python -c "import json, os; presets = {'ants_path': '/opt/ants-2.4.3/bin', 'fsl_path': os.environ.get('FSLDIR', '/opt/fsl-6.0.7.1') + '/bin', 'rois_path': '/opt/pals-2.0.1/ROIs', 'template_directory': '/opt/pals-2.0.1/templates'}; open('/opt/pals-2.0.1/presets.json', 'w').write(__import__('json').dumps(presets, indent=4))"
+
+    # Copy pre-populated presets.json so PALS finds ANTs/FSL paths immediately
+    - copy:
+      - presets.json
+      - /opt/pals-2.0.1/presets.json
 
     - environment:
         PALS_DIR: /opt/pals-2.0.1
