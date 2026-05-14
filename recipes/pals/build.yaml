@@ -117,8 +117,8 @@ build:
     - run:
         - /opt/miniconda/bin/pip install --no-cache-dir 'matplotlib>=3.5' 'nibabel>=3.2' 'numpy>=1.21' 'scipy>=1.7' 'pandas>=1.3' 'Pillow>=8.0'
         - git clone --depth 1 --branch main https://github.com/npnl/PALS /opt/pals-2.0.1
-        - /opt/miniconda/bin/pip install --no-cache-dir -r /opt/pals-2.0.1/requirements.txt
-
+        - grep -iv matplotlib /opt/pals-2.0.1/requirements.txt | /opt/miniconda/bin/pip install --no-cache-dir -r /dev/stdin
+        
     # Copy pre-populated presets.json so PALS finds ANTs/FSL paths immediately
     - copy:
       - presets.json
