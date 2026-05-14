@@ -1,11 +1,11 @@
 # AIDAmri container test suite
-# Tests for aidamri v1.1 - Atlas-based Image Data Analysis for mouse MRI
+# Tests for aidamri v2.0 - Atlas-based Image Data Analysis for mouse MRI
 #
 # AIDAmri is designed for automated processing of mouse brain MRI data
 # including T2-weighted MRI, DTI, and resting-state fMRI. It registers the
 # Allen Mouse Brain Reference Atlas (ARA, CCF v3) to MRI data for ROI analysis.
 #
-# Note: This container requires Python from miniconda (/opt/miniconda-latest/bin/python3)
+# Note: This container requires Python from miniconda (/opt/miniconda-4.7.12.1/bin/python3)
 # to access nipype and other dependencies. The system python3 lacks these modules.
 #
 # Test data: ds000001/sub-01 (human data used for basic pipeline testing)
@@ -13,8 +13,8 @@
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s
 
 name: aidamri
-version: "1.1"
-container: aidamri_1.1_20210708.simg
+version: "2.0"
+container: aidamri_2.0.simg
 
 required_files:
   - dataset: ds000001
@@ -25,8 +25,8 @@ required_files:
 test_data:
   t2: ds000001/sub-01/anat/sub-01_inplaneT2.nii.gz
   bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
-  atlas_template: /opt/aidamri-1.1/lib/average_template_50.nii.gz
-  atlas_annotation: /opt/aidamri-1.1/lib/annotation_50CHANGEDanno.nii.gz
+  atlas_template: /opt/aidamri-2.0/lib/average_template_50.nii.gz
+  atlas_annotation: /opt/aidamri-2.0/lib/annotation_50CHANGEDanno.nii.gz
   output_dir: test_output/aidamri
 
 env_setup: |
@@ -46,27 +46,27 @@ tests:
   # ==========================================================================
   - name: Python version check
     description: Verify miniconda Python is available
-    command: bash -lc '/opt/miniconda-latest/bin/python3 --version'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 --version'
     expected_output_contains: "Python 3"
 
   - name: Nipype availability
     description: Verify nipype module is installed
-    command: bash -lc '/opt/miniconda-latest/bin/python3 -c "import nipype; print('\''nipype version:'\'', nipype.__version__)"'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 -c "import nipype; print('\''nipype version:'\'', nipype.__version__)"'
     expected_output_contains: "nipype version"
 
   - name: Nibabel availability
     description: Verify nibabel module is installed
-    command: bash -lc '/opt/miniconda-latest/bin/python3 -c "import nibabel as nib; print('\''nibabel version:'\'', nib.__version__)"'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 -c "import nibabel as nib; print('\''nibabel version:'\'', nib.__version__)"'
     expected_output_contains: "nibabel version"
 
   - name: NumPy availability
     description: Verify numpy module is installed
-    command: bash -lc '/opt/miniconda-latest/bin/python3 -c "import numpy as np; print('\''numpy version:'\'', np.__version__)"'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 -c "import numpy as np; print('\''numpy version:'\'', np.__version__)"'
     expected_output_contains: "numpy version"
 
   - name: SciPy availability
     description: Verify scipy module is installed
-    command: bash -lc '/opt/miniconda-latest/bin/python3 -c "import scipy; print('\''scipy version:'\'', scipy.__version__)"'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 -c "import scipy; print('\''scipy version:'\'', scipy.__version__)"'
     expected_output_contains: "scipy version"
 
   # ==========================================================================
@@ -74,32 +74,32 @@ tests:
   # ==========================================================================
   - name: batchProc help
     description: Test batch processing script help
-    command: bash -lc '/opt/miniconda-latest/bin/python3 /opt/aidamri-1.1/bin/batchProc.py --help'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 /opt/aidamri-2.0/bin/batchProc.py --help'
     expected_output_contains: "Batch processing of all data"
 
   - name: T2 preprocessing help
     description: Test T2 preprocessing script help
-    command: bash -lc '/opt/miniconda-latest/bin/python3 /opt/aidamri-1.1/bin/2.1_T2PreProcessing/preProcessing_T2.py --help'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 /opt/aidamri-2.0/bin/2.1_T2PreProcessing/preProcessing_T2.py --help'
     expected_output_contains: "Preprocessing of T2 Data"
 
   - name: T2 registration help
     description: Test T2 registration script help
-    command: bash -lc '/opt/miniconda-latest/bin/python3 /opt/aidamri-1.1/bin/2.1_T2PreProcessing/registration_T2.py --help'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 /opt/aidamri-2.0/bin/2.1_T2PreProcessing/registration_T2.py --help'
     expected_output_contains: "Registration from ABA to T2 Data"
 
   - name: fMRI preprocessing help
     description: Test fMRI preprocessing script help
-    command: bash -lc '/opt/miniconda-latest/bin/python3 /opt/aidamri-1.1/bin/2.3_fMRIPreProcessing/preProcessing_fMRI.py --help'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 /opt/aidamri-2.0/bin/2.3_fMRIPreProcessing/preProcessing_fMRI.py --help'
     expected_output_contains: "Preprocessing of rsfMRI Data"
 
   - name: fMRI registration help
     description: Test fMRI registration script help
-    command: bash -lc '/opt/miniconda-latest/bin/python3 /opt/aidamri-1.1/bin/2.3_fMRIPreProcessing/registration_rsfMRI.py --help'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 /opt/aidamri-2.0/bin/2.3_fMRIPreProcessing/registration_rsfMRI.py --help'
     expected_output_contains: "Registration of Allen Brain Atlas to rsfMRI"
 
   - name: fMRI processing help
     description: Test fMRI activity processing script help
-    command: bash -lc '/opt/miniconda-latest/bin/python3 /opt/aidamri-1.1/bin/3.3_fMRIActivity/process_fMRI.py --help'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 /opt/aidamri-2.0/bin/3.3_fMRIActivity/process_fMRI.py --help'
     expected_output_contains: "Process fMRI data"
 
   # ==========================================================================
@@ -107,32 +107,32 @@ tests:
   # ==========================================================================
   - name: Allen Brain Atlas template exists
     description: Verify ABA template is present
-    command: bash -lc '/opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-1.1/lib/average_template_50.nii.gz'
+    command: bash -lc '/opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-2.0/lib/average_template_50.nii.gz'
     expected_output_contains: "dim1"
 
   - name: Allen Brain Atlas annotation exists
     description: Verify ABA annotation file is present
-    command: bash -lc '/opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-1.1/lib/annotation_50CHANGEDanno.nii.gz'
+    command: bash -lc '/opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-2.0/lib/annotation_50CHANGEDanno.nii.gz'
     expected_output_contains: "dim1"
 
   - name: Annotation volume exists
     description: Verify annotation volume file is present
-    command: bash -lc '/opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-1.1/lib/annoVolume.nii.gz'
+    command: bash -lc '/opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-2.0/lib/annoVolume.nii.gz'
     expected_output_contains: "dim1"
 
   - name: rsfMRI annotation volume exists
     description: Verify rsfMRI annotation volume is present
-    command: bash -lc '/opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-1.1/lib/annoVolume+2000_rsfMRI.nii.gz'
+    command: bash -lc '/opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-2.0/lib/annoVolume+2000_rsfMRI.nii.gz'
     expected_output_contains: "dim1"
 
   - name: ARA annotation exists
     description: Verify ARA annotation file is present
-    command: bash -lc '/opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-1.1/lib/ARA_annotationR+2000.nii.gz'
+    command: bash -lc '/opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-2.0/lib/ARA_annotationR+2000.nii.gz'
     expected_output_contains: "dim1"
 
   - name: NP template exists
     description: Verify NP template file is present
-    command: bash -lc '/opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-1.1/lib/NP_template_sc0.nii.gz'
+    command: bash -lc '/opt/fsl-5.0.11/bin/fslinfo /opt/aidamri-2.0/lib/NP_template_sc0.nii.gz'
     expected_output_contains: "dim1"
 
   # ==========================================================================
@@ -418,32 +418,32 @@ tests:
   # ==========================================================================
   - name: NiftyReg reg_aladin exists
     description: Check NiftyReg reg_aladin binary exists
-    command: "bash -lc 'ls -la /opt/aidamri-1.1/NiftyReg/bin/reg_aladin'"
+    command: "bash -lc 'ls -la /opt/aidamri-2.0/NiftyReg/bin/reg_aladin'"
     expected_output_contains: "reg_aladin"
 
   - name: NiftyReg reg_f3d exists
     description: Check NiftyReg reg_f3d binary exists
-    command: "bash -lc 'ls -la /opt/aidamri-1.1/NiftyReg/bin/reg_f3d'"
+    command: "bash -lc 'ls -la /opt/aidamri-2.0/NiftyReg/bin/reg_f3d'"
     expected_output_contains: "reg_f3d"
 
   - name: NiftyReg reg_resample exists
     description: Check NiftyReg reg_resample binary exists
-    command: "bash -lc 'ls -la /opt/aidamri-1.1/NiftyReg/bin/reg_resample'"
+    command: "bash -lc 'ls -la /opt/aidamri-2.0/NiftyReg/bin/reg_resample'"
     expected_output_contains: "reg_resample"
 
   - name: NiftyReg reg_tools exists
     description: Check NiftyReg reg_tools binary exists
-    command: "bash -lc 'ls -la /opt/aidamri-1.1/NiftyReg/bin/reg_tools'"
+    command: "bash -lc 'ls -la /opt/aidamri-2.0/NiftyReg/bin/reg_tools'"
     expected_output_contains: "reg_tools"
 
   - name: NiftyReg reg_transform exists
     description: Check NiftyReg reg_transform binary exists
-    command: "bash -lc 'ls -la /opt/aidamri-1.1/NiftyReg/bin/reg_transform'"
+    command: "bash -lc 'ls -la /opt/aidamri-2.0/NiftyReg/bin/reg_transform'"
     expected_output_contains: "reg_transform"
 
   - name: NiftyReg reg_measure exists
     description: Check NiftyReg reg_measure binary exists
-    command: "bash -lc 'ls -la /opt/aidamri-1.1/NiftyReg/bin/reg_measure'"
+    command: "bash -lc 'ls -la /opt/aidamri-2.0/NiftyReg/bin/reg_measure'"
     expected_output_contains: "reg_measure"
 
   # ==========================================================================
@@ -451,47 +451,47 @@ tests:
   # ==========================================================================
   - name: Script directory structure
     description: Verify AIDAmri script directories exist
-    command: "bash -lc 'ls /opt/aidamri-1.1/bin/'"
+    command: "bash -lc 'ls /opt/aidamri-2.0/bin/'"
     expected_output_contains: "2.1_T2PreProcessing"
 
   - name: PV2NIfTi converter scripts exist
     description: Verify ParaVision to NIfTI converter scripts
-    command: "bash -lc 'ls /opt/aidamri-1.1/bin/1_PV2NIfTiConverter/'"
+    command: "bash -lc 'ls /opt/aidamri-2.0/bin/PV2NIfTiConverter/'"
     expected_output_contains: "pv_conv2Nifti.py"
 
   - name: T2 preprocessing scripts exist
     description: Verify T2 preprocessing scripts are present
-    command: "bash -lc 'ls /opt/aidamri-1.1/bin/2.1_T2PreProcessing/'"
+    command: "bash -lc 'ls /opt/aidamri-2.0/bin/2.1_T2PreProcessing/'"
     expected_output_contains: "preProcessing_T2.py"
 
   - name: DTI preprocessing scripts exist
     description: Verify DTI preprocessing scripts are present
-    command: "bash -lc 'ls /opt/aidamri-1.1/bin/2.2_DTIPreprocessing/'"
+    command: "bash -lc 'ls /opt/aidamri-2.0/bin/2.2_DTIPreProcessing/'"
     expected_output_contains: "preProcessing_DTI.py"
 
   - name: fMRI preprocessing scripts exist
     description: Verify fMRI preprocessing scripts are present
-    command: "bash -lc 'ls /opt/aidamri-1.1/bin/2.3_fMRIPreProcessing/'"
+    command: "bash -lc 'ls /opt/aidamri-2.0/bin/2.3_fMRIPreProcessing/'"
     expected_output_contains: "preProcessing_fMRI.py"
 
   - name: T2 processing scripts exist
     description: Verify T2 processing scripts are present
-    command: "bash -lc 'ls /opt/aidamri-1.1/bin/3.1_T2Processing/'"
+    command: "bash -lc 'ls /opt/aidamri-2.0/bin/3.1_T2Processing/'"
     expected_output_contains: "getIncidenceMap.py"
 
   - name: DTI connectivity scripts exist
     description: Verify DTI connectivity scripts are present
-    command: "bash -lc 'ls /opt/aidamri-1.1/bin/3.2_DTIConnectivity/'"
+    command: "bash -lc 'ls /opt/aidamri-2.0/bin/3.2_DTIConnectivity/'"
     expected_output_contains: "dsi_main.py"
 
   - name: fMRI activity scripts exist
     description: Verify fMRI activity scripts are present
-    command: "bash -lc 'ls /opt/aidamri-1.1/bin/3.3_fMRIActivity/'"
+    command: "bash -lc 'ls /opt/aidamri-2.0/bin/3.3_fMRIActivity/'"
     expected_output_contains: "process_fMRI.py"
 
   - name: ROI analysis scripts exist
     description: Verify ROI analysis scripts are present
-    command: "bash -lc 'ls /opt/aidamri-1.1/bin/4.1_ROI_analysis/'"
+    command: "bash -lc 'ls /opt/aidamri-2.0/bin/5.1_ROI_analysis/'"
     expected_output_contains: "create_seed_rois.py"
 
   # ==========================================================================
@@ -499,24 +499,24 @@ tests:
   # ==========================================================================
   - name: Load NIfTI with nibabel
     description: Test loading NIfTI file with nibabel
-    command: bash -lc '/opt/miniconda-latest/bin/python3 -c "import nibabel as nib; img = nib.load('\''${t2}'\''); print('\''Shape:'\'', img.shape); print('\''Affine:\\n'\'', img.affine)"'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 -c "import nibabel as nib; img = nib.load('\''${t2}'\''); print('\''Shape:'\'', img.shape); print('\''Affine:\\n'\'', img.affine)"'
     expected_output_contains: "Shape:"
 
   - name: Extract affine matrix
     description: Extract affine transformation matrix
-    command: bash -lc '/opt/miniconda-latest/bin/python3 -c "import nibabel as nib; import numpy as np; img = nib.load('\''${t2}'\''); np.savetxt('\''test_output/aidamri/t2_affine.txt'\'', img.affine); print('\''Saved affine matrix'\'')"'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 -c "import nibabel as nib; import numpy as np; img = nib.load('\''${t2}'\''); np.savetxt('\''test_output/aidamri/t2_affine.txt'\'', img.affine); print('\''Saved affine matrix'\'')"'
     validate:
       - output_exists: ${output_dir}/t2_affine.txt
 
   - name: Calculate image statistics with Python
     description: Calculate mean, std, min, max using nibabel
-    command: bash -lc '/opt/miniconda-latest/bin/python3 -c "import nibabel as nib; import numpy as np; img = nib.load('\''${t2}'\''); data = img.get_fdata(); print('\''Mean:'\'', np.mean(data)); print('\''Std:'\'', np.std(data)); print('\''Min:'\'', np.min(data)); print('\''Max:'\'', np.max(data))"'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 -c "import nibabel as nib; import numpy as np; img = nib.load('\''${t2}'\''); data = img.get_fdata(); print('\''Mean:'\'', np.mean(data)); print('\''Std:'\'', np.std(data)); print('\''Min:'\'', np.min(data)); print('\''Max:'\'', np.max(data))"'
     expected_output_contains: "Mean:"
 
   - name: Create binary mask with Python
     description: Create threshold-based binary mask
     command: |
-      bash -lc '/opt/miniconda-latest/bin/python3 << '\''EOF'\''
+      bash -lc '/opt/miniconda-4.7.12.1/bin/python3 << '\''EOF'\''
       import nibabel as nib
       import numpy as np
       img = nib.load('\''${t2}'\'')
@@ -532,7 +532,7 @@ tests:
   - name: Extract 3D volume from 4D with Python
     description: Extract single volume from 4D fMRI
     command: |
-      bash -lc '/opt/miniconda-latest/bin/python3 << '\''EOF'\''
+      bash -lc '/opt/miniconda-4.7.12.1/bin/python3 << '\''EOF'\''
       import nibabel as nib
       import numpy as np
       img = nib.load('\''${bold}'\'')
@@ -550,13 +550,13 @@ tests:
   # ==========================================================================
   - name: Nipype FSL interface import
     description: Test nipype FSL interface import
-    command: bash -lc '/opt/miniconda-latest/bin/python3 -c "import nipype.interfaces.fsl as fsl; print('\''FSL interfaces available'\'')"'
+    command: bash -lc '/opt/miniconda-4.7.12.1/bin/python3 -c "import nipype.interfaces.fsl as fsl; print('\''FSL interfaces available'\'')"'
     expected_output_contains: "FSL interfaces available"
 
   - name: Nipype BET interface
     description: Test nipype BET interface
     command: |
-      bash -lc '/opt/miniconda-latest/bin/python3 << '\''EOF'\''
+      bash -lc '/opt/miniconda-4.7.12.1/bin/python3 << '\''EOF'\''
       import nipype.interfaces.fsl as fsl
       bet = fsl.BET()
       bet.inputs.in_file = '\''${t2}'\''
@@ -572,7 +572,7 @@ tests:
   - name: Nipype FLIRT interface
     description: Test nipype FLIRT interface
     command: |
-      bash -lc '/opt/miniconda-latest/bin/python3 << '\''EOF'\''
+      bash -lc '/opt/miniconda-4.7.12.1/bin/python3 << '\''EOF'\''
       import nipype.interfaces.fsl as fsl
       flirt = fsl.FLIRT()
       flirt.inputs.in_file = '\''${t2}'\''
@@ -591,7 +591,7 @@ tests:
   - name: Nipype MCFLIRT interface
     description: Test nipype MCFLIRT interface
     command: |
-      bash -lc '/opt/miniconda-latest/bin/python3 << '\''EOF'\''
+      bash -lc '/opt/miniconda-4.7.12.1/bin/python3 << '\''EOF'\''
       import nipype.interfaces.fsl as fsl
       mcflirt = fsl.MCFLIRT()
       mcflirt.inputs.in_file = '\''${bold}'\''

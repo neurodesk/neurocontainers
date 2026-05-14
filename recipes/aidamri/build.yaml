@@ -1,0 +1,128 @@
+name: aidamri
+version: "2.0"
+
+copyright:
+  - license: GPL-3.0-only
+    url: https://github.com/Aswendt-Lab/AIDAmri/blob/v2.0/LICENSE
+  - license: BSD-3-Clause
+    url: https://github.com/KCL-BMEIS/niftyreg/blob/master/LICENSE.txt
+
+architectures:
+  - x86_64
+
+variables:
+  niftyreg_version: 1.4.0
+  niftyreg_revision: 83d8d1182ed4c227ce4764f1fdab3b1797eecd8d
+  fsl_version: 5.0.11
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - ca-certificates
+        - cmake
+        - make
+        - g++
+        - libgomp1
+        - bc
+        - dc
+        - file
+        - libfontconfig1
+        - libfreetype6
+        - libgl1-mesa-dev
+        - libgl1-mesa-dri
+        - libglu1-mesa-dev
+        - libice6
+        - libopenblas0
+        - libxcursor1
+        - libxft2
+        - libxinerama1
+        - libxrandr2
+        - libxrender1
+        - libxt6
+        - nano
+        - python3
+        - sudo
+        - wget
+
+    - workdir: /opt
+
+    - run:
+        - tar -xzf {{ get_file("aidamri_tar") }} -C /opt
+        - mv AIDAmri-{{ context.version }} aidamri-{{ context.version }}
+        - echo /opt/aidamri-{{ context.version }}/bin/dsi_studio_ubuntu_1804/dsi-studio/dsi_studio > /opt/aidamri-{{ context.version }}/bin/3.2_DTIConnectivity/dsi_studioPath.txt
+
+    - workdir: /opt/niftyreg-builder
+
+    - run:
+        - tar -xzf {{ get_file("niftyreg_tar") }} -C /opt/niftyreg-builder
+        - mv niftyreg-{{ context.niftyreg_revision }} src
+        - mkdir build
+        - cmake -S src -B build -D CMAKE_INSTALL_PREFIX=/opt/aidamri-{{ context.version }}/NiftyReg
+        - cd build
+        - make
+        - make install
+        - rm -rf /opt/niftyreg-builder
+
+    - run:
+        - mkdir -p /opt/fsl-{{ context.fsl_version }}
+        - tar -xzf {{ get_file("fsl_tar") }} -C /opt/fsl-{{ context.fsl_version }} --strip-components 1 --exclude='data'
+        - bash /opt/fsl-{{ context.fsl_version }}/etc/fslconf/fslpython_install.sh -f /opt/fsl-{{ context.fsl_version }}
+
+    - template:
+        name: miniconda
+        version: 4.7.12.1
+        conda_install: python=3.6
+        pip_install: nipype==1.1.2 lmfit==0.9.11 progressbar2==3.38.0 nibabel
+
+    - environment:
+        FSLDIR: /opt/fsl-{{ context.fsl_version }}
+        FSLMULTIFILEQUIT: "TRUE"
+        FSLOUTPUTTYPE: NIFTI_GZ
+        FSLTCLSH: /opt/fsl-{{ context.fsl_version }}/bin/fsltclsh
+        FSLWISH: /opt/fsl-{{ context.fsl_version }}/bin/fslwish
+        TOOLBOX_PATH: /opt/aidamri-{{ context.version }}/
+        PATH: /opt/aidamri-{{ context.version }}:/opt/aidamri-{{ context.version }}/bin:/opt/aidamri-{{ context.version }}/NiftyReg/bin:/opt/fsl-{{ context.fsl_version }}/bin:$PATH
+
+deploy:
+  path:
+    - /opt/aidamri-{{ context.version }}/bin
+    - /opt/aidamri-{{ context.version }}/NiftyReg/bin
+    - /opt/fsl-{{ context.fsl_version }}/bin
+    - /opt/miniconda-4.7.12.1/bin
+
+categories:
+  - "rodent imaging"
+  - "structural imaging"
+  - "diffusion imaging"
+  - "functional imaging"
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAB/klEQVR4nO1ay23DMAx1ii7QwIdO0AJdpxsEPWeEHjJCz0Y3yDo5eIaiK7QnA4JgWeQT6efAfMdElvieSOrHw9Pz61+3YzywDWAjBGAbwEYIwDaAjRCAbQAbIQDbADYe1xzscr2J236+v7naMuHgvRXWkC7BUwwXASxIl2AthrkANfJf37/VPs6n4+L/liKYCVAiLiFcQ0kQCyFMBJgjb0E8x5wQrSI0CbAW8RyWQsD7ABb50jho4oU8IB9sLeJzyL1B6wnNO0EmeYvx1R6Qzj46+Dj0xf9ePn6gPlNP0HiBaivcssFZIl1qh4pxud7EIsAhIJ39cejF5Fu+Rb1RHAKI65eMX5pZ5JsU2lBwOw3mRKQE0nZpH+PQwyGxBFEIaGcfJZ8j/04SDql9kpxl7gGaJCZpO/0+tbX2BNMbITTZMcepCoCu+9bxqulPEwamIeCRpLz73/2laAjANoAN92tx5AyQwzO37N4Ddi+AewhIDz7eS2gJVQ9IT1S1+/qtQHMi3H0IhACSRvcUBtoLkfAAacN78ALkZhheBs+nY/OdvOXSh06KKgTWqtpohcZOdQ7YYiigjyKdRRJki9A6Pvw8znwd7gyfyGEPmBtsLW+wrA+ICpGoEYoqsagTjEpRt94z7LJWeOuI4zDbADZCALYBbIQAbAPYCAHYBrDxD1sR7q5+M2ntAAAAAElFTkSuQmCC
+
+readme: |
+  ----------------------------------
+  ## aidamri/{{ context.version }} ##
+  The Atlas-based Processing Pipeline for functional and structural MRI data
+  (AIDAmri) was developed for automated processing of mouse brain MRI.
+  AIDAmri works with T2-weighted MRI (T2w), diffusion weighted MRI or
+  diffusion tensor imaging (DTI) and resting-state functional MRI (fMRI). The
+  Allen Mouse Brain Reference Atlas (ARA, CCF v3) is registered on each of
+  these MRI data sets and is used to analyse regions of interest.
+
+  More documentation can be found here: https://github.com/Aswendt-Lab/AIDAmri
+
+  To run container outside of this environment: ml aidamri/{{ context.version }}
+
+  License: GPL-3.0-only, https://github.com/Aswendt-Lab/AIDAmri/blob/v{{ context.version }}/LICENSE
+
+  ----------------------------------
+
+files:
+  - name: aidamri_tar
+    url: https://github.com/Aswendt-Lab/AIDAmri/archive/v{{ context.version }}.tar.gz
+  - name: niftyreg_tar
+    url: https://github.com/KCL-BMEIS/niftyreg/archive/{{ context.niftyreg_revision }}.tar.gz
+  - name: fsl_tar
+    url: https://fsl.fmrib.ox.ac.uk/fsldownloads/fsl-{{ context.fsl_version }}-centos6_64.tar.gz
