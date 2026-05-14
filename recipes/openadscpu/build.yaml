@@ -1,0 +1,136 @@
+name: openadscpu
+version: 1.0.0
+copyright:
+  - name: JHU Non-Profit Research Software License Agreement
+    url: https://github.com/farialab/OpenADS/blob/main/LICENSE
+architectures:
+  - x86_64
+structured_readme:
+  description: |-
+    OpenADS is an end-to-end medical imaging pipeline for stroke analysis, covering preprocessing, registration, segmentation, and report generation for DWI and PWI workflows.
+    This is the CPU version of the neurocontainer.
+  example: |-
+    # Example usage
+
+    ```bash
+    # Run the full DWI pipeline (CPU only)
+    ads dwi --subject-path /data/dwi/sub-01 --all --gpu 0
+
+    # Run the full PWI pipeline (CPU only)
+    ads pwi --subject-path /data/pwi/sub-01 --all --gpu 0
+
+    # Run the combined DWI + PWI pipeline (CPU only)
+    ads combined \
+      --dwi-subject-path /data/dwi/sub-01 \
+      --pwi-subject-path /data/pwi/sub-01 \
+      --all --gpu 0
+
+    # Write outputs to a custom directory (CPU only)
+    ads dwi --subject-path /data/dwi/sub-01 --all --gpu 0 \
+      --output-root /output/results
+
+    # Check available options
+    ads --help
+    ads dwi --help
+    ```
+  documentation: https://github.com/farialab/OpenADS
+  citation: |-
+    For stroke segmentation and quantification: Liu CF, Hsu J, Xu X, Ramachandran S, Wang V, Miller MI, Hillis AE, Faria AV. Deep learning-based detection and segmentation of diffusion abnormalities in acute ischemic stroke. Commun Med 1, 61 (2021) https://doi.org/10.1038/s43856-021-00062-8
+
+    For ASPECTS calculation: Liu CF, Li J, Kim G, Miller MI, Hillis AE, Faria AV. Automatic comprehensive aspects reports in clinical acute stroke MRIs. Sci Rep 13, 3784 (2023). https://doi.org/10.1038/s41598-023-30242-6
+
+    For automatic radiological reports: Liu CF, Zhao Y, Yedavalli V, Leigh R, Falcao V, Miller MI, Hillis AE, Faria AV. Automatic comprehensive radiological reports for clinical acute stroke MRIs. Commun Med 3, 95 (2023). https://doi.org/10.1038/s43856-023-00327-4
+
+    For the dataset: Liu CF, Leigh R, Johnson B, Urrutia V, Hsu J, Xu X, Li X, Mori S, Hillis AE, Faria AV. A large public dataset of annotated clinical MRIs and metadata of patients with acute stroke. Sci Data 10, 548 (2023). https://doi.org/10.1038/s41597-023-02457-9
+
+    For the dataset source: Faria, Andreia V. Annotated Clinical MRIs and Linked Metadata of Patients with Acute Stroke, Baltimore, Maryland, 2009-2019. Inter-university Consortium for Political and Social Research [distributor], 2022-12-12. https://doi.org/10.3886/ICPSR38464.v5
+readme: |-
+  ----------------------------------
+  ## openadscpu/{{ context.version }} ##
+
+  OpenADS is an end-to-end medical imaging pipeline for stroke analysis, covering preprocessing, registration, segmentation, and report generation for DWI and PWI workflows.
+  This is the CPU version of the neurocontainer.
+
+  Example:
+  ```
+  # Example usage
+
+  ```bash
+  # Run the full DWI pipeline (CPU only)
+  ads dwi --subject-path /data/dwi/sub-01 --all --gpu 0
+
+  # Run the full PWI pipeline (CPU only)
+  ads pwi --subject-path /data/pwi/sub-01 --all --gpu 0
+
+  # Run the combined DWI + PWI pipeline (CPU only)
+  ads combined \
+    --dwi-subject-path /data/dwi/sub-01 \
+    --pwi-subject-path /data/pwi/sub-01 \
+    --all --gpu 0
+
+  # Write outputs to a custom directory (CPU only)
+  ads dwi --subject-path /data/dwi/sub-01 --all --gpu 0 \
+    --output-root /output/results
+
+  # Check available options
+  ads --help
+  ads dwi --help
+  ```
+  ```
+
+  More documentation can be found here: https://github.com/farialab/OpenADS
+
+  Citation:
+  ```
+  For stroke segmentaion and quantification: Liu CF, Hsu J, Xu X, Ramachandran S, Wang V, Miller MI, Hillis AE, Faria AV. Deep learning-based detection and segmentation of diffusion abnormalities in acute ischemic stroke. Commun Med 1, 61 (2021) https://doi.org/10.1038/s43856-021-00062-8
+
+  For ASPECTS calculation: Liu CF, Li J, Kim G, Miller MI, Hillis AE, Faria AV. Automatic comprehensive aspects reports in clinical acute stroke MRIs. Sci Rep 13, 3784 (2023). https://doi.org/10.1038/s41598-023-30242-6
+
+  For automatic radiological reports: Liu CF, Zhao Y, Yedavalli V, Leigh R, Falcao V, Miller MI, Hillis AE, Faria AV. Automatic comprehensive radiological reports for clinical acute stroke MRIs. Commun Med 3, 95 (2023). https://doi.org/10.1038/s43856-023-00327-4
+
+  For the dataset: Liu CF, Leigh R, Johnson B, Urrutia V, Hsu J, Xu X, Li X, Mori S, Hillis AE, Faria AV. A large public dataset of annotated clinical MRIs and metadata of patients with acute stroke. Sci Data 10, 548 (2023). https://doi.org/10.1038/s41597-023-02457-9
+
+  For the dataset source: Faria, Andreia V. Annotated Clinical MRIs and Linked Metadata of Patients with Acute Stroke, Baltimore, Maryland, 2009-2019. Inter-university Consortium for Political and Social Research [distributor], 2022-12-12. https://doi.org/10.3886/ICPSR38464.v5
+  ```
+
+  To run container outside of this environment: ml openadscpu/{{ context.version }}
+
+  ----------------------------------
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: miniconda
+        version: latest
+        conda_install: python=3.11
+        pip_install: numpy==2.0.1 antspyx==0.5.4 pandas==2.2.3 matplotlib==3.9.2 scikit-image==0.24.0 scipy==1.13.1 pyyaml>=6.0 nibabel==5.3.2 tqdm==4.67.1 scikit-learn==1.7.2 surfa==0.6.3 shap==0.50.0
+    - run:
+        - pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+        - pip install git+https://github.com/farialab/OpenADS --no-deps
+    - deploy:
+        bins:
+          - ads
+    - test:
+        name: verify_installation
+        script: |-
+          # Test Python and conda installation
+          python --version
+          conda --version
+
+          # Test that pip packages were installed
+          python -c "import sys; print('Python path:', sys.path)"
+          pip list | grep -i "ads"
+
+          # Test the main package import
+          python -c "import ads; print('ads imported successfully')"
+
+          # Test the CLI is available
+          ads --help
+    - test:
+        name: Simple Deploy Bins/Path Test
+        builtin: test_deploy.sh
+categories:
+  - image segmentation
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAFAElEQVR4AWxUbUyWZRS+7ufBF14YUkDoDNBppvm1bFMRYoPwa3MOWNnHzLVZW5mZTVLZnIPpspmhmQZW0tI1pmv+yMmP8kcvZG7W5lxbwDK2TCSQzxBmyvs+p3Pdz/MKOO+913Ou+9zn3OfjPuAM1yfL7RPJMvRlsvz7RbIMfh62GDgelv66sPTVJknvZ0nSc8zHraNJ0v1pknQdSbToPJwoxM1DIemoCcmNj0Py98GQXP9okoUjYgAQCJYBdSLB1p7559QR8ZM4pyRgbREs+hhoANELCagkyAlywPPICTz0XPRmHzyXcfY+d6BLbayz0vvyQc59HKJVS1ChKEeQuVidnzmC5Yxl6EdkNp6HcZmQE6LBRfWw0rcTy3kHQR1BTpBrBQ/rORDVIP3DgoERgXbJ5uNnyADExExhqzAaEMEiNxPfgJn/1ePhQOMo5laO4o3GpXj5zDw8+8FdfPVTDJ0DojKKx7ffRXaFj5z37yF3xz28/U0Ujb/FMHRHbBBmT+gjwy5md61bsOvbGFZsa8TA8Ciam5tx5coVXOuKIbfsa1R/F0X/CFBRUaGX8KIx1P/QiT8yt+LQBQ99w6zQXutXwH713fZQ3zSK6uMRrFy5Env37kVKSgrS0tJQV1eHDRs2YFPVWVxuFxjD9gALFy7E/PnzUVhYiKGhIdTU1OD87yG0/OMhpn1lR+6/wZ+3BK1DuSgoKMCpU6dQXV2NWel38FTmMLZs2YKLFy+itLQU1/v9y5lfa2srWlpa7FllZSUcx0HRirW4qa2Mxnw7O0WjMUG7BpizuJh+qK2txe51CTj7TggNbyagqtRFQ0ODzXzy1DnWhp/MzExkZGRg+fLl2LdvHzxN+dy5c0hMMNAntm3UCqAHAKclJyeHfujvvoFF2QbJIcB1DB5LdRCNRu1Zenq6lfx0dXWht7cXly5dwsyZM7F//37MzYpidhagbhpAJR+XSNBQbW1t9EP5i6/aaYhqZQTfp7y83J5dvXrVSn5KSkpQVFSE/Px8hMNh7NmzBxvzDKZrDryTsFOkrcOUyQaRSIR+WL9+PU5f9vDzNcGPbR5O/+Jh2bJlGBwcRNjoGFkroKmpCYk9zViceBk7Vzs4+5aLtQuMtigwUKEBBK4RPDnVIDe5B5FIBEuWLMHzW49hZ2MWPmzOxZGT34OtqaqqwowM9Qp+GSnQjB28+5yD1wsMFkyDthRg5vwb8HSSHNqK/j/JftSgbLGDNWvW2CCbN29GR0cH2tvbwVZwSs6cPIp50/T5ROhmMcbiF1u1foyFThEPRMsSlD3jYNeqKIqLi5GamoqysjLk5eXBdV0c++QAdqxykP0I7LwbYxCLxcB0makOEKlCdGh8sIqgAmuHtLDBpkIXzbsmYffq/zBj5DzyUn/F4ZdcXNiegHWLHOQ/YVD/mosTG10cfMFFbrqxEwNdLIxQan/k9g0YiRtKbQCma59fWWrw3goH20oclD5tMCUVcB19qyyDQg1SOBsomAWrj/vS3+dMWGw1GsBoNIJKpfonAgsES0PqG9GRirh8kHOPwI82oj7cawCZ0DNm4fdUbAbk1BF+nyWw9xPy9dRxTynWL663bwC7WAWztRv9kFNHR8LnejDhJ+PGKM4pCRrqFE2MyMg89CXPeDlBTpATYivxbf2970NOiK1EK2BmBOMRzJwG5GOSu/hl5LD99v18PTmBYPEeg/8BAAD//2TCBLIAAAAGSURBVAMA+ARY4s7fqfIAAAAASUVORK5CYII=
