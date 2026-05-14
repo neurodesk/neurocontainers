@@ -4,7 +4,7 @@ architectures:
   - x86_64
 structured_readme:
   description: ExploreASL is a pipeline and toolbox for image processing and statistics of arterial spin labeling perfusion MR images. It is designed as a multi-OS, open-source, collaborative framework that facilitates cross-pollination between image processing method developers and clinical investigators. This container contains Matlab MCR
-  example: ExploreASL
+  example: "ExploreASL /path/to/dataset 0 1"
   documentation: https://exploreasl.github.io/Documentation/1.11.0/
   citation: "Mutsaerts, H., & Petr, J. (2023). ExploreASL/ExploreASL: ExploreASL v1.10.1 (v1.11.0). Zenodo. https://doi.org/10.5281/zenodo.8326499"
 build:
@@ -16,12 +16,24 @@ build:
         - "echo '#!/bin/bash' > /usr/local/bin/ExploreASL"
         - "echo '/opt/xasl/xASL_latest/run_xASL_latest.sh /opt/mcr/v97/ \"$@\"' >> /usr/local/bin/ExploreASL"
         - chmod +x /usr/local/bin/ExploreASL
+    - run:
+        - "echo '#!/bin/bash' > /usr/local/bin/ExploreASL_test"
+        - "echo 'echo \"Downloading ExploreASL test dataset...\"' >> /usr/local/bin/ExploreASL_test"
+        - "echo 'apt-get update -qq && apt-get install -y -qq wget unzip > /dev/null 2>&1' >> /usr/local/bin/ExploreASL_test"
+        - "echo 'cd /tmp && wget -q https://github.com/ExploreASL/ExploreASL/archive/refs/heads/main.zip -O exploreasl.zip' >> /usr/local/bin/ExploreASL_test"
+        - "echo 'unzip -qo exploreasl.zip \"ExploreASL-main/External/TestDataSet/*\"' >> /usr/local/bin/ExploreASL_test"
+        - "echo 'cp -r ExploreASL-main/External/TestDataSet /tmp/TestDataSet' >> /usr/local/bin/ExploreASL_test"
+        - "echo 'rm -rf exploreasl.zip ExploreASL-main' >> /usr/local/bin/ExploreASL_test"
+        - "echo 'echo \"Running ExploreASL on test dataset...\"' >> /usr/local/bin/ExploreASL_test"
+        - "echo 'ExploreASL /tmp/TestDataSet 0 1' >> /usr/local/bin/ExploreASL_test"
+        - chmod +x /usr/local/bin/ExploreASL_test
     - deploy:
         path: []
         bins:
           - /opt/xasl/xASL_latest/run_xASL_latest.sh
           - /opt/run.sh
           - /usr/local/bin/ExploreASL
+          - /usr/local/bin/ExploreASL_test
 categories:
   - workflows
 readme: |-
@@ -32,7 +44,12 @@ readme: |-
 
   Example:
   ```
-  ExploreASL
+  ExploreASL /path/to/dataset [import] [process]
+    #import:  0 = skip DICOM-to-BIDS import, 1 = run import
+    #process: 0 = skip processing, 1 = run processing
+  
+  #To run a quick test with the ExploreASL example dataset (downloads ~50MB):
+  ExploreASL_test
   ```
 
   More documentation can be found here: https://exploreasl.github.io/Documentation/1.11.0/

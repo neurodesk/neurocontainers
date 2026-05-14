@@ -22,13 +22,10 @@ structured_readme:
     # Example usage
 
     ```bash
-    python test.py \
-        --weights ./synthstroke_model/checkpoint.pt \
+    synthstroke \
+        --files "/path/to/input.nii.gz" \
         --tta \
-        --mb \
-        --patch 128 \
-        --savedir /path/to/output/ \
-        --files "/path/to/input/*.nii.gz"
+        --savedir /path/to/output/
     ```
   documentation: |-
     This container includes:
@@ -101,7 +98,8 @@ build:
     - install: git libgl1 curl ca-certificates
     - run:
         - git clone https://github.com/liamchalcroft/SynthStroke.git /opt/synthstroke
-        - printf '#!/bin/bash\npython /opt/synthstroke/test.py "$@"\n' > /usr/local/bin/synthstroke && chmod +x /usr/local/bin/synthstroke
+        - hf download liamchalcroft/synthstroke-baseline --local-dir /opt/synthstroke/weights/baseline
+        - printf '#!/bin/bash\npython /opt/synthstroke/test.py --weights /opt/synthstroke/weights/baseline/model.safetensors "$@"\n' > /usr/local/bin/synthstroke && chmod +x /usr/local/bin/synthstroke
     - deploy:
         bins:
           - synthstroke
