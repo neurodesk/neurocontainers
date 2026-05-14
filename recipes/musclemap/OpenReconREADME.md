@@ -35,9 +35,12 @@ https://doi.org/10.3390/jimaging10110262
 MuscleMap buffers the incoming image stream before returning anything to the
 scanner. When `sendoriginal` is enabled, all received source images are returned
 first as source-native 2D passthrough images: source protocol, sequence,
-image-type, slice, and numbering fields are preserved while series/storage UIDs
-are refreshed. If `sendoriginal` is disabled, non-processed input images are
-still returned with the same source-native passthrough handling.
+image-type, slice, and per-image numbering fields are preserved while
+series/storage UIDs are refreshed. Scanner partition counters such as
+`Actual3DImagePartNumber` and `AnatomicalPartitionNo` are forced to the returned
+single-partition stream (`0`) instead of copying source partition values. If
+`sendoriginal` is disabled, non-processed input images are still returned with
+the same source-native passthrough handling.
 
 MuscleMap segmentation and optional metrics report images are sent after the
 source passthrough stream as derived outputs with fresh series identity, fresh

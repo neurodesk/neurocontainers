@@ -285,6 +285,8 @@ tests:
               or source_minihead_value3_tokens
           )
           def expected_source_storage_int(key):
+              if key in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
+                  return module.SCANNER_PARTITION_INDEX
               value = first(source_meta.get(key))
               if value is not None:
                   return int(value)
@@ -368,12 +370,14 @@ tests:
               "ProtocolSliceNumber",
           ):
               source_value = minihead_long(source_image, key)
-              expected_value = (
-                  source_value
-                  if source_value is not None
-                  and (key != "NumberInSeries" or source_value >= 1)
-                  else expected_source_storage_int(key)
-              )
+              if key in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
+                  expected_value = module.SCANNER_PARTITION_INDEX
+              elif source_value is not None and (
+                  key != "NumberInSeries" or source_value >= 1
+              ):
+                  expected_value = source_value
+              else:
+                  expected_value = expected_source_storage_int(key)
               assert minihead_long(image, key) == expected_value, key
           assert minihead_array_tokens(image, "ImageTypeValue4") == minihead_array_tokens(
               source_image,
@@ -841,6 +845,37 @@ tests:
           assert "image_index 0, expected >= 1" in str(exc), str(exc)
       else:
           raise AssertionError("expected invalid original image_index validation failure")
+
+      invalid_partition_originals = module._restamp_originals(wrapped_sources)
+      invalid_partition_meta = ismrmrd.Meta.deserialize(
+          invalid_partition_originals[0].attribute_string
+      )
+      invalid_partition_meta["Actual3DImagePartNumber"] = "21"
+      invalid_partition_minihead = base64.b64decode(
+          first(invalid_partition_meta.get("IceMiniHead"))
+      ).decode("utf-8")
+      invalid_partition_minihead, _ = module._replace_or_append_minihead_long_param(
+          invalid_partition_minihead,
+          "Actual3DImagePartNumber",
+          21,
+      )
+      invalid_partition_meta["IceMiniHead"] = base64.b64encode(
+          invalid_partition_minihead.encode("utf-8")
+      ).decode("ascii")
+      invalid_partition_originals[0].attribute_string = (
+          invalid_partition_meta.serialize()
+      )
+      try:
+          module._validate_output_images(invalid_partition_originals, wrapped_sources)
+      except ValueError as exc:
+          message = str(exc)
+          assert "original Meta Actual3DImagePartNumber=21, expected 0" in message, message
+          assert (
+              "original IceMiniHead Actual3DImagePartNumber=21, expected 0"
+              in message
+          ), message
+      else:
+          raise AssertionError("expected invalid original partition validation failure")
 
       wide_geometry_images = []
       for index in range(8):

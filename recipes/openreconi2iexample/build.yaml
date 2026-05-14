@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.37
+version: 1.0.38
 architectures:
   - x86_64
 
@@ -69,8 +69,9 @@ readme: |-
 
   Original copies are sent first as source-native 2D images with
   `Keep_image_geometry = 1`. The pass-through keeps the source protocol,
-  sequence, image-type, MiniHead, slice, and partition metadata as intact as
-  possible while assigning new returned-series UIDs. If the incoming MRD
+  sequence, image-type, MiniHead, and slice metadata as intact as possible while
+  assigning new returned-series UIDs. Scanner partition counters are kept at
+  zero for the returned single-partition 2D stream. If the incoming MRD
   `image_index` is zero, the returned copy uses a one-based per-series
   `image_index`, and missing MiniHead storage counters are filled from source
   metadata or the source slice number. If a source group cannot be sent safely

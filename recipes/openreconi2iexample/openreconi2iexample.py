@@ -49,6 +49,10 @@ SCANNER_WRITE_UNSAFE_META_KEYS = {
     "ImageTypeValue3",
 }
 ORIGINAL_IMAGE_TYPE_VALUE3 = "M"
+ORIGINAL_SINGLE_PARTITION_FIELDS = (
+    "Actual3DImagePartNumber",
+    "AnatomicalPartitionNo",
+)
 SCANNER_PARTITION_INDEX = 0
 SLICE_POSITION_TOLERANCE_MM = 1e-4
 EXTRA_ORIGINAL_SERIES_INDEX_START = 104
@@ -1584,6 +1588,9 @@ def _original_storage_fields(source_image, output_index):
     }
     storage_fields = {}
     for key, fallback in fallbacks.items():
+        if key in ORIGINAL_SINGLE_PARTITION_FIELDS:
+            storage_fields[key] = SCANNER_PARTITION_INDEX
+            continue
         value = _meta_int(source_meta, key)
         if key == "NumberInSeries" and value is not None and value < 1:
             value = None
@@ -1604,6 +1611,9 @@ def _ensure_original_storage_meta(
     if storage_fields is None:
         storage_fields = _original_storage_fields(source_image, output_index)
     for key in storage_fields:
+        if key in ORIGINAL_SINGLE_PARTITION_FIELDS:
+            _set_meta_scalar(meta, key, storage_fields[key])
+            continue
         current_value = _meta_int(meta, key)
         if current_value is not None and not (
             key == "NumberInSeries" and current_value < 1
@@ -1865,12 +1875,19 @@ def _patch_original_ice_minihead(
         "ProtocolSliceNumber",
         "SliceNo",
     ):
-        current_text, did_change = _ensure_minihead_long_param(
-            current_text,
-            name,
-            storage_fields.get(name),
-            minimum=1 if name == "NumberInSeries" else None,
-        )
+        if name in ORIGINAL_SINGLE_PARTITION_FIELDS:
+            current_text, did_change = _replace_or_append_minihead_long_param(
+                current_text,
+                name,
+                storage_fields.get(name),
+            )
+        else:
+            current_text, did_change = _ensure_minihead_long_param(
+                current_text,
+                name,
+                storage_fields.get(name),
+                minimum=1 if name == "NumberInSeries" else None,
+            )
         changed = changed or did_change
     return current_text, changed
 
@@ -2260,6 +2277,24 @@ def _validate_storage_fields(
             f"image {index} is an original pass-through output with "
             f"Keep_image_geometry={keep_image_geometry}, expected 1"
         )
+    elif is_original_output:
+        for field in ORIGINAL_SINGLE_PARTITION_FIELDS:
+            meta_value = _meta_int(meta, field)
+            if meta_value is None:
+                errors.append(f"image {index} is missing original Meta {field}")
+            elif meta_value != SCANNER_PARTITION_INDEX:
+                errors.append(
+                    f"image {index} has original Meta {field}={meta_value}, "
+                    f"expected {SCANNER_PARTITION_INDEX}"
+                )
+            minihead_value = _minihead_long_value(minihead, field)
+            if minihead and minihead_value is None:
+                errors.append(f"image {index} is missing original IceMiniHead {field}")
+            elif minihead_value is not None and minihead_value != SCANNER_PARTITION_INDEX:
+                errors.append(
+                    f"image {index} has original IceMiniHead {field}="
+                    f"{minihead_value}, expected {SCANNER_PARTITION_INDEX}"
+                )
     elif keep_image_geometry == 0:
         partition_count = _meta_int(meta, "partition_count")
         if partition_count is None:

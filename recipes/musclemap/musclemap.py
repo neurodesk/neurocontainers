@@ -34,6 +34,10 @@ muscleMapImageTypeToken = "MUSCLEMAP"
 originalImageTypeValue3 = "M"
 reservedScannerSeriesIndices = {99}
 scannerPartitionIndex = 0
+singlePartitionScannerFields = (
+    "Actual3DImagePartNumber",
+    "AnatomicalPartitionNo",
+)
 sourceParentReferenceMetaKeys = {
     "DicomEngineDimString",
     "MFInstanceNumber",
@@ -723,8 +727,8 @@ def _original_storage_fields(source_image, output_index):
         source_meta = ismrmrd.Meta()
     minihead_text = _decode_ice_minihead(source_meta)
     fallbacks = {
-        "Actual3DImagePartNumber": header_slice,
-        "AnatomicalPartitionNo": header_slice,
+        "Actual3DImagePartNumber": scannerPartitionIndex,
+        "AnatomicalPartitionNo": scannerPartitionIndex,
         "AnatomicalSliceNo": header_slice,
         "ChronSliceNo": header_slice,
         "NumberInSeries": header_image_index,
@@ -735,6 +739,9 @@ def _original_storage_fields(source_image, output_index):
 
     storage_fields = {}
     for key, fallback in fallbacks.items():
+        if key in singlePartitionScannerFields:
+            storage_fields[key] = scannerPartitionIndex
+            continue
         value = _get_first_meta_int(source_meta, [key])
         if key == "NumberInSeries" and value is not None and value < 1:
             value = None
@@ -750,6 +757,9 @@ def _ensure_original_storage_meta(meta_obj, source_image, output_index, storage_
     if storage_fields is None:
         storage_fields = _original_storage_fields(source_image, output_index)
     for key, value in storage_fields.items():
+        if key in singlePartitionScannerFields:
+            _set_meta_scalar(meta_obj, key, value)
+            continue
         current_value = _get_first_meta_int(meta_obj, [key])
         if current_value is not None and not (
             key == "NumberInSeries" and current_value < 1
@@ -832,12 +842,19 @@ def _patch_original_ice_minihead(
         "ProtocolSliceNumber",
         "SliceNo",
     ):
-        current_text, did_change = _ensure_minihead_long_param(
-            current_text,
-            param_name,
-            storage_fields.get(param_name),
-            minimum=1 if param_name == "NumberInSeries" else None,
-        )
+        if param_name in singlePartitionScannerFields:
+            current_text, did_change = _replace_or_append_minihead_long_param(
+                current_text,
+                param_name,
+                storage_fields.get(param_name),
+            )
+        else:
+            current_text, did_change = _ensure_minihead_long_param(
+                current_text,
+                param_name,
+                storage_fields.get(param_name),
+                minimum=1 if param_name == "NumberInSeries" else None,
+            )
         changed = changed or did_change
 
     return current_text, changed
@@ -2110,6 +2127,29 @@ def _validate_output_storage_contract(output_images):
                 f"{', '.join(missing_storage_fields)}"
             )
             continue
+
+        for field_name in singlePartitionScannerFields:
+            meta_value = _get_first_meta_int(meta_obj, [field_name])
+            if meta_value is None:
+                errors.append(
+                    f"image {image_index} is missing scanner partition Meta {field_name}"
+                )
+            elif meta_value != scannerPartitionIndex:
+                errors.append(
+                    f"image {image_index} has scanner partition Meta "
+                    f"{field_name}={meta_value}, expected {scannerPartitionIndex}"
+                )
+
+            minihead_value = _extract_minihead_long_value(minihead_text, field_name)
+            if minihead_text and minihead_value is None:
+                errors.append(
+                    f"image {image_index} is missing scanner partition IceMiniHead {field_name}"
+                )
+            elif minihead_value is not None and minihead_value != scannerPartitionIndex:
+                errors.append(
+                    f"image {image_index} has scanner partition IceMiniHead "
+                    f"{field_name}={minihead_value}, expected {scannerPartitionIndex}"
+                )
 
         storage_key = (
             series_instance_uid,

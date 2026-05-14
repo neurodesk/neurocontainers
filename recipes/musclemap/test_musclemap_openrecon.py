@@ -329,6 +329,7 @@ def test_original_restamp_preserves_source_native_geometry_and_processing_identi
         assignments=[
             "originalImageTypeValue3",
             "scannerPartitionIndex",
+            "singlePartitionScannerFields",
             "sourceParentReferenceMetaKeys",
             "sourceParentReferenceMetaPrefixes",
         ],
@@ -381,8 +382,8 @@ def test_original_restamp_preserves_source_native_geometry_and_processing_identi
     assert "DicomImageType" not in output_meta
     assert output_meta["SequenceDescriptionAdditional"] == "source_extra"
     assert output_meta["Keep_image_geometry"] == 1
-    assert output_meta["Actual3DImagePartNumber"] == "8"
-    assert output_meta["AnatomicalPartitionNo"] == "8"
+    assert output_meta["Actual3DImagePartNumber"] == "0"
+    assert output_meta["AnatomicalPartitionNo"] == "0"
     assert output_meta["AnatomicalSliceNo"] == "8"
     assert output_meta["ChronSliceNo"] == "8"
     assert output_meta["NumberInSeries"] == "9"
@@ -412,8 +413,8 @@ def test_original_restamp_preserves_source_native_geometry_and_processing_identi
     ) == "ORIGINAL\\PRIMARY\\DIXON\\WATER"
     assert helpers["_extract_minihead_string_value"](minihead, "ImageTypeValue3") == "M"
     assert helpers["_extract_minihead_array_tokens"](minihead, "ImageTypeValue4") == ["WATER"]
-    assert helpers["_extract_minihead_long_value"](minihead, "Actual3DImagePartNumber") == 8
-    assert helpers["_extract_minihead_long_value"](minihead, "AnatomicalPartitionNo") == 8
+    assert helpers["_extract_minihead_long_value"](minihead, "Actual3DImagePartNumber") == 0
+    assert helpers["_extract_minihead_long_value"](minihead, "AnatomicalPartitionNo") == 0
     assert helpers["_extract_minihead_long_value"](minihead, "SliceNo") == 8
     assert helpers["_extract_minihead_long_value"](minihead, "NumberInSeries") == 9
 
@@ -463,11 +464,16 @@ def test_output_storage_contract_rejects_duplicate_scanner_storage_key():
         [
             "_as_image_list",
             "_decode_ice_minihead",
+            "_extract_minihead_long_value",
             "_extract_minihead_string_value",
             "_first_non_empty_text",
             "_get_first_meta_int",
             "_get_meta_text",
             "_validate_output_storage_contract",
+        ],
+        assignments=[
+            "scannerPartitionIndex",
+            "singlePartitionScannerFields",
         ],
     )
     images = [
@@ -479,6 +485,8 @@ def test_output_storage_contract_rejects_duplicate_scanner_storage_key():
             {
                 "SeriesInstanceUID": "2.25.4",
                 "SOPInstanceUID": "2.25.4.1",
+                "Actual3DImagePartNumber": "0",
+                "AnatomicalPartitionNo": "0",
                 "SliceNo": "8",
                 "ChronSliceNo": "8",
                 "NumberInSeries": "9",
@@ -491,3 +499,44 @@ def test_output_storage_contract_rejects_duplicate_scanner_storage_key():
         assert "duplicates scanner storage key" in str(exc)
     else:
         raise AssertionError("Expected validator to reject duplicate scanner storage key")
+
+
+def test_output_storage_contract_rejects_nonzero_partition_counters():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_as_image_list",
+            "_decode_ice_minihead",
+            "_extract_minihead_long_value",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_get_first_meta_int",
+            "_get_meta_text",
+            "_validate_output_storage_contract",
+        ],
+        assignments=[
+            "scannerPartitionIndex",
+            "singlePartitionScannerFields",
+        ],
+    )
+    image = helpers["FakeImage"](np.zeros((1, 2, 2), dtype=np.int16))
+    image.attribute_string = helpers["FakeMeta"](
+        {
+            "SeriesInstanceUID": "2.25.4",
+            "SOPInstanceUID": "2.25.4.1",
+            "Actual3DImagePartNumber": "8",
+            "AnatomicalPartitionNo": "8",
+            "SliceNo": "8",
+            "ChronSliceNo": "8",
+            "NumberInSeries": "9",
+            "IceMiniHead": _encoded_minihead(),
+        }
+    ).serialize()
+
+    try:
+        helpers["_validate_output_storage_contract"]([image])
+    except ValueError as exc:
+        message = str(exc)
+        assert "scanner partition Meta Actual3DImagePartNumber=8, expected 0" in message
+        assert "scanner partition IceMiniHead Actual3DImagePartNumber=8, expected 0" in message
+    else:
+        raise AssertionError("Expected validator to reject nonzero scanner partition counters")

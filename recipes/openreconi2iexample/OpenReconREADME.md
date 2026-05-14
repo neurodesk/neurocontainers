@@ -86,8 +86,9 @@ writes the region volume into `ImageComments` and `ImageComment`.
   per-series `image_index`; missing `IceMiniHead` storage counters are filled
   from source metadata or the source slice number.
 - Scanner partition counters such as `Actual3DImagePartNumber` and
-  `AnatomicalPartitionNo` are preserved for original pass-through images and
-  kept at zero for derived image series.
+  `AnatomicalPartitionNo` are kept at zero for original pass-through and derived
+  image series, while slice counters such as `SliceNo` and `ChronSliceNo` remain
+  source-like.
 - Derived outputs set `SequenceDescriptionAdditional` to `openrecon` so
   scanners do not append `_None` to the display name. Original pass-through
   preserves the incoming value and does not synthesize an `openrecon` suffix.
