@@ -16,12 +16,23 @@ ORIGINAL_SERIES_INDEX = 100
 SEGMENT_SERIES_INDEX = 101
 UPSAMPLED_SERIES_INDEX = 102
 MIP_SERIES_INDEX = 103
+METRICS_SERIES_INDEX = 120
 INVERT_SERIES_NAME = "openrecon_invert"
 ORIGINAL_SERIES_NAME = "openrecon_original"
 SEGMENT_SERIES_NAME = "openrecon_segment"
 UPSAMPLED_SERIES_NAME = "openrecon_upsampled"
 MIP_SERIES_NAME = "openrecon_mip"
+METRICS_SERIES_NAME = "openrecon_metrics"
 SEGMENTATION_LUT = "MicroDeltaHotMetal.pal"
+METRICS_FIELDNAMES = (
+    "region",
+    "source",
+    "voxels",
+    "volume_mm3",
+    "volume_ml",
+    "voxel_mm3",
+    "threshold",
+)
 SOURCE_PARENT_REFERENCE_META_KEYS = {
     "DicomEngineDimString",
     "MFInstanceNumber",
@@ -37,6 +48,7 @@ SOURCE_PARENT_REFERENCE_META_PREFIXES = (
 SCANNER_WRITE_UNSAFE_META_KEYS = {
     "ImageTypeValue3",
 }
+ORIGINAL_IMAGE_TYPE_VALUE3 = "M"
 SCANNER_PARTITION_INDEX = 0
 SLICE_POSITION_TOLERANCE_MM = 1e-4
 EXTRA_ORIGINAL_SERIES_INDEX_START = 104
@@ -92,6 +104,11 @@ def process(connection, config, metadata):
             ("mip", "sendmip", "sendthresholdmip"),
             default=False,
         )
+        send_metrics = _config_bool_any(
+            config,
+            ("sendmetrics", "metrics", "sendregionmetrics"),
+            default=False,
+        )
         output_images = []
         original_images = []
         if send_original:
@@ -101,12 +118,17 @@ def process(connection, config, metadata):
         if send_invert:
             inverted_images = _invert_images(magnitude_images)
             output_images.extend(inverted_images)
+        computed_segment_images = []
         segment_images = []
-        if send_segment:
-            segment_images = _segment_images(
+        metrics_rows = []
+        if send_segment or send_metrics:
+            computed_segment_images = _segment_images(
                 magnitude_images,
                 use_colormap=use_segmentation_colormap,
+                metrics_rows=metrics_rows if send_metrics else None,
             )
+        if send_segment:
+            segment_images = computed_segment_images
             output_images.extend(segment_images)
         upsampled_images = []
         if send_upsampled:
@@ -116,25 +138,32 @@ def process(connection, config, metadata):
         if send_mip:
             mip_images = _mip_image(magnitude_images)
             output_images.extend(mip_images)
+        metrics_images = []
+        if send_metrics:
+            metrics_images = _metrics_report_images(magnitude_images, metrics_rows)
+            output_images.extend(metrics_images)
 
         logging.info(
             "Configured outputs: original=%s invert=%s upsampled=%s segment=%s "
-            "segmentationcolormap=%s mip=%s",
+            "segmentationcolormap=%s mip=%s metrics=%s",
             send_original,
             send_invert,
             send_upsampled,
             send_segment,
             use_segmentation_colormap,
             send_mip,
+            send_metrics,
         )
         logging.info(
             "Sending %d original image(s), %d inverted image(s), "
-            "%d upsampled image(s), %d segmentation image(s), and %d MIP image(s)",
+            "%d upsampled image(s), %d segmentation image(s), %d MIP image(s), "
+            "and %d metrics image(s)",
             len(original_images),
             len(inverted_images),
             len(upsampled_images),
             len(segment_images),
             len(mip_images),
+            len(metrics_images),
         )
         if not output_images:
             logging.info("No output options enabled; closing without output")
@@ -219,7 +248,7 @@ def _invert_images(images):
     return outputs
 
 
-def _segment_images(images, use_colormap=False):
+def _segment_images(images, use_colormap=False, metrics_rows=None):
     if not images:
         return []
 
@@ -246,10 +275,25 @@ def _segment_images(images, use_colormap=False):
             )
             segment_items.append((source_image, segmentation))
 
+        metric_row = None
+        if metrics_rows is not None:
+            metric_row = _region_metrics_row(
+                group_images,
+                group_index,
+                segment_suffixes[group_index],
+                threshold,
+                segment_items,
+            )
+            metrics_rows.append(metric_row)
+
         extra_meta = {
             "WindowCenter": "0.5",
             "WindowWidth": "1",
         }
+        if metric_row:
+            metrics_comment = _format_region_volume_comment(metric_row)
+            extra_meta["ImageComments"] = metrics_comment
+            extra_meta["ImageComment"] = metrics_comment
         if len(source_groups) > 1:
             extra_meta["SourceVolumeGroup"] = segment_suffixes[group_index]
             for field_name, _label in SOURCE_VOLUME_GROUP_FIELDS:
@@ -283,6 +327,220 @@ def _segment_images(images, use_colormap=False):
         use_colormap,
     )
     return outputs
+
+
+def _region_metrics_row(group_images, group_index, region_name, threshold, segment_items):
+    voxel_count = int(
+        sum(
+            int(np.count_nonzero(np.asarray(segmentation)))
+            for _image, segmentation in segment_items
+        )
+    )
+    voxel_volume_mm3 = _source_voxel_volume_mm3(group_images)
+    volume_mm3 = float(voxel_count * voxel_volume_mm3)
+    source_name = _source_series_name(group_images[0]) or "source"
+    return {
+        "region": region_name,
+        "source": source_name,
+        "series": _segment_series_index(group_index),
+        "voxels": voxel_count,
+        "voxel_mm3": voxel_volume_mm3,
+        "volume_mm3": volume_mm3,
+        "volume_ml": volume_mm3 / 1000.0,
+        "threshold": float(threshold),
+    }
+
+
+def _source_voxel_volume_mm3(images):
+    if not images:
+        return 0.0
+
+    header = images[0].getHead()
+    matrix = [max(int(value), 1) for value in header.matrix_size]
+    fov = [float(value) for value in header.field_of_view]
+    voxel_x = fov[0] / matrix[0] if matrix[0] else 1.0
+    voxel_y = fov[1] / matrix[1] if matrix[1] else 1.0
+    slice_axis = _infer_slice_axis([image.getHead() for image in images])
+    voxel_z = _explicit_volume_output_spacing(images, slice_axis)
+    return abs(float(voxel_x * voxel_y * voxel_z))
+
+
+def _format_metric_number(value):
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if np.isposinf(value):
+        return "inf"
+    if np.isneginf(value):
+        return "-inf"
+    if not np.isfinite(value):
+        return "nan"
+    return f"{value:.6g}"
+
+
+def _format_region_volume_comment(row):
+    return (
+        "Region volume: "
+        f"{_format_metric_number(row['volume_ml'])} mL "
+        f"({_format_metric_number(row['volume_mm3'])} mm3; "
+        f"{int(row['voxels'])} voxels)"
+    )
+
+
+def _format_metrics_summary_comment(rows, max_chars=1200):
+    rows = list(rows or [])
+    if not rows:
+        return ""
+    if len(rows) == 1:
+        return _format_region_volume_comment(rows[0])
+
+    total_volume_ml = sum(float(row["volume_ml"]) for row in rows)
+    parts = [
+        f"{row['region']}={_format_metric_number(row['volume_ml'])} mL"
+        for row in rows[:8]
+    ]
+    if len(rows) > 8:
+        parts.append(f"... {len(rows) - 8} more")
+    text = (
+        "Region volumes: "
+        + ", ".join(parts)
+        + f"; total={_format_metric_number(total_volume_ml)} mL"
+    )
+    if len(text) > max_chars:
+        return text[: max_chars - 3] + "..."
+    return text
+
+
+def _metrics_report_images(images, metrics_rows):
+    metrics_rows = list(metrics_rows or [])
+    if not images or not metrics_rows:
+        if not metrics_rows:
+            logging.info("sendmetrics requested but no region metrics were available")
+        return []
+
+    page = _render_metrics_table_page(metrics_rows)
+    output = ismrmrd.Image.from_array(page.astype(np.uint16, copy=False), transpose=False)
+    header = images[0].getHead()
+    header.data_type = output.data_type
+    header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    header.image_index = 1
+    header.slice = 0
+    header.contrast = 0
+    height, width = int(page.shape[0]), int(page.shape[1])
+    _set_header_sequence_field(header, "matrix_size", [width, height, 1])
+    _set_header_sequence_field(
+        header,
+        "field_of_view",
+        [float(width), float(height), 1.0],
+    )
+    output.setHead(header)
+
+    series_identity = _build_output_series_identity(
+        images[0],
+        METRICS_SERIES_INDEX,
+        "metrics",
+        METRICS_SERIES_NAME,
+    )
+    metrics_comment = _format_metrics_summary_comment(metrics_rows)
+    extra_meta = {
+        "Keep_image_geometry": str(int(0)),
+        "partition_count": str(int(1)),
+        "slice_count": str(int(1)),
+        "NumberOfSlices": str(int(1)),
+        "ImagesInAcquisition": str(int(1)),
+        "WindowCenter": "2040",
+        "WindowWidth": "4080",
+        "ImageComments": metrics_comment,
+        "ImageComment": metrics_comment,
+        "MetricsRows": str(len(metrics_rows)),
+    }
+    extra_meta.update(_explicit_header_geometry_meta(header))
+    _stamp_output_image(
+        output,
+        images[0],
+        METRICS_SERIES_INDEX,
+        0,
+        series_identity["series_name"],
+        "Image",
+        METRICS_SERIES_NAME,
+        ["PYTHON", "OPENRECON_METRICS"],
+        extra_meta=extra_meta,
+        patch_minihead=False,
+        series_identity=series_identity,
+    )
+    logging.info(
+        "Created metrics report image with %d row(s), total volume=%s mL",
+        len(metrics_rows),
+        _format_metric_number(sum(float(row["volume_ml"]) for row in metrics_rows)),
+    )
+    return [output]
+
+
+def _render_metrics_table_page(metrics_rows):
+    from PIL import Image, ImageDraw, ImageFont
+
+    row_height = 24
+    margin = 24
+    header_lines = 3
+    width = 1024
+    height = max(
+        512,
+        margin * 2 + row_height * (len(metrics_rows) + header_lines + 2),
+    )
+    image = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+
+    draw.text((margin, margin), "OpenRecon Region Metrics", fill=255, font=font)
+    draw.text(
+        (margin, margin + row_height),
+        f"Rows: {len(metrics_rows)}    Total volume: "
+        f"{_format_metric_number(sum(float(row['volume_ml']) for row in metrics_rows))} mL",
+        fill=220,
+        font=font,
+    )
+
+    table_top = margin + row_height * header_lines
+    column_widths = {
+        "region": 150,
+        "source": 250,
+        "voxels": 90,
+        "volume_mm3": 135,
+        "volume_ml": 120,
+        "voxel_mm3": 115,
+        "threshold": 120,
+    }
+    columns = [(field, column_widths[field]) for field in METRICS_FIELDNAMES]
+    x = margin
+    for field, width_px in columns:
+        draw.text((x, table_top), field, fill=255, font=font)
+        x += width_px
+    draw.line(
+        (
+            margin,
+            table_top + row_height - 6,
+            width - margin,
+            table_top + row_height - 6,
+        ),
+        fill=120,
+    )
+
+    y = table_top + row_height
+    for row in metrics_rows:
+        x = margin
+        for field, width_px in columns:
+            value = row.get(field, "")
+            if isinstance(value, float):
+                value = _format_metric_number(value)
+            text = str(value)
+            if len(text) > 32:
+                text = text[:29] + "..."
+            draw.text((x, y), text, fill=220, font=font)
+            x += width_px
+        y += row_height
+
+    return np.asarray(image, dtype=np.uint16) * 16
 
 
 def _bright_foreground_threshold(images):
@@ -1132,8 +1390,11 @@ def _stamp_original_image(
     series_name,
     series_identity=None,
 ):
+    storage_fields = _original_storage_fields(source_image, output_index)
     header = output.getHead()
     header.image_series_index = series_index
+    if int(header.image_index) < 1:
+        header.image_index = output_index + 1
     output.setHead(header)
     output.image_series_index = series_index
     output.attribute_string = _original_passthrough_meta(
@@ -1142,6 +1403,7 @@ def _stamp_original_image(
         output_index,
         series_name,
         series_identity,
+        storage_fields,
     ).serialize()
     return output
 
@@ -1152,10 +1414,10 @@ def _original_passthrough_meta(
     output_index,
     series_name,
     series_identity,
+    storage_fields,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
-    _strip_scanner_write_unsafe_meta(meta)
     if series_identity is None:
         series_identity = _build_output_series_identity_from_name(
             source_image,
@@ -1179,19 +1441,18 @@ def _original_passthrough_meta(
     meta["SeriesInstanceUID"] = series_uid
     meta["SOPInstanceUID"] = sop_uid
     meta["SeriesNumberRangeNameUID"] = series_grouping
-    if not _meta_text(meta, "SequenceDescriptionAdditional"):
-        _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
     _set_meta_scalar(meta, "Keep_image_geometry", 1)
-    _ensure_original_storage_meta(meta, source_image, output_index)
-    _strip_scanner_write_unsafe_meta(meta)
+    _ensure_original_storage_meta(meta, source_image, output_index, storage_fields)
 
     minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    _normalize_original_meta_image_type_value3(meta, minihead)
     if minihead:
         patched_minihead, changed = _patch_original_ice_minihead(
             minihead,
             series_grouping,
             series_uid,
             sop_uid,
+            storage_fields,
         )
         if changed:
             meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
@@ -1303,13 +1564,14 @@ def _set_output_position_meta(meta, output_index):
         _set_meta_scalar(meta, key, value)
 
 
-def _ensure_original_storage_meta(meta, source_image, output_index):
+def _original_storage_fields(source_image, output_index):
     header = source_image.getHead()
     header_slice = int(header.slice)
     header_image_index = int(header.image_index)
     if header_image_index < 1:
         header_image_index = output_index + 1
-    minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    source_meta = _meta_from_image(source_image)
+    minihead = _decode_ice_minihead(_meta_text(source_meta, "IceMiniHead"))
     fallbacks = {
         "Actual3DImagePartNumber": header_slice,
         "AnatomicalPartitionNo": header_slice,
@@ -1320,13 +1582,43 @@ def _ensure_original_storage_meta(meta, source_image, output_index):
         "SliceNo": header_slice,
         "IsmrmrdSliceNo": header_slice,
     }
+    storage_fields = {}
     for key, fallback in fallbacks.items():
-        if _meta_int(meta, key) is not None:
-            continue
-        value = None
-        if key != "IsmrmrdSliceNo":
+        value = _meta_int(source_meta, key)
+        if key == "NumberInSeries" and value is not None and value < 1:
+            value = None
+        if value is None and key != "IsmrmrdSliceNo":
             value = _minihead_long_value(minihead, key)
-        _set_meta_scalar(meta, key, value if value is not None else fallback)
+        if key == "NumberInSeries" and value is not None and value < 1:
+            value = None
+        storage_fields[key] = value if value is not None else fallback
+    return storage_fields
+
+
+def _ensure_original_storage_meta(
+    meta,
+    source_image,
+    output_index,
+    storage_fields=None,
+):
+    if storage_fields is None:
+        storage_fields = _original_storage_fields(source_image, output_index)
+    for key in storage_fields:
+        current_value = _meta_int(meta, key)
+        if current_value is not None and not (
+            key == "NumberInSeries" and current_value < 1
+        ):
+            continue
+        _set_meta_scalar(meta, key, storage_fields[key])
+
+
+def _normalize_original_meta_image_type_value3(meta, minihead):
+    if (
+        "ImageTypeValue3" in meta
+        or _minihead_string_value(minihead, "ImageTypeValue3")
+        or _minihead_array_tokens(minihead, "ImageTypeValue3")
+    ):
+        meta["ImageTypeValue3"] = ORIGINAL_IMAGE_TYPE_VALUE3
 
 
 def _meta_from_image(image):
@@ -1545,12 +1837,14 @@ def _patch_original_ice_minihead(
     series_grouping,
     series_uid,
     sop_uid,
+    storage_fields,
 ):
     current_text = minihead_text
-    current_text, changed = _remove_minihead_string_param(
-        current_text,
-        "ImageTypeValue3",
+    changed = False
+    current_text, did_change = _normalize_original_minihead_image_type_value3(
+        current_text
     )
+    changed = changed or did_change
     for name, value in (
         ("SeriesNumberRangeNameUID", series_grouping),
         ("SeriesInstanceUID", series_uid),
@@ -1560,6 +1854,42 @@ def _patch_original_ice_minihead(
             current_text,
             name,
             value,
+        )
+        changed = changed or did_change
+    for name in (
+        "Actual3DImagePartNumber",
+        "AnatomicalPartitionNo",
+        "AnatomicalSliceNo",
+        "ChronSliceNo",
+        "NumberInSeries",
+        "ProtocolSliceNumber",
+        "SliceNo",
+    ):
+        current_text, did_change = _ensure_minihead_long_param(
+            current_text,
+            name,
+            storage_fields.get(name),
+            minimum=1 if name == "NumberInSeries" else None,
+        )
+        changed = changed or did_change
+    return current_text, changed
+
+
+def _normalize_original_minihead_image_type_value3(minihead_text):
+    current_text = minihead_text
+    changed = False
+    if re.search(r'<ParamString\."ImageTypeValue3">', current_text):
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            "ImageTypeValue3",
+            ORIGINAL_IMAGE_TYPE_VALUE3,
+        )
+        changed = changed or did_change
+    if _minihead_array_tokens(current_text, "ImageTypeValue3"):
+        current_text, did_change = _replace_or_append_minihead_array_token(
+            current_text,
+            "ImageTypeValue3",
+            ORIGINAL_IMAGE_TYPE_VALUE3,
         )
         changed = changed or did_change
     return current_text, changed
@@ -1620,6 +1950,15 @@ def _replace_or_append_minihead_long_param(minihead_text, name, value):
 
     appended_param = f'\n<ParamLong."{name}">\t{{ {value} }}\n'
     return minihead_text.rstrip() + appended_param, True
+
+
+def _ensure_minihead_long_param(minihead_text, name, value, minimum=None):
+    if value is None:
+        return minihead_text, False
+    current_value = _minihead_long_value(minihead_text, name)
+    if current_value is not None and (minimum is None or current_value >= minimum):
+        return minihead_text, False
+    return _replace_or_append_minihead_long_param(minihead_text, name, value)
 
 
 def _replace_or_append_minihead_array_token(minihead_text, name, target_token):
@@ -1863,10 +2202,16 @@ def _validate_storage_fields(
 ):
     header = image.getHead()
     header_slice = int(header.slice)
+    header_image_index = int(header.image_index)
     header_matrix_z = int(header.matrix_size[2])
     keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
     image_type_value4 = _meta_text(meta, "ImageTypeValue4")
     is_original_output = _is_original_series_index(int(image.image_series_index))
+
+    if header_image_index < 1:
+        errors.append(
+            f"image {index} has image_index {header_image_index}, expected >= 1"
+        )
 
     if (
         series_slice_limit
@@ -1971,11 +2316,68 @@ def _validate_storage_fields(
                 f"image {index} has IceMiniHead ImageTypeValue4 "
                 f"{minihead_image_type_value4}, expected {image_type_value4}"
             )
-    for field in SCANNER_WRITE_UNSAFE_META_KEYS:
-        if _meta_text(meta, field):
-            errors.append(f"image {index} has unsafe scanner Meta {field}")
-        if _minihead_string_value(minihead, field):
-            errors.append(f"image {index} has unsafe scanner IceMiniHead {field}")
+    else:
+        original_meta_image_type_value3 = _meta_text(meta, "ImageTypeValue3")
+        if (
+            original_meta_image_type_value3
+            and original_meta_image_type_value3 != ORIGINAL_IMAGE_TYPE_VALUE3
+        ):
+            errors.append(
+                f"image {index} has original Meta ImageTypeValue3="
+                f"{original_meta_image_type_value3}, expected "
+                f"{ORIGINAL_IMAGE_TYPE_VALUE3}"
+            )
+    if is_original_output and minihead:
+        original_minihead_image_type_value3 = _minihead_string_value(
+            minihead, "ImageTypeValue3"
+        )
+        if (
+            original_minihead_image_type_value3
+            and original_minihead_image_type_value3 != ORIGINAL_IMAGE_TYPE_VALUE3
+        ):
+            errors.append(
+                f"image {index} has original IceMiniHead ImageTypeValue3="
+                f"{original_minihead_image_type_value3}, expected "
+                f"{ORIGINAL_IMAGE_TYPE_VALUE3}"
+            )
+        original_minihead_image_type_value3_tokens = _minihead_array_tokens(
+            minihead, "ImageTypeValue3"
+        )
+        if (
+            original_minihead_image_type_value3_tokens
+            and original_minihead_image_type_value3_tokens
+            != [ORIGINAL_IMAGE_TYPE_VALUE3]
+        ):
+            errors.append(
+                f"image {index} has original IceMiniHead ImageTypeValue3 "
+                f"{original_minihead_image_type_value3_tokens}, expected "
+                f"{ORIGINAL_IMAGE_TYPE_VALUE3}"
+            )
+        for field in (
+            "Actual3DImagePartNumber",
+            "AnatomicalPartitionNo",
+            "AnatomicalSliceNo",
+            "ChronSliceNo",
+            "NumberInSeries",
+            "ProtocolSliceNumber",
+            "SliceNo",
+        ):
+            value = _minihead_long_value(minihead, field)
+            if value is None:
+                errors.append(
+                    f"image {index} is missing original IceMiniHead {field}"
+                )
+            elif field == "NumberInSeries" and value < 1:
+                errors.append(
+                    f"image {index} has original IceMiniHead {field}={value}, "
+                    "expected >= 1"
+                )
+    if not is_original_output:
+        for field in SCANNER_WRITE_UNSAFE_META_KEYS:
+            if _meta_text(meta, field):
+                errors.append(f"image {index} has unsafe scanner Meta {field}")
+            if _minihead_string_value(minihead, field):
+                errors.append(f"image {index} has unsafe scanner IceMiniHead {field}")
 
     storage_key = (
         _meta_text(meta, "SeriesInstanceUID"),

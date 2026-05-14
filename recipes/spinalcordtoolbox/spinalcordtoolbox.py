@@ -169,7 +169,7 @@ OPENRECON_DEFAULTS = {
 
 OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96
 RESERVED_SCANNER_SERIES_INDICES = {99}
-# SCT currently sends 2D slice stacks; revisit this if 3D slab images are emitted.
+# Returned originals stay 2D; processed SCT outputs are sent as explicit 3D volumes.
 SCANNER_PARTITION_INDEX = 0
 
 SOURCE_PARENT_REFERENCE_META_KEYS = {
@@ -185,6 +185,10 @@ SOURCE_PARENT_REFERENCE_META_PREFIXES = (
     "ReferencedGSPS",
     "ReferencedImageSequence",
 )
+
+SCANNER_WRITE_UNSAFE_META_KEYS = {
+    "ImageTypeValue3",
+}
 
 SCT_BATCH_PROCESSING_OPENRECON_CASES = (
     {
@@ -384,6 +388,12 @@ def _header_vector(image_header, field_name):
         return np.asarray(getattr(image_header, field_name), dtype=float)
     except Exception:
         return np.zeros(3, dtype=float)
+
+
+def _set_header_sequence_field(image_header, field_name, values):
+    sequence = getattr(image_header, field_name)
+    for index, value in enumerate(values):
+        sequence[index] = value
 
 
 def _normalize_vector(vector):
@@ -623,7 +633,7 @@ def _send_images_by_series(connection, images, context):
         batch_series = None
 
     for image in images:
-        series_index = int(getattr(image, "image_series_index", 0))
+        series_index = _get_image_series_index(image)
         if batch and series_index != batch_series:
             flush_batch()
         batch.append(image)
@@ -682,6 +692,25 @@ def _strip_source_parent_refs(meta_obj):
                 del meta_obj[key]
             except Exception:
                 logging.warning("Could not remove source parent metadata key %s", key_text)
+
+    return meta_obj
+
+
+def _strip_scanner_write_unsafe_meta(meta_obj):
+    try:
+        meta_keys = list(meta_obj.keys())
+    except Exception:
+        return meta_obj
+
+    for key in meta_keys:
+        key_text = str(key)
+        key_leaf = key_text.rsplit(".", 1)[-1]
+        if key_text not in SCANNER_WRITE_UNSAFE_META_KEYS and key_leaf not in SCANNER_WRITE_UNSAFE_META_KEYS:
+            continue
+        try:
+            del meta_obj[key]
+        except Exception:
+            logging.warning("Could not remove scanner-unsafe metadata key %s", key_text)
 
     return meta_obj
 
@@ -789,6 +818,7 @@ def _series_contract_entry(image, source="output"):
         ) or "N/A",
         "protocol_name": _first_non_empty_text(meta_protocol_name, minihead_protocol_name) or "N/A",
         "series_description": _get_meta_text(meta_obj, "SeriesDescription") or "N/A",
+        "keep_image_geometry": _meta_int(meta_obj, "Keep_image_geometry"),
     }
 
 
@@ -845,6 +875,14 @@ def _log_and_validate_output_series_contract(output_images, input_images, contex
     }
     _log_json_event("SCT_OUTPUT_SERIES_CONTRACT", payload)
     _validate_output_series_contract(output_summary, input_summary)
+    _validate_output_images(output_images, input_images)
+
+
+def _summary_uid_values(entry, list_name, scalar_name):
+    list_values = _non_empty_values(entry.get(list_name))
+    if list_values:
+        return list_values
+    return _non_empty_values(entry.get(scalar_name))
 
 
 def _validate_output_series_contract(output_summary, input_summary):
@@ -880,18 +918,27 @@ def _validate_output_series_contract(output_summary, input_summary):
         uid = _first_non_empty_text(entry.get("series_instance_uid"))
         meta_uid = _first_non_empty_text(entry.get("meta_series_instance_uid"))
         minihead_uid = _first_non_empty_text(entry.get("minihead_series_instance_uid"))
-        meta_sop_uids = _non_empty_values(
-            entry.get("meta_sop_instance_uids"),
-            entry.get("meta_sop_instance_uid"),
+        meta_sop_uids = _summary_uid_values(
+            entry,
+            "meta_sop_instance_uids",
+            "meta_sop_instance_uid",
         )
-        minihead_sop_uids = _non_empty_values(
-            entry.get("minihead_sop_instance_uids"),
-            entry.get("minihead_sop_instance_uid"),
+        minihead_sop_uids = _summary_uid_values(
+            entry,
+            "minihead_sop_instance_uids",
+            "minihead_sop_instance_uid",
         )
         meta_grouping = _first_non_empty_text(entry.get("meta_series_grouping"))
         minihead_grouping = _first_non_empty_text(entry.get("minihead_series_grouping"))
         meta_protocol = _first_non_empty_text(entry.get("meta_protocol_name"))
         minihead_protocol = _first_non_empty_text(entry.get("minihead_protocol_name"))
+        keep_image_geometry = entry.get("keep_image_geometry")
+        explicit_volume_output = False
+        try:
+            explicit_volume_output = int(keep_image_geometry) == 0
+        except (TypeError, ValueError):
+            explicit_volume_output = False
+        require_minihead_identity = input_has_minihead_identity and not explicit_volume_output
 
         roles_by_index.setdefault(series_index, set()).add(role)
         if series_index in input_series_indices:
@@ -912,7 +959,7 @@ def _validate_output_series_contract(output_summary, input_summary):
                 errors.append(f"derived role {role} reuses input SeriesInstanceUID {uid}")
             if not meta_uid:
                 errors.append(f"derived role {role} is missing Meta SeriesInstanceUID")
-            if input_has_minihead_identity and not minihead_uid:
+            if require_minihead_identity and not minihead_uid:
                 errors.append(f"derived role {role} is missing IceMiniHead SeriesInstanceUID")
             if meta_uid and minihead_uid and meta_uid != minihead_uid:
                 errors.append(
@@ -921,7 +968,7 @@ def _validate_output_series_contract(output_summary, input_summary):
                 )
             if not meta_sop_uids:
                 errors.append(f"derived role {role} is missing Meta SOPInstanceUID")
-            if input_has_minihead_identity and not minihead_sop_uids:
+            if require_minihead_identity and not minihead_sop_uids:
                 errors.append(f"derived role {role} is missing IceMiniHead SOPInstanceUID")
             if len(meta_sop_uids) != len(set(meta_sop_uids)):
                 errors.append(f"derived role {role} has duplicate Meta SOPInstanceUID values")
@@ -942,7 +989,7 @@ def _validate_output_series_contract(output_summary, input_summary):
                 errors.append(f"derived role {role} reuses input SOPInstanceUID(s): {reused_sop_uids}")
             if not meta_grouping:
                 errors.append(f"derived role {role} is missing Meta SeriesNumberRangeNameUID")
-            if input_has_minihead_identity and not minihead_grouping:
+            if require_minihead_identity and not minihead_grouping:
                 errors.append(f"derived role {role} is missing IceMiniHead SeriesNumberRangeNameUID")
             if meta_grouping and minihead_grouping and meta_grouping != minihead_grouping:
                 errors.append(
@@ -951,7 +998,7 @@ def _validate_output_series_contract(output_summary, input_summary):
                 )
             if not meta_protocol:
                 errors.append(f"derived role {role} is missing Meta ProtocolName")
-            if input_has_minihead_identity and not minihead_protocol:
+            if require_minihead_identity and not minihead_protocol:
                 errors.append(f"derived role {role} is missing IceMiniHead ProtocolName")
             if meta_protocol and minihead_protocol and meta_protocol != minihead_protocol:
                 errors.append(
@@ -974,6 +1021,415 @@ def _validate_output_series_contract(output_summary, input_summary):
 
     if errors:
         raise ValueError("Invalid SCT output series contract before send: " + "; ".join(errors))
+
+
+def _validate_output_images(output_images, input_images):
+    errors = []
+    seen_image_keys = {}
+    seen_storage_keys = {}
+    seen_sop_uids = {}
+    source_image_count = len(input_images)
+    source_slice_count = source_image_count
+    input_identity = _identity_values(input_images)
+    input_series_indices = {
+        _get_image_series_index(image)
+        for image in _as_image_list(input_images)
+    }
+    input_has_minihead = any(_image_minihead(image) for image in input_images)
+    series_identity = {}
+    series_by_uid = {}
+
+    for index, image in enumerate(_as_image_list(output_images)):
+        header = image.getHead()
+        series_index = _get_image_series_index(image)
+        image_key = (
+            series_index,
+            int(header.slice),
+            int(header.image_index),
+        )
+        if image_key in seen_image_keys:
+            errors.append(
+                f"image {index} duplicates output image key {image_key} "
+                f"from image {seen_image_keys[image_key]}"
+            )
+        else:
+            seen_image_keys[image_key] = index
+
+        if series_index in input_series_indices:
+            errors.append(f"output image {index} reuses input image_series_index {series_index}")
+
+        meta = _meta_from_image(image)
+        minihead = _image_minihead(image)
+        keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
+        is_original_output = _series_contract_role(meta, minihead) == "ORIGINAL"
+        if (
+            input_has_minihead
+            and not minihead
+            and keep_image_geometry != 0
+        ):
+            errors.append(f"image {index} is missing IceMiniHead")
+
+        identity = {
+            "series_description": _get_meta_text(meta, "SeriesDescription"),
+            "sequence_description": _get_meta_text(meta, "SequenceDescription"),
+            "protocol_name": _get_meta_text(meta, "ProtocolName"),
+            "series_grouping": _get_meta_text(meta, "SeriesNumberRangeNameUID"),
+            "series_uid": _get_meta_text(meta, "SeriesInstanceUID"),
+            "sop_uid": _get_meta_text(meta, "SOPInstanceUID"),
+            "minihead_sequence_description": _extract_minihead_string_value(
+                minihead, "SequenceDescription"
+            ),
+            "minihead_protocol_name": _extract_minihead_string_value(minihead, "ProtocolName"),
+            "minihead_series_grouping": _extract_minihead_string_value(
+                minihead, "SeriesNumberRangeNameUID"
+            ),
+            "minihead_series_uid": _extract_minihead_string_value(minihead, "SeriesInstanceUID"),
+            "minihead_sop_uid": _extract_minihead_string_value(minihead, "SOPInstanceUID"),
+        }
+        _validate_identity_fields(
+            index,
+            identity,
+            input_identity,
+            errors,
+            allow_reused_descriptors=is_original_output,
+        )
+        _validate_storage_fields(
+            index,
+            image,
+            meta,
+            minihead,
+            input_identity,
+            seen_storage_keys,
+            seen_sop_uids,
+            _series_slice_limit(series_index, source_slice_count, source_image_count),
+            errors,
+        )
+
+        comparable_identity = (
+            identity["sequence_description"],
+            identity["protocol_name"],
+            identity["series_grouping"],
+            identity["series_uid"],
+        )
+        previous_identity = series_identity.setdefault(series_index, comparable_identity)
+        if previous_identity != comparable_identity:
+            errors.append(
+                f"image {index} in image_series_index {series_index} has "
+                f"inconsistent identity values: {comparable_identity} != "
+                f"{previous_identity}"
+            )
+        series_uid = identity["series_uid"]
+        if series_uid:
+            previous_series = series_by_uid.setdefault(series_uid, series_index)
+            if previous_series != series_index:
+                errors.append(
+                    f"SeriesInstanceUID {series_uid} is shared by "
+                    f"image_series_index {previous_series} and {series_index}"
+                )
+
+    if errors:
+        raise ValueError(
+            "Invalid SCT output series contract before send: " + "; ".join(errors)
+        )
+
+
+def _validate_identity_fields(
+    index,
+    identity,
+    input_identity,
+    errors,
+    allow_reused_descriptors=False,
+):
+    required = (
+        "series_description",
+        "sequence_description",
+        "protocol_name",
+        "series_grouping",
+        "series_uid",
+        "sop_uid",
+    )
+    for key in required:
+        if not identity[key]:
+            errors.append(f"image {index} is missing Meta {key}")
+
+    for meta_key, minihead_key in (
+        ("sequence_description", "minihead_sequence_description"),
+        ("protocol_name", "minihead_protocol_name"),
+        ("series_grouping", "minihead_series_grouping"),
+        ("series_uid", "minihead_series_uid"),
+        ("sop_uid", "minihead_sop_uid"),
+    ):
+        meta_value = identity[meta_key]
+        minihead_value = identity[minihead_key]
+        if minihead_value and meta_value != minihead_value:
+            errors.append(
+                f"image {index} has Meta/IceMiniHead {meta_key} mismatch: "
+                f"{meta_value} != {minihead_value}"
+            )
+
+    for key in (
+        "sequence_description",
+        "protocol_name",
+        "series_grouping",
+        "series_uid",
+        "minihead_sequence_description",
+        "minihead_protocol_name",
+        "minihead_series_grouping",
+        "minihead_series_uid",
+        "sop_uid",
+        "minihead_sop_uid",
+    ):
+        if allow_reused_descriptors and key in (
+            "sequence_description",
+            "protocol_name",
+            "minihead_sequence_description",
+            "minihead_protocol_name",
+        ):
+            continue
+        value = identity[key]
+        if value and value in input_identity:
+            errors.append(f"image {index} reuses input identity {key}={value}")
+
+
+def _validate_storage_fields(
+    index,
+    image,
+    meta,
+    minihead,
+    input_identity,
+    seen_storage_keys,
+    seen_sop_uids,
+    series_slice_limit,
+    errors,
+):
+    header = image.getHead()
+    header_slice = int(header.slice)
+    header_image_index = int(header.image_index)
+    header_matrix_z = int(header.matrix_size[2])
+    keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
+    image_type_value4 = _get_meta_text(meta, "ImageTypeValue4")
+    is_original_output = _series_contract_role(meta, minihead) == "ORIGINAL"
+
+    if header_image_index < 1:
+        errors.append(
+            f"image {index} has image_index {header_image_index}, expected >= 1"
+        )
+
+    if (
+        series_slice_limit
+        and not 0 <= header_slice < series_slice_limit
+    ):
+        errors.append(
+            f"image {index} has slice {header_slice} outside source image "
+            f"bounds [0..{series_slice_limit})"
+        )
+
+    expected_position_fields = {
+        "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
+        "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+        "AnatomicalSliceNo": header_slice,
+        "ChronSliceNo": header_slice,
+        "NumberInSeries": int(header.image_index),
+        "ProtocolSliceNumber": header_slice,
+        "SliceNo": header_slice,
+        "IsmrmrdSliceNo": header_slice,
+    }
+
+    for field, expected in expected_position_fields.items():
+        meta_value = _meta_int(meta, field)
+        if meta_value is None:
+            errors.append(f"image {index} is missing Meta {field}")
+        elif meta_value != expected:
+            errors.append(
+                f"image {index} has Meta {field}={meta_value}, expected {expected}"
+            )
+        if field == "IsmrmrdSliceNo":
+            continue
+        minihead_value = _minihead_long_value(minihead, field)
+        if minihead and minihead_value is None:
+            errors.append(f"image {index} is missing IceMiniHead {field}")
+        elif minihead_value is not None and minihead_value != expected:
+            errors.append(
+                f"image {index} has IceMiniHead {field}={minihead_value}, "
+                f"expected {expected}"
+            )
+
+    if keep_image_geometry is None:
+        errors.append(f"image {index} is missing Meta Keep_image_geometry")
+    elif keep_image_geometry == 0:
+        partition_count = _meta_int(meta, "partition_count")
+        if partition_count is None:
+            errors.append(f"image {index} is missing Meta partition_count")
+        elif partition_count < 1:
+            errors.append(
+                f"image {index} has Meta partition_count={partition_count}, "
+                "expected at least 1"
+            )
+
+        slice_count = _meta_int(meta, "slice_count")
+        if slice_count is None:
+            errors.append(f"image {index} is missing Meta slice_count")
+        elif header_slice >= slice_count:
+            errors.append(
+                f"image {index} has slice {header_slice} outside explicit "
+                f"slice_count {slice_count}"
+            )
+        elif header_matrix_z > 1 and header_matrix_z != slice_count:
+            errors.append(
+                f"image {index} has matrix_size[2]={header_matrix_z}, "
+                f"expected explicit slice_count {slice_count}"
+            )
+
+        number_of_slices = _meta_int(meta, "NumberOfSlices")
+        if header_matrix_z > 1 and number_of_slices != slice_count:
+            errors.append(
+                f"image {index} has Meta NumberOfSlices={number_of_slices}, "
+                f"expected {slice_count}"
+            )
+
+    sop_uid = _get_meta_text(meta, "SOPInstanceUID")
+    minihead_sop_uid = _extract_minihead_string_value(minihead, "SOPInstanceUID")
+    if sop_uid:
+        previous_index = seen_sop_uids.setdefault(sop_uid, index)
+        if previous_index != index:
+            errors.append(
+                f"SOPInstanceUID {sop_uid} is shared by output images "
+                f"{previous_index} and {index}"
+            )
+    if minihead_sop_uid:
+        previous_index = seen_sop_uids.setdefault(minihead_sop_uid, index)
+        if previous_index != index:
+            errors.append(
+                f"IceMiniHead SOPInstanceUID {minihead_sop_uid} is shared by "
+                f"output images {previous_index} and {index}"
+            )
+
+    minihead_image_type_value4 = _extract_minihead_array_tokens(minihead, "ImageTypeValue4")
+    if not image_type_value4:
+        errors.append(f"image {index} is missing Meta ImageTypeValue4")
+    if minihead and minihead_image_type_value4 != [image_type_value4]:
+        errors.append(
+            f"image {index} has IceMiniHead ImageTypeValue4 "
+            f"{minihead_image_type_value4}, expected only {image_type_value4}"
+        )
+    if is_original_output:
+        for source, value in (
+            ("Meta", _get_meta_text(meta, "ImageTypeValue3")),
+            ("IceMiniHead", _extract_minihead_string_value(minihead, "ImageTypeValue3")),
+        ):
+            if value and value != "M":
+                errors.append(
+                    f"image {index} has original {source} ImageTypeValue3={value}, expected M"
+                )
+    else:
+        meta_image_type_value3 = _get_meta_text(meta, "ImageTypeValue3")
+        if meta_image_type_value3:
+            errors.append(
+                f"image {index} has unsafe scanner Meta ImageTypeValue3={meta_image_type_value3}"
+            )
+        minihead_image_type_value3 = _extract_minihead_string_value(
+            minihead,
+            "ImageTypeValue3",
+        )
+        if minihead_image_type_value3:
+            errors.append(
+                f"image {index} has unsafe scanner IceMiniHead ImageTypeValue3="
+                f"{minihead_image_type_value3}"
+            )
+        minihead_image_type_value3_tokens = _extract_minihead_array_tokens(
+            minihead,
+            "ImageTypeValue3",
+        )
+        if minihead_image_type_value3_tokens:
+            errors.append(
+                f"image {index} has unsafe scanner IceMiniHead ImageTypeValue3 "
+                f"{minihead_image_type_value3_tokens}"
+            )
+
+    storage_key = (
+        _get_meta_text(meta, "SeriesInstanceUID"),
+        _meta_int(meta, "SliceNo"),
+        _meta_int(meta, "ChronSliceNo"),
+        _meta_int(meta, "NumberInSeries"),
+    )
+    missing_storage_fields = [
+        field
+        for field, value in zip(
+            ("SeriesInstanceUID", "SliceNo", "ChronSliceNo", "NumberInSeries"),
+            storage_key,
+        )
+        if value is None
+    ]
+    if missing_storage_fields:
+        errors.append(
+            f"image {index} is missing scanner storage key field(s) "
+            f"{', '.join(missing_storage_fields)}"
+        )
+    previous_index = seen_storage_keys.setdefault(storage_key, index)
+    if previous_index != index:
+        errors.append(
+            f"image {index} duplicates scanner storage key {storage_key} "
+            f"from image {previous_index}"
+        )
+    if sop_uid and sop_uid in input_identity:
+        errors.append(f"image {index} reuses input storage identity SOPInstanceUID={sop_uid}")
+
+
+def _series_slice_limit(_series_index, source_slice_count, _source_image_count):
+    return max(int(source_slice_count), 0)
+
+
+def _identity_values(images):
+    values = set()
+    for image in _as_image_list(images):
+        meta = _meta_from_image(image)
+        minihead = _image_minihead(image)
+        for key in (
+            "SeriesDescription",
+            "SequenceDescription",
+            "ProtocolName",
+            "SeriesNumberRangeNameUID",
+            "SeriesInstanceUID",
+            "SOPInstanceUID",
+        ):
+            value = _get_meta_text(meta, key)
+            if value:
+                values.add(value)
+            minihead_value = _extract_minihead_string_value(minihead, key)
+            if minihead_value:
+                values.add(minihead_value)
+    return values
+
+
+def _meta_int(meta_obj, key):
+    text = _get_meta_text(meta_obj, key)
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
+
+
+def _meta_from_image(image):
+    try:
+        return ismrmrd.Meta.deserialize(image.attribute_string)
+    except Exception:
+        return ismrmrd.Meta()
+
+
+def _image_minihead(image):
+    return _decode_ice_minihead(_meta_from_image(image))
+
+
+def _minihead_long_value(minihead_text, key):
+    text = _extract_minihead_string_value(minihead_text, key)
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except ValueError:
+        return None
 
 
 def _first_non_empty_text(*values):
@@ -1119,12 +1575,37 @@ def _replace_or_append_minihead_string_param(minihead_text, name, value):
     return minihead_text.rstrip() + appended_param, True
 
 
+def _remove_minihead_string_param(minihead_text, name):
+    if not minihead_text:
+        return minihead_text, False
+
+    pattern = re.compile(
+        rf'^\s*<ParamString\."{re.escape(name)}">\s*\{{\s*"[^"]*"\s*\}}\s*\n?',
+        flags=re.MULTILINE,
+    )
+    updated_text, count = pattern.subn("", minihead_text)
+    return updated_text, bool(count)
+
+
+def _remove_minihead_array_param(minihead_text, name):
+    if not minihead_text:
+        return minihead_text, False
+
+    pattern = re.compile(
+        rf'^\s*<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}\s*\n?',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    updated_text, count = pattern.subn("", minihead_text)
+    return updated_text, bool(count)
+
+
 def _replace_minihead_array_token(minihead_text, name, source_token, target_token):
+    target_token = _sanitize_minihead_param_value(target_token)
     if not minihead_text or not target_token:
         return minihead_text, False
 
     block_pattern = re.compile(
-        rf'<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}',
+        rf'(<ParamArray\."{re.escape(name)}">\s*\{{)(.*?)(^\s*\}})',
         flags=re.DOTALL | re.MULTILINE,
     )
     block_match = block_pattern.search(minihead_text)
@@ -1133,36 +1614,21 @@ def _replace_minihead_array_token(minihead_text, name, source_token, target_toke
 
     block_text = block_match.group(0)
     tokens = [token.strip() for token in re.findall(r'\{\s*"([^"]+)"\s*\}', block_text)]
-    if not tokens:
-        return minihead_text, False
-    if any(token.upper() == target_token.upper() for token in tokens):
+    if tokens == [target_token]:
         return minihead_text, False
 
-    replacement_source = ""
-    source_token = (source_token or "").strip().upper()
-    for token in tokens:
-        if token.upper() == source_token:
-            replacement_source = token
-            break
-    if not replacement_source:
-        reserved_tokens = {"NORM", "DIS2D", "DIS3D"}
-        for token in tokens:
-            if token.upper() not in reserved_tokens:
-                replacement_source = token
-                break
-    if not replacement_source:
-        return minihead_text, False
-
-    token_pattern = re.compile(rf'(\{{\s*"){re.escape(replacement_source)}("\s*\}})')
-    token_match = token_pattern.search(block_text)
-    if not token_match:
-        return minihead_text, False
-
-    replaced_block = (
-        block_text[:token_match.start()]
-        + f'{token_match.group(1)}{target_token}{token_match.group(2)}'
-        + block_text[token_match.end():]
-    )
+    token_pattern = re.compile(r'\{\s*"[^"]*"\s*\}')
+    token_matches = list(token_pattern.finditer(block_text))
+    if not token_matches:
+        replaced_block = block_text.rstrip()[:-1] + f'\n\t{{ "{target_token}" }}\n}}'
+    else:
+        first_token = token_matches[0]
+        last_token = token_matches[-1]
+        replaced_block = (
+            block_text[:first_token.start()]
+            + f'{{ "{target_token}" }}'
+            + block_text[last_token.end():]
+        )
     return (
         minihead_text[:block_match.start()] + replaced_block + minihead_text[block_match.end():],
         True,
@@ -1216,6 +1682,7 @@ def _patch_ice_minihead(
     target_type_token,
     target_display_token=None,
     output_index=0,
+    preserve_image_type_value3=False,
 ):
     if not minihead_text:
         return minihead_text, False
@@ -1224,6 +1691,18 @@ def _patch_ice_minihead(
     current_text = minihead_text
     target_display_token = target_display_token or target_type_token
 
+    if preserve_image_type_value3:
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            "ImageTypeValue3",
+            "M",
+        )
+        changed = changed or did_change
+    else:
+        for remover in (_remove_minihead_string_param, _remove_minihead_array_param):
+            current_text, did_change = remover(current_text, "ImageTypeValue3")
+            changed = changed or did_change
+
     for param_name, param_value in (
         ("SequenceDescription", sequence_description),
         ("ProtocolName", sequence_description),
@@ -1231,7 +1710,6 @@ def _patch_ice_minihead(
         ("SeriesInstanceUID", series_instance_uid),
         ("SOPInstanceUID", sop_instance_uid),
         ("ImageType", f"DERIVED\\PRIMARY\\M\\{target_type_token}"),
-        ("ImageTypeValue3", "M"),
         ("ComplexImageComponent", "MAGNITUDE"),
     ):
         current_text, did_change = _replace_or_append_minihead_string_param(
@@ -1452,6 +1930,9 @@ def _restamp_passthrough_images(images, role, output_series_index):
         tmpMeta = _copy_meta(source_meta)
         _strip_source_parent_refs(tmpMeta)
         output_identity = _build_passthrough_output_identity(tmpMeta, role, output_series_index)
+        is_original_output = output_identity["type_token"] == "ORIGINAL"
+        if not is_original_output:
+            _strip_scanner_write_unsafe_meta(tmpMeta)
         sop_instance_uid = _build_derived_sop_instance_uid(
             source_meta,
             role,
@@ -1468,7 +1949,8 @@ def _restamp_passthrough_images(images, role, output_series_index):
         tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]
         tmpMeta["SOPInstanceUID"] = sop_instance_uid
         tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
-        tmpMeta["ImageTypeValue3"] = "M"
+        if is_original_output:
+            tmpMeta["ImageTypeValue3"] = "M"
         tmpMeta["ImageTypeValue4"] = output_identity["display_token"]
         tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
         tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
@@ -1490,6 +1972,7 @@ def _restamp_passthrough_images(images, role, output_series_index):
                 output_identity["type_token"],
                 target_display_token=output_identity["display_token"],
                 output_index=iImg,
+                preserve_image_type_value3=is_original_output,
             )
             if minihead_changed:
                 tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
@@ -1697,102 +2180,114 @@ def _sct_output_to_mrd_images(
         logging.info("Converting SCT output from %s to int16", data.dtype)
         data = np.rint(data).astype(np.int16)
 
-    data = data[:, :, :, None, None]
-    data = data.transpose((0, 1, 4, 3, 2))
+    output_slice_count = int(data.shape[-1])
+    volume_data = np.stack(
+        [data[:, :, slice_index] for slice_index in range(output_slice_count)],
+        axis=0,
+    )
+    output_image = ismrmrd.Image.from_array(volume_data, transpose=False)
 
-    imagesOut = [None] * data.shape[-1]
-    for iImg in range(data.shape[-1]):
-        imagesOut[iImg] = ismrmrd.Image.from_array(
-            data[..., iImg].transpose((3, 2, 0, 1)),
-            transpose=False,
-        )
+    oldHeader = copy.deepcopy(head[0])
+    oldHeader.data_type = output_image.data_type
+    if (output_image.data_type == ismrmrd.DATATYPE_CXFLOAT) or (output_image.data_type == ismrmrd.DATATYPE_CXDOUBLE):
+        oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
+    else:
+        oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    oldHeader.image_series_index = output_series_index
+    oldHeader.image_index = 1
+    oldHeader.slice = 0
+    oldHeader.contrast = 0
 
-        oldHeader = copy.deepcopy(head[iImg])
-        oldHeader.data_type = imagesOut[iImg].data_type
-        if (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXFLOAT) or (imagesOut[iImg].data_type == ismrmrd.DATATYPE_CXDOUBLE):
-            oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
-        else:
-            oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
-        oldHeader.image_series_index = output_series_index
-        oldHeader.image_index = iImg + 1
-        oldHeader.slice = iImg
-        imagesOut[iImg].setHead(oldHeader)
+    output_header = output_image.getHead()
+    _set_header_sequence_field(
+        oldHeader,
+        "matrix_size",
+        [int(value) for value in output_header.matrix_size],
+    )
+    slice_axis = _infer_slice_axis(head)
+    output_spacing = _estimate_slice_spacing(head, slice_axis=slice_axis)
+    if output_spacing is None:
+        try:
+            output_spacing = float(img.header.get_zooms()[2])
+        except Exception:
+            output_spacing = float(oldHeader.field_of_view[2])
+    output_spacing = max(float(output_spacing), 1e-6)
+    output_fov = [float(value) for value in oldHeader.field_of_view]
+    output_fov[2] = float(output_spacing * output_slice_count)
+    _set_header_sequence_field(oldHeader, "field_of_view", output_fov)
+    _set_header_sequence_field(oldHeader, "position", [float(value) for value in head[0].position])
+    _set_header_sequence_field(oldHeader, "slice_dir", [float(value) for value in slice_axis])
+    output_image.setHead(oldHeader)
 
-        source_meta = meta[iImg]
-        tmpMeta = _copy_meta(source_meta)
-        _strip_source_parent_refs(tmpMeta)
-        sop_instance_uid = _build_derived_sop_instance_uid(
-            source_meta,
-            series_suffix or analysis,
-            output_series_index,
-            iImg,
-            output_identity["series_instance_uid"],
-        )
-        tmpMeta["DataRole"] = "Image"
-        tmpMeta["ImageProcessingHistory"] = ["PYTHON", "SPINALCORDTOOLBOX"]
-        tmpMeta["WindowCenter"] = str((maxVal + 1) / 2)
-        tmpMeta["WindowWidth"] = str(maxVal + 1)
-        tmpMeta["SeriesDescription"] = output_identity["series_description"]
-        tmpMeta["SequenceDescription"] = output_identity["sequence_description"]
-        tmpMeta["ProtocolName"] = output_identity["sequence_description"]
-        tmpMeta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
-        tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]
-        tmpMeta["SOPInstanceUID"] = sop_instance_uid
-        tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
-        tmpMeta["ImageTypeValue3"] = "M"
-        tmpMeta["ImageTypeValue4"] = output_identity["display_token"]
-        tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
-        tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
-        tmpMeta["ImageComments"] = output_identity["image_comment"]
-        tmpMeta["ImageComment"] = output_identity["image_comment"]
-        tmpMeta["SequenceDescriptionAdditional"] = "openrecon"
-        tmpMeta["Keep_image_geometry"] = 1
-        _set_output_position_meta(tmpMeta, iImg)
+    source_meta = meta[0]
+    tmpMeta = _copy_meta(source_meta)
+    _strip_source_parent_refs(tmpMeta)
+    _strip_scanner_write_unsafe_meta(tmpMeta)
+    if "IceMiniHead" in tmpMeta:
+        del tmpMeta["IceMiniHead"]
+    sop_instance_uid = _build_derived_sop_instance_uid(
+        source_meta,
+        series_suffix or analysis,
+        output_series_index,
+        0,
+        output_identity["series_instance_uid"],
+    )
+    tmpMeta["DataRole"] = "Image"
+    tmpMeta["ImageProcessingHistory"] = ["PYTHON", "SPINALCORDTOOLBOX", output_identity["type_token"]]
+    tmpMeta["WindowCenter"] = str((maxVal + 1) / 2)
+    tmpMeta["WindowWidth"] = str(maxVal + 1)
+    tmpMeta["SeriesDescription"] = output_identity["series_description"]
+    tmpMeta["SequenceDescription"] = output_identity["sequence_description"]
+    tmpMeta["ProtocolName"] = output_identity["sequence_description"]
+    tmpMeta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
+    tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]
+    tmpMeta["SOPInstanceUID"] = sop_instance_uid
+    tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+    tmpMeta["ImageTypeValue4"] = output_identity["display_token"]
+    tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+    tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
+    tmpMeta["ImageComments"] = output_identity["image_comment"]
+    tmpMeta["ImageComment"] = output_identity["image_comment"]
+    tmpMeta["SequenceDescriptionAdditional"] = "openrecon"
+    tmpMeta["Keep_image_geometry"] = 0
+    tmpMeta["partition_count"] = "1"
+    tmpMeta["slice_count"] = str(output_slice_count)
+    tmpMeta["NumberOfSlices"] = str(output_slice_count)
+    tmpMeta["ImagesInAcquisition"] = str(output_slice_count)
+    _set_output_position_meta(tmpMeta, 0)
+    tmpMeta["ImageRowDir"] = [
+        "{:.18f}".format(oldHeader.read_dir[0]),
+        "{:.18f}".format(oldHeader.read_dir[1]),
+        "{:.18f}".format(oldHeader.read_dir[2]),
+    ]
 
-        minihead_text = _decode_ice_minihead(tmpMeta)
-        if minihead_text:
-            patched_minihead_text, minihead_changed = _patch_ice_minihead(
-                minihead_text,
-                output_identity["sequence_description"],
-                output_identity["grouping"],
-                output_identity["series_instance_uid"],
-                sop_instance_uid,
-                output_identity["source_type_token"],
-                output_identity["type_token"],
-                target_display_token=output_identity["display_token"],
-                output_index=iImg,
-            )
-            if minihead_changed:
-                tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
-            else:
-                logging.warning(
-                    "IceMiniHead was present but not updated for SCT output slice %d",
-                    iImg,
-                )
-        tmpMeta["ImageRowDir"] = [
-            "{:.18f}".format(oldHeader.read_dir[0]),
-            "{:.18f}".format(oldHeader.read_dir[1]),
-            "{:.18f}".format(oldHeader.read_dir[2]),
-        ]
+    tmpMeta["ImageColumnDir"] = [
+        "{:.18f}".format(oldHeader.phase_dir[0]),
+        "{:.18f}".format(oldHeader.phase_dir[1]),
+        "{:.18f}".format(oldHeader.phase_dir[2]),
+    ]
 
-        tmpMeta["ImageColumnDir"] = [
-            "{:.18f}".format(oldHeader.phase_dir[0]),
-            "{:.18f}".format(oldHeader.phase_dir[1]),
-            "{:.18f}".format(oldHeader.phase_dir[2]),
-        ]
+    tmpMeta["ImageSliceNormDir"] = [
+        "{:.18f}".format(oldHeader.slice_dir[0]),
+        "{:.18f}".format(oldHeader.slice_dir[1]),
+        "{:.18f}".format(oldHeader.slice_dir[2]),
+    ]
 
-        tmpMeta["ImageSliceNormDir"] = [
-            "{:.18f}".format(oldHeader.slice_dir[0]),
-            "{:.18f}".format(oldHeader.slice_dir[1]),
-            "{:.18f}".format(oldHeader.slice_dir[2]),
-        ]
+    if segmentation_colormap:
+        tmpMeta["LUTFileName"] = "MicroDeltaHotMetal.pal"
 
-        if segmentation_colormap:
-            tmpMeta["LUTFileName"] = "MicroDeltaHotMetal.pal"
+    output_image.attribute_string = tmpMeta.serialize()
+    logging.info(
+        "Packed SCT output %s into one explicit MRD volume with matrix_size=%s "
+        "field_of_view=%s slices=%d spacing=%.6f",
+        output_path,
+        _format_vector(output_image.getHead().matrix_size),
+        _format_vector(output_image.getHead().field_of_view),
+        output_slice_count,
+        output_spacing,
+    )
 
-        imagesOut[iImg].attribute_string = tmpMeta.serialize()
-
-    return imagesOut
+    return [output_image]
 
 
 def _openrecon_config_for_analysis(analysis, sendoriginal=False):

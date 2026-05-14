@@ -30,7 +30,8 @@ OPENRECON_WORKSPACE_ROOT = "vesselboost_openrecon"
 OPENRECON_OUTPUT_NAME_PARAM = "vboutputname"
 OPENRECON_MODULE_DEFAULT = "prediction"
 OPENRECON_MODULE_VALUES = (OPENRECON_MODULE_DEFAULT,)
-VESSELBOOST_SEGMENTATION_LABEL = "vesselboost_segmentation"
+OPENRECON_SERIES_SUFFIX = "OR"
+VESSELBOOST_SEGMENTATION_LABEL = "vesselboost"
 VESSELBOOST_SEGMENTATION_TYPE_TOKEN = VESSELBOOST_SEGMENTATION_LABEL.upper()
 VESSELBOOST_ORIGINAL_LABEL = "original"
 VESSELBOOST_ORIGINAL_TYPE_TOKEN = VESSELBOOST_ORIGINAL_LABEL.upper()
@@ -1011,7 +1012,7 @@ def _stamp_vesselboost_output_image(
     tmp_meta["ComplexImageComponent"] = "MAGNITUDE"
     tmp_meta["ImageComments"] = output_identity["image_comment"]
     tmp_meta["ImageComment"] = output_identity["image_comment"]
-    tmp_meta["SequenceDescriptionAdditional"] = "openrecon"
+    tmp_meta["SequenceDescriptionAdditional"] = OPENRECON_SERIES_SUFFIX
     tmp_meta["Keep_image_geometry"] = str(int(keep_image_geometry))
     _set_output_position_meta(tmp_meta, output_index)
 
@@ -1252,10 +1253,11 @@ def _validate_vesselboost_output_contract(
                 f"image {index}: ComplexImageComponent={identity['ComplexImageComponent']}, "
                 "expected MAGNITUDE"
             )
-        if identity["SequenceDescriptionAdditional"] != "openrecon":
+        if identity["SequenceDescriptionAdditional"] != OPENRECON_SERIES_SUFFIX:
             errors.append(
                 f"image {index}: SequenceDescriptionAdditional="
-                f"{identity['SequenceDescriptionAdditional']!r}, expected 'openrecon'"
+                f"{identity['SequenceDescriptionAdditional']!r}, expected "
+                f"{OPENRECON_SERIES_SUFFIX!r}"
             )
 
         keep_image_geometry = _get_meta_int(meta_obj, "Keep_image_geometry")
@@ -1809,6 +1811,7 @@ def _build_reformatted_images(
         extra_meta=extra_meta,
         keep_image_geometry=0,
         patch_minihead=False,
+        data_role="Segmentation",
     )
 
     logging.info(

@@ -1,4 +1,5 @@
 import ast
+import base64
 import copy
 import json
 from pathlib import Path
@@ -264,6 +265,7 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
             self.slice = slice
             self.contrast = 0
             self.image_type = 1
+            self.matrix_size = [1, 1, 1]
 
     class FakeImage:
         def __init__(self, data):
@@ -389,10 +391,12 @@ def test_wrapper_validates_output_series_contract_like_musclemap():
     assert "_build_connection_series_allocator" in function_names
     assert "_log_and_validate_output_series_contract" in function_names
     assert "_validate_output_series_contract" in function_names
+    assert "_validate_output_images" in function_names
     assert "SCT_OUTPUT_SERIES_CONTRACT" in wrapper_source
     assert "Invalid SCT output series contract before send" in wrapper_source
     assert "derived role {role} reuses input SeriesInstanceUID" in wrapper_source
     assert "output role {role} reuses input image_series_index" in wrapper_source
+    assert "duplicates scanner storage key" in wrapper_source
     assert "derived role {role} has Meta/IceMiniHead SeriesInstanceUID mismatch" in wrapper_source
     assert 'derived_series_allocator.allocate(output_spec["series_suffix"])' in wrapper_source
     assert 'derived_series_allocator.allocate("ORIGINAL")' in wrapper_source
@@ -468,6 +472,7 @@ def test_output_series_contract_rejects_input_series_index_reuse():
             "_first_non_empty_text",
             "_non_empty_values",
             "_sct_derived_roles",
+            "_summary_uid_values",
             "_validate_output_series_contract",
         ],
     )
@@ -514,6 +519,7 @@ def _load_output_contract_validator_helpers():
             "_first_non_empty_text",
             "_non_empty_values",
             "_sct_derived_roles",
+            "_summary_uid_values",
             "_validate_output_series_contract",
         ],
     )
@@ -523,6 +529,123 @@ def _load_output_contract_validator_helpers():
     helpers["SCT_ANALYSIS_OUTPUTS"] = {}
     helpers["RESERVED_SCANNER_SERIES_INDICES"] = {99}
     return helpers
+
+
+def _load_output_image_validator_helpers():
+    return _load_runtime_helpers_for_test(
+        [
+            "_as_image_list",
+            "_decode_ice_minihead",
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_get_image_series_index",
+            "_get_meta_text",
+            "_identity_values",
+            "_image_minihead",
+            "_meta_from_image",
+            "_meta_int",
+            "_minihead_long_value",
+            "_series_contract_role",
+            "_series_slice_limit",
+            "_validate_identity_fields",
+            "_validate_output_images",
+            "_validate_storage_fields",
+        ],
+        assignments=["SCANNER_PARTITION_INDEX"],
+    )
+
+
+def _contract_minihead(
+    *,
+    sequence_description,
+    series_grouping,
+    series_uid,
+    sop_uid,
+    image_type_value4,
+    image_type_value3="M",
+    slice_index=0,
+    image_index=1,
+):
+    image_type_value3_param = (
+        f'<ParamString."ImageTypeValue3">{{ "{image_type_value3}" }}\n'
+        if image_type_value3 is not None
+        else ""
+    )
+    minihead = f"""
+<ParamString."SeriesDescription">{{ "{sequence_description}" }}
+<ParamString."SequenceDescription">{{ "{sequence_description}" }}
+<ParamString."ProtocolName">{{ "{sequence_description}" }}
+<ParamString."SeriesNumberRangeNameUID">{{ "{series_grouping}" }}
+<ParamString."SeriesInstanceUID">{{ "{series_uid}" }}
+<ParamString."SOPInstanceUID">{{ "{sop_uid}" }}
+{image_type_value3_param}<ParamArray."ImageTypeValue4">
+{{
+  {{ "{image_type_value4}" }}
+}}
+<ParamLong."Actual3DImagePartNumber">{{ 0 }}
+<ParamLong."AnatomicalPartitionNo">{{ 0 }}
+<ParamLong."AnatomicalSliceNo">{{ {slice_index} }}
+<ParamLong."ChronSliceNo">{{ {slice_index} }}
+<ParamLong."NumberInSeries">{{ {image_index} }}
+<ParamLong."ProtocolSliceNumber">{{ {slice_index} }}
+<ParamLong."SliceNo">{{ {slice_index} }}
+"""
+    return base64.b64encode(minihead.encode("utf-8")).decode("ascii")
+
+
+def _contract_image(
+    helpers,
+    *,
+    series_index,
+    role,
+    series_uid,
+    sop_uid,
+    slice_index,
+    source=False,
+):
+    image = helpers["FakeImage"](np.zeros((1, 1, 2, 2), dtype=np.int16))
+    head = image.getHead()
+    head.image_series_index = series_index
+    head.image_index = slice_index + 1
+    head.slice = slice_index
+    image_type_value4 = "NORM" if source else role.lower()
+    sequence_description = "source" if source else f"source_{image_type_value4}"
+    series_grouping = "source_group" if source else f"source_group_{image_type_value4}"
+    image_type_value3 = "M" if source or role == "ORIGINAL" else None
+    meta_fields = {
+        "SeriesDescription": sequence_description,
+        "SequenceDescription": sequence_description,
+        "ProtocolName": sequence_description,
+        "SeriesNumberRangeNameUID": series_grouping,
+        "SeriesInstanceUID": series_uid,
+        "SOPInstanceUID": sop_uid,
+        "ImageTypeValue4": image_type_value4,
+        "Keep_image_geometry": "1",
+        "Actual3DImagePartNumber": "0",
+        "AnatomicalPartitionNo": "0",
+        "AnatomicalSliceNo": str(slice_index),
+        "ChronSliceNo": str(slice_index),
+        "NumberInSeries": str(slice_index + 1),
+        "ProtocolSliceNumber": str(slice_index),
+        "SliceNo": str(slice_index),
+        "IsmrmrdSliceNo": str(slice_index),
+    }
+    if image_type_value3 is not None:
+        meta_fields["ImageTypeValue3"] = image_type_value3
+    meta = helpers["FakeMeta"](meta_fields)
+    meta["IceMiniHead"] = _contract_minihead(
+        sequence_description=sequence_description,
+        series_grouping=series_grouping,
+        series_uid=series_uid,
+        sop_uid=sop_uid,
+        image_type_value4=image_type_value4,
+        image_type_value3=image_type_value3,
+        slice_index=slice_index,
+        image_index=slice_index + 1,
+    )
+    image.attribute_string = meta.serialize()
+    return image
 
 
 def _valid_sop_contract_input_summary():
@@ -547,6 +670,8 @@ def _valid_sop_contract_output_summary():
             "series_instance_uid": "2.25.4",
             "meta_series_instance_uid": "2.25.4",
             "minihead_series_instance_uid": "2.25.4",
+            "meta_sop_instance_uid": "2.25.4.1",
+            "minihead_sop_instance_uid": "2.25.4.1",
             "meta_sop_instance_uids": ["2.25.4.1", "2.25.4.2"],
             "minihead_sop_instance_uids": ["2.25.4.1", "2.25.4.2"],
             "series_grouping": "source_sct_deepseg_spinalcord",
@@ -572,9 +697,42 @@ def _assert_output_contract_rejects(output_summary, expected_error):
         raise AssertionError("Expected validator to reject invalid SOPInstanceUID contract")
 
 
+def test_output_series_contract_accepts_representative_and_per_image_sop_uids():
+    helpers = _load_output_contract_validator_helpers()
+
+    helpers["_validate_output_series_contract"](
+        _valid_sop_contract_output_summary(),
+        _valid_sop_contract_input_summary(),
+    )
+
+
+def test_output_series_contract_accepts_explicit_volume_without_minihead():
+    helpers = _load_output_contract_validator_helpers()
+    output_summary = _valid_sop_contract_output_summary()
+    output_summary[0].update(
+        {
+            "count": 1,
+            "meta_sop_instance_uid": "2.25.4.1",
+            "meta_sop_instance_uids": ["2.25.4.1"],
+            "minihead_series_instance_uid": "N/A",
+            "minihead_sop_instance_uid": "N/A",
+            "minihead_sop_instance_uids": [],
+            "minihead_series_grouping": "N/A",
+            "minihead_protocol_name": "N/A",
+            "keep_image_geometry": 0,
+        }
+    )
+
+    helpers["_validate_output_series_contract"](
+        output_summary,
+        _valid_sop_contract_input_summary(),
+    )
+
+
 def test_output_series_contract_rejects_missing_meta_sop_instance_uid():
     output_summary = _valid_sop_contract_output_summary()
     output_summary[0]["meta_sop_instance_uids"] = []
+    output_summary[0]["meta_sop_instance_uid"] = ""
 
     _assert_output_contract_rejects(
         output_summary,
@@ -585,6 +743,7 @@ def test_output_series_contract_rejects_missing_meta_sop_instance_uid():
 def test_output_series_contract_rejects_missing_minihead_sop_instance_uid():
     output_summary = _valid_sop_contract_output_summary()
     output_summary[0]["minihead_sop_instance_uids"] = []
+    output_summary[0]["minihead_sop_instance_uid"] = ""
 
     _assert_output_contract_rejects(
         output_summary,
@@ -638,6 +797,171 @@ def test_output_series_contract_rejects_input_sop_instance_uid_collision():
     )
 
 
+def test_output_image_validator_accepts_original_and_segmentation_slice_stacks():
+    helpers = _load_output_image_validator_helpers()
+    input_images = [
+        _contract_image(
+            helpers,
+            series_index=1,
+            role="NORM",
+            series_uid="1.2.3",
+            sop_uid=f"1.2.3.4.{slice_index + 1}",
+            slice_index=slice_index,
+            source=True,
+        )
+        for slice_index in range(9)
+    ]
+    original_images = [
+        _contract_image(
+            helpers,
+            series_index=3,
+            role="ORIGINAL",
+            series_uid="2.25.300",
+            sop_uid=f"2.25.300.{slice_index + 1}",
+            slice_index=slice_index,
+        )
+        for slice_index in range(9)
+    ]
+    segmentation_images = [
+        _contract_image(
+            helpers,
+            series_index=2,
+            role="SCT_DEEPSEG_SPINALCORD",
+            series_uid="2.25.200",
+            sop_uid=f"2.25.200.{slice_index + 1}",
+            slice_index=slice_index,
+        )
+        for slice_index in range(9)
+    ]
+
+    helpers["_validate_output_images"](
+        original_images + segmentation_images,
+        input_images,
+    )
+
+
+def test_output_image_validator_accepts_explicit_volume_without_minihead():
+    helpers = _load_output_image_validator_helpers()
+    input_images = [
+        _contract_image(
+            helpers,
+            series_index=1,
+            role="NORM",
+            series_uid=f"1.2.3.4.{slice_index + 1}",
+            sop_uid=f"1.2.3.5.{slice_index + 1}",
+            slice_index=slice_index,
+            source=True,
+        )
+        for slice_index in range(9)
+    ]
+    output_image = _contract_image(
+        helpers,
+        series_index=2,
+        role="SCT_DEEPSEG_SPINALCORD",
+        series_uid="2.25.200",
+        sop_uid="2.25.200.1",
+        slice_index=0,
+    )
+    head = output_image.getHead()
+    head.image_index = 1
+    head.slice = 0
+    head.matrix_size = [2, 2, 9]
+    meta = helpers["FakeMeta"].deserialize(output_image.attribute_string)
+    del meta["IceMiniHead"]
+    meta["Keep_image_geometry"] = "0"
+    meta["partition_count"] = "1"
+    meta["slice_count"] = "9"
+    meta["NumberOfSlices"] = "9"
+    meta["ImagesInAcquisition"] = "9"
+    output_image.attribute_string = meta.serialize()
+
+    helpers["_validate_output_images"]([output_image], input_images)
+
+
+def test_output_image_validator_rejects_derived_source_classifier_tokens():
+    helpers = _load_output_image_validator_helpers()
+    input_images = [
+        _contract_image(
+            helpers,
+            series_index=1,
+            role="NORM",
+            series_uid="1.2.3",
+            sop_uid="1.2.3.4.1",
+            slice_index=0,
+            source=True,
+        )
+    ]
+    output_image = _contract_image(
+        helpers,
+        series_index=2,
+        role="SCT_DEEPSEG_SPINALCORD",
+        series_uid="2.25.200",
+        sop_uid="2.25.200.1",
+        slice_index=0,
+    )
+    meta = helpers["FakeMeta"].deserialize(output_image.attribute_string)
+    meta["ImageTypeValue3"] = "M"
+    minihead = base64.b64decode(meta["IceMiniHead"]).decode("utf-8")
+    minihead = minihead.replace(
+        '{ "sct_deepseg_spinalcord" }',
+        '{ "sct_deepseg_spinalcord" }{ "DIS2D" }',
+    )
+    minihead = minihead + '\n<ParamString."ImageTypeValue3">{ "M" }\n'
+    meta["IceMiniHead"] = base64.b64encode(minihead.encode("utf-8")).decode("ascii")
+    output_image.attribute_string = meta.serialize()
+
+    try:
+        helpers["_validate_output_images"]([output_image], input_images)
+    except ValueError as exc:
+        message = str(exc)
+        assert "expected only sct_deepseg_spinalcord" in message
+        assert "unsafe scanner Meta ImageTypeValue3=M" in message
+        assert "unsafe scanner IceMiniHead ImageTypeValue3=M" in message
+    else:
+        raise AssertionError("Expected validator to reject inherited derived classifier tokens")
+
+
+def test_output_image_validator_rejects_duplicate_scanner_storage_key():
+    helpers = _load_output_image_validator_helpers()
+    input_images = [
+        _contract_image(
+            helpers,
+            series_index=1,
+            role="NORM",
+            series_uid="1.2.3",
+            sop_uid=f"1.2.3.4.{slice_index + 1}",
+            slice_index=slice_index,
+            source=True,
+        )
+        for slice_index in range(2)
+    ]
+    output_images = [
+        _contract_image(
+            helpers,
+            series_index=2,
+            role="SCT_DEEPSEG_SPINALCORD",
+            series_uid="2.25.200",
+            sop_uid="2.25.200.1",
+            slice_index=0,
+        ),
+        _contract_image(
+            helpers,
+            series_index=2,
+            role="SCT_DEEPSEG_SPINALCORD",
+            series_uid="2.25.200",
+            sop_uid="2.25.200.2",
+            slice_index=0,
+        ),
+    ]
+
+    try:
+        helpers["_validate_output_images"](output_images, input_images)
+    except ValueError as exc:
+        assert "duplicates scanner storage key" in str(exc)
+    else:
+        raise AssertionError("Expected validator to reject duplicate scanner storage keys")
+
+
 def test_minihead_string_extraction_prefers_writer_format_and_cleans_helper_prefix():
     helpers = _load_runtime_helpers_for_test(
         [
@@ -674,6 +998,8 @@ def test_patch_minihead_replaces_sop_identity_and_keeps_partition_constant():
             "_extract_minihead_string_value",
             "_first_non_empty_text",
             "_patch_ice_minihead",
+            "_remove_minihead_array_param",
+            "_remove_minihead_string_param",
             "_replace_minihead_array_token",
             "_replace_or_append_minihead_array_token",
             "_replace_or_append_minihead_long_param",
@@ -689,6 +1015,11 @@ def test_patch_minihead_replaces_sop_identity_and_keeps_partition_constant():
 <ParamString."SeriesInstanceUID">{ "source-series" }
 <ParamString."SOPInstanceUID">{ "source-sop" }
 <ParamString."ImageType">{ "ORIGINAL\\PRIMARY\\M\\NORM" }
+<ParamString."ImageTypeValue3">{ "M" }
+<ParamArray."ImageTypeValue3">
+{
+  { "M" }
+}
 <ParamArray."ImageTypeValue4">
 {
   { "NORM" }{ "DIS2D" }
@@ -717,10 +1048,13 @@ def test_patch_minihead_replaces_sop_identity_and_keeps_partition_constant():
         patched,
         "ImageType",
     ) == "DERIVED\\PRIMARY\\M\\SCT_DEEPSEG_SPINALCORD"
-    assert "sct_deepseg_spinalcord" in helpers["_extract_minihead_array_tokens"](
+    assert helpers["_extract_minihead_string_value"](patched, "ImageTypeValue3") == ""
+    assert helpers["_extract_minihead_array_tokens"](patched, "ImageTypeValue3") == []
+    assert helpers["_extract_minihead_array_tokens"](
         patched,
         "ImageTypeValue4",
-    )
+    ) == ["sct_deepseg_spinalcord"]
+    assert "DIS2D" not in patched
     assert '<ParamLong."Actual3DImagePartNumber">{ 0 }' in patched
     assert '<ParamLong."AnatomicalPartitionNo">{ 0 }' in patched
     assert '<ParamLong."SliceNo">{ 4 }' in patched
@@ -858,7 +1192,11 @@ def test_wrapper_patches_openrecon_derived_series_identity_like_musclemap():
     assert 'oldHeader.slice = iImg' in wrapper_source
     assert 'oldHeader.image_index = source_image_index' not in wrapper_source
     assert "_set_output_position_meta(tmpMeta, iImg)" in wrapper_source
-    assert "SCT currently sends 2D slice stacks" in wrapper_source
+    assert "processed SCT outputs are sent as explicit 3D volumes" in wrapper_source
+    assert 'tmpMeta["Keep_image_geometry"] = 0' in wrapper_source
+    assert 'tmpMeta["partition_count"] = "1"' in wrapper_source
+    assert 'if "IceMiniHead" in tmpMeta' in wrapper_source
+    assert "Packed SCT output" in wrapper_source
     assert "SCANNER_PARTITION_INDEX = 0" in wrapper_source
     assert '"Actual3DImagePartNumber", SCANNER_PARTITION_INDEX' in wrapper_source
     assert '"ChronSliceNo", output_index' in wrapper_source
@@ -904,6 +1242,24 @@ def test_wrapper_strips_source_parent_references_from_derived_meta():
     assert not any("Referenced" in key and "FrameNumber" in key for key in meta)
     assert meta["SeriesInstanceUID"] == "derived-series"
     assert meta["ImageType"] == "DERIVED\\PRIMARY\\M\\SCT_DEEPSEG_SPINALCORD"
+
+
+def test_wrapper_strips_scanner_unsafe_derived_meta():
+    helpers = _load_runtime_helpers_for_test(
+        ["_strip_scanner_write_unsafe_meta"],
+        assignments=["SCANNER_WRITE_UNSAFE_META_KEYS"],
+    )
+    meta = {
+        "ImageTypeValue3": "M",
+        "DICOM.ImageTypeValue3": "M",
+        "ImageTypeValue4": "sct_deepseg_spinalcord",
+    }
+
+    helpers["_strip_scanner_write_unsafe_meta"](meta)
+
+    assert "ImageTypeValue3" not in meta
+    assert "DICOM.ImageTypeValue3" not in meta
+    assert meta["ImageTypeValue4"] == "sct_deepseg_spinalcord"
 
 
 def test_batch_processing_openrecon_cases_are_declared_and_exposed():

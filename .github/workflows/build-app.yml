@@ -25,6 +25,9 @@ on:
       force_push_dockerhub:
         required: false
         type: string
+      force_push_nectar_registry:
+        required: false
+        type: string
       force_upload_nectar:
         required: false
         type: string
@@ -50,6 +53,8 @@ env:
 # - secrets.DOCKERHUB_USERNAME
 # - secrets.DOCKERHUB_PASSWORD
 # - secrets.DOCKERHUB_ORG
+# - secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY
+# - secrets.REGISTRY_RC_NECTAR_ORG_AU_USERNAME (optional; defaults to secrets.GH_REGISTRY)
 # - secrets.AWS_ROLE_ARN
 
 jobs:
@@ -688,6 +693,62 @@ jobs:
           docker tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ${DOCKERHUB_ORG}/${IMAGENAME}:latest
           docker push --all-tags ${DOCKERHUB_ORG}/${IMAGENAME}
 
+  push-nectar-registry:
+    needs: [config, build-image]
+    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_nectar_registry == 'true' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      packages: write
+    env:
+      APPLICATION: ${{ inputs.application }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
+      NECTAR_REGISTRY: registry.rc.nectar.org.au
+      NECTAR_REGISTRY_NAMESPACE: ssdsorg
+
+    steps:
+      - name: Configure GitHub-hosted runner
+        if: ${{ runner.environment == 'github-hosted' }}
+        run: |
+          BASE_PATH=/mnt
+          echo "BASE_PATH=$BASE_PATH" >> "$GITHUB_ENV"
+          sudo swapoff -a && sudo rm -rf "$BASE_PATH"/*
+          sudo mkdir -p "$BASE_PATH/tmp"
+          sudo chown "$USER" "$BASE_PATH/tmp"
+          sudo mkdir -p "$BASE_PATH/docker"
+          printf '{"data-root": "%s"}\n' "$BASE_PATH/docker" | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Login to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull latest image from GHCR
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          docker pull "ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}"
+
+      - name: Login to Nectar Container Registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          registry: registry.rc.nectar.org.au
+          username: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_USERNAME || secrets.GH_REGISTRY }}
+          password: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY }}
+
+      - name: Push to Nectar Container Registry
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          NECTAR_IMAGE="${NECTAR_REGISTRY}/${NECTAR_REGISTRY_NAMESPACE}/${IMAGENAME}"
+          docker tag "ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}" "${NECTAR_IMAGE}:${BUILDDATE}"
+          docker tag "ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}" "${NECTAR_IMAGE}:latest"
+          docker push "${NECTAR_IMAGE}:${BUILDDATE}"
+          docker push "${NECTAR_IMAGE}:latest"
+
   build-simg:
     needs: [config, build-image]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false' }}
@@ -944,7 +1005,7 @@ jobs:
           fi
 
   create-pr:
-    needs: [config, build-image, push-dockerhub, upload-s3, upload-nectar]
+    needs: [config, build-image, push-dockerhub, push-nectar-registry, upload-s3, upload-nectar]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true'}}
     runs-on: ubuntu-22.04
     permissions:

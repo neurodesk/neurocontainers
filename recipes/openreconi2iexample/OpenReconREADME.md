@@ -5,7 +5,8 @@ receives reconstructed MRD image messages and sends no outputs unless one or
 more output options are enabled. It can re-emit the original scan, invert
 magnitude images, upsample the slice direction, threshold each slice into a
 segmentation, optionally add a segmentation colourmap, and compute a maximum
-intensity projection.
+intensity projection. It can also send foreground-region volume metrics when
+`sendmetrics` is enabled.
 
 ## Inputs
 
@@ -13,7 +14,7 @@ intensity projection.
 - All image messages can be returned as copied original images when
   `sendoriginal` is enabled.
 - Magnitude images (`IMTYPE_MAGNITUDE` or unset image type) are processed by
-  `invert`, `upsampled`, `segment`, and `mip`.
+  `invert`, `upsampled`, `segment`, `mip`, and `sendmetrics`.
 
 ## Outputs
 
@@ -42,6 +43,10 @@ intensity projection.
   `image_series_index = 102` when `upsampled` is true.
 - `<source>-mip`: one maximum intensity projection image on
   `image_series_index = 103` when `mip` is true.
+- `<source>-metrics`: one derived DICOM image-table page on
+  `image_series_index = 120` when `sendmetrics` is true. The table reports the
+  segmented foreground region, source name, voxel count, voxel volume, threshold,
+  and volume in `mm3` and `mL`.
 
 The inverted images normally keep the source geometry and use the input
 intensity range: `inverted = min(input) + max(input) - input`.
@@ -54,11 +59,15 @@ and inserting midpoint slices between acquired slices. The final edge slice is
 duplicated so the output volume contains exactly `2 * N` slices in one MRD
 image message.
 The MIP output projects the source magnitude stack across all source slices.
+The metrics output reuses the same foreground segmentation logic as `segment`.
+When `segment` and `sendmetrics` are both enabled, each segmentation output also
+writes the region volume into `ImageComments` and `ImageComment`.
 
 ## Scanner Notes
 
-- `sendoriginal`, `invert`, `upsampled`, `segment`, `segmentationcolormap`, and
-  `mip` are exposed in `OpenReconLabel.json` and all default to false.
+- `sendoriginal`, `invert`, `upsampled`, `segment`, `segmentationcolormap`,
+  `mip`, and `sendmetrics` are exposed in `OpenReconLabel.json` and all default
+  to false.
 - Scanner protocols saved before these parameters were added may need the OpenRecon algorithm
   reselected once so the parameter schema refreshes.
 - Derived output names are written to `SeriesDescription`, `SequenceDescription`,
@@ -72,15 +81,24 @@ The MIP output projects the source magnitude stack across all source slices.
   `image_series_index`, `SeriesNumberRangeNameUID`, `SeriesInstanceUID`, and
   `SOPInstanceUID` values so the scanner can store them as independent returned
   series while scanner postprocessing still sees source-like images.
+- Original pass-through preserves the source MRD header geometry and pixel data.
+  If the incoming MRD `image_index` is zero, the returned copy uses a one-based
+  per-series `image_index`; missing `IceMiniHead` storage counters are filled
+  from source metadata or the source slice number.
 - Scanner partition counters such as `Actual3DImagePartNumber` and
   `AnatomicalPartitionNo` are preserved for original pass-through images and
   kept at zero for derived image series.
 - Derived outputs set `SequenceDescriptionAdditional` to `openrecon` so
-  scanners do not append `_None` to the display name.
-- Outputs strip scanner `ImageTypeValue3` from both MRD metadata and
+  scanners do not append `_None` to the display name. Original pass-through
+  preserves the incoming value and does not synthesize an `openrecon` suffix.
+- Derived outputs strip scanner `ImageTypeValue3` from both MRD metadata and
   `IceMiniHead`. Some sequences reject that protocol node during OpenRecon
-  conversion. Output identity is carried by `ImageType`, `DicomImageType`,
-  `ComplexImageComponent`, and `ImageTypeValue4`.
+  conversion. Original pass-through keeps source image-type metadata as intact
+  as possible but normalizes returned `ImageTypeValue3` values to `M` when that
+  classifier field exists. This preserves Dixon `ImageType` / `ImageTypeValue4`
+  subtype metadata while avoiding the scanner's unknown `MAP` classifier path on
+  returned fat-fraction originals. Derived output identity is carried by
+  `ImageType`, `DicomImageType`, `ComplexImageComponent`, and `ImageTypeValue4`.
 - `sendoriginal` outputs are emitted before derived outputs. This keeps scanner
   inline MIP/MPR postprocessing attached to the original series when originals
   and segmentations are enabled together.

@@ -48,3 +48,4 @@ vesselboost_openrecon_parameter_matrix_outputs
 *.mrd
 openrecon_test_*
 bug_*
+httpcache/
