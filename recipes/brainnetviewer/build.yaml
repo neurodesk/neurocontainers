@@ -1,0 +1,81 @@
+name: brainnetviewer
+version: 1.7.20191031
+
+copyright:
+  - license: GPL-3.0-only
+    url: https://www.nitrc.org/projects/bnv/
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - openjdk-17-jdk
+        - bash
+        - ca-certificates
+        - unzip
+        - libxext6
+        - libxt6
+        - libxmu6
+        - libxrender1
+        - libxcomposite1
+        - libxrandr2
+        - libxss1
+        - libasound2
+
+    - run:
+        - mkdir -p /tmp/mcr /opt/matlab
+        - cp {{ get_file("mcr_installer") }} /tmp/MCR_R2018a_glnxa64_installer.zip
+        - unzip -q /tmp/MCR_R2018a_glnxa64_installer.zip -d /tmp/mcr
+        - /tmp/mcr/install -destinationFolder /opt/matlab -mode silent -agreeToLicense yes
+        - rm -rf /tmp/mcr /tmp/MCR_R2018a_glnxa64_installer.zip
+
+    - run:
+        - cp {{ get_file("brainnetviewer_zip") }} /tmp/BrainNetViewer20191031_sd_Linux_x64_compiled2018a.zip
+        - unzip -q /tmp/BrainNetViewer20191031_sd_Linux_x64_compiled2018a.zip -d /
+        - rm /tmp/BrainNetViewer20191031_sd_Linux_x64_compiled2018a.zip
+
+    - run:
+        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
+        - chmod +x /usr/bin/ll
+        - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
+
+    - copy: brainnetviewer /usr/bin/brainnetviewer
+
+    - run:
+        - chmod +x /usr/bin/brainnetviewer
+
+    - entrypoint: /usr/bin/brainnetviewer
+
+deploy:
+  bins:
+    - brainnetviewer
+
+categories:
+  - functional imaging
+  - visualization
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=
+
+readme: |-
+  ----------------------------------
+  ## brainnetviewer/{{ context.version }} ##
+
+  BrainNet Viewer is a brain network visualization tool for visualizing structural and functional connectivity patterns.
+
+  Homepage: https://www.nitrc.org/projects/bnv/
+  Example: `brainnetviewer`
+  License: GNU General Public License Version 3 (GPL-3.0)
+
+  ----------------------------------
+
+files:
+  - name: brainnetviewer_zip
+    url: https://www.nitrc.org/frs/download.php/11585/BrainNetViewer20191031_sd_Linux_x64_compiled2018a.zip
+  - name: mcr_installer
+    url: https://ssd.mathworks.com/supportfiles/downloads/R2018a/deployment_files/R2018a/installers/glnxa64/MCR_R2018a_glnxa64_installer.zip
