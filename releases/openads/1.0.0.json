@@ -1,0 +1,18 @@
+{
+  "apps": {
+    "openads 1.0.0": {
+      "version": "20260512",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "diffusion imaging",
+    "structural imaging",
+    "image registration",
+    "image segmentation",
+    "visualization",
+    "machine learning",
+    "workflows"
+  ]
+}
