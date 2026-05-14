@@ -2,7 +2,7 @@ name: pals
 version: 2.0.1
 
 copyright:
-  - name: custom
+  - license: custom
     url: https://github.com/npnl/PALS
 
 architectures:
