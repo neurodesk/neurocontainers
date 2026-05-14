@@ -1,0 +1,67 @@
+name: vmtk
+version: 1.5.0
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/vmtk/vmtk
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - libgl1
+        - libglu1-mesa
+        - ca-certificates
+        - bzip2
+
+    - run:
+        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
+        - chmod +x /usr/bin/ll
+        - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
+
+    - run:
+        - cp {{ get_file("miniforge_installer") }} /tmp/Miniforge3-Linux-x86_64.sh
+        - bash /tmp/Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge3
+        - rm /tmp/Miniforge3-Linux-x86_64.sh
+        - /opt/miniforge3/bin/mamba install -y -c conda-forge vtk itk vmtk python=3.10
+        - /opt/miniforge3/bin/conda clean -afy
+
+    - environment:
+        PATH: /opt/miniforge3/bin:$PATH
+        CONDA_PATH: /opt/miniforge3
+
+deploy:
+  path:
+    - /opt/miniforge3/bin
+
+categories:
+  - image segmentation
+  - visualization
+  - modeling
+
+readme: |-
+  ----------------------------------
+  ## vmtk/{{ context.version }} ##
+
+  The Vascular Modeling Toolkit is a collection of libraries and tools for 3D reconstruction, geometric analysis, mesh generation and surface data analysis for image-based modeling of blood vessels.
+
+  Homepage: http://www.vmtk.org/
+
+  Example:
+  ```sh
+  vmtkcenterlines -ifile foo.vtp -ofile foo_centerlines.vtp
+  ```
+
+  License: BSD license
+
+  ----------------------------------
+
+files:
+  - name: miniforge_installer
+    url: https://github.com/conda-forge/miniforge/releases/download/24.7.1-2/Miniforge3-Linux-x86_64.sh
