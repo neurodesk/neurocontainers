@@ -112,7 +112,7 @@ files:
       model.save_prediction(result, args.outdir, affine=img.affine)
       print("Done. Output saved to:", args.outdir)
       
-  build:
+build:
   kind: neurodocker
   base-image: ubuntu:24.04
   pkg-manager: apt
