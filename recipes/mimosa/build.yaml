@@ -60,7 +60,7 @@ build:
     - run:
         - R --slave -e " source('https://neuroconductor.org/neurocLite.R'); neuro_install('mimosa', release = 'stable') "
         - R --slave -e " stopifnot(requireNamespace('mimosa', quietly = TRUE)); cat('mimosa installed OK\n') "
-     - test:
+    - test:
         name: verify_r_installation
         script: |-
           # Test R installation
