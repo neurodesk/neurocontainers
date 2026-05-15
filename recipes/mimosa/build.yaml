@@ -58,8 +58,9 @@ build:
         version: 6.0.7.16
     - install: r-base r-base-dev cmake git build-essential libhdf5-dev libfftw3-dev libpng-dev libjpeg-dev zlib1g-dev libssl-dev libcurl4-openssl-dev libxml2-dev
     - run:
-        - R --slave -e " pkgs <- c('mimosa', 'ANTsRCore', 'dplyr', 'extrantsr', 'fslr', 'neurobase', 'oasis', 'rlist', 'WhiteStripe'); mis <- setdiff(pkgs, rownames(installed.packages())); if (length(mis)) install.packages(mis, dependencies = TRUE); cat('Installed CRAN packages:\n'); if (length(pkgs)) cat(paste(pkgs, collapse = ', '), '\n') "
-    - test:
+        - R --slave -e " source('https://neuroconductor.org/neurocLite.R'); neuro_install('mimosa', release = 'stable') "
+        - R --slave -e " stopifnot(requireNamespace('mimosa', quietly = TRUE)); cat('mimosa installed OK\n') "
+     - test:
         name: verify_r_installation
         script: |-
           # Test R installation
@@ -100,6 +101,12 @@ build:
               }
             }
           "
+
+    - deploy:
+        bins:
+          - R
+          - Rscript
+
 categories:
   - image segmentation
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEKUlEQVR4AYxUf0yUZRz/PO97P+D4JYL8NijBNGTOUZStQg1d/WH9k1sFCysn1iqkCQOMZIr8XMCqSRgbtGV/aLHYchVaxlwjnauWy6bNaYFwBxecCN3de3fv6/N9vDu58e7O2/M83x+f7+fzee+99z0JYT6VB7pb2lpq/hj/+QNNnT6nadOjYvt4Tj3C9jZ2NYWRgK5BXWPz6t72PYfrclprqwu+L0grehssuQhIfkxsieeZG8pQkz9UUJvdtl/Mco6eUYjB3kNdaw8cbD60Nfn05d2ZvfWpJhuYJEE2GJdyo1MAgwU0Q7PEIS5pLB6WAkXl+519+VGXRqqyO97bnHgm0L7nSBziksY7jV1HAkSpvbm6+PPO0hNtefWv78roW5FgcAQwEcdcWSLey0Fc0mhfVfcGaZK2xBh+Kk394gWz5NbVcHgTdfvhmqRFmqQdvEUBwsDkTjjVaAzZn8c3UztQEHsRQ8Nn4XS5MXD8pBhr6DiKs+d+x4R1WtSBg7iBPBCXGKi409I0hnnVAi3jWWiaJuZVf1yTlwObfRZq6laMODahZ/wtXJh7GKqfK4b9xx01f0Fh2/JhmJiCjQmjKE48Dbb+MDYWroPJZMS2p4poBC8+V4IN+XlI2nIEGaYJlKcPIN4wB+KKgUXHEoMs8zhk5hOPX7r5Bh/1ISVJhsRuITPNzL/NTZE/kB2H6Cgj8ixXYJHnsZpH4nJCyJJCKp3C4+zH/OxBuG6W810qtsd5AspCKwjToYS0Ihp43V/zK7ZxkgpmeBVW+zNQ3Jdw9dpyEMaBsCuigYp0/uOt5SIqNG8/0pK/gyyNIW9VEu9FXhENJEzCPvUrfD52V01zwqsM3q3DZBEN3IoZRmMMZFnjJssgmSuFnMqehoaVIg93RDSIWdaJ2FgnZOMTGJsshKoMgMkFkLQfEBW3L5y2wCIagKXgf6WC35LzyM3N4SQDv/J4KN77eb7otvFKb0U0kIdXIjH2QzCmwOvqh8v3Eswxb8IoX4f2baGeZkgvogF/dKD4CvlVm3BrYT0cUx/D6diJ2bk1YLwboqZTSPzvZdMx28tfulWzDgxIUjp/Y01cTEFczG+IjuZvMxc2m+4TmB6JtEiTtKWa+o6RsneP7ai92nKhb2LX9IIvNpTjuAz291e8x3DyVD5+HDHg2ngFEmyfARzjQHAt+OJAGlzrPGmSdvAWdTdWPfKn66HiwamypjOzm4MkSgwz/NupDCVbtuPJx33IzeqBYcZEUHAT57i1vIk0uNajASBoQI3uhqq/XtnX03DKXvJg78TuFpuSSm0w6yiiLG0wsF7Ex3tEzqy/CIxmjt6oaCbOazUfNZCGAPxHiIG/h5bG+it7qnvrW6/X9bX/W31xxpMMDK6DRSlGnLpd5P95VoCwtn9qP62o+WQ/cQL8xfE2AAAA//8UqtzmAAAABklEQVQDALyFm6xL7f81AAAAAElFTkSuQmCC
