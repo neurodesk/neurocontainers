@@ -13,16 +13,16 @@ structured_readme:
     # Example usage
 
     ```bash
-    # Run the full DWI pipeline (CPU only)
-    ads dwi --subject-path /data/dwi/sub-01 --all --gpu 0
-
-    # Run the full PWI pipeline (CPU only)
-    ads pwi --subject-path /data/pwi/sub-01 --all --gpu 0
-
-    # Run the combined DWI + PWI pipeline (CPU only)
+    # DWI example
+    ads dwi --subject-path /opt/openads/assets/examples/dwi/sub-02e8eb42 --all --gpu 0
+    
+    # PWI example
+    ads pwi --subject-path /opt/openads/assets/examples/pwi/sub-02e8eb42 --all --gpu 0
+    
+    # Combined
     ads combined \
-      --dwi-subject-path /data/dwi/sub-01 \
-      --pwi-subject-path /data/pwi/sub-01 \
+      --dwi-subject-path /opt/openads/assets/examples/dwi/sub-02e8eb42 \
+      --pwi-subject-path /opt/openads/assets/examples/pwi/sub-02e8eb42 \
       --all --gpu 0
 
     # Write outputs to a custom directory (CPU only)
@@ -107,6 +107,10 @@ build:
         version: latest
         conda_install: python=3.11
         pip_install: numpy==2.0.1 antspyx==0.5.4 pandas==2.2.3 matplotlib==3.9.2 scikit-image==0.24.0 scipy==1.13.1 pyyaml>=6.0 nibabel==5.3.2 tqdm==4.67.1 scikit-learn==1.7.2 surfa==0.6.3 shap==0.50.0
+    - run:
+        - pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+        - pip install git+https://github.com/farialab/OpenADS --no-deps
+        - git clone https://github.com/farialab/OpenADS /opt/openads && rm -rf /opt/openads/.git
     - run:
         - pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
         - pip install git+https://github.com/farialab/OpenADS --no-deps
