@@ -58,7 +58,8 @@ build:
         version: 6.0.7.16
     - install: r-base r-base-dev cmake git build-essential libhdf5-dev libfftw3-dev libpng-dev libjpeg-dev zlib1g-dev libssl-dev libcurl4-openssl-dev libxml2-dev
     - run:
-        - R --slave -e " source('https://neuroconductor.org/neurocLite.R'); neuro_install('mimosa', release = 'stable') "
+        - R --slave -e " install.packages(c('remotes', 'dplyr', 'rlist', 'oro.nifti')) "
+        - R --slave -e " for (pkg in c('neuroconductor/neurobase', 'neuroconductor/ANTsRCore', 'neuroconductor/ANTsR', 'neuroconductor/extrantsr', 'neuroconductor/fslr', 'neuroconductor/oasis', 'neuroconductor/WhiteStripe', 'neuroconductor/mimosa')) remotes::install_github(pkg, dependencies = NA, upgrade = 'never', build_vignettes = FALSE) "
         - R --slave -e " stopifnot(requireNamespace('mimosa', quietly = TRUE)); cat('mimosa installed OK\n') "
     - test:
         name: verify_r_installation
