@@ -81,7 +81,7 @@ build:
   base-image: ubuntu:18.04
   pkg-manager: apt
   directives:
-    - install: libxt6 libglu1-mesa libgl1-mesa-glx curl ca-certificates
+    - install: libxt6 libglu1-mesa libgl1-mesa-glx curl ca-certificates unzip
 
     # ---------------------------------------------------------------------
     # Bundled-FSL environment.
@@ -118,6 +118,11 @@ build:
             && ln -sf /opt/BCBToolKit/BCBToolKit.sh /usr/local/bin/BCBToolKit.sh \
             && ln -sf /opt/BCBToolKit/run_disco.sh /usr/local/bin/run_disco.sh \
             && ln -sf /opt/BCBToolKit/tractotron_cli.sh /usr/local/bin/tractotron_cli.sh \
+            && curl -L -o /tmp/hcp_atlas.zip \
+                 https://github.com/data-others/atlas/releases/download/hcp1065/hcp1065_prob_coverage_nifti.zip \
+            && mkdir -p /opt/BCBToolKit/Tools/HCP1065 \
+            && unzip /tmp/hcp_atlas.zip -d /opt/BCBToolKit/Tools/HCP1065 \
+            && rm /tmp/hcp_atlas.zip \
             && printf '%s\n' \
                  '1.000000 0.000000 0.000000 0.000000' \
                  '0.000000 1.000000 0.000000 0.000000' \
@@ -132,7 +137,6 @@ build:
           #   with "Could not open matrix file ... nulldeform.mat", every
           #   track_vis call then fails on the missing resliced ROI, and the
           #   output is empty while the script still reports success.
-
     - deploy:
         bins:
           - BCBToolKit.sh
