@@ -6,7 +6,7 @@
 
 name: gimp
 version: 2.10.18
-container: gimp_2.10.18_*.simg
+container: gimp_2.10.18_20210104.simg
 
 setup:
   script: |
