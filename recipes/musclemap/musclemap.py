@@ -3385,7 +3385,7 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
     DEBUG=False
     if DEBUG:
         logging.info("DEBUG mode: Skipping actual mm_segment execution and creating dummy output.")
-        subprocess.run(f"cp /buildhostdirectory/input_dseg.nii.gz {mmSegmentOutputPath}", shell=True, check=True)
+subprocess.run(f"cp /buildhostdirectory/input_dseg.nii.gz {mmSegmentOutputPath}", shell=False, check=True)
     else:
         _run_mm_segment(
             bodyregion=bodyregion,

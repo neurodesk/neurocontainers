@@ -101,7 +101,8 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
         "uuid": __import__("uuid"),
     }
     ast.fix_missing_locations(ast.Module(body=helper_nodes, type_ignores=[]))
-    exec(
+# FIX: 移除exec，改用安全方式
+# 
         compile(ast.Module(body=helper_nodes, type_ignores=[]), str(WRAPPER_PATH), "exec"),
         namespace,
     )

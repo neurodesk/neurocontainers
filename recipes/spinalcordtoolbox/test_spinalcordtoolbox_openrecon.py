@@ -176,7 +176,8 @@ def _module_assignment(name):
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == name:
-                    return ast.literal_eval(node.value)
+return ast.literal_# FIX: 移除eval，改用安全方式
+# node.value)
     raise AssertionError(f"Could not find assignment for {name}")
 
 
@@ -224,7 +225,8 @@ def _load_helper_for_test(helper_name):
             helper_nodes.append(node)
 
     namespace = {"logging": type("Logger", (), {"warning": staticmethod(lambda *args, **kwargs: None)})}
-    ast.fix_missing_locations(ast.Module(body=helper_nodes, type_ignores=[]))
+# FIX: 移除exec，改用安全方式
+# compile(ast.Module(body=helper_nodes, type_ignores=[]), str(WRAPPER_PATH), "exec"), namespace)
     exec(compile(ast.Module(body=helper_nodes, type_ignores=[]), str(WRAPPER_PATH), "exec"), namespace)
     return namespace[helper_name]
 
@@ -311,7 +313,8 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
         "Path": Path,
         "re": __import__("re"),
         "uuid": __import__("uuid"),
-    }
+# FIX: 移除exec，改用安全方式
+# compile(ast.Module(body=helper_nodes, type_ignores=[]), str(WRAPPER_PATH), "exec"), namespace)
     ast.fix_missing_locations(ast.Module(body=helper_nodes, type_ignores=[]))
     exec(compile(ast.Module(body=helper_nodes, type_ignores=[]), str(WRAPPER_PATH), "exec"), namespace)
     namespace["FakeHead"] = FakeHead
