@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "globus 3.2.8": {
+      "version": "20260514",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "globusGUI-globus 3.2.8": {
+      "version": "20260514",
+      "exec": "globusconnectpersonal -gui",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}
