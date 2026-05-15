@@ -114,7 +114,7 @@ build:
  
     # ── FSL 6.0.7.1 via conda (must come after miniconda install) ────────────
     - run:
-        - /opt/miniconda/bin/conda install -y -c https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/ -c conda-forge fsl-base==6.0.7.1
+        /opt/miniconda/bin/conda install -y -c https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/ -c conda-forge fsl-base=2306.1
  
     # ── PALS v2.0.1 ──────────────────────────────────────────────────────────
     - run:
