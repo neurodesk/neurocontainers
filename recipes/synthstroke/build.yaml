@@ -85,7 +85,34 @@ readme: |-
   To run container outside of this environment: ml synthstroke/{{ context.version }}
 
   ----------------------------------
-build:
+files:
+  - name: run.py
+    contents: |
+      import argparse
+      import nibabel as nib
+      from pathlib import Path
+      from synthstroke_model import SynthStrokeModel
+
+      parser = argparse.ArgumentParser()
+      parser.add_argument("--input", required=True, help="Input T1w NIfTI file")
+      parser.add_argument("--outdir", required=True, help="Output directory")
+      parser.add_argument("--tta", action="store_true", help="Enable test-time augmentation")
+      parser.add_argument("--weights", default="/opt/synthstroke/weights/baseline/model.safetensors")
+      args = parser.parse_args()
+
+      img = nib.load(args.input)
+      model = SynthStrokeModel.from_checkpoint(args.weights)
+      model.eval()
+
+      result = model.predict_comprehensive_with_preprocessing(
+          img.get_fdata(), affine=img.affine,
+          use_tta=args.tta, use_sliding_window=True, patch_size=128
+      )
+      Path(args.outdir).mkdir(parents=True, exist_ok=True)
+      model.save_prediction(result, args.outdir, affine=img.affine)
+      print("Done. Output saved to:", args.outdir)
+      
+  build:
   kind: neurodocker
   base-image: ubuntu:24.04
   pkg-manager: apt
@@ -99,7 +126,8 @@ build:
     - run:
         - git clone https://github.com/liamchalcroft/SynthStroke.git /opt/synthstroke
         - hf download liamchalcroft/synthstroke-baseline --local-dir /opt/synthstroke/weights/baseline
-        - printf '#!/bin/bash\npython /opt/synthstroke/test.py --weights /opt/synthstroke/weights/baseline/model.safetensors "$@"\n' > /usr/local/bin/synthstroke && chmod +x /usr/local/bin/synthstroke
+        - cp {{ get_file("run.py") }} /opt/synthstroke/run.py
+        - printf '#!/bin/bash\npython /opt/synthstroke/run.py "$@"\n' > /usr/local/bin/synthstroke && chmod +x /usr/local/bin/synthstroke
     - deploy:
         bins:
           - synthstroke
