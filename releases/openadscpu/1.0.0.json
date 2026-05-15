@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "openadscpu 1.0.0": {
+      "version": "20260516",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation"
+  ]
+}
