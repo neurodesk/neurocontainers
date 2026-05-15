@@ -381,17 +381,32 @@ class ReleaseContainerDownloader:
         )
         os.makedirs(self.cache_dir, exist_ok=True)
 
-        # Base URLs for NeuroContainers
+        # Prefer Nectar, but fall back to the AWS S3 mirror because release PR
+        # tests can start before the best-effort Nectar upload is available.
         self.base_urls = [
-            "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk",
+            (
+                "Nectar Object Storage",
+                "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk",
+            ),
+            (
+                "AWS S3",
+                "https://neurocontainers.s3.us-east-2.amazonaws.com",
+            ),
         ]
 
     def download_from_release(
-        self, name: str, version: str, build_date: str
+        self, name: str, version: str, build_date: Optional[str]
     ) -> Optional[str]:
         """Download container using release build information"""
-        # The primary format for release containers includes the build date
-        # URL format: https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/{name}_{version}_{build_date}.simg
+        if not build_date:
+            print(
+                "Release metadata did not include a build date; "
+                "cannot download container"
+            )
+            return None
+
+        # The primary format for release containers includes the build date:
+        # {base_url}/{name}_{version}_{build_date}.simg
         filenames = [
             f"{name}_{version}_{build_date}.simg",  # Primary format for releases
         ]
@@ -404,21 +419,27 @@ class ReleaseContainerDownloader:
                 print(f"Using cached container: {cache_path}")
                 return cache_path
 
-            # Try downloading from each base URL
-            for base_url in self.base_urls:
+            # Try downloading from each mirror.
+            for source_name, base_url in self.base_urls:
                 url = f"{base_url}/{filename}"
-                print(f"Attempting to download: {url}")
+                temp_path = f"{cache_path}.tmp"
+                print(f"Attempting to download from {source_name}: {url}")
                 print(f"Note: Container will be cached in {self.cache_dir}")
                 print(
                     "Use --cleanup to remove after testing or --cleanup-all to remove all cached containers"
                 )
 
                 try:
-                    urllib.request.urlretrieve(url, cache_path)
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                    urllib.request.urlretrieve(url, temp_path)
+                    os.replace(temp_path, cache_path)
                     print(f"Successfully downloaded: {cache_path}")
                     return cache_path
                 except Exception as e:
-                    print(f"Failed to download from {url}: {e}")
+                    if os.path.exists(temp_path):
+                        os.remove(temp_path)
+                    print(f"Failed to download from {source_name} ({url}): {e}")
                     continue
 
         return None
@@ -737,6 +758,11 @@ class ContainerTester:
                 return downloaded_path
 
         if location == "auto" or location == "docker":
+            if (
+                self.selected_runtime is not None
+                and self.selected_runtime.name != "docker"
+            ):
+                return None
             # For Docker, the container reference is the tag
             return f"{name}:{version}"
 
