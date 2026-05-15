@@ -1,0 +1,115 @@
+name: globus
+version: "3.2.8"
+
+copyright:
+  - name: Globus Connect Personal
+    url: https://www.globus.org/globus-connect-personal
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  globus_archive:
+    try:
+      - value: globusconnectpersonal_x86_64_tgz
+        condition: arch == "x86_64"
+      - value: globusconnectpersonal_aarch64_tgz
+        condition: arch == "aarch64"
+
+files:
+  - name: globusconnectpersonal_x86_64_tgz
+    url: https://downloads.globus.org/globus-connect-personal/v3/linux/stable/globusconnectpersonal-{{ context.version }}.tgz
+    condition: arch == "x86_64"
+  - name: globusconnectpersonal_aarch64_tgz
+    url: https://downloads.globus.org/globus-connect-personal/v3/linux_aarch64/stable/globusconnectpersonal-aarch64-{{ context.version }}.tgz
+    condition: arch == "aarch64"
+  - name: gc-ctrl.py
+    filename: gc-ctrl.py
+
+build:
+  kind: neurodocker
+  base-image: fedora:37
+  pkg-manager: yum
+
+  directives:
+    - install:
+        - ca-certificates
+        - glibc
+        - libXScrnSaver
+        - libxcrypt-compat
+        - python-unversioned-command
+        - python3
+        - tcllib
+        - tk
+
+    - workdir: /opt
+
+    - run:
+        - tar -xzf {{ get_file(context.globus_archive) }} -C /opt
+        - test -d /opt/globusconnectpersonal-{{ context.version }}
+        - install -m 0755 {{ get_file("gc-ctrl.py") }} /opt/globusconnectpersonal-{{ context.version }}/gc-ctrl.py
+        - grep -q "_get_linux_distro_name" /opt/globusconnectpersonal-{{ context.version }}/gc-ctrl.py
+        - python -m py_compile /opt/globusconnectpersonal-{{ context.version }}/gc-ctrl.py
+        - rm -rf /opt/globusconnectpersonal-{{ context.version }}/__pycache__
+
+    - environment:
+        DEPLOY_PATH: /opt/globusconnectpersonal-{{ context.version }}/
+        PATH: $PATH:/opt/globusconnectpersonal-{{ context.version }}/
+
+deploy:
+  bins:
+    - globusconnect
+    - globusconnectpersonal
+  path:
+    - /opt/globusconnectpersonal-{{ context.version }}
+
+gui_apps:
+  - name: globusGUI
+    exec: globusconnectpersonal -gui
+
+tests:
+  - name: check globusconnectpersonal help
+    script: |
+      if [ "$(id -u)" -eq 0 ]; then
+        globusconnectpersonal --help 2>&1 | grep -q "root is not supported"
+      else
+        globusconnectpersonal --help 2>&1 | grep -q Usage
+      fi
+
+  - name: check patched gc-ctrl.py
+    script: |
+      GCP_DIR="$(find /opt -maxdepth 1 -type d -name 'globusconnectpersonal-*' | sort | tail -n 1)"
+      test -n "${GCP_DIR}"
+      test -f "${GCP_DIR}/gc-ctrl.py"
+      grep -q "_get_linux_distro_name" "${GCP_DIR}/gc-ctrl.py"
+      python - <<'PY'
+      from pathlib import Path
+      candidates = sorted(Path("/opt").glob("globusconnectpersonal-*/gc-ctrl.py"))
+      if not candidates:
+          raise SystemExit("gc-ctrl.py not found")
+      source = candidates[-1]
+      compile(source.read_text(), str(source), "exec")
+      PY
+
+categories:
+  - data organisation
+
+readme: |-
+  ----------------------------------
+  ## globus/{{ context.version }} ##
+
+  Globus Connect Personal lets users create personal Globus endpoints for transferring files between local systems and Globus-connected endpoints.
+
+  Example:
+  ```
+  globusconnectpersonal -setup
+  globusconnectpersonal -gui
+  chmod 600 ~/.globusonline/lta/relay-anonymous-key.pem
+  ```
+
+  More documentation can be found here: https://www.neurodesk.org/docs/getting-started/neurodesktop/storage/#globus
+
+  To run container outside of this environment: ml globus/{{ context.version }}
+
+  ----------------------------------
