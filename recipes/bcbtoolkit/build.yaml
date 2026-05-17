@@ -11,7 +11,8 @@ structured_readme:
     space. Provides disconnectome maps (run_disco.sh), Tractotron probability
     of disconnection (tractotron_cli.sh), and a Java GUI launcher
     (BCBToolKit.sh). Bundles a stripped FSL plus a Java runtime — there is no
-    Python package to import.
+    Python package to import. Includes the HCP-1065 probabilistic tract atlas
+    (64 tracts, 2mm MNI152) at /opt/BCBToolKit/Tools/HCP1065/prob.
   example: |-
     # Disconnectome maps from a folder of MNI-space lesion masks
     run_disco.sh -l /data/lesions -o /data/disco_out
@@ -24,16 +25,13 @@ structured_readme:
 
     # Tractotron — probability of disconnection per individual tract
     tractotron_cli.sh -l /data/lesions -o /data/tractotron_out
-      # Tractotron — using bundled HCP-1065 probabilistic tract atlas (2mm MNI)
-        # Reslice lesion to 2mm first if it's in 1mm space
-        tractotron_cli.sh -l /data/lesions_2mm -t /opt/BCBToolKit/Tools/HCP1065/prob -o /data/tractotron_out
+    
+    # Tractotron — using bundled HCP-1065 probabilistic tract atlas (2mm MNI)
+    # Reslice lesion to 2mm first if it's in 1mm space
+    tractotron_cli.sh -l /data/lesions_2mm -t /opt/BCBToolKit/Tools/HCP1065/prob -o /data/tractotron_out
 
     # Java GUI (requires X forwarding)
     BCBToolKit.sh
-  extra: |-
-    Bundled atlases:
-    - Disconnectome (run_disco.sh): 10 population-averaged tractography streamline atlases (.trk) at 1mm MNI152 FSL space (182x218x182)
-    - Tractotron (tractotron_cli.sh): HCP-1065 probabilistic tract atlas, 64 tracts, 2mm MNI152 space (91x109x91) — located at /opt/BCBToolKit/Tools/HCP1065/prob
   documentation: https://www.dropbox.com/scl/fi/crlns14gd7flckow067ig/USER_MANUALBCB.pdf?rlkey=49vnztok9brqaa769d42zey2w&e=1&dl=0
   citation: |-
     Foulon C. et al. (2018) Advanced lesion symptom mapping analyses and implementation as BCBtoolkit. GigaScience 7, 1–17.
@@ -46,10 +44,11 @@ readme: |-
   ## bcbtoolkit/{{ context.version }} ##
 
   Tools to indirectly assess brain disconnections from lesion masks in MNI
-  space. Provides disconnectome maps (`run_disco.sh`), Tractotron probability
-  of disconnection (`tractotron_cli.sh`), and a Java GUI launcher
-  (`BCBToolKit.sh`). Bundles a stripped FSL plus a Java runtime — there is no
-  Python package to import.
+  space. Provides disconnectome maps (run_disco.sh), Tractotron probability
+  of disconnection (tractotron_cli.sh), and a Java GUI launcher
+  (BCBToolKit.sh). Bundles a stripped FSL plus a Java runtime — there is no
+  Python package to import. Includes the HCP-1065 probabilistic tract atlas
+  (64 tracts, 2mm MNI152) at /opt/BCBToolKit/Tools/HCP1065/prob.
 
   Example:
   ```bash
@@ -66,8 +65,8 @@ readme: |-
   tractotron_cli.sh -l /data/lesions -o /data/tractotron_out
 
   # Tractotron — using bundled HCP-1065 probabilistic tract atlas (2mm MNI)
-    # Reslice lesion to 2mm first if it's in 1mm space
-    tractotron_cli.sh -l /data/lesions_2mm -t /opt/BCBToolKit/Tools/HCP1065/prob -o /data/tractotron_out
+  # Reslice lesion to 2mm first if it's in 1mm space
+  tractotron_cli.sh -l /data/lesions_2mm -t /opt/BCBToolKit/Tools/HCP1065/prob -o /data/tractotron_out
 
   # Java GUI (requires X forwarding)
   BCBToolKit.sh
