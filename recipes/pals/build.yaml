@@ -112,9 +112,9 @@ build:
         - /opt/miniconda/bin/conda config --system --set show_channel_urls true
         - /opt/miniconda/bin/conda clean --all --yes
  
-    # ── FSL 6.0.7.1 via conda (must come after miniconda install) ────────────
+    # ── FSL tools via conda (fsl-base 2604.1, avwutils 2209.6, bet2 2111.9, flirt 2111.4) ──
     - run:
-        - /opt/miniconda/bin/conda install -y -c https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/ -c conda-forge fsl-base=2306.1
+        - /opt/miniconda/bin/conda install -y --no-channel-priority --prefix /opt/miniconda -c https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public/ -c conda-forge fsl-base=2604.1 fsl-avwutils=2209.6 fsl-bet2=2111.9 fsl-flirt=2111.4
  
     # ── PALS v2.0.1 ──────────────────────────────────────────────────────────
     - run:
