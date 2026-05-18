@@ -25,6 +25,7 @@ on:
         type: choice
         options:
         - "neurodesk-arcrunner-neurocontainers"
+        - "neurodesk-syd-arcrunner-neurocontainers"
         - "blacksmith-8vcpu-ubuntu-2404"
         - "blacksmith-8vcpu-ubuntu-2404-arm"
         - "ubuntu-22.04"
@@ -107,6 +108,9 @@ jobs:
         case "$CHOICE" in
           "neurodesk-arcrunner-neurocontainers")
             runner='"neurodesk-arcrunner-neurocontainers"'
+            ;;
+          "neurodesk-syd-arcrunner-neurocontainers")
+            runner='["self-hosted","neurodesk-syd-arcrunner-neurocontainers"]'
             ;;
           "blacksmith-8vcpu-ubuntu-2404"|"blacksmith-8vcpu-ubuntu-2404-arm"|"ubuntu-22.04"|"self-hosted")
             runner="\"$CHOICE\""
