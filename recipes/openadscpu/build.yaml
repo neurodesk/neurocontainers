@@ -115,6 +115,8 @@ build:
         - pip install /opt/openads --no-deps
         - rm -rf /opt/openads/.git
         - ln -s /opt/openads/scripts /opt/miniconda-latest/lib/python3.11/scripts
+        - ln -s /opt/openads/assets /opt/miniconda-latest/lib/python3.11/assets
+        - ln -s /opt/openads/configs /opt/miniconda-latest/lib/python3.11/configs
     - deploy:
         bins:
           - ads
