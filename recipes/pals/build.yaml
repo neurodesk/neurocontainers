@@ -127,6 +127,8 @@ build:
       - /opt/pals-2.0.1/presets.json
  
     - environment:
+        FSLDIR: /opt/miniconda
+        FSLOUTPUTTYPE: NIFTI_GZ
         PALS_DIR: /opt/pals-2.0.1
         PATH: /opt/pals-2.0.1:/opt/ants-2.4.3:/opt/miniconda/bin:$PATH
  
