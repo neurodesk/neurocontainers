@@ -178,15 +178,13 @@ build:
         conda_install: python=3.10
         pip_install: monai torch nibabel numpy scikit-image tqdm wandb cornucopia huggingface_hub safetensors scipy einops
     - install: git libgl1 curl ca-certificates
-    - env:
-        PYTHONPATH: /opt/synthstroke
     - run:
         - git clone https://github.com/liamchalcroft/SynthStroke.git /opt/synthstroke
         - hf download liamchalcroft/synthstroke-baseline --local-dir /opt/synthstroke/weights/baseline
         - cp {{ get_file("run.py") }} /opt/synthstroke/run.py
         - cp {{ get_file("download.py") }} /opt/synthstroke/download.py
-        - printf '#!/bin/bash\npython /opt/synthstroke/run.py "$@"\n' > /usr/local/bin/synthstroke && chmod +x /usr/local/bin/synthstroke
-        - printf '#!/bin/bash\npython /opt/synthstroke/download.py "$@"\n' > /usr/local/bin/synthstroke-download && chmod +x /usr/local/bin/synthstroke-download
+        - printf '#!/bin/bash\nexport PYTHONPATH=/opt/synthstroke:$PYTHONPATH\npython /opt/synthstroke/run.py "$@"\n' > /usr/local/bin/synthstroke && chmod +x /usr/local/bin/synthstroke
+        - printf '#!/bin/bash\nexport PYTHONPATH=/opt/synthstroke:$PYTHONPATH\npython /opt/synthstroke/download.py "$@"\n' > /usr/local/bin/synthstroke-download && chmod +x /usr/local/bin/synthstroke-download
 
 deploy:
   bins:
