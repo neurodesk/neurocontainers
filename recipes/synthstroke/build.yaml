@@ -178,6 +178,8 @@ build:
         conda_install: python=3.10
         pip_install: monai torch nibabel numpy scikit-image tqdm wandb cornucopia huggingface_hub safetensors scipy einops
     - install: git libgl1 curl ca-certificates
+    - env:
+        PYTHONPATH: /opt/synthstroke
     - run:
         - git clone https://github.com/liamchalcroft/SynthStroke.git /opt/synthstroke
         - hf download liamchalcroft/synthstroke-baseline --local-dir /opt/synthstroke/weights/baseline
