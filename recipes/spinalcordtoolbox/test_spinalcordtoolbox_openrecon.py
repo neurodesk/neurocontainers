@@ -423,6 +423,23 @@ def test_wrapper_validates_output_series_contract_like_musclemap():
     assert "_log_and_validate_output_series_contract(\n                output_images" in wrapper_source
 
 
+def test_process_image_allocates_original_before_segmentation_like_vesselboost():
+    wrapper_source = WRAPPER_PATH.read_text()
+    tree = ast.parse(wrapper_source)
+    process_node = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "process_image"
+    )
+    process_source = ast.get_source_segment(wrapper_source, process_node)
+
+    original_allocation = 'original_passthrough_index = derived_series_allocator.allocate("ORIGINAL")'
+    segmentation_allocation = 'output_series_index = derived_series_allocator.allocate(output_spec["series_suffix"])'
+    assert process_source.index(original_allocation) < process_source.index(segmentation_allocation)
+    assert "imagesOut.extend(\n                _restamp_passthrough_images" in process_source
+    assert "imagesOut = original_passthrough_images + imagesOut" not in process_source
+
+
 def test_passthrough_restamp_uses_fresh_series_identity():
     helpers = _load_runtime_helpers_for_test(
         [
@@ -477,7 +494,7 @@ def test_passthrough_restamp_uses_fresh_series_identity():
     assert output_meta["SOPInstanceUID"] != "1.2.3.4.5"
     assert output_meta["SeriesNumberRangeNameUID"] == "source_group_original"
     assert output_meta["ImageTypeValue4"] == "ORIGINAL"
-    assert output_meta["SequenceDescriptionAdditional"] == "openrecon"
+    assert output_meta["SequenceDescriptionAdditional"] == "or"
     assert output_meta["Actual3DImagePartNumber"] == "0"
     assert output_meta["AnatomicalPartitionNo"] == "0"
     assert output_meta["SliceNo"] == "0"
@@ -917,7 +934,7 @@ def test_output_image_validator_accepts_original_and_segmentation_slice_stacks()
     original_images = [
         _contract_image(
             helpers,
-            series_index=3,
+            series_index=2,
             role="ORIGINAL",
             series_uid="2.25.300",
             sop_uid=f"2.25.300.{slice_index + 1}",
@@ -928,7 +945,7 @@ def test_output_image_validator_accepts_original_and_segmentation_slice_stacks()
     segmentation_images = [
         _contract_image(
             helpers,
-            series_index=2,
+            series_index=3,
             role="SCT_DEEPSEG_SPINALCORD",
             series_uid="2.25.200",
             sop_uid=f"2.25.200.{slice_index + 1}",
@@ -941,6 +958,51 @@ def test_output_image_validator_accepts_original_and_segmentation_slice_stacks()
         original_images + segmentation_images,
         input_images,
     )
+
+
+def test_output_image_validator_rejects_descending_series_send_order():
+    helpers = _load_output_image_validator_helpers()
+    input_images = [
+        _contract_image(
+            helpers,
+            series_index=1,
+            role="NORM",
+            series_uid="1.2.3",
+            sop_uid=f"1.2.3.4.{slice_index + 1}",
+            slice_index=slice_index,
+            source=True,
+        )
+        for slice_index in range(3)
+    ]
+    original_images = [
+        _contract_image(
+            helpers,
+            series_index=3,
+            role="ORIGINAL",
+            series_uid="2.25.300",
+            sop_uid=f"2.25.300.{slice_index + 1}",
+            slice_index=slice_index,
+        )
+        for slice_index in range(3)
+    ]
+    segmentation_images = [
+        _contract_image(
+            helpers,
+            series_index=2,
+            role="SCT_DEEPSEG_SPINALCORD",
+            series_uid="2.25.200",
+            sop_uid=f"2.25.200.{slice_index + 1}",
+            slice_index=slice_index,
+        )
+        for slice_index in range(3)
+    ]
+
+    try:
+        helpers["_validate_output_images"](original_images + segmentation_images, input_images)
+    except ValueError as exc:
+        assert "image_series_index 2 after 3" in str(exc)
+    else:
+        raise AssertionError("descending output series order was accepted")
 
 
 def test_output_image_validator_accepts_explicit_volume_without_minihead():
@@ -1286,7 +1348,7 @@ def test_wrapper_patches_openrecon_derived_series_identity_like_musclemap():
     assert 'tmpMeta["ProtocolName"] = output_identity["sequence_description"]' in wrapper_source
     assert 'tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]' in wrapper_source
     assert 'tmpMeta["SOPInstanceUID"] = sop_instance_uid' in wrapper_source
-    assert 'tmpMeta["SequenceDescriptionAdditional"] = "openrecon"' in wrapper_source
+    assert 'tmpMeta["SequenceDescriptionAdditional"] = "or"' in wrapper_source
     assert 'tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)' in wrapper_source
     assert '"ProtocolName", sequence_description' in wrapper_source
     assert '"SeriesInstanceUID", series_instance_uid' in wrapper_source

@@ -1040,10 +1040,18 @@ def _validate_output_images(output_images, input_images):
     input_has_minihead = any(_image_minihead(image) for image in input_images)
     series_identity = {}
     series_by_uid = {}
+    previous_series_index = None
 
     for index, image in enumerate(_as_image_list(output_images)):
         header = image.getHead()
         series_index = _get_image_series_index(image)
+        if previous_series_index is not None and series_index < previous_series_index:
+            errors.append(
+                f"image {index} has image_series_index {series_index} after "
+                f"{previous_series_index}; output series must be emitted in "
+                "ascending allocation order"
+            )
+        previous_series_index = series_index
         image_key = (
             series_index,
             int(header.slice),
@@ -1958,7 +1966,7 @@ def _restamp_passthrough_images(images, role, output_series_index):
         tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
         tmpMeta["ImageComments"] = output_identity["image_comment"]
         tmpMeta["ImageComment"] = output_identity["image_comment"]
-        tmpMeta["SequenceDescriptionAdditional"] = "openrecon"
+        tmpMeta["SequenceDescriptionAdditional"] = "or"
         tmpMeta["Keep_image_geometry"] = 1
         _set_output_position_meta(tmpMeta, iImg)
 
@@ -2267,7 +2275,7 @@ def _sct_output_to_mrd_images(
     tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
     tmpMeta["ImageComments"] = output_identity["image_comment"]
     tmpMeta["ImageComment"] = output_identity["image_comment"]
-    tmpMeta["SequenceDescriptionAdditional"] = "openrecon"
+    tmpMeta["SequenceDescriptionAdditional"] = "or"
     tmpMeta["Keep_image_geometry"] = 0
     tmpMeta["partition_count"] = "1"
     tmpMeta["slice_count"] = str(output_slice_count)
@@ -2375,7 +2383,7 @@ def _sct_output_to_source_geometry_images(
         tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
         tmpMeta["ImageComments"] = output_identity["image_comment"]
         tmpMeta["ImageComment"] = output_identity["image_comment"]
-        tmpMeta["SequenceDescriptionAdditional"] = "openrecon"
+        tmpMeta["SequenceDescriptionAdditional"] = "or"
         tmpMeta["Keep_image_geometry"] = 1
         _set_output_position_meta(tmpMeta, iImg)
 
@@ -2627,6 +2635,26 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
     )
 
     imagesOut = []
+    if send_original:
+        if called_from_raw:
+            logging.warning("sendoriginal is true, but input was raw data, so no original images to return.")
+        else:
+            original_passthrough_index = derived_series_allocator.allocate("ORIGINAL")
+            logging.info(
+                "Preparing original SCT source images as first derived original series_index=%d",
+                original_passthrough_index,
+            )
+            ordered_original_images = [
+                original_images[index] for index in slice_sort_indices
+            ]
+            imagesOut.extend(
+                _restamp_passthrough_images(
+                    ordered_original_images,
+                    "ORIGINAL",
+                    original_passthrough_index,
+                )
+            )
+
     precomputed_outputs = {}
     for member_analysis in analyses:
         member_work_dir = request_work_dir
@@ -2655,25 +2683,6 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
                     series_suffix=output_spec["series_suffix"],
                 )
             )
-
-    if send_original:
-        if called_from_raw:
-            logging.warning("sendoriginal is true, but input was raw data, so no original images to return.")
-        else:
-            original_passthrough_index = derived_series_allocator.allocate("ORIGINAL")
-            logging.info(
-                "Sending original SCT source images as derived passthrough series_index=%d",
-                original_passthrough_index,
-            )
-            ordered_original_images = [
-                original_images[index] for index in slice_sort_indices
-            ]
-            original_passthrough_images = _restamp_passthrough_images(
-                ordered_original_images,
-                "ORIGINAL",
-                original_passthrough_index,
-            )
-            imagesOut = original_passthrough_images + imagesOut
 
     return imagesOut
 
