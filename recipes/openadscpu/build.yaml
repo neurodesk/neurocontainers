@@ -109,8 +109,9 @@ build:
     - run:
         - pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
         - pip install numpy==2.0.1 antspyx==0.5.4 pandas==2.2.3 matplotlib==3.9.2 scikit-image==0.24.0 scipy==1.13.1 pyyaml==6.0.2 nibabel==5.3.2 tqdm==4.67.1 scikit-learn==1.7.2 surfa==0.6.3 shap==0.50.0
-        - pip install git+https://github.com/farialab/OpenADS --no-deps
-        - git clone https://github.com/farialab/OpenADS /opt/openads && rm -rf /opt/openads/.git
+        - git clone https://github.com/farialab/OpenADS /opt/openads
+        - pip install /opt/openads --no-deps
+        - rm -rf /opt/openads/.git
         - ln -s /opt/openads/scripts /opt/miniconda-latest/lib/python3.11/scripts
     - deploy:
         bins:
