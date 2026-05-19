@@ -134,6 +134,7 @@ def _summarise_builtin(payload: Dict) -> Tuple[Dict, bool]:
     binaries: Dict[str, BinarySummary] = {}
     path_to_binary: Dict[str, str] = {}
     missing_paths: Set[str] = set()
+    access_failures: List[str] = []
 
     for entry in tests:
         name = entry.get("name", "")
@@ -170,12 +171,17 @@ def _summarise_builtin(payload: Dict) -> Tuple[Dict, bool]:
                     for path in paths:
                         missing_paths.add(path)
                     if bin_name:
-                        binaries.setdefault(bin_name, BinarySummary(name=bin_name)).missing_libs.append(
-                            (lib_name, paths[0] if paths else None)
-                        )
+                        binary = binaries.setdefault(bin_name, BinarySummary(name=bin_name))
+                        binary.status = "failed"
+                        binary.missing_libs.append((lib_name, paths[0] if paths else None))
             continue
 
-        if name.startswith("file.exists:") or name.startswith("file.executable:"):
+        if (
+            name.startswith("file.exists:")
+            or name.startswith("file.executable:")
+            or name.startswith("file.access.arbitrary_user:")
+            or name.startswith("path.access:")
+        ):
             file_path = name.split(":", 1)[1]
             target_binary = path_to_binary.get(file_path)
             if target_binary is None:
@@ -184,11 +190,18 @@ def _summarise_builtin(payload: Dict) -> Tuple[Dict, bool]:
                     path_to_binary[file_path] = target_binary
             if status == "failed":
                 if target_binary:
-                    binaries.setdefault(target_binary, BinarySummary(name=target_binary)).additional_messages.append(
-                        message.strip()
-                    )
+                    binary = binaries.setdefault(target_binary, BinarySummary(name=target_binary))
+                    binary.status = "failed"
+                    binary.additional_messages.append(message.strip())
+                else:
+                    access_failures.append(message.strip())
                 for path in _extract_paths(message):
                     missing_paths.add(path)
+            continue
+
+        if name.startswith("directory.access.arbitrary_user:"):
+            if status == "failed":
+                access_failures.append(message.strip())
             continue
 
         if status == "failed":
@@ -215,6 +228,15 @@ def _summarise_builtin(payload: Dict) -> Tuple[Dict, bool]:
                     "message": "Missing filesystem entries:\n" + "\n".join(tree_lines),
                 }
             )
+
+    if access_failures:
+        new_tests.append(
+            {
+                "name": "runtime-user-access",
+                "status": "failed",
+                "message": "\n".join(sorted(set(access_failures))),
+            }
+        )
 
     payload["tests"] = new_tests
     payload["total"] = len(new_tests)

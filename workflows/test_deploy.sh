@@ -8,7 +8,7 @@ PASSED=0
 FAILED=0
 SKIPPED=0
 
-declare -A VISITED_FILES
+VISITED_FILES=""
 
 parse_non_negative_integer() {
     local value="$1"
@@ -92,6 +92,118 @@ normalise_path() {
     fi
 }
 
+has_visited_file() {
+    local filename="$1"
+    printf '%s\n' "$VISITED_FILES" | grep -Fx -- "$filename" >/dev/null 2>&1
+}
+
+mark_visited_file() {
+    local filename="$1"
+    VISITED_FILES="${VISITED_FILES}${filename}"$'\n'
+}
+
+path_has_other_bit() {
+    local path="$1"
+    local mode="$2"
+
+    [ -n "$(find "$path" -maxdepth 0 -perm "$mode" -print -quit 2>/dev/null)" ]
+}
+
+resolve_path_best_effort() {
+    local filename="$1"
+    local resolved=""
+
+    resolved=$(readlink -f "$filename" 2>/dev/null || true)
+    if [ -n "$resolved" ]; then
+        printf '%s' "$resolved"
+        return
+    fi
+
+    if [[ "$filename" == /* ]]; then
+        printf '%s' "$filename"
+        return
+    fi
+
+    local dir
+    local base
+    dir=$(dirname "$filename")
+    base=$(basename "$filename")
+    resolved=$(cd "$dir" 2>/dev/null && printf '%s/%s' "$(pwd -P)" "$base" || true)
+    if [ -n "$resolved" ]; then
+        printf '%s' "$resolved"
+    else
+        printf '%s' "$filename"
+    fi
+}
+
+test_parent_directory_access() {
+    local filename="$1"
+    local dir
+
+    dir=$(dirname "$filename")
+    while [ -n "$dir" ] && [ "$dir" != "." ]; do
+        if [ ! -d "$dir" ]; then
+            record_result "path.access:$filename" "failed" "Parent directory $dir does not exist."
+            return 1
+        fi
+
+        if ! path_has_other_bit "$dir" "-0001"; then
+            record_result "path.access:$filename" "failed" "Parent directory $dir is not traversable by arbitrary runtime users."
+            return 1
+        fi
+
+        [ "$dir" = "/" ] && break
+        dir=$(dirname "$dir")
+    done
+
+    return 0
+}
+
+test_file_arbitrary_user_access() {
+    local filename="$1"
+    local resolved
+
+    resolved=$(resolve_path_best_effort "$filename")
+    if [ -z "$resolved" ]; then
+        resolved="$filename"
+    fi
+
+    if ! test_parent_directory_access "$filename"; then
+        return
+    fi
+
+    if [[ "$filename" == /* ]] && ! test_parent_directory_access "$resolved"; then
+        return
+    fi
+
+    if ! path_has_other_bit "$resolved" "-0004"; then
+        record_result "file.access.arbitrary_user:$filename" "failed" "File $resolved is not readable by arbitrary runtime users."
+        return
+    fi
+
+    if ! path_has_other_bit "$resolved" "-0001"; then
+        record_result "file.access.arbitrary_user:$filename" "failed" "File $resolved is not executable by arbitrary runtime users."
+        return
+    fi
+
+    record_result "file.access.arbitrary_user:$filename" "passed" "File $resolved is accessible to arbitrary runtime users."
+}
+
+test_directory_arbitrary_user_access() {
+    local dirname="$1"
+
+    if ! test_parent_directory_access "$dirname"; then
+        return
+    fi
+
+    if ! path_has_other_bit "$dirname" "-0001"; then
+        record_result "directory.access.arbitrary_user:$dirname" "failed" "Directory $dirname is not traversable by arbitrary runtime users."
+        return
+    fi
+
+    record_result "directory.access.arbitrary_user:$dirname" "passed" "Directory $dirname is traversable by arbitrary runtime users."
+}
+
 test_file() {
     local filename="$1"
 
@@ -99,10 +211,10 @@ test_file() {
         return
     fi
 
-    if [[ -n "${VISITED_FILES[$filename]:-}" ]]; then
+    if has_visited_file "$filename"; then
         return
     fi
-    VISITED_FILES["$filename"]=1
+    mark_visited_file "$filename"
 
     if [ -d "$filename" ]; then
         record_result "file.directory:$filename" "skipped" "Path $filename is a directory."
@@ -123,6 +235,7 @@ test_file() {
         return
     fi
 
+    test_file_arbitrary_user_access "$filename"
     test_file_linking "$filename"
 }
 
@@ -271,6 +384,7 @@ process_deploy_paths() {
 
         if [ -d "$dir" ]; then
             record_result "deploy_dir:$dir" "passed" "Directory $dir exists."
+            test_directory_arbitrary_user_access "$dir"
 
             local tested_count=0
             while IFS= read -r target; do
