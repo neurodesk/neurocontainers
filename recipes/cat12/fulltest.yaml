@@ -19,7 +19,7 @@ container: cat12_26.0.rc3_20260519.simg
 # Container paths
 container_paths:
   spm_root: /opt/cat12
-  mcr_root: /opt/mcr/v915
+  mcr_root: /opt/mcr/R2023b
   standalone_dir: /opt/cat12/standalone
 
 required_files:
@@ -51,8 +51,8 @@ tests:
 
   - name: MCR installation exists
     description: Verify MATLAB Compiler Runtime is installed
-    command: bash -lc 'test -d /opt/mcr/v915 && echo "MCR v915 installed"'
-    expected_output_contains: "MCR v915 installed"
+    command: bash -lc 'test -d /opt/mcr/R2023b && echo "MCR R2023b installed"'
+    expected_output_contains: "MCR R2023b installed"
 
   - name: CAT12 standalone directory exists
     description: Verify CAT12 standalone batch files are present
@@ -168,7 +168,7 @@ tests:
   # ==========================================================================
   - name: SPM25 MCR initialization
     description: Test SPM25 can initialize with MCR (basic startup test)
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/v915/ quit 2>&1 | tail -20 || echo \"SPM25 init test complete\"'"
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/R2023b/ quit 2>&1 | tail -20 || echo \"SPM25 init test complete\"'"
     expected_exit_code: 0
     timeout: 180
 
@@ -216,7 +216,7 @@ tests:
 
   - name: Run SPM25 smoothing
     description: Test SPM25 smoothing via CAT12 container (quick operation)
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 300 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_smooth.m 2>&1 | tail -30'"
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 300 /opt/cat12/run_spm25.sh /opt/mcr/R2023b/ batch test_smooth.m 2>&1 | tail -30'"
     depends_on: Prepare smoothing batch
     timeout: 360
     validate:
@@ -233,7 +233,7 @@ tests:
 
   - name: Run SPM25 deface
     description: Test SPM25 de-facing operation
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 300 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_deface.m 2>&1 | tail -30'"
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 300 /opt/cat12/run_spm25.sh /opt/mcr/R2023b/ batch test_deface.m 2>&1 | tail -30'"
     depends_on: Prepare deface batch
     timeout: 360
     validate:
@@ -247,7 +247,7 @@ tests:
     command: |
       bash -lc '/opt/cat12/standalone/cat_standalone.sh \
         -s /opt/cat12 \
-        -m /opt/mcr/v915 \
+        -m /opt/mcr/R2023b \
         -b /opt/cat12/standalone/cat_standalone_segment.m \
         --help 2>&1 | head -30 || echo "Help displayed"'
     expected_exit_code: 0
@@ -263,7 +263,7 @@ tests:
 
   - name: Run CAT12 segmentation (no surface)
     description: Run CAT12 segmentation without surface processing
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 3600 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_segment_nosurf.m 2>&1'"
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 3600 /opt/cat12/run_spm25.sh /opt/mcr/R2023b/ batch test_segment_nosurf.m 2>&1'"
     depends_on: Prepare no-surface segmentation batch
     timeout: 3660
     expected_output_contains: "Bye for now"
@@ -305,7 +305,7 @@ tests:
 
   - name: Verify CAT12 batch error handling
     description: Check that the no-surface segmentation batch can be run through SPM25
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 3600 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_segment_nosurf.m 2>&1 | tail -5'"
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 3600 /opt/cat12/run_spm25.sh /opt/mcr/R2023b/ batch test_segment_nosurf.m 2>&1 | tail -5'"
     depends_on: Prepare no-surface segmentation batch
     timeout: 3660
     expected_output_contains: "Bye for now"
@@ -321,7 +321,7 @@ tests:
 
   - name: Run TIV extraction
     description: Run TIV extraction
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_tiv.m 2>&1'"
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/R2023b/ batch test_tiv.m 2>&1'"
     depends_on: Prepare TIV extraction batch
     timeout: 180
     expected_output_contains: "Bye for now"
@@ -337,7 +337,7 @@ tests:
 
   - name: Run quality measures
     description: Run quality measures
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_quality.m 2>&1'"
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/R2023b/ batch test_quality.m 2>&1'"
     depends_on: Prepare quality measures batch
     timeout: 180
     ignore_exit_code: true
@@ -354,7 +354,7 @@ tests:
 
   - name: Run IQR extraction
     description: Run IQR extraction
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_iqr.m 2>&1'"
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/R2023b/ batch test_iqr.m 2>&1'"
     depends_on: Prepare IQR extraction batch
     timeout: 180
     expected_output_contains: "Bye for now"
@@ -370,7 +370,7 @@ tests:
 
   - name: Run GM smoothing
     description: Run GM smoothing
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_smooth_gm.m 2>&1'"
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/R2023b/ batch test_smooth_gm.m 2>&1'"
     depends_on: Prepare GM smoothing batch
     timeout: 180
     ignore_exit_code: true
@@ -423,7 +423,7 @@ tests:
   #     cd ${output_dir}/cat12_work && \
   #     /opt/cat12/standalone/cat_standalone.sh \
   #       -s /opt/cat12 \
-  #       -m /opt/mcr/v915 \
+  #       -m /opt/mcr/R2023b \
   #       -b /opt/cat12/standalone/cat_standalone_segment.m \
   #       $(pwd)/../sub-01_T1w.nii 2>&1 | tail -50
   #   depends_on: Prepare uncompressed T1w for CAT12

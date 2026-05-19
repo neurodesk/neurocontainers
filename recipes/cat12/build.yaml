@@ -15,7 +15,7 @@ architectures:
 
 variables:
   matlab_version: 2023b
-  matlab_runtime_version: v915
+  matlab_runtime_version: R2023b
   matlab_mcr_root: "/opt/mcr/{{ context.matlab_runtime_version }}"
   cat12_inner_zip: "CAT_R{{ context.matlab_version }}_MCR_Linux.zip"
 
