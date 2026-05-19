@@ -61,7 +61,9 @@ build:
   # "fatal error: zlib.h: No such file or directory" despite zlib1g-dev
   # being listed previously).
   # ----------------------------------------------------------------------
-  - install: r-base r-base-dev cmake git build-essential libhdf5-dev libfftw3-dev libpng-dev libjpeg-dev zlib1g-dev libbz2-dev liblzma-dev libuv1-dev libssl-dev libcurl4-openssl-dev libxml2-dev libgit2-dev libfontconfig1-dev libfreetype6-dev libharfbuzz-dev libfribidi-dev libtiff5-dev pandoc pandoc-citeproc ca-certificates pkg-config
+  # NB: do not add pandoc-citeproc here -- removed from Ubuntu 22.10+;
+  # its functionality is built into the pandoc binary on noble.
+  - install: r-base r-base-dev cmake git build-essential libhdf5-dev libfftw3-dev libpng-dev libjpeg-dev zlib1g-dev libbz2-dev liblzma-dev libuv1-dev libssl-dev libcurl4-openssl-dev libxml2-dev libgit2-dev libfontconfig1-dev libfreetype6-dev libharfbuzz-dev libfribidi-dev libtiff5-dev pandoc ca-certificates pkg-config
 
   - environment:
       # Use Posit Package Manager binary packages for Ubuntu 24.04 (noble).
