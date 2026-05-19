@@ -86,6 +86,15 @@ readme: |-
   To run container outside of this environment: ml bcbtoolkit/{{ context.version }}
 
   ----------------------------------
+files:
+  - name: bcbtoolkit_archive
+    url: https://www.dropbox.com/s/ug93rp9oouryqj3/BCBToolKitLINUX.tar.gz?dl=1
+  - name: run_disco_sh
+    url: https://raw.githubusercontent.com/chrisfoulon/BCBToolKit/master/run_disco.sh
+  - name: tractotron_cli_sh
+    url: https://raw.githubusercontent.com/chrisfoulon/BCBToolKit/master/tractotron_cli.sh
+  - name: hcp_atlas_zip
+    url: https://github.com/data-others/atlas/releases/download/hcp1065/hcp1065_prob_coverage_nifti.zip
 build:
   kind: neurodocker
   base-image: ubuntu:18.04
@@ -121,20 +130,17 @@ build:
     - run:
         - |-
           mkdir -p /opt/BCBToolKit && cd /opt/BCBToolKit \
-            && curl -L -o bcb.tar.gz "https://www.dropbox.com/s/ug93rp9oouryqj3/BCBToolKitLINUX.tar.gz?dl=1" \
-            && tar -xzf bcb.tar.gz --strip-components=1 \
+            && cp {{ get_file("bcbtoolkit_archive") }} bcb.tar.gz \
+            && tar --no-same-owner -xzf bcb.tar.gz --strip-components=1 \
             && rm bcb.tar.gz \
-            && curl -L -o /opt/BCBToolKit/run_disco.sh \
-                 https://raw.githubusercontent.com/chrisfoulon/BCBToolKit/master/run_disco.sh \
-            && curl -L -o /opt/BCBToolKit/tractotron_cli.sh \
-                 https://raw.githubusercontent.com/chrisfoulon/BCBToolKit/master/tractotron_cli.sh \
+            && cp {{ get_file("run_disco_sh") }} /opt/BCBToolKit/run_disco.sh \
+            && cp {{ get_file("tractotron_cli_sh") }} /opt/BCBToolKit/tractotron_cli.sh \
             && chmod +x /opt/BCBToolKit/BCBToolKit.sh \
                         /opt/BCBToolKit/run_disco.sh \
                         /opt/BCBToolKit/tractotron_cli.sh \
             && ln -sf /opt/BCBToolKit/run_disco.sh /usr/local/bin/run_disco.sh \
             && ln -sf /opt/BCBToolKit/tractotron_cli.sh /usr/local/bin/tractotron_cli.sh \
-            && curl -L -o /tmp/hcp_atlas.zip \
-                 https://github.com/data-others/atlas/releases/download/hcp1065/hcp1065_prob_coverage_nifti.zip \
+            && cp {{ get_file("hcp_atlas_zip") }} /tmp/hcp_atlas.zip \
             && mkdir -p /opt/BCBToolKit/Tools/HCP1065 \
             && unzip /tmp/hcp_atlas.zip -d /opt/BCBToolKit/Tools/HCP1065 \
             && rm /tmp/hcp_atlas.zip \
@@ -144,6 +150,7 @@ build:
                  '0.000000 0.000000 1.000000 0.000000' \
                  '0.000000 0.000000 0.000000 1.000000' \
                  > /opt/BCBToolKit/Tools/extraFiles/nulldeform.mat \
+            && chown -R root:root /opt/BCBToolKit \
             && chmod -R a+rX /opt/BCBToolKit \
             && rm -f /usr/local/bin/BCBToolKit.sh \
             && printf '%s\n' \
