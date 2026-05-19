@@ -17,7 +17,9 @@ build:
 
     - template:
         name: miniconda
-        use_env: base
+        version: "py37_4.12.0"
+        method: binaries
+        env_name: base
         conda_install: python=3.7 nipy nilearn traits argh joblib matplotlib numpy pandas scipy seaborn statsmodels nipype
         pip_install: nibabel scikit-image pybids==0.6.5 pynrrd duecredit
 
