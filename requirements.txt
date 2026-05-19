@@ -4,7 +4,7 @@ charset-normalizer==3.4.1
 ci-info==0.3.0
 click==8.1.8
 etelemetry==0.3.1
-idna==3.10
+idna==3.15
 jinja2==3.1.6
 jsonschema==4.23.0
 jsonschema-specifications==2024.10.1
