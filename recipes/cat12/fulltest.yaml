@@ -1,8 +1,8 @@
 # CAT12 container test suite
-# Tests for CAT12 12.9 - SPM12 standalone with CAT12 toolbox in Matlab Compiler Runtime
+# Tests for CAT12 26.0.rc3 - SPM25 standalone with CAT12 toolbox in Matlab Compiler Runtime
 #
 # CAT12 (Computational Anatomy Toolbox) is a comprehensive software tool for
-# morphometric analyses of brain MRI data using SPM12.
+# morphometric analyses of brain MRI data using SPM25.
 #
 # Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
 #   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
@@ -13,13 +13,13 @@
 # the container setup and basic functionality.
 
 name: cat12
-version: 12.9
-container: cat12_12.9_20250307.simg
+version: 26.0.rc3
+container: cat12_26.0.rc3_20260519.simg
 
 # Container paths
 container_paths:
   spm_root: /opt/cat12
-  mcr_root: /opt/mcr/v93
+  mcr_root: /opt/mcr/v915
   standalone_dir: /opt/cat12/standalone
 
 required_files:
@@ -44,25 +44,25 @@ tests:
   # ==========================================================================
   # BASIC CONTAINER VERIFICATION
   # ==========================================================================
-  - name: SPM12 runner script exists
-    description: Verify the main SPM12 runner script is present
-    command: bash -lc 'test -f /opt/cat12/run_spm12.sh && echo "run_spm12.sh exists"'
-    expected_output_contains: "run_spm12.sh exists"
+  - name: SPM25 runner script exists
+    description: Verify the main SPM25 runner script is present
+    command: bash -lc 'test -f /opt/cat12/run_spm25.sh && echo "run_spm25.sh exists"'
+    expected_output_contains: "run_spm25.sh exists"
 
   - name: MCR installation exists
     description: Verify MATLAB Compiler Runtime is installed
-    command: bash -lc 'test -d /opt/mcr/v93 && echo "MCR v93 installed"'
-    expected_output_contains: "MCR v93 installed"
+    command: bash -lc 'test -d /opt/mcr/v915 && echo "MCR v915 installed"'
+    expected_output_contains: "MCR v915 installed"
 
   - name: CAT12 standalone directory exists
     description: Verify CAT12 standalone batch files are present
     command: bash -lc 'ls /opt/cat12/standalone/*.m | wc -l'
     expected_output_contains: "13"
 
-  - name: SPM12 binary exists
-    description: Verify compiled SPM12 binary is present
-    command: bash -lc 'test -x /opt/cat12/spm12 && echo "spm12 binary exists"'
-    expected_output_contains: "spm12 binary exists"
+  - name: SPM25 binary exists
+    description: Verify compiled SPM25 binary is present
+    command: bash -lc 'test -x /opt/cat12/spm25 && echo "spm25 binary exists"'
+    expected_output_contains: "spm25 binary exists"
 
   # ==========================================================================
   # STANDALONE BATCH FILES VERIFICATION
@@ -155,7 +155,7 @@ tests:
   # ==========================================================================
   - name: TPM templates directory exists
     description: Verify tissue probability map templates are present
-    command: "bash -lc 'ls /opt/cat12/spm12_mcr/spm12/spm12/toolbox/cat12/templates_MNI152NLin2009cAsym/ 2>/dev/null | head -5 || ls /opt/cat12/spm12_mcr/home/gaser/spm/spm12/toolbox/cat12/templates_MNI152NLin2009cAsym/ 2>/dev/null | head -5 || echo \"templates found\"'"
+    command: "bash -lc 'find /opt/cat12 -type d -path \"*templates_MNI152NLin2009cAsym\" 2>/dev/null | head -5 || echo \"templates search complete\"'"
     expected_exit_code: 0
 
   - name: CAT12 atlas files present
@@ -164,11 +164,11 @@ tests:
     expected_exit_code: 0
 
   # ==========================================================================
-  # SPM12/CAT12 INITIALIZATION TEST
+  # SPM25/CAT12 INITIALIZATION TEST
   # ==========================================================================
-  - name: SPM12 MCR initialization
-    description: Test SPM12 can initialize with MCR (basic startup test)
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm12.sh /opt/mcr/v93/ quit 2>&1 | tail -20 || echo \"SPM12 init test complete\"'"
+  - name: SPM25 MCR initialization
+    description: Test SPM25 can initialize with MCR (basic startup test)
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/v915/ quit 2>&1 | tail -20 || echo \"SPM25 init test complete\"'"
     expected_exit_code: 0
     timeout: 180
 
@@ -214,9 +214,9 @@ tests:
     depends_on: Prepare uncompressed T1w for CAT12
     expected_output_contains: "matlabbatch"
 
-  - name: Run SPM12 smoothing
-    description: Test SPM12 smoothing via CAT12 container (quick operation)
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 300 /opt/cat12/run_spm12.sh /opt/mcr/v93/ batch test_smooth.m 2>&1 | tail -30'"
+  - name: Run SPM25 smoothing
+    description: Test SPM25 smoothing via CAT12 container (quick operation)
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 300 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_smooth.m 2>&1 | tail -30'"
     depends_on: Prepare smoothing batch
     timeout: 360
     validate:
@@ -231,9 +231,9 @@ tests:
     depends_on: Prepare uncompressed T1w for CAT12
     expected_output_contains: "matlabbatch"
 
-  - name: Run SPM12 deface
-    description: Test SPM12 de-facing operation
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 300 /opt/cat12/run_spm12.sh /opt/mcr/v93/ batch test_deface.m 2>&1 | tail -30'"
+  - name: Run SPM25 deface
+    description: Test SPM25 de-facing operation
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 300 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_deface.m 2>&1 | tail -30'"
     depends_on: Prepare deface batch
     timeout: 360
     validate:
@@ -247,7 +247,7 @@ tests:
     command: |
       bash -lc '/opt/cat12/standalone/cat_standalone.sh \
         -s /opt/cat12 \
-        -m /opt/mcr/v93 \
+        -m /opt/mcr/v915 \
         -b /opt/cat12/standalone/cat_standalone_segment.m \
         --help 2>&1 | head -30 || echo "Help displayed"'
     expected_exit_code: 0
@@ -262,26 +262,24 @@ tests:
     expected_output_contains: "surface = 0"
 
   - name: Run CAT12 segmentation (no surface)
-    description: Run CAT12 segmentation - known container bug (MEX files need GLIBC_2.29 but container has older glibc)
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm12.sh /opt/mcr/v93/ batch test_segment_nosurf.m 2>&1'"
+    description: Run CAT12 segmentation without surface processing
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 3600 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_segment_nosurf.m 2>&1'"
     depends_on: Prepare no-surface segmentation batch
-    timeout: 180
-    expected_output_contains: "CAT Preprocessing error"
+    timeout: 3660
+    expected_output_contains: "Bye for now"
 
   # ==========================================================================
   # POST-SEGMENTATION VERIFICATION
-  # NOTE: Segmentation fails due to container bug (GLIBC_2.29 mismatch in MEX files)
-  # These tests verify the error report was generated and document expected outputs
   # ==========================================================================
-  - name: Verify segmentation error report generated
-    description: Check CAT12 generated an error report PDF (produced even on failure)
+  - name: Verify segmentation report generated
+    description: Check CAT12 generated a report PDF
     command: |
-      ls ${output_dir}/report/catreport_sub-01_T1w.pdf 2>/dev/null && echo "error report exists" || echo "no error report"
+      ls ${output_dir}/report/catreport_sub-01_T1w.pdf 2>/dev/null && echo "report exists" || echo "no report"
     depends_on: Run CAT12 segmentation (no surface)
     expected_exit_code: 0
 
   - name: Verify segmentation output directories created
-    description: Check that CAT12 created mri/ report/ directories (created before error)
+    description: Check that CAT12 created mri/ report/ directories
     command: |
       echo "=== mri directory ===" && \
       ls ${output_dir}/mri/ 2>/dev/null || echo "mri dir empty/missing" && \
@@ -292,24 +290,24 @@ tests:
     depends_on: Run CAT12 segmentation (no surface)
     expected_exit_code: 0
 
-  - name: Verify MEX file glibc requirement
-    description: Confirm container bug - CAT12 MEX files require GLIBC_2.29 not available in container
-    command: "bash -lc 'ldd /opt/cat12/spm12_mcr/home/gaser/gaser/spm/spm12/toolbox/cat12/cat_sanlm.mexa64 2>&1'"
-    expected_output_contains: "GLIBC_2.29"
+  - name: Verify MEX file dependencies
+    description: Confirm CAT12 native extension dependencies can be inspected
+    command: "bash -lc 'mex=$(find /opt/cat12 -name \"cat_sanlm.mexa64\" -type f 2>/dev/null | head -1); test -n \"$mex\" && ldd \"$mex\" 2>&1 || echo \"cat_sanlm.mexa64 not found\"'"
+    expected_exit_code: 0
 
   - name: Verify all CAT12 MEX files present
-    description: Check that MEX files exist (they are present but incompatible with container glibc)
+    description: Check that CAT12 MEX files exist
     command: |
-      bash -lc 'count=$(ls /opt/cat12/spm12_mcr/home/gaser/gaser/spm/spm12/toolbox/cat12/*.mexa64 2>/dev/null | wc -l)
+      bash -lc 'count=$(find /opt/cat12 -name "*.mexa64" -type f 2>/dev/null | wc -l)
       echo "Found $count MEX files"
       [ "$count" -gt 10 ] && echo "MEX files present" || echo "MEX files missing"'
     expected_output_contains: "MEX files present"
 
   - name: Verify CAT12 batch error handling
-    description: Check that ignoreErrors=1 in batch allows SPM12 to continue after MEX failure
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm12.sh /opt/mcr/v93/ batch test_segment_nosurf.m 2>&1 | tail -5'"
+    description: Check that the no-surface segmentation batch can be run through SPM25
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 3600 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_segment_nosurf.m 2>&1 | tail -5'"
     depends_on: Prepare no-surface segmentation batch
-    timeout: 180
+    timeout: 3660
     expected_output_contains: "Bye for now"
 
   # ==========================================================================
@@ -322,8 +320,8 @@ tests:
     expected_output_contains: "calcvol"
 
   - name: Run TIV extraction
-    description: Run TIV extraction - fails on MEX error (known container bug, same GLIBC_2.29 issue)
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm12.sh /opt/mcr/v93/ batch test_tiv.m 2>&1'"
+    description: Run TIV extraction
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_tiv.m 2>&1'"
     depends_on: Prepare TIV extraction batch
     timeout: 180
     expected_output_contains: "Bye for now"
@@ -338,8 +336,8 @@ tests:
     expected_output_contains: "quality_measures"
 
   - name: Run quality measures
-    description: Run quality measures - input missing (segmentation failed due to GLIBC_2.29 MEX bug)
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm12.sh /opt/mcr/v93/ batch test_quality.m 2>&1'"
+    description: Run quality measures
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_quality.m 2>&1'"
     depends_on: Prepare quality measures batch
     timeout: 180
     ignore_exit_code: true
@@ -355,8 +353,8 @@ tests:
     expected_output_contains: "iqr"
 
   - name: Run IQR extraction
-    description: Run IQR extraction - input missing (segmentation failed due to GLIBC_2.29 MEX bug)
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm12.sh /opt/mcr/v93/ batch test_iqr.m 2>&1'"
+    description: Run IQR extraction
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_iqr.m 2>&1'"
     depends_on: Prepare IQR extraction batch
     timeout: 180
     expected_output_contains: "Bye for now"
@@ -371,8 +369,8 @@ tests:
     expected_output_contains: "smooth"
 
   - name: Run GM smoothing
-    description: Run GM smoothing - input missing (segmentation failed due to GLIBC_2.29 MEX bug)
-    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm12.sh /opt/mcr/v93/ batch test_smooth_gm.m 2>&1'"
+    description: Run GM smoothing
+    command: "bash -lc 'cd ${output_dir}/cat12_work && \\\ntimeout 120 /opt/cat12/run_spm25.sh /opt/mcr/v915/ batch test_smooth_gm.m 2>&1'"
     depends_on: Prepare GM smoothing batch
     timeout: 180
     ignore_exit_code: true
@@ -425,7 +423,7 @@ tests:
   #     cd ${output_dir}/cat12_work && \
   #     /opt/cat12/standalone/cat_standalone.sh \
   #       -s /opt/cat12 \
-  #       -m /opt/mcr/v93 \
+  #       -m /opt/mcr/v915 \
   #       -b /opt/cat12/standalone/cat_standalone_segment.m \
   #       $(pwd)/../sub-01_T1w.nii 2>&1 | tail -50
   #   depends_on: Prepare uncompressed T1w for CAT12
