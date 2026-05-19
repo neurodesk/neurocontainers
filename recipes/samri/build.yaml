@@ -51,7 +51,8 @@ build:
 
     - template:
         name: ants
-        version: 2.3.4
+        version: "2.4.3"
+        method: binaries
 
     - run:
         - git clone https://github.com/IBT-FMI/mouse-brain-atlases_generator.git
