@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "segmentator 1.6.1": {
+      "version": "20260519",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging",
+    "image segmentation"
+  ]
+}
