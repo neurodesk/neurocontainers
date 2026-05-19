@@ -1,92 +1,89 @@
 name: segmentator
 version: 1.6.1
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/ofgulban/segmentator?tab=BSD-3-Clause-1-ov-file
+
 architectures:
   - x86_64
   - aarch64
+
 structured_readme:
-  description: 3D MRI data exploration and segmentation tool.
-  example: segmentator --help
+  description: |-
+    Segmentator is a free and open-source package for multi-dimensional data exploration and segmentation of 3D images, mainly developed and tested with ultra-high-field MRI brain data.
+  example: |-
+    segmentator --help
+    segmentator_filters --help
+    segmentator /path/to/file.nii.gz
   documentation: https://github.com/ofgulban/segmentator/wiki
   citation: |-
-    Gulban, O. F., Schneider, M., Marquardt, I., Haast, R., & De Martino, F. (2023). A scalable method to improve gray matter segmentation at ultra high field MRI. In (Version v1.6.1) Zenodo. 
-    Gulban, O. F., Schneider, M., Marquardt, I., Haast, R. A. M., & De Martino, F. (2018). A scalable method to improve gray matter segmentation at ultra high field MRI. PLoS One, 13(6), e0198335. https://doi.org/10.1371/journal.pone.0198335 
+    Gulban, O. F., Schneider, M., Marquardt, I., Haast, R., & De Martino, F. (2023). A scalable method to improve gray matter segmentation at ultra high field MRI. In (Version v{{ context.version }}) Zenodo.
+    Gulban, O. F., Schneider, M., Marquardt, I., Haast, R. A. M., & De Martino, F. (2018). A scalable method to improve gray matter segmentation at ultra high field MRI. PLoS One, 13(6), e0198335. https://doi.org/10.1371/journal.pone.0198335
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
-    - file:
-        name: v1_6_1_tar_gz
-        url: https://github.com/ofgulban/segmentator/archive/refs/tags/v1.6.1.tar.gz
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - build-essential
+        - ca-certificates
+        - libgl1
+        - libice6
+        - libsm6
+        - libxext6
+        - libxrender1
+
     - template:
         name: miniconda
         version: py310_25.5.1-0
         install_path: /opt/miniconda
         env_name: segmentator
         env_exists: "false"
-        conda_install: matplotlib numpy=1.26 nibabel scipy python=3.10
+        conda_install: "python=3.10 numpy=1.23.5 scipy matplotlib nibabel scikit-image=0.19 tk pip setuptools<81"
         pip_install: compoda==0.3.5
         mamba: true
-    - run:
-        - apt-get -o Acquire::Retries=3 update
-        - DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential
-    - run:
-        - cp {{ get_file("v1_6_1_tar_gz") }} /tmp/segmentator.tar.gz
-        - mkdir -p /opt
-        - tar -xzf /tmp/segmentator.tar.gz -C /opt
-        - mv /opt/segmentator-1.6.1 /opt/segmentator
-        - bash -c "source activate segmentator && python -m pip install --no-build-isolation -e /opt/segmentator"
-        - rm /tmp/segmentator.tar.gz
-    - group:
-        - file:
-            name: myscript
-            contents: |-
-              #!/bin/bash
 
-              echo 'Hello, World!'
-        - run:
-            - cp {{ get_file("myscript") }} /usr/local/bin/myscript
-            - chmod +x /usr/local/bin/myscript
-        - environment:
-            PATH: $PATH:/usr/local/bin
-        - deploy:
-            bins:
-              - myscript
-      custom: shellScript
-      customParams:
-        name: myscript
-        path: /usr/local/bin
-        content: |-
-          #!/bin/bash
+    - environment:
+        PATH: /opt/miniconda/envs/segmentator/bin:$PATH
 
-          echo 'Hello, World!'
-        executable: true
-        addToPath: true
-        makeDeployBin: true
-    - deploy:
-        path: []
-        bins:
-          - segmentator
-    - test:
-        name: testScript
-        script: segmentator --help
+    - workdir: /opt
+
+    - run:
+        - mkdir -p /opt/segmentator
+        - tar -xzf {{ get_file("segmentator_source") }} -C /opt/segmentator --strip-components=1
+        - python -m pip install --no-build-isolation --no-deps -e /opt/segmentator
+        - python -c "from importlib.metadata import version; import segmentator, compoda; from segmentator.deriche_3D import deriche_3D; print(version('segmentator'))"
+
+deploy:
+  path: []
+  bins:
+    - segmentator
+    - segmentator_filters
+
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAA49JREFUSEu1lVlME1EUhv9pyyIIOFjrFhfEuFBwwwZNqkZRMb4Y9R1B3DcEl6BPxhBJUBAxhvjQuNQVF8AAL1rQREUxhgQkSFxI1Np2QMW2WutMZ8y9bYGWtkKMN5l0Znrn/87577nnMkfvLZYkScLAC4DPs/c///fkWRRF8hN0PnOkZpE0VMFgoFABMAXVaSEBgSIMFZD/fAoYGMG/ChKtgQEwh+9qhmzRUDz3X0sKCOSh8FuE86cLEkRERMnByAYv5FAWnTl0Z6EP4Od3Hm9f9OLJdRMmqKZCEAT0WI2Yt2Y0RsQq8PDiZ/C/3JUTaGg2xEO9chTkYe6AmIO3U/ssctgENFebsXzmJhQUFCA+Pp5q2Gw2lJaWQnf7FJw9EbCYegKKl5SU4ObTE0hKj6MAMpgDtxa4MxAlfOqw49llOz68N6Gurg7Z2dlISEhAeXk50tLSMH3GNNjtNpg/d6OoqAj19fU+oM7OTkzWClB7ADQDL8AliHjzvBe/2hJhMBiQl5eHsrIyKsCyLGpqapCbmwuj6SMspm5kZmZCr9cPyiR1PYukFbH9GeTdnEctEl0i3r204sE5M6xWKxQKBVpbW1FbWwudToeuri4qphqnpIDGxka0t7f3AUh5Hz12AMtylFAlRkCCu1wZL4BkYOyww6AzYgKbiOLiYqSnpyMyMpJObGlpgUajgVLFUot4nqeXdxA7xk4ahaU5Soz1AKhF+2/MpWvg/CGguYrDu8c8FbVYLPTb5ORkahWBFRYW4uy5M0EtimblWLJZCdW08P4Mcq/PoblQQDWHvRtPUn/lcrmPvyRaYte2HVvBmYOvgTZrNKbMHwGZwlNF+66lUADvdOGV4Stiv6VSoaqqKgpyOBy0ZEn0+fn5uHpND4u5GxUVFbQYBo62tjaETzUjOWMkFBGMex8QgLdMLe8duF/xCaeLziMrK6vvW7LZGhoasG7jWsREx4Ezfwm4DyorK3FctwUpGTH9gD1X1H0bTeBFfHxlR9MNDjJnDLRaLTiOQ1NTExVMyYjD60e2kDtZvSoG6tUkA49FBODTi0QJtq88jB0/YOvmER4tQ+yYMLDjw+BySfjO/YbokkgfoAqkHMmtu4tKCI+SgZ2oACP3tIrd+qT/2653XZ49qF3TyPyOUW+fH+55wey8NCtguw4lOJwzehDgb4e4/4Hyt/nM9gszhmVRMOuCvQ8I+Jcz2h/0B4ImEb3eEdfzAAAAAElFTkSuQmCC
 readme: |-
   ----------------------------------
   ## segmentator/{{ context.version }} ##
 
-  3D MRI data exploration and segmentation tool.
+  Segmentator is a free and open-source package for multi-dimensional data exploration and segmentation of 3D images, mainly developed and tested with ultra-high-field MRI brain data.
 
   Example:
   ```
   segmentator --help
+  segmentator_filters --help
+  segmentator /path/to/file.nii.gz
   ```
 
   More documentation can be found here: https://github.com/ofgulban/segmentator/wiki
 
   Citation:
   ```
-  Gulban, O. F., Schneider, M., Marquardt, I., Haast, R., & De Martino, F. (2023). A scalable method to improve gray matter segmentation at ultra high field MRI. In (Version v1.6.1) Zenodo. 
+  Gulban, O. F., Schneider, M., Marquardt, I., Haast, R., & De Martino, F. (2023). A scalable method to improve gray matter segmentation at ultra high field MRI. In (Version v{{ context.version }}) Zenodo.
   Gulban, O. F., Schneider, M., Marquardt, I., Haast, R. A. M., & De Martino, F. (2018). A scalable method to improve gray matter segmentation at ultra high field MRI. PLoS One, 13(6), e0198335. https://doi.org/10.1371/journal.pone.0198335
   ```
 
@@ -96,6 +93,7 @@ readme: |-
 categories:
   - structural imaging
   - image segmentation
-copyright:
-  - license: BSD-3-Clause
-    url: https://github.com/ofgulban/segmentator?tab=BSD-3-Clause-1-ov-file
+
+files:
+  - name: segmentator_source
+    url: https://github.com/ofgulban/segmentator/archive/refs/tags/v{{ context.version }}.tar.gz
