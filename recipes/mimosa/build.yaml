@@ -1,10 +1,10 @@
 name: mimosa
 version: 0.5.8
 copyright:
-  - license: GPL-2.0-only
-    url: https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
+- license: GPL-2.0-only
+  url: https://www.gnu.org/licenses/old-licenses/gpl-2.0-standalone.html
 architectures:
-  - x86_64
+- x86_64
 structured_readme:
   description: Trains and makes predictions from the 'MIMoSA' method
   example: mimosa_model
@@ -16,20 +16,16 @@ structured_readme:
     - Additional Bioconductor packages: none
     - System dependencies: none
     - Deployed scripts: none
-
     For detailed package documentation, see: https://github.com/avalcarcel9/mimosa
   citation: "Please cite the original authors of the mimosa package when using this container. Repository: https://github.com/avalcarcel9/mimosa"
 readme: |-
   ----------------------------------
   ## mimosa/{{ context.version }} ##
-
   Trains and makes predictions from the 'MIMoSA' method
-
   Example:
   ```
   mimosa_model
   ```
-
   More documentation can be found here: This container includes:
   - R
   - The R package mimosa from https://github.com/avalcarcel9/mimosa
@@ -37,77 +33,180 @@ readme: |-
   - Additional Bioconductor packages: none
   - System dependencies: none
   - Deployed scripts: none
-
   For detailed package documentation, see: https://github.com/avalcarcel9/mimosa
-
   Citation:
   ```
   Please cite the original authors of the mimosa package when using this container. Repository: https://github.com/avalcarcel9/mimosa
   ```
-
   To run container outside of this environment: ml mimosa/{{ context.version }}
-
   ----------------------------------
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
-    - template:
-        name: fsl
-        version: 6.0.7.16
-    - install: r-base r-base-dev cmake git build-essential libhdf5-dev libfftw3-dev libpng-dev libjpeg-dev zlib1g-dev libssl-dev libcurl4-openssl-dev libxml2-dev
-    - run:
-        - R --slave -e " install.packages(c('remotes', 'dplyr', 'rlist', 'oro.nifti')) "
-        - R --slave -e " for (pkg in c('neuroconductor/neurobase', 'neuroconductor/ANTsRCore', 'neuroconductor/ANTsR', 'neuroconductor/extrantsr', 'neuroconductor/fslr', 'neuroconductor/oasis', 'neuroconductor/WhiteStripe', 'neuroconductor/mimosa')) remotes::install_github(pkg, dependencies = NA, upgrade = 'never', build_vignettes = FALSE) "
-        - R --slave -e " stopifnot(requireNamespace('mimosa', quietly = TRUE)); cat('mimosa installed OK\n') "
-    - test:
-        name: verify_r_installation
-        script: |-
-          # Test R installation
-          R --version
-          echo "Testing R package installation..."
-          R --slave -e "
-            # Check R version
-            cat('R version:', R.version.string, '\n')
+  - template:
+      name: fsl
+      version: 6.0.7.16
 
-            # Test main package
-            tryCatch({
-              library("mimosa")
-              cat('Successfully loaded mimosa\n')
+  # ----------------------------------------------------------------------
+  # System libraries.
+  # The original recipe was missing libuv1-dev (required by R 'fs', whose
+  # failure cascades into sass -> bslib -> rmarkdown -> rticles ->
+  # neuroconductor's oro.nifti fork -> neurobase -> mimosa).
+  # libbz2-dev/liblzma-dev are needed by RNifti/oro.nifti when building
+  # from source; zlib1g-dev is reinstalled here because the FSL template
+  # earlier in this build can leave a stale sysroot where /usr/include/zlib.h
+  # is unreachable (that's what caused the RNifti compile to fail with
+  # "fatal error: zlib.h: No such file or directory" despite zlib1g-dev
+  # being listed previously).
+  # ----------------------------------------------------------------------
+  - install: r-base r-base-dev cmake git build-essential libhdf5-dev libfftw3-dev libpng-dev libjpeg-dev zlib1g-dev libbz2-dev liblzma-dev libuv1-dev libssl-dev libcurl4-openssl-dev libxml2-dev libgit2-dev libfontconfig1-dev libfreetype6-dev libharfbuzz-dev libfribidi-dev libtiff5-dev pandoc pandoc-citeproc ca-certificates pkg-config
 
-              # Try to get package info
-              pkg_info <- packageDescription('mimosa')
-              if (!is.na(pkg_info)) {
-                cat('Package version:', pkg_info[['Version']], '\n')
-                cat('Package title:', pkg_info[['Title']], '\n')
-              }
-            }, error = function(e) {
-              cat('Warning: Could not load mimosa:',
-                  e[['message']], '\n')
-              cat('Installed packages:\n')
-              print(installed.packages()[,c('Package', 'Version')])
-            })
+  - environment:
+      # Use Posit Package Manager binary packages for Ubuntu 24.04 (noble).
+      # This sidesteps source-builds of fs, sass, bslib, rmarkdown, RNifti,
+      # oro.nifti and everything else on CRAN -- which is what was failing.
+      R_REPOS: "https://packagemanager.posit.co/cran/__linux__/noble/latest"
+      R_DEFAULT_INTERNET_TIMEOUT: "600"
+      # Relax gcc-13 strictness. ITKR vendors an old HDF5 that emits
+      # "assignment from incompatible pointer type" -- a warning in gcc-11
+      # but a HARD ERROR in gcc-13 (which is what ships in Ubuntu 24.04).
+      # These flags are picked up by R's compile rules via $(CFLAGS) /
+      # $(CXXFLAGS), and by ITKR's CMake sub-build via $CFLAGS/$CXXFLAGS.
+      CFLAGS: "-O2 -g -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error"
+      CXXFLAGS: "-O2 -g -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error"
 
-            # List key installed packages
-            key_packages <- c('mimosa', 'ANTsRCore', 'dplyr', 'extrantsr', 'fslr', 'neurobase', 'oasis', 'rlist', 'WhiteStripe')
-            if (length(key_packages) > 0) {
-              cat('Checking additional packages:\n')
-              for (pkg in key_packages) {
-                if (require(pkg, character.only = TRUE, quietly = TRUE)) {
-                  cat('  ✓', pkg, '\n')
-                } else {
-                  cat('  ✗', pkg, '(not found)\n')
-                }
-              }
+  - run:
+      # Write the same flags into ~/.R/Makevars so individual R packages
+      # that don't honour the environment variables still pick them up.
+      - mkdir -p /root/.R
+      - |
+        cat > /root/.R/Makevars <<'EOF'
+        CFLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error
+        CXXFLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error
+        CXX11FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error
+        CXX14FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error
+        CXX17FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error
+        EOF
+
+      # CRAN packages -- pulled as prebuilt binaries from Posit PM.
+      - |
+        R --slave -e '
+          options(
+            repos = c(CRAN = Sys.getenv("R_REPOS")),
+            HTTPUserAgent = sprintf(
+              "R/%s R (%s)",
+              getRversion(),
+              paste(getRversion(), R.version["platform"], R.version["arch"], R.version["os"])
+            ),
+            timeout = as.integer(Sys.getenv("R_DEFAULT_INTERNET_TIMEOUT", 600)),
+            Ncpus = max(1L, parallel::detectCores() - 1L)
+          )
+          install.packages(c(
+            "remotes", "devtools", "dplyr", "rlist",
+            "fs", "sass", "bslib", "rmarkdown", "rticles",
+            "RNifti", "oro.nifti"
+          ))
+          # Hard-fail early if a critical CRAN package did not land.
+          for (p in c("remotes", "fs", "rmarkdown", "RNifti", "oro.nifti")) {
+            if (!requireNamespace(p, quietly = TRUE))
+              stop("CRAN install failed for ", p)
+          }
+          cat("CRAN bootstrap OK\n")
+        '
+
+      # Neuroconductor GitHub installs. ITKR FIRST (ANTsRCore LinkingTo's it),
+      # each in its own R invocation so a transient GitHub rate-limit on one
+      # doesn't poison the rest, with a 3x retry+backoff for transient
+      # 403/rate-limit responses from api.github.com.
+      #
+      # NOTE: set GITHUB_PAT in your build env to lift the unauthenticated
+      # 60 req/hr limit -- the original "cannot open URL .../DESCRIPTION?ref=HEAD"
+      # error was the rate-limit symptom, not a real URL problem.
+      - |
+        R --slave -e '
+          options(repos = c(CRAN = Sys.getenv("R_REPOS")))
+          pkgs <- c(
+            "neuroconductor/ITKR",
+            "neuroconductor/ANTsRCore",
+            "neuroconductor/ANTsR",
+            "neuroconductor/neurobase",
+            "neuroconductor/extrantsr",
+            "neuroconductor/fslr",
+            "neuroconductor/oasis",
+            "neuroconductor/WhiteStripe",
+            "neuroconductor/mimosa"
+          )
+          for (pkg in pkgs) {
+            cat("\n=== Installing", pkg, "===\n")
+            ok <- FALSE
+            for (attempt in 1:3) {
+              res <- tryCatch({
+                remotes::install_github(
+                  pkg,
+                  dependencies = TRUE,
+                  upgrade = "never",
+                  build_vignettes = FALSE,
+                  quiet = FALSE
+                )
+                TRUE
+              }, error = function(e) {
+                cat("Attempt", attempt, "for", pkg, "failed:",
+                    conditionMessage(e), "\n")
+                Sys.sleep(15 * attempt)
+                FALSE
+              })
+              if (isTRUE(res)) { ok <- TRUE; break }
             }
-          "
+            if (!ok) stop("Failed to install ", pkg, " after 3 attempts")
+          }
+        '
 
-    - deploy:
-        bins:
-          - R
-          - Rscript
+      - R --slave -e 'stopifnot(requireNamespace("mimosa", quietly = TRUE)); cat("mimosa installed OK\n")'
 
+  - test:
+      name: verify_r_installation
+      script: |-
+        # Test R installation
+        R --version
+        echo "Testing R package installation..."
+        R --slave -e "
+        # Check R version
+        cat('R version:', R.version.string, '\n')
+        # Test main package
+        tryCatch({
+        library(\"mimosa\")
+        cat('Successfully loaded mimosa\n')
+        # Try to get package info
+        pkg_info <- packageDescription('mimosa')
+        if (!is.na(pkg_info)) {
+        cat('Package version:', pkg_info[['Version']], '\n')
+        cat('Package title:', pkg_info[['Title']], '\n')
+        }
+        }, error = function(e) {
+        cat('Warning: Could not load mimosa:',
+        e[['message']], '\n')
+        cat('Installed packages:\n')
+        print(installed.packages()[,c('Package', 'Version')])
+        })
+        # List key installed packages
+        key_packages <- c('mimosa', 'ANTsRCore', 'dplyr', 'extrantsr', 'fslr', 'neurobase', 'oasis', 'rlist', 'WhiteStripe')
+        if (length(key_packages) > 0) {
+        cat('Checking additional packages:\n')
+        for (pkg in key_packages) {
+        if (require(pkg, character.only = TRUE, quietly = TRUE)) {
+        cat('  v', pkg, '\n')
+        } else {
+        cat('  x', pkg, '(not found)\n')
+        }
+        }
+        }
+        "
+
+  - deploy:
+      bins:
+      - R
+      - Rscript
 categories:
-  - image segmentation
-icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAEKUlEQVR4AYxUf0yUZRz/PO97P+D4JYL8NijBNGTOUZStQg1d/WH9k1sFCysn1iqkCQOMZIr8XMCqSRgbtGV/aLHYchVaxlwjnauWy6bNaYFwBxecCN3de3fv6/N9vDu58e7O2/M83x+f7+fzee+99z0JYT6VB7pb2lpq/hj/+QNNnT6nadOjYvt4Tj3C9jZ2NYWRgK5BXWPz6t72PYfrclprqwu+L0grehssuQhIfkxsieeZG8pQkz9UUJvdtl/Mco6eUYjB3kNdaw8cbD60Nfn05d2ZvfWpJhuYJEE2GJdyo1MAgwU0Q7PEIS5pLB6WAkXl+519+VGXRqqyO97bnHgm0L7nSBziksY7jV1HAkSpvbm6+PPO0hNtefWv78roW5FgcAQwEcdcWSLey0Fc0mhfVfcGaZK2xBh+Kk394gWz5NbVcHgTdfvhmqRFmqQdvEUBwsDkTjjVaAzZn8c3UztQEHsRQ8Nn4XS5MXD8pBhr6DiKs+d+x4R1WtSBg7iBPBCXGKi409I0hnnVAi3jWWiaJuZVf1yTlwObfRZq6laMODahZ/wtXJh7GKqfK4b9xx01f0Fh2/JhmJiCjQmjKE48Dbb+MDYWroPJZMS2p4poBC8+V4IN+XlI2nIEGaYJlKcPIN4wB+KKgUXHEoMs8zhk5hOPX7r5Bh/1ISVJhsRuITPNzL/NTZE/kB2H6Cgj8ixXYJHnsZpH4nJCyJJCKp3C4+zH/OxBuG6W810qtsd5AspCKwjToYS0Ihp43V/zK7ZxkgpmeBVW+zNQ3Jdw9dpyEMaBsCuigYp0/uOt5SIqNG8/0pK/gyyNIW9VEu9FXhENJEzCPvUrfD52V01zwqsM3q3DZBEN3IoZRmMMZFnjJssgmSuFnMqehoaVIg93RDSIWdaJ2FgnZOMTGJsshKoMgMkFkLQfEBW3L5y2wCIagKXgf6WC35LzyM3N4SQDv/J4KN77eb7otvFKb0U0kIdXIjH2QzCmwOvqh8v3Eswxb8IoX4f2baGeZkgvogF/dKD4CvlVm3BrYT0cUx/D6diJ2bk1YLwboqZTSPzvZdMx28tfulWzDgxIUjp/Y01cTEFczG+IjuZvMxc2m+4TmB6JtEiTtKWa+o6RsneP7ai92nKhb2LX9IIvNpTjuAz291e8x3DyVD5+HDHg2ngFEmyfARzjQHAt+OJAGlzrPGmSdvAWdTdWPfKn66HiwamypjOzm4MkSgwz/NupDCVbtuPJx33IzeqBYcZEUHAT57i1vIk0uNajASBoQI3uhqq/XtnX03DKXvJg78TuFpuSSm0w6yiiLG0wsF7Ex3tEzqy/CIxmjt6oaCbOazUfNZCGAPxHiIG/h5bG+it7qnvrW6/X9bX/W31xxpMMDK6DRSlGnLpd5P95VoCwtn9qP62o+WQ/cQL8xfE2AAAA//8UqtzmAAAABklEQVQDALyFm6xL7f81AAAAAElFTkSuQmCC
+- image segmentation
