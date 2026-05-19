@@ -80,15 +80,10 @@ build:
   - run:
       # Write the same flags into ~/.R/Makevars so individual R packages
       # that don't honour the environment variables still pick them up.
-      - mkdir -p /root/.R
-      - |
-        cat > /root/.R/Makevars <<'EOF'
-        CFLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error
-        CXXFLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error
-        CXX11FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error
-        CXX14FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error
-        CXX17FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error
-        EOF
+      # Avoid heredoc syntax here -- neurodocker re-serializes this block
+      # into a JSON spec file via 'echo', and an embedded <<EOF ... EOF
+      # would terminate the outer shell heredoc that wraps it.
+      - mkdir -p /root/.R && printf '%s\n' 'CFLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXXFLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXX11FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXX14FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXX17FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' > /root/.R/Makevars
 
       # CRAN packages -- pulled as prebuilt binaries from Posit PM.
       - |
