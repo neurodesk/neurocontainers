@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PETPREP_REAL="__PETPREP_REAL__"
+
+fs_subjects_dir=""
+fs_subjects_dir_set=false
+expect_fs_subjects_dir=false
+info_only=false
+
+for arg in "$@"; do
+  if [ "$expect_fs_subjects_dir" = true ]; then
+    fs_subjects_dir="$arg"
+    fs_subjects_dir_set=true
+    expect_fs_subjects_dir=false
+    continue
+  fi
+
+  case "$arg" in
+    --fs-subjects-dir=*)
+      fs_subjects_dir="${arg#*=}"
+      fs_subjects_dir_set=true
+      ;;
+    --fs-subjects-dir)
+      expect_fs_subjects_dir=true
+      ;;
+    -h|--help|--version)
+      info_only=true
+      ;;
+  esac
+done
+
+if [ "$expect_fs_subjects_dir" = true ]; then
+  echo "petprep: --fs-subjects-dir requires a directory argument" >&2
+  exit 2
+fi
+
+if [ "$fs_subjects_dir_set" = true ] && [ -z "$fs_subjects_dir" ]; then
+  echo "petprep: --fs-subjects-dir requires a non-empty directory argument" >&2
+  exit 2
+fi
+
+if [ "$fs_subjects_dir_set" = true ]; then
+  mkdir -p -- "$fs_subjects_dir"
+  export SUBJECTS_DIR="$fs_subjects_dir"
+elif [ "$info_only" != true ] && [ -n "${SUBJECTS_DIR:-}" ] && [ ! -d "$SUBJECTS_DIR" ]; then
+  cat >&2 <<EOF
+petprep: SUBJECTS_DIR points to a missing directory:
+  $SUBJECTS_DIR
+
+Neurodesk may inject a default SUBJECTS_DIR that is not available inside this
+container. Create that directory or pass --fs-subjects-dir with a writable
+directory, for example:
+
+  export SUBJECTS_DIR=/data/petprep-test-data/derivatives/sourcedata/freesurfer
+  mkdir -p "\$SUBJECTS_DIR"
+  petprep <bids_dir> <output_dir> participant --fs-subjects-dir "\$SUBJECTS_DIR"
+EOF
+  exit 2
+fi
+
+if [ "${PETPREP_NEURODESK_WRAPPER_TEST:-}" = "1" ]; then
+  printf 'PETPREP_REAL=%s\n' "$PETPREP_REAL"
+  printf 'SUBJECTS_DIR=%s\n' "${SUBJECTS_DIR:-}"
+  exit 0
+fi
+
+exec "$PETPREP_REAL" "$@"
