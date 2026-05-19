@@ -24,7 +24,21 @@ UPSAMPLED_SERIES_NAME = "openrecon_upsampled"
 MIP_SERIES_NAME = "openrecon_mip"
 METRICS_SERIES_NAME = "openrecon_metrics"
 SEGMENTATION_LUT = "MicroDeltaHotMetal.pal"
+SEGMENT_SOURCE_GEOMETRY_META_KEY = "SegmentSourceGeometry"
+SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE = (
+    f"DERIVED\\PRIMARY\\SEGMENTATION\\{SEGMENT_SERIES_NAME}"
+)
+SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4 = SEGMENT_SERIES_NAME
 SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
+SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY = "SegmentPostProcessingChildRole"
+SEGMENT_POSTPROCESSING_IMAGE_TYPE = f"DERIVED\\PRIMARY\\M\\{SEGMENT_SERIES_NAME}"
+SEGMENT_POSTPROCESSING_IMAGE_TYPE_VALUE4 = SEGMENT_SERIES_NAME
+SEGMENT_POSTPROCESSING_DISALLOWED_DIXON_TOKENS = {
+    "DIXON",
+    "FAT",
+    "FAT_FRAC",
+    "WATER",
+}
 METRICS_FIELDNAMES = (
     "region",
     "source",
@@ -61,6 +75,18 @@ ORIGINAL_RESTAMPED_STORAGE_FIELDS = (
     "NumberInSeries",
     "ProtocolSliceNumber",
     "SliceNo",
+    "IsmrmrdSliceNo",
+)
+MINIHEAD_STORAGE_FIELD_SPECS = (
+    ("Actual3DImagePartNumber", "DICOM", "Actual3DImagePartNumber"),
+    ("Actual3DImaPartNumber", "DICOM", "Actual3DImagePartNumber"),
+    ("NumberInSeries", "DICOM", "NumberInSeries"),
+    ("ProtocolSliceNumber", "DICOM", "ProtocolSliceNumber"),
+    ("SliceNo", "DICOM", "SliceNo"),
+    ("AnatomicalPartitionNo", "CONTROL", "AnatomicalPartitionNo"),
+    ("AnatomicalSliceNo", "CONTROL", "AnatomicalSliceNo"),
+    ("ChronSliceNo", "CONTROL", "ChronSliceNo"),
+    ("IsmrmrdSliceNo", "CONTROL", "IsmrmrdSliceNo"),
 )
 SCANNER_PARTITION_INDEX = 0
 SLICE_POSITION_TOLERANCE_MM = 1e-4
@@ -95,7 +121,7 @@ def process(connection, config, metadata):
             logging.warning("No image messages received; closing without output")
             return
 
-        send_original_requested = _config_bool(config, "sendoriginal", default=False)
+        send_original = _config_bool(config, "sendoriginal", default=False)
         send_invert = _config_bool_any(config, ("invert", "sendinvert"), default=False)
         send_upsampled = _config_bool_any(
             config,
@@ -132,15 +158,6 @@ def process(connection, config, metadata):
             ("sendmetrics", "metrics", "sendregionmetrics"),
             default=False,
         )
-        send_original = send_original_requested
-        if send_original and send_segment and send_segment_postprocessing:
-            logging.warning(
-                "sendoriginal=True ignored because segmentpostprocessing=True "
-                "emits source-geometry segmentation images for scanner "
-                "postprocessing; sending both would create duplicate scanner "
-                "postprocessing inputs"
-            )
-            send_original = False
         output_images = []
         original_images = []
         if send_original:
@@ -211,13 +228,56 @@ def process(connection, config, metadata):
 
         _validate_output_images(output_images, input_images)
         _log_output_images(output_images)
-        connection.send_image(output_images)
+        send_batches = _output_send_batches(
+            output_images,
+            original_images,
+            split_originals=bool(
+                original_images
+                and segment_images
+                and send_segment
+                and send_segment_postprocessing
+            ),
+        )
+        if len(send_batches) > 1:
+            logging.info(
+                "Sending source-geometry originals separately from "
+                "segmentpostprocessing outputs across %d MRD image messages",
+                len(send_batches),
+            )
+        for batch_index, batch in enumerate(send_batches, start=1):
+            if len(send_batches) > 1:
+                logging.info(
+                    "Sending MRD image message batch %d/%d with %d image(s)",
+                    batch_index,
+                    len(send_batches),
+                    len(batch),
+                )
+            connection.send_image(batch)
 
     except Exception:
         logging.error(traceback.format_exc())
         connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
     finally:
         connection.send_close()
+
+
+def _output_send_batches(output_images, original_images, split_originals=False):
+    if not split_originals:
+        return [output_images]
+
+    original_ids = {id(image) for image in original_images}
+    original_batch = [
+        image for image in output_images
+        if id(image) in original_ids
+    ]
+    remaining_batch = [
+        image for image in output_images
+        if id(image) not in original_ids
+    ]
+    return [
+        batch for batch in (original_batch, remaining_batch)
+        if batch
+    ]
 
 
 def _invert_images(images):
@@ -292,11 +352,18 @@ def _segment_images(images, use_colormap=False, metrics_rows=None):
     if not images:
         return []
 
-    source_groups = _segment_source_groups(images)
+    source_groups = _original_source_groups(images)
+    if len(source_groups) > 1:
+        logging.info(
+            "segmentation split %d received image(s) into %d source volume group(s)",
+            len(images),
+            len(source_groups),
+        )
     segment_suffixes = _segment_group_suffixes(source_groups)
     outputs = []
     thresholds = []
     for group_index, group_images in enumerate(source_groups):
+        _validate_original_source_geometry(group_images, "segmentation")
         threshold = _bright_foreground_threshold(group_images)
         thresholds.append(threshold)
         series_index = _segment_series_index(group_index)
@@ -343,22 +410,26 @@ def _segment_images(images, use_colormap=False, metrics_rows=None):
         if use_colormap:
             extra_meta["LUTFileName"] = SEGMENTATION_LUT
 
-        outputs.append(
-            _pack_explicit_volume(
-                segment_items,
+        for output_index, (source_image, segmentation) in enumerate(segment_items):
+            output = ismrmrd.Image.from_array(segmentation, transpose=False)
+            header = source_image.getHead()
+            header.data_type = output.data_type
+            output.setHead(header)
+            _stamp_segment_source_geometry_image(
+                output,
+                source_image,
                 series_index,
-                series_identity,
-                "Segmentation",
-                SEGMENT_SERIES_NAME,
-                ["PYTHON", "OPENRECON_SEGMENT_VOLUME"],
+                output_index,
+                series_identity["series_name"],
                 extra_meta,
-                "segmentation output",
+                series_identity,
             )
-        )
+            outputs.append(output)
 
     logging.info(
-        "Created %d foreground segmentation volume image(s) from %d source image(s) "
-        "across %d source volume group(s) with threshold(s) %s and "
+        "Created %d source-geometry segmentation image(s) from %d source image(s) "
+        "across %d source volume group(s) with threshold(s) %s, "
+        "segmentpostprocessing=False, and "
         "segmentationcolormap=%s",
         len(outputs),
         len(images),
@@ -1169,16 +1240,16 @@ def _restamp_originals(images):
     return outputs
 
 
-def _validate_original_source_geometry(group_images):
+def _validate_original_source_geometry(group_images, label="sendoriginal"):
     source_slice_count = _source_geometry_slice_limit(group_images)
     if source_slice_count is None or len(group_images) <= source_slice_count:
         return
     raise ValueError(
-        "sendoriginal source geometry advertises "
+        f"{label} source geometry advertises "
         f"{source_slice_count} slice/partition slot(s), but {len(group_images)} "
-        "image(s) were received. Refusing to pack originals into explicit-volume "
-        "geometry because scanner postprocessing needs the source-native 2D "
-        "image stream."
+        "image(s) were received. Refusing to change this output into "
+        "explicit-volume geometry because the scanner needs the source-native "
+        "2D image stream."
     )
 
 
@@ -1193,6 +1264,10 @@ def _is_original_series_index(series_index):
 
 def _is_segment_postprocessing_output(meta):
     return _meta_int(meta, SEGMENT_POSTPROCESSING_META_KEY) == 1
+
+
+def _is_segment_source_geometry_output(meta):
+    return _meta_int(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY) == 1
 
 
 def _source_image_groups(images):
@@ -1251,49 +1326,6 @@ def _original_source_groups(images):
         split_groups.append(group_images)
 
     return split_groups
-
-
-def _segment_source_groups(images):
-    images = list(images)
-    if len(images) < 2:
-        return [images]
-
-    source_slice_count = _source_geometry_slice_limit(images)
-    if source_slice_count is not None and len(images) > source_slice_count:
-        logging.warning(
-            "segmentation source geometry advertises %d slice/partition slot(s), "
-            "but %d image(s) were received; checking source volume groups before "
-            "explicit-volume packing",
-            source_slice_count,
-            len(images),
-        )
-
-    slice_axis = _infer_slice_axis([image.getHead() for image in images])
-    projections = np.asarray(
-        [_projected_position(image, slice_axis) for image in images],
-        dtype=float,
-    )
-    duplicate_positions = _duplicate_projected_position_count(projections)
-    if not duplicate_positions:
-        return [images]
-
-    source_groups = _source_volume_groups(images)
-    if len(source_groups) > 1:
-        logging.warning(
-            "segmentation source geometry has %d duplicate projected slice "
-            "position(s) across %d image(s); split into %d source volume group(s)",
-            duplicate_positions,
-            len(images),
-            len(source_groups),
-        )
-        return source_groups
-
-    logging.warning(
-        "segmentation source geometry has %d duplicate projected slice position(s), "
-        "but no distinct source volume groups were detected",
-        duplicate_positions,
-    )
-    return [images]
 
 
 def _source_volume_groups(images):
@@ -1589,7 +1621,7 @@ def _stamp_segment_postprocessing_image(
 ):
     header = output.getHead()
     header.image_series_index = series_index
-    header.image_index = output_index + 1
+    header.image_index = _source_geometry_header_image_index(source_image, output_index)
     if output.data_type in (ismrmrd.DATATYPE_CXFLOAT, ismrmrd.DATATYPE_CXDOUBLE):
         header.image_type = ismrmrd.IMTYPE_COMPLEX
     else:
@@ -1608,6 +1640,45 @@ def _stamp_segment_postprocessing_image(
         storage_fields,
     ).serialize()
     return output
+
+
+def _stamp_segment_source_geometry_image(
+    output,
+    source_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity=None,
+):
+    header = output.getHead()
+    header.image_series_index = series_index
+    header.image_index = _source_geometry_header_image_index(source_image, output_index)
+    if output.data_type in (ismrmrd.DATATYPE_CXFLOAT, ismrmrd.DATATYPE_CXDOUBLE):
+        header.image_type = ismrmrd.IMTYPE_COMPLEX
+    else:
+        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    output.setHead(header)
+    storage_fields = _original_storage_fields(output, output_index)
+    output.image_series_index = series_index
+    output.attribute_string = _segment_source_geometry_meta(
+        source_image,
+        output,
+        series_index,
+        output_index,
+        series_name,
+        extra_meta,
+        series_identity,
+        storage_fields,
+    ).serialize()
+    return output
+
+
+def _source_geometry_header_image_index(source_image, output_index):
+    source_image_index = int(source_image.getHead().image_index)
+    if source_image_index >= 1:
+        return source_image_index
+    return output_index + 1
 
 
 def _original_passthrough_meta(
@@ -1661,6 +1732,82 @@ def _original_passthrough_meta(
     return meta
 
 
+def _segment_source_geometry_meta(
+    source_image,
+    output_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity,
+    storage_fields,
+):
+    meta = _meta_from_image(source_image)
+    _strip_source_parent_refs(meta)
+    if series_identity is None:
+        series_identity = _build_output_series_identity_from_name(
+            source_image,
+            series_index,
+            series_name,
+        )
+    series_name = series_identity["series_name"]
+    series_uid = series_identity["series_uid"]
+    series_grouping = series_identity["series_grouping"]
+    sop_uid = _derived_instance_uid(
+        source_image,
+        series_index,
+        series_name,
+        output_index,
+        series_uid,
+    )
+    minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    image_type = SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE
+    image_type_value4 = SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4
+    child_role = _segment_postprocessing_child_role(series_index)
+    exam_data_role = _format_exam_data_role_sequential_number(child_role)
+
+    meta["DataRole"] = "Segmentation"
+    meta["ImageProcessingHistory"] = ["PYTHON", "OPENRECON_SEGMENT_SOURCE_GEOMETRY"]
+    meta["ImageType"] = image_type
+    meta["DicomImageType"] = image_type
+    meta["ExamDataRole"] = exam_data_role
+    meta["SeriesDescription"] = series_name
+    meta["SequenceDescription"] = series_name
+    meta["ProtocolName"] = series_name
+    meta["ImageComments"] = series_name
+    meta["ImageComment"] = series_name
+    meta["SeriesInstanceUID"] = series_uid
+    meta["SOPInstanceUID"] = sop_uid
+    meta["SeriesNumberRangeNameUID"] = series_grouping
+    meta["ImageTypeValue4"] = image_type_value4
+    meta["ComplexImageComponent"] = "MAGNITUDE"
+    _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
+    _set_meta_scalar(meta, "Keep_image_geometry", 1)
+    _set_meta_scalar(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY, 1)
+    _set_meta_scalar(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY, child_role)
+    _ensure_original_storage_meta(meta, output_image, output_index, storage_fields)
+    for key, value in (extra_meta or {}).items():
+        if value is not None:
+            meta[key] = value
+    _strip_scanner_write_unsafe_meta(meta)
+
+    if minihead:
+        patched_minihead, changed = _patch_segment_postprocessing_ice_minihead(
+            minihead,
+            series_name,
+            series_grouping,
+            series_uid,
+            sop_uid,
+            image_type,
+            image_type_value4,
+            exam_data_role,
+            storage_fields,
+        )
+        if changed:
+            meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
+    return meta
+
+
 def _segment_postprocessing_meta(
     source_image,
     output_image,
@@ -1690,32 +1837,30 @@ def _segment_postprocessing_meta(
         series_uid,
     )
     minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
-    image_type = (
-        _meta_text(meta, "ImageType")
-        or _minihead_string_value(minihead, "ImageType")
-        or "ORIGINAL\\PRIMARY\\M"
-    )
-    image_type_value4 = _meta_text(meta, "ImageTypeValue4")
-    if not image_type_value4:
-        image_type_value4_tokens = _minihead_array_tokens(minihead, "ImageTypeValue4")
-        if image_type_value4_tokens:
-            image_type_value4 = image_type_value4_tokens[0]
+    (
+        image_type,
+        dicom_image_type,
+        image_type_value4_tokens,
+    ) = _source_postprocessing_image_type_identity(meta, minihead)
+    child_role = _segment_postprocessing_child_role(series_index)
+    exam_data_role = _format_exam_data_role_sequential_number(child_role)
 
     meta["DataRole"] = "Image"
     meta["ImageProcessingHistory"] = ["PYTHON", "OPENRECON_SEGMENT_POSTPROCESSING"]
     meta["ImageType"] = image_type
-    meta["DicomImageType"] = image_type
+    meta["DicomImageType"] = dicom_image_type
+    meta["ExamDataRole"] = exam_data_role
     meta["SeriesDescription"] = series_name
     meta["SequenceDescription"] = series_name
     meta["ProtocolName"] = series_name
     meta["SeriesInstanceUID"] = series_uid
     meta["SOPInstanceUID"] = sop_uid
     meta["SeriesNumberRangeNameUID"] = series_grouping
-    if image_type_value4:
-        meta["ImageTypeValue4"] = image_type_value4
+    meta["ImageTypeValue4"] = image_type_value4_tokens
     meta["ComplexImageComponent"] = "MAGNITUDE"
     _set_meta_scalar(meta, "Keep_image_geometry", 1)
     _set_meta_scalar(meta, SEGMENT_POSTPROCESSING_META_KEY, 1)
+    _set_meta_scalar(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY, child_role)
     _ensure_original_storage_meta(meta, output_image, output_index, storage_fields)
     for key, value in (extra_meta or {}).items():
         if value is not None:
@@ -1730,6 +1875,8 @@ def _segment_postprocessing_meta(
             series_uid,
             sop_uid,
             image_type,
+            image_type_value4_tokens,
+            exam_data_role,
             storage_fields,
         )
         if changed:
@@ -1979,6 +2126,93 @@ def _meta_text(meta, key):
     return "" if text.upper() == "N/A" else text
 
 
+def _meta_values(meta, key):
+    value = meta.get(key)
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        value = [value]
+    values = []
+    for item in value:
+        text = str(item or "").strip()
+        if text and text.upper() != "N/A":
+            values.append(text)
+    return values
+
+
+def _normalise_identity_tokens(value):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple)):
+        values = value
+    else:
+        values = [value]
+    tokens = []
+    for item in values:
+        token = _sanitize_identity_text(item)
+        if token:
+            tokens.append(token)
+    return tokens
+
+
+def _source_postprocessing_image_type_identity(source_meta, minihead):
+    image_type = (
+        _meta_text(source_meta, "ImageType")
+        or _minihead_string_value(minihead, "ImageType")
+        or SEGMENT_POSTPROCESSING_IMAGE_TYPE
+    )
+    dicom_image_type = _meta_text(source_meta, "DicomImageType") or image_type
+    image_type_value4_tokens = (
+        _minihead_array_tokens(minihead, "ImageTypeValue4")
+        or _meta_values(source_meta, "ImageTypeValue4")
+        or [SEGMENT_POSTPROCESSING_IMAGE_TYPE_VALUE4]
+    )
+    return image_type, dicom_image_type, image_type_value4_tokens
+
+
+def _segment_postprocessing_child_role(series_index):
+    return int(series_index)
+
+
+def _has_dixon_image_type_token(values):
+    for value in values:
+        for token in re.split(r"[^A-Za-z0-9_]+", str(value or "").upper()):
+            if token in SEGMENT_POSTPROCESSING_DISALLOWED_DIXON_TOKENS:
+                return True
+    return False
+
+
+def _has_magnitude_image_type_value3_token(values):
+    for value in values:
+        parts = str(value or "").upper().split("\\")
+        if len(parts) >= 3 and parts[2] == "M":
+            return True
+    return False
+
+
+def _format_exam_data_role_sequential_number(value):
+    return (
+        '<DataRole Version="DR2.0">\n'
+        ' <Categories>\n'
+        '  <Category Name="SequentialNumber">\n'
+        f"   <CategoryEntry>{int(value)}</CategoryEntry>\n"
+        "  </Category>\n"
+        " </Categories>\n"
+        "</DataRole>"
+    )
+
+
+def _exam_data_role_sequential_number(value):
+    match = re.search(
+        r"SequentialNumber.*?<CategoryEntry>\s*(-?\d+)\s*</CategoryEntry>",
+        str(value or ""),
+        flags=re.DOTALL,
+    )
+    return int(match.group(1)) if match else None
+
+
 def _decode_ice_minihead(value):
     if not value:
         return ""
@@ -1998,6 +2232,17 @@ def _minihead_string_value(minihead, key):
         minihead,
     )
     return match.group(1).strip() if match else ""
+
+
+def _minihead_exam_data_role(minihead):
+    match = re.search(
+        r'<ParamString\."ExamDataRole">\s*\{\s*"(.*?</DataRole>)"\s*\}',
+        minihead,
+        flags=re.DOTALL,
+    )
+    if match:
+        return match.group(1).replace('""', '"').strip()
+    return _minihead_string_value(minihead, "ExamDataRole")
 
 
 def _minihead_long_value(minihead, key):
@@ -2021,6 +2266,55 @@ def _minihead_array_tokens(minihead, key):
         token.strip()
         for token in re.findall(r'\{\s*"([^"]+)"\s*\}', block_match.group(0))
     ]
+
+
+def _minihead_param_map_line_span(minihead_text, map_name):
+    lines = minihead_text.splitlines(keepends=True)
+    map_pattern = re.compile(rf'<ParamMap\."{re.escape(map_name)}">')
+
+    for map_index, line in enumerate(lines):
+        if not map_pattern.search(line):
+            continue
+
+        open_index = None
+        for candidate_index in range(map_index + 1, len(lines)):
+            stripped = lines[candidate_index].strip()
+            if stripped == "{":
+                open_index = candidate_index
+                break
+            if stripped.startswith('<ParamMap."'):
+                break
+        if open_index is None:
+            continue
+
+        depth = 1
+        for close_index in range(open_index + 1, len(lines)):
+            stripped = lines[close_index].strip()
+            if stripped == "{":
+                depth += 1
+            elif stripped == "}":
+                depth -= 1
+                if depth == 0:
+                    return lines, map_index, open_index, close_index
+
+    return lines, None, None, None
+
+
+def _minihead_param_map_text(minihead_text, map_name):
+    lines, map_index, _open_index, close_index = _minihead_param_map_line_span(
+        minihead_text,
+        map_name,
+    )
+    if map_index is None:
+        return ""
+    return "".join(lines[map_index : close_index + 1])
+
+
+def _minihead_param_map_has_long_param(minihead_text, map_name, name):
+    map_text = _minihead_param_map_text(minihead_text, map_name)
+    if not map_text:
+        return False
+    return bool(re.search(rf'<ParamLong\."{re.escape(name)}">', map_text))
 
 
 def _patch_ice_minihead(
@@ -2120,6 +2414,8 @@ def _patch_segment_postprocessing_ice_minihead(
     series_uid,
     sop_uid,
     image_type,
+    image_type_value4_tokens,
+    exam_data_role,
     storage_fields,
 ):
     current_text = minihead_text
@@ -2140,6 +2436,17 @@ def _patch_segment_postprocessing_ice_minihead(
             value,
         )
         changed = changed or did_change
+    current_text, did_change = _replace_or_append_minihead_array_tokens(
+        current_text,
+        "ImageTypeValue4",
+        image_type_value4_tokens,
+    )
+    changed = changed or did_change
+    current_text, did_change = _replace_or_insert_minihead_exam_data_role(
+        current_text,
+        exam_data_role,
+    )
+    changed = changed or did_change
     current_text, did_change = _strip_scanner_write_unsafe_minihead(current_text)
     changed = changed or did_change
     current_text, did_change = _patch_minihead_storage_fields(
@@ -2150,15 +2457,29 @@ def _patch_segment_postprocessing_ice_minihead(
     return current_text, changed
 
 
-def _patch_minihead_storage_fields(minihead_text, storage_fields):
+def _patch_minihead_storage_fields(
+    minihead_text,
+    storage_fields,
+    preserve_existing=False,
+):
     current_text = minihead_text
     changed = False
-    for name in ORIGINAL_RESTAMPED_STORAGE_FIELDS:
-        current_text, did_change = _replace_or_append_minihead_long_param(
-            current_text,
-            name,
-            storage_fields.get(name),
-        )
+    for minihead_name, map_name, source_field in MINIHEAD_STORAGE_FIELD_SPECS:
+        value = storage_fields.get(source_field)
+        if preserve_existing:
+            current_text, did_change = _ensure_minihead_long_param(
+                current_text,
+                minihead_name,
+                value,
+                map_name=map_name,
+            )
+        else:
+            current_text, did_change = _replace_or_insert_minihead_long_param(
+                current_text,
+                minihead_name,
+                value,
+                map_name=map_name,
+            )
         changed = changed or did_change
     return current_text, changed
 
@@ -2216,72 +2537,239 @@ def _replace_or_append_minihead_string_param(minihead_text, name, value):
     return minihead_text.rstrip() + appended_param, True
 
 
-def _replace_or_append_minihead_long_param(minihead_text, name, value):
-    if value is None:
+def _minihead_string_literal(value):
+    return str(value).replace('"', '""')
+
+
+def _replace_or_insert_minihead_exam_data_role(minihead_text, exam_data_role):
+    if not exam_data_role:
         return minihead_text, False
+
+    literal = _minihead_string_literal(exam_data_role)
+    pattern = re.compile(
+        r'(<ParamString\."ExamDataRole">\s*\{\s*")(.*?</DataRole>)("\s*\})',
+        flags=re.DOTALL,
+    )
+    matches = list(pattern.finditer(minihead_text))
+    if matches:
+        if all(match.group(2).replace('""', '"') == exam_data_role for match in matches):
+            return minihead_text, False
+        return (
+            pattern.sub(
+                lambda match: f"{match.group(1)}{literal}{match.group(3)}",
+                minihead_text,
+            ),
+            True,
+        )
+
+    return _insert_minihead_string_param_in_map(
+        minihead_text,
+        "DICOM",
+        "ExamDataRole",
+        exam_data_role,
+    )
+
+
+def _insert_minihead_string_param_in_map(minihead_text, map_name, name, value):
+    literal = _minihead_string_literal(value)
+    lines, _map_index, open_index, close_index = _minihead_param_map_line_span(
+        minihead_text,
+        map_name,
+    )
+    if close_index is None:
+        appended_param = f'\n<ParamString."{name}">\t{{ "{literal}" }}\n'
+        return minihead_text.rstrip() + appended_param, True
+
+    indent = ""
+    for line in lines[open_index + 1 : close_index]:
+        match = re.match(r'(\s*)<Param(?:Long|String|Array)\.', line)
+        if match:
+            indent = match.group(1)
+            break
+    if not indent:
+        indent_match = re.match(r"(\s*)", lines[open_index])
+        indent = indent_match.group(1) if indent_match else ""
+
+    line_ending = "\r\n" if "\r\n" in minihead_text else "\n"
+    param_line = f'{indent}<ParamString."{name}">\t{{ "{literal}" }}{line_ending}'
+    lines.insert(close_index, param_line)
+    return "".join(lines), True
+
+
+def _replace_existing_minihead_long_param(minihead_text, name, value):
+    if value is None:
+        return minihead_text, False, False
 
     value = int(value)
     pattern = re.compile(
         rf'(<ParamLong\."{re.escape(name)}">\s*\{{\s*)(-?\d*)?(\s*\}})'
     )
     matches = list(pattern.finditer(minihead_text))
-    if matches:
-        if all((match.group(2) or "").strip() == str(value) for match in matches):
-            return minihead_text, False
-        return (
-            pattern.sub(
-                lambda match: f"{match.group(1)}{value}{match.group(3)}",
-                minihead_text,
-            ),
-            True,
-        )
+    if not matches:
+        return minihead_text, False, False
+    if all((match.group(2) or "").strip() == str(value) for match in matches):
+        return minihead_text, False, True
+    return (
+        pattern.sub(
+            lambda match: f"{match.group(1)}{value}{match.group(3)}",
+            minihead_text,
+        ),
+        True,
+        True,
+    )
+
+
+def _replace_or_append_minihead_long_param(minihead_text, name, value):
+    if value is None:
+        return minihead_text, False
+
+    value = int(value)
+    current_text, changed, found = _replace_existing_minihead_long_param(
+        minihead_text,
+        name,
+        value,
+    )
+    if found:
+        return current_text, changed
 
     appended_param = f'\n<ParamLong."{name}">\t{{ {value} }}\n'
     return minihead_text.rstrip() + appended_param, True
 
 
-def _ensure_minihead_long_param(minihead_text, name, value, minimum=None):
+def _replace_or_insert_minihead_long_param(
+    minihead_text,
+    name,
+    value,
+    map_name=None,
+):
+    if value is None:
+        return minihead_text, False
+
+    value = int(value)
+    current_text, changed, found = _replace_existing_minihead_long_param(
+        minihead_text,
+        name,
+        value,
+    )
+    if not map_name:
+        if found:
+            return current_text, changed
+        return _replace_or_append_minihead_long_param(current_text, name, value)
+
+    if _minihead_param_map_has_long_param(current_text, map_name, name):
+        return current_text, changed
+
+    current_text, did_change = _insert_minihead_long_param_in_map(
+        current_text,
+        map_name,
+        name,
+        value,
+    )
+    return current_text, changed or did_change
+
+
+def _insert_minihead_long_param_in_map(minihead_text, map_name, name, value):
+    lines, _map_index, open_index, close_index = _minihead_param_map_line_span(
+        minihead_text,
+        map_name,
+    )
+    if close_index is None:
+        return _replace_or_append_minihead_long_param(minihead_text, name, value)
+
+    indent = ""
+    for line in lines[open_index + 1 : close_index]:
+        match = re.match(r'(\s*)<Param(?:Long|String|Array)\.', line)
+        if match:
+            indent = match.group(1)
+            break
+    if not indent:
+        indent_match = re.match(r"(\s*)", lines[open_index])
+        indent = indent_match.group(1) if indent_match else ""
+
+    line_ending = "\r\n" if "\r\n" in minihead_text else "\n"
+    param_line = f'{indent}<ParamLong."{name}">{{ {int(value)} }}{line_ending}'
+    lines.insert(close_index, param_line)
+    return "".join(lines), True
+
+
+def _ensure_minihead_long_param(
+    minihead_text,
+    name,
+    value,
+    minimum=None,
+    map_name=None,
+):
     if value is None:
         return minihead_text, False
     current_value = _minihead_long_value(minihead_text, name)
     if current_value is not None and (minimum is None or current_value >= minimum):
-        return minihead_text, False
-    return _replace_or_append_minihead_long_param(minihead_text, name, value)
+        if not map_name or _minihead_param_map_has_long_param(
+            minihead_text,
+            map_name,
+            name,
+        ):
+            return minihead_text, False
+    return _replace_or_insert_minihead_long_param(
+        minihead_text,
+        name,
+        value,
+        map_name=map_name,
+    )
 
 
 def _replace_or_append_minihead_array_token(minihead_text, name, target_token):
-    target_token = _sanitize_identity_text(target_token)
-    if not target_token:
+    return _replace_or_append_minihead_array_tokens(minihead_text, name, [target_token])
+
+
+def _replace_or_append_minihead_array_tokens(minihead_text, name, target_tokens):
+    target_tokens = _normalise_identity_tokens(target_tokens)
+    if not target_tokens:
         return minihead_text, False
 
+    line_ending = "\r\n" if "\r\n" in minihead_text else "\n"
     block_pattern = re.compile(
         rf'(<ParamArray\."{re.escape(name)}">\s*\{{)(.*?)(^\s*\}})',
         flags=re.DOTALL | re.MULTILINE,
     )
     block_match = block_pattern.search(minihead_text)
     if not block_match:
+        token_lines = "".join(
+            f'{line_ending}\t{{ "{token}" }}' for token in target_tokens
+        )
         appended_param = (
-            f'\n<ParamArray."{name}">\t{{\n\t{{ "{target_token}" }}\n}}\n'
+            f'{line_ending}<ParamArray."{name}">\t{{'
+            f"{token_lines}{line_ending}}}{line_ending}"
         )
         return minihead_text.rstrip() + appended_param, True
 
     block_text = block_match.group(0)
     tokens = _minihead_array_tokens(block_text, name)
-    if tokens == [target_token]:
+    if tokens == target_tokens:
         return minihead_text, False
 
     token_pattern = re.compile(r'\{\s*"[^"]*"\s*\}')
     token_matches = list(token_pattern.finditer(block_text))
+    token_lines = "".join(
+        f'{line_ending}\t{{ "{token}" }}' for token in target_tokens
+    )
     if not token_matches:
-        replacement_block = (
-            block_text.rstrip()[:-1] + f'\n\t{{ "{target_token}" }}\n}}'
-        )
+        stripped_block = block_text.rstrip()
+        close_index = stripped_block.rfind("}")
+        if close_index >= 0:
+            replacement_block = (
+                stripped_block[:close_index]
+                + token_lines
+                + line_ending
+                + stripped_block[close_index:]
+            )
+        else:
+            replacement_block = stripped_block + token_lines
     else:
         first_token = token_matches[0]
         last_token = token_matches[-1]
         replacement_block = (
             block_text[:first_token.start()]
-            + f'{{ "{target_token}" }}'
+            + token_lines.lstrip(line_ending)
             + block_text[last_token.end():]
         )
     return (
@@ -2479,6 +2967,18 @@ def _validate_identity_fields(
             errors.append(f"image {index} reuses input identity {key}={value}")
 
 
+def _validate_source_like_minihead_storage_maps(index, minihead, context, errors):
+    if not minihead:
+        return
+
+    for field, map_name, _source_field in MINIHEAD_STORAGE_FIELD_SPECS:
+        if not _minihead_param_map_has_long_param(minihead, map_name, field):
+            errors.append(
+                f"image {index} is missing {context} IceMiniHead "
+                f'{map_name} ParamLong "{field}"'
+            )
+
+
 def _validate_storage_fields(
     index,
     image,
@@ -2498,8 +2998,13 @@ def _validate_storage_fields(
     keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
     image_type_value4 = _meta_text(meta, "ImageTypeValue4")
     is_original_output = _is_original_series_index(int(image.image_series_index))
+    is_segment_source_geometry_output = _is_segment_source_geometry_output(meta)
     is_segment_postprocessing_output = _is_segment_postprocessing_output(meta)
-    is_source_like_output = is_original_output or is_segment_postprocessing_output
+    is_source_like_output = (
+        is_original_output
+        or is_segment_source_geometry_output
+        or is_segment_postprocessing_output
+    )
 
     if header_image_index < 1:
         errors.append(
@@ -2515,7 +3020,90 @@ def _validate_storage_fields(
             f"bounds [0..{series_slice_limit})"
         )
 
-    if is_segment_postprocessing_output:
+    if is_segment_source_geometry_output:
+        image_type = _meta_text(meta, "ImageType")
+        dicom_image_type = _meta_text(meta, "DicomImageType")
+        minihead_image_type = _minihead_string_value(minihead, "ImageType")
+        minihead_image_type_value4 = _minihead_array_tokens(
+            minihead,
+            "ImageTypeValue4",
+        )
+        expected_child_role = _segment_postprocessing_child_role(
+            int(image.image_series_index)
+        )
+        child_role_value = _meta_int(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)
+        meta_exam_data_role = _exam_data_role_sequential_number(
+            _meta_text(meta, "ExamDataRole")
+        )
+        minihead_exam_data_role = _exam_data_role_sequential_number(
+            _minihead_exam_data_role(minihead)
+        )
+        if _meta_text(meta, "DataRole") != "Segmentation":
+            errors.append(
+                f"image {index} has segment source-geometry DataRole="
+                f"{_meta_text(meta, 'DataRole')}, expected Segmentation"
+            )
+        if image_type != SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE:
+            errors.append(
+                f"image {index} has segment source-geometry ImageType="
+                f"{image_type}, expected {SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE}"
+            )
+        if dicom_image_type != SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE:
+            errors.append(
+                f"image {index} has segment source-geometry DicomImageType="
+                f"{dicom_image_type}, expected {SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE}"
+            )
+        if minihead and minihead_image_type and minihead_image_type != image_type:
+            errors.append(
+                f"image {index} has segment source-geometry IceMiniHead ImageType="
+                f"{minihead_image_type}, expected {image_type}"
+            )
+        if image_type_value4 != SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4:
+            errors.append(
+                f"image {index} has segment source-geometry ImageTypeValue4="
+                f"{image_type_value4}, expected "
+                f"{SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4}"
+            )
+        if minihead and minihead_image_type_value4 != [
+            SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4
+        ]:
+            errors.append(
+                f"image {index} has segment source-geometry IceMiniHead "
+                f"ImageTypeValue4={minihead_image_type_value4}, expected "
+                f"{[SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4]}"
+            )
+        if _has_dixon_image_type_token(
+            [image_type, dicom_image_type, image_type_value4]
+            + minihead_image_type_value4
+        ):
+            errors.append(
+                f"image {index} has Dixon image-type identity on "
+                "segment source-geometry output"
+            )
+        if _has_magnitude_image_type_value3_token(
+            [image_type, dicom_image_type, minihead_image_type]
+        ):
+            errors.append(
+                f"image {index} has M image-type value 3 on "
+                "segment source-geometry output"
+            )
+        if child_role_value != expected_child_role:
+            errors.append(
+                f"image {index} has segment source-geometry child role "
+                f"{child_role_value}, expected {expected_child_role}"
+            )
+        if meta_exam_data_role != expected_child_role:
+            errors.append(
+                f"image {index} has segment source-geometry Meta ExamDataRole "
+                f"SequentialNumber={meta_exam_data_role}, expected "
+                f"{expected_child_role}"
+            )
+        if minihead and minihead_exam_data_role != expected_child_role:
+            errors.append(
+                f"image {index} has segment source-geometry IceMiniHead ExamDataRole "
+                f"SequentialNumber={minihead_exam_data_role}, expected "
+                f"{expected_child_role}"
+            )
         expected_position_fields = {
             "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
             "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
@@ -2526,8 +3114,154 @@ def _validate_storage_fields(
             "SliceNo": header_slice,
             "IsmrmrdSliceNo": header_slice,
         }
+        for field in (
+            "Actual3DImagePartNumber",
+            "AnatomicalPartitionNo",
+            "AnatomicalSliceNo",
+            "ChronSliceNo",
+            "NumberInSeries",
+            "ProtocolSliceNumber",
+            "SliceNo",
+            "IsmrmrdSliceNo",
+        ):
+            expected = expected_position_fields[field]
+            meta_value = _meta_int(meta, field)
+            if meta_value is None:
+                errors.append(
+                    f"image {index} is missing segment source-geometry Meta {field}"
+                )
+            elif meta_value != expected:
+                errors.append(
+                    f"image {index} has segment source-geometry Meta {field}="
+                    f"{meta_value}, expected {expected}"
+                )
+            minihead_value = _minihead_long_value(minihead, field)
+            if minihead and minihead_value is None:
+                errors.append(
+                    f"image {index} is missing segment source-geometry IceMiniHead "
+                    f"{field}"
+                )
+            elif minihead_value is not None and minihead_value != expected:
+                errors.append(
+                    f"image {index} has segment source-geometry IceMiniHead "
+                    f"{field}={minihead_value}, expected {expected}"
+                )
+        actual_part_value = _minihead_long_value(minihead, "Actual3DImaPartNumber")
+        if minihead and actual_part_value is None:
+            errors.append(
+                f"image {index} is missing segment source-geometry IceMiniHead "
+                "Actual3DImaPartNumber"
+            )
+        elif (
+            actual_part_value is not None
+            and actual_part_value != SCANNER_PARTITION_INDEX
+        ):
+            errors.append(
+                f"image {index} has segment source-geometry IceMiniHead "
+                f"Actual3DImaPartNumber={actual_part_value}, "
+                f"expected {SCANNER_PARTITION_INDEX}"
+            )
+        _validate_source_like_minihead_storage_maps(
+            index,
+            minihead,
+            "segment source-geometry",
+            errors,
+        )
 
-        for field, expected in expected_position_fields.items():
+    elif is_segment_postprocessing_output:
+        image_type = _meta_text(meta, "ImageType")
+        dicom_image_type = _meta_text(meta, "DicomImageType")
+        image_type_value4_values = _meta_values(meta, "ImageTypeValue4")
+        minihead_image_type = _minihead_string_value(minihead, "ImageType")
+        minihead_image_type_value4 = _minihead_array_tokens(
+            minihead,
+            "ImageTypeValue4",
+        )
+        expected_child_role = _segment_postprocessing_child_role(
+            int(image.image_series_index)
+        )
+        child_role_value = _meta_int(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)
+        meta_exam_data_role = _exam_data_role_sequential_number(
+            _meta_text(meta, "ExamDataRole")
+        )
+        minihead_exam_data_role = _exam_data_role_sequential_number(
+            _minihead_exam_data_role(minihead)
+        )
+        if _meta_text(meta, "DataRole") != "Image":
+            errors.append(
+                f"image {index} has segment postprocessing DataRole="
+                f"{_meta_text(meta, 'DataRole')}, expected Image"
+            )
+        if not image_type:
+            errors.append(
+                f"image {index} is missing segment postprocessing ImageType"
+            )
+        if not dicom_image_type:
+            errors.append(
+                f"image {index} is missing segment postprocessing DicomImageType"
+            )
+        if minihead and minihead_image_type and minihead_image_type != image_type:
+            errors.append(
+                f"image {index} has segment postprocessing IceMiniHead ImageType="
+                f"{minihead_image_type}, expected {image_type}"
+            )
+        if not image_type_value4_values:
+            errors.append(
+                f"image {index} is missing segment postprocessing ImageTypeValue4"
+            )
+        if minihead and not minihead_image_type_value4:
+            errors.append(
+                f"image {index} is missing segment postprocessing IceMiniHead "
+                "ImageTypeValue4"
+            )
+        if (
+            minihead
+            and minihead_image_type_value4
+            and image_type_value4_values != minihead_image_type_value4
+        ):
+            errors.append(
+                f"image {index} has segment postprocessing Meta ImageTypeValue4="
+                f"{image_type_value4_values}, expected IceMiniHead "
+                f"{minihead_image_type_value4}"
+            )
+        if child_role_value != expected_child_role:
+            errors.append(
+                f"image {index} has segment postprocessing child role "
+                f"{child_role_value}, expected {expected_child_role}"
+            )
+        if meta_exam_data_role != expected_child_role:
+            errors.append(
+                f"image {index} has segment postprocessing Meta ExamDataRole "
+                f"SequentialNumber={meta_exam_data_role}, expected "
+                f"{expected_child_role}"
+            )
+        if minihead and minihead_exam_data_role != expected_child_role:
+            errors.append(
+                f"image {index} has segment postprocessing IceMiniHead ExamDataRole "
+                f"SequentialNumber={minihead_exam_data_role}, expected "
+                f"{expected_child_role}"
+            )
+        expected_position_fields = {
+            "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
+            "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+            "AnatomicalSliceNo": header_slice,
+            "ChronSliceNo": header_image_index - 1,
+            "NumberInSeries": header_image_index,
+            "ProtocolSliceNumber": header_slice,
+            "SliceNo": header_slice,
+            "IsmrmrdSliceNo": header_slice,
+        }
+        for field in (
+            "Actual3DImagePartNumber",
+            "AnatomicalPartitionNo",
+            "AnatomicalSliceNo",
+            "ChronSliceNo",
+            "NumberInSeries",
+            "ProtocolSliceNumber",
+            "SliceNo",
+            "IsmrmrdSliceNo",
+        ):
+            expected = expected_position_fields[field]
             meta_value = _meta_int(meta, field)
             if meta_value is None:
                 errors.append(
@@ -2538,8 +3272,6 @@ def _validate_storage_fields(
                     f"image {index} has segment postprocessing Meta {field}="
                     f"{meta_value}, expected {expected}"
                 )
-            if field == "IsmrmrdSliceNo":
-                continue
             minihead_value = _minihead_long_value(minihead, field)
             if minihead and minihead_value is None:
                 errors.append(
@@ -2548,9 +3280,30 @@ def _validate_storage_fields(
                 )
             elif minihead_value is not None and minihead_value != expected:
                 errors.append(
-                    f"image {index} has segment postprocessing IceMiniHead {field}="
-                    f"{minihead_value}, expected {expected}"
+                    f"image {index} has segment postprocessing IceMiniHead "
+                    f"{field}={minihead_value}, expected {expected}"
                 )
+        actual_part_value = _minihead_long_value(minihead, "Actual3DImaPartNumber")
+        if minihead and actual_part_value is None:
+            errors.append(
+                f"image {index} is missing segment postprocessing IceMiniHead "
+                "Actual3DImaPartNumber"
+            )
+        elif (
+            actual_part_value is not None
+            and actual_part_value != SCANNER_PARTITION_INDEX
+        ):
+            errors.append(
+                f"image {index} has segment postprocessing IceMiniHead "
+                f"Actual3DImaPartNumber={actual_part_value}, "
+                f"expected {SCANNER_PARTITION_INDEX}"
+            )
+        _validate_source_like_minihead_storage_maps(
+            index,
+            minihead,
+            "segment postprocessing",
+            errors,
+        )
 
     elif not is_original_output:
         expected_position_fields = {
@@ -2590,6 +3343,11 @@ def _validate_storage_fields(
             f"image {index} is an original pass-through output with "
             f"Keep_image_geometry={keep_image_geometry}, expected 1"
         )
+    elif is_segment_source_geometry_output and keep_image_geometry != 1:
+        errors.append(
+            f"image {index} is a segment source-geometry output with "
+            f"Keep_image_geometry={keep_image_geometry}, expected 1"
+        )
     elif is_segment_postprocessing_output and keep_image_geometry != 1:
         errors.append(
             f"image {index} is a segment postprocessing output with "
@@ -2615,8 +3373,6 @@ def _validate_storage_fields(
                     f"image {index} has original Meta {field}={meta_value}, "
                     f"expected {expected}"
                 )
-            if field == "IsmrmrdSliceNo":
-                continue
             minihead_value = _minihead_long_value(minihead, field)
             if minihead and minihead_value is None:
                 errors.append(f"image {index} is missing original IceMiniHead {field}")
@@ -2625,6 +3381,27 @@ def _validate_storage_fields(
                     f"image {index} has original IceMiniHead {field}="
                     f"{minihead_value}, expected {expected}"
                 )
+        actual_part_value = _minihead_long_value(minihead, "Actual3DImaPartNumber")
+        if minihead and actual_part_value is None:
+            errors.append(
+                f"image {index} is missing original IceMiniHead "
+                "Actual3DImaPartNumber"
+            )
+        elif (
+            actual_part_value is not None
+            and actual_part_value != SCANNER_PARTITION_INDEX
+        ):
+            errors.append(
+                f"image {index} has original IceMiniHead "
+                f"Actual3DImaPartNumber={actual_part_value}, "
+                f"expected {SCANNER_PARTITION_INDEX}"
+            )
+        _validate_source_like_minihead_storage_maps(
+            index,
+            minihead,
+            "original",
+            errors,
+        )
     elif keep_image_geometry == 0:
         partition_count = _meta_int(meta, "partition_count")
         if partition_count is None:

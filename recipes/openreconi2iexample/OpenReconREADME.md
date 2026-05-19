@@ -4,10 +4,10 @@
 receives reconstructed MRD image messages and sends no outputs unless one or
 more output options are enabled. It can re-emit the original scan, invert
 magnitude images, upsample the slice direction, threshold each slice into a
-segmentation, optionally send segmentations as source-geometry slices for
-scanner postprocessing, optionally add a segmentation colourmap, and compute a
-maximum intensity projection. It can also send foreground-region volume metrics
-when `sendmetrics` is enabled.
+segmentation, optionally mark segmentations for scanner postprocessing,
+optionally add a segmentation colourmap, and compute a maximum intensity
+projection. It can also send foreground-region volume metrics when `sendmetrics`
+is enabled.
 
 ## Inputs
 
@@ -31,26 +31,23 @@ when `sendmetrics` is enabled.
   sequence, image-type, MiniHead, slice, partition, and pixel data are preserved
   as much as possible; only returned-series identity and required safe storage
   fields are changed.
-- `<source>-segment`: explicit-volume thresholded segmentation output(s)
-  starting on `image_series_index = 101` when `segment` is true. Each output sets
-  `Keep_image_geometry = 0` and removes the source `IceMiniHead`, so scanner
-  inline MIP handling is not attached to the segmentation when originals are
-  also returned. Inputs with repeated physical slice positions are split by
-  source volume fields such as MRD `contrast` before packing; additional
-  segmentation groups use separate derived series indices. Segmentations set
-  `LUTFileName = MicroDeltaHotMetal.pal` only when `segmentationcolormap` is
-  true.
 - `<source>-segment`: source-geometry thresholded segmentation slice streams
-  starting on `image_series_index = 101` when `segment` and
-  `segmentpostprocessing` are both true. This opt-in mode sends one 2D
-  mask image per source image, sets `Keep_image_geometry = 1`, keeps the source
-  MRD slice geometry, and stamps the outputs as source-like `DataRole = Image`
-  images with a separate segment series identity in Meta and `IceMiniHead`. It
-  strips `ImageTypeValue3` because the scanner converter can reject that protocol
-  node on returned images. It replaces the explicit-volume segmentation output;
-  both forms are not sent together. If `sendoriginal` is also checked, the
-  original passthrough stream is skipped so the scanner Dixon composer sees only
-  one source-like stream per contrast.
+  starting on `image_series_index = 101` when `segment` is true. The recipe sends
+  one 2D mask image per source image, sets `Keep_image_geometry = 1`, keeps the
+  source MRD slice geometry, restamps returned-stream storage counters, and uses
+  separate segment series identity in Meta and `IceMiniHead`.
+  With `segmentpostprocessing = false`, masks are stamped as
+  `DataRole = Segmentation` with
+  `ImageType = DERIVED\PRIMARY\SEGMENTATION\openrecon_segment`,
+  `ImageTypeValue4 = openrecon_segment`, and `SegmentSourceGeometry = 1`; they
+  are source-geometry images but are not marked as scanner magnitude images for
+  inline postprocessing. With `segmentpostprocessing = true`, masks keep the same
+  source geometry and source image-type composer classification, are stamped as
+  `DataRole = Image`, and carry `SegmentPostProcessing = 1`. Both modes strip
+  `ImageTypeValue3` because the scanner converter can reject that protocol node
+  on returned images. If `sendoriginal` is also checked with
+  `segmentpostprocessing = true`, the original passthrough stream is sent first
+  in a separate MRD image message.
 - `<source>-upsampled`: one volume image with twice as many slices on
   `image_series_index = 102` when `upsampled` is true.
 - `<source>-mip`: one maximum intensity projection image on
@@ -58,19 +55,19 @@ when `sendmetrics` is enabled.
 - `<source>-metrics`: one derived DICOM image-table page on
   `image_series_index = 120` when `sendmetrics` is true. The table reports the
   segmented foreground region, source name, voxel count, voxel volume, threshold,
-  and volume in `mm3` and `mL`. It is sent in the same explicit derived-output
-  envelope as the segmentation volume so scanner inline postprocessing does not
-  attach to it. The rendered pixels are pre-oriented for scanner display and
-  use standalone identity geometry instead of inheriting scan orientation.
+  and volume in `mm3` and `mL`. It is sent as a standalone explicit derived
+  output so scanner inline postprocessing does not attach to it. The rendered
+  pixels are pre-oriented for scanner display and use standalone identity
+  geometry instead of inheriting scan orientation.
 
 The inverted images normally keep the source geometry and use the input
 intensity range: `inverted = min(input) + max(input) - input`.
 The segment output estimates a bright-foreground threshold per source volume
 group, keeps the largest connected foreground object in each slice, and stores
-the result as binary `uint16` segmentation data. By default those segmentations
-are explicit-volume image(s). With `segmentpostprocessing` enabled, the same
-binary masks are sent as source-like 2D image streams so scanner postprocessing
-can attach to them.
+the result as binary `uint16` segmentation data. Segmentations are returned as
+source-like 2D image streams in both modes. `segmentpostprocessing` only changes
+whether those source-geometry masks are marked as scanner-postprocessing
+candidate images.
 The upsampled output keeps the in-plane matrix unchanged and doubles the
 through-plane sample count by sorting source images by physical slice position
 and inserting midpoint slices between acquired slices. The final edge slice is
@@ -112,36 +109,42 @@ writes the region volume into `ImageComments` and `ImageComment`.
 - Derived outputs set `SequenceDescriptionAdditional` to `openrecon` so
   scanners do not append `_None` to the display name. Original pass-through
   preserves the incoming value and does not synthesize an `openrecon` suffix.
-- Returned outputs strip scanner `ImageTypeValue3` from both MRD metadata and
-  `IceMiniHead`. Some sequences reject that protocol node during OpenRecon
-  conversion. Dixon subtype identity is preserved through `ImageType`,
-  `DicomImageType`, `ComplexImageComponent`, and `ImageTypeValue4`.
+- Returned source-geometry outputs strip scanner `ImageTypeValue3` from both MRD
+  metadata and `IceMiniHead`. Some sequences reject that protocol node during
+  OpenRecon conversion. Original pass-through preserves Dixon subtype identity
+  through `ImageType`, `DicomImageType`, `ComplexImageComponent`, and
+  `ImageTypeValue4`.
+  Segmentation outputs preserve source geometry. With `segmentpostprocessing`
+  disabled they use a non-Dixon segment identity so scanner Dixon composing does
+  not count masks as extra `FAT`, `WATER`, or `FAT_FRAC` source images. With
+  `segmentpostprocessing` enabled they preserve the source composer identity so
+  the scanner can compose the masks through the same route as the source scan.
 - `sendoriginal` outputs are emitted before derived outputs. When
-  `segmentpostprocessing` is enabled with `segment`, the segment stream is the
-  scanner-postprocessing candidate and `sendoriginal` is ignored to avoid
-  duplicate Dixon compose inputs.
-- `Keep_image_geometry = 1` is set on original pass-through images. If an
-  original source group has more images than the advertised source slice or
+  `segmentpostprocessing` is enabled with `segment`, the original stream remains
+  first and is sent in its own MRD image message; the segment stream follows as a
+  separate source-geometry 2D image message. This keeps the scanner composer from
+  receiving two source-like returned streams in one image-message group.
+- `Keep_image_geometry = 1` is set on original pass-through and segmentation
+  images. If a source group has more images than the advertised source slice or
   partition count can hold, the job fails before send rather than packing those
-  originals as a derived volume. This keeps scanner MIP/MPR postprocessing on
-  the same 2D contract as the scanner received.
-- By default, `segment` and `upsampled` are packed as explicit-volume outputs
-  with `Keep_image_geometry = 0`, `matrix_size[2] = N`,
+  source-geometry outputs as a derived volume. This keeps scanner MIP/MPR
+  postprocessing on the same 2D contract as the scanner received.
+- Segmentation outputs are emitted as one source-geometry 2D stream per source
+  volume group while preserving source slice geometry. A valid source header
+  `image_index` is preserved; zero-valued source image indices are replaced with
+  a one-based returned index because returned MRD images must have
+  `image_index >= 1`. Returned storage counters in Meta and `IceMiniHead` are
+  restamped from the returned segment stream.
+- Explicit-volume outputs, such as `upsampled` and fallback packed `invert`
+  outputs, use `Keep_image_geometry = 0`, `matrix_size[2] = N`,
   `slice_count = NumberOfSlices = N`, and `partition_count = 1`. This prevents
   the marshaller from receiving invented source SLC indices such as `416..831`
   for a 416-partition sequence.
-- When `segmentpostprocessing` is enabled with `segment`, segmentations are not
-  packed as explicit volumes. They are emitted as one source-geometry 2D stream
-  per source volume group with the same returned-order storage counter rules as
-  original pass-through, so scanner inline postprocessing can process the
-  segmentation series.
 - Explicit-volume packing requires unique projected MRD header positions. Inputs
-  with repeated header positions are split by source volume fields before
-  segmentation packing. Multi-contrast wholebody data whose header `position`
-  repeats per contrast is returned as one explicit segmentation volume per
-  contrast. Inputs that still repeat positions inside one source volume group
-  fail before send with a Python-side OpenRecon logging error instead of sending
-  an unsafe output.
+  with repeated header positions are split by source volume fields where the
+  packed output supports that. Source-geometry original and segmentation outputs
+  instead fail before send when the source geometry cannot safely represent the
+  returned 2D image stream.
 - The upsampled output always changes the slice count, so it removes the source
   `IceMiniHead`, sends one MRD volume image with `matrix_size[2] = 2 * N`, and
   stamps `slice_count = NumberOfSlices = 2 * N` plus `partition_count = 1`

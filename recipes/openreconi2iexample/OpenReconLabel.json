@@ -74,14 +74,14 @@
       "id": "segment",
       "label": { "en": "Segment" },
       "type": "boolean",
-      "information": { "en": "Segment the brightest foreground object and send explicit-volume segmentation output(s)" },
+      "information": { "en": "Segment the brightest foreground object and send source-geometry 2D segmentation slices" },
       "default": false
     },
     {
       "id": "segmentpostprocessing",
       "label": { "en": "Scanner postprocess segmentations" },
       "type": "boolean",
-      "information": { "en": "When Segment is enabled, send segmentation slices with source geometry for scanner postprocessing; this overrides Send original" },
+      "information": { "en": "When Segment is enabled, send segmentation slices with source image geometry and source composer identity for scanner postprocessing; originals are sent in a separate image message when Send original is also enabled" },
       "default": false
     },
     {
