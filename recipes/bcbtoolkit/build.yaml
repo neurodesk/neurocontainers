@@ -112,6 +112,12 @@ build:
         FSLOUTPUTTYPE: NIFTI_GZ
         BCBTOOLKIT_ROOT: /opt/BCBToolKit
 
+    # The BCBToolKitLINUX.tar.gz from Dropbox is missing
+    # Tools/extraFiles/nulldeform.mat, an identity 4x4 affine that
+    # run_disco.sh feeds to flirt -applyxfm -init when it has to reslice
+    # between the SPM 181x217x181 MNI grid and the FSL 182x218x182 MNI grid.
+    # Without it, reslicing fails and downstream track_vis calls produce empty
+    # output while the script can still report success.
     - run:
         - |-
           mkdir -p /opt/BCBToolKit && cd /opt/BCBToolKit \
@@ -125,7 +131,6 @@ build:
             && chmod +x /opt/BCBToolKit/BCBToolKit.sh \
                         /opt/BCBToolKit/run_disco.sh \
                         /opt/BCBToolKit/tractotron_cli.sh \
-            && ln -sf /opt/BCBToolKit/BCBToolKit.sh /usr/local/bin/BCBToolKit.sh \
             && ln -sf /opt/BCBToolKit/run_disco.sh /usr/local/bin/run_disco.sh \
             && ln -sf /opt/BCBToolKit/tractotron_cli.sh /usr/local/bin/tractotron_cli.sh \
             && curl -L -o /tmp/hcp_atlas.zip \
@@ -138,15 +143,15 @@ build:
                  '0.000000 1.000000 0.000000 0.000000' \
                  '0.000000 0.000000 1.000000 0.000000' \
                  '0.000000 0.000000 0.000000 1.000000' \
-                 > /opt/BCBToolKit/Tools/extraFiles/nulldeform.mat
-          # ^ The BCBToolKitLINUX.tar.gz from Dropbox is missing
-          #   Tools/extraFiles/nulldeform.mat — an identity 4x4 affine that
-          #   run_disco.sh feeds to flirt -applyxfm -init when it has to
-          #   reslice between the SPM 181x217x181 MNI grid and the FSL
-          #   182x218x182 MNI grid (and back). Without it the reslice fails
-          #   with "Could not open matrix file ... nulldeform.mat", every
-          #   track_vis call then fails on the missing resliced ROI, and the
-          #   output is empty while the script still reports success.
+                 > /opt/BCBToolKit/Tools/extraFiles/nulldeform.mat \
+            && chmod -R a+rX /opt/BCBToolKit \
+            && rm -f /usr/local/bin/BCBToolKit.sh \
+            && printf '%s\n' \
+                 '#!/usr/bin/env bash' \
+                 'cd /opt/BCBToolKit' \
+                 'exec ./BCBToolKit.sh "$@"' \
+                 > /usr/local/bin/BCBToolKit.sh \
+            && chmod 0755 /usr/local/bin/BCBToolKit.sh
     - deploy:
         bins:
           - BCBToolKit.sh
@@ -180,6 +185,29 @@ build:
               || { echo "FSLOUTPUTTYPE not set in image"; exit 1; }
           test -d "${FSLDIR}" \
               || { echo "FSLDIR does not exist: $FSLDIR"; exit 1; }
+
+          # Upstream archive ships as uid/gid 1000 with restrictive group/other
+          # permissions. Normal runtime users must still be able to traverse
+          # bundled tools, libraries, the Java runtime, and data files.
+          unreadable_path="$(find /opt/BCBToolKit \( -type d ! -perm -0005 -o -type f ! -perm -0004 \) -print -quit)"
+          test -z "${unreadable_path}" \
+              || { echo "BCBToolKit path is not world-readable/traversable: ${unreadable_path}"; exit 1; }
+
+          blocked_exec="$(find /opt/BCBToolKit -type f -perm /0111 ! -perm -0001 -print -quit)"
+          test -z "${blocked_exec}" \
+              || { echo "BCBToolKit executable is not world-executable: ${blocked_exec}"; exit 1; }
+
+          test ! -L /usr/local/bin/BCBToolKit.sh \
+              || { echo "BCBToolKit launcher must be a wrapper, not a symlink"; exit 1; }
+          grep -q '/opt/BCBToolKit' /usr/local/bin/BCBToolKit.sh \
+              || { echo "BCBToolKit launcher does not enter /opt/BCBToolKit"; exit 1; }
+
+          su -s /bin/bash nobody -c \
+              'test -x /opt/BCBToolKit/Tools/binaries/bin/fslmaths &&
+               test -x /opt/BCBToolKit/jre/bin/java &&
+               test -r /opt/BCBToolKit/sources.jar &&
+               BCBTOOLKIT_ROOT=/opt/BCBToolKit run_disco.sh -l /tmp/nope -o /tmp/out 2>&1 |
+                   grep -q "neither an existing file nor directory"'
 
           echo "=== /opt/BCBToolKit contents ==="
           ls /opt/BCBToolKit/
