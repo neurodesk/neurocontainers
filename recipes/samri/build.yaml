@@ -1,0 +1,88 @@
+name: samri
+version: "0.5"
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: vnmd/fsl_6.0.3:20200905
+  pkg-manager: apt
+
+  directives:
+    - run:
+        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
+        - chmod +x /usr/bin/ll
+        - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
+
+    - template:
+        name: miniconda
+        use_env: base
+        conda_install: python=3.7 nipy nilearn traits argh joblib matplotlib numpy pandas scipy seaborn statsmodels nipype
+        pip_install: nibabel scikit-image pybids==0.6.5 pynrrd duecredit
+
+    - install:
+        - git
+        - zip
+        - wget
+        - libgtk2.0-0
+        - blender
+
+    - workdir: /opt
+
+    - run:
+        - git clone https://github.com/IBT-FMI/SAMRI.git
+
+    - workdir: /opt/SAMRI
+
+    - run:
+        - python setup.py install --user
+
+    - workdir: /opt/bru2
+
+    - run:
+        - wget https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip
+        - unzip Bru2_Linux.zip
+
+    - environment:
+        PATH: $PATH:/opt/bru2:/root/.local/bin
+
+    - workdir: /opt
+
+    - template:
+        name: ants
+        version: 2.3.4
+
+    - run:
+        - git clone https://github.com/IBT-FMI/mouse-brain-atlases_generator.git
+
+    - workdir: /opt/mouse-brain-atlases_generator
+
+    - environment:
+        DEPLOY_BINS: SAMRI
+
+    - copy: README.md /README.md
+
+deploy:
+  bins:
+    - SAMRI
+
+categories:
+  - rodent imaging
+  - workflows
+
+readme: |-
+  ----------------------------------
+  ## samri/{{ context.version }} ##
+
+  SAMRI standalone with Matlab Compiler Runtime.
+
+  Example:
+  ```
+  SAMRI
+  SAMRI diagnose bids
+  ```
+
+  More documentation can be found here: https://github.com/IBT-FMI/SAMRI
+
+  ----------------------------------
