@@ -79,88 +79,27 @@ build:
       CFLAGS: "-O2 -g -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error"
       CXXFLAGS: "-O2 -g -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error"
 
+  # IMPORTANT neurodocker behaviour:
+  # every list item under `run:` becomes a separate shell statement
+  # joined to its neighbours with ` && `, AND every PHYSICAL LINE inside
+  # a single item (e.g. `- |` block) is also joined with ` && `. So R
+  # scripts MUST be flattened onto one physical line with `;` separators,
+  # otherwise neurodocker will prepend `&&` to every R line and break it.
   - run:
-      # Write the same flags into ~/.R/Makevars so individual R packages
-      # that don't honour the environment variables still pick them up.
-      # Avoid heredoc syntax here -- neurodocker re-serializes this block
-      # into a JSON spec file via 'echo', and an embedded <<EOF ... EOF
-      # would terminate the outer shell heredoc that wraps it.
+      # Step 1: relax gcc-13 strictness for ITKR's bundled HDF5.
       - mkdir -p /root/.R && printf '%s\n' 'CFLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXXFLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXX11FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXX14FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' 'CXX17FLAGS = -O2 -g -fpic -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error' > /root/.R/Makevars
 
-      # CRAN packages -- pulled as prebuilt binaries from Posit PM.
-      - |
-        R --slave -e '
-          options(
-            repos = c(CRAN = Sys.getenv("R_REPOS")),
-            HTTPUserAgent = sprintf(
-              "R/%s R (%s)",
-              getRversion(),
-              paste(getRversion(), R.version["platform"], R.version["arch"], R.version["os"])
-            ),
-            timeout = as.integer(Sys.getenv("R_DEFAULT_INTERNET_TIMEOUT", 600)),
-            Ncpus = max(1L, parallel::detectCores() - 1L)
-          )
-          install.packages(c(
-            "remotes", "devtools", "dplyr", "rlist",
-            "fs", "sass", "bslib", "rmarkdown", "rticles",
-            "RNifti", "oro.nifti"
-          ))
-          # Hard-fail early if a critical CRAN package did not land.
-          for (p in c("remotes", "fs", "rmarkdown", "RNifti", "oro.nifti")) {
-            if (!requireNamespace(p, quietly = TRUE))
-              stop("CRAN install failed for ", p)
-          }
-          cat("CRAN bootstrap OK\n")
-        '
+      # Step 2: bootstrap CRAN packages from Posit PM binaries (skips source compile of fs/sass/RNifti/etc).
+      - R --slave -e "options(repos = c(CRAN = Sys.getenv('R_REPOS')), HTTPUserAgent = sprintf('R/%s R (%s)', getRversion(), paste(getRversion(), R.version['platform'], R.version['arch'], R.version['os'])), timeout = as.integer(Sys.getenv('R_DEFAULT_INTERNET_TIMEOUT', 600)), Ncpus = max(1L, parallel::detectCores() - 1L)); install.packages(c('remotes', 'devtools', 'dplyr', 'rlist', 'fs', 'sass', 'bslib', 'rmarkdown', 'rticles', 'RNifti', 'oro.nifti')); for (p in c('remotes', 'fs', 'rmarkdown', 'RNifti', 'oro.nifti')) if (!requireNamespace(p, quietly = TRUE)) stop('CRAN install failed for ', p); cat('CRAN bootstrap OK\\n')"
 
-      # Neuroconductor GitHub installs. ITKR FIRST (ANTsRCore LinkingTo's it),
-      # each in its own R invocation so a transient GitHub rate-limit on one
-      # doesn't poison the rest, with a 3x retry+backoff for transient
-      # 403/rate-limit responses from api.github.com.
-      #
-      # NOTE: set GITHUB_PAT in your build env to lift the unauthenticated
-      # 60 req/hr limit -- the original "cannot open URL .../DESCRIPTION?ref=HEAD"
-      # error was the rate-limit symptom, not a real URL problem.
-      - |
-        R --slave -e '
-          options(repos = c(CRAN = Sys.getenv("R_REPOS")))
-          pkgs <- c(
-            "neuroconductor/ITKR",
-            "neuroconductor/ANTsRCore",
-            "neuroconductor/ANTsR",
-            "neuroconductor/neurobase",
-            "neuroconductor/extrantsr",
-            "neuroconductor/fslr",
-            "neuroconductor/oasis",
-            "neuroconductor/WhiteStripe",
-            "neuroconductor/mimosa"
-          )
-          for (pkg in pkgs) {
-            cat("\n=== Installing", pkg, "===\n")
-            ok <- FALSE
-            for (attempt in 1:3) {
-              res <- tryCatch({
-                remotes::install_github(
-                  pkg,
-                  dependencies = TRUE,
-                  upgrade = "never",
-                  build_vignettes = FALSE,
-                  quiet = FALSE
-                )
-                TRUE
-              }, error = function(e) {
-                cat("Attempt", attempt, "for", pkg, "failed:",
-                    conditionMessage(e), "\n")
-                Sys.sleep(15 * attempt)
-                FALSE
-              })
-              if (isTRUE(res)) { ok <- TRUE; break }
-            }
-            if (!ok) stop("Failed to install ", pkg, " after 3 attempts")
-          }
-        '
+      # Step 3: neuroconductor GitHub installs.
+      # ITKR first (ANTsRCore LinkingTo's it). Each remotes::install_github call retried up to 3x
+      # with backoff to absorb transient github API 403 / rate-limit failures.
+      # Tip: set GITHUB_PAT in the build env to lift the 60 req/hr anonymous limit.
+      - R --slave -e "options(repos = c(CRAN = Sys.getenv('R_REPOS'))); pkgs <- c('neuroconductor/ITKR', 'neuroconductor/ANTsRCore', 'neuroconductor/ANTsR', 'neuroconductor/neurobase', 'neuroconductor/extrantsr', 'neuroconductor/fslr', 'neuroconductor/oasis', 'neuroconductor/WhiteStripe', 'neuroconductor/mimosa'); for (pkg in pkgs) { cat('\\n=== Installing', pkg, '===\\n'); ok <- FALSE; for (attempt in 1:3) { res <- tryCatch({ remotes::install_github(pkg, dependencies = TRUE, upgrade = 'never', build_vignettes = FALSE, quiet = FALSE); TRUE }, error = function(e) { cat('Attempt', attempt, 'for', pkg, 'failed:', conditionMessage(e), '\\n'); Sys.sleep(15 * attempt); FALSE }); if (isTRUE(res)) { ok <- TRUE; break } }; if (!ok) stop('Failed to install ', pkg, ' after 3 attempts') }"
 
-      - R --slave -e 'stopifnot(requireNamespace("mimosa", quietly = TRUE)); cat("mimosa installed OK\n")'
+      # Step 4: sanity check.
+      - R --slave -e "stopifnot(requireNamespace('mimosa', quietly = TRUE)); cat('mimosa installed OK\\n')"
 
   - test:
       name: verify_r_installation
