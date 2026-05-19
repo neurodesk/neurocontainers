@@ -209,12 +209,28 @@ build:
           grep -q '/opt/BCBToolKit' /usr/local/bin/BCBToolKit.sh \
               || { echo "BCBToolKit launcher does not enter /opt/BCBToolKit"; exit 1; }
 
-          su -s /bin/bash nobody -c \
-              'test -x /opt/BCBToolKit/Tools/binaries/bin/fslmaths &&
-               test -x /opt/BCBToolKit/jre/bin/java &&
-               test -r /opt/BCBToolKit/sources.jar &&
-               BCBTOOLKIT_ROOT=/opt/BCBToolKit run_disco.sh -l /tmp/nope -o /tmp/out 2>&1 |
-                   grep -q "neither an existing file nor directory"'
+          runtime_check="$(mktemp /tmp/bcb-runtime-check.XXXXXX)"
+          trap 'rm -f "${runtime_check}"' EXIT
+          cat > "${runtime_check}" <<'EOF'
+          #!/bin/bash
+          set -euo pipefail
+          test -x /opt/BCBToolKit/Tools/binaries/bin/fslmaths
+          test -x /opt/BCBToolKit/jre/bin/java
+          test -r /opt/BCBToolKit/sources.jar
+          BCBTOOLKIT_ROOT=/opt/BCBToolKit run_disco.sh -l /tmp/nope -o /tmp/out 2>&1 |
+              grep -q "neither an existing file nor directory"
+          EOF
+          chmod 0755 "${runtime_check}"
+
+          if [ "$(id -u)" -eq 0 ]; then
+              if command -v runuser >/dev/null 2>&1; then
+                  runuser -u nobody -- "${runtime_check}"
+              else
+                  su -s /bin/bash nobody -c "${runtime_check}"
+              fi
+          else
+              "${runtime_check}"
+          fi
 
           echo "=== /opt/BCBToolKit contents ==="
           ls /opt/BCBToolKit/
