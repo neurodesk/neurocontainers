@@ -1,43 +1,75 @@
 name: hcpasl
-version: 1.0.0
+version: 0.2.0
 
 copyright:
   - license: Apache-2.0
     url: https://github.com/physimals/hcp-asl/blob/master/LICENSE
-    
+
 architectures:
   - x86_64
 
+variables:
+  miniconda_version: py311_25.5.1-0
+  fsl_version: 6.0.7.22
+  freesurfer_version: 7.4.1
+  hcp_pipelines_version: 5.0.0
+
+files:
+  - name: hcp_asl_source
+    url: https://github.com/physimals/hcp-asl/archive/refs/tags/v{{ context.version }}.tar.gz
+  - name: hcp_pipelines_source
+    url: https://github.com/Washington-University/HCPpipelines/archive/refs/tags/v{{ context.hcp_pipelines_version }}.tar.gz
+  - name: hcp_asl_requirements
+    contents: |
+      fslpy==3.27.0
+      nibabel==5.4.2
+      pyfab==0.3.6
+      gradunwarp==1.2.3
+      requests==2.34.2
+      regtricks==0.3.7
+      toblerone==0.8.2
+      scipy==1.14.1
+      scikit-learn==1.5.2
+      pandas==2.2.3
+      matplotlib==3.9.4
+
 build:
   kind: neurodocker
-
   base-image: ubuntu:22.04
   pkg-manager: apt
-
   directives:
-    - install: wget curl git
+    - install:
+        - build-essential
+        - ca-certificates
+        - connectome-workbench
 
     - template:
         name: miniconda
-        version: latest
-        conda_install: "python=3.11 numpy scipy"
-        pip_install: "git+https://github.com/physimals/hcp-asl.git nibabel"
+        version: "{{ context.miniconda_version }}"
+        install_path: /opt/miniconda
+        conda_install: "python=3.11 pip"
 
     - template:
         name: fsl
-        version: 6.0.5.1
+        version: "{{ context.fsl_version }}"
 
     - template:
         name: freesurfer
-        version: 7.4.1
-
-    - install: connectome-workbench
+        version: "{{ context.freesurfer_version }}"
 
     - run:
-        - git clone https://github.com/Washington-University/HCPpipelines.git /opt/HCPpipelines
+        - python -m pip install --no-cache-dir "pip==26.1.1" "setuptools==82.0.1" "wheel==0.47.0"
+        - python -m pip install --no-cache-dir "cython==3.0.12" "numpy==1.26.4"
+        - python -m pip install --no-cache-dir --no-build-isolation -r {{ get_file("hcp_asl_requirements") }}
+        - mkdir -p /tmp/hcp-asl-src /opt/HCPpipelines
+        - tar -xzf {{ get_file("hcp_asl_source") }} -C /tmp/hcp-asl-src --strip-components 1
+        - printf "%s\n" "__version__ = '{{ context.version }}'" "__timestamp__ = 'unknown'" "__sha1__ = 'unknown'" > /tmp/hcp-asl-src/hcpasl/_version.py
+        - python -m pip install --no-cache-dir --no-deps /tmp/hcp-asl-src
+        - tar -xzf {{ get_file("hcp_pipelines_source") }} -C /opt/HCPpipelines --strip-components 1
+        - rm -rf /tmp/hcp-asl-src /root/.cache/pip
 
     - environment:
-        CARET7DIR: /usr/local/workbench/
+        CARET7DIR: /usr/bin
         HCPPIPEDIR: /opt/HCPpipelines
 
     - workdir: /opt
@@ -45,28 +77,51 @@ build:
 deploy:
   bins:
     - process_hcp_asl
+    - get_sebased_bias_asl
+    - mt_estimation_asl
+    - results_to_mni_asl
+    - VolumetoSurfaceASL.sh
+    - SurfaceSmoothASL.sh
+    - SubcorticalProcessingASL.sh
+    - PerfusionCIFTIProcessingPipelineASL.sh
+    - CreateDenseScalarASL.sh
 
 categories:
   - functional imaging
+  - workflows
+
+structured_readme:
+  description: HCP-ASL is a minimal processing pipeline for arterial spin labeling data from the Human Connectome Project Lifespan datasets.
+  example: |-
+    process_hcp_asl --studydir ${StudyDir} --subid ${Subjectid} \
+      --mbpcasl ${mbpcasl} --fmap_ap ${SEFM_AP} --fmap_pa ${SEFM_PA} \
+      --grads ${GradientCoeffs}
+  documentation: https://github.com/physimals/hcp-asl
+  citation: https://github.com/physimals/hcp-asl
 
 readme: |
+  ----------------------------------
   ## hcpasl/{{ context.version }} ##
-  HCP-ASL is a tool for processing ASL (Arterial Spin Labeling) data following the Human Connectome Project (HCP) minimal preprocessing pipelines. It provides a complete pipeline for processing ASL data, including motion correction, distortion correction, and calibration.
 
-  The tool requires FSL, FreeSurfer, Workbench and HCP Pipelines as dependencies which are all included in this container.
+  HCP-ASL is a minimal processing pipeline for arterial spin labeling data from the Human Connectome Project Lifespan datasets.
+
+  This container includes HCP-ASL, FSL, FreeSurfer, Connectome Workbench, and HCP Pipelines. HCP-ASL expects the runtime environment variables `FSLDIR`, `FREESURFER_HOME`, `CARET7DIR`, and `HCPPIPEDIR`; they are set inside this container.
 
   Example:
   ```
   process_hcp_asl --help
-  process_hcp_asl --subid ${Subjectid} --subdir ${SubDir} --mbpcasl ${mbpcasl} --fmap_ap ${SEFM_AP} --fmap_pa ${SEFM_PA} --grads ${GradientCoeffs}
+  process_hcp_asl --studydir ${StudyDir} --subid ${Subjectid} \
+    --mbpcasl ${mbpcasl} --fmap_ap ${SEFM_AP} --fmap_pa ${SEFM_PA} \
+    --grads ${GradientCoeffs}
   ```
 
   More documentation can be found here: https://github.com/physimals/hcp-asl
 
-  To run container outside of this environment: ml hcpasl/{{ context.version }}
-
   Citation:
   ```
-  If you use HCP-ASL in your research, please cite:
-  https://github.com/physimals/hcp-asl
+  HCP-ASL: https://github.com/physimals/hcp-asl
   ```
+
+  To run container outside of this environment: ml hcpasl/{{ context.version }}
+
+  ----------------------------------
