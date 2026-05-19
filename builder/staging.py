@@ -15,6 +15,7 @@ class DeclaredFile:
     contents: str | None = None
     executable: bool = False
     guest_filename: str | None = None
+    retry: int | None = None
 
 
 @dataclass
@@ -98,7 +99,12 @@ def materialize_plan(
             continue
 
         if file.url is not None:
-            source = http_cache.get(file.url, download=download)
+            source = http_cache.get(
+                file.url,
+                download=download,
+                file_name=file.name,
+                retry=file.retry,
+            )
             if not source.exists():
                 target = cache_dir / preferred
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -149,6 +155,7 @@ def declared_file_from_mapping(name: str, mapping: dict[str, object]) -> Declare
     filename = mapping.get("filename")
     contents = mapping.get("contents")
     executable = bool(mapping.get("executable", False))
+    retry = mapping.get("retry")
     url_str = str(url) if url is not None else None
     guest_filename = get_guest_filename(name, url_str)
     return DeclaredFile(
@@ -158,4 +165,5 @@ def declared_file_from_mapping(name: str, mapping: dict[str, object]) -> Declare
         contents=str(contents) if contents is not None else None,
         executable=executable,
         guest_filename=guest_filename,
+        retry=int(retry) if retry is not None else None,
     )
