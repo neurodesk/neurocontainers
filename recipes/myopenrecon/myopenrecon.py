@@ -1,0 +1,480 @@
+import ismrmrd
+import os
+import itertools
+import logging
+import traceback
+import numpy as np
+import numpy.fft as fft
+import xml.dom.minidom
+import base64
+import json
+import ctypes
+import re
+import mrdhelper
+import constants
+from time import perf_counter
+import nibabel as nib
+import subprocess
+
+
+# Folder for debug output files
+debugFolder = "/tmp/share/debug"
+
+def process(connection, config, metadata):
+    logging.info("Config: \n%s", config)
+
+    # Metadata should be MRD formatted header, but may be a string
+    # if it failed conversion earlier
+    try:
+        # Disabled due to incompatibility between PyXB and Python 3.8:
+        # https://github.com/pabigot/pyxb/issues/123
+        # # logging.info("Metadata: \n%s", metadata.toxml('utf-8'))
+
+        logging.info("Incoming dataset contains %d encodings", len(metadata.encoding))
+        logging.info("First encoding is of type '%s', with a matrix size of (%s x %s x %s) and a field of view of (%s x %s x %s)mm^3", 
+            metadata.encoding[0].trajectory, 
+            metadata.encoding[0].encodedSpace.matrixSize.x, 
+            metadata.encoding[0].encodedSpace.matrixSize.y, 
+            metadata.encoding[0].encodedSpace.matrixSize.z, 
+            metadata.encoding[0].encodedSpace.fieldOfView_mm.x, 
+            metadata.encoding[0].encodedSpace.fieldOfView_mm.y, 
+            metadata.encoding[0].encodedSpace.fieldOfView_mm.z)
+
+    except:
+        logging.info("Improperly formatted metadata: \n%s", metadata)
+
+    # Continuously parse incoming data parsed from MRD messages
+    currentSeries = 0
+    acqGroup = []
+    imgGroup = []
+    waveformGroup = []
+    try:
+        for item in connection:
+            # ----------------------------------------------------------
+            # Raw k-space data messages
+            # ----------------------------------------------------------
+            if isinstance(item, ismrmrd.Acquisition):
+                # Accumulate all imaging readouts in a group
+                if (not item.is_flag_set(ismrmrd.ACQ_IS_NOISE_MEASUREMENT) and
+                    not item.is_flag_set(ismrmrd.ACQ_IS_PARALLEL_CALIBRATION) and
+                    not item.is_flag_set(ismrmrd.ACQ_IS_PHASECORR_DATA) and
+                    not item.is_flag_set(ismrmrd.ACQ_IS_NAVIGATION_DATA)):
+                    acqGroup.append(item)
+
+
+            # ----------------------------------------------------------
+            # Image data messages
+            # ----------------------------------------------------------
+            elif isinstance(item, ismrmrd.Image):
+                # When this criteria is met, run process_group() on the accumulated
+                # data, which returns images that are sent back to the client.
+                # e.g. when the series number changes:
+                if item.image_series_index != currentSeries:
+                    logging.info("Processing a group of images because series index changed to %d", item.image_series_index)
+                    currentSeries = item.image_series_index
+                    image = process_image(imgGroup, connection, config, metadata)
+                    connection.send_image(image)
+                    imgGroup = []
+
+                # Only process magnitude images -- send phase images back without modification (fallback for images with unknown type)
+                if (item.image_type is ismrmrd.IMTYPE_MAGNITUDE) or (item.image_type == 0):
+                    imgGroup.append(item)
+                else:
+                    tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
+                    tmpMeta['Keep_image_geometry']    = 1
+                    item.attribute_string = tmpMeta.serialize()
+
+                    connection.send_image(item)
+                    continue
+
+            # ----------------------------------------------------------
+            # Waveform data messages
+            # ----------------------------------------------------------
+            elif isinstance(item, ismrmrd.Waveform):
+                waveformGroup.append(item)
+
+            elif item is None:
+                break
+
+            else:
+                logging.error("Unsupported data type %s", type(item).__name__)
+
+        # Extract raw ECG waveform data. Basic sorting to make sure that data 
+        # is time-ordered, but no additional checking for missing data.
+        # ecgData has shape (5 x timepoints)
+        if len(waveformGroup) > 0:
+            waveformGroup.sort(key = lambda item: item.time_stamp)
+            ecgData = [item.data for item in waveformGroup if item.waveform_id == 0]
+            ecgData = np.concatenate(ecgData,1)
+
+        if len(imgGroup) > 0:
+            logging.info("Processing a group of images (untriggered)")
+            image = process_image(imgGroup, connection, config, metadata)
+            connection.send_image(image)
+            imgGroup = []
+
+    except Exception as e:
+        logging.error(traceback.format_exc())
+        connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
+
+    finally:
+        connection.send_close()
+
+
+def compute_nifti_affine(image_header, voxel_size):
+    # MRD stores geometry in DICOM/LPS (x=Left, y=Posterior, z=Superior).
+    # NIfTI uses RAS (x=Right, y=Anterior, z=Superior), so negate x/y.
+    lps_to_ras = np.array([-1, -1, 1], dtype=float)
+
+    position = np.array(image_header.position) * lps_to_ras
+    read_dir = np.array(image_header.read_dir) * lps_to_ras
+    phase_dir = np.array(image_header.phase_dir) * lps_to_ras
+    slice_dir = np.array(image_header.slice_dir) * lps_to_ras
+
+    affine = np.eye(4)
+    affine[:3, :3] = np.column_stack([
+        voxel_size[0] * read_dir,
+        voxel_size[1] * phase_dir,
+        voxel_size[2] * slice_dir,
+    ])
+    affine[:3, 3] = position
+    return affine
+
+
+def compute_nifti_affine_expected_order(image_header, voxel_size, nifti_shape=None):
+    """
+    Build affine for NIfTI data arranged as [z, x, y].
+
+    To match scanner-style headers, the origin is shifted to the [0,0,0] voxel
+    in this reordered/flipped array layout.
+    """
+    lps_to_ras = np.array([-1, -1, 1], dtype=float)
+
+    position = np.array(image_header.position) * lps_to_ras
+    read_dir = np.array(image_header.read_dir) * lps_to_ras
+    phase_dir = np.array(image_header.phase_dir) * lps_to_ras
+    slice_dir = np.array(image_header.slice_dir) * lps_to_ras
+
+    affine = np.eye(4)
+    affine[:3, :3] = np.column_stack([
+        voxel_size[2] * slice_dir,   # NIfTI axis-0 (slices)
+        -voxel_size[0] * read_dir,   # NIfTI axis-1 (MRD x)
+        -voxel_size[1] * phase_dir,  # NIfTI axis-2 (MRD y)
+    ])
+
+    if nifti_shape is not None:
+        shape = np.asarray(nifti_shape[:3], dtype=float)
+        shape = np.maximum(shape - 1.0, 0.0)
+        affine[:3, 3] = position - affine[:3, :3].dot(shape)
+    else:
+        affine[:3, 3] = position
+
+    return affine
+
+
+def _meta_get_first(meta_obj, key):
+    value = meta_obj.get(key)
+    if isinstance(value, (list, tuple)):
+        if len(value) == 0:
+            return None
+        return value[0]
+    return value
+
+
+def _meta_dicom_json(meta_obj):
+    b64 = _meta_get_first(meta_obj, 'DicomJson')
+    if not b64:
+        return {}
+    try:
+        return json.loads(base64.b64decode(str(b64)).decode('utf-8'))
+    except Exception:
+        return {}
+
+
+def _dicom_tag_value(dicom_json, tag):
+    item = dicom_json.get(tag, {})
+    vals = item.get('Value', [])
+    if isinstance(vals, list) and len(vals) > 0:
+        return vals[0]
+    return None
+
+
+def _to_float_or_none(value):
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _format_dicom_time_hhmmss_msec(value):
+    if value is None:
+        return None
+    value = str(value).strip()
+    if len(value) < 6:
+        return None
+
+    hhmmss = value[:6]
+    if '.' not in value:
+        return hhmmss
+
+    frac = value.split('.', 1)[1]
+    frac = (frac + "000")[:3]
+    return f"{hhmmss}.{frac}"
+
+
+def process_image(images, connection, config, metadata):
+    if len(images) == 0:
+        return []
+    # Note: The MRD Image class stores data as [cha z y x]
+    # Extract image data into a 5D array of size [img cha z y x]
+    data = np.stack([img.data                              for img in images])
+    head = [img.getHead()                                  for img in images]
+    meta = [ismrmrd.Meta.deserialize(img.attribute_string) for img in images]
+
+    # Diagnostic info
+    matrix    = np.array(head[0].matrix_size  [:]) 
+    fov       = np.array(head[0].field_of_view[:])
+    if matrix[2] != len(images):
+        matrix[2] = len(images)
+    slice_thickness = fov[2]
+    fov[2] = slice_thickness * len(images)
+    voxelsize = fov/matrix
+    read_dir  = np.array(images[0].read_dir )
+    phase_dir = np.array(images[0].phase_dir)
+    slice_dir = np.array(images[0].slice_dir)
+    logging.info(f'MRD computed matrix [x y z] : {matrix   }')
+    logging.info(f'MRD computed fov     [x y z] : {fov      }')
+    logging.info(f'MRD computed voxel   [x y z] : {voxelsize}')
+    logging.info(f'MRD read_dir         [x y z] : {read_dir }')
+    logging.info(f'MRD phase_dir        [x y z] : {phase_dir}')
+    logging.info(f'MRD slice_dir        [x y z] : {slice_dir}')
+
+    logging.debug("Original image data before transposing is %s" % (data.shape,))
+
+    # Reformat data to [y x img cha z], i.e. [row col slice ...]
+    data = data.transpose((3, 4, 0, 1, 2))
+
+    logging.debug("Original image data after transposing is %s" % (data.shape,))
+
+    data = np.squeeze(data)
+    logging.debug("Squeezed to 3D: %s" % (data.shape,))
+
+    # Transpose from [y, x, z] to NIfTI [z, x, y].
+    if data.ndim == 2:
+        data_nifti = np.asarray(data[None, :, :], dtype=np.int16)
+    else:
+        data_nifti = np.asarray(data.transpose((2, 1, 0)), dtype=np.int16)
+    # Match scanner/reference voxel ordering.
+    data_nifti = np.ascontiguousarray(np.flip(data_nifti, axis=(0, 1, 2)))
+
+    # Build scanner-style affine for [z, x, y] data ordering.
+    affine = compute_nifti_affine_expected_order(head[0], voxelsize, nifti_shape=data_nifti.shape)
+
+    new_img = nib.nifti1.Nifti1Image(data_nifti, affine)
+
+    header = new_img.header
+    header.set_data_dtype(np.int16)
+    header.set_dim_info(freq=1, phase=0, slice=2)
+    header.set_xyzt_units(xyz='mm', t='sec')
+    header["pixdim"][0] = 1.0
+    header["pixdim"][1] = float(voxelsize[2])
+    header["pixdim"][2] = float(voxelsize[0])
+    header["pixdim"][3] = float(voxelsize[1])
+    header["pixdim"][5] = 0.0
+    header["pixdim"][6] = 0.0
+    header["pixdim"][7] = 0.0
+
+    # Populate scanner-style descriptive fields from DICOM metadata.
+    djson = _meta_dicom_json(meta[0]) if len(meta) > 0 else {}
+    te = _to_float_or_none(_dicom_tag_value(djson, "00180081"))  # EchoTime
+    tr = _to_float_or_none(_dicom_tag_value(djson, "00180080"))  # RepetitionTime
+    acq_time = _format_dicom_time_hhmmss_msec(_dicom_tag_value(djson, "00080032"))  # AcquisitionTime
+    aux_text = _dicom_tag_value(djson, "00204000")  # ImageComments
+    if aux_text is None and len(meta) > 0:
+        aux_text = _meta_get_first(meta[0], 'ImageComments')
+
+    # TE in many DICOMs is seconds for derived/converted datasets; convert to ms.
+    if te is not None and te < 1.0:
+        te = te * 1000.0
+    # NIfTI time units are seconds.
+    if tr is not None and tr > 100.0:
+        tr = tr / 1000.0
+    if tr is not None:
+        header["pixdim"][4] = float(tr)
+
+    desc_parts = []
+    if te is not None:
+        desc_parts.append(f"TE={round(te, 1):g}")
+    if acq_time:
+        desc_parts.append(f"Time={acq_time}")
+    header["descrip"] = ";".join(desc_parts)
+    aux_text = str(aux_text or "")
+    aux_text = re.sub(r"\(lambda\s*=\s*", "(lambda ", aux_text)
+    if aux_text.startswith("DENOISED IMAGE (lambda"):
+        aux_text = "DENOISED IMAGE (lambda "
+    header["aux_file"] = aux_text
+    header.set_slope_inter(1.0, 0.0)
+    new_img.set_qform(affine, code=1)
+    new_img.set_sform(affine, code=1)
+
+    nib.save(new_img, 't1_from_h5.nii')
+
+    # bet2 Usage: 
+    # bet2 <input_fileroot> <output_fileroot> [options]
+    # Optional arguments (You may optionally specify one or more of):
+        # -o,--outline    generate brain surface outline overlaid onto original image
+        # -m,--mask <m>   generate binary brain mask
+        # -s,--skull      generate approximate skull image
+        # -n,--nooutput   don't generate segmented brain image output
+        # -f <f>          fractional intensity threshold (0->1); default=0.5; smaller values give larger brain outline estimates
+        # -g <g>          vertical gradient in fractional intensity threshold (-1->1); default=0; positive values give larger brain outline at bottom, smaller at top
+        # -r,--radius <r> head radius (mm not voxels); initial surface sphere is set to half of this
+        # -w,--smooth <r> smoothness factor; default=1; values smaller than 1 produce more detailed brain surface, values larger than one produce smoother, less detailed surface
+        # -c <x y z>      centre-of-gravity (voxels not mm) of initial mesh surface.
+        # -t,--threshold  -apply thresholding to segmented brain image and mask
+        # -e,--mesh       generates brain surface as mesh in vtk format
+        # -v,--verbose    switch on diagnostic messages
+        # -h,--help       displays this help, then exits
+    subprocess.run(["bet2", "t1_from_h5.nii", "t1_from_h5_bet2.nii.gz", "-f", "0.65"])
+
+    data_img = nib.load('t1_from_h5_bet2.nii.gz')
+    data = data_img.get_fdata()
+    if data.ndim == 2:
+        data = data[:, :, None]
+    # Undo voxel flip applied at NIfTI write stage.
+    data = np.flip(data, axis=(0, 1, 2))
+    # Bring [z, x, y] from NIfTI back to [y, x, z].
+    if data.ndim >= 3:
+        data = data.transpose((2, 1, 0))
+    data = data[:, :, :, None, None]
+    data = data.transpose((0, 1, 3, 4, 2))
+
+    # Determine max value (12 or 16 bit)
+    BitsStored = 12
+    # if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
+    #     BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
+    maxVal = 2**BitsStored - 1
+
+    # Normalize Data and convert to int16
+    data = data.astype(np.float64)
+    data *= maxVal/data.max()
+    data = np.around(data)
+    data = data.astype(np.int16)
+
+    currentSeries = 0
+
+    # Re-slice image data back into 2D images
+    imagesOut = [None] * data.shape[-1]
+    # segmentationOut = [None] * data.shape[-1]
+    for iImg in range(data.shape[-1]):
+        # Create new MRD instance for the final image
+        # Transpose from convenience shape of [y x z cha] to MRD Image shape of [cha z y x]
+        # from_array() should be called with 'transpose=False' to avoid warnings, and when called
+        # with this option, can take input as: [cha z y x], [z y x], or [y x]
+        # imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
+        imagesOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
+        # segmentationOut[iImg] = ismrmrd.Image.from_array(data[...,iImg].transpose((3, 2, 0, 1)), transpose=False)
+
+        # Create a copy of the original fixed header and update the data_type
+        # (we changed it to int16 from all other types)
+        oldHeader = head[iImg]
+        oldHeader.data_type = imagesOut[iImg].data_type
+
+        # Supported ISMRMRD Data Types:
+        #     ISMRMRD_USHORT   = 1, /**< corresponds to uint16_t */
+        #     ISMRMRD_SHORT    = 2, /**< corresponds to int16_t */
+        #     ISMRMRD_FLOAT    = 5, /**< corresponds to float */
+        #     ISMRMRD_CXFLOAT  = 7, /**< corresponds to complex float */
+
+        # NOT SUPPORTED:
+        # ISMRMRD_UINT     = 3, /**< corresponds to uint32_t */
+        # ISMRMRD_INT      = 4, /**< corresponds to int32_t */
+        # ISMRMRD_DOUBLE   = 6, /**< corresponds to double */
+        # ISMRMRD_CXDOUBLE = 8  /**< corresponds to complex double */
+
+        # check if datatype is supported and if not show an error and stop:
+        if imagesOut[iImg].data_type not in [ismrmrd.DATATYPE_USHORT, ismrmrd.DATATYPE_SHORT, ismrmrd.DATATYPE_FLOAT, ismrmrd.DATATYPE_CXFLOAT]:
+            logging.error(f"Unsupported data type {imagesOut[iImg].data_type} in output image {iImg}. Supported types are: uint16, int16, float32, complex float32.")
+            raise ValueError(f"Unsupported data type {imagesOut[iImg].data_type} in output image {iImg}. Supported types are: uint16, int16, float32, complex float32.")
+
+
+        # Unused example, as images are grouped by series before being passed into this function now
+        # oldHeader.image_series_index = currentSeries+1
+
+        # Increment series number when flag detected (i.e. follow ICE logic for splitting series)
+        if mrdhelper.get_meta_value(meta[iImg], 'IceMiniHead') is not None:
+            if mrdhelper.extract_minihead_bool_param(base64.b64decode(meta[iImg]['IceMiniHead']).decode('utf-8'), 'BIsSeriesEnd') is True:
+                currentSeries += 1
+
+        imagesOut[iImg].setHead(oldHeader)
+
+        # Create a copy of the original ISMRMRD Meta attributes and update
+        tmpMeta = meta[iImg]
+        tmpMeta['DataRole']                       = 'Image'
+        tmpMeta['ImageProcessingHistory']         = ['PYTHON', 'PROSTATEFIDUCIALSEG']
+        tmpMeta['WindowCenter']                   = str((maxVal+1)/2)
+        tmpMeta['WindowWidth']                    = str((maxVal+1))
+        tmpMeta['SequenceDescriptionAdditional']  = 'OpenRecon'
+        tmpMeta['Keep_image_geometry']            = 1
+
+        logging.info("Creating ROI_example")
+        tmpMeta['ROI_example'] = create_example_roi(data.shape)
+
+        # Add image orientation directions to MetaAttributes if not already present
+        if tmpMeta.get('ImageRowDir') is None:
+            tmpMeta['ImageRowDir'] = ["{:.18f}".format(oldHeader.read_dir[0]), "{:.18f}".format(oldHeader.read_dir[1]), "{:.18f}".format(oldHeader.read_dir[2])]
+
+        if tmpMeta.get('ImageColumnDir') is None:
+            tmpMeta['ImageColumnDir'] = ["{:.18f}".format(oldHeader.phase_dir[0]), "{:.18f}".format(oldHeader.phase_dir[1]), "{:.18f}".format(oldHeader.phase_dir[2])]
+
+        metaXml = tmpMeta.serialize()
+        # logging.debug("Image MetaAttributes: %s", xml.dom.minidom.parseString(metaXml).toprettyxml())
+        logging.debug("Image data has %d elements", imagesOut[iImg].data.size)
+
+        imagesOut[iImg].attribute_string = metaXml
+
+    # Send a copy of original (unmodified) images back too if selected
+    opre_sendoriginal = mrdhelper.get_json_config_param(config, 'sendoriginal', default=True, type='bool')
+    if opre_sendoriginal:
+        stack = traceback.extract_stack()
+        if stack[-2].name == 'process_raw':
+            logging.warning('sendOriginal is true, but input was raw data, so no original images to return!')
+        else:
+            logging.info('Sending a copy of original unmodified images due to sendOriginal set to True')
+            # In reverse order so that they'll be in correct order as we insert them to the front of the list
+            for image in reversed(images):
+                # Create a copy to not modify the original inputs
+                tmpImg = image
+
+                # Change the series_index to have a different series
+                tmpImg.image_series_index = 99
+
+                # Ensure Keep_image_geometry is set to not reverse image orientation
+                tmpMeta = ismrmrd.Meta.deserialize(tmpImg.attribute_string)
+                tmpMeta['Keep_image_geometry'] = 1
+                tmpImg.attribute_string = tmpMeta.serialize()
+
+                imagesOut.insert(0, tmpImg)
+
+    return imagesOut
+
+# Create an example ROI <3
+def create_example_roi(img_size):
+    t = np.linspace(0, 2*np.pi)
+    x = 16*np.power(np.sin(t), 3)
+    y = -13*np.cos(t) + 5*np.cos(2*t) + 2*np.cos(3*t) + np.cos(4*t)
+
+    # Place ROI in bottom right of image, offset and scaled to 10% of the image size
+    x = (x-np.min(x)) / (np.max(x) - np.min(x))
+    y = (y-np.min(y)) / (np.max(y) - np.min(y))
+    x = (x * 0.08*img_size[0]) + 0.82*img_size[0]
+    y = (y * 0.10*img_size[1]) + 0.80*img_size[1]
+
+    rgb = (1,0,0)  # Red, green, blue color -- normalized to 1
+    thickness  = 1 # Line thickness
+    style      = 0 # Line style (0 = solid, 1 = dashed)
+    visibility = 1 # Line visibility (0 = false, 1 = true)
+
+
+    roi = mrdhelper.create_roi(x, y, rgb, thickness, style, visibility)
+    return roi

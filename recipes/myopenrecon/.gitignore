@@ -1,0 +1,4 @@
+dicom_data/
+*.h5
+*.nii
+*.nii.gz
