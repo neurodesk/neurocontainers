@@ -1,0 +1,23 @@
+tests:
+  - name: Segmentator command line help
+    script: |
+      segmentator --help
+      segmentator_filters --help
+
+  - name: Segmentator Python imports
+    script: |
+      python -c "from importlib.metadata import version; import segmentator, nibabel, scipy, compoda; from segmentator.deriche_3D import deriche_3D; print(version('segmentator'))"
+
+  - name: Segmentator no-GUI histogram smoke test
+    script: |
+      tmpdir="$(mktemp -d)"
+      cd "${tmpdir}"
+      python - <<'PY'
+      import numpy as np
+      import nibabel as nib
+
+      data = np.arange(64, dtype=np.float32).reshape((4, 4, 4))
+      nib.save(nib.Nifti1Image(data, np.eye(4)), "synthetic.nii.gz")
+      PY
+      MPLBACKEND=Agg segmentator synthetic.nii.gz --nogui --gramag numpy
+      test -f synthetic_volHist_pcMax97pt5_pcMin2pt5_sc400.npy
