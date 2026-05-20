@@ -602,6 +602,8 @@ class ContainerRecipe:
     deploy: Optional[DeployInfo] = attrs.field(default=None)
     tests: Optional[List[Union[BuiltinTest, ScriptTest]]] = attrs.field(default=None)
     categories: Optional[List[str]] = attrs.field(default=None)
+    show_in_menu: Optional[bool] = attrs.field(default=None)
+    show_in_applist: Optional[bool] = attrs.field(default=None)
     gui_apps: Optional[List[GUIApp]] = attrs.field(default=None)
     apptainer_args: Optional[List[str]] = attrs.field(default=None)
     draft: Optional[bool] = attrs.field(default=None)

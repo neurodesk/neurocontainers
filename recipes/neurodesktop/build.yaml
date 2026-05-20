@@ -11,6 +11,9 @@ architectures:
   - x86_64
   - aarch64
 
+show_in_menu: false
+show_in_applist: false
+
 variables:
   guacamole_version: "1.6.0"
   tomcat_rel: "9"

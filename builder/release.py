@@ -71,6 +71,9 @@ def release_data(
         },
         "categories": recipe.get("categories", ["other"]),
     }
+    for visibility_field in ("show_in_menu", "show_in_applist"):
+        if recipe.get(visibility_field) is not None:
+            data[visibility_field] = recipe[visibility_field]
     if is_arm64:
         data["architecture"] = normalized_architecture
     for gui_app in recipe.get("gui_apps", []) or []:

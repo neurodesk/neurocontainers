@@ -12,6 +12,9 @@ copyright:
 categories:
   - programming
 
+show_in_menu: false
+show_in_applist: false
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04

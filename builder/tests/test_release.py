@@ -18,6 +18,22 @@ def test_release_shape_matches_current_contract() -> None:
     assert data["apps"]["dcm2niix v1.0.20240202"]["exec"] == ""
 
 
+def test_release_preserves_container_visibility_flags() -> None:
+    data = release_data(
+        "tool",
+        "1.2.3",
+        {
+            "categories": ["workflows"],
+            "show_in_menu": False,
+            "show_in_applist": False,
+        },
+        "20260102",
+    )
+
+    assert data["show_in_menu"] is False
+    assert data["show_in_applist"] is False
+
+
 def test_arm64_release_shape_matches_current_contract() -> None:
     data = release_data(
         "tool",

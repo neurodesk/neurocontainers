@@ -4,6 +4,7 @@
 - always use {{ context.version }} instead of the hardcoded version number
 - always use `{{ get_file("filename") }}` to reference declared files in run directives instead of using `wget` or `curl` directly
 - the home directory will not be available during container runtime! Files cannot be stored under /home if they are needed during runtime!
+- make sure that every build.yaml recipe has an icon - first try to find the official icon, if none exist make one up based on the tool description.
 
 
 ## Environment Setup
