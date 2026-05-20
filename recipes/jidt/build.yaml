@@ -1,0 +1,165 @@
+name: jidt
+version: "1.6"
+
+architectures:
+  - x86_64
+
+variables:
+  rstudio_version: "2022.07.2"
+  rstudio_build: "576"
+
+files:
+  - name: jidt_zip
+    url: "https://lizier.me/joseph/software/jidt/download.php?file=infodynamics-dist-{{ context.version }}.zip"
+  - name: rstudio_deb
+    url: "https://download1.rstudio.org/desktop/jammy/amd64/rstudio-{{ context.rstudio_version }}-{{ context.rstudio_build }}-amd64.deb"
+  - name: dependencies.R
+    filename: dependencies.R
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - apt-transport-https
+        - build-essential
+        - ca-certificates
+        - cmake
+        - curl
+        - dirmngr
+        - gdebi-core
+        - gfortran
+        - git
+        - gnupg
+        - libblas-dev
+        - libblas64-dev
+        - libcairo2-dev
+        - libclang-dev
+        - libcurl4-openssl-dev
+        - libfftw3-dev
+        - libfribidi-dev
+        - libgdal-dev
+        - libgeos-dev
+        - libgfortran5
+        - libharfbuzz-dev
+        - liblapack-dev
+        - libnetcdf-dev
+        - libnode-dev
+        - libpq5
+        - libproj-dev
+        - libssl-dev
+        - libudunits2-dev
+        - libxml2-dev
+        - locales
+        - openjdk-11-jdk
+        - python3-fire
+        - python3-pandas
+        - python3-pip
+        - python3-pyqt5
+        - python3-tk
+        - python-is-python3
+        - qtbase5-dev
+        - r-base
+        - r-base-dev
+        - r-cran-ncdf4
+        - software-properties-common
+        - sudo
+        - unzip
+        - vim
+        - wget
+
+    - run:
+        - printf '#!/bin/bash\nls -la "$@"\n' > /usr/bin/ll
+        - chmod +x /usr/bin/ll
+        - locale-gen en_AU.UTF-8
+
+    - workdir: /opt/jidt-{{ context.version }}
+
+    - run:
+        - unzip {{ get_file("jidt_zip") }} -d /opt/jidt-{{ context.version }}
+
+    - template:
+        name: miniconda
+        version: latest
+        conda_install: "python=3.9 scipy scikit-learn matplotlib jupyter seaborn numpy pandas"
+        pip_install: "osfclient jpype1"
+
+    - run:
+        - cp {{ get_file("rstudio_deb") }} /opt/rstudio-{{ context.rstudio_version }}-{{ context.rstudio_build }}-amd64.deb
+        - gdebi -q -n /opt/rstudio-{{ context.rstudio_version }}-{{ context.rstudio_build }}-amd64.deb
+        - rm -f /opt/rstudio-{{ context.rstudio_version }}-{{ context.rstudio_build }}-amd64.deb
+
+    - copy: dependencies.R /opt/dependencies.R
+
+    - run:
+        - R CMD javareconf
+        - Rscript /opt/dependencies.R
+
+    - environment:
+        DEPLOY_PATH: /opt/jidt-{{ context.version }}
+        LC_ALL: en_AU.UTF-8
+        LANGUAGE: en_AU.UTF-8
+
+    - copy: README.md /README.md
+
+    - test:
+        name: jidt python demo
+        script: |
+          cd /opt/jidt-{{ context.version }}/infodynamics-dist-{{ context.version }}/demos/python
+          python3 example2TeMultidimBinaryData.py
+
+    - test:
+        name: rJava available
+        script: |
+          Rscript -e "library(rJava); cat('rJava loaded\n')"
+
+deploy:
+  path:
+    - /opt/jidt-{{ context.version }}
+  bins:
+    - Rscript
+    - rstudio
+    - python
+    - python3
+
+categories:
+  - statistics
+  - programming
+
+readme: |-
+  ----------------------------------
+  ## jidt/{{ context.version }} ##
+
+  JIDT: Java Information Dynamics Toolkit for studying information-theoretic
+  measures of computation in complex systems.
+
+  JIDT provides a stand-alone, open-source Java implementation, also usable in
+  Matlab, Octave, Python, R, Julia and Clojure, of information-theoretic
+  measures of distributed computation in complex systems: information storage,
+  transfer and modification.
+
+  Examples can be found in `/opt/jidt-{{ context.version }}/infodynamics-dist-{{ context.version }}/demos`.
+
+  Example in R:
+  ```
+  Rscript /opt/jidt-{{ context.version }}/infodynamics-dist-{{ context.version }}/demos/r/example1TeBinaryData.r
+  ```
+
+  More documentation can be found here: https://github.com/jlizier/jidt
+
+  To run applications outside of this container: ml jidt/{{ context.version }}
+
+  Container includes Python and RStudio. Other data analysis environments you
+  may want to use, such as Matlab, Octave, Julia, and Clojure, are missing.
+
+  Citation:
+  ```
+  https://arxiv.org/abs/1408.3270
+  ```
+
+  ----------------------------------
