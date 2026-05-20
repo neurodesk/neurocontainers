@@ -75,6 +75,18 @@ def _hash_obj(value: Any) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _render_release_recipe(
+    recipe: dict[str, Any],
+    renderer: TemplateRenderer,
+    context: RenderContext,
+) -> dict[str, Any]:
+    rendered_recipe = dict(recipe)
+    for key in ("categories", "apptainer_args", "show_in_menu", "show_in_applist", "gui_apps"):
+        if key in rendered_recipe:
+            rendered_recipe[key] = renderer.render_value(rendered_recipe[key], context)
+    return rendered_recipe
+
+
 @dataclass
 class RecipeFile:
     path: Path
@@ -511,7 +523,7 @@ def compile_recipe(
         definition.add(Entrypoint("/neurodocker/startup.sh"))
 
     return CompiledRecipe(
-        recipe=recipe,
+        recipe=_render_release_recipe(recipe, renderer, context),
         recipe_dir=recipe_dir,
         name=recipe["name"],
         version=version,

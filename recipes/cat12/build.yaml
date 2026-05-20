@@ -1,7 +1,6 @@
 # this template file builds cat12, new versions here: https://github.com/ChristianGaser/cat12/releases
 name: cat12
 version: "26.0.rc3"
-draft: true
 
 copyright:
   - license: GPL-2.0
