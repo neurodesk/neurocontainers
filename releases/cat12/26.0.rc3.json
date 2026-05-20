@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "cat12 26.0.rc3": {
+      "version": "20260519",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "cat12GUI-cat12 26.0.rc3": {
+      "version": "20260519",
+      "exec": "bash /opt/cat12/run_spm25.sh {{ context.matlab_mcr_root }}/",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "image registration",
+    "structural imaging"
+  ]
+}
