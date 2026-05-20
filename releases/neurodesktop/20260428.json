@@ -10,5 +10,7 @@
     "programming",
     "visualization",
     "data management"
-  ]
+  ],
+  "show_in_menu": false,
+  "show_in_applist": false
 }
