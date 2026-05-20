@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "hcpasl 0.2.0": {
+      "version": "20260519",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "workflows"
+  ]
+}
