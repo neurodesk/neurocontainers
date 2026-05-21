@@ -95,7 +95,7 @@ readme: |
   ```
   import nipype.interfaces.spm as spm
 
-  matlab_cmd = '/opt/cat12/run_spm25.sh {{ context.matlab_mcr_root }}/ script'
+  matlab_cmd = 'run_spm25.sh {{ context.matlab_mcr_root }}/ script'
   spm.SPMCommand.set_mlab_paths(matlab_cmd=matlab_cmd, use_mcr=True)
 
   import nipype.interfaces.cat12 as cat12
@@ -118,4 +118,4 @@ categories:
 
 gui_apps:
   - name: "cat12GUI"
-    exec: "bash /opt/cat12/run_spm25.sh {{ context.matlab_mcr_root }}/"
+    exec: "bash run_spm25.sh {{ context.matlab_mcr_root }}/"
