@@ -1,12 +1,12 @@
 {
   "apps": {
     "cat12 26.0.rc3": {
-      "version": "20260520",
+      "version": "20260521",
       "exec": "",
       "apptainer_args": []
     },
     "cat12GUI-cat12 26.0.rc3": {
-      "version": "20260520",
+      "version": "20260521",
       "exec": "bash run_spm25.sh /opt/mcr/R2023b/",
       "apptainer_args": []
     }
