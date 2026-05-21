@@ -2,6 +2,11 @@ name: noddi
 version: "1.0"
 architectures:
   - x86_64
+
+variables:
+  noddi_source_revision: 332c4ff5665e617e764a54efc7c25ccb23c0bb0f
+  matlab_runtime_root: /usr/local/MATLAB/v99
+
 readme: |-
   ----------------------------------
   ## noddi/{{ context.version }} ##
@@ -21,7 +26,7 @@ readme: |-
   ```
   singularity run --cleanenv \
       --bind /path/to/data:/In_fold \
-      noddi_1.0.sif \
+      noddi_{{ context.version }}.sif \
       /In_fold/DWI.nii.gz \
       /In_fold/brain_mask.nii.gz \
       /In_fold/NODDI_roi.mat \
@@ -47,6 +52,8 @@ readme: |-
   ----------------------------------
 
 files:
+  - name: noddi_source
+    url: https://github.com/CyclotronResearchCentre/NODDI_singularity/archive/{{ context.noddi_source_revision }}.zip
   - name: noddi_wrapper
     contents: |
       #!/usr/bin/env bash
@@ -79,7 +86,7 @@ files:
           echo "  noddi DWI.nii.gz mask.nii.gz NODDI_roi.mat data.bval data.bvec FittedParams.mat output"
           exit 1
       fi
-      exec bash /opt/ss_noddi/run_ss_noddi.sh /usr/local/MATLAB/v99 "$@"
+      exec bash /opt/ss_noddi/run_ss_noddi.sh "${MCRROOT:-{{ context.matlab_runtime_root }}}" "$@"
 
 build:
   kind: neurodocker
@@ -90,19 +97,19 @@ build:
         DEBIAN_FRONTEND: noninteractive
     - template:
         name: matlabmcr
+        curl_opts: "-fsSL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 3600"
         install_path: /usr/local/MATLAB
         version: 2020b
     - run:
         - mkdir -p /In_fold
         - mkdir -p /Out_fold
     - install:
-        curl unzip
+        unzip
     - run:
         - mkdir -p /opt/ss_noddi
-        - curl -fsSL -o /tmp/ss_noddi.zip https://github.com/CyclotronResearchCentre/NODDI_singularity/archive/refs/heads/main.zip
-        - unzip -q /tmp/ss_noddi.zip -d /opt/ss_noddi_tmp
-        - cp -r /opt/ss_noddi_tmp/NODDI_singularity-main/ss_noddi_App/* /opt/ss_noddi/
-        - rm -rf /opt/ss_noddi_tmp /tmp/ss_noddi.zip
+        - unzip -q {{ get_file("noddi_source") }} -d /opt/ss_noddi_tmp
+        - cp -r /opt/ss_noddi_tmp/NODDI_singularity-{{ context.noddi_source_revision }}/ss_noddi_App/* /opt/ss_noddi/
+        - rm -rf /opt/ss_noddi_tmp
         - chmod +x /opt/ss_noddi/run_ss_noddi.sh
         - chmod +x /opt/ss_noddi/ss_noddi
     - copy:
