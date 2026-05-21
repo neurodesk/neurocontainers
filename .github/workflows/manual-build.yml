@@ -11,15 +11,21 @@ on:
   workflow_dispatch:
     inputs:
       applications:
-        description: 'Applications (comma separated)'
+        description: 'Applications (comma separated). When network_probe_only=true, any placeholder works.'
         required: true
         type: string
+      network_probe_only:
+        description: 'Run only the network probe (no Docker build). Diagnostic.'
+        required: false
+        type: boolean
+        default: false
       runner:
         description: 'Runner pool to use'
         required: true
         type: choice
         options:
         - "neurodesk-arcrunner-neurocontainers"
+        - "neurodesk-syd-arcrunner-neurocontainers"
         - "blacksmith-8vcpu-ubuntu-2404"
         - "blacksmith-8vcpu-ubuntu-2404-arm"
         - "ubuntu-22.04"
@@ -72,7 +78,15 @@ on:
         default: false
 
 jobs:
+  network-probe:
+    if: ${{ github.event.inputs.network_probe_only == 'true' }}
+    uses: ./.github/workflows/network-probe.yml
+    with:
+      runner: ${{ github.event.inputs.runner }}
+      samples: "5"
+
   list-apps:
+    if: ${{ github.event.inputs.network_probe_only != 'true' }}
     runs-on: ubuntu-22.04
     outputs:
       app_list: ${{ steps.process_app_list.outputs.app_list }}
@@ -94,6 +108,9 @@ jobs:
         case "$CHOICE" in
           "neurodesk-arcrunner-neurocontainers")
             runner='"neurodesk-arcrunner-neurocontainers"'
+            ;;
+          "neurodesk-syd-arcrunner-neurocontainers")
+            runner='"neurodesk-syd-arcrunner-neurocontainers"'
             ;;
           "blacksmith-8vcpu-ubuntu-2404"|"blacksmith-8vcpu-ubuntu-2404-arm"|"ubuntu-22.04"|"self-hosted")
             runner="\"$CHOICE\""
