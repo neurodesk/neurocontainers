@@ -1,0 +1,104 @@
+name: matlabruntime
+version: 2026a
+
+copyright:
+  - name: MATLAB Runtime
+    url: https://www.mathworks.com/products/compiler/matlab-runtime.html
+
+architectures:
+  - x86_64
+
+variables:
+  matlab_release: R{{ context.version }}
+  matlab_runtime_root: /opt/matlabruntime/{{ context.matlab_release }}
+
+build:
+  kind: neurodocker
+  base-image: containers.mathworks.com/matlab-runtime:r{{ context.version }}
+  pkg-manager: apt
+  directives:
+    - environment:
+        AGREE_TO_MATLAB_RUNTIME_LICENSE: "yes"
+        MCRROOT: "{{ context.matlab_runtime_root }}"
+        MATLABCMD: "{{ context.matlab_runtime_root }}/toolbox/matlab"
+        XAPPLRESDIR: "{{ context.matlab_runtime_root }}/x11/app-defaults"
+        LD_LIBRARY_PATH: >-
+          $LD_LIBRARY_PATH:{{ context.matlab_runtime_root }}/runtime/glnxa64:{{ context.matlab_runtime_root }}/bin/glnxa64:{{ context.matlab_runtime_root }}/sys/os/glnxa64:{{ context.matlab_runtime_root }}/sys/opengl/lib/glnxa64:{{ context.matlab_runtime_root }}/extern/bin/glnxa64
+        PATH: "{{ context.matlab_runtime_root }}/bin/glnxa64:$PATH"
+
+    - copy:
+        - matlabruntime-info
+        - /usr/local/bin/matlabruntime-info
+
+    - run:
+        - chmod 0755 /usr/local/bin/matlabruntime-info
+        - test -d "{{ context.matlab_runtime_root }}/runtime/glnxa64"
+        - test -d "{{ context.matlab_runtime_root }}/bin/glnxa64"
+        - test -d "{{ context.matlab_runtime_root }}/toolbox/matlab"
+
+deploy:
+  bins:
+    - matlabruntime-info
+  path:
+    - "{{ context.matlab_runtime_root }}/bin/glnxa64"
+
+files:
+  - name: matlabruntime-info
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      release="R{{ context.version }}"
+      runtime_root="${MCRROOT:-/opt/matlabruntime/${release}}"
+      matlab_cmd="${MATLABCMD:-${runtime_root}/toolbox/matlab}"
+
+      test -d "${runtime_root}/runtime/glnxa64"
+      test -d "${runtime_root}/bin/glnxa64"
+      test -d "${runtime_root}/toolbox/matlab"
+
+      printf 'MATLAB Runtime\n'
+      printf 'Release: %s\n' "${release}"
+      printf 'Root: %s\n' "${runtime_root}"
+      printf 'MATLABCMD: %s\n' "${matlab_cmd}"
+      printf 'AGREE_TO_MATLAB_RUNTIME_LICENSE: %s\n' "${AGREE_TO_MATLAB_RUNTIME_LICENSE:-unset}"
+
+categories:
+  - programming
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAGKADAAQAAAABAAAAGAAAAADiNXWtAAADsElEQVRIDeWTW2hcVRSG/733ucyZM3Nm5mRmkqa5tbbSTDQGE+hUQVDqLSGmKq21D16ovolvSn0pVSz6IIKgLViwoIg6iCLairRSY9OWXtKWGC2WIS0Vi2RM2mQ6lzPnst0nMmVih8ToY9fLPmettf9vrbX3Bm5ae3jDS7dsa7x95WIDoIsl1Is3Z0ptTYVLh/pT3vC3a3o66uVUff8JEDnw0espnm3t3RprMcJ8e1Ws3rpkQHznkQHzwpktHco0eEpCyGSbvu7sXF1P3PctCRDbMdIWyk+915o9xhJRDVwDzKSs64q0+X8D2l/4cIViFz6LTZxpXz57CeGAClp2IUcJJEYfz3R1KfUgUj1nrW/tnonGXPanl91SfnMsN9HcfHYf4poMlTGQHAcNU6gKua2BSj1i34navf73goCmVzKJ2d9+/UYrXOkzzh8HsQpomr4Iw9SgEArvCgELEBgaY4W8PbQkwAMfZFtLn761S8r93ifPTKISMqEWp5FkLkKiA4kSeHmAyH9DaB5D+1eteq0/m7Vqu5jXwcZMhlWsvrssz30KZWsolu5P2F++Kyq9jEokgY6ronpdgR6QwHxAWUgxMYYggUJJqhLT0sIzfAPgsY9/aZcRGHRtbwuHmyZMJtwrQTJiwvssJk8PIzJ+WFTvICjr0DU2B+C2kCKAEqLQZUrKZXfTPwFz15Q6tMch2Okp+jrb9YhdLIA4DojnohwIg89Oo61wGYbqVy8LgOiAEXDHr1XcIp2CSgSUkMEDvb0R31u1OcDnT6/5qlxw0qVi/ntOZSHMoXAPljjI3OiPaDl3CEkx95Aiwwj6AAYqRiNSxBUlCEckGGGGIGOtjNjrq+L+ev2h7Xv+1nOYyQ44pdKrsucVbdu6OnV2BB1HP0G7yueqj4r5xwzxenUJVBxuQKJwPX6+QLw3KoTvlRmpiKPZWgsQE7zRBt8+0TVpezMr33nyodW4tssIqHJDOIAmU8WyeACJhIxoowI7gP1M48+EXzyc81WOr7vjQcvh71dcb3D96fEx31cX4AeqtrtzxZ4WU3su3qDAjCoIiVEYUQm2Qo6IFzZgbjs4U83115G13WkBSN17anyvEOeLAkafuLMzuVwdDUZErRxQKYVdwQXLofcte/OHi7Xi1e/vurv1Y2NjpR2AtyjA3zSbuecLTaOPekWOyp/8D2uKPBLfPnyyKrjQev2QF0xKurtZ1INn8pOOif5/K76Q5rwY/3mjcu3g3ffzU73BeYGb4ucvqe01ARfFJYIAAAAASUVORK5CYII=
+
+structured_readme:
+  description: >-
+    Standalone MATLAB Runtime environment for running applications compiled with
+    MATLAB Compiler or MATLAB Compiler SDK.
+  example: matlabruntime-info
+  documentation: https://www.mathworks.com/products/compiler/matlab-runtime.html
+
+readme: |-
+  ----------------------------------
+  ## matlabruntime/R{{ context.version }} ##
+
+  Standalone MATLAB Runtime environment for running applications compiled with MATLAB Compiler or MATLAB Compiler SDK.
+
+  This image is based on the MathWorks MATLAB Runtime container image and exposes the Runtime root through `MCRROOT`.
+
+  Environment:
+  ```
+  MCRROOT={{ context.matlab_runtime_root }}
+  MATLABCMD={{ context.matlab_runtime_root }}/toolbox/matlab
+  AGREE_TO_MATLAB_RUNTIME_LICENSE=yes
+  ```
+
+  Examples:
+  ```bash
+  matlabruntime-info
+  echo "$MCRROOT"
+  ```
+
+  More documentation:
+  - https://www.mathworks.com/products/compiler/matlab-runtime.html
+  - https://www.mathworks.com/help/compiler_sdk/ml_code/get-matlab-runtime-container.html
+
+  To run applications outside of this environment: ml matlabruntime/{{ context.version }}
+
+  ----------------------------------
