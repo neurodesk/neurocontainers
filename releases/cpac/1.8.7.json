@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "cpac 1.8.7": {
+      "version": "20260521",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "workflows",
+    "bids apps"
+  ]
+}
