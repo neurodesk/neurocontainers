@@ -1,0 +1,8 @@
+tests:
+  - name: Test C-PAC CLI version
+    script: |
+      cpac version
+
+  - name: Test C-PAC BIDS runner help
+    script: |
+      cpac-run --help

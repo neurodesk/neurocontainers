@@ -2,8 +2,8 @@ name: cpac
 version: 1.8.7
 
 copyright:
-  - license: Apache-2.0
-    url: https://github.com/bids-apps/CPAC/blob/master/LICENSE
+  - license: LGPL-3.0
+    url: https://github.com/FCP-INDI/C-PAC/blob/main/COPYING.LESSER
 
 architectures:
   - x86_64
@@ -11,38 +11,59 @@ architectures:
 build:
   kind: neurodocker
 
-  base-image: fcpindi/c-pac:release-v1.8.7.post1.dev3
+  base-image: fcpindi/c-pac:release-v{{ context.version }}.post1.dev3
   pkg-manager: apt
 
   directives:
+    - copy: cpac-run /usr/local/bin/cpac-run
     - run:
+        - chmod +x /usr/local/bin/cpac-run
         - pip install --upgrade setuptools
         - pip install --upgrade backports.tarfile
+  add-default-template: false
+  add-tzdata: false
 
 deploy:
   bins:
     - cpac
+    - cpac-run
 
 categories:
   - functional imaging
+  - workflows
+  - bids apps
+
+files:
+  - name: cpac-run
+    contents: |
+      #!/usr/bin/env bash
+      set -e
+      exec /code/run-with-freesurfer.sh "$@"
+
+icon: https://fcp-indi.github.io/images/cpac_logo.svg
 
 readme: |
   ## cpac/{{ context.version }} ##
 
   ## C-PAC (Configurable Pipeline for the Analysis of Connectomes)
 
-  C-PAC is a configurable, open-source pipeline for the analysis of functional MRI data. It provides tools for preprocessing, quality control, and functional connectivity analysis. C-PAC is designed to be user-friendly and adaptable to a variety of research needs.
+  C-PAC is a configurable, open-source, Nipype-based automated processing pipeline for resting-state fMRI data. It combines tools from packages such as AFNI, FSL, and ANTs for preprocessing, quality control, and functional connectivity analysis.
 
   Repository: [C-PAC GitHub](https://github.com/FCP-INDI/C-PAC)
 
-  Example:
+  BIDS App example:
   ```
-  cpac --help
-  cpac /path/to/bids_dir \
+  cpac-run /path/to/bids_dir \
     /path/to/output_dir \
-    participant \ # analysis_level
-    --pipeline_file <pipeline_config> \ # required
-    --participant_label <label> # optional
+    participant \
+    --preconfig default \
+    --participant-label <label>
+  ```
+
+  C-PAC CLI utilities are available through the `cpac` command:
+  ```
+  cpac version
+  cpac utils pipe_config new-template
   ```
 
   To run the container outside of this environment: `ml cpac/{{ context.version }}`
@@ -56,6 +77,6 @@ readme: |
 
   Please also cite the Zenodo DOI for the version you're referencing.
 
-  License: BSD 3-Clause License
+  License: GNU Lesser General Public License v3.0
 
-  License details: https://github.com/FCP-INDI/C-PAC/blob/main/LICENSE
+  License details: https://github.com/FCP-INDI/C-PAC/blob/main/COPYING.LESSER
