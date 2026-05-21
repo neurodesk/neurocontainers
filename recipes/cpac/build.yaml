@@ -18,8 +18,7 @@ build:
     - copy: cpac-run /usr/local/bin/cpac-run
     - run:
         - chmod +x /usr/local/bin/cpac-run
-        - pip install --upgrade setuptools
-        - pip install --upgrade backports.tarfile
+        - pip install "setuptools<81"
   add-default-template: false
   add-tzdata: false
 
