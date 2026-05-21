@@ -1,0 +1,19 @@
+tests:
+  - name: MEDE command line help
+    script: |
+      set -eu
+      command -v mede-deidentify
+      mede-deidentify --help | grep -F "deidentification-profile"
+
+  - name: MEDE Python package and cached OCR models
+    script: |
+      set -eu
+      python - <<'PY'
+      from importlib.metadata import version
+      import importlib.resources
+
+      print(version("mede"))
+      print(importlib.resources.files("mede") / "models" / "mednext_deface.pth")
+      PY
+      test -s /opt/easyocr/model/craft_mlt_25k.pth
+      test -s /opt/easyocr/model/english_g2.pth
