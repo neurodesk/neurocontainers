@@ -56,6 +56,14 @@ from rich import box
 console = Console()
 
 
+def container_runtime_command() -> str:
+    """Return the available Apptainer-compatible runtime command."""
+    for command in ("apptainer", "singularity"):
+        if shutil.which(command):
+            return command
+    return "apptainer"
+
+
 def _format_process_output(result: subprocess.CompletedProcess[str]) -> str:
     """Return combined subprocess output without truncation."""
     parts: list[str] = []
@@ -321,7 +329,7 @@ def run_single_test(
                             if not any(abs_parent == d or abs_parent.startswith(d + "/") for d in container_dirs):
                                 binds.add(f"{parent}:{parent}")
 
-                cmd_list = ["apptainer", "exec", "--writable-tmpfs"]
+                cmd_list = [container_runtime_command(), "exec", "--writable-tmpfs"]
                 for b in binds:
                     cmd_list.extend(["-B", b])
                 cmd_list.extend([str(container_path), "bash", str(script_path)])
@@ -484,7 +492,7 @@ def _run_container_health_check(
     binds = set()
     binds.add(f"{work_dir}:{work_dir}")
 
-    cmd_list = ["apptainer", "exec", "--writable-tmpfs"]
+    cmd_list = [container_runtime_command(), "exec", "--writable-tmpfs"]
     for b in binds:
         cmd_list.extend(["-B", b])
     cmd_list.extend([str(container_path), "true"])
@@ -543,7 +551,7 @@ def _run_setup_in_container(
                 if parent.exists():
                     binds.add(f"{parent}:{parent}")
 
-        cmd_list = ["apptainer", "exec", "--writable-tmpfs"]
+        cmd_list = [container_runtime_command(), "exec", "--writable-tmpfs"]
         for b in binds:
             cmd_list.extend(["-B", b])
         cmd_list.extend([str(container_path), "bash", str(script_path)])
