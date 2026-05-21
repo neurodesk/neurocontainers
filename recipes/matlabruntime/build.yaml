@@ -39,8 +39,6 @@ build:
 deploy:
   bins:
     - matlabruntime-info
-  path:
-    - "{{ context.matlab_runtime_root }}/bin/glnxa64"
 
 files:
   - name: matlabruntime-info

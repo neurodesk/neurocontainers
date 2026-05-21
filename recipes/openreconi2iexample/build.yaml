@@ -1,7 +1,9 @@
 name: openreconi2iexample
-version: 1.0.54
+version: 1.0.57
 architectures:
   - x86_64
+
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiByeD0iNCIgZmlsbD0iIzEzMjk0YiIvPjxyZWN0IHg9IjQiIHk9IjUiIHdpZHRoPSI3IiBoZWlnaHQ9IjciIHJ4PSIxLjIiIGZpbGw9IiM3ZGQzZmMiLz48cmVjdCB4PSIxMyIgeT0iMTIiIHdpZHRoPSI3IiBoZWlnaHQ9IjciIHJ4PSIxLjIiIGZpbGw9IiMzNGQzOTkiLz48cGF0aCBkPSJNOSAxNWg1LjJNMTIuNCAxMi44IDE1IDE1bC0yLjYgMi4yIiBmaWxsPSJub25lIiBzdHJva2U9IiNmOGZhZmMiIHN0cm9rZS13aWR0aD0iMS43IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48Y2lyY2xlIGN4PSI3LjUiIGN5PSI4LjUiIHI9IjEuNiIgZmlsbD0iI2Y4ZmFmYyIvPjxwYXRoIGQ9Ik0xNS4yIDE2LjRoMy4yTTE2LjggMTQuOHYzLjIiIHN0cm9rZT0iI2Y4ZmFmYyIgc3Ryb2tlLXdpZHRoPSIxLjEiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvc3ZnPg==
 
 copyright:
   - license: MIT
@@ -56,12 +58,12 @@ readme: |-
   pass the original 2D image stream through on `image_series_index = 100`.
   Enable `invert` to return inverted magnitude images as `<source>-inverted` on
   `image_series_index = 99`. Enable `segment` to extract the brightest foreground
-  object and send source-geometry `<source>-segment` 2D mask streams starting on
-  `image_series_index = 101`. Multi-contrast inputs with repeated slice positions
-  are split into one segmentation stream per source volume group.
-  Enable `segmentpostprocessing` with `segment` to mark the same source-geometry
-  masks as scanner-postprocessing candidate images using the source scan's
-  composer-facing image-type identity.
+  object and send `<source>-segment` outputs starting on
+  `image_series_index = 101`. The `outputgeometry` choice controls the
+  segmentation send path: `3d` packs one explicit 3D segmentation volume per
+  source volume group, while `2d_like_original` sends source-geometry 2D masks
+  for scanner postprocessing. Multi-contrast inputs with repeated slice
+  positions are split into one segmentation output per source volume group.
   Enable `segmentationcolormap` with `segment` to add `MicroDeltaHotMetal.pal`
   LUT metadata to segmentation outputs. Enable
   `upsampled` to send one double-slice-count `<source>-upsampled` volume on
@@ -85,24 +87,27 @@ readme: |-
   sent safely as a 2D stream, the job fails before send rather than packing the
   originals, because scanner MIP/MPR postprocessing depends on the original
   stream.
-  Segmentation outputs are emitted as source-geometry 2D image streams in both
-  segment modes with `Keep_image_geometry = 1`, the source slice geometry,
-  restamped returned-stream storage counters, and separate segment series
-  identity. With `segmentpostprocessing = false`, masks use
-  `DataRole = Segmentation`, `SegmentSourceGeometry = 1`, and a non-M segment
-  image type so scanner inline MIP/postprocessing does not attach to them. With
-  `segmentpostprocessing = true`, masks keep the same source geometry and source
-  image-type composer classification while still using separate segment series
-  identity. A valid source header image index is preserved; zero-valued source
-  image indices are replaced with a one-based returned index before send. If
-  `sendoriginal` is also enabled, the original source-native 2D stream is sent
-  first in a separate MRD image message.
+  With `outputgeometry = 3d`, segmentation outputs use
+  `Keep_image_geometry = 0`, `DataRole = Segmentation`,
+  `SegmentExplicitVolume = 1`, and one MRD volume that uses the first sorted
+  source slice as the volume position and sorted source spacing for the
+  through-plane FOV. With
+  `outputgeometry = 2d_like_original`, masks keep the source physical geometry,
+  use `Keep_image_geometry = 1`, preserve source composer-facing image-type
+  identity, sort by projected slice position, and restamp returned-stream header,
+  Meta, and MiniHead counters so wrapped source slice numbers do not collide in
+  scanner postprocessing. Source grouping header fields such as contrast,
+  phase, repetition, set, and average are reset to zero on the returned 2D
+  segment stream so it composes as one derived stream instead of clashing with
+  source children. If `sendoriginal` is also enabled with
+  `outputgeometry = 2d_like_original`, the original source-native 2D stream is
+  sent first in a separate MRD image message.
   Returned outputs strip scanner `ImageTypeValue3` metadata and `IceMiniHead`
   `ImageTypeValue3` entries because some sequences reject that protocol field
   during OpenRecon conversion. Original pass-through preserves Dixon subtype
-  identity; source-geometry segment outputs do the same only when
-  `segmentpostprocessing` is enabled so the masks can follow the same scanner
-  compose route as their source scan.
+  identity; `outputgeometry = 2d_like_original` segment outputs preserve source
+  identity, including Dixon subtype tokens, so the masks can follow the same
+  scanner compose route as their source scan.
 
   OpenRecon runtime notes: `recipes/openreconi2iexample/OpenReconREADME.md`.
 

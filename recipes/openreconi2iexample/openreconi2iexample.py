@@ -25,6 +25,7 @@ MIP_SERIES_NAME = "openrecon_mip"
 METRICS_SERIES_NAME = "openrecon_metrics"
 SEGMENTATION_LUT = "MicroDeltaHotMetal.pal"
 SEGMENT_SOURCE_GEOMETRY_META_KEY = "SegmentSourceGeometry"
+SEGMENT_EXPLICIT_VOLUME_META_KEY = "SegmentExplicitVolume"
 SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE = (
     f"DERIVED\\PRIMARY\\SEGMENTATION\\{SEGMENT_SERIES_NAME}"
 )
@@ -99,6 +100,15 @@ SOURCE_VOLUME_GROUP_FIELDS = (
     ("set", "set"),
     ("average", "avg"),
 )
+SOURCE_GROUP_HEADER_FIELDS = (
+    "contrast",
+    "phase",
+    "repetition",
+    "set",
+    "average",
+)
+SEGMENT_OUTPUT_GEOMETRY_2D = "2d_like_original"
+SEGMENT_OUTPUT_GEOMETRY_3D = "3d"
 
 
 def process(connection, config, metadata):
@@ -133,15 +143,9 @@ def process(connection, config, metadata):
             ("segment", "sendsegment", "sendthreshold"),
             default=False,
         )
-        send_segment_postprocessing = _config_bool_any(
-            config,
-            (
-                "segmentpostprocessing",
-                "sendsegmentpostprocessing",
-                "segmentationpostprocessing",
-                "sendsegmentationpostprocessing",
-            ),
-            default=False,
+        segment_output_geometry = _segment_output_geometry(config)
+        send_segment_2d_geometry = (
+            segment_output_geometry == SEGMENT_OUTPUT_GEOMETRY_2D
         )
         use_segmentation_colormap = _config_bool_any(
             config,
@@ -171,7 +175,7 @@ def process(connection, config, metadata):
         segment_images = []
         metrics_rows = []
         if send_segment or send_metrics:
-            if send_segment and send_segment_postprocessing:
+            if send_segment and send_segment_2d_geometry:
                 computed_segment_images = _segment_images_for_postprocessing(
                     magnitude_images,
                     use_colormap=use_segmentation_colormap,
@@ -201,12 +205,12 @@ def process(connection, config, metadata):
 
         logging.info(
             "Configured outputs: original=%s invert=%s upsampled=%s segment=%s "
-            "segmentpostprocessing=%s segmentationcolormap=%s mip=%s metrics=%s",
+            "outputgeometry=%s segmentationcolormap=%s mip=%s metrics=%s",
             send_original,
             send_invert,
             send_upsampled,
             send_segment,
-            send_segment_postprocessing,
+            segment_output_geometry,
             use_segmentation_colormap,
             send_mip,
             send_metrics,
@@ -235,13 +239,13 @@ def process(connection, config, metadata):
                 original_images
                 and segment_images
                 and send_segment
-                and send_segment_postprocessing
+                and send_segment_2d_geometry
             ),
         )
         if len(send_batches) > 1:
             logging.info(
                 "Sending source-geometry originals separately from "
-                "segmentpostprocessing outputs across %d MRD image messages",
+                "2D segmentation outputs across %d MRD image messages",
                 len(send_batches),
             )
         for batch_index, batch in enumerate(send_batches, start=1):
@@ -363,7 +367,6 @@ def _segment_images(images, use_colormap=False, metrics_rows=None):
     outputs = []
     thresholds = []
     for group_index, group_images in enumerate(source_groups):
-        _validate_original_source_geometry(group_images, "segmentation")
         threshold = _bright_foreground_threshold(group_images)
         thresholds.append(threshold)
         series_index = _segment_series_index(group_index)
@@ -410,34 +413,57 @@ def _segment_images(images, use_colormap=False, metrics_rows=None):
         if use_colormap:
             extra_meta["LUTFileName"] = SEGMENTATION_LUT
 
-        for output_index, (source_image, segmentation) in enumerate(segment_items):
-            output = ismrmrd.Image.from_array(segmentation, transpose=False)
-            header = source_image.getHead()
-            header.data_type = output.data_type
-            output.setHead(header)
-            _stamp_segment_source_geometry_image(
-                output,
-                source_image,
+        outputs.append(
+            _pack_segment_explicit_volume(
+                segment_items,
                 series_index,
-                output_index,
-                series_identity["series_name"],
-                extra_meta,
                 series_identity,
+                extra_meta,
             )
-            outputs.append(output)
+        )
 
     logging.info(
-        "Created %d source-geometry segmentation image(s) from %d source image(s) "
+        "Created %d explicit-volume segmentation image(s) from %d source image(s) "
         "across %d source volume group(s) with threshold(s) %s, "
-        "segmentpostprocessing=False, and "
+        "outputgeometry=%s, and "
         "segmentationcolormap=%s",
         len(outputs),
         len(images),
         len(source_groups),
         ", ".join(f"{threshold:.6g}" for threshold in thresholds),
+        SEGMENT_OUTPUT_GEOMETRY_3D,
         use_colormap,
     )
     return outputs
+
+
+def _pack_segment_explicit_volume(
+    segment_items,
+    series_index,
+    series_identity,
+    extra_meta=None,
+):
+    explicit_segment_meta = {
+        "WindowCenter": "0.5",
+        "WindowWidth": "1",
+        "ImageType": SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE,
+        "DicomImageType": SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE,
+        "ImageTypeValue4": SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4,
+        "ComplexImageComponent": "MAGNITUDE",
+        "SequenceDescriptionAdditional": "openrecon",
+        SEGMENT_EXPLICIT_VOLUME_META_KEY: "1",
+    }
+    explicit_segment_meta.update(extra_meta or {})
+    return _pack_explicit_volume(
+        segment_items,
+        series_index,
+        series_identity,
+        "Segmentation",
+        SEGMENT_SERIES_NAME,
+        ["PYTHON", "OPENRECON_SEGMENT_VOLUME"],
+        extra_meta=explicit_segment_meta,
+        label="segmentation output",
+    )
 
 
 def _segment_images_for_postprocessing(
@@ -451,8 +477,9 @@ def _segment_images_for_postprocessing(
     source_groups = _original_source_groups(images)
     if len(source_groups) > 1:
         logging.info(
-            "segmentpostprocessing split %d received image(s) into %d source "
+            "outputgeometry=%s split %d received image(s) into %d source "
             "volume group(s)",
+            SEGMENT_OUTPUT_GEOMETRY_2D,
             len(images),
             len(source_groups),
         )
@@ -509,7 +536,14 @@ def _segment_images_for_postprocessing(
         if use_colormap:
             extra_meta["LUTFileName"] = SEGMENTATION_LUT
 
-        for output_index, (source_image, segmentation) in enumerate(segment_items):
+        ordered_segment_items, _slice_axis = _ordered_source_geometry_items(
+            segment_items,
+            "2D segmentation output",
+        )
+
+        for output_index, (source_image, segmentation) in enumerate(
+            ordered_segment_items
+        ):
             output = ismrmrd.Image.from_array(segmentation, transpose=False)
             header = source_image.getHead()
             header.data_type = output.data_type
@@ -528,11 +562,12 @@ def _segment_images_for_postprocessing(
     logging.info(
         "Created %d source-geometry segmentation image(s) from %d source image(s) "
         "across %d source volume group(s) with threshold(s) %s, "
-        "segmentpostprocessing=True, and segmentationcolormap=%s",
+        "outputgeometry=%s, and segmentationcolormap=%s",
         len(outputs),
         len(images),
         len(source_groups),
         ", ".join(f"{threshold:.6g}" for threshold in thresholds),
+        SEGMENT_OUTPUT_GEOMETRY_2D,
         use_colormap,
     )
     return outputs
@@ -1270,6 +1305,10 @@ def _is_segment_source_geometry_output(meta):
     return _meta_int(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY) == 1
 
 
+def _is_segment_explicit_volume_output(meta):
+    return _meta_int(meta, SEGMENT_EXPLICIT_VOLUME_META_KEY) == 1
+
+
 def _source_image_groups(images):
     groups = []
     group_index_by_key = {}
@@ -1621,13 +1660,16 @@ def _stamp_segment_postprocessing_image(
 ):
     header = output.getHead()
     header.image_series_index = series_index
-    header.image_index = _source_geometry_header_image_index(source_image, output_index)
+    header.image_index = output_index + 1
+    header.slice = output_index
+    for field in SOURCE_GROUP_HEADER_FIELDS:
+        setattr(header, field, 0)
     if output.data_type in (ismrmrd.DATATYPE_CXFLOAT, ismrmrd.DATATYPE_CXDOUBLE):
         header.image_type = ismrmrd.IMTYPE_COMPLEX
     else:
         header.image_type = ismrmrd.IMTYPE_MAGNITUDE
     output.setHead(header)
-    storage_fields = _original_storage_fields(output, output_index)
+    storage_fields = _output_position_storage_fields(output_index)
     output.image_series_index = series_index
     output.attribute_string = _segment_postprocessing_meta(
         source_image,
@@ -1976,17 +2018,21 @@ def _strip_scanner_write_unsafe_meta(meta):
 
 
 def _set_output_position_meta(meta, output_index):
-    for key in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
-        _set_meta_scalar(meta, key, SCANNER_PARTITION_INDEX)
-    for key, value in (
-        ("AnatomicalSliceNo", output_index),
-        ("ChronSliceNo", output_index),
-        ("NumberInSeries", output_index + 1),
-        ("ProtocolSliceNumber", output_index),
-        ("SliceNo", output_index),
-        ("IsmrmrdSliceNo", output_index),
-    ):
+    for key, value in _output_position_storage_fields(output_index).items():
         _set_meta_scalar(meta, key, value)
+
+
+def _output_position_storage_fields(output_index):
+    return {
+        "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
+        "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+        "AnatomicalSliceNo": output_index,
+        "ChronSliceNo": output_index,
+        "NumberInSeries": output_index + 1,
+        "ProtocolSliceNumber": output_index,
+        "SliceNo": output_index,
+        "IsmrmrdSliceNo": output_index,
+    }
 
 
 def _original_storage_fields(source_image, output_index):
@@ -3000,6 +3046,7 @@ def _validate_storage_fields(
     is_original_output = _is_original_series_index(int(image.image_series_index))
     is_segment_source_geometry_output = _is_segment_source_geometry_output(meta)
     is_segment_postprocessing_output = _is_segment_postprocessing_output(meta)
+    is_segment_explicit_volume_output = _is_segment_explicit_volume_output(meta)
     is_source_like_output = (
         is_original_output
         or is_segment_source_geometry_output
@@ -3019,6 +3066,57 @@ def _validate_storage_fields(
             f"image {index} has slice {header_slice} outside source image "
             f"bounds [0..{series_slice_limit})"
         )
+
+    if is_segment_explicit_volume_output:
+        image_type = _meta_text(meta, "ImageType")
+        dicom_image_type = _meta_text(meta, "DicomImageType")
+        if _meta_text(meta, "DataRole") != "Segmentation":
+            errors.append(
+                f"image {index} has segment explicit-volume DataRole="
+                f"{_meta_text(meta, 'DataRole')}, expected Segmentation"
+            )
+        if image_type != SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE:
+            errors.append(
+                f"image {index} has segment explicit-volume ImageType="
+                f"{image_type}, expected {SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE}"
+            )
+        if dicom_image_type != SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE:
+            errors.append(
+                f"image {index} has segment explicit-volume DicomImageType="
+                f"{dicom_image_type}, expected {SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE}"
+            )
+        if image_type_value4 != SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4:
+            errors.append(
+                f"image {index} has segment explicit-volume ImageTypeValue4="
+                f"{image_type_value4}, expected "
+                f"{SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4}"
+            )
+        if _meta_int(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY):
+            errors.append(
+                f"image {index} marks an explicit-volume segment as "
+                "source-geometry"
+            )
+        if _meta_int(meta, SEGMENT_POSTPROCESSING_META_KEY):
+            errors.append(
+                f"image {index} marks an explicit-volume segment as "
+                "2D-like-original"
+            )
+        if minihead:
+            errors.append(
+                f"image {index} has IceMiniHead on segment explicit-volume output"
+            )
+        if _has_dixon_image_type_token(
+            [image_type, dicom_image_type, image_type_value4]
+        ):
+            errors.append(
+                f"image {index} has Dixon image-type identity on "
+                "segment explicit-volume output"
+            )
+        if _has_magnitude_image_type_value3_token([image_type, dicom_image_type]):
+            errors.append(
+                f"image {index} has M image-type value 3 on "
+                "segment explicit-volume output"
+            )
 
     if is_segment_source_geometry_output:
         image_type = _meta_text(meta, "ImageType")
@@ -3241,15 +3339,28 @@ def _validate_storage_fields(
                 f"SequentialNumber={minihead_exam_data_role}, expected "
                 f"{expected_child_role}"
             )
+        stream_index = header_image_index - 1
+        if header_slice != stream_index:
+            errors.append(
+                f"image {index} has segment postprocessing header slice="
+                f"{header_slice}, expected {stream_index} from image_index"
+            )
+        for field in SOURCE_GROUP_HEADER_FIELDS:
+            value = int(getattr(header, field))
+            if value != 0:
+                errors.append(
+                    f"image {index} has segment postprocessing header "
+                    f"{field}={value}, expected 0"
+                )
         expected_position_fields = {
             "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
             "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
-            "AnatomicalSliceNo": header_slice,
-            "ChronSliceNo": header_image_index - 1,
+            "AnatomicalSliceNo": stream_index,
+            "ChronSliceNo": stream_index,
             "NumberInSeries": header_image_index,
-            "ProtocolSliceNumber": header_slice,
-            "SliceNo": header_slice,
-            "IsmrmrdSliceNo": header_slice,
+            "ProtocolSliceNumber": stream_index,
+            "SliceNo": stream_index,
+            "IsmrmrdSliceNo": stream_index,
         }
         for field in (
             "Actual3DImagePartNumber",
@@ -3352,6 +3463,11 @@ def _validate_storage_fields(
         errors.append(
             f"image {index} is a segment postprocessing output with "
             f"Keep_image_geometry={keep_image_geometry}, expected 1"
+        )
+    elif is_segment_explicit_volume_output and keep_image_geometry != 0:
+        errors.append(
+            f"image {index} is a segment explicit-volume output with "
+            f"Keep_image_geometry={keep_image_geometry}, expected 0"
         )
     elif is_original_output:
         expected_original_fields = {
@@ -3684,6 +3800,76 @@ def _ordered_volume_items(source_items, label):
     logging.warning(
         "%s source slices are %s; sorting by projected position before "
         "packing explicit volume: first mappings %s",
+        label,
+        order_reason,
+        ", ".join(
+            f"out{output_index}->in{input_index}"
+            for output_index, input_index in enumerate(sort_indices[:24])
+        ),
+    )
+    if len(sort_indices) > 24:
+        logging.warning(
+            "%s source sort mapping omitted %d additional slice(s)",
+            label,
+            len(sort_indices) - 24,
+        )
+    return [source_items[index] for index in sort_indices], slice_axis
+
+
+def _ordered_source_geometry_items(source_items, label):
+    source_items = list(source_items)
+    if len(source_items) < 2:
+        images = [source_image for source_image, _data in source_items]
+        return source_items, _infer_slice_axis([image.getHead() for image in images])
+
+    images = [source_image for source_image, _data in source_items]
+    headers = [image.getHead() for image in images]
+    slice_axis = _infer_slice_axis(headers)
+    projections = np.asarray(
+        [_projected_position(image, slice_axis) for image in images],
+        dtype=float,
+    )
+    duplicate_positions = _duplicate_projected_position_count(projections)
+    median_spacing = _median_projected_spacing(projections)
+    increasing = _is_projected_order_monotonic(projections, increasing=True)
+    decreasing = _is_projected_order_monotonic(projections, increasing=False)
+    logging.info(
+        "%s source geometry: count=%d axis=%s projected_range=[%.6f, %.6f] "
+        "median_spacing=%.6f duplicate_positions=%d receive_order_monotonic=%s",
+        label,
+        len(source_items),
+        _format_vector(slice_axis),
+        float(np.min(projections)),
+        float(np.max(projections)),
+        median_spacing,
+        duplicate_positions,
+        increasing or decreasing,
+    )
+    if duplicate_positions:
+        raise ValueError(
+            f"{label} source geometry has duplicate projected slice position(s); "
+            "cannot send a safe composable 2D series"
+        )
+    if increasing:
+        return source_items, slice_axis
+
+    sort_indices = sorted(
+        range(len(source_items)),
+        key=lambda index: (
+            round(float(projections[index]), 4),
+            int(headers[index].slice),
+            int(headers[index].image_index),
+            index,
+        ),
+    )
+    order_reason = (
+        "decreasing in physical position"
+        if decreasing
+        else "not monotonic in physical position"
+    )
+    logging.warning(
+        "%s source slices are %s; sorting by projected position before "
+        "sending composable 2D stream: first mappings %s",
         label,
         order_reason,
         ", ".join(
@@ -4073,3 +4259,76 @@ def _config_bool_any(config, keys, default=False):
         if value is not None:
             return value
     return default
+
+
+def _config_value_any(config, keys, default=None):
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except json.JSONDecodeError:
+            return default
+
+    if not isinstance(config, dict):
+        return default
+
+    parameters = config.get("parameters")
+    for key in keys:
+        raw = config.get(key)
+        if raw is None and isinstance(parameters, dict):
+            raw = parameters.get(key)
+        if raw is not None:
+            return raw
+    return default
+
+
+def _segment_output_geometry(config):
+    raw = _config_value_any(
+        config,
+        (
+            "outputgeometry",
+            "output_geometry",
+            "segmentoutputgeometry",
+            "segment_output_geometry",
+            "segmentationoutputgeometry",
+            "segmentation_output_geometry",
+        ),
+    )
+    if raw is not None:
+        normalized = re.sub(r"[^a-z0-9]+", "_", str(raw).strip().lower()).strip("_")
+        if normalized in {
+            "3d",
+            "volume",
+            "explicit",
+            "explicit_volume",
+            "3d_volume",
+        }:
+            return SEGMENT_OUTPUT_GEOMETRY_3D
+        if normalized in {
+            "2d",
+            "2d_like_original",
+            "like_original",
+            "source_geometry",
+            "source_native",
+            "original",
+        }:
+            return SEGMENT_OUTPUT_GEOMETRY_2D
+        logging.warning(
+            "Unknown outputgeometry=%r; defaulting to %s",
+            raw,
+            SEGMENT_OUTPUT_GEOMETRY_3D,
+        )
+        return SEGMENT_OUTPUT_GEOMETRY_3D
+
+    legacy_postprocessing = _config_bool_any(
+        config,
+        (
+            "segmentpostprocessing",
+            "sendsegmentpostprocessing",
+            "segmentationpostprocessing",
+            "sendsegmentationpostprocessing",
+        ),
+        default=None,
+    )
+    if legacy_postprocessing is True:
+        return SEGMENT_OUTPUT_GEOMETRY_2D
+    return SEGMENT_OUTPUT_GEOMETRY_3D

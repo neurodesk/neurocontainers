@@ -74,15 +74,25 @@
       "id": "segment",
       "label": { "en": "Segment" },
       "type": "boolean",
-      "information": { "en": "Segment the brightest foreground object and send source-geometry 2D segmentation slices" },
+      "information": { "en": "Segment the brightest foreground object" },
       "default": false
     },
     {
-      "id": "segmentpostprocessing",
-      "label": { "en": "Scanner postprocess segmentations" },
-      "type": "boolean",
-      "information": { "en": "When Segment is enabled, send segmentation slices with source image geometry and source composer identity for scanner postprocessing; originals are sent in a separate image message when Send original is also enabled" },
-      "default": false
+      "id": "outputgeometry",
+      "label": { "en": "Segmentation Output Geometry" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "3d",
+          "name": { "en": "3D" }
+        },
+        {
+          "id": "2d_like_original",
+          "name": { "en": "2D like original" }
+        }
+      ],
+      "default": "3d",
+      "information": { "en": "Only affects Segment output. 3D sends one explicit segmentation volume per source volume group; 2D like original sends source-geometry 2D segmentation images for scanner postprocessing" }
     },
     {
       "id": "segmentationcolormap",
