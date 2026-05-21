@@ -78,7 +78,6 @@ build:
       # $(CXXFLAGS), and by ITKR's CMake sub-build via $CFLAGS/$CXXFLAGS.
       CFLAGS: "-O2 -g -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error"
       CXXFLAGS: "-O2 -g -Wno-incompatible-pointer-types -Wno-error=incompatible-pointer-types -Wno-error"
-      NEUROCONDUCTOR_REPOS: "https://neuroconductor.r-universe.dev"
 
   # IMPORTANT neurodocker behaviour:
   # every list item under `run:` becomes a separate shell statement
@@ -97,7 +96,7 @@ build:
       # ITKR first (ANTsRCore LinkingTo's it). Each remotes::install_github call retried up to 3x
       # with backoff to absorb transient github API 403 / rate-limit failures.
       # Tip: set GITHUB_PAT in the build env to lift the 60 req/hr anonymous limit.
-      - R --slave -e "options(repos = c(nconductor = Sys.getenv('NEUROCONDUCTOR_REPOS'), CRAN = Sys.getenv('R_REPOS')), pkgType = 'both'); install.packages('mimosa')"
+      - R --slave -e "options(repos = c(nconductor = paste0('https', '://neuroconductor.r-universe.dev'), CRAN = Sys.getenv('R_REPOS'))); install.packages('mimosa')"
 
       # Step 4: sanity check.
       - R --slave -e "stopifnot(requireNamespace('mimosa', quietly = TRUE)); cat('mimosa installed OK\\n')"
