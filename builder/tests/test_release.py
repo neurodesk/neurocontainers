@@ -28,7 +28,7 @@ def test_release_renders_gui_app_exec_from_recipe_context() -> None:
     data = release_data(compiled.name, compiled.version, compiled.recipe, "20260519")
     exec_command = data["apps"]["cat12GUI-cat12 26.0.rc3"]["exec"]
 
-    assert exec_command == "bash /opt/cat12/run_spm25.sh /opt/mcr/R2023b/"
+    assert exec_command == "bash run_spm25.sh /opt/mcr/R2023b/"
     assert "{{" not in exec_command
 
 
