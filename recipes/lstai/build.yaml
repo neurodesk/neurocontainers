@@ -56,8 +56,8 @@ build:
         PATH: /opt/miniforge3/envs/lstai/bin:/opt/lstai/bin:${PATH}
     - run:
         - pip install --timeout 300 torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
-        - pip install --timeout 300 tensorflow==2.13.1
-        - pip install -e /opt/lstai
+        - pip install --timeout 300 "numpy<1.24.4" pillow "scipy>=1.9.0" "scikit-image>=0.21.0" tensorflow==2.13.1 nibabel requests
+        - pip install --no-deps -e /opt/lstai
     - run:
         - git clone https://github.com/MIC-DKFZ/HD-BET /opt/hdbet
         - cd /opt/hdbet
