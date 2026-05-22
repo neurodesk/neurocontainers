@@ -16,7 +16,7 @@
 
 name: pydeface
 version: 2.0.2
-container: pydeface_2.0.2_20250206.simg
+container: pydeface_2.0.2_20260417.simg
 
 required_files:
   - dataset: ds000001
