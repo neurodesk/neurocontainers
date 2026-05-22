@@ -189,6 +189,7 @@ jobs:
       - name: Comment test results on PR
         if: always()
         uses: actions/github-script@v9
+        continue-on-error: true
         with:
           script: |
             const fs = require('fs');
