@@ -496,8 +496,7 @@ tests:
 
   - name: mrfilter FFT magnitude
     description: Apply FFT and output magnitude
-    command: mrfilter ${t2} fft ${output_dir}/t2_fft_mag.nii.gz -magnitude -force
-    ignore_exit_code: true
+    command: tmp_output=$(mktemp /tmp/t2_fft_mag.XXXXXX.nii.gz) && mrfilter ${t2} fft "$tmp_output" -magnitude -force && cp "$tmp_output" ${output_dir}/t2_fft_mag.nii.gz
     validate:
       - output_exists: ${output_dir}/t2_fft_mag.nii.gz
 
