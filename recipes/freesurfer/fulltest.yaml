@@ -1,5 +1,5 @@
 # FreeSurfer container test suite
-# Tests for FreeSurfer v8.1.0 - Comprehensive brain MRI analysis suite
+# Tests for FreeSurfer v8.2.0 - Comprehensive brain MRI analysis suite
 #
 # FreeSurfer is a software package for the analysis and visualization of
 # neuroimaging data from cross-sectional and longitudinal studies.
@@ -10,8 +10,8 @@
 #   - BOLD: 64x64x33x300, 3.125x3.125x4mm, TR=2s (4D functional)
 
 name: freesurfer
-version: 8.1.0
-container: freesurfer_8.1.0_20250812.simg
+version: 8.2.0
+container: freesurfer_8.2.0_20260331.simg
 
 required_files:
   - dataset: ds000001
@@ -41,7 +41,7 @@ tests:
   - name: FreeSurfer version check
     description: Verify mri_info binary runs and reports version
     command: mri_info --version
-    expected_output_contains: "freesurfer 8.1.0"
+    expected_output_contains: "freesurfer 8.2.0"
 
   - name: recon-all version check
     description: Verify recon-all script is available
