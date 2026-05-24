@@ -387,7 +387,7 @@ tests:
   # ==========================================================================
   - name: OpenCV normalize
     description: Test OpenCV image normalization
-    command: "python3 -c \"import cv2; import numpy as np; arr = np.random.rand(64, 64).astype(np.float32) * 100; normalized = cv2.normalize(arr, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8); print('Normalized range:', normalized.min(), '-', normalized.max())\""
+    command: "python3 -c \"import cv2; import numpy as np; arr = np.linspace(0, 100, 64 * 64, dtype=np.float32).reshape(64, 64); normalized = cv2.normalize(arr, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8); print('Normalized range:', normalized.min(), '-', normalized.max())\""
     expected_output_contains: "Normalized range: 0 - 255"
 
   - name: OpenCV threshold
