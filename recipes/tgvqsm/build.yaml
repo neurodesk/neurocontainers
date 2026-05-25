@@ -23,7 +23,6 @@ build:
     - template:
         name: dcm2niix
         version: latest
-        method: source
     - workdir: /
     - run:
         - wget https://repo.anaconda.com/miniconda/Miniconda2-4.6.14-Linux-x86_64.sh
@@ -49,7 +48,7 @@ deploy:
   path:
     - /opt/tgvqsm-{{ context.version }}/
     - /bet2/
-    - /opt/dcm2niix-latest/bin
+    - /opt/dcm2niix-latest
 
 readme: |-
   
