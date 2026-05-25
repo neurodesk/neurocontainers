@@ -1,12 +1,12 @@
 {
   "apps": {
     "tgvqsm 1.0.0": {
-      "version": "20210629",
-      "exec": ""
+      "version": "20260525",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
-    "quantitative imaging",
-    "phase processing"
+    "quantitative imaging"
   ]
 }
