@@ -1,0 +1,93 @@
+name: tgvqsm
+version: 1.0.0
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:16.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - wget
+        - unzip
+        - gcc
+        - cmake
+        - git
+        - g++
+    - run:
+        - git clone https://github.com/liangfu/bet2.git
+    - workdir: /bet2/build
+    - run:
+        - cmake .. && make
+    - template:
+        name: dcm2niix
+        version: latest
+        method: source
+    - workdir: /
+    - run:
+        - wget https://repo.anaconda.com/miniconda/Miniconda2-4.6.14-Linux-x86_64.sh
+    - environment:
+        PATH: /miniconda2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    - run:
+        - bash Miniconda2-4.6.14-Linux-x86_64.sh -b -p /miniconda2/
+        - /miniconda2/bin/conda install -c anaconda cython==0.29.14
+        - /miniconda2/bin/conda install numpy
+        - /miniconda2/bin/conda install pyparsing
+        - /miniconda2/bin/pip install scipy==0.17.1 nibabel==2.1.0
+        - wget http://www.neuroimaging.at/media/qsm/TGVQSM-plus.zip
+        - unzip TGVQSM-plus.zip
+    - workdir: /TGVQSM-master-011045626121baa8bfdd6633929974c732ae35e3
+    - copy: setup.py /TGVQSM-master-011045626121baa8bfdd6633929974c732ae35e3
+    - run:
+        - /miniconda2/bin/python setup.py install
+    - workdir: /opt/tgvqsm-{{ context.version }}
+    - run:
+        - cp /miniconda2/bin/tgv_qsm .
+
+deploy:
+  path:
+    - /opt/tgvqsm-{{ context.version }}/
+    - /bet2/
+    - /opt/dcm2niix-latest/bin
+
+readme: |-
+  
+  ----------------------------------
+  ## tgvqsm/1.0.0 ##
+  Quantitative susceptibility mapping allows the determination magnetic susceptibility from MRI phase data. TGV QSM is a python implementation to compute this.
+  
+  This container also includes bet2 for brain extraction and dcm2niix to convert dicom data to NiFTI files.
+  
+  Example:
+  ```
+  dcm2niix -o ./ -f magnitude GR_M_5_QSM_p2_1mmIso_TE20/
+  dcm2niix -o ./ -f phase GR_P_6_QSM_p2_1mmIso_TE20/
+  
+  bet2 magnitude.nii magnitude_bet2
+  
+  tgv_qsm \
+    -p phase.nii \
+    -m magnitude_bet2_mask.nii.gz \
+    -f 2.89 \
+    -t 0.02 \
+    -s \
+    -o qsm
+  ```
+  
+  More documentation can be found here: http://www.neuroimaging.at/pages/qsm.php
+  
+  To run container outside of this environment: ml tgvqsm/1.0.0
+  
+  Citation:
+  ```
+  Langkammer, C; Bredies, K; Poser, BA; Barth, M; Reishofer, G; Fan, AP; Bilgic, B; Fazekas, F; Mainero; C; Ropele, S
+  Fast Quantitative Susceptibility Mapping using 3D EPI and Total Generalized Variation.
+  Neuroimage. 2015 May 1;111:622-30. doi: 10.1016/j.neuroimage.2015.02.041
+  ```
+  
+  ----------------------------------
+
+categories:
+  - quantitative imaging
