@@ -1,12 +1,12 @@
 ----------------------------------
-## brkraw/toolVersion ##
+## brkraw/{{ context.version }} ##
 
 [![DOI](https://zenodo.org/badge/245546149.svg)](https://zenodo.org/badge/latestdoi/245546149)
 [![made-with-python](https://img.shields.io/badge/Made%20with-Python-1f425f.svg)](https://www.python.org/)
 [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/BrkRaw/tutorials/master)
 
 ## BrkRaw: A comprehensive tool to access raw Bruker Biospin MRI data
-#### Version: toolVersion
+#### Version: {{ context.version }}
 
 ### Description
 
