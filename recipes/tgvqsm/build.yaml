@@ -10,12 +10,11 @@ build:
   pkg-manager: apt
   directives:
     - install:
-        - wget
-        - unzip
-        - gcc
+        - build-essential
         - cmake
         - git
-        - g++
+        - unzip
+        - wget
     - run:
         - git clone https://github.com/liangfu/bet2.git
     - workdir: /bet2/build
