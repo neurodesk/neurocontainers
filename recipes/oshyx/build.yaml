@@ -15,8 +15,7 @@ deploy:
     - julia
   path:
     - /opt/ants-2.3.1/
-    - /opt/miniconda-latest/bin/python
-    - /opt/miniconda-latest/bin/julia
+    - /opt/miniconda-latest/bin
 
 readme: |-
   ----------------------------------
