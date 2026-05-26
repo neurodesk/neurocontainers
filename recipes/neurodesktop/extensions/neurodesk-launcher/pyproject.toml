@@ -37,12 +37,12 @@ ensured-targets = [
 
 [tool.hatch.build.hooks.jupyter-builder.build-kwargs]
 build_cmd = "build:prod"
-npm = ["npm"]
+npm = ["npm", "--cache", "/tmp/neurodesk-launcher-npm-cache"]
 source_dir = "src"
 build_dir = "neurodesk_launcher/labextension"
 
 [tool.hatch.build.hooks.jupyter-builder.editable-build-kwargs]
 build_cmd = "build"
-npm = ["npm"]
+npm = ["npm", "--cache", "/tmp/neurodesk-launcher-npm-cache"]
 source_dir = "src"
 build_dir = "neurodesk_launcher/labextension"
