@@ -68,9 +68,9 @@ tests:
   # ==========================================================================
   - name: c3d binary
     description: Convert3D binary runs and reports version
-    command: c3d -h
+    command: bash -lc 'command -v c3d && c3d 2>&1 | head -5'
     ignore_exit_code: true
-    expected_output_contains: "c3d"
+    expected_output_contains: "convert3d"
 
   # ==========================================================================
   # ASHS
@@ -103,6 +103,6 @@ tests:
   # Python install of LASHiS package
   # ==========================================================================
   - name: lashis Python package importable
-    description: `import lashis` succeeds inside the container
+    description: "`import lashis` succeeds inside the container"
     command: python3 -c "import lashis; print(lashis.__name__)"
     expected_output_contains: "lashis"
