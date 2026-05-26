@@ -18,7 +18,8 @@ build:
     - copy: cpac-run /usr/local/bin/cpac-run
     - run:
         - chmod +x /usr/local/bin/cpac-run
-        - pip install "setuptools<81"
+        - pip install --no-cache-dir "setuptools<81"
+        - rm -rf /root/.cache/pip
   add-default-template: false
   add-tzdata: false
 
