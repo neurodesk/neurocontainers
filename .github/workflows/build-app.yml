@@ -381,7 +381,7 @@ jobs:
           IS_BLACKSMITH_RUNNER: ${{ contains(inputs.runner, 'blacksmith') }}
         run: |
           cd "./build/${APPLICATION}"
-          CACHE_REF=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:buildcache
+          CACHE_REF=ghcr.io/${GH_REGISTRY}/${APPLICATION}${IMAGE_SUFFIX}:buildcache
           CACHE_FROM_ARGS=()
           CACHE_TO_ARGS=()
           if [ "${IS_BLACKSMITH_RUNNER}" = "true" ]; then
