@@ -71,6 +71,13 @@
       "default": true
     },
     {
+      "id": "sctdebugthresholdsegment",
+      "label": { "en": "Debug threshold segmentation" },
+      "type": "boolean",
+      "information": { "en": "Skip SCT inference and use a simple threshold segmentation to test the OpenRecon send path." },
+      "default": false
+    },
+    {
       "id": "analysis",
       "label": { "en": "Analysis" },
       "type": "choice",

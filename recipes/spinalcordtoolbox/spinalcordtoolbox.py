@@ -165,6 +165,7 @@ OPENRECON_DEFAULTS = {
     "sendoriginal": True,
     "segmentationcolormap": False,
     "segmentpostprocessing": True,
+    "sctdebugthresholdsegment": False,
     "analysis": "sct_deepseg_spinalcord",
 }
 
@@ -383,6 +384,114 @@ def compute_nifti_affine(image_header, voxel_size):
     affine[:3, 3] = position
 
     return affine
+
+
+def _simple_threshold_segmentation_volume(input_yxz, max_val):
+    data = np.asarray(input_yxz)
+    if np.iscomplexobj(data):
+        data = np.abs(data)
+    data = np.asarray(data, dtype=np.float32)
+    if data.ndim == 2:
+        data = data[:, :, None]
+    if data.ndim != 3:
+        raise ValueError(
+            "Debug threshold segmentation expects a 2D or 3D input volume, "
+            f"got shape {data.shape}"
+        )
+
+    threshold = _bright_foreground_threshold(data)
+    foreground = data >= threshold
+    foreground &= np.isfinite(data)
+    segmentation_zyx = _largest_connected_component_per_plane(
+        foreground.transpose((2, 0, 1))
+    )
+    segmentation_yxz = segmentation_zyx.transpose((1, 2, 0))
+    logging.warning(
+        "Using debug simple threshold segmentation: threshold=%.6g "
+        "foreground_voxels=%d kept_voxels=%d",
+        float(threshold),
+        int(np.count_nonzero(foreground)),
+        int(np.count_nonzero(segmentation_yxz)),
+    )
+    return (segmentation_yxz.astype(np.int16) * int(max_val)).astype(np.int16)
+
+
+def _bright_foreground_threshold(data):
+    finite_values = np.asarray(data, dtype=np.float32)
+    finite_values = finite_values[np.isfinite(finite_values)]
+    if finite_values.size == 0:
+        return np.inf
+
+    data_min = float(np.min(finite_values))
+    data_max = float(np.max(finite_values))
+    if data_max <= data_min:
+        return np.inf
+
+    background = float(np.percentile(finite_values, 50))
+    upper = float(np.percentile(finite_values, 95))
+    if upper <= background:
+        upper = data_max
+
+    threshold = background + 0.5 * (upper - background)
+    if threshold >= data_max:
+        threshold = background + 0.5 * (data_max - background)
+    return threshold
+
+
+def _largest_connected_component_per_plane(mask):
+    mask = np.asarray(mask, dtype=bool)
+    if mask.ndim < 2:
+        return _largest_connected_component_2d(mask.reshape(1, -1)).reshape(mask.shape)
+
+    result = np.zeros(mask.shape, dtype=bool)
+    planes = mask.reshape((-1,) + mask.shape[-2:])
+    result_planes = result.reshape((-1,) + mask.shape[-2:])
+    for index, plane in enumerate(planes):
+        result_planes[index] = _largest_connected_component_2d(plane)
+    return result
+
+
+def _largest_connected_component_2d(mask):
+    mask = np.asarray(mask, dtype=bool)
+    height, width = mask.shape
+    foreground = mask.ravel()
+    foreground_indices = np.flatnonzero(foreground)
+    if foreground_indices.size == 0:
+        return np.zeros(mask.shape, dtype=bool)
+
+    visited = np.zeros(foreground.size, dtype=bool)
+    best_component = []
+    for seed in foreground_indices:
+        if visited[seed]:
+            continue
+
+        component = []
+        stack = [int(seed)]
+        visited[seed] = True
+        while stack:
+            current = stack.pop()
+            component.append(current)
+            row, col = divmod(current, width)
+            neighbors = []
+            if row > 0:
+                neighbors.append(current - width)
+            if row + 1 < height:
+                neighbors.append(current + width)
+            if col > 0:
+                neighbors.append(current - 1)
+            if col + 1 < width:
+                neighbors.append(current + 1)
+            for neighbor in neighbors:
+                if foreground[neighbor] and not visited[neighbor]:
+                    visited[neighbor] = True
+                    stack.append(neighbor)
+
+        if len(component) > len(best_component):
+            best_component = component
+
+    result = np.zeros(foreground.size, dtype=bool)
+    result[best_component] = True
+    return result.reshape(mask.shape)
 
 
 def _header_vector(image_header, field_name):
@@ -2038,6 +2147,27 @@ def _require_sct_output_specs(analysis, output_specs):
     return output_specs
 
 
+def _write_debug_threshold_sct_outputs(input_data, affine, output_specs):
+    max_val = 2**12 - 1
+    volume_yxz = _simple_threshold_segmentation_volume(input_data, max_val)
+    for output_spec in output_specs:
+        output_path = Path(output_spec["path"])
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        debug_img = nib.nifti1.Nifti1Image(np.asarray(volume_yxz), affine)
+        debug_img.header.set_xyzt_units(xyz="mm", t="sec")
+        debug_img.header.set_dim_info(freq=1, phase=0, slice=2)
+        debug_img.set_qform(affine, code=1)
+        debug_img.set_sform(affine, code=1)
+        nib.save(debug_img, str(output_path))
+        logging.info(
+            "Saved debug threshold SCT output to %s with shape=%s dtype=%s",
+            output_path,
+            debug_img.shape,
+            debug_img.get_data_dtype(),
+        )
+    return output_specs
+
+
 def _nifti_output_stem(path):
     name = Path(path).name
     if name.endswith(".nii.gz"):
@@ -2427,6 +2557,7 @@ def _openrecon_config_for_analysis(analysis, sendoriginal=False):
             "sendoriginal": bool(sendoriginal),
             "segmentationcolormap": OPENRECON_DEFAULTS["segmentationcolormap"],
             "segmentpostprocessing": OPENRECON_DEFAULTS["segmentpostprocessing"],
+            "sctdebugthresholdsegment": OPENRECON_DEFAULTS["sctdebugthresholdsegment"],
             "analysis": analysis,
         }
     }
@@ -2510,6 +2641,10 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
         "segmentpostprocessing",
         default_val=OPENRECON_DEFAULTS["segmentpostprocessing"],
     )
+    debug_threshold_segment = boolean_checker(
+        "sctdebugthresholdsegment",
+        default_val=OPENRECON_DEFAULTS["sctdebugthresholdsegment"],
+    )
     called_from_raw = traceback.extract_stack()[-2].name == "process_raw"
     original_images = []
     if send_original and not called_from_raw:
@@ -2525,12 +2660,14 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
     analyses = _resolve_requested_analyses(requested_analysis)
     logging.info(
         "SCT parameters: analysis=%s resolved_analyses=%s sendoriginal=%s "
-        "segmentpostprocessing=%s segmentationcolormap=%s",
+        "segmentpostprocessing=%s segmentationcolormap=%s "
+        "sctdebugthresholdsegment=%s",
         requested_analysis,
         ",".join(analyses),
         send_original,
         segment_postprocessing,
         segmentation_colormap,
+        debug_threshold_segment,
     )
 
     unsorted_head = [img.getHead() for img in imgGroup]
@@ -2661,12 +2798,27 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
         if len(analyses) > 1:
             member_work_dir = request_work_dir / member_analysis
         member_work_dir.mkdir(parents=True, exist_ok=True)
-        output_specs = _run_sct_analysis(
-            member_analysis,
-            input_path,
-            member_work_dir,
-            precomputed_outputs=precomputed_outputs,
-        )
+        if debug_threshold_segment:
+            logging.warning(
+                "sctdebugthresholdsegment is enabled; skipping SCT model execution "
+                "and using a simple threshold segmentation instead."
+            )
+            output_specs = _expected_sct_output_specs(
+                member_analysis,
+                member_work_dir / "output.nii.gz",
+            )
+            output_specs = _write_debug_threshold_sct_outputs(
+                data_nifti,
+                affine,
+                output_specs,
+            )
+        else:
+            output_specs = _run_sct_analysis(
+                member_analysis,
+                input_path,
+                member_work_dir,
+                precomputed_outputs=precomputed_outputs,
+            )
         precomputed_outputs[member_analysis] = output_specs[0]["path"]
         for output_spec in output_specs:
             output_series_index = derived_series_allocator.allocate(output_spec["series_suffix"])

@@ -78,21 +78,29 @@
       "default": false
     },
     {
-      "id": "outputgeometry",
-      "label": { "en": "Segmentation Output Geometry" },
+      "id": "segmentoutput",
+      "label": { "en": "Segment output mode" },
       "type": "choice",
       "values": [
         {
-          "id": "3d",
-          "name": { "en": "3D" }
+          "id": "3d_volume",
+          "name": { "en": "3D volume" }
         },
         {
-          "id": "2d_like_original",
-          "name": { "en": "2D like original" }
+          "id": "3d_volume_detached",
+          "name": { "en": "3D volume, detached" }
+        },
+        {
+          "id": "2d_masks_first",
+          "name": { "en": "2D masks first" }
+        },
+        {
+          "id": "2d_masks_after_originals",
+          "name": { "en": "2D masks after originals" }
         }
       ],
-      "default": "3d",
-      "information": { "en": "Only affects Segment output. 3D sends one explicit segmentation volume per source volume group; 2D like original sends source-geometry 2D segmentation images for scanner postprocessing" }
+      "default": "3d_volume",
+      "information": { "en": "Only affects Segment output. 3D volume sends one slab-centered explicit segmentation volume per source volume group. 3D volume, detached sends source-geometry outputs first and explicit 3D data later. 2D masks first sends source-geometry masks before originals for scanner MRA/MIP postprocessing. 2D masks after originals sends originals first and masks second." }
     },
     {
       "id": "segmentationcolormap",

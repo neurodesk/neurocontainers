@@ -376,6 +376,21 @@ def test_openrecon_exposes_segmentation_postprocessing_toggle():
     assert "source-geometry segmentation image(s)" in wrapper_source
 
 
+def test_openrecon_exposes_debug_threshold_segment_toggle():
+    parameter = _label_parameter("sctdebugthresholdsegment")
+    assert parameter["type"] == "boolean"
+    assert parameter["default"] is False
+
+    defaults = _module_assignment("OPENRECON_DEFAULTS")
+    assert defaults["sctdebugthresholdsegment"] is False
+
+    wrapper_source = WRAPPER_PATH.read_text()
+    assert 'boolean_checker(\n        "sctdebugthresholdsegment"' in wrapper_source
+    assert "sctdebugthresholdsegment is enabled; skipping SCT model execution" in wrapper_source
+    assert "_simple_threshold_segmentation_volume" in wrapper_source
+    assert "_write_debug_threshold_sct_outputs" in wrapper_source
+
+
 def test_wrapper_avoids_hardcoded_sct_install_version_paths():
     wrapper_source = WRAPPER_PATH.read_text()
     assert "spinalcordtoolbox-7.2" not in wrapper_source
@@ -1249,6 +1264,28 @@ def test_wrapper_logs_sct_output_statistics_before_mrd_conversion():
     assert "np.unique(data)" in wrapper_source
 
 
+def test_debug_threshold_segmentation_keeps_largest_component_per_slice():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_simple_threshold_segmentation_volume",
+            "_bright_foreground_threshold",
+            "_largest_connected_component_per_plane",
+            "_largest_connected_component_2d",
+        ],
+    )
+    input_data = np.zeros((5, 5, 2), dtype=np.float32)
+    input_data[1:3, 1:3, 0] = 10
+    input_data[4, 4, 0] = 10
+
+    output = helpers["_simple_threshold_segmentation_volume"](input_data, max_val=7)
+
+    assert output.dtype == np.int16
+    assert output.shape == input_data.shape
+    assert np.all(output[1:3, 1:3, 0] == 7)
+    assert output[4, 4, 0] == 0
+    assert np.count_nonzero(output[:, :, 1]) == 0
+
+
 def test_openrecon_declares_multiclass_output_series():
     assert _module_assignment("SCT_ANALYSIS_OUTPUTS") == EXPECTED_ANALYSIS_OUTPUTS
 
@@ -1449,4 +1486,5 @@ def test_wrapper_can_generate_openrecon_configs_for_batch_processing_cases():
     assert "_openrecon_config_for_analysis(case[\"analysis\"])" in wrapper_source
     assert '"segmentationcolormap": OPENRECON_DEFAULTS["segmentationcolormap"]' in wrapper_source
     assert '"segmentpostprocessing": OPENRECON_DEFAULTS["segmentpostprocessing"]' in wrapper_source
+    assert '"sctdebugthresholdsegment": OPENRECON_DEFAULTS["sctdebugthresholdsegment"]' in wrapper_source
     assert "sct_deepseg_gm" in wrapper_source

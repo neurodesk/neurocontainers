@@ -31,6 +31,8 @@ OPENRECON_OUTPUT_NAME_PARAM = "vboutputname"
 OPENRECON_MODULE_DEFAULT = "prediction"
 OPENRECON_MODULE_VALUES = (OPENRECON_MODULE_DEFAULT,)
 OPENRECON_SERIES_SUFFIX = "OR"
+VESSELBOOST_OUTPUT_GEOMETRY_2D = "2d_like_original"
+VESSELBOOST_OUTPUT_GEOMETRY_3D = "3d"
 VESSELBOOST_SEGMENTATION_LABEL = "vesselboost"
 VESSELBOOST_SEGMENTATION_TYPE_TOKEN = VESSELBOOST_SEGMENTATION_LABEL.upper()
 VESSELBOOST_ORIGINAL_LABEL = "original"
@@ -59,6 +61,8 @@ OPENRECON_DEFAULTS = {
     "vbbiasfieldcorrection": True,
     "vbdenoising": False,
     "vbbrainextraction": True,
+    "vboutputgeometry": VESSELBOOST_OUTPUT_GEOMETRY_2D,
+    "vbdebugthresholdsegment": False,
     "vbreslicesagittal": False,
     "vbreslicecoronal": False,
 }
@@ -115,6 +119,114 @@ def _log_directory_contents(label: str, path: Path) -> None:
 
     entries = sorted(child.name for child in path.iterdir())
     logging.info("%s contents (%s): %s", label, path, entries)
+
+
+def _simple_threshold_segmentation_volume(input_yxz: np.ndarray, max_val: int) -> np.ndarray:
+    data = np.asarray(input_yxz)
+    if np.iscomplexobj(data):
+        data = np.abs(data)
+    data = np.asarray(data, dtype=np.float32)
+    if data.ndim == 2:
+        data = data[:, :, None]
+    if data.ndim != 3:
+        raise ValueError(
+            "Debug threshold segmentation expects a 2D or 3D input volume, "
+            f"got shape {data.shape}"
+        )
+
+    threshold = _bright_foreground_threshold(data)
+    foreground = data >= threshold
+    foreground &= np.isfinite(data)
+    segmentation_zyx = _largest_connected_component_per_plane(
+        foreground.transpose((2, 0, 1))
+    )
+    segmentation_yxz = segmentation_zyx.transpose((1, 2, 0))
+    logging.warning(
+        "Using debug simple threshold segmentation: threshold=%.6g "
+        "foreground_voxels=%d kept_voxels=%d",
+        float(threshold),
+        int(np.count_nonzero(foreground)),
+        int(np.count_nonzero(segmentation_yxz)),
+    )
+    return (segmentation_yxz.astype(np.int16) * int(max_val)).astype(np.int16)
+
+
+def _bright_foreground_threshold(data: np.ndarray) -> float:
+    finite_values = np.asarray(data, dtype=np.float32)
+    finite_values = finite_values[np.isfinite(finite_values)]
+    if finite_values.size == 0:
+        return np.inf
+
+    data_min = float(np.min(finite_values))
+    data_max = float(np.max(finite_values))
+    if data_max <= data_min:
+        return np.inf
+
+    background = float(np.percentile(finite_values, 50))
+    upper = float(np.percentile(finite_values, 95))
+    if upper <= background:
+        upper = data_max
+
+    threshold = background + 0.5 * (upper - background)
+    if threshold >= data_max:
+        threshold = background + 0.5 * (data_max - background)
+    return threshold
+
+
+def _largest_connected_component_per_plane(mask: np.ndarray) -> np.ndarray:
+    mask = np.asarray(mask, dtype=bool)
+    if mask.ndim < 2:
+        return _largest_connected_component_2d(mask.reshape(1, -1)).reshape(mask.shape)
+
+    result = np.zeros(mask.shape, dtype=bool)
+    planes = mask.reshape((-1,) + mask.shape[-2:])
+    result_planes = result.reshape((-1,) + mask.shape[-2:])
+    for index, plane in enumerate(planes):
+        result_planes[index] = _largest_connected_component_2d(plane)
+    return result
+
+
+def _largest_connected_component_2d(mask: np.ndarray) -> np.ndarray:
+    mask = np.asarray(mask, dtype=bool)
+    height, width = mask.shape
+    foreground = mask.ravel()
+    foreground_indices = np.flatnonzero(foreground)
+    if foreground_indices.size == 0:
+        return np.zeros(mask.shape, dtype=bool)
+
+    visited = np.zeros(foreground.size, dtype=bool)
+    best_component = []
+    for seed in foreground_indices:
+        if visited[seed]:
+            continue
+
+        component = []
+        stack = [int(seed)]
+        visited[seed] = True
+        while stack:
+            current = stack.pop()
+            component.append(current)
+            row, col = divmod(current, width)
+            neighbors = []
+            if row > 0:
+                neighbors.append(current - width)
+            if row + 1 < height:
+                neighbors.append(current + width)
+            if col > 0:
+                neighbors.append(current - 1)
+            if col + 1 < width:
+                neighbors.append(current + 1)
+            for neighbor in neighbors:
+                if foreground[neighbor] and not visited[neighbor]:
+                    visited[neighbor] = True
+                    stack.append(neighbor)
+
+        if len(component) > len(best_component):
+            best_component = component
+
+    result = np.zeros(foreground.size, dtype=bool)
+    result[best_component] = True
+    return result.reshape(mask.shape)
 
 
 def compute_nifti_affine(image_header, voxel_size):
@@ -409,6 +521,54 @@ def _config_has_param(config, key: str) -> bool:
         and isinstance(config.get("parameters"), dict)
         and key in config["parameters"]
     )
+
+
+def _vesselboost_output_geometry(config) -> str:
+    for key in (
+        "vboutputgeometry",
+        "outputgeometry",
+        "segmentoutputgeometry",
+        "segmentationoutputgeometry",
+    ):
+        if not _config_has_param(config, key):
+            continue
+        value = mrdhelper.get_json_config_param(
+            config,
+            key,
+            default=OPENRECON_DEFAULTS["vboutputgeometry"],
+            type='str',
+        )
+        normalised = str(value or "").strip().lower().replace("-", "_")
+        if normalised in {"2d", "2d_like_original", "source_geometry", "source"}:
+            return VESSELBOOST_OUTPUT_GEOMETRY_2D
+        if normalised in {"3d", "explicit", "explicit_volume", "volume"}:
+            return VESSELBOOST_OUTPUT_GEOMETRY_3D
+        logging.warning(
+            "Unknown VesselBoost output geometry %r from %s; falling back to %s",
+            value,
+            key,
+            OPENRECON_DEFAULTS["vboutputgeometry"],
+        )
+        return OPENRECON_DEFAULTS["vboutputgeometry"]
+
+    for key in ("vbsegmentpostprocessing", "segmentpostprocessing"):
+        if not _config_has_param(config, key):
+            continue
+        enabled = mrdhelper.get_json_config_param(
+            config,
+            key,
+            default=True,
+            type='bool',
+        )
+        if isinstance(enabled, str):
+            enabled = enabled.strip().lower() in ("1", "true", "yes", "on")
+        return (
+            VESSELBOOST_OUTPUT_GEOMETRY_2D
+            if enabled
+            else VESSELBOOST_OUTPUT_GEOMETRY_3D
+        )
+
+    return OPENRECON_DEFAULTS["vboutputgeometry"]
 
 
 def _clone_mrd_image(image):
@@ -1911,6 +2071,81 @@ def _build_vesselboost_segmentation_volume(
     return mrd_image
 
 
+def _build_vesselboost_segmentation_images(
+    volume_yxz: np.ndarray,
+    ordered_source_images,
+    source_identity: dict,
+    output_identity: dict,
+    series_index: int,
+    max_val: int,
+):
+    """Build one source-geometry 2D MRD segmentation image per source image."""
+    if volume_yxz.ndim != 3:
+        raise ValueError(
+            "VesselBoost segmentation image stack must be 3D, "
+            f"got shape {volume_yxz.shape}"
+        )
+
+    ordered_source_images = list(ordered_source_images)
+    if volume_yxz.shape[2] != len(ordered_source_images):
+        raise ValueError(
+            "VesselBoost 2D segmentation slice count does not match sources: "
+            f"output_z={volume_yxz.shape[2]} input_images={len(ordered_source_images)}"
+        )
+
+    outputs = []
+    for output_index, source_image in enumerate(ordered_source_images):
+        source_shape = np.asarray(source_image.data).shape
+        expected_yx = tuple(int(value) for value in source_shape[-2:])
+        slice_yx = np.ascontiguousarray(volume_yxz[:, :, output_index])
+        if expected_yx and slice_yx.shape != expected_yx:
+            raise ValueError(
+                "VesselBoost 2D segmentation slice shape does not match source: "
+                f"slice={output_index} output_yx={slice_yx.shape} "
+                f"source_yx={expected_yx}"
+            )
+
+        mrd_image = ismrmrd.Image.from_array(
+            slice_yx[np.newaxis, np.newaxis, :, :],
+            transpose=False,
+        )
+        new_header = source_image.getHead()
+        new_header.data_type = mrd_image.data_type
+        new_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+        mrd_image.setHead(new_header)
+
+        extra_meta = {
+            "WindowCenter": str((max_val + 1) / 2),
+            "WindowWidth": str(max_val + 1),
+            "VesselBoostOutputGeometry": VESSELBOOST_OUTPUT_GEOMETRY_2D,
+        }
+        _stamp_vesselboost_output_image(
+            mrd_image,
+            source_image,
+            output_identity,
+            source_identity,
+            series_index,
+            output_index,
+            source_identity.get("source_type_token", ""),
+            ["PYTHON", "VESSELBOOST", "SOURCE_GEOMETRY_2D"],
+            extra_meta=extra_meta,
+            keep_image_geometry=1,
+            patch_minihead=True,
+            data_role="Segmentation",
+        )
+        outputs.append(mrd_image)
+
+    logging.info(
+        "Built VesselBoost axial segmentation as %d source-geometry 2D image(s): "
+        "series_index=%d matrix_yx=%s outputgeometry=%s",
+        len(outputs),
+        series_index,
+        tuple(int(value) for value in volume_yxz.shape[:2]),
+        VESSELBOOST_OUTPUT_GEOMETRY_2D,
+    )
+    return outputs
+
+
 OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96
 OPENRECON_SEND_CHUNK_SIZE_ENV = "VESSELBOOST_OPENRECON_SEND_IMAGE_CHUNK_SIZE"
 OPENRECON_REFORMAT_DOWNSAMPLE_ENV = "VESSELBOOST_OPENRECON_REFORMAT_DOWNSAMPLE_FACTOR"
@@ -2649,6 +2884,11 @@ def process_image(images, connection, config, metadata):
         "vbreslicecoronal",
         default_val=OPENRECON_DEFAULTS["vbreslicecoronal"],
     )
+    output_geometry = _vesselboost_output_geometry(config)
+    debug_threshold_segment = boolean_checker(
+        "vbdebugthresholdsegment",
+        default_val=OPENRECON_DEFAULTS["vbdebugthresholdsegment"],
+    )
     run_name = _openrecon_run_name(
         module,
         prep_mode,
@@ -2697,11 +2937,20 @@ def process_image(images, connection, config, metadata):
     )
     logging.info("Using VesselBoost workspace %s", work_dir)
 
-    pretrained_model = _resolve_vesselboost_model("manual_0429")
+    # Determine max value (12 or 16 bit)
+    BitsStored = 12
+    # if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
+    #     BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
+    maxVal = 2**BitsStored - 1
+
+    pretrained_model = None
+    if not debug_threshold_segment:
+        pretrained_model = _resolve_vesselboost_model("manual_0429")
     logging.info(
         "OpenRecon VesselBoost options: run_name=%s module=%s bias_field_correction=%s "
         "denoising=%s prep_mode=%s brain_extraction=%s epochs=%s "
         "learning_rate=%s use_blending=%s overlap_ratio=%s "
+        "outputgeometry=%s debug_threshold_segment=%s "
         "reslice_sagittal=%s reslice_coronal=%s",
         run_name,
         module,
@@ -2713,6 +2962,8 @@ def process_image(images, connection, config, metadata):
         l_rate,
         use_blending,
         overlap_ratio,
+        output_geometry,
+        debug_threshold_segment,
         reslice_sagittal,
         reslice_coronal,
     )
@@ -2750,7 +3001,30 @@ def process_image(images, connection, config, metadata):
                 stderr=result.stderr,
             )
 
-    if module == 'prediction':
+    if debug_threshold_segment:
+        logging.warning(
+            "vbdebugthresholdsegment is enabled; skipping VesselBoost model "
+            "execution and using the openreconi2iexample-style simple threshold "
+            "segmentation instead."
+        )
+        volume_yxz = _simple_threshold_segmentation_volume(data, maxVal)
+        debug_output_path = output_dir / input_name
+        debug_output_data = np.asarray(volume_yxz).transpose((1, 0, 2))
+        debug_img = nib.nifti1.Nifti1Image(debug_output_data, affine)
+        debug_img.header.set_xyzt_units(xyz="mm", t="sec")
+        debug_img.header.set_dim_info(freq=1, phase=0, slice=2)
+        debug_img.set_qform(affine, code=1)
+        debug_img.set_sform(affine, code=1)
+        nib.save(debug_img, str(debug_output_path))
+        logging.info(
+            "Saved debug threshold segmentation to %s with shape=%s dtype=%s",
+            debug_output_path,
+            debug_img.shape,
+            debug_img.get_data_dtype(),
+        )
+        print('Debug threshold processing done')
+
+    elif module == 'prediction':
         logging.info("Running prediction module")
 
         vb_cmd = [
@@ -2803,67 +3077,95 @@ def process_image(images, connection, config, metadata):
     else:
         raise ValueError(f"Unsupported VesselBoost module requested: {module}")
 
-    print('Processing done')
-    output_image = _find_output_nifti(output_dir, input_name)
-    logging.info("Loading VesselBoost output image %s", output_image)
-    img = nib.load(str(output_image))
-    data = img.get_fdata(dtype=np.float32)
+    if not debug_threshold_segment:
+        print('Processing done')
+        output_image = _find_output_nifti(output_dir, input_name)
+        logging.info("Loading VesselBoost output image %s", output_image)
+        img = nib.load(str(output_image))
+        data = img.get_fdata(dtype=np.float32)
 
-    # Reformat data
-    print("shape after loading with nibabel")
-    print(data.shape)
-    if data.ndim == 2:
-        data = data[:, :, None]
-    if data.ndim == 3:
-        # Bring NIfTI [x, y, z] back to OpenRecon/MRD convenience [y, x, z].
-        data = data.transpose((1, 0, 2))
-    if data.ndim != 3:
-        raise ValueError(
-            f"VesselBoost output must be 3D after squeezing, got shape {data.shape}"
-        )
-    if data.shape[-1] != len(head):
+        # Reformat data
+        print("shape after loading with nibabel")
+        print(data.shape)
+        if data.ndim == 2:
+            data = data[:, :, None]
+        if data.ndim == 3:
+            # Bring NIfTI [x, y, z] back to OpenRecon/MRD convenience [y, x, z].
+            data = data.transpose((1, 0, 2))
+        if data.ndim != 3:
+            raise ValueError(
+                f"VesselBoost output must be 3D after squeezing, got shape {data.shape}"
+            )
+        if data.shape[-1] != len(head):
+            raise ValueError(
+                "VesselBoost output slice count does not match MRD input: "
+                f"output_z={data.shape[-1]} input_images={len(head)}"
+            )
+
+        if legacy_option == "complex":
+            logging.warning(
+                "Ignoring legacy complex output request because VesselBoost returns "
+                "real-valued segmentations."
+            )
+
+        # Normalize real-valued output and convert to int16 for MRD export.
+        data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
+        if np.min(data) < 0:
+            logging.warning("Negative values detected in VesselBoost output; clipping to zero.")
+            data = np.clip(data, 0, None)
+
+        data_max = float(np.max(data))
+        if data_max > 0:
+            volume_yxz = np.rint(data * (maxVal / data_max)).astype(np.int16)
+        else:
+            logging.warning("VesselBoost output is all zeros; returning a zero-valued image.")
+            volume_yxz = np.zeros(data.shape, dtype=np.int16)
+
+    if volume_yxz.shape[-1] != len(head):
         raise ValueError(
             "VesselBoost output slice count does not match MRD input: "
-            f"output_z={data.shape[-1]} input_images={len(head)}"
+            f"output_z={volume_yxz.shape[-1]} input_images={len(head)}"
         )
 
-    if legacy_option == "complex":
-        logging.warning(
-            "Ignoring legacy complex output request because VesselBoost returns "
-            "real-valued segmentations."
+    if output_geometry == VESSELBOOST_OUTPUT_GEOMETRY_2D:
+        imagesOut.extend(
+            _build_vesselboost_segmentation_images(
+                volume_yxz=volume_yxz,
+                ordered_source_images=ordered_images,
+                source_identity=source_identity,
+                output_identity=segmentation_identity,
+                series_index=segmentation_series_index,
+                max_val=maxVal,
+            )
         )
-
-    # Determine max value (12 or 16 bit)
-    BitsStored = 12
-    # if (mrdhelper.get_userParameterLong_value(metadata, "BitsStored") is not None):
-    #     BitsStored = mrdhelper.get_userParameterLong_value(metadata, "BitsStored")
-    maxVal = 2**BitsStored - 1
-
-    # Normalize real-valued output and convert to int16 for MRD export.
-    data = np.nan_to_num(data, nan=0.0, posinf=0.0, neginf=0.0)
-    if np.min(data) < 0:
-        logging.warning("Negative values detected in VesselBoost output; clipping to zero.")
-        data = np.clip(data, 0, None)
-
-    data_max = float(np.max(data))
-    if data_max > 0:
-        volume_yxz = np.rint(data * (maxVal / data_max)).astype(np.int16)
     else:
-        logging.warning("VesselBoost output is all zeros; returning a zero-valued image.")
-        volume_yxz = np.zeros(data.shape, dtype=np.int16)
-
-    imagesOut.append(
-        _build_vesselboost_segmentation_volume(
-            volume_yxz=volume_yxz,
-            head_template=head[0],
-            source_image=ordered_images[0],
-            source_identity=source_identity,
-            output_identity=segmentation_identity,
-            fov=fov,
-            series_index=segmentation_series_index,
-            max_val=maxVal,
+        imagesOut.append(
+            _build_vesselboost_segmentation_volume(
+                volume_yxz=volume_yxz,
+                head_template=head[0],
+                source_image=ordered_images[0],
+                source_identity=source_identity,
+                output_identity=segmentation_identity,
+                fov=fov,
+                series_index=segmentation_series_index,
+                max_val=maxVal,
+            )
         )
-    )
+
+    if original_series_index is not None and output_geometry == VESSELBOOST_OUTPUT_GEOMETRY_2D:
+        logging.info(
+            "VesselBoost send order is source-geometry originals first, then "
+            "source-geometry 2D segmentation images"
+        )
+    elif original_series_index is not None:
+        logging.info(
+            "VesselBoost send order is source-geometry originals first, then "
+            "explicit-volume segmentation"
+        )
+    elif output_geometry == VESSELBOOST_OUTPUT_GEOMETRY_2D:
+        logging.info("VesselBoost send order is source-geometry 2D segmentation images")
+    else:
+        logging.info("VesselBoost send order is explicit-volume segmentation")
 
     if reslice_sagittal or reslice_coronal:
         base_series = segmentation_series_index + 1

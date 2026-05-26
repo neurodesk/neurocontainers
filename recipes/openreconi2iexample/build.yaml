@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.57
+version: 1.0.65
 architectures:
   - x86_64
 
@@ -35,6 +35,8 @@ build:
 
     - copy: openreconi2iexample.py /opt/code/python-ismrmrd-server/openreconi2iexample.py
     - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
+    - environment:
+        OPENRECONI2IEXAMPLE_VERSION: "{{ context.version }}"
     - run:
         - pip install pillow==10.4.0
         - python -c "from PIL import Image, ImageDraw, ImageFont"
@@ -59,11 +61,14 @@ readme: |-
   Enable `invert` to return inverted magnitude images as `<source>-inverted` on
   `image_series_index = 99`. Enable `segment` to extract the brightest foreground
   object and send `<source>-segment` outputs starting on
-  `image_series_index = 101`. The `outputgeometry` choice controls the
-  segmentation send path: `3d` packs one explicit 3D segmentation volume per
-  source volume group, while `2d_like_original` sends source-geometry 2D masks
-  for scanner postprocessing. Multi-contrast inputs with repeated slice
-  positions are split into one segmentation output per source volume group.
+  `image_series_index = 101`. The `segmentoutput` choice controls both
+  segmentation geometry and send order: `3d_volume` packs one explicit 3D
+  segmentation volume per source volume group; `3d_volume_detached` sends
+  source-geometry outputs first and explicit 3D data later; `2d_masks_first`
+  sends source-geometry 2D masks before originals for scanner MRA/MIP
+  postprocessing; and `2d_masks_after_originals` sends originals first and the
+  2D mask stream second. Multi-contrast inputs with repeated slice positions
+  are split into one segmentation output per source volume group.
   Enable `segmentationcolormap` with `segment` to add `MicroDeltaHotMetal.pal`
   LUT metadata to segmentation outputs. Enable
   `upsampled` to send one double-slice-count `<source>-upsampled` volume on
@@ -76,7 +81,7 @@ readme: |-
   pre-oriented for scanner display and use standalone identity geometry instead
   of inheriting scan orientation.
 
-  Original copies are sent first as source-native 2D images with
+  Original copies are normally sent first as source-native 2D images with
   `Keep_image_geometry = 1`. The pass-through keeps the source protocol,
   sequence, image-type, MiniHead, and slice metadata as intact as possible while
   assigning new returned-series UIDs. Scanner partition counters are kept at
@@ -86,30 +91,39 @@ readme: |-
   `SliceNo` remain consistent with the MRD header. If a source group cannot be
   sent safely as a 2D stream, the job fails before send rather than packing the
   originals, because scanner MIP/MPR postprocessing depends on the original
-  stream.
-  With `outputgeometry = 3d`, segmentation outputs use
-  `Keep_image_geometry = 0`, `DataRole = Segmentation`,
-  `SegmentExplicitVolume = 1`, and one MRD volume that uses the first sorted
-  source slice as the volume position and sorted source spacing for the
-  through-plane FOV. With
-  `outputgeometry = 2d_like_original`, masks keep the source physical geometry,
+  stream. When `sendoriginal` is paired with `segment` and a 3D segment output
+  mode, the returned originals are sorted by projected physical slice position
+  so their frame order matches the explicit segmentation volume.
+  With `segmentoutput = 3d_volume` or `3d_volume_detached`, segmentation outputs
+  use `Keep_image_geometry = 0`, `DataRole = Segmentation`,
+  `SegmentExplicitVolume = 1`, and one MRD volume that uses the center of the
+  sorted source slab as the volume position and sorted source spacing for the
+  through-plane FOV. With `segmentoutput = 2d_masks_first` or
+  `2d_masks_after_originals`, masks keep the source physical geometry,
   use `Keep_image_geometry = 1`, preserve source composer-facing image-type
   identity, sort by projected slice position, and restamp returned-stream header,
   Meta, and MiniHead counters so wrapped source slice numbers do not collide in
   scanner postprocessing. Source grouping header fields such as contrast,
   phase, repetition, set, and average are reset to zero on the returned 2D
   segment stream so it composes as one derived stream instead of clashing with
-  source children. If `sendoriginal` is also enabled with
-  `outputgeometry = 2d_like_original`, the original source-native 2D stream is
-  sent first in a separate MRD image message.
+  source children. The `2d_masks_first` mode sends the 2D segment stream first
+  in a separate MRD image message so scanner MRA/MIP postprocessing attaches to
+  the masks. The `2d_masks_after_originals` mode sends the original stream
+  first and the segment stream second. The `3d_volume_detached` mode sends
+  explicit 3D outputs such as 3D segmentation, `upsampled`, and packed-volume
+  fallback outputs after source-geometry batches in separate MRD image messages.
   Returned outputs strip scanner `ImageTypeValue3` metadata and `IceMiniHead`
   `ImageTypeValue3` entries because some sequences reject that protocol field
   during OpenRecon conversion. Original pass-through preserves Dixon subtype
-  identity; `outputgeometry = 2d_like_original` segment outputs preserve source
+  identity; 2D mask segment outputs preserve source
   identity, including Dixon subtype tokens, so the masks can follow the same
   scanner compose route as their source scan.
 
   OpenRecon runtime notes: `recipes/openreconi2iexample/OpenReconREADME.md`.
+  Scanner logs include an `openreconi2iexample runtime version=...` marker,
+  `OPENRECONI2I_POSTPROCESSING target=...`, `segmentoutput=...` in the
+  configured-output line, and one `OPENRECONI2I_BATCH ...` marker before every
+  MRD image send.
 
   Build and validate:
   ```bash

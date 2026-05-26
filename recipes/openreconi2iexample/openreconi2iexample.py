@@ -2,6 +2,7 @@
 import base64
 import json
 import logging
+import os
 import re
 import traceback
 import uuid
@@ -107,11 +108,26 @@ SOURCE_GROUP_HEADER_FIELDS = (
     "set",
     "average",
 )
-SEGMENT_OUTPUT_GEOMETRY_2D = "2d_like_original"
+SEGMENT_OUTPUT_GEOMETRY_2D = "2d"
 SEGMENT_OUTPUT_GEOMETRY_3D = "3d"
+SEGMENT_OUTPUT_MODE_3D_VOLUME = "3d_volume"
+SEGMENT_OUTPUT_MODE_3D_VOLUME_DETACHED = "3d_volume_detached"
+SEGMENT_OUTPUT_MODE_2D_MASKS_FIRST = "2d_masks_first"
+SEGMENT_OUTPUT_MODE_2D_MASKS_AFTER_ORIGINALS = "2d_masks_after_originals"
+SEGMENT_OUTPUT_MODES = (
+    SEGMENT_OUTPUT_MODE_3D_VOLUME,
+    SEGMENT_OUTPUT_MODE_3D_VOLUME_DETACHED,
+    SEGMENT_OUTPUT_MODE_2D_MASKS_FIRST,
+    SEGMENT_OUTPUT_MODE_2D_MASKS_AFTER_ORIGINALS,
+)
+VERSION_ENV_VAR = "OPENRECONI2IEXAMPLE_VERSION"
 
 
 def process(connection, config, metadata):
+    logging.info(
+        "openreconi2iexample runtime version=%s",
+        _runtime_version(),
+    )
     logging.info("Config: %s", config)
     input_images = []
     magnitude_images = []
@@ -143,10 +159,20 @@ def process(connection, config, metadata):
             ("segment", "sendsegment", "sendthreshold"),
             default=False,
         )
-        segment_output_geometry = _segment_output_geometry(config)
+        segment_output_mode = _segment_output_mode(config)
+        segment_output_geometry = _segment_geometry_from_output_mode(
+            segment_output_mode
+        )
         send_segment_2d_geometry = (
             segment_output_geometry == SEGMENT_OUTPUT_GEOMETRY_2D
         )
+        send_segment_3d_geometry = (
+            segment_output_geometry == SEGMENT_OUTPUT_GEOMETRY_3D
+        )
+        send_segment_first = _segment_output_sends_segment_first(
+            segment_output_mode
+        )
+        detach_3d_data = _segment_output_detaches_3d_data(segment_output_mode)
         use_segmentation_colormap = _config_bool_any(
             config,
             ("segmentationcolormap", "sendsegmentationcolormap"),
@@ -165,7 +191,12 @@ def process(connection, config, metadata):
         output_images = []
         original_images = []
         if send_original:
-            original_images = _restamp_originals(input_images)
+            original_images = _restamp_originals(
+                input_images,
+                align_with_explicit_segment=bool(
+                    send_segment and send_segment_3d_geometry
+                ),
+            )
             output_images.extend(original_images)
         inverted_images = []
         if send_invert:
@@ -203,17 +234,31 @@ def process(connection, config, metadata):
             metrics_images = _metrics_report_images(magnitude_images, metrics_rows)
             output_images.extend(metrics_images)
 
+        postprocessing_target = _scanner_postprocessing_target(
+            send_original,
+            send_segment,
+            send_segment_2d_geometry,
+            send_segment_first,
+        )
         logging.info(
             "Configured outputs: original=%s invert=%s upsampled=%s segment=%s "
-            "outputgeometry=%s segmentationcolormap=%s mip=%s metrics=%s",
+            "segmentoutput=%s segment_geometry=%s detached3d=%s "
+            "postprocessing_target=%s segmentationcolormap=%s mip=%s metrics=%s",
             send_original,
             send_invert,
             send_upsampled,
             send_segment,
+            segment_output_mode,
             segment_output_geometry,
+            detach_3d_data,
+            postprocessing_target,
             use_segmentation_colormap,
             send_mip,
             send_metrics,
+        )
+        logging.info(
+            "OPENRECONI2I_POSTPROCESSING target=%s",
+            postprocessing_target,
         )
         logging.info(
             "Sending %d original image(s), %d inverted image(s), "
@@ -232,22 +277,55 @@ def process(connection, config, metadata):
 
         _validate_output_images(output_images, input_images)
         _log_output_images(output_images)
+        split_source_geometry_outputs = bool(
+            original_images
+            and segment_images
+            and send_segment
+            and send_segment_2d_geometry
+        )
+        detached_3d_images = [
+            image for image in output_images
+            if detach_3d_data and _is_detachable_3d_data_output(image)
+        ]
         send_batches = _output_send_batches(
             output_images,
             original_images,
-            split_originals=bool(
-                original_images
-                and segment_images
-                and send_segment
-                and send_segment_2d_geometry
-            ),
+            segment_images=segment_images,
+            split_originals=split_source_geometry_outputs,
+            segment_first=send_segment_first,
+            detach_3d_data=detach_3d_data,
         )
         if len(send_batches) > 1:
-            logging.info(
-                "Sending source-geometry originals separately from "
-                "2D segmentation outputs across %d MRD image messages",
-                len(send_batches),
-            )
+            if split_source_geometry_outputs and send_segment_first:
+                logging.info(
+                    "Sending 2D postprocessing segmentation outputs before "
+                    "source-geometry originals%s across %d MRD image messages",
+                    (
+                        " with detached 3D data"
+                        if detached_3d_images
+                        else ""
+                    ),
+                    len(send_batches),
+                )
+            elif split_source_geometry_outputs:
+                logging.info(
+                    "Sending source-geometry originals before 2D "
+                    "postprocessing segmentation outputs%s across %d MRD image "
+                    "messages",
+                    (
+                        " with detached 3D data"
+                        if detached_3d_images
+                        else ""
+                    ),
+                    len(send_batches),
+                )
+            elif detached_3d_images:
+                logging.info(
+                    "Sending source-geometry outputs before %d detached 3D "
+                    "data output(s) across %d MRD image messages",
+                    len(detached_3d_images),
+                    len(send_batches),
+                )
         for batch_index, batch in enumerate(send_batches, start=1):
             if len(send_batches) > 1:
                 logging.info(
@@ -256,6 +334,7 @@ def process(connection, config, metadata):
                     len(send_batches),
                     len(batch),
                 )
+            _log_send_batch_summary(batch_index, len(send_batches), batch)
             connection.send_image(batch)
 
     except Exception:
@@ -265,23 +344,151 @@ def process(connection, config, metadata):
         connection.send_close()
 
 
-def _output_send_batches(output_images, original_images, split_originals=False):
-    if not split_originals:
+def _output_send_batches(
+    output_images,
+    original_images,
+    segment_images=None,
+    split_originals=False,
+    segment_first=False,
+    detach_3d_data=False,
+):
+    detached_3d_ids = {
+        id(image) for image in output_images
+        if detach_3d_data and _is_detachable_3d_data_output(image)
+    }
+    if not split_originals and not detached_3d_ids:
         return [output_images]
 
     original_ids = {id(image) for image in original_images}
+    segment_ids = {id(image) for image in (segment_images or [])}
     original_batch = [
         image for image in output_images
-        if id(image) in original_ids
+        if id(image) in original_ids and id(image) not in detached_3d_ids
+    ]
+    segment_batch = [
+        image for image in output_images
+        if id(image) in segment_ids and id(image) not in detached_3d_ids
     ]
     remaining_batch = [
         image for image in output_images
-        if id(image) not in original_ids
+        if (
+            id(image) not in original_ids
+            and id(image) not in segment_ids
+            and id(image) not in detached_3d_ids
+        )
     ]
+    detached_3d_batch = [
+        image for image in output_images
+        if id(image) in detached_3d_ids
+    ]
+    if split_originals and segment_first:
+        batches = (
+            segment_batch,
+            original_batch + remaining_batch,
+            detached_3d_batch,
+        )
+    elif split_originals:
+        batches = (
+            original_batch,
+            segment_batch + remaining_batch,
+            detached_3d_batch,
+        )
+    else:
+        batches = (
+            original_batch + segment_batch + remaining_batch,
+            detached_3d_batch,
+        )
     return [
-        batch for batch in (original_batch, remaining_batch)
+        batch for batch in batches
         if batch
     ]
+
+
+def _runtime_version():
+    return os.environ.get(VERSION_ENV_VAR, "unknown")
+
+
+def _scanner_postprocessing_target(
+    send_original,
+    send_segment,
+    send_segment_2d_geometry,
+    send_segment_first,
+):
+    if send_segment and send_segment_2d_geometry:
+        if send_segment_first or not send_original:
+            return "segment_2d"
+        return "originals"
+    if send_original:
+        return "originals"
+    if send_segment:
+        return "none_explicit_3d"
+    return "none"
+
+
+def _log_send_batch_summary(batch_index, batch_count, images):
+    logging.info(_send_batch_summary(batch_index, batch_count, images))
+
+
+def _send_batch_summary(batch_index, batch_count, images):
+    series = _ordered_unique_strings(
+        int(image.image_series_index) for image in images
+    )
+    keep_geometry = _ordered_unique_strings(
+        _meta_text(_meta_from_image(image), "Keep_image_geometry") or "missing"
+        for image in images
+    )
+    names = _ordered_unique_strings(
+        _meta_text(_meta_from_image(image), "SeriesDescription") or "missing"
+        for image in images
+    )
+    targets = _ordered_unique_strings(_output_role(image) for image in images)
+    return (
+        "OPENRECONI2I_BATCH index=%d/%d images=%d target=%s "
+        "series=%s keep_geometry=%s names=%s"
+        % (
+            batch_index,
+            batch_count,
+            len(images),
+            "+".join(targets) if targets else "empty",
+            ",".join(series) if series else "empty",
+            ",".join(keep_geometry) if keep_geometry else "empty",
+            "|".join(names) if names else "empty",
+        )
+    )
+
+
+def _output_role(image):
+    meta = _meta_from_image(image)
+    if _is_segment_postprocessing_output(meta):
+        return "segment_postprocessing"
+    if _is_segment_explicit_volume_output(meta):
+        return "segment_explicit_3d"
+    if _is_segment_source_geometry_output(meta):
+        return "segment_source_geometry"
+    if _is_original_series_index(int(image.image_series_index)):
+        return "original_passthrough"
+    series_index = int(image.image_series_index)
+    if series_index == INVERT_SERIES_INDEX:
+        return "invert"
+    if series_index == UPSAMPLED_SERIES_INDEX:
+        return "upsampled"
+    if series_index == MIP_SERIES_INDEX:
+        return "mip"
+    if series_index == METRICS_SERIES_INDEX:
+        return "metrics"
+    return "derived"
+
+
+def _ordered_unique_strings(values):
+    unique = []
+    seen = set()
+    for value in values:
+        text = str(value)
+        if text in seen:
+            continue
+        seen.add(text)
+        unique.append(text)
+    return unique
 
 
 def _invert_images(images):
@@ -425,7 +632,7 @@ def _segment_images(images, use_colormap=False, metrics_rows=None):
     logging.info(
         "Created %d explicit-volume segmentation image(s) from %d source image(s) "
         "across %d source volume group(s) with threshold(s) %s, "
-        "outputgeometry=%s, and "
+        "segment_geometry=%s, and "
         "segmentationcolormap=%s",
         len(outputs),
         len(images),
@@ -477,7 +684,7 @@ def _segment_images_for_postprocessing(
     source_groups = _original_source_groups(images)
     if len(source_groups) > 1:
         logging.info(
-            "outputgeometry=%s split %d received image(s) into %d source "
+            "segment_geometry=%s split %d received image(s) into %d source "
             "volume group(s)",
             SEGMENT_OUTPUT_GEOMETRY_2D,
             len(images),
@@ -562,7 +769,7 @@ def _segment_images_for_postprocessing(
     logging.info(
         "Created %d source-geometry segmentation image(s) from %d source image(s) "
         "across %d source volume group(s) with threshold(s) %s, "
-        "outputgeometry=%s, and segmentationcolormap=%s",
+        "segment_geometry=%s, and segmentationcolormap=%s",
         len(outputs),
         len(images),
         len(source_groups),
@@ -1183,7 +1390,13 @@ def _pack_upsampled_volume(
     _set_header_sequence_field(
         header,
         "position",
-        [float(value) for value in _header_position(slice_images[0].getHead())],
+        [
+            float(value)
+            for value in _explicit_volume_center_position(
+                [(image, None) for image in slice_images],
+                slice_axis,
+            )
+        ],
     )
     _set_header_sequence_field(
         header,
@@ -1224,7 +1437,7 @@ def _pack_upsampled_volume(
     return output
 
 
-def _restamp_originals(images):
+def _restamp_originals(images, align_with_explicit_segment=False):
     if not images:
         return []
 
@@ -1246,6 +1459,8 @@ def _restamp_originals(images):
                 f"reserved original series range; group {group_index} would use "
                 f"image_series_index {series_index}"
             )
+        if align_with_explicit_segment:
+            group_images = _ordered_original_images_for_explicit_segment(group_images)
         _validate_original_source_geometry(group_images)
         series_identity = _build_output_series_identity(
             group_images[0],
@@ -1273,6 +1488,75 @@ def _restamp_originals(images):
             outputs.append(output)
 
     return outputs
+
+
+def _ordered_original_images_for_explicit_segment(images):
+    images = list(images)
+    if len(images) < 2:
+        return images
+
+    headers = [image.getHead() for image in images]
+    slice_axis = _infer_slice_axis(headers)
+    projections = np.asarray(
+        [_projected_position(image, slice_axis) for image in images],
+        dtype=float,
+    )
+    duplicate_positions = _duplicate_projected_position_count(projections)
+    median_spacing = _median_projected_spacing(projections)
+    increasing = _is_projected_order_monotonic(projections, increasing=True)
+    decreasing = _is_projected_order_monotonic(projections, increasing=False)
+    logging.info(
+        "sendoriginal 3D alignment source geometry: count=%d axis=%s "
+        "projected_range=[%.6f, %.6f] median_spacing=%.6f "
+        "duplicate_positions=%d receive_order_monotonic=%s",
+        len(images),
+        _format_vector(slice_axis),
+        float(np.min(projections)),
+        float(np.max(projections)),
+        median_spacing,
+        duplicate_positions,
+        increasing or decreasing,
+    )
+    if duplicate_positions:
+        raise ValueError(
+            "sendoriginal 3D alignment source geometry has duplicate projected "
+            "slice position(s); cannot align originals with explicit 3D "
+            "segmentation"
+        )
+    if increasing:
+        return images
+
+    sort_indices = sorted(
+        range(len(images)),
+        key=lambda index: (
+            round(float(projections[index]), 4),
+            int(headers[index].slice),
+            int(headers[index].image_index),
+            index,
+        ),
+    )
+    order_reason = (
+        "decreasing in physical position"
+        if decreasing
+        else "not monotonic in physical position"
+    )
+    logging.warning(
+        "sendoriginal source slices are %s; sorting by projected position so "
+        "original frame order matches 3D volume segmentation output: "
+        "first mappings %s",
+        order_reason,
+        ", ".join(
+            f"out{output_index}->in{input_index}"
+            for output_index, input_index in enumerate(sort_indices[:24])
+        ),
+    )
+    if len(sort_indices) > 24:
+        logging.warning(
+            "sendoriginal 3D alignment source sort mapping omitted %d "
+            "additional slice(s)",
+            len(sort_indices) - 24,
+        )
+    return [images[index] for index in sort_indices]
 
 
 def _validate_original_source_geometry(group_images, label="sendoriginal"):
@@ -1307,6 +1591,18 @@ def _is_segment_source_geometry_output(meta):
 
 def _is_segment_explicit_volume_output(meta):
     return _meta_int(meta, SEGMENT_EXPLICIT_VOLUME_META_KEY) == 1
+
+
+def _is_detachable_3d_data_output(image):
+    meta = _meta_from_image(image)
+    if _is_segment_explicit_volume_output(meta):
+        return True
+    if _meta_int(meta, "Keep_image_geometry") != 0:
+        return False
+    try:
+        return int(image.getHead().matrix_size[2]) > 1
+    except Exception:
+        return False
 
 
 def _source_image_groups(images):
@@ -1507,6 +1803,7 @@ def _pack_explicit_volume(
 
     ordered_items, slice_axis = _ordered_volume_items(source_items, label)
     output_slice_count = len(ordered_items)
+    output_position = _explicit_volume_center_position(ordered_items, slice_axis)
     output_spacing = _explicit_volume_output_spacing(
         [source_image for source_image, _data in ordered_items],
         slice_axis,
@@ -1543,7 +1840,7 @@ def _pack_explicit_volume(
     _set_header_sequence_field(
         header,
         "position",
-        [float(value) for value in _header_position(source_image.getHead())],
+        [float(value) for value in output_position],
     )
     _set_header_sequence_field(
         header,
@@ -1576,11 +1873,12 @@ def _pack_explicit_volume(
     )
     logging.info(
         "Packed %d %s image(s) into one explicit volume with matrix_size=%s "
-        "and field_of_view=%s",
+        "field_of_view=%s and position=%s",
         output_slice_count,
         label,
         _format_vector(output.getHead().matrix_size),
         _format_vector(output.getHead().field_of_view),
+        _format_vector(output.getHead().position),
     )
     return output
 
@@ -1640,6 +1938,7 @@ def _stamp_original_image(
     output.image_series_index = series_index
     output.attribute_string = _original_passthrough_meta(
         source_image,
+        output,
         series_index,
         output_index,
         series_name,
@@ -1725,6 +2024,7 @@ def _source_geometry_header_image_index(source_image, output_index):
 
 def _original_passthrough_meta(
     source_image,
+    output_image,
     series_index,
     output_index,
     series_name,
@@ -1758,6 +2058,8 @@ def _original_passthrough_meta(
     meta["SeriesNumberRangeNameUID"] = series_grouping
     _set_meta_scalar(meta, "Keep_image_geometry", 1)
     _ensure_original_storage_meta(meta, source_image, output_index, storage_fields)
+    for key, value in _header_geometry_meta(output_image.getHead()).items():
+        meta[key] = value
 
     minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
     _strip_scanner_write_unsafe_meta(meta)
@@ -3518,6 +3820,13 @@ def _validate_storage_fields(
             "original",
             errors,
         )
+        _validate_meta_header_geometry(
+            index,
+            image,
+            meta,
+            "original",
+            errors,
+        )
     elif keep_image_geometry == 0:
         partition_count = _meta_int(meta, "partition_count")
         if partition_count is None:
@@ -3996,15 +4305,48 @@ def _log_output_images(output_images):
         )
 
 
-def _explicit_header_geometry_meta(header):
-    # The MRD ImageHeader is the geometry contract; these Meta copies are kept
-    # aligned for scanner-side consumers and log/debug inspection.
+def _header_geometry_meta(header):
     return {
         "ImageRowDir": _meta_vector(_header_vector(header, "read_dir")),
         "ImageColumnDir": _meta_vector(_header_vector(header, "phase_dir")),
         "ImageSliceNormDir": _meta_vector(_header_vector(header, "slice_dir")),
         "SlicePosLightMarker": _meta_vector(_header_vector(header, "position")),
     }
+
+
+def _explicit_header_geometry_meta(header):
+    # The MRD ImageHeader is the geometry contract; these Meta copies are kept
+    # aligned for scanner-side consumers and log/debug inspection.
+    return _header_geometry_meta(header)
+
+
+def _validate_meta_header_geometry(index, image, meta, context, errors):
+    expected_meta = _header_geometry_meta(image.getHead())
+    for key, expected_values in expected_meta.items():
+        actual_values = _meta_values(meta, key)
+        if not actual_values:
+            errors.append(f"image {index} is missing {context} Meta {key}")
+            continue
+        try:
+            actual_vector = np.asarray([float(value) for value in actual_values])
+        except ValueError:
+            errors.append(
+                f"image {index} has non-numeric {context} Meta {key}="
+                f"{actual_values}"
+            )
+            continue
+        expected_vector = np.asarray(expected_values, dtype=float)
+        if actual_vector.shape != expected_vector.shape or not np.allclose(
+            actual_vector,
+            expected_vector,
+            atol=SLICE_POSITION_TOLERANCE_MM,
+            rtol=0.0,
+        ):
+            errors.append(
+                f"image {index} has {context} Meta {key}="
+                f"{_format_vector(actual_vector)}, expected header "
+                f"{_format_vector(expected_vector)}"
+            )
 
 
 def _infer_slice_axis(headers):
@@ -4107,6 +4449,21 @@ def _explicit_volume_output_spacing(images, slice_axis):
     if source_spacing > SLICE_POSITION_TOLERANCE_MM:
         return source_spacing
     return 1.0
+
+
+def _explicit_volume_center_position(ordered_items, slice_axis):
+    first_position = _header_position(ordered_items[0][0].getHead())
+    if len(ordered_items) < 2:
+        return first_position
+
+    normalized_axis = _normalize_vector(slice_axis)
+    if normalized_axis is None:
+        return first_position
+
+    last_position = _header_position(ordered_items[-1][0].getHead())
+    first_projection = float(np.dot(first_position, normalized_axis))
+    last_projection = float(np.dot(last_position, normalized_axis))
+    return first_position + 0.5 * (last_projection - first_projection) * normalized_axis
 
 
 def _interpolated_half_step(images):
@@ -4281,54 +4638,35 @@ def _config_value_any(config, keys, default=None):
     return default
 
 
-def _segment_output_geometry(config):
+def _segment_output_mode(config):
     raw = _config_value_any(
         config,
-        (
-            "outputgeometry",
-            "output_geometry",
-            "segmentoutputgeometry",
-            "segment_output_geometry",
-            "segmentationoutputgeometry",
-            "segmentation_output_geometry",
-        ),
+        ("segmentoutput", "segment_output"),
+        default=SEGMENT_OUTPUT_MODE_3D_VOLUME,
     )
-    if raw is not None:
-        normalized = re.sub(r"[^a-z0-9]+", "_", str(raw).strip().lower()).strip("_")
-        if normalized in {
-            "3d",
-            "volume",
-            "explicit",
-            "explicit_volume",
-            "3d_volume",
-        }:
-            return SEGMENT_OUTPUT_GEOMETRY_3D
-        if normalized in {
-            "2d",
-            "2d_like_original",
-            "like_original",
-            "source_geometry",
-            "source_native",
-            "original",
-        }:
-            return SEGMENT_OUTPUT_GEOMETRY_2D
-        logging.warning(
-            "Unknown outputgeometry=%r; defaulting to %s",
-            raw,
-            SEGMENT_OUTPUT_GEOMETRY_3D,
-        )
-        return SEGMENT_OUTPUT_GEOMETRY_3D
+    normalized = re.sub(r"[^a-z0-9]+", "_", str(raw).strip().lower()).strip("_")
+    if normalized in SEGMENT_OUTPUT_MODES:
+        return normalized
+    logging.warning(
+        "Unknown segmentoutput=%r; defaulting to %s",
+        raw,
+        SEGMENT_OUTPUT_MODE_3D_VOLUME,
+    )
+    return SEGMENT_OUTPUT_MODE_3D_VOLUME
 
-    legacy_postprocessing = _config_bool_any(
-        config,
-        (
-            "segmentpostprocessing",
-            "sendsegmentpostprocessing",
-            "segmentationpostprocessing",
-            "sendsegmentationpostprocessing",
-        ),
-        default=None,
-    )
-    if legacy_postprocessing is True:
+
+def _segment_geometry_from_output_mode(segment_output_mode):
+    if segment_output_mode in (
+        SEGMENT_OUTPUT_MODE_2D_MASKS_FIRST,
+        SEGMENT_OUTPUT_MODE_2D_MASKS_AFTER_ORIGINALS,
+    ):
         return SEGMENT_OUTPUT_GEOMETRY_2D
     return SEGMENT_OUTPUT_GEOMETRY_3D
+
+
+def _segment_output_sends_segment_first(segment_output_mode):
+    return segment_output_mode == SEGMENT_OUTPUT_MODE_2D_MASKS_FIRST
+
+
+def _segment_output_detaches_3d_data(segment_output_mode):
+    return segment_output_mode == SEGMENT_OUTPUT_MODE_3D_VOLUME_DETACHED
