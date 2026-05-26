@@ -19,3 +19,20 @@ def test_dockerfile_generation_without_neurodocker_dependency() -> None:
     assert "dcm2niix_lnx.zip" in dockerfile
     assert "DEPLOY_PATH" in dockerfile
     assert "# Save specification to JSON." in dockerfile
+
+
+def test_openreconi2iexample_version_env_does_not_invalidate_heavy_layers() -> None:
+    config = default_config()
+    compiled = compile_recipe(
+        resolve_recipe(config, "openreconi2iexample"),
+        architecture="x86_64",
+        include_dirs=config.include_dirs,
+    )
+    dockerfile = render_dockerfile(compiled.definition)
+
+    assert dockerfile.index('ENV OPENRECONI2IEXAMPLE_VERSION="') > dockerfile.index(
+        "git clone --branch fix/ismrmrd-compatibility"
+    )
+    assert dockerfile.index('ENV OPENRECONI2IEXAMPLE_VERSION="') < dockerfile.index(
+        "RUN --mount=type=bind"
+    )
