@@ -1,0 +1,18 @@
+{
+  "apps": {
+    "functionnectome 2.5.0": {
+      "version": "20260527",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "FunctionnectomeGUI-functionnectome 2.5.0": {
+      "version": "20260527",
+      "exec": "FunctionnectomeGUI",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "diffusion imaging"
+  ]
+}
