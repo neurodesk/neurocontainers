@@ -25,6 +25,10 @@ build:
 deploy:
   bins:
     - dcm2bids
+    - dcm2bids_scaffold
+    - dcm2bids_helper
+    - dcm2niix
+    - dcm2niibatch
 
 readme: |
   ## dcm2bids/{{ context.version }} ##
