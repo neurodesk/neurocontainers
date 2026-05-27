@@ -4,8 +4,8 @@
 - always use {{ context.version }} instead of the hardcoded version number
 - always use `{{ get_file("filename") }}` to reference declared files in run directives instead of using `wget` or `curl` directly
 - the home directory will not be available during container runtime! Files cannot be stored under /home if they are needed during runtime!
-- make sure that every build.yaml recipe has an icon - first try to find the official icon, if none exist make one up based on the tool description.
-
+- make sure that every build.yaml recipe has a base64 encoded icon - first try to find the official icon, if none exist make one up based on the tool description.
+- these are the available categories: functional imaging, image reconstruction, spectroscopy, rodent imaging, data organisation, diffusion imaging, structural imaging, quantitative imaging, image segmentation, image registration, visualization, statistics, quality control, spine, electrophysiology, bids apps, machine learning, phase processing, molecular biology, hippocampus, body, shape analysis, cryo EM, programming, workflows.
 
 ## Environment Setup
 

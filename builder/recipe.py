@@ -132,7 +132,7 @@ def load_recipe(recipe_dir: Path) -> dict[str, Any]:
         data["name"] = str(data["name"])
     if "version" in data and data["version"] is not None:
         data["version"] = str(data["version"])
-    validate_recipe_dict(data)
+    validate_recipe_dict(data, strict_metadata=False)
     return data
 
 

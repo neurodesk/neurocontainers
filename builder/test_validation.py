@@ -19,6 +19,15 @@ from builder.validation import (
     FileInfo
 )
 
+VALID_ICON = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+)
+VALID_SVG_ICON = (
+    "data:image/svg+xml;base64,"
+    "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4="
+)
+
 
 def test_valid_minimal_recipe():
     """Test validation of a minimal valid recipe"""
@@ -26,7 +35,8 @@ def test_valid_minimal_recipe():
         "name": "test-app",
         "version": "1.0.0",
         "architectures": ["x86_64"],
-        "categories": ["other"],
+        "categories": ["programming"],
+        "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -50,6 +60,7 @@ def test_valid_complex_recipe():
         "name": "complex-app",
         "version": "2.1.0",
         "architectures": ["x86_64", "aarch64"],
+        "icon": VALID_SVG_ICON,
         "copyright": [
             {"license": "MIT", "url": "https://opensource.org/licenses/MIT"},
             {"name": "Custom License", "url": "https://example.com/license"}
@@ -103,6 +114,8 @@ def test_invalid_recipe_empty_name():
         "name": "",
         "version": "1.0.0", 
         "architectures": ["x86_64"],
+        "categories": ["programming"],
+        "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -122,6 +135,8 @@ def test_invalid_architecture():
         "name": "test-app",
         "version": "1.0.0",
         "architectures": ["invalid-arch"],
+        "categories": ["programming"],
+        "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04", 
@@ -141,6 +156,7 @@ def test_invalid_recipe_missing_categories():
         "name": "test-app",
         "version": "1.0.0",
         "architectures": ["x86_64"],
+        "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -160,6 +176,7 @@ def test_invalid_category():
         "name": "test-app",
         "version": "1.0.0",
         "architectures": ["x86_64"],
+        "icon": VALID_ICON,
         "categories": ["invalid-category"],
         "build": {
             "kind": "neurodocker",
@@ -174,13 +191,116 @@ def test_invalid_category():
     assert any("category" in error.lower() for error in errors)
 
 
+def test_legacy_category_rejected_in_strict_metadata():
+    """Test strict validation rejects categories outside the current UI list"""
+    recipe = {
+        "name": "test-app",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "icon": VALID_ICON,
+        "categories": ["statistical analysis"],
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": []
+        }
+    }
+
+    errors = get_validation_errors(recipe)
+    assert len(errors) > 0
+    assert any("statistical analysis" in error for error in errors)
+
+
+def test_legacy_metadata_mode_allows_existing_recipe_gaps():
+    """Test internal recipe loading can still parse legacy recipe metadata"""
+    recipe = {
+        "name": "test-app",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": ["other"],
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": []
+        }
+    }
+
+    result = validate_recipe_dict(recipe, strict_metadata=False)
+    assert isinstance(result, ContainerRecipe)
+
+
+def test_invalid_recipe_missing_icon():
+    """Test validation fails when icon is missing"""
+    recipe = {
+        "name": "test-app",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": ["programming"],
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": []
+        }
+    }
+
+    errors = get_validation_errors(recipe)
+    assert len(errors) > 0
+    assert any("icon" in error.lower() for error in errors)
+
+
+def test_invalid_recipe_icon_url():
+    """Test validation fails when icon is an external URL"""
+    recipe = {
+        "name": "test-app",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": ["programming"],
+        "icon": "https://example.com/icon.png",
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": []
+        }
+    }
+
+    errors = get_validation_errors(recipe)
+    assert len(errors) > 0
+    assert any("base64 image data uri" in error.lower() for error in errors)
+
+
+def test_invalid_recipe_icon_base64():
+    """Test validation fails when icon data cannot be decoded"""
+    recipe = {
+        "name": "test-app",
+        "version": "1.0.0",
+        "architectures": ["x86_64"],
+        "categories": ["programming"],
+        "icon": "data:image/png;base64,not-valid-base64",
+        "build": {
+            "kind": "neurodocker",
+            "base-image": "ubuntu:22.04",
+            "pkg-manager": "apt",
+            "directives": []
+        }
+    }
+
+    errors = get_validation_errors(recipe)
+    assert len(errors) > 0
+    assert any("invalid base64" in error.lower() for error in errors)
+
+
 def test_validate_recipe_file():
     """Test validation of a YAML file"""
     recipe = {
         "name": "file-test-app",
         "version": "1.0.0",
         "architectures": ["x86_64"],
-        "categories": ["other"],
+        "categories": ["programming"],
+        "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -216,7 +336,8 @@ def test_directive_validation():
         "name": "directive-test",
         "version": "1.0.0",
         "architectures": ["x86_64"],
-        "categories": ["other"],
+        "categories": ["programming"],
+        "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -247,7 +368,8 @@ def test_structured_readme_allows_missing_optional_fields():
         "name": "structured-readme-test",
         "version": "1.0.0",
         "architectures": ["x86_64"],
-        "categories": ["other"],
+        "categories": ["programming"],
+        "icon": VALID_ICON,
         "structured_readme": {
             "description": "Example tool",
             "example": "example-tool --help",
@@ -285,7 +407,8 @@ def test_invalid_jinja_template_in_file_url():
         "name": "broken-template-app",
         "version": "1.0.0",
         "architectures": ["x86_64"],
-        "categories": ["other"],
+        "categories": ["programming"],
+        "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -313,7 +436,8 @@ def test_non_string_file_name_fails_validation():
         "name": "typed-file-app",
         "version": "1.0.0",
         "architectures": ["x86_64"],
-        "categories": ["other"],
+        "categories": ["programming"],
+        "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -341,7 +465,8 @@ def test_two_digit_version_yaml_parsing():
         "name": "version-test",
         "version": "1.1",  # This will be parsed as float by YAML
         "architectures": ["x86_64"],
-        "categories": ["other"],
+        "categories": ["programming"],
+        "icon": VALID_ICON,
         "build": {
             "kind": "neurodocker",
             "base-image": "ubuntu:22.04",
@@ -386,6 +511,11 @@ if __name__ == "__main__":
     test_invalid_architecture()
     test_invalid_recipe_missing_categories()
     test_invalid_category()
+    test_legacy_category_rejected_in_strict_metadata()
+    test_legacy_metadata_mode_allows_existing_recipe_gaps()
+    test_invalid_recipe_missing_icon()
+    test_invalid_recipe_icon_url()
+    test_invalid_recipe_icon_base64()
     test_validate_recipe_file()
     test_validate_nonexistent_file()
     test_directive_validation()
