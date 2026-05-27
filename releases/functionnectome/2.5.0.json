@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "functionnectome 2.5.0": {
+      "version": "20260526",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "FunctionnectomeGUI-functionnectome 2.5.0": {
+      "version": "20260526",
+      "exec": "FunctionnectomeGUI",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "connectomics",
+    "tractography"
+  ]
+}
