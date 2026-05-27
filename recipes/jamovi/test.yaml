@@ -10,12 +10,24 @@ tests:
       pid="$!"
       trap 'kill "${pid}" 2>/dev/null || true' EXIT
 
+      started=0
       for _ in $(seq 1 60); do
         if curl -fsS "http://localhost:${JAMOVI_PORT}/version"; then
-          exit 0
+          started=1
+          break
         fi
         sleep 1
       done
 
-      cat /tmp/jamovi-test.log
-      exit 1
+      kill "${pid}" 2>/dev/null || true
+      wait "${pid}" 2>/dev/null || true
+
+      if [ "${started}" -ne 1 ]; then
+        cat /tmp/jamovi-test.log
+        exit 1
+      fi
+
+      if grep -q "settings.json" /tmp/jamovi-test.log; then
+        cat /tmp/jamovi-test.log
+        exit 1
+      fi

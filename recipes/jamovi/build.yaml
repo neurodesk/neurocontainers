@@ -22,6 +22,7 @@ build:
   directives:
     - environment:
         JAMOVI_ALLOW_ARBITRARY_CODE: "false"
+        JAMOVI_BACKEND: "none"
 
     - copy: jamovi /usr/local/bin/jamovi
     - copy: jamovi-entrypoint /usr/local/bin/jamovi-entrypoint
@@ -93,6 +94,7 @@ files:
 
           export JAMOVI_ACCESS_KEY="${JAMOVI_ACCESS_KEY:-}"
           export JAMOVI_ALLOW_ARBITRARY_CODE="${JAMOVI_ALLOW_ARBITRARY_CODE:-false}"
+          export JAMOVI_BACKEND="${JAMOVI_BACKEND:-none}"
           export JAMOVI_HOST_A="${JAMOVI_HOST_A:-localhost:${port}}"
           export JAMOVI_HOST_B="${JAMOVI_HOST_B:-localhost:${port}/analyses}"
           export JAMOVI_HOST_C="${JAMOVI_HOST_C:-localhost:${port}/results}"
