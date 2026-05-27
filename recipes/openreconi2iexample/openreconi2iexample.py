@@ -28,6 +28,7 @@ SEGMENTATION_LUT = "MicroDeltaHotMetal.pal"
 SEGMENT_SOURCE_GEOMETRY_META_KEY = "SegmentSourceGeometry"
 SEGMENT_EXPLICIT_VOLUME_META_KEY = "SegmentExplicitVolume"
 DETACHED_3D_DATA_META_KEY = "Detached3DData"
+SEGMENT_OUTPUT_GEOMETRY_META_KEY = "SegmentOutputGeometry"
 SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE = (
     f"DERIVED\\PRIMARY\\SEGMENTATION\\{SEGMENT_SERIES_NAME}"
 )
@@ -42,8 +43,10 @@ SEGMENT_DETACHED_3D_IMAGE_TYPE = (
 SEGMENT_DETACHED_3D_IMAGE_TYPE_VALUE4 = f"{SEGMENT_SERIES_NAME}_detached_3d"
 SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
 SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY = "SegmentPostProcessingChildRole"
-SEGMENT_POSTPROCESSING_IMAGE_TYPE = f"DERIVED\\PRIMARY\\M\\{SEGMENT_SERIES_NAME}"
-SEGMENT_POSTPROCESSING_IMAGE_TYPE_VALUE4 = SEGMENT_SERIES_NAME
+SEGMENT_POSTPROCESSING_IMAGE_TYPE = (
+    f"DERIVED\\PRIMARY\\SEGMENTATION\\{SEGMENT_SERIES_NAME}_postprocessing"
+)
+SEGMENT_POSTPROCESSING_IMAGE_TYPE_VALUE4 = f"{SEGMENT_SERIES_NAME}_postprocessing"
 SEGMENT_POSTPROCESSING_DISALLOWED_DIXON_TOKENS = {
     "DIXON",
     "FAT",
@@ -176,13 +179,6 @@ def process(connection, config, metadata):
             ("segment", "sendsegment", "sendthreshold"),
             default=False,
         )
-        segment_output_geometry = _segment_output_geometry(config)
-        send_segment_2d_geometry = (
-            segment_output_geometry == SEGMENT_OUTPUT_GEOMETRY_2D
-        )
-        send_segment_3d_geometry = (
-            segment_output_geometry == SEGMENT_OUTPUT_GEOMETRY_3D
-        )
         segment_send_order = _segment_send_order(config)
         send_segment_first = (
             segment_send_order == SEGMENT_SEND_ORDER_BEFORE_ORIGINALS
@@ -192,6 +188,33 @@ def process(connection, config, metadata):
             config,
             "segmentpostprocessingstamp",
             default=False,
+        )
+        segment_output_geometry = _segment_output_geometry(config)
+        if send_segment and stamp_segment_for_postprocessing:
+            if send_original:
+                logging.warning(
+                    "segmentpostprocessingstamp=true disables sendoriginal to avoid "
+                    "returning two composer-eligible source-like streams"
+                )
+                send_original = False
+            if segment_output_geometry != SEGMENT_OUTPUT_GEOMETRY_2D:
+                logging.warning(
+                    "segmentpostprocessingstamp=true forces segmentgeometry=%s; "
+                    "stamped normal 3D segment series are not scanner-postprocessing-safe",
+                    SEGMENT_OUTPUT_GEOMETRY_2D,
+                )
+                segment_output_geometry = SEGMENT_OUTPUT_GEOMETRY_2D
+            if detach_3d_data:
+                logging.warning(
+                    "segmentpostprocessingstamp=true ignores detach3ddata because "
+                    "postprocessing masks must stay in source 2D geometry"
+                )
+                detach_3d_data = False
+        send_segment_2d_geometry = (
+            segment_output_geometry == SEGMENT_OUTPUT_GEOMETRY_2D
+        )
+        send_segment_3d_geometry = (
+            segment_output_geometry == SEGMENT_OUTPUT_GEOMETRY_3D
         )
         use_segmentation_colormap = _config_bool_any(
             config,
@@ -441,21 +464,19 @@ def _scanner_postprocessing_target(
     send_original,
     send_segment,
     send_segment_2d_geometry,
-    send_segment_first,
+    _send_segment_first,
     stamp_segment_for_postprocessing,
 ):
     if send_segment and stamp_segment_for_postprocessing:
         if send_segment_2d_geometry:
-            if send_segment_first or not send_original:
-                return "segment_2d"
-            return "originals_then_segment_2d"
-        return "segment_3d_stamped"
+            return "segment_2d"
+        return "none_3d_series"
     if send_segment and send_segment_2d_geometry:
         return "segment_2d_unstamped"
     if send_original:
         return "originals"
     if send_segment:
-        return "none_explicit_3d"
+        return "none_3d_series"
     return "none"
 
 
@@ -498,6 +519,10 @@ def _output_role(image):
     if _is_segment_explicit_volume_output(meta):
         return "segment_explicit_3d"
     if _is_segment_source_geometry_output(meta):
+        if _meta_text(meta, SEGMENT_OUTPUT_GEOMETRY_META_KEY) == (
+            SEGMENT_OUTPUT_GEOMETRY_3D
+        ):
+            return "segment_3d_series"
         return "segment_source_geometry"
     if _is_original_series_index(int(image.image_series_index)):
         return "original_passthrough"
@@ -659,20 +684,44 @@ def _segment_images(
                 )
         if use_colormap:
             extra_meta["LUTFileName"] = SEGMENTATION_LUT
+        extra_meta[SEGMENT_OUTPUT_GEOMETRY_META_KEY] = SEGMENT_OUTPUT_GEOMETRY_3D
+        extra_meta[DETACHED_3D_DATA_META_KEY] = str(int(bool(detach_3d_data)))
 
-        outputs.append(
-            _pack_segment_explicit_volume(
-                segment_items,
-                series_index,
-                series_identity,
-                extra_meta,
-                detach_3d_data=detach_3d_data,
-                stamp_for_postprocessing=stamp_for_postprocessing,
+        if stamp_for_postprocessing:
+            logging.warning(
+                "Ignoring segmentpostprocessingstamp for normal 3D segment output; "
+                "use segmentgeometry=%s for scanner postprocessing",
+                SEGMENT_OUTPUT_GEOMETRY_2D,
             )
+
+        ordered_segment_items, _slice_axis = _ordered_source_geometry_items(
+            segment_items,
+            "3D segmentation output",
+            duplicate_failure=(
+                "cannot send a safe scanner-visible 3D segment series"
+            ),
+            sort_action="sending scanner-visible 3D segment series",
         )
+        for output_index, (source_image, segmentation) in enumerate(
+            ordered_segment_items
+        ):
+            output = ismrmrd.Image.from_array(segmentation, transpose=False)
+            header = source_image.getHead()
+            header.data_type = output.data_type
+            output.setHead(header)
+            _stamp_segment_source_geometry_image(
+                output,
+                source_image,
+                series_index,
+                output_index,
+                series_identity["series_name"],
+                extra_meta,
+                series_identity,
+            )
+            outputs.append(output)
 
     logging.info(
-        "Created %d explicit-volume segmentation image(s) from %d source image(s) "
+        "Created %d scanner-safe 3D-series segmentation image(s) from %d source image(s) "
         "across %d source volume group(s) with threshold(s) %s, "
         "segment_geometry=%s, detach3ddata=%s, "
         "segmentpostprocessingstamp=%s, and segmentationcolormap=%s",
@@ -718,10 +767,10 @@ def _pack_segment_explicit_volume(
         DETACHED_3D_DATA_META_KEY: str(int(bool(detach_3d_data))),
     }
     if stamp_for_postprocessing:
-        child_role = _segment_postprocessing_child_role(series_index)
-        explicit_segment_meta[SEGMENT_POSTPROCESSING_META_KEY] = "1"
-        explicit_segment_meta[SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY] = str(
-            child_role
+        logging.warning(
+            "Ignoring segmentpostprocessingstamp for explicit-volume segment output; "
+            "use segmentgeometry=%s for scanner postprocessing",
+            SEGMENT_OUTPUT_GEOMETRY_2D,
         )
     explicit_segment_meta.update(extra_meta or {})
     return _pack_explicit_volume(
@@ -807,6 +856,7 @@ def _segment_images_for_postprocessing(
                 )
         if use_colormap:
             extra_meta["LUTFileName"] = SEGMENTATION_LUT
+        extra_meta[SEGMENT_OUTPUT_GEOMETRY_META_KEY] = SEGMENT_OUTPUT_GEOMETRY_2D
 
         ordered_segment_items, _slice_axis = _ordered_source_geometry_items(
             segment_items,
@@ -1464,7 +1514,7 @@ def _pack_upsampled_volume(
         "position",
         [
             float(value)
-            for value in _explicit_volume_origin_position(
+            for value in _explicit_volume_center_position(
                 [(image, None) for image in slice_images],
                 slice_axis,
             )
@@ -1592,8 +1642,7 @@ def _ordered_original_images_for_explicit_segment(images):
     if duplicate_positions:
         raise ValueError(
             "sendoriginal 3D alignment source geometry has duplicate projected "
-            "slice position(s); cannot align originals with explicit 3D "
-            "segmentation"
+            "slice position(s); cannot align originals with 3D segment series"
         )
     if increasing:
         return images
@@ -1614,7 +1663,7 @@ def _ordered_original_images_for_explicit_segment(images):
     )
     logging.warning(
         "sendoriginal source slices are %s; sorting by projected position so "
-        "original frame order matches 3D volume segmentation output: "
+        "original frame order matches 3D segment series output: "
         "first mappings %s",
         order_reason,
         ", ".join(
@@ -1875,7 +1924,7 @@ def _pack_explicit_volume(
 
     ordered_items, slice_axis = _ordered_volume_items(source_items, label)
     output_slice_count = len(ordered_items)
-    output_position = _explicit_volume_origin_position(ordered_items, slice_axis)
+    output_position = _explicit_volume_center_position(ordered_items, slice_axis)
     output_spacing = _explicit_volume_output_spacing(
         [source_image for source_image, _data in ordered_items],
         slice_axis,
@@ -2205,6 +2254,8 @@ def _segment_source_geometry_meta(
     for key, value in (extra_meta or {}).items():
         if value is not None:
             meta[key] = value
+    for key, value in _header_geometry_meta(output_image.getHead()).items():
+        meta[key] = value
     _strip_scanner_write_unsafe_meta(meta)
 
     if minihead:
@@ -2281,6 +2332,8 @@ def _segment_postprocessing_meta(
     for key, value in (extra_meta or {}).items():
         if value is not None:
             meta[key] = value
+    for key, value in _header_geometry_meta(output_image.getHead()).items():
+        meta[key] = value
     _strip_scanner_write_unsafe_meta(meta)
 
     if minihead:
@@ -3914,6 +3967,13 @@ def _validate_storage_fields(
             "original",
             errors,
         )
+    elif is_source_like_output and keep_image_geometry == 1:
+        context = (
+            "segment postprocessing"
+            if is_segment_postprocessing_output and not is_segment_explicit_volume_output
+            else "segment source-geometry"
+        )
+        _validate_meta_header_geometry(index, image, meta, context, errors)
     elif keep_image_geometry == 0:
         partition_count = _meta_int(meta, "partition_count")
         if partition_count is None:
@@ -4212,7 +4272,12 @@ def _ordered_volume_items(source_items, label):
     return [source_items[index] for index in sort_indices], slice_axis
 
 
-def _ordered_source_geometry_items(source_items, label):
+def _ordered_source_geometry_items(
+    source_items,
+    label,
+    duplicate_failure="cannot send a safe composable 2D series",
+    sort_action="sending composable 2D stream",
+):
     source_items = list(source_items)
     if len(source_items) < 2:
         images = [source_image for source_image, _data in source_items]
@@ -4244,7 +4309,7 @@ def _ordered_source_geometry_items(source_items, label):
     if duplicate_positions:
         raise ValueError(
             f"{label} source geometry has duplicate projected slice position(s); "
-            "cannot send a safe composable 2D series"
+            f"{duplicate_failure}"
         )
     if increasing:
         return source_items, slice_axis
@@ -4265,9 +4330,10 @@ def _ordered_source_geometry_items(source_items, label):
     )
     logging.warning(
         "%s source slices are %s; sorting by projected position before "
-        "sending composable 2D stream: first mappings %s",
+        "%s: first mappings %s",
         label,
         order_reason,
+        sort_action,
         ", ".join(
             f"out{output_index}->in{input_index}"
             for output_index, input_index in enumerate(sort_indices[:24])
@@ -4538,10 +4604,13 @@ def _explicit_volume_output_spacing(images, slice_axis):
     return 1.0
 
 
-def _explicit_volume_origin_position(ordered_items, slice_axis):
-    # OpenRecon's scanner conversion expands packed MRD volumes into frame stacks
-    # starting at ImageHeader.position, so this must be the first sorted frame.
-    return _header_position(ordered_items[0][0].getHead())
+def _explicit_volume_center_position(ordered_items, _slice_axis):
+    first = _header_position(ordered_items[0][0].getHead())
+    if len(ordered_items) == 1:
+        return first
+
+    last = _header_position(ordered_items[-1][0].getHead())
+    return 0.5 * (first + last)
 
 
 def _interpolated_half_step(images):

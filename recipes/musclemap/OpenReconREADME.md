@@ -42,11 +42,15 @@ single-partition stream (`0`) instead of copying source partition values. If
 `sendoriginal` is disabled, non-processed input images are still returned with
 the same source-native passthrough handling.
 
-MuscleMap segmentation and optional metrics report images are sent after the
-source passthrough stream as derived outputs with fresh series identity, fresh
-SOP identity, `SequenceDescriptionAdditional = openrecon`, and
-`Keep_image_geometry = 0` so scanner-side post-processing remains attached to
-the original stream rather than the derived overlays.
+MuscleMap segmentation images are sent after the source passthrough stream as
+source-geometry 2D masks with fresh series identity, fresh SOP identity,
+`SequenceDescriptionAdditional = openrecon`, `Keep_image_geometry = 1`,
+`DataRole = Segmentation`, and `SegmentSourceGeometry = 1`. This matches the
+`openreconi2iexample` 2D + detach + after-originals path when
+`segmentpostprocessingstamp` is disabled. Optional metrics report output follows
+the `openreconi2iexample` metrics path: one standalone explicit-volume derived
+image, preferring `image_series_index = 120` when available, with
+`DataRole = Segmentation`, `Keep_image_geometry = 0`, and no `IceMiniHead`.
 
 # Labels
 

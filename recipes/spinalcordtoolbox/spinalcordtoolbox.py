@@ -164,15 +164,14 @@ OPENRECON_DEFAULTS = {
     "config": "spinalcordtoolbox",
     "sendoriginal": True,
     "segmentationcolormap": False,
-    "segmentpostprocessing": True,
     "sctdebugthresholdsegment": False,
     "analysis": "sct_deepseg_spinalcord",
 }
 
 OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96
 RESERVED_SCANNER_SERIES_INDICES = {99}
-# Returned originals stay 2D. SCT segmentations default to source-geometry 2D
-# slices for scanner postprocessing, with explicit 3D volumes kept as an opt-out.
+# Returned originals stay 2D. SCT segmentations are returned as source-geometry
+# 2D slices after originals, without detached/explicit-volume output.
 SCANNER_PARTITION_INDEX = 0
 
 SOURCE_PARENT_REFERENCE_META_KEYS = {
@@ -2270,7 +2269,6 @@ def _sct_output_to_mrd_images(
     meta,
     output_series_index,
     segmentation_colormap=False,
-    segment_postprocessing=OPENRECON_DEFAULTS["segmentpostprocessing"],
     source_images=None,
     series_suffix=None,
 ):
@@ -2316,135 +2314,19 @@ def _sct_output_to_mrd_images(
         logging.info("Converting SCT output from %s to int16", data.dtype)
         data = np.rint(data).astype(np.int16)
 
-    output_slice_count = int(data.shape[-1])
-    if segment_postprocessing:
-        if source_images is None:
-            raise ValueError(
-                "source_images are required for SCT source-geometry segmentation output"
-            )
-        return _sct_output_to_source_geometry_images(
-            data,
-            analysis,
-            source_images,
-            output_series_index,
-            maxVal,
-            segmentation_colormap=segmentation_colormap,
-            series_suffix=series_suffix,
+    if source_images is None:
+        raise ValueError(
+            "source_images are required for SCT source-geometry segmentation output"
         )
-
-    output_identity = _build_sct_output_identity(
-        meta[0],
+    return _sct_output_to_source_geometry_images(
+        data,
         analysis,
+        source_images,
         output_series_index,
+        maxVal,
+        segmentation_colormap=segmentation_colormap,
         series_suffix=series_suffix,
     )
-    volume_data = np.stack(
-        [data[:, :, slice_index] for slice_index in range(output_slice_count)],
-        axis=0,
-    )
-    output_image = ismrmrd.Image.from_array(volume_data, transpose=False)
-
-    oldHeader = copy.deepcopy(head[0])
-    oldHeader.data_type = output_image.data_type
-    if (output_image.data_type == ismrmrd.DATATYPE_CXFLOAT) or (output_image.data_type == ismrmrd.DATATYPE_CXDOUBLE):
-        oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
-    else:
-        oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
-    oldHeader.image_series_index = output_series_index
-    oldHeader.image_index = 1
-    oldHeader.slice = 0
-    oldHeader.contrast = 0
-
-    output_header = output_image.getHead()
-    _set_header_sequence_field(
-        oldHeader,
-        "matrix_size",
-        [int(value) for value in output_header.matrix_size],
-    )
-    slice_axis = _infer_slice_axis(head)
-    output_spacing = _estimate_slice_spacing(head, slice_axis=slice_axis)
-    if output_spacing is None:
-        try:
-            output_spacing = float(img.header.get_zooms()[2])
-        except Exception:
-            output_spacing = float(oldHeader.field_of_view[2])
-    output_spacing = max(float(output_spacing), 1e-6)
-    output_fov = [float(value) for value in oldHeader.field_of_view]
-    output_fov[2] = float(output_spacing * output_slice_count)
-    _set_header_sequence_field(oldHeader, "field_of_view", output_fov)
-    _set_header_sequence_field(oldHeader, "position", [float(value) for value in head[0].position])
-    _set_header_sequence_field(oldHeader, "slice_dir", [float(value) for value in slice_axis])
-    output_image.setHead(oldHeader)
-
-    source_meta = meta[0]
-    tmpMeta = _copy_meta(source_meta)
-    _strip_source_parent_refs(tmpMeta)
-    _strip_scanner_write_unsafe_meta(tmpMeta)
-    if "IceMiniHead" in tmpMeta:
-        del tmpMeta["IceMiniHead"]
-    sop_instance_uid = _build_derived_sop_instance_uid(
-        source_meta,
-        series_suffix or analysis,
-        output_series_index,
-        0,
-        output_identity["series_instance_uid"],
-    )
-    tmpMeta["DataRole"] = "Image"
-    tmpMeta["ImageProcessingHistory"] = ["PYTHON", "SPINALCORDTOOLBOX", output_identity["type_token"]]
-    tmpMeta["WindowCenter"] = str((maxVal + 1) / 2)
-    tmpMeta["WindowWidth"] = str(maxVal + 1)
-    tmpMeta["SeriesDescription"] = output_identity["series_description"]
-    tmpMeta["SequenceDescription"] = output_identity["sequence_description"]
-    tmpMeta["ProtocolName"] = output_identity["sequence_description"]
-    tmpMeta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
-    tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]
-    tmpMeta["SOPInstanceUID"] = sop_instance_uid
-    tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
-    tmpMeta["ImageTypeValue4"] = output_identity["display_token"]
-    tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
-    tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
-    tmpMeta["ImageComments"] = output_identity["image_comment"]
-    tmpMeta["ImageComment"] = output_identity["image_comment"]
-    tmpMeta["SequenceDescriptionAdditional"] = "or"
-    tmpMeta["Keep_image_geometry"] = 0
-    tmpMeta["partition_count"] = "1"
-    tmpMeta["slice_count"] = str(output_slice_count)
-    tmpMeta["NumberOfSlices"] = str(output_slice_count)
-    tmpMeta["ImagesInAcquisition"] = str(output_slice_count)
-    _set_output_position_meta(tmpMeta, 0)
-    tmpMeta["ImageRowDir"] = [
-        "{:.18f}".format(oldHeader.read_dir[0]),
-        "{:.18f}".format(oldHeader.read_dir[1]),
-        "{:.18f}".format(oldHeader.read_dir[2]),
-    ]
-
-    tmpMeta["ImageColumnDir"] = [
-        "{:.18f}".format(oldHeader.phase_dir[0]),
-        "{:.18f}".format(oldHeader.phase_dir[1]),
-        "{:.18f}".format(oldHeader.phase_dir[2]),
-    ]
-
-    tmpMeta["ImageSliceNormDir"] = [
-        "{:.18f}".format(oldHeader.slice_dir[0]),
-        "{:.18f}".format(oldHeader.slice_dir[1]),
-        "{:.18f}".format(oldHeader.slice_dir[2]),
-    ]
-
-    if segmentation_colormap:
-        tmpMeta["LUTFileName"] = "MicroDeltaHotMetal.pal"
-
-    output_image.attribute_string = tmpMeta.serialize()
-    logging.info(
-        "Packed SCT output %s into one explicit MRD volume with matrix_size=%s "
-        "field_of_view=%s slices=%d spacing=%.6f",
-        output_path,
-        _format_vector(output_image.getHead().matrix_size),
-        _format_vector(output_image.getHead().field_of_view),
-        output_slice_count,
-        output_spacing,
-    )
-
-    return [output_image]
 
 
 def _sct_output_to_source_geometry_images(
@@ -2515,6 +2397,11 @@ def _sct_output_to_source_geometry_images(
         tmpMeta["ImageComment"] = output_identity["image_comment"]
         tmpMeta["SequenceDescriptionAdditional"] = "or"
         tmpMeta["Keep_image_geometry"] = 1
+        tmpMeta["SegmentSourceGeometry"] = 1
+        if "SegmentPostProcessing" in tmpMeta:
+            del tmpMeta["SegmentPostProcessing"]
+        if "SegmentPostProcessingChildRole" in tmpMeta:
+            del tmpMeta["SegmentPostProcessingChildRole"]
         _set_output_position_meta(tmpMeta, iImg)
 
         if segmentation_colormap:
@@ -2542,7 +2429,7 @@ def _sct_output_to_source_geometry_images(
 
     logging.info(
         "Converted SCT output into %d source-geometry segmentation image(s) "
-        "for scanner postprocessing: series_index=%d segmentationcolormap=%s",
+        "for scanner send path: series_index=%d segmentationcolormap=%s",
         len(outputs),
         output_series_index,
         segmentation_colormap,
@@ -2556,7 +2443,6 @@ def _openrecon_config_for_analysis(analysis, sendoriginal=False):
             "config": OPENRECON_DEFAULTS["config"],
             "sendoriginal": bool(sendoriginal),
             "segmentationcolormap": OPENRECON_DEFAULTS["segmentationcolormap"],
-            "segmentpostprocessing": OPENRECON_DEFAULTS["segmentpostprocessing"],
             "sctdebugthresholdsegment": OPENRECON_DEFAULTS["sctdebugthresholdsegment"],
             "analysis": analysis,
         }
@@ -2637,10 +2523,6 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
         "segmentationcolormap",
         default_val=OPENRECON_DEFAULTS["segmentationcolormap"],
     )
-    segment_postprocessing = boolean_checker(
-        "segmentpostprocessing",
-        default_val=OPENRECON_DEFAULTS["segmentpostprocessing"],
-    )
     debug_threshold_segment = boolean_checker(
         "sctdebugthresholdsegment",
         default_val=OPENRECON_DEFAULTS["sctdebugthresholdsegment"],
@@ -2660,12 +2542,10 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
     analyses = _resolve_requested_analyses(requested_analysis)
     logging.info(
         "SCT parameters: analysis=%s resolved_analyses=%s sendoriginal=%s "
-        "segmentpostprocessing=%s segmentationcolormap=%s "
-        "sctdebugthresholdsegment=%s",
+        "segmentationcolormap=%s sctdebugthresholdsegment=%s",
         requested_analysis,
         ",".join(analyses),
         send_original,
-        segment_postprocessing,
         segmentation_colormap,
         debug_threshold_segment,
     )
@@ -2830,7 +2710,6 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
                     meta,
                     output_series_index,
                     segmentation_colormap=segmentation_colormap,
-                    segment_postprocessing=segment_postprocessing,
                     source_images=ordered_images,
                     series_suffix=output_spec["series_suffix"],
                 )

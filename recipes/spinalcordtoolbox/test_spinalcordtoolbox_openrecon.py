@@ -362,17 +362,16 @@ def test_openrecon_exposes_segmentation_colourmap_lut_toggle():
     assert "segmentation_colormap=segmentation_colormap" in wrapper_source
 
 
-def test_openrecon_exposes_segmentation_postprocessing_toggle():
-    parameter = _label_parameter("segmentpostprocessing")
-    assert parameter["type"] == "boolean"
-    assert parameter["default"] is True
-
+def test_openrecon_does_not_expose_segmentation_postprocessing_toggle():
+    label = json.loads(LABEL_PATH.read_text())
+    parameter_ids = {parameter["id"] for parameter in label["parameters"]}
+    assert "segmentpostprocessing" not in parameter_ids
     defaults = _module_assignment("OPENRECON_DEFAULTS")
-    assert defaults["segmentpostprocessing"] is True
+    assert "segmentpostprocessing" not in defaults
 
     wrapper_source = WRAPPER_PATH.read_text()
-    assert 'boolean_checker(\n        "segmentpostprocessing"' in wrapper_source
-    assert "segment_postprocessing=segment_postprocessing" in wrapper_source
+    assert 'boolean_checker(\n        "segmentpostprocessing"' not in wrapper_source
+    assert "segment_postprocessing" not in wrapper_source
     assert "source-geometry segmentation image(s)" in wrapper_source
 
 
@@ -516,7 +515,7 @@ def test_passthrough_restamp_uses_fresh_series_identity():
     assert "CONTROL.PSMultiFrameSOPInstanceUID" not in output_meta
 
 
-def test_sct_segment_postprocessing_outputs_source_geometry_slices():
+def test_sct_segment_outputs_source_geometry_2d_slices():
     helpers = _load_runtime_helpers_for_test(
         [
             "_as_image_list",
@@ -590,6 +589,9 @@ def test_sct_segment_postprocessing_outputs_source_geometry_slices():
         assert head.slice == index
         assert meta["DataRole"] == "Segmentation"
         assert meta["Keep_image_geometry"] == 1
+        assert meta["SegmentSourceGeometry"] == 1
+        assert "SegmentPostProcessing" not in meta
+        assert "SegmentPostProcessingChildRole" not in meta
         assert meta["LUTFileName"] == "MicroDeltaHotMetal.pal"
         assert meta["ImageTypeValue4"] == "sct_deepseg_spinalcord"
         assert "ImageTypeValue3" not in meta
@@ -1394,17 +1396,18 @@ def test_wrapper_patches_openrecon_derived_series_identity_like_musclemap():
     assert 'oldHeader.slice = iImg' in wrapper_source
     assert 'oldHeader.image_index = source_image_index' not in wrapper_source
     assert "_set_output_position_meta(tmpMeta, iImg)" in wrapper_source
-    assert "SCT segmentations default to source-geometry 2D" in wrapper_source
-    assert 'tmpMeta["Keep_image_geometry"] = 0' in wrapper_source
+    assert "SCT segmentations are returned as source-geometry" in wrapper_source
+    assert 'tmpMeta["Keep_image_geometry"] = 0' not in wrapper_source
     assert 'tmpMeta["Keep_image_geometry"] = 1' in wrapper_source
-    assert 'tmpMeta["partition_count"] = "1"' in wrapper_source
-    assert 'if "IceMiniHead" in tmpMeta' in wrapper_source
-    assert "Packed SCT output" in wrapper_source
+    assert 'tmpMeta["SegmentSourceGeometry"] = 1' in wrapper_source
+    assert 'tmpMeta["SegmentPostProcessing"] = 1' not in wrapper_source
+    assert 'tmpMeta["partition_count"] = "1"' not in wrapper_source
+    assert "Packed SCT output" not in wrapper_source
     assert "SCANNER_PARTITION_INDEX = 0" in wrapper_source
     assert '"Actual3DImagePartNumber", SCANNER_PARTITION_INDEX' in wrapper_source
     assert '"ChronSliceNo", output_index' in wrapper_source
     assert '"ProtocolSliceNumber", output_index' in wrapper_source
-    assert 'tmpMeta["ImageSliceNormDir"]' in wrapper_source
+    assert 'tmpMeta["ImageSliceNormDir"]' not in wrapper_source
     assert 'text.replace("\\\\", "/")' not in wrapper_source
 
 
@@ -1485,6 +1488,5 @@ def test_wrapper_can_generate_openrecon_configs_for_batch_processing_cases():
     assert "--write-openrecon-batch-processing-test-configs" in wrapper_source
     assert "_openrecon_config_for_analysis(case[\"analysis\"])" in wrapper_source
     assert '"segmentationcolormap": OPENRECON_DEFAULTS["segmentationcolormap"]' in wrapper_source
-    assert '"segmentpostprocessing": OPENRECON_DEFAULTS["segmentpostprocessing"]' in wrapper_source
     assert '"sctdebugthresholdsegment": OPENRECON_DEFAULTS["sctdebugthresholdsegment"]' in wrapper_source
     assert "sct_deepseg_gm" in wrapper_source

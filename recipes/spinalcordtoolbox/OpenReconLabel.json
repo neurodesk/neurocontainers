@@ -64,13 +64,6 @@
       "default": false
     },
     {
-      "id": "segmentpostprocessing",
-      "label": { "en": "Scanner postprocess segmentations" },
-      "type": "boolean",
-      "information": { "en": "Send SCT segmentations as source-geometry slices so scanner postprocessing can run." },
-      "default": true
-    },
-    {
       "id": "sctdebugthresholdsegment",
       "label": { "en": "Debug threshold segmentation" },
       "type": "boolean",

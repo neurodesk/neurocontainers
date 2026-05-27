@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.68
+version: 1.0.72
 architectures:
   - x86_64
 
@@ -62,10 +62,10 @@ readme: |-
   `image_series_index = 99`. Enable `segment` to extract the brightest foreground
   object and send `<source>-segment` outputs starting on
   `image_series_index = 101`. Segment output handling is controlled by separate
-  scanner parameters: `segmentgeometry` chooses packed 3D volume versus
-  source-geometry 2D masks, `detach3ddata` sends detachable explicit 3D outputs
-  in separate MRD image messages, `segmentsendorder` sends segment outputs
-  before or after originals, and `segmentpostprocessingstamp` adds
+  scanner parameters: `segmentgeometry` chooses a scanner-safe per-slice 3D
+  segment series versus source-geometry 2D masks, `detach3ddata` marks the
+  3D segment series with `Detached3DData = 1`, `segmentsendorder` sends segment
+  outputs before or after originals, and `segmentpostprocessingstamp` adds
   `SegmentPostProcessing` metadata. Multi-contrast inputs with repeated slice
   positions are split into one segmentation output per source volume group.
   Enable `segmentationcolormap` with `segment` to add `MicroDeltaHotMetal.pal`
@@ -92,21 +92,22 @@ readme: |-
   originals, because scanner MIP/MPR postprocessing depends on the original
   stream. When `sendoriginal` is paired with `segment` and a 3D segment output,
   the returned originals are sorted by projected physical slice position so their
-  frame order matches the explicit segmentation volume.
-  With `segmentgeometry = 3d`, segmentation outputs use `Keep_image_geometry = 0`,
-  `DataRole = Image`, `SegmentExplicitVolume = 1`, and one MRD volume that uses
-  the first sorted source slice as the volume position and sorted source
-  spacing for the through-plane FOV. `detach3ddata = true` changes the 3D segment
-  image type to `DERIVED\SECONDARY\OTHER\openrecon_segment_detached_3d`, stamps
-  `Detached3DData = 1`, and sends detachable explicit 3D outputs in separate MRD
-  image messages. With `segmentgeometry = 2d`, masks keep source physical
-  geometry, use `Keep_image_geometry = 1`, sort by projected slice position, and
+  frame order matches the returned 3D segment series.
+  With `segmentgeometry = 3d`, segmentation outputs are sent as one returned
+  3D-derived series per source group with one MRD image per source slice. The
+  slices use `Keep_image_geometry = 1`, `DataRole = Segmentation`,
+  `SegmentSourceGeometry = 1`, `SegmentOutputGeometry = 3d`, unique returned
+  `slice` / `image_index` counters, source physical positions, and restamped
+  Meta and MiniHead storage fields. This avoids scanner-side overwrite errors
+  seen with a single packed mask volume. `detach3ddata = true` stamps
+  `Detached3DData = 1` on that 3D segment series. With `segmentgeometry = 2d`,
+  masks keep source physical geometry, use `Keep_image_geometry = 1`,
+  sort by projected slice position, and
   restamp returned-stream header, Meta, and MiniHead counters so wrapped source
   slice numbers do not collide. Source grouping header fields such as contrast,
   phase, repetition, set, and average are reset to zero on 2D segment streams.
   `segmentpostprocessingstamp = true` adds `SegmentPostProcessing = 1`; for 2D
-  masks it also preserves source composer-facing image-type identity, while for
-  3D masks it only adds the marker and keeps explicit-volume geometry.
+  masks it also preserves source composer-facing image-type identity.
   `segmentsendorder` controls whether segment outputs are sent before or after
   original outputs when both are enabled.
   Returned outputs strip scanner `ImageTypeValue3` metadata and `IceMiniHead`

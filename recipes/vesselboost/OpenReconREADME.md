@@ -16,7 +16,6 @@ The main derived output is named `<source>_vesselboost`, where `<source>` is the
 | --- | --- | --- | --- | --- |
 | config | `config` | choice | `vesselboost` | Selects the MRD server configuration. The available GUI option is `vesselboost`. |
 | Keep original images | `sendoriginal` | boolean | `true` | Return restamped original MRA images first, before the `vesselboost` output. Disable this to return only derived VesselBoost output series. |
-| Segmentation output geometry | `vboutputgeometry` | choice | `2d_like_original` | `2d_like_original` returns one source-geometry 2D segmentation image per source image after originals. `3d` returns one explicit packed segmentation volume. |
 | Debug threshold segmentation | `vbdebugthresholdsegment` | boolean | `false` | Skip VesselBoost inference and use the simple threshold segmentation from `openreconi2iexample` to exercise the send path quickly. |
 | Gaussian blending | `vbuseblending` | boolean | `false` | Experimental option that enables Gaussian blending across inference patches. This can smooth patch boundaries, but substantially increases runtime. |
 | Blend overlap % | `vboverlap` | integer | `50` | Patch overlap percentage used only when Gaussian blending is enabled. Valid GUI range: 0 to 99. |
@@ -47,7 +46,9 @@ Gaussian blending is marked experimental in the OpenRecon label. Use it only whe
 
 The OpenRecon label declares GPU support and requests at least 1 GPU, 10048 MB GPU memory, 40096 MB system memory, and 32 CPU cores.
 
-Returned images are always emitted as new scanner-visible series. Restamped originals are sent first with `Keep_image_geometry = 1` and a patched source `IceMiniHead`, so scanner-side processing and scanner-created MIPs stay attached to the original MRA geometry. The default VesselBoost segmentation follows as a separate source-geometry 2D stream with `Keep_image_geometry = 1`. If `vboutputgeometry = 3d` is selected, the segmentation is sent as one explicit packed 3D MRD volume with no source `IceMiniHead`, `Keep_image_geometry = 0`, `partition_count = 1`, and the output `slice_count`. Reformatted sagittal and coronal outputs remain explicit packed 3D MRD volumes.
+Returned images are always emitted as new scanner-visible series. Restamped originals are sent first with `Keep_image_geometry = 1` and a patched source `IceMiniHead`, so scanner-side processing and scanner-created MIPs stay attached to the original MRA geometry. The VesselBoost segmentation follows as a separate source-geometry 2D stream with `Keep_image_geometry = 1`.
+
+This mirrors the `openreconi2iexample` path with segment geometry fixed to `2d`, no detached 3D data, segment send order after originals, and no segment postprocessing stamp. Reformatted sagittal and coronal outputs remain explicit packed 3D MRD volumes.
 
 ## Citation
 

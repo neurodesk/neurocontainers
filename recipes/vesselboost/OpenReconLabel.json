@@ -57,23 +57,6 @@
       "information": { "en": "Return restamped original MRA images first, before the VesselBoost segmentation, so scanner-side processing stays attached to the originals." }
     },
     {
-      "id": "vboutputgeometry",
-      "label": { "en": "Segmentation output geometry" },
-      "type": "choice",
-      "values": [
-        {
-          "id": "2d_like_original",
-          "name": { "en": "2D like original" }
-        },
-        {
-          "id": "3d",
-          "name": { "en": "3D" }
-        }
-      ],
-      "default": "2d_like_original",
-      "information": { "en": "2D like original sends one source-geometry segmentation image per source image after originals. 3D sends one explicit packed segmentation volume." }
-    },
-    {
       "id": "vbdebugthresholdsegment",
       "label": { "en": "Debug threshold segmentation" },
       "type": "boolean",

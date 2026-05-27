@@ -54,7 +54,7 @@
       "label": { "en": "Send original images" },
       "type": "boolean",
       "information": { "en": "Pass the original 2D image stream back for scanner postprocessing" },
-      "default": false
+      "default": true
     },
     {
       "id": "invert",
@@ -75,7 +75,7 @@
       "label": { "en": "Segment" },
       "type": "boolean",
       "information": { "en": "Segment the brightest foreground object" },
-      "default": false
+      "default": true
     },
     {
       "id": "segmentgeometry",
@@ -84,7 +84,7 @@
       "values": [
         {
           "id": "3d",
-          "name": { "en": "3D volume" }
+          "name": { "en": "3D series" }
         },
         {
           "id": "2d",
@@ -92,13 +92,13 @@
         }
       ],
       "default": "3d",
-      "information": { "en": "Only affects Segment output. 3D packs one explicit MRD volume per source group with Keep_image_geometry=0. 2D sends one source-geometry mask image per source image with Keep_image_geometry=1." }
+      "information": { "en": "Only affects Segment output. 3D sends a scanner-safe per-slice segment series with source geometry and unique slice counters. 2D sends one source-geometry mask image per source image." }
     },
     {
       "id": "detach3ddata",
       "label": { "en": "Detach 3D data" },
       "type": "boolean",
-      "information": { "en": "Send explicit 3D outputs in separate MRD image messages and stamp Segment 3D output with Detached3DData=1. Does not change 2D segment geometry." },
+      "information": { "en": "Stamp Segment 3D series with Detached3DData=1. The 3D segment path is sent as per-slice images, not a packed MRD volume. Does not change 2D segment geometry." },
       "default": false
     },
     {
@@ -122,7 +122,7 @@
       "id": "segmentpostprocessingstamp",
       "label": { "en": "Stamp segment for postprocessing" },
       "type": "boolean",
-      "information": { "en": "Add SegmentPostProcessing metadata to Segment outputs. For 2D segment outputs this uses source composer-facing image identity; for 3D segment outputs it adds the marker while keeping explicit-volume geometry." },
+      "information": { "en": "Send Segment as source-geometry 2D masks with SegmentPostProcessing metadata. This disables Send original images, ignores Detach 3D data, and preserves the source image-type identity used by scanner compose filters." },
       "default": false
     },
     {

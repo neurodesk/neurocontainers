@@ -51,7 +51,17 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
             self.image_series_index = image_series_index
             self.image_index = image_index
             self.slice = slice
+            self.matrix_size = [8, 8, 1]
+            self.field_of_view = [8.0, 8.0, 1.0]
+            self.position = [3.0, 4.0, 5.0]
+            self.read_dir = [0.0, 1.0, 0.0]
+            self.phase_dir = [1.0, 0.0, 0.0]
+            self.slice_dir = [0.0, 0.0, -1.0]
+            self.average = 3
             self.contrast = 0
+            self.phase = 4
+            self.repetition = 5
+            self.set = 6
             self.image_type = 1
 
     class FakeImage:
@@ -97,7 +107,9 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
         ),
         "mrdhelper": FakeMrdHelper,
         "np": np,
+        "os": __import__("os"),
         "re": re,
+        "traceback": __import__("traceback"),
         "uuid": __import__("uuid"),
     }
     ast.fix_missing_locations(ast.Module(body=helper_nodes, type_ignores=[]))
@@ -172,6 +184,7 @@ def test_patched_minihead_protocol_name_round_trips_for_output_contract():
         assignments=[
             "muscleMapImageTypeToken",
             "reservedScannerSeriesIndices",
+            "segmentSourceGeometryImageTypeValue4",
         ],
     )
     minihead_text = """
@@ -419,6 +432,358 @@ def test_original_restamp_preserves_source_native_geometry_and_processing_identi
     assert helpers["_extract_minihead_long_value"](minihead, "NumberInSeries") == 9
 
 
+def test_segmentation_stamp_uses_2d_source_geometry_identity():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_build_derived_sop_instance_uid",
+            "_copy_meta",
+            "_decode_ice_minihead",
+            "_encode_ice_minihead",
+            "_extract_dicom_image_type_values",
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_long_value",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_format_exam_data_role_sequential_number",
+            "_get_dicom_image_type_value",
+            "_get_meta_text",
+            "_meta_text_values",
+            "_minihead_string_literal",
+            "_normalise_identity_tokens",
+            "_patch_ice_minihead",
+            "_patch_output_minihead_storage",
+            "_patch_segment_postprocessing_ice_minihead",
+            "_remove_minihead_array_param",
+            "_remove_minihead_string_param",
+            "_replace_minihead_array_token",
+            "_replace_or_append_minihead_array_token",
+            "_replace_or_append_minihead_array_tokens",
+            "_replace_or_append_minihead_long_param",
+            "_replace_or_append_minihead_raw_string_param",
+            "_replace_or_append_minihead_string_param",
+            "_sanitize_minihead_param_value",
+            "_segment_postprocessing_child_role",
+            "_set_meta_scalar",
+            "_set_output_storage_meta",
+            "_stamp_output_header",
+            "_stamp_output_image",
+            "_strip_scanner_write_unsafe_meta",
+            "_strip_scanner_write_unsafe_minihead",
+            "_strip_source_parent_refs",
+            "_output_meta",
+        ],
+        assignments=[
+            "muscleMapImageTypeToken",
+            "scannerPartitionIndex",
+            "scannerWriteUnsafeMetaKeys",
+            "segmentPostProcessingChildRoleMetaKey",
+            "segmentPostProcessingMetaKey",
+            "segmentSourceGeometryImageType",
+            "segmentSourceGeometryImageTypeValue4",
+            "segmentSourceGeometryMetaKey",
+            "sourceGroupHeaderFields",
+            "sourceParentReferenceMetaKeys",
+            "sourceParentReferenceMetaPrefixes",
+        ],
+    )
+
+    output = helpers["FakeImage"](np.ones((1, 2, 2), dtype=np.int16))
+    output_header = output.getHead()
+    output_header.image_series_index = 1
+    output_header.image_index = 9
+    output_header.slice = 8
+    output_header.average = 3
+    output_header.contrast = 4
+    output_header.phase = 5
+    output_header.repetition = 6
+    output_header.set = 7
+    source_meta = helpers["FakeMeta"](
+        {
+            "SeriesDescription": "source_W",
+            "SequenceDescription": "source_W",
+            "ProtocolName": "source_W",
+            "SeriesInstanceUID": "1.2.3",
+            "SOPInstanceUID": "1.2.3.5.8",
+            "SeriesNumberRangeNameUID": "source_group",
+            "ImageType": "ORIGINAL\\PRIMARY\\DIXON\\WATER",
+            "ImageTypeValue3": "DIXON",
+            "ImageTypeValue4": "WATER",
+            "DicomImageType": "ORIGINAL\\PRIMARY\\DIXON\\WATER",
+            "IceMiniHead": _encoded_minihead(),
+        }
+    )
+    output_identity = {
+        "series_description": "Musclemap",
+        "sequence_description": "Musclemap",
+        "grouping": "source_group_Musclemap",
+        "series_instance_uid": "2.25.42",
+    }
+
+    helpers["_stamp_output_image"](
+        output,
+        output_header,
+        source_meta,
+        output_identity,
+        2,
+        0,
+        helpers["muscleMapImageTypeToken"],
+        ["OPENRECON", "MUSCLEMAP", "SEGMENT_SOURCE_GEOMETRY"],
+        image_comment="Musclemap",
+        source_type_token="WATER",
+        extra_meta={"Keep_image_geometry": "1"},
+        source_geometry_segment=True,
+    )
+
+    meta = helpers["FakeMeta"].deserialize(output.attribute_string)
+    minihead = helpers["_decode_ice_minihead"](meta)
+
+    assert output.getHead().image_series_index == 2
+    assert output.image_series_index == 2
+    assert output.getHead().image_index == 1
+    assert output.getHead().slice == 0
+    assert output.getHead().average == 0
+    assert output.getHead().contrast == 0
+    assert output.getHead().phase == 0
+    assert output.getHead().repetition == 0
+    assert output.getHead().set == 0
+    assert meta["DataRole"] == "Segmentation"
+    assert meta["ImageType"] == helpers["segmentSourceGeometryImageType"]
+    assert meta["DicomImageType"] == helpers["segmentSourceGeometryImageType"]
+    assert "ImageTypeValue3" not in meta
+    assert meta["ImageTypeValue4"] == helpers["segmentSourceGeometryImageTypeValue4"]
+    assert meta["Keep_image_geometry"] == "1"
+    assert meta[helpers["segmentSourceGeometryMetaKey"]] == "1"
+    assert helpers["segmentPostProcessingMetaKey"] not in meta
+    assert meta[helpers["segmentPostProcessingChildRoleMetaKey"]] == "2"
+    assert "<CategoryEntry>2</CategoryEntry>" in meta["ExamDataRole"]
+    assert "DIXON" not in meta["ImageType"]
+    assert "WATER" not in meta["ImageType"]
+    assert helpers["_extract_minihead_string_value"](
+        minihead,
+        "ImageType",
+    ) == helpers["segmentSourceGeometryImageType"]
+    assert '<ParamString."ImageTypeValue3">' not in minihead
+    assert helpers["_extract_minihead_array_tokens"](minihead, "ImageTypeValue3") == []
+    assert helpers["_extract_minihead_array_tokens"](
+        minihead,
+        "ImageTypeValue4",
+    ) == [helpers["segmentSourceGeometryImageTypeValue4"]]
+    assert "<CategoryEntry>2</CategoryEntry>" in minihead
+    assert helpers["_extract_minihead_long_value"](minihead, "Actual3DImagePartNumber") == 0
+    assert helpers["_extract_minihead_long_value"](minihead, "AnatomicalPartitionNo") == 0
+    assert helpers["_extract_minihead_long_value"](minihead, "SliceNo") == 0
+    assert helpers["_extract_minihead_long_value"](minihead, "NumberInSeries") == 1
+
+
+def test_metrics_report_image_matches_openreconi2iexample_explicit_volume_contract():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_as_image_list",
+            "_build_derived_series_identity",
+            "_build_derived_series_instance_uid",
+            "_build_derived_sop_instance_uid",
+            "_build_metrics_column_groups",
+            "_build_metrics_report_images",
+            "_chunk_list",
+            "_copy_meta",
+            "_decode_ice_minihead",
+            "_explicit_header_geometry_meta",
+            "_extract_dicom_image_type_values",
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_long_value",
+            "_extract_minihead_string_value",
+            "_find_metrics_label_field",
+            "_first_non_empty_text",
+            "_format_meta_vector",
+            "_format_metric_value",
+            "_get_dicom_image_type_value",
+            "_get_first_meta_int",
+            "_get_meta_text",
+            "_header_geometry_meta",
+            "_header_vector",
+            "_meta_text_values",
+            "_metrics_fieldnames",
+            "_metrics_rows",
+            "_orient_metrics_report_page",
+            "_output_meta",
+            "_pil_text_size",
+            "_render_metrics_report_pages",
+            "_set_header_sequence_field",
+            "_set_meta_scalar",
+            "_set_output_storage_meta",
+            "_stamp_output_header",
+            "_stamp_output_image",
+            "_strip_scanner_write_unsafe_meta",
+            "_strip_source_parent_refs",
+            "_truncate_text_to_width",
+            "_validate_output_series_contract",
+            "_validate_output_storage_contract",
+        ],
+        assignments=[
+            "mmMetricsMethod",
+            "muscleMapImageTypeToken",
+            "reservedScannerSeriesIndices",
+            "scannerPartitionIndex",
+            "scannerWriteUnsafeMetaKeys",
+            "segmentSourceGeometryImageTypeValue4",
+            "singlePartitionScannerFields",
+            "sourceGroupHeaderFields",
+            "sourceParentReferenceMetaKeys",
+            "sourceParentReferenceMetaPrefixes",
+        ],
+    )
+    source_header = helpers["FakeHead"]()
+    source_meta = helpers["FakeMeta"](
+        {
+            "SeriesDescription": "source_W",
+            "SequenceDescription": "source_W",
+            "ProtocolName": "source_W",
+            "SeriesNumberRangeNameUID": "source_group",
+            "SeriesInstanceUID": "1.2.3",
+            "SOPInstanceUID": "1.2.3.4",
+            "ImageType": "ORIGINAL\\PRIMARY\\DIXON\\WATER",
+            "ImageTypeValue4": "WATER",
+            "IceMiniHead": _encoded_minihead(),
+        }
+    )
+    metrics_result = {
+        "fieldnames": ["label", "mean", "volume_ml"],
+        "rows": [
+            {"label": "muscle", "mean": "42.0", "volume_ml": "1.25"},
+        ],
+        "method": "average",
+        "region": "wholebody",
+        "csv_path": "/tmp/metrics.csv",
+    }
+
+    report_images = helpers["_build_metrics_report_images"](
+        metrics_result=metrics_result,
+        source_headers=[source_header],
+        source_meta=[source_meta],
+        metrics_series_index=7,
+        source_series_identity={
+            "series_description": "source_W",
+            "parent_grouping": "source_group",
+            "series_instance_uid": "1.2.3",
+        },
+        source_type_token="WATER",
+        metrics_comment="MuscleMap metrics summary",
+        metrics_minihead_text="minihead metrics should not be copied",
+        include_minihead_metrics=True,
+        report_spacing=2.5,
+    )
+
+    assert len(report_images) == 1
+    report_image = report_images[0]
+    report_header = report_image.getHead()
+    report_meta = helpers["FakeMeta"].deserialize(report_image.attribute_string)
+
+    assert report_image.image_series_index == 7
+    assert report_header.image_series_index == 7
+    assert report_header.image_index == 1
+    assert report_header.slice == 0
+    assert list(report_header.matrix_size) == [768, 768, 1]
+    assert list(report_header.field_of_view) == [768.0, 768.0, 1.0]
+    assert list(report_header.position) == [0.0, 0.0, 0.0]
+    assert list(report_header.read_dir) == [1.0, 0.0, 0.0]
+    assert list(report_header.phase_dir) == [0.0, 1.0, 0.0]
+    assert list(report_header.slice_dir) == [0.0, 0.0, 1.0]
+    assert report_meta["DataRole"] == "Segmentation"
+    assert report_meta["ImageProcessingHistory"] == ["PYTHON", "OPENRECON_METRICS"]
+    assert report_meta["ImageType"] == "DERIVED\\PRIMARY\\M\\METRICS"
+    assert report_meta["ImageTypeValue4"] == "METRICS"
+    assert report_meta["Keep_image_geometry"] == "0"
+    assert report_meta["partition_count"] == "1"
+    assert report_meta["slice_count"] == "1"
+    assert report_meta["NumberOfSlices"] == "1"
+    assert report_meta["ImagesInAcquisition"] == "1"
+    assert report_meta["MetricsRows"] == "1"
+    assert report_meta["ImageRowDir"] == [
+        "1.000000000000000000",
+        "0.000000000000000000",
+        "0.000000000000000000",
+    ]
+    assert report_meta["ImageColumnDir"] == [
+        "0.000000000000000000",
+        "1.000000000000000000",
+        "0.000000000000000000",
+    ]
+    assert report_meta["ImageSliceNormDir"] == [
+        "0.000000000000000000",
+        "0.000000000000000000",
+        "1.000000000000000000",
+    ]
+    assert report_meta["SlicePosLightMarker"] == [
+        "0.000000000000000000",
+        "0.000000000000000000",
+        "0.000000000000000000",
+    ]
+    assert "IceMiniHead" not in report_meta
+    assert int(np.max(np.asarray(report_image.data))) > 0
+
+    helpers["_validate_output_series_contract"](
+        [
+            {
+                "role": "METRICS",
+                "image_series_index": 7,
+                "series_instance_uid": report_meta["SeriesInstanceUID"],
+                "meta_series_instance_uid": report_meta["SeriesInstanceUID"],
+                "minihead_series_instance_uid": "N/A",
+                "series_grouping": report_meta["SeriesNumberRangeNameUID"],
+                "meta_series_grouping": report_meta["SeriesNumberRangeNameUID"],
+                "minihead_series_grouping": "N/A",
+                "meta_protocol_name": report_meta["ProtocolName"],
+                "minihead_protocol_name": "N/A",
+            }
+        ],
+        [
+            {
+                "role": "WATER",
+                "image_series_index": 1,
+                "series_instance_uid": "1.2.3",
+            }
+        ],
+    )
+    helpers["_validate_output_storage_contract"]([report_image])
+
+
+def test_metrics_series_allocator_prefers_openreconi2iexample_index_when_available():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "ConnectionSeriesAllocator",
+            "_first_non_empty_text",
+            "_json_log_default",
+            "_log_json_event",
+        ],
+        assignments=[
+            "metricsSeriesIndex",
+        ],
+    )
+
+    allocator = helpers["ConnectionSeriesAllocator"](
+        observed_indices={1},
+        reserved_indices={99},
+    )
+    assert allocator.allocate("MUSCLEMAP") == 2
+    assert allocator.allocate(
+        "METRICS",
+        preferred_index=helpers["metricsSeriesIndex"],
+    ) == helpers["metricsSeriesIndex"]
+    assert allocator.allocate(
+        "METRICS",
+        preferred_index=helpers["metricsSeriesIndex"],
+    ) == helpers["metricsSeriesIndex"] + 1
+
+    collision_allocator = helpers["ConnectionSeriesAllocator"](
+        observed_indices={helpers["metricsSeriesIndex"]},
+        reserved_indices={99},
+    )
+    assert collision_allocator.allocate(
+        "METRICS",
+        preferred_index=helpers["metricsSeriesIndex"],
+    ) == helpers["metricsSeriesIndex"] + 1
+
+
 def test_output_series_contract_rejects_restamped_role_input_index_reuse():
     helpers = _load_runtime_helpers_for_test(
         [
@@ -428,6 +793,7 @@ def test_output_series_contract_rejects_restamped_role_input_index_reuse():
         assignments=[
             "muscleMapImageTypeToken",
             "reservedScannerSeriesIndices",
+            "segmentSourceGeometryImageTypeValue4",
         ],
     )
     input_summary = [

@@ -31,8 +31,9 @@ OPENRECON_OUTPUT_NAME_PARAM = "vboutputname"
 OPENRECON_MODULE_DEFAULT = "prediction"
 OPENRECON_MODULE_VALUES = (OPENRECON_MODULE_DEFAULT,)
 OPENRECON_SERIES_SUFFIX = "OR"
-VESSELBOOST_OUTPUT_GEOMETRY_2D = "2d_like_original"
-VESSELBOOST_OUTPUT_GEOMETRY_3D = "3d"
+VESSELBOOST_OUTPUT_GEOMETRY_2D = "2d"
+VESSELBOOST_SEGMENT_SEND_ORDER = "after_originals"
+VESSELBOOST_SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
 VESSELBOOST_SEGMENTATION_LABEL = "vesselboost"
 VESSELBOOST_SEGMENTATION_TYPE_TOKEN = VESSELBOOST_SEGMENTATION_LABEL.upper()
 VESSELBOOST_ORIGINAL_LABEL = "original"
@@ -61,7 +62,6 @@ OPENRECON_DEFAULTS = {
     "vbbiasfieldcorrection": True,
     "vbdenoising": False,
     "vbbrainextraction": True,
-    "vboutputgeometry": VESSELBOOST_OUTPUT_GEOMETRY_2D,
     "vbdebugthresholdsegment": False,
     "vbreslicesagittal": False,
     "vbreslicecoronal": False,
@@ -521,54 +521,6 @@ def _config_has_param(config, key: str) -> bool:
         and isinstance(config.get("parameters"), dict)
         and key in config["parameters"]
     )
-
-
-def _vesselboost_output_geometry(config) -> str:
-    for key in (
-        "vboutputgeometry",
-        "outputgeometry",
-        "segmentoutputgeometry",
-        "segmentationoutputgeometry",
-    ):
-        if not _config_has_param(config, key):
-            continue
-        value = mrdhelper.get_json_config_param(
-            config,
-            key,
-            default=OPENRECON_DEFAULTS["vboutputgeometry"],
-            type='str',
-        )
-        normalised = str(value or "").strip().lower().replace("-", "_")
-        if normalised in {"2d", "2d_like_original", "source_geometry", "source"}:
-            return VESSELBOOST_OUTPUT_GEOMETRY_2D
-        if normalised in {"3d", "explicit", "explicit_volume", "volume"}:
-            return VESSELBOOST_OUTPUT_GEOMETRY_3D
-        logging.warning(
-            "Unknown VesselBoost output geometry %r from %s; falling back to %s",
-            value,
-            key,
-            OPENRECON_DEFAULTS["vboutputgeometry"],
-        )
-        return OPENRECON_DEFAULTS["vboutputgeometry"]
-
-    for key in ("vbsegmentpostprocessing", "segmentpostprocessing"):
-        if not _config_has_param(config, key):
-            continue
-        enabled = mrdhelper.get_json_config_param(
-            config,
-            key,
-            default=True,
-            type='bool',
-        )
-        if isinstance(enabled, str):
-            enabled = enabled.strip().lower() in ("1", "true", "yes", "on")
-        return (
-            VESSELBOOST_OUTPUT_GEOMETRY_2D
-            if enabled
-            else VESSELBOOST_OUTPUT_GEOMETRY_3D
-        )
-
-    return OPENRECON_DEFAULTS["vboutputgeometry"]
 
 
 def _clone_mrd_image(image):
@@ -1988,89 +1940,6 @@ def _build_reformatted_images(
     return [mrd_image]
 
 
-def _build_vesselboost_segmentation_volume(
-    volume_yxz: np.ndarray,
-    head_template,
-    source_image,
-    source_identity: dict,
-    output_identity: dict,
-    fov: np.ndarray,
-    series_index: int,
-    max_val: int,
-):
-    """Build one explicit 3D MRD volume for the axial VesselBoost segmentation."""
-    if volume_yxz.ndim != 3:
-        raise ValueError(
-            "VesselBoost segmentation volume must be 3D, "
-            f"got shape {volume_yxz.shape}"
-        )
-
-    output_slice_count = int(volume_yxz.shape[2])
-    volume_zyx = np.ascontiguousarray(volume_yxz.transpose((2, 0, 1)))
-    mrd_image = ismrmrd.Image.from_array(volume_zyx, transpose=False)
-
-    new_header = mrd_image.getHead()
-    new_header.data_type = mrd_image.data_type
-    new_header.image_type = ismrmrd.IMTYPE_MAGNITUDE
-    new_header.position = tuple(float(v) for v in head_template.position)
-    new_header.read_dir = tuple(float(v) for v in head_template.read_dir)
-    new_header.phase_dir = tuple(float(v) for v in head_template.phase_dir)
-    new_header.slice_dir = tuple(float(v) for v in head_template.slice_dir)
-    new_header.field_of_view = tuple(ctypes.c_float(float(v)) for v in fov[:3])
-    new_header.image_index = 1
-    new_header.image_series_index = series_index
-    new_header.slice = 0
-    new_header.contrast = 0
-
-    for attr in (
-        "measurement_uid",
-        "patient_table_position",
-        "acquisition_time_stamp",
-        "physiology_time_stamp",
-        "user_int",
-        "user_float",
-    ):
-        try:
-            setattr(new_header, attr, getattr(head_template, attr))
-        except Exception:
-            pass
-    mrd_image.setHead(new_header)
-
-    extra_meta = {
-        "WindowCenter": str((max_val + 1) / 2),
-        "WindowWidth": str(max_val + 1),
-        "partition_count": "1",
-        "slice_count": str(output_slice_count),
-        "NumberOfSlices": str(output_slice_count),
-        "ImagesInAcquisition": str(output_slice_count),
-    }
-    extra_meta.update(_explicit_header_geometry_meta(new_header))
-    _stamp_vesselboost_output_image(
-        mrd_image,
-        source_image,
-        output_identity,
-        source_identity,
-        series_index,
-        0,
-        source_identity.get("source_type_token", ""),
-        ["PYTHON", "VESSELBOOST"],
-        extra_meta=extra_meta,
-        keep_image_geometry=0,
-        patch_minihead=False,
-        data_role="Segmentation",
-    )
-
-    logging.info(
-        "Packed VesselBoost axial segmentation into one explicit volume: "
-        "series_index=%d matrix_size=%s field_of_view=%s slice_count=%d",
-        series_index,
-        _format_vector(mrd_image.getHead().matrix_size),
-        _format_vector(mrd_image.getHead().field_of_view),
-        output_slice_count,
-    )
-    return mrd_image
-
-
 def _build_vesselboost_segmentation_images(
     volume_yxz: np.ndarray,
     ordered_source_images,
@@ -2118,6 +1987,7 @@ def _build_vesselboost_segmentation_images(
             "WindowCenter": str((max_val + 1) / 2),
             "WindowWidth": str(max_val + 1),
             "VesselBoostOutputGeometry": VESSELBOOST_OUTPUT_GEOMETRY_2D,
+            VESSELBOOST_SEGMENT_POSTPROCESSING_META_KEY: "1",
         }
         _stamp_vesselboost_output_image(
             mrd_image,
@@ -2884,7 +2754,7 @@ def process_image(images, connection, config, metadata):
         "vbreslicecoronal",
         default_val=OPENRECON_DEFAULTS["vbreslicecoronal"],
     )
-    output_geometry = _vesselboost_output_geometry(config)
+    output_geometry = VESSELBOOST_OUTPUT_GEOMETRY_2D
     debug_threshold_segment = boolean_checker(
         "vbdebugthresholdsegment",
         default_val=OPENRECON_DEFAULTS["vbdebugthresholdsegment"],
@@ -2950,7 +2820,8 @@ def process_image(images, connection, config, metadata):
         "OpenRecon VesselBoost options: run_name=%s module=%s bias_field_correction=%s "
         "denoising=%s prep_mode=%s brain_extraction=%s epochs=%s "
         "learning_rate=%s use_blending=%s overlap_ratio=%s "
-        "outputgeometry=%s debug_threshold_segment=%s "
+        "outputgeometry=%s segmentation_send_order=%s "
+        "debug_threshold_segment=%s "
         "reslice_sagittal=%s reslice_coronal=%s",
         run_name,
         module,
@@ -2963,6 +2834,7 @@ def process_image(images, connection, config, metadata):
         use_blending,
         overlap_ratio,
         output_geometry,
+        VESSELBOOST_SEGMENT_SEND_ORDER,
         debug_threshold_segment,
         reslice_sagittal,
         reslice_coronal,
@@ -3127,45 +2999,24 @@ def process_image(images, connection, config, metadata):
             f"output_z={volume_yxz.shape[-1]} input_images={len(head)}"
         )
 
-    if output_geometry == VESSELBOOST_OUTPUT_GEOMETRY_2D:
-        imagesOut.extend(
-            _build_vesselboost_segmentation_images(
-                volume_yxz=volume_yxz,
-                ordered_source_images=ordered_images,
-                source_identity=source_identity,
-                output_identity=segmentation_identity,
-                series_index=segmentation_series_index,
-                max_val=maxVal,
-            )
+    imagesOut.extend(
+        _build_vesselboost_segmentation_images(
+            volume_yxz=volume_yxz,
+            ordered_source_images=ordered_images,
+            source_identity=source_identity,
+            output_identity=segmentation_identity,
+            series_index=segmentation_series_index,
+            max_val=maxVal,
         )
-    else:
-        imagesOut.append(
-            _build_vesselboost_segmentation_volume(
-                volume_yxz=volume_yxz,
-                head_template=head[0],
-                source_image=ordered_images[0],
-                source_identity=source_identity,
-                output_identity=segmentation_identity,
-                fov=fov,
-                series_index=segmentation_series_index,
-                max_val=maxVal,
-            )
-        )
+    )
 
-    if original_series_index is not None and output_geometry == VESSELBOOST_OUTPUT_GEOMETRY_2D:
+    if original_series_index is not None:
         logging.info(
             "VesselBoost send order is source-geometry originals first, then "
             "source-geometry 2D segmentation images"
         )
-    elif original_series_index is not None:
-        logging.info(
-            "VesselBoost send order is source-geometry originals first, then "
-            "explicit-volume segmentation"
-        )
-    elif output_geometry == VESSELBOOST_OUTPUT_GEOMETRY_2D:
-        logging.info("VesselBoost send order is source-geometry 2D segmentation images")
     else:
-        logging.info("VesselBoost send order is explicit-volume segmentation")
+        logging.info("VesselBoost send order is source-geometry 2D segmentation images")
 
     if reslice_sagittal or reslice_coronal:
         base_series = segmentation_series_index + 1
