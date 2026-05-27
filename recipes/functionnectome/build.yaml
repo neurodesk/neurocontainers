@@ -11,6 +11,9 @@ architectures:
   - x86_64
   - aarch64
 
+variables:
+  setuptools_version: 80.9.0
+
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
@@ -40,7 +43,7 @@ build:
 
     - run:
         - python3 -m venv "${FUNCTIONNECTOME_VENV}"
-        - . "${FUNCTIONNECTOME_VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+        - . "${FUNCTIONNECTOME_VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools=={{ context.setuptools_version }} wheel
         - . "${FUNCTIONNECTOME_VENV}/bin/activate" && python -m pip install --no-cache-dir {{ get_file("functionnectome_source_tar_gz") }}
         - chmod -R a+rX "${FUNCTIONNECTOME_VENV}"
         - chmod -R a+rwX "${FUNCTIONNECTOME_VENV}"/lib/python*/site-packages/Functionnectome

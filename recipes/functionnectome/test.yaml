@@ -10,3 +10,9 @@ tests:
       assert fun.PRIORS_H5
       assert qd.PRIORS_H5
       PY
+  - name: Test Functionnectome GUI import
+    script: |
+      python - <<'PY'
+      import Functionnectome.functionnectome_GUI as gui
+      assert gui.version
+      PY
