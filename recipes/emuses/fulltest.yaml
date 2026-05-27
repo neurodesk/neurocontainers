@@ -1,0 +1,14 @@
+name: emuses
+version: 1.3.0
+container: emuses_1.3.0.simg
+
+tests:
+  - name: EMUSES CLI help
+    description: Verify the EMUSES command is installed and shows the Typer help banner.
+    command: emuses --help 2>&1 | head -40
+    expected_output_contains: "EMUSES pipeline"
+
+  - name: EMUSES Python imports
+    description: Verify the installed package and representative runtime dependencies import.
+    command: python -c "import emuses, nibabel, nilearn, sklearn, umap; print('emuses imports ok')"
+    expected_output_contains: "emuses imports ok"
