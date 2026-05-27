@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "jamovi 2.7.4": {
+      "version": "20260527",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "statistics"
+  ]
+}
