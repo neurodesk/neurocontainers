@@ -1,0 +1,39 @@
+tests:
+  - name: DeepDisco installation smoke test
+    script: |
+      command -v deepdisco
+      command -v DeepDisco
+      test -x /usr/local/bin/deepdisco
+      test -d "${DEEPDISCO_HOME}/resources"
+      test -f "${DEEPDISCO_HOME}/resources/model_ASS.pt"
+      test -f "${DEEPDISCO_HOME}/resources/model_COM.pt"
+      test -f "${DEEPDISCO_HOME}/resources/model_PRO.pt"
+      test -f "${DEEPDISCO_HOME}/resources/trained_model.pt"
+      cd "${DEEPDISCO_HOME}"
+      "${DEEPDISCO_VENV}/bin/python" - <<'PY'
+      import os
+      import torch
+      import nibabel
+      import monai
+      import PySide6
+      import torchio
+      from models.my_torch_model_fm import UNet3D
+
+      model_path = os.path.join("resources", "model_ASS.pt")
+      checkpoint = torch.load(model_path, map_location="cpu", weights_only=True)
+      model = UNet3D(in_channels=2, out_channels=1, num_filters=8)
+      model.load_state_dict(checkpoint)
+
+      expected_resources = [
+          "Left_mask.nii.gz",
+          "Right_mask.nii.gz",
+          "affine_image.nii.gz",
+          "normalized_average_transformed_new.nii.gz",
+          "icon_creation.png",
+      ]
+      for name in expected_resources:
+          path = os.path.join("resources", name)
+          assert os.path.exists(path), path
+
+      print("DeepDisco imports and model weights load successfully")
+      PY

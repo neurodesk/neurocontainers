@@ -1,0 +1,177 @@
+name: deepdisco
+version: "20251008"
+
+description: DeepDisco predicts brain connectivity maps from binary lesion or region masks using trained 3D U-Net models.
+
+copyright:
+  - name: LicenseRef-DeepDisco
+    url: https://github.com/annamatsulevits/DeepDisco
+
+architectures:
+  - x86_64
+
+variables:
+  upstream_commit: ab3a7944a6824f7147d5621af79d637c1ff241c1
+  install_path: /opt/deepdisco-{{ context.version }}
+  venv_path: /opt/deepdisco-{{ context.version }}/venv
+  pip_version: 26.1.1
+  setuptools_version: 82.0.1
+  wheel_version: 0.47.0
+  torch_version: 2.5.1
+  monai_version: 1.5.2
+  nibabel_version: 5.4.2
+  numpy_version: 2.2.6
+  pillow_version: 12.2.0
+  pyside6_version: 6.11.1
+  torchio_version: 1.2.0
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        DEEPDISCO_HOME: "{{ context.install_path }}"
+        DEEPDISCO_VENV: "{{ context.venv_path }}"
+        PYTHONNOUSERSITE: "1"
+        XDG_CACHE_HOME: /tmp/deepdisco-cache
+        QT_XCB_GL_INTEGRATION: none
+        PATH: "{{ context.venv_path }}/bin:$PATH"
+
+    - install:
+        - ca-certificates
+        - libdbus-1-3
+        - libegl1
+        - libfontconfig1
+        - libfreetype6
+        - libgl1
+        - libglib2.0-0
+        - libice6
+        - libopengl0
+        - libsm6
+        - libx11-6
+        - libx11-xcb1
+        - libxcb-cursor0
+        - libxcb-glx0
+        - libxcb-icccm4
+        - libxcb-image0
+        - libxcb-keysyms1
+        - libxcb-randr0
+        - libxcb-render-util0
+        - libxcb-render0
+        - libxcb-shape0
+        - libxcb-shm0
+        - libxcb-sync1
+        - libxcb-xfixes0
+        - libxcb-xinerama0
+        - libxcb-xkb1
+        - libxcb1
+        - libxext6
+        - libxkbcommon-x11-0
+        - libxkbcommon0
+        - libxrender1
+        - python3
+        - python3-pip
+        - python3-venv
+        - tar
+
+    - run:
+        - mkdir -p "{{ context.install_path }}" /tmp/deepdisco-src
+        - tar -xzf {{ get_file("deepdisco_source_tar_gz") }} -C /tmp/deepdisco-src --strip-components=1
+        - cp -a /tmp/deepdisco-src/. "{{ context.install_path }}/"
+        - python3 -m venv "{{ context.venv_path }}"
+        - . "{{ context.venv_path }}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip=={{ context.pip_version }} setuptools=={{ context.setuptools_version }} wheel=={{ context.wheel_version }}
+        - . "{{ context.venv_path }}/bin/activate" && python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch=={{ context.torch_version }}
+        - . "{{ context.venv_path }}/bin/activate" && python -m pip install --no-cache-dir monai=={{ context.monai_version }} nibabel=={{ context.nibabel_version }} numpy=={{ context.numpy_version }} Pillow=={{ context.pillow_version }} PySide6=={{ context.pyside6_version }} torchio=={{ context.torchio_version }}
+        - chmod 0755 "{{ context.install_path }}/run_app.sh" "{{ context.install_path }}/DeepDisco.command"
+        - chmod -R a+rX "{{ context.install_path }}"
+        - find "{{ context.install_path }}" -type d -name __pycache__ -prune -exec rm -rf {} +
+        - rm -rf /tmp/deepdisco-src /root/.cache/pip /tmp/deepdisco-cache
+
+    - copy:
+        - deepdisco_wrapper
+        - /usr/local/bin/deepdisco
+
+    - run:
+        - chmod 0755 /usr/local/bin/deepdisco
+        - ln -s /usr/local/bin/deepdisco /usr/local/bin/DeepDisco
+
+deploy:
+  bins:
+    - deepdisco
+    - DeepDisco
+  path:
+    - /usr/local/bin
+
+gui_apps:
+  - name: DeepDisco
+    exec: deepdisco
+
+categories:
+  - connectomics
+  - machine learning
+  - tractography
+
+files:
+  - name: deepdisco_source_tar_gz
+    url: https://github.com/annamatsulevits/DeepDisco/archive/{{ context.upstream_commit }}.tar.gz
+  - name: deepdisco_wrapper
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      export DEEPDISCO_HOME="${DEEPDISCO_HOME:-{{ context.install_path }}}"
+      export DEEPDISCO_VENV="${DEEPDISCO_VENV:-{{ context.venv_path }}}"
+      export PYTHONNOUSERSITE=1
+      export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/deepdisco-cache}"
+      export QT_XCB_GL_INTEGRATION="${QT_XCB_GL_INTEGRATION:-none}"
+      mkdir -p "${XDG_CACHE_HOME}"
+
+      cd "${DEEPDISCO_HOME}"
+      exec "${DEEPDISCO_VENV}/bin/python" part.py "$@"
+
+structured_readme:
+  description: >-
+    DeepDisco is a graphical deep learning tool for generating rapid brain
+    connectivity and disconnectome maps from binary lesion or region masks.
+  example: deepdisco
+  documentation: https://github.com/annamatsulevits/DeepDisco
+  citation: >-
+    Matsulevits A, Tourdias T, Thiebaut de Schotten M. DeepDisco: A Deep
+    Learning Tool for Rapid Brain Connectivity Estimation. bioRxiv.
+    https://doi.org/10.1101/2025.07.10.663897
+
+readme: |-
+  ----------------------------------
+  ## deepdisco/{{ context.version }} ##
+
+  DeepDisco is a graphical deep learning tool for generating brain connectivity
+  and disconnectome maps from binary lesion or region masks using bundled
+  trained 3D U-Net models.
+
+  Example:
+  ```bash
+  deepdisco
+  ```
+
+  This recipe pins upstream commit {{ context.upstream_commit }} because the
+  upstream repository does not currently publish versioned releases or tags.
+  The application and model resources are installed under {{ context.install_path }}.
+  Runtime caches are written under `/tmp/deepdisco-cache` by default.
+
+  More documentation:
+  https://github.com/annamatsulevits/DeepDisco
+
+  To run container outside of this environment: ml deepdisco/{{ context.version }}
+
+  Citation:
+  Matsulevits A, Tourdias T, Thiebaut de Schotten M. DeepDisco: A Deep
+  Learning Tool for Rapid Brain Connectivity Estimation. bioRxiv.
+  https://doi.org/10.1101/2025.07.10.663897
+
+  License: upstream repository does not declare a software license.
+  ----------------------------------
+
+icon: https://raw.githubusercontent.com/annamatsulevits/DeepDisco/ab3a7944a6824f7147d5621af79d637c1ff241c1/resources/icon_creation.png
