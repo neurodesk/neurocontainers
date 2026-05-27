@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.65
+version: 1.0.66
 architectures:
   - x86_64
 
@@ -95,10 +95,11 @@ readme: |-
   mode, the returned originals are sorted by projected physical slice position
   so their frame order matches the explicit segmentation volume.
   With `segmentoutput = 3d_volume` or `3d_volume_detached`, segmentation outputs
-  use `Keep_image_geometry = 0`, `DataRole = Segmentation`,
-  `SegmentExplicitVolume = 1`, and one MRD volume that uses the center of the
-  sorted source slab as the volume position and sorted source spacing for the
-  through-plane FOV. With `segmentoutput = 2d_masks_first` or
+  use `Keep_image_geometry = 0`, `DataRole = Image`,
+  `ImageType = DERIVED\SECONDARY\OTHER\openrecon_segment_detached_3d`,
+  `SegmentExplicitVolume = 1`, `Detached3DData = 1`, and one MRD volume that
+  uses the center of the sorted source slab as the volume position and sorted
+  source spacing for the through-plane FOV. With `segmentoutput = 2d_masks_first` or
   `2d_masks_after_originals`, masks keep the source physical geometry,
   use `Keep_image_geometry = 1`, preserve source composer-facing image-type
   identity, sort by projected slice position, and restamp returned-stream header,

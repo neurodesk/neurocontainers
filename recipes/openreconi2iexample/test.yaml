@@ -705,21 +705,22 @@ tests:
           )
           expected_comment = expected_name if expected_comment is None else expected_comment
 
-          assert first(meta.get("DataRole")) == "Segmentation"
-          assert first(meta.get("ImageType")) == module.SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE
-          assert first(meta.get("DicomImageType")) == module.SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE
+          assert first(meta.get("DataRole")) == "Image"
+          assert first(meta.get("ImageType")) == module.SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE
+          assert first(meta.get("DicomImageType")) == module.SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE
           assert first(meta.get("SeriesDescription")) == expected_name
           assert first(meta.get("SequenceDescription")) == expected_name
           assert first(meta.get("ProtocolName")) == expected_name
           assert first(meta.get("ImageComments")) == expected_comment
           assert first(meta.get("ImageComment")) == expected_comment
           assert first(meta.get("ImageTypeValue3")) is None
-          assert first(meta.get("ImageTypeValue4")) == module.SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4
+          assert first(meta.get("ImageTypeValue4")) == module.SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4
           assert not module._has_magnitude_image_type_value3_token(
               [first(meta.get("ImageType")), first(meta.get("DicomImageType"))]
           )
           assert int(first(meta.get("Keep_image_geometry"))) == 0
           assert int(first(meta.get(module.SEGMENT_EXPLICIT_VOLUME_META_KEY))) == 1
+          assert int(first(meta.get(module.DETACHED_3D_DATA_META_KEY))) == 1
           assert first(meta.get(module.SEGMENT_SOURCE_GEOMETRY_META_KEY)) is None
           assert first(meta.get(module.SEGMENT_POSTPROCESSING_META_KEY)) is None
           assert first(meta.get(module.SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)) is None

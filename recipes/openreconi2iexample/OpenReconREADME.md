@@ -34,12 +34,14 @@ projection. It can also send foreground-region volume metrics when
 - `<source>-segment`: thresholded segmentation outputs starting on
   `image_series_index = 101` when `segment` is true. With
   `segmentoutput = 3d_volume` or `3d_volume_detached`, each source volume group
-  is packed into one explicit 3D segmentation volume stamped as
-  `DataRole = Segmentation`,
-  `ImageType = DERIVED\PRIMARY\SEGMENTATION\openrecon_segment`,
-  `ImageTypeValue4 = openrecon_segment`, `SegmentExplicitVolume = 1`, and
-  `Keep_image_geometry = 0`. Its MRD header uses the center of the sorted source
-  slab as the volume position and uses the sorted source spacing for the
+  is packed into one explicit 3D mask volume stamped as detached derived image
+  data, not as a scanner-composable segmentation/postprocessing stream:
+  `DataRole = Image`,
+  `ImageType = DERIVED\SECONDARY\OTHER\openrecon_segment_detached_3d`,
+  `ImageTypeValue4 = openrecon_segment_detached_3d`,
+  `SegmentExplicitVolume = 1`, `Detached3DData = 1`, and
+  `Keep_image_geometry = 0`. Its MRD header uses the center of the sorted
+  source slab as the volume position and uses the sorted source spacing for the
   through-plane FOV so the volume overlaps the source stack on the scanner.
   With `segmentoutput = 2d_masks_first` or `2d_masks_after_originals`, the
   recipe sends one source-geometry 2D mask image per source image, sets
@@ -133,9 +135,10 @@ writes the region volume into `ImageComments` and `ImageComment`.
   OpenRecon conversion. Original pass-through preserves Dixon subtype identity
   through `ImageType`, `DicomImageType`, `ComplexImageComponent`, and
   `ImageTypeValue4`.
-  The 3D segmentation path uses a non-Dixon segment identity and removes the
-  source `IceMiniHead`. The 2D mask path preserves source geometry and source
-  composer identity, including Dixon
+  The 3D segmentation path uses a neutral detached 3D image identity and removes
+  the source `IceMiniHead` so scanner composers do not treat it as a source-like
+  or segmentation-postprocessing stream. The 2D mask path preserves source
+  geometry and source composer identity, including Dixon
   subtype tokens, so the scanner can compose the masks through the same route as
   the source scan.
 - `sendoriginal` outputs are normally emitted before derived outputs.
@@ -145,8 +148,8 @@ writes the region volume into `ImageComments` and `ImageComment`.
   sends the segment stream second. `segmentoutput = 3d_volume_detached` sends
   detachable 3D data in later MRD image messages after source-geometry images.
   This is the scanner-composition path for 3D segmentation: originals are sent
-  first for Dixon or other source-side composing, and explicit 3D segmentation
-  follows as detached derived data. The mode also applies to other explicit 3D
+  first for Dixon or other source-side composing, and the 3D mask volume follows
+  as detached derived data. The mode also applies to other explicit 3D
   outputs such as `upsampled` and packed-volume fallback outputs.
 - Runtime logs include `OPENRECONI2I_POSTPROCESSING target=...` and one
   `OPENRECONI2I_BATCH ...` line before every MRD image send. Use these markers
@@ -166,7 +169,7 @@ writes the region volume into `ImageComments` and `ImageComment`.
   `IceMiniHead` are restamped from the returned segment stream, and source
   grouping header fields such as contrast, phase, repetition, set, and average
   are reset to zero to avoid composer child clashes.
-- Explicit-volume outputs, such as 3D segmentation,
+- Explicit-volume outputs, such as detached 3D mask data,
   `upsampled`, and fallback packed `invert` outputs, use
   `Keep_image_geometry = 0`, `matrix_size[2] = N`,
   `slice_count = NumberOfSlices = N`, and `partition_count = 1`. This prevents

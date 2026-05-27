@@ -27,10 +27,15 @@ METRICS_SERIES_NAME = "openrecon_metrics"
 SEGMENTATION_LUT = "MicroDeltaHotMetal.pal"
 SEGMENT_SOURCE_GEOMETRY_META_KEY = "SegmentSourceGeometry"
 SEGMENT_EXPLICIT_VOLUME_META_KEY = "SegmentExplicitVolume"
+DETACHED_3D_DATA_META_KEY = "Detached3DData"
 SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE = (
     f"DERIVED\\PRIMARY\\SEGMENTATION\\{SEGMENT_SERIES_NAME}"
 )
 SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4 = SEGMENT_SERIES_NAME
+SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE = (
+    f"DERIVED\\SECONDARY\\OTHER\\{SEGMENT_SERIES_NAME}_detached_3d"
+)
+SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4 = f"{SEGMENT_SERIES_NAME}_detached_3d"
 SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
 SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY = "SegmentPostProcessingChildRole"
 SEGMENT_POSTPROCESSING_IMAGE_TYPE = f"DERIVED\\PRIMARY\\M\\{SEGMENT_SERIES_NAME}"
@@ -653,19 +658,20 @@ def _pack_segment_explicit_volume(
     explicit_segment_meta = {
         "WindowCenter": "0.5",
         "WindowWidth": "1",
-        "ImageType": SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE,
-        "DicomImageType": SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE,
-        "ImageTypeValue4": SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4,
+        "ImageType": SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE,
+        "DicomImageType": SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE,
+        "ImageTypeValue4": SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4,
         "ComplexImageComponent": "MAGNITUDE",
         "SequenceDescriptionAdditional": "openrecon",
         SEGMENT_EXPLICIT_VOLUME_META_KEY: "1",
+        DETACHED_3D_DATA_META_KEY: "1",
     }
     explicit_segment_meta.update(extra_meta or {})
     return _pack_explicit_volume(
         segment_items,
         series_index,
         series_identity,
-        "Segmentation",
+        "Image",
         SEGMENT_SERIES_NAME,
         ["PYTHON", "OPENRECON_SEGMENT_VOLUME"],
         extra_meta=explicit_segment_meta,
@@ -3372,26 +3378,31 @@ def _validate_storage_fields(
     if is_segment_explicit_volume_output:
         image_type = _meta_text(meta, "ImageType")
         dicom_image_type = _meta_text(meta, "DicomImageType")
-        if _meta_text(meta, "DataRole") != "Segmentation":
+        if _meta_text(meta, "DataRole") != "Image":
             errors.append(
                 f"image {index} has segment explicit-volume DataRole="
-                f"{_meta_text(meta, 'DataRole')}, expected Segmentation"
+                f"{_meta_text(meta, 'DataRole')}, expected Image"
             )
-        if image_type != SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE:
+        if image_type != SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE:
             errors.append(
                 f"image {index} has segment explicit-volume ImageType="
-                f"{image_type}, expected {SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE}"
+                f"{image_type}, expected {SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE}"
             )
-        if dicom_image_type != SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE:
+        if dicom_image_type != SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE:
             errors.append(
                 f"image {index} has segment explicit-volume DicomImageType="
-                f"{dicom_image_type}, expected {SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE}"
+                f"{dicom_image_type}, expected {SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE}"
             )
-        if image_type_value4 != SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4:
+        if image_type_value4 != SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4:
             errors.append(
                 f"image {index} has segment explicit-volume ImageTypeValue4="
                 f"{image_type_value4}, expected "
-                f"{SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4}"
+                f"{SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4}"
+            )
+        if _meta_int(meta, DETACHED_3D_DATA_META_KEY) != 1:
+            errors.append(
+                f"image {index} is missing {DETACHED_3D_DATA_META_KEY}=1 "
+                "on segment explicit-volume output"
             )
         if _meta_int(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY):
             errors.append(
