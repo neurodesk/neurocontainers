@@ -1,0 +1,19 @@
+{
+  "apps": {
+    "neurodesktop 20260428 arm64": {
+      "version": "20260519",
+      "exec": "",
+      "apptainer_args": [],
+      "architecture": "aarch64",
+      "image": "neurodesktop_20260428_arm64"
+    }
+  },
+  "categories": [
+    "programming",
+    "visualization",
+    "data management"
+  ],
+  "show_in_menu": false,
+  "show_in_applist": false,
+  "architecture": "aarch64"
+}
