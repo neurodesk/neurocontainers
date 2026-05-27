@@ -4,9 +4,9 @@
 receives reconstructed MRD image messages and sends no outputs unless one or
 more output options are enabled. It can re-emit the original scan, invert
 magnitude images, upsample the slice direction, threshold each slice into a
-segmentation, choose one segment output mode that combines geometry and send
-order, optionally add a segmentation colourmap, and compute a maximum intensity
-projection. It can also send foreground-region volume metrics when
+segmentation, independently choose segment geometry, 3D detachment, send order,
+and postprocessing stamping, optionally add a segmentation colourmap, and compute
+a maximum intensity projection. It can also send foreground-region volume metrics when
 `sendmetrics` is enabled.
 
 ## Inputs
@@ -32,36 +32,22 @@ projection. It can also send foreground-region volume metrics when
   as much as possible; only returned-series identity and required safe storage
   fields are changed.
 - `<source>-segment`: thresholded segmentation outputs starting on
-  `image_series_index = 101` when `segment` is true. With
-  `segmentoutput = 3d_volume` or `3d_volume_detached`, each source volume group
-  is packed into one explicit 3D mask volume stamped as detached derived image
-  data, not as a scanner-composable segmentation/postprocessing stream:
-  `DataRole = Image`,
-  `ImageType = DERIVED\SECONDARY\OTHER\openrecon_segment_detached_3d`,
-  `ImageTypeValue4 = openrecon_segment_detached_3d`,
-  `SegmentExplicitVolume = 1`, `Detached3DData = 1`, and
-  `Keep_image_geometry = 0`. Its MRD header uses the center of the sorted
-  source slab as the volume position and uses the sorted source spacing for the
-  through-plane FOV so the volume overlaps the source stack on the scanner.
-  With `segmentoutput = 2d_masks_first` or `2d_masks_after_originals`, the
-  recipe sends one source-geometry 2D mask image per source image, sets
-  `Keep_image_geometry = 1`, keeps the source MRD slice geometry, restamps
-  returned-stream storage counters, stamps `DataRole = Image`, and carries
-  `SegmentPostProcessing = 1`. This is the
-  scanner-postprocessing path. It preserves source image-type composer identity,
-  including Dixon subtype tokens, sorts returned masks by projected slice
-  position, and restamps returned-stream header, Meta, and MiniHead storage
-  counters so wrapped source slice numbers do not collide during composing. It
-  also resets source grouping header fields such as contrast, phase, repetition,
-  set, and average to zero so the returned masks form one derived stream rather
-  than clashing with source children. `2d_masks_first` sends masks before
-  originals so scanner MRA/MIP postprocessing attaches to masks;
-  `2d_masks_after_originals` sends originals first and masks second.
-  `3d_volume_detached` sends source-geometry outputs first and explicit 3D data
-  later in a separate MRD image message, so scanner composition can attach to
-  originals while 3D segmentation remains a detached derived output. All modes
-  strip `ImageTypeValue3` because the scanner converter can reject that protocol
-  node on returned images.
+  `image_series_index = 101` when `segment` is true. `segmentgeometry = 3d`
+  packs each source volume group into one explicit 3D mask volume with
+  `DataRole = Image`, `SegmentExplicitVolume = 1`,
+  `Keep_image_geometry = 0`, `matrix_size[2] = N`, `slice_count = N`, and
+  no source `IceMiniHead`. `detach3ddata = true` changes the explicit 3D mask
+  identity to `DERIVED\SECONDARY\OTHER\openrecon_segment_detached_3d`, stamps
+  `Detached3DData = 1`, and sends detachable 3D outputs in separate MRD image
+  messages. `segmentgeometry = 2d` sends one source-geometry 2D mask image per
+  source image with `Keep_image_geometry = 1`, sorted projected slice order, and
+  restamped returned-stream storage counters. `segmentsendorder` controls whether
+  segment outputs are batched before or after original pass-through outputs.
+  `segmentpostprocessingstamp = true` adds `SegmentPostProcessing = 1`; for 2D
+  masks it also uses source composer-facing image identity, while for 3D masks it
+  only adds the marker and keeps explicit-volume geometry. All segment paths strip
+  `ImageTypeValue3` because the scanner converter can reject that protocol node
+  on returned images.
 - `<source>-upsampled`: one volume image with twice as many slices on
   `image_series_index = 102` when `upsampled` is true.
 - `<source>-mip`: one maximum intensity projection image on
@@ -78,10 +64,10 @@ The inverted images normally keep the source geometry and use the input
 intensity range: `inverted = min(input) + max(input) - input`.
 The segment output estimates a bright-foreground threshold per source volume
 group, keeps the largest connected foreground object in each slice, and stores
-the result as binary `uint16` segmentation data. `segmentoutput` controls
-whether segmentations are packed into explicit 3D volumes, detached from
-source-geometry streams, or returned as source-like 2D image streams for scanner
-postprocessing.
+the result as binary `uint16` segmentation data. `segmentgeometry`,
+`detach3ddata`, `segmentsendorder`, and `segmentpostprocessingstamp` are
+independent controls so scanner testing can exercise each output-handling change
+separately.
 The upsampled output keeps the in-plane matrix unchanged and doubles the
 through-plane sample count by sorting source images by physical slice position
 and inserting midpoint slices between acquired slices. The final edge slice is
@@ -92,12 +78,63 @@ The metrics output reuses the same foreground segmentation logic as `segment`.
 When `segment` and `sendmetrics` are both enabled, each segmentation output also
 writes the region volume into `ImageComments` and `ImageComment`.
 
+## Scanner Option Test Matrix
+
+Use these empty tables for scanner testing with `segment = true` and
+`sendoriginal = true`. Keep `invert`, `upsampled`, `segmentationcolormap`,
+`mip`, and `sendmetrics` disabled unless a row is deliberately extended for
+another output test. The matrix enumerates every combination of the independent
+segment-output controls.
+
+### TOF
+
+| ID | segmentgeometry | detach3ddata | segmentsendorder | segmentpostprocessingstamp | Notes |
+| --- | --- | --- | --- | --- | --- |
+| TOF-01 | 3d | false | after_originals | false | MIPs based on org, segment at the end |
+| TOF-02 | 3d | false | after_originals | true | MIPs based on org, segment at the end |
+| TOF-03 | 3d | false | before_originals | false | segment first, then org, then MIPs based on org,  |
+| TOF-04 | 3d | false | before_originals | true | org first, then MIPs based on org |
+| TOF-05 | 3d | true | after_originals | false |  |
+| TOF-06 | 3d | true | after_originals | true |  |
+| TOF-07 | 3d | true | before_originals | false |  |
+| TOF-08 | 3d | true | before_originals | true | seg first, then org, then MIPs based on org |
+| TOF-09 | 2d | false | after_originals | false | org first, then MIP org+seg alternating, Radials only on org |
+| TOF-10 | 2d | false | after_originals | true | MIP based on org |
+| TOF-11 | 2d | false | before_originals | false | seg first, then MIP seg+org altnernating,  |
+| TOF-12 | 2d | false | before_originals | true |  |
+| TOF-13 | 2d | true | after_originals | false | org first, then MIP org+seg alternating, Radials only on org |
+| TOF-14 | 2d | true | after_originals | true | MIPs based on org |
+| TOF-15 | 2d | true | before_originals | false | segmentation is send first, MIP seg+org alternating |
+| TOF-16 | 2d | true | before_originals | true |  |
+
+### Wholebody multistation protocol Dixon recon F/W
+
+| ID | segmentgeometry | detach3ddata | segmentsendorder | segmentpostprocessingstamp | Notes |
+| --- | --- | --- | --- | --- | --- |
+| WB-01 | 3d | false | after_originals | false | fat, water, FF, then F/W/FF seg in two series with misc, composing for F/W/FF org |
+| WB-02 | 3d | false | after_originals | true | org first, seg in two series, composing org |
+| WB-03 | 3d | false | before_originals | false | F/W/FF seg in two series with misc, then F/W/FF, composing for F/W/FF org  |
+| WB-04 | 3d | false | before_originals | true | seg first in two series, then F/W/FF, composing of org |
+| WB-05 | 3d | true | after_originals | false | FW/FF org first, seg in two series, composing of org |
+| WB-06 | 3d | true | after_originals | true | org first, then seg in two series (NOT GOOD!),  |
+| WB-07 | 3d | true | before_originals | false | seg first in two series, then org, composing of org |
+| WB-08 | 3d | true | before_originals | true |  |
+| WB-09 | 2d | false | after_originals | false | F/W/FF org, F/W/FF seg in one series, composing for F/W/FF org |
+| WB-10 | 2d | false | after_originals | true | F/W/FF org, segments in groups (not great!), NO COMPOSE!!!! |
+| WB-11 | 2d | false | before_originals | false | F/W/FF seg, F/W/FF org, composing F/W/FF org |
+| WB-12 | 2d | false | before_originals | true | F/W/FF org, seg in groups (not great!), NO COMPOSE!!!! |
+| WB-13 | 2d | true | after_originals | false | org first, seg next, org compose |
+| WB-14 | 2d | true | after_originals | true |  |
+| WB-15 | 2d | true | before_originals | false | seg first, then org, org compose |
+| WB-16 | 2d | true | before_originals | true |  |
+
 ## Scanner Notes
 
-- `sendoriginal`, `invert`, `upsampled`, `segment`, `segmentoutput`,
+- `sendoriginal`, `invert`, `upsampled`, `segment`, `segmentgeometry`,
+  `detach3ddata`, `segmentsendorder`, `segmentpostprocessingstamp`,
   `segmentationcolormap`, `mip`, and `sendmetrics` are exposed in
-  `OpenReconLabel.json`. Boolean outputs default to false. `segmentoutput`
-  defaults to `3d_volume`.
+  `OpenReconLabel.json`. Boolean outputs default to false, `segmentgeometry`
+  defaults to `3d`, and `segmentsendorder` defaults to `after_originals`.
 - Scanner protocols saved before these parameters were added may need the OpenRecon algorithm
   reselected once so the parameter schema refreshes.
 - Runtime logs include an `openreconi2iexample runtime version=...` marker from
@@ -135,26 +172,18 @@ writes the region volume into `ImageComments` and `ImageComment`.
   OpenRecon conversion. Original pass-through preserves Dixon subtype identity
   through `ImageType`, `DicomImageType`, `ComplexImageComponent`, and
   `ImageTypeValue4`.
-  The 3D segmentation path uses a neutral detached 3D image identity and removes
-  the source `IceMiniHead` so scanner composers do not treat it as a source-like
-  or segmentation-postprocessing stream. The 2D mask path preserves source
-  geometry and source composer identity, including Dixon
-  subtype tokens, so the scanner can compose the masks through the same route as
-  the source scan.
-- `sendoriginal` outputs are normally emitted before derived outputs.
-  `segmentoutput = 2d_masks_first` sends the 2D segment stream first in its own
-  MRD image message and the original stream follows.
-  `segmentoutput = 2d_masks_after_originals` keeps the original stream first and
-  sends the segment stream second. `segmentoutput = 3d_volume_detached` sends
-  detachable 3D data in later MRD image messages after source-geometry images.
-  This is the scanner-composition path for 3D segmentation: originals are sent
-  first for Dixon or other source-side composing, and the 3D mask volume follows
-  as detached derived data. The mode also applies to other explicit 3D
-  outputs such as `upsampled` and packed-volume fallback outputs.
-- Runtime logs include `OPENRECONI2I_POSTPROCESSING target=...` and one
-  `OPENRECONI2I_BATCH ...` line before every MRD image send. Use these markers
-  to confirm whether the scanner composer is expected to see `segment_2d`,
-  `originals`, or no explicit-volume segmentation postprocessing target.
+  The 3D segmentation path removes the source `IceMiniHead`. The 2D mask path
+  preserves source geometry; when `segmentpostprocessingstamp = true`, it also
+  preserves source composer identity, including Dixon subtype tokens.
+- `segmentsendorder = before_originals` sends the segment stream before the
+  original stream when both are enabled. `segmentsendorder = after_originals`
+  sends originals first and segment outputs second.
+- `detach3ddata = true` sends detachable explicit 3D outputs in separate MRD
+  image messages and stamps segment 3D output with `Detached3DData = 1`. This
+  can be combined with either segment send order.
+- Runtime logs include `OPENRECONI2I_POSTPROCESSING target=...`, the independent
+  segment controls in the configured-output line, and one `OPENRECONI2I_BATCH`
+  line before every MRD image send.
 - `Keep_image_geometry = 1` is set on original pass-through and 2D mask
   segmentation images. If a source group has
   more images than the advertised source slice or partition count can hold, the
@@ -175,10 +204,10 @@ writes the region volume into `ImageComments` and `ImageComment`.
   `slice_count = NumberOfSlices = N`, and `partition_count = 1`. This prevents
   the marshaller from receiving invented source SLC indices such as `416..831`
   for a 416-partition sequence.
-- Packed explicit-volume outputs place the MRD header position at the center of
-  the sorted source slab. The voxel data still starts with the first sorted
-  source slice; only the volume-level position is slab-centered so scanner 3D
-  display and MIP/MPR geometry match the source stack.
+- Packed explicit-volume outputs place the MRD header position at the first
+  sorted output frame. The scanner expands packed MRD volumes into DICOM frame
+  stacks starting at `ImageHeader.position`, so a source slab from `-24.75` to
+  `-5.25` mm is stamped at `-24.75` mm with a through-plane FOV of `20.0` mm.
 - Explicit-volume packing requires unique projected MRD header positions. Inputs
   with repeated header positions are split by source volume fields where the
   packed output supports that. Source-geometry original and

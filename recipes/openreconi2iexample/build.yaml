@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.66
+version: 1.0.68
 architectures:
   - x86_64
 
@@ -61,14 +61,13 @@ readme: |-
   Enable `invert` to return inverted magnitude images as `<source>-inverted` on
   `image_series_index = 99`. Enable `segment` to extract the brightest foreground
   object and send `<source>-segment` outputs starting on
-  `image_series_index = 101`. The `segmentoutput` choice controls both
-  segmentation geometry and send order: `3d_volume` packs one explicit 3D
-  segmentation volume per source volume group; `3d_volume_detached` sends
-  source-geometry outputs first and explicit 3D data later; `2d_masks_first`
-  sends source-geometry 2D masks before originals for scanner MRA/MIP
-  postprocessing; and `2d_masks_after_originals` sends originals first and the
-  2D mask stream second. Multi-contrast inputs with repeated slice positions
-  are split into one segmentation output per source volume group.
+  `image_series_index = 101`. Segment output handling is controlled by separate
+  scanner parameters: `segmentgeometry` chooses packed 3D volume versus
+  source-geometry 2D masks, `detach3ddata` sends detachable explicit 3D outputs
+  in separate MRD image messages, `segmentsendorder` sends segment outputs
+  before or after originals, and `segmentpostprocessingstamp` adds
+  `SegmentPostProcessing` metadata. Multi-contrast inputs with repeated slice
+  positions are split into one segmentation output per source volume group.
   Enable `segmentationcolormap` with `segment` to add `MicroDeltaHotMetal.pal`
   LUT metadata to segmentation outputs. Enable
   `upsampled` to send one double-slice-count `<source>-upsampled` volume on
@@ -91,28 +90,25 @@ readme: |-
   `SliceNo` remain consistent with the MRD header. If a source group cannot be
   sent safely as a 2D stream, the job fails before send rather than packing the
   originals, because scanner MIP/MPR postprocessing depends on the original
-  stream. When `sendoriginal` is paired with `segment` and a 3D segment output
-  mode, the returned originals are sorted by projected physical slice position
-  so their frame order matches the explicit segmentation volume.
-  With `segmentoutput = 3d_volume` or `3d_volume_detached`, segmentation outputs
-  use `Keep_image_geometry = 0`, `DataRole = Image`,
-  `ImageType = DERIVED\SECONDARY\OTHER\openrecon_segment_detached_3d`,
-  `SegmentExplicitVolume = 1`, `Detached3DData = 1`, and one MRD volume that
-  uses the center of the sorted source slab as the volume position and sorted
-  source spacing for the through-plane FOV. With `segmentoutput = 2d_masks_first` or
-  `2d_masks_after_originals`, masks keep the source physical geometry,
-  use `Keep_image_geometry = 1`, preserve source composer-facing image-type
-  identity, sort by projected slice position, and restamp returned-stream header,
-  Meta, and MiniHead counters so wrapped source slice numbers do not collide in
-  scanner postprocessing. Source grouping header fields such as contrast,
-  phase, repetition, set, and average are reset to zero on the returned 2D
-  segment stream so it composes as one derived stream instead of clashing with
-  source children. The `2d_masks_first` mode sends the 2D segment stream first
-  in a separate MRD image message so scanner MRA/MIP postprocessing attaches to
-  the masks. The `2d_masks_after_originals` mode sends the original stream
-  first and the segment stream second. The `3d_volume_detached` mode sends
-  explicit 3D outputs such as 3D segmentation, `upsampled`, and packed-volume
-  fallback outputs after source-geometry batches in separate MRD image messages.
+  stream. When `sendoriginal` is paired with `segment` and a 3D segment output,
+  the returned originals are sorted by projected physical slice position so their
+  frame order matches the explicit segmentation volume.
+  With `segmentgeometry = 3d`, segmentation outputs use `Keep_image_geometry = 0`,
+  `DataRole = Image`, `SegmentExplicitVolume = 1`, and one MRD volume that uses
+  the first sorted source slice as the volume position and sorted source
+  spacing for the through-plane FOV. `detach3ddata = true` changes the 3D segment
+  image type to `DERIVED\SECONDARY\OTHER\openrecon_segment_detached_3d`, stamps
+  `Detached3DData = 1`, and sends detachable explicit 3D outputs in separate MRD
+  image messages. With `segmentgeometry = 2d`, masks keep source physical
+  geometry, use `Keep_image_geometry = 1`, sort by projected slice position, and
+  restamp returned-stream header, Meta, and MiniHead counters so wrapped source
+  slice numbers do not collide. Source grouping header fields such as contrast,
+  phase, repetition, set, and average are reset to zero on 2D segment streams.
+  `segmentpostprocessingstamp = true` adds `SegmentPostProcessing = 1`; for 2D
+  masks it also preserves source composer-facing image-type identity, while for
+  3D masks it only adds the marker and keeps explicit-volume geometry.
+  `segmentsendorder` controls whether segment outputs are sent before or after
+  original outputs when both are enabled.
   Returned outputs strip scanner `ImageTypeValue3` metadata and `IceMiniHead`
   `ImageTypeValue3` entries because some sequences reject that protocol field
   during OpenRecon conversion. Original pass-through preserves Dixon subtype
@@ -120,11 +116,12 @@ readme: |-
   identity, including Dixon subtype tokens, so the masks can follow the same
   scanner compose route as their source scan.
 
-  OpenRecon runtime notes: `recipes/openreconi2iexample/OpenReconREADME.md`.
+  OpenRecon runtime notes and scanner option-combination tables:
+  `recipes/openreconi2iexample/OpenReconREADME.md`.
   Scanner logs include an `openreconi2iexample runtime version=...` marker,
-  `OPENRECONI2I_POSTPROCESSING target=...`, `segmentoutput=...` in the
-  configured-output line, and one `OPENRECONI2I_BATCH ...` marker before every
-  MRD image send.
+  `OPENRECONI2I_POSTPROCESSING target=...`, the independent segment controls in
+  the configured-output line, and one `OPENRECONI2I_BATCH ...` marker before
+  every MRD image send.
 
   Build and validate:
   ```bash

@@ -66,9 +66,8 @@ gui_apps:
     exec: FunctionnectomeGUI
 
 categories:
-  - "functional imaging"
-  - "connectomics"
-  - "tractography"
+  - functional imaging
+  - diffusion imaging
 
 files:
   - name: functionnectome_source_tar_gz

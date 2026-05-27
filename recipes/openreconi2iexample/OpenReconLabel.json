@@ -78,29 +78,52 @@
       "default": false
     },
     {
-      "id": "segmentoutput",
-      "label": { "en": "Segment output mode" },
+      "id": "segmentgeometry",
+      "label": { "en": "Segment geometry" },
       "type": "choice",
       "values": [
         {
-          "id": "3d_volume",
+          "id": "3d",
           "name": { "en": "3D volume" }
         },
         {
-          "id": "3d_volume_detached",
-          "name": { "en": "3D volume, detached" }
-        },
-        {
-          "id": "2d_masks_first",
-          "name": { "en": "2D masks first" }
-        },
-        {
-          "id": "2d_masks_after_originals",
-          "name": { "en": "2D masks after originals" }
+          "id": "2d",
+          "name": { "en": "2D images" }
         }
       ],
-      "default": "3d_volume",
-      "information": { "en": "Only affects Segment output. 3D volume sends one slab-centered detached derived mask volume per source volume group. 3D volume, detached sends source-geometry outputs first and detached explicit 3D data later. 2D masks first sends source-geometry masks before originals for scanner MRA/MIP postprocessing. 2D masks after originals sends originals first and masks second." }
+      "default": "3d",
+      "information": { "en": "Only affects Segment output. 3D packs one explicit MRD volume per source group with Keep_image_geometry=0. 2D sends one source-geometry mask image per source image with Keep_image_geometry=1." }
+    },
+    {
+      "id": "detach3ddata",
+      "label": { "en": "Detach 3D data" },
+      "type": "boolean",
+      "information": { "en": "Send explicit 3D outputs in separate MRD image messages and stamp Segment 3D output with Detached3DData=1. Does not change 2D segment geometry." },
+      "default": false
+    },
+    {
+      "id": "segmentsendorder",
+      "label": { "en": "Segment send order" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "after_originals",
+          "name": { "en": "After originals" }
+        },
+        {
+          "id": "before_originals",
+          "name": { "en": "Before originals" }
+        }
+      ],
+      "default": "after_originals",
+      "information": { "en": "When Segment and Send original images are both enabled, choose whether segment outputs are sent before or after original outputs." }
+    },
+    {
+      "id": "segmentpostprocessingstamp",
+      "label": { "en": "Stamp segment for postprocessing" },
+      "type": "boolean",
+      "information": { "en": "Add SegmentPostProcessing metadata to Segment outputs. For 2D segment outputs this uses source composer-facing image identity; for 3D segment outputs it adds the marker while keeping explicit-volume geometry." },
+      "default": false
     },
     {
       "id": "segmentationcolormap",

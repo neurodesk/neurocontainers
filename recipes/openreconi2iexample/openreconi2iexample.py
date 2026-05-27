@@ -33,9 +33,13 @@ SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE = (
 )
 SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4 = SEGMENT_SERIES_NAME
 SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE = (
+    f"DERIVED\\SECONDARY\\OTHER\\{SEGMENT_SERIES_NAME}_3d"
+)
+SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4 = f"{SEGMENT_SERIES_NAME}_3d"
+SEGMENT_DETACHED_3D_IMAGE_TYPE = (
     f"DERIVED\\SECONDARY\\OTHER\\{SEGMENT_SERIES_NAME}_detached_3d"
 )
-SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4 = f"{SEGMENT_SERIES_NAME}_detached_3d"
+SEGMENT_DETACHED_3D_IMAGE_TYPE_VALUE4 = f"{SEGMENT_SERIES_NAME}_detached_3d"
 SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
 SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY = "SegmentPostProcessingChildRole"
 SEGMENT_POSTPROCESSING_IMAGE_TYPE = f"DERIVED\\PRIMARY\\M\\{SEGMENT_SERIES_NAME}"
@@ -115,15 +119,23 @@ SOURCE_GROUP_HEADER_FIELDS = (
 )
 SEGMENT_OUTPUT_GEOMETRY_2D = "2d"
 SEGMENT_OUTPUT_GEOMETRY_3D = "3d"
-SEGMENT_OUTPUT_MODE_3D_VOLUME = "3d_volume"
-SEGMENT_OUTPUT_MODE_3D_VOLUME_DETACHED = "3d_volume_detached"
-SEGMENT_OUTPUT_MODE_2D_MASKS_FIRST = "2d_masks_first"
-SEGMENT_OUTPUT_MODE_2D_MASKS_AFTER_ORIGINALS = "2d_masks_after_originals"
-SEGMENT_OUTPUT_MODES = (
-    SEGMENT_OUTPUT_MODE_3D_VOLUME,
-    SEGMENT_OUTPUT_MODE_3D_VOLUME_DETACHED,
-    SEGMENT_OUTPUT_MODE_2D_MASKS_FIRST,
-    SEGMENT_OUTPUT_MODE_2D_MASKS_AFTER_ORIGINALS,
+SEGMENT_OUTPUT_GEOMETRIES = (
+    SEGMENT_OUTPUT_GEOMETRY_2D,
+    SEGMENT_OUTPUT_GEOMETRY_3D,
+)
+SEGMENT_OUTPUT_GEOMETRY_ALIASES = {
+    "2d": SEGMENT_OUTPUT_GEOMETRY_2D,
+    "2d_image": SEGMENT_OUTPUT_GEOMETRY_2D,
+    "2d_images": SEGMENT_OUTPUT_GEOMETRY_2D,
+    "3d": SEGMENT_OUTPUT_GEOMETRY_3D,
+    "3d_image": SEGMENT_OUTPUT_GEOMETRY_3D,
+    "3d_images": SEGMENT_OUTPUT_GEOMETRY_3D,
+}
+SEGMENT_SEND_ORDER_AFTER_ORIGINALS = "after_originals"
+SEGMENT_SEND_ORDER_BEFORE_ORIGINALS = "before_originals"
+SEGMENT_SEND_ORDERS = (
+    SEGMENT_SEND_ORDER_AFTER_ORIGINALS,
+    SEGMENT_SEND_ORDER_BEFORE_ORIGINALS,
 )
 VERSION_ENV_VAR = "OPENRECONI2IEXAMPLE_VERSION"
 
@@ -164,20 +176,23 @@ def process(connection, config, metadata):
             ("segment", "sendsegment", "sendthreshold"),
             default=False,
         )
-        segment_output_mode = _segment_output_mode(config)
-        segment_output_geometry = _segment_geometry_from_output_mode(
-            segment_output_mode
-        )
+        segment_output_geometry = _segment_output_geometry(config)
         send_segment_2d_geometry = (
             segment_output_geometry == SEGMENT_OUTPUT_GEOMETRY_2D
         )
         send_segment_3d_geometry = (
             segment_output_geometry == SEGMENT_OUTPUT_GEOMETRY_3D
         )
-        send_segment_first = _segment_output_sends_segment_first(
-            segment_output_mode
+        segment_send_order = _segment_send_order(config)
+        send_segment_first = (
+            segment_send_order == SEGMENT_SEND_ORDER_BEFORE_ORIGINALS
         )
-        detach_3d_data = _segment_output_detaches_3d_data(segment_output_mode)
+        detach_3d_data = _config_bool(config, "detach3ddata", default=False)
+        stamp_segment_for_postprocessing = _config_bool(
+            config,
+            "segmentpostprocessingstamp",
+            default=False,
+        )
         use_segmentation_colormap = _config_bool_any(
             config,
             ("segmentationcolormap", "sendsegmentationcolormap"),
@@ -216,12 +231,15 @@ def process(connection, config, metadata):
                     magnitude_images,
                     use_colormap=use_segmentation_colormap,
                     metrics_rows=metrics_rows if send_metrics else None,
+                    stamp_for_postprocessing=stamp_segment_for_postprocessing,
                 )
             else:
                 computed_segment_images = _segment_images(
                     magnitude_images,
                     use_colormap=use_segmentation_colormap,
                     metrics_rows=metrics_rows if send_metrics else None,
+                    detach_3d_data=detach_3d_data,
+                    stamp_for_postprocessing=stamp_segment_for_postprocessing,
                 )
         if send_segment:
             segment_images = computed_segment_images
@@ -244,18 +262,21 @@ def process(connection, config, metadata):
             send_segment,
             send_segment_2d_geometry,
             send_segment_first,
+            stamp_segment_for_postprocessing,
         )
         logging.info(
             "Configured outputs: original=%s invert=%s upsampled=%s segment=%s "
-            "segmentoutput=%s segment_geometry=%s detached3d=%s "
-            "postprocessing_target=%s segmentationcolormap=%s mip=%s metrics=%s",
+            "segmentgeometry=%s detach3ddata=%s segmentsendorder=%s "
+            "segmentpostprocessingstamp=%s postprocessing_target=%s "
+            "segmentationcolormap=%s mip=%s metrics=%s",
             send_original,
             send_invert,
             send_upsampled,
             send_segment,
-            segment_output_mode,
             segment_output_geometry,
             detach_3d_data,
+            segment_send_order,
+            stamp_segment_for_postprocessing,
             postprocessing_target,
             use_segmentation_colormap,
             send_mip,
@@ -286,7 +307,6 @@ def process(connection, config, metadata):
             original_images
             and segment_images
             and send_segment
-            and send_segment_2d_geometry
         )
         detached_3d_images = [
             image for image in output_images
@@ -303,8 +323,8 @@ def process(connection, config, metadata):
         if len(send_batches) > 1:
             if split_source_geometry_outputs and send_segment_first:
                 logging.info(
-                    "Sending 2D postprocessing segmentation outputs before "
-                    "source-geometry originals%s across %d MRD image messages",
+                    "Sending segment outputs before original outputs%s across "
+                    "%d MRD image messages",
                     (
                         " with detached 3D data"
                         if detached_3d_images
@@ -314,9 +334,8 @@ def process(connection, config, metadata):
                 )
             elif split_source_geometry_outputs:
                 logging.info(
-                    "Sending source-geometry originals before 2D "
-                    "postprocessing segmentation outputs%s across %d MRD image "
-                    "messages",
+                    "Sending original outputs before segment outputs%s across "
+                    "%d MRD image messages",
                     (
                         " with detached 3D data"
                         if detached_3d_images
@@ -374,6 +393,10 @@ def _output_send_batches(
         image for image in output_images
         if id(image) in segment_ids and id(image) not in detached_3d_ids
     ]
+    detached_segment_batch = [
+        image for image in output_images
+        if id(image) in segment_ids and id(image) in detached_3d_ids
+    ]
     remaining_batch = [
         image for image in output_images
         if (
@@ -384,11 +407,12 @@ def _output_send_batches(
     ]
     detached_3d_batch = [
         image for image in output_images
-        if id(image) in detached_3d_ids
+        if id(image) in detached_3d_ids and id(image) not in segment_ids
     ]
     if split_originals and segment_first:
         batches = (
             segment_batch,
+            detached_segment_batch,
             original_batch + remaining_batch,
             detached_3d_batch,
         )
@@ -396,12 +420,12 @@ def _output_send_batches(
         batches = (
             original_batch,
             segment_batch + remaining_batch,
-            detached_3d_batch,
+            detached_segment_batch + detached_3d_batch,
         )
     else:
         batches = (
             original_batch + segment_batch + remaining_batch,
-            detached_3d_batch,
+            detached_segment_batch + detached_3d_batch,
         )
     return [
         batch for batch in batches
@@ -418,11 +442,16 @@ def _scanner_postprocessing_target(
     send_segment,
     send_segment_2d_geometry,
     send_segment_first,
+    stamp_segment_for_postprocessing,
 ):
+    if send_segment and stamp_segment_for_postprocessing:
+        if send_segment_2d_geometry:
+            if send_segment_first or not send_original:
+                return "segment_2d"
+            return "originals_then_segment_2d"
+        return "segment_3d_stamped"
     if send_segment and send_segment_2d_geometry:
-        if send_segment_first or not send_original:
-            return "segment_2d"
-        return "originals"
+        return "segment_2d_unstamped"
     if send_original:
         return "originals"
     if send_segment:
@@ -564,7 +593,13 @@ def _invert_images(images):
     return outputs
 
 
-def _segment_images(images, use_colormap=False, metrics_rows=None):
+def _segment_images(
+    images,
+    use_colormap=False,
+    metrics_rows=None,
+    detach_3d_data=False,
+    stamp_for_postprocessing=False,
+):
     if not images:
         return []
 
@@ -631,19 +666,23 @@ def _segment_images(images, use_colormap=False, metrics_rows=None):
                 series_index,
                 series_identity,
                 extra_meta,
+                detach_3d_data=detach_3d_data,
+                stamp_for_postprocessing=stamp_for_postprocessing,
             )
         )
 
     logging.info(
         "Created %d explicit-volume segmentation image(s) from %d source image(s) "
         "across %d source volume group(s) with threshold(s) %s, "
-        "segment_geometry=%s, and "
-        "segmentationcolormap=%s",
+        "segment_geometry=%s, detach3ddata=%s, "
+        "segmentpostprocessingstamp=%s, and segmentationcolormap=%s",
         len(outputs),
         len(images),
         len(source_groups),
         ", ".join(f"{threshold:.6g}" for threshold in thresholds),
         SEGMENT_OUTPUT_GEOMETRY_3D,
+        detach_3d_data,
+        stamp_for_postprocessing,
         use_colormap,
     )
     return outputs
@@ -654,18 +693,36 @@ def _pack_segment_explicit_volume(
     series_index,
     series_identity,
     extra_meta=None,
+    detach_3d_data=False,
+    stamp_for_postprocessing=False,
 ):
+    image_type = (
+        SEGMENT_DETACHED_3D_IMAGE_TYPE
+        if detach_3d_data
+        else SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE
+    )
+    image_type_value4 = (
+        SEGMENT_DETACHED_3D_IMAGE_TYPE_VALUE4
+        if detach_3d_data
+        else SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4
+    )
     explicit_segment_meta = {
         "WindowCenter": "0.5",
         "WindowWidth": "1",
-        "ImageType": SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE,
-        "DicomImageType": SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE,
-        "ImageTypeValue4": SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4,
+        "ImageType": image_type,
+        "DicomImageType": image_type,
+        "ImageTypeValue4": image_type_value4,
         "ComplexImageComponent": "MAGNITUDE",
         "SequenceDescriptionAdditional": "openrecon",
         SEGMENT_EXPLICIT_VOLUME_META_KEY: "1",
-        DETACHED_3D_DATA_META_KEY: "1",
+        DETACHED_3D_DATA_META_KEY: str(int(bool(detach_3d_data))),
     }
+    if stamp_for_postprocessing:
+        child_role = _segment_postprocessing_child_role(series_index)
+        explicit_segment_meta[SEGMENT_POSTPROCESSING_META_KEY] = "1"
+        explicit_segment_meta[SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY] = str(
+            child_role
+        )
     explicit_segment_meta.update(extra_meta or {})
     return _pack_explicit_volume(
         segment_items,
@@ -683,6 +740,7 @@ def _segment_images_for_postprocessing(
     images,
     use_colormap=False,
     metrics_rows=None,
+    stamp_for_postprocessing=True,
 ):
     if not images:
         return []
@@ -734,8 +792,9 @@ def _segment_images_for_postprocessing(
         extra_meta = {
             "WindowCenter": "0.5",
             "WindowWidth": "1",
-            SEGMENT_POSTPROCESSING_META_KEY: "1",
         }
+        if stamp_for_postprocessing:
+            extra_meta[SEGMENT_POSTPROCESSING_META_KEY] = "1"
         if metric_row:
             metrics_comment = _format_region_volume_comment(metric_row)
             extra_meta["ImageComments"] = metrics_comment
@@ -761,7 +820,12 @@ def _segment_images_for_postprocessing(
             header = source_image.getHead()
             header.data_type = output.data_type
             output.setHead(header)
-            _stamp_segment_postprocessing_image(
+            stamp_segment_image = (
+                _stamp_segment_postprocessing_image
+                if stamp_for_postprocessing
+                else _stamp_segment_source_geometry_image
+            )
+            stamp_segment_image(
                 output,
                 source_image,
                 series_index,
@@ -775,12 +839,14 @@ def _segment_images_for_postprocessing(
     logging.info(
         "Created %d source-geometry segmentation image(s) from %d source image(s) "
         "across %d source volume group(s) with threshold(s) %s, "
-        "segment_geometry=%s, and segmentationcolormap=%s",
+        "segment_geometry=%s, segmentpostprocessingstamp=%s, and "
+        "segmentationcolormap=%s",
         len(outputs),
         len(images),
         len(source_groups),
         ", ".join(f"{threshold:.6g}" for threshold in thresholds),
         SEGMENT_OUTPUT_GEOMETRY_2D,
+        stamp_for_postprocessing,
         use_colormap,
     )
     return outputs
@@ -1398,7 +1464,7 @@ def _pack_upsampled_volume(
         "position",
         [
             float(value)
-            for value in _explicit_volume_center_position(
+            for value in _explicit_volume_origin_position(
                 [(image, None) for image in slice_images],
                 slice_axis,
             )
@@ -1809,7 +1875,7 @@ def _pack_explicit_volume(
 
     ordered_items, slice_axis = _ordered_volume_items(source_items, label)
     output_slice_count = len(ordered_items)
-    output_position = _explicit_volume_center_position(ordered_items, slice_axis)
+    output_position = _explicit_volume_origin_position(ordered_items, slice_axis)
     output_spacing = _explicit_volume_output_spacing(
         [source_image for source_image, _data in ordered_items],
         slice_axis,
@@ -3358,7 +3424,7 @@ def _validate_storage_fields(
     is_source_like_output = (
         is_original_output
         or is_segment_source_geometry_output
-        or is_segment_postprocessing_output
+        or (is_segment_postprocessing_output and not is_segment_explicit_volume_output)
     )
 
     if header_image_index < 1:
@@ -3378,41 +3444,47 @@ def _validate_storage_fields(
     if is_segment_explicit_volume_output:
         image_type = _meta_text(meta, "ImageType")
         dicom_image_type = _meta_text(meta, "DicomImageType")
+        detached_3d_value = _meta_int(meta, DETACHED_3D_DATA_META_KEY)
+        expected_image_type = (
+            SEGMENT_DETACHED_3D_IMAGE_TYPE
+            if detached_3d_value == 1
+            else SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE
+        )
+        expected_image_type_value4 = (
+            SEGMENT_DETACHED_3D_IMAGE_TYPE_VALUE4
+            if detached_3d_value == 1
+            else SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4
+        )
         if _meta_text(meta, "DataRole") != "Image":
             errors.append(
                 f"image {index} has segment explicit-volume DataRole="
                 f"{_meta_text(meta, 'DataRole')}, expected Image"
             )
-        if image_type != SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE:
+        if detached_3d_value not in (0, 1):
+            errors.append(
+                f"image {index} has segment explicit-volume "
+                f"{DETACHED_3D_DATA_META_KEY}={detached_3d_value}, expected 0 or 1"
+            )
+        if image_type != expected_image_type:
             errors.append(
                 f"image {index} has segment explicit-volume ImageType="
-                f"{image_type}, expected {SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE}"
+                f"{image_type}, expected {expected_image_type}"
             )
-        if dicom_image_type != SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE:
+        if dicom_image_type != expected_image_type:
             errors.append(
                 f"image {index} has segment explicit-volume DicomImageType="
-                f"{dicom_image_type}, expected {SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE}"
+                f"{dicom_image_type}, expected {expected_image_type}"
             )
-        if image_type_value4 != SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4:
+        if image_type_value4 != expected_image_type_value4:
             errors.append(
                 f"image {index} has segment explicit-volume ImageTypeValue4="
                 f"{image_type_value4}, expected "
-                f"{SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4}"
-            )
-        if _meta_int(meta, DETACHED_3D_DATA_META_KEY) != 1:
-            errors.append(
-                f"image {index} is missing {DETACHED_3D_DATA_META_KEY}=1 "
-                "on segment explicit-volume output"
+                f"{expected_image_type_value4}"
             )
         if _meta_int(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY):
             errors.append(
                 f"image {index} marks an explicit-volume segment as "
                 "source-geometry"
-            )
-        if _meta_int(meta, SEGMENT_POSTPROCESSING_META_KEY):
-            errors.append(
-                f"image {index} marks an explicit-volume segment as "
-                "2D-like-original"
             )
         if minihead:
             errors.append(
@@ -3431,7 +3503,7 @@ def _validate_storage_fields(
                 "segment explicit-volume output"
             )
 
-    if is_segment_source_geometry_output:
+    if not is_segment_explicit_volume_output and is_segment_source_geometry_output:
         image_type = _meta_text(meta, "ImageType")
         dicom_image_type = _meta_text(meta, "DicomImageType")
         minihead_image_type = _minihead_string_value(minihead, "ImageType")
@@ -3579,7 +3651,7 @@ def _validate_storage_fields(
             errors,
         )
 
-    elif is_segment_postprocessing_output:
+    elif not is_segment_explicit_volume_output and is_segment_postprocessing_output:
         image_type = _meta_text(meta, "ImageType")
         dicom_image_type = _meta_text(meta, "DicomImageType")
         image_type_value4_values = _meta_values(meta, "ImageTypeValue4")
@@ -3772,7 +3844,11 @@ def _validate_storage_fields(
             f"image {index} is a segment source-geometry output with "
             f"Keep_image_geometry={keep_image_geometry}, expected 1"
         )
-    elif is_segment_postprocessing_output and keep_image_geometry != 1:
+    elif (
+        is_segment_postprocessing_output
+        and not is_segment_explicit_volume_output
+        and keep_image_geometry != 1
+    ):
         errors.append(
             f"image {index} is a segment postprocessing output with "
             f"Keep_image_geometry={keep_image_geometry}, expected 1"
@@ -4462,19 +4538,10 @@ def _explicit_volume_output_spacing(images, slice_axis):
     return 1.0
 
 
-def _explicit_volume_center_position(ordered_items, slice_axis):
-    first_position = _header_position(ordered_items[0][0].getHead())
-    if len(ordered_items) < 2:
-        return first_position
-
-    normalized_axis = _normalize_vector(slice_axis)
-    if normalized_axis is None:
-        return first_position
-
-    last_position = _header_position(ordered_items[-1][0].getHead())
-    first_projection = float(np.dot(first_position, normalized_axis))
-    last_projection = float(np.dot(last_position, normalized_axis))
-    return first_position + 0.5 * (last_projection - first_projection) * normalized_axis
+def _explicit_volume_origin_position(ordered_items, slice_axis):
+    # OpenRecon's scanner conversion expands packed MRD volumes into frame stacks
+    # starting at ImageHeader.position, so this must be the first sorted frame.
+    return _header_position(ordered_items[0][0].getHead())
 
 
 def _interpolated_half_step(images):
@@ -4649,35 +4716,40 @@ def _config_value_any(config, keys, default=None):
     return default
 
 
-def _segment_output_mode(config):
+def _normalized_config_token(value):
+    return re.sub(r"[^a-z0-9]+", "_", str(value).strip().lower()).strip("_")
+
+
+def _segment_output_geometry(config):
     raw = _config_value_any(
         config,
-        ("segmentoutput", "segment_output"),
-        default=SEGMENT_OUTPUT_MODE_3D_VOLUME,
+        ("segmentgeometry",),
+        default=SEGMENT_OUTPUT_GEOMETRY_3D,
     )
-    normalized = re.sub(r"[^a-z0-9]+", "_", str(raw).strip().lower()).strip("_")
-    if normalized in SEGMENT_OUTPUT_MODES:
-        return normalized
+    normalized = _normalized_config_token(raw)
+    output_geometry = SEGMENT_OUTPUT_GEOMETRY_ALIASES.get(normalized)
+    if output_geometry is not None:
+        return output_geometry
     logging.warning(
-        "Unknown segmentoutput=%r; defaulting to %s",
+        "Unknown segmentgeometry=%r; defaulting to %s",
         raw,
-        SEGMENT_OUTPUT_MODE_3D_VOLUME,
+        SEGMENT_OUTPUT_GEOMETRY_3D,
     )
-    return SEGMENT_OUTPUT_MODE_3D_VOLUME
-
-
-def _segment_geometry_from_output_mode(segment_output_mode):
-    if segment_output_mode in (
-        SEGMENT_OUTPUT_MODE_2D_MASKS_FIRST,
-        SEGMENT_OUTPUT_MODE_2D_MASKS_AFTER_ORIGINALS,
-    ):
-        return SEGMENT_OUTPUT_GEOMETRY_2D
     return SEGMENT_OUTPUT_GEOMETRY_3D
 
 
-def _segment_output_sends_segment_first(segment_output_mode):
-    return segment_output_mode == SEGMENT_OUTPUT_MODE_2D_MASKS_FIRST
-
-
-def _segment_output_detaches_3d_data(segment_output_mode):
-    return segment_output_mode == SEGMENT_OUTPUT_MODE_3D_VOLUME_DETACHED
+def _segment_send_order(config):
+    raw = _config_value_any(
+        config,
+        ("segmentsendorder",),
+        default=SEGMENT_SEND_ORDER_AFTER_ORIGINALS,
+    )
+    normalized = _normalized_config_token(raw)
+    if normalized in SEGMENT_SEND_ORDERS:
+        return normalized
+    logging.warning(
+        "Unknown segmentsendorder=%r; defaulting to %s",
+        raw,
+        SEGMENT_SEND_ORDER_AFTER_ORIGINALS,
+    )
+    return SEGMENT_SEND_ORDER_AFTER_ORIGINALS

@@ -70,7 +70,6 @@ files:
 
 categories:
   - diffusion imaging
-  - tractography
 
 gui_apps:
   - name: StarTrack
