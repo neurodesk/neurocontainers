@@ -305,8 +305,7 @@ def cmd_login(args: argparse.Namespace) -> int:
     print(" ".join(command))
     import subprocess
 
-    subprocess.check_call(command)
-    return 0
+    return subprocess.call(command)
 
 
 def build_parser() -> argparse.ArgumentParser:
