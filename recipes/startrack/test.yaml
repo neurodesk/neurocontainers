@@ -1,0 +1,7 @@
+tests:
+  - name: StarTrack installation smoke test
+    script: |
+      command -v startrack
+      test -x /usr/local/bin/startrack
+      test -d "${MCRROOT}/runtime/glnxa64"
+      find /opt -maxdepth 2 -type f -name StarTrack -perm -111 -print -quit | grep -q StarTrack
