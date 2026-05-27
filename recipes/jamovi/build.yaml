@@ -16,15 +16,21 @@ build:
   kind: neurodocker
   base-image: jamovi/jamovi:{{ context.version }}
   pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
 
   directives:
     - environment:
         JAMOVI_ALLOW_ARBITRARY_CODE: "false"
 
     - copy: jamovi /usr/local/bin/jamovi
+    - copy: jamovi-entrypoint /usr/local/bin/jamovi-entrypoint
 
     - run:
         - chmod +x /usr/local/bin/jamovi
+        - chmod +x /usr/local/bin/jamovi-entrypoint
+
+    - entrypoint: /usr/local/bin/jamovi-entrypoint
 
 deploy:
   bins:
@@ -58,6 +64,19 @@ readme: |
   ----------------------------------
 
 files:
+  - name: jamovi-entrypoint
+    contents: |
+      #!/usr/bin/env bash
+      set -e
+
+      export USER="${USER:-$(whoami)}"
+
+      if [ "$#" -gt 0 ]; then
+        exec "$@"
+      fi
+
+      exec /usr/bin/env bash
+
   - name: jamovi
     contents: |
       #!/usr/bin/env bash
