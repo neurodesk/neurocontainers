@@ -1,0 +1,12 @@
+tests:
+  - name: Test Functionnectome entry points
+    script: |
+      Functionnectome --help | grep -q "Usage: Functionnectome"
+      QuickDisco --help | grep -q "Generate a quick disconnectome"
+      WhiteRest --help | grep -q "WhiteRest module"
+      python - <<'PY'
+      import Functionnectome.functionnectome as fun
+      import Functionnectome.quickDisco as qd
+      assert fun.PRIORS_H5
+      assert qd.PRIORS_H5
+      PY
