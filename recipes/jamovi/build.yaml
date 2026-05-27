@@ -1,31 +1,34 @@
 name: jamovi
-version: "2.3"
+version: 2.7.4
+
+icon: data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjwhLS0gQ3JlYXRlZCB3aXRoIElua3NjYXBlIChodHRwOi8vd3d3Lmlua3NjYXBlLm9yZy8pIC0tPgo8c3ZnIGlkPSJzdmc0MTU5IiB4bWxuczpyZGY9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkvMDIvMjItcmRmLXN5bnRheC1ucyMiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgaGVpZ2h0PSI0OCIgd2lkdGg9IjQ4IiB2ZXJzaW9uPSIxLjEiIHhtbG5zOmNjPSJodHRwOi8vY3JlYXRpdmVjb21tb25zLm9yZy9ucyMiIHhtbG5zOmRjPSJodHRwOi8vcHVybC5vcmcvZGMvZWxlbWVudHMvMS4xLyIgdmlld0JveD0iMCAwIDQ4IDQ4LjAwMDAwMSI+CiA8bWV0YWRhdGEgaWQ9Im1ldGFkYXRhNDE2NCI+CiAgPHJkZjpSREY+CiAgIDxjYzpXb3JrIHJkZjphYm91dD0iIj4KICAgIDxkYzpmb3JtYXQ+aW1hZ2Uvc3ZnK3htbDwvZGM6Zm9ybWF0PgogICAgPGRjOnR5cGUgcmRmOnJlc291cmNlPSJodHRwOi8vcHVybC5vcmcvZGMvZGNtaXR5cGUvU3RpbGxJbWFnZSIvPgogICAgPGRjOnRpdGxlLz4KICAgPC9jYzpXb3JrPgogIDwvcmRmOlJERj4KIDwvbWV0YWRhdGE+CiA8ZyBpZD0ibGF5ZXIxIiB0cmFuc2Zvcm09InRyYW5zbGF0ZSg2LjQ4MSAtNy4zMTc1KSI+CiAgPGcgaWQ9Imc0MjA3IiB0cmFuc2Zvcm09Im1hdHJpeCguNzQxNDEgMCAwIC43NDE0MSAtMS40OTYyIDE0LjEyNSkiPgogICA8cGF0aCBpZD0icGF0aDQxMzQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIGQ9Im01Ni44MjYgMjMuODExYTMxLjE4NSAzMS4xODUgMCAwIDEgLTMxLjc4MSAzMC41NTcgMzEuMTg1IDMxLjE4NSAwIDAgMSAtMzAuNTc3IC0zMS43NjEgMzEuMTg1IDMxLjE4NSAwIDAgMSAzMS43NDIgLTMwLjU5OCAzMS4xODUgMzEuMTg1IDAgMCAxIDMwLjYxOCAzMS43MjMiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2Utd2lkdGg9Ii4yOTI1NiIgZmlsbD0iIzNlNmRhOSIvPgogICA8cGF0aCBpZD0icGF0aDQ2OTQtNyIgZD0ibTEwLjE5MSAyNS4xNTh2LTE4LjEyMWg0Ljc3NzQgNC43Nzc0djEyLjU0MiAxMi41NDJsMC43NDEzMy0wLjIyOTljMi45MjM0LTAuOTA2NjYgNy4zODI2LTMuOTczMiAxMC4xOTUtNy4wMTExIDQuMjQ2LTQuNTg2MiA2LjQ0NTctOS40NTk3IDcuMzQ3NC0xNi4yNzhsMC4yMDY5Ni0xLjU2NWg0LjcyNTggNC43MjU4bC0wLjE0NDc5IDEuNDAwM2MtMC44NDAwOSA4LjEyMzItMi43NzAxIDEzLjQzMi03LjA4MTkgMTkuNDgtNC4yMDE5IDUuODkzNy0xMC4zMyAxMC41MDEtMTcuNjEzIDEzLjI0Mi0yLjc3ODQgMS4wNDU4LTguMTczNyAyLjExOTUtMTAuNjUgMi4xMTk1aC0yLjAwNzV6IiBzdHJva2U9IiMyNzQ1NmEiIHN0cm9rZS13aWR0aD0iLjQ4NzYwIiBmaWxsPSIjZmZmIi8+CiAgPC9nPgogPC9nPgo8L3N2Zz4K
+
+copyright:
+  - license: AGPL-3.0-or-later
+    url: https://github.com/jamovi/jamovi/blob/current-dev/LICENSE.md
+  - license: GPL-2.0-or-later
+    url: https://github.com/jamovi/jamovi/blob/current-dev/LICENSE.md
 
 architectures:
   - x86_64
 
 build:
   kind: neurodocker
-
-  base-image: jamovi/jamovi:2.3.17
-  pkg-manager: yum
+  base-image: jamovi/jamovi:{{ context.version }}
+  pkg-manager: apt
 
   directives:
-    - run:
-        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
-        - chmod +x /usr/bin/ll
+    - environment:
+        JAMOVI_ALLOW_ARBITRARY_CODE: "false"
 
-    - install:
-        - flatpak
-        - ca-certificates
+    - copy: jamovi /usr/local/bin/jamovi
 
     - run:
-        - flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-        - flatpak install flathub org.jamovi.jamovi -y
+        - chmod +x /usr/local/bin/jamovi
 
 deploy:
-  path:
-    - /usr/bin
+  bins:
+    - jamovi
 
 categories:
   - statistical analysis
@@ -33,23 +36,54 @@ categories:
 readme: |
   ----------------------------------
   ## jamovi/{{ context.version }} ##
-  Jamovi is a GUI-based statistics package based on R
+
+  jamovi is a free and open statistical spreadsheet built on top of R.
 
   Example:
   ```
-  flatpak run org.jamovi.jamovi
+  jamovi start
   ```
+
+  This starts the jamovi server on `${NEURODESK_WEBAPP_PORT}` when set, otherwise on `${JAMOVI_PORT}` or port `41337`.
 
   More documentation can be found here: https://www.jamovi.org/
 
-  To run applications outside of this container: ml jamovi/{{ context.version }}
-
   Citation:
   ```
-  The jamovi project (2021). jamovi (Version 2.3) [Computer Software]. Retrieved from https://www.jamovi.org
+  The jamovi project. jamovi (Version {{ context.version }}) [Computer Software]. Retrieved from https://www.jamovi.org
   ```
 
-  WARNING: The flatpak install may not work inside a container because it requires usernamespaces.
-  It would be best to start from the official jamovi container: https://github.com/jamovi/jamovi/blob/current-dev/docker-compose.yaml
+  To run container outside of this environment: ml jamovi/{{ context.version }}
 
   ----------------------------------
+
+files:
+  - name: jamovi
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      case "${1:-start}" in
+        start|server)
+          port="${NEURODESK_WEBAPP_PORT:-${JAMOVI_PORT:-41337}}"
+          export HOME="${JAMOVI_HOME_DIR:-/tmp/jamovi-home}"
+          export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/jamovi-cache}"
+          export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-/tmp/jamovi-config}"
+          export XDG_DATA_HOME="${XDG_DATA_HOME:-/tmp/jamovi-data}"
+          mkdir -p "${HOME}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}"
+
+          export JAMOVI_ACCESS_KEY="${JAMOVI_ACCESS_KEY:-}"
+          export JAMOVI_ALLOW_ARBITRARY_CODE="${JAMOVI_ALLOW_ARBITRARY_CODE:-false}"
+          export JAMOVI_HOST_A="${JAMOVI_HOST_A:-localhost:${port}}"
+          export JAMOVI_HOST_B="${JAMOVI_HOST_B:-localhost:${port}/analyses}"
+          export JAMOVI_HOST_C="${JAMOVI_HOST_C:-localhost:${port}/results}"
+
+          exec /usr/bin/python3 -u -m jamovi.server "${port}" --if=*
+          ;;
+        version|--version|-v)
+          cat /usr/lib/jamovi/version
+          ;;
+        *)
+          exec /usr/bin/python3 -u -m jamovi.server "$@"
+          ;;
+      esac

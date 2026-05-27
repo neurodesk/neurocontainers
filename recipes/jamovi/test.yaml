@@ -1,0 +1,21 @@
+tests:
+  - name: Test jamovi version
+    script: |
+      jamovi --version
+
+  - name: Test jamovi server starts
+    script: |
+      export JAMOVI_PORT=42037
+      jamovi start >/tmp/jamovi-test.log 2>&1 &
+      pid="$!"
+      trap 'kill "${pid}" 2>/dev/null || true' EXIT
+
+      for _ in $(seq 1 60); do
+        if curl -fsS "http://localhost:${JAMOVI_PORT}/version"; then
+          exit 0
+        fi
+        sleep 1
+      done
+
+      cat /tmp/jamovi-test.log
+      exit 1
