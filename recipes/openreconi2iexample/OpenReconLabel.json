@@ -78,28 +78,29 @@
       "default": true
     },
     {
-      "id": "segmentgeometry",
-      "label": { "en": "Segment geometry" },
+      "id": "segmentdeliverymode",
+      "label": { "en": "Segment delivery mode" },
       "type": "choice",
       "values": [
         {
-          "id": "3d",
-          "name": { "en": "3D series" }
+          "id": "exclude",
+          "name": { "en": "Exclude from postprocessing" }
         },
         {
-          "id": "2d",
-          "name": { "en": "2D images" }
+          "id": "source_geometry_3d",
+          "name": { "en": "Source geometry 3D" }
+        },
+        {
+          "id": "source_geometry_2d",
+          "name": { "en": "Source geometry 2D" }
+        },
+        {
+          "id": "postprocess_segment",
+          "name": { "en": "Postprocess segment" }
         }
       ],
-      "default": "2d",
-      "information": { "en": "Only affects Segment output. 3D sends a scanner-safe per-slice segment series with source geometry and unique slice counters. 2D sends one source-geometry mask image per source image." }
-    },
-    {
-      "id": "detach3ddata",
-      "label": { "en": "Detach 3D data" },
-      "type": "boolean",
-      "information": { "en": "Stamp Segment 3D series with Detached3DData=1. The 3D segment path is sent as per-slice images, not a packed MRD volume. Does not change 2D segment geometry." },
-      "default": false
+      "default": "exclude",
+      "information": { "en": "Choose how Segment is returned. Exclude sends one explicit derived segment volume that scanner inline postprocessing should ignore. Source geometry 3D sends one source-like 3D segment series per source group. Source geometry 2D sends one source-like 2D mask per source image. Postprocess segment sends source-geometry 2D masks for scanner postprocessing and disables Send original images." }
     },
     {
       "id": "segmentsendorder",
@@ -119,13 +120,6 @@
       "information": { "en": "When Segment and Send original images are both enabled, choose whether segment outputs are sent before or after original outputs." }
     },
     {
-      "id": "segmentpostprocessingstamp",
-      "label": { "en": "Stamp segment for postprocessing" },
-      "type": "boolean",
-      "information": { "en": "Send Segment as source-geometry 2D masks with SegmentPostProcessing metadata. This disables Send original images, ignores Detach 3D data, and preserves the source image-type identity used by scanner compose filters." },
-      "default": false
-    },
-    {
       "id": "segmentationcolormap",
       "label": { "en": "Segmentation colourmap" },
       "type": "boolean",
@@ -133,8 +127,22 @@
       "default": false
     },
     {
-      "id": "mip",
-      "label": { "en": "MIP" },
+      "id": "sendreformatsagittal",
+      "label": { "en": "Send sagittal segment reformat" },
+      "type": "boolean",
+      "information": { "en": "Send one explicit sagittal 3D reformat volume of the segment data" },
+      "default": false
+    },
+    {
+      "id": "sendreformatcoronal",
+      "label": { "en": "Send coronal segment reformat" },
+      "type": "boolean",
+      "information": { "en": "Send one explicit coronal 3D reformat volume of the segment data" },
+      "default": false
+    },
+    {
+      "id": "sendcomputedmip",
+      "label": { "en": "Computed MIP output" },
       "type": "boolean",
       "information": { "en": "Compute and send one maximum intensity projection image" },
       "default": false

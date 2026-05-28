@@ -106,7 +106,7 @@ tests:
       assert meta_position == header_position, (meta_position, header_position)
       PY
       rm -f openreconi2iexample.json
-      echo "Inspect ${output_h5} with an HDF5 viewer; with options enabled, series 99 should be named <source>-inverted, series 100 should be named <source>-original, series 101 should be named <source>-segment, series 102 should be named <source>-upsampled, series 103 should be named <source>-mip, and series 120 should be named <source>-metrics."
+      echo "Inspect ${output_h5} with an HDF5 viewer; with options enabled, series 99 should be named <source>-inverted, series 100 should be named <source>-original, series 101 should be named <source>-segment, series 102 should be named <source>-upsampled, series 103 should be named <source>-mip, series 120 should be named <source>-metrics, and series 121/122 should be named <source>-segment-sagittal/coronal."
 
  - name: Optional original invert segment MIP and upsample unit smoke test
    manual: true
@@ -602,7 +602,6 @@ tests:
           output_index,
           expected_comment=None,
           expected_output_geometry=None,
-          detached=False,
           expect_minihead=True,
       ):
           meta = ismrmrd.Meta.deserialize(image.attribute_string)
@@ -649,10 +648,6 @@ tests:
               assert first(meta.get(module.SEGMENT_OUTPUT_GEOMETRY_META_KEY)) == (
                   expected_output_geometry
               )
-          if expected_output_geometry == module.SEGMENT_OUTPUT_GEOMETRY_3D:
-              assert int(first(meta.get(module.DETACHED_3D_DATA_META_KEY))) == int(detached)
-          else:
-              assert first(meta.get(module.DETACHED_3D_DATA_META_KEY)) is None
           assert first(meta.get(module.SEGMENT_POSTPROCESSING_META_KEY)) is None
           assert int(first(meta.get(module.SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY))) == (
               expected_child_role
@@ -702,21 +697,9 @@ tests:
           expected_name,
           expected_series_index,
           expected_comment=None,
-          detached=False,
-          postprocessing_stamp=False,
       ):
           meta = ismrmrd.Meta.deserialize(image.attribute_string)
           header = image.getHead()
-          expected_image_type = (
-              module.SEGMENT_DETACHED_3D_IMAGE_TYPE
-              if detached
-              else module.SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE
-          )
-          expected_image_type_value4 = (
-              module.SEGMENT_DETACHED_3D_IMAGE_TYPE_VALUE4
-              if detached
-              else module.SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4
-          )
           ordered_items, slice_axis = module._ordered_volume_items(
               [(source_image, np.asarray(source_image.data)) for source_image in source_images],
               "test segment volume",
@@ -732,30 +715,23 @@ tests:
           expected_comment = expected_name if expected_comment is None else expected_comment
 
           assert first(meta.get("DataRole")) == "Image"
-          assert first(meta.get("ImageType")) == expected_image_type
-          assert first(meta.get("DicomImageType")) == expected_image_type
+          assert first(meta.get("ImageType")) == module.SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE
+          assert first(meta.get("DicomImageType")) == module.SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE
           assert first(meta.get("SeriesDescription")) == expected_name
           assert first(meta.get("SequenceDescription")) == expected_name
           assert first(meta.get("ProtocolName")) == expected_name
           assert first(meta.get("ImageComments")) == expected_comment
           assert first(meta.get("ImageComment")) == expected_comment
           assert first(meta.get("ImageTypeValue3")) is None
-          assert first(meta.get("ImageTypeValue4")) == expected_image_type_value4
+          assert first(meta.get("ImageTypeValue4")) == module.SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4
           assert not module._has_magnitude_image_type_value3_token(
               [first(meta.get("ImageType")), first(meta.get("DicomImageType"))]
           )
           assert int(first(meta.get("Keep_image_geometry"))) == 0
           assert int(first(meta.get(module.SEGMENT_EXPLICIT_VOLUME_META_KEY))) == 1
-          assert int(first(meta.get(module.DETACHED_3D_DATA_META_KEY))) == int(detached)
           assert first(meta.get(module.SEGMENT_SOURCE_GEOMETRY_META_KEY)) is None
-          if postprocessing_stamp:
-              assert int(first(meta.get(module.SEGMENT_POSTPROCESSING_META_KEY))) == 1
-              assert int(first(meta.get(module.SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY))) == (
-                  module._segment_postprocessing_child_role(expected_series_index)
-              )
-          else:
-              assert first(meta.get(module.SEGMENT_POSTPROCESSING_META_KEY)) is None
-              assert first(meta.get(module.SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)) is None
+          assert first(meta.get(module.SEGMENT_POSTPROCESSING_META_KEY)) is None
+          assert first(meta.get(module.SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)) is None
           assert not first(meta.get("IceMiniHead"))
           assert image.image_series_index == expected_series_index
           assert header.image_series_index == expected_series_index
@@ -777,6 +753,61 @@ tests:
           segment_data = np.asarray(image.data)
           assert segment_data.shape[1] == len(source_images), segment_data.shape
           assert set(np.unique(segment_data).tolist()) <= {0, 1}
+
+      def assert_segment_reformat_identity(
+          image,
+          source_images,
+          expected_name,
+          expected_series_index,
+          expected_orientation,
+      ):
+          meta = ismrmrd.Meta.deserialize(image.attribute_string)
+          header = image.getHead()
+          ordered_items, slice_axis = module._ordered_volume_items(
+              [(source_image, np.asarray(source_image.data)) for source_image in source_images],
+              "test segment reformat",
+          )
+          expected_position = module._explicit_volume_center_position(
+              ordered_items,
+              slice_axis,
+          )
+          expected_slice_count = (
+              int(source_images[0].getHead().matrix_size[0])
+              if expected_orientation == module.SEGMENT_REFORMAT_ORIENTATION_SAGITTAL
+              else int(source_images[0].getHead().matrix_size[1])
+          )
+
+          assert first(meta.get("DataRole")) == "Segmentation"
+          assert first(meta.get("SeriesDescription")) == expected_name
+          assert first(meta.get("SequenceDescription")) == expected_name
+          assert first(meta.get("ProtocolName")) == expected_name
+          assert first(meta.get("ImageTypeValue3")) is None
+          assert first(meta.get("ImageTypeValue4")) == (
+              module.SEGMENT_REFORMAT_SERIES[expected_orientation]
+          )
+          assert int(first(meta.get("Keep_image_geometry"))) == 0
+          assert int(first(meta.get(module.SEGMENT_REFORMAT_META_KEY))) == 1
+          assert first(meta.get(module.SEGMENT_REFORMAT_ORIENTATION_META_KEY)) == (
+              expected_orientation
+          )
+          assert first(meta.get(module.SEGMENT_EXPLICIT_VOLUME_META_KEY)) is None
+          assert first(meta.get(module.SEGMENT_SOURCE_GEOMETRY_META_KEY)) is None
+          assert not first(meta.get("IceMiniHead"))
+          assert image.image_series_index == expected_series_index
+          assert header.image_series_index == expected_series_index
+          assert int(header.image_index) == 1
+          assert int(header.slice) == 0
+          assert int(header.contrast) == 0
+          assert int(header.matrix_size[2]) == expected_slice_count
+          assert int(first(meta.get("partition_count"))) == 1
+          assert int(first(meta.get("slice_count"))) == expected_slice_count
+          assert int(first(meta.get("NumberOfSlices"))) == expected_slice_count
+          assert int(first(meta.get("ImagesInAcquisition"))) == expected_slice_count
+          assert np.allclose(np.asarray(header.position, dtype=float), expected_position)
+          assert_header_geometry_meta(image)
+          reformat_data = np.asarray(image.data)
+          assert reformat_data.shape[1] == expected_slice_count, reformat_data.shape
+          assert set(np.unique(reformat_data).tolist()) <= {0, 1}
 
       def assert_one_series_identity(images_to_check):
           identities = []
@@ -955,6 +986,29 @@ tests:
       assert int(active_segment_data[0, 0, 3, 3]) == 1
       assert int(active_segment_data[0, 0, 6, 6]) == 0
 
+      excluded_segment_sources = [make_sparse_image(i) for i in range(4)]
+      excluded_segment_outputs = module._segment_images_excluded_from_postprocessing(
+          excluded_segment_sources
+      )
+      assert len(excluded_segment_outputs) == 1
+      assert_segment_explicit_volume_identity(
+          excluded_segment_outputs[0],
+          excluded_segment_sources,
+          "i2i_example_send_org-segment",
+          module.SEGMENT_SERIES_INDEX,
+      )
+      excluded_segment_meta = ismrmrd.Meta.deserialize(
+          excluded_segment_outputs[0].attribute_string
+      )
+      assert first(excluded_segment_meta.get("LUTFileName")) is None
+      assert first(excluded_segment_meta.get(module.SEGMENT_OUTPUT_GEOMETRY_META_KEY)) == (
+          module.SEGMENT_OUTPUT_GEOMETRY_3D
+      )
+      module._validate_output_images(
+          excluded_segment_outputs,
+          excluded_segment_sources,
+      )
+
       postprocessing_sources = [make_sparse_image(i) for i in range(4)]
       postprocessing_segments = module._segment_images_for_postprocessing(
           postprocessing_sources
@@ -1088,6 +1142,31 @@ tests:
           segment_outputs_with_metrics + metrics_report,
           metrics_sources,
       )
+
+      reformat_sources = [make_sparse_image(i) for i in range(4)]
+      reformat_outputs = module._segment_reformat_images(
+          reformat_sources,
+          (
+              module.SEGMENT_REFORMAT_ORIENTATION_SAGITTAL,
+              module.SEGMENT_REFORMAT_ORIENTATION_CORONAL,
+          ),
+      )
+      assert len(reformat_outputs) == 2
+      assert_segment_reformat_identity(
+          reformat_outputs[0],
+          reformat_sources,
+          "i2i_example_send_org-segment-sagittal",
+          module.REFORMAT_SERIES_INDEX_START,
+          module.SEGMENT_REFORMAT_ORIENTATION_SAGITTAL,
+      )
+      assert_segment_reformat_identity(
+          reformat_outputs[1],
+          reformat_sources,
+          "i2i_example_send_org-segment-coronal",
+          module.REFORMAT_SERIES_INDEX_START + 1,
+          module.SEGMENT_REFORMAT_ORIENTATION_CORONAL,
+      )
+      module._validate_output_images(reformat_outputs, reformat_sources)
 
       postprocessing_metrics_sources = [make_sparse_image(i) for i in range(4)]
       postprocessing_metrics_rows = []
@@ -2247,71 +2326,50 @@ tests:
           )
           assert np.asarray(original.data).shape == (1, 1, 8, 8)
 
-      upsample_detached_connection = FakeConnection(images + [None])
-      module.process(
-          upsample_detached_connection,
-          {
-              "parameters": {
-                  "upsampled": True,
-                  "sendoriginal": True,
-                  "detach3ddata": True,
-              }
-          },
-          None,
-      )
-      assert len(upsample_detached_connection.sent_images) == 2
-      upsample_detached_original_batch = upsample_detached_connection.sent_images[0]
-      upsample_detached_3d_batch = upsample_detached_connection.sent_images[1]
-      assert [
-          int(image.image_series_index)
-          for image in upsample_detached_original_batch
-      ] == [module.ORIGINAL_SERIES_INDEX] * len(images)
-      assert [
-          int(image.image_series_index)
-          for image in upsample_detached_3d_batch
-      ] == [module.UPSAMPLED_SERIES_INDEX]
-      upsample_detached_original_summary = module._send_batch_summary(
-          1,
-          2,
-          upsample_detached_original_batch,
-      )
-      upsample_detached_3d_summary = module._send_batch_summary(
-          2,
-          2,
-          upsample_detached_3d_batch,
-      )
-      assert "target=original_passthrough" in upsample_detached_original_summary
-      assert "keep_geometry=1" in upsample_detached_original_summary
-      assert "target=upsampled" in upsample_detached_3d_summary
-      assert "keep_geometry=0" in upsample_detached_3d_summary
-
       default_connection = FakeConnection(images + [None])
       module.process(default_connection, {"parameters": {}}, None)
       assert default_connection.sent_images == []
       assert default_connection.closed is True
+
+      reformat_process_sources = [make_sparse_image(i) for i in range(4)]
+      reformat_only_connection = FakeConnection(reformat_process_sources + [None])
+      module.process(
+          reformat_only_connection,
+          {
+              "parameters": {
+                  "segment": False,
+                  "sendreformatsagittal": True,
+                  "sendreformatcoronal": True,
+              }
+          },
+          None,
+      )
+      assert reformat_only_connection.logging == []
+      assert len(reformat_only_connection.sent_images) == 1
+      reformat_only_outputs = reformat_only_connection.sent_images[0]
+      assert [
+          int(image.image_series_index)
+          for image in reformat_only_outputs
+      ] == [module.REFORMAT_SERIES_INDEX_START, module.REFORMAT_SERIES_INDEX_START + 1]
+      module._validate_output_images(reformat_only_outputs, reformat_process_sources)
 
       segment_process_sources = [make_sparse_image(i) for i in range(4)]
       segment_connection = FakeConnection(segment_process_sources + [None])
       module.process(segment_connection, {"parameters": {"segment": True}}, None)
       assert len(segment_connection.sent_images) == 1
       segment_process_outputs = segment_connection.sent_images[0]
-      assert len(segment_process_outputs) == len(segment_process_sources)
+      assert len(segment_process_outputs) == 1
       segment_process_meta = ismrmrd.Meta.deserialize(
           segment_process_outputs[0].attribute_string
       )
       assert first(segment_process_meta.get("LUTFileName")) is None
-      assert int(first(segment_process_meta.get("Keep_image_geometry"))) == 1
-      for index, (segment_slice, source_image) in enumerate(
-          zip(segment_process_outputs, segment_process_sources)
-      ):
-          assert_segment_source_geometry_identity(
-              segment_slice,
-              source_image,
-              "i2i_example_send_org-segment",
-              module.SEGMENT_SERIES_INDEX,
-              index,
-              expected_output_geometry=module.SEGMENT_OUTPUT_GEOMETRY_3D,
-          )
+      assert int(first(segment_process_meta.get("Keep_image_geometry"))) == 0
+      assert_segment_explicit_volume_identity(
+          segment_process_outputs[0],
+          segment_process_sources,
+          "i2i_example_send_org-segment",
+          module.SEGMENT_SERIES_INDEX,
+      )
 
       segment_3d_stamped_sources = [make_sparse_image(i) for i in range(4)]
       segment_3d_stamped_connection = FakeConnection(segment_3d_stamped_sources + [None])
@@ -2320,7 +2378,7 @@ tests:
           {
               "parameters": {
                   "segment": True,
-                  "segmentpostprocessingstamp": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
               }
           },
           None,
@@ -2353,9 +2411,8 @@ tests:
           {
               "parameters": {
                   "segment": True,
-                  "segmentgeometry": module.SEGMENT_OUTPUT_GEOMETRY_2D,
                   "segmentsendorder": module.SEGMENT_SEND_ORDER_BEFORE_ORIGINALS,
-                  "segmentpostprocessingstamp": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
               }
           },
           None,
@@ -2394,7 +2451,7 @@ tests:
           {
               "parameters": {
                   "segment": True,
-                  "segmentgeometry": module.SEGMENT_OUTPUT_GEOMETRY_2D,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D,
               }
           },
           None,
@@ -2424,7 +2481,13 @@ tests:
       )
       module.process(
           segment_with_original_connection,
-          {"parameters": {"segment": True, "sendoriginal": True}},
+          {
+              "parameters": {
+                  "segment": True,
+                  "sendoriginal": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
+              }
+          },
           None,
       )
       assert segment_with_original_connection.logging == []
@@ -2483,60 +2546,54 @@ tests:
               expected_output_geometry=module.SEGMENT_OUTPUT_GEOMETRY_3D,
           )
 
-      detached_segment_sources = [make_sparse_image(i) for i in range(4)]
-      detached_segment_connection = FakeConnection(detached_segment_sources + [None])
+      excluded_segment_sources = [make_sparse_image(i) for i in range(4)]
+      excluded_segment_connection = FakeConnection(excluded_segment_sources + [None])
       module.process(
-          detached_segment_connection,
+          excluded_segment_connection,
           {
               "parameters": {
                   "segment": True,
                   "sendoriginal": True,
-                  "detach3ddata": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_EXCLUDE,
               }
           },
           None,
       )
-      assert detached_segment_connection.logging == []
-      assert len(detached_segment_connection.sent_images) == 2
-      detached_segment_original_batch = detached_segment_connection.sent_images[0]
-      detached_segment_3d_batch = detached_segment_connection.sent_images[1]
+      assert excluded_segment_connection.logging == []
+      assert len(excluded_segment_connection.sent_images) == 2
+      excluded_segment_original_batch = excluded_segment_connection.sent_images[0]
+      excluded_segment_batch = excluded_segment_connection.sent_images[1]
       assert [
           int(image.image_series_index)
-          for image in detached_segment_original_batch
+          for image in excluded_segment_original_batch
       ] == [module.ORIGINAL_SERIES_INDEX] * 4
       assert [
           int(image.image_series_index)
-          for image in detached_segment_3d_batch
-      ] == [module.SEGMENT_SERIES_INDEX] * 4
-      detached_original_summary = module._send_batch_summary(
+          for image in excluded_segment_batch
+      ] == [module.SEGMENT_SERIES_INDEX]
+      excluded_original_summary = module._send_batch_summary(
           1,
           2,
-          detached_segment_original_batch,
+          excluded_segment_original_batch,
       )
-      detached_segment_summary = module._send_batch_summary(
+      excluded_segment_summary = module._send_batch_summary(
           2,
           2,
-          detached_segment_3d_batch,
+          excluded_segment_batch,
       )
-      assert "target=original_passthrough" in detached_original_summary
-      assert "keep_geometry=1" in detached_original_summary
-      assert "target=segment_3d_series" in detached_segment_summary
-      assert "keep_geometry=1" in detached_segment_summary
-      for index, (segment_slice, source_image) in enumerate(
-          zip(detached_segment_3d_batch, detached_segment_sources)
-      ):
-          assert_segment_source_geometry_identity(
-              segment_slice,
-              source_image,
-              "i2i_example_send_org-segment",
-              module.SEGMENT_SERIES_INDEX,
-              index,
-              expected_output_geometry=module.SEGMENT_OUTPUT_GEOMETRY_3D,
-              detached=True,
-          )
+      assert "target=original_passthrough" in excluded_original_summary
+      assert "keep_geometry=1" in excluded_original_summary
+      assert "target=segment_explicit_3d" in excluded_segment_summary
+      assert "keep_geometry=0" in excluded_segment_summary
+      assert_segment_explicit_volume_identity(
+          excluded_segment_batch[0],
+          excluded_segment_sources,
+          "i2i_example_send_org-segment",
+          module.SEGMENT_SERIES_INDEX,
+      )
       module._validate_output_images(
-          detached_segment_original_batch + detached_segment_3d_batch,
-          detached_segment_sources,
+          excluded_segment_original_batch + excluded_segment_batch,
+          excluded_segment_sources,
       )
 
       wrapped_segment_original_sources = [
@@ -2547,7 +2604,13 @@ tests:
       )
       module.process(
           wrapped_segment_original_connection,
-          {"parameters": {"segment": True, "sendoriginal": True}},
+          {
+              "parameters": {
+                  "segment": True,
+                  "sendoriginal": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
+              }
+          },
           None,
       )
       assert wrapped_segment_original_connection.logging == []
@@ -2611,9 +2674,8 @@ tests:
           {
               "parameters": {
                   "segment": True,
-                  "segmentgeometry": module.SEGMENT_OUTPUT_GEOMETRY_2D,
                   "segmentsendorder": module.SEGMENT_SEND_ORDER_BEFORE_ORIGINALS,
-                  "segmentpostprocessingstamp": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
                   "sendoriginal": True,
               }
           },
@@ -2675,9 +2737,8 @@ tests:
           {
               "parameters": {
                   "segment": True,
-                  "segmentgeometry": module.SEGMENT_OUTPUT_GEOMETRY_2D,
                   "segmentsendorder": module.SEGMENT_SEND_ORDER_AFTER_ORIGINALS,
-                  "segmentpostprocessingstamp": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
                   "sendoriginal": True,
               }
           },
@@ -2711,7 +2772,13 @@ tests:
       multi_contrast_connection = FakeConnection(multi_contrast_images + [None])
       module.process(
           multi_contrast_connection,
-          {"parameters": {"segment": True, "sendoriginal": True}},
+          {
+              "parameters": {
+                  "segment": True,
+                  "sendoriginal": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
+              }
+          },
           None,
       )
       assert multi_contrast_connection.logging == []
@@ -2797,61 +2864,62 @@ tests:
       storage_keys = [storage_key(image) for image in multi_contrast_outputs]
       assert len(set(storage_keys)) == len(storage_keys), storage_keys
 
-      multi_contrast_detach_connection = FakeConnection(multi_contrast_images + [None])
+      multi_contrast_exclude_connection = FakeConnection(multi_contrast_images + [None])
       module.process(
-          multi_contrast_detach_connection,
+          multi_contrast_exclude_connection,
           {
               "parameters": {
                   "segment": True,
                   "sendoriginal": True,
-                  "detach3ddata": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_EXCLUDE,
               }
           },
           None,
       )
-      assert multi_contrast_detach_connection.logging == []
-      assert len(multi_contrast_detach_connection.sent_images) == 2
-      multi_contrast_detach_original_batch = (
-          multi_contrast_detach_connection.sent_images[0]
+      assert multi_contrast_exclude_connection.logging == []
+      assert len(multi_contrast_exclude_connection.sent_images) == 2
+      multi_contrast_exclude_original_batch = (
+          multi_contrast_exclude_connection.sent_images[0]
       )
-      multi_contrast_detach_3d_batch = (
-          multi_contrast_detach_connection.sent_images[1]
+      multi_contrast_exclude_segment_batch = (
+          multi_contrast_exclude_connection.sent_images[1]
       )
       assert [
           int(image.image_series_index)
-          for image in multi_contrast_detach_original_batch
+          for image in multi_contrast_exclude_original_batch
       ] == [module.ORIGINAL_SERIES_INDEX] * 4 + [
           module._grouped_series_index(module.ORIGINAL_SERIES_INDEX, 1)
       ] * 4
       assert [
           int(image.image_series_index)
-          for image in multi_contrast_detach_3d_batch
-      ] == [module.SEGMENT_SERIES_INDEX] * 4 + [
+          for image in multi_contrast_exclude_segment_batch
+      ] == [module.SEGMENT_SERIES_INDEX] + [
           module._segment_series_index(1)
-      ] * 4
-      multi_contrast_detach_original_summary = module._send_batch_summary(
+      ]
+      multi_contrast_exclude_original_summary = module._send_batch_summary(
           1,
           2,
-          multi_contrast_detach_original_batch,
+          multi_contrast_exclude_original_batch,
       )
-      multi_contrast_detach_3d_summary = module._send_batch_summary(
+      multi_contrast_exclude_segment_summary = module._send_batch_summary(
           2,
           2,
-          multi_contrast_detach_3d_batch,
+          multi_contrast_exclude_segment_batch,
       )
-      assert "target=original_passthrough" in multi_contrast_detach_original_summary
-      assert "keep_geometry=1" in multi_contrast_detach_original_summary
-      assert "target=segment_3d_series" in multi_contrast_detach_3d_summary
-      assert "series=101,110" in multi_contrast_detach_3d_summary
-      assert "keep_geometry=1" in multi_contrast_detach_3d_summary
-      segment_cursor = 0
-      for expected_name, expected_series_index, expected_contrast in (
+      assert "target=original_passthrough" in multi_contrast_exclude_original_summary
+      assert "keep_geometry=1" in multi_contrast_exclude_original_summary
+      assert "target=segment_explicit_3d" in multi_contrast_exclude_segment_summary
+      assert "series=101,110" in multi_contrast_exclude_segment_summary
+      assert "keep_geometry=0" in multi_contrast_exclude_segment_summary
+      for segment_volume, expected_name, expected_series_index, expected_contrast in (
           (
+              multi_contrast_exclude_segment_batch[0],
               "wholebody_i2i_seg+org_W-segment-c0",
               module.SEGMENT_SERIES_INDEX,
               0,
           ),
           (
+              multi_contrast_exclude_segment_batch[1],
               "wholebody_i2i_seg+org_W-segment-c1",
               module._segment_series_index(1),
               1,
@@ -2861,25 +2929,14 @@ tests:
               image for image in multi_contrast_images
               if int(image.getHead().contrast) == expected_contrast
           ]
-          segment_group = multi_contrast_detach_3d_batch[
-              segment_cursor:segment_cursor + len(source_group)
-          ]
-          segment_cursor += len(source_group)
-          for index, (segment_slice, source_image) in enumerate(
-              zip(segment_group, source_group)
-          ):
-              assert_segment_source_geometry_identity(
-                  segment_slice,
-                  source_image,
-                  expected_name,
-                  expected_series_index,
-                  index,
-                  expected_output_geometry=module.SEGMENT_OUTPUT_GEOMETRY_3D,
-                  detached=True,
-                  expect_minihead=False,
-              )
+          assert_segment_explicit_volume_identity(
+              segment_volume,
+              source_group,
+              expected_name,
+              expected_series_index,
+          )
       module._validate_output_images(
-          multi_contrast_detach_original_batch + multi_contrast_detach_3d_batch,
+          multi_contrast_exclude_original_batch + multi_contrast_exclude_segment_batch,
           multi_contrast_images,
       )
 
@@ -2889,9 +2946,8 @@ tests:
           {
               "parameters": {
                   "segment": True,
-                  "segmentgeometry": module.SEGMENT_OUTPUT_GEOMETRY_2D,
                   "segmentsendorder": module.SEGMENT_SEND_ORDER_BEFORE_ORIGINALS,
-                  "segmentpostprocessingstamp": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
                   "sendoriginal": True,
               }
           },
@@ -2954,9 +3010,8 @@ tests:
           {
               "parameters": {
                   "segment": True,
-                  "segmentgeometry": module.SEGMENT_OUTPUT_GEOMETRY_2D,
                   "segmentsendorder": module.SEGMENT_SEND_ORDER_BEFORE_ORIGINALS,
-                  "segmentpostprocessingstamp": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
                   "segmentationcolormap": True,
               }
           },
@@ -3029,7 +3084,13 @@ tests:
       metrics_segment_connection = FakeConnection(metrics_segment_sources + [None])
       module.process(
           metrics_segment_connection,
-          {"parameters": {"segment": True, "sendmetrics": True}},
+          {
+              "parameters": {
+                  "segment": True,
+                  "sendmetrics": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
+              }
+          },
           None,
       )
       assert metrics_segment_connection.logging == []
@@ -3054,9 +3115,8 @@ tests:
           {
               "parameters": {
                   "segment": True,
-                  "segmentgeometry": module.SEGMENT_OUTPUT_GEOMETRY_2D,
                   "segmentsendorder": module.SEGMENT_SEND_ORDER_BEFORE_ORIGINALS,
-                  "segmentpostprocessingstamp": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
                   "sendmetrics": True,
               }
           },
@@ -3082,7 +3142,12 @@ tests:
       )
       module.process(
           duplicate_position_connection,
-          {"parameters": {"segment": True}},
+          {
+              "parameters": {
+                  "segment": True,
+                  "segmentdeliverymode": module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
+              }
+          },
           None,
       )
       assert duplicate_position_connection.sent_images == []
@@ -3102,15 +3167,21 @@ tests:
       assert module._config_bool_any({"parameters": {"invert": "true"}}, ("invert", "sendinvert"), default=False) is True
       assert module._config_bool_any({"parameters": {"sendinterpolated": "true"}}, ("upsampled", "sendinterpolated"), default=False) is True
       assert module._config_bool_any({"parameters": {"segment": "true"}}, ("segment", "sendsegment"), default=False) is True
-      assert module._segment_output_geometry({"parameters": {}}) == (
-          module.SEGMENT_OUTPUT_GEOMETRY_3D
+      assert module._segment_delivery_mode({"parameters": {}}) == (
+          module.SEGMENT_DELIVERY_MODE_EXCLUDE
       )
-      assert module._segment_output_geometry(
-          {"parameters": {"segmentgeometry": "2D images"}}
-      ) == module.SEGMENT_OUTPUT_GEOMETRY_2D
-      assert module._segment_output_geometry(
-          {"parameters": {"segmentgeometry": "not_a_geometry"}}
-      ) == module.SEGMENT_OUTPUT_GEOMETRY_3D
+      assert module._segment_delivery_mode(
+          {"parameters": {"segmentdeliverymode": "source geometry 2d"}}
+      ) == module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D
+      assert module._segment_delivery_mode(
+          {"parameters": {"segmentdeliverymode": "source geometry 3d"}}
+      ) == module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D
+      assert module._segment_delivery_mode(
+          {"parameters": {"segmentdeliverymode": "postprocess segment"}}
+      ) == module.SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT
+      assert module._segment_delivery_mode(
+          {"parameters": {"segmentdeliverymode": "not_a_mode"}}
+      ) == module.SEGMENT_DELIVERY_MODE_EXCLUDE
       assert module._segment_send_order({"parameters": {}}) == (
           module.SEGMENT_SEND_ORDER_AFTER_ORIGINALS
       )
@@ -3120,44 +3191,26 @@ tests:
       assert module._segment_send_order(
           {"parameters": {"segmentsendorder": "not_an_order"}}
       ) == module.SEGMENT_SEND_ORDER_AFTER_ORIGINALS
-      assert module._config_bool(
-          {"parameters": {"detach3ddata": "true"}},
-          "detach3ddata",
-          default=False,
-      ) is True
-      assert module._config_bool(
-          {"parameters": {"segmentpostprocessingstamp": "true"}},
-          "segmentpostprocessingstamp",
-          default=False,
-      ) is True
       assert module._scanner_postprocessing_target(
           True,
           True,
-          True,
-          True,
-          True,
-      ) == "segment_2d"
+          module.SEGMENT_DELIVERY_MODE_EXCLUDE,
+      ) == "originals"
       assert module._scanner_postprocessing_target(
           True,
           True,
-          True,
-          False,
-          True,
+          module.SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
       ) == "segment_2d"
       assert module._scanner_postprocessing_target(
           False,
           True,
-          False,
-          True,
-          False,
-      ) == "none_3d_series"
+          module.SEGMENT_DELIVERY_MODE_EXCLUDE,
+      ) == "none_segment_excluded"
       assert module._scanner_postprocessing_target(
           True,
           True,
-          False,
-          True,
-          True,
-      ) == "none_3d_series"
+          module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
+      ) == "segment_3d_source_geometry"
       module.os.environ[module.VERSION_ENV_VAR] = "unit-test"
       assert module._runtime_version() == "unit-test"
       assert module._config_bool_any(
@@ -3165,7 +3218,7 @@ tests:
           ("segmentationcolormap", "sendsegmentationcolormap"),
           default=False,
       ) is True
-      assert module._config_bool_any({"parameters": {"sendthresholdmip": "true"}}, ("mip", "sendthresholdmip"), default=False) is True
+      assert module._config_bool_any({"parameters": {"sendcomputedmip": "true"}}, ("sendcomputedmip",), default=False) is True
       assert module._config_bool_any({"parameters": {"sendmetrics": "true"}}, ("sendmetrics", "metrics"), default=False) is True
 
       print("optional original invert segment MIP upsample and metrics tests passed")
