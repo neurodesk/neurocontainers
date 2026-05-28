@@ -49,24 +49,44 @@ build:
         - libharfbuzz-dev
         - liblapack-dev
         - libnetcdf-dev
+        - libasound2
+        - libatk-bridge2.0-0
+        - libgtk-3-0
+        - libnss3
         - libnode-dev
         - libpq5
         - libproj-dev
         - libssl-dev
         - libudunits2-dev
+        - libxcomposite1
+        - libxcursor1
+        - libxdamage1
         - libxml2-dev
+        - libxrandr2
+        - libxss1
+        - libxtst6
         - locales
         - openjdk-11-jdk
         - python3-fire
+        - python3-matplotlib
+        - python3-numpy
         - python3-pandas
         - python3-pip
         - python3-pyqt5
+        - python3-scipy
+        - python3-seaborn
+        - python3-sklearn
         - python3-tk
         - python-is-python3
         - qtbase5-dev
         - r-base
         - r-base-dev
+        - r-cran-devtools
         - r-cran-ncdf4
+        - r-cran-plotly
+        - r-cran-rcpp
+        - r-cran-rjava
+        - r-cran-rmarkdown
         - software-properties-common
         - sudo
         - unzip
@@ -81,13 +101,11 @@ build:
     - workdir: /opt/jidt-{{ context.version }}
 
     - run:
-        - unzip {{ get_file("jidt_zip") }} -d /opt/jidt-{{ context.version }}
+        - mkdir -p /opt/jidt-{{ context.version }}/infodynamics-dist-{{ context.version }}
+        - unzip {{ get_file("jidt_zip") }} -d /opt/jidt-{{ context.version }}/infodynamics-dist-{{ context.version }}
 
-    - template:
-        name: miniconda
-        version: latest
-        conda_install: "python=3.9 scipy scikit-learn matplotlib jupyter seaborn numpy pandas"
-        pip_install: "osfclient jpype1"
+    - run:
+        - python3 -m pip install --no-cache-dir osfclient jpype1
 
     - run:
         - cp {{ get_file("rstudio_deb") }} /opt/rstudio-{{ context.rstudio_version }}-{{ context.rstudio_build }}-amd64.deb
