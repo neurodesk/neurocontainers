@@ -46,9 +46,9 @@ Gaussian blending is marked experimental in the OpenRecon label. Use it only whe
 
 The OpenRecon label declares GPU support and requests at least 1 GPU, 10048 MB GPU memory, 40096 MB system memory, and 32 CPU cores.
 
-Returned images are always emitted as new scanner-visible series. Restamped originals are sent first with `Keep_image_geometry = 1` and a patched source `IceMiniHead`, so scanner-side processing and scanner-created MIPs stay attached to the original MRA geometry. The VesselBoost segmentation follows as a separate source-geometry 2D stream with `Keep_image_geometry = 1`.
+Returned images are always emitted as new scanner-visible series. Restamped originals are sent first with `Keep_image_geometry = 1` and a patched source `IceMiniHead`, so scanner-side processing and scanner-created MIPs stay attached to the original MRA geometry. The VesselBoost segmentation follows as a separate source-geometry 2D stream with `Keep_image_geometry = 1` and `SegmentPostProcessing = 1`.
 
-This mirrors the `openreconi2iexample` path with segment geometry fixed to `2d`, no detached 3D data, segment send order after originals, and no segment postprocessing stamp. Reformatted sagittal and coronal outputs remain explicit packed 3D MRD volumes.
+This mirrors the `openreconi2iexample` path with segment geometry fixed to `2d`, no detached 3D data, segment send order after originals, and the segment postprocessing stamp enabled. Reformatted sagittal and coronal outputs remain explicit packed 3D MRD volumes without the segment postprocessing stamp.
 
 ## Citation
 

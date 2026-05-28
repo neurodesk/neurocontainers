@@ -285,6 +285,7 @@ tests:
                     "image_comment": get_text(meta, "ImageComment"),
                     "keep_image_geometry": get_text(meta, "Keep_image_geometry"),
                     "output_geometry": get_text(meta, "VesselBoostOutputGeometry"),
+                    "segment_postprocessing": get_text(meta, "SegmentPostProcessing"),
                     "matrix_x": int(header.matrix_size[0]),
                     "matrix_y": int(header.matrix_size[1]),
                     "matrix_z": int(header.matrix_size[2]),
@@ -312,6 +313,7 @@ tests:
             assert original["image_comment"] == "original", original
             assert original["sequence_description_additional"] == "OR", original
             assert original["keep_image_geometry"] == "1", original
+            assert original["segment_postprocessing"] == "", original
             assert expected_original in original["ice_minihead"], original["ice_minihead"]
             assert original["grouping"] != expected_source, original
             assert original["image_index"] == 1, original
@@ -331,6 +333,7 @@ tests:
             assert derived["sequence_description_additional"] == "OR", derived
             assert derived["keep_image_geometry"] == "1", derived
             assert derived["output_geometry"] == "2d", derived
+            assert derived["segment_postprocessing"] == "1", derived
             assert expected_derived in derived["ice_minihead"], derived["ice_minihead"]
             assert derived["image_count"] == original["image_count"], summaries
             assert derived["matrix_z"] == 1, derived
@@ -348,6 +351,7 @@ tests:
             assert derived["image_type_value4"] == "vesselboost", derived
             assert derived["keep_image_geometry"] == "1", derived
             assert derived["output_geometry"] == "2d", derived
+            assert derived["segment_postprocessing"] == "1", derived
             assert expected_derived in derived["ice_minihead"], derived["ice_minihead"]
             assert derived["image_count"] > 1, derived
             assert derived["matrix_z"] == 1, derived
@@ -379,12 +383,14 @@ tests:
             assert derived["last_slice"] == derived["image_count"] - 1, derived
             assert derived["keep_image_geometry"] == "1", derived
             assert derived["output_geometry"] == "2d", derived
+            assert derived["segment_postprocessing"] == "1", derived
             assert expected_derived in derived["ice_minihead"], derived["ice_minihead"]
             assert original["image_type_value4"] == "original", original
             assert original["keep_image_geometry"] == "1", original
             assert expected_original in original["ice_minihead"], original["ice_minihead"]
             for reformat in (sagittal, coronal):
                 assert reformat["data_role"] == "Segmentation", reformat
+                assert reformat["segment_postprocessing"] == "", reformat
                 assert reformat["image_count"] == 1, reformat
                 assert reformat["image_indices"] == [1], reformat
                 assert reformat["slice_indices"] == [0], reformat
@@ -584,6 +590,7 @@ tests:
       assert first(segmentation_meta.get("SequenceDescriptionAdditional")) == "OR"
       assert first(segmentation_meta.get("Keep_image_geometry")) == "1"
       assert first(segmentation_meta.get("VesselBoostOutputGeometry")) == "2d"
+      assert first(segmentation_meta.get(module.VESSELBOOST_SEGMENT_POSTPROCESSING_META_KEY)) == "1"
       assert first(segmentation_meta.get("IceMiniHead"))
       assert int(segmentation.getHead().matrix_size[2]) == 1
       assert [int(image.getHead().image_index) for image in segmentations] == [1, 2]
