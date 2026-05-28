@@ -91,7 +91,7 @@
           "name": { "en": "2D images" }
         }
       ],
-      "default": "3d",
+      "default": "2d",
       "information": { "en": "Only affects Segment output. 3D sends a scanner-safe per-slice segment series with source geometry and unique slice counters. 2D sends one source-geometry mask image per source image." }
     },
     {
