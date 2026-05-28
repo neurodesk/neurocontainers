@@ -95,29 +95,28 @@ rows ignore `sendoriginal`, force `segmentgeometry = 2d`, and ignore
 `detach3ddata` before sending.
 
 ### TOF
+(tested last with version 1.0.73)
 
 | ID | segmentgeometry | detach3ddata | segmentsendorder | segmentpostprocessingstamp | Notes |
 | --- | --- | --- | --- | --- | --- |
-| TOF-01 | 3d | false | after_originals | false | MIPs based on org, segment at the end |
-| TOF-02 | 3d | false | after_originals | true | MIPs based on org, segment at the end |
-| TOF-03 | 3d | false | before_originals | false | segment first, then org, then MIPs based on org,  |
-| TOF-04 | 3d | false | before_originals | true | org first, then MIPs based on org |
-| TOF-05 | 3d | true | after_originals | false | org first, then MIP based on org, then seg |
-| TOF-06 | 3d | true | after_originals | true | org first, then MIP based on org, then seg  |
-| TOF-07 | 3d | true | before_originals | false | seg first, then org, then MIPs based on org |
-| TOF-08 | 3d | true | before_originals | true | seg first, then org, then MIPs based on org |
-| TOF-09 | 2d | false | after_originals | false | org first, then MIP org+seg alternating, Radials only on org |
-| TOF-10 | 2d | false | after_originals | true | MIP based on org |
-| TOF-11 | 2d | false | before_originals | false | seg first, then MIP seg+org altnernating,  |
-| TOF-12 | 2d | false | before_originals | true | seg first, then MIP based on seg, then org |
-| TOF-13 | 2d | true | after_originals | false | org first, then MIP org+seg alternating, Radials only on org |
-| TOF-14 | 2d | true | after_originals | true | MIPs based on org |
-| TOF-15 | 2d | true | before_originals | false | segmentation is send first, MIP seg+org alternating |
-| TOF-16 | 2d | true | before_originals | true | seg first, then MIPS based on seg, then org|
+| TOF-01 | 3d | false | after_originals | false | org, MIPs based on org+seg, segment at the end |
+| TOF-02 | 3d | false | after_originals | true | seg, then MIPs based on seg, NO ORG |
+| TOF-03 | 3d | false | before_originals | false | segment first, then MIPs based on org and seg, org at end |
+| TOF-04 | 3d | false | before_originals | true | seg first, then MIPs based on seg, no org |
+| TOF-05 | 3d | true | after_originals | false | org first, then MIP based on org and seg, then seg |
+| TOF-06 | 3d | true | after_originals | true | seg first, then MIP based on seg, NO ORG  |
+| TOF-07 | 3d | true | before_originals | false | seg first, then MIPs based on seg+org, then org |
+| TOF-08 | 3d | true | before_originals | true | seg first, then MIPs based on seg, no org |
+| TOF-09 | 2d | false | after_originals | false | org first, then MIP org+seg alternating, seg last |
+| TOF-10 | 2d | false | after_originals | true | seg, MIP based on seg, NO ORG | 
+| TOF-11 | 2d | false | before_originals | false | seg first, then MIP seg+org altnernating, then org |
+| TOF-12 | 2d | false | before_originals | true | seg first, then MIP based on seg, NO org |
+| TOF-13 | 2d | true | after_originals | false | org first, then MIP org+seg alternating, then seg |
+| TOF-14 | 2d | true | after_originals | true | seg first, MIPs based on seg, NO ORG |
+| TOF-15 | 2d | true | before_originals | false | seg first, MIP seg+org alternating, then org |
+| TOF-16 | 2d | true | before_originals | true | seg first, then MIPS based on seg, NO org|
 
 best:
-| TOF-10 | 2d | false | after_originals | true | MIP based on org |
-| TOF-14 | 2d | true | after_originals | true | MIP based on org |
 
 ### Wholebody multistation protocol Dixon recon F/W
 
