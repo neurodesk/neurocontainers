@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "rshrf 1.7.0": {
+      "version": "20260529",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "functional imaging",
+    "bids apps"
+  ]
+}
