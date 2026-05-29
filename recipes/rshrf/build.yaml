@@ -23,13 +23,12 @@ structured_readme:
 
 build:
   kind: neurodocker
-  base-image: bids/rshrf:{{ context.version }}
+  base-image: bids/rshrf:v{{ context.version }}
   pkg-manager: apt
   add-default-template: false
   add-tzdata: false
   directives:
     - run:
-        - apk add --no-cache bash
         - mkdir -p /neurodocker
         - echo '#!/usr/bin/env bash' > /neurodocker/startup.sh
         - echo 'set -e' >> /neurodocker/startup.sh
