@@ -61,6 +61,9 @@ SOURCE_PARENT_REFERENCE_META_PREFIXES = (
     "ReferencedGSPS",
     "ReferencedImageSequence",
 )
+SCANNER_WRITE_UNSAFE_META_KEYS = {
+    "ImageTypeValue3",
+}
 
 # Keep this overview aligned with recipes/vesselboost/OpenReconLabel.json.
 # Tests can import it to build a minimal OpenRecon config payload.
@@ -571,6 +574,12 @@ def _strip_source_parent_refs(meta_obj):
             del meta_obj[key]
 
 
+def _strip_scanner_write_unsafe_meta(meta_obj):
+    for key in SCANNER_WRITE_UNSAFE_META_KEYS:
+        if key in meta_obj:
+            del meta_obj[key]
+
+
 def _set_meta_scalar(meta_obj, key, value):
     meta_obj[key] = str(int(value))
 
@@ -834,6 +843,35 @@ def _replace_minihead_array_token(minihead_text, name, target_token):
 
 def _replace_or_append_minihead_array_token(minihead_text, name, source_token, target_token):
     return _replace_or_append_minihead_array_tokens(minihead_text, name, [target_token])
+
+
+def _remove_minihead_string_param(minihead_text, name):
+    pattern = re.compile(
+        rf'^\s*<ParamString\."{re.escape(name)}">\s*\{{\s*"[^"]*"\s*\}}\s*\n?',
+        flags=re.MULTILINE,
+    )
+    updated_text, count = pattern.subn("", minihead_text)
+    return updated_text, bool(count)
+
+
+def _remove_minihead_array_param(minihead_text, name):
+    pattern = re.compile(
+        rf'^\s*<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}\s*\n?',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    updated_text, count = pattern.subn("", minihead_text)
+    return updated_text, bool(count)
+
+
+def _strip_scanner_write_unsafe_minihead(minihead_text):
+    current_text = minihead_text
+    changed = False
+    for key in SCANNER_WRITE_UNSAFE_META_KEYS:
+        current_text, did_change = _remove_minihead_string_param(current_text, key)
+        changed = changed or did_change
+        current_text, did_change = _remove_minihead_array_param(current_text, key)
+        changed = changed or did_change
+    return current_text, changed
 
 
 def _replace_or_append_minihead_array_tokens(minihead_text, name, target_tokens):
@@ -1144,6 +1182,8 @@ def _patch_source_image_header_ice_minihead(
         exam_data_role,
     )
     changed = changed or did_change
+    current_text, did_change = _strip_scanner_write_unsafe_minihead(current_text)
+    changed = changed or did_change
 
     for param_name, param_value in (
         ("Actual3DImagePartNumber", SCANNER_PARTITION_INDEX),
@@ -1420,11 +1460,8 @@ def _stamp_vesselboost_output_image(
         if source_image_header_identity
         else f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
     )
-    tmp_meta["ImageTypeValue3"] = (
-        _get_meta_text(source_meta, "ImageTypeValue3")
-        if source_image_header_identity
-        else "M"
-    ) or "M"
+    if not source_image_header_identity:
+        tmp_meta["ImageTypeValue3"] = "M"
     tmp_meta["ImageTypeValue4"] = (
         source_image_type_value4
         if source_image_header_identity
@@ -1462,6 +1499,8 @@ def _stamp_vesselboost_output_image(
         for key, value in extra_meta.items():
             if value is not None:
                 tmp_meta[key] = value
+    if source_image_header_identity:
+        _strip_scanner_write_unsafe_meta(tmp_meta)
 
     minihead_text = _decode_ice_minihead(tmp_meta)
     if not patch_minihead:
@@ -1786,6 +1825,12 @@ def _validate_vesselboost_output_contract(
                     f"image {index}: ExamDataRole does not match image_series_index "
                     f"{series_index}"
                 )
+            for field in SCANNER_WRITE_UNSAFE_META_KEYS:
+                if _get_meta_text(meta_obj, field):
+                    errors.append(
+                        f"image {index}: source-image-header output still carries "
+                        f"unsafe scanner Meta {field}"
+                    )
             if minihead_text:
                 dicom_map = _minihead_param_map_text(minihead_text, "DICOM")
                 if '<ParamString."ExamDataRole">' not in dicom_map:
@@ -1799,6 +1844,15 @@ def _validate_vesselboost_output_contract(
                         f"image {index}: source-image-header IceMiniHead DICOM "
                         f"ExamDataRole is missing {expected_entry}"
                     )
+                for field in SCANNER_WRITE_UNSAFE_META_KEYS:
+                    if (
+                        _extract_minihead_string_value(minihead_text, field)
+                        or _extract_minihead_array_tokens(minihead_text, field)
+                    ):
+                        errors.append(
+                            f"image {index}: source-image-header IceMiniHead still "
+                            f"carries unsafe scanner {field}"
+                        )
         if keep_image_geometry == 0:
             header_matrix_z = int(getattr(header, "matrix_size", [0, 0, 0])[2])
             if minihead_text:

@@ -279,6 +279,7 @@ tests:
                     "sequence_description_additional": get_text(meta, "SequenceDescriptionAdditional"),
                     "grouping": get_text(meta, "SeriesNumberRangeNameUID"),
                     "image_type": get_text(meta, "ImageType"),
+                    "image_type_value3": get_text(meta, "ImageTypeValue3"),
                     "image_type_value4": get_text(meta, "ImageTypeValue4"),
                     "dicom_image_type": get_text(meta, "DicomImageType"),
                     "image_comments": get_text(meta, "ImageComments"),
@@ -332,6 +333,7 @@ tests:
             assert derived["data_role"] == "Image", derived
             assert derived["image_type"] == "ORIGINAL\\\\PRIMARY\\\\M\\\\TOF", derived
             assert derived["dicom_image_type"] == "ORIGINAL\\\\PRIMARY\\\\M\\\\TOF", derived
+            assert derived["image_type_value3"] == "", derived
             assert derived["image_type_value4"] == "TOF", derived
             assert derived["image_comments"] == expected_derived, derived
             assert derived["image_comment"] == expected_derived, derived
@@ -346,6 +348,7 @@ tests:
             assert "<CategoryEntry>3</CategoryEntry>" in derived["exam_data_role"], derived
             assert expected_derived in derived["ice_minihead"], derived["ice_minihead"]
             assert '<ParamString."ImageType">\t{ "ORIGINAL\\\\PRIMARY\\\\M\\\\TOF" }' in derived["ice_minihead"], derived["ice_minihead"]
+            assert '<ParamString."ImageTypeValue3">' not in derived["ice_minihead"], derived["ice_minihead"]
             assert '{ "TOF" }' in derived["ice_minihead"], derived["ice_minihead"]
             assert derived["image_count"] == original["image_count"], summaries
             assert derived["matrix_z"] == 1, derived
@@ -360,6 +363,7 @@ tests:
             assert derived["sequence_description"] == expected_derived, derived
             assert derived["grouping"] == expected_derived, derived
             assert derived["data_role"] == "Image", derived
+            assert derived["image_type_value3"] == "", derived
             assert derived["image_type_value4"] == "TOF", derived
             assert derived["keep_image_geometry"] == "1", derived
             assert derived["output_geometry"] == "2d", derived
@@ -369,6 +373,7 @@ tests:
             assert derived["segment_output_geometry"] == "2d", derived
             assert derived["segment_postprocessing_child_role"] == derived["series_index"], derived
             assert expected_derived in derived["ice_minihead"], derived["ice_minihead"]
+            assert '<ParamString."ImageTypeValue3">' not in derived["ice_minihead"], derived["ice_minihead"]
             assert derived["image_count"] > 1, derived
             assert derived["matrix_z"] == 1, derived
             assert derived["image_index"] == 1, derived
@@ -394,6 +399,7 @@ tests:
             sagittal = summaries[2]
             coronal = summaries[3]
             assert derived["data_role"] == "Image", derived
+            assert derived["image_type_value3"] == "", derived
             assert derived["image_index"] == 1, derived
             assert derived["last_image_index"] == derived["image_count"], derived
             assert derived["last_slice"] == derived["image_count"] - 1, derived
@@ -405,6 +411,7 @@ tests:
             assert derived["segment_output_geometry"] == "2d", derived
             assert derived["segment_postprocessing_child_role"] == derived["series_index"], derived
             assert expected_derived in derived["ice_minihead"], derived["ice_minihead"]
+            assert '<ParamString."ImageTypeValue3">' not in derived["ice_minihead"], derived["ice_minihead"]
             assert original["image_type_value4"] == "original", original
             assert original["keep_image_geometry"] == "1", original
             assert expected_original in original["ice_minihead"], original["ice_minihead"]
@@ -623,6 +630,7 @@ tests:
       assert first(segmentation_meta.get(module.VESSELBOOST_SEGMENT_OUTPUT_GEOMETRY_META_KEY)) == "2d"
       assert first(segmentation_meta.get("ImageType")) == "ORIGINAL\\PRIMARY\\M\\TOF"
       assert first(segmentation_meta.get("DicomImageType")) == "ORIGINAL\\PRIMARY\\M\\TOF"
+      assert not first(segmentation_meta.get("ImageTypeValue3"))
       assert first(segmentation_meta.get("ImageTypeValue4")) == "TOF"
       assert first(segmentation_meta.get(module.VESSELBOOST_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)) == "3"
       assert "<CategoryEntry>3</CategoryEntry>" in first(segmentation_meta.get("ExamDataRole"))
@@ -630,6 +638,10 @@ tests:
       dicom_map = module._minihead_param_map_text(segmentation_minihead_text, "DICOM")
       assert '<ParamString."ExamDataRole">' in dicom_map
       assert "<CategoryEntry>3</CategoryEntry>" in dicom_map
+      assert not module._extract_minihead_string_value(
+          segmentation_minihead_text,
+          "ImageTypeValue3",
+      )
       assert module._extract_minihead_array_tokens(segmentation_minihead_text, "ImageTypeValue4") == [
           "TOF"
       ]
