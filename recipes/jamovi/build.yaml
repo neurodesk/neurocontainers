@@ -36,6 +36,13 @@ build:
 deploy:
   bins:
     - jamovi
+  webapp:
+    title: "jamovi"
+    icon: "icon.svg"
+    startup_command: "jamovi start"
+    startup_timeout: 120
+    description: "Statistical spreadsheet for data analysis"
+    port: 41337
 
 categories:
   - statistics
