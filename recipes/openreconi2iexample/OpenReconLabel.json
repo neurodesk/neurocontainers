@@ -78,46 +78,33 @@
       "default": true
     },
     {
-      "id": "segmentdeliverymode",
-      "label": { "en": "Segment delivery mode" },
+      "id": "segmentheadergeometry",
+      "label": { "en": "Segment header geometry" },
       "type": "choice",
       "values": [
         {
-          "id": "exclude",
-          "name": { "en": "Exclude from postprocessing" }
+          "id": "explicit_volume_derived_header",
+          "name": { "en": "Explicit volume, derived image header" }
         },
         {
-          "id": "source_geometry_3d",
-          "name": { "en": "Source geometry 3D" }
+          "id": "3d_series_segment_header",
+          "name": { "en": "3D segmentation header" }
         },
         {
-          "id": "source_geometry_2d",
-          "name": { "en": "Source geometry 2D" }
+          "id": "2d_segment_header",
+          "name": { "en": "2D segmentation header" }
         },
         {
-          "id": "postprocess_segment",
-          "name": { "en": "Postprocess segment" }
+          "id": "2d_derived_image_header",
+          "name": { "en": "2D derived image header" }
+        },
+        {
+          "id": "2d_source_image_header",
+          "name": { "en": "2D source image header" }
         }
       ],
-      "default": "exclude",
-      "information": { "en": "Choose how Segment is returned. Exclude sends one explicit derived segment volume that scanner inline postprocessing should ignore. Source geometry 3D sends one source-like 3D segment series per source group. Source geometry 2D sends one source-like 2D mask per source image. Postprocess segment sends source-geometry 2D masks for scanner postprocessing and disables Send original images." }
-    },
-    {
-      "id": "segmentsendorder",
-      "label": { "en": "Segment send order" },
-      "type": "choice",
-      "values": [
-        {
-          "id": "after_originals",
-          "name": { "en": "After originals" }
-        },
-        {
-          "id": "before_originals",
-          "name": { "en": "Before originals" }
-        }
-      ],
-      "default": "after_originals",
-      "information": { "en": "When Segment and Send original images are both enabled, choose whether segment outputs are sent before or after original outputs." }
+      "default": "2d_segment_header",
+      "information": { "en": "Choose the geometry and header identity used for Segment. Explicit volume sends one derived 3D volume with Keep_image_geometry=0 and DataRole=Image. 3D and 2D segmentation header modes keep Keep_image_geometry=1 and DataRole=Segmentation. 2D derived image header keeps source geometry with DataRole=Image and a derived ImageType. 2D source image header keeps source geometry with DataRole=Image and the source ImageType/ImageTypeValue4 identity." }
     },
     {
       "id": "segmentationcolormap",
@@ -130,14 +117,14 @@
       "id": "sendreformatsagittal",
       "label": { "en": "Send sagittal segment reformat" },
       "type": "boolean",
-      "information": { "en": "Send one explicit sagittal 3D reformat volume of the segment data" },
+      "information": { "en": "Send explicit sagittal 3D reformat volume(s) of the segment data, one per source group" },
       "default": false
     },
     {
       "id": "sendreformatcoronal",
       "label": { "en": "Send coronal segment reformat" },
       "type": "boolean",
-      "information": { "en": "Send one explicit coronal 3D reformat volume of the segment data" },
+      "information": { "en": "Send explicit coronal 3D reformat volume(s) of the segment data, one per source group" },
       "default": false
     },
     {

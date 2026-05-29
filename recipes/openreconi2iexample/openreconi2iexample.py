@@ -29,6 +29,8 @@ REFORMAT_SAGITTAL_SERIES_NAME = "openrecon_segment_reformat_sagittal"
 REFORMAT_CORONAL_SERIES_NAME = "openrecon_segment_reformat_coronal"
 SEGMENTATION_LUT = "MicroDeltaHotMetal.pal"
 SEGMENT_SOURCE_GEOMETRY_META_KEY = "SegmentSourceGeometry"
+SEGMENT_SOURCE_IMAGE_HEADER_META_KEY = "SegmentSourceImageHeader"
+SEGMENT_DERIVED_IMAGE_HEADER_META_KEY = "SegmentDerivedImageHeader"
 SEGMENT_EXPLICIT_VOLUME_META_KEY = "SegmentExplicitVolume"
 SEGMENT_OUTPUT_GEOMETRY_META_KEY = "SegmentOutputGeometry"
 SEGMENT_REFORMAT_META_KEY = "SegmentReformat"
@@ -43,10 +45,22 @@ SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE = (
 SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4 = f"{SEGMENT_SERIES_NAME}_3d"
 SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
 SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY = "SegmentPostProcessingChildRole"
-SEGMENT_POSTPROCESSING_IMAGE_TYPE = (
-    f"DERIVED\\PRIMARY\\SEGMENTATION\\{SEGMENT_SERIES_NAME}_postprocessing"
+SEGMENT_SOURCE_IMAGE_HEADER_IMAGE_TYPE = (
+    f"DERIVED\\PRIMARY\\SEGMENTATION\\{SEGMENT_SERIES_NAME}_source_image_header"
 )
-SEGMENT_POSTPROCESSING_IMAGE_TYPE_VALUE4 = f"{SEGMENT_SERIES_NAME}_postprocessing"
+SEGMENT_SOURCE_IMAGE_HEADER_IMAGE_TYPE_VALUE4 = (
+    f"{SEGMENT_SERIES_NAME}_source_image_header"
+)
+SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE = (
+    f"DERIVED\\PRIMARY\\OTHER\\{SEGMENT_SERIES_NAME}_derived_image_header"
+)
+SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE_VALUE4 = (
+    f"{SEGMENT_SERIES_NAME}_derived_image_header"
+)
+SEGMENT_POSTPROCESSING_IMAGE_TYPE = SEGMENT_SOURCE_IMAGE_HEADER_IMAGE_TYPE
+SEGMENT_POSTPROCESSING_IMAGE_TYPE_VALUE4 = (
+    SEGMENT_SOURCE_IMAGE_HEADER_IMAGE_TYPE_VALUE4
+)
 SEGMENT_POSTPROCESSING_DISALLOWED_DIXON_TOKENS = {
     "DIXON",
     "FAT",
@@ -126,39 +140,23 @@ SEGMENT_OUTPUT_GEOMETRIES = (
     SEGMENT_OUTPUT_GEOMETRY_2D,
     SEGMENT_OUTPUT_GEOMETRY_3D,
 )
-SEGMENT_SEND_ORDER_AFTER_ORIGINALS = "after_originals"
-SEGMENT_SEND_ORDER_BEFORE_ORIGINALS = "before_originals"
-SEGMENT_SEND_ORDERS = (
-    SEGMENT_SEND_ORDER_AFTER_ORIGINALS,
-    SEGMENT_SEND_ORDER_BEFORE_ORIGINALS,
+SEGMENT_DELIVERY_MODE_EXCLUDE = "explicit_volume_derived_header"
+SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D = "3d_series_segment_header"
+SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D = "2d_segment_header"
+SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER = (
+    "2d_derived_image_header"
 )
-SEGMENT_DELIVERY_MODE_EXCLUDE = "exclude"
-SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D = "source_geometry_3d"
-SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D = "source_geometry_2d"
-SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT = "postprocess_segment"
+SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER = (
+    "2d_source_image_header"
+)
 SEGMENT_DELIVERY_MODES = (
     SEGMENT_DELIVERY_MODE_EXCLUDE,
     SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
     SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D,
-    SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
+    SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER,
+    SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER,
 )
-SEGMENT_DELIVERY_MODE_ALIASES = {
-    "exclude": SEGMENT_DELIVERY_MODE_EXCLUDE,
-    "excluded": SEGMENT_DELIVERY_MODE_EXCLUDE,
-    "exclude_segment": SEGMENT_DELIVERY_MODE_EXCLUDE,
-    "exclude_segmentation": SEGMENT_DELIVERY_MODE_EXCLUDE,
-    "explicit": SEGMENT_DELIVERY_MODE_EXCLUDE,
-    "explicit_volume": SEGMENT_DELIVERY_MODE_EXCLUDE,
-    "source_geometry_3d": SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
-    "source_3d": SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
-    "3d_source_geometry": SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
-    "source_geometry_2d": SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D,
-    "source_2d": SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D,
-    "2d_source_geometry": SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D,
-    "postprocess_segment": SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
-    "postprocess_segmentation": SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
-    "scanner_postprocess_segment": SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
-}
+SEGMENT_DELIVERY_MODE_DEFAULT = SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D
 SEGMENT_REFORMAT_ORIENTATION_SAGITTAL = "sagittal"
 SEGMENT_REFORMAT_ORIENTATION_CORONAL = "coronal"
 SEGMENT_REFORMAT_ORIENTATIONS = (
@@ -208,30 +206,24 @@ def process(connection, config, metadata):
             ("segment", "sendsegment", "sendthreshold"),
             default=False,
         )
-        segment_send_order = _segment_send_order(config)
-        send_segment_first = (
-            segment_send_order == SEGMENT_SEND_ORDER_BEFORE_ORIGINALS
-        )
         segment_delivery_mode = _segment_delivery_mode(config)
         exclude_segment_from_postprocessing = (
             segment_delivery_mode == SEGMENT_DELIVERY_MODE_EXCLUDE
         )
-        stamp_segment_for_postprocessing = (
-            segment_delivery_mode == SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT
+        stamp_segment_with_source_image_header = (
+            segment_delivery_mode
+            == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER
         )
-        if send_segment and stamp_segment_for_postprocessing:
-            if send_original:
-                logging.warning(
-                    "segmentdeliverymode=%s disables sendoriginal to avoid "
-                    "returning two composer-eligible source-like streams",
-                    SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
-                )
-                send_original = False
+        stamp_segment_with_derived_image_header = (
+            segment_delivery_mode
+            == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER
+        )
         send_segment_2d_geometry = (
             segment_delivery_mode
             in (
                 SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D,
-                SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT,
+                SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER,
+                SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER,
             )
         )
         send_segment_3d_source_geometry = (
@@ -301,7 +293,10 @@ def process(connection, config, metadata):
                     magnitude_images,
                     use_colormap=use_segmentation_colormap,
                     metrics_rows=metrics_rows if send_metrics else None,
-                    stamp_for_postprocessing=stamp_segment_for_postprocessing,
+                    stamp_for_postprocessing=stamp_segment_with_source_image_header,
+                    stamp_with_derived_image_header=(
+                        stamp_segment_with_derived_image_header
+                    ),
                 )
             else:
                 computed_segment_images = _segment_images(
@@ -344,8 +339,7 @@ def process(connection, config, metadata):
         )
         logging.info(
             "Configured outputs: original=%s invert=%s upsampled=%s segment=%s "
-            "segmentdeliverymode=%s segmentsendorder=%s "
-            "postprocessing_target=%s "
+            "segmentheadergeometry=%s postprocessing_target=%s "
             "segmentationcolormap=%s computedmip=%s metrics=%s "
             "reformat_sagittal=%s reformat_coronal=%s",
             send_original,
@@ -353,7 +347,6 @@ def process(connection, config, metadata):
             send_upsampled,
             send_segment,
             segment_delivery_mode,
-            segment_send_order,
             postprocessing_target,
             use_segmentation_colormap,
             send_mip,
@@ -394,16 +387,9 @@ def process(connection, config, metadata):
             original_images,
             segment_images=segment_images,
             split_originals=split_source_geometry_outputs,
-            segment_first=send_segment_first,
         )
         if len(send_batches) > 1:
-            if split_source_geometry_outputs and send_segment_first:
-                logging.info(
-                    "Sending segment outputs before original outputs across "
-                    "%d MRD image messages",
-                    len(send_batches),
-                )
-            elif split_source_geometry_outputs:
+            if split_source_geometry_outputs:
                 logging.info(
                     "Sending original outputs before segment outputs across "
                     "%d MRD image messages",
@@ -432,7 +418,6 @@ def _output_send_batches(
     original_images,
     segment_images=None,
     split_originals=False,
-    segment_first=False,
 ):
     if not split_originals:
         return [output_images]
@@ -454,16 +439,10 @@ def _output_send_batches(
             and id(image) not in segment_ids
         )
     ]
-    if split_originals and segment_first:
-        batches = (
-            segment_batch,
-            original_batch + remaining_batch,
-        )
-    else:
-        batches = (
-            original_batch,
-            segment_batch + remaining_batch,
-        )
+    batches = (
+        original_batch,
+        segment_batch + remaining_batch,
+    )
     return [
         batch for batch in batches
         if batch
@@ -485,9 +464,20 @@ def _scanner_postprocessing_target(
         return "none_segment_excluded"
     if (
         send_segment
-        and segment_delivery_mode == SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT
+        and segment_delivery_mode
+        == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER
     ):
-        return "segment_2d"
+        if send_original:
+            return "originals+segment_2d_source_image_header"
+        return "segment_2d_source_image_header"
+    if (
+        send_segment
+        and segment_delivery_mode
+        == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER
+    ):
+        if send_original:
+            return "originals+segment_2d_derived_image_header"
+        return "segment_2d_derived_image_header"
     if (
         send_segment
         and segment_delivery_mode == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D
@@ -539,8 +529,12 @@ def _output_role(image):
     meta = _meta_from_image(image)
     if _is_segment_reformat_output(meta):
         return "segment_reformat"
+    if _is_segment_source_image_header_output(meta):
+        return "segment_source_image_header"
+    if _is_segment_derived_image_header_output(meta):
+        return "segment_derived_image_header"
     if _is_segment_postprocessing_output(meta):
-        return "segment_postprocessing"
+        return "segment_source_image_header"
     if _is_segment_explicit_volume_output(meta):
         return "segment_explicit_3d"
     if _is_segment_source_geometry_output(meta):
@@ -738,7 +732,7 @@ def _segment_images(
     logging.info(
         "Created %d scanner-safe 3D-series segmentation image(s) from %d source image(s) "
         "across %d source volume group(s) with threshold(s) %s, "
-        "segmentdeliverymode=%s, "
+        "segmentheadergeometry=%s, "
         "and segmentationcolormap=%s",
         len(outputs),
         len(images),
@@ -761,7 +755,7 @@ def _segment_images_excluded_from_postprocessing(
     source_groups = _original_source_groups(images)
     if len(source_groups) > 1:
         logging.info(
-            "segmentdeliverymode=%s split %d received image(s) into %d "
+            "segmentheadergeometry=%s split %d received image(s) into %d "
             "source volume group(s)",
             SEGMENT_DELIVERY_MODE_EXCLUDE,
             len(images),
@@ -830,7 +824,7 @@ def _segment_images_excluded_from_postprocessing(
     logging.info(
         "Created %d explicit-volume segmentation image(s) from %d source image(s) "
         "across %d source volume group(s) with threshold(s) %s, "
-        "segmentdeliverymode=%s, and segmentationcolormap=%s",
+        "segmentheadergeometry=%s, and segmentationcolormap=%s",
         len(outputs),
         len(images),
         len(source_groups),
@@ -875,9 +869,12 @@ def _segment_images_for_postprocessing(
     use_colormap=False,
     metrics_rows=None,
     stamp_for_postprocessing=True,
+    stamp_with_derived_image_header=False,
 ):
     if not images:
         return []
+    if stamp_with_derived_image_header:
+        stamp_for_postprocessing = False
 
     source_groups = _original_source_groups(images)
     if len(source_groups) > 1:
@@ -928,7 +925,9 @@ def _segment_images_for_postprocessing(
             "WindowWidth": "1",
         }
         if stamp_for_postprocessing:
-            extra_meta[SEGMENT_POSTPROCESSING_META_KEY] = "1"
+            extra_meta[SEGMENT_SOURCE_IMAGE_HEADER_META_KEY] = "1"
+        if stamp_with_derived_image_header:
+            extra_meta[SEGMENT_DERIVED_IMAGE_HEADER_META_KEY] = "1"
         if metric_row:
             metrics_comment = _format_region_volume_comment(metric_row)
             extra_meta["ImageComments"] = metrics_comment
@@ -955,11 +954,12 @@ def _segment_images_for_postprocessing(
             header = source_image.getHead()
             header.data_type = output.data_type
             output.setHead(header)
-            stamp_segment_image = (
-                _stamp_segment_postprocessing_image
-                if stamp_for_postprocessing
-                else _stamp_segment_source_geometry_image
-            )
+            if stamp_for_postprocessing:
+                stamp_segment_image = _stamp_segment_source_image_header_image
+            elif stamp_with_derived_image_header:
+                stamp_segment_image = _stamp_segment_derived_image_header_image
+            else:
+                stamp_segment_image = _stamp_segment_source_geometry_image
             stamp_segment_image(
                 output,
                 source_image,
@@ -974,15 +974,17 @@ def _segment_images_for_postprocessing(
     logging.info(
         "Created %d source-geometry segmentation image(s) from %d source image(s) "
         "across %d source volume group(s) with threshold(s) %s, "
-        "segmentdeliverymode=%s, and "
+        "segmentheadergeometry=%s, and "
         "segmentationcolormap=%s",
         len(outputs),
         len(images),
         len(source_groups),
         ", ".join(f"{threshold:.6g}" for threshold in thresholds),
         (
-            SEGMENT_DELIVERY_MODE_POSTPROCESS_SEGMENT
+            SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER
             if stamp_for_postprocessing
+            else SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER
+            if stamp_with_derived_image_header
             else SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D
         ),
         use_colormap,
@@ -2079,8 +2081,19 @@ def _is_segment_postprocessing_output(meta):
     return _meta_int(meta, SEGMENT_POSTPROCESSING_META_KEY) == 1
 
 
+def _is_segment_source_image_header_output(meta):
+    return _meta_int(meta, SEGMENT_SOURCE_IMAGE_HEADER_META_KEY) == 1
+
+
+def _is_segment_derived_image_header_output(meta):
+    return _meta_int(meta, SEGMENT_DERIVED_IMAGE_HEADER_META_KEY) == 1
+
+
 def _is_segment_source_geometry_output(meta):
-    return _meta_int(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY) == 1
+    return (
+        _meta_int(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY) == 1
+        and not _is_segment_source_image_header_output(meta)
+    )
 
 
 def _is_segment_explicit_volume_output(meta):
@@ -2469,6 +2482,70 @@ def _stamp_segment_postprocessing_image(
     return output
 
 
+def _stamp_segment_source_image_header_image(
+    output,
+    source_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity=None,
+):
+    header = output.getHead()
+    header.image_series_index = series_index
+    header.image_index = _source_geometry_header_image_index(source_image, output_index)
+    if output.data_type in (ismrmrd.DATATYPE_CXFLOAT, ismrmrd.DATATYPE_CXDOUBLE):
+        header.image_type = ismrmrd.IMTYPE_COMPLEX
+    else:
+        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    output.setHead(header)
+    storage_fields = _original_storage_fields(output, output_index)
+    output.image_series_index = series_index
+    output.attribute_string = _segment_source_image_header_meta(
+        source_image,
+        output,
+        series_index,
+        output_index,
+        series_name,
+        extra_meta,
+        series_identity,
+        storage_fields,
+    ).serialize()
+    return output
+
+
+def _stamp_segment_derived_image_header_image(
+    output,
+    source_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity=None,
+):
+    header = output.getHead()
+    header.image_series_index = series_index
+    header.image_index = _source_geometry_header_image_index(source_image, output_index)
+    if output.data_type in (ismrmrd.DATATYPE_CXFLOAT, ismrmrd.DATATYPE_CXDOUBLE):
+        header.image_type = ismrmrd.IMTYPE_COMPLEX
+    else:
+        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    output.setHead(header)
+    storage_fields = _original_storage_fields(output, output_index)
+    output.image_series_index = series_index
+    output.attribute_string = _segment_derived_image_header_meta(
+        source_image,
+        output,
+        series_index,
+        output_index,
+        series_name,
+        extra_meta,
+        series_identity,
+        storage_fields,
+    ).serialize()
+    return output
+
+
 def _stamp_segment_source_geometry_image(
     output,
     source_image,
@@ -2571,6 +2648,10 @@ def _segment_source_geometry_meta(
     extra_meta,
     series_identity,
     storage_fields,
+    data_role="Segmentation",
+    image_processing_history=None,
+    image_type=None,
+    image_type_value4=None,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
@@ -2591,13 +2672,17 @@ def _segment_source_geometry_meta(
         series_uid,
     )
     minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
-    image_type = SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE
-    image_type_value4 = SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4
+    image_type = image_type or SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE
+    image_type_value4 = image_type_value4 or SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4
+    image_processing_history = image_processing_history or [
+        "PYTHON",
+        "OPENRECON_SEGMENT_SOURCE_GEOMETRY",
+    ]
     child_role = _segment_postprocessing_child_role(series_index)
     exam_data_role = _format_exam_data_role_sequential_number(child_role)
 
-    meta["DataRole"] = "Segmentation"
-    meta["ImageProcessingHistory"] = ["PYTHON", "OPENRECON_SEGMENT_SOURCE_GEOMETRY"]
+    meta["DataRole"] = data_role
+    meta["ImageProcessingHistory"] = image_processing_history
     meta["ImageType"] = image_type
     meta["DicomImageType"] = image_type
     meta["ExamDataRole"] = exam_data_role
@@ -2632,6 +2717,116 @@ def _segment_source_geometry_meta(
             sop_uid,
             image_type,
             image_type_value4,
+            exam_data_role,
+            storage_fields,
+        )
+        if changed:
+            meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
+    return meta
+
+
+def _segment_derived_image_header_meta(
+    source_image,
+    output_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity,
+    storage_fields,
+):
+    return _segment_source_geometry_meta(
+        source_image,
+        output_image,
+        series_index,
+        output_index,
+        series_name,
+        extra_meta,
+        series_identity,
+        storage_fields,
+        data_role="Image",
+        image_processing_history=[
+            "PYTHON",
+            "OPENRECON_SEGMENT_DERIVED_IMAGE_HEADER",
+        ],
+        image_type=SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE,
+        image_type_value4=SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE_VALUE4,
+    )
+
+
+def _segment_source_image_header_meta(
+    source_image,
+    output_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity,
+    storage_fields,
+):
+    meta = _meta_from_image(source_image)
+    _strip_source_parent_refs(meta)
+    if series_identity is None:
+        series_identity = _build_output_series_identity_from_name(
+            source_image,
+            series_index,
+            series_name,
+        )
+    series_name = series_identity["series_name"]
+    series_uid = series_identity["series_uid"]
+    series_grouping = series_identity["series_grouping"]
+    sop_uid = _derived_instance_uid(
+        source_image,
+        series_index,
+        series_name,
+        output_index,
+        series_uid,
+    )
+    minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    (
+        image_type,
+        dicom_image_type,
+        image_type_value4_tokens,
+    ) = _source_postprocessing_image_type_identity(meta, minihead)
+    child_role = _segment_postprocessing_child_role(series_index)
+    exam_data_role = _format_exam_data_role_sequential_number(child_role)
+
+    meta["DataRole"] = "Image"
+    meta["ImageProcessingHistory"] = ["PYTHON", "OPENRECON_SEGMENT_SOURCE_IMAGE_HEADER"]
+    meta["ImageType"] = image_type
+    meta["DicomImageType"] = dicom_image_type
+    meta["ExamDataRole"] = exam_data_role
+    meta["SeriesDescription"] = series_name
+    meta["SequenceDescription"] = series_name
+    meta["ProtocolName"] = series_name
+    meta["ImageComments"] = series_name
+    meta["ImageComment"] = series_name
+    meta["SeriesInstanceUID"] = series_uid
+    meta["SOPInstanceUID"] = sop_uid
+    meta["SeriesNumberRangeNameUID"] = series_grouping
+    meta["ImageTypeValue4"] = image_type_value4_tokens
+    meta["ComplexImageComponent"] = "MAGNITUDE"
+    _set_meta_scalar(meta, "Keep_image_geometry", 1)
+    _set_meta_scalar(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY, 1)
+    _set_meta_scalar(meta, SEGMENT_SOURCE_IMAGE_HEADER_META_KEY, 1)
+    _set_meta_scalar(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY, child_role)
+    _ensure_original_storage_meta(meta, output_image, output_index, storage_fields)
+    for key, value in (extra_meta or {}).items():
+        if value is not None:
+            meta[key] = value
+    for key, value in _header_geometry_meta(output_image.getHead()).items():
+        meta[key] = value
+    _strip_scanner_write_unsafe_meta(meta)
+
+    if minihead:
+        patched_minihead, changed = _patch_segment_postprocessing_ice_minihead(
+            minihead,
+            series_name,
+            series_grouping,
+            series_uid,
+            sop_uid,
+            image_type,
+            image_type_value4_tokens,
             exam_data_role,
             storage_fields,
         )
@@ -3836,11 +4031,18 @@ def _validate_storage_fields(
     keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
     image_type_value4 = _meta_text(meta, "ImageTypeValue4")
     is_original_output = _is_original_series_index(int(image.image_series_index))
+    is_segment_source_image_header_output = (
+        _is_segment_source_image_header_output(meta)
+    )
+    is_segment_derived_image_header_output = (
+        _is_segment_derived_image_header_output(meta)
+    )
     is_segment_source_geometry_output = _is_segment_source_geometry_output(meta)
     is_segment_postprocessing_output = _is_segment_postprocessing_output(meta)
     is_segment_explicit_volume_output = _is_segment_explicit_volume_output(meta)
     is_source_like_output = (
         is_original_output
+        or is_segment_source_image_header_output
         or is_segment_source_geometry_output
         or (is_segment_postprocessing_output and not is_segment_explicit_volume_output)
     )
@@ -3905,7 +4107,170 @@ def _validate_storage_fields(
                 "segment explicit-volume output"
             )
 
-    if not is_segment_explicit_volume_output and is_segment_source_geometry_output:
+    elif is_segment_source_image_header_output:
+        image_type = _meta_text(meta, "ImageType")
+        dicom_image_type = _meta_text(meta, "DicomImageType")
+        image_type_value4_values = _meta_values(meta, "ImageTypeValue4")
+        minihead_image_type = _minihead_string_value(minihead, "ImageType")
+        minihead_image_type_value4 = _minihead_array_tokens(
+            minihead,
+            "ImageTypeValue4",
+        )
+        expected_child_role = _segment_postprocessing_child_role(
+            int(image.image_series_index)
+        )
+        child_role_value = _meta_int(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)
+        meta_exam_data_role = _exam_data_role_sequential_number(
+            _meta_text(meta, "ExamDataRole")
+        )
+        minihead_exam_data_role = _exam_data_role_sequential_number(
+            _minihead_exam_data_role(minihead)
+        )
+        if _meta_text(meta, "DataRole") != "Image":
+            errors.append(
+                f"image {index} has segment source-image-header DataRole="
+                f"{_meta_text(meta, 'DataRole')}, expected Image"
+            )
+        if not image_type:
+            errors.append(
+                f"image {index} is missing segment source-image-header ImageType"
+            )
+        if not dicom_image_type:
+            errors.append(
+                f"image {index} is missing segment source-image-header DicomImageType"
+            )
+        if minihead and minihead_image_type and minihead_image_type != image_type:
+            errors.append(
+                f"image {index} has segment source-image-header IceMiniHead "
+                f"ImageType={minihead_image_type}, expected {image_type}"
+            )
+        if not image_type_value4_values:
+            errors.append(
+                f"image {index} is missing segment source-image-header ImageTypeValue4"
+            )
+        if minihead and not minihead_image_type_value4:
+            errors.append(
+                f"image {index} is missing segment source-image-header "
+                "IceMiniHead ImageTypeValue4"
+            )
+        if (
+            minihead
+            and minihead_image_type_value4
+            and image_type_value4_values != minihead_image_type_value4
+        ):
+            errors.append(
+                f"image {index} has segment source-image-header Meta "
+                f"ImageTypeValue4={image_type_value4_values}, expected "
+                f"IceMiniHead {minihead_image_type_value4}"
+            )
+        if _meta_int(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY) != 1:
+            errors.append(
+                f"image {index} is missing segment source-image-header "
+                f"{SEGMENT_SOURCE_GEOMETRY_META_KEY}=1"
+            )
+        if child_role_value != expected_child_role:
+            errors.append(
+                f"image {index} has segment source-image-header child role "
+                f"{child_role_value}, expected {expected_child_role}"
+            )
+        if meta_exam_data_role != expected_child_role:
+            errors.append(
+                f"image {index} has segment source-image-header Meta ExamDataRole "
+                f"SequentialNumber={meta_exam_data_role}, expected "
+                f"{expected_child_role}"
+            )
+        if minihead and minihead_exam_data_role != expected_child_role:
+            errors.append(
+                f"image {index} has segment source-image-header IceMiniHead "
+                f"ExamDataRole SequentialNumber={minihead_exam_data_role}, "
+                f"expected {expected_child_role}"
+            )
+        expected_position_fields = {
+            "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
+            "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+            "AnatomicalSliceNo": header_slice,
+            "ChronSliceNo": header_image_index - 1,
+            "NumberInSeries": header_image_index,
+            "ProtocolSliceNumber": header_slice,
+            "SliceNo": header_slice,
+            "IsmrmrdSliceNo": header_slice,
+        }
+        for field in (
+            "Actual3DImagePartNumber",
+            "AnatomicalPartitionNo",
+            "AnatomicalSliceNo",
+            "ChronSliceNo",
+            "NumberInSeries",
+            "ProtocolSliceNumber",
+            "SliceNo",
+            "IsmrmrdSliceNo",
+        ):
+            expected = expected_position_fields[field]
+            meta_value = _meta_int(meta, field)
+            if meta_value is None:
+                errors.append(
+                    f"image {index} is missing segment source-image-header "
+                    f"Meta {field}"
+                )
+            elif meta_value != expected:
+                errors.append(
+                    f"image {index} has segment source-image-header Meta "
+                    f"{field}={meta_value}, expected {expected}"
+                )
+            minihead_value = _minihead_long_value(minihead, field)
+            if minihead and minihead_value is None:
+                errors.append(
+                    f"image {index} is missing segment source-image-header "
+                    f"IceMiniHead {field}"
+                )
+            elif minihead_value is not None and minihead_value != expected:
+                errors.append(
+                    f"image {index} has segment source-image-header IceMiniHead "
+                    f"{field}={minihead_value}, expected {expected}"
+                )
+        actual_part_value = _minihead_long_value(minihead, "Actual3DImaPartNumber")
+        if minihead and actual_part_value is None:
+            errors.append(
+                f"image {index} is missing segment source-image-header IceMiniHead "
+                "Actual3DImaPartNumber"
+            )
+        elif (
+            actual_part_value is not None
+            and actual_part_value != SCANNER_PARTITION_INDEX
+        ):
+            errors.append(
+                f"image {index} has segment source-image-header IceMiniHead "
+                f"Actual3DImaPartNumber={actual_part_value}, "
+                f"expected {SCANNER_PARTITION_INDEX}"
+            )
+        _validate_source_like_minihead_storage_maps(
+            index,
+            minihead,
+            "segment source-image-header",
+            errors,
+        )
+
+    elif is_segment_source_geometry_output:
+        segment_context = (
+            "segment derived-image-header"
+            if is_segment_derived_image_header_output
+            else "segment source-geometry"
+        )
+        expected_data_role = (
+            "Image"
+            if is_segment_derived_image_header_output
+            else "Segmentation"
+        )
+        expected_image_type = (
+            SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE
+            if is_segment_derived_image_header_output
+            else SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE
+        )
+        expected_image_type_value4 = (
+            SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE_VALUE4
+            if is_segment_derived_image_header_output
+            else SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4
+        )
         image_type = _meta_text(meta, "ImageType")
         dicom_image_type = _meta_text(meta, "DicomImageType")
         minihead_image_type = _minihead_string_value(minihead, "ImageType")
@@ -3923,39 +4288,37 @@ def _validate_storage_fields(
         minihead_exam_data_role = _exam_data_role_sequential_number(
             _minihead_exam_data_role(minihead)
         )
-        if _meta_text(meta, "DataRole") != "Segmentation":
+        if _meta_text(meta, "DataRole") != expected_data_role:
             errors.append(
-                f"image {index} has segment source-geometry DataRole="
-                f"{_meta_text(meta, 'DataRole')}, expected Segmentation"
+                f"image {index} has {segment_context} DataRole="
+                f"{_meta_text(meta, 'DataRole')}, expected {expected_data_role}"
             )
-        if image_type != SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE:
+        if image_type != expected_image_type:
             errors.append(
-                f"image {index} has segment source-geometry ImageType="
-                f"{image_type}, expected {SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE}"
+                f"image {index} has {segment_context} ImageType="
+                f"{image_type}, expected {expected_image_type}"
             )
-        if dicom_image_type != SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE:
+        if dicom_image_type != expected_image_type:
             errors.append(
-                f"image {index} has segment source-geometry DicomImageType="
-                f"{dicom_image_type}, expected {SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE}"
+                f"image {index} has {segment_context} DicomImageType="
+                f"{dicom_image_type}, expected {expected_image_type}"
             )
         if minihead and minihead_image_type and minihead_image_type != image_type:
             errors.append(
-                f"image {index} has segment source-geometry IceMiniHead ImageType="
+                f"image {index} has {segment_context} IceMiniHead ImageType="
                 f"{minihead_image_type}, expected {image_type}"
             )
-        if image_type_value4 != SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4:
+        if image_type_value4 != expected_image_type_value4:
             errors.append(
-                f"image {index} has segment source-geometry ImageTypeValue4="
+                f"image {index} has {segment_context} ImageTypeValue4="
                 f"{image_type_value4}, expected "
-                f"{SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4}"
+                f"{expected_image_type_value4}"
             )
-        if minihead and minihead_image_type_value4 != [
-            SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4
-        ]:
+        if minihead and minihead_image_type_value4 != [expected_image_type_value4]:
             errors.append(
-                f"image {index} has segment source-geometry IceMiniHead "
+                f"image {index} has {segment_context} IceMiniHead "
                 f"ImageTypeValue4={minihead_image_type_value4}, expected "
-                f"{[SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4]}"
+                f"{[expected_image_type_value4]}"
             )
         if _has_dixon_image_type_token(
             [image_type, dicom_image_type, image_type_value4]
@@ -3963,29 +4326,37 @@ def _validate_storage_fields(
         ):
             errors.append(
                 f"image {index} has Dixon image-type identity on "
-                "segment source-geometry output"
+                f"{segment_context} output"
             )
         if _has_magnitude_image_type_value3_token(
             [image_type, dicom_image_type, minihead_image_type]
         ):
             errors.append(
                 f"image {index} has M image-type value 3 on "
-                "segment source-geometry output"
+                f"{segment_context} output"
+            )
+        if (
+            is_segment_derived_image_header_output
+            and _meta_int(meta, SEGMENT_DERIVED_IMAGE_HEADER_META_KEY) != 1
+        ):
+            errors.append(
+                f"image {index} is missing {segment_context} "
+                f"{SEGMENT_DERIVED_IMAGE_HEADER_META_KEY}=1"
             )
         if child_role_value != expected_child_role:
             errors.append(
-                f"image {index} has segment source-geometry child role "
+                f"image {index} has {segment_context} child role "
                 f"{child_role_value}, expected {expected_child_role}"
             )
         if meta_exam_data_role != expected_child_role:
             errors.append(
-                f"image {index} has segment source-geometry Meta ExamDataRole "
+                f"image {index} has {segment_context} Meta ExamDataRole "
                 f"SequentialNumber={meta_exam_data_role}, expected "
                 f"{expected_child_role}"
             )
         if minihead and minihead_exam_data_role != expected_child_role:
             errors.append(
-                f"image {index} has segment source-geometry IceMiniHead ExamDataRole "
+                f"image {index} has {segment_context} IceMiniHead ExamDataRole "
                 f"SequentialNumber={minihead_exam_data_role}, expected "
                 f"{expected_child_role}"
             )
@@ -4013,28 +4384,28 @@ def _validate_storage_fields(
             meta_value = _meta_int(meta, field)
             if meta_value is None:
                 errors.append(
-                    f"image {index} is missing segment source-geometry Meta {field}"
+                    f"image {index} is missing {segment_context} Meta {field}"
                 )
             elif meta_value != expected:
                 errors.append(
-                    f"image {index} has segment source-geometry Meta {field}="
+                    f"image {index} has {segment_context} Meta {field}="
                     f"{meta_value}, expected {expected}"
                 )
             minihead_value = _minihead_long_value(minihead, field)
             if minihead and minihead_value is None:
                 errors.append(
-                    f"image {index} is missing segment source-geometry IceMiniHead "
+                    f"image {index} is missing {segment_context} IceMiniHead "
                     f"{field}"
                 )
             elif minihead_value is not None and minihead_value != expected:
                 errors.append(
-                    f"image {index} has segment source-geometry IceMiniHead "
+                    f"image {index} has {segment_context} IceMiniHead "
                     f"{field}={minihead_value}, expected {expected}"
                 )
         actual_part_value = _minihead_long_value(minihead, "Actual3DImaPartNumber")
         if minihead and actual_part_value is None:
             errors.append(
-                f"image {index} is missing segment source-geometry IceMiniHead "
+                f"image {index} is missing {segment_context} IceMiniHead "
                 "Actual3DImaPartNumber"
             )
         elif (
@@ -4042,14 +4413,14 @@ def _validate_storage_fields(
             and actual_part_value != SCANNER_PARTITION_INDEX
         ):
             errors.append(
-                f"image {index} has segment source-geometry IceMiniHead "
+                f"image {index} has {segment_context} IceMiniHead "
                 f"Actual3DImaPartNumber={actual_part_value}, "
                 f"expected {SCANNER_PARTITION_INDEX}"
             )
         _validate_source_like_minihead_storage_maps(
             index,
             minihead,
-            "segment source-geometry",
+            segment_context,
             errors,
         )
 
@@ -4241,6 +4612,11 @@ def _validate_storage_fields(
             f"image {index} is an original pass-through output with "
             f"Keep_image_geometry={keep_image_geometry}, expected 1"
         )
+    elif is_segment_source_image_header_output and keep_image_geometry != 1:
+        errors.append(
+            f"image {index} is a segment source-image-header output with "
+            f"Keep_image_geometry={keep_image_geometry}, expected 1"
+        )
     elif is_segment_source_geometry_output and keep_image_geometry != 1:
         errors.append(
             f"image {index} is a segment source-geometry output with "
@@ -4317,11 +4693,14 @@ def _validate_storage_fields(
             errors,
         )
     elif is_source_like_output and keep_image_geometry == 1:
-        context = (
-            "segment postprocessing"
-            if is_segment_postprocessing_output and not is_segment_explicit_volume_output
-            else "segment source-geometry"
-        )
+        if is_segment_source_image_header_output:
+            context = "segment source-image-header"
+        elif is_segment_derived_image_header_output:
+            context = "segment derived-image-header"
+        elif is_segment_postprocessing_output and not is_segment_explicit_volume_output:
+            context = "segment postprocessing"
+        else:
+            context = "segment source-geometry"
         _validate_meta_header_geometry(index, image, meta, context, errors)
     elif keep_image_geometry == 0:
         partition_count = _meta_int(meta, "partition_count")
@@ -5138,36 +5517,18 @@ def _normalized_config_token(value):
     return re.sub(r"[^a-z0-9]+", "_", str(value).strip().lower()).strip("_")
 
 
-def _segment_send_order(config):
-    raw = _config_value_any(
-        config,
-        ("segmentsendorder",),
-        default=SEGMENT_SEND_ORDER_AFTER_ORIGINALS,
-    )
-    normalized = _normalized_config_token(raw)
-    if normalized in SEGMENT_SEND_ORDERS:
-        return normalized
-    logging.warning(
-        "Unknown segmentsendorder=%r; defaulting to %s",
-        raw,
-        SEGMENT_SEND_ORDER_AFTER_ORIGINALS,
-    )
-    return SEGMENT_SEND_ORDER_AFTER_ORIGINALS
-
-
 def _segment_delivery_mode(config):
     raw = _config_value_any(
         config,
-        ("segmentdeliverymode",),
-        default=SEGMENT_DELIVERY_MODE_EXCLUDE,
+        ("segmentheadergeometry",),
+        default=SEGMENT_DELIVERY_MODE_DEFAULT,
     )
     normalized = _normalized_config_token(raw)
-    mode = SEGMENT_DELIVERY_MODE_ALIASES.get(normalized)
-    if mode is not None:
-        return mode
+    if normalized in SEGMENT_DELIVERY_MODES:
+        return normalized
     logging.warning(
-        "Unknown segmentdeliverymode=%r; defaulting to %s",
+        "Unknown segmentheadergeometry=%r; defaulting to %s",
         raw,
-        SEGMENT_DELIVERY_MODE_EXCLUDE,
+        SEGMENT_DELIVERY_MODE_DEFAULT,
     )
-    return SEGMENT_DELIVERY_MODE_EXCLUDE
+    return SEGMENT_DELIVERY_MODE_DEFAULT
