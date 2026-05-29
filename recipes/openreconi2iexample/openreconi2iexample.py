@@ -91,6 +91,7 @@ SOURCE_PARENT_REFERENCE_META_PREFIXES = (
 SCANNER_WRITE_UNSAFE_META_KEYS = {
     "ImageTypeValue3",
 }
+ORIGINAL_IMAGE_TYPE_VALUE3 = "M"
 ORIGINAL_SINGLE_PARTITION_FIELDS = (
     "Actual3DImagePartNumber",
     "AnatomicalPartitionNo",
@@ -2063,10 +2064,15 @@ def _passthrough_originals_native(images):
     ``SeriesNumberRangeNameUID`` grouping, series number, ``ImageType``, Dixon
     sub-type tokens, slice/partition counters, and ``IceMiniHead`` -- so the
     composer sees the returned Dixon contrasts exactly as native sub-results
-    routed only to their Dixon channels. Only the scanner-write-unsafe
-    ``ImageTypeValue3`` field is stripped (some sequences reject it during
-    OpenRecon conversion) and ``Keep_image_geometry`` is forced to 1 so the
-    converter preserves the source MRD geometry.
+    routed only to their Dixon channels. ``ImageTypeValue3`` is normalized to
+    "M" in both Meta and ``IceMiniHead`` (mirroring the working musclemap
+    pass-through) instead of being stripped: the inline Composer uses that
+    magnitude discriminator to keep each Dixon contrast bound to its
+    FILTER_DIXON* channel, so the master FILTER channel stays empty/benign like
+    a native acquisition. A clean "M" value also avoids the OpenRecon conversion
+    rejection that motivated stripping (e.g. a "MAP" array on the fat-fraction
+    map). ``Keep_image_geometry`` is forced to 1 so the converter preserves the
+    source MRD geometry.
     """
     outputs = []
     for source_image in images:
@@ -2081,10 +2087,12 @@ def _passthrough_originals_native(images):
 
         meta = _meta_from_image(source_image)
         _set_meta_scalar(meta, "Keep_image_geometry", 1)
-        _strip_scanner_write_unsafe_meta(meta)
         minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+        _normalize_original_image_type_value3_meta(meta, minihead)
         if minihead:
-            patched_minihead, changed = _strip_scanner_write_unsafe_minihead(minihead)
+            patched_minihead, changed = _normalize_original_image_type_value3_minihead(
+                minihead
+            )
             if changed:
                 meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
         output.attribute_string = meta.serialize()
@@ -3747,6 +3755,43 @@ def _strip_scanner_write_unsafe_minihead(minihead_text):
         current_text, did_change = _remove_minihead_string_param(current_text, key)
         changed = changed or did_change
         current_text, did_change = _remove_minihead_array_param(current_text, key)
+        changed = changed or did_change
+    return current_text, changed
+
+
+def _normalize_original_image_type_value3_meta(meta, minihead_text):
+    """Normalize ImageTypeValue3 to "M" in Meta (mirror of the musclemap path).
+
+    The pass-through originals must keep a clean ImageTypeValue3 magnitude
+    discriminator rather than having it stripped: the inline Composer uses it to
+    keep a Dixon contrast bound to its FILTER_DIXON* channel. A clean "M" value
+    avoids the OpenRecon conversion rejection that motivated stripping (e.g. a
+    "MAP" array on the fat-fraction map).
+    """
+    if (
+        "ImageTypeValue3" in meta
+        or _minihead_string_value(minihead_text, "ImageTypeValue3")
+        or _minihead_array_tokens(minihead_text, "ImageTypeValue3")
+    ):
+        meta["ImageTypeValue3"] = ORIGINAL_IMAGE_TYPE_VALUE3
+
+
+def _normalize_original_image_type_value3_minihead(minihead_text):
+    current_text = minihead_text
+    changed = False
+    if re.search(r'<ParamString\."ImageTypeValue3">', current_text):
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            "ImageTypeValue3",
+            ORIGINAL_IMAGE_TYPE_VALUE3,
+        )
+        changed = changed or did_change
+    if _minihead_array_tokens(current_text, "ImageTypeValue3"):
+        current_text, did_change = _replace_or_append_minihead_array_tokens(
+            current_text,
+            "ImageTypeValue3",
+            [ORIGINAL_IMAGE_TYPE_VALUE3],
+        )
         changed = changed or did_change
     return current_text, changed
 

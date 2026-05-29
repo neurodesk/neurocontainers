@@ -116,8 +116,12 @@ version `1.0.78`.
   `SeriesNumberRangeNameUID` grouping, source series number, source `ImageType`
   and Dixon sub-type tokens, slice/partition counters, and `IceMiniHead`)
   instead of being split by contrast onto the renumbered original series range
-  with fresh derived UIDs. Only `ImageTypeValue3` is stripped and
-  `Keep_image_geometry` is forced to 1. Background: on a multi-station Dixon
+  with fresh derived UIDs. `ImageTypeValue3` is normalized to `M` in both Meta
+  and `IceMiniHead` (mirroring the working musclemap pass-through) instead of
+  being stripped, so the inline Dixon composer keeps each contrast bound to its
+  `FILTER_DIXON*` channel and the master `FILTER` channel stays empty/benign
+  like a native acquisition; `Keep_image_geometry` is forced to 1. Background:
+  on a multi-station Dixon
   scan the standard re-stamped originals composed in the per-contrast Dixon
   channels but the master `FILTER` (main) compose channel — empty and benign
   for a native acquisition — received a re-stamped contrast and failed its

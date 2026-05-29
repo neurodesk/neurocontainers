@@ -1620,8 +1620,9 @@ tests:
       # reserved original series range, source Dixon ImageType preserved) so the
       # scanner's inline Composing sees the returned contrasts as native Dixon
       # sub-results routed only to their Dixon channels. The only deltas are
-      # Keep_image_geometry forced to 1 and the scanner-write-unsafe
-      # ImageTypeValue3 stripped.
+      # Keep_image_geometry forced to 1 and ImageTypeValue3 normalized to "M"
+      # (mirroring the working musclemap pass-through) instead of stripped, so
+      # the magnitude discriminator stays present for the Dixon compose channels.
       native_source_meta = ismrmrd.Meta.deserialize(
           dixon_fat_fraction.attribute_string
       )
@@ -1657,8 +1658,11 @@ tests:
           "DIS2D",
       ]
       assert int(first(native_meta.get("Keep_image_geometry"))) == 1
-      assert first(native_meta.get("ImageTypeValue3")) is None
-      assert not minihead_array_tokens(native_original, "ImageTypeValue3")
+      # ImageTypeValue3 is normalized to "M" (not stripped): the source minihead
+      # carried a "MAP" array token, which is rewritten to "M" in both Meta and
+      # IceMiniHead so the inline Dixon composer still recognizes the frame.
+      assert first(native_meta.get("ImageTypeValue3")) == "M"
+      assert minihead_array_tokens(native_original, "ImageTypeValue3") == ["M"]
 
       wrapped_source_order = [2, 3, 0, 1]
       wrapped_sources = []
