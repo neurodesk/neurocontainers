@@ -57,6 +57,13 @@
       "default": true
     },
     {
+      "id": "originalnativeidentity",
+      "label": { "en": "Original native identity (experimental)" },
+      "type": "boolean",
+      "information": { "en": "Experimental whole-body composing pass-through. With Send original images, return each original with its native source series identity preserved (source SeriesInstanceUID/grouping, series number, ImageType and Dixon sub-type tokens, slice/partition counters, and IceMiniHead) instead of splitting contrasts onto renumbered original series with fresh UIDs. Only ImageTypeValue3 is stripped and Keep_image_geometry is forced to 1. Use to test whether inline Composing of the original multi-station Dixon stations works when the returned originals are not re-stamped. Bypasses the restamped-output contract validation for the originals." },
+      "default": false
+    },
+    {
       "id": "invert",
       "label": { "en": "Invert" },
       "type": "boolean",

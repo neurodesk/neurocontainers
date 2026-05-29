@@ -508,6 +508,23 @@ def _set_header_sequence_field(image_header, field_name, values):
         sequence[index] = value
 
 
+def _meta_vector(values):
+    return [f"{float(value):.18f}" for value in values]
+
+
+def _explicit_header_geometry_meta(header):
+    # Mirrors vesselboost: stamp explicit per-image direction + position vectors
+    # into the Meta so the scanner converter/DicomWriter places every returned
+    # frame unambiguously and assembles the multi-frame ("concat") series without
+    # closing the parent early (the spinalcordtoolbox originals crash).
+    return {
+        "ImageRowDir": _meta_vector(_header_vector(header, "read_dir")),
+        "ImageColumnDir": _meta_vector(_header_vector(header, "phase_dir")),
+        "ImageSliceNormDir": _meta_vector(_header_vector(header, "slice_dir")),
+        "SlicePosLightMarker": _meta_vector(_header_vector(header, "position")),
+    }
+
+
 def _normalize_vector(vector):
     vector = np.asarray(vector, dtype=float)
     norm = float(np.linalg.norm(vector))
@@ -2041,6 +2058,11 @@ def _patch_ice_minihead(
             changed = changed or did_change
 
     for param_name, param_value in (
+        # SeriesDescription must be re-stamped here too (matches vesselboost):
+        # the derived identity already lands in the Meta, but the scanner can use
+        # the IceMiniHead identity when assembling the concat parent, so leaving
+        # the source SeriesDescription here is a scanner-visible mismatch.
+        ("SeriesDescription", sequence_description),
         ("SequenceDescription", sequence_description),
         ("ProtocolName", sequence_description),
         ("SeriesNumberRangeNameUID", series_grouping),
@@ -2295,8 +2317,17 @@ def _restamp_passthrough_images(images, role, output_series_index):
         tmpMeta["ImageComments"] = output_identity["image_comment"]
         tmpMeta["ImageComment"] = output_identity["image_comment"]
         tmpMeta["SequenceDescriptionAdditional"] = "or"
-        tmpMeta["Keep_image_geometry"] = 1
+        tmpMeta["Keep_image_geometry"] = "1"
         _set_output_position_meta(tmpMeta, iImg)
+        if is_original_output:
+            # Explicit per-slice geometry is vesselboost's originals-only
+            # differentiator. _restamp_passthrough_images is also the PASSTHROUGH
+            # path for phase/unknown images, which vesselboost never stamps, so
+            # gate this strictly to ORIGINAL outputs.
+            for geom_key, geom_value in _explicit_header_geometry_meta(
+                output_image.getHead()
+            ).items():
+                tmpMeta[geom_key] = geom_value
 
         minihead_text = _decode_ice_minihead(tmpMeta)
         if minihead_text:

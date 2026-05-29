@@ -268,6 +268,15 @@ def process(connection, config, metadata):
             reformat_orientations.append(SEGMENT_REFORMAT_ORIENTATION_SAGITTAL)
         if send_reformat_coronal:
             reformat_orientations.append(SEGMENT_REFORMAT_ORIENTATION_CORONAL)
+        native_original_identity = _config_bool_any(
+            config,
+            (
+                "originalnativeidentity",
+                "nativeoriginalidentity",
+                "composepassthrough",
+            ),
+            default=False,
+        )
         output_images = []
         original_images = []
         align_originals_with_segment = bool(
@@ -281,6 +290,7 @@ def process(connection, config, metadata):
             original_images = _restamp_originals(
                 input_images,
                 align_with_explicit_segment=align_originals_with_segment,
+                native_identity=native_original_identity,
             )
             output_images.extend(original_images)
         inverted_images = []
@@ -368,6 +378,13 @@ def process(connection, config, metadata):
             "OPENRECONI2I_POSTPROCESSING target=%s",
             postprocessing_target,
         )
+        if native_original_identity:
+            logging.info(
+                "OPENRECONI2I_ORIGINAL_NATIVE_IDENTITY enabled: returning %d "
+                "original image(s) with source series identity preserved "
+                "(experimental whole-body composing pass-through)",
+                len(original_images),
+            )
         logging.info(
             "Sending %d original image(s), %d inverted image(s), "
             "%d upsampled image(s), %d segmentation image(s), "
@@ -385,7 +402,20 @@ def process(connection, config, metadata):
             logging.info("No output options enabled; closing without output")
             return
 
-        _validate_output_images(output_images, input_images)
+        if native_original_identity and original_images:
+            native_ids = {id(image) for image in original_images}
+            images_to_validate = [
+                image for image in output_images if id(image) not in native_ids
+            ]
+            logging.info(
+                "OPENRECONI2I_ORIGINAL_NATIVE_IDENTITY bypasses the restamped "
+                "output contract validation for %d native pass-through "
+                "original image(s)",
+                len(original_images),
+            )
+        else:
+            images_to_validate = output_images
+        _validate_output_images(images_to_validate, input_images)
         _log_output_images(output_images)
         split_source_geometry_outputs = bool(
             original_images
@@ -1955,9 +1985,16 @@ def _pack_upsampled_volume(
     return output
 
 
-def _restamp_originals(images, align_with_explicit_segment=False):
+def _restamp_originals(
+    images,
+    align_with_explicit_segment=False,
+    native_identity=False,
+):
     if not images:
         return []
+
+    if native_identity:
+        return _passthrough_originals_native(images)
 
     outputs = []
     source_groups = _original_source_groups(images)
@@ -2005,6 +2042,59 @@ def _restamp_originals(images, align_with_explicit_segment=False):
             )
             outputs.append(output)
 
+    return outputs
+
+
+def _passthrough_originals_native(images):
+    """Return originals with maximal native series identity preserved.
+
+    Experimental whole-body composing pass-through. The standard
+    ``_restamp_originals`` path splits the input by contrast, renumbers each
+    group onto the reserved original series range (group 0 -> series 100), and
+    assigns fresh derived Series/SOP UIDs. On a multi-station Dixon scan that
+    extra identity makes the scanner's inline Composing treat a re-stamped
+    contrast as a primary/main anatomical volume in the master ``FILTER``
+    compose channel (which is empty and benign for a native acquisition), where
+    its strict "Transversal lowest position vector (following ICE standard)"
+    check fails and aborts the transverse compose.
+
+    This pass-through instead returns each source image with its native
+    identity intact -- source ``SeriesInstanceUID`` /
+    ``SeriesNumberRangeNameUID`` grouping, series number, ``ImageType``, Dixon
+    sub-type tokens, slice/partition counters, and ``IceMiniHead`` -- so the
+    composer sees the returned Dixon contrasts exactly as native sub-results
+    routed only to their Dixon channels. Only the scanner-write-unsafe
+    ``ImageTypeValue3`` field is stripped (some sequences reject it during
+    OpenRecon conversion) and ``Keep_image_geometry`` is forced to 1 so the
+    converter preserves the source MRD geometry.
+    """
+    outputs = []
+    for source_image in images:
+        output = ismrmrd.Image.from_array(
+            np.asarray(source_image.data).copy(),
+            transpose=False,
+        )
+        header = source_image.getHead()
+        header.data_type = output.data_type
+        output.setHead(header)
+        output.image_series_index = int(header.image_series_index)
+
+        meta = _meta_from_image(source_image)
+        _set_meta_scalar(meta, "Keep_image_geometry", 1)
+        _strip_scanner_write_unsafe_meta(meta)
+        minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+        if minihead:
+            patched_minihead, changed = _strip_scanner_write_unsafe_minihead(minihead)
+            if changed:
+                meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
+        output.attribute_string = meta.serialize()
+        outputs.append(output)
+
+    logging.info(
+        "OPENRECONI2I_OUTPUT_NATIVE returning %d original image(s) with native "
+        "source series identity preserved",
+        len(outputs),
+    )
     return outputs
 
 
@@ -3295,6 +3385,25 @@ def _source_postprocessing_image_type_identity(source_meta, minihead):
         or _meta_values(source_meta, "ImageTypeValue4")
         or [SEGMENT_POSTPROCESSING_IMAGE_TYPE_VALUE4]
     )
+    # A segment must never inherit a Dixon (WATER/FAT/FAT_FRAC) image-type
+    # token. The scanner's inline Dixon composer routes any such image into its
+    # FILTER_DIXON* channels and then aborts the measurement ("Composer has been
+    # switched off ... Cloning of image data failed") because the mask is not a
+    # valid Dixon volume member. Fall back to the neutral derived-segment
+    # identity so the mask is ignored by composing instead of crashing it, while
+    # still keeping the source per-slice geometry.
+    if _has_dixon_image_type_token(
+        [image_type, dicom_image_type, *image_type_value4_tokens]
+    ):
+        logging.info(
+            "OPENRECONI2I_SEGMENT_DIXON_TOKEN_STRIPPED source ImageType=%s "
+            "carried a Dixon token; substituting neutral segment identity to "
+            "keep the mask out of the scanner Dixon composer",
+            image_type,
+        )
+        image_type = SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE
+        dicom_image_type = SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE
+        image_type_value4_tokens = [SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE_VALUE4]
     return image_type, dicom_image_type, image_type_value4_tokens
 
 
@@ -4255,6 +4364,16 @@ def _validate_storage_fields(
             errors.append(
                 f"image {index} has segment source-image-header IceMiniHead "
                 f"ImageType={minihead_image_type}, expected {image_type}"
+            )
+        if _has_dixon_image_type_token(
+            [image_type, dicom_image_type, *image_type_value4_values]
+        ) or _has_dixon_image_type_token(
+            [minihead_image_type, *minihead_image_type_value4]
+        ):
+            errors.append(
+                f"image {index} has Dixon image-type identity on segment "
+                "source-image-header output; segments must not carry a Dixon "
+                "token or the scanner Dixon composer aborts the measurement"
             )
         if not image_type_value4_values:
             errors.append(

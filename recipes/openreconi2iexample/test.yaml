@@ -1591,7 +1591,13 @@ tests:
       assert minihead_array_tokens(dixon_segment, "ImageTypeValue4") == (
           expected_segment_image_type_value4
       )
-      assert module._has_dixon_image_type_token(
+      # Segments must NOT inherit the source Dixon (WATER/FAT/FAT_FRAC)
+      # image-type token: the scanner's inline Dixon composer would otherwise
+      # route the mask into a FILTER_DIXON* channel and abort the measurement
+      # ("Composer has been switched off ... Cloning of image data failed").
+      # _source_postprocessing_image_type_identity substitutes a neutral
+      # derived-segment identity, so no Dixon token may remain.
+      assert not module._has_dixon_image_type_token(
           [
               first(dixon_segment_meta.get("ImageType")),
               first(dixon_segment_meta.get("DicomImageType")),
@@ -1607,6 +1613,52 @@ tests:
           module.SEGMENT_SERIES_INDEX,
           output_index=0,
       )
+
+      # Native-identity pass-through (experimental whole-body composing mode):
+      # _restamp_originals(..., native_identity=True) returns each original with
+      # its SOURCE series identity intact (no re-UID, no renumbering onto the
+      # reserved original series range, source Dixon ImageType preserved) so the
+      # scanner's inline Composing sees the returned contrasts as native Dixon
+      # sub-results routed only to their Dixon channels. The only deltas are
+      # Keep_image_geometry forced to 1 and the scanner-write-unsafe
+      # ImageTypeValue3 stripped.
+      native_source_meta = ismrmrd.Meta.deserialize(
+          dixon_fat_fraction.attribute_string
+      )
+      native_original = module._restamp_originals(
+          [dixon_fat_fraction],
+          native_identity=True,
+      )[0]
+      native_meta = ismrmrd.Meta.deserialize(native_original.attribute_string)
+      assert first(native_meta.get("SeriesInstanceUID")) == "1.2.3.4.99"
+      assert first(native_meta.get("SeriesInstanceUID")) == first(
+          native_source_meta.get("SeriesInstanceUID")
+      )
+      assert first(native_meta.get("SeriesNumberRangeNameUID")) == first(
+          native_source_meta.get("SeriesNumberRangeNameUID")
+      )
+      assert first(native_meta.get("SOPInstanceUID")) == first(
+          native_source_meta.get("SOPInstanceUID")
+      )
+      assert int(native_original.getHead().image_series_index) == int(
+          dixon_fat_fraction.getHead().image_series_index
+      )
+      assert int(native_original.getHead().image_series_index) != (
+          module.ORIGINAL_SERIES_INDEX
+      )
+      assert first(native_meta.get("ImageType")) == "DERIVED\\PRIMARY\\DIXON\\FAT_FRAC"
+      assert minihead_value(native_original, "ImageType") == (
+          "DERIVED\\PRIMARY\\DIXON\\FAT_FRAC"
+      )
+      assert minihead_array_tokens(native_original, "ImageTypeValue4") == [
+          "NORM",
+          "FAT_FRAC",
+          "DIS3D",
+          "DIS2D",
+      ]
+      assert int(first(native_meta.get("Keep_image_geometry"))) == 1
+      assert first(native_meta.get("ImageTypeValue3")) is None
+      assert not minihead_array_tokens(native_original, "ImageTypeValue3")
 
       wrapped_source_order = [2, 3, 0, 1]
       wrapped_sources = []

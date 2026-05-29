@@ -1204,6 +1204,77 @@ def _patch_source_image_header_ice_minihead(
     return current_text, changed
 
 
+def _patch_original_passthrough_ice_minihead(
+    minihead_text,
+    series_description,
+    series_grouping,
+    series_uid,
+    sop_uid,
+    image_type,
+    image_type_value4_tokens,
+    slice_index,
+    image_index,
+):
+    # Native original passthrough: keep the source's inherited ImageType (e.g.
+    # ORIGINAL\PRIMARY\M\TOF), drop the standalone ImageTypeValue3, refresh the
+    # derived series identity, and do NOT tag an ExamDataRole post-processing
+    # child. Mirrors openreconi2iexample._patch_original_ice_minihead so the
+    # scanner keeps the originals as the primary acquisition (still inline-MIP'd)
+    # while the segment remains the only post-processing child.
+    if not minihead_text:
+        return minihead_text, False
+
+    changed = False
+    current_text = minihead_text
+    for param_name, param_value in (
+        ("SeriesDescription", series_description),
+        ("SequenceDescription", series_description),
+        ("ProtocolName", series_description),
+        ("SeriesNumberRangeNameUID", series_grouping),
+        ("SeriesInstanceUID", series_uid),
+        ("SOPInstanceUID", sop_uid),
+        ("ImageType", image_type),
+        ("ComplexImageComponent", "MAGNITUDE"),
+    ):
+        if not param_value:
+            continue
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            param_name,
+            param_value,
+        )
+        changed = changed or did_change
+
+    if image_type_value4_tokens:
+        current_text, did_change = _replace_or_append_minihead_array_tokens(
+            current_text,
+            "ImageTypeValue4",
+            image_type_value4_tokens,
+        )
+        changed = changed or did_change
+
+    current_text, did_change = _strip_scanner_write_unsafe_minihead(current_text)
+    changed = changed or did_change
+
+    for param_name, param_value in (
+        ("Actual3DImagePartNumber", SCANNER_PARTITION_INDEX),
+        ("AnatomicalPartitionNo", SCANNER_PARTITION_INDEX),
+        ("AnatomicalSliceNo", slice_index),
+        ("ChronSliceNo", max(int(image_index), 1) - 1),
+        ("NumberInSeries", max(int(image_index), 1)),
+        ("ProtocolSliceNumber", slice_index),
+        ("SliceNo", slice_index),
+    ):
+        current_text, did_change = _replace_or_append_minihead_long_param(
+            current_text,
+            param_name,
+            param_value,
+        )
+        changed = changed or did_change
+
+    return current_text, changed
+
+
 def _resolve_source_series_identity(meta_obj):
     minihead_text = _decode_ice_minihead(meta_obj)
     series_description = _get_meta_text(meta_obj, "SeriesDescription")
@@ -1400,6 +1471,7 @@ def _stamp_vesselboost_output_image(
     patch_minihead=True,
     data_role="Image",
     source_image_header_identity=False,
+    original_passthrough_identity=False,
 ):
     source_meta = _copy_meta(_meta_from_image(source_image))
     header = image.getHead()
@@ -1435,16 +1507,26 @@ def _stamp_vesselboost_output_image(
         series_uid=series_uid,
     )
     minihead_text = _decode_ice_minihead(source_meta)
+    # Originals and 2D source-image-header segments both inherit the source's
+    # native ImageType identity (e.g. ORIGINAL\PRIMARY\M\TOF) and drop the
+    # standalone ImageTypeValue3 so they pass back through the scanner with the
+    # parent acquisition's identity intact -- this mirrors openreconi2iexample's
+    # _original_passthrough_meta / _segment_source_image_header_meta. Only the
+    # segment is additionally tagged as a post-processing child via ExamDataRole.
+    inherit_source_image_type = (
+        source_image_header_identity or original_passthrough_identity
+    )
     source_image_type = None
     source_dicom_image_type = None
     source_image_type_value4 = None
     exam_data_role = None
-    if source_image_header_identity:
+    if inherit_source_image_type:
         (
             source_image_type,
             source_dicom_image_type,
             source_image_type_value4,
         ) = _source_postprocessing_image_type_identity(source_meta, minihead_text)
+    if source_image_header_identity:
         exam_data_role = _format_exam_data_role_sequential_number(series_index)
 
     tmp_meta["DataRole"] = "Image" if source_image_header_identity else data_role
@@ -1457,19 +1539,19 @@ def _stamp_vesselboost_output_image(
     tmp_meta["SOPInstanceUID"] = sop_uid
     tmp_meta["ImageType"] = (
         source_image_type
-        if source_image_header_identity
+        if inherit_source_image_type
         else f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
     )
-    if not source_image_header_identity:
+    if not inherit_source_image_type:
         tmp_meta["ImageTypeValue3"] = "M"
     tmp_meta["ImageTypeValue4"] = (
         source_image_type_value4
-        if source_image_header_identity
+        if inherit_source_image_type
         else output_identity["display_token"]
     )
     tmp_meta["DicomImageType"] = (
         source_dicom_image_type
-        if source_image_header_identity
+        if inherit_source_image_type
         else f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
     )
     if source_image_header_identity:
@@ -1499,7 +1581,7 @@ def _stamp_vesselboost_output_image(
         for key, value in extra_meta.items():
             if value is not None:
                 tmp_meta[key] = value
-    if source_image_header_identity:
+    if inherit_source_image_type:
         _strip_scanner_write_unsafe_meta(tmp_meta)
 
     minihead_text = _decode_ice_minihead(tmp_meta)
@@ -1521,6 +1603,20 @@ def _stamp_vesselboost_output_image(
                     source_image_type,
                     source_image_type_value4,
                     exam_data_role,
+                    int(header.slice),
+                    int(header.image_index),
+                )
+            )
+        elif original_passthrough_identity:
+            patched_minihead_text, minihead_changed = (
+                _patch_original_passthrough_ice_minihead(
+                    minihead_text,
+                    series_name,
+                    output_identity["grouping"],
+                    series_uid,
+                    sop_uid,
+                    source_image_type,
+                    source_image_type_value4,
                     int(header.slice),
                     int(header.image_index),
                 )
@@ -1605,6 +1701,7 @@ def _build_vesselboost_original_images(
             extra_meta=_explicit_header_geometry_meta(original_image.getHead()),
             keep_image_geometry=1,
             patch_minihead=True,
+            original_passthrough_identity=True,
         )
         outputs.append(original_image)
 

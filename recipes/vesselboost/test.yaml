@@ -312,15 +312,19 @@ tests:
             assert original["series_description"] == expected_original, original
             assert original["sequence_description"] == expected_original, original
             assert original["grouping"] == expected_original, original
-            assert original["image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\ORIGINAL", original
-            assert original["dicom_image_type"] == "DERIVED\\\\PRIMARY\\\\M\\\\ORIGINAL", original
-            assert original["image_type_value4"] == "original", original
+            assert original["image_type"] == "ORIGINAL\\\\PRIMARY\\\\M\\\\TOF", original
+            assert original["dicom_image_type"] == "ORIGINAL\\\\PRIMARY\\\\M\\\\TOF", original
+            assert original["image_type_value4"] == "TOF", original
+            assert original["image_type_value3"] == "", original
+            assert original["exam_data_role"] == "", original
             assert original["image_comments"] == "original", original
             assert original["image_comment"] == "original", original
             assert original["sequence_description_additional"] == "OR", original
             assert original["keep_image_geometry"] == "1", original
             assert original["segment_postprocessing"] == "", original
             assert expected_original in original["ice_minihead"], original["ice_minihead"]
+            assert '<ParamString."ImageType">\t{ "ORIGINAL\\\\PRIMARY\\\\M\\\\TOF" }' in original["ice_minihead"], original["ice_minihead"]
+            assert '<ParamString."ImageTypeValue3">' not in original["ice_minihead"], original["ice_minihead"]
             assert original["grouping"] != expected_source, original
             assert original["image_index"] == 1, original
             assert original["last_image_index"] == original["image_count"], original
@@ -412,7 +416,8 @@ tests:
             assert derived["segment_postprocessing_child_role"] == derived["series_index"], derived
             assert expected_derived in derived["ice_minihead"], derived["ice_minihead"]
             assert '<ParamString."ImageTypeValue3">' not in derived["ice_minihead"], derived["ice_minihead"]
-            assert original["image_type_value4"] == "original", original
+            assert original["image_type_value4"] == "TOF", original
+            assert original["image_type_value3"] == "", original
             assert original["keep_image_geometry"] == "1", original
             assert expected_original in original["ice_minihead"], original["ice_minihead"]
             for reformat in (sagittal, coronal):
@@ -609,7 +614,10 @@ tests:
       assert first(original_meta.get("SeriesDescription")) == "tof_fl3d_tra_original"
       assert first(original_meta.get("SequenceDescriptionAdditional")) == "OR"
       assert first(original_meta.get("Keep_image_geometry")) == "1"
-      assert first(original_meta.get("ImageTypeValue4")) == "original"
+      assert first(original_meta.get("ImageType")) == "ORIGINAL\\PRIMARY\\M\\TOF"
+      assert first(original_meta.get("ImageTypeValue4")) == "TOF"
+      assert not first(original_meta.get("ImageTypeValue3"))
+      assert not first(original_meta.get("ExamDataRole"))
       assert first(original_meta.get("SeriesInstanceUID")).startswith("2.25.")
       assert first(original_meta.get("SOPInstanceUID")).startswith("2.25.")
       assert module._extract_minihead_long_value(original_minihead_text, "SliceNo") == 0
@@ -664,8 +672,12 @@ tests:
       assert patched_minihead.count('ParamLong."EmptyLong"') == 1
       assert module._extract_minihead_long_value(patched_minihead, "EmptyLong") == 7
       assert module._extract_minihead_array_tokens(original_minihead_text, "ImageTypeValue4") == [
-          "original"
+          "TOF"
       ]
+      assert not module._extract_minihead_string_value(
+          original_minihead_text,
+          "ImageTypeValue3",
+      )
       debug_threshold = module._simple_threshold_segmentation_volume(
           volume_yxz.astype(np.float32),
           4095,

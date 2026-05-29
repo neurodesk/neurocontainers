@@ -464,13 +464,25 @@ def test_passthrough_restamp_uses_fresh_series_identity():
             "_clone_mrd_image",
             "_copy_meta",
             "_decode_ice_minihead",
+            "_encode_ice_minihead",
+            "_explicit_header_geometry_meta",
             "_extract_minihead_array_tokens",
             "_extract_minihead_string_value",
             "_first_non_empty_text",
             "_get_meta_text",
+            "_header_vector",
             "_json_log_default",
             "_log_json_event",
+            "_meta_vector",
+            "_patch_ice_minihead",
+            "_remove_minihead_array_param",
+            "_remove_minihead_string_param",
+            "_replace_minihead_array_token",
+            "_replace_or_append_minihead_array_token",
+            "_replace_or_append_minihead_long_param",
+            "_replace_or_append_minihead_string_param",
             "_restamp_passthrough_images",
+            "_sanitize_minihead_param_value",
             "_set_meta_scalar",
             "_set_output_position_meta",
             "_strip_source_parent_refs",
@@ -485,6 +497,10 @@ def test_passthrough_restamp_uses_fresh_series_identity():
     image.getHead().image_series_index = 1
     image.getHead().image_index = 9
     image.getHead().slice = 8
+    image.getHead().read_dir = [1.0, 0.0, 0.0]
+    image.getHead().phase_dir = [0.0, 1.0, 0.0]
+    image.getHead().slice_dir = [0.0, 0.0, 1.0]
+    image.getHead().position = [10.0, 20.0, 30.0]
     image.attribute_string = helpers["FakeMeta"]({
         "SeriesDescription": "source",
         "SeriesInstanceUID": "1.2.3",
@@ -492,6 +508,16 @@ def test_passthrough_restamp_uses_fresh_series_identity():
         "SeriesNumberRangeNameUID": "source_group",
         "ImageTypeValue4": "M",
         "CONTROL.PSMultiFrameSOPInstanceUID": "source-parent",
+        "IceMiniHead": _contract_minihead(
+            sequence_description="source",
+            series_grouping="source_group",
+            series_uid="1.2.3",
+            sop_uid="1.2.3.4.5",
+            image_type_value4="M",
+            image_type_value3="M",
+            slice_index=8,
+            image_index=9,
+        ),
     }).serialize()
 
     restamped = helpers["_restamp_passthrough_images"]([image], "ORIGINAL", 2)
@@ -513,6 +539,92 @@ def test_passthrough_restamp_uses_fresh_series_identity():
     assert output_meta["AnatomicalPartitionNo"] == "0"
     assert output_meta["SliceNo"] == "0"
     assert "CONTROL.PSMultiFrameSOPInstanceUID" not in output_meta
+    # Explicit per-slice geometry is stamped on originals (matches vesselboost),
+    # so the scanner converter/DicomWriter can assemble the multi-frame ("concat")
+    # series without closing the parent early and orphaning a frame.
+    assert output_meta["ImageRowDir"] == helpers["_meta_vector"]([1.0, 0.0, 0.0])
+    assert output_meta["ImageColumnDir"] == helpers["_meta_vector"]([0.0, 1.0, 0.0])
+    assert output_meta["ImageSliceNormDir"] == helpers["_meta_vector"]([0.0, 0.0, 1.0])
+    assert output_meta["SlicePosLightMarker"] == helpers["_meta_vector"]([10.0, 20.0, 30.0])
+    # Meta and IceMiniHead identity must agree (matches vesselboost): the derived
+    # SeriesDescription is re-stamped into BOTH, never left as the source value,
+    # so the scanner cannot build the concat parent off a stale minihead identity.
+    out_minihead = helpers["_decode_ice_minihead"](output_meta)
+    assert out_minihead, "expected the restamped original to carry an IceMiniHead"
+    assert output_meta["SeriesDescription"] == "source_original"
+    assert (
+        helpers["_extract_minihead_string_value"](out_minihead, "SeriesDescription")
+        == output_meta["SeriesDescription"]
+    )
+    assert (
+        helpers["_extract_minihead_string_value"](out_minihead, "SequenceDescription")
+        == output_meta["SequenceDescription"]
+    )
+    assert (
+        helpers["_extract_minihead_string_value"](out_minihead, "SeriesInstanceUID")
+        == output_meta["SeriesInstanceUID"]
+    )
+
+
+def test_passthrough_non_original_role_skips_explicit_geometry():
+    # _restamp_passthrough_images is also the PASSTHROUGH path for phase/unknown
+    # images. Vesselboost stamps explicit geometry only on ORIGINALS, so this
+    # path must not gain the new geometry tags (no scanner-visible regression).
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_as_image_list",
+            "_build_derived_series_instance_uid",
+            "_build_derived_sop_instance_uid",
+            "_build_passthrough_output_identity",
+            "_clone_mrd_image",
+            "_copy_meta",
+            "_decode_ice_minihead",
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_get_meta_text",
+            "_json_log_default",
+            "_log_json_event",
+            "_restamp_passthrough_images",
+            "_set_meta_scalar",
+            "_set_output_position_meta",
+            "_strip_scanner_write_unsafe_meta",
+            "_strip_source_parent_refs",
+        ],
+        assignments=[
+            "SCANNER_PARTITION_INDEX",
+            "SCANNER_WRITE_UNSAFE_META_KEYS",
+            "SOURCE_PARENT_REFERENCE_META_KEYS",
+            "SOURCE_PARENT_REFERENCE_META_PREFIXES",
+        ],
+    )
+    image = helpers["FakeImage"](np.zeros((1, 2, 2), dtype=np.int16))
+    image.getHead().image_series_index = 1
+    image.getHead().image_index = 3
+    image.getHead().slice = 2
+    image.getHead().read_dir = [1.0, 0.0, 0.0]
+    image.getHead().phase_dir = [0.0, 1.0, 0.0]
+    image.getHead().slice_dir = [0.0, 0.0, 1.0]
+    image.getHead().position = [10.0, 20.0, 30.0]
+    image.attribute_string = helpers["FakeMeta"]({
+        "SeriesDescription": "source",
+        "SeriesInstanceUID": "1.2.3",
+        "SOPInstanceUID": "1.2.3.4.5",
+        "SeriesNumberRangeNameUID": "source_group",
+        "ImageTypeValue4": "P",
+    }).serialize()
+
+    restamped = helpers["_restamp_passthrough_images"]([image], "PASSTHROUGH", 2)
+
+    assert len(restamped) == 1
+    output_meta = helpers["FakeMeta"].deserialize(restamped[0].attribute_string)
+    assert restamped[0].getHead().image_series_index == 2
+    assert output_meta["ImageTypeValue4"] == "PASSTHROUGH"
+    # No explicit per-slice geometry tags on the non-original passthrough path.
+    assert "ImageRowDir" not in output_meta
+    assert "ImageColumnDir" not in output_meta
+    assert "ImageSliceNormDir" not in output_meta
+    assert "SlicePosLightMarker" not in output_meta
 
 
 def test_sct_segment_outputs_source_geometry_2d_slices():

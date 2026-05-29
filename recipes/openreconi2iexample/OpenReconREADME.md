@@ -106,9 +106,28 @@ version `1.0.78`.
 
 ## Scanner Notes
 
-- `sendoriginal`, `invert`, `upsampled`, `segment`, `segmentheadergeometry`,
-  `segmentationcolormap`, `sendreformatsagittal`, `sendreformatcoronal`,
-  `sendcomputedmip`, and `sendmetrics` are exposed in `OpenReconLabel.json`.
+- `sendoriginal`, `originalnativeidentity`, `invert`, `upsampled`, `segment`,
+  `segmentheadergeometry`, `segmentationcolormap`, `sendreformatsagittal`,
+  `sendreformatcoronal`, `sendcomputedmip`, and `sendmetrics` are exposed in
+  `OpenReconLabel.json`.
+- `originalnativeidentity` (experimental, default off) is a whole-body inline
+  Composing pass-through. With `sendoriginal`, originals are returned with their
+  native source series identity preserved (source `SeriesInstanceUID` /
+  `SeriesNumberRangeNameUID` grouping, source series number, source `ImageType`
+  and Dixon sub-type tokens, slice/partition counters, and `IceMiniHead`)
+  instead of being split by contrast onto the renumbered original series range
+  with fresh derived UIDs. Only `ImageTypeValue3` is stripped and
+  `Keep_image_geometry` is forced to 1. Background: on a multi-station Dixon
+  scan the standard re-stamped originals composed in the per-contrast Dixon
+  channels but the master `FILTER` (main) compose channel — empty and benign
+  for a native acquisition — received a re-stamped contrast and failed its
+  "Transversal lowest position vector (following ICE standard)" check, aborting
+  the transverse compose. Native pass-through tests whether preserving source
+  identity keeps the originals composing as native Dixon sub-results. Returned
+  native originals bypass the restamped-output contract validation. Whether this
+  resolves the abort can only be confirmed on the scanner; if it still aborts,
+  the lowest-position vector is rebuilt by the OpenRecon→ICE converter outside
+  the module's reach.
 - Scanner protocols saved before these parameters were added may need the
   OpenRecon algorithm reselected once so the parameter schema refreshes.
   The TOF log shows this as `OpenRecon validation failed!` for a stale
