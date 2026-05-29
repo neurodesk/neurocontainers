@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "openrefine 3.10.1": {
+      "version": "20260529",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}
