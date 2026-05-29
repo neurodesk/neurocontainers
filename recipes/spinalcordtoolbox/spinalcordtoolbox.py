@@ -171,8 +171,10 @@ OPENRECON_DEFAULTS = {
 OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96
 RESERVED_SCANNER_SERIES_INDICES = {99}
 # Returned originals stay 2D. SCT segmentations are returned as source-geometry
-# 2D slices after originals, without detached/explicit-volume output.
+# source-image-header 2D slices after originals, without detached/explicit-volume output.
 SCANNER_PARTITION_INDEX = 0
+SCT_SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
+SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY = "SegmentSourceImageHeader"
 
 SOURCE_PARENT_REFERENCE_META_KEYS = {
     "DicomEngineDimString",
@@ -879,6 +881,14 @@ def _build_connection_series_allocator(images):
 
 
 def _series_contract_role(meta_obj, minihead_text):
+    if _meta_int(meta_obj, SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY) == 1:
+        source_header_role = _first_non_empty_text(
+            _get_meta_text(meta_obj, "ImageComment"),
+            _get_meta_text(meta_obj, "ImageComments"),
+        )
+        if source_header_role:
+            return source_header_role.upper()
+
     image_type_value4 = _first_non_empty_text(
         _get_meta_text(meta_obj, "ImageTypeValue4"),
         _extract_minihead_array_tokens(minihead_text, "ImageTypeValue4"),
@@ -1325,8 +1335,11 @@ def _validate_storage_fields(
     header_image_index = int(header.image_index)
     header_matrix_z = int(header.matrix_size[2])
     keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
-    image_type_value4 = _get_meta_text(meta, "ImageTypeValue4")
+    image_type_value4_values = _get_meta_values(meta, "ImageTypeValue4")
     is_original_output = _series_contract_role(meta, minihead) == "ORIGINAL"
+    is_source_image_header_output = (
+        _meta_int(meta, SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY) == 1
+    )
 
     if header_image_index < 1:
         errors.append(
@@ -1346,7 +1359,7 @@ def _validate_storage_fields(
         "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
         "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
         "AnatomicalSliceNo": header_slice,
-        "ChronSliceNo": header_slice,
+        "ChronSliceNo": max(header_image_index, 1) - 1,
         "NumberInSeries": int(header.image_index),
         "ProtocolSliceNumber": header_slice,
         "SliceNo": header_slice,
@@ -1423,21 +1436,23 @@ def _validate_storage_fields(
             )
 
     minihead_image_type_value4 = _extract_minihead_array_tokens(minihead, "ImageTypeValue4")
-    if not image_type_value4:
+    if not image_type_value4_values:
         errors.append(f"image {index} is missing Meta ImageTypeValue4")
-    if minihead and minihead_image_type_value4 != [image_type_value4]:
+    if minihead and minihead_image_type_value4 != image_type_value4_values:
         errors.append(
             f"image {index} has IceMiniHead ImageTypeValue4 "
-            f"{minihead_image_type_value4}, expected only {image_type_value4}"
+            f"{minihead_image_type_value4}, expected {image_type_value4_values}"
         )
-    if is_original_output:
+    if is_original_output or is_source_image_header_output:
+        value3_context = "original" if is_original_output else "source-image-header"
         for source, value in (
             ("Meta", _get_meta_text(meta, "ImageTypeValue3")),
             ("IceMiniHead", _extract_minihead_string_value(minihead, "ImageTypeValue3")),
         ):
             if value and value != "M":
                 errors.append(
-                    f"image {index} has original {source} ImageTypeValue3={value}, expected M"
+                    f"image {index} has {value3_context} {source} "
+                    f"ImageTypeValue3={value}, expected M"
                 )
     else:
         meta_image_type_value3 = _get_meta_text(meta, "ImageTypeValue3")
@@ -1586,6 +1601,23 @@ def _get_meta_text(meta_obj, key):
         return _first_non_empty_text(meta_obj.get(key))
     except Exception:
         return ""
+
+
+def _get_meta_values(meta_obj, key):
+    try:
+        value = meta_obj.get(key)
+    except Exception:
+        value = None
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        value = [value]
+    values = []
+    for item in value:
+        text = str(item or "").strip()
+        if text and text.upper() != "N/A":
+            values.append(text)
+    return values
 
 
 def _decode_ice_minihead(meta_obj):
@@ -1770,6 +1802,108 @@ def _replace_or_append_minihead_array_token(minihead_text, name, source_token, t
     return current_text.rstrip() + appended_param, True
 
 
+def _replace_or_append_minihead_array_tokens(minihead_text, name, target_tokens):
+    target_tokens = [
+        token
+        for token in (
+            _sanitize_minihead_param_value(token) for token in target_tokens
+        )
+        if token
+    ]
+    if not minihead_text or not target_tokens:
+        return minihead_text, False
+
+    line_ending = "\r\n" if "\r\n" in minihead_text else "\n"
+    block_pattern = re.compile(
+        rf'(<ParamArray\."{re.escape(name)}">\s*\{{)(.*?)(^\s*\}})',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    block_match = block_pattern.search(minihead_text)
+    if not block_match:
+        token_lines = "".join(
+            f'{line_ending}\t{{ "{token}" }}' for token in target_tokens
+        )
+        appended_param = (
+            f'{line_ending}<ParamArray."{name}">\t{{'
+            f"{token_lines}{line_ending}}}{line_ending}"
+        )
+        return minihead_text.rstrip() + appended_param, True
+
+    block_text = block_match.group(0)
+    tokens = _extract_minihead_array_tokens(block_text, name)
+    if tokens == target_tokens:
+        return minihead_text, False
+
+    token_pattern = re.compile(r'\{\s*"[^"]*"\s*\}')
+    token_matches = list(token_pattern.finditer(block_text))
+    token_lines = "".join(
+        f'{line_ending}\t{{ "{token}" }}' for token in target_tokens
+    )
+    if not token_matches:
+        stripped_block = block_text.rstrip()
+        close_index = stripped_block.rfind("}")
+        if close_index >= 0:
+            replacement_block = (
+                stripped_block[:close_index]
+                + token_lines
+                + line_ending
+                + stripped_block[close_index:]
+            )
+        else:
+            replacement_block = stripped_block + token_lines
+    else:
+        first_token = token_matches[0]
+        last_token = token_matches[-1]
+        replacement_block = (
+            block_text[:first_token.start()]
+            + token_lines.lstrip(line_ending)
+            + block_text[last_token.end():]
+        )
+    return (
+        minihead_text[:block_match.start()]
+        + replacement_block
+        + minihead_text[block_match.end():],
+        True,
+    )
+
+
+def _format_exam_data_role_sequential_number(value):
+    return (
+        '<DataRole Version="DR2.0">\n'
+        ' <Categories>\n'
+        '  <Category Name="SequentialNumber">\n'
+        f"   <CategoryEntry>{int(value)}</CategoryEntry>\n"
+        "  </Category>\n"
+        " </Categories>\n"
+        "</DataRole>"
+    )
+
+
+def _replace_or_append_minihead_exam_data_role(minihead_text, exam_data_role):
+    if not minihead_text or not exam_data_role:
+        return minihead_text, False
+
+    literal = str(exam_data_role).replace('"', '""')
+    pattern = re.compile(
+        r'(<ParamString\."ExamDataRole">\s*\{\s*")(.*?</DataRole>)("\s*\})',
+        flags=re.DOTALL,
+    )
+    matches = list(pattern.finditer(minihead_text))
+    if matches:
+        if all(match.group(2).replace('""', '"') == exam_data_role for match in matches):
+            return minihead_text, False
+        return (
+            pattern.sub(
+                lambda match: f"{match.group(1)}{literal}{match.group(3)}",
+                minihead_text,
+            ),
+            True,
+        )
+
+    appended_param = f'\n<ParamString."ExamDataRole">\t{{ "{literal}" }}\n'
+    return minihead_text.rstrip() + appended_param, True
+
+
 def _replace_or_append_minihead_long_param(minihead_text, name, value):
     if not minihead_text or value is None:
         return minihead_text, False
@@ -1788,6 +1922,91 @@ def _replace_or_append_minihead_long_param(minihead_text, name, value):
 
     appended_param = f'\n<ParamLong."{name}">\t{{ {value} }}\n'
     return minihead_text.rstrip() + appended_param, True
+
+
+def _source_postprocessing_image_type_identity(source_meta, minihead_text, fallback_token):
+    fallback_token = _first_non_empty_text(fallback_token) or "sct_source_image_header"
+    fallback_value4 = f"{fallback_token}_source_image_header"
+    image_type = (
+        _get_meta_text(source_meta, "ImageType")
+        or _extract_minihead_string_value(minihead_text, "ImageType")
+        or f"DERIVED\\PRIMARY\\SEGMENTATION\\{fallback_value4}"
+    )
+    dicom_image_type = _get_meta_text(source_meta, "DicomImageType") or image_type
+    image_type_value4_tokens = (
+        _extract_minihead_array_tokens(minihead_text, "ImageTypeValue4")
+        or _get_meta_values(source_meta, "ImageTypeValue4")
+        or [fallback_value4]
+    )
+    return image_type, dicom_image_type, image_type_value4_tokens
+
+
+def _patch_source_image_header_ice_minihead(
+    minihead_text,
+    series_description,
+    series_grouping,
+    series_instance_uid,
+    sop_instance_uid,
+    image_type,
+    image_type_value4_tokens,
+    exam_data_role,
+    slice_index,
+    image_index,
+):
+    if not minihead_text:
+        return minihead_text, False
+
+    changed = False
+    current_text = minihead_text
+    for param_name, param_value in (
+        ("SeriesDescription", series_description),
+        ("SequenceDescription", series_description),
+        ("ProtocolName", series_description),
+        ("SeriesNumberRangeNameUID", series_grouping),
+        ("SeriesInstanceUID", series_instance_uid),
+        ("SOPInstanceUID", sop_instance_uid),
+        ("ImageType", image_type),
+        ("ComplexImageComponent", "MAGNITUDE"),
+    ):
+        if not param_value:
+            continue
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            param_name,
+            param_value,
+        )
+        changed = changed or did_change
+
+    current_text, did_change = _replace_or_append_minihead_array_tokens(
+        current_text,
+        "ImageTypeValue4",
+        image_type_value4_tokens,
+    )
+    changed = changed or did_change
+
+    current_text, did_change = _replace_or_append_minihead_exam_data_role(
+        current_text,
+        exam_data_role,
+    )
+    changed = changed or did_change
+
+    for long_param_name, long_param_value in (
+        ("Actual3DImagePartNumber", SCANNER_PARTITION_INDEX),
+        ("AnatomicalPartitionNo", SCANNER_PARTITION_INDEX),
+        ("AnatomicalSliceNo", slice_index),
+        ("ChronSliceNo", max(int(image_index), 1) - 1),
+        ("NumberInSeries", max(int(image_index), 1)),
+        ("ProtocolSliceNumber", slice_index),
+        ("SliceNo", slice_index),
+    ):
+        current_text, did_change = _replace_or_append_minihead_long_param(
+            current_text,
+            long_param_name,
+            long_param_value,
+        )
+        changed = changed or did_change
+
+    return current_text, changed
 
 
 def _patch_ice_minihead(
@@ -1868,13 +2087,14 @@ def _set_meta_scalar(meta_obj, name, value):
     meta_obj[name] = str(int(value))
 
 
-def _set_output_position_meta(meta_obj, output_index):
+def _set_output_position_meta(meta_obj, output_index, image_index=None):
+    image_index = int(image_index) if image_index is not None else int(output_index) + 1
     for key in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
         _set_meta_scalar(meta_obj, key, SCANNER_PARTITION_INDEX)
     for key, value in (
         ("AnatomicalSliceNo", output_index),
-        ("ChronSliceNo", output_index),
-        ("NumberInSeries", output_index + 1),
+        ("ChronSliceNo", max(image_index, 1) - 1),
+        ("NumberInSeries", max(image_index, 1)),
         ("ProtocolSliceNumber", output_index),
         ("SliceNo", output_index),
         ("IsmrmrdSliceNo", output_index),
@@ -2329,6 +2549,24 @@ def _sct_output_to_mrd_images(
     )
 
 
+def _source_geometry_header_image_index(source_image, output_index):
+    try:
+        source_image_index = int(source_image.getHead().image_index)
+    except Exception:
+        source_image_index = 0
+    if source_image_index >= 1:
+        return source_image_index
+    return int(output_index) + 1
+
+
+def _source_geometry_header_slice(source_image, output_index):
+    try:
+        source_slice = int(source_image.getHead().slice)
+    except Exception:
+        source_slice = int(output_index)
+    return source_slice if source_slice >= 0 else int(output_index)
+
+
 def _sct_output_to_source_geometry_images(
     data,
     analysis,
@@ -2355,7 +2593,11 @@ def _sct_output_to_source_geometry_images(
     )
     outputs = []
     for iImg, source_image in enumerate(source_images):
-        output_image = ismrmrd.Image.from_array(data[:, :, iImg], transpose=False)
+        slice_yx = np.ascontiguousarray(data[:, :, iImg])
+        output_image = ismrmrd.Image.from_array(
+            slice_yx[np.newaxis, np.newaxis, :, :],
+            transpose=False,
+        )
         oldHeader = copy.deepcopy(source_image.getHead())
         oldHeader.data_type = output_image.data_type
         if (output_image.data_type == ismrmrd.DATATYPE_CXFLOAT) or (output_image.data_type == ismrmrd.DATATYPE_CXDOUBLE):
@@ -2363,15 +2605,18 @@ def _sct_output_to_source_geometry_images(
         else:
             oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
         oldHeader.image_series_index = output_series_index
-        oldHeader.image_index = iImg + 1
-        oldHeader.slice = iImg
+        oldHeader.image_index = _source_geometry_header_image_index(source_image, iImg)
+        oldHeader.slice = _source_geometry_header_slice(source_image, iImg)
         oldHeader.contrast = 0
         output_image.setHead(oldHeader)
+        output_image.image_series_index = int(output_series_index)
+        output_header_slice = int(oldHeader.slice)
+        output_header_image_index = int(oldHeader.image_index)
 
         source_meta = ismrmrd.Meta.deserialize(source_image.attribute_string)
+        source_minihead = _decode_ice_minihead(source_meta)
         tmpMeta = _copy_meta(source_meta)
         _strip_source_parent_refs(tmpMeta)
-        _strip_scanner_write_unsafe_meta(tmpMeta)
         sop_instance_uid = _build_derived_sop_instance_uid(
             source_meta,
             series_suffix or analysis,
@@ -2379,8 +2624,28 @@ def _sct_output_to_source_geometry_images(
             iImg,
             output_identity["series_instance_uid"],
         )
-        tmpMeta["DataRole"] = "Segmentation"
-        tmpMeta["ImageProcessingHistory"] = ["PYTHON", "SPINALCORDTOOLBOX", output_identity["type_token"]]
+        (
+            source_image_type,
+            source_dicom_image_type,
+            source_image_type_value4,
+        ) = _source_postprocessing_image_type_identity(
+            source_meta,
+            source_minihead,
+            output_identity["display_token"],
+        )
+        source_image_type_value3 = _first_non_empty_text(
+            _get_meta_text(source_meta, "ImageTypeValue3"),
+            _extract_minihead_string_value(source_minihead, "ImageTypeValue3"),
+            "M",
+        )
+        exam_data_role = _format_exam_data_role_sequential_number(output_series_index)
+        tmpMeta["DataRole"] = "Image"
+        tmpMeta["ImageProcessingHistory"] = [
+            "PYTHON",
+            "SPINALCORDTOOLBOX",
+            "SOURCE_IMAGE_HEADER_2D",
+            output_identity["type_token"],
+        ]
         tmpMeta["WindowCenter"] = str((maxVal + 1) / 2)
         tmpMeta["WindowWidth"] = str(maxVal + 1)
         tmpMeta["SeriesDescription"] = output_identity["series_description"]
@@ -2389,37 +2654,43 @@ def _sct_output_to_source_geometry_images(
         tmpMeta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
         tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]
         tmpMeta["SOPInstanceUID"] = sop_instance_uid
-        tmpMeta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
-        tmpMeta["ImageTypeValue4"] = output_identity["display_token"]
-        tmpMeta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+        tmpMeta["ImageType"] = source_image_type
+        tmpMeta["ImageTypeValue3"] = source_image_type_value3
+        tmpMeta["ImageTypeValue4"] = source_image_type_value4
+        tmpMeta["DicomImageType"] = source_dicom_image_type
         tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
-        tmpMeta["ImageComments"] = output_identity["image_comment"]
-        tmpMeta["ImageComment"] = output_identity["image_comment"]
+        tmpMeta["ImageComments"] = output_identity["series_description"]
+        tmpMeta["ImageComment"] = output_identity["series_description"]
         tmpMeta["SequenceDescriptionAdditional"] = "or"
-        tmpMeta["Keep_image_geometry"] = 1
-        tmpMeta["SegmentSourceGeometry"] = 1
-        if "SegmentPostProcessing" in tmpMeta:
-            del tmpMeta["SegmentPostProcessing"]
-        if "SegmentPostProcessingChildRole" in tmpMeta:
-            del tmpMeta["SegmentPostProcessingChildRole"]
-        _set_output_position_meta(tmpMeta, iImg)
+        tmpMeta["Keep_image_geometry"] = "1"
+        tmpMeta["SegmentSourceGeometry"] = "1"
+        tmpMeta["SegmentSourceImageHeader"] = "1"
+        tmpMeta["SegmentPostProcessingChildRole"] = str(int(output_series_index))
+        tmpMeta["ExamDataRole"] = exam_data_role
+        if SCT_SEGMENT_POSTPROCESSING_META_KEY in tmpMeta:
+            del tmpMeta[SCT_SEGMENT_POSTPROCESSING_META_KEY]
+        _set_output_position_meta(
+            tmpMeta,
+            output_header_slice,
+            image_index=output_header_image_index,
+        )
 
         if segmentation_colormap:
             tmpMeta["LUTFileName"] = "MicroDeltaHotMetal.pal"
 
         minihead_text = _decode_ice_minihead(tmpMeta)
         if minihead_text:
-            patched_minihead_text, minihead_changed = _patch_ice_minihead(
+            patched_minihead_text, minihead_changed = _patch_source_image_header_ice_minihead(
                 minihead_text,
                 output_identity["sequence_description"],
                 output_identity["grouping"],
                 output_identity["series_instance_uid"],
                 sop_instance_uid,
-                output_identity["source_type_token"],
-                output_identity["type_token"],
-                target_display_token=output_identity["display_token"],
-                output_index=iImg,
-                preserve_image_type_value3=False,
+                source_image_type,
+                source_image_type_value4,
+                exam_data_role,
+                output_header_slice,
+                output_header_image_index,
             )
             if minihead_changed:
                 tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
@@ -2428,7 +2699,7 @@ def _sct_output_to_source_geometry_images(
         outputs.append(output_image)
 
     logging.info(
-        "Converted SCT output into %d source-geometry segmentation image(s) "
+        "Converted SCT output into %d source-image-header segmentation image(s) "
         "for scanner send path: series_index=%d segmentationcolormap=%s",
         len(outputs),
         output_series_index,

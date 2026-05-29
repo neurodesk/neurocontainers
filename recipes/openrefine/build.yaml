@@ -1,0 +1,133 @@
+name: openrefine
+version: 3.10.1
+
+architectures:
+  - x86_64
+  - aarch64
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/OpenRefine/OpenRefine/blob/master/LICENSE.txt
+
+categories:
+  - data organisation
+
+icon: data:image/png;base64,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
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - ca-certificates
+        - curl
+        - openjdk-17-jre-headless
+
+    - workdir: /opt
+
+    - run:
+        - tar -xzf {{ get_file("openrefine_tar") }} -C /opt
+        - mv /opt/openrefine-{{ context.version }} /opt/openrefine
+        - chmod +x /opt/openrefine/refine
+
+    - copy: openrefine /usr/local/bin/openrefine
+    - copy: openrefine /usr/local/bin/refine
+
+    - run:
+        - chmod +x /usr/local/bin/openrefine /usr/local/bin/refine
+
+    - test:
+        name: check OpenRefine web server
+        script: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          expected_version="$(awk '/^version:/{print $2; exit}' /build.yaml)"
+          openrefine --version | grep "${expected_version}"
+          export OPENREFINE_DATA_DIR="$(mktemp -d)"
+          openrefine start > /tmp/openrefine-test.log 2>&1 &
+          pid="$!"
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3333/ >/dev/null; then
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+              exit 0
+            fi
+            sleep 1
+          done
+
+          cat /tmp/openrefine-test.log
+          exit 1
+
+deploy:
+  bins:
+    - openrefine
+    - refine
+  webapp:
+    title: OpenRefine
+    icon: https://openrefine.org/img/openrefine_logo.svg
+    startup_command: "openrefine start"
+    startup_timeout: 180
+    description: "Data cleaning and transformation tool"
+    port: 3333
+
+readme: |
+  ----------------------------------
+  ## openrefine/{{ context.version }} ##
+
+  OpenRefine is a tool for working with messy data: cleaning it, transforming it from one format into another, and extending it with web services and external data.
+
+  Example:
+  ```
+  openrefine start
+  ```
+
+  This starts the OpenRefine server on `${NEURODESK_WEBAPP_PORT}` when set, otherwise on `${OPENREFINE_PORT}` or port `3333`. Runtime project data is stored in `${OPENREFINE_DATA_DIR}` when set, otherwise in `/tmp/openrefine-workspace`.
+
+  More documentation can be found here: https://openrefine.org/docs
+
+  To run container outside of this environment: ml openrefine/{{ context.version }}
+
+  ----------------------------------
+
+files:
+  - name: openrefine_tar
+    url: https://github.com/OpenRefine/OpenRefine/releases/download/{{ context.version }}/openrefine-linux-{{ context.version }}.tar.gz
+
+  - name: openrefine
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      case "${1:-start}" in
+        start|server)
+          if [ "$#" -gt 0 ]; then
+            shift
+          fi
+          port="${NEURODESK_WEBAPP_PORT:-${OPENREFINE_PORT:-3333}}"
+          interface="${OPENREFINE_INTERFACE:-0.0.0.0}"
+          data_dir="${OPENREFINE_DATA_DIR:-/tmp/openrefine-workspace}"
+          mkdir -p "$data_dir"
+          exec /opt/openrefine/refine \
+            -i "$interface" \
+            -p "$port" \
+            -d "$data_dir" \
+            -x refine.headless=true \
+            "$@"
+          ;;
+        version|--version)
+          printf '%s\n' "{{ context.version }}"
+          ;;
+        help|--help|-h)
+          exec /opt/openrefine/refine -h
+          ;;
+        *)
+          exec /opt/openrefine/refine "$@"
+          ;;
+      esac

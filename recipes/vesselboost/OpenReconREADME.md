@@ -8,7 +8,7 @@ The normal VesselBoost software suite includes three command-line modules: predi
 
 Use this reconstruction pipeline on 3D TOF-MRA image data.
 
-The main derived output is named `<source>_vesselboost`, where `<source>` is the incoming source `SeriesDescription` or, when that is absent, the incoming `SequenceDescription`. If neither source name is available, the fallback name is `vesselboost`. Returned scanner series use `OR` as the short OpenRecon suffix. By default, OpenRecon returns restamped original MRA images first as `<source>_original`, then sends one source-geometry 2D VesselBoost segmentation image per source image. Optional sagittal and coronal reformat series are named `<source>_vesselboost_sagittal` and `<source>_vesselboost_coronal`.
+The main derived output is named `<source>_vesselboost`, where `<source>` is the incoming source `SeriesDescription` or, when that is absent, the incoming `SequenceDescription`. If neither source name is available, the fallback name is `vesselboost`. Returned scanner series use `OR` as the short OpenRecon suffix. By default, OpenRecon returns restamped original MRA images first as `<source>_original`, then sends one source-image-header 2D VesselBoost segmentation image per source image. Optional sagittal and coronal reformat series are named `<source>_vesselboost_sagittal` and `<source>_vesselboost_coronal`.
 
 ## GUI Parameters
 
@@ -46,9 +46,9 @@ Gaussian blending is marked experimental in the OpenRecon label. Use it only whe
 
 The OpenRecon label declares GPU support and requests at least 1 GPU, 10048 MB GPU memory, 40096 MB system memory, and 32 CPU cores.
 
-Returned images are always emitted as new scanner-visible series. Restamped originals are sent first with `Keep_image_geometry = 1` and a patched source `IceMiniHead`, so scanner-side processing and scanner-created MIPs stay attached to the original MRA geometry. The VesselBoost segmentation follows as a separate source-geometry 2D stream with `Keep_image_geometry = 1` and `SegmentPostProcessing = 1`.
+Returned images are always emitted as new scanner-visible series. Restamped originals are sent first with `Keep_image_geometry = 1` and a patched source `IceMiniHead`, so scanner-side processing and scanner-created MIPs stay attached to the original MRA geometry. The VesselBoost segmentation follows as a separate source-image-header 2D stream with `Keep_image_geometry = 1`, `DataRole = Image`, `SegmentSourceGeometry = 1`, `SegmentSourceImageHeader = 1`, `SegmentOutputGeometry = 2d`, and the source `ImageType`, `DicomImageType`, and `ImageTypeValue4` identity.
 
-This mirrors the `openreconi2iexample` path with segment geometry fixed to `2d`, no detached 3D data, segment send order after originals, and the segment postprocessing stamp enabled. Reformatted sagittal and coronal outputs remain explicit packed 3D MRD volumes without the segment postprocessing stamp.
+This mirrors the `openreconi2iexample` `2d_source_image_header` path with segment geometry fixed to `2d`, no detached 3D data, and segment send order after originals. Reformatted sagittal and coronal outputs remain explicit packed 3D MRD volumes without source-image-header stamping.
 
 ## Citation
 

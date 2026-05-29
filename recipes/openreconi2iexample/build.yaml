@@ -1,5 +1,5 @@
 name: openreconi2iexample
-version: 1.0.78
+version: 1.0.80no
 architectures:
   - x86_64
 
@@ -68,7 +68,9 @@ readme: |-
   an explicit derived volume, `3d_series_segment_header` sends 3D
   source-geometry masks with segmentation header identity,
   `2d_segment_header` sends 2D source-geometry masks with
-  segmentation header identity, `2d_derived_image_header` sends 2D
+  segmentation header identity, `2d_segment_header_originals` sends the same
+  masks without scanner postprocessing child-role metadata,
+  `2d_derived_image_header` sends 2D
   source-geometry masks with derived image header identity, and
   `2d_source_image_header` sends 2D source-geometry masks with
   source image header identity.
@@ -94,14 +96,14 @@ readme: |-
   Original copies are normally sent first as source-native 2D images with
   `Keep_image_geometry = 1`. The pass-through keeps the source protocol,
   sequence, image-type, MiniHead, and slice metadata as intact as possible while
-  assigning new returned-series UIDs. Scanner partition counters are kept at
-  zero for the returned single-partition 2D stream. Returned originals use a
-  one-based per-series `image_index`. Meta and MiniHead storage counters are
-  restamped from the returned stream so `NumberInSeries`, `ChronSliceNo`, and
-  `SliceNo` remain consistent with the MRD header. If a source group cannot be
-  sent safely as a 2D stream, the job fails before send rather than packing the
-  originals, because scanner MIP/MPR postprocessing depends on the original
-  stream. When `sendoriginal` is paired with
+  assigning new returned-series UIDs. Returned originals use a one-based
+  per-series `image_index`. Meta and MiniHead storage counters are restamped
+  from the returned stream so `NumberInSeries`, `ChronSliceNo`, and `SliceNo`
+  remain consistent with the MRD header; valid source partition counters are
+  preserved for multi-partition inputs such as wholebody Dixon. If a source
+  group cannot be sent safely as a 2D stream, the job fails before send rather
+  than packing the originals, because scanner MIP/MPR postprocessing depends on
+  the original stream. When `sendoriginal` is paired with
   `segmentheadergeometry = explicit_volume_derived_header`, the returned
   originals are sorted by projected physical slice position so their frame order
   matches the returned explicit segment volume. With
@@ -120,6 +122,10 @@ readme: |-
   physical geometry, use `Keep_image_geometry = 1`,
   `DataRole = Segmentation`, `SegmentSourceGeometry = 1`, and the explicit
   segmentation `ImageType`. With
+  `segmentheadergeometry = 2d_segment_header_originals`, masks use the same
+  source-geometry segmentation header identity, but do not set
+  `SegmentPostProcessingChildRole` or restamp `ExamDataRole` on the segment
+  stream so scanner postprocessing can remain on the original stream. With
   `segmentheadergeometry = 2d_derived_image_header`, masks use the same
   source-geometry 2D header path but keep `DataRole = Image` and use a derived
   segment `ImageType`. With

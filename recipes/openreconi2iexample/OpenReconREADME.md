@@ -44,6 +44,10 @@ and send foreground-region volume metrics.
   `segmentheadergeometry = 2d_segment_header` sends one 2D
   source-geometry mask per source image with `DataRole = Segmentation`,
   `SegmentSourceGeometry = 1`, and the explicit segmentation `ImageType`.
+  `segmentheadergeometry = 2d_segment_header_originals` uses the same 2D
+  source-geometry segmentation header identity, but omits scanner
+  postprocessing child-role metadata from the segment stream so scanner
+  postprocessing uses originals only when `sendoriginal` is enabled.
   `segmentheadergeometry = 2d_derived_image_header` uses the same 2D
   source-geometry header path, but stamps the mask as `DataRole = Image` with a
   derived segment `ImageType`.
@@ -77,13 +81,17 @@ foreground segmentation logic even when `segment` is disabled.
 
 ### TOF
 
-| ID | segmentheadergeometry | Notes |
-| --- | --- | --- |
-| TOF-01 | explicit_volume_derived_header | explicit derived segment volume |
-| TOF-02 | 3d_series_segment_header | 3D source geometry, segmentation header |
-| TOF-03 | 2d_segment_header | 2D source geometry, segmentation header |
-| TOF-04 | 2d_derived_image_header | 2D source geometry, derived image header |
-| TOF-05 | 2d_source_image_header | 2D source geometry, source image header |
+Observed in `log_i2i_error.log` from the `tof_i2i_74_*` runs with runtime
+version `1.0.78`.
+
+| ID | segmentheadergeometry | Observed postprocessing target and batches | Scanner storage result | Status | Notes |
+| --- | --- | --- | --- | --- | --- |
+| TOF-01 | explicit_volume_derived_header | `postprocessing_target=originals`; 40 original images with `keep_geometry=1`, then 1 `segment_explicit_3d` image with `keep_geometry=0` | Stored original, scanner MIP side products, and `tof_i2i_74_explicit-segment_openrecon` | OK. Scanner postprocessing ran on originals only; the segment was sent as an explicit derived volume. | explicit - org, mips(org), seg, geometry mismatch between org and seg
+| TOF-02 | 3d_series_segment_header | `postprocessing_target=segment_3d_source_geometry`; 40 original images with `keep_geometry=1`, then 40 `segment_3d_series` images with `keep_geometry=1` | Stored original, scanner MIP side products, and `tof_i2i_74_3D-segment_openrecon` | OK. Scanner postprocessing ran on the 3D source-geometry segment stream. | 3D - org, mips(org,seg), seg
+| TOF-03 | 2d_segment_header | `postprocessing_target=segment_2d_source_geometry`; 40 original images with `keep_geometry=1`, then 40 `segment_source_geometry` images with `keep_geometry=1` | Stored original, scanner MIP side products, and `tof_i2i_74_2D-segment_openrecon` | OK. Scanner postprocessing ran on the 2D source-geometry segmentation-header stream. | 2D - org, mips(org,seg), seg
+| TOF-03b | 2d_segment_header_originals | Not present in the 1.0.78 log; intended target is `postprocessing_target=originals`, then a 2D source-geometry segmentation-header stream without scanner postprocessing child-role metadata. | Retest needed. | New Dixon-oriented mode. | 2D - org, mips(org), seg
+| TOF-04 | 2d_derived_image_header | `postprocessing_target=originals+segment_2d_derived_image_header`; 40 original images with `keep_geometry=1`, then 40 `segment_derived_image_header` images with `keep_geometry=1` | Stored original, scanner MIP side products, and `tof_i2i_74_2D_derived-segment_openrecon` | OK. Scanner postprocessing ran on originals plus a 2D source-geometry segment stream stamped as derived image data. | 2D derived - org, mips(org,seg), seg
+| TOF-05 | 2d_source_image_header | `postprocessing_target=originals+segment_2d_source_image_header`; 40 original images with `keep_geometry=1`, then 40 `segment_source_image_header` images with `keep_geometry=1` | Stored original, scanner MIP side products, and `tof_i2i_74_2D_source-segment` | OK. Scanner postprocessing ran on originals plus a 2D source-geometry segment stream stamped with source image identity. | 2D source - org, mips(org), seg -> should use that for vesselboost
 
 ### Wholebody Multistation Protocol Dixon Recon F/W
 
@@ -92,6 +100,7 @@ foreground segmentation logic even when `segment` is disabled.
 | WB-01 | explicit_volume_derived_header | explicit derived segment volume |
 | WB-02 | 3d_series_segment_header | 3D source geometry, segmentation header |
 | WB-03 | 2d_segment_header | 2D source geometry, segmentation header |
+| WB-03b | 2d_segment_header_originals | 2D source geometry, segmentation header; scanner postprocessing child-role metadata omitted so originals remain the postprocessing target |
 | WB-04 | 2d_derived_image_header | 2D source geometry, derived image header |
 | WB-05 | 2d_source_image_header | 2D source geometry, source image header |
 
@@ -102,11 +111,30 @@ foreground segmentation logic even when `segment` is disabled.
   `sendcomputedmip`, and `sendmetrics` are exposed in `OpenReconLabel.json`.
 - Scanner protocols saved before these parameters were added may need the
   OpenRecon algorithm reselected once so the parameter schema refreshes.
+  The TOF log shows this as `OpenRecon validation failed!` for a stale
+  persisted protocol that still contained removed parameter ids such as
+  `detach3ddata`, `segmentgeometry`, and `segmentsendorder`; conversion then
+  succeeded and the later `tof_i2i_74_*` runs used the current schema.
 - Runtime logs include an `openreconi2iexample runtime version=...` marker from
   the container environment. If this does not match the recipe version, the
   scanner is still using an older deployed image or cached protocol config.
 - Runtime logs include `OPENRECONI2I_POSTPROCESSING target=...`, the configured
   output line, and one `OPENRECONI2I_BATCH` line before every MRD image send.
+- `segmentheadergeometry` also selects which returned stream is stamped for
+  scanner postprocessing. In the TOF log, `explicit_volume_derived_header`
+  ran scanner postprocessing on originals only, `3d_series_segment_header` and
+  `2d_segment_header` ran it on the segment stream, and the two 2D image-header
+  modes ran it on originals plus the segment stream.
+- `segmentheadergeometry = 2d_segment_header_originals` was added after the
+  1.0.78 scanner logs for the Dixon case where original pass-through must stay
+  enabled but the 2D source-geometry segmentation stream should not be selected
+  for scanner postprocessing.
+- Unsigned research images can produce `Used OpenRecon image has NO valid
+  signature` and `ChangeContentQualification` warnings. In the TOF log these
+  warnings did not prevent storage of the OpenRecon outputs.
+- `Failed to read out configuration settings for AutomaticPhoenixZipSending`
+  appeared after storage and fell back to scanner defaults; it did not indicate
+  an OpenRecon output failure in the TOF runs.
 - Derived output names are written to `SeriesDescription`,
   `SequenceDescription`, `ProtocolName`, `ImageComments`,
   `SeriesNumberRangeNameUID`, and `SeriesInstanceUID`.
@@ -114,9 +142,19 @@ foreground segmentation logic even when `segment` is disabled.
   Returned originals use a one-based per-series `image_index`. Scanner storage
   counters in Meta and `IceMiniHead` are restamped consistently from the
   returned stream.
+- For multi-partition source volumes such as wholebody Dixon, original
+  pass-through and source-geometry segment outputs preserve valid source
+  partition counters (`Actual3DImagePartNumber`, `Actual3DImaPartNumber`, and
+  `AnatomicalPartitionNo`) instead of flattening every returned image to
+  partition `0`.
 - The scanner-label default segment mode is
   `2d_segment_header`. It returns source-geometry 2D masks with
   segmentation header identity after the original pass-through stream.
+- `segmentheadergeometry = 2d_segment_header_originals` returns the same
+  source-geometry 2D masks with segmentation header identity, but does not set
+  `SegmentPostProcessingChildRole` or restamp `ExamDataRole` on the segment
+  stream. With `sendoriginal` enabled, originals remain the scanner
+  postprocessing target.
 - `segmentheadergeometry = 2d_source_image_header` keeps original
   pass-through enabled when requested. The original stream is sent first, and
   the source-image-header mask stream is sent second.

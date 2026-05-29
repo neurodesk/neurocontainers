@@ -34,8 +34,18 @@ OPENRECON_SERIES_SUFFIX = "OR"
 VESSELBOOST_OUTPUT_GEOMETRY_2D = "2d"
 VESSELBOOST_SEGMENT_SEND_ORDER = "after_originals"
 VESSELBOOST_SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
+VESSELBOOST_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY = "SegmentPostProcessingChildRole"
+VESSELBOOST_SEGMENT_SOURCE_GEOMETRY_META_KEY = "SegmentSourceGeometry"
+VESSELBOOST_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY = "SegmentSourceImageHeader"
+VESSELBOOST_SEGMENT_OUTPUT_GEOMETRY_META_KEY = "SegmentOutputGeometry"
 VESSELBOOST_SEGMENTATION_LABEL = "vesselboost"
 VESSELBOOST_SEGMENTATION_TYPE_TOKEN = VESSELBOOST_SEGMENTATION_LABEL.upper()
+VESSELBOOST_SOURCE_IMAGE_HEADER_FALLBACK_TYPE = (
+    f"DERIVED\\PRIMARY\\SEGMENTATION\\{VESSELBOOST_SEGMENTATION_LABEL}_source_image_header"
+)
+VESSELBOOST_SOURCE_IMAGE_HEADER_FALLBACK_VALUE4 = (
+    f"{VESSELBOOST_SEGMENTATION_LABEL}_source_image_header"
+)
 VESSELBOOST_ORIGINAL_LABEL = "original"
 VESSELBOOST_ORIGINAL_TYPE_TOKEN = VESSELBOOST_ORIGINAL_LABEL.upper()
 SCANNER_PARTITION_INDEX = 0
@@ -591,6 +601,23 @@ def _get_meta_text(meta_obj, key):
         return ""
 
 
+def _get_meta_values(meta_obj, key):
+    try:
+        value = meta_obj.get(key)
+    except Exception:
+        value = None
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        value = [value]
+    values = []
+    for item in value:
+        text = str(item or "").strip()
+        if text and text.upper() != "N/A":
+            values.append(text)
+    return values
+
+
 def _get_meta_int(meta_obj, key):
     text = _get_meta_text(meta_obj, key)
     if not text:
@@ -806,19 +833,185 @@ def _replace_minihead_array_token(minihead_text, name, target_token):
 
 
 def _replace_or_append_minihead_array_token(minihead_text, name, source_token, target_token):
-    current_text, did_change = _replace_minihead_array_token(
-        minihead_text,
-        name,
-        target_token,
-    )
-    if did_change or not current_text or not target_token:
-        return current_text, did_change
-    if _extract_minihead_array_tokens(current_text, name):
-        return current_text, False
+    return _replace_or_append_minihead_array_tokens(minihead_text, name, [target_token])
 
-    target_token = _sanitize_minihead_param_value(target_token)
-    appended_param = f'\n<ParamArray."{name}">\t{{\n\t{{ "{target_token}" }}\n}}\n'
-    return current_text.rstrip() + appended_param, True
+
+def _replace_or_append_minihead_array_tokens(minihead_text, name, target_tokens):
+    target_tokens = [
+        token
+        for token in (
+            _sanitize_minihead_param_value(token) for token in target_tokens
+        )
+        if token
+    ]
+    if not minihead_text or not target_tokens:
+        return minihead_text, False
+
+    line_ending = "\r\n" if "\r\n" in minihead_text else "\n"
+    block_pattern = re.compile(
+        rf'(<ParamArray\."{re.escape(name)}">\s*\{{)(.*?)(^\s*\}})',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    block_match = block_pattern.search(minihead_text)
+    if not block_match:
+        token_lines = "".join(
+            f'{line_ending}\t{{ "{token}" }}' for token in target_tokens
+        )
+        appended_param = (
+            f'{line_ending}<ParamArray."{name}">\t{{'
+            f"{token_lines}{line_ending}}}{line_ending}"
+        )
+        return minihead_text.rstrip() + appended_param, True
+
+    block_text = block_match.group(0)
+    tokens = _extract_minihead_array_tokens(block_text, name)
+    if tokens == target_tokens:
+        return minihead_text, False
+
+    token_pattern = re.compile(r'\{\s*"[^"]*"\s*\}')
+    token_matches = list(token_pattern.finditer(block_text))
+    token_lines = "".join(
+        f'{line_ending}\t{{ "{token}" }}' for token in target_tokens
+    )
+    if not token_matches:
+        stripped_block = block_text.rstrip()
+        close_index = stripped_block.rfind("}")
+        if close_index >= 0:
+            replacement_block = (
+                stripped_block[:close_index]
+                + token_lines
+                + line_ending
+                + stripped_block[close_index:]
+            )
+        else:
+            replacement_block = stripped_block + token_lines
+    else:
+        first_token = token_matches[0]
+        last_token = token_matches[-1]
+        replacement_block = (
+            block_text[:first_token.start()]
+            + token_lines.lstrip(line_ending)
+            + block_text[last_token.end():]
+        )
+    return (
+        minihead_text[:block_match.start()]
+        + replacement_block
+        + minihead_text[block_match.end():],
+        True,
+    )
+
+
+def _format_exam_data_role_sequential_number(value):
+    return (
+        '<DataRole Version="DR2.0">\n'
+        ' <Categories>\n'
+        '  <Category Name="SequentialNumber">\n'
+        f"   <CategoryEntry>{int(value)}</CategoryEntry>\n"
+        "  </Category>\n"
+        " </Categories>\n"
+        "</DataRole>"
+    )
+
+
+def _minihead_string_literal(value):
+    return str(value).replace('"', '""')
+
+
+def _minihead_param_map_line_span(minihead_text, map_name):
+    lines = minihead_text.splitlines(keepends=True)
+    map_pattern = re.compile(rf'<ParamMap\."{re.escape(map_name)}">')
+
+    for map_index, line in enumerate(lines):
+        if not map_pattern.search(line):
+            continue
+
+        open_index = None
+        for candidate_index in range(map_index + 1, len(lines)):
+            stripped = lines[candidate_index].strip()
+            if stripped == "{":
+                open_index = candidate_index
+                break
+            if stripped.startswith('<ParamMap."'):
+                break
+        if open_index is None:
+            continue
+
+        depth = 1
+        for close_index in range(open_index + 1, len(lines)):
+            stripped = lines[close_index].strip()
+            if stripped == "{":
+                depth += 1
+            elif stripped == "}":
+                depth -= 1
+                if depth == 0:
+                    return lines, map_index, open_index, close_index
+
+    return lines, None, None, None
+
+
+def _minihead_param_map_text(minihead_text, map_name):
+    lines, map_index, _open_index, close_index = _minihead_param_map_line_span(
+        minihead_text,
+        map_name,
+    )
+    if map_index is None:
+        return ""
+    return "".join(lines[map_index:close_index + 1])
+
+
+def _insert_minihead_string_param_in_map(minihead_text, map_name, name, value):
+    literal = _minihead_string_literal(value)
+    lines, _map_index, open_index, close_index = _minihead_param_map_line_span(
+        minihead_text,
+        map_name,
+    )
+    if close_index is None:
+        appended_param = f'\n<ParamString."{name}">\t{{ "{literal}" }}\n'
+        return minihead_text.rstrip() + appended_param, True
+
+    indent = ""
+    for line in lines[open_index + 1:close_index]:
+        match = re.match(r'(\s*)<Param(?:Long|String|Array)\.', line)
+        if match:
+            indent = match.group(1)
+            break
+    if not indent:
+        indent_match = re.match(r"(\s*)", lines[open_index])
+        indent = indent_match.group(1) if indent_match else ""
+
+    line_ending = "\r\n" if "\r\n" in minihead_text else "\n"
+    param_line = f'{indent}<ParamString."{name}">\t{{ "{literal}" }}{line_ending}'
+    lines.insert(close_index, param_line)
+    return "".join(lines), True
+
+
+def _replace_or_insert_minihead_exam_data_role(minihead_text, exam_data_role):
+    if not minihead_text or not exam_data_role:
+        return minihead_text, False
+
+    literal = _minihead_string_literal(exam_data_role)
+    pattern = re.compile(
+        r'(<ParamString\."ExamDataRole">\s*\{\s*")(.*?</DataRole>)("\s*\})',
+        flags=re.DOTALL,
+    )
+    matches = list(pattern.finditer(minihead_text))
+    if matches:
+        if all(match.group(2).replace('""', '"') == exam_data_role for match in matches):
+            return minihead_text, False
+        return (
+            pattern.sub(
+                lambda match: f"{match.group(1)}{literal}{match.group(3)}",
+                minihead_text,
+            ),
+            True,
+        )
+
+    return _insert_minihead_string_param_in_map(
+        minihead_text,
+        "DICOM",
+        "ExamDataRole",
+        exam_data_role,
+    )
 
 
 def _patch_ice_minihead(
@@ -884,6 +1077,89 @@ def _patch_ice_minihead(
                 param_value,
             )
             changed = changed or did_change
+
+    return current_text, changed
+
+
+def _source_postprocessing_image_type_identity(source_meta, minihead_text):
+    image_type = (
+        _get_meta_text(source_meta, "ImageType")
+        or _extract_minihead_string_value(minihead_text, "ImageType")
+        or VESSELBOOST_SOURCE_IMAGE_HEADER_FALLBACK_TYPE
+    )
+    dicom_image_type = _get_meta_text(source_meta, "DicomImageType") or image_type
+    image_type_value4_tokens = (
+        _extract_minihead_array_tokens(minihead_text, "ImageTypeValue4")
+        or _get_meta_values(source_meta, "ImageTypeValue4")
+        or [VESSELBOOST_SOURCE_IMAGE_HEADER_FALLBACK_VALUE4]
+    )
+    return image_type, dicom_image_type, image_type_value4_tokens
+
+
+def _patch_source_image_header_ice_minihead(
+    minihead_text,
+    series_description,
+    series_grouping,
+    series_uid,
+    sop_uid,
+    image_type,
+    image_type_value4_tokens,
+    exam_data_role,
+    slice_index,
+    image_index,
+):
+    if not minihead_text:
+        return minihead_text, False
+
+    changed = False
+    current_text = minihead_text
+    for param_name, param_value in (
+        ("SeriesDescription", series_description),
+        ("SequenceDescription", series_description),
+        ("ProtocolName", series_description),
+        ("SeriesNumberRangeNameUID", series_grouping),
+        ("SeriesInstanceUID", series_uid),
+        ("SOPInstanceUID", sop_uid),
+        ("ImageType", image_type),
+        ("ComplexImageComponent", "MAGNITUDE"),
+    ):
+        if not param_value:
+            continue
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            param_name,
+            param_value,
+        )
+        changed = changed or did_change
+
+    current_text, did_change = _replace_or_append_minihead_array_tokens(
+        current_text,
+        "ImageTypeValue4",
+        image_type_value4_tokens,
+    )
+    changed = changed or did_change
+
+    current_text, did_change = _replace_or_insert_minihead_exam_data_role(
+        current_text,
+        exam_data_role,
+    )
+    changed = changed or did_change
+
+    for param_name, param_value in (
+        ("Actual3DImagePartNumber", SCANNER_PARTITION_INDEX),
+        ("AnatomicalPartitionNo", SCANNER_PARTITION_INDEX),
+        ("AnatomicalSliceNo", slice_index),
+        ("ChronSliceNo", max(int(image_index), 1) - 1),
+        ("NumberInSeries", max(int(image_index), 1)),
+        ("ProtocolSliceNumber", slice_index),
+        ("SliceNo", slice_index),
+    ):
+        current_text, did_change = _replace_or_append_minihead_long_param(
+            current_text,
+            param_name,
+            param_value,
+        )
+        changed = changed or did_change
 
     return current_text, changed
 
@@ -1083,17 +1359,26 @@ def _stamp_vesselboost_output_image(
     keep_image_geometry=1,
     patch_minihead=True,
     data_role="Image",
+    source_image_header_identity=False,
 ):
+    source_meta = _copy_meta(_meta_from_image(source_image))
     header = image.getHead()
     header.image_series_index = int(series_index)
-    header.image_index = int(output_index) + 1
-    header.slice = int(output_index)
+    if source_image_header_identity:
+        header.image_index = _source_geometry_header_image_index(
+            source_image,
+            output_index,
+        )
+        header.slice = _source_geometry_header_slice(source_image, output_index)
+    else:
+        header.image_index = int(output_index) + 1
+        header.slice = int(output_index)
     header.contrast = 0
     header.image_type = ismrmrd.IMTYPE_MAGNITUDE
     image.setHead(header)
     image.image_series_index = int(series_index)
 
-    tmp_meta = _copy_meta(_meta_from_image(source_image))
+    tmp_meta = _copy_meta(source_meta)
     _strip_source_parent_refs(tmp_meta)
     series_name = output_identity["series_description"]
     series_uid = output_identity.get("series_uid") or _derived_vesselboost_series_uid(
@@ -1109,7 +1394,20 @@ def _stamp_vesselboost_output_image(
         output_index,
         series_uid=series_uid,
     )
-    tmp_meta["DataRole"] = data_role
+    minihead_text = _decode_ice_minihead(source_meta)
+    source_image_type = None
+    source_dicom_image_type = None
+    source_image_type_value4 = None
+    exam_data_role = None
+    if source_image_header_identity:
+        (
+            source_image_type,
+            source_dicom_image_type,
+            source_image_type_value4,
+        ) = _source_postprocessing_image_type_identity(source_meta, minihead_text)
+        exam_data_role = _format_exam_data_role_sequential_number(series_index)
+
+    tmp_meta["DataRole"] = "Image" if source_image_header_identity else data_role
     tmp_meta["ImageProcessingHistory"] = processing_history
     tmp_meta["SeriesDescription"] = series_name
     tmp_meta["SequenceDescription"] = output_identity["sequence_description"]
@@ -1117,16 +1415,48 @@ def _stamp_vesselboost_output_image(
     tmp_meta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
     tmp_meta["SeriesInstanceUID"] = series_uid
     tmp_meta["SOPInstanceUID"] = sop_uid
-    tmp_meta["ImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
-    tmp_meta["ImageTypeValue3"] = "M"
-    tmp_meta["ImageTypeValue4"] = output_identity["display_token"]
-    tmp_meta["DicomImageType"] = f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+    tmp_meta["ImageType"] = (
+        source_image_type
+        if source_image_header_identity
+        else f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+    )
+    tmp_meta["ImageTypeValue3"] = (
+        _get_meta_text(source_meta, "ImageTypeValue3")
+        if source_image_header_identity
+        else "M"
+    ) or "M"
+    tmp_meta["ImageTypeValue4"] = (
+        source_image_type_value4
+        if source_image_header_identity
+        else output_identity["display_token"]
+    )
+    tmp_meta["DicomImageType"] = (
+        source_dicom_image_type
+        if source_image_header_identity
+        else f"DERIVED\\PRIMARY\\M\\{output_identity['type_token']}"
+    )
+    if source_image_header_identity:
+        tmp_meta["ExamDataRole"] = exam_data_role
     tmp_meta["ComplexImageComponent"] = "MAGNITUDE"
-    tmp_meta["ImageComments"] = output_identity["image_comment"]
-    tmp_meta["ImageComment"] = output_identity["image_comment"]
+    tmp_meta["ImageComments"] = (
+        series_name if source_image_header_identity else output_identity["image_comment"]
+    )
+    tmp_meta["ImageComment"] = (
+        series_name if source_image_header_identity else output_identity["image_comment"]
+    )
     tmp_meta["SequenceDescriptionAdditional"] = OPENRECON_SERIES_SUFFIX
     tmp_meta["Keep_image_geometry"] = str(int(keep_image_geometry))
-    _set_output_position_meta(tmp_meta, output_index)
+    _set_output_position_meta(
+        tmp_meta,
+        int(header.slice),
+        image_index=int(header.image_index),
+    )
+    if source_image_header_identity:
+        tmp_meta[VESSELBOOST_SEGMENT_SOURCE_GEOMETRY_META_KEY] = "1"
+        tmp_meta[VESSELBOOST_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY] = "1"
+        tmp_meta[VESSELBOOST_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY] = str(
+            int(series_index)
+        )
 
     if extra_meta:
         for key, value in extra_meta.items():
@@ -1141,17 +1471,33 @@ def _stamp_vesselboost_output_image(
             except Exception:
                 tmp_meta["IceMiniHead"] = ""
     elif minihead_text:
-        patched_minihead_text, minihead_changed = _patch_ice_minihead(
-            minihead_text,
-            series_name,
-            output_identity["grouping"],
-            source_type_token,
-            output_identity["type_token"],
-            target_display_token=output_identity["display_token"],
-            series_uid=series_uid,
-            sop_uid=sop_uid,
-            output_index=output_index,
-        )
+        if source_image_header_identity:
+            patched_minihead_text, minihead_changed = (
+                _patch_source_image_header_ice_minihead(
+                    minihead_text,
+                    series_name,
+                    output_identity["grouping"],
+                    series_uid,
+                    sop_uid,
+                    source_image_type,
+                    source_image_type_value4,
+                    exam_data_role,
+                    int(header.slice),
+                    int(header.image_index),
+                )
+            )
+        else:
+            patched_minihead_text, minihead_changed = _patch_ice_minihead(
+                minihead_text,
+                series_name,
+                output_identity["grouping"],
+                source_type_token,
+                output_identity["type_token"],
+                target_display_token=output_identity["display_token"],
+                series_uid=series_uid,
+                sop_uid=sop_uid,
+                output_index=output_index,
+            )
         if minihead_changed:
             tmp_meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
         else:
@@ -1161,6 +1507,24 @@ def _stamp_vesselboost_output_image(
             )
 
     image.attribute_string = tmp_meta.serialize()
+
+
+def _source_geometry_header_image_index(source_image, output_index):
+    try:
+        source_image_index = int(source_image.getHead().image_index)
+    except Exception:
+        source_image_index = 0
+    if source_image_index >= 1:
+        return source_image_index
+    return int(output_index) + 1
+
+
+def _source_geometry_header_slice(source_image, output_index):
+    try:
+        source_slice = int(source_image.getHead().slice)
+    except Exception:
+        source_slice = int(output_index)
+    return source_slice if source_slice >= 0 else int(output_index)
 
 
 def _build_vesselboost_original_images(
@@ -1208,16 +1572,18 @@ def _build_vesselboost_original_images(
     return outputs
 
 
-def _set_output_position_meta(meta_obj, output_index):
+def _set_output_position_meta(meta_obj, slice_index, image_index=None):
+    slice_index = int(slice_index)
+    image_index = int(image_index) if image_index is not None else slice_index + 1
     for key in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
         _set_meta_scalar(meta_obj, key, SCANNER_PARTITION_INDEX)
     for key, value in (
-        ("AnatomicalSliceNo", output_index),
-        ("ChronSliceNo", output_index),
-        ("NumberInSeries", output_index + 1),
-        ("ProtocolSliceNumber", output_index),
-        ("SliceNo", output_index),
-        ("IsmrmrdSliceNo", output_index),
+        ("AnatomicalSliceNo", slice_index),
+        ("ChronSliceNo", max(image_index, 1) - 1),
+        ("NumberInSeries", max(image_index, 1)),
+        ("ProtocolSliceNumber", slice_index),
+        ("SliceNo", slice_index),
+        ("IsmrmrdSliceNo", slice_index),
     ):
         _set_meta_scalar(meta_obj, key, value)
 
@@ -1295,6 +1661,7 @@ def _validate_vesselboost_output_contract(
             "SeriesInstanceUID": _get_meta_text(meta_obj, "SeriesInstanceUID"),
             "SOPInstanceUID": _get_meta_text(meta_obj, "SOPInstanceUID"),
             "ImageTypeValue4": _get_meta_text(meta_obj, "ImageTypeValue4"),
+            "ImageTypeValue4Values": _get_meta_values(meta_obj, "ImageTypeValue4"),
             "ComplexImageComponent": _get_meta_text(meta_obj, "ComplexImageComponent"),
             "SequenceDescriptionAdditional": _get_meta_text(
                 meta_obj,
@@ -1358,7 +1725,7 @@ def _validate_vesselboost_output_contract(
                     f"{field}={minihead_value}"
                 )
 
-        if not identity["ImageTypeValue4"]:
+        if not identity["ImageTypeValue4Values"]:
             errors.append(f"image {index}: output is missing ImageTypeValue4")
         if identity["ComplexImageComponent"] != "MAGNITUDE":
             errors.append(
@@ -1375,6 +1742,63 @@ def _validate_vesselboost_output_contract(
         keep_image_geometry = _get_meta_int(meta_obj, "Keep_image_geometry")
         if keep_image_geometry is None:
             errors.append(f"image {index}: missing Keep_image_geometry")
+        if _is_vesselboost_source_image_header_output(meta_obj):
+            data_role = _get_meta_text(meta_obj, "DataRole")
+            if data_role != "Image":
+                errors.append(
+                    f"image {index}: source-image-header output DataRole={data_role}, "
+                    "expected Image"
+                )
+            if keep_image_geometry != 1:
+                errors.append(
+                    f"image {index}: source-image-header output Keep_image_geometry="
+                    f"{keep_image_geometry}, expected 1"
+                )
+            segment_output_geometry = _get_meta_text(
+                meta_obj,
+                VESSELBOOST_SEGMENT_OUTPUT_GEOMETRY_META_KEY,
+            )
+            if segment_output_geometry != VESSELBOOST_OUTPUT_GEOMETRY_2D:
+                errors.append(
+                    f"image {index}: SegmentOutputGeometry={segment_output_geometry}, "
+                    f"expected {VESSELBOOST_OUTPUT_GEOMETRY_2D}"
+                )
+            if _get_meta_text(meta_obj, VESSELBOOST_SEGMENT_POSTPROCESSING_META_KEY):
+                errors.append(
+                    f"image {index}: source-image-header output still carries "
+                    f"{VESSELBOOST_SEGMENT_POSTPROCESSING_META_KEY}"
+                )
+            child_role = _get_meta_int(
+                meta_obj,
+                VESSELBOOST_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY,
+            )
+            if child_role != series_index:
+                errors.append(
+                    f"image {index}: SegmentPostProcessingChildRole={child_role}, "
+                    f"expected {series_index}"
+                )
+            expected_exam_data_role = _format_exam_data_role_sequential_number(
+                series_index
+            )
+            exam_data_role = _get_meta_text(meta_obj, "ExamDataRole")
+            if exam_data_role != expected_exam_data_role:
+                errors.append(
+                    f"image {index}: ExamDataRole does not match image_series_index "
+                    f"{series_index}"
+                )
+            if minihead_text:
+                dicom_map = _minihead_param_map_text(minihead_text, "DICOM")
+                if '<ParamString."ExamDataRole">' not in dicom_map:
+                    errors.append(
+                        f"image {index}: source-image-header IceMiniHead is missing "
+                        "ExamDataRole inside the DICOM ParamMap"
+                    )
+                expected_entry = f"<CategoryEntry>{series_index}</CategoryEntry>"
+                if expected_entry not in dicom_map:
+                    errors.append(
+                        f"image {index}: source-image-header IceMiniHead DICOM "
+                        f"ExamDataRole is missing {expected_entry}"
+                    )
         if keep_image_geometry == 0:
             header_matrix_z = int(getattr(header, "matrix_size", [0, 0, 0])[2])
             if minihead_text:
@@ -1422,7 +1846,7 @@ def _validate_vesselboost_output_contract(
             "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
             "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
             "AnatomicalSliceNo": int(getattr(header, "slice", 0)),
-            "ChronSliceNo": int(getattr(header, "slice", 0)),
+            "ChronSliceNo": max(int(getattr(header, "image_index", 0)), 1) - 1,
             "NumberInSeries": int(getattr(header, "image_index", 0)),
             "ProtocolSliceNumber": int(getattr(header, "slice", 0)),
             "SliceNo": int(getattr(header, "slice", 0)),
@@ -1451,10 +1875,10 @@ def _validate_vesselboost_output_contract(
             minihead_text,
             "ImageTypeValue4",
         )
-        if minihead_text and minihead_type_tokens != [identity["ImageTypeValue4"]]:
+        if minihead_text and minihead_type_tokens != identity["ImageTypeValue4Values"]:
             errors.append(
                 f"image {index}: IceMiniHead ImageTypeValue4={minihead_type_tokens}, "
-                f"expected {[identity['ImageTypeValue4']]}"
+                f"expected {identity['ImageTypeValue4Values']}"
             )
 
         storage_key = (
@@ -1948,7 +2372,7 @@ def _build_vesselboost_segmentation_images(
     series_index: int,
     max_val: int,
 ):
-    """Build one source-geometry 2D MRD segmentation image per source image."""
+    """Build one source-image-header 2D MRD segmentation image per source image."""
     if volume_yxz.ndim != 3:
         raise ValueError(
             "VesselBoost segmentation image stack must be 3D, "
@@ -1987,7 +2411,7 @@ def _build_vesselboost_segmentation_images(
             "WindowCenter": str((max_val + 1) / 2),
             "WindowWidth": str(max_val + 1),
             "VesselBoostOutputGeometry": VESSELBOOST_OUTPUT_GEOMETRY_2D,
-            VESSELBOOST_SEGMENT_POSTPROCESSING_META_KEY: "1",
+            VESSELBOOST_SEGMENT_OUTPUT_GEOMETRY_META_KEY: VESSELBOOST_OUTPUT_GEOMETRY_2D,
         }
         _stamp_vesselboost_output_image(
             mrd_image,
@@ -1997,16 +2421,16 @@ def _build_vesselboost_segmentation_images(
             series_index,
             output_index,
             source_identity.get("source_type_token", ""),
-            ["PYTHON", "VESSELBOOST", "SOURCE_GEOMETRY_2D"],
+            ["PYTHON", "VESSELBOOST", "SOURCE_IMAGE_HEADER_2D"],
             extra_meta=extra_meta,
             keep_image_geometry=1,
             patch_minihead=True,
-            data_role="Segmentation",
+            source_image_header_identity=True,
         )
         outputs.append(mrd_image)
 
     logging.info(
-        "Built VesselBoost axial segmentation as %d source-geometry 2D image(s): "
+        "Built VesselBoost axial segmentation as %d source-image-header 2D image(s): "
         "series_index=%d matrix_yx=%s outputgeometry=%s",
         len(outputs),
         series_index,
@@ -2146,6 +2570,64 @@ def _format_chunk_image_summary(chunk) -> dict:
     }
 
 
+def _ordered_unique_strings(values):
+    ordered_values = []
+    seen = set()
+    for value in values:
+        text = str(value)
+        if text in seen:
+            continue
+        seen.add(text)
+        ordered_values.append(text)
+    return ordered_values
+
+
+def _is_vesselboost_source_image_header_output(meta_obj):
+    return (
+        _get_meta_int(meta_obj, VESSELBOOST_SEGMENT_SOURCE_GEOMETRY_META_KEY) == 1
+        and _get_meta_int(meta_obj, VESSELBOOST_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY) == 1
+    )
+
+
+def _output_role(image):
+    meta_obj = _meta_from_image(image)
+    if _is_vesselboost_source_image_header_output(meta_obj):
+        return "segment_source_image_header"
+    if _get_meta_text(meta_obj, "ImageTypeValue4") == VESSELBOOST_ORIGINAL_LABEL:
+        return "original_passthrough"
+    if _get_meta_int(meta_obj, "Keep_image_geometry") == 0:
+        return "segment_reformat"
+    return "image"
+
+
+def _send_batch_summary(context, images):
+    images = list(images)
+    series = _ordered_unique_strings(
+        int(image.image_series_index) for image in images
+    )
+    keep_geometry = _ordered_unique_strings(
+        _get_meta_text(_meta_from_image(image), "Keep_image_geometry") or "missing"
+        for image in images
+    )
+    names = _ordered_unique_strings(
+        _get_meta_text(_meta_from_image(image), "SeriesDescription") or "missing"
+        for image in images
+    )
+    targets = _ordered_unique_strings(_output_role(image) for image in images)
+    return (
+        "VESSELBOOST_OPENRECON_BATCH context=%s images=%d target=%s "
+        "series=%s keep_geometry=%s names=%s"
+        % (
+            context,
+            len(images),
+            "+".join(targets) if targets else "empty",
+            ",".join(series) if series else "empty",
+            ",".join(keep_geometry) if keep_geometry else "empty",
+            "|".join(names) if names else "empty",
+        )
+    )
+
+
 def _send_images_by_series(connection, images, context: str = "images") -> None:
     """Send MRD images in series-preserving chunks."""
     if images is None:
@@ -2186,6 +2668,7 @@ def _send_images_by_series(connection, images, context: str = "images") -> None:
                 time.sleep(delay_seconds)
             delayed_series.add(batch_series)
 
+        logging.info(_send_batch_summary(context, batch))
         for chunk_start in range(0, len(batch), chunk_size):
             chunk = batch[chunk_start:chunk_start + chunk_size]
             chunk_summary = _format_chunk_image_summary(chunk)
@@ -2582,18 +3065,18 @@ def process_image(images, connection, config, metadata):
         sorted(set(source_series_indices)),
     )
     imagesOut = []
+    original_output_images = []
     if original_series_index is not None:
         ordered_original_images = [
             original_images[index] for index in slice_sort_indices
         ]
-        imagesOut.extend(
-            _build_vesselboost_original_images(
-                ordered_original_images,
-                ordered_images,
-                source_identity,
-                original_series_index,
-            )
+        original_output_images = _build_vesselboost_original_images(
+            ordered_original_images,
+            ordered_images,
+            source_identity,
+            original_series_index,
         )
+        imagesOut.extend(original_output_images)
 
     legacy_option = None
     if isinstance(config, dict):
@@ -2999,27 +3482,27 @@ def process_image(images, connection, config, metadata):
             f"output_z={volume_yxz.shape[-1]} input_images={len(head)}"
         )
 
-    imagesOut.extend(
-        _build_vesselboost_segmentation_images(
-            volume_yxz=volume_yxz,
-            ordered_source_images=ordered_images,
-            source_identity=source_identity,
-            output_identity=segmentation_identity,
-            series_index=segmentation_series_index,
-            max_val=maxVal,
-        )
+    segmentation_images = _build_vesselboost_segmentation_images(
+        volume_yxz=volume_yxz,
+        ordered_source_images=ordered_images,
+        source_identity=source_identity,
+        output_identity=segmentation_identity,
+        series_index=segmentation_series_index,
+        max_val=maxVal,
     )
+    imagesOut.extend(segmentation_images)
 
     if original_series_index is not None:
         logging.info(
             "VesselBoost send order is source-geometry originals first, then "
-            "source-geometry 2D segmentation images"
+            "source-image-header 2D segmentation images"
         )
     else:
-        logging.info("VesselBoost send order is source-geometry 2D segmentation images")
+        logging.info("VesselBoost send order is source-image-header 2D segmentation images")
 
     if reslice_sagittal or reslice_coronal:
         base_series = segmentation_series_index + 1
+        reformat_images = []
 
         if reslice_sagittal:
             sagittal_identity = _build_openrecon_output_identity(
@@ -3032,20 +3515,20 @@ def process_image(images, connection, config, metadata):
                 base_series,
                 sagittal_identity["series_description"],
             )
-            imagesOut.extend(
-                _build_reformatted_images(
-                    volume_yxz=volume_yxz,
-                    head_template=head[0],
-                    source_image=ordered_images[0],
-                    source_identity=source_identity,
-                    output_identity=sagittal_identity,
-                    voxel_size=voxel_size,
-                    fov=fov,
-                    orientation="sagittal",
-                    series_index=base_series,
-                    max_val=maxVal,
-                )
+            sagittal_images = _build_reformatted_images(
+                volume_yxz=volume_yxz,
+                head_template=head[0],
+                source_image=ordered_images[0],
+                source_identity=source_identity,
+                output_identity=sagittal_identity,
+                voxel_size=voxel_size,
+                fov=fov,
+                orientation="sagittal",
+                series_index=base_series,
+                max_val=maxVal,
             )
+            imagesOut.extend(sagittal_images)
+            reformat_images.extend(sagittal_images)
             base_series += 1
 
         if reslice_coronal:
@@ -3059,20 +3542,44 @@ def process_image(images, connection, config, metadata):
                 base_series,
                 coronal_identity["series_description"],
             )
-            imagesOut.extend(
-                _build_reformatted_images(
-                    volume_yxz=volume_yxz,
-                    head_template=head[0],
-                    source_image=ordered_images[0],
-                    source_identity=source_identity,
-                    output_identity=coronal_identity,
-                    voxel_size=voxel_size,
-                    fov=fov,
-                    orientation="coronal",
-                    series_index=base_series,
-                    max_val=maxVal,
-                )
+            coronal_images = _build_reformatted_images(
+                volume_yxz=volume_yxz,
+                head_template=head[0],
+                source_image=ordered_images[0],
+                source_identity=source_identity,
+                output_identity=coronal_identity,
+                voxel_size=voxel_size,
+                fov=fov,
+                orientation="coronal",
+                series_index=base_series,
+                max_val=maxVal,
             )
+            imagesOut.extend(coronal_images)
+            reformat_images.extend(coronal_images)
+    else:
+        reformat_images = []
+
+    postprocessing_target = (
+        "originals+segment_2d_source_image_header"
+        if original_series_index is not None
+        else "segment_2d_source_image_header"
+    )
+    logging.info(
+        "Configured outputs: original=%s segment=True "
+        "segmentheadergeometry=2d_source_image_header postprocessing_target=%s "
+        "reformat_sagittal=%s reformat_coronal=%s",
+        original_series_index is not None,
+        postprocessing_target,
+        reslice_sagittal,
+        reslice_coronal,
+    )
+    logging.info("VESSELBOOST_OPENRECON_POSTPROCESSING target=%s", postprocessing_target)
+    logging.info(
+        "Sending %d original image(s), %d segmentation image(s), and %d reformat image(s)",
+        len(original_output_images),
+        len(segmentation_images),
+        len(reformat_images),
+    )
 
     _validate_vesselboost_output_contract(
         imagesOut,

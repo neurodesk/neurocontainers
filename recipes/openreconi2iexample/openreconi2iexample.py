@@ -143,6 +143,9 @@ SEGMENT_OUTPUT_GEOMETRIES = (
 SEGMENT_DELIVERY_MODE_EXCLUDE = "explicit_volume_derived_header"
 SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D = "3d_series_segment_header"
 SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D = "2d_segment_header"
+SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS = (
+    "2d_segment_header_originals"
+)
 SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER = (
     "2d_derived_image_header"
 )
@@ -153,6 +156,7 @@ SEGMENT_DELIVERY_MODES = (
     SEGMENT_DELIVERY_MODE_EXCLUDE,
     SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
     SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D,
+    SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS,
     SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER,
     SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER,
 )
@@ -222,9 +226,14 @@ def process(connection, config, metadata):
             segment_delivery_mode
             in (
                 SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D,
+                SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS,
                 SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER,
                 SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER,
             )
+        )
+        segment_scanner_postprocessing = (
+            segment_delivery_mode
+            != SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS
         )
         send_segment_3d_source_geometry = (
             segment_delivery_mode == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D
@@ -297,6 +306,7 @@ def process(connection, config, metadata):
                     stamp_with_derived_image_header=(
                         stamp_segment_with_derived_image_header
                     ),
+                    scanner_postprocessing=segment_scanner_postprocessing,
                 )
             else:
                 computed_segment_images = _segment_images(
@@ -462,6 +472,13 @@ def _scanner_postprocessing_target(
         if send_original:
             return "originals"
         return "none_segment_excluded"
+    if (
+        send_segment
+        and segment_delivery_mode == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS
+    ):
+        if send_original:
+            return "originals"
+        return "none_segment_not_postprocessed"
     if (
         send_segment
         and segment_delivery_mode
@@ -870,6 +887,7 @@ def _segment_images_for_postprocessing(
     metrics_rows=None,
     stamp_for_postprocessing=True,
     stamp_with_derived_image_header=False,
+    scanner_postprocessing=True,
 ):
     if not images:
         return []
@@ -968,6 +986,7 @@ def _segment_images_for_postprocessing(
                 series_identity["series_name"],
                 extra_meta,
                 series_identity,
+                scanner_postprocessing=scanner_postprocessing,
             )
             outputs.append(output)
 
@@ -985,6 +1004,8 @@ def _segment_images_for_postprocessing(
             if stamp_for_postprocessing
             else SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER
             if stamp_with_derived_image_header
+            else SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS
+            if not scanner_postprocessing
             else SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D
         ),
         use_colormap,
@@ -2433,7 +2454,7 @@ def _stamp_original_image(
     header.image_series_index = series_index
     header.image_index = output_index + 1
     output.setHead(header)
-    storage_fields = _original_storage_fields(output, output_index)
+    storage_fields = _original_storage_fields(source_image, output_index, output)
     output.image_series_index = series_index
     output.attribute_string = _original_passthrough_meta(
         source_image,
@@ -2490,6 +2511,7 @@ def _stamp_segment_source_image_header_image(
     series_name,
     extra_meta,
     series_identity=None,
+    scanner_postprocessing=True,
 ):
     header = output.getHead()
     header.image_series_index = series_index
@@ -2499,7 +2521,7 @@ def _stamp_segment_source_image_header_image(
     else:
         header.image_type = ismrmrd.IMTYPE_MAGNITUDE
     output.setHead(header)
-    storage_fields = _original_storage_fields(output, output_index)
+    storage_fields = _original_storage_fields(source_image, output_index, output)
     output.image_series_index = series_index
     output.attribute_string = _segment_source_image_header_meta(
         source_image,
@@ -2510,6 +2532,7 @@ def _stamp_segment_source_image_header_image(
         extra_meta,
         series_identity,
         storage_fields,
+        scanner_postprocessing=scanner_postprocessing,
     ).serialize()
     return output
 
@@ -2522,6 +2545,7 @@ def _stamp_segment_derived_image_header_image(
     series_name,
     extra_meta,
     series_identity=None,
+    scanner_postprocessing=True,
 ):
     header = output.getHead()
     header.image_series_index = series_index
@@ -2531,7 +2555,7 @@ def _stamp_segment_derived_image_header_image(
     else:
         header.image_type = ismrmrd.IMTYPE_MAGNITUDE
     output.setHead(header)
-    storage_fields = _original_storage_fields(output, output_index)
+    storage_fields = _original_storage_fields(source_image, output_index, output)
     output.image_series_index = series_index
     output.attribute_string = _segment_derived_image_header_meta(
         source_image,
@@ -2542,6 +2566,7 @@ def _stamp_segment_derived_image_header_image(
         extra_meta,
         series_identity,
         storage_fields,
+        scanner_postprocessing=scanner_postprocessing,
     ).serialize()
     return output
 
@@ -2554,6 +2579,7 @@ def _stamp_segment_source_geometry_image(
     series_name,
     extra_meta,
     series_identity=None,
+    scanner_postprocessing=True,
 ):
     header = output.getHead()
     header.image_series_index = series_index
@@ -2563,7 +2589,7 @@ def _stamp_segment_source_geometry_image(
     else:
         header.image_type = ismrmrd.IMTYPE_MAGNITUDE
     output.setHead(header)
-    storage_fields = _original_storage_fields(output, output_index)
+    storage_fields = _original_storage_fields(source_image, output_index, output)
     output.image_series_index = series_index
     output.attribute_string = _segment_source_geometry_meta(
         source_image,
@@ -2574,6 +2600,7 @@ def _stamp_segment_source_geometry_image(
         extra_meta,
         series_identity,
         storage_fields,
+        scanner_postprocessing=scanner_postprocessing,
     ).serialize()
     return output
 
@@ -2652,6 +2679,7 @@ def _segment_source_geometry_meta(
     image_processing_history=None,
     image_type=None,
     image_type_value4=None,
+    scanner_postprocessing=True,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
@@ -2678,14 +2706,16 @@ def _segment_source_geometry_meta(
         "PYTHON",
         "OPENRECON_SEGMENT_SOURCE_GEOMETRY",
     ]
-    child_role = _segment_postprocessing_child_role(series_index)
-    exam_data_role = _format_exam_data_role_sequential_number(child_role)
+    child_role = None
+    exam_data_role = None
+    if scanner_postprocessing:
+        child_role = _segment_postprocessing_child_role(series_index)
+        exam_data_role = _format_exam_data_role_sequential_number(child_role)
 
     meta["DataRole"] = data_role
     meta["ImageProcessingHistory"] = image_processing_history
     meta["ImageType"] = image_type
     meta["DicomImageType"] = image_type
-    meta["ExamDataRole"] = exam_data_role
     meta["SeriesDescription"] = series_name
     meta["SequenceDescription"] = series_name
     meta["ProtocolName"] = series_name
@@ -2699,7 +2729,17 @@ def _segment_source_geometry_meta(
     _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
     _set_meta_scalar(meta, "Keep_image_geometry", 1)
     _set_meta_scalar(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY, 1)
-    _set_meta_scalar(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY, child_role)
+    if scanner_postprocessing:
+        meta["ExamDataRole"] = exam_data_role
+        _set_meta_scalar(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY, child_role)
+    else:
+        for key in (
+            "ExamDataRole",
+            SEGMENT_POSTPROCESSING_META_KEY,
+            SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY,
+        ):
+            if key in meta:
+                del meta[key]
     _ensure_original_storage_meta(meta, output_image, output_index, storage_fields)
     for key, value in (extra_meta or {}).items():
         if value is not None:
@@ -2734,6 +2774,7 @@ def _segment_derived_image_header_meta(
     extra_meta,
     series_identity,
     storage_fields,
+    scanner_postprocessing=True,
 ):
     return _segment_source_geometry_meta(
         source_image,
@@ -2751,6 +2792,7 @@ def _segment_derived_image_header_meta(
         ],
         image_type=SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE,
         image_type_value4=SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE_VALUE4,
+        scanner_postprocessing=scanner_postprocessing,
     )
 
 
@@ -2763,6 +2805,7 @@ def _segment_source_image_header_meta(
     extra_meta,
     series_identity,
     storage_fields,
+    scanner_postprocessing=True,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
@@ -2788,14 +2831,16 @@ def _segment_source_image_header_meta(
         dicom_image_type,
         image_type_value4_tokens,
     ) = _source_postprocessing_image_type_identity(meta, minihead)
-    child_role = _segment_postprocessing_child_role(series_index)
-    exam_data_role = _format_exam_data_role_sequential_number(child_role)
+    child_role = None
+    exam_data_role = None
+    if scanner_postprocessing:
+        child_role = _segment_postprocessing_child_role(series_index)
+        exam_data_role = _format_exam_data_role_sequential_number(child_role)
 
     meta["DataRole"] = "Image"
     meta["ImageProcessingHistory"] = ["PYTHON", "OPENRECON_SEGMENT_SOURCE_IMAGE_HEADER"]
     meta["ImageType"] = image_type
     meta["DicomImageType"] = dicom_image_type
-    meta["ExamDataRole"] = exam_data_role
     meta["SeriesDescription"] = series_name
     meta["SequenceDescription"] = series_name
     meta["ProtocolName"] = series_name
@@ -2809,7 +2854,17 @@ def _segment_source_image_header_meta(
     _set_meta_scalar(meta, "Keep_image_geometry", 1)
     _set_meta_scalar(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY, 1)
     _set_meta_scalar(meta, SEGMENT_SOURCE_IMAGE_HEADER_META_KEY, 1)
-    _set_meta_scalar(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY, child_role)
+    if scanner_postprocessing:
+        meta["ExamDataRole"] = exam_data_role
+        _set_meta_scalar(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY, child_role)
+    else:
+        for key in (
+            "ExamDataRole",
+            SEGMENT_POSTPROCESSING_META_KEY,
+            SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY,
+        ):
+            if key in meta:
+                del meta[key]
     _ensure_original_storage_meta(meta, output_image, output_index, storage_fields)
     for key, value in (extra_meta or {}).items():
         if value is not None:
@@ -3022,15 +3077,17 @@ def _output_position_storage_fields(output_index):
     }
 
 
-def _original_storage_fields(source_image, output_index):
+def _original_storage_fields(source_image, output_index, stream_image=None):
     header = source_image.getHead()
+    stream_header = (stream_image or source_image).getHead()
     header_slice = int(header.slice)
-    header_image_index = max(int(header.image_index), 1)
+    header_image_index = max(int(stream_header.image_index), 1)
     stream_index = header_image_index - 1
     slice_index = header_slice if header_slice >= 0 else output_index
+    partition_index = _source_partition_storage_index(source_image, slice_index)
     return {
-        "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
-        "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+        "Actual3DImagePartNumber": partition_index,
+        "AnatomicalPartitionNo": partition_index,
         "AnatomicalSliceNo": slice_index,
         "ChronSliceNo": stream_index,
         "NumberInSeries": header_image_index,
@@ -3050,6 +3107,42 @@ def _ensure_original_storage_meta(
         storage_fields = _original_storage_fields(source_image, output_index)
     for key in storage_fields:
         _set_meta_scalar(meta, key, storage_fields[key])
+
+
+def _source_partition_storage_index(source_image, fallback_slice_index):
+    partition_count = _source_partition_count_hint([source_image])
+    if partition_count is None or partition_count <= 1:
+        return SCANNER_PARTITION_INDEX
+
+    for key in (
+        "Actual3DImagePartNumber",
+        "Actual3DImaPartNumber",
+        "AnatomicalPartitionNo",
+    ):
+        value = _source_storage_int(source_image, key)
+        if value is not None and 0 <= value < partition_count:
+            return value
+
+    return _expected_partition_storage_index(fallback_slice_index, partition_count)
+
+
+def _expected_partition_storage_index(slice_index, partition_count):
+    if partition_count is None or partition_count <= 1:
+        return SCANNER_PARTITION_INDEX
+
+    slice_index = int(slice_index)
+    if 0 <= slice_index < partition_count:
+        return slice_index
+
+    return SCANNER_PARTITION_INDEX
+
+
+def _source_storage_int(image, key):
+    meta_value = _meta_int(_meta_from_image(image), key)
+    if meta_value is not None:
+        return meta_value
+
+    return _minihead_long_value(_image_minihead(image), key)
 
 
 def _meta_from_image(image):
@@ -3475,10 +3568,13 @@ def _patch_segment_postprocessing_ice_minihead(
         image_type_value4_tokens,
     )
     changed = changed or did_change
-    current_text, did_change = _replace_or_insert_minihead_exam_data_role(
-        current_text,
-        exam_data_role,
-    )
+    if exam_data_role:
+        current_text, did_change = _replace_or_insert_minihead_exam_data_role(
+            current_text,
+            exam_data_role,
+        )
+    else:
+        current_text, did_change = _remove_minihead_exam_data_role(current_text)
     changed = changed or did_change
     current_text, did_change = _strip_scanner_write_unsafe_minihead(current_text)
     changed = changed or did_change
@@ -3601,6 +3697,15 @@ def _replace_or_insert_minihead_exam_data_role(minihead_text, exam_data_role):
         "ExamDataRole",
         exam_data_role,
     )
+
+
+def _remove_minihead_exam_data_role(minihead_text):
+    pattern = re.compile(
+        r'^\s*<ParamString\."ExamDataRole">\s*\{\s*".*?</DataRole>"\s*\}\s*\n?',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    updated_text, count = pattern.subn("", minihead_text)
+    return updated_text, bool(count)
 
 
 def _insert_minihead_string_param_in_map(minihead_text, map_name, name, value):
@@ -3839,6 +3944,7 @@ def _validate_output_images(output_images, input_images):
     seen_sop_uids = {}
     source_image_count = len(input_images)
     source_slice_count = _source_geometry_slice_limit(input_images) or source_image_count
+    source_partition_count = _source_partition_count_hint(input_images)
     input_identity = _identity_values(input_images)
     input_has_minihead = any(_image_minihead(image) for image in input_images)
     series_identity = {}
@@ -3909,6 +4015,7 @@ def _validate_output_images(output_images, input_images):
                 source_slice_count,
                 source_image_count,
             ),
+            source_partition_count,
             errors,
         )
 
@@ -4022,12 +4129,17 @@ def _validate_storage_fields(
     seen_minihead_storage_keys,
     seen_sop_uids,
     series_slice_limit,
+    source_partition_count,
     errors,
 ):
     header = image.getHead()
     header_slice = int(header.slice)
     header_image_index = int(header.image_index)
     header_matrix_z = int(header.matrix_size[2])
+    partition_storage_index = _expected_partition_storage_index(
+        header_slice,
+        source_partition_count,
+    )
     keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
     image_type_value4 = _meta_text(meta, "ImageTypeValue4")
     is_original_output = _is_original_series_index(int(image.image_series_index))
@@ -4186,8 +4298,8 @@ def _validate_storage_fields(
                 f"expected {expected_child_role}"
             )
         expected_position_fields = {
-            "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
-            "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+            "Actual3DImagePartNumber": partition_storage_index,
+            "AnatomicalPartitionNo": partition_storage_index,
             "AnatomicalSliceNo": header_slice,
             "ChronSliceNo": header_image_index - 1,
             "NumberInSeries": header_image_index,
@@ -4236,12 +4348,12 @@ def _validate_storage_fields(
             )
         elif (
             actual_part_value is not None
-            and actual_part_value != SCANNER_PARTITION_INDEX
+            and actual_part_value != partition_storage_index
         ):
             errors.append(
                 f"image {index} has segment source-image-header IceMiniHead "
                 f"Actual3DImaPartNumber={actual_part_value}, "
-                f"expected {SCANNER_PARTITION_INDEX}"
+                f"expected {partition_storage_index}"
             )
         _validate_source_like_minihead_storage_maps(
             index,
@@ -4343,26 +4455,38 @@ def _validate_storage_fields(
                 f"image {index} is missing {segment_context} "
                 f"{SEGMENT_DERIVED_IMAGE_HEADER_META_KEY}=1"
             )
-        if child_role_value != expected_child_role:
-            errors.append(
-                f"image {index} has {segment_context} child role "
-                f"{child_role_value}, expected {expected_child_role}"
-            )
-        if meta_exam_data_role != expected_child_role:
-            errors.append(
-                f"image {index} has {segment_context} Meta ExamDataRole "
-                f"SequentialNumber={meta_exam_data_role}, expected "
-                f"{expected_child_role}"
-            )
-        if minihead and minihead_exam_data_role != expected_child_role:
-            errors.append(
-                f"image {index} has {segment_context} IceMiniHead ExamDataRole "
-                f"SequentialNumber={minihead_exam_data_role}, expected "
-                f"{expected_child_role}"
-            )
+        if child_role_value is None:
+            if _meta_text(meta, "ExamDataRole"):
+                errors.append(
+                    f"image {index} has {segment_context} Meta ExamDataRole "
+                    "without a scanner postprocessing child role"
+                )
+            if minihead and minihead_exam_data_role is not None:
+                errors.append(
+                    f"image {index} has {segment_context} IceMiniHead "
+                    "ExamDataRole without a scanner postprocessing child role"
+                )
+        else:
+            if child_role_value != expected_child_role:
+                errors.append(
+                    f"image {index} has {segment_context} child role "
+                    f"{child_role_value}, expected {expected_child_role}"
+                )
+            if meta_exam_data_role != expected_child_role:
+                errors.append(
+                    f"image {index} has {segment_context} Meta ExamDataRole "
+                    f"SequentialNumber={meta_exam_data_role}, expected "
+                    f"{expected_child_role}"
+                )
+            if minihead and minihead_exam_data_role != expected_child_role:
+                errors.append(
+                    f"image {index} has {segment_context} IceMiniHead ExamDataRole "
+                    f"SequentialNumber={minihead_exam_data_role}, expected "
+                    f"{expected_child_role}"
+                )
         expected_position_fields = {
-            "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
-            "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+            "Actual3DImagePartNumber": partition_storage_index,
+            "AnatomicalPartitionNo": partition_storage_index,
             "AnatomicalSliceNo": header_slice,
             "ChronSliceNo": header_image_index - 1,
             "NumberInSeries": header_image_index,
@@ -4410,12 +4534,12 @@ def _validate_storage_fields(
             )
         elif (
             actual_part_value is not None
-            and actual_part_value != SCANNER_PARTITION_INDEX
+            and actual_part_value != partition_storage_index
         ):
             errors.append(
                 f"image {index} has {segment_context} IceMiniHead "
                 f"Actual3DImaPartNumber={actual_part_value}, "
-                f"expected {SCANNER_PARTITION_INDEX}"
+                f"expected {partition_storage_index}"
             )
         _validate_source_like_minihead_storage_maps(
             index,
@@ -4511,8 +4635,8 @@ def _validate_storage_fields(
                     f"{field}={value}, expected 0"
                 )
         expected_position_fields = {
-            "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
-            "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+            "Actual3DImagePartNumber": partition_storage_index,
+            "AnatomicalPartitionNo": partition_storage_index,
             "AnatomicalSliceNo": stream_index,
             "ChronSliceNo": stream_index,
             "NumberInSeries": header_image_index,
@@ -4560,12 +4684,12 @@ def _validate_storage_fields(
             )
         elif (
             actual_part_value is not None
-            and actual_part_value != SCANNER_PARTITION_INDEX
+            and actual_part_value != partition_storage_index
         ):
             errors.append(
                 f"image {index} has segment postprocessing IceMiniHead "
                 f"Actual3DImaPartNumber={actual_part_value}, "
-                f"expected {SCANNER_PARTITION_INDEX}"
+                f"expected {partition_storage_index}"
             )
         _validate_source_like_minihead_storage_maps(
             index,
@@ -4576,8 +4700,8 @@ def _validate_storage_fields(
 
     elif not is_original_output:
         expected_position_fields = {
-            "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
-            "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+            "Actual3DImagePartNumber": partition_storage_index,
+            "AnatomicalPartitionNo": partition_storage_index,
             "AnatomicalSliceNo": header_slice,
             "ChronSliceNo": header_slice,
             "NumberInSeries": int(header.image_index),
@@ -4638,8 +4762,8 @@ def _validate_storage_fields(
         )
     elif is_original_output:
         expected_original_fields = {
-            "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
-            "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+            "Actual3DImagePartNumber": partition_storage_index,
+            "AnatomicalPartitionNo": partition_storage_index,
             "AnatomicalSliceNo": header_slice,
             "ChronSliceNo": header_image_index - 1,
             "NumberInSeries": header_image_index,
@@ -4672,12 +4796,12 @@ def _validate_storage_fields(
             )
         elif (
             actual_part_value is not None
-            and actual_part_value != SCANNER_PARTITION_INDEX
+            and actual_part_value != partition_storage_index
         ):
             errors.append(
                 f"image {index} has original IceMiniHead "
                 f"Actual3DImaPartNumber={actual_part_value}, "
-                f"expected {SCANNER_PARTITION_INDEX}"
+                f"expected {partition_storage_index}"
             )
         _validate_source_like_minihead_storage_maps(
             index,

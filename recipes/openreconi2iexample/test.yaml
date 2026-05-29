@@ -335,18 +335,18 @@ tests:
           source_meta = ismrmrd.Meta.deserialize(source_image.attribute_string)
           source_header = source_image.getHead()
           source_has_minihead = bool(first(source_meta.get("IceMiniHead")))
+          expected_storage_fields = module._original_storage_fields(
+              source_image,
+              output_index
+              if output_index is not None
+              else int(image.getHead().image_index) - 1,
+              image,
+          )
+
           def expected_original_storage_int(key):
-              if key in (
-                  "Actual3DImagePartNumber",
-                  "Actual3DImaPartNumber",
-                  "AnatomicalPartitionNo",
-              ):
-                  return module.SCANNER_PARTITION_INDEX
-              if key == "NumberInSeries":
-                  return int(image.getHead().image_index)
-              if key == "ChronSliceNo":
-                  return int(image.getHead().image_index) - 1
-              return int(source_header.slice)
+              if key == "Actual3DImaPartNumber":
+                  key = "Actual3DImagePartNumber"
+              return int(expected_storage_fields[key])
 
           expected_header_image_index = (
               output_index + 1
@@ -412,14 +412,7 @@ tests:
               "ProtocolSliceNumber",
               "IsmrmrdSliceNo",
           ):
-              if key in (
-                  "Actual3DImagePartNumber",
-                  "Actual3DImaPartNumber",
-                  "AnatomicalPartitionNo",
-              ):
-                  expected_value = module.SCANNER_PARTITION_INDEX
-              else:
-                  expected_value = expected_original_storage_int(key)
+              expected_value = expected_original_storage_int(key)
               assert minihead_long(image, key) == expected_value, key
           dicom_map = minihead_map_text(image, "DICOM")
           control_map = minihead_map_text(image, "CONTROL")
@@ -461,6 +454,11 @@ tests:
           expected_slice_index = source_slice if source_slice >= 0 else output_index
           source_has_minihead = bool(first(source_meta.get("IceMiniHead")))
           source_minihead = minihead_text(source_image) if source_has_minihead else ""
+          expected_storage_fields = module._original_storage_fields(
+              source_image,
+              output_index,
+              image,
+          )
           (
               expected_image_type,
               expected_dicom_image_type,
@@ -474,17 +472,9 @@ tests:
           )
 
           def expected_storage_int(key):
-              if key in (
-                  "Actual3DImagePartNumber",
-                  "Actual3DImaPartNumber",
-                  "AnatomicalPartitionNo",
-              ):
-                  return module.SCANNER_PARTITION_INDEX
-              if key == "NumberInSeries":
-                  return expected_header_image_index
-              if key == "ChronSliceNo":
-                  return expected_header_image_index - 1
-              return expected_slice_index
+              if key == "Actual3DImaPartNumber":
+                  key = "Actual3DImagePartNumber"
+              return int(expected_storage_fields[key])
 
           assert first(meta.get("DataRole")) == "Image"
           assert first(meta.get("ImageType")) == expected_image_type
@@ -618,6 +608,7 @@ tests:
           expected_image_type_value4=None,
           expected_derived_image_header=False,
           expect_minihead=True,
+          expect_scanner_postprocessing=True,
       ):
           meta = ismrmrd.Meta.deserialize(image.attribute_string)
           source_header = source_image.getHead()
@@ -637,22 +628,19 @@ tests:
               expected_header_image_index = output_index + 1
           source_slice = int(source_header.slice)
           expected_slice_index = source_slice if source_slice >= 0 else output_index
+          expected_storage_fields = module._original_storage_fields(
+              source_image,
+              output_index,
+              image,
+          )
           expected_child_role = module._segment_postprocessing_child_role(
               expected_series_index
           )
 
           def expected_storage_int(key):
-              if key in (
-                  "Actual3DImagePartNumber",
-                  "Actual3DImaPartNumber",
-                  "AnatomicalPartitionNo",
-              ):
-                  return module.SCANNER_PARTITION_INDEX
-              if key == "NumberInSeries":
-                  return expected_header_image_index
-              if key == "ChronSliceNo":
-                  return expected_header_image_index - 1
-              return expected_slice_index
+              if key == "Actual3DImaPartNumber":
+                  key = "Actual3DImagePartNumber"
+              return int(expected_storage_fields[key])
 
           assert first(meta.get("DataRole")) == expected_data_role
           assert first(meta.get("ImageType")) == expected_image_type
@@ -679,9 +667,13 @@ tests:
                   expected_output_geometry
               )
           assert first(meta.get(module.SEGMENT_POSTPROCESSING_META_KEY)) is None
-          assert int(first(meta.get(module.SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY))) == (
-              expected_child_role
-          )
+          if expect_scanner_postprocessing:
+              assert int(first(meta.get(module.SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY))) == (
+                  expected_child_role
+              )
+          else:
+              assert first(meta.get(module.SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)) is None
+              assert first(meta.get("ExamDataRole")) is None
           assert_header_geometry_meta(image)
           assert image.image_series_index == expected_series_index
           assert image.getHead().image_series_index == expected_series_index
@@ -713,7 +705,10 @@ tests:
           assert minihead_value(image, "ImageType") == expected_image_type
           assert not minihead_value(image, "ImageTypeValue3")
           assert not minihead_array_tokens(image, "ImageTypeValue3")
-          assert minihead_exam_data_role_number(image) == expected_child_role
+          if expect_scanner_postprocessing:
+              assert minihead_exam_data_role_number(image) == expected_child_role
+          else:
+              assert minihead_exam_data_role_number(image) is None
           assert minihead_array_tokens(image, "ImageTypeValue4") == [
               expected_image_type_value4
           ]
@@ -1725,6 +1720,34 @@ tests:
       assert [minihead_long(image, "ChronSliceNo") for image in stale_counter_originals] == [0, 1, 2, 3]
       assert [minihead_long(image, "NumberInSeries") for image in stale_counter_originals] == [1, 2, 3, 4]
       module._validate_output_images(stale_counter_originals, stale_counter_sources)
+
+      dixon_partition_source = make_image(395, source_partition_count=416)
+      dixon_partition_meta = ismrmrd.Meta.deserialize(
+          dixon_partition_source.attribute_string
+      )
+      dixon_partition_meta["Actual3DImagePartNumber"] = "395"
+      dixon_partition_meta["AnatomicalPartitionNo"] = "395"
+      dixon_partition_meta["NumberOfSlices"] = "416"
+      dixon_partition_source.attribute_string = dixon_partition_meta.serialize()
+      dixon_partition_original = module._restamp_originals(
+          [dixon_partition_source]
+      )[0]
+      dixon_partition_original_meta = ismrmrd.Meta.deserialize(
+          dixon_partition_original.attribute_string
+      )
+      assert int(first(
+          dixon_partition_original_meta.get("Actual3DImagePartNumber")
+      )) == 395
+      assert int(first(
+          dixon_partition_original_meta.get("AnatomicalPartitionNo")
+      )) == 395
+      assert minihead_long(dixon_partition_original, "Actual3DImagePartNumber") == 395
+      assert minihead_long(dixon_partition_original, "Actual3DImaPartNumber") == 395
+      assert minihead_long(dixon_partition_original, "AnatomicalPartitionNo") == 395
+      module._validate_output_images(
+          [dixon_partition_original],
+          [dixon_partition_source],
+      )
 
       siemens_blank_source = make_image(0)
       siemens_blank_meta = ismrmrd.Meta.deserialize(
@@ -2952,6 +2975,63 @@ tests:
           segment_after_original_sources,
       )
 
+      segment_originals_only_sources = [make_sparse_image(i) for i in range(4)]
+      segment_originals_only_connection = FakeConnection(
+          segment_originals_only_sources + [None]
+      )
+      module.process(
+          segment_originals_only_connection,
+          {
+              "parameters": {
+                  "segment": True,
+                  "segmentheadergeometry": module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS,
+                  "sendoriginal": True,
+              }
+          },
+          None,
+      )
+      assert segment_originals_only_connection.logging == []
+      assert len(segment_originals_only_connection.sent_images) == 2
+      segment_originals_only_original_batch = (
+          segment_originals_only_connection.sent_images[0]
+      )
+      segment_originals_only_segment_batch = (
+          segment_originals_only_connection.sent_images[1]
+      )
+      assert [
+          int(image.image_series_index)
+          for image in segment_originals_only_original_batch
+      ] == [module.ORIGINAL_SERIES_INDEX] * 4
+      assert [
+          int(image.image_series_index)
+          for image in segment_originals_only_segment_batch
+      ] == [module.SEGMENT_SERIES_INDEX] * 4
+      assert "target=segment_source_geometry" in module._send_batch_summary(
+          2,
+          2,
+          segment_originals_only_segment_batch,
+      )
+      segment_originals_only_outputs = (
+          segment_originals_only_original_batch
+          + segment_originals_only_segment_batch
+      )
+      for index, (segment_slice, source_image) in enumerate(
+          zip(segment_originals_only_segment_batch, segment_originals_only_sources)
+      ):
+          assert_segment_source_geometry_identity(
+              segment_slice,
+              source_image,
+              "i2i_example_send_org-segment",
+              module.SEGMENT_SERIES_INDEX,
+              index,
+              expected_output_geometry=module.SEGMENT_OUTPUT_GEOMETRY_2D,
+              expect_scanner_postprocessing=False,
+          )
+      module._validate_output_images(
+          segment_originals_only_outputs,
+          segment_originals_only_sources,
+      )
+
       multi_contrast_connection = FakeConnection(multi_contrast_images + [None])
       module.process(
           multi_contrast_connection,
@@ -3371,6 +3451,12 @@ tests:
           {"parameters": {"segmentheadergeometry": "2d_segment_header"}}
       ) == module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D
       assert module._segment_delivery_mode(
+          {"parameters": {"segmentheadergeometry": "2d_segment_header_originals"}}
+      ) == module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS
+      assert module._segment_delivery_mode(
+          {"parameters": {"segmentheadergeometry": "2d segment header originals"}}
+      ) == module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS
+      assert module._segment_delivery_mode(
           {"parameters": {"segmentheadergeometry": "3d_series_segment_header"}}
       ) == module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D
       assert module._segment_delivery_mode(
@@ -3418,6 +3504,16 @@ tests:
           True,
           module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER,
       ) == "originals+segment_2d_derived_image_header"
+      assert module._scanner_postprocessing_target(
+          True,
+          True,
+          module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS,
+      ) == "originals"
+      assert module._scanner_postprocessing_target(
+          False,
+          True,
+          module.SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS,
+      ) == "none_segment_not_postprocessed"
       assert module._scanner_postprocessing_target(
           False,
           True,

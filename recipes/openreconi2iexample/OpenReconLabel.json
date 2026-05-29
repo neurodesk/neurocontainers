@@ -95,6 +95,10 @@
           "name": { "en": "2D segmentation header" }
         },
         {
+          "id": "2d_segment_header_originals",
+          "name": { "en": "2D segmentation header, originals postprocessed" }
+        },
+        {
           "id": "2d_derived_image_header",
           "name": { "en": "2D derived image header" }
         },
@@ -104,7 +108,7 @@
         }
       ],
       "default": "2d_segment_header",
-      "information": { "en": "Choose the geometry and header identity used for Segment. Explicit volume sends one derived 3D volume with Keep_image_geometry=0 and DataRole=Image. 3D and 2D segmentation header modes keep Keep_image_geometry=1 and DataRole=Segmentation. 2D derived image header keeps source geometry with DataRole=Image and a derived ImageType. 2D source image header keeps source geometry with DataRole=Image and the source ImageType/ImageTypeValue4 identity." }
+      "information": { "en": "Choose the geometry, header identity, and scanner postprocessing stream used for Segment. Explicit volume sends one derived 3D volume with Keep_image_geometry=0 and DataRole=Image; scanner postprocessing uses originals only. 3D and 2D segmentation header modes keep Keep_image_geometry=1 and DataRole=Segmentation; scanner postprocessing uses the segment stream. 2D segmentation header, originals postprocessed keeps the same source geometry and segmentation header identity but leaves the segment stream without scanner postprocessing child-role metadata. 2D derived image header keeps source geometry with DataRole=Image and a derived ImageType. 2D source image header keeps source geometry with DataRole=Image and the source ImageType/ImageTypeValue4 identity. The two 2D image-header modes use originals plus the segment stream when originals are enabled." }
     },
     {
       "id": "segmentationcolormap",

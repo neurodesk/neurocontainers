@@ -372,7 +372,7 @@ def test_openrecon_does_not_expose_segmentation_postprocessing_toggle():
     wrapper_source = WRAPPER_PATH.read_text()
     assert 'boolean_checker(\n        "segmentpostprocessing"' not in wrapper_source
     assert "segment_postprocessing" not in wrapper_source
-    assert "source-geometry segmentation image(s)" in wrapper_source
+    assert "source-image-header segmentation image(s)" in wrapper_source
 
 
 def test_openrecon_exposes_debug_threshold_segment_toggle():
@@ -529,24 +529,31 @@ def test_sct_segment_outputs_source_geometry_2d_slices():
             "_extract_minihead_array_tokens",
             "_extract_minihead_string_value",
             "_first_non_empty_text",
+            "_format_exam_data_role_sequential_number",
+            "_get_meta_values",
             "_get_meta_text",
             "_patch_ice_minihead",
+            "_patch_source_image_header_ice_minihead",
             "_remove_minihead_array_param",
             "_remove_minihead_string_param",
             "_replace_minihead_array_token",
             "_replace_or_append_minihead_array_token",
+            "_replace_or_append_minihead_array_tokens",
+            "_replace_or_append_minihead_exam_data_role",
             "_replace_or_append_minihead_long_param",
             "_replace_or_append_minihead_string_param",
             "_sanitize_minihead_param_value",
             "_sct_output_to_source_geometry_images",
+            "_source_geometry_header_image_index",
+            "_source_geometry_header_slice",
+            "_source_postprocessing_image_type_identity",
             "_set_meta_scalar",
             "_set_output_position_meta",
-            "_strip_scanner_write_unsafe_meta",
             "_strip_source_parent_refs",
         ],
         assignments=[
             "SCANNER_PARTITION_INDEX",
-            "SCANNER_WRITE_UNSAFE_META_KEYS",
+            "SCT_SEGMENT_POSTPROCESSING_META_KEY",
             "SOURCE_PARENT_REFERENCE_META_KEYS",
             "SOURCE_PARENT_REFERENCE_META_PREFIXES",
         ],
@@ -587,20 +594,122 @@ def test_sct_segment_outputs_source_geometry_2d_slices():
         assert head.image_series_index == 2
         assert head.image_index == index + 1
         assert head.slice == index
-        assert meta["DataRole"] == "Segmentation"
-        assert meta["Keep_image_geometry"] == 1
-        assert meta["SegmentSourceGeometry"] == 1
+        assert meta["DataRole"] == "Image"
+        assert meta["Keep_image_geometry"] == "1"
+        assert meta["SegmentSourceGeometry"] == "1"
+        assert meta["SegmentSourceImageHeader"] == "1"
         assert "SegmentPostProcessing" not in meta
-        assert "SegmentPostProcessingChildRole" not in meta
+        assert meta["SegmentPostProcessingChildRole"] == "2"
+        assert meta["ExamDataRole"] == helpers["_format_exam_data_role_sequential_number"](2)
         assert meta["LUTFileName"] == "MicroDeltaHotMetal.pal"
-        assert meta["ImageTypeValue4"] == "sct_deepseg_spinalcord"
-        assert "ImageTypeValue3" not in meta
+        assert meta["ImageTypeValue4"] == ["NORM"]
+        assert meta["ImageTypeValue3"] == "M"
+        assert meta["ImageComment"] == "source_sct_deepseg_spinalcord"
+        assert meta["ImageComments"] == "source_sct_deepseg_spinalcord"
         assert meta["SOPInstanceUID"].startswith("2.25.")
         assert meta["SOPInstanceUID"] not in seen_sop_uids
         seen_sop_uids.add(meta["SOPInstanceUID"])
         minihead = base64.b64decode(meta["IceMiniHead"]).decode("utf-8")
-        assert "ImageTypeValue3" not in minihead
+        assert "SequentialNumber" in minihead
         assert "sct_deepseg_spinalcord" in minihead
+        assert helpers["_extract_minihead_array_tokens"](minihead, "ImageTypeValue4") == ["NORM"]
+
+
+def test_sct_segment_source_header_outputs_allow_interleaved_source_slice_order():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_as_image_list",
+            "_build_derived_series_instance_uid",
+            "_build_derived_sop_instance_uid",
+            "_build_sct_output_identity",
+            "_collect_non_empty_texts",
+            "_copy_meta",
+            "_decode_ice_minihead",
+            "_encode_ice_minihead",
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_format_exam_data_role_sequential_number",
+            "_get_image_series_index",
+            "_get_meta_values",
+            "_get_meta_text",
+            "_identity_values",
+            "_image_minihead",
+            "_meta_from_image",
+            "_meta_int",
+            "_minihead_long_value",
+            "_patch_ice_minihead",
+            "_patch_source_image_header_ice_minihead",
+            "_remove_minihead_array_param",
+            "_remove_minihead_string_param",
+            "_replace_minihead_array_token",
+            "_replace_or_append_minihead_array_token",
+            "_replace_or_append_minihead_array_tokens",
+            "_replace_or_append_minihead_exam_data_role",
+            "_replace_or_append_minihead_long_param",
+            "_replace_or_append_minihead_string_param",
+            "_sanitize_minihead_param_value",
+            "_sct_output_to_source_geometry_images",
+            "_series_contract_role",
+            "_series_slice_limit",
+            "_source_geometry_header_image_index",
+            "_source_geometry_header_slice",
+            "_source_postprocessing_image_type_identity",
+            "_set_meta_scalar",
+            "_set_output_position_meta",
+            "_strip_source_parent_refs",
+            "_validate_identity_fields",
+            "_validate_output_images",
+            "_validate_storage_fields",
+        ],
+        assignments=[
+            "SCANNER_PARTITION_INDEX",
+            "SCT_SEGMENT_POSTPROCESSING_META_KEY",
+            "SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY",
+            "SOURCE_PARENT_REFERENCE_META_KEYS",
+            "SOURCE_PARENT_REFERENCE_META_PREFIXES",
+        ],
+    )
+    helpers["SCT_ANALYSIS_REGISTRY"] = {
+        "sct_deepseg_spinalcord": {"series_suffix": "sct_deepseg_spinalcord"}
+    }
+    source_layout = [(0, 1), (2, 2), (1, 3)]
+    source_images = []
+    for ordinal, (slice_index, image_index) in enumerate(source_layout):
+        image = _contract_image(
+            helpers,
+            series_index=1,
+            role="NORM",
+            series_uid="1.2.3",
+            sop_uid=f"1.2.3.4.{ordinal + 1}",
+            slice_index=slice_index,
+            source=True,
+        )
+        image.getHead().image_index = image_index
+        source_images.append(image)
+
+    outputs = helpers["_sct_output_to_source_geometry_images"](
+        np.zeros((2, 2, 3), dtype=np.int16),
+        "sct_deepseg_spinalcord",
+        source_images,
+        2,
+        1,
+        segmentation_colormap=False,
+        series_suffix="sct_deepseg_spinalcord",
+    )
+
+    for output, (slice_index, image_index) in zip(outputs, source_layout):
+        header = output.getHead()
+        meta = helpers["FakeMeta"].deserialize(output.attribute_string)
+        minihead = base64.b64decode(meta["IceMiniHead"]).decode("utf-8")
+        assert header.slice == slice_index
+        assert header.image_index == image_index
+        assert meta["SliceNo"] == str(slice_index)
+        assert meta["ChronSliceNo"] == str(image_index - 1)
+        assert helpers["_minihead_long_value"](minihead, "SliceNo") == slice_index
+        assert helpers["_minihead_long_value"](minihead, "ChronSliceNo") == image_index - 1
+
+    helpers["_validate_output_images"](outputs, source_images)
 
 
 def test_output_series_contract_rejects_input_series_index_reuse():
@@ -678,6 +787,7 @@ def _load_output_image_validator_helpers():
             "_first_non_empty_text",
             "_get_image_series_index",
             "_get_meta_text",
+            "_get_meta_values",
             "_identity_values",
             "_image_minihead",
             "_meta_from_image",
@@ -689,7 +799,10 @@ def _load_output_image_validator_helpers():
             "_validate_output_images",
             "_validate_storage_fields",
         ],
-        assignments=["SCANNER_PARTITION_INDEX"],
+        assignments=[
+            "SCANNER_PARTITION_INDEX",
+            "SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY",
+        ],
     )
 
 
@@ -1096,7 +1209,7 @@ def test_output_image_validator_rejects_derived_source_classifier_tokens():
         helpers["_validate_output_images"]([output_image], input_images)
     except ValueError as exc:
         message = str(exc)
-        assert "expected only sct_deepseg_spinalcord" in message
+        assert "expected ['sct_deepseg_spinalcord']" in message
         assert "unsafe scanner Meta ImageTypeValue3=M" in message
         assert "unsafe scanner IceMiniHead ImageTypeValue3=M" in message
     else:
@@ -1392,14 +1505,15 @@ def test_wrapper_patches_openrecon_derived_series_identity_like_musclemap():
     assert '"ProtocolName", sequence_description' in wrapper_source
     assert '"SeriesInstanceUID", series_instance_uid' in wrapper_source
     assert '"SOPInstanceUID", sop_instance_uid' in wrapper_source
-    assert 'oldHeader.image_index = iImg + 1' in wrapper_source
-    assert 'oldHeader.slice = iImg' in wrapper_source
-    assert 'oldHeader.image_index = source_image_index' not in wrapper_source
-    assert "_set_output_position_meta(tmpMeta, iImg)" in wrapper_source
+    assert 'oldHeader.image_index = _source_geometry_header_image_index(source_image, iImg)' in wrapper_source
+    assert 'oldHeader.slice = _source_geometry_header_slice(source_image, iImg)' in wrapper_source
+    assert "image_index=output_header_image_index" in wrapper_source
     assert "SCT segmentations are returned as source-geometry" in wrapper_source
     assert 'tmpMeta["Keep_image_geometry"] = 0' not in wrapper_source
-    assert 'tmpMeta["Keep_image_geometry"] = 1' in wrapper_source
-    assert 'tmpMeta["SegmentSourceGeometry"] = 1' in wrapper_source
+    assert 'tmpMeta["Keep_image_geometry"] = "1"' in wrapper_source
+    assert 'tmpMeta["SegmentSourceGeometry"] = "1"' in wrapper_source
+    assert 'tmpMeta["SegmentSourceImageHeader"] = "1"' in wrapper_source
+    assert 'tmpMeta["SegmentPostProcessingChildRole"] = str(int(output_series_index))' in wrapper_source
     assert 'tmpMeta["SegmentPostProcessing"] = 1' not in wrapper_source
     assert 'tmpMeta["partition_count"] = "1"' not in wrapper_source
     assert "Packed SCT output" not in wrapper_source
