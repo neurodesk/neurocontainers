@@ -678,6 +678,43 @@ tests:
           original_minihead_text,
           "ImageTypeValue3",
       )
+
+      # "Segmentation MIPs" mode: the segment is emitted as a primary magnitude
+      # series (no ExamDataRole / child role) so the scanner inline radial MIP
+      # includes it alongside the original-scan MIPs.
+      mip_segmentations = module._build_vesselboost_segmentation_images(
+          volume_yxz=volume_yxz,
+          ordered_source_images=sources,
+          source_identity=source_identity,
+          output_identity=segmentation_identity,
+          series_index=3,
+          max_val=4095,
+          scanner_postprocessing=False,
+      )
+      module._validate_vesselboost_output_contract(
+          originals + mip_segmentations,
+          [1],
+          source_identity,
+          "segmentation mips smoke",
+      )
+      mip_seg_meta = ismrmrd.Meta.deserialize(mip_segmentations[0].attribute_string)
+      mip_seg_minihead = base64.b64decode(
+          first(mip_seg_meta.get("IceMiniHead"))
+      ).decode("utf-8")
+      assert first(mip_seg_meta.get("ImageType")) == "ORIGINAL\\PRIMARY\\M\\TOF"
+      assert not first(mip_seg_meta.get("ImageTypeValue3"))
+      assert not first(mip_seg_meta.get("ExamDataRole"))
+      assert not first(
+          mip_seg_meta.get(module.VESSELBOOST_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)
+      )
+      assert first(mip_seg_meta.get(module.VESSELBOOST_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY)) == "1"
+      assert '<ParamString."ExamDataRole">' not in mip_seg_minihead
+      assert not module._extract_minihead_string_value(
+          mip_seg_minihead,
+          "ImageTypeValue3",
+      )
+      assert module.OPENRECON_DEFAULTS["vbsegmentationmips"] is False
+
       debug_threshold = module._simple_threshold_segmentation_volume(
           volume_yxz.astype(np.float32),
           4095,

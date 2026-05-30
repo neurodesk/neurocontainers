@@ -113,6 +113,13 @@
       "type": "boolean",
       "default": false,
       "information": { "en": "Emit an additional output series with the segmentation resliced in the coronal plane." }
+    },
+    {
+      "id": "vbsegmentationmips",
+      "label": { "en": "Segmentation MIPs" },
+      "type": "boolean",
+      "default": false,
+      "information": { "en": "Also produce scanner inline radial MIPs of the segmentation, in addition to the original-scan MIPs. When off, the segmentation is sent as a post-processing child and excluded from the inline MIP." }
     }
   ]
 }
