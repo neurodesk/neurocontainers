@@ -1941,6 +1941,36 @@ def _replace_or_append_minihead_long_param(minihead_text, name, value):
     return minihead_text.rstrip() + appended_param, True
 
 
+def _replace_or_append_minihead_bool_param(minihead_text, name, value):
+    # The Siemens IceMiniHead carries scanner-side end-of-series flags
+    # (BIsSeriesEnd, ConcatenationEnd) on whichever source slice was last
+    # CHRONOLOGICALLY. After SCT reorders inputs by physical position, that
+    # flag lands on the wrong output frame and the host's MrDicomWriter
+    # closes the parent multi-frame series early, then rejects later frames
+    # with "parent frame not found" — see sct.log:5442-5453.
+    if not minihead_text or value is None:
+        return minihead_text, False
+
+    bool_text = "true" if bool(value) else "false"
+    pattern = re.compile(
+        rf'<ParamBool\."{re.escape(name)}">\s*\{{\s*("[^"]*")?\s*\}}'
+    )
+    match = pattern.search(minihead_text)
+    if match:
+        current_value = match.group(1)
+        if current_value is not None:
+            current_text_value = current_value.strip('"').strip().lower()
+        else:
+            current_text_value = "false"
+        if current_text_value == bool_text:
+            return minihead_text, False
+        replacement = f'<ParamBool."{name}">{{ "{bool_text}" }}'
+        return minihead_text[:match.start()] + replacement + minihead_text[match.end():], True
+
+    appended_param = f'\n<ParamBool."{name}">\t{{ "{bool_text}" }}\n'
+    return minihead_text.rstrip() + appended_param, True
+
+
 def _source_postprocessing_image_type_identity(source_meta, minihead_text, fallback_token):
     fallback_token = _first_non_empty_text(fallback_token) or "sct_source_image_header"
     fallback_value4 = f"{fallback_token}_source_image_header"
@@ -1969,6 +1999,7 @@ def _patch_source_image_header_ice_minihead(
     exam_data_role,
     slice_index,
     image_index,
+    is_last_in_series=False,
 ):
     if not minihead_text:
         return minihead_text, False
@@ -2023,6 +2054,19 @@ def _patch_source_image_header_ice_minihead(
         )
         changed = changed or did_change
 
+    for bool_param_name, bool_param_value in (
+        # Same end-of-series remap as _patch_ice_minihead: see comment on
+        # _replace_or_append_minihead_bool_param.
+        ("BIsSeriesEnd", bool(is_last_in_series)),
+        ("ConcatenationEnd", bool(is_last_in_series)),
+    ):
+        current_text, did_change = _replace_or_append_minihead_bool_param(
+            current_text,
+            bool_param_name,
+            bool_param_value,
+        )
+        changed = changed or did_change
+
     return current_text, changed
 
 
@@ -2037,6 +2081,7 @@ def _patch_ice_minihead(
     target_display_token=None,
     output_index=0,
     preserve_image_type_value3=False,
+    is_last_in_series=False,
 ):
     if not minihead_text:
         return minihead_text, False
@@ -2099,6 +2144,21 @@ def _patch_ice_minihead(
             current_text,
             long_param_name,
             long_param_value,
+        )
+        changed = changed or did_change
+
+    for bool_param_name, bool_param_value in (
+        # End-of-series markers must reflect OUTPUT ordering, not the source's
+        # chronological order. Otherwise the host's MrDicomWriter closes the
+        # series after whichever output frame happens to inherit the source's
+        # last-chronological-slice flag, then rejects later frames.
+        ("BIsSeriesEnd", bool(is_last_in_series)),
+        ("ConcatenationEnd", bool(is_last_in_series)),
+    ):
+        current_text, did_change = _replace_or_append_minihead_bool_param(
+            current_text,
+            bool_param_name,
+            bool_param_value,
         )
         changed = changed or did_change
 
@@ -2276,6 +2336,7 @@ def _build_passthrough_output_identity(source_meta, role, output_series_index):
 def _restamp_passthrough_images(images, role, output_series_index):
     restamped_images = []
     image_list = _as_image_list(images)
+    output_count = len(image_list)
     for iImg, image in enumerate(image_list):
         output_image = _clone_mrd_image(image)
         oldHeader = copy.deepcopy(output_image.getHead())
@@ -2342,6 +2403,7 @@ def _restamp_passthrough_images(images, role, output_series_index):
                 target_display_token=output_identity["display_token"],
                 output_index=iImg,
                 preserve_image_type_value3=is_original_output,
+                is_last_in_series=(iImg == output_count - 1),
             )
             if minihead_changed:
                 tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)
@@ -2722,6 +2784,7 @@ def _sct_output_to_source_geometry_images(
                 exam_data_role,
                 output_header_slice,
                 output_header_image_index,
+                is_last_in_series=(iImg == len(source_images) - 1),
             )
             if minihead_changed:
                 tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)

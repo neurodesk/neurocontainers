@@ -184,6 +184,17 @@ version `1.0.78`.
 - `segmentheadergeometry = 2d_derived_image_header` sends 2D source-geometry
   masks as `DataRole = Image` while using a derived segment `ImageType` rather
   than the source scan's image-type identity.
+- `segmentheadergeometry = 2d_dixon_composable` is an EXPERIMENTAL whole-body
+  composing diagnostic. Unlike every other mode (which strips the source Dixon
+  token from masks so the scanner Dixon composer ignores them), this mode
+  deliberately KEEPS the source Dixon contrast token on each mask, plus
+  `ImageTypeValue3 = M`, full per-slice source geometry, and a distinct
+  per-station segment `SeriesInstanceUID` (marked `SegmentDixonComposable = 1`),
+  so each mask is routed into a Dixon compose channel. Use it to observe whether
+  segmentation masks compose across stations or collide with the original Dixon
+  contrast. Risks: the composer may merge the mask into the original of the same
+  contrast, and adaptive overlap blending will de-binarize the mask in the
+  station overlap region. Not for production until validated on the scanner.
 - When originals and segments are both enabled, originals are sent first and
   segment outputs are sent second in a separate MRD image message.
 - Returned source-geometry outputs strip scanner `ImageTypeValue3` from both MRD

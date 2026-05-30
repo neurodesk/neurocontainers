@@ -479,6 +479,7 @@ def test_passthrough_restamp_uses_fresh_series_identity():
             "_remove_minihead_string_param",
             "_replace_minihead_array_token",
             "_replace_or_append_minihead_array_token",
+            "_replace_or_append_minihead_bool_param",
             "_replace_or_append_minihead_long_param",
             "_replace_or_append_minihead_string_param",
             "_restamp_passthrough_images",
@@ -651,6 +652,7 @@ def test_sct_segment_outputs_source_geometry_2d_slices():
             "_replace_minihead_array_token",
             "_replace_or_append_minihead_array_token",
             "_replace_or_append_minihead_array_tokens",
+            "_replace_or_append_minihead_bool_param",
             "_replace_or_append_minihead_exam_data_role",
             "_replace_or_append_minihead_long_param",
             "_replace_or_append_minihead_string_param",
@@ -757,6 +759,7 @@ def test_sct_segment_source_header_outputs_allow_interleaved_source_slice_order(
             "_replace_minihead_array_token",
             "_replace_or_append_minihead_array_token",
             "_replace_or_append_minihead_array_tokens",
+            "_replace_or_append_minihead_bool_param",
             "_replace_or_append_minihead_exam_data_role",
             "_replace_or_append_minihead_long_param",
             "_replace_or_append_minihead_string_param",
@@ -1409,6 +1412,7 @@ def test_patch_minihead_replaces_sop_identity_and_keeps_partition_constant():
             "_remove_minihead_string_param",
             "_replace_minihead_array_token",
             "_replace_or_append_minihead_array_token",
+            "_replace_or_append_minihead_bool_param",
             "_replace_or_append_minihead_long_param",
             "_replace_or_append_minihead_string_param",
             "_sanitize_minihead_param_value",
@@ -1465,6 +1469,206 @@ def test_patch_minihead_replaces_sop_identity_and_keeps_partition_constant():
     assert '<ParamLong."Actual3DImagePartNumber">{ 0 }' in patched
     assert '<ParamLong."AnatomicalPartitionNo">{ 0 }' in patched
     assert '<ParamLong."SliceNo">{ 4 }' in patched
+
+
+def test_replace_or_append_minihead_bool_param_handles_inputs():
+    helpers = _load_runtime_helpers_for_test(
+        ["_replace_or_append_minihead_bool_param"],
+    )
+    replace = helpers["_replace_or_append_minihead_bool_param"]
+
+    # Existing "true" → false
+    text = '<ParamBool."BIsSeriesEnd">{ "true" }\n'
+    patched, changed = replace(text, "BIsSeriesEnd", False)
+    assert changed is True
+    assert '<ParamBool."BIsSeriesEnd">{ "false" }' in patched
+
+    # Empty default → true (host treats empty as false)
+    text = '<ParamBool."BIsSeriesEnd">{ }\n'
+    patched, changed = replace(text, "BIsSeriesEnd", True)
+    assert changed is True
+    assert '<ParamBool."BIsSeriesEnd">{ "true" }' in patched
+
+    # Already-matching → no-op
+    text = '<ParamBool."BIsSeriesEnd">{ "true" }\n'
+    patched, changed = replace(text, "BIsSeriesEnd", True)
+    assert changed is False
+    assert patched == text
+
+    # Empty + want false → treated as already matching (default is false)
+    text = '<ParamBool."BIsSeriesEnd">{ }\n'
+    patched, changed = replace(text, "BIsSeriesEnd", False)
+    assert changed is False
+    assert patched == text
+
+    # Missing param → append
+    text = '<ParamString."SeriesDescription">{ "source" }\n'
+    patched, changed = replace(text, "BIsSeriesEnd", True)
+    assert changed is True
+    assert '<ParamBool."BIsSeriesEnd">' in patched
+    assert '"true"' in patched.split('<ParamBool."BIsSeriesEnd">')[1]
+
+
+def test_patch_minihead_marks_only_last_frame_as_series_end():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_patch_ice_minihead",
+            "_remove_minihead_array_param",
+            "_remove_minihead_string_param",
+            "_replace_minihead_array_token",
+            "_replace_or_append_minihead_array_token",
+            "_replace_or_append_minihead_bool_param",
+            "_replace_or_append_minihead_long_param",
+            "_replace_or_append_minihead_string_param",
+            "_sanitize_minihead_param_value",
+        ],
+        assignments=["SCANNER_PARTITION_INDEX"],
+    )
+    # Source minihead with end-of-series flags inherited from the source's
+    # chronologically-last slice — i.e., the failure mode from sct.log.
+    minihead_text = """
+<ParamString."SequenceDescription">{ "source" }
+<ParamString."ProtocolName">{ "source" }
+<ParamString."SeriesNumberRangeNameUID">{ "source_group" }
+<ParamString."SeriesInstanceUID">{ "source-series" }
+<ParamString."SOPInstanceUID">{ "source-sop" }
+<ParamString."ImageType">{ "ORIGINAL\\PRIMARY\\M\\NORM" }
+<ParamArray."ImageTypeValue4">
+{
+  { "NORM" }
+}
+<ParamLong."AnatomicalSliceNo">{ 7 }
+<ParamLong."SliceNo">{ 7 }
+<ParamBool."BIsSeriesEnd">{ "true" }
+<ParamBool."ConcatenationEnd">{ "true" }
+"""
+
+    # Frame 13 of 15 — NOT the last spatial frame. The inherited "true" flags
+    # must be cleared, otherwise the host's MrDicomWriter closes the parent
+    # multi-frame series early and rejects later frames (sct.log:5442-5453).
+    patched_middle, _ = helpers["_patch_ice_minihead"](
+        minihead_text,
+        "source_sct_deepseg_spinalcord",
+        "source_group_sct_deepseg_spinalcord",
+        "2.25.1",
+        "2.25.1.4",
+        "NORM",
+        "SCT_DEEPSEG_SPINALCORD",
+        target_display_token="sct_deepseg_spinalcord",
+        output_index=13,
+        is_last_in_series=False,
+    )
+    assert '<ParamBool."BIsSeriesEnd">{ "false" }' in patched_middle
+    assert '<ParamBool."ConcatenationEnd">{ "false" }' in patched_middle
+
+    # Last output frame keeps the end markers set.
+    patched_last, _ = helpers["_patch_ice_minihead"](
+        minihead_text,
+        "source_sct_deepseg_spinalcord",
+        "source_group_sct_deepseg_spinalcord",
+        "2.25.1",
+        "2.25.1.4",
+        "NORM",
+        "SCT_DEEPSEG_SPINALCORD",
+        target_display_token="sct_deepseg_spinalcord",
+        output_index=14,
+        is_last_in_series=True,
+    )
+    assert '<ParamBool."BIsSeriesEnd">{ "true" }' in patched_last
+    assert '<ParamBool."ConcatenationEnd">{ "true" }' in patched_last
+
+    # When the source minihead has no end-of-series params at all, the patcher
+    # appends them so the host always sees an explicit close on the last frame.
+    minihead_without_flags = """
+<ParamString."SeriesDescription">{ "source" }
+<ParamString."SeriesInstanceUID">{ "source-series" }
+<ParamString."SOPInstanceUID">{ "source-sop" }
+<ParamString."ImageType">{ "ORIGINAL\\PRIMARY\\M\\NORM" }
+"""
+    patched_append, _ = helpers["_patch_ice_minihead"](
+        minihead_without_flags,
+        "source_sct_deepseg_spinalcord",
+        "source_group_sct_deepseg_spinalcord",
+        "2.25.1",
+        "2.25.1.4",
+        "NORM",
+        "SCT_DEEPSEG_SPINALCORD",
+        target_display_token="sct_deepseg_spinalcord",
+        output_index=14,
+        is_last_in_series=True,
+    )
+    assert '<ParamBool."BIsSeriesEnd">' in patched_append
+    assert '<ParamBool."ConcatenationEnd">' in patched_append
+
+
+def test_patch_source_image_header_minihead_marks_only_last_frame_as_series_end():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_extract_minihead_array_tokens",
+            "_extract_minihead_string_value",
+            "_first_non_empty_text",
+            "_format_exam_data_role_sequential_number",
+            "_patch_source_image_header_ice_minihead",
+            "_replace_minihead_array_token",
+            "_replace_or_append_minihead_array_token",
+            "_replace_or_append_minihead_array_tokens",
+            "_replace_or_append_minihead_bool_param",
+            "_replace_or_append_minihead_exam_data_role",
+            "_replace_or_append_minihead_long_param",
+            "_replace_or_append_minihead_string_param",
+            "_sanitize_minihead_param_value",
+        ],
+        assignments=["SCANNER_PARTITION_INDEX"],
+    )
+    minihead_text = """
+<ParamString."SeriesDescription">{ "source" }
+<ParamString."SeriesInstanceUID">{ "source-series" }
+<ParamString."SOPInstanceUID">{ "source-sop" }
+<ParamString."ImageType">{ "ORIGINAL\\PRIMARY\\M\\NORM" }
+<ParamArray."ImageTypeValue4">
+{
+  { "NORM" }
+}
+<ParamLong."AnatomicalSliceNo">{ 7 }
+<ParamBool."BIsSeriesEnd">{ "true" }
+<ParamBool."ConcatenationEnd">{ "true" }
+"""
+    exam_data_role = helpers["_format_exam_data_role_sequential_number"](3)
+
+    patched_middle, _ = helpers["_patch_source_image_header_ice_minihead"](
+        minihead_text,
+        "source_sct_deepseg_spinalcord",
+        "source_group_sct_deepseg_spinalcord",
+        "2.25.1",
+        "2.25.1.4",
+        "ORIGINAL\\PRIMARY\\M\\NORM",
+        ["NORM"],
+        exam_data_role,
+        13,
+        14,
+        is_last_in_series=False,
+    )
+    assert '<ParamBool."BIsSeriesEnd">{ "false" }' in patched_middle
+    assert '<ParamBool."ConcatenationEnd">{ "false" }' in patched_middle
+
+    patched_last, _ = helpers["_patch_source_image_header_ice_minihead"](
+        minihead_text,
+        "source_sct_deepseg_spinalcord",
+        "source_group_sct_deepseg_spinalcord",
+        "2.25.1",
+        "2.25.1.4",
+        "ORIGINAL\\PRIMARY\\M\\NORM",
+        ["NORM"],
+        exam_data_role,
+        14,
+        15,
+        is_last_in_series=True,
+    )
+    assert '<ParamBool."BIsSeriesEnd">{ "true" }' in patched_last
+    assert '<ParamBool."ConcatenationEnd">{ "true" }' in patched_last
 
 
 def test_get_image_series_index_logs_malformed_header_fallback():
@@ -1635,6 +1839,14 @@ def test_wrapper_patches_openrecon_derived_series_identity_like_musclemap():
     assert '"ProtocolSliceNumber", output_index' in wrapper_source
     assert 'tmpMeta["ImageSliceNormDir"]' not in wrapper_source
     assert 'text.replace("\\\\", "/")' not in wrapper_source
+    # End-of-series remap (sct.log:5442-5453): every output frame must override
+    # the inherited BIsSeriesEnd/ConcatenationEnd flags so the host closes the
+    # multi-frame series at the actual last OUTPUT frame.
+    assert "_replace_or_append_minihead_bool_param" in function_names
+    assert '"BIsSeriesEnd", bool(is_last_in_series)' in wrapper_source
+    assert '"ConcatenationEnd", bool(is_last_in_series)' in wrapper_source
+    assert "is_last_in_series=(iImg == output_count - 1)" in wrapper_source
+    assert "is_last_in_series=(iImg == len(source_images) - 1)" in wrapper_source
 
 
 def test_wrapper_strips_source_parent_references_from_derived_meta():

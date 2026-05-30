@@ -112,6 +112,10 @@
         {
           "id": "2d_source_image_header",
           "name": { "en": "2D source image header" }
+        },
+        {
+          "id": "2d_dixon_composable",
+          "name": { "en": "2D Dixon composable (experimental composing diagnostic)" }
         }
       ],
       "default": "2d_segment_header",

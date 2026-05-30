@@ -1664,6 +1664,34 @@ tests:
       assert first(native_meta.get("ImageTypeValue3")) == "M"
       assert minihead_array_tokens(native_original, "ImageTypeValue3") == ["M"]
 
+      # 2d_dixon_composable (experimental composing diagnostic): unlike every
+      # other segment mode, the mask KEEPS the source Dixon contrast token and
+      # gets ImageTypeValue3="M" + a SegmentDixonComposable marker + a distinct
+      # per-station segment series identity, so the scanner's Dixon composer can
+      # route it. This tests whether segmentation masks can be composed.
+      dixon_composable_segment = module._segment_images_for_postprocessing(
+          [dixon_fat_fraction],
+          preserve_dixon_identity=True,
+      )[0]
+      dcs_meta = ismrmrd.Meta.deserialize(dixon_composable_segment.attribute_string)
+      assert first(dcs_meta.get("ImageType")) == "DERIVED\\PRIMARY\\DIXON\\FAT_FRAC"
+      assert module._has_dixon_image_type_token([first(dcs_meta.get("ImageType"))])
+      assert minihead_value(dixon_composable_segment, "ImageType") == (
+          "DERIVED\\PRIMARY\\DIXON\\FAT_FRAC"
+      )
+      assert first(dcs_meta.get("ImageTypeValue3")) == "M"
+      assert minihead_value(dixon_composable_segment, "ImageTypeValue3") == "M"
+      assert int(first(dcs_meta.get(module.SEGMENT_DIXON_COMPOSABLE_META_KEY))) == 1
+      assert int(first(dcs_meta.get("Keep_image_geometry"))) == 1
+      assert first(dcs_meta.get("DataRole")) == "Image"
+      # distinct derived segment series identity (not the source contrast UID)
+      assert first(dcs_meta.get("SeriesInstanceUID")) != "1.2.3.4.99"
+      # the SegmentDixonComposable marker is what exempts this output from the
+      # validator's Dixon-token rejection (verified end-to-end on the scanner)
+      assert module._has_dixon_image_type_token(
+          [first(dcs_meta.get("ImageType"))]
+      ) and int(first(dcs_meta.get(module.SEGMENT_DIXON_COMPOSABLE_META_KEY))) == 1
+
       wrapped_source_order = [2, 3, 0, 1]
       wrapped_sources = []
       for output_index, source_slice in enumerate(wrapped_source_order):

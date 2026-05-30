@@ -45,6 +45,7 @@ SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE = (
 SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4 = f"{SEGMENT_SERIES_NAME}_3d"
 SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
 SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY = "SegmentPostProcessingChildRole"
+SEGMENT_DIXON_COMPOSABLE_META_KEY = "SegmentDixonComposable"
 SEGMENT_SOURCE_IMAGE_HEADER_IMAGE_TYPE = (
     f"DERIVED\\PRIMARY\\SEGMENTATION\\{SEGMENT_SERIES_NAME}_source_image_header"
 )
@@ -153,6 +154,13 @@ SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER = (
 SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER = (
     "2d_source_image_header"
 )
+# Experimental whole-body composing diagnostic: keep the source Dixon contrast
+# token on the masks (the inverse of the Dixon-token sanitization used by every
+# other mode) plus native ImageTypeValue3="M" and a distinct per-station segment
+# series identity, so each mask is routed into a Dixon compose channel. Used to
+# observe which channel claims the masks and whether they compose across
+# stations or collide with the original contrast.
+SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE = "2d_dixon_composable"
 SEGMENT_DELIVERY_MODES = (
     SEGMENT_DELIVERY_MODE_EXCLUDE,
     SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
@@ -160,6 +168,7 @@ SEGMENT_DELIVERY_MODES = (
     SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS,
     SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER,
     SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER,
+    SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE,
 )
 SEGMENT_DELIVERY_MODE_DEFAULT = SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D
 SEGMENT_REFORMAT_ORIENTATION_SAGITTAL = "sagittal"
@@ -215,9 +224,13 @@ def process(connection, config, metadata):
         exclude_segment_from_postprocessing = (
             segment_delivery_mode == SEGMENT_DELIVERY_MODE_EXCLUDE
         )
+        preserve_segment_dixon_identity = (
+            segment_delivery_mode == SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE
+        )
         stamp_segment_with_source_image_header = (
             segment_delivery_mode
             == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER
+            or preserve_segment_dixon_identity
         )
         stamp_segment_with_derived_image_header = (
             segment_delivery_mode
@@ -230,6 +243,7 @@ def process(connection, config, metadata):
                 SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS,
                 SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER,
                 SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER,
+                SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE,
             )
         )
         segment_scanner_postprocessing = (
@@ -318,6 +332,7 @@ def process(connection, config, metadata):
                         stamp_segment_with_derived_image_header
                     ),
                     scanner_postprocessing=segment_scanner_postprocessing,
+                    preserve_dixon_identity=preserve_segment_dixon_identity,
                 )
             else:
                 computed_segment_images = _segment_images(
@@ -518,6 +533,10 @@ def _scanner_postprocessing_target(
         if send_original:
             return "originals+segment_2d_source_image_header"
         return "segment_2d_source_image_header"
+    if send_segment and segment_delivery_mode == SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE:
+        if send_original:
+            return "originals+segment_2d_dixon_composable"
+        return "segment_2d_dixon_composable"
     if (
         send_segment
         and segment_delivery_mode
@@ -919,11 +938,15 @@ def _segment_images_for_postprocessing(
     stamp_for_postprocessing=True,
     stamp_with_derived_image_header=False,
     scanner_postprocessing=True,
+    preserve_dixon_identity=False,
 ):
     if not images:
         return []
     if stamp_with_derived_image_header:
         stamp_for_postprocessing = False
+    if preserve_dixon_identity:
+        stamp_for_postprocessing = True
+        stamp_with_derived_image_header = False
 
     source_groups = _original_source_groups(images)
     if len(source_groups) > 1:
@@ -1009,16 +1032,29 @@ def _segment_images_for_postprocessing(
                 stamp_segment_image = _stamp_segment_derived_image_header_image
             else:
                 stamp_segment_image = _stamp_segment_source_geometry_image
-            stamp_segment_image(
-                output,
-                source_image,
-                series_index,
-                output_index,
-                series_identity["series_name"],
-                extra_meta,
-                series_identity,
-                scanner_postprocessing=scanner_postprocessing,
-            )
+            if stamp_for_postprocessing:
+                stamp_segment_image(
+                    output,
+                    source_image,
+                    series_index,
+                    output_index,
+                    series_identity["series_name"],
+                    extra_meta,
+                    series_identity,
+                    scanner_postprocessing=scanner_postprocessing,
+                    preserve_dixon_identity=preserve_dixon_identity,
+                )
+            else:
+                stamp_segment_image(
+                    output,
+                    source_image,
+                    series_index,
+                    output_index,
+                    series_identity["series_name"],
+                    extra_meta,
+                    series_identity,
+                    scanner_postprocessing=scanner_postprocessing,
+                )
             outputs.append(output)
 
     logging.info(
@@ -2610,6 +2646,7 @@ def _stamp_segment_source_image_header_image(
     extra_meta,
     series_identity=None,
     scanner_postprocessing=True,
+    preserve_dixon_identity=False,
 ):
     header = output.getHead()
     header.image_series_index = series_index
@@ -2631,6 +2668,7 @@ def _stamp_segment_source_image_header_image(
         series_identity,
         storage_fields,
         scanner_postprocessing=scanner_postprocessing,
+        preserve_dixon_identity=preserve_dixon_identity,
     ).serialize()
     return output
 
@@ -2904,6 +2942,7 @@ def _segment_source_image_header_meta(
     series_identity,
     storage_fields,
     scanner_postprocessing=True,
+    preserve_dixon_identity=False,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
@@ -2928,7 +2967,11 @@ def _segment_source_image_header_meta(
         image_type,
         dicom_image_type,
         image_type_value4_tokens,
-    ) = _source_postprocessing_image_type_identity(meta, minihead)
+    ) = _source_postprocessing_image_type_identity(
+        meta,
+        minihead,
+        sanitize_dixon=not preserve_dixon_identity,
+    )
     child_role = None
     exam_data_role = None
     if scanner_postprocessing:
@@ -2952,6 +2995,8 @@ def _segment_source_image_header_meta(
     _set_meta_scalar(meta, "Keep_image_geometry", 1)
     _set_meta_scalar(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY, 1)
     _set_meta_scalar(meta, SEGMENT_SOURCE_IMAGE_HEADER_META_KEY, 1)
+    if preserve_dixon_identity:
+        _set_meta_scalar(meta, SEGMENT_DIXON_COMPOSABLE_META_KEY, 1)
     if scanner_postprocessing:
         meta["ExamDataRole"] = exam_data_role
         _set_meta_scalar(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY, child_role)
@@ -2969,7 +3014,13 @@ def _segment_source_image_header_meta(
             meta[key] = value
     for key, value in _header_geometry_meta(output_image.getHead()).items():
         meta[key] = value
-    _strip_scanner_write_unsafe_meta(meta)
+    if preserve_dixon_identity:
+        # Keep a clean ImageTypeValue3="M" magnitude discriminator (like the
+        # native originals) so the Dixon composer accepts the mask, instead of
+        # stripping it.
+        meta["ImageTypeValue3"] = ORIGINAL_IMAGE_TYPE_VALUE3
+    else:
+        _strip_scanner_write_unsafe_meta(meta)
 
     if minihead:
         patched_minihead, changed = _patch_segment_postprocessing_ice_minihead(
@@ -2983,6 +3034,16 @@ def _segment_source_image_header_meta(
             exam_data_role,
             storage_fields,
         )
+        if preserve_dixon_identity:
+            # _patch_segment_postprocessing_ice_minihead strips ImageTypeValue3;
+            # restore a clean "M" so the IceMiniHead matches the Meta and the
+            # Dixon composer routing.
+            patched_minihead, itv3_changed = _replace_or_append_minihead_string_param(
+                patched_minihead,
+                "ImageTypeValue3",
+                ORIGINAL_IMAGE_TYPE_VALUE3,
+            )
+            changed = changed or itv3_changed
         if changed:
             meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
     return meta
@@ -3155,6 +3216,39 @@ def _strip_scanner_write_unsafe_meta(meta):
     for key in SCANNER_WRITE_UNSAFE_META_KEYS:
         if key in meta:
             del meta[key]
+
+
+def _scanner_write_unsafe_field_errors(meta, minihead, is_dixon_composable_output, index):
+    """Collect errors for unsafe scanner Meta/IceMiniHead fields.
+
+    2d_dixon_composable intentionally writes ImageTypeValue3="M" into both
+    Meta and IceMiniHead so the scanner's inline Dixon composer keeps the
+    derived segment bound to its FILTER_DIXON* channel. That exact value is
+    allowed only when SegmentDixonComposable=1; any other value or any other
+    unsafe field still trips the guard.
+    """
+    errors = []
+    for field in SCANNER_WRITE_UNSAFE_META_KEYS:
+        meta_value = _meta_text(meta, field)
+        minihead_string_value = _minihead_string_value(minihead, field)
+        minihead_array_tokens = _minihead_array_tokens(minihead, field)
+        if is_dixon_composable_output and field == "ImageTypeValue3":
+            meta_safe = not meta_value or meta_value == ORIGINAL_IMAGE_TYPE_VALUE3
+            minihead_string_safe = (
+                not minihead_string_value
+                or minihead_string_value == ORIGINAL_IMAGE_TYPE_VALUE3
+            )
+            minihead_array_safe = (
+                not minihead_array_tokens
+                or minihead_array_tokens == [ORIGINAL_IMAGE_TYPE_VALUE3]
+            )
+            if meta_safe and minihead_string_safe and minihead_array_safe:
+                continue
+        if meta_value:
+            errors.append(f"image {index} has unsafe scanner Meta {field}")
+        if minihead_string_value or minihead_array_tokens:
+            errors.append(f"image {index} has unsafe scanner IceMiniHead {field}")
+    return errors
 
 
 def _set_output_position_meta(meta, output_index):
@@ -3381,7 +3475,7 @@ def _normalise_identity_tokens(value):
     return tokens
 
 
-def _source_postprocessing_image_type_identity(source_meta, minihead):
+def _source_postprocessing_image_type_identity(source_meta, minihead, sanitize_dixon=True):
     image_type = (
         _meta_text(source_meta, "ImageType")
         or _minihead_string_value(minihead, "ImageType")
@@ -3393,14 +3487,18 @@ def _source_postprocessing_image_type_identity(source_meta, minihead):
         or _meta_values(source_meta, "ImageTypeValue4")
         or [SEGMENT_POSTPROCESSING_IMAGE_TYPE_VALUE4]
     )
-    # A segment must never inherit a Dixon (WATER/FAT/FAT_FRAC) image-type
-    # token. The scanner's inline Dixon composer routes any such image into its
-    # FILTER_DIXON* channels and then aborts the measurement ("Composer has been
-    # switched off ... Cloning of image data failed") because the mask is not a
-    # valid Dixon volume member. Fall back to the neutral derived-segment
+    # A segment must normally never inherit a Dixon (WATER/FAT/FAT_FRAC)
+    # image-type token. The scanner's inline Dixon composer routes any such image
+    # into its FILTER_DIXON* channels and then aborts the measurement ("Composer
+    # has been switched off ... Cloning of image data failed") when the mask is
+    # not a valid Dixon volume member. Fall back to the neutral derived-segment
     # identity so the mask is ignored by composing instead of crashing it, while
     # still keeping the source per-slice geometry.
-    if _has_dixon_image_type_token(
+    # The experimental 2d_dixon_composable mode passes sanitize_dixon=False to
+    # DELIBERATELY keep the Dixon token (paired with full per-slice geometry and
+    # ImageTypeValue3="M") so the mask is routed into a Dixon compose channel --
+    # a diagnostic to observe whether segment masks can be composed.
+    if sanitize_dixon and _has_dixon_image_type_token(
         [image_type, dicom_image_type, *image_type_value4_tokens]
     ):
         logging.info(
@@ -4306,6 +4404,9 @@ def _validate_storage_fields(
     is_segment_source_geometry_output = _is_segment_source_geometry_output(meta)
     is_segment_postprocessing_output = _is_segment_postprocessing_output(meta)
     is_segment_explicit_volume_output = _is_segment_explicit_volume_output(meta)
+    is_dixon_composable_output = (
+        _meta_int(meta, SEGMENT_DIXON_COMPOSABLE_META_KEY) == 1
+    )
     is_source_like_output = (
         is_original_output
         or is_segment_source_image_header_output
@@ -4410,15 +4511,20 @@ def _validate_storage_fields(
                 f"image {index} has segment source-image-header IceMiniHead "
                 f"ImageType={minihead_image_type}, expected {image_type}"
             )
-        if _has_dixon_image_type_token(
-            [image_type, dicom_image_type, *image_type_value4_values]
-        ) or _has_dixon_image_type_token(
-            [minihead_image_type, *minihead_image_type_value4]
+        if not is_dixon_composable_output and (
+            _has_dixon_image_type_token(
+                [image_type, dicom_image_type, *image_type_value4_values]
+            )
+            or _has_dixon_image_type_token(
+                [minihead_image_type, *minihead_image_type_value4]
+            )
         ):
             errors.append(
                 f"image {index} has Dixon image-type identity on segment "
                 "source-image-header output; segments must not carry a Dixon "
-                "token or the scanner Dixon composer aborts the measurement"
+                "token or the scanner Dixon composer aborts the measurement "
+                "(use segmentheadergeometry=2d_dixon_composable to intentionally "
+                "keep the Dixon token for the composing diagnostic)"
             )
         if not image_type_value4_values:
             errors.append(
@@ -5046,14 +5152,14 @@ def _validate_storage_fields(
                 f"image {index} has IceMiniHead ImageTypeValue4 "
                 f"{minihead_image_type_value4}, expected {image_type_value4}"
             )
-    for field in SCANNER_WRITE_UNSAFE_META_KEYS:
-        if _meta_text(meta, field):
-            errors.append(f"image {index} has unsafe scanner Meta {field}")
-        if _minihead_string_value(minihead, field) or _minihead_array_tokens(
+    errors.extend(
+        _scanner_write_unsafe_field_errors(
+            meta,
             minihead,
-            field,
-        ):
-            errors.append(f"image {index} has unsafe scanner IceMiniHead {field}")
+            is_dixon_composable_output,
+            index,
+        )
+    )
 
     storage_key = (
         _meta_text(meta, "SeriesInstanceUID"),
