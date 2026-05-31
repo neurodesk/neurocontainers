@@ -188,7 +188,7 @@ tests:
   - name: Convert-OME help shows parallelize option
     description: Verify convert-ome help shows parallelize option
     command: QuPath convert-ome --help 2>&1
-    expected_output_contains: "--parallelize"
+    expected_output_contains: "--[no-]parallelize"
 
   - name: Convert-OME help shows series option
     description: Verify convert-ome help shows series option for Bio-Formats
