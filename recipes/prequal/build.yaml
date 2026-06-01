@@ -70,6 +70,7 @@ build:
         version: 6.0.4
         install_path: /APPS/fsl
         fslpython_debug: "true"
+        fslpython_accept_tos: "true"
     - template:
         name: convert3d
         version: 1.0.0
