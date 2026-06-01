@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "cosmomvpa 1.1.0": {
+      "version": "20260512",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "statistics"
+  ]
+}
