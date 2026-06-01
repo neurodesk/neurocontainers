@@ -1,0 +1,220 @@
+name: prequal
+version: 1.1.0
+
+copyright:
+  - name: Vanderbilt University Contribution and Software License Agreement
+    url: https://github.com/MASILab/PreQual/blob/v{{ context.version }}/LICENSE.md
+
+architectures:
+  - x86_64
+
+variables:
+  prequal_dir: /opt/PreQual-{{ context.version }}
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - build-essential
+        - ca-certificates
+        - curl
+        - git
+        - ghostscript
+        - libblas-dev
+        - libbz2-dev
+        - libexpat1-dev
+        - libfftw3-dev
+        - libfreetype6-dev
+        - libglib2.0-0
+        - libglu1-mesa
+        - libgl1-mesa-dev
+        - libgtk2.0-0
+        - libice6
+        - libjpeg-turbo8-dev
+        - liblapack-dev
+        - libopenblas-base
+        - libomp-dev
+        - libpng-dev
+        - libsm6
+        - libssl-dev
+        - libtiff5-dev
+        - libx11-6
+        - libxcursor1
+        - libxext6
+        - libxft2
+        - libxinerama1
+        - libxrandr2
+        - libxrender1
+        - libxt6
+        - python3
+        - python3-dev
+        - python3-distutils
+        - python3-pip
+        - python3-venv
+        - software-properties-common
+        - unzip
+        - xvfb
+    - run:
+        - add-apt-repository -y ppa:deadsnakes/ppa
+        - apt-get update
+        - apt-get install -y --no-install-recommends python3.6 python3.6-dev python3.6-distutils python3.6-venv python3.8 python3.8-dev python3.8-venv
+        - rm -rf /var/lib/apt/lists/*
+        - ln -sf /usr/bin/python3 /usr/bin/python
+    - template:
+        name: mrtrix3
+        method: source
+        version: 3.0.3
+        build_processes: "1"
+        install_path: /APPS/mrtrix3
+    - template:
+        name: fsl
+        version: 6.0.4
+        install_path: /APPS/fsl
+    - template:
+        name: convert3d
+        version: 1.0.0
+        install_path: /APPS/c3d-1.0.0-Linux-x86_64
+    - template:
+        name: ants
+        version: 2.4.3
+    - run:
+        - mkdir -p /tmp/mcr-install
+        - unzip -q {{ get_file("matlab_runtime_installer") }} -d /tmp/mcr-install
+        - /tmp/mcr-install/install -destinationFolder /opt/MCR -mode silent -agreeToLicense yes
+        - rm -rf /tmp/mcr-install
+    - run:
+        - mkdir -p /APPS /CODE /INPUTS /OUTPUTS /SUPPLEMENTAL {{ context.prequal_dir }}
+        - tar -xzf {{ get_file("prequal_source") }} -C {{ context.prequal_dir }} --strip-components 1
+        - cp -a {{ context.prequal_dir }}/src/APPS/. /APPS/
+        - cp -a {{ context.prequal_dir }}/src/CODE/. /CODE/
+        - cp -a {{ context.prequal_dir }}/src/SUPPLEMENTAL/. /SUPPLEMENTAL/
+        - chmod 755 /INPUTS /SUPPLEMENTAL /APPS /CODE
+        - chmod 775 /OUTPUTS
+    - run:
+        - mkdir -p /APPS/freesurfer
+        - tar -xzf {{ get_file("freesurfer_tar") }} -C /APPS/freesurfer --strip-components 1
+        - printf '%s\n' 'This is a placeholder license file. Bind your FreeSurfer license here for Synb0-DisCo.' > /APPS/freesurfer/license.txt
+    - run:
+        - cd /APPS/synb0
+        - python3.6 -m venv pytorch
+        - . pytorch/bin/activate
+        - python3.6 -m pip install --upgrade "pip<22" "setuptools<60" wheel
+        - sed -i '/pkg-resources==0.0.0/d' {{ context.prequal_dir }}/venv/pip_install_synb0.txt
+        - python3.6 -m pip install --no-cache-dir --timeout 180 --retries 10 -r {{ context.prequal_dir }}/venv/pip_install_synb0.txt
+        - deactivate
+    - template:
+        name: miniconda
+        version: py38_23.11.0-2
+        install_path: /APPS/gradtensor/conda
+        env_name: gradvenv
+        env_exists: "false"
+        conda_install: python=3.8 pip=23.3.2 dipy=1.5.0 fpdf imageio pypng freetype-py
+        mamba: "true"
+    - run:
+        - . /APPS/gradtensor/conda/etc/profile.d/conda.sh
+        - conda activate gradvenv
+        - mkdir -p /APPS/gradtensor/scilpy
+        - tar -xzf {{ get_file("scilpy_source") }} -C /APPS/gradtensor/scilpy --strip-components 1
+        - cd /APPS/gradtensor/scilpy
+        - python -m pip install --no-cache-dir --no-deps -e .
+        - conda list > /APPS/gradtensor/conda_packages.txt
+        - conda deactivate
+    - run:
+        - cd /CODE/dtiQA_v7
+        - python3 -m venv venv
+        - . venv/bin/activate
+        - python -m pip install --upgrade pip wheel setuptools
+        - python -m pip install --no-cache-dir --timeout 180 --retries 10 Cython==0.29.30
+        - python -m pip install --no-cache-dir --timeout 180 --retries 10 -r {{ context.prequal_dir }}/venv/pip_install_dtiQA.txt
+        - deactivate
+    - copy: prequal /usr/local/bin/prequal
+    - run:
+        - chmod +x /usr/local/bin/prequal /CODE/run_dtiQA.sh
+    - environment:
+        ANTSPATH: /opt/ants-2.4.3/
+        CUDA_HOME: /usr/local/cuda
+        DEPLOY_BINS: prequal,run_dtiQA.sh,mrinfo,flirt,c3d,antsRegistration
+        DEPLOY_PATH: /usr/local/bin:/CODE:/APPS/mrtrix3/bin:/APPS/fsl/bin:/APPS/c3d-1.0.0-Linux-x86_64/bin:/opt/ants-2.4.3
+        FSLDIR: /APPS/fsl
+        FREESURFER_HOME: /APPS/freesurfer
+        MCRROOT: /opt/MCR/v92
+        PATH: /usr/local/bin:/CODE:/APPS/gradtensor/conda/envs/gradvenv/bin:/APPS/gradtensor/conda/bin:/APPS/mrtrix3/bin:/APPS/fsl/bin:/APPS/c3d-1.0.0-Linux-x86_64/bin:/opt/ants-2.4.3:/APPS/freesurfer/bin:/opt/MCR/v92/runtime/glnxa64:/opt/MCR/v92/bin/glnxa64:/usr/local/cuda/bin:$PATH
+        LD_LIBRARY_PATH: /opt/MCR/v92/runtime/glnxa64:/opt/MCR/v92/bin/glnxa64:/opt/MCR/v92/sys/os/glnxa64:/opt/MCR/v92/extern/bin/glnxa64:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+    - deploy:
+        path:
+          - /usr/local/bin
+          - /CODE
+          - /APPS/mrtrix3/bin
+          - /APPS/fsl/bin
+          - /APPS/c3d-1.0.0-Linux-x86_64/bin
+          - /opt/ants-2.4.3
+        bins:
+          - prequal
+          - run_dtiQA.sh
+
+deploy:
+  bins:
+    - prequal
+    - run_dtiQA.sh
+
+categories:
+  - diffusion imaging
+  - quality control
+
+files:
+  - name: prequal_source
+    url: https://github.com/MASILab/PreQual/archive/refs/tags/v{{ context.version }}.tar.gz
+  - name: freesurfer_tar
+    url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/6.0.0/freesurfer-Linux-centos6_x86_64-stable-pub-v6.0.0.tar.gz
+  - name: matlab_runtime_installer
+    url: http://ssd.mathworks.com/supportfiles/downloads/R2017a/deployment_files/R2017a/installers/glnxa64/MCR_R2017a_glnxa64_installer.zip
+  - name: scilpy_source
+    url: https://github.com/scilus/scilpy/archive/refs/tags/1.4.0.tar.gz
+  - name: prequal
+    contents: |
+      #!/usr/bin/env bash
+      set -e
+      exec xvfb-run -a --server-num="$((65536+$$))" --server-args="-screen 0 1600x1280x24 -ac" bash /CODE/run_dtiQA.sh /INPUTS /OUTPUTS "$@"
+
+readme: |-
+  ----------------------------------
+  ## prequal/{{ context.version }} ##
+
+  PreQual is an automated quality assurance pipeline for diffusion weighted MRI.
+  It provides integrated preprocessing and quality control for DWI data,
+  including distortion correction, motion correction, denoising, tensor-derived
+  metrics, and PDF quality reports.
+
+  Example:
+  ```
+  prequal j
+  ```
+
+  The original PreQual container expects inputs in `/INPUTS` and writes outputs
+  to `/OUTPUTS`. A FreeSurfer license is only required for Synb0-DisCo and can
+  be bound to `/APPS/freesurfer/license.txt`.
+
+  More documentation can be found here: https://github.com/MASILab/PreQual
+
+  Citation:
+  ```
+  Cai, L. Y., Yang, Q., Hansen, C. B., Nath, V., Ramadass, K., Johnson, G. W.,
+  Conrad, B. N., Boyd, B. D., Begnoche, J. P., Beason-Held, L. L., Shafer,
+  A. T., Resnick, S. M., Taylor, W. D., Price, G. R., Morgan, V. L., Rogers,
+  B. P., Schilling, K. G., & Landman, B. A. (2021). PreQual: An automated
+  pipeline for integrated preprocessing and quality assurance of diffusion
+  weighted MRI images. Magnetic Resonance in Medicine, 86(1), 456-470.
+  ```
+
+  License: Vanderbilt University Contribution and Software License Agreement.
+  This includes noncommercial/research-use conditions; see the upstream license.
+
+  To run container outside of this environment: ml prequal/{{ context.version }}
+
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABKCAYAAAAL8lK4AAAACXBIWXMAAAsTAAALEwEAmpwYAAAFF2lUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4gPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iQWRvYmUgWE1QIENvcmUgNy4xLWMwMDAgNzkuN2E3YTIzNiwgMjAyMS8wOC8xMi0wMDoyNToyMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy85OS8wMi8yMi1yZGYtc3ludGF4LW5zIyI+IDxyZGY6RGVzY3JpcHRpb24gcmRmOmFib3V0PSIiIHhtbG5zOnhtcD0iaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wLyIgeG1sbnM6ZGM9Imh0dHA6Ly9wdXJsLm9yZy9kYy9lbGVtZW50cy8xLjEvIiB4bWxuczpwaG90b3Nob3A9Imh0dHA6Ly9ucy5hZG9iZS5jb20vcGhvdG9zaG9wLzEuMC8iIHhtbG5zOnhtcE1NPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvbW0vIiB4bWxuczpzdEV2dD0iaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wL3NUeXBlL1Jlc291cmNlRXZlbnQjIiB4bXA6Q3JlYXRvclRvb2w9IkFkb2JlIFBob3Rvc2hvcCAyMi41IChXaW5kb3dzKSIgeG1wOkNyZWF0ZURhdGU9IjIwMjEtMDktMTVUMjA6MzQ6MzArMTA6MDAiIHhtcDpNb2RpZnlEYXRlPSIyMDIxLTA5LTI5VDA4OjMwOjQyKzEwOjAwIiB4bXA6TWV0YWRhdGFEYXRlPSIyMDIxLTA5LTI5VDA4OjMwOjQyKzEwOjAwIiBkYzpmb3JtYXQ9ImltYWdlL3BuZyIgcGhvdG9zaG9wOkNvbG9yTW9kZT0iMyIgcGhvdG9zaG9wOklDQ1Byb2ZpbGU9InNSR0IgSUVDNjE5NjYtMi4xIiB4bXBNTTpJbnN0YW5jZUlEPSJ4bXAuaWQ6ZGM2MWFhMTUtNDI3MS03ZDQyLTk5Y2MtMWQ2MTA1MzQ5MTViIiB4bXBNTTpEb2N1bWVudElEPSJ4bXAuZGlkOmRjNjFhYTE1LTQyNzEtN2Q0Mi05OWNjLTFkNjEwNTM0OTE1YiIgeG1wTU06T3JpZ2luYWxEb2N1bWVudElEPSJ4bXAuZGlkOmRjNjFhYTE1LTQyNzEtN2Q0Mi05OWNjLTFkNjEwNTM0OTE1YiI+IDx4bXBNTTpIaXN0b3J5PiA8cmRmOlNlcT4gPHJkZjpsaSBzdEV2dDphY3Rpb249ImNyZWF0ZWQiIHN0RXZ0Omluc3RhbmNlSUQ9InhtcC5pZDpEYzYxYWExNS00MjcxLTdkNDItOTljYy0xZDYxMDUzNDkxNWIiIHN0RXZ0OndoZW49IjIwMjEtMDktMTVUMjA6MzQ6MzArMTA6MDAiIHN0RXZ0OnNvZnR3YXJlQWdlbnQ9IkFkb2JlIFBob3Rvc2hvcCAyMi41IChXaW5kb3dzKSIvPiA8L3JkZjpTZXE+IDwveG1wTU06SGlzdG9yeT4gPC9yZGY6RGVzY3JpcHRpb24+IDwvcmRmOlJERj4gPC94OnhtcG1ldGE+IDw/eHBhY2tldCBlbmQ9InIiPz7VNi2sAAAAWklEQVR4nO3QsQkAIAwEwWf/x24qFaE0IGeDgxo9h7LkHknozqQHAFQEoCoAVASgKgBUBKAqAFQEoCoAVASgKgBUBKAqAFQEoCoAVASgKgBUBKAqAFQEzA8fB9bm+89hAAAAAElFTkSuQmCC
