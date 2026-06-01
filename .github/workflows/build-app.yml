@@ -752,7 +752,7 @@ jobs:
 
   build-simg:
     needs: [config, build-image]
-    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false' }}
+    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false') }}
     runs-on: ${{ contains(inputs.runner, 'arm') && 'blacksmith-8vcpu-ubuntu-2404-arm' || 'ubuntu-22.04' }}
     permissions:
       packages: write
@@ -874,7 +874,7 @@ jobs:
 
   upload-nectar:
     needs: [config, build-image, build-simg]
-    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' }}
+    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true') }}
     # Nectar object storage is a best-effort mirror; S3 remains the blocking upload.
     continue-on-error: true
     runs-on: ${{ fromJSON(inputs.runner) }}
@@ -961,7 +961,7 @@ jobs:
 
   upload-s3:
     needs: [config, build-image, build-simg]
-    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_s3 == 'true' }}
+    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_s3 == 'true') }}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
