@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "datalad 1.3.1 arm64": {
+      "version": "20260512",
+      "exec": "",
+      "apptainer_args": [],
+      "architecture": "aarch64",
+      "image": "datalad_1.3.1_arm64"
+    }
+  },
+  "categories": [
+    "data management"
+  ],
+  "architecture": "aarch64"
+}
