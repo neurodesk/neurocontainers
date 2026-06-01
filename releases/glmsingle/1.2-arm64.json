@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "glmsingle 1.2 arm64": {
+      "version": "20260513",
+      "exec": "",
+      "apptainer_args": [],
+      "architecture": "aarch64",
+      "image": "glmsingle_1.2_arm64"
+    }
+  },
+  "categories": [
+    "functional imaging"
+  ],
+  "architecture": "aarch64"
+}
