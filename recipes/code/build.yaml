@@ -90,8 +90,8 @@ build:
 
     - environment:
         DONT_PROMPT_WSL_INSTALL: "1"
-        PATH: \$PATH:/opt/julia-1.6.3/bin
-        GOPATH: \$HOME/go
+        PATH: $PATH:/opt/julia-1.6.3/bin
+        GOPATH: $HOME/go
 
     - run:
         - cp {{ get_file("go1_17_2_linux_amd64_tar_gz") }} go1.17.2.linux-amd64.tar.gz
@@ -99,7 +99,7 @@ build:
         - rm go1.17.2.linux-amd64.tar.gz
 
     - environment:
-        PATH: \$PATH:/usr/local/go/bin:\$GOPATH/bin
+        PATH: $PATH:/usr/local/go/bin:$GOPATH/bin
 
     - run:
         - mkdir -p /root/go/src/github.com/sylabs
