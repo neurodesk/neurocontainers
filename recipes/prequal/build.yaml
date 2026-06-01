@@ -55,14 +55,9 @@ build:
         - python3-distutils
         - python3-pip
         - python3-venv
-        - software-properties-common
         - unzip
         - xvfb
     - run:
-        - add-apt-repository -y ppa:deadsnakes/ppa
-        - apt-get update
-        - apt-get install -y --no-install-recommends python3.6 python3.6-dev python3.6-distutils python3.6-venv python3.8 python3.8-dev python3.8-venv
-        - rm -rf /var/lib/apt/lists/*
         - ln -sf /usr/bin/python3 /usr/bin/python
     - template:
         name: mrtrix3
@@ -94,17 +89,26 @@ build:
         - cp -a {{ context.prequal_dir }}/src/SUPPLEMENTAL/. /SUPPLEMENTAL/
         - chmod 755 /INPUTS /SUPPLEMENTAL /APPS /CODE
         - chmod 775 /OUTPUTS
+    - template:
+        name: miniconda
+        version: py38_23.11.0-2
+        install_path: /APPS/synb0/conda
+        env_name: py37
+        env_exists: "false"
+        conda_install: python=3.7 pip
+        mamba: "true"
     - run:
         - mkdir -p /APPS/freesurfer
         - tar -xzf {{ get_file("freesurfer_tar") }} -C /APPS/freesurfer --strip-components 1
         - printf '%s\n' 'This is a placeholder license file. Bind your FreeSurfer license here for Synb0-DisCo.' > /APPS/freesurfer/license.txt
     - run:
         - cd /APPS/synb0
-        - python3.6 -m venv pytorch
+        - /APPS/synb0/conda/envs/py37/bin/python -m venv pytorch
         - . pytorch/bin/activate
-        - python3.6 -m pip install --upgrade "pip<22" "setuptools<60" wheel
+        - python -m pip install --upgrade "pip<22" "setuptools<60" wheel
         - sed -i '/pkg-resources==0.0.0/d' {{ context.prequal_dir }}/venv/pip_install_synb0.txt
-        - python3.6 -m pip install --no-cache-dir --timeout 180 --retries 10 -r {{ context.prequal_dir }}/venv/pip_install_synb0.txt
+        - python -m pip install --no-cache-dir --timeout 180 --retries 10 -r {{ context.prequal_dir }}/venv/pip_install_synb0.txt
+        - sed -i 's/python3\.6 /python /g' /APPS/synb0/synb0.sh
         - deactivate
     - template:
         name: miniconda
