@@ -1291,7 +1291,7 @@ jobs:
 
   report-auto-build-failure:
     needs: [config, build-image, push-dockerhub, build-simg, upload-s3, create-pr]
-    if: ${{ failure() && github.event_name == 'push' }}
+    if: ${{ always() && !cancelled() && github.event_name == 'push' && contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -1318,15 +1318,28 @@ jobs:
           workflow_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           title="Auto-build failed for ${APPLICATION}"
 
-          submitter="$(gh api \
+          pr_number="$(gh api \
             -H "Accept: application/vnd.github+json" \
             "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
-            --jq '.[0].user.login // empty' 2>/dev/null || true)"
+            --jq '.[0].number // empty' 2>/dev/null || true)"
+          submitter=""
+          if [ -n "${pr_number}" ] && [ "${pr_number}" != "null" ]; then
+            submitter="$(gh api --paginate \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${GITHUB_REPOSITORY}/pulls/${pr_number}/commits" \
+              --jq '[.[] | .author.login // empty | select(. != "" and . != "github-actions[bot]" and . != "neurocontainers-bot" and (endswith("[bot]") | not))][0] // empty' 2>/dev/null || true)"
+            if [ -z "${submitter}" ] || [ "${submitter}" = "null" ]; then
+              submitter="$(gh api \
+                -H "Accept: application/vnd.github+json" \
+                "/repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" \
+                --jq '.user.login // empty' 2>/dev/null || true)"
+            fi
+          fi
           if [ -z "${submitter}" ] || [ "${submitter}" = "null" ]; then
             submitter="${GITHUB_ACTOR}"
           fi
 
-          body="${RUNNER_TEMP}/auto-build-failure-${APPLICATION}.md"
+          body="$(mktemp "${RUNNER_TEMP}/auto-build-failure.XXXXXX.md")"
           {
             echo "@${submitter} the auto-build for \`${APPLICATION}\` failed."
             echo ""
@@ -1352,12 +1365,13 @@ jobs:
             echo "Please check the workflow logs and push a fix or rerun the build once the underlying problem is resolved."
           } > "${body}"
 
-          existing_issue="$(gh issue list \
+          existing_issue="$(TITLE="${title}" gh issue list \
             --repo "${GITHUB_REPOSITORY}" \
             --state open \
-            --search "${title} in:title" \
-            --json number \
-            --jq '.[0].number // ""')"
+            --label "automated" \
+            --limit 100 \
+            --json number,title \
+            --jq 'map(select(.title == env.TITLE))[0].number // ""')"
 
           if [ -n "${existing_issue}" ]; then
             gh issue comment "${existing_issue}" \
