@@ -1,0 +1,16 @@
+{
+  "apps": {
+    "bidscoin 4.6.2 arm64": {
+      "version": "20260512",
+      "exec": "",
+      "apptainer_args": [],
+      "architecture": "aarch64",
+      "image": "bidscoin_4.6.2_arm64"
+    }
+  },
+  "categories": [
+    "data organisation",
+    "bids apps"
+  ],
+  "architecture": "aarch64"
+}
