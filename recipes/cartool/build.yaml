@@ -27,14 +27,20 @@ build:
         - git
         - curl
         - ca-certificates
+        - p7zip-full
         - unzip
         - wine
         - xvfb
     - environment:
         WINEPREFIX: /opt/wine
     - run:
-        - winecfg
-        - cp {{ get_file("cartool_installer") }} {{ context.cartool_installer }}
+        - mkdir -p /opt/cartool-{{ context.version }} /opt/cartool-{{ context.version }}/bin /opt/wine
+        - 7z x -y -o/opt/cartool-{{ context.version }} {{ get_file("cartool_installer") }}
+        - sh -c 'Xvfb :99 -screen 0 1024x768x16 & xvfb_pid=$!; DISPLAY=:99 wineboot --init; status=$?; kill "$xvfb_pid"; exit "$status"'
+        - printf '#!/usr/bin/env bash\nexport WINEPREFIX=/opt/wine\nexec wine /opt/cartool-{{ context.version }}/Cartool64.exe "$@"\n' > /opt/cartool-{{ context.version }}/bin/cartool
+        - chmod -R a+rX /opt/cartool-{{ context.version }}
+        - chmod -R a+rwX /opt/wine
+        - chmod a+x /opt/cartool-{{ context.version }}/bin/cartool
         - dpkg --add-architecture i386
     - install:
         - wine32
