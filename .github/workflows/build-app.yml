@@ -1288,3 +1288,86 @@ jobs:
         echo "The container has been successfully build. To test the container, run this:" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
         echo "bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE" >> $GITHUB_STEP_SUMMARY
+
+  report-auto-build-failure:
+    needs: [config, build-image, push-dockerhub, build-simg, upload-s3, create-pr]
+    if: ${{ failure() && github.event_name == 'push' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    env:
+      APPLICATION: ${{ inputs.application }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      VERSION: ${{ needs.config.outputs.VERSION }}
+      ARCHITECTURE: ${{ needs.config.outputs.ARCHITECTURE }}
+      IMAGE_SUFFIX: ${{ needs.config.outputs.IMAGE_SUFFIX }}
+      CONFIG_RESULT: ${{ needs.config.result }}
+      BUILD_IMAGE_RESULT: ${{ needs.build-image.result }}
+      PUSH_DOCKERHUB_RESULT: ${{ needs.push-dockerhub.result }}
+      BUILD_SIMG_RESULT: ${{ needs.build-simg.result }}
+      UPLOAD_S3_RESULT: ${{ needs.upload-s3.result }}
+      CREATE_PR_RESULT: ${{ needs.create-pr.result }}
+      GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION || github.token }}
+    steps:
+      - name: Open or update auto-build failure issue
+        run: |
+          set -euo pipefail
+
+          workflow_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          title="Auto-build failed for ${APPLICATION}"
+
+          submitter="$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+            --jq '.[0].user.login // empty' 2>/dev/null || true)"
+          if [ -z "${submitter}" ] || [ "${submitter}" = "null" ]; then
+            submitter="${GITHUB_ACTOR}"
+          fi
+
+          body="${RUNNER_TEMP}/auto-build-failure-${APPLICATION}.md"
+          {
+            echo "@${submitter} the auto-build for \`${APPLICATION}\` failed."
+            echo ""
+            echo "## Summary"
+            echo ""
+            echo "- Application: \`${APPLICATION}\`"
+            echo "- Version: \`${VERSION:-unknown}\`"
+            echo "- Architecture: \`${ARCHITECTURE:-unknown}\`"
+            echo "- Image suffix: \`${IMAGE_SUFFIX:-none}\`"
+            echo "- Build date: \`${BUILDDATE:-unknown}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Workflow run: ${workflow_url}"
+            echo ""
+            echo "## Job Results"
+            echo ""
+            echo "- config: \`${CONFIG_RESULT}\`"
+            echo "- build-image: \`${BUILD_IMAGE_RESULT}\`"
+            echo "- push-dockerhub: \`${PUSH_DOCKERHUB_RESULT}\`"
+            echo "- build-simg: \`${BUILD_SIMG_RESULT}\`"
+            echo "- upload-s3: \`${UPLOAD_S3_RESULT}\`"
+            echo "- create-pr: \`${CREATE_PR_RESULT}\`"
+            echo ""
+            echo "Please check the workflow logs and push a fix or rerun the build once the underlying problem is resolved."
+          } > "${body}"
+
+          existing_issue="$(gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --search "${title} in:title" \
+            --json number \
+            --jq '.[0].number // ""')"
+
+          if [ -n "${existing_issue}" ]; then
+            gh issue comment "${existing_issue}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body-file "${body}"
+            echo "Updated existing auto-build failure issue #${existing_issue}."
+          else
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${title}" \
+              --body-file "${body}" \
+              --label "automated"
+          fi
