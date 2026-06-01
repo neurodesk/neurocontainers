@@ -10,6 +10,7 @@ binaries:
       install_path: /opt/fsl-{{ self.version }}
       exclude_paths: ''
       fslpython_debug: 'false'
+      fslpython_accept_tos: 'false'
   urls:
     6.0.7.22: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/fslinstaller.py
     6.0.7.18: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/fslinstaller.py
@@ -97,6 +98,15 @@ binaries:
       {%- endfor %}
       {%- endif %}
       {% if self.version not in ("5.0.9", "5.0.8") -%}
+      {% if self.fslpython_accept_tos.lower() in ["true", "y", "1"] -%}
+      fslpython_installer={{ self.install_path }}/etc/fslconf/fslpython_install.sh
+      grep -q 'env create -f .*fslpython_environment.yml' "$fslpython_installer"
+      sed -i '/env create -f .*fslpython_environment.yml/i\
+      if "${miniconda_bin_dir}/conda" tos --help >/dev/null; then\
+        "${miniconda_bin_dir}/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main;\
+        "${miniconda_bin_dir}/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r;\
+      fi' "$fslpython_installer"
+      {% endif -%}
       echo "Installing FSL conda environment ..."
       {% if self.fslpython_debug.lower() in ["true", "y", "1"] -%}
       bash {{ self.install_path }}/etc/fslconf/fslpython_install.sh -f {{ self.install_path }} || \
