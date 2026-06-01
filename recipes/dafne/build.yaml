@@ -18,9 +18,9 @@ variables:
         condition: arch=="aarch64"
   pip_install:
     try:
-      - value: "pyradiomics dafne==1.8a4"
+      - value: "SimpleITK==2.4.1 pyradiomics dafne==1.8a4"
         condition: arch=="x86_64"
-      - value: "tensorflow==2.13.1 pyradiomics dafne==1.8a4"
+      - value: "tensorflow==2.13.1 SimpleITK==2.4.1 pyradiomics dafne==1.8a4"
         condition: arch=="aarch64"
 
 build:
@@ -45,6 +45,8 @@ build:
         - libsm6
         - libxrender1
         - libxext6
+        - xauth
+        - xvfb
 
     - template:
         name: miniconda

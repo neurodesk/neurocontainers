@@ -1,4 +1,13 @@
 tests:
   - name: Test dafne
     script: |
-      dafne
+      python -c "import SimpleITK; import dafne; print(dafne.__version__)"
+      set +e
+      timeout 20s xvfb-run -a dafne >/tmp/dafne.log 2>&1
+      status=$?
+      set -e
+      if [ "$status" -eq 0 ] || [ "$status" -eq 124 ]; then
+        exit 0
+      fi
+      cat /tmp/dafne.log
+      exit "$status"
