@@ -381,8 +381,8 @@ class ReleaseContainerDownloader:
         )
         os.makedirs(self.cache_dir, exist_ok=True)
 
-        # Prefer Nectar, but fall back to the AWS S3 mirror because release PR
-        # tests can start before the best-effort Nectar upload is available.
+        # Prefer Nectar, matching NeuroDesk's public release path, and fall back
+        # to the AWS S3 mirror if Nectar is unavailable.
         self.base_urls = [
             (
                 "Nectar Object Storage",
