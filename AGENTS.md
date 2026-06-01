@@ -136,6 +136,13 @@ tests:
       toolname --help
 ```
 
+### Testing Guidance
+
+- Prefer tests that exercise shared builder behavior, workflow contracts, schema validation, or real container/runtime behavior.
+- For recipe-only fixes, usually validate the recipe and regenerate the Dockerfile; add or update `test.yaml` only when it checks behavior a user or CI actually relies on.
+- Do not add one-off regression tests that only match hardcoded strings already visible in git history or in the same recipe diff. These tests are brittle, duplicate version control, and create maintenance noise without proving behavior.
+- Avoid recipe-specific Python tests unless the recipe exposes a reusable bug class or the assertion is meaningfully stronger than `builder/validation.py` plus Dockerfile generation.
+
 ## Validation Schema
 
 Recipe validation (`builder/validation.py`) enforces:
