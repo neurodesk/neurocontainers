@@ -14,7 +14,7 @@ variables:
     try:
       - value: "python=3.8 numpy tensorflow"
         condition: arch=="x86_64"
-      - value: "python=3.8 numpy pyqt=5.15"
+      - value: "python=3.8 numpy pyqt=5.15 vtk"
         condition: arch=="aarch64"
   pip_install:
     try:
