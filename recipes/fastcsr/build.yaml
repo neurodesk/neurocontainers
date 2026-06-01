@@ -1,0 +1,133 @@
+name: fastcsr
+version: "1.0"
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjE4IiBmaWxsPSIjMTYyMTNlIi8+PHBhdGggZD0iTTI1IDg1YzE4LTM4IDM2LTM4IDU0IDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2Y2Yzg1ZiIgc3Ryb2tlLXdpZHRoPSI4IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48cGF0aCBkPSJNMzYgODBjMTItMjQgMjQtMjQgMzYgMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNGVjZGM0IiBzdHJva2Utd2lkdGg9IjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxjaXJjbGUgY3g9IjY0IiBjeT0iNDQiIHI9IjIwIiBmaWxsPSJub25lIiBzdHJva2U9IiNmN2ZmZjciIHN0cm9rZS13aWR0aD0iNyIvPjx0ZXh0IHg9IjY0IiB5PSIxMTQiIGZvbnQtZmFtaWx5PSJBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjE5IiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZjdmZmY3IiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5GYXN0Q1NSPC90ZXh0Pjwvc3ZnPg==
+
+architectures:
+  - x86_64
+
+variables:
+  fastcsr_repo: https://github.com/IndiLab/FastCSR.git
+  freesurfer_version: 6.0.0
+  freesurfer_home: /opt/freesurfer-{{ context.freesurfer_version }}
+  freesurfer_url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/6.0.0/freesurfer-Linux-centos6_x86_64-stable-pub-v6.0.0.tar.gz
+  nighres_wheel_url: https://raw.githubusercontent.com/IndiLab/FastCSR/main/docker/nighres-1.5.0-cp38-cp38-linux_x86_64.whl
+  model_zip_url: "https://drive.usercontent.google.com/download?id=1qATJ2PT8e6RhBnfJviU6qTtBicVO9_Qr&export=download&authuser=0&confirm=t&uuid=ba0ee838-2af9-48be-8a27-39e5475e4802&at=APZUnTWLoGPK9o4jOoHb5vxdbqCf:1698212871026"
+  data_zip_url: "https://drive.usercontent.google.com/download?id=1Ypw25hbpCloQzlbWhg1XWB-HuxIVlHH7&export=download&authuser=0&confirm=t&uuid=e00becd7-c885-4748-8099-04f472d7ccdd&at=APZUnTX9F-JDE6TLLHxD2NuSF0pA:1698212916237"
+
+files:
+  - name: freesurfer_tar
+    url: "{{ context.freesurfer_url }}"
+  - name: nighres_wheel
+    url: "{{ context.nighres_wheel_url }}"
+  - name: model_zip
+    url: "{{ context.model_zip_url }}"
+  - name: data_zip
+    url: "{{ context.data_zip_url }}"
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - git
+        - software-properties-common
+        - wget
+        - openjdk-11-jdk
+        - bc
+        - binutils
+        - ca-certificates
+        - curl
+        - libgomp1
+        - libxmu6
+        - libxt6
+        - perl
+        - psmisc
+        - sudo
+        - tar
+        - tcsh
+        - unzip
+        - uuid-dev
+        - vim-common
+        - libjpeg62-dev
+        - python3-pip
+    - environment:
+        OS: Linux
+        PATH: "{{ context.freesurfer_home }}/bin:{{ context.freesurfer_home }}/fsfast/bin:{{ context.freesurfer_home }}/tktools:{{ context.freesurfer_home }}/mni/bin:$PATH"
+        FREESURFER_HOME: "{{ context.freesurfer_home }}"
+        FREESURFER: "{{ context.freesurfer_home }}"
+        SUBJECTS_DIR: "{{ context.freesurfer_home }}/subjects"
+        LOCAL_DIR: "{{ context.freesurfer_home }}/local"
+        FSFAST_HOME: "{{ context.freesurfer_home }}/fsfast"
+        FMRI_ANALYSIS_DIR: "{{ context.freesurfer_home }}/fsfast"
+        FUNCTIONALS_DIR: "{{ context.freesurfer_home }}/sessions"
+        FS_OVERRIDE: "0"
+        FIX_VERTEX_AREA: ""
+        FSF_OUTPUT_FORMAT: nii.gz
+        MINC_BIN_DIR: "{{ context.freesurfer_home }}/mni/bin"
+        MINC_LIB_DIR: "{{ context.freesurfer_home }}/mni/lib"
+        MNI_DIR: "{{ context.freesurfer_home }}/mni"
+        MNI_DATAPATH: "{{ context.freesurfer_home }}/mni/data"
+        MNI_PERL5LIB: "{{ context.freesurfer_home }}/mni/share/perl5"
+        PERL5LIB: "{{ context.freesurfer_home }}/mni/share/perl5"
+    - run:
+        - mkdir -p {{ context.freesurfer_home }}
+        - tar -xz -C {{ context.freesurfer_home }} --owner root --group root --no-same-owner --transform='s,freesurfer/,,' --exclude='average/mult-comp-cor' --exclude='lib/cuda' --exclude='lib/qt' --exclude='subjects/V1_average' --exclude='subjects/bert' --exclude='subjects/cvs_avg35' --exclude='subjects/cvs_avg35_inMNI152' --exclude='subjects/fsaverage3' --exclude='subjects/fsaverage4' --exclude='subjects/fsaverage5' --exclude='subjects/fsaverage6' --exclude='subjects/fsaverage_sym' --exclude='trctrain' -f '{{ get_file("freesurfer_tar") }}'
+    - copy:
+        - fs_license.txt
+        - "{{ context.freesurfer_home }}/license.txt"
+    - environment:
+        LD_LIBRARY_PATH: /usr/lib/jvm/java-11-openjdk-amd64/lib:/usr/lib/jvm/java-11-openjdk-amd64/lib/server
+    - run:
+        - pip3 install '{{ get_file("nighres_wheel") }}'
+        - pip install nighres==1.5.0
+        - pip install -U numpy
+        - pip install torch==1.9.1+cpu torchvision==0.10.1+cpu torchaudio==0.9.1 -f https://download.pytorch.org/whl/torch_stable.html
+    - environment:
+        SKLEARN_ALLOW_DEPRECATED_SKLEARN_PACKAGE_INSTALL: "True"
+    - run:
+        - pip install nnunet==1.7.1 antspyx sh
+    - workdir: /opt
+    - run:
+        - git clone {{ context.fastcsr_repo }}
+    - workdir: /opt/FastCSR/
+    - run:
+        - unzip '{{ get_file("model_zip") }}'
+        - unzip '{{ get_file("data_zip") }}'
+    - copy:
+        - license.txt
+        - /license.txt
+
+deploy:
+  path:
+    - /opt/FastCSR
+
+readme: |-
+  
+  ----------------------------------
+  ## fastcsr/{{ context.version }} ##
+   Reconstructing cortical surfaces from structural magnetic resonance imaging (MRI) is a prerequisite for surface-based functional and anatomical image analyses. Conventional algorithms for cortical surface construction are computationally inefficient and typically take several hours for each subject, causing a bottleneck in applications when fast turnaround time is needed. To address this challenge, here we proposed a fast cortical surface reconstruction (FastCSR) pipeline based on deep machine learning. 
+  
+  Example:
+  ```
+  cp /opt/FastCSR /tmp/FastCSR -r
+  cd /tmp/FastCSR
+  python3 pipeline.py --sd ./data --sid sub-001  --t1 ./data/sub-001.nii.gz --parallel_scheduling off --verbose --optimizing_surface off
+  ```
+  
+  More documentation can be found here:  https://github.com/IndiLab/FastCSR/blob/main/README.md
+  
+  To make the executables and scripts inside this container transparently available in the command line of environments where Neurocommand is installed: ml fastcsr/{{ context.version }}
+  
+  Citation:
+  ```
+  Ren, J., Hu, Q., Wang, W. et al. Fast cortical surface reconstruction from MRI using deep learning. Brain Inf. 9, 6 (2022). https://doi.org/10.1186/s40708-022-00155-7
+  ```
+  
+  ----------------------------------
+
+categories:
+  - image segmentation
+  - machine learning
