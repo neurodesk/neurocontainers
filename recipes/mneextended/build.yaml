@@ -1,0 +1,114 @@
+name: mneextended
+version: 1.1.0
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: debian:9
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - midori
+        - xdg-utils
+        - python-pyqt5
+        - unzip
+        - git
+        - apt-transport-https
+        - ca-certificates
+        - coreutils
+        - curl
+        - gnome-keyring
+        - gnupg
+        - libnotify4
+        - wget
+        - libnss3
+        - libxkbfile1
+        - libsecret-1-0
+        - libgtk-3-0
+        - libxss1
+        - libgbm1
+        - libxshmfence1
+        - libasound2
+        - libglu1-mesa
+        - libgl1-mesa-dri
+        - mesa-utils
+        - libgl1-mesa-glx
+        - spyder
+    - copy: mne-extended.yml /opt/mne-extended.yml
+    - template:
+        name: miniconda
+        version: 4.7.12
+        env_name: base
+    - run:
+        - conda install -c conda-forge -n base mamba=0.24.0
+        - mamba env create --file /opt/mne-extended.yml
+        - cp {{ get_file("vscode_deb") }} vscode.deb
+        - apt install ./vscode.deb
+        - rm -rf ./vscode.deb
+        - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.python && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.vscode-pylance && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-keymap && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-renderers
+    - environment:
+        DONT_PROMPT_WSL_INSTALL: "1"
+    - workdir: /opt/
+    - run:
+        - tar xz -f {{ get_file("mne_bids_pipeline_main_tar_gz") }}
+        - chmod a+rwx /opt/mne-bids-pipeline-main -R
+    - copy: code /usr/local/sbin/code
+    - run:
+        - chmod a+x /usr/local/sbin/code
+        - chmod a+rwx /opt/vscode-extensions -R
+    - environment:
+        XDG_RUNTIME_DIR: /neurodesktop-storage
+        RUNLEVEL: "3"
+    - user: neuro
+
+deploy:
+  bins:
+    - code
+
+readme: |-
+  
+  ----------------------------------
+  ## mneextended/{{ context.version }} ##
+  Python MNE environment with VScode 
+  
+  This environment contains MNE Python and some additional tools with dependencies (MNE BIDS Pipeline, MNE-connectivity, MNE-icalabel, Neurokit2)   
+  
+  Example:
+  ```
+  source /opt/miniconda-4.7.12/etc/profile.d/conda.sh
+  conda activate mne-extended 
+  ```
+  
+  More documentation can be found here: https://mne.tools/stable/index.html
+  To cite MNE Python see here: https://mne.tools/stable/overview/cite.html
+  
+  
+  To use the MNE BIDS Pipeline (https://mne.tools/mne-bids-pipeline/)
+  ```
+  python /opt/mne-bids-pipeline-main/run.py --config=/path/to/your/custom_config.py 
+  ```
+  
+  To run applications outside of this container: ml mneextended/{{ context.version }}
+  Note the use of the module system does not currently interface with MNE and conda environments in this container
+  
+  ----------------------------------
+
+files:
+  - name: mne_extended_yml
+    filename: mne-extended.yml
+  - name: code
+    filename: code
+  - name: vscode_deb
+    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
+  - name: mne_bids_pipeline_main_tar_gz
+    url: https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz
+
+categories:
+  - electrophysiology
+  - programming
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAACXBIWXMAAC4jAAAuIwF4pT92AAADcElEQVR4nO2aT4hNURzHP/eZQZRBI2r8W5iUEouJYYPFGDWlURKKkQWS/Ldg85qNFTUZFmaUGs3IsGIj/6JZ+BOSkqYhSkoKo8FoGGNx7vXOu857995zZ/ot5nzqdt/53fc799v3nvN759yeNzQ0xGgmIy1AGmeAtABpnAHSAqRxBkgLkMYZIC1AGmeAtABpnAHSAqRxBkgLkMYZIC1AGmeAtABpnAHSAqQp0RuNjY3VwCJgJjCIMmgQaAK+RvS1EVgI/NL67gSe++0Nft/B9VLgOtBl6KsMOAB4wJCvYwA4CfQDVcA6ra+4lADd2Wz2gh7QqQP2ApNC8VpgeZGO5wMXDfEP5Aw4CCwNXT+GMuJ3KF4OZA39taAMqPFzbegB/hkQngKfgNeGpGXAmiKdthWI92qf3xX4zjlDzPRkf6JGI8DnIlqieKs3ktSA8wXim4EltmqABmBlivyklOqNJAbMAI4b4q2p5Cg6h6GPuIzVG+EaEMVR4Azw3m83ARPSa2IacAI4nKKPa8ARij/UDNCnB5IaAGoqrAYqgH0W+YU4BHQATy11vQK6kybZ3KgGWAXssMiN4hJQiSrGSVkAVFN8BHjAM+B7ELAxAOCOZV4U81BFtcMit9Y/oqgCngSNOEXwj4WYuPQZYu3ACuDNCN0zb80Rx4CPRFf6buCGhZg9wF1D/ArDU1xN5P0hIo4B5cAu4HaR72wFblmIeYEa8qZ7TrfoLw7j9EacGlCCmgbbMK/mHgKPUEvdpCxGzcdO1F4hDV1AM4Ufquefe/Rg3CJY6Se2oZ62zib/bDNkg6exBagntEhJyGPgctKkuCvBMf55F2pXFtBKrlgNkpwgZwDYbpGvU4HaxJUVOaYAE/WkuAYEvwT9qN1iwG57vf/RDlxNkb8eVbCjjrxRYrMOOAusRVXq8DY2LQ3AF8vcDKECV4C8rb7tG6E6Cu8O09AL7ByBfnV+6I2wAeWo1ViYOM7OMcQma59nGa5PNcRagAeG+HhytciUF5e5eiM8BW6ihuBscvPeQ73ZieI06pVXkJcB7mvXm1GLnmAh4lF4SV0P7NfaHuolyTe/fQ84RfJVagZ4qQc890/RUY4zQFqANM4AaQHSOAOkBUjjDJAWII0zQFqANM4AaQHSOAOkBUjjDJAWII0zQFqANM4AaQHS/AVA344BKfe0swAAAABJRU5ErkJggg==
