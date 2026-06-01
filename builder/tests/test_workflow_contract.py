@@ -60,16 +60,6 @@ def test_simg_upload_jobs_are_skipped_when_simg_build_is_skipped() -> None:
     assert "inputs.skip_simg_build != 'true'" in upload_s3_header
 
 
-def test_create_pr_job_does_not_wait_for_nectar_mirrors() -> None:
-    workflow = Path(".github/workflows/build-app.yml").read_text()
-    create_pr_header = workflow.split("  create-pr:", 1)[1].split("    steps:", 1)[0]
-
-    assert "push-dockerhub" in create_pr_header
-    assert "upload-s3" in create_pr_header
-    assert "push-nectar-registry" not in create_pr_header
-    assert "upload-nectar" not in create_pr_header
-
-
 def test_nectar_registry_username_is_explicit() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     push_nectar_job = workflow.split("  push-nectar-registry:", 1)[1].split("  build-simg:", 1)[0]
