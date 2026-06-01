@@ -178,11 +178,11 @@ jobs:
           fi
           python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} -r requirements.txt
 
-      - name: Generate Dockerfile and Release file
+      - name: Generate Dockerfile and stage metadata
         id: generate
         run: |
           echo "APPLICATION: $APPLICATION"
-          python3 -m builder build "$APPLICATION" --recreate --generate-release
+          python3 -m builder stage "$APPLICATION" --recreate --architecture "$ARCHITECTURE"
 
       - name: Set image variables
         id: imgvars
@@ -323,11 +323,11 @@ jobs:
           fi
           python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} -r requirements.txt
 
-      - name: Generate Dockerfile and Release file
+      - name: Generate Dockerfile and stage build context
         id: generate
         run: |
           echo "APPLICATION: $APPLICATION"
-          python3 -m builder build "$APPLICATION" --recreate --generate-release --architecture "$ARCHITECTURE"
+          python3 -m builder stage "$APPLICATION" --recreate --download --architecture "$ARCHITECTURE"
 
       - name: Set image variables
         id: imgvars

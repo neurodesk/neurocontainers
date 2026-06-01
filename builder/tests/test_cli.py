@@ -36,3 +36,30 @@ def test_cmd_login_returns_docker_exit_code_without_traceback(
 
     assert cli.cmd_login(args) == 130
     assert commands == [["docker", "run", "--rm", "-it", "tool:1.0"]]
+
+
+def test_cmd_stage_can_download_declared_url_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+    compiled = SimpleNamespace(
+        name="tool",
+        version="1.0",
+        architecture="x86_64",
+        staging_plan=SimpleNamespace(files={"archive": object()}),
+    )
+    config = SimpleNamespace(repo_root=object(), output_root=object())
+    build_dir = SimpleNamespace()
+    dockerfile_path = SimpleNamespace()
+
+    def fake_write_build_files(*args, **kwargs):
+        calls.append(kwargs)
+        return build_dir, dockerfile_path
+
+    monkeypatch.setattr(cli, "compile_from_args", lambda args: (config, compiled))
+    monkeypatch.setattr(cli, "write_build_files", fake_write_build_files)
+
+    args = argparse.Namespace(output_root=None, recreate=True, download=True)
+
+    assert cli.cmd_stage(args) == 0
+    assert calls == [{"recreate": True, "stage": True, "download": True}]
