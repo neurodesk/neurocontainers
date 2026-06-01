@@ -49,6 +49,17 @@ def test_nectar_mirrors_are_best_effort() -> None:
     assert "continue-on-error: true" in upload_nectar_job
 
 
+def test_simg_upload_jobs_are_skipped_when_simg_build_is_skipped() -> None:
+    workflow = Path(".github/workflows/build-app.yml").read_text()
+    build_simg_header = workflow.split("  build-simg:", 1)[1].split("    runs-on:", 1)[0]
+    upload_nectar_header = workflow.split("  upload-nectar:", 1)[1].split("    # Nectar", 1)[0]
+    upload_s3_header = workflow.split("  upload-s3:", 1)[1].split("    runs-on:", 1)[0]
+
+    assert "inputs.skip_simg_build != 'true'" in build_simg_header
+    assert "inputs.skip_simg_build != 'true'" in upload_nectar_header
+    assert "inputs.skip_simg_build != 'true'" in upload_s3_header
+
+
 def test_create_pr_job_does_not_wait_for_nectar_mirrors() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     create_pr_header = workflow.split("  create-pr:", 1)[1].split("    steps:", 1)[0]
