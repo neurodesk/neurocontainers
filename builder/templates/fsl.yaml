@@ -9,6 +9,7 @@ binaries:
     optional:
       install_path: /opt/fsl-{{ self.version }}
       exclude_paths: ''
+      fslpython_debug: 'false'
   urls:
     6.0.7.22: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/fslinstaller.py
     6.0.7.18: https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/fslinstaller.py
@@ -77,14 +78,37 @@ binaries:
       FSLMACHINELIST: ''
       FSLREMOTECALL: ''
       FSLGECUDAQ: cuda.q
-  - run: "{{ self.install_dependencies() }}\n{% if self.version.split('.') | map('int') | list >= [6, 0, 6] %}\necho \"Installing\
-      \ FSL ...\"\ncurl -fsSL {{ self.urls[self.version] }} | python3 - -d {{ self.install_path }} -V {{ self.version }}\n\
-      {% else %}\necho \"Downloading FSL ...\"\nmkdir -p {{ self.install_path }}\ncurl -fL {{ self.urls[self.version] }} \\\
-      \n| tar -xz -C {{ self.install_path }} --strip-components 1 {% if self.exclude_paths -%}\\\n{%- for exclude_path in\
-      \ self.exclude_paths.split() %}\n  {% if not loop.last -%}\n  --exclude='{{ exclude_path }}' \\\n  {%- else -%}\n  --exclude='{{\
-      \ exclude_path }}'\n  {%- endif -%}\n{%- endfor %}\n{%- endif %}\n{% if self.version not in (\"5.0.9\", \"5.0.8\") -%}\n\
-      echo \"Installing FSL conda environment ...\"\nbash {{ self.install_path }}/etc/fslconf/fslpython_install.sh -f {{ self.install_path\
-      \ }}\n{% endif -%}\n{% if self.version in (\"6.0.1\") -%}\necho \"Downgrading deprecation module per https://github.com/kaczmarj/neurodocker/issues/271#issuecomment-514523420\"\
-      \n{{ self.install_path }}/fslpython/bin/conda install -n fslpython -c conda-forge -y deprecation==1.*\necho \"Removing\
-      \ bundled with FSLeyes libz likely incompatible with the one from OS\"\nrm -f {{ self.install_path }}/bin/FSLeyes/libz.so.1\n\
-      {% endif -%}\n{% endif -%}\n"
+  - run: |
+      {{ self.install_dependencies() }}
+      {% if self.version.split('.') | map('int') | list >= [6, 0, 6] %}
+      echo "Installing FSL ..."
+      curl -fsSL {{ self.urls[self.version] }} | python3 - -d {{ self.install_path }} -V {{ self.version }}
+      {% else %}
+      echo "Downloading FSL ..."
+      mkdir -p {{ self.install_path }}
+      curl -fL {{ self.urls[self.version] }} \
+      | tar -xz -C {{ self.install_path }} --strip-components 1 {% if self.exclude_paths -%}\
+      {%- for exclude_path in self.exclude_paths.split() %}
+        {% if not loop.last -%}
+        --exclude='{{ exclude_path }}' \
+        {%- else -%}
+        --exclude='{{ exclude_path }}'
+        {%- endif -%}
+      {%- endfor %}
+      {%- endif %}
+      {% if self.version not in ("5.0.9", "5.0.8") -%}
+      echo "Installing FSL conda environment ..."
+      {% if self.fslpython_debug.lower() in ["true", "y", "1"] -%}
+      bash {{ self.install_path }}/etc/fslconf/fslpython_install.sh -f {{ self.install_path }} || \
+        (echo "FSL Python installer logs:"; cat /tmp/fslpython*/fslpython_miniconda_installer.log /tmp/fslpython*/fslpython_install_*.log 2>/dev/null || true; exit 1)
+      {% else -%}
+      bash {{ self.install_path }}/etc/fslconf/fslpython_install.sh -f {{ self.install_path }}
+      {% endif -%}
+      {% endif -%}
+      {% if self.version in ("6.0.1") -%}
+      echo "Downgrading deprecation module per https://github.com/kaczmarj/neurodocker/issues/271#issuecomment-514523420"
+      {{ self.install_path }}/fslpython/bin/conda install -n fslpython -c conda-forge -y deprecation==1.*
+      echo "Removing bundled with FSLeyes libz likely incompatible with the one from OS"
+      rm -f {{ self.install_path }}/bin/FSLeyes/libz.so.1
+      {% endif -%}
+      {% endif -%}
