@@ -71,7 +71,7 @@ deploy:
     - refine
   webapp:
     title: OpenRefine
-    icon: https://openrefine.org/img/openrefine_logo.svg
+    icon: icon.svg
     startup_command: "openrefine start"
     startup_timeout: 180
     description: "Data cleaning and transformation tool"
