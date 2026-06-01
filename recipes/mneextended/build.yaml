@@ -6,7 +6,7 @@ architectures:
 
 build:
   kind: neurodocker
-  base-image: debian:9
+  base-image: debian/eol:stretch
   pkg-manager: apt
   directives:
     - environment:
