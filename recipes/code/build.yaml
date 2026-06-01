@@ -20,7 +20,7 @@ build:
         pip_install: "osfclient"
 
     - install:
-        - midori
+        - firefox-esr
         - xdg-utils
         - python3-pyqt5
         - unzip
