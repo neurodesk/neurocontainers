@@ -16,7 +16,7 @@
 #   - /OSHy/test_T2w.nii.gz: T2w test image
 
 name: oshyx
-version: 0.4
+version: "0.4"
 container: oshyx_0.4_20220620.simg
 
 test_data:

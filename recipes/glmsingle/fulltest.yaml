@@ -12,7 +12,7 @@
 #   - Events: BIDS-formatted event timing files
 
 name: glmsingle
-version: 1.2
+version: "1.2"
 container: glmsingle_1.2_20240520.simg
 
 required_files:

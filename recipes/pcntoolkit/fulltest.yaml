@@ -5,7 +5,7 @@
 # Documentation: https://pcntoolkit.readthedocs.io/en/latest/
 
 name: pcntoolkit
-version: 0.35
+version: "0.35"
 container: pcntoolkit_0.35_20250628.simg
 
 test_data:
