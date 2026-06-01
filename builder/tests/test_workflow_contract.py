@@ -28,6 +28,18 @@ def test_create_pr_job_generates_release_without_rebuilding() -> None:
     )
 
 
+def test_build_app_workflow_stages_without_hidden_docker_builds() -> None:
+    workflow = Path(".github/workflows/build-app.yml").read_text()
+    config_job = workflow.split("  config:", 1)[1].split("  build-image:", 1)[0]
+    build_image_job = workflow.split("  build-image:", 1)[1].split("  push-dockerhub:", 1)[0]
+
+    assert 'python3 -m builder stage "$APPLICATION" --recreate --architecture "$ARCHITECTURE"' in config_job
+    assert 'python3 -m builder stage "$APPLICATION" --recreate --download --architecture "$ARCHITECTURE"' in build_image_job
+    assert "python3 -m builder build" not in config_job
+    assert "python3 -m builder build" not in build_image_job
+    assert "docker buildx build" in build_image_job
+
+
 def test_nectar_mirrors_are_best_effort() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     push_nectar_job = workflow.split("  push-nectar-registry:", 1)[1].split("  build-simg:", 1)[0]
