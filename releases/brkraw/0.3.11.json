@@ -1,12 +1,14 @@
 {
   "apps": {
     "brkraw 0.3.11": {
-      "version": "20240320",
-      "exec": ""
+      "version": "20260601",
+      "exec": "",
+      "apptainer_args": []
     },
     "brkrawGUI-brkraw 0.3.11": {
-      "version": "20240320",
-      "exec": "brkraw gui"
+      "version": "20260601",
+      "exec": "brkraw gui",
+      "apptainer_args": []
     }
   },
   "categories": [
