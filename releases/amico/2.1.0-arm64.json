@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "amico 2.1.0 arm64": {
+      "version": "20260512",
+      "exec": "",
+      "apptainer_args": [],
+      "architecture": "aarch64",
+      "image": "amico_2.1.0_arm64"
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ],
+  "architecture": "aarch64"
+}
