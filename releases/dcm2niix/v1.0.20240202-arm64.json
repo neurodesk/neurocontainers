@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "dcm2niix v1.0.20240202 arm64": {
+      "version": "20260513",
+      "exec": "",
+      "apptainer_args": [],
+      "architecture": "aarch64",
+      "image": "dcm2niix_v1.0.20240202_arm64"
+    }
+  },
+  "categories": [
+    "data organisation"
+  ],
+  "architecture": "aarch64"
+}
