@@ -53,6 +53,12 @@ build:
         pip_install: "{{ context.pip_install }}"
         version: py38_22.11.1-1
 
+    - environment:
+        HOME: /tmp
+        XDG_CACHE_HOME: /tmp/.cache
+        XDG_CONFIG_HOME: /tmp/.config
+        XDG_DATA_HOME: /tmp/.local/share
+
 deploy:
   bins:
     - dafne
