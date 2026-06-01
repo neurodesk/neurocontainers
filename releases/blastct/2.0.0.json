@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "blastct 2.0.0": {
+      "version": "20260512",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "structural imaging"
+  ]
+}
