@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from builder.ir import Run
+from builder.ir import Env, Run
 from builder.template import RenderContext, TemplateError, TemplateRenderer
 from builder.recipe import compile_recipe
 from builder.template_backend import apply_builtin_template
@@ -99,3 +99,34 @@ def test_miniconda_template_bootstraps_python_and_pip_for_pip_install() -> None:
     assert "if ! python -m pip --version >/dev/null 2>&1; then" in command
     assert "conda install -y" in command
     assert "--name testenv python pip" in command
+
+
+def test_miniconda_template_guards_conda_tos_for_older_installers() -> None:
+    directives: list[Run] = []
+    apply_builtin_template(
+        "miniconda",
+        {
+            "version": "py37_4.12.0",
+            "arch": "x86_64",
+        },
+        "apt",
+        directives.append,
+    )
+    command = "\n".join(item.command for item in directives if isinstance(item, Run))
+    assert "if conda tos --help >/dev/null 2>&1; then conda tos accept; fi" in command
+    assert "\nconda tos accept\n" not in command
+
+
+def test_matlabmcr_template_uses_release_named_runtime_dirs_for_r2023b() -> None:
+    directives = []
+    apply_builtin_template(
+        "matlabmcr",
+        {"version": "2023b", "install_path": "/opt/mcr"},
+        "apt",
+        directives.append,
+    )
+    env = next(item.values for item in directives if isinstance(item, Env))
+    assert "/opt/mcr/R2023b/runtime/glnxa64" in env["LD_LIBRARY_PATH"]
+    assert env["MATLABCMD"].strip() == "/opt/mcr/R2023b/toolbox/matlab"
+    assert env["MCRROOT"].strip() == "/opt/mcr/R2023b"
+    assert env["XAPPLRESDIR"].strip() == "/opt/mcr/R2023b/x11/app-defaults"

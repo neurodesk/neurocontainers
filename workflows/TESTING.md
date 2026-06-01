@@ -7,7 +7,7 @@ This document describes how container tests are defined, executed locally, and a
 - **Test sources** live beside each recipe. The default location is `recipes/<name>/test.yaml`; when that file is absent, the tooling falls back to the `tests` block embedded in `recipes/<name>/build.yaml`. Each test entry generally specifies a shell script snippet and optional mounts or GPU requirements.
 - **`workflows/test_runner.py`** provides the high-level `ContainerTestRunner` used by local commands, the full-matrix script, and GitHub Actions. Internally it relies on `workflows/container_tester.py`, which handles runtime selection, container discovery, and test execution. Key flags you will see in CI:
   - `--runtime apptainer` forces the Apptainer/Singularity backend.
-  - `--location auto` searches CVMFS first, then local `./sifs`, then downloads via release metadata, and finally falls back to Docker tags.
+  - `--location auto` searches CVMFS first, then local `./sifs`, then downloads via release metadata. Release downloads try Nectar Object Storage first and fall back to the AWS S3 mirror. Docker tags are only used as the final fallback when the selected runtime is Docker.
   - `--docker-to-simg` bypasses the normal SIF lookup, pulls `ghcr.io/<registry>/<name>_<version>:<build_date>`, converts `docker save` output with `docker-save-to-simg`, and tests the generated `.simg` with Apptainer.
   - `--release-file …` injects build-date information so downloads come from the correct storage path.
   - `--cleanup` deletes any downloaded artifacts after tests finish; `--output` writes a JSON summary used for reporting.

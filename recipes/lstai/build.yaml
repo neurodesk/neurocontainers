@@ -1,6 +1,8 @@
 name: lstai
-version: 1.0.0
-copyright: []
+version: 1.2.0
+copyright:
+  - license: MIT
+    url: https://github.com/CompImg/LST-AI/blob/main/LICENSE
 architectures:
   - x86_64
 build:
@@ -8,6 +10,33 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - file:
+        name: Miniforge3_Linux_x86_64_sh
+        url: https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+    - file:
+        name: 0_model
+        url: https://zenodo.org/record/2540695/files/0.model?download=1
+    - file:
+        name: 1_model
+        url: https://zenodo.org/record/2540695/files/1.model?download=1
+    - file:
+        name: 2_model
+        url: https://zenodo.org/record/2540695/files/2.model?download=1
+    - file:
+        name: 3_model
+        url: https://zenodo.org/record/2540695/files/3.model?download=1
+    - file:
+        name: 4_model
+        url: https://zenodo.org/record/2540695/files/4.model?download=1
+    - file:
+        name: greedy
+        url: https://github.com/CompImg/LST-AI/releases/download/v1.0.0/greedy
+    - file:
+        name: lst_data_zip
+        url: https://github.com/CompImg/LST-AI/releases/download/v1.0.0/lst_data.zip
+    - file:
+        name: dcm2niix_lnx_zip
+        url: https://github.com/rordenlab/dcm2niix/releases/download/v1.0.20240202/dcm2niix_lnx.zip
     - deploy:
         path:
           - /opt/miniforge3/envs/lstai/bin/
@@ -17,17 +46,19 @@ build:
           - hd-bet
     - install: wget python3-pip git python3 unzip
     - workdir: /opt
-    - run: # INSTALL MINIFORGE
+    - run:
         - cp {{ get_file("Miniforge3_Linux_x86_64_sh") }} Miniforge3-Linux-x86_64.sh
         - bash Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge3
-    - run: # CREATE LST-AI CONDA ENVIRONMENT AND CLONE LST-AI REPO
-        - /opt/miniforge3/bin/conda create -n lstai python=3.8
+    - run:
+        - /opt/miniforge3/bin/conda create -y -n lstai python=3.8
         - git clone https://github.com/CompImg/LST-AI/ /opt/lstai
     - environment:
         PATH: /opt/miniforge3/envs/lstai/bin:/opt/lstai/bin:${PATH}
-    - run : # INSTALL LST-AI
+    - run:
+        - pip install --timeout 300 torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
+        - pip install --timeout 300 tensorflow==2.13.1
         - pip install -e /opt/lstai
-    - run: # INSTALL HD-BET
+    - run:
         - git clone https://github.com/MIC-DKFZ/HD-BET /opt/hdbet
         - cd /opt/hdbet
         - git checkout ae160681324d524db3578e4135bf781f8206e146
@@ -40,69 +71,42 @@ build:
         - cp {{ get_file("4_model") }} /opt/hd-bet_params/4.model
         - sed -i "s|os.path.join(os.path.expanduser('~'), 'hd-bet_params')|'/opt/hd-bet_params'|" /opt/hdbet/HD_BET/paths.py
         - pip install -e /opt/hdbet
-    - run: # DOWNLOAD LST-AI GREEDY BINARY AND DATA
+    - run:
         - cp {{ get_file("greedy") }} greedy
         - chmod +x greedy
         - mkdir -p /opt/lstai/bin
         - mv greedy /opt/lstai/bin
-    - run: # DOWNLOAD LST-AI MODEL DATA
+    - run:
         - cp {{ get_file("lst_data_zip") }} lst_data.zip
         - unzip lst_data.zip -d /opt/lstai/LST_AI
-    - run: # INSTALL DCM2NIIX
+    - run:
         - cp {{ get_file("dcm2niix_lnx_zip") }} dcm2niix_lnx.zip
         - unzip dcm2niix_lnx.zip -d /opt/dcm2niix
         - chmod a+x /opt/dcm2niix/dcm2niix
         - rm dcm2niix_lnx.zip
     - environment:
         PATH: $PATH:/opt/dcm2niix
-    - run: # INSTALL OSFCLIENT FOR TESTING
+    - run:
         - pip install osfclient
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
     - test:
-        name: Test LST-AI
-        script: |
-          #!/bin/bash
-          set -e
-
-          # Download MS test dataset from OSF using osfclient
-          cd /tmp
-          echo "[INFO] Downloading test dataset from OSF..."
-          osf -p x62zy fetch archive.zip /tmp/archive.zip
-          echo "[INFO] Unzipping dataset..."
-          unzip /tmp/archive.zip -d /tmp/
-          rm -rf /tmp/archive.zip
-
-          # Convert DICOM to NIfTI (with -z y for gzip compression)
-          # SE000005 = T1W, SE000006 = FLAIR
-          echo "[INFO] Converting DICOM to NIfTI..."
-          dcm2niix -z y -o /tmp/ /tmp/archive/ST000001/SE000005/
-          dcm2niix -z y -o /tmp/ /tmp/archive/ST000001/SE000006/
-          rm -rf /tmp/archive/
-
-          # Find the converted files
-          T1_FILE=$(ls /tmp/*T1W*.nii.gz | head -1)
-          FLAIR_FILE=$(ls /tmp/*FLAIR*.nii.gz | head -1)
-          echo "[INFO] T1 file: $T1_FILE"
-          echo "[INFO] FLAIR file: $FLAIR_FILE"
-
-          # Run LST-AI
-          echo "[INFO] Running LST-AI..."
-          lst --t1 "$T1_FILE" --flair "$FLAIR_FILE" --output /tmp/lstai_output --device cpu --fast-mode
-          echo "[INFO] LST-AI completed."
-
-          # Check output exists
-          echo "[INFO] Checking output files..."
-          ls -la /tmp/lstai_output/
-
-          # Print CSVs
-          echo "\nAnnotated Lesion Stats:"
-          cat /tmp/lstai_output/annotated_lesion_stats.csv
-          echo "\nLesion Stats:"
-          cat /tmp/lstai_output/lesion_stats.csv
-
-          echo "[INFO] Test complete"
+            name: Test LST-AI
+            script: |
+              #!/bin/bash
+              set -e
+              osf -p x62zy fetch archive.zip /tmp/archive.zip
+              unzip /tmp/archive.zip -d /tmp/osfdata
+              rm -f /tmp/archive.zip
+              mkdir -p /tmp/t1_out /tmp/flair_out
+              dcm2niix -z y -f "t1" -o /tmp/t1_out /tmp/osfdata/archive/ST000001/SE000005/
+              dcm2niix -z y -f "flair" -o /tmp/flair_out /tmp/osfdata/archive/ST000001/SE000006/
+              lst --t1 /tmp/t1_out/t1.nii.gz \
+                  --flair /tmp/flair_out/flair.nii.gz \
+                  --output /tmp/lstai_output --device cpu --segment_only --fast-mode
+              ls -la /tmp/lstai_output/
+              cat /tmp/lstai_output/lesion_stats.csv
 categories:
   - image segmentation
   - machine learning
@@ -123,14 +127,9 @@ readme: |-
 
   Citation:
   ```
-  Wiltgen T, McGinnis J, Schlaeger S, Kofler F, Voon C, Berthele A, Bischl D, Grundl L, Will N, Metz M, et al. (2024)
-  LST-AI: A deep learning ensemble for accurate MS lesion segmentation.
-  NeuroImage: Clinical. doi:10.1016/j.nicl.2024.103611
+  Wiltgen T, McGinnis J, Schlaeger S, Kofler F, Voon C, Berthele A, Bischl D, Grundl L, Will N, Metz M, et al. (2024) LST-AI: A deep learning ensemble for accurate MS lesion segmentation. NeuroImage: Clinical. doi:10.1016/j.nicl.2024.103611
 
-  Isensee F, Schell M, Tursunova I, Brugnara G, Bonekamp D, Neuberger U, Wick A, Schlemmer HP, Heiland S, Wick W,
-  Bendszus M, Maier-Hein KH, Kickingereder P. (2019)
-  Automated brain extraction of multi-sequence MRI using artificial neural networks.
-  Hum Brain Mapp. 1-13. doi:10.1002/hbm.24750
+  Isensee F, Schell M, Tursunova I, Brugnara G, Bonekamp D, Neuberger U, Wick A, Schlemmer HP, Heiland S, Wick W, Bendszus M, Maier-Hein KH, Kickingereder P. (2019) Automated brain extraction of multi-sequence MRI using artificial neural networks. Hum Brain Mapp. 1-13. doi:10.1002/hbm.24750
   ```
 
   To run container outside of this environment: ml lstai/{{ context.version }}
@@ -146,31 +145,3 @@ structured_readme:
     Wiltgen T, McGinnis J, Schlaeger S, Kofler F, Voon C, Berthele A, Bischl D, Grundl L, Will N, Metz M, et al. (2024) LST-AI: A deep learning ensemble for accurate MS lesion segmentation. NeuroImage: Clinical. doi:10.1016/j.nicl.2024.103611
 
     Isensee F, Schell M, Tursunova I, Brugnara G, Bonekamp D, Neuberger U, Wick A, Schlemmer HP, Heiland S, Wick W, Bendszus M, Maier-Hein KH, Kickingereder P. (2019) Automated brain extraction of multi-sequence MRI using artificial neural networks. Hum Brain Mapp. 1-13. doi:10.1002/hbm.24750
-
-files:
-  - name: Miniforge3_Linux_x86_64_sh
-    url: https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
-
-  - name: 0_model
-    url: https://zenodo.org/record/2540695/files/0.model?download=1
-
-  - name: 1_model
-    url: https://zenodo.org/record/2540695/files/1.model?download=1
-
-  - name: 2_model
-    url: https://zenodo.org/record/2540695/files/2.model?download=1
-
-  - name: 3_model
-    url: https://zenodo.org/record/2540695/files/3.model?download=1
-
-  - name: 4_model
-    url: https://zenodo.org/record/2540695/files/4.model?download=1
-
-  - name: greedy
-    url: https://github.com/CompImg/LST-AI/releases/download/v1.0.0/greedy
-
-  - name: lst_data_zip
-    url: https://github.com/CompImg/LST-AI/releases/download/v1.0.0/lst_data.zip
-
-  - name: dcm2niix_lnx_zip
-    url: https://github.com/rordenlab/dcm2niix/releases/download/v1.0.20240202/dcm2niix_lnx.zip

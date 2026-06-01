@@ -2,105 +2,149 @@ name: noddi
 version: "1.0"
 architectures:
   - x86_64
+
+variables:
+  noddi_source_revision: 332c4ff5665e617e764a54efc7c25ccb23c0bb0f
+  matlab_runtime_root: /usr/local/MATLAB/v99
+
 readme: |-
   ----------------------------------
   ## noddi/{{ context.version }} ##
+  This MATLAB toolbox implements a data fitting routine for Neurite Orientation
+  Dispersion and Density Imaging (NODDI). NODDI is a new diffusion MRI technique
+  for imaging brain tissue microstructure. Compared to DTI, it provides measures
+  of tissue microstructure that are more direct and specific, by adopting a
+  model-based strategy that relates diffusion MRI signals to geometric models of
+  tissue microstructure.
 
-  This MATLAB toolbox implements a data fitting routine for Neurite Orientation Dispersion and Density Imaging (NODDI). NODDI is a new diffusion MRI technique for imaging brain tissue microstructure. Compared to DTI, it has the advantage of providing measures of tissue microstructure that are much more direct and hence more specific. It achieves this by adopting the model-based strategy which relates the signals from diffusion MRI to geometric models of tissue microstructure. In contrast to typical model-based techniques, NODDI is much more clinically feasible and can be acquired on standard MR scanners with an imaging time comparable to DTI.
+  Example (inside the container):
+  ```
+  noddi <NODDI_image> <brain_mask> <NODDI_roi.mat> <bval> <bvec> <FittedParams.mat> <output_prefix>
+  ```
 
-  Example:
+  Example (from outside the container via Singularity):
   ```
   singularity run --cleanenv \
-      --bind <path_to_noddi_input_folder>:/In_fold \
-      <path_to_singulairty_image_folder>/noddi-singularity.sif \
-      /In_fold/<NODDI image> \
-      /In_fold/<brain_mask> \
-      /In_fold/<NODDI_roi> \
-      /In_fold/<bval> \
-      /In_fold/<bvecs> \
-      /In_fold/<FittedParams.mat> \
-      /In_fold/<output_map>
+      --bind /path/to/data:/In_fold \
+      noddi_{{ context.version }}.sif \
+      /In_fold/DWI.nii.gz \
+      /In_fold/brain_mask.nii.gz \
+      /In_fold/NODDI_roi.mat \
+      /In_fold/bvals \
+      /In_fold/bvecs \
+      /In_fold/FittedParams.mat \
+      /In_fold/output
   ```
 
-  More documentation can be found here: https://github.com/CyclotronResearchCentre/NODDI_singularity
+  More documentation: https://github.com/CyclotronResearchCentre/NODDI_singularity
 
   Citation:
   ```
-  Zhang, H., Schneider, T., Wheeler-Kingshott, C. A., & Alexander, D. C. (2012). NODDI: practical in vivo neurite orientation dispersion and density imaging of the human brain. NeuroImage, 61(4), 1000–1016.
+  Zhang, H., Schneider, T., Wheeler-Kingshott, C. A., & Alexander, D. C. (2012).
+  NODDI: practical in vivo neurite orientation dispersion and density imaging of
+  the human brain. NeuroImage, 61(4), 1000-1016.
 
-  Sherif, S., Grignard, M., & Phillips, C. (July 12, 2021). noddi-singularity Zenodo doi:10.5281/zenodo.5093701
+  Sherif, S., Grignard, M., & Phillips, C. (July 12, 2021).
+  noddi-singularity Zenodo doi:10.5281/zenodo.5093701
   ```
 
   To run container outside of this environment: ml noddi/{{ context.version }}
-
   ----------------------------------
+
+files:
+  - name: noddi_source
+    url: https://github.com/CyclotronResearchCentre/NODDI_singularity/archive/{{ context.noddi_source_revision }}.zip
+  - name: noddi_wrapper
+    contents: |
+      #!/usr/bin/env bash
+      # Wrapper script for NODDI (ss_noddi) compiled MATLAB application
+      #
+      # Usage: noddi <DWI> <mask> <roi.mat> <bval> <bvec> <FittedParams.mat> <output>
+      #
+      # Arguments:
+      #   DWI             - Diffusion weighted image (e.g. NODDI_DWI.nii.gz)
+      #   mask            - Brain mask (e.g. brain_mask.nii.gz)
+      #   roi.mat         - NODDI ROI definition file (e.g. NODDI_roi.mat)
+      #   bval            - b-value file
+      #   bvec            - b-vector file
+      #   FittedParams    - Output fitted parameters file (.mat)
+      #   output          - Output map prefix/folder
+      #
+      if [ "$#" -lt 7 ]; then
+          echo "Usage: noddi <DWI> <mask> <roi.mat> <bval> <bvec> <FittedParams.mat> <output>"
+          echo ""
+          echo "Arguments:"
+          echo "  DWI             Diffusion weighted image (.nii.gz or .hdr)"
+          echo "  mask            Brain mask"
+          echo "  roi.mat         NODDI ROI definition file"
+          echo "  bval            b-value file"
+          echo "  bvec            b-vector file"
+          echo "  FittedParams    Output fitted parameters file (.mat)"
+          echo "  output          Output map prefix/folder"
+          echo ""
+          echo "Example:"
+          echo "  noddi DWI.nii.gz mask.nii.gz NODDI_roi.mat data.bval data.bvec FittedParams.mat output"
+          exit 1
+      fi
+      exec bash /opt/ss_noddi/run_ss_noddi.sh "${MCRROOT:-{{ context.matlab_runtime_root }}}" "$@"
+
 build:
   kind: neurodocker
   base-image: ubuntu:20.04
   pkg-manager: apt
   directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
     - template:
         name: matlabmcr
+        curl_opts: "-fsSL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 3600"
         install_path: /usr/local/MATLAB
         version: 2020b
     - run:
-        - mkdir /In_fold
-        - mkdir /Out_fold
-    - file:
-        name: ss_noddi.zip
-        url: https://github.com/CyclotronResearchCentre/NODDI_singularity/archive/refs/heads/main.zip
+        - mkdir -p /In_fold
+        - mkdir -p /Out_fold
+    - install:
+        unzip
     - run:
         - mkdir -p /opt/ss_noddi
-        - unzip -q {{ get_file("ss_noddi.zip") }} -d /opt/ss_noddi_tmp
-        - cp -r /opt/ss_noddi_tmp/NODDI_singularity-main/ss_noddi_App/* /opt/ss_noddi/
+        - unzip -q {{ get_file("noddi_source") }} -d /opt/ss_noddi_tmp
+        - cp -r /opt/ss_noddi_tmp/NODDI_singularity-{{ context.noddi_source_revision }}/ss_noddi_App/* /opt/ss_noddi/
         - rm -rf /opt/ss_noddi_tmp
-    - group:
-        - file:
-            name: noddi
-            contents: |-
-              #!/usr/bin/env bash
+        - chmod +x /opt/ss_noddi/run_ss_noddi.sh
+        - chmod +x /opt/ss_noddi/ss_noddi
+    - copy:
+        - noddi_wrapper
+        - /usr/local/bin/noddi
+    - run:
+        - chmod +x /usr/local/bin/noddi
 
-              bash /opt/ss_noddi/run_ss_noddi.sh /usr/local/MATLAB/MATLAB_Runtime/v99 "$@"
-        - run:
-            - cp {{ get_file("noddi") }} /usr/local/bin/noddi
-            - chmod +x /usr/local/bin/noddi
-        - environment:
-            PATH: $PATH:/usr/local/bin
-        - deploy:
-            bins:
-              - noddi
-      custom: shellScript
-      customParams:
-        name: noddi
-        path: /usr/local/bin
-        content: |-
-          #!/usr/bin/env bash
+deploy:
+  bins:
+    - noddi
 
-          bash /opt/ss_noddi/run_ss_noddi.sh /usr/local/MATLAB/MATLAB_Runtime/v99 "$@"
-        executable: true
-        addToPath: true
-        makeDeployBin: true
 copyright:
   - license: GPL-3.0-only
     url: https://github.com/CyclotronResearchCentre/NODDI_singularity?tab=GPL-3.0-1-ov-file
+
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAAXNSR0IArs4c6QAABFhJREFUSEullv9P1HUcxx/vA+4Ojjs47w419ThkmAcCipCwYEVuaJoZjGw155pttSS11peZ/Af90Gr94I8VMM1RhNIarUSbzUEiEbYGhHwrFTw4ODiF647Pp33el6fCCVqf7fbZ5/153evxer5e7/fr9RFHTxepqqpy9w+45/n2u/nr2rOiKNrtvvbi/VOF6oM6vB9osQDEkcYtiwKiRbhYQPPtJSASgQqKulDywzjUfN1tL95rKJAriqLivTZDvDkGgylG5vS/5Hx+LSVAW9QAf/42zYw/RHq+BaGT/hctYjCgEJxViDMKdLHR7cW7X+WrcyGFP9omaPpwQFol2uLYdsCJw2Xk0jceLn59Q66nrI2ndP9Kpr1BLn/vJTRmITc3l7a2NuzuEO4nk7C79Oh0IrKrxDtfblaVOVUCpi45OXfuHP39/ezcl0/+cw56LkxStfsDKisrSct2kLYpEdPEBpqamjCZTOGwgYmJCZ55dgf69f248kwRReLt+rywgp8n8XekSoB2HTx4kNbhk9yaCnFk/8dUVFSwOsNGRqqbtgsdDA0NUV5eTmdnJ8XFxTQ2NmK1WlmX7eTRnQop6QbtdBAV0Nvbi8vlwmaz4ff7qampkYCU1ck0n26hqKgIu92Oz+fDmWPCMzjLmhXp9PT0UFdXx0cNh3CXmonVC8RbJzfKFPVpCn5xSQUlJSWcPXuW5uZmdu3aFQEsc1i4OjyKx+PhiZ15lOxzYF2tZ/L635z/7Abd7delsucPlLC5Ihljoi46wO12s3fvXqqrqyksLKSqqkoqsNosTHqn6erq4pWj28kvX4Y+QYd/PMiFE2N0/DDM+Pg4217aREGllfgkHeLNL3JlDfou+rjVmSYVaIDu7m5GR0cJhUKcOXMmAhgevEpiYiIbt65kywt2jGbB5PUgHfUzDFwek7avVu9mc7kFozkGcfhETjhFUQClpaW0tLTIqIxGI7blSZxu+JaysjIyMjKw5U3gSNMz1HmLx9Ne5NixY3JznB+oIXOrmViDQBw6ni0BVzTAr2sjCkLJ1xgbnKXheDMa6ObNm6xITSYlyUlfXx9er5c9e/bQ2toq61RbWys3xCOpDopftrJ83b+7SANoKbpycYqZrjuANU9NyVN6+VSQkZERAoEAzvXL0MUIinLKqK+vx2DQnIQvrbgFBQXYN8yQ/bQFfUL4sIk36rLCCtqn+O6TvyJ/2H54FXaXgfbGcbp/9Ml1h8vAhrIken+a5urvM2RmZpKVlRVJ49rHEsjZYcZku9PLwgBFxTcSwOcJoipak1OxLI/DbItjyhPAMxRgoN2PMzeBVVnxCJ3Kjf4AY4MB5oKqzLUjXY91VWzkBN9ueqKqNvNOu75fc1PAMzRLQlKM3Hp3D5il5oU4UONeMHCi9f+5OUUTBiJ6G58/dm+3e/H65+vvUTC/ny81c5eyXwD4vw4XDJzXPl33QCmKNuEe5CNARAM8TBGX+tz5BzDSL71M7B0sAAAAAElFTkSuQmCC
+
 structured_readme:
-  description: This MATLAB toolbox implements a data fitting routine for Neurite Orientation Dispersion and Density Imaging (NODDI). NODDI is a new diffusion MRI technique for imaging brain tissue microstructure. Compared to DTI, it has the advantage of providing measures of tissue microstructure that are much more direct and hence more specific. It achieves this by adopting the model-based strategy which relates the signals from diffusion MRI to geometric models of tissue microstructure. In contrast to typical model-based techniques, NODDI is much more clinically feasible and can be acquired on standard MR scanners with an imaging time comparable to DTI.
+  description: >-
+    This MATLAB toolbox implements a data fitting routine for Neurite Orientation
+    Dispersion and Density Imaging (NODDI). NODDI is a new diffusion MRI technique
+    for imaging brain tissue microstructure. Compared to DTI, it provides measures
+    of tissue microstructure that are more direct and specific, by adopting a
+    model-based strategy that relates diffusion MRI signals to geometric models of
+    tissue microstructure.
   example: |-
-    singularity run --cleanenv \
-        --bind <path_to_noddi_input_folder>:/In_fold \
-        <path_to_singulairty_image_folder>/noddi-singularity.sif \
-        /In_fold/<NODDI image> \
-        /In_fold/<brain_mask> \
-        /In_fold/<NODDI_roi> \
-        /In_fold/<bval> \
-        /In_fold/<bvecs> \
-        /In_fold/<FittedParams.mat> \
-        /In_fold/<output_map>
+    noddi DWI.nii.gz brain_mask.nii.gz NODDI_roi.mat data.bval data.bvec FittedParams.mat output
   documentation: https://github.com/CyclotronResearchCentre/NODDI_singularity
   citation: |-
-    Zhang, H., Schneider, T., Wheeler-Kingshott, C. A., & Alexander, D. C. (2012). NODDI: practical in vivo neurite orientation dispersion and density imaging of the human brain. NeuroImage, 61(4), 1000–1016.
+    Zhang, H., Schneider, T., Wheeler-Kingshott, C. A., & Alexander, D. C. (2012).
+    NODDI: practical in vivo neurite orientation dispersion and density imaging of
+    the human brain. NeuroImage, 61(4), 1000-1016.
+    Sherif, S., Grignard, M., & Phillips, C. (July 12, 2021).
+    noddi-singularity Zenodo doi:10.5281/zenodo.5093701
 
-    Sherif, S., Grignard, M., & Phillips, C. (July 12, 2021). noddi-singularity Zenodo doi:10.5281/zenodo.5093701
 categories:
   - diffusion imaging

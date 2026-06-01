@@ -24,7 +24,7 @@ https://doi.org/10.3390/jimaging10110262
 
 | ID | Label | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| `sendoriginal` | Send original images | boolean | `true` | Return restamped derived copies of the original source images with the MuscleMap output |
+| `sendoriginal` | Send original images | boolean | `true` | Return source-native 2D original images before the MuscleMap-derived outputs, with fresh scanner storage identity |
 | `labeltransform` | Scale labels to lower integer range for DICOM 12BIT | boolean | `true` | Applying label transformation: 3 * (label_in // 10) + (label_in % 10) |
 | `bodyregion` | Body Region | choice | `wholebody, abdomen, pelvis, thigh, leg` | Select the body region for segmentation |
 | `chunksize` | Chunk Size | string | `100` | Chunk size between 5 and 200 - change for memory optimization on GPU |
@@ -33,10 +33,24 @@ https://doi.org/10.3390/jimaging10110262
 # Scanner output handling
 
 MuscleMap buffers the incoming image stream before returning anything to the
-scanner. The segmentation, optional metrics report, optional original copies,
-and non-processed passthrough images are all sent as derived output series with
-fresh series identity, fresh SOP identity, and sequential scanner slice fields.
-This avoids reusing the source scanner storage identity for returned images.
+scanner. When `sendoriginal` is enabled, all received source images are returned
+first as source-native 2D passthrough images: source protocol, sequence,
+image-type, slice, and per-image numbering fields are preserved while
+series/storage UIDs are refreshed. Scanner partition counters such as
+`Actual3DImagePartNumber` and `AnatomicalPartitionNo` are forced to the returned
+single-partition stream (`0`) instead of copying source partition values. If
+`sendoriginal` is disabled, non-processed input images are still returned with
+the same source-native passthrough handling.
+
+MuscleMap segmentation images are sent after the source passthrough stream as
+source-geometry 2D masks with fresh series identity, fresh SOP identity,
+`SequenceDescriptionAdditional = openrecon`, `Keep_image_geometry = 1`,
+`DataRole = Segmentation`, and `SegmentSourceGeometry = 1`. This matches the
+`openreconi2iexample` 2D + detach + after-originals path when
+`segmentpostprocessingstamp` is disabled. Optional metrics report output follows
+the `openreconi2iexample` metrics path: one standalone explicit-volume derived
+image, preferring `image_series_index = 120` when available, with
+`DataRole = Segmentation`, `Keep_image_geometry = 0`, and no `IceMiniHead`.
 
 # Labels
 

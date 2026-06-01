@@ -11,7 +11,8 @@ structured_readme:
     space. Provides disconnectome maps (run_disco.sh), Tractotron probability
     of disconnection (tractotron_cli.sh), and a Java GUI launcher
     (BCBToolKit.sh). Bundles a stripped FSL plus a Java runtime — there is no
-    Python package to import.
+    Python package to import. Includes the HCP-1065 probabilistic tract atlas
+    (64 tracts, 2mm MNI152) at /opt/BCBToolKit/Tools/HCP1065/prob.
   example: |-
     # Disconnectome maps from a folder of MNI-space lesion masks
     run_disco.sh -l /data/lesions -o /data/disco_out
@@ -24,6 +25,10 @@ structured_readme:
 
     # Tractotron — probability of disconnection per individual tract
     tractotron_cli.sh -l /data/lesions -o /data/tractotron_out
+    
+    # Tractotron — using bundled HCP-1065 probabilistic tract atlas (2mm MNI)
+    # Reslice lesion to 2mm first if it's in 1mm space
+    tractotron_cli.sh -l /data/lesions_2mm -t /opt/BCBToolKit/Tools/HCP1065/prob -o /data/tractotron_out
 
     # Java GUI (requires X forwarding)
     BCBToolKit.sh
@@ -39,10 +44,11 @@ readme: |-
   ## bcbtoolkit/{{ context.version }} ##
 
   Tools to indirectly assess brain disconnections from lesion masks in MNI
-  space. Provides disconnectome maps (`run_disco.sh`), Tractotron probability
-  of disconnection (`tractotron_cli.sh`), and a Java GUI launcher
-  (`BCBToolKit.sh`). Bundles a stripped FSL plus a Java runtime — there is no
-  Python package to import.
+  space. Provides disconnectome maps (run_disco.sh), Tractotron probability
+  of disconnection (tractotron_cli.sh), and a Java GUI launcher
+  (BCBToolKit.sh). Bundles a stripped FSL plus a Java runtime — there is no
+  Python package to import. Includes the HCP-1065 probabilistic tract atlas
+  (64 tracts, 2mm MNI152) at /opt/BCBToolKit/Tools/HCP1065/prob.
 
   Example:
   ```bash
@@ -57,6 +63,10 @@ readme: |-
 
   # Tractotron — probability of disconnection per individual tract
   tractotron_cli.sh -l /data/lesions -o /data/tractotron_out
+
+  # Tractotron — using bundled HCP-1065 probabilistic tract atlas (2mm MNI)
+  # Reslice lesion to 2mm first if it's in 1mm space
+  tractotron_cli.sh -l /data/lesions_2mm -t /opt/BCBToolKit/Tools/HCP1065/prob -o /data/tractotron_out
 
   # Java GUI (requires X forwarding)
   BCBToolKit.sh
@@ -76,12 +86,21 @@ readme: |-
   To run container outside of this environment: ml bcbtoolkit/{{ context.version }}
 
   ----------------------------------
+files:
+  - name: bcbtoolkit_archive
+    url: https://www.dropbox.com/s/ug93rp9oouryqj3/BCBToolKitLINUX.tar.gz?dl=1
+  - name: run_disco_sh
+    url: https://raw.githubusercontent.com/chrisfoulon/BCBToolKit/master/run_disco.sh
+  - name: tractotron_cli_sh
+    url: https://raw.githubusercontent.com/chrisfoulon/BCBToolKit/master/tractotron_cli.sh
+  - name: hcp_atlas_zip
+    url: https://github.com/data-others/atlas/releases/download/hcp1065/hcp1065_prob_coverage_nifti.zip
 build:
   kind: neurodocker
   base-image: ubuntu:18.04
   pkg-manager: apt
   directives:
-    - install: libxt6 libglu1-mesa libgl1-mesa-glx curl ca-certificates
+    - install: libxt6 libglu1-mesa libgl1-mesa-glx curl ca-certificates unzip
 
     # ---------------------------------------------------------------------
     # Bundled-FSL environment.
@@ -100,35 +119,46 @@ build:
         FSLDIR: /opt/BCBToolKit/Tools/binaries
         LD_LIBRARY_PATH: /opt/BCBToolKit/Tools/libraries/lib
         FSLOUTPUTTYPE: NIFTI_GZ
+        BCBTOOLKIT_ROOT: /opt/BCBToolKit
 
+    # The BCBToolKitLINUX.tar.gz from Dropbox is missing
+    # Tools/extraFiles/nulldeform.mat, an identity 4x4 affine that
+    # run_disco.sh feeds to flirt -applyxfm -init when it has to reslice
+    # between the SPM 181x217x181 MNI grid and the FSL 182x218x182 MNI grid.
+    # Without it, reslicing fails and downstream track_vis calls produce empty
+    # output while the script can still report success.
     - run:
         - |-
           mkdir -p /opt/BCBToolKit && cd /opt/BCBToolKit \
-            && curl -L -o bcb.tar.gz "https://www.dropbox.com/s/ug93rp9oouryqj3/BCBToolKitLINUX.tar.gz?dl=1" \
-            && tar -xzf bcb.tar.gz --strip-components=1 \
+            && cp {{ get_file("bcbtoolkit_archive") }} bcb.tar.gz \
+            && tar --no-same-owner -xzf bcb.tar.gz --strip-components=1 \
             && rm bcb.tar.gz \
-            && curl -L -o /opt/BCBToolKit/run_disco.sh \
-                 https://raw.githubusercontent.com/chrisfoulon/BCBToolKit/master/run_disco.sh \
-            && curl -L -o /opt/BCBToolKit/tractotron_cli.sh \
-                 https://raw.githubusercontent.com/chrisfoulon/BCBToolKit/master/tractotron_cli.sh \
+            && cp {{ get_file("run_disco_sh") }} /opt/BCBToolKit/run_disco.sh \
+            && cp {{ get_file("tractotron_cli_sh") }} /opt/BCBToolKit/tractotron_cli.sh \
             && chmod +x /opt/BCBToolKit/BCBToolKit.sh \
                         /opt/BCBToolKit/run_disco.sh \
                         /opt/BCBToolKit/tractotron_cli.sh \
+            && ln -sf /opt/BCBToolKit/run_disco.sh /usr/local/bin/run_disco.sh \
+            && ln -sf /opt/BCBToolKit/tractotron_cli.sh /usr/local/bin/tractotron_cli.sh \
+            && cp {{ get_file("hcp_atlas_zip") }} /tmp/hcp_atlas.zip \
+            && mkdir -p /opt/BCBToolKit/Tools/HCP1065 \
+            && unzip /tmp/hcp_atlas.zip -d /opt/BCBToolKit/Tools/HCP1065 \
+            && rm /tmp/hcp_atlas.zip \
             && printf '%s\n' \
                  '1.000000 0.000000 0.000000 0.000000' \
                  '0.000000 1.000000 0.000000 0.000000' \
                  '0.000000 0.000000 1.000000 0.000000' \
                  '0.000000 0.000000 0.000000 1.000000' \
-                 > /opt/BCBToolKit/Tools/extraFiles/nulldeform.mat
-          # ^ The BCBToolKitLINUX.tar.gz from Dropbox is missing
-          #   Tools/extraFiles/nulldeform.mat — an identity 4x4 affine that
-          #   run_disco.sh feeds to flirt -applyxfm -init when it has to
-          #   reslice between the SPM 181x217x181 MNI grid and the FSL
-          #   182x218x182 MNI grid (and back). Without it the reslice fails
-          #   with "Could not open matrix file ... nulldeform.mat", every
-          #   track_vis call then fails on the missing resliced ROI, and the
-          #   output is empty while the script still reports success.
-
+                 > /opt/BCBToolKit/Tools/extraFiles/nulldeform.mat \
+            && chown -R root:root /opt/BCBToolKit \
+            && chmod -R a+rX /opt/BCBToolKit \
+            && rm -f /usr/local/bin/BCBToolKit.sh \
+            && printf '%s\n' \
+                 '#!/usr/bin/env bash' \
+                 'cd /opt/BCBToolKit' \
+                 'exec ./BCBToolKit.sh "$@"' \
+                 > /usr/local/bin/BCBToolKit.sh \
+            && chmod 0755 /usr/local/bin/BCBToolKit.sh
     - deploy:
         bins:
           - BCBToolKit.sh
@@ -162,6 +192,45 @@ build:
               || { echo "FSLOUTPUTTYPE not set in image"; exit 1; }
           test -d "${FSLDIR}" \
               || { echo "FSLDIR does not exist: $FSLDIR"; exit 1; }
+
+          # Upstream archive ships as uid/gid 1000 with restrictive group/other
+          # permissions. Normal runtime users must still be able to traverse
+          # bundled tools, libraries, the Java runtime, and data files.
+          unreadable_path="$(find /opt/BCBToolKit \( -type d ! -perm -0005 -o -type f ! -perm -0004 \) -print -quit)"
+          test -z "${unreadable_path}" \
+              || { echo "BCBToolKit path is not world-readable/traversable: ${unreadable_path}"; exit 1; }
+
+          blocked_exec="$(find /opt/BCBToolKit -type f -perm /0111 ! -perm -0001 -print -quit)"
+          test -z "${blocked_exec}" \
+              || { echo "BCBToolKit executable is not world-executable: ${blocked_exec}"; exit 1; }
+
+          test ! -L /usr/local/bin/BCBToolKit.sh \
+              || { echo "BCBToolKit launcher must be a wrapper, not a symlink"; exit 1; }
+          grep -q '/opt/BCBToolKit' /usr/local/bin/BCBToolKit.sh \
+              || { echo "BCBToolKit launcher does not enter /opt/BCBToolKit"; exit 1; }
+
+          runtime_check="$(mktemp /tmp/bcb-runtime-check.XXXXXX)"
+          trap 'rm -f "${runtime_check}"' EXIT
+          cat > "${runtime_check}" <<'EOF'
+          #!/bin/bash
+          set -euo pipefail
+          test -x /opt/BCBToolKit/Tools/binaries/bin/fslmaths
+          test -x /opt/BCBToolKit/jre/bin/java
+          test -r /opt/BCBToolKit/sources.jar
+          BCBTOOLKIT_ROOT=/opt/BCBToolKit run_disco.sh -l /tmp/nope -o /tmp/out 2>&1 |
+              grep -q "neither an existing file nor directory"
+          EOF
+          chmod 0755 "${runtime_check}"
+
+          if [ "$(id -u)" -eq 0 ]; then
+              if command -v runuser >/dev/null 2>&1; then
+                  runuser -u nobody -- "${runtime_check}"
+              else
+                  su -s /bin/bash nobody -c "${runtime_check}"
+              fi
+          else
+              "${runtime_check}"
+          fi
 
           echo "=== /opt/BCBToolKit contents ==="
           ls /opt/BCBToolKit/

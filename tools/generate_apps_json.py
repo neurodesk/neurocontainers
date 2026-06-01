@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Dict, Any
 
 
+VISIBILITY_FIELDS = ("show_in_menu", "show_in_applist")
+
+
 def collect_release_files(releases_dir: str) -> Dict[str, list]:
     """
     Collect all release files organized by container.
@@ -82,6 +85,7 @@ def merge_container_releases(container_name: str, release_files: list) -> Dict[s
     """
     merged_apps = {}
     merged_categories = set()
+    merged_visibility: Dict[str, Any] = {}
     
     for version, file_path in release_files:
         print(f"  Processing {container_name} {version}")
@@ -99,11 +103,21 @@ def merge_container_releases(container_name: str, release_files: list) -> Dict[s
         # Merge categories
         categories = release_data.get('categories', [])
         merged_categories.update(categories)
+
+        for field in VISIBILITY_FIELDS:
+            if field not in release_data:
+                continue
+            value = release_data[field]
+            if value is None:
+                continue
+            if value is False or field not in merged_visibility:
+                merged_visibility[field] = value
     
-    return {
+    container_data = {
         "apps": merged_apps,
         "categories": sorted(list(merged_categories))
     }
+    return {**merged_visibility, **container_data}
 
 
 def generate_apps_json(releases_dir: str, output_file: str):

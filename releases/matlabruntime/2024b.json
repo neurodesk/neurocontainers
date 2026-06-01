@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "matlabruntime 2024b": {
+      "version": "20260521",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "programming"
+  ]
+}

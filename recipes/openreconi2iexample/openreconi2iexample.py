@@ -2,6 +2,7 @@
 import base64
 import json
 import logging
+import os
 import re
 import traceback
 import uuid
@@ -16,12 +17,66 @@ ORIGINAL_SERIES_INDEX = 100
 SEGMENT_SERIES_INDEX = 101
 UPSAMPLED_SERIES_INDEX = 102
 MIP_SERIES_INDEX = 103
+METRICS_SERIES_INDEX = 120
+REFORMAT_SERIES_INDEX_START = 121
 INVERT_SERIES_NAME = "openrecon_invert"
 ORIGINAL_SERIES_NAME = "openrecon_original"
 SEGMENT_SERIES_NAME = "openrecon_segment"
 UPSAMPLED_SERIES_NAME = "openrecon_upsampled"
 MIP_SERIES_NAME = "openrecon_mip"
+METRICS_SERIES_NAME = "openrecon_metrics"
+REFORMAT_SAGITTAL_SERIES_NAME = "openrecon_segment_reformat_sagittal"
+REFORMAT_CORONAL_SERIES_NAME = "openrecon_segment_reformat_coronal"
 SEGMENTATION_LUT = "MicroDeltaHotMetal.pal"
+SEGMENT_SOURCE_GEOMETRY_META_KEY = "SegmentSourceGeometry"
+SEGMENT_SOURCE_IMAGE_HEADER_META_KEY = "SegmentSourceImageHeader"
+SEGMENT_DERIVED_IMAGE_HEADER_META_KEY = "SegmentDerivedImageHeader"
+SEGMENT_EXPLICIT_VOLUME_META_KEY = "SegmentExplicitVolume"
+SEGMENT_OUTPUT_GEOMETRY_META_KEY = "SegmentOutputGeometry"
+SEGMENT_REFORMAT_META_KEY = "SegmentReformat"
+SEGMENT_REFORMAT_ORIENTATION_META_KEY = "SegmentReformatOrientation"
+SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE = (
+    f"DERIVED\\PRIMARY\\SEGMENTATION\\{SEGMENT_SERIES_NAME}"
+)
+SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4 = SEGMENT_SERIES_NAME
+SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE = (
+    f"DERIVED\\SECONDARY\\OTHER\\{SEGMENT_SERIES_NAME}_3d"
+)
+SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4 = f"{SEGMENT_SERIES_NAME}_3d"
+SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
+SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY = "SegmentPostProcessingChildRole"
+SEGMENT_DIXON_COMPOSABLE_META_KEY = "SegmentDixonComposable"
+SEGMENT_SOURCE_IMAGE_HEADER_IMAGE_TYPE = (
+    f"DERIVED\\PRIMARY\\SEGMENTATION\\{SEGMENT_SERIES_NAME}_source_image_header"
+)
+SEGMENT_SOURCE_IMAGE_HEADER_IMAGE_TYPE_VALUE4 = (
+    f"{SEGMENT_SERIES_NAME}_source_image_header"
+)
+SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE = (
+    f"DERIVED\\PRIMARY\\OTHER\\{SEGMENT_SERIES_NAME}_derived_image_header"
+)
+SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE_VALUE4 = (
+    f"{SEGMENT_SERIES_NAME}_derived_image_header"
+)
+SEGMENT_POSTPROCESSING_IMAGE_TYPE = SEGMENT_SOURCE_IMAGE_HEADER_IMAGE_TYPE
+SEGMENT_POSTPROCESSING_IMAGE_TYPE_VALUE4 = (
+    SEGMENT_SOURCE_IMAGE_HEADER_IMAGE_TYPE_VALUE4
+)
+SEGMENT_POSTPROCESSING_DISALLOWED_DIXON_TOKENS = {
+    "DIXON",
+    "FAT",
+    "FAT_FRAC",
+    "WATER",
+}
+METRICS_FIELDNAMES = (
+    "region",
+    "source",
+    "voxels",
+    "volume_mm3",
+    "volume_ml",
+    "voxel_mm3",
+    "threshold",
+)
 SOURCE_PARENT_REFERENCE_META_KEYS = {
     "DicomEngineDimString",
     "MFInstanceNumber",
@@ -34,12 +89,106 @@ SOURCE_PARENT_REFERENCE_META_PREFIXES = (
     "ReferencedGSPS",
     "ReferencedImageSequence",
 )
+SCANNER_WRITE_UNSAFE_META_KEYS = {
+    "ImageTypeValue3",
+}
+ORIGINAL_IMAGE_TYPE_VALUE3 = "M"
+ORIGINAL_SINGLE_PARTITION_FIELDS = (
+    "Actual3DImagePartNumber",
+    "AnatomicalPartitionNo",
+)
+ORIGINAL_RESTAMPED_STORAGE_FIELDS = (
+    "Actual3DImagePartNumber",
+    "AnatomicalPartitionNo",
+    "AnatomicalSliceNo",
+    "ChronSliceNo",
+    "NumberInSeries",
+    "ProtocolSliceNumber",
+    "SliceNo",
+    "IsmrmrdSliceNo",
+)
+MINIHEAD_STORAGE_FIELD_SPECS = (
+    ("Actual3DImagePartNumber", "DICOM", "Actual3DImagePartNumber"),
+    ("Actual3DImaPartNumber", "DICOM", "Actual3DImagePartNumber"),
+    ("NumberInSeries", "DICOM", "NumberInSeries"),
+    ("ProtocolSliceNumber", "DICOM", "ProtocolSliceNumber"),
+    ("SliceNo", "DICOM", "SliceNo"),
+    ("AnatomicalPartitionNo", "CONTROL", "AnatomicalPartitionNo"),
+    ("AnatomicalSliceNo", "CONTROL", "AnatomicalSliceNo"),
+    ("ChronSliceNo", "CONTROL", "ChronSliceNo"),
+    ("IsmrmrdSliceNo", "CONTROL", "IsmrmrdSliceNo"),
+)
 SCANNER_PARTITION_INDEX = 0
 SLICE_POSITION_TOLERANCE_MM = 1e-4
 EXTRA_ORIGINAL_SERIES_INDEX_START = 104
+EXTRA_SEGMENT_SERIES_INDEX_START = 110
+SOURCE_VOLUME_GROUP_FIELDS = (
+    ("contrast", "c"),
+    ("phase", "ph"),
+    ("repetition", "rep"),
+    ("set", "set"),
+    ("average", "avg"),
+)
+SOURCE_GROUP_HEADER_FIELDS = (
+    "contrast",
+    "phase",
+    "repetition",
+    "set",
+    "average",
+)
+SEGMENT_OUTPUT_GEOMETRY_2D = "2d"
+SEGMENT_OUTPUT_GEOMETRY_3D = "3d"
+SEGMENT_OUTPUT_GEOMETRIES = (
+    SEGMENT_OUTPUT_GEOMETRY_2D,
+    SEGMENT_OUTPUT_GEOMETRY_3D,
+)
+SEGMENT_DELIVERY_MODE_EXCLUDE = "explicit_volume_derived_header"
+SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D = "3d_series_segment_header"
+SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D = "2d_segment_header"
+SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS = (
+    "2d_segment_header_originals"
+)
+SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER = (
+    "2d_derived_image_header"
+)
+SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER = (
+    "2d_source_image_header"
+)
+# Experimental whole-body composing diagnostic: keep the source Dixon contrast
+# token on the masks (the inverse of the Dixon-token sanitization used by every
+# other mode) plus native ImageTypeValue3="M" and a distinct per-station segment
+# series identity, so each mask is routed into a Dixon compose channel. Used to
+# observe which channel claims the masks and whether they compose across
+# stations or collide with the original contrast.
+SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE = "2d_dixon_composable"
+SEGMENT_DELIVERY_MODES = (
+    SEGMENT_DELIVERY_MODE_EXCLUDE,
+    SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
+    SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D,
+    SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS,
+    SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER,
+    SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER,
+    SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE,
+)
+SEGMENT_DELIVERY_MODE_DEFAULT = SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D
+SEGMENT_REFORMAT_ORIENTATION_SAGITTAL = "sagittal"
+SEGMENT_REFORMAT_ORIENTATION_CORONAL = "coronal"
+SEGMENT_REFORMAT_ORIENTATIONS = (
+    SEGMENT_REFORMAT_ORIENTATION_SAGITTAL,
+    SEGMENT_REFORMAT_ORIENTATION_CORONAL,
+)
+SEGMENT_REFORMAT_SERIES = {
+    SEGMENT_REFORMAT_ORIENTATION_SAGITTAL: REFORMAT_SAGITTAL_SERIES_NAME,
+    SEGMENT_REFORMAT_ORIENTATION_CORONAL: REFORMAT_CORONAL_SERIES_NAME,
+}
+VERSION_ENV_VAR = "OPENRECONI2IEXAMPLE_VERSION"
 
 
 def process(connection, config, metadata):
+    logging.info(
+        "openreconi2iexample runtime version=%s",
+        _runtime_version(),
+    )
     logging.info("Config: %s", config)
     input_images = []
     magnitude_images = []
@@ -71,28 +220,141 @@ def process(connection, config, metadata):
             ("segment", "sendsegment", "sendthreshold"),
             default=False,
         )
+        segment_delivery_mode = _segment_delivery_mode(config)
+        exclude_segment_from_postprocessing = (
+            segment_delivery_mode == SEGMENT_DELIVERY_MODE_EXCLUDE
+        )
+        preserve_segment_dixon_identity = (
+            segment_delivery_mode == SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE
+        )
+        stamp_segment_with_source_image_header = (
+            segment_delivery_mode
+            == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER
+            or preserve_segment_dixon_identity
+        )
+        stamp_segment_with_derived_image_header = (
+            segment_delivery_mode
+            == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER
+        )
+        send_segment_2d_geometry = (
+            segment_delivery_mode
+            in (
+                SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D,
+                SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS,
+                SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER,
+                SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER,
+                SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE,
+            )
+        )
+        segment_scanner_postprocessing = (
+            segment_delivery_mode
+            != SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS
+        )
+        send_segment_3d_source_geometry = (
+            segment_delivery_mode == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D
+        )
         use_segmentation_colormap = _config_bool_any(
             config,
             ("segmentationcolormap", "sendsegmentationcolormap"),
             default=False,
         )
-        send_mip = _config_bool_any(
+        send_mip = _config_bool(
             config,
-            ("mip", "sendmip", "sendthresholdmip"),
+            "sendcomputedmip",
+            default=False,
+        )
+        send_metrics = _config_bool_any(
+            config,
+            ("sendmetrics", "metrics", "sendregionmetrics"),
+            default=False,
+        )
+        send_reformat_sagittal = _config_bool(
+            config,
+            "sendreformatsagittal",
+            default=False,
+        )
+        send_reformat_coronal = _config_bool(
+            config,
+            "sendreformatcoronal",
+            default=False,
+        )
+        reformat_orientations = []
+        if send_reformat_sagittal:
+            reformat_orientations.append(SEGMENT_REFORMAT_ORIENTATION_SAGITTAL)
+        if send_reformat_coronal:
+            reformat_orientations.append(SEGMENT_REFORMAT_ORIENTATION_CORONAL)
+        native_original_identity = _config_bool_any(
+            config,
+            (
+                "originalnativeidentity",
+                "nativeoriginalidentity",
+                "composepassthrough",
+            ),
             default=False,
         )
         output_images = []
+        original_images = []
+        align_originals_with_segment = bool(
+            send_segment
+            and (
+                exclude_segment_from_postprocessing
+                or send_segment_3d_source_geometry
+            )
+        )
+        if send_original:
+            original_images = _restamp_originals(
+                input_images,
+                align_with_explicit_segment=align_originals_with_segment,
+                native_identity=native_original_identity,
+            )
+            output_images.extend(original_images)
         inverted_images = []
         if send_invert:
             inverted_images = _invert_images(magnitude_images)
             output_images.extend(inverted_images)
+        computed_segment_images = []
         segment_images = []
+        metrics_rows = []
         if send_segment:
-            segment_images = _segment_images(
-                magnitude_images,
-                use_colormap=use_segmentation_colormap,
-            )
+            if send_segment and exclude_segment_from_postprocessing:
+                computed_segment_images = _segment_images_excluded_from_postprocessing(
+                    magnitude_images,
+                    use_colormap=use_segmentation_colormap,
+                    metrics_rows=metrics_rows if send_metrics else None,
+                )
+            elif send_segment and send_segment_2d_geometry:
+                computed_segment_images = _segment_images_for_postprocessing(
+                    magnitude_images,
+                    use_colormap=use_segmentation_colormap,
+                    metrics_rows=metrics_rows if send_metrics else None,
+                    stamp_for_postprocessing=stamp_segment_with_source_image_header,
+                    stamp_with_derived_image_header=(
+                        stamp_segment_with_derived_image_header
+                    ),
+                    scanner_postprocessing=segment_scanner_postprocessing,
+                    preserve_dixon_identity=preserve_segment_dixon_identity,
+                )
+            else:
+                computed_segment_images = _segment_images(
+                    magnitude_images,
+                    use_colormap=use_segmentation_colormap,
+                    metrics_rows=metrics_rows if send_metrics else None,
+                )
+        elif send_metrics and not reformat_orientations:
+            _segment_metrics_rows(magnitude_images, metrics_rows)
+        if send_segment:
+            segment_images = computed_segment_images
             output_images.extend(segment_images)
+        reformat_images = []
+        if reformat_orientations:
+            reformat_images = _segment_reformat_images(
+                magnitude_images,
+                reformat_orientations,
+                metrics_rows=(
+                    metrics_rows if send_metrics and not computed_segment_images else None
+                ),
+            )
+            output_images.extend(reformat_images)
         upsampled_images = []
         if send_upsampled:
             upsampled_images = _upsampled_images(magnitude_images)
@@ -101,43 +363,277 @@ def process(connection, config, metadata):
         if send_mip:
             mip_images = _mip_image(magnitude_images)
             output_images.extend(mip_images)
-        original_images = []
-        if send_original:
-            original_images = _restamp_originals(input_images)
-            output_images.extend(original_images)
+        metrics_images = []
+        if send_metrics:
+            metrics_images = _metrics_report_images(magnitude_images, metrics_rows)
+            output_images.extend(metrics_images)
 
+        postprocessing_target = _scanner_postprocessing_target(
+            send_original,
+            send_segment,
+            segment_delivery_mode,
+        )
         logging.info(
             "Configured outputs: original=%s invert=%s upsampled=%s segment=%s "
-            "segmentationcolormap=%s mip=%s",
+            "segmentheadergeometry=%s postprocessing_target=%s "
+            "segmentationcolormap=%s computedmip=%s metrics=%s "
+            "reformat_sagittal=%s reformat_coronal=%s",
             send_original,
             send_invert,
             send_upsampled,
             send_segment,
+            segment_delivery_mode,
+            postprocessing_target,
             use_segmentation_colormap,
             send_mip,
+            send_metrics,
+            send_reformat_sagittal,
+            send_reformat_coronal,
         )
         logging.info(
+            "OPENRECONI2I_POSTPROCESSING target=%s",
+            postprocessing_target,
+        )
+        if native_original_identity:
+            logging.info(
+                "OPENRECONI2I_ORIGINAL_NATIVE_IDENTITY enabled: returning %d "
+                "original image(s) with source series identity preserved "
+                "(experimental whole-body composing pass-through)",
+                len(original_images),
+            )
+        logging.info(
             "Sending %d original image(s), %d inverted image(s), "
-            "%d upsampled image(s), %d segmentation image(s), and %d MIP image(s)",
+            "%d upsampled image(s), %d segmentation image(s), "
+            "%d reformat image(s), %d computed MIP image(s), "
+            "and %d metrics image(s)",
             len(original_images),
             len(inverted_images),
             len(upsampled_images),
             len(segment_images),
+            len(reformat_images),
             len(mip_images),
+            len(metrics_images),
         )
         if not output_images:
             logging.info("No output options enabled; closing without output")
             return
 
-        _validate_output_images(output_images, input_images)
+        if native_original_identity and original_images:
+            native_ids = {id(image) for image in original_images}
+            images_to_validate = [
+                image for image in output_images if id(image) not in native_ids
+            ]
+            logging.info(
+                "OPENRECONI2I_ORIGINAL_NATIVE_IDENTITY bypasses the restamped "
+                "output contract validation for %d native pass-through "
+                "original image(s)",
+                len(original_images),
+            )
+        else:
+            images_to_validate = output_images
+        _validate_output_images(images_to_validate, input_images)
         _log_output_images(output_images)
-        connection.send_image(output_images)
+        split_source_geometry_outputs = bool(
+            original_images
+            and segment_images
+            and send_segment
+        )
+        send_batches = _output_send_batches(
+            output_images,
+            original_images,
+            segment_images=segment_images,
+            split_originals=split_source_geometry_outputs,
+        )
+        if len(send_batches) > 1:
+            if split_source_geometry_outputs:
+                logging.info(
+                    "Sending original outputs before segment outputs across "
+                    "%d MRD image messages",
+                    len(send_batches),
+                )
+        for batch_index, batch in enumerate(send_batches, start=1):
+            if len(send_batches) > 1:
+                logging.info(
+                    "Sending MRD image message batch %d/%d with %d image(s)",
+                    batch_index,
+                    len(send_batches),
+                    len(batch),
+                )
+            _log_send_batch_summary(batch_index, len(send_batches), batch)
+            connection.send_image(batch)
 
     except Exception:
         logging.error(traceback.format_exc())
         connection.send_logging(constants.MRD_LOGGING_ERROR, traceback.format_exc())
     finally:
         connection.send_close()
+
+
+def _output_send_batches(
+    output_images,
+    original_images,
+    segment_images=None,
+    split_originals=False,
+):
+    if not split_originals:
+        return [output_images]
+
+    original_ids = {id(image) for image in original_images}
+    segment_ids = {id(image) for image in (segment_images or [])}
+    original_batch = [
+        image for image in output_images
+        if id(image) in original_ids
+    ]
+    segment_batch = [
+        image for image in output_images
+        if id(image) in segment_ids
+    ]
+    remaining_batch = [
+        image for image in output_images
+        if (
+            id(image) not in original_ids
+            and id(image) not in segment_ids
+        )
+    ]
+    batches = (
+        original_batch,
+        segment_batch + remaining_batch,
+    )
+    return [
+        batch for batch in batches
+        if batch
+    ]
+
+
+def _runtime_version():
+    return os.environ.get(VERSION_ENV_VAR, "unknown")
+
+
+def _scanner_postprocessing_target(
+    send_original,
+    send_segment,
+    segment_delivery_mode,
+):
+    if send_segment and segment_delivery_mode == SEGMENT_DELIVERY_MODE_EXCLUDE:
+        if send_original:
+            return "originals"
+        return "none_segment_excluded"
+    if (
+        send_segment
+        and segment_delivery_mode == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS
+    ):
+        if send_original:
+            return "originals"
+        return "none_segment_not_postprocessed"
+    if (
+        send_segment
+        and segment_delivery_mode
+        == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER
+    ):
+        if send_original:
+            return "originals+segment_2d_source_image_header"
+        return "segment_2d_source_image_header"
+    if send_segment and segment_delivery_mode == SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE:
+        if send_original:
+            return "originals+segment_2d_dixon_composable"
+        return "segment_2d_dixon_composable"
+    if (
+        send_segment
+        and segment_delivery_mode
+        == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER
+    ):
+        if send_original:
+            return "originals+segment_2d_derived_image_header"
+        return "segment_2d_derived_image_header"
+    if (
+        send_segment
+        and segment_delivery_mode == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D
+    ):
+        return "segment_2d_source_geometry"
+    if (
+        send_segment
+        and segment_delivery_mode == SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D
+    ):
+        return "segment_3d_source_geometry"
+    if send_original:
+        return "originals"
+    return "none"
+
+
+def _log_send_batch_summary(batch_index, batch_count, images):
+    logging.info(_send_batch_summary(batch_index, batch_count, images))
+
+
+def _send_batch_summary(batch_index, batch_count, images):
+    series = _ordered_unique_strings(
+        int(image.image_series_index) for image in images
+    )
+    keep_geometry = _ordered_unique_strings(
+        _meta_text(_meta_from_image(image), "Keep_image_geometry") or "missing"
+        for image in images
+    )
+    names = _ordered_unique_strings(
+        _meta_text(_meta_from_image(image), "SeriesDescription") or "missing"
+        for image in images
+    )
+    targets = _ordered_unique_strings(_output_role(image) for image in images)
+    return (
+        "OPENRECONI2I_BATCH index=%d/%d images=%d target=%s "
+        "series=%s keep_geometry=%s names=%s"
+        % (
+            batch_index,
+            batch_count,
+            len(images),
+            "+".join(targets) if targets else "empty",
+            ",".join(series) if series else "empty",
+            ",".join(keep_geometry) if keep_geometry else "empty",
+            "|".join(names) if names else "empty",
+        )
+    )
+
+
+def _output_role(image):
+    meta = _meta_from_image(image)
+    if _is_segment_reformat_output(meta):
+        return "segment_reformat"
+    if _is_segment_source_image_header_output(meta):
+        return "segment_source_image_header"
+    if _is_segment_derived_image_header_output(meta):
+        return "segment_derived_image_header"
+    if _is_segment_postprocessing_output(meta):
+        return "segment_source_image_header"
+    if _is_segment_explicit_volume_output(meta):
+        return "segment_explicit_3d"
+    if _is_segment_source_geometry_output(meta):
+        if _meta_text(meta, SEGMENT_OUTPUT_GEOMETRY_META_KEY) == (
+            SEGMENT_OUTPUT_GEOMETRY_3D
+        ):
+            return "segment_3d_series"
+        return "segment_source_geometry"
+    if _is_original_series_index(int(image.image_series_index)):
+        return "original_passthrough"
+    series_index = int(image.image_series_index)
+    if series_index == INVERT_SERIES_INDEX:
+        return "invert"
+    if series_index == UPSAMPLED_SERIES_INDEX:
+        return "upsampled"
+    if series_index == MIP_SERIES_INDEX:
+        return "mip"
+    if series_index == METRICS_SERIES_INDEX:
+        return "metrics"
+    return "derived"
+
+
+def _ordered_unique_strings(values):
+    unique = []
+    seen = set()
+    for value in values:
+        text = str(value)
+        if text in seen:
+            continue
+        seen.add(text)
+        unique.append(text)
+    return unique
 
 
 def _invert_images(images):
@@ -208,84 +704,908 @@ def _invert_images(images):
     return outputs
 
 
-def _segment_images(images, use_colormap=False):
+def _segment_images(
+    images,
+    use_colormap=False,
+    metrics_rows=None,
+):
     if not images:
         return []
 
-    threshold = _bright_foreground_threshold(images)
-    series_identity = _build_output_series_identity(
-        images[0],
-        SEGMENT_SERIES_INDEX,
-        "segment",
-        SEGMENT_SERIES_NAME,
+    source_groups = _original_source_groups(images)
+    if len(source_groups) > 1:
+        logging.info(
+            "segmentation split %d received image(s) into %d source volume group(s)",
+            len(images),
+            len(source_groups),
+        )
+    segment_suffixes = _segment_group_suffixes(source_groups)
+    outputs = []
+    thresholds = []
+    for group_index, group_images in enumerate(source_groups):
+        threshold = _bright_foreground_threshold(group_images)
+        thresholds.append(threshold)
+        series_index = _segment_series_index(group_index)
+        series_identity = _build_output_series_identity(
+            group_images[0],
+            series_index,
+            segment_suffixes[group_index],
+            SEGMENT_SERIES_NAME,
+        )
+        segment_items = []
+        for source_image in group_images:
+            source_data = np.asarray(source_image.data)
+            foreground = source_data.astype(np.float32) >= threshold
+            segmentation = _largest_connected_component_per_plane(foreground).astype(
+                np.uint16
+            )
+            segment_items.append((source_image, segmentation))
+
+        metric_row = None
+        if metrics_rows is not None:
+            metric_row = _region_metrics_row(
+                group_images,
+                group_index,
+                segment_suffixes[group_index],
+                threshold,
+                segment_items,
+            )
+            metrics_rows.append(metric_row)
+
+        extra_meta = {
+            "WindowCenter": "0.5",
+            "WindowWidth": "1",
+        }
+        if metric_row:
+            metrics_comment = _format_region_volume_comment(metric_row)
+            extra_meta["ImageComments"] = metrics_comment
+            extra_meta["ImageComment"] = metrics_comment
+        if len(source_groups) > 1:
+            extra_meta["SourceVolumeGroup"] = segment_suffixes[group_index]
+            for field_name, _label in SOURCE_VOLUME_GROUP_FIELDS:
+                extra_meta[f"Source{field_name.title()}"] = str(
+                    _source_volume_field_value(group_images[0], field_name)
+                )
+        if use_colormap:
+            extra_meta["LUTFileName"] = SEGMENTATION_LUT
+        extra_meta[SEGMENT_OUTPUT_GEOMETRY_META_KEY] = SEGMENT_OUTPUT_GEOMETRY_3D
+
+        ordered_segment_items, _slice_axis = _ordered_source_geometry_items(
+            segment_items,
+            "3D segmentation output",
+            duplicate_failure=(
+                "cannot send a safe scanner-visible 3D segment series"
+            ),
+            sort_action="sending scanner-visible 3D segment series",
+        )
+        for output_index, (source_image, segmentation) in enumerate(
+            ordered_segment_items
+        ):
+            output = ismrmrd.Image.from_array(segmentation, transpose=False)
+            header = source_image.getHead()
+            header.data_type = output.data_type
+            output.setHead(header)
+            _stamp_segment_source_geometry_image(
+                output,
+                source_image,
+                series_index,
+                output_index,
+                series_identity["series_name"],
+                extra_meta,
+                series_identity,
+            )
+            outputs.append(output)
+
+    logging.info(
+        "Created %d scanner-safe 3D-series segmentation image(s) from %d source image(s) "
+        "across %d source volume group(s) with threshold(s) %s, "
+        "segmentheadergeometry=%s, "
+        "and segmentationcolormap=%s",
+        len(outputs),
+        len(images),
+        len(source_groups),
+        ", ".join(f"{threshold:.6g}" for threshold in thresholds),
+        SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
+        use_colormap,
     )
+    return outputs
+
+
+def _segment_images_excluded_from_postprocessing(
+    images,
+    use_colormap=False,
+    metrics_rows=None,
+):
+    if not images:
+        return []
+
+    source_groups = _original_source_groups(images)
+    if len(source_groups) > 1:
+        logging.info(
+            "segmentheadergeometry=%s split %d received image(s) into %d "
+            "source volume group(s)",
+            SEGMENT_DELIVERY_MODE_EXCLUDE,
+            len(images),
+            len(source_groups),
+        )
+    segment_suffixes = _segment_group_suffixes(source_groups)
+    outputs = []
+    thresholds = []
+    for group_index, group_images in enumerate(source_groups):
+        threshold = _bright_foreground_threshold(group_images)
+        thresholds.append(threshold)
+        series_index = _segment_series_index(group_index)
+        series_identity = _build_output_series_identity(
+            group_images[0],
+            series_index,
+            segment_suffixes[group_index],
+            SEGMENT_SERIES_NAME,
+        )
+        segment_items = []
+        for source_image in group_images:
+            source_data = np.asarray(source_image.data)
+            foreground = source_data.astype(np.float32) >= threshold
+            segmentation = _largest_connected_component_per_plane(foreground).astype(
+                np.uint16
+            )
+            segment_items.append((source_image, segmentation))
+
+        metric_row = None
+        if metrics_rows is not None:
+            metric_row = _region_metrics_row(
+                group_images,
+                group_index,
+                segment_suffixes[group_index],
+                threshold,
+                segment_items,
+            )
+            metrics_rows.append(metric_row)
+
+        extra_meta = {
+            "WindowCenter": "0.5",
+            "WindowWidth": "1",
+            SEGMENT_OUTPUT_GEOMETRY_META_KEY: SEGMENT_OUTPUT_GEOMETRY_3D,
+        }
+        if metric_row:
+            metrics_comment = _format_region_volume_comment(metric_row)
+            extra_meta["ImageComments"] = metrics_comment
+            extra_meta["ImageComment"] = metrics_comment
+        if len(source_groups) > 1:
+            extra_meta["SourceVolumeGroup"] = segment_suffixes[group_index]
+            for field_name, _label in SOURCE_VOLUME_GROUP_FIELDS:
+                extra_meta[f"Source{field_name.title()}"] = str(
+                    _source_volume_field_value(group_images[0], field_name)
+                )
+        if use_colormap:
+            extra_meta["LUTFileName"] = SEGMENTATION_LUT
+
+        outputs.append(
+            _pack_segment_explicit_volume(
+                segment_items,
+                series_index,
+                series_identity,
+                extra_meta,
+            )
+        )
+
+    logging.info(
+        "Created %d explicit-volume segmentation image(s) from %d source image(s) "
+        "across %d source volume group(s) with threshold(s) %s, "
+        "segmentheadergeometry=%s, and segmentationcolormap=%s",
+        len(outputs),
+        len(images),
+        len(source_groups),
+        ", ".join(f"{threshold:.6g}" for threshold in thresholds),
+        SEGMENT_DELIVERY_MODE_EXCLUDE,
+        use_colormap,
+    )
+    return outputs
+
+
+def _pack_segment_explicit_volume(
+    segment_items,
+    series_index,
+    series_identity,
+    extra_meta=None,
+):
+    explicit_segment_meta = {
+        "WindowCenter": "0.5",
+        "WindowWidth": "1",
+        "ImageType": SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE,
+        "DicomImageType": SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE,
+        "ImageTypeValue4": SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4,
+        "ComplexImageComponent": "MAGNITUDE",
+        "SequenceDescriptionAdditional": "openrecon",
+        SEGMENT_EXPLICIT_VOLUME_META_KEY: "1",
+    }
+    explicit_segment_meta.update(extra_meta or {})
+    return _pack_explicit_volume(
+        segment_items,
+        series_index,
+        series_identity,
+        "Image",
+        SEGMENT_SERIES_NAME,
+        ["PYTHON", "OPENRECON_SEGMENT_VOLUME"],
+        extra_meta=explicit_segment_meta,
+        label="segmentation output",
+    )
+
+
+def _segment_images_for_postprocessing(
+    images,
+    use_colormap=False,
+    metrics_rows=None,
+    stamp_for_postprocessing=True,
+    stamp_with_derived_image_header=False,
+    scanner_postprocessing=True,
+    preserve_dixon_identity=False,
+):
+    if not images:
+        return []
+    if stamp_with_derived_image_header:
+        stamp_for_postprocessing = False
+    if preserve_dixon_identity:
+        stamp_for_postprocessing = True
+        stamp_with_derived_image_header = False
+
+    source_groups = _original_source_groups(images)
+    if len(source_groups) > 1:
+        logging.info(
+            "segment_geometry=%s split %d received image(s) into %d source "
+            "volume group(s)",
+            SEGMENT_OUTPUT_GEOMETRY_2D,
+            len(images),
+            len(source_groups),
+        )
+    segment_suffixes = _segment_group_suffixes(source_groups)
+    outputs = []
+    thresholds = []
+
+    for group_index, group_images in enumerate(source_groups):
+        _validate_original_source_geometry(group_images)
+        threshold = _bright_foreground_threshold(group_images)
+        thresholds.append(threshold)
+        series_index = _segment_series_index(group_index)
+        series_identity = _build_output_series_identity(
+            group_images[0],
+            series_index,
+            segment_suffixes[group_index],
+            SEGMENT_SERIES_NAME,
+        )
+        segment_items = []
+        for source_image in group_images:
+            source_data = np.asarray(source_image.data)
+            foreground = source_data.astype(np.float32) >= threshold
+            segmentation = _largest_connected_component_per_plane(foreground).astype(
+                np.uint16
+            )
+            segment_items.append((source_image, segmentation))
+
+        metric_row = None
+        if metrics_rows is not None:
+            metric_row = _region_metrics_row(
+                group_images,
+                group_index,
+                segment_suffixes[group_index],
+                threshold,
+                segment_items,
+            )
+            metrics_rows.append(metric_row)
+
+        extra_meta = {
+            "WindowCenter": "0.5",
+            "WindowWidth": "1",
+        }
+        if stamp_for_postprocessing:
+            extra_meta[SEGMENT_SOURCE_IMAGE_HEADER_META_KEY] = "1"
+        if stamp_with_derived_image_header:
+            extra_meta[SEGMENT_DERIVED_IMAGE_HEADER_META_KEY] = "1"
+        if metric_row:
+            metrics_comment = _format_region_volume_comment(metric_row)
+            extra_meta["ImageComments"] = metrics_comment
+            extra_meta["ImageComment"] = metrics_comment
+        if len(source_groups) > 1:
+            extra_meta["SourceVolumeGroup"] = segment_suffixes[group_index]
+            for field_name, _label in SOURCE_VOLUME_GROUP_FIELDS:
+                extra_meta[f"Source{field_name.title()}"] = str(
+                    _source_volume_field_value(group_images[0], field_name)
+                )
+        if use_colormap:
+            extra_meta["LUTFileName"] = SEGMENTATION_LUT
+        extra_meta[SEGMENT_OUTPUT_GEOMETRY_META_KEY] = SEGMENT_OUTPUT_GEOMETRY_2D
+
+        ordered_segment_items, _slice_axis = _ordered_source_geometry_items(
+            segment_items,
+            "2D segmentation output",
+        )
+
+        for output_index, (source_image, segmentation) in enumerate(
+            ordered_segment_items
+        ):
+            output = ismrmrd.Image.from_array(segmentation, transpose=False)
+            header = source_image.getHead()
+            header.data_type = output.data_type
+            output.setHead(header)
+            if stamp_for_postprocessing:
+                stamp_segment_image = _stamp_segment_source_image_header_image
+            elif stamp_with_derived_image_header:
+                stamp_segment_image = _stamp_segment_derived_image_header_image
+            else:
+                stamp_segment_image = _stamp_segment_source_geometry_image
+            if stamp_for_postprocessing:
+                stamp_segment_image(
+                    output,
+                    source_image,
+                    series_index,
+                    output_index,
+                    series_identity["series_name"],
+                    extra_meta,
+                    series_identity,
+                    scanner_postprocessing=scanner_postprocessing,
+                    preserve_dixon_identity=preserve_dixon_identity,
+                )
+            else:
+                stamp_segment_image(
+                    output,
+                    source_image,
+                    series_index,
+                    output_index,
+                    series_identity["series_name"],
+                    extra_meta,
+                    series_identity,
+                    scanner_postprocessing=scanner_postprocessing,
+                )
+            outputs.append(output)
+
+    logging.info(
+        "Created %d source-geometry segmentation image(s) from %d source image(s) "
+        "across %d source volume group(s) with threshold(s) %s, "
+        "segmentheadergeometry=%s, and "
+        "segmentationcolormap=%s",
+        len(outputs),
+        len(images),
+        len(source_groups),
+        ", ".join(f"{threshold:.6g}" for threshold in thresholds),
+        (
+            SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER
+            if stamp_for_postprocessing
+            else SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER
+            if stamp_with_derived_image_header
+            else SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_ORIGINALS
+            if not scanner_postprocessing
+            else SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D
+        ),
+        use_colormap,
+    )
+    return outputs
+
+
+def _segment_metrics_rows(images, metrics_rows):
+    if not images or metrics_rows is None:
+        return
+
+    source_groups = _original_source_groups(images)
+    segment_suffixes = _segment_group_suffixes(source_groups)
+    thresholds = []
+    for group_index, group_images in enumerate(source_groups):
+        threshold = _bright_foreground_threshold(group_images)
+        thresholds.append(threshold)
+        segment_items = _segment_items_for_group(group_images, threshold)
+        metrics_rows.append(
+            _region_metrics_row(
+                group_images,
+                group_index,
+                segment_suffixes[group_index],
+                threshold,
+                segment_items,
+            )
+        )
+    logging.info(
+        "Computed %d segment metrics row(s) without sending segment outputs "
+        "using threshold(s) %s",
+        len(source_groups),
+        ", ".join(f"{threshold:.6g}" for threshold in thresholds),
+    )
+
+
+def _segment_reformat_images(images, orientations, metrics_rows=None):
+    orientations = tuple(orientations or ())
+    if not images or not orientations:
+        return []
+
+    for orientation in orientations:
+        _require_segment_reformat_orientation(orientation)
+
+    source_groups = _original_source_groups(images)
+    if len(source_groups) > 1:
+        logging.info(
+            "segment reformats split %d received image(s) into %d source "
+            "volume group(s)",
+            len(images),
+            len(source_groups),
+        )
+    segment_suffixes = _segment_group_suffixes(source_groups)
+    outputs = []
+    thresholds = []
+    for group_index, group_images in enumerate(source_groups):
+        threshold = _bright_foreground_threshold(group_images)
+        thresholds.append(threshold)
+        segment_items = _segment_items_for_group(group_images, threshold)
+
+        metric_row = None
+        if metrics_rows is not None:
+            metric_row = _region_metrics_row(
+                group_images,
+                group_index,
+                segment_suffixes[group_index],
+                threshold,
+                segment_items,
+            )
+            metrics_rows.append(metric_row)
+
+        for orientation in orientations:
+            series_index = _segment_reformat_series_index(group_index, orientation)
+            suffix = f"{segment_suffixes[group_index]}-{orientation}"
+            series_identity = _build_output_series_identity(
+                group_images[0],
+                series_index,
+                suffix,
+                SEGMENT_REFORMAT_SERIES[orientation],
+            )
+            extra_meta = {}
+            if metric_row:
+                metrics_comment = _format_region_volume_comment(metric_row)
+                extra_meta["ImageComments"] = metrics_comment
+                extra_meta["ImageComment"] = metrics_comment
+            if len(source_groups) > 1:
+                extra_meta["SourceVolumeGroup"] = segment_suffixes[group_index]
+                for field_name, _label in SOURCE_VOLUME_GROUP_FIELDS:
+                    extra_meta[f"Source{field_name.title()}"] = str(
+                        _source_volume_field_value(group_images[0], field_name)
+                    )
+            outputs.append(
+                _pack_segment_reformat_volume(
+                    segment_items,
+                    orientation,
+                    series_index,
+                    series_identity,
+                    extra_meta,
+                )
+            )
+
+    logging.info(
+        "Created %d segment reformat volume image(s) from %d source image(s) "
+        "across %d source volume group(s) and orientation(s) %s with "
+        "threshold(s) %s",
+        len(outputs),
+        len(images),
+        len(source_groups),
+        ",".join(orientations),
+        ", ".join(f"{threshold:.6g}" for threshold in thresholds),
+    )
+    return outputs
+
+
+def _segment_items_for_group(group_images, threshold):
     segment_items = []
-    for source_image in images:
+    for source_image in group_images:
         source_data = np.asarray(source_image.data)
         foreground = source_data.astype(np.float32) >= threshold
         segmentation = _largest_connected_component_per_plane(foreground).astype(
             np.uint16
         )
         segment_items.append((source_image, segmentation))
+    return segment_items
 
-    extra_meta = {
+
+def _pack_segment_reformat_volume(
+    segment_items,
+    orientation,
+    series_index,
+    series_identity,
+    extra_meta=None,
+):
+    _require_segment_reformat_orientation(orientation)
+    label = f"{orientation} segment reformat"
+    ordered_items, source_slice_axis = _ordered_volume_items(segment_items, label)
+    source_images = [source_image for source_image, _data in ordered_items]
+    output_spacing_z = _explicit_volume_output_spacing(
+        source_images,
+        source_slice_axis,
+    )
+
+    volume_slices = []
+    for index, (_source_image, data) in enumerate(ordered_items):
+        data = np.asarray(data)
+        if data.ndim != 4 or data.shape[0] != 1 or data.shape[1] != 1:
+            raise ValueError(
+                f"{label} requires single-channel 2D source images; "
+                f"image {index} has shape {data.shape}"
+            )
+        volume_slices.append(data[0, 0])
+    volume_zyx = np.stack(volume_slices, axis=0)
+    z_count, y_count, x_count = [int(value) for value in volume_zyx.shape]
+
+    source_image = ordered_items[0][0]
+    source_header = source_image.getHead()
+    read_dir = _normalized_header_axis(source_header, "read_dir", (1.0, 0.0, 0.0))
+    phase_dir = _normalized_header_axis(source_header, "phase_dir", (0.0, 1.0, 0.0))
+    slice_dir = _normalize_vector(source_slice_axis)
+    if slice_dir is None:
+        slice_dir = _normalized_header_axis(
+            source_header,
+            "slice_dir",
+            (0.0, 0.0, 1.0),
+        )
+
+    matrix = [max(int(value), 1) for value in source_header.matrix_size]
+    fov = [float(value) for value in source_header.field_of_view]
+    spacing_x = fov[0] / matrix[0] if matrix[0] else 1.0
+    spacing_y = fov[1] / matrix[1] if matrix[1] else 1.0
+
+    if orientation == SEGMENT_REFORMAT_ORIENTATION_SAGITTAL:
+        n_slices = x_count
+        reformat_volume_zyx = np.stack(
+            [volume_zyx[:, :, index] for index in range(x_count)],
+            axis=0,
+        )
+        new_read_dir = phase_dir
+        new_phase_dir = slice_dir
+        new_slice_dir = read_dir
+        new_fov = (
+            float(y_count * spacing_y),
+            float(z_count * output_spacing_z),
+            float(x_count * spacing_x),
+        )
+    else:
+        n_slices = y_count
+        reformat_volume_zyx = np.stack(
+            [volume_zyx[:, index, :] for index in range(y_count)],
+            axis=0,
+        )
+        new_read_dir = read_dir
+        new_phase_dir = slice_dir
+        new_slice_dir = phase_dir
+        new_fov = (
+            float(x_count * spacing_x),
+            float(z_count * output_spacing_z),
+            float(y_count * spacing_y),
+        )
+
+    output = ismrmrd.Image.from_array(
+        np.ascontiguousarray(reformat_volume_zyx),
+        transpose=False,
+    )
+    header = source_header
+    header.data_type = output.data_type
+    header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    header.image_index = 1
+    header.slice = 0
+    for field in SOURCE_GROUP_HEADER_FIELDS:
+        setattr(header, field, 0)
+    _set_header_sequence_field(
+        header,
+        "matrix_size",
+        [int(value) for value in output.getHead().matrix_size],
+    )
+    _set_header_sequence_field(header, "field_of_view", new_fov)
+    _set_header_sequence_field(
+        header,
+        "position",
+        [
+            float(value)
+            for value in _explicit_volume_center_position(
+                ordered_items,
+                source_slice_axis,
+            )
+        ],
+    )
+    _set_header_sequence_field(header, "read_dir", new_read_dir)
+    _set_header_sequence_field(header, "phase_dir", new_phase_dir)
+    _set_header_sequence_field(header, "slice_dir", new_slice_dir)
+    output.setHead(header)
+
+    reformat_meta = {
         "WindowCenter": "0.5",
         "WindowWidth": "1",
+        "Keep_image_geometry": str(int(0)),
+        "partition_count": str(int(1)),
+        "slice_count": str(int(n_slices)),
+        "NumberOfSlices": str(int(n_slices)),
+        "ImagesInAcquisition": str(int(n_slices)),
+        SEGMENT_REFORMAT_META_KEY: str(int(1)),
+        SEGMENT_REFORMAT_ORIENTATION_META_KEY: orientation,
+        SEGMENT_OUTPUT_GEOMETRY_META_KEY: f"reformat_{orientation}",
     }
-    if use_colormap:
-        extra_meta["LUTFileName"] = SEGMENTATION_LUT
-
-    if _source_geometry_needs_explicit_volume(images):
-        outputs = [
-            _pack_explicit_volume(
-                segment_items,
-                SEGMENT_SERIES_INDEX,
-                series_identity,
-                "Segmentation",
-                SEGMENT_SERIES_NAME,
-                ["PYTHON", "OPENRECON_SEGMENT_VOLUME"],
-                extra_meta,
-                "segmentation output",
-            )
-        ]
-        logging.info(
-            "Created %d foreground segmentation volume image(s) from %d source "
-            "image(s) with threshold %.6g and segmentationcolormap=%s",
-            len(outputs),
-            len(images),
-            threshold,
-            use_colormap,
-        )
-        return outputs
-
-    outputs = []
-    for output_index, (source_image, segmentation) in enumerate(segment_items):
-        output = ismrmrd.Image.from_array(segmentation, transpose=False)
-        header = source_image.getHead()
-        header.data_type = output.data_type
-        output.setHead(header)
-        _stamp_output_image(
-            output,
-            source_image,
-            SEGMENT_SERIES_INDEX,
-            output_index,
-            series_identity["series_name"],
-            "Segmentation",
-            SEGMENT_SERIES_NAME,
-            ["PYTHON", "OPENRECON_SEGMENT"],
-            extra_meta,
-            series_identity=series_identity,
-        )
-        outputs.append(output)
-
-    logging.info(
-        "Created %d foreground segmentation image(s) with threshold %.6g "
-        "and segmentationcolormap=%s",
-        len(outputs),
-        threshold,
-        use_colormap,
+    reformat_meta.update(_explicit_header_geometry_meta(header))
+    reformat_meta.update(extra_meta or {})
+    _stamp_output_image(
+        output,
+        source_image,
+        series_index,
+        0,
+        series_identity["series_name"],
+        "Segmentation",
+        SEGMENT_REFORMAT_SERIES[orientation],
+        ["PYTHON", "OPENRECON_SEGMENT_REFORMAT", f"REFORMAT_{orientation.upper()}"],
+        extra_meta=reformat_meta,
+        patch_minihead=False,
+        series_identity=series_identity,
     )
-    return outputs
+    logging.info(
+        "Packed %s segment reformat into one explicit volume with "
+        "matrix_size=%s field_of_view=%s position=%s",
+        orientation,
+        _format_vector(output.getHead().matrix_size),
+        _format_vector(output.getHead().field_of_view),
+        _format_vector(output.getHead().position),
+    )
+    return output
+
+
+def _require_segment_reformat_orientation(orientation):
+    if orientation not in SEGMENT_REFORMAT_ORIENTATIONS:
+        raise ValueError(f"Unsupported segment reformat orientation: {orientation!r}")
+    return orientation
+
+
+def _segment_reformat_series_index(group_index, orientation):
+    orientation_offset = SEGMENT_REFORMAT_ORIENTATIONS.index(
+        _require_segment_reformat_orientation(orientation)
+    )
+    return REFORMAT_SERIES_INDEX_START + (
+        group_index * len(SEGMENT_REFORMAT_ORIENTATIONS)
+    ) + orientation_offset
+
+
+def _normalized_header_axis(header, field_name, fallback):
+    axis = _normalize_vector(_header_vector(header, field_name))
+    if axis is not None:
+        return axis
+    return np.asarray(fallback, dtype=float)
+
+
+def _region_metrics_row(group_images, group_index, region_name, threshold, segment_items):
+    voxel_count = int(
+        sum(
+            int(np.count_nonzero(np.asarray(segmentation)))
+            for _image, segmentation in segment_items
+        )
+    )
+    voxel_volume_mm3 = _source_voxel_volume_mm3(group_images)
+    volume_mm3 = float(voxel_count * voxel_volume_mm3)
+    source_name = _source_series_name(group_images[0]) or "source"
+    return {
+        "region": region_name,
+        "source": source_name,
+        "series": _segment_series_index(group_index),
+        "voxels": voxel_count,
+        "voxel_mm3": voxel_volume_mm3,
+        "volume_mm3": volume_mm3,
+        "volume_ml": volume_mm3 / 1000.0,
+        "threshold": float(threshold),
+    }
+
+
+def _source_voxel_volume_mm3(images):
+    if not images:
+        return 0.0
+
+    header = images[0].getHead()
+    matrix = [max(int(value), 1) for value in header.matrix_size]
+    fov = [float(value) for value in header.field_of_view]
+    voxel_x = fov[0] / matrix[0] if matrix[0] else 1.0
+    voxel_y = fov[1] / matrix[1] if matrix[1] else 1.0
+    slice_axis = _infer_slice_axis([image.getHead() for image in images])
+    voxel_z = _explicit_volume_output_spacing(images, slice_axis)
+    return abs(float(voxel_x * voxel_y * voxel_z))
+
+
+def _format_metric_number(value):
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if np.isposinf(value):
+        return "inf"
+    if np.isneginf(value):
+        return "-inf"
+    if not np.isfinite(value):
+        return "nan"
+    return f"{value:.6g}"
+
+
+def _format_region_volume_comment(row):
+    return (
+        "Region volume: "
+        f"{_format_metric_number(row['volume_ml'])} mL "
+        f"({_format_metric_number(row['volume_mm3'])} mm3; "
+        f"{int(row['voxels'])} voxels)"
+    )
+
+
+def _format_metrics_summary_comment(rows, max_chars=1200):
+    rows = list(rows or [])
+    if not rows:
+        return ""
+    if len(rows) == 1:
+        return _format_region_volume_comment(rows[0])
+
+    total_volume_ml = sum(float(row["volume_ml"]) for row in rows)
+    parts = [
+        f"{row['region']}={_format_metric_number(row['volume_ml'])} mL"
+        for row in rows[:8]
+    ]
+    if len(rows) > 8:
+        parts.append(f"... {len(rows) - 8} more")
+    text = (
+        "Region volumes: "
+        + ", ".join(parts)
+        + f"; total={_format_metric_number(total_volume_ml)} mL"
+    )
+    if len(text) > max_chars:
+        return text[: max_chars - 3] + "..."
+    return text
+
+
+def _metrics_report_images(images, metrics_rows):
+    metrics_rows = list(metrics_rows or [])
+    if not images or not metrics_rows:
+        if not metrics_rows:
+            logging.info("sendmetrics requested but no region metrics were available")
+        return []
+
+    source_header = images[0].getHead()
+    report_width = max(int(source_header.matrix_size[0]), 1)
+    report_height = max(int(source_header.matrix_size[1]), 1)
+    page = _render_metrics_table_page(
+        metrics_rows,
+        width=report_width,
+        height=report_height,
+    )
+    page = _orient_metrics_report_page_for_scanner(page)
+    height, width = int(page.shape[0]), int(page.shape[1])
+    series_identity = _build_output_series_identity(
+        images[0],
+        METRICS_SERIES_INDEX,
+        "metrics",
+        METRICS_SERIES_NAME,
+    )
+    report_source = _metrics_report_source_image(images[0], width, height)
+    metrics_comment = _format_metrics_summary_comment(metrics_rows)
+    extra_meta = {
+        "WindowCenter": "2040",
+        "WindowWidth": "4080",
+        "ImageComments": metrics_comment,
+        "ImageComment": metrics_comment,
+        "MetricsRows": str(len(metrics_rows)),
+    }
+    output = _pack_explicit_volume(
+        [(report_source, page.reshape(1, 1, height, width))],
+        METRICS_SERIES_INDEX,
+        series_identity,
+        "Segmentation",
+        METRICS_SERIES_NAME,
+        ["PYTHON", "OPENRECON_METRICS"],
+        extra_meta,
+        "metrics report output",
+    )
+    logging.info(
+        "Created metrics report image with %d row(s), total volume=%s mL",
+        len(metrics_rows),
+        _format_metric_number(sum(float(row["volume_ml"]) for row in metrics_rows)),
+    )
+    return [output]
+
+
+def _orient_metrics_report_page_for_scanner(page):
+    return np.rot90(np.asarray(page), 2).copy()
+
+
+def _metrics_report_source_image(source_image, width, height):
+    data = np.zeros((1, 1, height, width), dtype=np.uint16)
+    report_source = ismrmrd.Image.from_array(data, transpose=False)
+    header = source_image.getHead()
+    header.data_type = report_source.data_type
+    header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    header.image_index = 1
+    header.slice = 0
+    header.contrast = 0
+    _set_metrics_report_header_geometry(header, width, height)
+    report_source.setHead(header)
+    report_source.attribute_string = source_image.attribute_string
+    return report_source
+
+
+def _set_metrics_report_header_geometry(header, width, height):
+    _set_header_sequence_field(header, "matrix_size", [width, height, 1])
+    _set_header_sequence_field(
+        header,
+        "field_of_view",
+        [float(width), float(height), 1.0],
+    )
+    _set_header_sequence_field(header, "position", [0.0, 0.0, 0.0])
+    _set_header_sequence_field(header, "read_dir", [1.0, 0.0, 0.0])
+    _set_header_sequence_field(header, "phase_dir", [0.0, 1.0, 0.0])
+    _set_header_sequence_field(header, "slice_dir", [0.0, 0.0, 1.0])
+
+
+def _render_metrics_table_page(metrics_rows, width=1024, height=None):
+    from PIL import Image, ImageDraw, ImageFont
+
+    width = max(int(width), 1)
+    header_lines = 3
+    if height is None:
+        margin = 24
+        row_height = 24
+        height = max(
+            512,
+            margin * 2 + row_height * (len(metrics_rows) + header_lines + 2),
+        )
+    else:
+        height = max(int(height), 1)
+        margin = max(2, min(24, width // 32, height // 24))
+        visible_rows = max(len(metrics_rows) + header_lines + 2, 1)
+        row_height = max(8, min(24, (height - 2 * margin) // visible_rows))
+    image = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default()
+
+    draw.text((margin, margin), "OpenRecon Region Metrics", fill=255, font=font)
+    draw.text(
+        (margin, margin + row_height),
+        f"Rows: {len(metrics_rows)}    Total volume: "
+        f"{_format_metric_number(sum(float(row['volume_ml']) for row in metrics_rows))} mL",
+        fill=220,
+        font=font,
+    )
+
+    table_top = margin + row_height * header_lines
+    base_column_widths = {
+        "region": 150,
+        "source": 250,
+        "voxels": 90,
+        "volume_mm3": 135,
+        "volume_ml": 120,
+        "voxel_mm3": 115,
+        "threshold": 120,
+    }
+    available_width = max(width - 2 * margin, len(METRICS_FIELDNAMES))
+    scale = min(1.0, available_width / sum(base_column_widths.values()))
+    column_widths = {
+        field: max(8, int(base_column_widths[field] * scale))
+        for field in METRICS_FIELDNAMES
+    }
+    columns = [(field, column_widths[field]) for field in METRICS_FIELDNAMES]
+    x = margin
+    for field, width_px in columns:
+        draw.text((x, table_top), field, fill=255, font=font)
+        x += width_px
+    draw.line(
+        (
+            margin,
+            table_top + row_height - 6,
+            width - margin,
+            table_top + row_height - 6,
+        ),
+        fill=120,
+    )
+
+    y = table_top + row_height
+    for row in metrics_rows:
+        x = margin
+        for field, width_px in columns:
+            value = row.get(field, "")
+            if isinstance(value, float):
+                value = _format_metric_number(value)
+            text = str(value)
+            if len(text) > 32:
+                text = text[:29] + "..."
+            draw.text((x, y), text, fill=220, font=font)
+            x += width_px
+        y += row_height
+
+    return np.asarray(image, dtype=np.uint16) * 16
 
 
 def _bright_foreground_threshold(images):
@@ -655,7 +1975,13 @@ def _pack_upsampled_volume(
     _set_header_sequence_field(
         header,
         "position",
-        [float(value) for value in _header_position(slice_images[0].getHead())],
+        [
+            float(value)
+            for value in _explicit_volume_center_position(
+                [(image, None) for image in slice_images],
+                slice_axis,
+            )
+        ],
     )
     _set_header_sequence_field(
         header,
@@ -696,35 +2022,48 @@ def _pack_upsampled_volume(
     return output
 
 
-def _restamp_originals(images):
+def _restamp_originals(
+    images,
+    align_with_explicit_segment=False,
+    native_identity=False,
+):
     if not images:
         return []
 
+    if native_identity:
+        return _passthrough_originals_native(images)
+
     outputs = []
-    source_groups = _source_image_groups(images)
+    source_groups = _original_source_groups(images)
     if len(source_groups) > 1:
         logging.info(
-            "sendoriginal split %d received image(s) into %d source group(s)",
+            "sendoriginal split %d received image(s) into %d source volume group(s)",
             len(images),
             len(source_groups),
         )
+    original_suffixes = _original_group_suffixes(source_groups)
 
     for group_index, group_images in enumerate(source_groups):
         series_index = _grouped_series_index(ORIGINAL_SERIES_INDEX, group_index)
+        if not _is_original_series_index(series_index):
+            raise ValueError(
+                "sendoriginal produced too many source volume groups for the "
+                f"reserved original series range; group {group_index} would use "
+                f"image_series_index {series_index}"
+            )
+        if align_with_explicit_segment:
+            group_images = _ordered_original_images_for_explicit_segment(group_images)
+        _validate_original_source_geometry(group_images)
         series_identity = _build_output_series_identity(
             group_images[0],
             series_index,
-            "original",
+            original_suffixes[group_index],
             ORIGINAL_SERIES_NAME,
         )
-        original_items = [
-            (source_image, np.asarray(source_image.data).copy())
-            for source_image in group_images
-        ]
 
-        for output_index, (source_image, source_data) in enumerate(original_items):
+        for output_index, source_image in enumerate(group_images):
             output = ismrmrd.Image.from_array(
-                source_data,
+                np.asarray(source_image.data).copy(),
                 transpose=False,
             )
             header = source_image.getHead()
@@ -743,11 +2082,246 @@ def _restamp_originals(images):
     return outputs
 
 
+def _passthrough_originals_native(images):
+    """Return originals with maximal native series identity preserved.
+
+    Experimental whole-body composing pass-through. The standard
+    ``_restamp_originals`` path splits the input by contrast, renumbers each
+    group onto the reserved original series range (group 0 -> series 100), and
+    assigns fresh derived Series/SOP UIDs. On a multi-station Dixon scan that
+    extra identity makes the scanner's inline Composing treat a re-stamped
+    contrast as a primary/main anatomical volume in the master ``FILTER``
+    compose channel (which is empty and benign for a native acquisition), where
+    its strict "Transversal lowest position vector (following ICE standard)"
+    check fails and aborts the transverse compose.
+
+    This pass-through instead returns each source image with its native
+    identity intact -- source ``SeriesInstanceUID`` /
+    ``SeriesNumberRangeNameUID`` grouping, series number, ``ImageType``, Dixon
+    sub-type tokens, slice/partition counters, and ``IceMiniHead`` -- so the
+    composer sees the returned Dixon contrasts exactly as native sub-results
+    routed only to their Dixon channels. ``ImageTypeValue3`` is normalized to
+    "M" in both Meta and ``IceMiniHead`` (mirroring the working musclemap
+    pass-through) instead of being stripped: the inline Composer uses that
+    magnitude discriminator to keep each Dixon contrast bound to its
+    FILTER_DIXON* channel, so the master FILTER channel stays empty/benign like
+    a native acquisition. A clean "M" value also avoids the OpenRecon conversion
+    rejection that motivated stripping (e.g. a "MAP" array on the fat-fraction
+    map). ``Keep_image_geometry`` is forced to 1 so the converter preserves the
+    source MRD geometry.
+    """
+    outputs = []
+    for source_image in images:
+        output = ismrmrd.Image.from_array(
+            np.asarray(source_image.data).copy(),
+            transpose=False,
+        )
+        header = source_image.getHead()
+        header.data_type = output.data_type
+        output.setHead(header)
+        output.image_series_index = int(header.image_series_index)
+
+        meta = _meta_from_image(source_image)
+        _set_meta_scalar(meta, "Keep_image_geometry", 1)
+        minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+        _normalize_original_image_type_value3_meta(meta, minihead)
+        if minihead:
+            patched_minihead, changed = _normalize_original_image_type_value3_minihead(
+                minihead
+            )
+            if changed:
+                meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
+        output.attribute_string = meta.serialize()
+        outputs.append(output)
+
+    logging.info(
+        "OPENRECONI2I_OUTPUT_NATIVE returning %d original image(s) with native "
+        "source series identity preserved",
+        len(outputs),
+    )
+    return outputs
+
+
+def _ordered_original_images_for_explicit_segment(images):
+    images = list(images)
+    if len(images) < 2:
+        return images
+
+    headers = [image.getHead() for image in images]
+    slice_axis = _infer_slice_axis(headers)
+    projections = np.asarray(
+        [_projected_position(image, slice_axis) for image in images],
+        dtype=float,
+    )
+    duplicate_positions = _duplicate_projected_position_count(projections)
+    median_spacing = _median_projected_spacing(projections)
+    increasing = _is_projected_order_monotonic(projections, increasing=True)
+    decreasing = _is_projected_order_monotonic(projections, increasing=False)
+    logging.info(
+        "sendoriginal 3D alignment source geometry: count=%d axis=%s "
+        "projected_range=[%.6f, %.6f] median_spacing=%.6f "
+        "duplicate_positions=%d receive_order_monotonic=%s",
+        len(images),
+        _format_vector(slice_axis),
+        float(np.min(projections)),
+        float(np.max(projections)),
+        median_spacing,
+        duplicate_positions,
+        increasing or decreasing,
+    )
+    if duplicate_positions:
+        raise ValueError(
+            "sendoriginal 3D alignment source geometry has duplicate projected "
+            "slice position(s); cannot align originals with 3D segment series"
+        )
+    if increasing:
+        return images
+
+    sort_indices = sorted(
+        range(len(images)),
+        key=lambda index: (
+            round(float(projections[index]), 4),
+            int(headers[index].slice),
+            int(headers[index].image_index),
+            index,
+        ),
+    )
+    order_reason = (
+        "decreasing in physical position"
+        if decreasing
+        else "not monotonic in physical position"
+    )
+    logging.warning(
+        "sendoriginal source slices are %s; sorting by projected position so "
+        "original frame order matches 3D segment series output: "
+        "first mappings %s",
+        order_reason,
+        ", ".join(
+            f"out{output_index}->in{input_index}"
+            for output_index, input_index in enumerate(sort_indices[:24])
+        ),
+    )
+    if len(sort_indices) > 24:
+        logging.warning(
+            "sendoriginal 3D alignment source sort mapping omitted %d "
+            "additional slice(s)",
+            len(sort_indices) - 24,
+        )
+    return [images[index] for index in sort_indices]
+
+
+def _validate_original_source_geometry(group_images, label="sendoriginal"):
+    source_slice_count = _source_geometry_slice_limit(group_images)
+    if source_slice_count is None or len(group_images) <= source_slice_count:
+        return
+    raise ValueError(
+        f"{label} source geometry advertises "
+        f"{source_slice_count} slice/partition slot(s), but {len(group_images)} "
+        "image(s) were received. Refusing to change this output into "
+        "explicit-volume geometry because the scanner needs the source-native "
+        "2D image stream."
+    )
+
+
+def _is_original_series_index(series_index):
+    return (
+        int(series_index) == ORIGINAL_SERIES_INDEX
+        or EXTRA_ORIGINAL_SERIES_INDEX_START
+        <= int(series_index)
+        < EXTRA_SEGMENT_SERIES_INDEX_START
+    )
+
+
+def _is_segment_postprocessing_output(meta):
+    return _meta_int(meta, SEGMENT_POSTPROCESSING_META_KEY) == 1
+
+
+def _is_segment_source_image_header_output(meta):
+    return _meta_int(meta, SEGMENT_SOURCE_IMAGE_HEADER_META_KEY) == 1
+
+
+def _is_segment_derived_image_header_output(meta):
+    return _meta_int(meta, SEGMENT_DERIVED_IMAGE_HEADER_META_KEY) == 1
+
+
+def _is_segment_source_geometry_output(meta):
+    return (
+        _meta_int(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY) == 1
+        and not _is_segment_source_image_header_output(meta)
+    )
+
+
+def _is_segment_explicit_volume_output(meta):
+    return _meta_int(meta, SEGMENT_EXPLICIT_VOLUME_META_KEY) == 1
+
+
+def _is_segment_reformat_output(meta):
+    return _meta_int(meta, SEGMENT_REFORMAT_META_KEY) == 1
+
+
 def _source_image_groups(images):
     groups = []
     group_index_by_key = {}
     for image in images:
         key = _source_group_key(image)
+        group_index = group_index_by_key.get(key)
+        if group_index is None:
+            group_index = len(groups)
+            group_index_by_key[key] = group_index
+            groups.append([])
+        groups[group_index].append(image)
+    return groups
+
+
+def _original_source_groups(images):
+    images = list(images)
+    if len(images) < 2:
+        return [images]
+
+    source_groups = _source_image_groups(images)
+    split_groups = []
+    for group_images in source_groups:
+        if len(group_images) < 2:
+            split_groups.append(group_images)
+            continue
+
+        slice_axis = _infer_slice_axis([image.getHead() for image in group_images])
+        projections = np.asarray(
+            [_projected_position(image, slice_axis) for image in group_images],
+            dtype=float,
+        )
+        duplicate_positions = _duplicate_projected_position_count(projections)
+        if not duplicate_positions:
+            split_groups.append(group_images)
+            continue
+
+        volume_groups = _source_volume_groups(group_images)
+        if len(volume_groups) > 1:
+            logging.warning(
+                "sendoriginal source geometry has %d duplicate projected slice "
+                "position(s) across %d image(s); split into %d source volume group(s)",
+                duplicate_positions,
+                len(group_images),
+                len(volume_groups),
+            )
+            split_groups.extend(volume_groups)
+            continue
+
+        logging.warning(
+            "sendoriginal source geometry has %d duplicate projected slice "
+            "position(s), but no distinct source volume groups were detected",
+            duplicate_positions,
+        )
+        split_groups.append(group_images)
+
+    return split_groups
+
+
+def _source_volume_groups(images):
+    groups = []
+    group_index_by_key = {}
+    for image in images:
+        key = _source_volume_group_key(image)
         group_index = group_index_by_key.get(key)
         if group_index is None:
             group_index = len(groups)
@@ -786,10 +2360,85 @@ def _source_group_key(image):
     )
 
 
+def _source_volume_group_key(image):
+    return (
+        _source_group_key(image),
+        tuple(
+            _source_volume_field_value(image, field_name)
+            for field_name, _label in SOURCE_VOLUME_GROUP_FIELDS
+        ),
+    )
+
+
+def _original_group_suffixes(source_groups):
+    if len(source_groups) == 1:
+        return ["original"]
+
+    source_key_counts = {}
+    for group_images in source_groups:
+        key = _source_group_key(group_images[0])
+        source_key_counts[key] = source_key_counts.get(key, 0) + 1
+
+    suffixes = []
+    seen = set()
+    for group_index, group_images in enumerate(source_groups):
+        source_key = _source_group_key(group_images[0])
+        if source_key_counts[source_key] == 1:
+            suffix = "original"
+        else:
+            label = _source_volume_group_label(group_images[0]) or f"g{group_index}"
+            suffix = f"original-{label}"
+        suffix_key = (source_key, suffix)
+        if suffix_key in seen:
+            suffix = f"original-g{group_index}"
+            suffix_key = (source_key, suffix)
+        seen.add(suffix_key)
+        suffixes.append(suffix)
+    return suffixes
+
+
+def _segment_group_suffixes(source_groups):
+    if len(source_groups) == 1:
+        return ["segment"]
+
+    suffixes = []
+    seen = set()
+    for group_index, group_images in enumerate(source_groups):
+        label = _source_volume_group_label(group_images[0]) or f"g{group_index}"
+        suffix = f"segment-{label}"
+        if suffix in seen:
+            suffix = f"segment-g{group_index}"
+        seen.add(suffix)
+        suffixes.append(suffix)
+    return suffixes
+
+
+def _source_volume_group_label(image):
+    parts = []
+    for field_name, label in SOURCE_VOLUME_GROUP_FIELDS:
+        value = _source_volume_field_value(image, field_name)
+        if field_name == "contrast" or value != 0:
+            parts.append(f"{label}{value}")
+    return "-".join(parts)
+
+
+def _source_volume_field_value(image, field_name):
+    try:
+        return int(getattr(image.getHead(), field_name))
+    except Exception:
+        return 0
+
+
 def _grouped_series_index(base_series_index, group_index):
     if group_index == 0:
         return base_series_index
     return EXTRA_ORIGINAL_SERIES_INDEX_START + group_index - 1
+
+
+def _segment_series_index(group_index):
+    if group_index == 0:
+        return SEGMENT_SERIES_INDEX
+    return EXTRA_SEGMENT_SERIES_INDEX_START + group_index - 1
 
 
 def _pack_explicit_volume(
@@ -808,6 +2457,7 @@ def _pack_explicit_volume(
 
     ordered_items, slice_axis = _ordered_volume_items(source_items, label)
     output_slice_count = len(ordered_items)
+    output_position = _explicit_volume_center_position(ordered_items, slice_axis)
     output_spacing = _explicit_volume_output_spacing(
         [source_image for source_image, _data in ordered_items],
         slice_axis,
@@ -844,7 +2494,7 @@ def _pack_explicit_volume(
     _set_header_sequence_field(
         header,
         "position",
-        [float(value) for value in _header_position(source_image.getHead())],
+        [float(value) for value in output_position],
     )
     _set_header_sequence_field(
         header,
@@ -877,11 +2527,12 @@ def _pack_explicit_volume(
     )
     logging.info(
         "Packed %d %s image(s) into one explicit volume with matrix_size=%s "
-        "and field_of_view=%s",
+        "field_of_view=%s and position=%s",
         output_slice_count,
         label,
         _format_vector(output.getHead().matrix_size),
         _format_vector(output.getHead().field_of_view),
+        _format_vector(output.getHead().position),
     )
     return output
 
@@ -921,7 +2572,6 @@ def _stamp_output_image(
         extra_meta or {},
         patch_minihead,
         series_identity,
-        preserve_source_geometry=False,
     ).serialize()
     return output
 
@@ -936,22 +2586,545 @@ def _stamp_original_image(
 ):
     header = output.getHead()
     header.image_series_index = series_index
+    header.image_index = output_index + 1
     output.setHead(header)
+    storage_fields = _original_storage_fields(source_image, output_index, output)
     output.image_series_index = series_index
-    output.attribute_string = _output_meta(
+    output.attribute_string = _original_passthrough_meta(
         source_image,
+        output,
         series_index,
         output_index,
         series_name,
-        "Image",
-        ORIGINAL_SERIES_NAME,
-        ["PYTHON", "OPENRECON_ORIGINAL_COPY"],
-        {},
-        True,
         series_identity,
-        preserve_source_geometry=True,
+        storage_fields,
     ).serialize()
     return output
+
+
+def _stamp_segment_postprocessing_image(
+    output,
+    source_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity=None,
+):
+    header = output.getHead()
+    header.image_series_index = series_index
+    header.image_index = output_index + 1
+    header.slice = output_index
+    for field in SOURCE_GROUP_HEADER_FIELDS:
+        setattr(header, field, 0)
+    if output.data_type in (ismrmrd.DATATYPE_CXFLOAT, ismrmrd.DATATYPE_CXDOUBLE):
+        header.image_type = ismrmrd.IMTYPE_COMPLEX
+    else:
+        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    output.setHead(header)
+    storage_fields = _output_position_storage_fields(output_index)
+    output.image_series_index = series_index
+    output.attribute_string = _segment_postprocessing_meta(
+        source_image,
+        output,
+        series_index,
+        output_index,
+        series_name,
+        extra_meta,
+        series_identity,
+        storage_fields,
+    ).serialize()
+    return output
+
+
+def _stamp_segment_source_image_header_image(
+    output,
+    source_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity=None,
+    scanner_postprocessing=True,
+    preserve_dixon_identity=False,
+):
+    header = output.getHead()
+    header.image_series_index = series_index
+    header.image_index = _source_geometry_header_image_index(source_image, output_index)
+    if output.data_type in (ismrmrd.DATATYPE_CXFLOAT, ismrmrd.DATATYPE_CXDOUBLE):
+        header.image_type = ismrmrd.IMTYPE_COMPLEX
+    else:
+        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    output.setHead(header)
+    storage_fields = _original_storage_fields(source_image, output_index, output)
+    output.image_series_index = series_index
+    output.attribute_string = _segment_source_image_header_meta(
+        source_image,
+        output,
+        series_index,
+        output_index,
+        series_name,
+        extra_meta,
+        series_identity,
+        storage_fields,
+        scanner_postprocessing=scanner_postprocessing,
+        preserve_dixon_identity=preserve_dixon_identity,
+    ).serialize()
+    return output
+
+
+def _stamp_segment_derived_image_header_image(
+    output,
+    source_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity=None,
+    scanner_postprocessing=True,
+):
+    header = output.getHead()
+    header.image_series_index = series_index
+    header.image_index = _source_geometry_header_image_index(source_image, output_index)
+    if output.data_type in (ismrmrd.DATATYPE_CXFLOAT, ismrmrd.DATATYPE_CXDOUBLE):
+        header.image_type = ismrmrd.IMTYPE_COMPLEX
+    else:
+        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    output.setHead(header)
+    storage_fields = _original_storage_fields(source_image, output_index, output)
+    output.image_series_index = series_index
+    output.attribute_string = _segment_derived_image_header_meta(
+        source_image,
+        output,
+        series_index,
+        output_index,
+        series_name,
+        extra_meta,
+        series_identity,
+        storage_fields,
+        scanner_postprocessing=scanner_postprocessing,
+    ).serialize()
+    return output
+
+
+def _stamp_segment_source_geometry_image(
+    output,
+    source_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity=None,
+    scanner_postprocessing=True,
+):
+    header = output.getHead()
+    header.image_series_index = series_index
+    header.image_index = _source_geometry_header_image_index(source_image, output_index)
+    if output.data_type in (ismrmrd.DATATYPE_CXFLOAT, ismrmrd.DATATYPE_CXDOUBLE):
+        header.image_type = ismrmrd.IMTYPE_COMPLEX
+    else:
+        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+    output.setHead(header)
+    storage_fields = _original_storage_fields(source_image, output_index, output)
+    output.image_series_index = series_index
+    output.attribute_string = _segment_source_geometry_meta(
+        source_image,
+        output,
+        series_index,
+        output_index,
+        series_name,
+        extra_meta,
+        series_identity,
+        storage_fields,
+        scanner_postprocessing=scanner_postprocessing,
+    ).serialize()
+    return output
+
+
+def _source_geometry_header_image_index(source_image, output_index):
+    source_image_index = int(source_image.getHead().image_index)
+    if source_image_index >= 1:
+        return source_image_index
+    return output_index + 1
+
+
+def _original_passthrough_meta(
+    source_image,
+    output_image,
+    series_index,
+    output_index,
+    series_name,
+    series_identity,
+    storage_fields,
+):
+    meta = _meta_from_image(source_image)
+    _strip_source_parent_refs(meta)
+    if series_identity is None:
+        series_identity = _build_output_series_identity_from_name(
+            source_image,
+            series_index,
+            series_name,
+        )
+    series_name = series_identity["series_name"]
+    series_uid = series_identity["series_uid"]
+    series_grouping = series_identity["series_grouping"]
+    sop_uid = _derived_instance_uid(
+        source_image,
+        series_index,
+        series_name,
+        output_index,
+        series_uid,
+    )
+
+    for key in ("SeriesDescription", "SequenceDescription", "ProtocolName"):
+        if not _meta_text(meta, key):
+            meta[key] = series_name
+    meta["SeriesInstanceUID"] = series_uid
+    meta["SOPInstanceUID"] = sop_uid
+    meta["SeriesNumberRangeNameUID"] = series_grouping
+    _set_meta_scalar(meta, "Keep_image_geometry", 1)
+    _ensure_original_storage_meta(meta, source_image, output_index, storage_fields)
+    for key, value in _header_geometry_meta(output_image.getHead()).items():
+        meta[key] = value
+
+    minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    _strip_scanner_write_unsafe_meta(meta)
+    if minihead:
+        patched_minihead, changed = _patch_original_ice_minihead(
+            minihead,
+            series_grouping,
+            series_uid,
+            sop_uid,
+            storage_fields,
+        )
+        if changed:
+            meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
+    return meta
+
+
+def _segment_source_geometry_meta(
+    source_image,
+    output_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity,
+    storage_fields,
+    data_role="Segmentation",
+    image_processing_history=None,
+    image_type=None,
+    image_type_value4=None,
+    scanner_postprocessing=True,
+):
+    meta = _meta_from_image(source_image)
+    _strip_source_parent_refs(meta)
+    if series_identity is None:
+        series_identity = _build_output_series_identity_from_name(
+            source_image,
+            series_index,
+            series_name,
+        )
+    series_name = series_identity["series_name"]
+    series_uid = series_identity["series_uid"]
+    series_grouping = series_identity["series_grouping"]
+    sop_uid = _derived_instance_uid(
+        source_image,
+        series_index,
+        series_name,
+        output_index,
+        series_uid,
+    )
+    minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    image_type = image_type or SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE
+    image_type_value4 = image_type_value4 or SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4
+    image_processing_history = image_processing_history or [
+        "PYTHON",
+        "OPENRECON_SEGMENT_SOURCE_GEOMETRY",
+    ]
+    child_role = None
+    exam_data_role = None
+    if scanner_postprocessing:
+        child_role = _segment_postprocessing_child_role(series_index)
+        exam_data_role = _format_exam_data_role_sequential_number(child_role)
+
+    meta["DataRole"] = data_role
+    meta["ImageProcessingHistory"] = image_processing_history
+    meta["ImageType"] = image_type
+    meta["DicomImageType"] = image_type
+    meta["SeriesDescription"] = series_name
+    meta["SequenceDescription"] = series_name
+    meta["ProtocolName"] = series_name
+    meta["ImageComments"] = series_name
+    meta["ImageComment"] = series_name
+    meta["SeriesInstanceUID"] = series_uid
+    meta["SOPInstanceUID"] = sop_uid
+    meta["SeriesNumberRangeNameUID"] = series_grouping
+    meta["ImageTypeValue4"] = image_type_value4
+    meta["ComplexImageComponent"] = "MAGNITUDE"
+    _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
+    _set_meta_scalar(meta, "Keep_image_geometry", 1)
+    _set_meta_scalar(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY, 1)
+    if scanner_postprocessing:
+        meta["ExamDataRole"] = exam_data_role
+        _set_meta_scalar(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY, child_role)
+    else:
+        for key in (
+            "ExamDataRole",
+            SEGMENT_POSTPROCESSING_META_KEY,
+            SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY,
+        ):
+            if key in meta:
+                del meta[key]
+    _ensure_original_storage_meta(meta, output_image, output_index, storage_fields)
+    for key, value in (extra_meta or {}).items():
+        if value is not None:
+            meta[key] = value
+    for key, value in _header_geometry_meta(output_image.getHead()).items():
+        meta[key] = value
+    _strip_scanner_write_unsafe_meta(meta)
+
+    if minihead:
+        patched_minihead, changed = _patch_segment_postprocessing_ice_minihead(
+            minihead,
+            series_name,
+            series_grouping,
+            series_uid,
+            sop_uid,
+            image_type,
+            image_type_value4,
+            exam_data_role,
+            storage_fields,
+        )
+        if changed:
+            meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
+    return meta
+
+
+def _segment_derived_image_header_meta(
+    source_image,
+    output_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity,
+    storage_fields,
+    scanner_postprocessing=True,
+):
+    return _segment_source_geometry_meta(
+        source_image,
+        output_image,
+        series_index,
+        output_index,
+        series_name,
+        extra_meta,
+        series_identity,
+        storage_fields,
+        data_role="Image",
+        image_processing_history=[
+            "PYTHON",
+            "OPENRECON_SEGMENT_DERIVED_IMAGE_HEADER",
+        ],
+        image_type=SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE,
+        image_type_value4=SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE_VALUE4,
+        scanner_postprocessing=scanner_postprocessing,
+    )
+
+
+def _segment_source_image_header_meta(
+    source_image,
+    output_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity,
+    storage_fields,
+    scanner_postprocessing=True,
+    preserve_dixon_identity=False,
+):
+    meta = _meta_from_image(source_image)
+    _strip_source_parent_refs(meta)
+    if series_identity is None:
+        series_identity = _build_output_series_identity_from_name(
+            source_image,
+            series_index,
+            series_name,
+        )
+    series_name = series_identity["series_name"]
+    series_uid = series_identity["series_uid"]
+    series_grouping = series_identity["series_grouping"]
+    sop_uid = _derived_instance_uid(
+        source_image,
+        series_index,
+        series_name,
+        output_index,
+        series_uid,
+    )
+    minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    (
+        image_type,
+        dicom_image_type,
+        image_type_value4_tokens,
+    ) = _source_postprocessing_image_type_identity(
+        meta,
+        minihead,
+        sanitize_dixon=not preserve_dixon_identity,
+    )
+    child_role = None
+    exam_data_role = None
+    if scanner_postprocessing:
+        child_role = _segment_postprocessing_child_role(series_index)
+        exam_data_role = _format_exam_data_role_sequential_number(child_role)
+
+    meta["DataRole"] = "Image"
+    meta["ImageProcessingHistory"] = ["PYTHON", "OPENRECON_SEGMENT_SOURCE_IMAGE_HEADER"]
+    meta["ImageType"] = image_type
+    meta["DicomImageType"] = dicom_image_type
+    meta["SeriesDescription"] = series_name
+    meta["SequenceDescription"] = series_name
+    meta["ProtocolName"] = series_name
+    meta["ImageComments"] = series_name
+    meta["ImageComment"] = series_name
+    meta["SeriesInstanceUID"] = series_uid
+    meta["SOPInstanceUID"] = sop_uid
+    meta["SeriesNumberRangeNameUID"] = series_grouping
+    meta["ImageTypeValue4"] = image_type_value4_tokens
+    meta["ComplexImageComponent"] = "MAGNITUDE"
+    _set_meta_scalar(meta, "Keep_image_geometry", 1)
+    _set_meta_scalar(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY, 1)
+    _set_meta_scalar(meta, SEGMENT_SOURCE_IMAGE_HEADER_META_KEY, 1)
+    if preserve_dixon_identity:
+        _set_meta_scalar(meta, SEGMENT_DIXON_COMPOSABLE_META_KEY, 1)
+    if scanner_postprocessing:
+        meta["ExamDataRole"] = exam_data_role
+        _set_meta_scalar(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY, child_role)
+    else:
+        for key in (
+            "ExamDataRole",
+            SEGMENT_POSTPROCESSING_META_KEY,
+            SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY,
+        ):
+            if key in meta:
+                del meta[key]
+    _ensure_original_storage_meta(meta, output_image, output_index, storage_fields)
+    for key, value in (extra_meta or {}).items():
+        if value is not None:
+            meta[key] = value
+    for key, value in _header_geometry_meta(output_image.getHead()).items():
+        meta[key] = value
+    if preserve_dixon_identity:
+        # Keep a clean ImageTypeValue3="M" magnitude discriminator (like the
+        # native originals) so the Dixon composer accepts the mask, instead of
+        # stripping it.
+        meta["ImageTypeValue3"] = ORIGINAL_IMAGE_TYPE_VALUE3
+    else:
+        _strip_scanner_write_unsafe_meta(meta)
+
+    if minihead:
+        patched_minihead, changed = _patch_segment_postprocessing_ice_minihead(
+            minihead,
+            series_name,
+            series_grouping,
+            series_uid,
+            sop_uid,
+            image_type,
+            image_type_value4_tokens,
+            exam_data_role,
+            storage_fields,
+        )
+        if preserve_dixon_identity:
+            # _patch_segment_postprocessing_ice_minihead strips ImageTypeValue3;
+            # restore a clean "M" so the IceMiniHead matches the Meta and the
+            # Dixon composer routing.
+            patched_minihead, itv3_changed = _replace_or_append_minihead_string_param(
+                patched_minihead,
+                "ImageTypeValue3",
+                ORIGINAL_IMAGE_TYPE_VALUE3,
+            )
+            changed = changed or itv3_changed
+        if changed:
+            meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
+    return meta
+
+
+def _segment_postprocessing_meta(
+    source_image,
+    output_image,
+    series_index,
+    output_index,
+    series_name,
+    extra_meta,
+    series_identity,
+    storage_fields,
+):
+    meta = _meta_from_image(source_image)
+    _strip_source_parent_refs(meta)
+    if series_identity is None:
+        series_identity = _build_output_series_identity_from_name(
+            source_image,
+            series_index,
+            series_name,
+        )
+    series_name = series_identity["series_name"]
+    series_uid = series_identity["series_uid"]
+    series_grouping = series_identity["series_grouping"]
+    sop_uid = _derived_instance_uid(
+        source_image,
+        series_index,
+        series_name,
+        output_index,
+        series_uid,
+    )
+    minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    (
+        image_type,
+        dicom_image_type,
+        image_type_value4_tokens,
+    ) = _source_postprocessing_image_type_identity(meta, minihead)
+    child_role = _segment_postprocessing_child_role(series_index)
+    exam_data_role = _format_exam_data_role_sequential_number(child_role)
+
+    meta["DataRole"] = "Image"
+    meta["ImageProcessingHistory"] = ["PYTHON", "OPENRECON_SEGMENT_POSTPROCESSING"]
+    meta["ImageType"] = image_type
+    meta["DicomImageType"] = dicom_image_type
+    meta["ExamDataRole"] = exam_data_role
+    meta["SeriesDescription"] = series_name
+    meta["SequenceDescription"] = series_name
+    meta["ProtocolName"] = series_name
+    meta["SeriesInstanceUID"] = series_uid
+    meta["SOPInstanceUID"] = sop_uid
+    meta["SeriesNumberRangeNameUID"] = series_grouping
+    meta["ImageTypeValue4"] = image_type_value4_tokens
+    meta["ComplexImageComponent"] = "MAGNITUDE"
+    _set_meta_scalar(meta, "Keep_image_geometry", 1)
+    _set_meta_scalar(meta, SEGMENT_POSTPROCESSING_META_KEY, 1)
+    _set_meta_scalar(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY, child_role)
+    _ensure_original_storage_meta(meta, output_image, output_index, storage_fields)
+    for key, value in (extra_meta or {}).items():
+        if value is not None:
+            meta[key] = value
+    for key, value in _header_geometry_meta(output_image.getHead()).items():
+        meta[key] = value
+    _strip_scanner_write_unsafe_meta(meta)
+
+    if minihead:
+        patched_minihead, changed = _patch_segment_postprocessing_ice_minihead(
+            minihead,
+            series_name,
+            series_grouping,
+            series_uid,
+            sop_uid,
+            image_type,
+            image_type_value4_tokens,
+            exam_data_role,
+            storage_fields,
+        )
+        if changed:
+            meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
+    return meta
 
 
 def _output_meta(
@@ -965,10 +3138,10 @@ def _output_meta(
     extra_meta,
     patch_minihead,
     series_identity,
-    preserve_source_geometry=False,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
+    _strip_scanner_write_unsafe_meta(meta)
     if series_identity is None:
         series_identity = _build_output_series_identity_from_name(
             source_image,
@@ -998,25 +3171,22 @@ def _output_meta(
     meta["SeriesInstanceUID"] = series_uid
     meta["SOPInstanceUID"] = sop_uid
     meta["SeriesNumberRangeNameUID"] = series_grouping
-    meta["ImageTypeValue3"] = "M"
     meta["ImageTypeValue4"] = image_type_token
     meta["ComplexImageComponent"] = "MAGNITUDE"
     _set_meta_field(meta, "SequenceDescriptionAdditional", "openrecon")
     _set_meta_scalar(meta, "Keep_image_geometry", 1)
-    if preserve_source_geometry:
-        _set_meta_scalar(meta, "OriginalGeometryPassThrough", 1)
-    else:
-        _set_output_position_meta(meta, output_index)
+    minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
+    _set_output_position_meta(meta, output_index)
     for key, value in extra_meta.items():
         if value is not None:
             meta[key] = value
+    _strip_scanner_write_unsafe_meta(meta)
 
     if not patch_minihead:
         if "IceMiniHead" in meta:
             del meta["IceMiniHead"]
         return meta
 
-    minihead = _decode_ice_minihead(_meta_text(meta, "IceMiniHead"))
     if minihead:
         patched_minihead, changed = _patch_ice_minihead(
             minihead,
@@ -1027,7 +3197,6 @@ def _output_meta(
             image_type,
             image_type_token,
             output_index,
-            preserve_source_geometry=preserve_source_geometry,
         )
         if changed:
             meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
@@ -1043,18 +3212,129 @@ def _strip_source_parent_refs(meta):
             del meta[key]
 
 
+def _strip_scanner_write_unsafe_meta(meta):
+    for key in SCANNER_WRITE_UNSAFE_META_KEYS:
+        if key in meta:
+            del meta[key]
+
+
+def _scanner_write_unsafe_field_errors(meta, minihead, is_dixon_composable_output, index):
+    """Collect errors for unsafe scanner Meta/IceMiniHead fields.
+
+    2d_dixon_composable intentionally writes ImageTypeValue3="M" into both
+    Meta and IceMiniHead so the scanner's inline Dixon composer keeps the
+    derived segment bound to its FILTER_DIXON* channel. That exact value is
+    allowed only when SegmentDixonComposable=1; any other value or any other
+    unsafe field still trips the guard.
+    """
+    errors = []
+    for field in SCANNER_WRITE_UNSAFE_META_KEYS:
+        meta_value = _meta_text(meta, field)
+        minihead_string_value = _minihead_string_value(minihead, field)
+        minihead_array_tokens = _minihead_array_tokens(minihead, field)
+        if is_dixon_composable_output and field == "ImageTypeValue3":
+            meta_safe = not meta_value or meta_value == ORIGINAL_IMAGE_TYPE_VALUE3
+            minihead_string_safe = (
+                not minihead_string_value
+                or minihead_string_value == ORIGINAL_IMAGE_TYPE_VALUE3
+            )
+            minihead_array_safe = (
+                not minihead_array_tokens
+                or minihead_array_tokens == [ORIGINAL_IMAGE_TYPE_VALUE3]
+            )
+            if meta_safe and minihead_string_safe and minihead_array_safe:
+                continue
+        if meta_value:
+            errors.append(f"image {index} has unsafe scanner Meta {field}")
+        if minihead_string_value or minihead_array_tokens:
+            errors.append(f"image {index} has unsafe scanner IceMiniHead {field}")
+    return errors
+
+
 def _set_output_position_meta(meta, output_index):
-    for key in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
-        _set_meta_scalar(meta, key, SCANNER_PARTITION_INDEX)
-    for key, value in (
-        ("AnatomicalSliceNo", output_index),
-        ("ChronSliceNo", output_index),
-        ("NumberInSeries", output_index + 1),
-        ("ProtocolSliceNumber", output_index),
-        ("SliceNo", output_index),
-        ("IsmrmrdSliceNo", output_index),
-    ):
+    for key, value in _output_position_storage_fields(output_index).items():
         _set_meta_scalar(meta, key, value)
+
+
+def _output_position_storage_fields(output_index):
+    return {
+        "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
+        "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+        "AnatomicalSliceNo": output_index,
+        "ChronSliceNo": output_index,
+        "NumberInSeries": output_index + 1,
+        "ProtocolSliceNumber": output_index,
+        "SliceNo": output_index,
+        "IsmrmrdSliceNo": output_index,
+    }
+
+
+def _original_storage_fields(source_image, output_index, stream_image=None):
+    header = source_image.getHead()
+    stream_header = (stream_image or source_image).getHead()
+    header_slice = int(header.slice)
+    header_image_index = max(int(stream_header.image_index), 1)
+    stream_index = header_image_index - 1
+    slice_index = header_slice if header_slice >= 0 else output_index
+    partition_index = _source_partition_storage_index(source_image, slice_index)
+    return {
+        "Actual3DImagePartNumber": partition_index,
+        "AnatomicalPartitionNo": partition_index,
+        "AnatomicalSliceNo": slice_index,
+        "ChronSliceNo": stream_index,
+        "NumberInSeries": header_image_index,
+        "ProtocolSliceNumber": slice_index,
+        "SliceNo": slice_index,
+        "IsmrmrdSliceNo": slice_index,
+    }
+
+
+def _ensure_original_storage_meta(
+    meta,
+    source_image,
+    output_index,
+    storage_fields=None,
+):
+    if storage_fields is None:
+        storage_fields = _original_storage_fields(source_image, output_index)
+    for key in storage_fields:
+        _set_meta_scalar(meta, key, storage_fields[key])
+
+
+def _source_partition_storage_index(source_image, fallback_slice_index):
+    partition_count = _source_partition_count_hint([source_image])
+    if partition_count is None or partition_count <= 1:
+        return SCANNER_PARTITION_INDEX
+
+    for key in (
+        "Actual3DImagePartNumber",
+        "Actual3DImaPartNumber",
+        "AnatomicalPartitionNo",
+    ):
+        value = _source_storage_int(source_image, key)
+        if value is not None and 0 <= value < partition_count:
+            return value
+
+    return _expected_partition_storage_index(fallback_slice_index, partition_count)
+
+
+def _expected_partition_storage_index(slice_index, partition_count):
+    if partition_count is None or partition_count <= 1:
+        return SCANNER_PARTITION_INDEX
+
+    slice_index = int(slice_index)
+    if 0 <= slice_index < partition_count:
+        return slice_index
+
+    return SCANNER_PARTITION_INDEX
+
+
+def _source_storage_int(image, key):
+    meta_value = _meta_int(_meta_from_image(image), key)
+    if meta_value is not None:
+        return meta_value
+
+    return _minihead_long_value(_image_minihead(image), key)
 
 
 def _meta_from_image(image):
@@ -1164,6 +3444,116 @@ def _meta_text(meta, key):
     return "" if text.upper() == "N/A" else text
 
 
+def _meta_values(meta, key):
+    value = meta.get(key)
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        value = [value]
+    values = []
+    for item in value:
+        text = str(item or "").strip()
+        if text and text.upper() != "N/A":
+            values.append(text)
+    return values
+
+
+def _normalise_identity_tokens(value):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple)):
+        values = value
+    else:
+        values = [value]
+    tokens = []
+    for item in values:
+        token = _sanitize_identity_text(item)
+        if token:
+            tokens.append(token)
+    return tokens
+
+
+def _source_postprocessing_image_type_identity(source_meta, minihead, sanitize_dixon=True):
+    image_type = (
+        _meta_text(source_meta, "ImageType")
+        or _minihead_string_value(minihead, "ImageType")
+        or SEGMENT_POSTPROCESSING_IMAGE_TYPE
+    )
+    dicom_image_type = _meta_text(source_meta, "DicomImageType") or image_type
+    image_type_value4_tokens = (
+        _minihead_array_tokens(minihead, "ImageTypeValue4")
+        or _meta_values(source_meta, "ImageTypeValue4")
+        or [SEGMENT_POSTPROCESSING_IMAGE_TYPE_VALUE4]
+    )
+    # A segment must normally never inherit a Dixon (WATER/FAT/FAT_FRAC)
+    # image-type token. The scanner's inline Dixon composer routes any such image
+    # into its FILTER_DIXON* channels and then aborts the measurement ("Composer
+    # has been switched off ... Cloning of image data failed") when the mask is
+    # not a valid Dixon volume member. Fall back to the neutral derived-segment
+    # identity so the mask is ignored by composing instead of crashing it, while
+    # still keeping the source per-slice geometry.
+    # The experimental 2d_dixon_composable mode passes sanitize_dixon=False to
+    # DELIBERATELY keep the Dixon token (paired with full per-slice geometry and
+    # ImageTypeValue3="M") so the mask is routed into a Dixon compose channel --
+    # a diagnostic to observe whether segment masks can be composed.
+    if sanitize_dixon and _has_dixon_image_type_token(
+        [image_type, dicom_image_type, *image_type_value4_tokens]
+    ):
+        logging.info(
+            "OPENRECONI2I_SEGMENT_DIXON_TOKEN_STRIPPED source ImageType=%s "
+            "carried a Dixon token; substituting neutral segment identity to "
+            "keep the mask out of the scanner Dixon composer",
+            image_type,
+        )
+        image_type = SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE
+        dicom_image_type = SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE
+        image_type_value4_tokens = [SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE_VALUE4]
+    return image_type, dicom_image_type, image_type_value4_tokens
+
+
+def _segment_postprocessing_child_role(series_index):
+    return int(series_index)
+
+
+def _has_dixon_image_type_token(values):
+    for value in values:
+        for token in re.split(r"[^A-Za-z0-9_]+", str(value or "").upper()):
+            if token in SEGMENT_POSTPROCESSING_DISALLOWED_DIXON_TOKENS:
+                return True
+    return False
+
+
+def _has_magnitude_image_type_value3_token(values):
+    for value in values:
+        parts = str(value or "").upper().split("\\")
+        if len(parts) >= 3 and parts[2] == "M":
+            return True
+    return False
+
+
+def _format_exam_data_role_sequential_number(value):
+    return (
+        '<DataRole Version="DR2.0">\n'
+        ' <Categories>\n'
+        '  <Category Name="SequentialNumber">\n'
+        f"   <CategoryEntry>{int(value)}</CategoryEntry>\n"
+        "  </Category>\n"
+        " </Categories>\n"
+        "</DataRole>"
+    )
+
+
+def _exam_data_role_sequential_number(value):
+    match = re.search(
+        r"SequentialNumber.*?<CategoryEntry>\s*(-?\d+)\s*</CategoryEntry>",
+        str(value or ""),
+        flags=re.DOTALL,
+    )
+    return int(match.group(1)) if match else None
+
+
 def _decode_ice_minihead(value):
     if not value:
         return ""
@@ -1183,6 +3573,17 @@ def _minihead_string_value(minihead, key):
         minihead,
     )
     return match.group(1).strip() if match else ""
+
+
+def _minihead_exam_data_role(minihead):
+    match = re.search(
+        r'<ParamString\."ExamDataRole">\s*\{\s*"(.*?</DataRole>)"\s*\}',
+        minihead,
+        flags=re.DOTALL,
+    )
+    if match:
+        return match.group(1).replace('""', '"').strip()
+    return _minihead_string_value(minihead, "ExamDataRole")
 
 
 def _minihead_long_value(minihead, key):
@@ -1208,6 +3609,55 @@ def _minihead_array_tokens(minihead, key):
     ]
 
 
+def _minihead_param_map_line_span(minihead_text, map_name):
+    lines = minihead_text.splitlines(keepends=True)
+    map_pattern = re.compile(rf'<ParamMap\."{re.escape(map_name)}">')
+
+    for map_index, line in enumerate(lines):
+        if not map_pattern.search(line):
+            continue
+
+        open_index = None
+        for candidate_index in range(map_index + 1, len(lines)):
+            stripped = lines[candidate_index].strip()
+            if stripped == "{":
+                open_index = candidate_index
+                break
+            if stripped.startswith('<ParamMap."'):
+                break
+        if open_index is None:
+            continue
+
+        depth = 1
+        for close_index in range(open_index + 1, len(lines)):
+            stripped = lines[close_index].strip()
+            if stripped == "{":
+                depth += 1
+            elif stripped == "}":
+                depth -= 1
+                if depth == 0:
+                    return lines, map_index, open_index, close_index
+
+    return lines, None, None, None
+
+
+def _minihead_param_map_text(minihead_text, map_name):
+    lines, map_index, _open_index, close_index = _minihead_param_map_line_span(
+        minihead_text,
+        map_name,
+    )
+    if map_index is None:
+        return ""
+    return "".join(lines[map_index : close_index + 1])
+
+
+def _minihead_param_map_has_long_param(minihead_text, map_name, name):
+    map_text = _minihead_param_map_text(minihead_text, map_name)
+    if not map_text:
+        return False
+    return bool(re.search(rf'<ParamLong\."{re.escape(name)}">', map_text))
+
+
 def _patch_ice_minihead(
     minihead_text,
     series_name,
@@ -1217,10 +3667,12 @@ def _patch_ice_minihead(
     image_type,
     image_type_token,
     output_index,
-    preserve_source_geometry=False,
 ):
     current_text = minihead_text
-    changed = False
+    current_text, changed = _remove_minihead_string_param(
+        current_text,
+        "ImageTypeValue3",
+    )
     for name, value in (
         ("SeriesDescription", series_name),
         ("SequenceDescription", series_name),
@@ -1229,7 +3681,6 @@ def _patch_ice_minihead(
         ("SeriesInstanceUID", series_uid),
         ("SOPInstanceUID", sop_uid),
         ("ImageType", image_type),
-        ("ImageTypeValue3", "M"),
         ("ComplexImageComponent", "MAGNITUDE"),
     ):
         current_text, did_change = _replace_or_append_minihead_string_param(
@@ -1244,27 +3695,202 @@ def _patch_ice_minihead(
         image_type_token,
     )
     changed = changed or did_change
-    if not preserve_source_geometry:
-        for name in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
-            current_text, did_change = _replace_or_append_minihead_long_param(
+    for name in ("Actual3DImagePartNumber", "AnatomicalPartitionNo"):
+        current_text, did_change = _replace_or_append_minihead_long_param(
+            current_text,
+            name,
+            SCANNER_PARTITION_INDEX,
+        )
+        changed = changed or did_change
+    for name, value in (
+        ("AnatomicalSliceNo", output_index),
+        ("ChronSliceNo", output_index),
+        ("NumberInSeries", output_index + 1),
+        ("ProtocolSliceNumber", output_index),
+        ("SliceNo", output_index),
+    ):
+        current_text, did_change = _replace_or_append_minihead_long_param(
+            current_text,
+            name,
+            value,
+        )
+        changed = changed or did_change
+    return current_text, changed
+
+
+def _patch_original_ice_minihead(
+    minihead_text,
+    series_grouping,
+    series_uid,
+    sop_uid,
+    storage_fields,
+):
+    current_text = minihead_text
+    changed = False
+    current_text, did_change = _strip_scanner_write_unsafe_minihead(current_text)
+    changed = changed or did_change
+    for name, value in (
+        ("SeriesNumberRangeNameUID", series_grouping),
+        ("SeriesInstanceUID", series_uid),
+        ("SOPInstanceUID", sop_uid),
+    ):
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            name,
+            value,
+        )
+        changed = changed or did_change
+    current_text, did_change = _patch_minihead_storage_fields(
+        current_text,
+        storage_fields,
+    )
+    changed = changed or did_change
+    return current_text, changed
+
+
+def _patch_segment_postprocessing_ice_minihead(
+    minihead_text,
+    series_name,
+    series_grouping,
+    series_uid,
+    sop_uid,
+    image_type,
+    image_type_value4_tokens,
+    exam_data_role,
+    storage_fields,
+):
+    current_text = minihead_text
+    changed = False
+    for name, value in (
+        ("SeriesDescription", series_name),
+        ("SequenceDescription", series_name),
+        ("ProtocolName", series_name),
+        ("SeriesNumberRangeNameUID", series_grouping),
+        ("SeriesInstanceUID", series_uid),
+        ("SOPInstanceUID", sop_uid),
+        ("ImageType", image_type),
+        ("ComplexImageComponent", "MAGNITUDE"),
+    ):
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            name,
+            value,
+        )
+        changed = changed or did_change
+    current_text, did_change = _replace_or_append_minihead_array_tokens(
+        current_text,
+        "ImageTypeValue4",
+        image_type_value4_tokens,
+    )
+    changed = changed or did_change
+    if exam_data_role:
+        current_text, did_change = _replace_or_insert_minihead_exam_data_role(
+            current_text,
+            exam_data_role,
+        )
+    else:
+        current_text, did_change = _remove_minihead_exam_data_role(current_text)
+    changed = changed or did_change
+    current_text, did_change = _strip_scanner_write_unsafe_minihead(current_text)
+    changed = changed or did_change
+    current_text, did_change = _patch_minihead_storage_fields(
+        current_text,
+        storage_fields,
+    )
+    changed = changed or did_change
+    return current_text, changed
+
+
+def _patch_minihead_storage_fields(
+    minihead_text,
+    storage_fields,
+    preserve_existing=False,
+):
+    current_text = minihead_text
+    changed = False
+    for minihead_name, map_name, source_field in MINIHEAD_STORAGE_FIELD_SPECS:
+        value = storage_fields.get(source_field)
+        if preserve_existing:
+            current_text, did_change = _ensure_minihead_long_param(
                 current_text,
-                name,
-                SCANNER_PARTITION_INDEX,
-            )
-            changed = changed or did_change
-        for name, value in (
-            ("AnatomicalSliceNo", output_index),
-            ("ChronSliceNo", output_index),
-            ("NumberInSeries", output_index + 1),
-            ("ProtocolSliceNumber", output_index),
-            ("SliceNo", output_index),
-        ):
-            current_text, did_change = _replace_or_append_minihead_long_param(
-                current_text,
-                name,
+                minihead_name,
                 value,
+                map_name=map_name,
             )
-            changed = changed or did_change
+        else:
+            current_text, did_change = _replace_or_insert_minihead_long_param(
+                current_text,
+                minihead_name,
+                value,
+                map_name=map_name,
+            )
+        changed = changed or did_change
+    return current_text, changed
+
+
+def _remove_minihead_string_param(minihead_text, name):
+    pattern = re.compile(
+        rf'^\s*<ParamString\."{re.escape(name)}">\s*\{{\s*"[^"]*"\s*\}}\s*\n?',
+        flags=re.MULTILINE,
+    )
+    updated_text, count = pattern.subn("", minihead_text)
+    return updated_text, bool(count)
+
+
+def _remove_minihead_array_param(minihead_text, name):
+    pattern = re.compile(
+        rf'^\s*<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}\s*\n?',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    updated_text, count = pattern.subn("", minihead_text)
+    return updated_text, bool(count)
+
+
+def _strip_scanner_write_unsafe_minihead(minihead_text):
+    current_text = minihead_text
+    changed = False
+    for key in SCANNER_WRITE_UNSAFE_META_KEYS:
+        current_text, did_change = _remove_minihead_string_param(current_text, key)
+        changed = changed or did_change
+        current_text, did_change = _remove_minihead_array_param(current_text, key)
+        changed = changed or did_change
+    return current_text, changed
+
+
+def _normalize_original_image_type_value3_meta(meta, minihead_text):
+    """Normalize ImageTypeValue3 to "M" in Meta (mirror of the musclemap path).
+
+    The pass-through originals must keep a clean ImageTypeValue3 magnitude
+    discriminator rather than having it stripped: the inline Composer uses it to
+    keep a Dixon contrast bound to its FILTER_DIXON* channel. A clean "M" value
+    avoids the OpenRecon conversion rejection that motivated stripping (e.g. a
+    "MAP" array on the fat-fraction map).
+    """
+    if (
+        "ImageTypeValue3" in meta
+        or _minihead_string_value(minihead_text, "ImageTypeValue3")
+        or _minihead_array_tokens(minihead_text, "ImageTypeValue3")
+    ):
+        meta["ImageTypeValue3"] = ORIGINAL_IMAGE_TYPE_VALUE3
+
+
+def _normalize_original_image_type_value3_minihead(minihead_text):
+    current_text = minihead_text
+    changed = False
+    if re.search(r'<ParamString\."ImageTypeValue3">', current_text):
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            "ImageTypeValue3",
+            ORIGINAL_IMAGE_TYPE_VALUE3,
+        )
+        changed = changed or did_change
+    if _minihead_array_tokens(current_text, "ImageTypeValue3"):
+        current_text, did_change = _replace_or_append_minihead_array_tokens(
+            current_text,
+            "ImageTypeValue3",
+            [ORIGINAL_IMAGE_TYPE_VALUE3],
+        )
+        changed = changed or did_change
     return current_text, changed
 
 
@@ -1292,63 +3918,248 @@ def _replace_or_append_minihead_string_param(minihead_text, name, value):
     return minihead_text.rstrip() + appended_param, True
 
 
-def _replace_or_append_minihead_long_param(minihead_text, name, value):
-    if value is None:
+def _minihead_string_literal(value):
+    return str(value).replace('"', '""')
+
+
+def _replace_or_insert_minihead_exam_data_role(minihead_text, exam_data_role):
+    if not exam_data_role:
         return minihead_text, False
+
+    literal = _minihead_string_literal(exam_data_role)
+    pattern = re.compile(
+        r'(<ParamString\."ExamDataRole">\s*\{\s*")(.*?</DataRole>)("\s*\})',
+        flags=re.DOTALL,
+    )
+    matches = list(pattern.finditer(minihead_text))
+    if matches:
+        if all(match.group(2).replace('""', '"') == exam_data_role for match in matches):
+            return minihead_text, False
+        return (
+            pattern.sub(
+                lambda match: f"{match.group(1)}{literal}{match.group(3)}",
+                minihead_text,
+            ),
+            True,
+        )
+
+    return _insert_minihead_string_param_in_map(
+        minihead_text,
+        "DICOM",
+        "ExamDataRole",
+        exam_data_role,
+    )
+
+
+def _remove_minihead_exam_data_role(minihead_text):
+    pattern = re.compile(
+        r'^\s*<ParamString\."ExamDataRole">\s*\{\s*".*?</DataRole>"\s*\}\s*\n?',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    updated_text, count = pattern.subn("", minihead_text)
+    return updated_text, bool(count)
+
+
+def _insert_minihead_string_param_in_map(minihead_text, map_name, name, value):
+    literal = _minihead_string_literal(value)
+    lines, _map_index, open_index, close_index = _minihead_param_map_line_span(
+        minihead_text,
+        map_name,
+    )
+    if close_index is None:
+        appended_param = f'\n<ParamString."{name}">\t{{ "{literal}" }}\n'
+        return minihead_text.rstrip() + appended_param, True
+
+    indent = ""
+    for line in lines[open_index + 1 : close_index]:
+        match = re.match(r'(\s*)<Param(?:Long|String|Array)\.', line)
+        if match:
+            indent = match.group(1)
+            break
+    if not indent:
+        indent_match = re.match(r"(\s*)", lines[open_index])
+        indent = indent_match.group(1) if indent_match else ""
+
+    line_ending = "\r\n" if "\r\n" in minihead_text else "\n"
+    param_line = f'{indent}<ParamString."{name}">\t{{ "{literal}" }}{line_ending}'
+    lines.insert(close_index, param_line)
+    return "".join(lines), True
+
+
+def _replace_existing_minihead_long_param(minihead_text, name, value):
+    if value is None:
+        return minihead_text, False, False
 
     value = int(value)
     pattern = re.compile(
         rf'(<ParamLong\."{re.escape(name)}">\s*\{{\s*)(-?\d*)?(\s*\}})'
     )
     matches = list(pattern.finditer(minihead_text))
-    if matches:
-        if all((match.group(2) or "").strip() == str(value) for match in matches):
-            return minihead_text, False
-        return (
-            pattern.sub(
-                lambda match: f"{match.group(1)}{value}{match.group(3)}",
-                minihead_text,
-            ),
-            True,
-        )
+    if not matches:
+        return minihead_text, False, False
+    if all((match.group(2) or "").strip() == str(value) for match in matches):
+        return minihead_text, False, True
+    return (
+        pattern.sub(
+            lambda match: f"{match.group(1)}{value}{match.group(3)}",
+            minihead_text,
+        ),
+        True,
+        True,
+    )
+
+
+def _replace_or_append_minihead_long_param(minihead_text, name, value):
+    if value is None:
+        return minihead_text, False
+
+    value = int(value)
+    current_text, changed, found = _replace_existing_minihead_long_param(
+        minihead_text,
+        name,
+        value,
+    )
+    if found:
+        return current_text, changed
 
     appended_param = f'\n<ParamLong."{name}">\t{{ {value} }}\n'
     return minihead_text.rstrip() + appended_param, True
 
 
-def _replace_or_append_minihead_array_token(minihead_text, name, target_token):
-    target_token = _sanitize_identity_text(target_token)
-    if not target_token:
+def _replace_or_insert_minihead_long_param(
+    minihead_text,
+    name,
+    value,
+    map_name=None,
+):
+    if value is None:
         return minihead_text, False
 
+    value = int(value)
+    current_text, changed, found = _replace_existing_minihead_long_param(
+        minihead_text,
+        name,
+        value,
+    )
+    if not map_name:
+        if found:
+            return current_text, changed
+        return _replace_or_append_minihead_long_param(current_text, name, value)
+
+    if _minihead_param_map_has_long_param(current_text, map_name, name):
+        return current_text, changed
+
+    current_text, did_change = _insert_minihead_long_param_in_map(
+        current_text,
+        map_name,
+        name,
+        value,
+    )
+    return current_text, changed or did_change
+
+
+def _insert_minihead_long_param_in_map(minihead_text, map_name, name, value):
+    lines, _map_index, open_index, close_index = _minihead_param_map_line_span(
+        minihead_text,
+        map_name,
+    )
+    if close_index is None:
+        return _replace_or_append_minihead_long_param(minihead_text, name, value)
+
+    indent = ""
+    for line in lines[open_index + 1 : close_index]:
+        match = re.match(r'(\s*)<Param(?:Long|String|Array)\.', line)
+        if match:
+            indent = match.group(1)
+            break
+    if not indent:
+        indent_match = re.match(r"(\s*)", lines[open_index])
+        indent = indent_match.group(1) if indent_match else ""
+
+    line_ending = "\r\n" if "\r\n" in minihead_text else "\n"
+    param_line = f'{indent}<ParamLong."{name}">{{ {int(value)} }}{line_ending}'
+    lines.insert(close_index, param_line)
+    return "".join(lines), True
+
+
+def _ensure_minihead_long_param(
+    minihead_text,
+    name,
+    value,
+    minimum=None,
+    map_name=None,
+):
+    if value is None:
+        return minihead_text, False
+    current_value = _minihead_long_value(minihead_text, name)
+    if current_value is not None and (minimum is None or current_value >= minimum):
+        if not map_name or _minihead_param_map_has_long_param(
+            minihead_text,
+            map_name,
+            name,
+        ):
+            return minihead_text, False
+    return _replace_or_insert_minihead_long_param(
+        minihead_text,
+        name,
+        value,
+        map_name=map_name,
+    )
+
+
+def _replace_or_append_minihead_array_token(minihead_text, name, target_token):
+    return _replace_or_append_minihead_array_tokens(minihead_text, name, [target_token])
+
+
+def _replace_or_append_minihead_array_tokens(minihead_text, name, target_tokens):
+    target_tokens = _normalise_identity_tokens(target_tokens)
+    if not target_tokens:
+        return minihead_text, False
+
+    line_ending = "\r\n" if "\r\n" in minihead_text else "\n"
     block_pattern = re.compile(
         rf'(<ParamArray\."{re.escape(name)}">\s*\{{)(.*?)(^\s*\}})',
         flags=re.DOTALL | re.MULTILINE,
     )
     block_match = block_pattern.search(minihead_text)
     if not block_match:
+        token_lines = "".join(
+            f'{line_ending}\t{{ "{token}" }}' for token in target_tokens
+        )
         appended_param = (
-            f'\n<ParamArray."{name}">\t{{\n\t{{ "{target_token}" }}\n}}\n'
+            f'{line_ending}<ParamArray."{name}">\t{{'
+            f"{token_lines}{line_ending}}}{line_ending}"
         )
         return minihead_text.rstrip() + appended_param, True
 
     block_text = block_match.group(0)
     tokens = _minihead_array_tokens(block_text, name)
-    if tokens == [target_token]:
+    if tokens == target_tokens:
         return minihead_text, False
 
     token_pattern = re.compile(r'\{\s*"[^"]*"\s*\}')
     token_matches = list(token_pattern.finditer(block_text))
+    token_lines = "".join(
+        f'{line_ending}\t{{ "{token}" }}' for token in target_tokens
+    )
     if not token_matches:
-        replacement_block = (
-            block_text.rstrip()[:-1] + f'\n\t{{ "{target_token}" }}\n}}'
-        )
+        stripped_block = block_text.rstrip()
+        close_index = stripped_block.rfind("}")
+        if close_index >= 0:
+            replacement_block = (
+                stripped_block[:close_index]
+                + token_lines
+                + line_ending
+                + stripped_block[close_index:]
+            )
+        else:
+            replacement_block = stripped_block + token_lines
     else:
         first_token = token_matches[0]
         last_token = token_matches[-1]
         replacement_block = (
             block_text[:first_token.start()]
-            + f'{{ "{target_token}" }}'
+            + token_lines.lstrip(line_ending)
             + block_text[last_token.end():]
         )
     return (
@@ -1381,9 +4192,11 @@ def _validate_output_images(output_images, input_images):
     errors = []
     seen_image_keys = {}
     seen_storage_keys = {}
+    seen_minihead_storage_keys = {}
     seen_sop_uids = {}
     source_image_count = len(input_images)
     source_slice_count = _source_geometry_slice_limit(input_images) or source_image_count
+    source_partition_count = _source_partition_count_hint(input_images)
     input_identity = _identity_values(input_images)
     input_has_minihead = any(_image_minihead(image) for image in input_images)
     series_identity = {}
@@ -1407,12 +4220,12 @@ def _validate_output_images(output_images, input_images):
         meta = _meta_from_image(image)
         minihead = _image_minihead(image)
         keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
-        original_pass_through = _meta_int(meta, "OriginalGeometryPassThrough") == 1
+        is_original_output = _is_original_series_index(int(image.image_series_index))
         if (
             input_has_minihead
             and not minihead
             and keep_image_geometry != 0
-            and not original_pass_through
+            and not is_original_output
         ):
             errors.append(f"image {index} is missing IceMiniHead")
 
@@ -1433,7 +4246,13 @@ def _validate_output_images(output_images, input_images):
             "minihead_series_uid": _minihead_string_value(minihead, "SeriesInstanceUID"),
             "minihead_sop_uid": _minihead_string_value(minihead, "SOPInstanceUID"),
         }
-        _validate_identity_fields(index, identity, input_identity, errors)
+        _validate_identity_fields(
+            index,
+            identity,
+            input_identity,
+            errors,
+            allow_reused_descriptors=is_original_output,
+        )
         _validate_storage_fields(
             index,
             image,
@@ -1441,12 +4260,14 @@ def _validate_output_images(output_images, input_images):
             minihead,
             input_identity,
             seen_storage_keys,
+            seen_minihead_storage_keys,
             seen_sop_uids,
             _series_slice_limit(
                 int(image.image_series_index),
                 source_slice_count,
                 source_image_count,
             ),
+            source_partition_count,
             errors,
         )
 
@@ -1480,7 +4301,13 @@ def _validate_output_images(output_images, input_images):
         )
 
 
-def _validate_identity_fields(index, identity, input_identity, errors):
+def _validate_identity_fields(
+    index,
+    identity,
+    input_identity,
+    errors,
+    allow_reused_descriptors=False,
+):
     required = (
         "series_description",
         "sequence_description",
@@ -1520,9 +4347,28 @@ def _validate_identity_fields(index, identity, input_identity, errors):
         "sop_uid",
         "minihead_sop_uid",
     ):
+        if allow_reused_descriptors and key in (
+            "sequence_description",
+            "protocol_name",
+            "minihead_sequence_description",
+            "minihead_protocol_name",
+        ):
+            continue
         value = identity[key]
         if value and value in input_identity:
             errors.append(f"image {index} reuses input identity {key}={value}")
+
+
+def _validate_source_like_minihead_storage_maps(index, minihead, context, errors):
+    if not minihead:
+        return
+
+    for field, map_name, _source_field in MINIHEAD_STORAGE_FIELD_SPECS:
+        if not _minihead_param_map_has_long_param(minihead, map_name, field):
+            errors.append(
+                f"image {index} is missing {context} IceMiniHead "
+                f'{map_name} ParamLong "{field}"'
+            )
 
 
 def _validate_storage_fields(
@@ -1532,20 +4378,49 @@ def _validate_storage_fields(
     minihead,
     input_identity,
     seen_storage_keys,
+    seen_minihead_storage_keys,
     seen_sop_uids,
     series_slice_limit,
+    source_partition_count,
     errors,
 ):
     header = image.getHead()
     header_slice = int(header.slice)
+    header_image_index = int(header.image_index)
     header_matrix_z = int(header.matrix_size[2])
+    partition_storage_index = _expected_partition_storage_index(
+        header_slice,
+        source_partition_count,
+    )
     keep_image_geometry = _meta_int(meta, "Keep_image_geometry")
     image_type_value4 = _meta_text(meta, "ImageTypeValue4")
-    preserves_source_geometry = _meta_int(meta, "OriginalGeometryPassThrough") == 1
+    is_original_output = _is_original_series_index(int(image.image_series_index))
+    is_segment_source_image_header_output = (
+        _is_segment_source_image_header_output(meta)
+    )
+    is_segment_derived_image_header_output = (
+        _is_segment_derived_image_header_output(meta)
+    )
+    is_segment_source_geometry_output = _is_segment_source_geometry_output(meta)
+    is_segment_postprocessing_output = _is_segment_postprocessing_output(meta)
+    is_segment_explicit_volume_output = _is_segment_explicit_volume_output(meta)
+    is_dixon_composable_output = (
+        _meta_int(meta, SEGMENT_DIXON_COMPOSABLE_META_KEY) == 1
+    )
+    is_source_like_output = (
+        is_original_output
+        or is_segment_source_image_header_output
+        or is_segment_source_geometry_output
+        or (is_segment_postprocessing_output and not is_segment_explicit_volume_output)
+    )
+
+    if header_image_index < 1:
+        errors.append(
+            f"image {index} has image_index {header_image_index}, expected >= 1"
+        )
 
     if (
-        not preserves_source_geometry
-        and series_slice_limit
+        series_slice_limit
         and not 0 <= header_slice < series_slice_limit
     ):
         errors.append(
@@ -1553,16 +4428,550 @@ def _validate_storage_fields(
             f"bounds [0..{series_slice_limit})"
         )
 
-    if preserves_source_geometry:
-        if header_matrix_z != 1:
+    if is_segment_explicit_volume_output:
+        image_type = _meta_text(meta, "ImageType")
+        dicom_image_type = _meta_text(meta, "DicomImageType")
+        if _meta_text(meta, "DataRole") != "Image":
             errors.append(
-                f"original pass-through image {index} has matrix_size[2]="
-                f"{header_matrix_z}; expected a 2D image"
+                f"image {index} has segment explicit-volume DataRole="
+                f"{_meta_text(meta, 'DataRole')}, expected Image"
             )
-    else:
+        if image_type != SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE:
+            errors.append(
+                f"image {index} has segment explicit-volume ImageType="
+                f"{image_type}, expected {SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE}"
+            )
+        if dicom_image_type != SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE:
+            errors.append(
+                f"image {index} has segment explicit-volume DicomImageType="
+                f"{dicom_image_type}, expected {SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE}"
+            )
+        if image_type_value4 != SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4:
+            errors.append(
+                f"image {index} has segment explicit-volume ImageTypeValue4="
+                f"{image_type_value4}, expected "
+                f"{SEGMENT_EXPLICIT_VOLUME_IMAGE_TYPE_VALUE4}"
+            )
+        if _meta_int(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY):
+            errors.append(
+                f"image {index} marks an explicit-volume segment as "
+                "source-geometry"
+            )
+        if minihead:
+            errors.append(
+                f"image {index} has IceMiniHead on segment explicit-volume output"
+            )
+        if _has_dixon_image_type_token(
+            [image_type, dicom_image_type, image_type_value4]
+        ):
+            errors.append(
+                f"image {index} has Dixon image-type identity on "
+                "segment explicit-volume output"
+            )
+        if _has_magnitude_image_type_value3_token([image_type, dicom_image_type]):
+            errors.append(
+                f"image {index} has M image-type value 3 on "
+                "segment explicit-volume output"
+            )
+
+    elif is_segment_source_image_header_output:
+        image_type = _meta_text(meta, "ImageType")
+        dicom_image_type = _meta_text(meta, "DicomImageType")
+        image_type_value4_values = _meta_values(meta, "ImageTypeValue4")
+        minihead_image_type = _minihead_string_value(minihead, "ImageType")
+        minihead_image_type_value4 = _minihead_array_tokens(
+            minihead,
+            "ImageTypeValue4",
+        )
+        expected_child_role = _segment_postprocessing_child_role(
+            int(image.image_series_index)
+        )
+        child_role_value = _meta_int(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)
+        meta_exam_data_role = _exam_data_role_sequential_number(
+            _meta_text(meta, "ExamDataRole")
+        )
+        minihead_exam_data_role = _exam_data_role_sequential_number(
+            _minihead_exam_data_role(minihead)
+        )
+        if _meta_text(meta, "DataRole") != "Image":
+            errors.append(
+                f"image {index} has segment source-image-header DataRole="
+                f"{_meta_text(meta, 'DataRole')}, expected Image"
+            )
+        if not image_type:
+            errors.append(
+                f"image {index} is missing segment source-image-header ImageType"
+            )
+        if not dicom_image_type:
+            errors.append(
+                f"image {index} is missing segment source-image-header DicomImageType"
+            )
+        if minihead and minihead_image_type and minihead_image_type != image_type:
+            errors.append(
+                f"image {index} has segment source-image-header IceMiniHead "
+                f"ImageType={minihead_image_type}, expected {image_type}"
+            )
+        if not is_dixon_composable_output and (
+            _has_dixon_image_type_token(
+                [image_type, dicom_image_type, *image_type_value4_values]
+            )
+            or _has_dixon_image_type_token(
+                [minihead_image_type, *minihead_image_type_value4]
+            )
+        ):
+            errors.append(
+                f"image {index} has Dixon image-type identity on segment "
+                "source-image-header output; segments must not carry a Dixon "
+                "token or the scanner Dixon composer aborts the measurement "
+                "(use segmentheadergeometry=2d_dixon_composable to intentionally "
+                "keep the Dixon token for the composing diagnostic)"
+            )
+        if not image_type_value4_values:
+            errors.append(
+                f"image {index} is missing segment source-image-header ImageTypeValue4"
+            )
+        if minihead and not minihead_image_type_value4:
+            errors.append(
+                f"image {index} is missing segment source-image-header "
+                "IceMiniHead ImageTypeValue4"
+            )
+        if (
+            minihead
+            and minihead_image_type_value4
+            and image_type_value4_values != minihead_image_type_value4
+        ):
+            errors.append(
+                f"image {index} has segment source-image-header Meta "
+                f"ImageTypeValue4={image_type_value4_values}, expected "
+                f"IceMiniHead {minihead_image_type_value4}"
+            )
+        if _meta_int(meta, SEGMENT_SOURCE_GEOMETRY_META_KEY) != 1:
+            errors.append(
+                f"image {index} is missing segment source-image-header "
+                f"{SEGMENT_SOURCE_GEOMETRY_META_KEY}=1"
+            )
+        if child_role_value != expected_child_role:
+            errors.append(
+                f"image {index} has segment source-image-header child role "
+                f"{child_role_value}, expected {expected_child_role}"
+            )
+        if meta_exam_data_role != expected_child_role:
+            errors.append(
+                f"image {index} has segment source-image-header Meta ExamDataRole "
+                f"SequentialNumber={meta_exam_data_role}, expected "
+                f"{expected_child_role}"
+            )
+        if minihead and minihead_exam_data_role != expected_child_role:
+            errors.append(
+                f"image {index} has segment source-image-header IceMiniHead "
+                f"ExamDataRole SequentialNumber={minihead_exam_data_role}, "
+                f"expected {expected_child_role}"
+            )
         expected_position_fields = {
-            "Actual3DImagePartNumber": SCANNER_PARTITION_INDEX,
-            "AnatomicalPartitionNo": SCANNER_PARTITION_INDEX,
+            "Actual3DImagePartNumber": partition_storage_index,
+            "AnatomicalPartitionNo": partition_storage_index,
+            "AnatomicalSliceNo": header_slice,
+            "ChronSliceNo": header_image_index - 1,
+            "NumberInSeries": header_image_index,
+            "ProtocolSliceNumber": header_slice,
+            "SliceNo": header_slice,
+            "IsmrmrdSliceNo": header_slice,
+        }
+        for field in (
+            "Actual3DImagePartNumber",
+            "AnatomicalPartitionNo",
+            "AnatomicalSliceNo",
+            "ChronSliceNo",
+            "NumberInSeries",
+            "ProtocolSliceNumber",
+            "SliceNo",
+            "IsmrmrdSliceNo",
+        ):
+            expected = expected_position_fields[field]
+            meta_value = _meta_int(meta, field)
+            if meta_value is None:
+                errors.append(
+                    f"image {index} is missing segment source-image-header "
+                    f"Meta {field}"
+                )
+            elif meta_value != expected:
+                errors.append(
+                    f"image {index} has segment source-image-header Meta "
+                    f"{field}={meta_value}, expected {expected}"
+                )
+            minihead_value = _minihead_long_value(minihead, field)
+            if minihead and minihead_value is None:
+                errors.append(
+                    f"image {index} is missing segment source-image-header "
+                    f"IceMiniHead {field}"
+                )
+            elif minihead_value is not None and minihead_value != expected:
+                errors.append(
+                    f"image {index} has segment source-image-header IceMiniHead "
+                    f"{field}={minihead_value}, expected {expected}"
+                )
+        actual_part_value = _minihead_long_value(minihead, "Actual3DImaPartNumber")
+        if minihead and actual_part_value is None:
+            errors.append(
+                f"image {index} is missing segment source-image-header IceMiniHead "
+                "Actual3DImaPartNumber"
+            )
+        elif (
+            actual_part_value is not None
+            and actual_part_value != partition_storage_index
+        ):
+            errors.append(
+                f"image {index} has segment source-image-header IceMiniHead "
+                f"Actual3DImaPartNumber={actual_part_value}, "
+                f"expected {partition_storage_index}"
+            )
+        _validate_source_like_minihead_storage_maps(
+            index,
+            minihead,
+            "segment source-image-header",
+            errors,
+        )
+
+    elif is_segment_source_geometry_output:
+        segment_context = (
+            "segment derived-image-header"
+            if is_segment_derived_image_header_output
+            else "segment source-geometry"
+        )
+        expected_data_role = (
+            "Image"
+            if is_segment_derived_image_header_output
+            else "Segmentation"
+        )
+        expected_image_type = (
+            SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE
+            if is_segment_derived_image_header_output
+            else SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE
+        )
+        expected_image_type_value4 = (
+            SEGMENT_DERIVED_IMAGE_HEADER_IMAGE_TYPE_VALUE4
+            if is_segment_derived_image_header_output
+            else SEGMENT_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4
+        )
+        image_type = _meta_text(meta, "ImageType")
+        dicom_image_type = _meta_text(meta, "DicomImageType")
+        minihead_image_type = _minihead_string_value(minihead, "ImageType")
+        minihead_image_type_value4 = _minihead_array_tokens(
+            minihead,
+            "ImageTypeValue4",
+        )
+        expected_child_role = _segment_postprocessing_child_role(
+            int(image.image_series_index)
+        )
+        child_role_value = _meta_int(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)
+        meta_exam_data_role = _exam_data_role_sequential_number(
+            _meta_text(meta, "ExamDataRole")
+        )
+        minihead_exam_data_role = _exam_data_role_sequential_number(
+            _minihead_exam_data_role(minihead)
+        )
+        if _meta_text(meta, "DataRole") != expected_data_role:
+            errors.append(
+                f"image {index} has {segment_context} DataRole="
+                f"{_meta_text(meta, 'DataRole')}, expected {expected_data_role}"
+            )
+        if image_type != expected_image_type:
+            errors.append(
+                f"image {index} has {segment_context} ImageType="
+                f"{image_type}, expected {expected_image_type}"
+            )
+        if dicom_image_type != expected_image_type:
+            errors.append(
+                f"image {index} has {segment_context} DicomImageType="
+                f"{dicom_image_type}, expected {expected_image_type}"
+            )
+        if minihead and minihead_image_type and minihead_image_type != image_type:
+            errors.append(
+                f"image {index} has {segment_context} IceMiniHead ImageType="
+                f"{minihead_image_type}, expected {image_type}"
+            )
+        if image_type_value4 != expected_image_type_value4:
+            errors.append(
+                f"image {index} has {segment_context} ImageTypeValue4="
+                f"{image_type_value4}, expected "
+                f"{expected_image_type_value4}"
+            )
+        if minihead and minihead_image_type_value4 != [expected_image_type_value4]:
+            errors.append(
+                f"image {index} has {segment_context} IceMiniHead "
+                f"ImageTypeValue4={minihead_image_type_value4}, expected "
+                f"{[expected_image_type_value4]}"
+            )
+        if _has_dixon_image_type_token(
+            [image_type, dicom_image_type, image_type_value4]
+            + minihead_image_type_value4
+        ):
+            errors.append(
+                f"image {index} has Dixon image-type identity on "
+                f"{segment_context} output"
+            )
+        if _has_magnitude_image_type_value3_token(
+            [image_type, dicom_image_type, minihead_image_type]
+        ):
+            errors.append(
+                f"image {index} has M image-type value 3 on "
+                f"{segment_context} output"
+            )
+        if (
+            is_segment_derived_image_header_output
+            and _meta_int(meta, SEGMENT_DERIVED_IMAGE_HEADER_META_KEY) != 1
+        ):
+            errors.append(
+                f"image {index} is missing {segment_context} "
+                f"{SEGMENT_DERIVED_IMAGE_HEADER_META_KEY}=1"
+            )
+        if child_role_value is None:
+            if _meta_text(meta, "ExamDataRole"):
+                errors.append(
+                    f"image {index} has {segment_context} Meta ExamDataRole "
+                    "without a scanner postprocessing child role"
+                )
+            if minihead and minihead_exam_data_role is not None:
+                errors.append(
+                    f"image {index} has {segment_context} IceMiniHead "
+                    "ExamDataRole without a scanner postprocessing child role"
+                )
+        else:
+            if child_role_value != expected_child_role:
+                errors.append(
+                    f"image {index} has {segment_context} child role "
+                    f"{child_role_value}, expected {expected_child_role}"
+                )
+            if meta_exam_data_role != expected_child_role:
+                errors.append(
+                    f"image {index} has {segment_context} Meta ExamDataRole "
+                    f"SequentialNumber={meta_exam_data_role}, expected "
+                    f"{expected_child_role}"
+                )
+            if minihead and minihead_exam_data_role != expected_child_role:
+                errors.append(
+                    f"image {index} has {segment_context} IceMiniHead ExamDataRole "
+                    f"SequentialNumber={minihead_exam_data_role}, expected "
+                    f"{expected_child_role}"
+                )
+        expected_position_fields = {
+            "Actual3DImagePartNumber": partition_storage_index,
+            "AnatomicalPartitionNo": partition_storage_index,
+            "AnatomicalSliceNo": header_slice,
+            "ChronSliceNo": header_image_index - 1,
+            "NumberInSeries": header_image_index,
+            "ProtocolSliceNumber": header_slice,
+            "SliceNo": header_slice,
+            "IsmrmrdSliceNo": header_slice,
+        }
+        for field in (
+            "Actual3DImagePartNumber",
+            "AnatomicalPartitionNo",
+            "AnatomicalSliceNo",
+            "ChronSliceNo",
+            "NumberInSeries",
+            "ProtocolSliceNumber",
+            "SliceNo",
+            "IsmrmrdSliceNo",
+        ):
+            expected = expected_position_fields[field]
+            meta_value = _meta_int(meta, field)
+            if meta_value is None:
+                errors.append(
+                    f"image {index} is missing {segment_context} Meta {field}"
+                )
+            elif meta_value != expected:
+                errors.append(
+                    f"image {index} has {segment_context} Meta {field}="
+                    f"{meta_value}, expected {expected}"
+                )
+            minihead_value = _minihead_long_value(minihead, field)
+            if minihead and minihead_value is None:
+                errors.append(
+                    f"image {index} is missing {segment_context} IceMiniHead "
+                    f"{field}"
+                )
+            elif minihead_value is not None and minihead_value != expected:
+                errors.append(
+                    f"image {index} has {segment_context} IceMiniHead "
+                    f"{field}={minihead_value}, expected {expected}"
+                )
+        actual_part_value = _minihead_long_value(minihead, "Actual3DImaPartNumber")
+        if minihead and actual_part_value is None:
+            errors.append(
+                f"image {index} is missing {segment_context} IceMiniHead "
+                "Actual3DImaPartNumber"
+            )
+        elif (
+            actual_part_value is not None
+            and actual_part_value != partition_storage_index
+        ):
+            errors.append(
+                f"image {index} has {segment_context} IceMiniHead "
+                f"Actual3DImaPartNumber={actual_part_value}, "
+                f"expected {partition_storage_index}"
+            )
+        _validate_source_like_minihead_storage_maps(
+            index,
+            minihead,
+            segment_context,
+            errors,
+        )
+
+    elif not is_segment_explicit_volume_output and is_segment_postprocessing_output:
+        image_type = _meta_text(meta, "ImageType")
+        dicom_image_type = _meta_text(meta, "DicomImageType")
+        image_type_value4_values = _meta_values(meta, "ImageTypeValue4")
+        minihead_image_type = _minihead_string_value(minihead, "ImageType")
+        minihead_image_type_value4 = _minihead_array_tokens(
+            minihead,
+            "ImageTypeValue4",
+        )
+        expected_child_role = _segment_postprocessing_child_role(
+            int(image.image_series_index)
+        )
+        child_role_value = _meta_int(meta, SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)
+        meta_exam_data_role = _exam_data_role_sequential_number(
+            _meta_text(meta, "ExamDataRole")
+        )
+        minihead_exam_data_role = _exam_data_role_sequential_number(
+            _minihead_exam_data_role(minihead)
+        )
+        if _meta_text(meta, "DataRole") != "Image":
+            errors.append(
+                f"image {index} has segment postprocessing DataRole="
+                f"{_meta_text(meta, 'DataRole')}, expected Image"
+            )
+        if not image_type:
+            errors.append(
+                f"image {index} is missing segment postprocessing ImageType"
+            )
+        if not dicom_image_type:
+            errors.append(
+                f"image {index} is missing segment postprocessing DicomImageType"
+            )
+        if minihead and minihead_image_type and minihead_image_type != image_type:
+            errors.append(
+                f"image {index} has segment postprocessing IceMiniHead ImageType="
+                f"{minihead_image_type}, expected {image_type}"
+            )
+        if not image_type_value4_values:
+            errors.append(
+                f"image {index} is missing segment postprocessing ImageTypeValue4"
+            )
+        if minihead and not minihead_image_type_value4:
+            errors.append(
+                f"image {index} is missing segment postprocessing IceMiniHead "
+                "ImageTypeValue4"
+            )
+        if (
+            minihead
+            and minihead_image_type_value4
+            and image_type_value4_values != minihead_image_type_value4
+        ):
+            errors.append(
+                f"image {index} has segment postprocessing Meta ImageTypeValue4="
+                f"{image_type_value4_values}, expected IceMiniHead "
+                f"{minihead_image_type_value4}"
+            )
+        if child_role_value != expected_child_role:
+            errors.append(
+                f"image {index} has segment postprocessing child role "
+                f"{child_role_value}, expected {expected_child_role}"
+            )
+        if meta_exam_data_role != expected_child_role:
+            errors.append(
+                f"image {index} has segment postprocessing Meta ExamDataRole "
+                f"SequentialNumber={meta_exam_data_role}, expected "
+                f"{expected_child_role}"
+            )
+        if minihead and minihead_exam_data_role != expected_child_role:
+            errors.append(
+                f"image {index} has segment postprocessing IceMiniHead ExamDataRole "
+                f"SequentialNumber={minihead_exam_data_role}, expected "
+                f"{expected_child_role}"
+            )
+        stream_index = header_image_index - 1
+        if header_slice != stream_index:
+            errors.append(
+                f"image {index} has segment postprocessing header slice="
+                f"{header_slice}, expected {stream_index} from image_index"
+            )
+        for field in SOURCE_GROUP_HEADER_FIELDS:
+            value = int(getattr(header, field))
+            if value != 0:
+                errors.append(
+                    f"image {index} has segment postprocessing header "
+                    f"{field}={value}, expected 0"
+                )
+        expected_position_fields = {
+            "Actual3DImagePartNumber": partition_storage_index,
+            "AnatomicalPartitionNo": partition_storage_index,
+            "AnatomicalSliceNo": stream_index,
+            "ChronSliceNo": stream_index,
+            "NumberInSeries": header_image_index,
+            "ProtocolSliceNumber": stream_index,
+            "SliceNo": stream_index,
+            "IsmrmrdSliceNo": stream_index,
+        }
+        for field in (
+            "Actual3DImagePartNumber",
+            "AnatomicalPartitionNo",
+            "AnatomicalSliceNo",
+            "ChronSliceNo",
+            "NumberInSeries",
+            "ProtocolSliceNumber",
+            "SliceNo",
+            "IsmrmrdSliceNo",
+        ):
+            expected = expected_position_fields[field]
+            meta_value = _meta_int(meta, field)
+            if meta_value is None:
+                errors.append(
+                    f"image {index} is missing segment postprocessing Meta {field}"
+                )
+            elif meta_value != expected:
+                errors.append(
+                    f"image {index} has segment postprocessing Meta {field}="
+                    f"{meta_value}, expected {expected}"
+                )
+            minihead_value = _minihead_long_value(minihead, field)
+            if minihead and minihead_value is None:
+                errors.append(
+                    f"image {index} is missing segment postprocessing IceMiniHead "
+                    f"{field}"
+                )
+            elif minihead_value is not None and minihead_value != expected:
+                errors.append(
+                    f"image {index} has segment postprocessing IceMiniHead "
+                    f"{field}={minihead_value}, expected {expected}"
+                )
+        actual_part_value = _minihead_long_value(minihead, "Actual3DImaPartNumber")
+        if minihead and actual_part_value is None:
+            errors.append(
+                f"image {index} is missing segment postprocessing IceMiniHead "
+                "Actual3DImaPartNumber"
+            )
+        elif (
+            actual_part_value is not None
+            and actual_part_value != partition_storage_index
+        ):
+            errors.append(
+                f"image {index} has segment postprocessing IceMiniHead "
+                f"Actual3DImaPartNumber={actual_part_value}, "
+                f"expected {partition_storage_index}"
+            )
+        _validate_source_like_minihead_storage_maps(
+            index,
+            minihead,
+            "segment postprocessing",
+            errors,
+        )
+
+    elif not is_original_output:
+        expected_position_fields = {
+            "Actual3DImagePartNumber": partition_storage_index,
+            "AnatomicalPartitionNo": partition_storage_index,
             "AnatomicalSliceNo": header_slice,
             "ChronSliceNo": header_slice,
             "NumberInSeries": int(header.image_index),
@@ -1592,6 +5001,101 @@ def _validate_storage_fields(
 
     if keep_image_geometry is None:
         errors.append(f"image {index} is missing Meta Keep_image_geometry")
+    elif is_original_output and keep_image_geometry != 1:
+        errors.append(
+            f"image {index} is an original pass-through output with "
+            f"Keep_image_geometry={keep_image_geometry}, expected 1"
+        )
+    elif is_segment_source_image_header_output and keep_image_geometry != 1:
+        errors.append(
+            f"image {index} is a segment source-image-header output with "
+            f"Keep_image_geometry={keep_image_geometry}, expected 1"
+        )
+    elif is_segment_source_geometry_output and keep_image_geometry != 1:
+        errors.append(
+            f"image {index} is a segment source-geometry output with "
+            f"Keep_image_geometry={keep_image_geometry}, expected 1"
+        )
+    elif (
+        is_segment_postprocessing_output
+        and not is_segment_explicit_volume_output
+        and keep_image_geometry != 1
+    ):
+        errors.append(
+            f"image {index} is a segment postprocessing output with "
+            f"Keep_image_geometry={keep_image_geometry}, expected 1"
+        )
+    elif is_segment_explicit_volume_output and keep_image_geometry != 0:
+        errors.append(
+            f"image {index} is a segment explicit-volume output with "
+            f"Keep_image_geometry={keep_image_geometry}, expected 0"
+        )
+    elif is_original_output:
+        expected_original_fields = {
+            "Actual3DImagePartNumber": partition_storage_index,
+            "AnatomicalPartitionNo": partition_storage_index,
+            "AnatomicalSliceNo": header_slice,
+            "ChronSliceNo": header_image_index - 1,
+            "NumberInSeries": header_image_index,
+            "ProtocolSliceNumber": header_slice,
+            "SliceNo": header_slice,
+            "IsmrmrdSliceNo": header_slice,
+        }
+        for field, expected in expected_original_fields.items():
+            meta_value = _meta_int(meta, field)
+            if meta_value is None:
+                errors.append(f"image {index} is missing original Meta {field}")
+            elif meta_value != expected:
+                errors.append(
+                    f"image {index} has original Meta {field}={meta_value}, "
+                    f"expected {expected}"
+                )
+            minihead_value = _minihead_long_value(minihead, field)
+            if minihead and minihead_value is None:
+                errors.append(f"image {index} is missing original IceMiniHead {field}")
+            elif minihead_value is not None and minihead_value != expected:
+                errors.append(
+                    f"image {index} has original IceMiniHead {field}="
+                    f"{minihead_value}, expected {expected}"
+                )
+        actual_part_value = _minihead_long_value(minihead, "Actual3DImaPartNumber")
+        if minihead and actual_part_value is None:
+            errors.append(
+                f"image {index} is missing original IceMiniHead "
+                "Actual3DImaPartNumber"
+            )
+        elif (
+            actual_part_value is not None
+            and actual_part_value != partition_storage_index
+        ):
+            errors.append(
+                f"image {index} has original IceMiniHead "
+                f"Actual3DImaPartNumber={actual_part_value}, "
+                f"expected {partition_storage_index}"
+            )
+        _validate_source_like_minihead_storage_maps(
+            index,
+            minihead,
+            "original",
+            errors,
+        )
+        _validate_meta_header_geometry(
+            index,
+            image,
+            meta,
+            "original",
+            errors,
+        )
+    elif is_source_like_output and keep_image_geometry == 1:
+        if is_segment_source_image_header_output:
+            context = "segment source-image-header"
+        elif is_segment_derived_image_header_output:
+            context = "segment derived-image-header"
+        elif is_segment_postprocessing_output and not is_segment_explicit_volume_output:
+            context = "segment postprocessing"
+        else:
+            context = "segment source-geometry"
+        _validate_meta_header_geometry(index, image, meta, context, errors)
     elif keep_image_geometry == 0:
         partition_count = _meta_int(meta, "partition_count")
         if partition_count is None:
@@ -1639,14 +5143,23 @@ def _validate_storage_fields(
                 f"IceMiniHead SOPInstanceUID {minihead_sop_uid} is shared by "
                 f"output images {previous_index} and {index}"
             )
-    minihead_image_type_value4 = _minihead_array_tokens(minihead, "ImageTypeValue4")
-    if not image_type_value4:
-        errors.append(f"image {index} is missing Meta ImageTypeValue4")
-    if minihead and image_type_value4 not in minihead_image_type_value4:
-        errors.append(
-            f"image {index} has IceMiniHead ImageTypeValue4 "
-            f"{minihead_image_type_value4}, expected {image_type_value4}"
+    if not is_source_like_output:
+        minihead_image_type_value4 = _minihead_array_tokens(minihead, "ImageTypeValue4")
+        if not image_type_value4:
+            errors.append(f"image {index} is missing Meta ImageTypeValue4")
+        if minihead and image_type_value4 not in minihead_image_type_value4:
+            errors.append(
+                f"image {index} has IceMiniHead ImageTypeValue4 "
+                f"{minihead_image_type_value4}, expected {image_type_value4}"
+            )
+    errors.extend(
+        _scanner_write_unsafe_field_errors(
+            meta,
+            minihead,
+            is_dixon_composable_output,
+            index,
         )
+    )
 
     storage_key = (
         _meta_text(meta, "SeriesInstanceUID"),
@@ -1654,12 +5167,43 @@ def _validate_storage_fields(
         _meta_int(meta, "ChronSliceNo"),
         _meta_int(meta, "NumberInSeries"),
     )
+    missing_storage_fields = [
+        field
+        for field, value in zip(
+            ("SeriesInstanceUID", "SliceNo", "ChronSliceNo", "NumberInSeries"),
+            storage_key,
+        )
+        if value is None
+    ]
+    if missing_storage_fields:
+        errors.append(
+            f"image {index} is missing scanner storage key field(s) "
+            f"{', '.join(missing_storage_fields)}"
+        )
     previous_index = seen_storage_keys.setdefault(storage_key, index)
     if previous_index != index:
         errors.append(
             f"image {index} duplicates scanner storage key {storage_key} "
             f"from image {previous_index}"
         )
+    minihead_storage_key = (
+        _minihead_string_value(minihead, "SeriesInstanceUID"),
+        _minihead_long_value(minihead, "SliceNo"),
+        _minihead_long_value(minihead, "ChronSliceNo"),
+        _minihead_long_value(minihead, "NumberInSeries"),
+    )
+    if minihead and all(
+        value is not None and value != "" for value in minihead_storage_key
+    ):
+        previous_index = seen_minihead_storage_keys.setdefault(
+            minihead_storage_key,
+            index,
+        )
+        if previous_index != index:
+            errors.append(
+                f"image {index} duplicates scanner MiniHead storage key "
+                f"{minihead_storage_key} from image {previous_index}"
+            )
     for field in ("SOPInstanceUID",):
         value = _meta_text(meta, field)
         if value and value in input_identity:
@@ -1850,6 +5394,82 @@ def _ordered_volume_items(source_items, label):
     return [source_items[index] for index in sort_indices], slice_axis
 
 
+def _ordered_source_geometry_items(
+    source_items,
+    label,
+    duplicate_failure="cannot send a safe composable 2D series",
+    sort_action="sending composable 2D stream",
+):
+    source_items = list(source_items)
+    if len(source_items) < 2:
+        images = [source_image for source_image, _data in source_items]
+        return source_items, _infer_slice_axis([image.getHead() for image in images])
+
+    images = [source_image for source_image, _data in source_items]
+    headers = [image.getHead() for image in images]
+    slice_axis = _infer_slice_axis(headers)
+    projections = np.asarray(
+        [_projected_position(image, slice_axis) for image in images],
+        dtype=float,
+    )
+    duplicate_positions = _duplicate_projected_position_count(projections)
+    median_spacing = _median_projected_spacing(projections)
+    increasing = _is_projected_order_monotonic(projections, increasing=True)
+    decreasing = _is_projected_order_monotonic(projections, increasing=False)
+    logging.info(
+        "%s source geometry: count=%d axis=%s projected_range=[%.6f, %.6f] "
+        "median_spacing=%.6f duplicate_positions=%d receive_order_monotonic=%s",
+        label,
+        len(source_items),
+        _format_vector(slice_axis),
+        float(np.min(projections)),
+        float(np.max(projections)),
+        median_spacing,
+        duplicate_positions,
+        increasing or decreasing,
+    )
+    if duplicate_positions:
+        raise ValueError(
+            f"{label} source geometry has duplicate projected slice position(s); "
+            f"{duplicate_failure}"
+        )
+    if increasing:
+        return source_items, slice_axis
+
+    sort_indices = sorted(
+        range(len(source_items)),
+        key=lambda index: (
+            round(float(projections[index]), 4),
+            int(headers[index].slice),
+            int(headers[index].image_index),
+            index,
+        ),
+    )
+    order_reason = (
+        "decreasing in physical position"
+        if decreasing
+        else "not monotonic in physical position"
+    )
+    logging.warning(
+        "%s source slices are %s; sorting by projected position before "
+        "%s: first mappings %s",
+        label,
+        order_reason,
+        sort_action,
+        ", ".join(
+            f"out{output_index}->in{input_index}"
+            for output_index, input_index in enumerate(sort_indices[:24])
+        ),
+    )
+    if len(sort_indices) > 24:
+        logging.warning(
+            "%s source sort mapping omitted %d additional slice(s)",
+            label,
+            len(sort_indices) - 24,
+        )
+    return [source_items[index] for index in sort_indices], slice_axis
+
+
 def _validate_unique_projected_positions(images, slice_axis, label):
     if len(images) < 2:
         return
@@ -1960,15 +5580,48 @@ def _log_output_images(output_images):
         )
 
 
-def _explicit_header_geometry_meta(header):
-    # The MRD ImageHeader is the geometry contract; these Meta copies are kept
-    # aligned for scanner-side consumers and log/debug inspection.
+def _header_geometry_meta(header):
     return {
         "ImageRowDir": _meta_vector(_header_vector(header, "read_dir")),
         "ImageColumnDir": _meta_vector(_header_vector(header, "phase_dir")),
         "ImageSliceNormDir": _meta_vector(_header_vector(header, "slice_dir")),
         "SlicePosLightMarker": _meta_vector(_header_vector(header, "position")),
     }
+
+
+def _explicit_header_geometry_meta(header):
+    # The MRD ImageHeader is the geometry contract; these Meta copies are kept
+    # aligned for scanner-side consumers and log/debug inspection.
+    return _header_geometry_meta(header)
+
+
+def _validate_meta_header_geometry(index, image, meta, context, errors):
+    expected_meta = _header_geometry_meta(image.getHead())
+    for key, expected_values in expected_meta.items():
+        actual_values = _meta_values(meta, key)
+        if not actual_values:
+            errors.append(f"image {index} is missing {context} Meta {key}")
+            continue
+        try:
+            actual_vector = np.asarray([float(value) for value in actual_values])
+        except ValueError:
+            errors.append(
+                f"image {index} has non-numeric {context} Meta {key}="
+                f"{actual_values}"
+            )
+            continue
+        expected_vector = np.asarray(expected_values, dtype=float)
+        if actual_vector.shape != expected_vector.shape or not np.allclose(
+            actual_vector,
+            expected_vector,
+            atol=SLICE_POSITION_TOLERANCE_MM,
+            rtol=0.0,
+        ):
+            errors.append(
+                f"image {index} has {context} Meta {key}="
+                f"{_format_vector(actual_vector)}, expected header "
+                f"{_format_vector(expected_vector)}"
+            )
 
 
 def _infer_slice_axis(headers):
@@ -2071,6 +5724,15 @@ def _explicit_volume_output_spacing(images, slice_axis):
     if source_spacing > SLICE_POSITION_TOLERANCE_MM:
         return source_spacing
     return 1.0
+
+
+def _explicit_volume_center_position(ordered_items, _slice_axis):
+    first = _header_position(ordered_items[0][0].getHead())
+    if len(ordered_items) == 1:
+        return first
+
+    last = _header_position(ordered_items[-1][0].getHead())
+    return 0.5 * (first + last)
 
 
 def _interpolated_half_step(images):
@@ -2223,3 +5885,44 @@ def _config_bool_any(config, keys, default=False):
         if value is not None:
             return value
     return default
+
+
+def _config_value_any(config, keys, default=None):
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except json.JSONDecodeError:
+            return default
+
+    if not isinstance(config, dict):
+        return default
+
+    parameters = config.get("parameters")
+    for key in keys:
+        raw = config.get(key)
+        if raw is None and isinstance(parameters, dict):
+            raw = parameters.get(key)
+        if raw is not None:
+            return raw
+    return default
+
+
+def _normalized_config_token(value):
+    return re.sub(r"[^a-z0-9]+", "_", str(value).strip().lower()).strip("_")
+
+
+def _segment_delivery_mode(config):
+    raw = _config_value_any(
+        config,
+        ("segmentheadergeometry",),
+        default=SEGMENT_DELIVERY_MODE_DEFAULT,
+    )
+    normalized = _normalized_config_token(raw)
+    if normalized in SEGMENT_DELIVERY_MODES:
+        return normalized
+    logging.warning(
+        "Unknown segmentheadergeometry=%r; defaulting to %s",
+        raw,
+        SEGMENT_DELIVERY_MODE_DEFAULT,
+    )
+    return SEGMENT_DELIVERY_MODE_DEFAULT

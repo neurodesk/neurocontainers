@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "niimath 1.0.20250804 arm64": {
+      "version": "20251016",
+      "exec": "",
+      "apptainer_args": [],
+      "architecture": "aarch64",
+      "image": "niimath_1.0.20250804_arm64"
+    }
+  },
+  "categories": [
+    "data organisation"
+  ],
+  "architecture": "aarch64"
+}

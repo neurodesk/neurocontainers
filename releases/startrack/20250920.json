@@ -1,0 +1,17 @@
+{
+  "apps": {
+    "startrack 20250920": {
+      "version": "20260526",
+      "exec": "",
+      "apptainer_args": []
+    },
+    "StarTrack-startrack 20250920": {
+      "version": "20260526",
+      "exec": "startrack",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "diffusion imaging"
+  ]
+}

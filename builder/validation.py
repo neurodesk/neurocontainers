@@ -6,8 +6,12 @@ This module provides validation for neurocontainer YAML recipes using attrs clas
 The schema matches the Zod schema from https://github.com/neurodesk/neurocontainers-ui/blob/main/lib/zodSchema.ts
 """
 
-import attrs
+import base64
+import binascii
+import re
 from typing import List, Dict, Union, Optional, Any, Literal
+
+import attrs
 import jinja2
 import yaml
 
@@ -20,41 +24,46 @@ ARCHITECTURES = ["x86_64", "aarch64"]
 
 # Categories from the UI - this should match CATEGORIES in the UI
 CATEGORIES = [
-    "image registration",
-    "structural imaging",
-    "image segmentation",
     "functional imaging",
-    "rodent imaging",
-    "diffusion imaging",
-    "spine",
-    "body",
-    "connectomics",
-    "electrophysiology",
-    "microscopy",
-    "data management",
-    "machine learning",
-    "visualization",
-    "quantitative imaging",
     "image reconstruction",
-    "conversion",
-    "file conversion",  # Legacy category name
-    "quality control",
-    "tractography",
-    "preprocessing",
-    "motion correction",
-    "statistical analysis",
-    "statistics",  # Legacy category name
-    "modeling",
-    "simulation",
-    "workflows",
+    "spectroscopy",
+    "image registration",
+    "rodent imaging",
     "data organisation",
+    "diffusion imaging",
+    "structural imaging",
+    "quantitative imaging",
+    "image segmentation",
+    "visualization",
+    "statistics",
+    "quality control",
+    "spine",
+    "electrophysiology",
     "bids apps",
-    "programming",  # For development tools
-    "phase processing",  # For phase imaging tools
-    "molecular biology",  # For molecular/biological tools
-    "hippocampus",  # For hippocampus-specific tools
-    "spectroscopy",  # For spectroscopy tools
+    "machine learning",
+    "phase processing",
+    "molecular biology",
+    "hippocampus",
+    "body",
+    "shape analysis",
+    "cryo EM",
+    "programming",
+    "workflows",
+]
+
+LEGACY_CATEGORIES = CATEGORIES + [
+    "connectomics",
+    "conversion",
+    "data management",
+    "file conversion",
+    "microscopy",
+    "modeling",
+    "motion correction",
     "other",
+    "preprocessing",
+    "simulation",
+    "statistical analysis",
+    "tractography",
 ]
 
 INCLUDE_MACROS = [
@@ -65,6 +74,7 @@ INCLUDE_MACROS = [
 ALLOWED_AUTO_UPDATE_METHODS = ["github_release"]
 
 _jinja_env = jinja2.Environment()
+_ICON_DATA_URI_RE = re.compile(r"^data:image/[a-zA-Z0-9.+-]+;base64,(?P<data>.+)$")
 
 
 # ============================================================================
@@ -82,9 +92,9 @@ def validate_architecture(instance, attribute, value):
 
 def validate_category(instance, attribute, value):
     """Validate category is in allowed list"""
-    if value not in CATEGORIES:
+    if value not in LEGACY_CATEGORIES:
         raise ValueError(
-            f"Category '{value}' not supported. Must be one of: {CATEGORIES}"
+            f"Category '{value}' not supported. Must be one of: {LEGACY_CATEGORIES}"
         )
 
 
@@ -113,6 +123,45 @@ def validate_webapp_icon(instance, attribute, value):
             f"Webapp icon must be an SVG file (got '{value}'). "
             "JupyterLab requires SVG format for launcher icons."
         )
+
+
+def validate_container_icon(instance, attribute, value):
+    """Validate container icon is an inline base64 image data URI."""
+    if not isinstance(value, str) or value.strip() == "":
+        raise ValueError("icon is required and must be a base64 image data URI")
+
+    match = _ICON_DATA_URI_RE.match(value.strip())
+    if not match:
+        raise ValueError(
+            "icon must be a base64 image data URI such as "
+            "'data:image/png;base64,...'"
+        )
+
+    payload = "".join(match.group("data").split())
+    try:
+        decoded = base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError) as e:
+        raise ValueError("icon contains invalid base64 data") from e
+
+    if not decoded:
+        raise ValueError("icon must decode to non-empty image data")
+
+
+def validate_recipe_metadata(recipe_dict: Dict[str, Any]) -> None:
+    """Validate metadata required for published NeuroDesk container recipes."""
+    validate_container_icon(None, None, recipe_dict.get("icon"))
+
+    categories = recipe_dict.get("categories")
+    if not isinstance(categories, list) or not categories:
+        raise ValueError("categories is required and must be a non-empty list")
+
+    for category in categories:
+        if not isinstance(category, str):
+            raise ValueError("categories entries must be strings")
+        if category not in CATEGORIES:
+            raise ValueError(
+                f"Category '{category}' not supported. Must be one of: {CATEGORIES}"
+            )
 
 
 def validate_template_syntax(template: str, path: str):
@@ -602,6 +651,8 @@ class ContainerRecipe:
     deploy: Optional[DeployInfo] = attrs.field(default=None)
     tests: Optional[List[Union[BuiltinTest, ScriptTest]]] = attrs.field(default=None)
     categories: Optional[List[str]] = attrs.field(default=None)
+    show_in_menu: Optional[bool] = attrs.field(default=None)
+    show_in_applist: Optional[bool] = attrs.field(default=None)
     gui_apps: Optional[List[GUIApp]] = attrs.field(default=None)
     apptainer_args: Optional[List[str]] = attrs.field(default=None)
     draft: Optional[bool] = attrs.field(default=None)
@@ -624,9 +675,9 @@ class ContainerRecipe:
             raise ValueError("categories is required and must be a non-empty list")
 
         for category in value:
-            if category not in CATEGORIES:
+            if category not in LEGACY_CATEGORIES:
                 raise ValueError(
-                    f"Category '{category}' not supported. Must be one of: {CATEGORIES}"
+                    f"Category '{category}' not supported. Must be one of: {LEGACY_CATEGORIES}"
                 )
 
 
@@ -757,12 +808,15 @@ def parse_test_from_dict(test_dict: Dict[str, Any]) -> Union[BuiltinTest, Script
         raise ValueError("Test must have either 'builtin' or 'script' field")
 
 
-def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
+def validate_recipe_dict(
+    recipe_dict: Dict[str, Any], *, strict_metadata: bool = True
+) -> ContainerRecipe:
     """
     Validate a recipe dictionary and return a ContainerRecipe instance.
 
     Args:
         recipe_dict: Dictionary loaded from YAML
+        strict_metadata: Require current UI categories and an inline base64 icon
 
     Returns:
         ContainerRecipe instance
@@ -860,18 +914,24 @@ def validate_recipe_dict(recipe_dict: Dict[str, Any]) -> ContainerRecipe:
             recipe_copy["gui_apps"] = gui_apps_list
 
         # Create and return the container recipe
-        return ContainerRecipe(**recipe_copy)
+        recipe = ContainerRecipe(**recipe_copy)
+        if strict_metadata:
+            validate_recipe_metadata(recipe_dict)
+        return recipe
 
     except Exception as e:
         raise ValueError(f"Recipe validation failed: {str(e)}")
 
 
-def validate_recipe_file(file_path: str) -> ContainerRecipe:
+def validate_recipe_file(
+    file_path: str, *, strict_metadata: bool = True
+) -> ContainerRecipe:
     """
     Validate a YAML recipe file.
 
     Args:
         file_path: Path to the YAML file
+        strict_metadata: Require current UI categories and an inline base64 icon
 
     Returns:
         ContainerRecipe instance
@@ -887,7 +947,7 @@ def validate_recipe_file(file_path: str) -> ContainerRecipe:
         if not recipe_dict:
             raise ValueError("Recipe file is empty or invalid YAML")
 
-        return validate_recipe_dict(recipe_dict)
+        return validate_recipe_dict(recipe_dict, strict_metadata=strict_metadata)
 
     except yaml.YAMLError as e:
         raise ValueError(f"Invalid YAML syntax: {str(e)}")
@@ -895,18 +955,21 @@ def validate_recipe_file(file_path: str) -> ContainerRecipe:
         raise FileNotFoundError(f"Recipe file not found: {file_path}")
 
 
-def get_validation_errors(recipe_dict: Dict[str, Any]) -> List[str]:
+def get_validation_errors(
+    recipe_dict: Dict[str, Any], *, strict_metadata: bool = True
+) -> List[str]:
     """
     Get a list of validation errors for a recipe without raising exceptions.
 
     Args:
         recipe_dict: Dictionary loaded from YAML
+        strict_metadata: Require current UI categories and an inline base64 icon
 
     Returns:
         List of error messages (empty if valid)
     """
     try:
-        validate_recipe_dict(recipe_dict)
+        validate_recipe_dict(recipe_dict, strict_metadata=strict_metadata)
         return []
     except ValueError as e:
         return [str(e)]

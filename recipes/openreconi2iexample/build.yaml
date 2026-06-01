@@ -1,7 +1,9 @@
 name: openreconi2iexample
-version: 1.0.23
+version: 1.0.87
 architectures:
   - x86_64
+
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiByeD0iNCIgZmlsbD0iIzEzMjk0YiIvPjxyZWN0IHg9IjQiIHk9IjUiIHdpZHRoPSI3IiBoZWlnaHQ9IjciIHJ4PSIxLjIiIGZpbGw9IiM3ZGQzZmMiLz48cmVjdCB4PSIxMyIgeT0iMTIiIHdpZHRoPSI3IiBoZWlnaHQ9IjciIHJ4PSIxLjIiIGZpbGw9IiMzNGQzOTkiLz48cGF0aCBkPSJNOSAxNWg1LjJNMTIuNCAxMi44IDE1IDE1bC0yLjYgMi4yIiBmaWxsPSJub25lIiBzdHJva2U9IiNmOGZhZmMiIHN0cm9rZS13aWR0aD0iMS43IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz48Y2lyY2xlIGN4PSI3LjUiIGN5PSI4LjUiIHI9IjEuNiIgZmlsbD0iI2Y4ZmFmYyIvPjxwYXRoIGQ9Ik0xNS4yIDE2LjRoMy4yTTE2LjggMTQuOHYzLjIiIHN0cm9rZT0iI2Y4ZmFmYyIgc3Ryb2tlLXdpZHRoPSIxLjEiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjwvc3ZnPg==
 
 copyright:
   - license: MIT
@@ -33,7 +35,11 @@ build:
 
     - copy: openreconi2iexample.py /opt/code/python-ismrmrd-server/openreconi2iexample.py
     - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
+    - environment:
+        OPENRECONI2IEXAMPLE_VERSION: "{{ context.version }}"
     - run:
+        - pip install pillow==10.4.0
+        - python -c "from PIL import Image, ImageDraw, ImageFont"
         - install -m 0755 {{ get_file("openreconi2iexample") }} /usr/local/bin/openreconi2iexample
         - mkdir -p /tmp/share/debug
         - chmod 1777 /tmp/share /tmp/share/debug
@@ -50,25 +56,99 @@ readme: |-
   ## openreconi2iexample/{{ context.version }} ##
 
   Minimal OpenRecon image-to-image reference. Receives reconstructed MRD
-  image messages and sends no output by default. Enable `sendoriginal` to
-  re-emit the original scan as `<source>-original` on `image_series_index = 100`.
+  image messages and sends outputs according to the enabled output options. The
+  scanner label defaults enable original pass-through plus segmentation. Enable
+  `sendoriginal` to pass the original 2D image stream through on
+  `image_series_index = 100`.
   Enable `invert` to return inverted magnitude images as `<source>-inverted` on
   `image_series_index = 99`. Enable `segment` to extract the brightest foreground
-  object and send `<source>-segment` on `image_series_index = 101`. Enable
-  `segmentationcolormap` with `segment` to add `MicroDeltaHotMetal.pal` LUT
-  metadata to segmentation outputs. Enable `upsampled` to send one
-  double-slice-count `<source>-upsampled` volume on `image_series_index =
-  102`. Enable `mip` to send one `<source>-mip` maximum intensity projection
-  image on `image_series_index = 103`.
+  object and send `<source>-segment` outputs starting on
+  `image_series_index = 101`. Segment output handling is controlled by
+  `segmentheadergeometry`: `explicit_volume_derived_header` sends segmentation as
+  an explicit derived volume, `3d_series_segment_header` sends 3D
+  source-geometry masks with segmentation header identity,
+  `2d_segment_header` sends 2D source-geometry masks with
+  segmentation header identity, `2d_segment_header_originals` sends the same
+  masks without scanner postprocessing child-role metadata,
+  `2d_derived_image_header` sends 2D
+  source-geometry masks with derived image header identity, and
+  `2d_source_image_header` sends 2D source-geometry masks with
+  source image header identity.
+  When originals and segments are both enabled, originals are sent first and
+  segment outputs are sent after them.
+  Multi-contrast inputs with repeated slice positions are split into one
+  segmentation output per source volume group.
+  Enable `segmentationcolormap` with `segment` to add `MicroDeltaHotMetal.pal`
+  LUT metadata to segmentation outputs. Enable
+  `upsampled` to send one double-slice-count `<source>-upsampled` volume on
+  `image_series_index = 102`. Enable `sendreformatsagittal` or
+  `sendreformatcoronal` to send explicit sagittal/coronal 3D reformat volumes of
+  the segment data starting on `image_series_index = 121`. Enable
+  `sendcomputedmip` to send one `<source>-mip` maximum intensity projection
+  image on `image_series_index = 103`. Enable
+  `sendmetrics` to send segmented-region volume in image comments and a
+  `<source>-metrics` DICOM image table on `image_series_index = 120`.
+  The metrics table is sent as a standalone explicit derived output so scanner
+  inline postprocessing does not attach to it. The rendered pixels are
+  pre-oriented for scanner display and use standalone identity geometry instead
+  of inheriting scan orientation.
 
-  When a scanner sequence sends more images than its source slice/partition
-  geometry advertises, inverted and segmentation outputs are packed into one
-  explicit volume image instead of returned as out-of-range source-geometry
-  frames. Original copies are always returned as individual 2D image messages
-  split by source series so scanner-side downstream processing still sees a
-  normal image stream.
+  Original copies are normally sent first as source-native 2D images with
+  `Keep_image_geometry = 1`. The pass-through keeps the source protocol,
+  sequence, image-type, MiniHead, and slice metadata as intact as possible while
+  assigning new returned-series UIDs. Returned originals use a one-based
+  per-series `image_index`. Meta and MiniHead storage counters are restamped
+  from the returned stream so `NumberInSeries`, `ChronSliceNo`, and `SliceNo`
+  remain consistent with the MRD header; valid source partition counters are
+  preserved for multi-partition inputs such as wholebody Dixon. If a source
+  group cannot be sent safely as a 2D stream, the job fails before send rather
+  than packing the originals, because scanner MIP/MPR postprocessing depends on
+  the original stream. When `sendoriginal` is paired with
+  `segmentheadergeometry = explicit_volume_derived_header`, the returned
+  originals are sorted by projected physical slice position so their frame order
+  matches the returned explicit segment volume. With
+  `segmentheadergeometry = explicit_volume_derived_header`, segmentation outputs
+  are sent as one explicit derived volume per source group with
+  `Keep_image_geometry = 0`, `DataRole = Image`, and
+  `SegmentExplicitVolume = 1`. These outputs are batched separately from
+  originals.
+  With `segmentheadergeometry = 3d_series_segment_header`, segmentation outputs are sent
+  as one returned 3D-derived series per source group with one MRD image per
+  source slice. The slices use `Keep_image_geometry = 1`, `DataRole = Segmentation`,
+  `SegmentSourceGeometry = 1`, `SegmentOutputGeometry = 3d`, unique returned
+  `slice` / `image_index` counters, source physical positions, and restamped
+  Meta and MiniHead storage fields. With
+  `segmentheadergeometry = 2d_segment_header`, masks keep source
+  physical geometry, use `Keep_image_geometry = 1`,
+  `DataRole = Segmentation`, `SegmentSourceGeometry = 1`, and the explicit
+  segmentation `ImageType`. With
+  `segmentheadergeometry = 2d_segment_header_originals`, masks use the same
+  source-geometry segmentation header identity, but do not set
+  `SegmentPostProcessingChildRole` or restamp `ExamDataRole` on the segment
+  stream so scanner postprocessing can remain on the original stream. With
+  `segmentheadergeometry = 2d_derived_image_header`, masks use the same
+  source-geometry 2D header path but keep `DataRole = Image` and use a derived
+  segment `ImageType`. With
+  `segmentheadergeometry = 2d_source_image_header`, masks use the
+  same source-geometry 2D header path but keep `DataRole = Image` and source
+  `ImageType`, `DicomImageType`, and `ImageTypeValue4` identity. Segment
+  reformats are packed explicit 3D volumes with centered slab geometry,
+  `Keep_image_geometry = 0`, no `IceMiniHead`, `image_index = 1`, `slice = 0`,
+  and matching `slice_count`, `NumberOfSlices`, and `ImagesInAcquisition`.
+  When originals and segments are both enabled, segment outputs are sent after
+  original outputs in a separate MRD image message.
+  Returned outputs strip scanner `ImageTypeValue3` metadata and `IceMiniHead`
+  `ImageTypeValue3` entries because some sequences reject that protocol field
+  during OpenRecon conversion. Original pass-through preserves Dixon subtype
+  identity. 2D source-image-header mask outputs preserve source identity,
+  including Dixon subtype tokens.
 
-  OpenRecon runtime notes: `recipes/openreconi2iexample/OpenReconREADME.md`.
+  OpenRecon runtime notes and scanner option-combination tables:
+  `recipes/openreconi2iexample/OpenReconREADME.md`.
+  Scanner logs include an `openreconi2iexample runtime version=...` marker,
+  `OPENRECONI2I_POSTPROCESSING target=...`, the independent segment controls in
+  the configured-output line, and one `OPENRECONI2I_BATCH ...` marker before
+  every MRD image send.
 
   Build and validate:
   ```bash

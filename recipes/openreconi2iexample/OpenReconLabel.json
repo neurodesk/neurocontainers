@@ -53,7 +53,14 @@
       "id": "sendoriginal",
       "label": { "en": "Send original images" },
       "type": "boolean",
-      "information": { "en": "Send a copy of original unmodified images back too" },
+      "information": { "en": "Pass the original 2D image stream back for scanner postprocessing" },
+      "default": true
+    },
+    {
+      "id": "originalnativeidentity",
+      "label": { "en": "Original native identity (experimental)" },
+      "type": "boolean",
+      "information": { "en": "Experimental whole-body composing pass-through. With Send original images, return each original with its native source series identity preserved (source SeriesInstanceUID/grouping, series number, ImageType and Dixon sub-type tokens, slice/partition counters, and IceMiniHead) instead of splitting contrasts onto renumbered original series with fresh UIDs. ImageTypeValue3 is normalized to M (mirroring the musclemap pass-through) instead of stripped, so the inline Dixon composer keeps each contrast bound to its Dixon channel and the master FILTER channel stays empty like a native acquisition; Keep_image_geometry is forced to 1. Use to test whether inline Composing of the original multi-station Dixon stations works when the returned originals are not re-stamped. Bypasses the restamped-output contract validation for the originals." },
       "default": false
     },
     {
@@ -74,8 +81,45 @@
       "id": "segment",
       "label": { "en": "Segment" },
       "type": "boolean",
-      "information": { "en": "Segment the brightest foreground object and send a segmentation" },
-      "default": false
+      "information": { "en": "Segment the brightest foreground object" },
+      "default": true
+    },
+    {
+      "id": "segmentheadergeometry",
+      "label": { "en": "Segment header geometry" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "explicit_volume_derived_header",
+          "name": { "en": "Explicit volume, derived image header" }
+        },
+        {
+          "id": "3d_series_segment_header",
+          "name": { "en": "3D segmentation header" }
+        },
+        {
+          "id": "2d_segment_header",
+          "name": { "en": "2D segmentation header" }
+        },
+        {
+          "id": "2d_segment_header_originals",
+          "name": { "en": "2D segmentation header, originals postprocessed" }
+        },
+        {
+          "id": "2d_derived_image_header",
+          "name": { "en": "2D derived image header" }
+        },
+        {
+          "id": "2d_source_image_header",
+          "name": { "en": "2D source image header" }
+        },
+        {
+          "id": "2d_dixon_composable",
+          "name": { "en": "2D Dixon composable (experimental composing diagnostic)" }
+        }
+      ],
+      "default": "2d_segment_header",
+      "information": { "en": "Choose the geometry, header identity, and scanner postprocessing stream used for Segment. Explicit volume sends one derived 3D volume with Keep_image_geometry=0 and DataRole=Image; scanner postprocessing uses originals only. 3D and 2D segmentation header modes keep Keep_image_geometry=1 and DataRole=Segmentation; scanner postprocessing uses the segment stream. 2D segmentation header, originals postprocessed keeps the same source geometry and segmentation header identity but leaves the segment stream without scanner postprocessing child-role metadata. 2D derived image header keeps source geometry with DataRole=Image and a derived ImageType. 2D source image header keeps source geometry with DataRole=Image and the source ImageType/ImageTypeValue4 identity. The two 2D image-header modes use originals plus the segment stream when originals are enabled." }
     },
     {
       "id": "segmentationcolormap",
@@ -85,10 +129,31 @@
       "default": false
     },
     {
-      "id": "mip",
-      "label": { "en": "MIP" },
+      "id": "sendreformatsagittal",
+      "label": { "en": "Send sagittal segment reformat" },
+      "type": "boolean",
+      "information": { "en": "Send explicit sagittal 3D reformat volume(s) of the segment data, one per source group" },
+      "default": false
+    },
+    {
+      "id": "sendreformatcoronal",
+      "label": { "en": "Send coronal segment reformat" },
+      "type": "boolean",
+      "information": { "en": "Send explicit coronal 3D reformat volume(s) of the segment data, one per source group" },
+      "default": false
+    },
+    {
+      "id": "sendcomputedmip",
+      "label": { "en": "Computed MIP output" },
       "type": "boolean",
       "information": { "en": "Compute and send one maximum intensity projection image" },
+      "default": false
+    },
+    {
+      "id": "sendmetrics",
+      "label": { "en": "Send metrics" },
+      "type": "boolean",
+      "information": { "en": "Send region volume in image comments and as a DICOM metrics table image" },
       "default": false
     }
   ]

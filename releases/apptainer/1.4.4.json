@@ -8,5 +8,7 @@
   },
   "categories": [
     "programming"
-  ]
+  ],
+  "show_in_menu": false,
+  "show_in_applist": false
 }

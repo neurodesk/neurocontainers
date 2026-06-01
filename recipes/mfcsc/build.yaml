@@ -1,0 +1,85 @@
+name: mfcsc
+version: "1.1"
+
+copyright:
+  - license: MIT
+    url: https://github.com/civier/mfcsc
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:18.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - curl
+        - unzip
+        - ca-certificates
+        - openjdk-8-jre
+        - dbus-x11
+    - template:
+        name: matlabmcr
+        version: 2020a
+        install_path: /opt/MCR
+    - workdir: /opt/mfcsc-{{ context.version }}/
+    - run:
+        - cp {{ get_file("mfcsc_binary") }} mfcsc
+    - environment:
+        XAPPLRESDIR: /opt/MCR/v98/x11/app-defaults
+    - run:
+        - chmod a+x /opt/mfcsc-{{ context.version }}/*
+    - environment:
+        PATH: /opt/mfcsc-{{ context.version }}/:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    - copy:
+        - app_test.sh
+        - /neurodesk/app_test.sh
+    - copy:
+        - app_version.sh
+        - /neurodesk/app_version.sh
+    - copy:
+        - fix_bash.sh
+        - /neurodesk/fix_bash.sh
+    - run:
+        - chmod +x /neurodesk/*.sh
+
+deploy:
+  bins:
+    - mfcsc
+
+readme: |-
+  
+  ----------------------------------
+  ## mfcsc/{{ context.version }} ##
+  Standalone (compiled) version of mfcsc with MATLAB runtime
+  
+  Example:
+  ```
+  mfcsc FC_SC_LIST FC_INPUT_DIR SC_INPUT_DIR OUTPUT_DIR not_in_mask_value is_contra is_keep_neg_fc is_symmetrical is_figures
+  ```
+  
+  More documentation can be found here: https://github.com/civier/mfcsc
+  
+  mfcsc is released under the MIT license
+  mfcsc includes the Brain Connectivity Toolbox (https://sites.google.com/site/bctnet/)
+  
+  Citations:
+  ```
+  Civier O, Sourty M, Calamante F (2023) MFCSC: Novel method to calculate mismatch between functional and structural brain connectomes, and its application for detecting hemispheric functional specialisations. Scientific Reports. https://doi.org/10.1038/s41598-022-17213-z
+  
+  Rubinov M, Sporns O (2010) Complex network measures of brain connectivity: Uses and interpretations. NeuroImage 52:1059-69.
+  ```
+  
+  To run mfcsc outside of this container, first type 'ml mfcsc/{{ context.version }}' in the terminal and then follow the example above
+  
+  ----------------------------------
+
+categories:
+  - electrophysiology
+
+files:
+  - name: mfcsc_binary
+    url: https://www.dropbox.com/s/rc8rysdwqxgxcfn/mfcsc?dl=0
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABP0lEQVR42u3azRHCIBCG4ZRhEx5swCYswZMNWYnFOY4zOrkbQuDbH+J72KM/+2SBBTI9X+/PP8cEAAAAAAAAAAAAAAAAAACgiOP1YfqHD6dLPoA56aVQJb0U4QCl5BUIpeQVCAB4AJzvt+ZIDVCTfA9CTfK9CFSAN0DNd+4aoAQxZAWsIayV+FLitQjDdIIt43+YTnBLtCa+i81Q79MfFqBnGUwPUGp1tyTXChGyCqz1/T1PteazylVh8uz8FMNG3Re4ACjnjyEBlBEKYL37i9gdUgHZToC8T4gAyHgK7HlKLOkEPdvXX3NC+F4gEiDNZigCINVu0KMKLH7DDEA9Ic5jPTWAxepgeRYoB1D3B9anwQBEAGS6EXK7F2hB8LgTpAKYAwCgDzC9GLHoBHlPEAAAAAAAAAAAAAAAAABQxRdgu/0O6G9E3wAAAABJRU5ErkJggg==

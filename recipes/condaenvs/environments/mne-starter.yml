@@ -1,0 +1,40 @@
+name: mne-eeg-meg
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3
+  - jupyter
+  - mne
+  - mne-bids
+  - mnelab
+  - nb_conda_kernels
+  - pytables
+  - h5py
+  - h5io
+  - pymatreader
+  - seaborn
+  - statsmodels
+  - pybv
+  - scikit-learn
+  - pyxdf
+  - pyEDFlib
+  - neurokit2
+  - autoreject
+  - coloredlogs
+  - pandas
+  - openpyxl
+  - json_tricks
+  - fire
+  - typing_extensions
+  - python-picard
+  - dask
+  - distributed
+  - psutil
+  - joblib
+  - jupyter-server-proxy
+  - pyqt
+  - pyvista
+  - pyvistaqt
+  - hdf5

@@ -1,0 +1,93 @@
+name: tgvqsm
+version: 1.0.0
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:16.04
+  pkg-manager: apt
+  directives:
+    - install:
+        - build-essential
+        - cmake
+        - git
+        - unzip
+        - wget
+    - run:
+        - git clone https://github.com/liangfu/bet2.git
+    - workdir: /bet2/build
+    - run:
+        - cmake .. && make
+    - template:
+        name: dcm2niix
+        version: latest
+    - workdir: /
+    - run:
+        - wget https://repo.anaconda.com/miniconda/Miniconda2-4.6.14-Linux-x86_64.sh
+    - environment:
+        PATH: /miniconda2/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    - run:
+        - bash Miniconda2-4.6.14-Linux-x86_64.sh -b -p /miniconda2/
+        - /miniconda2/bin/conda install -c anaconda cython==0.29.14
+        - /miniconda2/bin/conda install numpy
+        - /miniconda2/bin/conda install pyparsing
+        - /miniconda2/bin/pip install scipy==0.17.1 nibabel==2.1.0
+        - wget http://www.neuroimaging.at/media/qsm/TGVQSM-plus.zip
+        - unzip TGVQSM-plus.zip
+    - workdir: /TGVQSM-master-011045626121baa8bfdd6633929974c732ae35e3
+    - copy: setup.py /TGVQSM-master-011045626121baa8bfdd6633929974c732ae35e3
+    - run:
+        - /miniconda2/bin/python setup.py install
+    - workdir: /opt/tgvqsm-{{ context.version }}
+    - run:
+        - cp /miniconda2/bin/tgv_qsm .
+
+deploy:
+  path:
+    - /opt/tgvqsm-{{ context.version }}/
+    - /bet2/
+    - /opt/dcm2niix-latest
+
+readme: |-
+  
+  ----------------------------------
+  ## tgvqsm/1.0.0 ##
+  Quantitative susceptibility mapping allows the determination magnetic susceptibility from MRI phase data. TGV QSM is a python implementation to compute this.
+  
+  This container also includes bet2 for brain extraction and dcm2niix to convert dicom data to NiFTI files.
+  
+  Example:
+  ```
+  dcm2niix -o ./ -f magnitude GR_M_5_QSM_p2_1mmIso_TE20/
+  dcm2niix -o ./ -f phase GR_P_6_QSM_p2_1mmIso_TE20/
+  
+  bet2 magnitude.nii magnitude_bet2
+  
+  tgv_qsm \
+    -p phase.nii \
+    -m magnitude_bet2_mask.nii.gz \
+    -f 2.89 \
+    -t 0.02 \
+    -s \
+    -o qsm
+  ```
+  
+  More documentation can be found here: http://www.neuroimaging.at/pages/qsm.php
+  
+  To run container outside of this environment: ml tgvqsm/1.0.0
+  
+  Citation:
+  ```
+  Langkammer, C; Bredies, K; Poser, BA; Barth, M; Reishofer, G; Fan, AP; Bilgic, B; Fazekas, F; Mainero; C; Ropele, S
+  Fast Quantitative Susceptibility Mapping using 3D EPI and Total Generalized Variation.
+  Neuroimage. 2015 May 1;111:622-30. doi: 10.1016/j.neuroimage.2015.02.041
+  ```
+  
+  ----------------------------------
+
+categories:
+  - quantitative imaging
+  - phase processing
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBIWXMAAC4jAAAuIwF4pT92AAAGdGlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4gPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iQWRvYmUgWE1QIENvcmUgNy4xLWMwMDAgNzkuN2E3YTIzNiwgMjAyMS8wOC8xMi0wMDoyNToyMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczp4bXBNTT0iaHR0cDovL25zLmFkb2JlLmNvbS94YXAvMS4wL21tLyIgeG1sbnM6c3RFdnQ9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9zVHlwZS9SZXNvdXJjZUV2ZW50IyIgeG1sbnM6cGhvdG9zaG9wPSJodHRwOi8vbnMuYWRvYmUuY29tL3Bob3Rvc2hvcC8xLjAvIiB4bWxuczpkYz0iaHR0cDovL3B1cmwub3JnL2RjL2VsZW1lbnRzLzEuMS8iIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIDIyLjUgKFdpbmRvd3MpIiB4bXA6Q3JlYXRlRGF0ZT0iMjAyMS0wOS0yOVQwODo0OToxMCsxMDowMCIgeG1wOk1ldGFkYXRhRGF0ZT0iMjAyMS0wOS0yOVQwODo0OToxMCsxMDowMCIgeG1wOk1vZGlmeURhdGU9IjIwMjEtMDktMjlUMDg6NDk6MTArMTA6MDAiIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6YmYzZTU5MjYtYzA4MC1hNzQxLThlZGItODllNzA3ZTM2YTk1IiB4bXBNTTpEb2N1bWVudElEPSJhZG9iZTpkb2NpZDpwaG90b3Nob3A6YzlkMmFkMjAtOTFmOS03NDQ4LWI3MTctY2I2ODcwMjc5MjczIiB4bXBNTTpPcmlnaW5hbERvY3VtZW50SUQ9InhtcC5kaWQ6ZjNiMjA4MjktMjg3My05NjQzLWJhODItYzAzNWVkZGU1YWU4IiBwaG90b3Nob3A6Q29sb3JNb2RlPSIzIiBwaG90b3Nob3A6SUNDUHJvZmlsZT0ic1JHQiBJRUM2MTk2Ni0yLjEiIGRjOmZvcm1hdD0iaW1hZ2UvcG5nIj4gPHhtcE1NOkhpc3Rvcnk+IDxyZGY6U2VxPiA8cmRmOmxpIHN0RXZ0OmFjdGlvbj0iY3JlYXRlZCIgc3RFdnQ6aW5zdGFuY2VJRD0ieG1wLmlpZDpmM2IyMDgyOS0yODczLTk2NDMtYmE4Mi1jMDM1ZWRkZTVhZTgiIHN0RXZ0OndoZW49IjIwMjEtMDktMjlUMDg6NDk6MTArMTA6MDAiIHN0RXZ0OnNvZnR3YXJlQWdlbnQ9IkFkb2JlIFBob3Rvc2hvcCAyMi41IChXaW5kb3dzKSIvPiA8cmRmOmxpIHN0RXZ0OmFjdGlvbj0ic2F2ZWQiIHN0RXZ0Omluc3RhbmNlSUQ9InhtcC5paWQ6YmYzZTU5MjYtYzA4MC1hNzQxLThlZGItODllNzA3ZTM2YTk1IiBzdEV2dDp3aGVuPSIyMDIxLTA5LTI5VDA4OjQ5OjEwKzEwOjAwIiBzdEV2dDpzb2Z0d2FyZUFnZW50PSJBZG9iZSBQaG90b3Nob3AgMjIuNSAoV2luZG93cykiIHN0RXZ0OmNoYW5nZWQ9Ii8iLz4gPC9yZGY6U2VxPiA8L3htcE1NOkhpc3Rvcnk+IDxwaG90b3Nob3A6VGV4dExheWVycz4gPHJkZjpCYWc+IDxyZGY6bGkgcGhvdG9zaG9wOkxheWVyTmFtZT0iVEdWIiBwaG90b3Nob3A6TGF5ZXJUZXh0PSJUR1YiLz4gPC9yZGY6QmFnPiA8L3Bob3Rvc2hvcDpUZXh0TGF5ZXJzPiA8L3JkZjpEZXNjcmlwdGlvbj4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gPD94cGFja2V0IGVuZD0iciI/PtPBFskAAAMDSURBVGje7Zq9qioxEMf1cDpLwcpKRLBRtlVBtPEJRO0sBR9BfARLO2sRfQErRVAbEVELQdDWD7Cz3zuX5c4Zs9k1mj1wDnemkBDz9Zv5Z5KIftM0fb/ZPny/3BiAARiAARiAARiAARiAARiAAf43q9frprPNZrNOpwNt8vk87dJsNvv9/uFwoI3L5bLKmNRgkG8BuN/vMHQsFnvaHQixF6BiPYygAoDM4JFPWIp9gtvt1uv1cK32BoZhCDWbzaZYLO73e1oJEYjH41a53W5jfTQaxXIul8PydDotFAru8NfrFdeWTqd9UsT1eo0dVFwyHA7pHK1Wi/oY7XK5QIjgW6EelQYeVdcPhBoi5gEArBUbQ3AFiasYVZG6fixH6AKAU1H0MLSiiAUDZun2kE4ntNQFADeg3N9bvaAiu8CksQKvWTVaANQf0MXUMPvKFDm1AHA/wbimntEZnXxBlYY7TesknkwmVqFWq2keLIlEAvfSYrGQthmPx+ivSCTi5mDFCHilH/t2ctcP6O1rDW8D0A2gs32l6diei6X6Aft8O+jn8xnLgUDAqdlgMJDWZ7PZUChEa1KpFKjIOsuXy+WXSB71A8n64au3I/CqzASTqg5VBKt00g9kjofxfxQAVRFIVKofWq+VhSBv0JucUzNFHqoiIcUJ+hGEp5VGcbLT6eTVS6NUKlmF7XaLld1u1ypUq9UnHnpJHnB5fPUt8jTz0outSrrTisDf6/i/u/7xePQkAplMBsvz+ZxqCfxlT3cfmpOhihqNhicAsEQM7G63owDoL88kJDxP3S+S6oc3qsi6n7tf8jx40OALw4qy+6msAoCLBkMYJ+94AEDfNJarICxCtranc/frE6oIzy+nh443b2Lwmf3tDyR1YioHmdMj2+WR4A0Azkp/CHIxaCYNkfSmKFw/BfNLT0c4WZPJJAK8lEYg90H2WK1W8DkajXA7BoNBwzDC4TB8Cqep1CqVCv58AtoT7nZofv6zBwMwAAMwAAMwAAMwAAMwAAMwAAO8Z38AjPszABADIRkAAAAASUVORK5CYII=

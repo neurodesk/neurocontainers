@@ -3,6 +3,15 @@ version: 0.4.0
 copyright: []
 architectures:
   - x86_64
+  - aarch64
+
+variables:
+  tinyrange_archive:
+    try:
+      - value: tinyrange_linux_amd64_zip
+        condition: arch == "x86_64"
+      - value: tinyrange_linux_arm64_zip
+        condition: arch == "aarch64"
 structured_readme:
   description: ""
   example: |-
@@ -42,15 +51,21 @@ readme: |-
   ----------------------------------
 build:
   kind: neurodocker
-  base-image: ghcr.io/tinyrange/tinyrange:v{{ context.version }}
+  base-image: ubuntu:24.04
   pkg-manager: apt
-  add-tzdata: false
   directives:
+    - install:
+        - ca-certificates
+        - unzip
     - run:
-        - apk add --no-cache bash
-        - mv /tinyrange /usr/bin/tinyrange
+        - cp {{ get_file(context.tinyrange_archive) }} /tmp/tinyrange.zip
+        - unzip -q /tmp/tinyrange.zip -d /opt
+        - chmod +x /opt/tinyrange/tinyrange /opt/tinyrange/tinyqemu/tinyrange_qemu /opt/tinyrange/tinyqemu/qemu-system-aarch64
+        - ln -sfn /opt/tinyrange/tinyrange /usr/local/bin/tinyrange
+        - rm -f /tmp/tinyrange.zip
     - deploy:
-        path: []
+        path:
+          - /opt/tinyrange
         bins:
           - tinyrange
     - test:
@@ -58,8 +73,12 @@ build:
         builtin: test_deploy.sh
     - test:
         name: tinyrange test
-        script: tinyrange login -E whoami
-  add-default-template: false
+        script: tinyrange --help
 categories:
   - programming
+files:
+  - name: tinyrange_linux_amd64_zip
+    url: https://github.com/tinyrange/tinyrange/releases/download/v{{ context.version }}/tinyrange-linux-amd64.zip
+  - name: tinyrange_linux_arm64_zip
+    url: https://github.com/tinyrange/tinyrange/releases/download/v{{ context.version }}/tinyrange-linux-arm64.zip
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAC6klEQVR4AYyUSU9TURTHz6tplIiACIiigbgxcQclkZUSWZOg1HmAgvM8LBwrMihq1KVxSLrQpHGIC/0QbkESIm668VNIaa/3d8t5ee+1RZv+3vmf/z33nnv73mts9MZTM3L9iUlde2yGr06boSuPHCcuPzTHL02ZYxcnzdELE+bI+XHH4XMPzKGzY+bgmfuO/afuGUievGsGR++YfSO3zd7ULTMwfNMRM8ZI9IMH//K1hgjRenLXgMFqFItFqTZWyQ/Wo2N00ULVRMAnRsEHfI1RTQ4xulAEqomAB2hQTYSgp1p9zctOQNcgTNBcdbFQkPziH1nKLzoKhSUtcT+nJtSX3YNisSC/cz8l+3LM8eHVuMDH1xPy6c2kfH47JV8y0/Lt/Qv5+u6Zjc/l14/vrqHumoUV1yDYkQHyRCLhdkNeCfFE8vm8ZDIZykNoPaZrQGfQAfTc3Jx0dXU50uk0tZJMJl3e2dkpsvx0e57nNsIcJbiOuwdutr2UBqywX3Y3MzMjkMvlrCMyPz/v8tnZWZdXu5TWKe0g9BQxwKS2ju1y4HRa7Jsp3bv6sXx6+galt39IauvX+x6CuZUInYBC0EK0/1uUkorXYD1ai9Bl94DfkQFQrROIJd8e337JlZJfeuuZB3iuQbAIzQCgo0TWdcPUgksiF9eAwZUIzbF/jtSGPJsY+1jhB+EU7h6oaetCX/yQ4Scs5ye+oB58w4rQU0THIBTbDUs2mxXP82RhYUGK1sC3cyUej0sqlfLfA3zQNdArnsDzPGloapWevqTs3DPoWFe/QdbU1MqORK909w5I9+4BaWnbJrHYKteIRWkO6LJ7QHcGlNq6Rmne3OFo2tQuNWvrJL66RhpbtkhTa7s0btwq6xqa7QljfgOdS3QNZPmDsSxDAR8wNUY1uUINkLsG7BowAQ2qiRD0VKuvuUb13T2gk8JAVOOB+sEY9FUTgbqyp4iB/yW422pzyk5AVy1WTYSgT66s5P8FAAD//zxgdb4AAAAGSURBVAMAYr7SV66M5DYAAAAASUVORK5CYII=

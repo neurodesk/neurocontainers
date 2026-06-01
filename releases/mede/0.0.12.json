@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "mede 0.0.12": {
+      "version": "20260521",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "data organisation"
+  ]
+}

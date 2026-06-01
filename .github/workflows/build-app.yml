@@ -25,6 +25,9 @@ on:
       force_push_dockerhub:
         required: false
         type: string
+      force_push_nectar_registry:
+        required: false
+        type: string
       force_upload_nectar:
         required: false
         type: string
@@ -50,6 +53,7 @@ env:
 # - secrets.DOCKERHUB_USERNAME
 # - secrets.DOCKERHUB_PASSWORD
 # - secrets.DOCKERHUB_ORG
+# - secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY
 # - secrets.AWS_ROLE_ARN
 
 jobs:
@@ -79,9 +83,8 @@ jobs:
           # (legacy self-hosted VMs). Runs in full on ARC pods and partially
           # on github-hosted runners (forks).
           if command -v docker >/dev/null 2>&1 \
-            && command -v apptainer >/dev/null 2>&1 \
             && command -v aws >/dev/null 2>&1 \
-            && command -v swift >/dev/null 2>&1 \
+            && python3 -c "import swiftclient" 2>/dev/null \
             && command -v gh >/dev/null 2>&1 \
             && command -v jq >/dev/null 2>&1; then
             echo "All build tooling already present; skipping bootstrap."
@@ -96,11 +99,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends --no-upgrade "${APT_PACKAGES[@]}"
           case "$(uname -m)" in
             x86_64)
-              APPTAINER_ARCH=amd64
               AWSCLI_ARCH=x86_64
               ;;
             aarch64|arm64)
-              APPTAINER_ARCH=arm64
               AWSCLI_ARCH=aarch64
               ;;
             *)
@@ -108,19 +109,6 @@ jobs:
               exit 1
               ;;
           esac
-          APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
-            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          if [ "$APPTAINER_ARCH" = "arm64" ]; then
-            sudo apt-get install -y --no-install-recommends software-properties-common
-            sudo add-apt-repository -y ppa:apptainer/ppa
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends apptainer
-          else
-            curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
-              -o /tmp/apptainer.deb
-            sudo apt-get install -y /tmp/apptainer.deb
-            rm /tmp/apptainer.deb
-          fi
           python3 -m venv "$RUNNER_TEMP/openstack-client-venv"
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install \
@@ -135,7 +123,7 @@ jobs:
             sudo /tmp/aws/install
             rm -rf /tmp/aws /tmp/awscliv2.zip
           fi
-          docker --version && apptainer --version && aws --version
+          docker --version && aws --version
           gh --version && jq --version && swift --version
 
       - name: Set environment variables
@@ -190,11 +178,11 @@ jobs:
           fi
           python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} -r requirements.txt
 
-      - name: Generate Dockerfile and Release file
+      - name: Generate Dockerfile and stage metadata
         id: generate
         run: |
           echo "APPLICATION: $APPLICATION"
-          python3 -m builder build "$APPLICATION" --recreate --generate-release
+          python3 -m builder stage "$APPLICATION" --recreate --architecture "$ARCHITECTURE"
 
       - name: Set image variables
         id: imgvars
@@ -219,7 +207,7 @@ jobs:
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull latest image from registry and get rootfs
@@ -279,9 +267,8 @@ jobs:
           # (legacy self-hosted VMs). Runs in full on ARC pods and partially
           # on github-hosted runners (forks).
           if command -v docker >/dev/null 2>&1 \
-            && command -v apptainer >/dev/null 2>&1 \
             && command -v aws >/dev/null 2>&1 \
-            && command -v swift >/dev/null 2>&1 \
+            && python3 -c "import swiftclient" 2>/dev/null \
             && command -v gh >/dev/null 2>&1 \
             && command -v jq >/dev/null 2>&1; then
             echo "All build tooling already present; skipping bootstrap."
@@ -296,11 +283,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends --no-upgrade "${APT_PACKAGES[@]}"
           case "$(uname -m)" in
             x86_64)
-              APPTAINER_ARCH=amd64
               AWSCLI_ARCH=x86_64
               ;;
             aarch64|arm64)
-              APPTAINER_ARCH=arm64
               AWSCLI_ARCH=aarch64
               ;;
             *)
@@ -308,19 +293,6 @@ jobs:
               exit 1
               ;;
           esac
-          APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
-            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          if [ "$APPTAINER_ARCH" = "arm64" ]; then
-            sudo apt-get install -y --no-install-recommends software-properties-common
-            sudo add-apt-repository -y ppa:apptainer/ppa
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends apptainer
-          else
-            curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
-              -o /tmp/apptainer.deb
-            sudo apt-get install -y /tmp/apptainer.deb
-            rm /tmp/apptainer.deb
-          fi
           python3 -m venv "$RUNNER_TEMP/openstack-client-venv"
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install \
@@ -335,7 +307,7 @@ jobs:
             sudo /tmp/aws/install
             rm -rf /tmp/aws /tmp/awscliv2.zip
           fi
-          docker --version && apptainer --version && aws --version
+          docker --version && aws --version
           gh --version && jq --version && swift --version
 
       - name: Checkout repository
@@ -351,11 +323,11 @@ jobs:
           fi
           python3 -m pip install ${PIP_BREAK_SYSTEM_PACKAGES} -r requirements.txt
 
-      - name: Generate Dockerfile and Release file
+      - name: Generate Dockerfile and stage build context
         id: generate
         run: |
           echo "APPLICATION: $APPLICATION"
-          python3 -m builder build "$APPLICATION" --recreate --generate-release --architecture "$ARCHITECTURE"
+          python3 -m builder stage "$APPLICATION" --recreate --download --architecture "$ARCHITECTURE"
 
       - name: Set image variables
         id: imgvars
@@ -382,7 +354,7 @@ jobs:
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
@@ -409,7 +381,7 @@ jobs:
           IS_BLACKSMITH_RUNNER: ${{ contains(inputs.runner, 'blacksmith') }}
         run: |
           cd "./build/${APPLICATION}"
-          CACHE_REF=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:buildcache
+          CACHE_REF=ghcr.io/${GH_REGISTRY}/${APPLICATION}${IMAGE_SUFFIX}:buildcache
           CACHE_FROM_ARGS=()
           CACHE_TO_ARGS=()
           if [ "${IS_BLACKSMITH_RUNNER}" = "true" ]; then
@@ -687,7 +659,7 @@ jobs:
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull latest image from registry
@@ -720,9 +692,67 @@ jobs:
           docker tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ${DOCKERHUB_ORG}/${IMAGENAME}:latest
           docker push --all-tags ${DOCKERHUB_ORG}/${IMAGENAME}
 
+  push-nectar-registry:
+    needs: [config, build-image]
+    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_nectar_registry == 'true' }}
+    # Nectar is a best-effort mirror; outages must not block the release path.
+    continue-on-error: true
+    runs-on: ubuntu-22.04
+    permissions:
+      packages: write
+    env:
+      APPLICATION: ${{ inputs.application }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      IMAGENAME: ${{ inputs.application }}_${{ needs.config.outputs.VERSION }}${{ needs.config.outputs.IMAGE_SUFFIX }}
+      NECTAR_REGISTRY: registry.rc.nectar.org.au
+      NECTAR_REGISTRY_NAMESPACE: ssdsorg
+
+    steps:
+      - name: Configure GitHub-hosted runner
+        if: ${{ runner.environment == 'github-hosted' }}
+        run: |
+          BASE_PATH=/mnt
+          echo "BASE_PATH=$BASE_PATH" >> "$GITHUB_ENV"
+          sudo swapoff -a && sudo rm -rf "$BASE_PATH"/*
+          sudo mkdir -p "$BASE_PATH/tmp"
+          sudo chown "$USER" "$BASE_PATH/tmp"
+          sudo mkdir -p "$BASE_PATH/docker"
+          printf '{"data-root": "%s"}\n' "$BASE_PATH/docker" | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+
+      - name: Login to GHCR
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull latest image from GHCR
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          docker pull "ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}"
+
+      - name: Login to Nectar Container Registry
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
+        with:
+          registry: registry.rc.nectar.org.au
+          username: s.bollmann@uq.edu.au
+          password: ${{ secrets.REGISTRY_RC_NECTAR_ORG_AU_CLI_KEY }}
+
+      - name: Push to Nectar Container Registry
+        env:
+          GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
+        run: |
+          NECTAR_IMAGE="${NECTAR_REGISTRY}/${NECTAR_REGISTRY_NAMESPACE}/${IMAGENAME}"
+          docker tag "ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}" "${NECTAR_IMAGE}:${BUILDDATE}"
+          docker tag "ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}" "${NECTAR_IMAGE}:latest"
+          docker push "${NECTAR_IMAGE}:${BUILDDATE}"
+          docker push "${NECTAR_IMAGE}:latest"
+
   build-simg:
     needs: [config, build-image]
-    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false' }}
+    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false') }}
     runs-on: ${{ contains(inputs.runner, 'arm') && 'blacksmith-8vcpu-ubuntu-2404-arm' || 'ubuntu-22.04' }}
     permissions:
       packages: write
@@ -792,7 +822,7 @@ jobs:
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # - name: Download image artifact
@@ -844,7 +874,9 @@ jobs:
 
   upload-nectar:
     needs: [config, build-image, build-simg]
-    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' }}
+    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true') }}
+    # Nectar object storage is a best-effort mirror; S3 remains the blocking upload.
+    continue-on-error: true
     runs-on: ${{ fromJSON(inputs.runner) }}
     permissions:
       packages: write
@@ -861,9 +893,8 @@ jobs:
           # Idempotency check: skip when everything's already pre-baked
           # (legacy self-hosted VMs). Runs in full on ARC pods.
           if command -v docker >/dev/null 2>&1 \
-            && command -v apptainer >/dev/null 2>&1 \
             && command -v aws >/dev/null 2>&1 \
-            && command -v swift >/dev/null 2>&1 \
+            && python3 -c "import swiftclient" 2>/dev/null \
             && command -v gh >/dev/null 2>&1 \
             && command -v jq >/dev/null 2>&1; then
             echo "All build tooling already present; skipping bootstrap."
@@ -878,11 +909,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends --no-upgrade "${APT_PACKAGES[@]}"
           case "$(uname -m)" in
             x86_64)
-              APPTAINER_ARCH=amd64
               AWSCLI_ARCH=x86_64
               ;;
             aarch64|arm64)
-              APPTAINER_ARCH=arm64
               AWSCLI_ARCH=aarch64
               ;;
             *)
@@ -890,19 +919,6 @@ jobs:
               exit 1
               ;;
           esac
-          APPTAINER_VER=$(curl -fsSL https://api.github.com/repos/apptainer/apptainer/releases/latest \
-            | grep '"tag_name"' | head -1 | cut -d'"' -f4 | sed 's/^v//')
-          if [ "$APPTAINER_ARCH" = "arm64" ]; then
-            sudo apt-get install -y --no-install-recommends software-properties-common
-            sudo add-apt-repository -y ppa:apptainer/ppa
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends apptainer
-          else
-            curl -fsSL "https://github.com/apptainer/apptainer/releases/download/v${APPTAINER_VER}/apptainer_${APPTAINER_VER}_${APPTAINER_ARCH}.deb" \
-              -o /tmp/apptainer.deb
-            sudo apt-get install -y /tmp/apptainer.deb
-            rm /tmp/apptainer.deb
-          fi
           python3 -m venv "$RUNNER_TEMP/openstack-client-venv"
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/openstack-client-venv/bin/python" -m pip install \
@@ -917,7 +933,7 @@ jobs:
             sudo /tmp/aws/install
             rm -rf /tmp/aws /tmp/awscliv2.zip
           fi
-          docker --version && apptainer --version && aws --version
+          docker --version && aws --version
           gh --version && jq --version && swift --version
 
       - name: Download simg artifact
@@ -945,7 +961,7 @@ jobs:
 
   upload-s3:
     needs: [config, build-image, build-simg]
-    if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_s3 == 'true' }}
+    if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_s3 == 'true') }}
     runs-on: ubuntu-22.04
     permissions:
       packages: write
@@ -992,7 +1008,7 @@ jobs:
           fi
 
   create-pr:
-    needs: [config, build-image, push-dockerhub, upload-s3, upload-nectar]
+    needs: [config, build-image, push-dockerhub, upload-nectar, upload-s3]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_create_pr == 'true'}}
     runs-on: ubuntu-22.04
     permissions:
@@ -1099,7 +1115,7 @@ jobs:
 
         Or, for testing directly with Apptainer/Singularity:
         \`\`\`bash
-        curl -X GET https://neurocontainers.s3.us-east-2.amazonaws.com/${IMAGENAME}_${BUILDDATE}.simg -O
+        curl -X GET https://neurocontainers.neurodesk.workers.dev/${IMAGENAME}_${BUILDDATE}.simg -O
         singularity shell --overlay /tmp/apptainer_overlay ${IMAGENAME}_${BUILDDATE}.simg
         \`\`\`
 
@@ -1272,3 +1288,100 @@ jobs:
         echo "The container has been successfully build. To test the container, run this:" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
         echo "bash /neurocommand/local/fetch_and_run.sh ${IMAGENAME//_/ } $BUILDDATE" >> $GITHUB_STEP_SUMMARY
+
+  report-auto-build-failure:
+    needs: [config, build-image, push-dockerhub, build-simg, upload-s3, create-pr]
+    if: ${{ always() && !cancelled() && github.event_name == 'push' && contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    env:
+      APPLICATION: ${{ inputs.application }}
+      BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
+      VERSION: ${{ needs.config.outputs.VERSION }}
+      ARCHITECTURE: ${{ needs.config.outputs.ARCHITECTURE }}
+      IMAGE_SUFFIX: ${{ needs.config.outputs.IMAGE_SUFFIX }}
+      CONFIG_RESULT: ${{ needs.config.result }}
+      BUILD_IMAGE_RESULT: ${{ needs.build-image.result }}
+      PUSH_DOCKERHUB_RESULT: ${{ needs.push-dockerhub.result }}
+      BUILD_SIMG_RESULT: ${{ needs.build-simg.result }}
+      UPLOAD_S3_RESULT: ${{ needs.upload-s3.result }}
+      CREATE_PR_RESULT: ${{ needs.create-pr.result }}
+      GH_TOKEN: ${{ secrets.NEURODESK_GITHUB_TOKEN_ISSUE_AUTOMATION || github.token }}
+    steps:
+      - name: Open or update auto-build failure issue
+        run: |
+          set -euo pipefail
+
+          workflow_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          title="Auto-build failed for ${APPLICATION}"
+
+          pr_number="$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+            --jq '.[0].number // empty' 2>/dev/null || true)"
+          submitter=""
+          if [ -n "${pr_number}" ] && [ "${pr_number}" != "null" ]; then
+            submitter="$(gh api --paginate \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${GITHUB_REPOSITORY}/pulls/${pr_number}/commits" \
+              --jq '[.[] | .author.login // empty | select(. != "" and . != "github-actions[bot]" and . != "neurocontainers-bot" and (endswith("[bot]") | not))][0] // empty' 2>/dev/null || true)"
+            if [ -z "${submitter}" ] || [ "${submitter}" = "null" ]; then
+              submitter="$(gh api \
+                -H "Accept: application/vnd.github+json" \
+                "/repos/${GITHUB_REPOSITORY}/pulls/${pr_number}" \
+                --jq '.user.login // empty' 2>/dev/null || true)"
+            fi
+          fi
+          if [ -z "${submitter}" ] || [ "${submitter}" = "null" ]; then
+            submitter="${GITHUB_ACTOR}"
+          fi
+
+          body="$(mktemp "${RUNNER_TEMP}/auto-build-failure.XXXXXX.md")"
+          {
+            echo "@${submitter} the auto-build for \`${APPLICATION}\` failed."
+            echo ""
+            echo "## Summary"
+            echo ""
+            echo "- Application: \`${APPLICATION}\`"
+            echo "- Version: \`${VERSION:-unknown}\`"
+            echo "- Architecture: \`${ARCHITECTURE:-unknown}\`"
+            echo "- Image suffix: \`${IMAGE_SUFFIX:-none}\`"
+            echo "- Build date: \`${BUILDDATE:-unknown}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Workflow run: ${workflow_url}"
+            echo ""
+            echo "## Job Results"
+            echo ""
+            echo "- config: \`${CONFIG_RESULT}\`"
+            echo "- build-image: \`${BUILD_IMAGE_RESULT}\`"
+            echo "- push-dockerhub: \`${PUSH_DOCKERHUB_RESULT}\`"
+            echo "- build-simg: \`${BUILD_SIMG_RESULT}\`"
+            echo "- upload-s3: \`${UPLOAD_S3_RESULT}\`"
+            echo "- create-pr: \`${CREATE_PR_RESULT}\`"
+            echo ""
+            echo "Please check the workflow logs and push a fix or rerun the build once the underlying problem is resolved."
+          } > "${body}"
+
+          existing_issue="$(TITLE="${title}" gh issue list \
+            --repo "${GITHUB_REPOSITORY}" \
+            --state open \
+            --label "automated" \
+            --limit 100 \
+            --json number,title \
+            --jq 'map(select(.title == env.TITLE))[0].number // ""')"
+
+          if [ -n "${existing_issue}" ]; then
+            gh issue comment "${existing_issue}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --body-file "${body}"
+            echo "Updated existing auto-build failure issue #${existing_issue}."
+          else
+            gh issue create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${title}" \
+              --body-file "${body}" \
+              --label "automated"
+          fi

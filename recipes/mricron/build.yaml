@@ -46,7 +46,7 @@ build:
 categories:
   - visualization
   - structural imaging
-  - file conversion
+  - data organisation
 structured_readme:
   description: MRIcron is a cross-platform NIfTI format image viewer. It can load multiple  layers of images, generate volume renderings and draw regions of interest.  It also includes dcm2niix for converting DICOM images to NIfTI format.
   example: |-

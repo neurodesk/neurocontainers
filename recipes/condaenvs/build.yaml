@@ -3,10 +3,11 @@ version: 1.0.1
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
-  base-image: ubuntu:22.04
+  base-image: ubuntu:24.04
   pkg-manager: apt
 
   directives:
@@ -16,14 +17,14 @@ build:
     - template:
         name: miniconda
         version: latest
-
-    - install:
-        - git
+        env_name: condaenvs
+        env_exists: "false"
 
     - workdir: /opt
 
-    - run:
-        - git clone https://github.com/NeuroDesk/condaenvs
+    - copy:
+        - environments
+        - /opt/condaenvs/environments
 
     - copy:
         - install_all.sh
@@ -36,6 +37,7 @@ build:
 
 categories:
   - data organisation
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAANCAYAAADISGwcAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAJrSURBVDhPYxgFgxLM3z+fI213KD+UCwYe21T47OfLc0C5DMjs+v8MTAz1DEwgWmuVFlvoqlBmqBQMMILE7ffLc9QD1UHFwIARSsPBujtLat7+eFXFw8bHcfvDtQ3b7q+K5mbjXfSfgcEGqJqJ4f//vn2BNzqd1mtu/8/4r2B/wM2bzuu1WoDyjxkZ/on9Z2DMBar7wfCf4eIvVpa4Iz6X3zut0/RkYGI0Axp/lYnh74M9ATfPQGxjQHVN/elsh+ffnlTzsvJ5sLEJSh98vmMWFxtvIdDwz7YB16X//mdTB2qJddigaQ50uRjjf6atbuu1ZYGWMTIw/gd7hpGRoWVfwHU5IPcS2+8/nVCxEsb/DIl//zKf+PJT8CpIDAZQHMDByGP67serixHqKYeCFYKf7/W/tgMobPyPgWFpI9B7BwMvfmBg+L+J+f9/Y1Dg/WdkbP3L8G/Lf8b/ohATEOA/M9NKoBJTlw3qJkD3/QM6cA0z01/vE+EnvkOVgAGKA4682HneQMzKIGSHnavjGk15vy2W3kBDzjExMEaB4td+vb4AUJkv0LhzYA1//u8Dkm1ANUlgPsI4oHP/RjL8YzgFtLkE6FSp//8ZrYHOKkJPAyicrT4X9px+eagzQiVtU7x2zgMbSaeMbz8/9wHjnf/wBs2nzAy/bgF9vXRP8I0TQF//Z2Zj/L838PpKoEXFEBP+AZUy1Dqu13wMDHZtZkbG6Qz/mXQYGf+5MjH+DQZG1eXDBtreELV4gMVKGU7ndRrCUC4YoOeC0FUMKCkdKM8Oygn2++1ZwLkCBIBhD2eDAMj3aCEwCgYYMDAAAETv3twS9FUmAAAAAElFTkSuQmCC
 
 readme: |
   ----------------------------------
@@ -57,7 +59,35 @@ readme: |
 files:
   - name: install_all.sh
     contents: |
-      for file in \`ls environments/*-pinned.yml\`; do
-          echo \$file
-          conda env create -f \$file
-      done
+      set -e
+
+      if [ "$(uname -m)" = "aarch64" ]; then
+          for file in \
+              environments/mne-starter.yml \
+              environments/nipype-pinned.yml \
+              environments/pytorch_cpu-starter.yml
+          do
+              echo "$file"
+              if [ "$file" = "environments/mne-starter.yml" ]; then
+                  tmpfile=$(mktemp)
+                  sed '/^[[:space:]]*-[[:space:]]*pyEDFlib[[:space:]]*$/d' "$file" > "$tmpfile"
+                  conda env create --solver libmamba -f "$tmpfile"
+                  rm -f "$tmpfile"
+                  conda run -n mne-eeg-meg python -m ensurepip --upgrade
+                  conda run -n mne-eeg-meg python -m pip install pyEDFlib
+              elif [ "$file" = "environments/nipype-pinned.yml" ]; then
+                  tmpfile=$(mktemp)
+                  sed 's/^[[:space:]]*-[[:space:]]*nipype=1\.7\.0[[:space:]]*$/  - nipype=1.10.0/' "$file" > "$tmpfile"
+                  conda env create --solver libmamba -f "$tmpfile"
+                  rm -f "$tmpfile"
+              else
+                  conda env create --solver libmamba -f "$file"
+              fi
+          done
+      else
+          files=$(ls environments/*-pinned.yml)
+          for file in $files; do
+              echo "$file"
+              conda env create -f "$file"
+          done
+      fi

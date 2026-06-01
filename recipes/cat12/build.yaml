@@ -1,15 +1,11 @@
-# this template file builds cat12, new versions here: http://141.35.69.218/cat12/?C=M;O=D
+# this template file builds cat12, new versions here: https://github.com/ChristianGaser/cat12/releases
 name: cat12
-version: "12.9"
-draft: true
+version: "26.0.rc3"
 
 copyright:
   - license: GPL-2.0
     url: https://github.com/ChristianGaser/cat12?tab=GPL-2.0-1-ov-file#readme
     
-# https://github.com/ChristianGaser/cat12/releases
-# with 12.9 we use the new versioning scheme instead of the old (r****)
-
 # inspired by: https://github.com/m-wierzba/cat-container/blob/master/Singularity
 # discussed here: https://github.com/ReproNim/neurodocker/issues/407
 
@@ -18,16 +14,18 @@ architectures:
 
 variables:
   matlab_version: 2023b
-  cat12_version: "{{ context.version }}_R{{ context.matlab_version }}"
+  matlab_runtime_version: R2023b
+  matlab_mcr_root: "/opt/mcr/{{ context.matlab_runtime_version }}"
+  cat12_inner_zip: "CAT_R{{ context.matlab_version }}_MCR_Linux.zip"
 
 files:
   - name: cat12.zip
-    url: https://dbm.neuro.uni-jena.de/cat12/CAT{{ context.version }}_R{{ context.matlab_version }}_MCR_Linux.zip
+    url: https://github.com/ChristianGaser/cat12/releases/download/{{ context.version }}/cat-standalone-Linux.zip
 
 build:
   kind: neurodocker
 
-  base-image: ubuntu:16.04
+  base-image: ubuntu:20.04
   pkg-manager: apt
 
   directives:
@@ -47,38 +45,41 @@ build:
         - install: ca-certificates curl unzip
         - run:
             # Install cat12
-            - unzip -q {{ get_file("cat12.zip") }} -d /tmp
-            - mkdir -p {{ local.install_path }}
-            - mv /tmp/*{{ context.cat12_version }}*/* {{ local.install_path }}/
+            - mkdir -p /tmp/cat12-extract {{ local.install_path }}
+            - unzip -q {{ get_file("cat12.zip") }} -d /tmp/cat12-extract
+            - unzip -q /tmp/cat12-extract/{{ context.cat12_inner_zip }} -d /tmp/cat12-extract
+            - mv /tmp/cat12-extract/cat_standalone/* {{ local.install_path }}/
+            - rm -rf /tmp/cat12-extract
             - chmod -R 777 {{ local.install_path }}
         - run:
             # Test
-            - "{{ local.install_path }}/spm12 function exit"
-            # Fix m file
-            - rm {{ local.install_path }}/spm12_mcr/home/gaser/gaser/spm/spm12/toolbox/cat12/cat_long_main.m
-            - cp {{ local.install_path }}/spm12_mcr/home/gaser/gaser/spm/spm12/toolbox/cat12/cat_long_main.txt {{ local.install_path }}/spm12_mcr/home/gaser/gaser/spm/spm12/toolbox/cat12/cat_long_main.m
+            - "{{ local.install_path }}/run_spm25.sh {{ context.matlab_mcr_root }} function exit"
         - environment:
             FORCE_SPMMCR: "1"
             SPM_HTML_BROWSER: "0"
             MCR_INHIBIT_CTF_LOCK: "1"
+            MCRROOT: "{{ context.matlab_mcr_root }}"
             SPMROOT: "{{ local.install_path }}"
-            PATH: "{{ local.install_path }}:$PATH"
+            XAPPLRESDIR: "{{ context.matlab_mcr_root }}/x11/app-defaults"
+            PATH: "{{ local.install_path }}:{{ local.install_path }}/standalone:$PATH"
       with:
         install_path: /opt/cat12
 
 deploy:
   bins:
-    - run_spm12.sh
-    - spm12
+    - run_spm25.sh
+    - spm25
+    - cat_standalone.sh
+    - cat_parallelize.sh
 
 readme: |
   ----------------------------------
   ## cat12/{{ context.version }} ##
-  SPM12 standalone with CAT12 toolbox in Matlab Compiler Runtime
+  SPM25 standalone with CAT12 toolbox in Matlab Compiler Runtime
 
   Example:
   ```
-  run_spm12.sh /opt/mcr/v93/
+  run_spm25.sh {{ context.matlab_mcr_root }}/
   ```
 
   Example with nipype:
@@ -94,7 +95,7 @@ readme: |
   ```
   import nipype.interfaces.spm as spm
 
-  matlab_cmd = '/opt/cat12/run_spm12.sh /opt/mcr/v93/ script'
+  matlab_cmd = 'run_spm25.sh {{ context.matlab_mcr_root }}/ script'
   spm.SPMCommand.set_mlab_paths(matlab_cmd=matlab_cmd, use_mcr=True)
 
   import nipype.interfaces.cat12 as cat12
@@ -114,7 +115,8 @@ categories:
   - "image segmentation"
   - "image registration"
   - "structural imaging"
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBIWXMAAAsTAAALEwEAmpwYAAAFF2lUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4gPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iQWRvYmUgWE1QIENvcmUgNy4xLWMwMDAgNzkuN2E3YTIzNiwgMjAyMS8wOC8xMi0wMDoyNToyMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczpkYz0iaHR0cDovL3B1cmwub3JnL2RjL2VsZW1lbnRzLzEuMS8iIHhtbG5zOnBob3Rvc2hvcD0iaHR0cDovL25zLmFkb2JlLmNvbS9waG90b3Nob3AvMS4wLyIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0RXZ0PSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VFdmVudCMiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIDIyLjUgKFdpbmRvd3MpIiB4bXA6Q3JlYXRlRGF0ZT0iMjAyMS0wOS0xNVQyMDozNDozMCsxMDowMCIgeG1wOk1vZGlmeURhdGU9IjIwMjEtMDktMjlUMDg6MjY6MjUrMTA6MDAiIHhtcDpNZXRhZGF0YURhdGU9IjIwMjEtMDktMjlUMDg6MjY6MjUrMTA6MDAiIGRjOmZvcm1hdD0iaW1hZ2UvcG5nIiBwaG90b3Nob3A6Q29sb3JNb2RlPSIzIiBwaG90b3Nob3A6SUNDUHJvZmlsZT0ic1JHQiBJRUM2MTk2Ni0yLjEiIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6ZTQwNDg2ZDctY2E3Zi02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
 
 gui_apps:
   - name: "cat12GUI"
-    exec: "bash run_spm12.sh /opt/mcr/v93/"
+    exec: "bash run_spm25.sh {{ context.matlab_mcr_root }}/"

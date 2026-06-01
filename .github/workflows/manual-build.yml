@@ -20,6 +20,7 @@ on:
         type: choice
         options:
         - "neurodesk-arcrunner-neurocontainers"
+        - "neurodesk-syd-arcrunner-neurocontainers"
         - "blacksmith-8vcpu-ubuntu-2404"
         - "blacksmith-8vcpu-ubuntu-2404-arm"
         - "ubuntu-22.04"
@@ -37,6 +38,11 @@ on:
         default: false
       force_push_dockerhub:
         description: 'Force push to DockerHub'
+        required: false
+        type: boolean
+        default: false
+      force_push_nectar_registry:
+        description: 'Force push to Nectar Container Registry'
         required: false
         type: boolean
         default: false
@@ -90,6 +96,9 @@ jobs:
           "neurodesk-arcrunner-neurocontainers")
             runner='"neurodesk-arcrunner-neurocontainers"'
             ;;
+          "neurodesk-syd-arcrunner-neurocontainers")
+            runner='"neurodesk-syd-arcrunner-neurocontainers"'
+            ;;
           "blacksmith-8vcpu-ubuntu-2404"|"blacksmith-8vcpu-ubuntu-2404-arm"|"ubuntu-22.04"|"self-hosted")
             runner="\"$CHOICE\""
             ;;
@@ -114,6 +123,7 @@ jobs:
       disable_auto_upload: ${{ github.event.inputs.disable_auto_upload }}
       force_push_ghcr: ${{ github.event.inputs.force_push_ghcr }}
       force_push_dockerhub: ${{ github.event.inputs.force_push_dockerhub }}
+      force_push_nectar_registry: ${{ github.event.inputs.force_push_nectar_registry }}
       force_upload_nectar: ${{ github.event.inputs.force_upload_nectar }}
       force_upload_s3: ${{ github.event.inputs.force_upload_s3 }}
       force_create_pr: ${{ github.event.inputs.force_create_pr }}

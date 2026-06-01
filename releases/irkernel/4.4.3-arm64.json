@@ -1,0 +1,15 @@
+{
+  "apps": {
+    "irkernel 4.4.3 arm64": {
+      "version": "20260513",
+      "exec": "",
+      "apptainer_args": [],
+      "architecture": "aarch64",
+      "image": "irkernel_4.4.3_arm64"
+    }
+  },
+  "categories": [
+    "programming"
+  ],
+  "architecture": "aarch64"
+}

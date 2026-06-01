@@ -1,0 +1,196 @@
+name: synthstroke
+version: 0.0.0
+copyright:
+  - license: MIT
+    url: https://github.com/liamchalcroft/SynthStroke/blob/main/LICENSE
+architectures:
+  - x86_64
+structured_readme:
+  description: |-
+    Implementation of "Synthetic Data for Robust Stroke Segmentation" (MELBA 2025). Uses synthetic data to improve stroke lesion segmentation across different imaging protocols and patient populations.
+    Features:
+    - Synthetic data generation pipeline using healthy brain MRI
+    - Multi-tissue segmentation (lesions and healthy brain tissue)
+    - Mixed precision training with configurable loss functions
+    - Test-time augmentation (TTA) for improved inference accuracy
+    - 6 pre-trained models available via Hugging Face Hub
+  example: |-
+    # Basic usage (baked-in baseline model)
+    synthstroke --input /path/to/T1w.nii.gz --outdir /path/to/output/ --tta
+
+    # Download additional models
+    synthstroke-download synth
+    synthstroke --input /path/to/T1w.nii.gz --outdir /path/to/output/ --weights /opt/synthstroke/weights/synth/model.safetensors --tta
+  documentation: |-
+    This container includes:
+    - Python 3.10 via Miniconda
+    - The Python package from https://github.com/liamchalcroft/SynthStroke
+    - Additional pip packages: monai, torch, nibabel, numpy, scikit-image, tqdm, wandb, cornucopia, huggingface_hub, safetensors, scipy, einops
+    - Deployed binaries: synthstroke, synthstroke-download
+    - Pre-trained weights: synthstroke-baseline (baked in at /opt/synthstroke/weights/baseline/)
+
+    Available models (download with synthstroke-download <name>):
+      baseline     - Real ATLAS T1w data only. 2-class: background + lesion. [baked in]
+      synth        - Synthetic data augmentation. 6-class: tissues + lesion.
+      synth-pseudo - Synthetic + pseudo-label augmentation. 6-class.
+      synth-plus   - Synthetic + multi-dataset training. 6-class.
+      qatlas       - Quantitative MRI (qMRI) based. 2-class.
+      qsynth       - qMRI-constrained synthetic training. 6-class.
+
+    For detailed documentation see: https://github.com/liamchalcroft/SynthStroke
+  citation: "Chalcroft, L., Pappas, I., Price, C. J., & Ashburner, J. (2025). Synthetic Data for Robust Stroke Segmentation. Machine Learning for Biomedical Imaging, 3, 317-346."
+readme: |-
+  ----------------------------------
+  ## synthstroke/{{ context.version }} ##
+
+  Implementation of "Synthetic Data for Robust Stroke Segmentation" (MELBA 2025).
+  Uses synthetic data to improve stroke lesion segmentation across different imaging
+  protocols and patient populations.
+
+  Basic usage (baseline model is baked in):
+    synthstroke --input /path/to/T1w.nii.gz --outdir /path/to/output/ --tta
+
+  Arguments:
+    --input      Input T1w NIfTI file (.nii or .nii.gz)
+    --outdir     Output directory for segmentation results
+    --tta        Enable test-time augmentation (slower but more accurate)
+    --weights    Path to model weights (default: baked-in baseline model)
+    --threshold  Probability threshold for binary mask (default: 0.5)
+
+  Available models:
+    baseline     Real ATLAS T1w data only. 2-class: background + lesion. [baked in]
+    synth        Synthetic data augmentation. 6-class: tissues + lesion.
+    synth-pseudo Synthetic + pseudo-label augmentation. 6-class.
+    synth-plus   Synthetic + multi-dataset training. 6-class.
+    qatlas       Quantitative MRI (qMRI) based. 2-class.
+    qsynth       qMRI-constrained synthetic training. 6-class.
+
+  Downloading additional models:
+    synthstroke-download synth
+    synthstroke --input T1w.nii.gz --outdir ./output/ \
+      --weights /opt/synthstroke/weights/synth/model.safetensors --tta
+
+  Note: 6-class models (synth, synth-pseudo, synth-plus, qsynth) also output
+  tissue segmentations: gray matter, white matter, CSF alongside the lesion mask.
+
+  Citation:
+  Chalcroft, L., Pappas, I., Price, C. J., & Ashburner, J. (2025).
+  Synthetic Data for Robust Stroke Segmentation.
+  Machine Learning for Biomedical Imaging, 3, 317-346.
+
+  To run container outside of this environment: ml synthstroke/{{ context.version }}
+  ----------------------------------
+files:
+  - name: run.py
+    contents: |
+      import argparse
+      import nibabel as nib
+      import numpy as np
+      from pathlib import Path
+      from synthstroke_model import SynthStrokeModel
+
+      parser = argparse.ArgumentParser(description="SynthStroke: Stroke Lesion Segmentation")
+      parser.add_argument("--input", required=True, help="Input T1w NIfTI file")
+      parser.add_argument("--outdir", required=True, help="Output directory")
+      parser.add_argument("--tta", action="store_true", help="Enable test-time augmentation")
+      parser.add_argument("--weights", default="/opt/synthstroke/weights/baseline/model.safetensors", help="Path to model weights")
+      parser.add_argument("--threshold", type=float, default=0.5, help="Probability threshold for binary lesion mask (default: 0.5)")
+      args = parser.parse_args()
+
+      outdir = Path(args.outdir)
+      outdir.mkdir(parents=True, exist_ok=True)
+
+      img = nib.load(args.input)
+      model = SynthStrokeModel.from_checkpoint(args.weights)
+      model.eval()
+
+      result = model.predict_comprehensive_with_preprocessing(
+          img.get_fdata(), affine=img.affine,
+          use_tta=args.tta, use_sliding_window=True, patch_size=128
+      )
+      model.save_prediction(result, args.outdir, affine=img.affine)
+
+      # Re-derive binary mask from probability map.
+      # Lesion is always the last class: class 1 for 2-class models (baseline, qatlas),
+      # class 5 for 6-class models (synth, synth-pseudo, synth-plus, qsynth).
+      prob_files = sorted(outdir.glob("prediction_prob_class_*.nii.gz"))
+      mask_path = outdir / "prediction_lesion_mask.nii.gz"
+      if prob_files:
+          prob_img = nib.load(str(prob_files[-1]))  # last class = lesion
+          prob_data = prob_img.get_fdata()
+          binary_mask = (prob_data > args.threshold).astype(np.uint8)
+          mask_img = nib.Nifti1Image(binary_mask, prob_img.affine, prob_img.header)
+          nib.save(mask_img, str(mask_path))
+          print(f"Lesion mask: {int(binary_mask.sum())} voxels above threshold {args.threshold}")
+
+      print("Done. Output saved to:", args.outdir)
+
+  - name: download.py
+    contents: |
+      import argparse
+      import subprocess
+      import sys
+      from pathlib import Path
+
+      MODELS = {
+          "baseline":     ("liamchalcroft/synthstroke-baseline",    "2-class: background + lesion (real ATLAS T1w data)"),
+          "synth":        ("liamchalcroft/synthstroke-synth",        "6-class: tissues + lesion (synthetic data augmentation)"),
+          "synth-pseudo": ("liamchalcroft/synthstroke-synth-pseudo", "6-class: tissues + lesion (synthetic + pseudo-labels)"),
+          "synth-plus":   ("liamchalcroft/synthstroke-synth-plus",   "6-class: tissues + lesion (synthetic + multi-dataset)"),
+          "qatlas":       ("liamchalcroft/synthstroke-qatlas",       "2-class: background + lesion (quantitative MRI)"),
+          "qsynth":       ("liamchalcroft/synthstroke-qsynth",       "6-class: tissues + lesion (qMRI-constrained synthetic)"),
+      }
+
+      parser = argparse.ArgumentParser(
+          description="Download SynthStroke pre-trained model weights from Hugging Face Hub",
+          formatter_class=argparse.RawDescriptionHelpFormatter,
+          epilog="\n".join([f"  {k:<14} {v[1]}" for k, v in MODELS.items()])
+      )
+      parser.add_argument("model", choices=list(MODELS.keys()), help="Model name to download")
+      parser.add_argument("--outdir", default=None, help="Download destination (default: /opt/synthstroke/weights/<model>/)")
+      args = parser.parse_args()
+
+      hf_repo, description = MODELS[args.model]
+      outdir = args.outdir or f"/opt/synthstroke/weights/{args.model}"
+
+      print(f"Downloading {args.model}: {description}")
+      print(f"  Source : {hf_repo}")
+      print(f"  Dest   : {outdir}")
+      print()
+
+      result = subprocess.run(["hf", "download", hf_repo, "--local-dir", outdir])
+      if result.returncode != 0:
+          print("Download failed.", file=sys.stderr)
+          sys.exit(1)
+
+      weights = Path(outdir) / "model.safetensors"
+      print(f"\nDone! Run inference with:")
+      print(f"  synthstroke --input T1w.nii.gz --outdir ./output/ --weights {weights} --tta")
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: miniconda
+        version: latest
+        conda_install: python=3.10
+        pip_install: monai torch nibabel numpy scikit-image tqdm wandb cornucopia huggingface_hub safetensors scipy einops
+    - install: git libgl1 curl ca-certificates
+    - run:
+        - git clone https://github.com/liamchalcroft/SynthStroke.git /opt/synthstroke
+        - hf download liamchalcroft/synthstroke-baseline --local-dir /opt/synthstroke/weights/baseline
+        - cp {{ get_file("run.py") }} /opt/synthstroke/run.py
+        - cp {{ get_file("download.py") }} /opt/synthstroke/download.py
+        - printf '#!/bin/bash\nexport PYTHONPATH=/opt/synthstroke:$PYTHONPATH\npython /opt/synthstroke/run.py "$@"\n' > /usr/local/bin/synthstroke && chmod +x /usr/local/bin/synthstroke
+        - printf '#!/bin/bash\nexport PYTHONPATH=/opt/synthstroke:$PYTHONPATH\npython /opt/synthstroke/download.py "$@"\n' > /usr/local/bin/synthstroke-download && chmod +x /usr/local/bin/synthstroke-download
+
+deploy:
+  bins:
+    - synthstroke
+    - synthstroke-download
+
+categories:
+  - image segmentation
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAE9UlEQVR4AWyUf0yVVRjHP+e99wIXiTAVIlJBU6NJQk4hlrg5nLFhXmajrY1mrlX/NM0/yqkJf7ialERmGanl9I9WM1uN2FLZGk7dmIlzSGs6yVRCAVHR2IV7OZ3nnHsBlWfv9z3f5/x4fp3nfb27+5L1wN5kfWdPsr79dbK+1RC06P8qqG/uDuq+L5N07xdJumeXw43Pk/T1nUm6+7NEi65PE7XgWl2CvrojQV/5JEH/83GCvlwbsPC0VoCAmChkTuuYatfcuswJ4itxLqMAu5eYyBmFcaCNQQFmFAgXCIeREeECJlzXxrKDrOtx+x33MGL22MOGjo4PctHj0CZrHctQG04scm3nXOTExBuL0HmUaEZGGBeJcIE2zrWZx45un7ZcbAhkTiBcINxkMFHNYSgCvQOavruaiHEoAbkIxYHg/kixWYgtYiJcPXwHvQMjHDwRYcEHYVbum05ZQyYFW8OUfDRE5vowT7wbJmtDmD0tEf4b0gwNa35uizLzvSGLnI3DrNwZof3aiMlWiwNG5aaJdtfRKF1Z6/nr714uXLhAZ2cnF6/e5tW3q/H74PTp00SjUZovZ3L+qqazF77/w8/AwAA9PT3W1mvFHk9NUyiFONDWUzSq6TBef7s4mdraWk6dOkV6ejqFhYV0dHRQXV1NTnY2q1atskZ2NPxIzS8RtvwUYe37u0lJSaGyspJXFnmUzFEEfGLXOAAFBsY+1+9onpyVh8ixY8dsRK2trZSVlXH8+HFSUiczKdrF9u3bWbx4MTPyy7lBDmvWrOHIkSNcOf87lQsVjyXH7whGuwjTYgk+OHnyJMPDw9TV1XH27Fm2bdtGWloaJSUltLW1UZij2LRpE93d3Rw4cIDGxka7f/Xq1VQVKeZmKIkP6SCB6SKri31Sg4qs1DD5+fk0NTUxb948Nm/ezKVLlzhz5gw+n4+FMz3eWuojFApZx7m5uaxbt47SOfcozfVI9Dt78pauM18y5g7g7qDmaHuU3nAqfX19lJeXEwwGycvLo7m5mYKCAmpqarh5T1P+rCLS3cq5c+fo7+/n1x8abGmmTMJGLt+AfEujDsSbwDP51NfX09XVJapFe3s7paWlRCIR5s+fz7+3tM10lumSwcFBW57sKZCRqvAUD4nJQFuvAVP/9EcUhw4dwjOeDh8+bDtDyiJl8vv9tLS0kGYu0G8CsTWNmzP3J9FKzd04lolsNQ4UcsELsxV/tjaxf/9+KioqbG9L5FIa6ZLvvqknf4ZnWpAJJW7cLUo6SrrIeTNvnslUbH3Jx4cb1zJ16lRCoRDFxcUEAgFWrFjBhuWKBVmgTPgmb4qKisjIyDAaxGsuWbg7MDuMRw8jZjRZQIJfsexpj4Nv+Nmy/DazBxt5cVor377u58RGP6F8H0kBSPLDy8957K3ysafK480lirQg1obYMibtI3z0DkQR74LMR6GiQPHOMo+q5xVL58LjqZhLlKiwrVgwHZbMgRdmKxbNVKQkypog7ki4/Rcp403gFjAFcCAmpiDmny8ByER8fJCLjj3r7GhzRnSbwfiaSQbjdeEyJ3B11qbegrgh4QLRZdSmVA5y1t4BViQLidYq5iVc5uSgwHGzcN+jTYvGJ+JcRoHMj/6LXITOsyyK7iDGBePXnC4Rur1On2i/yUAiE4g/gUQuB4SPjaLFjQnH1tudc/PCBcRE7Cj+BwAA///QddDGAAAABklEQVQDAAkkU+IrvEcbAAAAAElFTkSuQmCC

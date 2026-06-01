@@ -11,6 +11,7 @@ binaries:
     2.6.2: https://github.com/ANTsX/ANTs/releases/download/v2.6.2/ants-2.6.2-centos7-X64-gcc.zip
     2.5.1: https://github.com/ANTsX/ANTs/releases/download/v2.5.1/ants-2.5.1-centos7-X64-gcc.zip
     2.4.3: https://github.com/ANTsX/ANTs/releases/download/v2.4.3/ants-2.4.3-centos7-X64-gcc.zip
+    2.3.4: https://zenodo.org/api/records/15230173/files/ants-Linux-centos6_x86_64-v2.3.4.tar.gz/content
     2.3.1: https://dl.dropbox.com/s/1xfhydsf4t4qoxg/ants-Linux-centos6_x86_64-v2.3.1.tar.gz
   dependencies:
     apt:

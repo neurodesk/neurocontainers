@@ -1,0 +1,116 @@
+name: globus
+version: "3.2.8"
+
+copyright:
+  - name: Globus Connect Personal
+    url: https://www.globus.org/globus-connect-personal
+
+architectures:
+  - x86_64
+  - aarch64
+
+variables:
+  globus_archive:
+    try:
+      - value: globusconnectpersonal_x86_64_tgz
+        condition: arch == "x86_64"
+      - value: globusconnectpersonal_aarch64_tgz
+        condition: arch == "aarch64"
+
+files:
+  - name: globusconnectpersonal_x86_64_tgz
+    url: https://downloads.globus.org/globus-connect-personal/v3/linux/stable/globusconnectpersonal-{{ context.version }}.tgz
+    condition: arch == "x86_64"
+  - name: globusconnectpersonal_aarch64_tgz
+    url: https://downloads.globus.org/globus-connect-personal/v3/linux_aarch64/stable/globusconnectpersonal-aarch64-{{ context.version }}.tgz
+    condition: arch == "aarch64"
+  - name: gc-ctrl.py
+    filename: gc-ctrl.py
+
+build:
+  kind: neurodocker
+  base-image: fedora:37
+  pkg-manager: yum
+
+  directives:
+    - install:
+        - ca-certificates
+        - glibc
+        - libXScrnSaver
+        - libxcrypt-compat
+        - python-unversioned-command
+        - python3
+        - tcllib
+        - tk
+
+    - workdir: /opt
+
+    - run:
+        - tar -xzf {{ get_file(context.globus_archive) }} -C /opt
+        - test -d /opt/globusconnectpersonal-{{ context.version }}
+        - install -m 0755 {{ get_file("gc-ctrl.py") }} /opt/globusconnectpersonal-{{ context.version }}/gc-ctrl.py
+        - grep -q "_get_linux_distro_name" /opt/globusconnectpersonal-{{ context.version }}/gc-ctrl.py
+        - python -m py_compile /opt/globusconnectpersonal-{{ context.version }}/gc-ctrl.py
+        - rm -rf /opt/globusconnectpersonal-{{ context.version }}/__pycache__
+
+    - environment:
+        DEPLOY_PATH: /opt/globusconnectpersonal-{{ context.version }}/
+        PATH: $PATH:/opt/globusconnectpersonal-{{ context.version }}/
+
+deploy:
+  bins:
+    - globusconnect
+    - globusconnectpersonal
+  path:
+    - /opt/globusconnectpersonal-{{ context.version }}
+
+gui_apps:
+  - name: globusGUI
+    exec: globusconnectpersonal -gui
+
+tests:
+  - name: check globusconnectpersonal help
+    script: |
+      if [ "$(id -u)" -eq 0 ]; then
+        globusconnectpersonal --help 2>&1 | grep -q "root is not supported"
+      else
+        globusconnectpersonal --help 2>&1 | grep -q Usage
+      fi
+
+  - name: check patched gc-ctrl.py
+    script: |
+      GCP_DIR="$(find /opt -maxdepth 1 -type d -name 'globusconnectpersonal-*' | sort | tail -n 1)"
+      test -n "${GCP_DIR}"
+      test -f "${GCP_DIR}/gc-ctrl.py"
+      grep -q "_get_linux_distro_name" "${GCP_DIR}/gc-ctrl.py"
+      python - <<'PY'
+      from pathlib import Path
+      candidates = sorted(Path("/opt").glob("globusconnectpersonal-*/gc-ctrl.py"))
+      if not candidates:
+          raise SystemExit("gc-ctrl.py not found")
+      source = candidates[-1]
+      compile(source.read_text(), str(source), "exec")
+      PY
+
+categories:
+  - data organisation
+icon: data:image/png;base64,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
+
+readme: |-
+  ----------------------------------
+  ## globus/{{ context.version }} ##
+
+  Globus Connect Personal lets users create personal Globus endpoints for transferring files between local systems and Globus-connected endpoints.
+
+  Example:
+  ```
+  globusconnectpersonal -setup
+  globusconnectpersonal -gui
+  chmod 600 ~/.globusonline/lta/relay-anonymous-key.pem
+  ```
+
+  More documentation can be found here: https://www.neurodesk.org/docs/getting-started/neurodesktop/storage/#globus
+
+  To run container outside of this environment: ml globus/{{ context.version }}
+
+  ----------------------------------

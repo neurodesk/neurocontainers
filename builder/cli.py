@@ -115,7 +115,14 @@ def cmd_generate(args: argparse.Namespace) -> int:
 def cmd_stage(args: argparse.Namespace) -> int:
     config, compiled = compile_from_args(args)
     output_root = args.output_root or config.output_root
-    build_dir, dockerfile_path = write_build_files(config.repo_root, compiled, output_root, recreate=args.recreate, stage=True)
+    build_dir, dockerfile_path = write_build_files(
+        config.repo_root,
+        compiled,
+        output_root,
+        recreate=args.recreate,
+        stage=True,
+        download=args.download,
+    )
     summary = {
         "name": compiled.name,
         "version": compiled.version,
@@ -305,8 +312,7 @@ def cmd_login(args: argparse.Namespace) -> int:
     print(" ".join(command))
     import subprocess
 
-    subprocess.check_call(command)
-    return 0
+    return subprocess.call(command)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -319,6 +325,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     stage = subparsers.add_parser("stage", help="Generate a Dockerfile and stage files")
     add_common_recipe_args(stage)
+    stage.add_argument("--download", action="store_true", help="Download URL-backed declared files")
     stage.set_defaults(func=cmd_stage)
 
     release = subparsers.add_parser("release", help="Generate release JSON")

@@ -1,0 +1,109 @@
+name: startrack
+version: "20250920"
+
+copyright:
+  - license: LicenseRef-StarTrack
+    url: https://nbl-research.github.io/startrack.html
+
+architectures:
+  - x86_64
+
+variables:
+  matlab_runtime_version: 2023b
+  matlab_runtime_root: /opt/MCR-{{ context.matlab_runtime_version }}/R{{ context.matlab_runtime_version }}
+  install_path: /opt/{{ context.name }}-{{ context.version }}
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:20.04
+  pkg-manager: apt
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        MCR_CACHE_ROOT: /tmp/mcr_cache
+
+    - template:
+        name: matlabmcr
+        curl_opts: "-fsSL --retry 5 --retry-delay 5 --connect-timeout 20 --max-time 3600"
+        install_path: /opt/MCR-{{ context.matlab_runtime_version }}
+        version: "{{ context.matlab_runtime_version }}"
+
+    - run:
+        - mkdir -p "{{ context.install_path }}" /tmp/startrack-unpack
+        - unzip -q {{ get_file("startrack_linux_zip") }} -d /tmp/startrack-unpack
+        - cp /tmp/startrack-unpack/ST_Linux_x86/StarTrack "{{ context.install_path }}/StarTrack"
+        - cp /tmp/startrack-unpack/ST_Linux_x86/StarTrack.sh "{{ context.install_path }}/StarTrack.sh"
+        - cp /tmp/startrack-unpack/ST_Linux_x86/readme.txt "{{ context.install_path }}/readme.txt"
+        - chmod 0755 "{{ context.install_path }}/StarTrack" "{{ context.install_path }}/StarTrack.sh"
+        - rm -rf /tmp/startrack-unpack
+
+    - copy:
+        - startrack_wrapper
+        - /usr/local/bin/startrack
+
+    - run:
+        - chmod 0755 /usr/local/bin/startrack
+
+deploy:
+  bins:
+    - startrack
+
+files:
+  - name: startrack_linux_zip
+    url: https://www.dropbox.com/scl/fi/3iovmntgm129hzxarmjnm/ST_Linux_x86.zip?rlkey=xcz8y2mrcpeo1ehxtfd6exhbt&dl=1
+  - name: startrack_wrapper
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      mcr_root="${MCRROOT:-{{ context.matlab_runtime_root }}}"
+      export MCR_CACHE_ROOT="${MCR_CACHE_ROOT:-/tmp/mcr_cache}"
+      mkdir -p "${MCR_CACHE_ROOT}"
+
+      export LD_LIBRARY_PATH=".:${mcr_root}/runtime/glnxa64:${mcr_root}/bin/glnxa64:${mcr_root}/sys/os/glnxa64:${mcr_root}/sys/opengl/lib/glnxa64:${mcr_root}/extern/bin/glnxa64:${LD_LIBRARY_PATH:-}"
+
+      if command -v ldd >/dev/null 2>&1 && ldd --version 2>&1 | grep -q "(GNU libc) 2\\.17"; then
+        export LD_PRELOAD="${mcr_root}/bin/glnxa64/glibc-2.17_shim.so"
+      fi
+
+      exec "{{ context.install_path }}/StarTrack" "$@"
+
+categories:
+  - diffusion imaging
+
+gui_apps:
+  - name: StarTrack
+    exec: startrack
+
+icon: data:image/png;base64,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
+
+structured_readme:
+  description: >-
+    StarTrack is a diffusion MRI analysis and tractography application for DTI,
+    spherical deconvolution, fibre orientation distribution visualization, and
+    whole-brain tractography.
+  example: startrack
+  documentation: https://nbl-research.github.io/startrack.html
+
+readme: |-
+  ----------------------------------
+  ## startrack/{{ context.version }} ##
+
+  StarTrack is a diffusion MRI analysis and tractography application for DTI,
+  spherical deconvolution, fibre orientation distribution visualization, and
+  whole-brain tractography.
+
+  Example:
+  ```bash
+  startrack
+  ```
+
+  The container installs StarTrack with MATLAB Runtime {{ context.matlab_runtime_version }}.
+  Runtime cache files are written under `/tmp/mcr_cache` by default.
+
+  More documentation:
+  https://nbl-research.github.io/startrack.html
+
+  To run applications outside of this container: ml startrack/{{ context.version }}
+
+  ----------------------------------
