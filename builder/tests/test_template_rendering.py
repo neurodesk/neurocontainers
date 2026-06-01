@@ -101,6 +101,22 @@ def test_miniconda_template_bootstraps_python_and_pip_for_pip_install() -> None:
     assert "--name testenv python pip" in command
 
 
+def test_miniconda_template_guards_conda_tos_for_older_installers() -> None:
+    directives: list[Run] = []
+    apply_builtin_template(
+        "miniconda",
+        {
+            "version": "py37_4.12.0",
+            "arch": "x86_64",
+        },
+        "apt",
+        directives.append,
+    )
+    command = "\n".join(item.command for item in directives if isinstance(item, Run))
+    assert "if conda tos --help >/dev/null 2>&1; then conda tos accept; fi" in command
+    assert "\nconda tos accept\n" not in command
+
+
 def test_matlabmcr_template_uses_release_named_runtime_dirs_for_r2023b() -> None:
     directives = []
     apply_builtin_template(
