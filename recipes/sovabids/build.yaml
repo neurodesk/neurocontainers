@@ -50,13 +50,15 @@ build:
           git+https://github.com/yjmantilla/bidscoin.git@sovabids
           git+https://github.com/yjmantilla/sovabids.git@v0.3.1-alpha
     - run:
-        - wget -O vscode.deb 'https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64' && apt install ./vscode.deb && rm -rf ./vscode.deb
+        - cp {{ get_file("vscode_deb") }} vscode.deb
+        - apt install ./vscode.deb
+        - rm -rf ./vscode.deb
         - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.python && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-python.vscode-pylance && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-keymap && code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-renderers
     - environment:
         DONT_PROMPT_WSL_INSTALL: "1"
     - workdir: /opt/
     - run:
-        - curl -fsSL https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz | tar xz
+        - tar xz -f {{ get_file("mne_bids_pipeline_main_tar_gz") }}
         - chmod a+rwx /opt/mne-bids-pipeline-main -R
     - copy: code /usr/local/sbin/code
     - run:
@@ -74,7 +76,7 @@ deploy:
 readme: |-
   
   ----------------------------------
-  ## sovabids/0.3.1a0 ##
+  ## sovabids/{{ context.version }} ##
   Python sovabids environment with VScode 
   
   This environment contains sovabids, a package for eeg to bids conversion.
@@ -94,6 +96,18 @@ readme: |-
   
   ----------------------------------
 
+files:
+  - name: sovabids_yml
+    filename: sovabids.yml
+  - name: code
+    filename: code
+  - name: vscode_deb
+    url: https://code.visualstudio.com/sha/download?build=stable&os=linux-deb-x64
+  - name: mne_bids_pipeline_main_tar_gz
+    url: https://github.com/mne-tools/mne-bids-pipeline/archive/refs/heads/main.tar.gz
+
 categories:
   - electrophysiology
   - bids apps
+
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTIiIGZpbGw9IiMxNDNkNTIiLz48cGF0aCBkPSJNMTMgNDFjNS0xMiAxMy0xOCAyNS0xOCA2IDAgMTAgMiAxMyA1IiBmaWxsPSJub25lIiBzdHJva2U9IiM2ZWU3YjciIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTE2IDQ0YzctNiAxNS03IDI0LTMiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2Y4ZmFmYyIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz48Y2lyY2xlIGN4PSIxOSIgY3k9IjQyIiByPSI0IiBmaWxsPSIjZjU5ZTBiIi8+PGNpcmNsZSBjeD0iMzIiIGN5PSIzMCIgcj0iNCIgZmlsbD0iIzM4YmRmOCIvPjxjaXJjbGUgY3g9IjQ2IiBjeT0iMjkiIHI9IjQiIGZpbGw9IiNmOGZhZmMiLz48cGF0aCBkPSJNMjEgNDFsMTAtMTAgMTItMiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjY2JkNWUxIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgb3BhY2l0eT0iLjkiLz48dGV4dCB4PSIzMiIgeT0iNTUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMSIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iI2Y4ZmFmYyI+QklEUzwvdGV4dD48L3N2Zz4=
