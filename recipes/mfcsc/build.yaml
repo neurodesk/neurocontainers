@@ -1,6 +1,10 @@
 name: mfcsc
 version: "1.1"
 
+copyright:
+  - license: MIT
+    url: https://github.com/civier/mfcsc
+
 architectures:
   - x86_64
 
@@ -21,7 +25,7 @@ build:
         install_path: /opt/MCR
     - workdir: /opt/mfcsc-{{ context.version }}/
     - run:
-        - curl -L -o mfcsc 'https://www.dropbox.com/s/rc8rysdwqxgxcfn/mfcsc?dl=0'
+        - cp {{ get_file("mfcsc_binary") }} mfcsc
     - environment:
         XAPPLRESDIR: /opt/MCR/v98/x11/app-defaults
     - run:
@@ -47,7 +51,7 @@ deploy:
 readme: |-
   
   ----------------------------------
-  ## mfcsc/toolVersion ##
+  ## mfcsc/{{ context.version }} ##
   Standalone (compiled) version of mfcsc with MATLAB runtime
   
   Example:
@@ -67,9 +71,15 @@ readme: |-
   Rubinov M, Sporns O (2010) Complex network measures of brain connectivity: Uses and interpretations. NeuroImage 52:1059-69.
   ```
   
-  To run mfcsc outside of this container, first type 'ml mfcsc/toolVersion' in the terminal and then follow the example above
+  To run mfcsc outside of this container, first type 'ml mfcsc/{{ context.version }}' in the terminal and then follow the example above
   
   ----------------------------------
 
 categories:
   - electrophysiology
+
+files:
+  - name: mfcsc_binary
+    url: https://www.dropbox.com/s/rc8rysdwqxgxcfn/mfcsc?dl=0
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABP0lEQVR42u3azRHCIBCG4ZRhEx5swCYswZMNWYnFOY4zOrkbQuDbH+J72KM/+2SBBTI9X+/PP8cEAAAAAAAAAAAAAAAAAACgiOP1YfqHD6dLPoA56aVQJb0U4QCl5BUIpeQVCAB4AJzvt+ZIDVCTfA9CTfK9CFSAN0DNd+4aoAQxZAWsIayV+FLitQjDdIIt43+YTnBLtCa+i81Q79MfFqBnGUwPUGp1tyTXChGyCqz1/T1PteazylVh8uz8FMNG3Re4ACjnjyEBlBEKYL37i9gdUgHZToC8T4gAyHgK7HlKLOkEPdvXX3NC+F4gEiDNZigCINVu0KMKLH7DDEA9Ic5jPTWAxepgeRYoB1D3B9anwQBEAGS6EXK7F2hB8LgTpAKYAwCgDzC9GLHoBHlPEAAAAAAAAAAAAAAAAABQxRdgu/0O6G9E3wAAAABJRU5ErkJggg==
