@@ -1,8 +1,43 @@
 name: lcmodel
 version: "6.3"
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cmVjdCB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgcng9IjE4IiBmaWxsPSIjMTAyYTQzIi8+PHBhdGggZD0iTTE0IDc2IEMyNCA3NiAyNSAzOCAzNSAzOCBDNDUgMzggNDcgOTIgNTcgOTIgQzY3IDkyIDY5IDUyIDc5IDUyIEM4OSA1MiA5MSA3NiAxMDEgNzYgTDExNiA3NiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNjhkMzkxIiBzdHJva2Utd2lkdGg9IjgiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjx0ZXh0IHg9IjY0IiB5PSIxMTIiIGZvbnQtZmFtaWx5PSJBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjIwIiBmb250LXdlaWdodD0iNzAwIiBmaWxsPSIjZjdmYWZjIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj5MQ01vZGVsPC90ZXh0Pjwvc3ZnPg==
 
 architectures:
   - x86_64
+
+variables:
+  lcm_64_url: https://www.lcmodel.com/pub/LCModel/programs/lcm-64.tar
+  basis_3t_url: https://www.s-provencher.com/pub/LCModel/3t.zip
+  basis_1_5t_url: https://www.s-provencher.com/pub/LCModel/1.5t.zip
+  basis_7t_url: https://www.s-provencher.com/pub/LCModel/7t.zip
+  basis_9_4t_url: https://www.s-provencher.com/pub/LCModel/9.4t.zip
+  basisset_lcmodel_url: https://www.ismrm.org/workshops/Spectroscopy16/mrs_fitting_challenge/basisset_LCModel.zip
+  raw_basis_4000_url: https://juchem.bme.columbia.edu/sites/default/files/2021-01/RawBasis_for_sLASERSiemens_TE_20_BW_4000_NPts_2048.zip
+  raw_basis_2500_url: https://juchem.bme.columbia.edu/sites/default/files/2021-01/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024.zip
+  testdata_url: https://zenodo.org/record/3904443/files/Spectra_hippocampus%28rat%29_TE02.rar?download=1
+  manual_url: https://www.lcmodel.com/pub/LCModel/manual/manual.pdf
+
+files:
+  - name: lcm_64_tar
+    url: "{{ context.lcm_64_url }}"
+  - name: basis_3t_zip
+    url: "{{ context.basis_3t_url }}"
+  - name: basis_1_5t_zip
+    url: "{{ context.basis_1_5t_url }}"
+  - name: basis_7t_zip
+    url: "{{ context.basis_7t_url }}"
+  - name: basis_9_4t_zip
+    url: "{{ context.basis_9_4t_url }}"
+  - name: basisset_lcmodel_zip
+    url: "{{ context.basisset_lcmodel_url }}"
+  - name: raw_basis_4000_zip
+    url: "{{ context.raw_basis_4000_url }}"
+  - name: raw_basis_2500_zip
+    url: "{{ context.raw_basis_2500_url }}"
+  - name: testdata_rar
+    url: "{{ context.testdata_url }}"
+  - name: manual_pdf
+    url: "{{ context.manual_url }}"
 
 build:
   kind: neurodocker
@@ -23,25 +58,25 @@ build:
         - unrar
     - workdir: /opt/lcmodel-{{ context.version }}/
     - run:
-        - curl -o /opt/lcm-64.tar http://www.lcmodel.com/pub/LCModel/programs/lcm-64.tar && tar xf /opt/lcm-64.tar && rm -rf /opt/lcm-64.tar
+        - tar xf '{{ get_file("lcm_64_tar") }}'
         - gunzip -c lcm-core.tar.gz | tar xf -
         - rm -rf lcm-core.tar.gz
     - workdir: /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets
     - run:
-        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/3t.zip http://www.s-provencher.com/pub/LCModel/3t.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/3t.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/3t.zip
-        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/1.5t.zip http://www.s-provencher.com/pub/LCModel/1.5t.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/1.5t.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/1.5t.zip
-        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/7t.zip http://www.s-provencher.com/pub/LCModel/7t.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/7t.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/7t.zip
-        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/9.4t.zip http://www.s-provencher.com/pub/LCModel/9.4t.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/9.4t.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/9.4t.zip
-        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/basisset_LCModel.zip https://www.ismrm.org/workshops/Spectroscopy16/mrs_fitting_challenge/basisset_LCModel.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/basisset_LCModel.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/basisset_LCModel.zip
-        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_4000_NPts_2048.zip http://juchem.bme.columbia.edu/sites/default/files/2021-01/RawBasis_for_sLASERSiemens_TE_20_BW_4000_NPts_2048.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_4000_NPts_2048.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_4000_NPts_2048.zip
-        - curl -o /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024.zip http://juchem.bme.columbia.edu/sites/default/files/2021-01/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024.zip && unzip /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024.zip && rm -rf /opt/lcmodel-{{ context.version }}/.lcmodel/basis-sets/RawBasis_for_sLASERSiemens_TE_20_BW_2500_NPts_1024.zip
+        - unzip '{{ get_file("basis_3t_zip") }}'
+        - unzip '{{ get_file("basis_1_5t_zip") }}'
+        - unzip '{{ get_file("basis_7t_zip") }}'
+        - unzip '{{ get_file("basis_9_4t_zip") }}'
+        - unzip '{{ get_file("basisset_lcmodel_zip") }}'
+        - unzip '{{ get_file("raw_basis_4000_zip") }}'
+        - unzip '{{ get_file("raw_basis_2500_zip") }}'
     - copy:
         - license
         - /opt/lcmodel-{{ context.version }}/.lcmodel/license
     - workdir: /opt/datasets
     - run:
-        - curl -o /opt/datasets/testdata.rar https://zenodo.org/record/3904443/files/Spectra_hippocampus%28rat%29_TE02.rar?download=1 && unrar x /opt/datasets/testdata.rar && rm -rf /opt/datasets/testdata.rar
-        - curl -o /opt/lcmodel-{{ context.version }}/manual.pdf http://www.lcmodel.com/pub/LCModel/manual/manual.pdf
+        - unrar x '{{ get_file("testdata_rar") }}'
+        - cp '{{ get_file("manual_pdf") }}' /opt/lcmodel-{{ context.version }}/manual.pdf
     - copy:
         - setup_lcmodel.sh
         - /opt/lcmodel-{{ context.version }}/.lcmodel/bin/setup_lcmodel.sh
@@ -65,7 +100,7 @@ deploy:
 readme: |-
   
   ----------------------------------
-  ## lcmodel/6.3 ##
+  ## lcmodel/{{ context.version }} ##
   Automatic quantification of in vivo proton MR spectra. 
   
   When using this for the first time, run:
@@ -79,9 +114,9 @@ readme: |-
   ```
   
   More documentation can be found here: http://www.lcmodel.com/lcmodel.shtml
-  The manual contains a lot of useful information: http://www.lcmodel.com/pub/LCModel/manual/manual.pdf (or /opt/lcmodel-6.3/manual.pdf)
+  The manual contains a lot of useful information: http://www.lcmodel.com/pub/LCModel/manual/manual.pdf (or /opt/lcmodel-{{ context.version }}/manual.pdf)
   
-  To run container outside of this environment: ml lcmodel/6.3
+  To run container outside of this environment: ml lcmodel/{{ context.version }}
   
   ----------------------------------
 
