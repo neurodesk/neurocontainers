@@ -129,7 +129,7 @@
       "id": "segmentwateronly",
       "label": { "en": "Segment Water scan only (Dixon)" },
       "type": "boolean",
-      "information": { "en": "In a Dixon sequence, compute the segmentation from the WATER contrast only (images whose ImageType carries the WATER Dixon token), producing a single mask series instead of one per contrast. Required for and forced on by segmentheadergeometry=2d_main_composable. If no WATER contrast is detected, all magnitude images are segmented." },
+      "information": { "en": "In a Dixon sequence, compute the segmentation from the WATER contrast only (images whose ImageType carries the WATER Dixon token), producing a single mask series instead of one per contrast. Required for and forced on by segmentheadergeometry=2d_main_composable. If no WATER contrast is detected the segmentation falls back to all magnitude images, except in 2d_main_composable mode which hard-fails before send." },
       "default": false
     },
     {

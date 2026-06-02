@@ -194,27 +194,35 @@ version `1.0.78`.
   segmentation masks compose across stations or collide with the original Dixon
   contrast. Risks: the composer may merge the mask into the original of the same
   contrast, and adaptive overlap blending will de-binarize the mask in the
-  station overlap region. Not for production until validated on the scanner.
-  CONFIRMED DEAD END on the scanner: each Dixon channel expects exactly the
-  per-station partition count, so an original + a mask sharing a contrast token
-  overfills the channel ("We retrieved at least one TRA image more than
-  expected") and the composer switches off for the whole measurement. Superseded
-  by `2d_main_composable`.
-- `segmentheadergeometry = 2d_main_composable` is the EXPERIMENTAL Option B for
-  composing a segmentation mask alongside the composed originals. It emits a
-  SINGLE mask series (forces `segmentwateronly`) re-tagged with a non-W/F/FF
-  Dixon token (`DERIVED\PRIMARY\DIXON\IN_PHASE`, `ImageTypeValue3 = M`, full
-  per-slice source geometry, distinct per-station `SeriesInstanceUID`,
-  `SegmentDixonComposable = 1`) so it routes into the otherwise-empty master
-  `FILTER` (main) compose channel instead of overfilling a Dixon channel. The
-  originals keep composing in the W/F/FF channels. Routing of the `IN_PHASE`
-  token to master `FILTER` is unproven and must be checked on the scanner; the
-  composed mask will be de-binarized by adaptive overlap blending (re-threshold
-  at 0.5).
+  station overlap region.
+  CONFIRMED RESULT on the scanner: the masks DO compose across stations when the
+  original pass-through is DISABLED (`sendoriginal = false`) -- each Dixon
+  channel then receives exactly its expected per-station count of mask images.
+  But with `sendoriginal = true` the original + mask of the same contrast
+  overfill the channel ("We retrieved at least one TRA image more than expected")
+  and the composer switches off for the whole measurement. So this mode composes
+  masks ONLY in a masks-only run; it cannot compose masks AND originals together.
+- `segmentheadergeometry = 2d_main_composable` was the EXPERIMENTAL Option B
+  attempt to compose a mask alongside the composed originals: emit a SINGLE mask
+  series (forces `segmentwateronly`) re-tagged with a non-W/F/FF Dixon token
+  (`DERIVED\PRIMARY\DIXON\IN_PHASE`, `ImageTypeValue3 = M`, full per-slice source
+  geometry, distinct per-station `SeriesInstanceUID`, `SegmentDixonComposable =
+  1`) intended to route into the otherwise-empty master `FILTER` (main) channel.
+  CONFIRMED DEAD END on the scanner: the inline composer only routes images whose
+  contrast matches the protocol's DECLARED contrasts (W/F/FF), so the `IN_PHASE`
+  mask is claimed by NO channel -- master `FILTER` stays empty ("No TRA images to
+  combine") and the mask is delivered but never composed (no crash). There is no
+  free compose channel for a mask. Net: composing the original Dixon stations and
+  the segmentation masks together in a single run is not achievable in this
+  module; compose the masks in a separate masks-only run (`2d_dixon_composable`,
+  `sendoriginal = false`), or compute the segmentation offline on the composed
+  whole-body water image.
 - `segmentwateronly` (GUI boolean) computes the segmentation from the WATER
   Dixon contrast only (one mask series instead of one per contrast). It is
-  forced on by `2d_main_composable`. If no WATER contrast is detected, all
-  magnitude images are segmented.
+  forced on by `2d_main_composable`. If no WATER contrast is detected the
+  segmentation falls back to all magnitude images, EXCEPT in
+  `2d_main_composable` mode, which hard-fails before send (it must not retag
+  multiple contrasts as IN_PHASE mask streams).
 - When originals and segments are both enabled, originals are sent first and
   segment outputs are sent second in a separate MRD image message.
 - Returned source-geometry outputs strip scanner `ImageTypeValue3` from both MRD

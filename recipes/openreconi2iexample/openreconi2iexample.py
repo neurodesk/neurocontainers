@@ -348,6 +348,20 @@ def process(connection, config, metadata):
                     len(magnitude_images),
                 )
                 segment_source_images = water_images
+            elif segment_main_composable:
+                # Hard-fail rather than fall back to all magnitude images: the
+                # main-composable mode retags its input as a single IN_PHASE mask
+                # series for the master FILTER channel, so feeding it every
+                # contrast would emit multiple IN_PHASE mask streams (the exact
+                # multi-stream pattern this mode exists to avoid). Refuse before
+                # send if the required WATER contrast is absent.
+                raise ValueError(
+                    "segmentheadergeometry=2d_main_composable requires a WATER "
+                    "Dixon contrast to emit a single composable mask series, but "
+                    f"no WATER contrast was detected among {len(magnitude_images)} "
+                    "magnitude image(s). Use a non-composable segment mode for a "
+                    "non-Dixon acquisition."
+                )
             else:
                 logging.warning(
                     "segmentwateronly requested but no WATER Dixon contrast was "

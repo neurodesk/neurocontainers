@@ -2622,6 +2622,32 @@ tests:
               index,
           )
 
+      # 2d_main_composable must HARD-FAIL before send when no WATER Dixon
+      # contrast is present, rather than falling back to all magnitude images and
+      # retagging every contrast as an IN_PHASE mask stream (Codex review
+      # finding). make_sparse_image inputs carry no WATER token.
+      main_composable_no_water_sources = [make_sparse_image(i) for i in range(4)]
+      main_composable_no_water_connection = FakeConnection(
+          main_composable_no_water_sources + [None]
+      )
+      module.process(
+          main_composable_no_water_connection,
+          {
+              "parameters": {
+                  "segment": True,
+                  "sendoriginal": False,
+                  "segmentheadergeometry": module.SEGMENT_DELIVERY_MODE_MAIN_COMPOSABLE,
+              }
+          },
+          None,
+      )
+      assert main_composable_no_water_connection.sent_images == []
+      assert main_composable_no_water_connection.closed is True
+      assert any(
+          "2d_main_composable" in message and "WATER" in message
+          for _level, message in main_composable_no_water_connection.logging
+      )
+
       segment_postprocessing_sources = [make_sparse_image(i) for i in range(4)]
       segment_postprocessing_connection = FakeConnection(
           segment_postprocessing_sources + [None]
