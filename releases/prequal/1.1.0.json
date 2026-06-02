@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "prequal 1.1.0": {
+      "version": "20260602",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "diffusion imaging",
+    "quality control"
+  ]
+}
