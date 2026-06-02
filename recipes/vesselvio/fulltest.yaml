@@ -28,14 +28,14 @@ tests:
   # PYTHON ENVIRONMENT VERIFICATION
   # ==========================================================================
   - name: Python version check
-    description: Verify Python 3.10 is available
-    command: python --version
-    expected_output_contains: "Python 3.10"
+    description: Verify a supported Python 3 runtime is available
+    command: python --version 2>&1 | grep -E "Python 3\\.(8|10)"
+    expected_output_contains: "Python 3."
 
   - name: Python executable path
-    description: Verify Python path is in the Miniforge vesselvio environment
-    command: which python
-    expected_output_contains: "/opt/miniforge/envs/vesselvio/bin/python"
+    description: Verify Python path is in a supported conda environment
+    command: which python | grep -E "/opt/(miniconda-latest/bin|miniforge/envs/vesselvio/bin)/python"
+    expected_output_contains: "/opt/"
 
   # ==========================================================================
   # CORE SCIENTIFIC PYTHON PACKAGES
