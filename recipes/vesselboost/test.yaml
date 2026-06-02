@@ -679,9 +679,10 @@ tests:
           "ImageTypeValue3",
       )
 
-      # "Segmentation MIPs" mode: the segment is emitted as a primary magnitude
-      # series (no ExamDataRole / child role) so the scanner inline radial MIP
-      # includes it alongside the original-scan MIPs.
+      # "Segmentation MIPs" mode mirrors openreconi2iexample's
+      # 2d/source-image-header/postprocessed path: the segment remains a
+      # post-processing child and also carries a clean ImageTypeValue3="M" so
+      # the scanner inline radial MIP includes it.
       mip_segmentations = module._build_vesselboost_segmentation_images(
           volume_yxz=volume_yxz,
           ordered_source_images=sources,
@@ -689,7 +690,8 @@ tests:
           output_identity=segmentation_identity,
           series_index=3,
           max_val=4095,
-          scanner_postprocessing=False,
+          scanner_postprocessing=True,
+          segmentation_mips=True,
       )
       module._validate_vesselboost_output_contract(
           originals + mip_segmentations,
@@ -703,12 +705,15 @@ tests:
       ).decode("utf-8")
       assert first(mip_seg_meta.get("ImageType")) == "ORIGINAL\\PRIMARY\\M\\TOF"
       assert first(mip_seg_meta.get("ImageTypeValue3")) == "M"
-      assert not first(mip_seg_meta.get("ExamDataRole"))
-      assert not first(
+      assert "<CategoryEntry>3</CategoryEntry>" in first(mip_seg_meta.get("ExamDataRole"))
+      assert first(
           mip_seg_meta.get(module.VESSELBOOST_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)
-      )
+      ) == "3"
       assert first(mip_seg_meta.get(module.VESSELBOOST_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY)) == "1"
-      assert '<ParamString."ExamDataRole">' not in mip_seg_minihead
+      assert '<ParamString."ExamDataRole">' in module._minihead_param_map_text(
+          mip_seg_minihead,
+          "DICOM",
+      )
       assert module._extract_minihead_string_value(
           mip_seg_minihead,
           "ImageTypeValue3",

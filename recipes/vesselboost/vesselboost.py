@@ -1483,6 +1483,7 @@ def _stamp_vesselboost_output_image(
     source_image_header_identity=False,
     original_passthrough_identity=False,
     segment_scanner_postprocessing=True,
+    segment_scanner_mip_processing=False,
 ):
     source_meta = _copy_meta(_meta_from_image(source_image))
     header = image.getHead()
@@ -1519,10 +1520,10 @@ def _stamp_vesselboost_output_image(
     )
     minihead_text = _decode_ice_minihead(source_meta)
     # Originals and 2D source-image-header segments both inherit the source's
-    # native ImageType identity (e.g. ORIGINAL\PRIMARY\M\TOF). Normal segments
-    # drop standalone ImageTypeValue3 and are tagged as post-processing children;
-    # segmentation-MIP mode restores ImageTypeValue3=M so the scanner's inline
-    # MIP selector includes the segment.
+    # native ImageType identity (e.g. ORIGINAL\PRIMARY\M\TOF). Source-image-header
+    # segments stay scanner post-processing children; segmentation-MIP mode only
+    # restores ImageTypeValue3=M so the scanner's inline MIP selector includes
+    # that child stream.
     inherit_source_image_type = (
         source_image_header_identity or original_passthrough_identity
     )
@@ -1539,7 +1540,7 @@ def _stamp_vesselboost_output_image(
         ) = _source_postprocessing_image_type_identity(source_meta, minihead_text)
     if source_image_header_identity and segment_scanner_postprocessing:
         exam_data_role = _format_exam_data_role_sequential_number(series_index)
-    if source_image_header_identity and not segment_scanner_postprocessing:
+    if source_image_header_identity and segment_scanner_mip_processing:
         source_image_header_image_type_value3 = (
             VESSELBOOST_SCANNER_MIP_IMAGE_TYPE_VALUE3
         )
@@ -1928,10 +1929,9 @@ def _validate_vesselboost_output_contract(
                 VESSELBOOST_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY,
             )
             exam_data_role = _get_meta_text(meta_obj, "ExamDataRole")
-            # "Segmentation MIPs" mode emits the segment as a primary magnitude
-            # series (no ExamDataRole / child role) so the scanner inline radial
-            # MIP includes it. Only enforce the post-processing-child identity
-            # when it is actually present.
+            # Segmentation-MIP mode should still be a post-processing child; the
+            # child-role check is conditional only to keep this validator usable
+            # for older detached/debug outputs.
             segment_is_postprocessing_child = (
                 child_role is not None or bool(exam_data_role)
             )
@@ -1951,7 +1951,13 @@ def _validate_vesselboost_output_contract(
                         f"{series_index}"
                     )
                 for field in SCANNER_WRITE_UNSAFE_META_KEYS:
-                    if _get_meta_text(meta_obj, field):
+                    field_value = _get_meta_text(meta_obj, field)
+                    if (
+                        field == "ImageTypeValue3"
+                        and field_value == VESSELBOOST_SCANNER_MIP_IMAGE_TYPE_VALUE3
+                    ):
+                        continue
+                    if field_value:
                         errors.append(
                             f"image {index}: source-image-header output still carries "
                             f"unsafe scanner Meta {field}"
@@ -1977,10 +1983,22 @@ def _validate_vesselboost_output_contract(
                             f"ExamDataRole is missing {expected_entry}"
                         )
                     for field in SCANNER_WRITE_UNSAFE_META_KEYS:
+                        minihead_string_value = _extract_minihead_string_value(
+                            minihead_text,
+                            field,
+                        )
+                        minihead_array_tokens = _extract_minihead_array_tokens(
+                            minihead_text,
+                            field,
+                        )
                         if (
-                            _extract_minihead_string_value(minihead_text, field)
-                            or _extract_minihead_array_tokens(minihead_text, field)
+                            field == "ImageTypeValue3"
+                            and minihead_string_value
+                            == VESSELBOOST_SCANNER_MIP_IMAGE_TYPE_VALUE3
+                            and not minihead_array_tokens
                         ):
+                            continue
+                        if minihead_string_value or minihead_array_tokens:
                             errors.append(
                                 f"image {index}: source-image-header IceMiniHead still "
                                 f"carries unsafe scanner {field}"
@@ -2572,13 +2590,13 @@ def _build_vesselboost_segmentation_images(
     series_index: int,
     max_val: int,
     scanner_postprocessing: bool = True,
+    segmentation_mips: bool = False,
 ):
     """Build one source-image-header 2D MRD segmentation image per source image.
 
-    When ``scanner_postprocessing`` is False ("Segmentation MIPs" enabled) the
-    segment is emitted without the ExamDataRole post-processing-child tag, so the
-    scanner's inline radial MIP treats it as a primary magnitude series and
-    produces segmentation MIPs alongside the original-scan MIPs.
+    ``segmentation_mips`` keeps the scanner post-processing-child contract and
+    restores ImageTypeValue3=M so the scanner's inline radial MIP includes the
+    source-image-header segment stream.
     """
     if volume_yxz.ndim != 3:
         raise ValueError(
@@ -2634,6 +2652,7 @@ def _build_vesselboost_segmentation_images(
             patch_minihead=True,
             source_image_header_identity=True,
             segment_scanner_postprocessing=scanner_postprocessing,
+            segment_scanner_mip_processing=segmentation_mips,
         )
         outputs.append(mrd_image)
 
@@ -2646,7 +2665,7 @@ def _build_vesselboost_segmentation_images(
         tuple(int(value) for value in volume_yxz.shape[:2]),
         VESSELBOOST_OUTPUT_GEOMETRY_2D,
         scanner_postprocessing,
-        not scanner_postprocessing,
+        segmentation_mips,
     )
     return outputs
 
@@ -3705,7 +3724,8 @@ def process_image(images, connection, config, metadata):
         output_identity=segmentation_identity,
         series_index=segmentation_series_index,
         max_val=maxVal,
-        scanner_postprocessing=not segmentation_mips,
+        scanner_postprocessing=True,
+        segmentation_mips=segmentation_mips,
     )
     imagesOut.extend(segmentation_images)
 
