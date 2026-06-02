@@ -14,7 +14,7 @@
 
 name: aslprep
 version: 0.7.5
-container: aslprep_0.7.5_20250206.simg
+container: aslprep_0.7.5_20260413.simg
 
 required_files:
   - dataset: ds000001
