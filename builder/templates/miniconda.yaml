@@ -89,9 +89,9 @@ binaries:
               python -m pip install --no-cache-dir {{ self.pip_opts }} \
               {%- for pkg in self.pip_install.split() %}
                   {% if not loop.last -%}
-                  "{{ pkg }}" \
+                  \"{{ pkg }}\" \
                   {%- else -%}
-                  "{{ pkg }}"
+                  \"{{ pkg }}\"
                   {%- endif -%}
               {% endfor %}"
             {% endif -%}
