@@ -3107,10 +3107,9 @@ def _build_metrics_column_groups(fieldnames, available_width):
 
 
 def _orient_metrics_report_page(page_array):
-    # The scanner viewer currently displays the burned-in metrics page mirrored
-    # left/right and rotated; transpose the synthetic raster before wrapping it
-    # as DICOM/MRD so the visible page reads correctly.
-    return np.ascontiguousarray(np.rot90(np.fliplr(page_array), 1))
+    # Match openreconi2iexample: pre-rotate the synthetic metrics raster so the
+    # scanner viewer displays the burned-in table in the intended orientation.
+    return np.rot90(np.asarray(page_array), 2).copy()
 
 
 def _render_metrics_report_pages(metrics_result, width, height):
@@ -3223,15 +3222,15 @@ def _build_metrics_report_images(
     # explicit-volume geometry as openreconi2iexample instead of source spacing.
     report_spacing = 1.0
     report_series_description = (
-        f"{source_series_identity['series_description']}_MuscleMap_Metrics"
+        f"{source_series_identity['series_description']}_Musclemap_Metrics"
         if source_series_identity["series_description"]
-        else "MuscleMap_Metrics"
+        else "Musclemap_Metrics"
     )
     report_identity = _build_derived_series_identity(
         source_series_identity,
         series_description=report_series_description,
         sequence_description=report_series_description,
-        grouping_suffix="MuscleMap_Metrics",
+        grouping_suffix="Musclemap_Metrics",
         derived_series_index=metrics_series_index,
         derived_kind="metrics",
     )

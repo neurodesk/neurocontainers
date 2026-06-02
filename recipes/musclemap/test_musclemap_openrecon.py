@@ -218,8 +218,8 @@ def test_patched_minihead_protocol_name_round_trips_for_output_contract():
     )
     patched_metrics, changed_metrics = helpers["_patch_ice_minihead"](
         minihead_text,
-        parent_sequence="MuscleMap_Metrics",
-        parent_grouping="source_MuscleMap_Metrics",
+        parent_sequence="Musclemap_Metrics",
+        parent_grouping="source_Musclemap_Metrics",
         series_instance_uid="2.25.2",
         source_type_token="WATER",
         target_type_token="METRICS",
@@ -230,13 +230,13 @@ def test_patched_minihead_protocol_name_round_trips_for_output_contract():
     assert changed_musclemap
     assert changed_metrics
     assert helpers["_extract_minihead_string_value"](patched_musclemap, "ProtocolName") == "Musclemap"
-    assert helpers["_extract_minihead_string_value"](patched_metrics, "ProtocolName") == "MuscleMap_Metrics"
+    assert helpers["_extract_minihead_string_value"](patched_metrics, "ProtocolName") == "Musclemap_Metrics"
     assert helpers["_extract_minihead_string_value"](
         patched_musclemap, "SeriesNumberRangeNameUID"
     ) == "source_Musclemap"
     assert helpers["_extract_minihead_string_value"](
         patched_metrics, "SeriesNumberRangeNameUID"
-    ) == "source_MuscleMap_Metrics"
+    ) == "source_Musclemap_Metrics"
     assert helpers["_extract_minihead_string_value"](patched_musclemap, "SeriesInstanceUID") == "2.25.1"
     assert helpers["_extract_minihead_string_value"](patched_metrics, "SeriesInstanceUID") == "2.25.2"
     assert helpers["_extract_minihead_string_value"](
@@ -278,12 +278,12 @@ def test_patched_minihead_protocol_name_round_trips_for_output_contract():
             "minihead_series_instance_uid": helpers["_extract_minihead_string_value"](
                 patched_metrics, "SeriesInstanceUID"
             ),
-            "series_grouping": "source_MuscleMap_Metrics",
-            "meta_series_grouping": "source_MuscleMap_Metrics",
+            "series_grouping": "source_Musclemap_Metrics",
+            "meta_series_grouping": "source_Musclemap_Metrics",
             "minihead_series_grouping": helpers["_extract_minihead_string_value"](
                 patched_metrics, "SeriesNumberRangeNameUID"
             ),
-            "meta_protocol_name": "MuscleMap_Metrics",
+            "meta_protocol_name": "Musclemap_Metrics",
             "minihead_protocol_name": helpers["_extract_minihead_string_value"](
                 patched_metrics, "ProtocolName"
             ),
@@ -690,6 +690,11 @@ def test_metrics_report_image_matches_openreconi2iexample_explicit_volume_contra
     assert list(report_header.slice_dir) == [0.0, 0.0, 1.0]
     assert report_meta["DataRole"] == "Segmentation"
     assert report_meta["ImageProcessingHistory"] == ["PYTHON", "OPENRECON_METRICS"]
+    assert report_meta["SeriesDescription"] == "source_W_Musclemap_Metrics"
+    assert report_meta["SequenceDescription"] == "source_W_Musclemap_Metrics"
+    assert report_meta["ProtocolName"] == "source_W_Musclemap_Metrics"
+    assert report_meta["SeriesNumberRangeNameUID"] == "source_group_Musclemap_Metrics"
+    assert report_meta["SequenceDescriptionAdditional"] == "openrecon"
     assert report_meta["ImageType"] == "DERIVED\\PRIMARY\\M\\METRICS"
     assert report_meta["ImageTypeValue4"] == "METRICS"
     assert report_meta["Keep_image_geometry"] == "0"
@@ -720,6 +725,12 @@ def test_metrics_report_image_matches_openreconi2iexample_explicit_volume_contra
     ]
     assert "IceMiniHead" not in report_meta
     assert int(np.max(np.asarray(report_image.data))) > 0
+    orientation_probe = np.zeros((4, 5), dtype=np.uint16)
+    orientation_probe[0, 0] = 1
+    orientation_probe[1, 4] = 2
+    oriented_probe = helpers["_orient_metrics_report_page"](orientation_probe)
+    assert oriented_probe[-1, -1] == 1
+    assert oriented_probe[-2, 0] == 2
 
     helpers["_validate_output_series_contract"](
         [
