@@ -168,6 +168,13 @@ build:
 
     - environment:
         DEPLOY_TEST_MAX_PATH_FILES: "60"
+        # Set FREESURFER_HOME on `module load` to the host-visible path inside the
+        # unpacked container, so host-side tools (MATLAB toolbox, luts, fsaverage,
+        # SetUpFreeSurfer.sh) resolve without exec-ing into the container. BASEPATH
+        # is substituted by transparent-singularity to the container's .simg dir.
+        # This adds, in LUA:
+        # setenv("FREESURFER_HOME", "/cvmfs/neurodesk.ardc.edu.au/containers/freesurfer_8.2.0_20260331/freesurfer_8.2.0_20260331.simg/opt/freesurfer-8.2.0")
+        DEPLOY_ENV_FREESURFER_HOME: "BASEPATH/opt/freesurfer-{{ context.version }}"
         FREESURFER: /opt/freesurfer-{{ context.version }}
         LD_LIBRARY_PATH: /usr/local/freesurfer/{{ context.version }}/lib/qt/lib:/usr/local/freesurfer/{{ context.version }}-1/lib/qt/lib:/usr/local/freesurfer/lib/qt/lib:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/opt/freesurfer-{{ context.version }}/MCRv97/runtime/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/os/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/sys/opengl/lib/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv97/extern/bin/glnxa64:/opt/freesurfer-{{ context.version }}/MCRv83/runtime/glnxa64
         PATH: $PATH:/opt/workbench/:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/tktools:/opt/freesurfer-{{ context.version }}/bin:/opt/freesurfer-{{ context.version }}/fsfast/bin:/opt/freesurfer-{{ context.version }}/mni/bin
