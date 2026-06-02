@@ -87,6 +87,8 @@ build:
         - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-keymap
         - code --extensions-dir=/opt/vscode-extensions --user-data-dir=/opt/vscode-data --install-extension ms-toolsai.jupyter-renderers
         - rm -rf /opt/vscode-data/CachedExtensionVSIXs/
+        - chmod a+rwx /opt/vscode-extensions/ -R
+        - chmod a+rwx /opt/vscode-data -R
 
     - environment:
         DONT_PROMPT_WSL_INSTALL: "1"
@@ -118,8 +120,6 @@ build:
 
     - run:
         - chmod a+x /usr/local/sbin/code
-        - chmod a+rwx /opt/vscode-extensions/ -R
-        - chmod a+rwx /opt/vscode-data -R
 
     - copy:
         - module.sh
