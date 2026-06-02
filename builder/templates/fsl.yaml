@@ -98,11 +98,16 @@ binaries:
       {%- endfor %}
       {%- endif %}
       {% if self.version not in ("5.0.9", "5.0.8") -%}
-      {% if self.fslpython_accept_tos.lower() in ["true", "y", "1"] -%}
       fslpython_installer={{ self.install_path }}/etc/fslconf/fslpython_install.sh
-      grep -q 'env create -f .*fslpython_environment.yml' "$fslpython_installer"
-      sed -i '/env create -f .*fslpython_environment.yml/i\
-      if "${miniconda_bin_dir}/conda" tos --help >/dev/null; then\
+      fslpython_environment={{ self.install_path }}/etc/fslconf/fslpython_environment.yml
+      sed -i 's/Miniconda3-latest-Linux-x86_64.sh/Miniconda3-py39_24.7.1-0-Linux-x86_64.sh/' "$fslpython_installer"
+      if ! grep -q '^ - requests' "$fslpython_environment"; then
+        sed -i '/^ - pip:/i\ - requests<2.32' "$fslpython_environment";
+      fi
+      {% if self.fslpython_accept_tos.lower() in ["true", "y", "1"] -%}
+      grep -q 'conda" env create' "$fslpython_installer"
+      sed -i '/conda" env create/i\
+      if "${miniconda_bin_dir}/conda" tos --help >/dev/null 2>\&1; then\
         "${miniconda_bin_dir}/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main;\
         "${miniconda_bin_dir}/conda" tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r;\
       fi' "$fslpython_installer"
