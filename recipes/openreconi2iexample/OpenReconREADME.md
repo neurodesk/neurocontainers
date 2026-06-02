@@ -195,6 +195,26 @@ version `1.0.78`.
   contrast. Risks: the composer may merge the mask into the original of the same
   contrast, and adaptive overlap blending will de-binarize the mask in the
   station overlap region. Not for production until validated on the scanner.
+  CONFIRMED DEAD END on the scanner: each Dixon channel expects exactly the
+  per-station partition count, so an original + a mask sharing a contrast token
+  overfills the channel ("We retrieved at least one TRA image more than
+  expected") and the composer switches off for the whole measurement. Superseded
+  by `2d_main_composable`.
+- `segmentheadergeometry = 2d_main_composable` is the EXPERIMENTAL Option B for
+  composing a segmentation mask alongside the composed originals. It emits a
+  SINGLE mask series (forces `segmentwateronly`) re-tagged with a non-W/F/FF
+  Dixon token (`DERIVED\PRIMARY\DIXON\IN_PHASE`, `ImageTypeValue3 = M`, full
+  per-slice source geometry, distinct per-station `SeriesInstanceUID`,
+  `SegmentDixonComposable = 1`) so it routes into the otherwise-empty master
+  `FILTER` (main) compose channel instead of overfilling a Dixon channel. The
+  originals keep composing in the W/F/FF channels. Routing of the `IN_PHASE`
+  token to master `FILTER` is unproven and must be checked on the scanner; the
+  composed mask will be de-binarized by adaptive overlap blending (re-threshold
+  at 0.5).
+- `segmentwateronly` (GUI boolean) computes the segmentation from the WATER
+  Dixon contrast only (one mask series instead of one per contrast). It is
+  forced on by `2d_main_composable`. If no WATER contrast is detected, all
+  magnitude images are segmented.
 - When originals and segments are both enabled, originals are sent first and
   segment outputs are sent second in a separate MRD image message.
 - Returned source-geometry outputs strip scanner `ImageTypeValue3` from both MRD

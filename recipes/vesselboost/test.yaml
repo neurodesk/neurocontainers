@@ -702,17 +702,17 @@ tests:
           first(mip_seg_meta.get("IceMiniHead"))
       ).decode("utf-8")
       assert first(mip_seg_meta.get("ImageType")) == "ORIGINAL\\PRIMARY\\M\\TOF"
-      assert not first(mip_seg_meta.get("ImageTypeValue3"))
+      assert first(mip_seg_meta.get("ImageTypeValue3")) == "M"
       assert not first(mip_seg_meta.get("ExamDataRole"))
       assert not first(
           mip_seg_meta.get(module.VESSELBOOST_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)
       )
       assert first(mip_seg_meta.get(module.VESSELBOOST_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY)) == "1"
       assert '<ParamString."ExamDataRole">' not in mip_seg_minihead
-      assert not module._extract_minihead_string_value(
+      assert module._extract_minihead_string_value(
           mip_seg_minihead,
           "ImageTypeValue3",
-      )
+      ) == "M"
       assert module.OPENRECON_DEFAULTS["vbsegmentationmips"] is False
 
       debug_threshold = module._simple_threshold_segmentation_volume(

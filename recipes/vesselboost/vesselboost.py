@@ -48,6 +48,7 @@ VESSELBOOST_SOURCE_IMAGE_HEADER_FALLBACK_VALUE4 = (
 )
 VESSELBOOST_ORIGINAL_LABEL = "original"
 VESSELBOOST_ORIGINAL_TYPE_TOKEN = VESSELBOOST_ORIGINAL_LABEL.upper()
+VESSELBOOST_SCANNER_MIP_IMAGE_TYPE_VALUE3 = "M"
 SCANNER_PARTITION_INDEX = 0
 SOURCE_PARENT_REFERENCE_META_KEYS = {
     "DicomEngineDimString",
@@ -1146,6 +1147,7 @@ def _patch_source_image_header_ice_minihead(
     exam_data_role,
     slice_index,
     image_index,
+    image_type_value3=None,
 ):
     if not minihead_text:
         return minihead_text, False
@@ -1185,6 +1187,13 @@ def _patch_source_image_header_ice_minihead(
     changed = changed or did_change
     current_text, did_change = _strip_scanner_write_unsafe_minihead(current_text)
     changed = changed or did_change
+    if image_type_value3:
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            "ImageTypeValue3",
+            image_type_value3,
+        )
+        changed = changed or did_change
 
     for param_name, param_value in (
         ("Actual3DImagePartNumber", SCANNER_PARTITION_INDEX),
@@ -1510,11 +1519,10 @@ def _stamp_vesselboost_output_image(
     )
     minihead_text = _decode_ice_minihead(source_meta)
     # Originals and 2D source-image-header segments both inherit the source's
-    # native ImageType identity (e.g. ORIGINAL\PRIMARY\M\TOF) and drop the
-    # standalone ImageTypeValue3 so they pass back through the scanner with the
-    # parent acquisition's identity intact -- this mirrors openreconi2iexample's
-    # _original_passthrough_meta / _segment_source_image_header_meta. Only the
-    # segment is additionally tagged as a post-processing child via ExamDataRole.
+    # native ImageType identity (e.g. ORIGINAL\PRIMARY\M\TOF). Normal segments
+    # drop standalone ImageTypeValue3 and are tagged as post-processing children;
+    # segmentation-MIP mode restores ImageTypeValue3=M so the scanner's inline
+    # MIP selector includes the segment.
     inherit_source_image_type = (
         source_image_header_identity or original_passthrough_identity
     )
@@ -1522,6 +1530,7 @@ def _stamp_vesselboost_output_image(
     source_dicom_image_type = None
     source_image_type_value4 = None
     exam_data_role = None
+    source_image_header_image_type_value3 = None
     if inherit_source_image_type:
         (
             source_image_type,
@@ -1530,6 +1539,10 @@ def _stamp_vesselboost_output_image(
         ) = _source_postprocessing_image_type_identity(source_meta, minihead_text)
     if source_image_header_identity and segment_scanner_postprocessing:
         exam_data_role = _format_exam_data_role_sequential_number(series_index)
+    if source_image_header_identity and not segment_scanner_postprocessing:
+        source_image_header_image_type_value3 = (
+            VESSELBOOST_SCANNER_MIP_IMAGE_TYPE_VALUE3
+        )
 
     tmp_meta["DataRole"] = "Image" if source_image_header_identity else data_role
     tmp_meta["ImageProcessingHistory"] = processing_history
@@ -1586,6 +1599,8 @@ def _stamp_vesselboost_output_image(
                 tmp_meta[key] = value
     if inherit_source_image_type:
         _strip_scanner_write_unsafe_meta(tmp_meta)
+    if source_image_header_image_type_value3:
+        tmp_meta["ImageTypeValue3"] = source_image_header_image_type_value3
 
     minihead_text = _decode_ice_minihead(tmp_meta)
     if not patch_minihead:
@@ -1608,6 +1623,7 @@ def _stamp_vesselboost_output_image(
                     exam_data_role,
                     int(header.slice),
                     int(header.image_index),
+                    image_type_value3=source_image_header_image_type_value3,
                 )
             )
         elif original_passthrough_identity:
@@ -1919,6 +1935,7 @@ def _validate_vesselboost_output_contract(
             segment_is_postprocessing_child = (
                 child_role is not None or bool(exam_data_role)
             )
+            image_type_value3 = _get_meta_text(meta_obj, "ImageTypeValue3")
             if segment_is_postprocessing_child:
                 if child_role != series_index:
                     errors.append(
@@ -1933,12 +1950,18 @@ def _validate_vesselboost_output_contract(
                         f"image {index}: ExamDataRole does not match image_series_index "
                         f"{series_index}"
                     )
-            for field in SCANNER_WRITE_UNSAFE_META_KEYS:
-                if _get_meta_text(meta_obj, field):
-                    errors.append(
-                        f"image {index}: source-image-header output still carries "
-                        f"unsafe scanner Meta {field}"
-                    )
+                for field in SCANNER_WRITE_UNSAFE_META_KEYS:
+                    if _get_meta_text(meta_obj, field):
+                        errors.append(
+                            f"image {index}: source-image-header output still carries "
+                            f"unsafe scanner Meta {field}"
+                        )
+            elif image_type_value3 != VESSELBOOST_SCANNER_MIP_IMAGE_TYPE_VALUE3:
+                errors.append(
+                    f"image {index}: segmentation-MIP output ImageTypeValue3="
+                    f"{image_type_value3!r}, expected "
+                    f"{VESSELBOOST_SCANNER_MIP_IMAGE_TYPE_VALUE3!r}"
+                )
             if minihead_text:
                 dicom_map = _minihead_param_map_text(minihead_text, "DICOM")
                 if segment_is_postprocessing_child:
@@ -1953,14 +1976,28 @@ def _validate_vesselboost_output_contract(
                             f"image {index}: source-image-header IceMiniHead DICOM "
                             f"ExamDataRole is missing {expected_entry}"
                         )
-                for field in SCANNER_WRITE_UNSAFE_META_KEYS:
+                    for field in SCANNER_WRITE_UNSAFE_META_KEYS:
+                        if (
+                            _extract_minihead_string_value(minihead_text, field)
+                            or _extract_minihead_array_tokens(minihead_text, field)
+                        ):
+                            errors.append(
+                                f"image {index}: source-image-header IceMiniHead still "
+                                f"carries unsafe scanner {field}"
+                            )
+                else:
+                    minihead_image_type_value3 = _extract_minihead_string_value(
+                        minihead_text,
+                        "ImageTypeValue3",
+                    )
                     if (
-                        _extract_minihead_string_value(minihead_text, field)
-                        or _extract_minihead_array_tokens(minihead_text, field)
+                        minihead_image_type_value3
+                        != VESSELBOOST_SCANNER_MIP_IMAGE_TYPE_VALUE3
                     ):
                         errors.append(
-                            f"image {index}: source-image-header IceMiniHead still "
-                            f"carries unsafe scanner {field}"
+                            f"image {index}: segmentation-MIP IceMiniHead "
+                            f"ImageTypeValue3={minihead_image_type_value3!r}, "
+                            f"expected {VESSELBOOST_SCANNER_MIP_IMAGE_TYPE_VALUE3!r}"
                         )
         if keep_image_geometry == 0:
             header_matrix_z = int(getattr(header, "matrix_size", [0, 0, 0])[2])

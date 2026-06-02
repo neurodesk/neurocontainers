@@ -24,6 +24,7 @@ The main derived output is named `<source>_vesselboost`, where `<source>` is the
 | Brain masking | `vbbrainextraction` | boolean | `true` | Enable SynthStrip brain extraction during preprocessing. This is used only when N4 bias field correction or denoising is enabled. |
 | Reslice sagittal | `vbreslicesagittal` | boolean | `false` | Emit an additional sagittal reformat series of the segmentation. |
 | Reslice coronal | `vbreslicecoronal` | boolean | `false` | Emit an additional coronal reformat series of the segmentation. |
+| Segmentation MIPs | `vbsegmentationmips` | boolean | `false` | Include the segmentation in scanner inline radial MIP processing. |
 
 ## Preprocessing Combinations
 
@@ -46,7 +47,7 @@ Gaussian blending is marked experimental in the OpenRecon label. Use it only whe
 
 The OpenRecon label declares GPU support and requests at least 1 GPU, 10048 MB GPU memory, 40096 MB system memory, and 32 CPU cores.
 
-Returned images are always emitted as new scanner-visible series. Restamped originals are sent first with `Keep_image_geometry = 1` and a patched source `IceMiniHead`, so scanner-side processing and scanner-created MIPs stay attached to the original MRA geometry. The VesselBoost segmentation follows as a separate source-image-header 2D stream with `Keep_image_geometry = 1`, `DataRole = Image`, `SegmentSourceGeometry = 1`, `SegmentSourceImageHeader = 1`, `SegmentOutputGeometry = 2d`, and the source `ImageType`, `DicomImageType`, and `ImageTypeValue4` identity. The segment stream strips `ImageTypeValue3` from MRD metadata and `IceMiniHead` so Siemens MIP functors that select `ImageTypeValue3 = M` stay attached to the original stream.
+Returned images are always emitted as new scanner-visible series. Restamped originals are sent first with `Keep_image_geometry = 1` and a patched source `IceMiniHead`, so scanner-side processing and scanner-created MIPs stay attached to the original MRA geometry. The VesselBoost segmentation follows as a separate source-image-header 2D stream with `Keep_image_geometry = 1`, `DataRole = Image`, `SegmentSourceGeometry = 1`, `SegmentSourceImageHeader = 1`, `SegmentOutputGeometry = 2d`, and the source `ImageType`, `DicomImageType`, and `ImageTypeValue4` identity. In normal mode, the segment stream strips `ImageTypeValue3` from MRD metadata and `IceMiniHead` so Siemens MIP functors that select `ImageTypeValue3 = M` stay attached to the original stream. When `vbsegmentationmips` is enabled, the segment stream omits the post-processing child tags and restores `ImageTypeValue3 = M` in MRD metadata and `IceMiniHead` so scanner inline radial MIP processing includes the segmentation.
 
 This mirrors the `openreconi2iexample` `2d_source_image_header` path with segment geometry fixed to `2d`, no detached 3D data, and segment send order after originals. Reformatted sagittal and coronal outputs remain explicit packed 3D MRD volumes without source-image-header stamping.
 

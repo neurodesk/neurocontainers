@@ -161,6 +161,14 @@ SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER = (
 # observe which channel claims the masks and whether they compose across
 # stations or collide with the original contrast.
 SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE = "2d_dixon_composable"
+# Option B: route a SINGLE mask series into the otherwise-empty master FILTER
+# (main/in-phase) compose channel via a non-W/F/FF Dixon token, so the mask
+# composes across stations WITHOUT colliding with the original Dixon contrasts
+# (which fill the W/F/FF channels to exactly their expected per-station count).
+# Pairs with segmentwateronly so only one mask series is produced.
+SEGMENT_DELIVERY_MODE_MAIN_COMPOSABLE = "2d_main_composable"
+SEGMENT_MAIN_COMPOSABLE_IMAGE_TYPE = "DERIVED\\PRIMARY\\DIXON\\IN_PHASE"
+SEGMENT_MAIN_COMPOSABLE_IMAGE_TYPE_VALUE4 = ("NORM", "IN_PHASE", "DIS3D", "DIS2D")
 SEGMENT_DELIVERY_MODES = (
     SEGMENT_DELIVERY_MODE_EXCLUDE,
     SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_3D,
@@ -169,6 +177,7 @@ SEGMENT_DELIVERY_MODES = (
     SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER,
     SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER,
     SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE,
+    SEGMENT_DELIVERY_MODE_MAIN_COMPOSABLE,
 )
 SEGMENT_DELIVERY_MODE_DEFAULT = SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D
 SEGMENT_REFORMAT_ORIENTATION_SAGITTAL = "sagittal"
@@ -224,8 +233,12 @@ def process(connection, config, metadata):
         exclude_segment_from_postprocessing = (
             segment_delivery_mode == SEGMENT_DELIVERY_MODE_EXCLUDE
         )
-        preserve_segment_dixon_identity = (
-            segment_delivery_mode == SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE
+        segment_main_composable = (
+            segment_delivery_mode == SEGMENT_DELIVERY_MODE_MAIN_COMPOSABLE
+        )
+        preserve_segment_dixon_identity = segment_delivery_mode in (
+            SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE,
+            SEGMENT_DELIVERY_MODE_MAIN_COMPOSABLE,
         )
         stamp_segment_with_source_image_header = (
             segment_delivery_mode
@@ -244,7 +257,19 @@ def process(connection, config, metadata):
                 SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_DERIVED_IMAGE_HEADER,
                 SEGMENT_DELIVERY_MODE_SOURCE_GEOMETRY_2D_SOURCE_IMAGE_HEADER,
                 SEGMENT_DELIVERY_MODE_DIXON_COMPOSABLE,
+                SEGMENT_DELIVERY_MODE_MAIN_COMPOSABLE,
             )
+        )
+        # Restrict segmentation to the WATER Dixon contrast when requested (GUI
+        # option), and always for the master-FILTER composing mode so it emits a
+        # single mask series rather than three co-located contrast masks.
+        segment_water_only = (
+            _config_bool_any(
+                config,
+                ("segmentwateronly", "wateronly", "segmentwater"),
+                default=False,
+            )
+            or segment_main_composable
         )
         segment_scanner_postprocessing = (
             segment_delivery_mode
@@ -312,19 +337,36 @@ def process(connection, config, metadata):
         if send_invert:
             inverted_images = _invert_images(magnitude_images)
             output_images.extend(inverted_images)
+        segment_source_images = magnitude_images
+        if segment_water_only:
+            water_images = _water_dixon_images(magnitude_images)
+            if water_images:
+                logging.info(
+                    "segmentwateronly: restricting segmentation to %d WATER Dixon "
+                    "image(s) out of %d magnitude image(s)",
+                    len(water_images),
+                    len(magnitude_images),
+                )
+                segment_source_images = water_images
+            else:
+                logging.warning(
+                    "segmentwateronly requested but no WATER Dixon contrast was "
+                    "detected; segmenting all %d magnitude image(s) instead",
+                    len(magnitude_images),
+                )
         computed_segment_images = []
         segment_images = []
         metrics_rows = []
         if send_segment:
             if send_segment and exclude_segment_from_postprocessing:
                 computed_segment_images = _segment_images_excluded_from_postprocessing(
-                    magnitude_images,
+                    segment_source_images,
                     use_colormap=use_segmentation_colormap,
                     metrics_rows=metrics_rows if send_metrics else None,
                 )
             elif send_segment and send_segment_2d_geometry:
                 computed_segment_images = _segment_images_for_postprocessing(
-                    magnitude_images,
+                    segment_source_images,
                     use_colormap=use_segmentation_colormap,
                     metrics_rows=metrics_rows if send_metrics else None,
                     stamp_for_postprocessing=stamp_segment_with_source_image_header,
@@ -333,15 +375,16 @@ def process(connection, config, metadata):
                     ),
                     scanner_postprocessing=segment_scanner_postprocessing,
                     preserve_dixon_identity=preserve_segment_dixon_identity,
+                    main_composable=segment_main_composable,
                 )
             else:
                 computed_segment_images = _segment_images(
-                    magnitude_images,
+                    segment_source_images,
                     use_colormap=use_segmentation_colormap,
                     metrics_rows=metrics_rows if send_metrics else None,
                 )
         elif send_metrics and not reformat_orientations:
-            _segment_metrics_rows(magnitude_images, metrics_rows)
+            _segment_metrics_rows(segment_source_images, metrics_rows)
         if send_segment:
             segment_images = computed_segment_images
             output_images.extend(segment_images)
@@ -537,6 +580,10 @@ def _scanner_postprocessing_target(
         if send_original:
             return "originals+segment_2d_dixon_composable"
         return "segment_2d_dixon_composable"
+    if send_segment and segment_delivery_mode == SEGMENT_DELIVERY_MODE_MAIN_COMPOSABLE:
+        if send_original:
+            return "originals+segment_2d_main_composable"
+        return "segment_2d_main_composable"
     if (
         send_segment
         and segment_delivery_mode
@@ -939,9 +986,12 @@ def _segment_images_for_postprocessing(
     stamp_with_derived_image_header=False,
     scanner_postprocessing=True,
     preserve_dixon_identity=False,
+    main_composable=False,
 ):
     if not images:
         return []
+    if main_composable:
+        preserve_dixon_identity = True
     if stamp_with_derived_image_header:
         stamp_for_postprocessing = False
     if preserve_dixon_identity:
@@ -1043,6 +1093,7 @@ def _segment_images_for_postprocessing(
                     series_identity,
                     scanner_postprocessing=scanner_postprocessing,
                     preserve_dixon_identity=preserve_dixon_identity,
+                    main_composable=main_composable,
                 )
             else:
                 stamp_segment_image(
@@ -2647,6 +2698,7 @@ def _stamp_segment_source_image_header_image(
     series_identity=None,
     scanner_postprocessing=True,
     preserve_dixon_identity=False,
+    main_composable=False,
 ):
     header = output.getHead()
     header.image_series_index = series_index
@@ -2669,6 +2721,7 @@ def _stamp_segment_source_image_header_image(
         storage_fields,
         scanner_postprocessing=scanner_postprocessing,
         preserve_dixon_identity=preserve_dixon_identity,
+        main_composable=main_composable,
     ).serialize()
     return output
 
@@ -2943,6 +2996,7 @@ def _segment_source_image_header_meta(
     storage_fields,
     scanner_postprocessing=True,
     preserve_dixon_identity=False,
+    main_composable=False,
 ):
     meta = _meta_from_image(source_image)
     _strip_source_parent_refs(meta)
@@ -2972,6 +3026,14 @@ def _segment_source_image_header_meta(
         minihead,
         sanitize_dixon=not preserve_dixon_identity,
     )
+    if main_composable:
+        # Option B: override the contrast token with a non-W/F/FF Dixon token so
+        # the single mask series is routed into the otherwise-empty master
+        # FILTER (main) compose channel instead of colliding with an original
+        # WATER/FAT/FAT_FRAC contrast (which would overfill that Dixon channel).
+        image_type = SEGMENT_MAIN_COMPOSABLE_IMAGE_TYPE
+        dicom_image_type = SEGMENT_MAIN_COMPOSABLE_IMAGE_TYPE
+        image_type_value4_tokens = list(SEGMENT_MAIN_COMPOSABLE_IMAGE_TYPE_VALUE4)
     child_role = None
     exam_data_role = None
     if scanner_postprocessing:
@@ -3523,6 +3585,27 @@ def _has_dixon_image_type_token(values):
             if token in SEGMENT_POSTPROCESSING_DISALLOWED_DIXON_TOKENS:
                 return True
     return False
+
+
+def _is_water_dixon_image(image):
+    meta = _meta_from_image(image)
+    minihead = _image_minihead(image)
+    candidate_values = [
+        _meta_text(meta, "ImageType"),
+        _meta_text(meta, "DicomImageType"),
+        _minihead_string_value(minihead, "ImageType"),
+    ]
+    candidate_values.extend(_meta_values(meta, "ImageTypeValue4"))
+    candidate_values.extend(_minihead_array_tokens(minihead, "ImageTypeValue4"))
+    for value in candidate_values:
+        for token in re.split(r"[^A-Za-z0-9_]+", str(value or "").upper()):
+            if token == "WATER":
+                return True
+    return False
+
+
+def _water_dixon_images(images):
+    return [image for image in images if _is_water_dixon_image(image)]
 
 
 def _has_magnitude_image_type_value3_token(values):

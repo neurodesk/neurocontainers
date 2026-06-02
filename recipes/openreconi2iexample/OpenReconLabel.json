@@ -116,10 +116,21 @@
         {
           "id": "2d_dixon_composable",
           "name": { "en": "2D Dixon composable (experimental composing diagnostic)" }
+        },
+        {
+          "id": "2d_main_composable",
+          "name": { "en": "2D main-channel composable (experimental: compose mask in master FILTER)" }
         }
       ],
       "default": "2d_segment_header",
       "information": { "en": "Choose the geometry, header identity, and scanner postprocessing stream used for Segment. Explicit volume sends one derived 3D volume with Keep_image_geometry=0 and DataRole=Image; scanner postprocessing uses originals only. 3D and 2D segmentation header modes keep Keep_image_geometry=1 and DataRole=Segmentation; scanner postprocessing uses the segment stream. 2D segmentation header, originals postprocessed keeps the same source geometry and segmentation header identity but leaves the segment stream without scanner postprocessing child-role metadata. 2D derived image header keeps source geometry with DataRole=Image and a derived ImageType. 2D source image header keeps source geometry with DataRole=Image and the source ImageType/ImageTypeValue4 identity. The two 2D image-header modes use originals plus the segment stream when originals are enabled." }
+    },
+    {
+      "id": "segmentwateronly",
+      "label": { "en": "Segment Water scan only (Dixon)" },
+      "type": "boolean",
+      "information": { "en": "In a Dixon sequence, compute the segmentation from the WATER contrast only (images whose ImageType carries the WATER Dixon token), producing a single mask series instead of one per contrast. Required for and forced on by segmentheadergeometry=2d_main_composable. If no WATER contrast is detected, all magnitude images are segmented." },
+      "default": false
     },
     {
       "id": "segmentationcolormap",

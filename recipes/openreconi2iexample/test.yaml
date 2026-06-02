@@ -1692,6 +1692,61 @@ tests:
           [first(dcs_meta.get("ImageType"))]
       ) and int(first(dcs_meta.get(module.SEGMENT_DIXON_COMPOSABLE_META_KEY))) == 1
 
+      # WATER Dixon detection (segmentwateronly GUI option). Build a WATER
+      # contrast image and confirm it is detected while the FAT_FRAC one is not.
+      dixon_water = make_image(
+          0,
+          series_name="wholebody_i2i_seg+org_W",
+          series_uid="1.2.3.4.98",
+          series_group="wholebody_i2i_seg+org_W",
+      )
+      dw_meta = ismrmrd.Meta.deserialize(dixon_water.attribute_string)
+      dw_meta["ImageType"] = "DERIVED\\PRIMARY\\DIXON\\WATER"
+      dw_meta["IceMiniHead"] = make_minihead(
+          "wholebody_i2i_seg+org_W",
+          0,
+          "1.2.3.4.98",
+          "wholebody_i2i_seg+org_W",
+          image_type="DERIVED\\PRIMARY\\DIXON\\WATER",
+          image_type_value3="M",
+          image_type_value4_tokens=("NORM", "WATER", "DIS3D", "DIS2D"),
+      )
+      dixon_water.attribute_string = dw_meta.serialize()
+      assert module._is_water_dixon_image(dixon_water)
+      assert not module._is_water_dixon_image(dixon_fat_fraction)
+      assert module._water_dixon_images([dixon_fat_fraction, dixon_water]) == [
+          dixon_water
+      ]
+
+      # Option B (2d_main_composable): the single WATER mask is re-tagged with a
+      # non-W/F/FF Dixon token (IN_PHASE) so it routes into the empty master
+      # FILTER compose channel instead of colliding with the WATER originals.
+      main_composable_segment = module._segment_images_for_postprocessing(
+          [dixon_water],
+          main_composable=True,
+      )[0]
+      mcs_meta = ismrmrd.Meta.deserialize(main_composable_segment.attribute_string)
+      assert first(mcs_meta.get("ImageType")) == module.SEGMENT_MAIN_COMPOSABLE_IMAGE_TYPE
+      assert first(mcs_meta.get("ImageType")) == "DERIVED\\PRIMARY\\DIXON\\IN_PHASE"
+      assert minihead_value(main_composable_segment, "ImageType") == (
+          "DERIVED\\PRIMARY\\DIXON\\IN_PHASE"
+      )
+      assert meta_values(mcs_meta, "ImageTypeValue4") == [
+          "NORM",
+          "IN_PHASE",
+          "DIS3D",
+          "DIS2D",
+      ]
+      # must NOT carry a WATER/FAT/FAT_FRAC contrast token (those would overfill
+      # the original's Dixon channel); IN_PHASE routes to the empty master FILTER
+      assert not any(
+          token in ("WATER", "FAT", "FAT_FRAC")
+          for token in meta_values(mcs_meta, "ImageTypeValue4")
+      )
+      assert first(mcs_meta.get("ImageTypeValue3")) == "M"
+      assert int(first(mcs_meta.get(module.SEGMENT_DIXON_COMPOSABLE_META_KEY))) == 1
+      assert int(first(mcs_meta.get("Keep_image_geometry"))) == 1
+
       wrapped_source_order = [2, 3, 0, 1]
       wrapped_sources = []
       for output_index, source_slice in enumerate(wrapped_source_order):
