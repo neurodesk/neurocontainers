@@ -114,14 +114,11 @@ build:
 
     - environment:
         PATH: /opt/miniconda/envs/samri/bin:/opt/miniconda/bin:/opt/bru2:/opt/ants-{{ context.ants_version }}:$PATH
-        DEPLOY_PATH: /opt/miniconda/envs/samri/bin:/opt/bru2:/opt/ants-{{ context.ants_version }}
-        DEPLOY_BINS: SAMRI
 
 deploy:
   bins:
     - SAMRI
   path:
-    - /opt/miniconda/envs/samri/bin
     - /opt/bru2
     - /opt/ants-{{ context.ants_version }}
 
