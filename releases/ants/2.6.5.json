@@ -1,7 +1,7 @@
 {
   "apps": {
     "ants 2.6.5": {
-      "version": "20260225",
+      "version": "20260602",
       "exec": "",
       "apptainer_args": []
     }
