@@ -76,6 +76,8 @@ readme: |-
   ----------------------------------
 
 categories:
+  - functional imaging
+  - diffusion imaging
   - electrophysiology
 
 files:
