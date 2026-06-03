@@ -1,0 +1,85 @@
+# PreQual container test suite
+# These tests verify the command wrapper and bundled dependencies without
+# requiring DWI input data or a FreeSurfer license.
+
+name: prequal
+version: 1.1.0
+container: prequal_1.1.0_20260603.simg
+
+default_timeout: 180
+
+tests:
+  - name: PreQual command wrappers
+    description: Verify the exposed PreQual entrypoints are available
+    command: |
+      command -v prequal
+      command -v run_dtiQA.sh
+      test -x /usr/local/bin/prequal
+      test -x /CODE/run_dtiQA.sh
+
+  - name: MRtrix3 runtime
+    description: Verify the bundled MRtrix3 command can report its version
+    command: mrinfo --version
+    expected_output_contains: "mrinfo 3.0.3"
+
+  - name: FSL runtime
+    description: Verify the bundled FSL command can report its version
+    command: flirt -version
+    expected_output_contains: "FLIRT version"
+
+  - name: Convert3D runtime
+    description: Verify the bundled Convert3D command can report its version
+    command: c3d -version 2>&1
+    expected_output_contains: "Version"
+
+  - name: ANTs runtime
+    description: Verify the bundled ANTs command can report its version
+    command: antsRegistration --version
+    expected_output_contains: "ANTs Version"
+
+  - name: PreQual runtime directories
+    description: Verify key runtime paths exist in the container
+    command: |
+      test -d /APPS/synb0
+      test -d /APPS/freesurfer
+      test -f /APPS/freesurfer/license.txt
+      test -d /CODE/dtiQA_v7
+      test -d /APPS/gradtensor/conda/envs/gradvenv
+
+  - name: Synb0 Python environment
+    description: Verify Synb0 Python dependencies import together
+    command: |
+      /APPS/synb0/pytorch/bin/python - <<'PY'
+      import nibabel
+      import scipy
+      import torch
+
+      print("synb0 environment ok")
+      print("torch", torch.__version__)
+      PY
+    expected_output_contains: "synb0 environment ok"
+
+  - name: dtiQA Python environment
+    description: Verify dtiQA Python dependencies import together
+    command: |
+      /CODE/dtiQA_v7/venv/bin/python - <<'PY'
+      import nibabel
+      import numpy
+      import skimage
+
+      print("dtiQA environment ok")
+      PY
+    expected_output_contains: "dtiQA environment ok"
+
+  - name: GradTensor Python environment
+    description: Verify GradTensor and scilpy dependencies import together
+    command: |
+      /APPS/gradtensor/conda/envs/gradvenv/bin/python - <<'PY'
+      import dipy
+      import fpdf
+      import imageio
+      from scilpy.io.utils import assert_inputs_exist
+
+      print("gradtensor environment ok")
+      PY
+    expected_output_contains: "gradtensor environment ok"
