@@ -26,6 +26,7 @@ build:
     - workdir: /opt/mfcsc-{{ context.version }}/
     - run:
         - cp {{ get_file("mfcsc_binary") }} mfcsc
+        - od -An -tx1 -N4 mfcsc | grep -q '7f 45 4c 46'
     - environment:
         XAPPLRESDIR: /opt/MCR/v98/x11/app-defaults
     - run:
@@ -82,6 +83,6 @@ categories:
 
 files:
   - name: mfcsc_binary
-    url: https://www.dropbox.com/s/rc8rysdwqxgxcfn/mfcsc?dl=0
+    url: https://www.dropbox.com/s/rc8rysdwqxgxcfn/mfcsc?dl=1
 
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABP0lEQVR42u3azRHCIBCG4ZRhEx5swCYswZMNWYnFOY4zOrkbQuDbH+J72KM/+2SBBTI9X+/PP8cEAAAAAAAAAAAAAAAAAACgiOP1YfqHD6dLPoA56aVQJb0U4QCl5BUIpeQVCAB4AJzvt+ZIDVCTfA9CTfK9CFSAN0DNd+4aoAQxZAWsIayV+FLitQjDdIIt43+YTnBLtCa+i81Q79MfFqBnGUwPUGp1tyTXChGyCqz1/T1PteazylVh8uz8FMNG3Re4ACjnjyEBlBEKYL37i9gdUgHZToC8T4gAyHgK7HlKLOkEPdvXX3NC+F4gEiDNZigCINVu0KMKLH7DDEA9Ic5jPTWAxepgeRYoB1D3B9anwQBEAGS6EXK7F2hB8LgTpAKYAwCgDzC9GLHoBHlPEAAAAAAAAAAAAAAAAABQxRdgu/0O6G9E3wAAAABJRU5ErkJggg==
