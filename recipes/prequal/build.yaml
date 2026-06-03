@@ -143,13 +143,11 @@ build:
     - environment:
         ANTSPATH: /opt/ants-2.4.3/
         CUDA_HOME: /usr/local/cuda
-        DEPLOY_BINS: prequal,run_dtiQA.sh,mrinfo,flirt,c3d,antsRegistration
-        DEPLOY_PATH: /usr/local/bin:/CODE:/APPS/mrtrix3/bin:/APPS/fsl/bin:/APPS/c3d-1.0.0-Linux-x86_64/bin:/opt/ants-2.4.3
         FSLDIR: /APPS/fsl
         FREESURFER_HOME: /APPS/freesurfer
         MCRROOT: /opt/MCR/v92
         PATH: /usr/local/bin:/CODE:/APPS/gradtensor/conda/envs/gradvenv/bin:/APPS/gradtensor/conda/bin:/APPS/mrtrix3/bin:/APPS/fsl/bin:/APPS/c3d-1.0.0-Linux-x86_64/bin:/opt/ants-2.4.3:/APPS/freesurfer/bin:/opt/MCR/v92/runtime/glnxa64:/opt/MCR/v92/bin/glnxa64:/usr/local/cuda/bin:$PATH
-        LD_LIBRARY_PATH: /opt/MCR/v92/runtime/glnxa64:/opt/MCR/v92/bin/glnxa64:/opt/MCR/v92/sys/os/glnxa64:/opt/MCR/v92/extern/bin/glnxa64:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+        LD_LIBRARY_PATH: /APPS/mrtrix3/lib:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/opt/MCR/v92/runtime/glnxa64:/opt/MCR/v92/bin/glnxa64:/opt/MCR/v92/sys/os/glnxa64:/opt/MCR/v92/extern/bin/glnxa64:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
     - deploy:
         path:
           - /usr/local/bin
