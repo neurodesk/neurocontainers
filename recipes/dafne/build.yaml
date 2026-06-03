@@ -12,13 +12,13 @@ architectures:
 variables:
   conda_install:
     try:
-      - value: "python=3.8 numpy=1.24.3 protobuf=3.20.3 tensorflow=2.13.1"
+      - value: "python=3.8 numpy=1.24.3 protobuf=3.20.3"
         condition: arch=="x86_64"
       - value: "python=3.8 numpy=1.24.3 protobuf=3.20.3 pyqt=5.15 vtk"
         condition: arch=="aarch64"
   pip_install:
     try:
-      - value: "SimpleITK==2.4.1 pyradiomics==3.1.0 protobuf==3.20.3 dafne=={{ context.version }}"
+      - value: "tensorflow==2.13.1 SimpleITK==2.4.1 pyradiomics==3.1.0 protobuf==3.20.3 dafne=={{ context.version }}"
         condition: arch=="x86_64"
       - value: "tensorflow==2.13.1 SimpleITK==2.4.1 pyradiomics==3.1.0 protobuf==3.20.3 dafne=={{ context.version }}"
         condition: arch=="aarch64"
