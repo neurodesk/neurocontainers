@@ -39,6 +39,33 @@ def test_existing_recipe_fulltest_yaml_uses_latest_release_metadata(tmp_path: Pa
     ]
 
 
+def test_test_config_change_prefers_x86_release_over_arm64_metadata(
+    tmp_path: Path,
+) -> None:
+    latest_x86_release = write_release(
+        tmp_path,
+        "niimath",
+        "1.0.20250804",
+        build_date="20251016",
+    )
+    write_release(
+        tmp_path,
+        "niimath",
+        "1.0.20250804-arm64",
+        build_date="20251016",
+    )
+
+    result = detect_release_pr_changes(["recipes/niimath/fulltest.yaml"], repo_root=tmp_path)
+
+    assert result.matrix() == [
+        {
+            "name": "niimath",
+            "version": "1.0.20250804",
+            "file": latest_x86_release.relative_to(tmp_path).as_posix(),
+        }
+    ]
+
+
 def test_existing_recipe_legacy_test_yaml_still_uses_latest_release_metadata(
     tmp_path: Path,
 ) -> None:
