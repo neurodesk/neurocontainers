@@ -1,0 +1,14 @@
+{
+  "apps": {
+    "samri 0.5": {
+      "version": "20260603",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "rodent imaging",
+    "functional imaging",
+    "workflows"
+  ]
+}
