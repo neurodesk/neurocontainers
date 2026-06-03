@@ -1,5 +1,6 @@
 # niimath container test suite
 # Tests for niimath v1.0.20250804 - fslmaths-compatible image calculator
+# Canary change to exercise release PR fulltest integration.
 #
 # Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
 #   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
