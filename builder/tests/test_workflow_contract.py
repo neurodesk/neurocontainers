@@ -17,6 +17,19 @@ def test_build_app_workflow_uses_version_stable_build_cache_ref() -> None:
     assert "CACHE_REF=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:buildcache" not in workflow
 
 
+def test_build_app_workflow_compares_image_config_not_only_rootfs() -> None:
+    workflow = Path(".github/workflows/build-app.yml").read_text()
+    config_job = workflow.split("  config:", 1)[1].split("  build-image:", 1)[0]
+    build_image_job = workflow.split("  build-image:", 1)[1].split("  push-dockerhub:", 1)[0]
+
+    assert "IMAGE_FINGERPRINT_CACHE" in config_job
+    assert "IMAGE_FINGERPRINT_NEW" in build_image_job
+    assert "python3 builder/image_fingerprint.py" in config_job
+    assert "python3 builder/image_fingerprint.py" in build_image_job
+    assert "ROOTFS_CACHE" not in workflow
+    assert "ROOTFS_NEW" not in workflow
+
+
 def test_create_pr_job_generates_release_without_rebuilding() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     create_pr_job = workflow.split("  create-pr:", 1)[1]
