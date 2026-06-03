@@ -1,0 +1,12 @@
+tests:
+  - name: dwidenoise2 help
+    script: |
+      dwidenoise2 -help
+
+  - name: dwi2noise help
+    script: |
+      dwi2noise -help
+
+  - name: bundled MRtrix3 helper help
+    script: |
+      mrconvert -help

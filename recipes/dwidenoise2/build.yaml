@@ -1,0 +1,119 @@
+name: dwidenoise2
+version: "20260603"
+
+description: Updated implementation of MP-PCA denoising using the MRtrix3 API.
+
+copyright:
+  - license: PolyForm-Noncommercial-1.0.0
+    url: https://github.com/Lestropie/dwidenoise2/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  upstream_commit: 2cd437203f737d680042053b11000421e42e38c9
+  mrtrix3_commit: fa6ee952913fbc1df79aeca745600852155f533f
+  dwidenoise2_source_dir: /src/dwidenoise2
+  mrtrix3_source_dir: /src/mrtrix3
+  install_path: /opt/mrtrix3
+
+build:
+  kind: neurodocker
+  base-image: debian:bookworm-slim
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PATH: "{{ context.install_path }}/bin:$PATH"
+        LD_LIBRARY_PATH: "{{ context.install_path }}/cpp/core/"
+
+    - install:
+        - build-essential
+        - ca-certificates
+        - cmake
+        - git
+        - less
+        - libfftw3-dev
+        - libfftw3-double3
+        - libfftw3-single3
+        - libpng-dev
+        - libpng16-16
+        - libtiff-dev
+        - ninja-build
+        - pkg-config
+        - tar
+        - zlib1g-dev
+
+    - run:
+        - mkdir -p "{{ context.dwidenoise2_source_dir }}" "{{ context.mrtrix3_source_dir }}"
+        - tar -xzf {{ get_file("dwidenoise2_source_tar_gz") }} -C "{{ context.dwidenoise2_source_dir }}" --strip-components=1
+        - tar -xzf {{ get_file("mrtrix3_source_tar_gz") }} -C "{{ context.mrtrix3_source_dir }}" --strip-components=1
+        - cp "{{ context.dwidenoise2_source_dir }}/cpp/cmd/dwidenoise2.cpp" "{{ context.mrtrix3_source_dir }}/cpp/cmd/dwidenoise2.cpp"
+        - cp "{{ context.dwidenoise2_source_dir }}/cpp/cmd/dwi2noise.cpp" "{{ context.mrtrix3_source_dir }}/cpp/cmd/dwi2noise.cpp"
+        - cp -a "{{ context.dwidenoise2_source_dir }}/cpp/core/denoise" "{{ context.mrtrix3_source_dir }}/cpp/core/denoise"
+        - cd "{{ context.mrtrix3_source_dir }}"
+        - cmake -Bbuild -GNinja -DMRTRIX_BUILD_GUI=OFF -DCMAKE_COMPILE_WARNING_AS_ERROR=ON --preset=release
+        - cmake --build build --target dwidenoise2 dwi2noise mrcalc mrcat mrconvert
+        - mkdir -p "{{ context.install_path }}"
+        - cp -a build/. "{{ context.install_path }}/"
+        - chmod -R a+rX "{{ context.install_path }}"
+        - rm -rf "{{ context.dwidenoise2_source_dir }}" "{{ context.mrtrix3_source_dir }}"
+        - apt-get purge -y --auto-remove build-essential cmake git libfftw3-dev libpng-dev libtiff-dev ninja-build pkg-config zlib1g-dev
+        - rm -rf /var/lib/apt/lists/*
+
+deploy:
+  path:
+    - "{{ context.install_path }}/bin"
+
+structured_readme:
+  description: >-
+    dwidenoise2 is a reworked implementation of Marchenko-Pastur Principal
+    Components Analysis denoising of greater-than-3D MRI data, building on the
+    MRtrix3 dwidenoise command.
+  example: dwidenoise2 input.mif denoised.mif -noise_out noise.mif
+  documentation: https://github.com/Lestropie/dwidenoise2
+  citation: >-
+    Smith RE. dwidenoise2: Updated implementation of MP-PCA denoising using the
+    MRtrix3 API. https://github.com/Lestropie/dwidenoise2
+
+readme: |-
+  ----------------------------------
+  ## dwidenoise2/{{ context.version }} ##
+
+  dwidenoise2 is a reworked implementation of Marchenko-Pastur Principal
+  Components Analysis denoising of greater-than-3D MRI data. It builds on the
+  MRtrix3 dwidenoise command and provides the `dwidenoise2` and `dwi2noise`
+  commands, plus the MRtrix3 helper commands `mrcalc`, `mrcat`, and `mrconvert`.
+
+  This recipe follows the upstream Dockerfile build strategy by pinning
+  dwidenoise2 to upstream commit {{ context.upstream_commit }}, pinning MRtrix3
+  to {{ context.mrtrix3_commit }}, copying the dwidenoise2 sources into the
+  MRtrix3 tree before CMake configuration, and installing the resulting build
+  tree under {{ context.install_path }}.
+
+  Example:
+  ```bash
+  dwidenoise2 input.mif denoised.mif -noise_out noise.mif
+  dwi2noise input.mif noise.mif
+  ```
+
+  More documentation can be found here: https://github.com/Lestropie/dwidenoise2
+
+  License: PolyForm Noncommercial License 1.0.0.
+  https://github.com/Lestropie/dwidenoise2/blob/main/LICENSE
+
+  To run container outside of this environment: ml dwidenoise2/{{ context.version }}
+
+  ----------------------------------
+
+categories:
+  - diffusion imaging
+
+icon: data:image/png;base64,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
+
+files:
+  - name: dwidenoise2_source_tar_gz
+    url: https://github.com/Lestropie/dwidenoise2/archive/{{ context.upstream_commit }}.tar.gz
+  - name: mrtrix3_source_tar_gz
+    url: https://github.com/MRtrix3/mrtrix3/archive/{{ context.mrtrix3_commit }}.tar.gz
