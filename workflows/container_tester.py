@@ -395,7 +395,12 @@ class ReleaseContainerDownloader:
         ]
 
     def download_from_release(
-        self, name: str, version: str, build_date: Optional[str]
+        self,
+        name: str,
+        version: str,
+        build_date: Optional[str],
+        *,
+        use_cache: bool = True,
     ) -> Optional[str]:
         """Download container using release build information"""
         if not build_date:
@@ -414,10 +419,13 @@ class ReleaseContainerDownloader:
         for filename in filenames:
             cache_path = os.path.join(self.cache_dir, filename)
 
-            # Check cache first
-            if os.path.exists(cache_path):
+            # Check cache first. CI release tests bypass this because rebuilds
+            # on the same day share the same release filename.
+            if use_cache and os.path.exists(cache_path):
                 print(f"Using cached container: {cache_path}")
                 return cache_path
+            if not use_cache and os.path.exists(cache_path):
+                print(f"Refreshing cached container: {cache_path}")
 
             # Try downloading from each mirror.
             for source_name, base_url in self.base_urls:

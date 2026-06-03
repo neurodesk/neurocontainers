@@ -36,6 +36,37 @@ def test_release_downloader_falls_back_to_s3_when_nectar_fails(
     ]
 
 
+def test_release_downloader_can_refresh_existing_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    downloader = ReleaseContainerDownloader(cache_dir=str(tmp_path))
+    cache_path = tmp_path / "globus_3.2.8_20260514.simg"
+    cache_path.write_text("stale", encoding="utf-8")
+    calls: list[str] = []
+
+    def fake_urlretrieve(url: str, filename: str) -> tuple[str, None]:
+        calls.append(url)
+        Path(filename).write_text("fresh", encoding="utf-8")
+        return filename, None
+
+    monkeypatch.setattr(
+        container_tester.urllib.request, "urlretrieve", fake_urlretrieve
+    )
+
+    path = downloader.download_from_release(
+        "globus",
+        "3.2.8",
+        "20260514",
+        use_cache=False,
+    )
+
+    assert path == str(cache_path)
+    assert cache_path.read_text(encoding="utf-8") == "fresh"
+    assert calls == [
+        "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/globus_3.2.8_20260514.simg",
+    ]
+
+
 def test_auto_location_does_not_return_docker_tag_for_apptainer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
