@@ -1,8 +1,49 @@
 name: samri
 version: "0.5"
 
+copyright:
+  - license: GPL-3.0-or-later
+    url: https://github.com/IBT-FMI/SAMRI/blob/master/LICENSE
+
 architectures:
   - x86_64
+
+variables:
+  miniconda_version: py37_4.12.0
+  bru2_version: v1.0.20180303
+  ants_version: 2.3.4
+  mouse_brain_atlases_generator_commit: 009e878ab3bf057135f2a9d5620dc06256f66b20
+
+files:
+  - name: miniconda_installer
+    url: https://repo.anaconda.com/miniconda/Miniconda3-{{ context.miniconda_version }}-Linux-x86_64.sh
+  - name: samri_requirements
+    contents: |
+      argh==0.26.2
+      duecredit==0.9.3
+      joblib==1.3.2
+      matplotlib==3.5.3
+      nibabel==4.0.2
+      nilearn==0.9.2
+      nipy==0.5.0
+      nipype==1.8.6
+      numpy==1.21.6
+      pandas==1.3.5
+      pybids==0.6.5
+      pynrrd==1.0.0
+      scikit-image==0.19.3
+      scipy==1.7.3
+      seaborn==0.12.2
+      statsmodels==0.13.5
+      traits==6.3.2
+  - name: samri_source
+    url: https://github.com/IBT-FMI/SAMRI/archive/refs/tags/{{ context.version }}.tar.gz
+  - name: bru2_linux_zip
+    url: https://github.com/neurolabusc/Bru2Nii/releases/download/{{ context.bru2_version }}/Bru2_Linux.zip
+  - name: ants_archive
+    url: https://zenodo.org/api/records/15230173/files/ants-Linux-centos6_x86_64-v{{ context.ants_version }}.tar.gz/content
+  - name: mouse_brain_atlases_generator_source
+    url: https://github.com/IBT-FMI/mouse-brain-atlases_generator/archive/{{ context.mouse_brain_atlases_generator_commit }}.tar.gz
 
 build:
   kind: neurodocker
@@ -10,83 +51,112 @@ build:
   pkg-manager: apt
 
   directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        CONDA_DIR: /opt/miniconda
+        PATH: /opt/miniconda/envs/samri/bin:/opt/miniconda/bin:/opt/bru2:/opt/ants-{{ context.ants_version }}:$PATH
+        ANTSPATH: /opt/ants-{{ context.ants_version }}/
+
     - run:
-        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
+        - printf '#!/bin/bash\nls -la "$@"\n' > /usr/bin/ll
         - chmod +x /usr/bin/ll
         - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
 
-    - template:
-        name: miniconda
-        version: "py37_4.12.0"
-        method: binaries
-        env_name: base
-        conda_install: python=3.7 nipy nilearn traits argh joblib matplotlib numpy pandas scipy seaborn statsmodels nipype
-        pip_install: nibabel scikit-image pybids==0.6.5 pynrrd duecredit
-
     - install:
-        - git
-        - zip
-        - wget
-        - libgtk2.0-0
         - blender
+        - bzip2
+        - ca-certificates
+        - git
+        - libgtk2.0-0
+        - unzip
+        - zip
+
+    - run:
+        - cp {{ get_file("miniconda_installer") }} /tmp/miniconda.sh
+        - bash /tmp/miniconda.sh -b -p /opt/miniconda
+        - rm -f /tmp/miniconda.sh
+        - /opt/miniconda/bin/conda tos accept || true
+        - /opt/miniconda/bin/conda config --system --set auto_update_conda false
+        - /opt/miniconda/bin/conda config --system --set show_channel_urls true
+        - /opt/miniconda/bin/conda create -y -q -n samri -c defaults --override-channels python=3.7 pip
+        - /opt/miniconda/bin/conda run -n samri python -m pip install --no-cache-dir --upgrade "pip==24.0" "setuptools<68" wheel
+        - /opt/miniconda/bin/conda run -n samri python -m pip install --no-cache-dir -r {{ get_file("samri_requirements") }}
+        - sync && /opt/miniconda/bin/conda clean --all --yes && sync
+        - rm -rf /root/.cache/pip
 
     - workdir: /opt
 
     - run:
-        - git clone https://github.com/IBT-FMI/SAMRI.git
-
-    - workdir: /opt/SAMRI
-
-    - run:
-        - python setup.py install --user
+        - mkdir -p /tmp/samri-src
+        - tar -xzf {{ get_file("samri_source") }} -C /tmp/samri-src --strip-components 1
+        - /opt/miniconda/bin/conda run -n samri python -m pip install --no-cache-dir --no-deps /tmp/samri-src
+        - cp -a /tmp/samri-src /opt/SAMRI
+        - rm -rf /tmp/samri-src /root/.cache/pip
 
     - workdir: /opt/bru2
 
     - run:
-        - wget https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip
-        - unzip Bru2_Linux.zip
-
-    - environment:
-        PATH: $PATH:/opt/bru2:/root/.local/bin
+        - cp {{ get_file("bru2_linux_zip") }} Bru2_Linux.zip
+        - unzip -q Bru2_Linux.zip
+        - rm -f Bru2_Linux.zip
+        - chmod a+rx /opt/bru2/Bru2 /opt/bru2/Bru2Nii
 
     - workdir: /opt
 
-    - template:
-        name: ants
-        version: "2.4.3"
-        method: binaries
+    - run:
+        - mkdir -p /opt/ants-{{ context.ants_version }}
+        - tar -xzf {{ get_file("ants_archive") }} -C /opt/ants-{{ context.ants_version }} --strip-components 1
+        - chmod -R a+rX /opt/ants-{{ context.ants_version }}
 
     - run:
-        - git clone https://github.com/IBT-FMI/mouse-brain-atlases_generator.git
-
-    - workdir: /opt/mouse-brain-atlases_generator
+        - mkdir -p /opt/mouse-brain-atlases_generator
+        - tar -xzf {{ get_file("mouse_brain_atlases_generator_source") }} -C /opt/mouse-brain-atlases_generator --strip-components 1
 
     - environment:
+        PATH: /opt/miniconda/envs/samri/bin:/opt/miniconda/bin:/opt/bru2:/opt/ants-{{ context.ants_version }}:$PATH
+        DEPLOY_PATH: /opt/miniconda/envs/samri/bin:/opt/bru2:/opt/ants-{{ context.ants_version }}
         DEPLOY_BINS: SAMRI
-
-    - copy: README.md /README.md
 
 deploy:
   bins:
     - SAMRI
+  path:
+    - /opt/miniconda/envs/samri/bin
+    - /opt/bru2
+    - /opt/ants-{{ context.ants_version }}
 
 categories:
   - rodent imaging
+  - functional imaging
   - workflows
-icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABKCAYAAAAL8lK4AAAACXBIWXMAAAsTAAALEwEAmpwYAAAFF2lUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4gPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iQWRvYmUgWE1QIENvcmUgNy4xLWMwMDAgNzkuN2E3YTIzNiwgMjAyMS8wOC8xMi0wMDoyNToyMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczpkYz0iaHR0cDovL3B1cmwub3JnL2RjL2VsZW1lbnRzLzEuMS8iIHhtbG5zOnBob3Rvc2hvcD0iaHR0cDovL25zLmFkb2JlLmNvbS9waG90b3Nob3AvMS4wLyIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0RXZ0PSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VFdmVudCMiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIDIyLjUgKFdpbmRvd3MpIiB4bXA6Q3JlYXRlRGF0ZT0iMjAyMS0wOS0xNVQyMDozNDozMCsxMDowMCIgeG1wOk1vZGlmeURhdGU9IjIwMjEtMDktMjlUMDg6MzA6NDIrMTA6MDAiIHhtcDpNZXRhZGF0YURhdGU9IjIwMjEtMDktMjlUMDg6MzA6NDIrMTA6MDAiIGRjOmZvcm1hdD0iaW1hZ2UvcG5nIiBwaG90b3Nob3A6Q29sb3JNb2RlPSIzIiBwaG90b3Nob3A6SUNDUHJvZmlsZT0ic1JHQiBJRUM2MTk2Ni0yLjEiIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6ZGM2MWFhMTUtNDI3MS03ZDQyLTk5Y2MtMWQ2MTA1MzQ5MTViIiB4bXBNTTpEb2N1bWVudElEPSJ4bXAuZGlkOmRjNjFhYTE1LTQyNzEtN2Q0Mi05OWNjLTFkNjEwNTM0OTE1YiIgeG1wTU06T3JpZ2luYWxEb2N1bWVudElEPSJ4bXAuZGlkOmRjNjFhYTE1LTQyNzEtN2Q0Mi05OWNjLTFkNjEwNTM0OTE1YiI+IDx4bXBNTTpIaXN0b3J5PiA8cmRmOlNlcT4gPHJkZjpsaSBzdEV2dDphY3Rpb249ImNyZWF0ZWQiIHN0RXZ0Omluc3RhbmNlSUQ9InhtcC5paWQ6ZGM2MWFhMTUtNDI3MS03ZDQyLTk5Y2MtMWQ2MTA1MzQ5MTViIiBzdEV2dDp3aGVuPSIyMDIxLTA5LTE1VDIwOjM0OjMwKzEwOjAwIiBzdEV2dDpzb2Z0d2FyZUFnZW50PSJBZG9iZSBQaG90b3Nob3AgMjIuNSAoV2luZG93cykiLz4gPC9yZGY6U2VxPiA8L3htcE1NOkhpc3Rvcnk+IDwvcmRmOkRlc2NyaXB0aW9uPiA8L3JkZjpSREY+IDwveDp4bXBtZXRhPiA8P3hwYWNrZXQgZW5kPSJyIj8+TzdbEgAAElBJREFUeJzNW2dUlFe3fqYwDAMI4gxKUwYYRCBYiIhSVBQUjIpGVAixoEE+cy1BNNgoiRcF0cRLLJhF0ysGS4war1FMiNFEiYqiUfFDsQBKUZA4SBtm3x/CLNoM0zTfs9ZeM+ucs8vZ73n32ae8DCLCW8AgsVgcePv2bZtnz569J5FIdIRC4Z+urq7/BvAjgHI5fL4vXrwYWlhYOLSurs7SxMTkvrm5eYVIJLoM4NTbMBREpE1yvHnz5jcrVqxo5vP5BKAT2djYUGJi4t9EZN+V9/79++lTp04lAwODbnx+fn6Unp5+mYgWa9lerTmA/fTp080RERHdjO+Jzp07d7sL/6whQ4b0yufs7ExpaWk3iGj6f5IDhubk5Nzp27evUp0HQH379qX6+vqoNn7D5ORksbK8ACggIIAqKir+5z/BAVMjIyOlqhjfTikpKUVtMhabmpqqzM/n8+nChQt5RMT4pxzw/pIlS1Q2vJ3mzp0rJSJcv379S3VlAKD8/Pw//gkHcHJycso0Mdzd3Z2IaERWVtY3msgxNDSkurq6f6nrACbUw4jExEQLNXkBANXV1QDgLhaLhZrIefXqFfLy8hary6+WAx4+fLisoKBAXZ0AgNLSUgAYWF1dbaKRIAApKSkjAASrxazikBEVFBR8b2Njo/aQbacRI0YQEW27cuXKZTabrbG8yZMnU1FRURYRWb2tGLDo008/VSvidyUHBwc6dOgQSaXSLQUFBRdDQ0OJy+VqLBcAbdiwoYGIxmnbAROnT5+uFQMHDx5MMTEx5OrqSlKpdOmaNWuOjB49mhITE7UiHwDFxcUREZloywGs9PT0v5VVbmtrSxYWFj3WDRo0iLKysmjgwIHE4XCIiHyPHj26HQAtXbqUNmzYIFeuQCAge3t7pZ1QUlJyTFsOmNGnTx+l38PExERKSkqi4cOHd6rr168fZWZmkoeHBwGg999/n4jI/aeffpLlAWvXrqU1a9Z0kztkyBBKTEykLVu20JQpU5SyJSQkhIiIr6kDBPv27StWRqFIJJIZr6OjQ2lpabRkyRKaMWMGzZkzh1JTU2ncuHGy9iNHjiQiGpaXl7e2o5yYmBiKj4+nGTNm0KxZsygsLIwyMjLI2NiYANCqVavI2dlZKSecPXu2gIj6KeqjomnQNCMj4+q8efPsFLSRQSqVyv5zOBwAgKGhIfh8PgQCATIzM/Hrr7/K2ujo6ABAI4/Ha+wo54svvkBZWRkGDBiAvn37Ql9fHwDAZL4xlcVivXlySsDPz294dnb2NQB95TaS55kffvjhPlQMPgEBAbRy5UpavXo1ubq6Kmzr5eVFRCQsKipa2ptcR0dH+vzzz2nZsmUUGBioclA8e/bsXyq9AqWlpdmqKmkngUBARkZGvbYbO3YsEZFVWVlZmDJy9fX1acCAAWrZxGQyqaamJkVZB7w/ZswYtRSpQhMnTiQi4tfV1YXq6uq+dX0ffvghEZF1rw7Iz8+/8LaNAUATJkwgIuI3NzfPbg9wb5vKysr29xYErbdu3eqJdwcGk8lsYbPZ70TZnj17JgFgdCzrqnnizZs3taIsLCwM1tbWuHXrFg4fPtytvr6+HgBYLBarubGxsVs9AEybNg2urq6oqKhAampqp5lGHVy/fl0AQAigpL2sqwOa26cwTRASEgI+n4+jR4/C398fCxcuxNWrV2VTmUQiwfDhwwGgAUCrh4cHysvLwWKxALyZUl1cXCAUCvH9999j/PjxWLx4Mfbu3auRXaamphIALzuWdXXASx6Pp5ESAHBycsLx48dRWFgIHo+HqKgo8Hg8MBhvRl9LSwuGDRsGAI0ApGPGjEFFRYXMAUSEcePGITU1FYWFhWhubkZ4eLjGdtXV1QGAOYAaWWHHgFBWVrZd3qrMxMSEzM3NlQo2Li4uFBsbS6GhoRQXF0f9+vXr1sbb25uIiEdE4/v379+tXl9fn2JiYig0NJRiY2PJ3d1d4yDI5XKpqqoqRd4swFiwYEFVT4xOTk60Y8cOSkpKooCAAKWUWVhYkJ+fH8mL8FOmTGl3gLe8LXF9fX3y9fUla2trrc0Ea9eurSUinfZ+d3wFFpiYmAhmzJghe1eJCMbGxnB3d8fatWtRW1uLqKgoFBcXo7i4WNFoQ3l5OcrL5R0AQfY6AGhuS4u7ob6+Hrm5uQr1qIrMzEzjhISEJQC+ATpsiZ0/fz68pKQE+vr64PF4MjI0NASHw4FYLJZF4fZ3VRM0NzcDgAGAlg7OeOt49uwZsrKy/iUraBsKTn5+fnKHjZubG61bt45WrVpFQUFBWhmKPj4+REQWROQ8cuTId5IItZOnpycRkbcsBtTU1GzjcDgKmfr160eWlpZaM6ItEzT/JxwAgEpKStJkmeB33303tm1IysWLFy9QVlamsI2akGgrE+zTpw9EIpFSbQ8cODAeeJMHWF68eHGEVizoAgaDAaFQiJKSkh7r2iA3CKoCHx8feHp64tmzZ3Bzc8PBgwcVZo6XLl0SAhjOBuB369YtrUcha2trzJo1C2KxGBKJBAcPHmxPfwHINlCYAJiaprhcLhcjR45ESkoKamtrkZCQAG9v704bMF1x+/ZtABjPbGxsHPjo0SONDOgJixYtwvXr17Fnzx4wmUz4+Ph0qm9paQEADoDW9mm3K+bMmYNNmzYhMjISenp6cnU1NjaiqakJZmZmYDAYYLFYaGpqUmjfkydP8PTpUwv2/fv3+a9evVKxe72jtbUVXC4XAFBbWyvPIAaApp5eAW9vb9jY2ODbb7+Fj48PIiIi8NVXX/Woy9LSEo6Ojhg0aBBev36NX375BZcuXVJoHxHh7t27JmyxWKxUBLKxsUFYWBikUilSU1MVJjkAkJqaio8//hje3t7o378/FixY0Km+LQaQPH4ul4tr167h8ePHKCgowLx583psZ25ujk2bNmHr1q24c+cOzM3Ne7WtHRwOR4Kampov9PX1FU4ZJiYmFB8fTx4eHvTBBx/QqlWrlD7JEYlEFBkZSd7e3p3KR40aRUQ0hIjMfXx8uvE5OjrS6dOnKTo6mrZs2UI9pcvDhg2j1NRUGjRokMrTIIPBoLKysi1sPT295t4yu8DAQIhEIsTGxgIARCIRDAwMIG8d3xHFxcU4fPgw1q1bh4KCAojFYgCy/QAGAGZDQ0MnHpFIhPDwcHz55ZdgsVgoLi5GRUVFj/L19PTU2ido2/s0Yf/111/mf//9d4+NuFwuFi1aBFNTU9y7dw+hoaGwsLDA8+fP8fz5c6WVlZaW4siRI4iNjcW9e/fQ2traPl+zAEhmz54Ne3t76OrqgslkwsnJCWlpabhx44ZCuTdu3MDGjRsRFxeHXbt24dq1a0rb1MZvgePHj3+HHobIpEmTaNeuXfTZZ591Kus6lFUhKysrsre3Jzs7O5o6dSoR0Sgi0g8PDydbW1sSiUQ0ePDgHm+K9SY3MzOTRo8erRLfyZMn83HgwIFTHQstLS0pISGBkpOTycHB4a2loiKRiIjInYh4EyZM0FielZUVpaWldTp9UkRBQUFUWFh4ly2RSGQTbFhYGFxdXXHlyhVkZmYqHj8aoi395QCArq6uxvJKS0sRFxeHhIQEAJCbBDGZTGzevBm5ublISkrSYz58+NDQ2dkZW7duxcCBA7F+/fq33nkAqKmpAd7EAPS2DlEWpaWlWLVqFUJCQjBx4sRu9To6Oti+fTsePXqEc+fOwcTERIc9evTolurqavz44484f/68RgYYGRlh5syZePnyJRgMhizf7/orlUphYWEBvFmLkJ+fH4yNjTud+3X8bf9vbGyM33//HUVFRXJtqKqqQnR0NJKTkwEA586dAwDweDxs374d+fn5yMjIAPBmFLKlUql4586dGnUcAGxtbREdHY2rV6+ioqJCZrhUKu32XyKRoLa2FgB0ANCdO3dw9epVcDgcsNlssFgssFgsMJlMMBgM2W9raytWr16Nffv2KXxYNTU1iIyMxLZt29Da2oq8vDzs2LEDZ86cwZEjR2Tt2Gx2K/bv338MGgYgFxcX2r9/P3l6eirNY2RkREQUSEQcRZsxXcna2poyMzNp0qRJvbbl8/mUnJxM2dnZNHny5G718fHxd/Hnn39+q0nnPTw8aP/+/TR06FCV+Pr370+tra0ziMhYFQe086anp5My13aMjY3lPpidO3f+zh42bFiZoaEhlF0Q6ejoYPbs2dDT04O1tTWYTCbi4uLw4MEDpfjb0dLSAiJiAuBIJBKVeCsrKxEVFYXly5fDw8MDRUVFYDKZyMnJ6daPly9f4uLFiz3KEQqFZUwdHZ1/29vbK6185syZEAqFOHnyJPh8PoqKilTuPPAmFW5oaOACkMpbDitCTU0Nrl27BlNTU5w6dQqGhoYIDAxUmp/L5cLT0/MBE8CZ9957r0VZRktLS1y+fBmVlZU4fvw4rKysVDYeAJqamlBZWWkAwEDdadDW1hYnTpxAZWUlfv75Z/D5fKV5hw4dCkNDw8tsADWTJk36MzMz00MZxtOnT2P+/Plwd3eHrq6ubEpRB1VVVYa2trZGr1+/Vov/xIkTCA8Ph6OjI4yMjHDgwAGleb28vGoAnGqfllb3dHwlj4yMjGj69OmkyjcCPdHZs2djichT2UtPPRGPx6Pp06erfHukqKjofzsejRktX768WZPOqEPHjh3bRkQf2NravlO9beeS7p3OBqurq1OYTOY7NSQjIyONiCIEAsE71Xvx4sUL3W6I8Pn8dRs3bux9h0OLqK+v1wNgom4MUAcBAQHw8PBYLivocmfmUzMzs3f2JHbs2JFDROsMDQ3fmc6ysrIDiu4I7czJyflLff/2DDs7OwQHB0MgEHQqZzAYUgCNPd1KEYlECA4OxoABA7RmR3x8vMTCwmJZx7JuGYiXl9fMqVOnak2pnZ0dlixZAgsLC6xcubLT0RWbzZYAELdvn7fD2dkZYWFhMDc3x7Jly2BiovE3FTAyMkJMTEwkOt4OQfcrMgBQnJ6eni0QCELkCRMKhRg7dizEYjGIqOMxV7elb0BAAKKjo1FRUYGZM2di/vz52LBhAwCAyWRKAbzqeugRHByMw4cPo6CgAG5ubkhOTsapU6fA4XDAYDDw6tUriMVi3L17V+5maVckJCTUAkjpWt7jmQCfz182e/bskEOHDnWrGzduHEJCQpCbm4vKykrZgYdUKpUtdzv+CgQCBAcH48yZM3Bzc8Mff/whk6Wrq9sEoKarA+7cuQNfX180NDTA19cX58+fx6NHj2BmZia7Q6ynp4egoCDk5ubi2LFjCjuvp6eHpUuX/nePlfLu0JaWln6PLgFk2rRplJGRofKVlY8++ojCw8PJ39+/U3lWVtYeIvJ0c3PrVM5gMCgoKIg++eQThXeDBQIB7dq1ixYuXKhQf3R0dBMRMZW9KttOgzoaPGvWLNq7dy+p85GjPMrIyEglIlcvLy+N5CQlJdHSpUvl1ovF4m/k9VPRMuzx9u3bzwFvDka8vb2xfPlyVFVVKWBRDRKJhIW2fUFNsGbNGpiZmWHFihXd6ubOnQt9ff0YebwK16EODg5R27ZtA5/PR2RkpFInQaqgoaFBD0Cf3k5ylcHGjRvB5/Oxfv36TuWbNm36P3SJ/J2g4BUAEaG5uTkXbykp2bx583Eimuvi4qI1mdHR0RQbG0vAm8/u284f1fpiBADAZrOX+vn59dZMLdTV1fUBYN7x4oSm2LJlC8rLyzFv3jwkJCQcA3BXIUNvI4CIUFVVlYW3MAIiIiJuEtFudT+EUETZ2dlEvXwvpNQIAACBQLB49+7dWr9F0dTUxAPAb21t1apcoVAIf3///wLwotfGyoyANhoaFRWl1ae0aNGiIiLK0uYIsLGxoerq6l3K9ksVB4CIRqSnpz9Q5psgZSgiIuISEX1uZ2enFXmhoaHU3Nwcq0qfVHUAiIj9/Pnz5GXLlkl4PJ5GBu/evfscEdkre6IrjyZPnkwXLlw4Q0TDVO2POg5oJ5vy8vKt69atq5L3qawiCggIoObm5rlEhPz8/OOq3gkAQIGBgZSXl/cDEfmq2w9NHNBOBo2NjZ9//fXXN8aOHSvXWD6fTyNHjqSFCxe2ZGdn5xFRUAcZjCdPnny1YcOGh/7+/qRoj9DKyorCw8Mlly9fziYiT03tZxARtIgpDx488P3tt99cHj58aElEMDMze+7k5FQ8atSoe1wutxjAJQCK7tx6A3jv8ePH1jdu3LB+/PjxwNra2j4GBgavHRwcSvz9/fOZTOYRAI+0YfD/AxEFJ8mg+GSnAAAAAElFTkSuQmCC
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiMxZjI5MzciLz48cGF0aCBkPSJNMTQgMzhjNS0xNSAzMS0xNSAzNiAwIiBmaWxsPSJub25lIiBzdHJva2U9IiM2MGE1ZmEiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+PHBhdGggZD0iTTE4IDMwYzYtMTIgMjItMTIgMjggMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMzRkMzk5IiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxjaXJjbGUgY3g9IjMyIiBjeT0iMzQiIHI9IjgiIGZpbGw9IiNmOWZhZmIiLz48cGF0aCBkPSJNMjYgNDhoMTJsNi0xMSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZjU5ZTBiIiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==
 
-readme: |-
+readme: |
   ----------------------------------
   ## samri/{{ context.version }} ##
 
-  SAMRI standalone with Matlab Compiler Runtime.
+  SAMRI (Small Animal Magnetic Resonance Imaging) provides fMRI
+  preprocessing, Bruker ParaVision metadata parsing, BIDS conversion, and
+  analysis workflows for small rodent MRI data.
+
+  This container includes SAMRI, FSL, ANTs, Bru2Nii, Blender, and the
+  Python packages listed by upstream SAMRI for the {{ context.version }}
+  workflow generation. Example datasets and atlas releases are not bundled.
 
   Example:
   ```
-  SAMRI
+  SAMRI --help
+  SAMRI bru2bids -o . -f '{"acquisition":["EPI"]}' -s '{"acquisition":["TurboRARE"]}' samri_bindata
   SAMRI diagnose bids
+  SAMRI generic-prep -m /usr/share/mouse-brain-atlases/dsurqec_200micron_mask.nii \
+      -f '{"acquisition":["EPIlowcov"]}' \
+      -s '{"acquisition":["TurboRARElowcov"]}' \
+      bids /usr/share/mouse-brain-atlases/dsurqec_200micron.nii
   ```
 
   More documentation can be found here: https://github.com/IBT-FMI/SAMRI
 
+  To run container outside of this environment: ml samri/{{ context.version }}
+
+  License: GPL-3.0-or-later
   ----------------------------------

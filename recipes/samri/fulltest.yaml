@@ -1,0 +1,29 @@
+tests:
+  - name: SAMRI command line help
+    script: |
+      SAMRI --help
+
+  - name: SAMRI Python import
+    script: |
+      python - <<'PY'
+      import samri
+      import samri.cli
+      print(samri.__file__)
+      PY
+
+  - name: Bru2Nii binaries are available
+    script: |
+      command -v Bru2
+      command -v Bru2Nii
+
+  - name: ANTs binaries are available
+    script: |
+      command -v antsRegistration
+      command -v antsApplyTransforms
+
+  - name: Runtime paths do not depend on home directories
+    script: |
+      test -x /opt/miniconda/envs/samri/bin/SAMRI
+      test -x /opt/bru2/Bru2
+      test -d /opt/SAMRI
+      test -d /opt/mouse-brain-atlases_generator
