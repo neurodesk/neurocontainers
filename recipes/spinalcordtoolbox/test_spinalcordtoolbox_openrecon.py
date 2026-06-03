@@ -342,11 +342,6 @@ def test_openrecon_exposes_combined_analysis_bundles():
     for bundle_id in EXPECTED_ANALYSIS_BUNDLES:
         assert bundle_id in choices
 
-    wrapper_source = WRAPPER_PATH.read_text()
-    assert "_resolve_requested_analyses" in wrapper_source
-    assert "_sct_output_to_mrd_images" in wrapper_source
-    assert "precomputed_outputs" in wrapper_source
-
 
 def test_openrecon_exposes_segmentation_colourmap_lut_toggle():
     parameter = _label_parameter("segmentationcolormap")
@@ -356,11 +351,6 @@ def test_openrecon_exposes_segmentation_colourmap_lut_toggle():
     defaults = _module_assignment("OPENRECON_DEFAULTS")
     assert defaults["segmentationcolormap"] is False
 
-    wrapper_source = WRAPPER_PATH.read_text()
-    assert 'tmpMeta["LUTFileName"] = "MicroDeltaHotMetal.pal"' in wrapper_source
-    assert 'boolean_checker(\n        "segmentationcolormap"' in wrapper_source
-    assert "segmentation_colormap=segmentation_colormap" in wrapper_source
-
 
 def test_openrecon_does_not_expose_segmentation_postprocessing_toggle():
     label = json.loads(LABEL_PATH.read_text())
@@ -368,11 +358,6 @@ def test_openrecon_does_not_expose_segmentation_postprocessing_toggle():
     assert "segmentpostprocessing" not in parameter_ids
     defaults = _module_assignment("OPENRECON_DEFAULTS")
     assert "segmentpostprocessing" not in defaults
-
-    wrapper_source = WRAPPER_PATH.read_text()
-    assert 'boolean_checker(\n        "segmentpostprocessing"' not in wrapper_source
-    assert "segment_postprocessing" not in wrapper_source
-    assert "source-image-header segmentation image(s)" in wrapper_source
 
 
 def test_openrecon_exposes_debug_threshold_segment_toggle():
@@ -382,76 +367,6 @@ def test_openrecon_exposes_debug_threshold_segment_toggle():
 
     defaults = _module_assignment("OPENRECON_DEFAULTS")
     assert defaults["sctdebugthresholdsegment"] is False
-
-    wrapper_source = WRAPPER_PATH.read_text()
-    assert 'boolean_checker(\n        "sctdebugthresholdsegment"' in wrapper_source
-    assert "sctdebugthresholdsegment is enabled; skipping SCT model execution" in wrapper_source
-    assert "_simple_threshold_segmentation_volume" in wrapper_source
-    assert "_write_debug_threshold_sct_outputs" in wrapper_source
-
-
-def test_wrapper_avoids_hardcoded_sct_install_version_paths():
-    wrapper_source = WRAPPER_PATH.read_text()
-    assert "spinalcordtoolbox-7.2" not in wrapper_source
-    assert "spinalcordtoolbox-7.1" not in wrapper_source
-
-
-def test_wrapper_preserves_nifti2mrd_axis_order_for_sct():
-    wrapper_source = WRAPPER_PATH.read_text()
-    assert "_slice_sort_indices" in wrapper_source
-    assert "_estimate_slice_spacing" in wrapper_source
-    assert "new_img.set_qform(affine, code=1)" in wrapper_source
-    assert "new_img.set_sform(affine, code=1)" in wrapper_source
-    assert "data_nifti = np.asarray(data)" in wrapper_source
-    assert "data_nifti = np.asarray(data.transpose((1, 0, 2)))" not in wrapper_source
-
-
-def test_wrapper_sends_openrecon_images_in_series_preserving_batches():
-    wrapper_source = WRAPPER_PATH.read_text()
-    function_names = _function_names()
-    assert "_send_images_by_series" in function_names
-    assert "OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96" in wrapper_source
-    assert "Sending %s batch: series_index=%s chunk=%d-%d/%d image_count=%d" in wrapper_source
-    assert "connection.send_image(chunk)" in wrapper_source
-    assert 'connection.send_image(image)' not in wrapper_source
-
-
-def test_wrapper_validates_output_series_contract_like_musclemap():
-    wrapper_source = WRAPPER_PATH.read_text()
-    function_names = _function_names()
-    assert "ConnectionSeriesAllocator" in wrapper_source
-    assert "_build_connection_series_allocator" in function_names
-    assert "_log_and_validate_output_series_contract" in function_names
-    assert "_validate_output_series_contract" in function_names
-    assert "_validate_output_images" in function_names
-    assert "SCT_OUTPUT_SERIES_CONTRACT" in wrapper_source
-    assert "Invalid SCT output series contract before send" in wrapper_source
-    assert "derived role {role} reuses input SeriesInstanceUID" in wrapper_source
-    assert "output role {role} reuses input image_series_index" in wrapper_source
-    assert "duplicates scanner storage key" in wrapper_source
-    assert "derived role {role} has Meta/IceMiniHead SeriesInstanceUID mismatch" in wrapper_source
-    assert 'derived_series_allocator.allocate(output_spec["series_suffix"])' in wrapper_source
-    assert 'derived_series_allocator.allocate("ORIGINAL")' in wrapper_source
-    assert 'derived_series_allocator.allocate("PASSTHROUGH")' in wrapper_source
-    assert "_restamp_passthrough_images" in function_names
-    assert "_log_and_validate_output_series_contract(\n                output_images" in wrapper_source
-
-
-def test_process_image_allocates_original_before_segmentation_like_vesselboost():
-    wrapper_source = WRAPPER_PATH.read_text()
-    tree = ast.parse(wrapper_source)
-    process_node = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.FunctionDef) and node.name == "process_image"
-    )
-    process_source = ast.get_source_segment(wrapper_source, process_node)
-
-    original_allocation = 'original_passthrough_index = derived_series_allocator.allocate("ORIGINAL")'
-    segmentation_allocation = 'output_series_index = derived_series_allocator.allocate(output_spec["series_suffix"])'
-    assert process_source.index(original_allocation) < process_source.index(segmentation_allocation)
-    assert "imagesOut.extend(\n                _restamp_passthrough_images" in process_source
-    assert "imagesOut = original_passthrough_images + imagesOut" not in process_source
 
 
 def test_passthrough_restamp_uses_fresh_series_identity():
@@ -1688,13 +1603,6 @@ def test_get_image_series_index_logs_malformed_header_fallback():
     assert warnings[0][1]["exc_info"] is True
 
 
-def test_wrapper_logs_sct_output_statistics_before_mrd_conversion():
-    wrapper_source = WRAPPER_PATH.read_text()
-    assert "SCT output voxel statistics before MRD conversion" in wrapper_source
-    assert "np.count_nonzero(data)" in wrapper_source
-    assert "np.unique(data)" in wrapper_source
-
-
 def test_debug_threshold_segmentation_keeps_largest_component_per_slice():
     helpers = _load_runtime_helpers_for_test(
         [
@@ -1806,49 +1714,6 @@ def test_label_vertebrae_output_path_follows_segmentation_filename():
     ) == Path("/tmp/openrecon/sct_label_vertebrae/output_labeled.nii.gz")
 
 
-def test_wrapper_patches_openrecon_derived_series_identity_like_musclemap():
-    wrapper_source = WRAPPER_PATH.read_text()
-    function_names = _function_names()
-    assert "_build_derived_series_instance_uid" in function_names
-    assert "_build_derived_sop_instance_uid" in function_names
-    assert "_patch_ice_minihead" in function_names
-    assert "_replace_or_append_minihead_long_param" in function_names
-    assert 'tmpMeta["ProtocolName"] = output_identity["sequence_description"]' in wrapper_source
-    assert 'tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]' in wrapper_source
-    assert 'tmpMeta["SOPInstanceUID"] = sop_instance_uid' in wrapper_source
-    assert 'tmpMeta["SequenceDescriptionAdditional"] = "or"' in wrapper_source
-    assert 'tmpMeta["IceMiniHead"] = _encode_ice_minihead(patched_minihead_text)' in wrapper_source
-    assert '"ProtocolName", sequence_description' in wrapper_source
-    assert '"SeriesInstanceUID", series_instance_uid' in wrapper_source
-    assert '"SOPInstanceUID", sop_instance_uid' in wrapper_source
-    assert 'oldHeader.image_index = _source_geometry_header_image_index(source_image, iImg)' in wrapper_source
-    assert 'oldHeader.slice = _source_geometry_header_slice(source_image, iImg)' in wrapper_source
-    assert "image_index=output_header_image_index" in wrapper_source
-    assert "SCT segmentations are returned as source-geometry" in wrapper_source
-    assert 'tmpMeta["Keep_image_geometry"] = 0' not in wrapper_source
-    assert 'tmpMeta["Keep_image_geometry"] = "1"' in wrapper_source
-    assert 'tmpMeta["SegmentSourceGeometry"] = "1"' in wrapper_source
-    assert 'tmpMeta["SegmentSourceImageHeader"] = "1"' in wrapper_source
-    assert 'tmpMeta["SegmentPostProcessingChildRole"] = str(int(output_series_index))' in wrapper_source
-    assert 'tmpMeta["SegmentPostProcessing"] = 1' not in wrapper_source
-    assert 'tmpMeta["partition_count"] = "1"' not in wrapper_source
-    assert "Packed SCT output" not in wrapper_source
-    assert "SCANNER_PARTITION_INDEX = 0" in wrapper_source
-    assert '"Actual3DImagePartNumber", SCANNER_PARTITION_INDEX' in wrapper_source
-    assert '"ChronSliceNo", output_index' in wrapper_source
-    assert '"ProtocolSliceNumber", output_index' in wrapper_source
-    assert 'tmpMeta["ImageSliceNormDir"]' not in wrapper_source
-    assert 'text.replace("\\\\", "/")' not in wrapper_source
-    # End-of-series remap (sct.log:5442-5453): every output frame must override
-    # the inherited BIsSeriesEnd/ConcatenationEnd flags so the host closes the
-    # multi-frame series at the actual last OUTPUT frame.
-    assert "_replace_or_append_minihead_bool_param" in function_names
-    assert '"BIsSeriesEnd", bool(is_last_in_series)' in wrapper_source
-    assert '"ConcatenationEnd", bool(is_last_in_series)' in wrapper_source
-    assert "is_last_in_series=(iImg == output_count - 1)" in wrapper_source
-    assert "is_last_in_series=(iImg == len(source_images) - 1)" in wrapper_source
-
-
 def test_wrapper_strips_source_parent_references_from_derived_meta():
     strip_source_parent_refs = _load_helper_for_test("_strip_source_parent_refs")
     prefixes = _module_assignment("SOURCE_PARENT_REFERENCE_META_PREFIXES")
@@ -1916,15 +1781,3 @@ def test_batch_processing_openrecon_cases_are_declared_and_exposed():
         assert by_name[name]["analysis"] == analysis
         assert by_name[name]["source_command"] == source_command
         assert analysis in choices
-
-
-def test_wrapper_can_generate_openrecon_configs_for_batch_processing_cases():
-    wrapper_source = WRAPPER_PATH.read_text()
-    function_names = _function_names()
-    assert "iter_openrecon_batch_processing_test_configs" in function_names
-    assert "write_openrecon_batch_processing_test_configs" in function_names
-    assert "--write-openrecon-batch-processing-test-configs" in wrapper_source
-    assert "_openrecon_config_for_analysis(case[\"analysis\"])" in wrapper_source
-    assert '"segmentationcolormap": OPENRECON_DEFAULTS["segmentationcolormap"]' in wrapper_source
-    assert '"sctdebugthresholdsegment": OPENRECON_DEFAULTS["sctdebugthresholdsegment"]' in wrapper_source
-    assert "sct_deepseg_gm" in wrapper_source

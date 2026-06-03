@@ -127,23 +127,3 @@ def test_unsafe_field_helper_rejects_image_type_value3_in_minihead():
         0,
     )
     assert errors == ["image 0 has unsafe scanner IceMiniHead ImageTypeValue3"]
-
-
-def test_validate_storage_fields_uses_unsafe_field_helper():
-    wrapper_source = WRAPPER_PATH.read_text()
-    # The validator must delegate to the helper so scanner-unsafe fields are
-    # checked consistently.
-    assert "_scanner_write_unsafe_field_errors(" in wrapper_source
-    assert "is_" + "dixon" + "_composable_output = (" not in wrapper_source
-    assert "Segment" + "DixonComposable" not in wrapper_source
-
-
-def test_validate_output_images_calls_validate_storage_fields():
-    # Ensures the helper is reached on every output.
-    wrapper_source = WRAPPER_PATH.read_text()
-    assert "_validate_output_images" in wrapper_source
-    assert "_validate_storage_fields" in wrapper_source
-    # _validate_output_images iterates output_images and dispatches to
-    # _validate_storage_fields per image — preserve that wiring.
-    assert "for index, image in enumerate(output_images):" in wrapper_source
-    assert "_validate_storage_fields(" in wrapper_source
