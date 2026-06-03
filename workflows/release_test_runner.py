@@ -150,6 +150,34 @@ def _write_integration_outputs(
     return status
 
 
+def _failure_results(
+    *,
+    recipe: str,
+    version: str,
+    message: str,
+    container_ref: str = "unresolved",
+) -> dict[str, Any]:
+    return {
+        "container": container_ref,
+        "runtime": "apptainer",
+        "recipe": recipe,
+        "version": version,
+        "total_tests": 1,
+        "passed": 0,
+        "failed": 1,
+        "skipped": 0,
+        "test_results": [
+            {
+                "name": "release_test_runner",
+                "status": "failed",
+                "stdout": "",
+                "stderr": message,
+                "return_code": 1,
+            }
+        ],
+    }
+
+
 def run_fulltest_release(args: argparse.Namespace) -> str:
     release_file = Path(args.release_file)
     test_config = Path(args.test_config)
@@ -302,7 +330,26 @@ def main(argv: list[str] | None = None) -> int:
         else:
             status = run_legacy_release(args)
     except Exception as exc:
-        print(str(exc), file=sys.stderr)
+        message = str(exc)
+        print(message, file=sys.stderr)
+        try:
+            _write_integration_outputs(
+                recipe=args.recipe,
+                version=args.version,
+                results=_failure_results(
+                    recipe=args.recipe,
+                    version=args.version,
+                    message=message,
+                ),
+                results_path=Path(args.results_path),
+                output_dir=Path(args.output_dir),
+            )
+            if args.github_output:
+                with Path(args.github_output).open("a", encoding="utf-8") as handle:
+                    handle.write("status=failed\n")
+                    handle.write(f"reason={message}\n")
+        except Exception as write_exc:
+            print(f"Unable to write failure report: {write_exc}", file=sys.stderr)
         return 1
 
     if args.github_output:

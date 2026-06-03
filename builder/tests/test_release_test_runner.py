@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from workflows.release_test_runner import (
     _combine_results,
+    _failure_results,
     _load_jsonl_records,
     _normalise_run_tests_output,
     _release_build_date,
+    main,
 )
 from workflows.reporting import build_report
 
@@ -120,6 +123,61 @@ def test_combine_results_prepends_deploy_check_and_sums_counts() -> None:
         {"name": "deploy", "status": "failed"},
         {"name": "fulltest", "status": "passed"},
     ]
+
+
+def test_failure_results_are_reportable() -> None:
+    result = _failure_results(
+        recipe="niimath",
+        version="1.0",
+        message="Unable to download release container",
+    )
+
+    assert result["failed"] == 1
+    assert result["test_results"][0]["name"] == "release_test_runner"
+    assert "Unable to download" in result["test_results"][0]["stderr"]
+
+
+def test_main_writes_failure_outputs_when_fulltest_adapter_errors(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def fail_fulltest(args: SimpleNamespace) -> str:
+        raise RuntimeError("Unable to download release container")
+
+    monkeypatch.setattr(
+        "workflows.release_test_runner.run_fulltest_release",
+        fail_fulltest,
+    )
+    test_config = tmp_path / "fulltest.yaml"
+    test_config.write_text("tests: []\n", encoding="utf-8")
+    release_file = tmp_path / "release.json"
+    release_file.write_text("{}", encoding="utf-8")
+    github_output = tmp_path / "github-output.txt"
+    results_path = tmp_path / "builder" / "test-results-niimath.json"
+
+    status = main(
+        [
+            "--recipe",
+            "niimath",
+            "--version",
+            "1.0",
+            "--release-file",
+            str(release_file),
+            "--test-config",
+            str(test_config),
+            "--results-path",
+            str(results_path),
+            "--output-dir",
+            str(tmp_path / "builder"),
+            "--github-output",
+            str(github_output),
+        ]
+    )
+
+    assert status == 1
+    assert results_path.is_file()
+    assert (tmp_path / "builder" / "test-report-niimath.md").is_file()
+    assert "status=failed" in github_output.read_text(encoding="utf-8")
 
 
 def test_build_report_includes_fulltest_summary_and_artifacts() -> None:

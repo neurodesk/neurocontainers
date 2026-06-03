@@ -54,13 +54,24 @@ def _relative_posix(path: Path, repo_root: Path) -> str:
         return path.as_posix()
 
 
-def find_latest_release_file(release_dir: str | Path) -> tuple[Path | None, str | None]:
+def _release_sort_key(version: str, build_date: str, *, prefer_x86_64: bool) -> tuple[int, str, str]:
+    architecture_priority = 1
+    if prefer_x86_64 and version.endswith("-arm64"):
+        architecture_priority = 0
+    return architecture_priority, build_date, version
+
+
+def find_latest_release_file(
+    release_dir: str | Path,
+    *,
+    prefer_x86_64: bool = False,
+) -> tuple[Path | None, str | None]:
     release_path = Path(release_dir)
     if not release_path.is_dir():
         return None, None
 
     latest_path: Path | None = None
-    latest_build_date = ""
+    latest_key: tuple[int, str, str] | None = None
     latest_version = ""
 
     for entry in sorted(release_path.iterdir()):
@@ -81,16 +92,22 @@ def find_latest_release_file(release_dir: str | Path) -> tuple[Path | None, str 
 
         if latest_path is None:
             latest_path = entry
-            latest_build_date = build_date
+            latest_key = _release_sort_key(
+                candidate_version,
+                build_date,
+                prefer_x86_64=prefer_x86_64,
+            )
             latest_version = candidate_version
             continue
 
-        if build_date and (not latest_build_date or build_date > latest_build_date):
+        candidate_key = _release_sort_key(
+            candidate_version,
+            build_date,
+            prefer_x86_64=prefer_x86_64,
+        )
+        if latest_key is None or candidate_key > latest_key:
             latest_path = entry
-            latest_build_date = build_date
-            latest_version = candidate_version
-        elif build_date == latest_build_date and candidate_version > latest_version:
-            latest_path = entry
+            latest_key = candidate_key
             latest_version = candidate_version
 
     if latest_path is None:
@@ -151,7 +168,10 @@ def detect_release_pr_changes(
         if recipe in entries:
             continue
 
-        release_file, version = find_latest_release_file(root / "releases" / recipe)
+        release_file, version = find_latest_release_file(
+            root / "releases" / recipe,
+            prefer_x86_64=True,
+        )
         if release_file and version:
             entries[recipe] = ReleaseEntry(
                 name=recipe,
