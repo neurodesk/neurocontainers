@@ -210,6 +210,7 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
             args.recipe,
             args.version,
             build_date,
+            use_cache=False,
         )
         if not container_ref:
             raise RuntimeError(
