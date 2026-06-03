@@ -627,6 +627,7 @@ tests:
       segmentation_minihead_text = base64.b64decode(
           first(segmentation_meta.get("IceMiniHead"))
       ).decode("utf-8")
+      assert module._output_role(segmentation) == "segment_source_image_header"
       assert first(segmentation_meta.get("DataRole")) == "Image"
       assert first(segmentation_meta.get("SeriesDescription")) == "tof_fl3d_tra_vesselboost"
       assert first(segmentation_meta.get("SequenceDescriptionAdditional")) == "OR"
@@ -680,9 +681,9 @@ tests:
       )
 
       # "Segmentation MIPs" mode mirrors openreconi2iexample's
-      # 2d/source-image-header/postprocessed path: the segment remains a
-      # post-processing child and also carries a clean ImageTypeValue3="M" so
-      # the scanner inline radial MIP includes it.
+      # 2d_segment_header_originals path: originals remain the scanner
+      # post-processing target and the segment is a source-geometry
+      # segmentation-header stream without child-role metadata.
       mip_segmentations = module._build_vesselboost_segmentation_images(
           volume_yxz=volume_yxz,
           ordered_source_images=sources,
@@ -690,7 +691,7 @@ tests:
           output_identity=segmentation_identity,
           series_index=3,
           max_val=4095,
-          scanner_postprocessing=True,
+          scanner_postprocessing=False,
           segmentation_mips=True,
       )
       module._validate_vesselboost_output_contract(
@@ -703,21 +704,34 @@ tests:
       mip_seg_minihead = base64.b64decode(
           first(mip_seg_meta.get("IceMiniHead"))
       ).decode("utf-8")
-      assert first(mip_seg_meta.get("ImageType")) == "ORIGINAL\\PRIMARY\\M\\TOF"
-      assert first(mip_seg_meta.get("ImageTypeValue3")) == "M"
-      assert "<CategoryEntry>3</CategoryEntry>" in first(mip_seg_meta.get("ExamDataRole"))
-      assert first(
+      assert first(mip_seg_meta.get("DataRole")) == "Segmentation"
+      assert first(mip_seg_meta.get("ImageType")) == module.VESSELBOOST_SOURCE_GEOMETRY_IMAGE_TYPE
+      assert first(mip_seg_meta.get("DicomImageType")) == module.VESSELBOOST_SOURCE_GEOMETRY_IMAGE_TYPE
+      assert first(mip_seg_meta.get("ImageTypeValue4")) == module.VESSELBOOST_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4
+      assert not first(mip_seg_meta.get("ImageTypeValue3"))
+      assert not first(mip_seg_meta.get("ExamDataRole"))
+      assert first(mip_seg_meta.get(module.VESSELBOOST_SEGMENT_SOURCE_GEOMETRY_META_KEY)) == "1"
+      assert not first(mip_seg_meta.get(module.VESSELBOOST_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY))
+      assert not first(
           mip_seg_meta.get(module.VESSELBOOST_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY)
-      ) == "3"
-      assert first(mip_seg_meta.get(module.VESSELBOOST_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY)) == "1"
-      assert '<ParamString."ExamDataRole">' in module._minihead_param_map_text(
+      )
+      assert '<ParamString."ExamDataRole">' not in module._minihead_param_map_text(
           mip_seg_minihead,
           "DICOM",
       )
       assert module._extract_minihead_string_value(
           mip_seg_minihead,
+          "ImageType",
+      ) == module.VESSELBOOST_SOURCE_GEOMETRY_IMAGE_TYPE
+      assert module._extract_minihead_array_tokens(
+          mip_seg_minihead,
+          "ImageTypeValue4",
+      ) == [module.VESSELBOOST_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4]
+      assert module._output_role(mip_segmentations[0]) == "segment_source_geometry"
+      assert not module._extract_minihead_string_value(
+          mip_seg_minihead,
           "ImageTypeValue3",
-      ) == "M"
+      )
       assert module.OPENRECON_DEFAULTS["vbsegmentationmips"] is False
 
       debug_threshold = module._simple_threshold_segmentation_volume(

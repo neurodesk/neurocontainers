@@ -119,7 +119,7 @@
       "label": { "en": "Segmentation MIPs" },
       "type": "boolean",
       "default": false,
-      "information": { "en": "Also produce scanner inline radial MIPs of the segmentation, in addition to the original-scan MIPs. When off, the segmentation is sent as a post-processing child and excluded from the inline MIP." }
+      "information": { "en": "Use the openreconi2iexample 2D segmentation-header/originals-postprocessed delivery mode: originals stay the scanner post-processing target, then the segmentation is sent without source-image-header or child-role metadata." }
     }
   ]
 }
