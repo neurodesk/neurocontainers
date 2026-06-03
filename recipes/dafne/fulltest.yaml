@@ -41,7 +41,7 @@ tests:
       print("SimpleITK", SimpleITK.__version__)
       PY
     expected_output_contains:
-      - "dafne 1.8a4"
+      - "dafne 1.8-alpha4"
       - "numpy 1.24.3"
       - "SimpleITK"
 
