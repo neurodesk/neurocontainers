@@ -81,6 +81,10 @@ def discover_test_config(recipe_dir: str | Path) -> Optional[Path]:
     """Return the default test configuration file for a recipe, if available."""
 
     recipe_path = Path(recipe_dir)
+    fulltest_yaml = recipe_path / "fulltest.yaml"
+    if fulltest_yaml.is_file():
+        return fulltest_yaml
+
     test_yaml = recipe_path / "test.yaml"
     if test_yaml.is_file():
         return test_yaml

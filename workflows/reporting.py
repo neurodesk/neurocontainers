@@ -170,6 +170,29 @@ def build_report(data: Dict, recipe: str, version: str) -> str:
         "",
     ]
 
+    fulltest_summary = data.get("fulltest_summary")
+    if isinstance(fulltest_summary, dict):
+        try:
+            duration = float(fulltest_summary.get("duration", 0) or 0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        header.extend(
+            [
+                "### Fulltest Summary",
+                f"- Suites: {fulltest_summary.get('suites_passed', 0)}/{fulltest_summary.get('total_suites', 0)} passed",
+                f"- Fulltest tests: {fulltest_summary.get('tests_passed', 0)}/{fulltest_summary.get('total_tests', 0)} passed",
+                f"- Duration: {duration:.1f}s",
+                "",
+            ]
+        )
+
+    fulltest_artifacts = data.get("fulltest_artifacts")
+    if isinstance(fulltest_artifacts, dict):
+        header.append("### Fulltest Artifacts")
+        for label, path in fulltest_artifacts.items():
+            header.append(f"- {label}: `{path}`")
+        header.append("")
+
     sections: List[str] = []
     failed_tests = [entry for entry in data.get("test_results", []) if entry.get("status") == "failed"]
     passed_tests = [entry for entry in data.get("test_results", []) if entry.get("status") == "passed"]

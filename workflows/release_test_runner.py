@@ -1,0 +1,317 @@
+"""Run release PR container tests with fulltest-aware integration output."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from workflows.container_tester import ContainerTester
+from workflows.reporting import build_comment, build_report, determine_status, write_text
+from workflows.summarize_deploy_results import summarise_results_file
+from workflows.test_runner import ContainerTestRunner, TestRequest
+
+
+def _release_build_date(release_file: Path) -> str:
+    data = json.loads(release_file.read_text(encoding="utf-8"))
+    apps = data.get("apps", {}) or {}
+    if not isinstance(apps, dict) or not apps:
+        raise RuntimeError(f"No app entry in release file: {release_file}")
+    first_value = next(iter(apps.values()))
+    build_date = str(first_value.get("version", "")).strip()
+    if not build_date:
+        raise RuntimeError(f"Build date missing in release file: {release_file}")
+    return build_date
+
+
+def _normalise_run_tests_output(
+    raw: dict[str, Any],
+    *,
+    recipe: str,
+    version: str,
+    container_ref: str,
+    jsonl_records: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    summary = raw.get("summary", {}) or {}
+    suites = raw.get("suites", []) or []
+    record_lookup: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for record in jsonl_records or []:
+        key = (str(record.get("suite", "")), str(record.get("test", "")))
+        record_lookup.setdefault(key, []).append(record)
+
+    test_results: list[dict[str, Any]] = []
+    for suite in suites:
+        suite_name = str(suite.get("name", ""))
+        for test in suite.get("tests", []) or []:
+            test_name = str(test.get("name", "unnamed"))
+            records = record_lookup.get((suite_name, test_name), [])
+            record = records.pop(0) if records else {}
+            passed = bool(test.get("passed"))
+            message = str(test.get("message", "") or "")
+            stdout = str(record.get("stdout", "") or "")
+            stderr = str(record.get("stderr", "") or "")
+            if not passed and message and not stderr:
+                stderr = message
+            test_results.append(
+                {
+                    "name": test_name,
+                    "status": "passed" if passed else "failed",
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "return_code": int(record.get("exit_code", 0 if passed else 1) or 0),
+                    "duration": test.get("duration", 0),
+                    "message": message,
+                }
+            )
+
+    total = int(summary.get("total_tests", len(test_results)) or 0)
+    passed = int(summary.get("tests_passed", 0) or 0)
+    failed = int(summary.get("tests_failed", 0) or 0)
+
+    return {
+        "container": container_ref,
+        "runtime": "apptainer",
+        "recipe": recipe,
+        "version": version,
+        "total_tests": total,
+        "passed": passed,
+        "failed": failed,
+        "skipped": max(0, total - passed - failed),
+        "test_results": test_results,
+        "fulltest_summary": summary,
+    }
+
+
+def _load_jsonl_records(path: Path) -> list[dict[str, Any]]:
+    if not path.is_file():
+        return []
+
+    records: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict):
+            records.append(record)
+    return records
+
+
+def _combine_results(
+    fulltest_results: dict[str, Any],
+    deploy_results: dict[str, Any],
+) -> dict[str, Any]:
+    combined = dict(fulltest_results)
+    combined["test_results"] = list(deploy_results.get("test_results", [])) + list(
+        fulltest_results.get("test_results", [])
+    )
+    combined["total_tests"] = int(deploy_results.get("total_tests", 0) or 0) + int(
+        fulltest_results.get("total_tests", 0) or 0
+    )
+    combined["passed"] = int(deploy_results.get("passed", 0) or 0) + int(
+        fulltest_results.get("passed", 0) or 0
+    )
+    combined["failed"] = int(deploy_results.get("failed", 0) or 0) + int(
+        fulltest_results.get("failed", 0) or 0
+    )
+    combined["skipped"] = int(deploy_results.get("skipped", 0) or 0) + int(
+        fulltest_results.get("skipped", 0) or 0
+    )
+    return combined
+
+
+def _write_integration_outputs(
+    *,
+    recipe: str,
+    version: str,
+    results: dict[str, Any],
+    results_path: Path,
+    output_dir: Path,
+) -> str:
+    write_text(results_path, json.dumps(results, indent=2) + "\n")
+    summarise_results_file(results_path)
+
+    data = json.loads(results_path.read_text(encoding="utf-8"))
+    report = build_report(data, recipe, version)
+    write_text(output_dir / f"test-report-{recipe}.md", report)
+
+    comment, status = build_comment(data, recipe, version)
+    write_text(output_dir / f"comment-{recipe}.md", comment)
+    write_text(output_dir / f"status-{recipe}.txt", status + "\n")
+    return status
+
+
+def run_fulltest_release(args: argparse.Namespace) -> str:
+    release_file = Path(args.release_file)
+    test_config = Path(args.test_config)
+    output_dir = Path(args.output_dir)
+    results_path = Path(args.results_path)
+    containers_dir = output_dir / "fulltest-containers"
+    raw_results_path = output_dir / f"fulltest-raw-{args.recipe}.json"
+    fulltest_log_path = output_dir / f"fulltest-{args.recipe}.log"
+    fulltest_jsonl_path = output_dir / f"fulltest-{args.recipe}.jsonl"
+    suite_path = output_dir / f"fulltest-suite-{args.recipe}.yaml"
+    containers_dir.mkdir(parents=True, exist_ok=True)
+
+    build_date = _release_build_date(release_file)
+    tester = ContainerTester()
+    runtime = tester.select_runtime(args.runtime)
+    if runtime.name != "apptainer":
+        raise RuntimeError("fulltest.yaml release tests currently require Apptainer/Singularity")
+
+    if args.docker_to_simg:
+        container_ref = tester.convert_docker_image_to_simg(
+            args.recipe,
+            args.version,
+            release_file=str(release_file),
+            docker_registry=args.docker_registry,
+            converter_source=args.docker_save_to_simg,
+            verbose=args.verbose,
+        )
+    else:
+        container_ref = tester.release_downloader.download_from_release(
+            args.recipe,
+            args.version,
+            build_date,
+        )
+        if not container_ref:
+            raise RuntimeError(
+                f"Unable to download release container {args.recipe}:{args.version}"
+            )
+    source = Path(container_ref)
+    target = containers_dir / source.name
+    if source.resolve() != target.resolve():
+        shutil.copy2(source, target)
+    container_ref = str(target)
+
+    suite = yaml.safe_load(test_config.read_text(encoding="utf-8")) or {}
+    suite["name"] = suite.get("name") or args.recipe
+    suite["version"] = args.version
+    suite["container"] = Path(container_ref).name
+    write_text(suite_path, yaml.safe_dump(suite, sort_keys=False))
+
+    deploy_results = tester.run_test_suite(
+        container_ref,
+        {"tests": [{"name": "Simple Deploy Bins/Path Test", "builtin": "test_deploy.sh"}]},
+        verbose=args.verbose,
+    )
+
+    command = [
+        "uv",
+        "run",
+        "builder/run_tests.py",
+        str(suite_path),
+        "-c",
+        str(containers_dir),
+        "-o",
+        str(raw_results_path),
+        "--log",
+        str(fulltest_log_path),
+        "--jsonl",
+        str(fulltest_jsonl_path),
+    ]
+    proc = subprocess.run(command, cwd=args.repo_root, text=True, check=False)
+    if proc.returncode != 0 and not raw_results_path.is_file():
+        raise RuntimeError(f"run_tests.py failed before writing results: exit {proc.returncode}")
+
+    raw = json.loads(raw_results_path.read_text(encoding="utf-8"))
+    fulltest_results = _normalise_run_tests_output(
+        raw,
+        recipe=args.recipe,
+        version=args.version,
+        container_ref=container_ref,
+        jsonl_records=_load_jsonl_records(fulltest_jsonl_path),
+    )
+    fulltest_results["fulltest_artifacts"] = {
+        "raw_json": str(raw_results_path),
+        "jsonl": str(fulltest_jsonl_path),
+        "log": str(fulltest_log_path),
+        "suite": str(suite_path),
+    }
+    results = _combine_results(fulltest_results, deploy_results)
+    status = _write_integration_outputs(
+        recipe=args.recipe,
+        version=args.version,
+        results=results,
+        results_path=results_path,
+        output_dir=output_dir,
+    )
+    if proc.returncode != 0:
+        return "failed"
+    return status
+
+
+def run_legacy_release(args: argparse.Namespace) -> str:
+    runner = ContainerTestRunner(repo_root=Path(args.repo_root))
+    request = TestRequest(
+        recipe=args.recipe,
+        version=args.version,
+        release_file=args.release_file,
+        test_config=args.test_config,
+        runtime=args.runtime,
+        location=args.location,
+        cleanup=True,
+        auto_cleanup=False,
+        docker_to_simg=args.docker_to_simg,
+        docker_registry=args.docker_registry,
+        docker_save_to_simg=args.docker_save_to_simg,
+        verbose=args.verbose,
+        allow_missing_tests=True,
+        output_dir=Path(args.output_dir),
+        results_path=Path(args.results_path),
+    )
+    outcome = runner.run(request)
+    return outcome.status
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--recipe", required=True)
+    parser.add_argument("--version", required=True)
+    parser.add_argument("--release-file", required=True)
+    parser.add_argument("--test-config", required=True)
+    parser.add_argument("--runtime", default="apptainer")
+    parser.add_argument("--location", default="auto")
+    parser.add_argument("--output-dir", default="builder")
+    parser.add_argument("--results-path", required=True)
+    parser.add_argument("--repo-root", default=".")
+    parser.add_argument("--github-output", default=os.environ.get("GITHUB_OUTPUT"))
+    parser.add_argument("--docker-to-simg", action="store_true")
+    parser.add_argument("--docker-registry", default="neurodesk")
+    parser.add_argument("--docker-save-to-simg", default="builder/docker-save-to-simg.go")
+    parser.add_argument("--verbose", action="store_true")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    test_config = Path(args.test_config)
+
+    try:
+        if test_config.name == "fulltest.yaml":
+            status = run_fulltest_release(args)
+        else:
+            status = run_legacy_release(args)
+    except Exception as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
+    if args.github_output:
+        with Path(args.github_output).open("a", encoding="utf-8") as handle:
+            handle.write(f"status={status}\n")
+
+    print(f"Status: {status}")
+    return 0 if status != "failed" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
