@@ -18,6 +18,7 @@ build:
         LD_LIBRARY_PATH: ""
     - template:
         name: ants
+        cmake_opts: -DCMAKE_INSTALL_PREFIX=/opt/ants-{{ context.version }} -DBUILD_SHARED_LIBS=ON -DBUILD_TESTING=OFF -DCMAKE_C_FLAGS="-march=x86-64 -mtune=generic -mlong-double-64" -DCMAKE_CXX_FLAGS="-march=x86-64 -mtune=generic -mlong-double-64"
         make_opts: -j2
         method: source
         version: "{{ context.version }}"
