@@ -12,15 +12,15 @@ architectures:
 variables:
   conda_install:
     try:
-      - value: "python=3.8 numpy tensorflow"
+      - value: "python=3.8 numpy=1.24.3 protobuf=3.20.3 tensorflow=2.13.1"
         condition: arch=="x86_64"
-      - value: "python=3.8 numpy pyqt=5.15 vtk"
+      - value: "python=3.8 numpy=1.24.3 protobuf=3.20.3 pyqt=5.15 vtk"
         condition: arch=="aarch64"
   pip_install:
     try:
-      - value: "SimpleITK==2.4.1 pyradiomics dafne==1.8a4"
+      - value: "SimpleITK==2.4.1 pyradiomics==3.1.0 protobuf==3.20.3 dafne=={{ context.version }}"
         condition: arch=="x86_64"
-      - value: "tensorflow==2.13.1 SimpleITK==2.4.1 pyradiomics dafne==1.8a4"
+      - value: "tensorflow==2.13.1 SimpleITK==2.4.1 pyradiomics==3.1.0 protobuf==3.20.3 dafne=={{ context.version }}"
         condition: arch=="aarch64"
 
 build:
@@ -57,9 +57,16 @@ build:
 
     - environment:
         HOME: /tmp
+        PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
         XDG_CACHE_HOME: /tmp/.cache
         XDG_CONFIG_HOME: /tmp/.config
         XDG_DATA_HOME: /tmp/.local/share
+
+    - run:
+        - dafne_bin="$(command -v dafne)"
+        - mv "$dafne_bin" "${dafne_bin}.real"
+        - printf '%s\n' '#!/usr/bin/env bash' 'export HOME=/tmp' 'export XDG_CACHE_HOME=/tmp/.cache' 'export XDG_CONFIG_HOME=/tmp/.config' 'export XDG_DATA_HOME=/tmp/.local/share' 'export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python' 'mkdir -p "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME"' 'exec "$0.real" "$@"' > "$dafne_bin"
+        - chmod +x "$dafne_bin"
 
 deploy:
   bins:
