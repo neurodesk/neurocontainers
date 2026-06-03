@@ -25,16 +25,7 @@ structured_readme:
     docker run --rm lqt:0.1.0 R --slave -e "library(LQT); cat('LQT is available!\\n')"
 
     ```
-  documentation: |-
-    This container includes:
-    - R
-    - The R package LQT from https://github.com/jdwor/LQT
-    - Additional CRAN packages: none
-    - Additional Bioconductor packages: none
-    - System dependencies: none
-    - Deployed scripts: none
-
-    For detailed package documentation, see: https://github.com/jdwor/LQT
+  documentation: https://github.com/jdwor/LQT
   citation: "Please cite the original authors of the LQT package when using this container. Repository: https://github.com/jdwor/LQT"
 readme: |-
   ----------------------------------
@@ -61,15 +52,7 @@ readme: |-
   ```
   ```
 
-  More documentation can be found here: This container includes:
-  - R
-  - The R package LQT from https://github.com/jdwor/LQT
-  - Additional CRAN packages: none
-  - Additional Bioconductor packages: none
-  - System dependencies: none
-  - Deployed scripts: none
-
-  For detailed package documentation, see: https://github.com/jdwor/LQT
+  More documentation can be found here: https://github.com/jdwor/LQT
 
   Citation:
   ```
