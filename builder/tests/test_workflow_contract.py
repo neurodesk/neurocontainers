@@ -17,6 +17,17 @@ def test_build_app_workflow_uses_version_stable_build_cache_ref() -> None:
     assert "CACHE_REF=ghcr.io/${GH_REGISTRY}/${IMAGENAME}:buildcache" not in workflow
 
 
+def test_build_app_workflow_strips_version_inline_comments() -> None:
+    workflow = Path(".github/workflows/build-app.yml").read_text()
+    old_version_extractor = (
+        "VERSION=$(sed -n 's/^version:[[:space:]]*//p' "
+        '"recipes/${APPLICATION}/build.yaml" | head -1 | tr -d "\\\"\'")'
+    )
+
+    assert "sed 's/[[:space:]]#.*$//'" in workflow
+    assert old_version_extractor not in workflow
+
+
 def test_build_app_workflow_compares_image_config_not_only_rootfs() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     config_job = workflow.split("  config:", 1)[1].split("  build-image:", 1)[0]

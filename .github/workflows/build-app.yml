@@ -131,7 +131,7 @@ jobs:
         run: |
           APPLICATION=${{ inputs.application }}
           SHORT_SHA=$(git rev-parse --short $GITHUB_SHA)
-          VERSION=$(sed -n 's/^version:[[:space:]]*//p' "recipes/${APPLICATION}/build.yaml" | head -1 | tr -d "\"'")
+          VERSION=$(sed -n 's/^version:[[:space:]]*//p' "recipes/${APPLICATION}/build.yaml" | head -1 | sed 's/[[:space:]]#.*$//' | tr -d "\"'")
           if [ -z "$VERSION" ]; then
             echo "Recipe version not found for $APPLICATION"
             exit 1
