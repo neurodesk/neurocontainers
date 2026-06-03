@@ -1,12 +1,14 @@
 {
   "apps": {
     "mfcsc 1.1": {
-      "version": "20230321",
-      "exec": ""
+      "version": "20260603",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
     "functional imaging",
-    "diffusion imaging"
+    "diffusion imaging",
+    "electrophysiology"
   ]
 }
