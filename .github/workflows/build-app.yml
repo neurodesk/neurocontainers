@@ -67,7 +67,7 @@ jobs:
       ARCHITECTURE: ${{ steps.envars.outputs.ARCHITECTURE }}
       IMAGE_SUFFIX: ${{ steps.envars.outputs.IMAGE_SUFFIX }}
       RELEASE_VERSION: ${{ steps.envars.outputs.RELEASE_VERSION }}
-      ROOTFS_CACHE: ${{ steps.getrootfs.outputs.ROOTFS_CACHE }}
+      IMAGE_FINGERPRINT_CACHE: ${{ steps.getfingerprint.outputs.IMAGE_FINGERPRINT_CACHE }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -210,14 +210,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull latest image from registry and get rootfs
-        id: getrootfs
+      - name: Pull latest image from registry and get fingerprint
+        id: getfingerprint
         if: inputs.skip_docker_build != 'true'
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
-          docker pull ghcr.io/${GH_REGISTRY}/${{ env.IMAGENAME }}:latest && ROOTFS_CACHE=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${{ env.IMAGENAME }}:latest) || true
-          echo "ROOTFS_CACHE=$ROOTFS_CACHE" >> $GITHUB_OUTPUT
+          IMAGE_FINGERPRINT_CACHE=""
+          IMAGE_REF="ghcr.io/${GH_REGISTRY}/${{ env.IMAGENAME }}:latest"
+          if docker pull "$IMAGE_REF"; then
+            IMAGE_FINGERPRINT_CACHE=$(python3 builder/image_fingerprint.py "$IMAGE_REF")
+          fi
+          echo "IMAGE_FINGERPRINT_CACHE=$IMAGE_FINGERPRINT_CACHE" >> "$GITHUB_OUTPUT"
 
   build-image:
     needs: config
@@ -234,7 +238,7 @@ jobs:
       APPLICATION: ${{ inputs.application }}
       BUILDDATE: ${{ needs.config.outputs.BUILDDATE }}
       IMAGETAG: ${{ needs.config.outputs.IMAGETAG }}
-      ROOTFS_CACHE: ${{ needs.config.outputs.ROOTFS_CACHE }}
+      IMAGE_FINGERPRINT_CACHE: ${{ needs.config.outputs.IMAGE_FINGERPRINT_CACHE }}
       SHORT_SHA: ${{ needs.config.outputs.SHORT_SHA }}
       ARCHITECTURE: ${{ needs.config.outputs.ARCHITECTURE }}
       IMAGE_SUFFIX: ${{ needs.config.outputs.IMAGE_SUFFIX }}
@@ -448,13 +452,14 @@ jobs:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
         run: |
           # Check if the image exists before trying to inspect it
-          if docker inspect ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} >/dev/null 2>&1; then
-            ROOTFS_NEW=$(docker inspect --format='{{.RootFS}}' ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE})
-            echo "ROOTFS_NEW=$ROOTFS_NEW" >> $GITHUB_ENV
+          IMAGE_REF="ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}"
+          if docker inspect "$IMAGE_REF" >/dev/null 2>&1; then
+            IMAGE_FINGERPRINT_NEW=$(python3 builder/image_fingerprint.py "$IMAGE_REF")
+            echo "IMAGE_FINGERPRINT_NEW=$IMAGE_FINGERPRINT_NEW" >> "$GITHUB_ENV"
 
             if [ "$DISABLE_AUTO_UPLOAD" = "true" ]; then
               echo "Auto-upload is disabled. Skipping push to registry."
-            elif [ "$ROOTFS_NEW" = "$ROOTFS_CACHE" ]; then
+            elif [ -n "$IMAGE_FINGERPRINT_CACHE" ] && [ "$IMAGE_FINGERPRINT_NEW" = "$IMAGE_FINGERPRINT_CACHE" ]; then
               echo "No changes found. Skipping push to registry. "
             else
               echo "Pushing to registry. Changes found"
