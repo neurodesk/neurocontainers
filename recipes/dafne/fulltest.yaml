@@ -1,0 +1,148 @@
+# dafne container test suite
+# DAFNE is a Qt application for medical image segmentation. These tests verify
+# the installed Python stack and a headless GUI startup without requiring
+# network access or model downloads.
+
+name: dafne
+version: 1.8a4
+container: dafne_1.8a4_20260602.simg
+
+default_timeout: 120
+
+tests:
+  - name: DAFNE executable is on PATH
+    description: Verify the generated console entrypoint is available
+    command: |
+      command -v dafne
+      test -x "$(command -v dafne)"
+
+  - name: DAFNE package metadata
+    description: Verify the installed package version matches the recipe
+    command: |
+      python - <<'PY'
+      from importlib.metadata import version
+
+      print(version("dafne"))
+      PY
+    expected_output_contains: "1.8a4"
+
+  - name: DAFNE Python imports
+    description: Verify DAFNE and its main runtime dependencies import together
+    command: |
+      python - <<'PY'
+      import dafne
+      import numpy
+      import radiomics
+      import SimpleITK
+
+      print("dafne", dafne.__version__)
+      print("numpy", numpy.__version__)
+      print("radiomics", radiomics.__version__)
+      print("SimpleITK", SimpleITK.__version__)
+      PY
+    expected_output_contains:
+      - "dafne 1.8a4"
+      - "numpy 1.24.3"
+      - "SimpleITK"
+
+  - name: TensorFlow runtime import
+    description: Verify the deep-learning runtime imports and can execute a small tensor operation
+    command: |
+      TF_CPP_MIN_LOG_LEVEL=2 python - <<'PY'
+      import os
+      import tensorflow as tf
+
+      value = tf.reduce_sum(tf.constant([1, 2, 3])).numpy()
+      print("protobuf-implementation", os.environ.get("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"))
+      print("tensorflow", tf.__version__)
+      print("sum", value)
+      PY
+    expected_output_contains:
+      - "protobuf-implementation python"
+      - "sum 6"
+    timeout: 180
+
+  - name: SimpleITK image operations
+    description: Verify basic image creation and thresholding work in the runtime
+    command: |
+      python - <<'PY'
+      import numpy as np
+      import SimpleITK as sitk
+
+      data = np.zeros((8, 9, 10), dtype=np.float32)
+      data[2:6, 3:7, 4:8] = 4.0
+      image = sitk.GetImageFromArray(data)
+      mask = sitk.BinaryThreshold(image, lowerThreshold=1.0, upperThreshold=5.0)
+
+      print("image-size", image.GetSize())
+      print("mask-size", mask.GetSize())
+      print("mask-sum", int(sitk.GetArrayFromImage(mask).sum()))
+      PY
+    expected_output_contains:
+      - "image-size (10, 9, 8)"
+      - "mask-sum 64"
+
+  - name: PyRadiomics feature extractor creation
+    description: Verify PyRadiomics can instantiate its feature extraction machinery
+    command: |
+      python - <<'PY'
+      from radiomics import featureextractor
+
+      extractor = featureextractor.RadiomicsFeatureExtractor()
+      print("enabled-image-types", sorted(extractor.enabledImagetypes))
+      print("enabled-features", sorted(extractor.enabledFeatures)[:3])
+      PY
+    expected_output_contains: "enabled-image-types"
+
+  - name: Runtime state uses configured temporary locations
+    description: Verify DAFNE runtime state avoids persistent home-directory paths
+    command: |
+      python - <<'PY'
+      import os
+      from pathlib import Path
+
+      expected = {
+          "XDG_CACHE_HOME": "/tmp/.cache",
+          "XDG_CONFIG_HOME": "/tmp/.config",
+          "XDG_DATA_HOME": "/tmp/.local/share",
+      }
+      print(f"HOME={os.environ.get('HOME')}")
+      for key, value in expected.items():
+          actual = os.environ.get(key)
+          print(f"{key}={actual}")
+          if actual != value:
+              raise SystemExit(f"{key} expected {value!r}, got {actual!r}")
+          Path(actual).mkdir(parents=True, exist_ok=True)
+      PY
+    expected_output_contains:
+      - "XDG_CACHE_HOME=/tmp/.cache"
+      - "XDG_CONFIG_HOME=/tmp/.config"
+      - "XDG_DATA_HOME=/tmp/.local/share"
+
+  - name: DAFNE headless GUI startup
+    description: Verify the Qt application starts under Xvfb without import or plugin failures
+    command: |
+      set -euo pipefail
+
+      log=/tmp/dafne-startup.log
+      rm -f "$log"
+
+      set +e
+      timeout 25s xvfb-run -a dafne >"$log" 2>&1
+      status=$?
+      set -e
+
+      if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then
+        cat "$log"
+        exit "$status"
+      fi
+
+      if grep -E "Traceback|ModuleNotFoundError|ImportError|numpy.core.multiarray failed|qt.qpa.plugin.*could not|Could not load the Qt platform plugin" "$log"; then
+        cat "$log"
+        exit 1
+      fi
+
+      echo "dafne startup status $status"
+      sed -n '1,40p' "$log"
+    expected_output_contains: "dafne startup status"
+    timeout: 60
