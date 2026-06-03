@@ -44,7 +44,7 @@ class DetectionResult:
 
 
 RELEASE_PATTERN = re.compile(r"^releases/([^/]+)/([^/]+)\.json$")
-TEST_PATTERN = re.compile(r"^recipes/([^/]+)/test\.yaml$")
+TEST_CONFIG_PATTERN = re.compile(r"^recipes/([^/]+)/(?:fulltest|test)\.yaml$")
 
 
 def _relative_posix(path: Path, repo_root: Path) -> str:
@@ -106,9 +106,10 @@ def detect_release_pr_changes(
 ) -> DetectionResult:
     """Return released container test targets for changed release/test files.
 
-    A new recipe can add ``recipes/<name>/test.yaml`` before release metadata
-    exists. That should not fail this workflow because there is no published
-    container for the release-test job to download yet.
+    A new recipe can add ``recipes/<name>/fulltest.yaml`` before release
+    metadata exists. That should not fail this workflow because there is no
+    published container for the release-test job to download yet. Legacy
+    ``test.yaml`` files are still accepted during the migration to fulltests.
     """
 
     root = Path(repo_root)
@@ -118,7 +119,7 @@ def detect_release_pr_changes(
     unrelated_to_release = [
         path
         for path in paths
-        if not RELEASE_PATTERN.match(path) and not TEST_PATTERN.match(path)
+        if not RELEASE_PATTERN.match(path) and not TEST_CONFIG_PATTERN.match(path)
     ]
 
     if release_files and unrelated_to_release:
@@ -142,7 +143,7 @@ def detect_release_pr_changes(
     skipped_new_recipe_tests: list[str] = []
     skipped_seen: set[str] = set()
     for path in paths:
-        match = TEST_PATTERN.match(path)
+        match = TEST_CONFIG_PATTERN.match(path)
         if not match:
             continue
 
@@ -195,11 +196,11 @@ def _escape_notice(text: str) -> str:
 def print_skipped_notices(result: DetectionResult) -> None:
     for recipe in result.skipped_new_recipe_tests:
         message = (
-            f"recipes/{recipe}/test.yaml changed, but releases/{recipe}/*.json does not exist. "
+            f"recipes/{recipe}/fulltest.yaml or test.yaml changed, but "
+            f"releases/{recipe}/*.json does not exist. "
             "Skipping release-container tests for this new or unreleased recipe; "
             "this workflow only retests already released containers. "
-            "Use fulltest.yaml for new recipe smoke tests or let the release workflow "
-            "generate metadata first."
+            "Let the release workflow generate metadata first."
         )
         print(f"::notice::{_escape_notice(message)}")
 
