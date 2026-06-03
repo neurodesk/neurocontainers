@@ -6,7 +6,7 @@ import stat
 import subprocess
 from pathlib import Path
 
-from workflows.summarize_deploy_results import _summarise_builtin
+from workflows.summarize_deploy_results import _summarise_builtin, summarise_results_file
 
 
 SCRIPT = Path("workflows/test_deploy.sh").resolve()
@@ -90,3 +90,21 @@ def test_deploy_summary_preserves_runtime_user_access_failures() -> None:
     assert summary["tests"][0]["name"] == "tool"
     assert summary["tests"][0]["status"] == "failed"
     assert "arbitrary runtime users" in summary["tests"][0]["message"]
+
+
+def test_deploy_summary_ignores_json_scalar_stdout(tmp_path: Path) -> None:
+    results_path = tmp_path / "test-results-ants.json"
+    results = {
+        "test_results": [
+            {
+                "name": "ImageMath mean intensity",
+                "status": "passed",
+                "stdout": "66.1212\n",
+                "stderr": "",
+            }
+        ]
+    }
+    results_path.write_text(json.dumps(results), encoding="utf-8")
+
+    assert summarise_results_file(results_path) is False
+    assert json.loads(results_path.read_text(encoding="utf-8")) == results

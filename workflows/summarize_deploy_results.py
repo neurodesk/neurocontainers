@@ -263,6 +263,8 @@ def summarise_results_file(path: Path) -> bool:
             payload = json.loads(stdout)
         except json.JSONDecodeError:
             continue
+        if not isinstance(payload, dict):
+            continue
 
         updated_payload, updated = _summarise_builtin(payload)
         if updated:
