@@ -608,9 +608,34 @@ import traceback
 pipeline_dir = Path("/opt/KneePipeline")
 sys.path.insert(0, str(pipeline_dir))
 
-from run_pipeline import _get_remap_table, _run_step_subprocess
-from steps._common import load_config
+import os
+import subprocess as _sp
+
+from run_pipeline import _get_remap_table
+from steps._common import STEP_RESULT_FILENAME, load_config
 from steps.label_remap import run as label_remap
+
+# KneePipeline's own _run_step_subprocess hardcodes a 600s timeout, too short
+# for CPU-only / emulated hosts where DOSMA qDESS inference can take much
+# longer. Use a generous, configurable timeout instead.
+_STEP_TIMEOUT = int(os.environ.get("OPENMSK_STEP_TIMEOUT", "5400"))
+
+
+def _run_step(module_name, wd, options=None, config_path=None):
+    cmd = [sys.executable, "-m", module_name, str(wd)]
+    if options:
+        cmd += ["--options", json.dumps(options)]
+    if config_path:
+        cmd += ["--config", str(config_path)]
+    r = _sp.run(cmd, capture_output=True, text=True, timeout=_STEP_TIMEOUT)
+    if r.stdout:
+        print(r.stdout)
+    if r.returncode != 0:
+        raise RuntimeError("%s failed (exit %s): %s" % (module_name, r.returncode, r.stderr[-1500:]))
+    rp = Path(wd) / STEP_RESULT_FILENAME
+    res = json.loads(rp.read_text())
+    rp.unlink()
+    return res
 
 input_path = Path(sys.argv[1])
 working_dir = Path(sys.argv[2])
@@ -633,7 +658,7 @@ summary = {
     "errors": {},
 }
 
-seg_result = _run_step_subprocess(
+seg_result = _run_step(
     "steps.segment",
     working_dir,
     options={"model": seg_model},

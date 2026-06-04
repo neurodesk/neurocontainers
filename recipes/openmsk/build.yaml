@@ -181,6 +181,10 @@ build:
     - copy: OpenReconREADME.md /opt/code/python-ismrmrd-server/OpenReconREADME.md
     - copy: enhanceddicom2mrd.py /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py
     - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
+    # Utility: expand Siemens qDESS Enhanced (multi-frame) DICOM into classic
+    # single-frame DICOM so the direct `run_pipeline.py <dicom_dir>` path (DOSMA
+    # QDess.from_dicom: qDESS RSS segmentation + T2) can read it.
+    - copy: enhanced2singleframe.py /opt/code/python-ismrmrd-server/enhanced2singleframe.py
 
 deploy:
   bins:

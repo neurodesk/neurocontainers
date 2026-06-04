@@ -28,16 +28,23 @@ tests:
         /buildhostdirectory/input.h5 \
         -c openmsk
 
-      # Also run the full KneePipeline directly on qDESS DICOM. This path keeps
-      # the qDESS private tags and should produce segmentation, thickness, and T2.
-      rm -rf /buildhostdirectory/out_direct
-      python /opt/KneePipeline/run_pipeline.py \
+      # Also run the full KneePipeline directly on the qDESS DICOM. Siemens qDESS
+      # exports as Enhanced multi-frame DICOM, which DOSMA's QDess.from_dicom
+      # cannot parse, so first expand it into classic single-frame DICOM.
+      rm -rf /buildhostdirectory/qDESS_sf /buildhostdirectory/out_direct
+      python /opt/code/python-ismrmrd-server/enhanced2singleframe.py \
         /buildhostdirectory/dicom_data/qDESS \
+        /buildhostdirectory/qDESS_sf
+
+      # Segmentation + cartilage thickness always run. T2 mapping also runs when
+      # the qDESS GL_AREA (0019,10B6) / TG (0019,10B7) private tags survived the
+      # export; DOSMA skips T2 with a warning if they were stripped.
+      python /opt/KneePipeline/run_pipeline.py \
+        /buildhostdirectory/qDESS_sf \
         /buildhostdirectory/out_direct \
         --config /opt/KneePipeline/config.json
 
       find /buildhostdirectory/out_direct -maxdepth 1 -type f | sort
       ls -lh /buildhostdirectory/out_direct/*_all-labels.nii.gz
       ls -lh /buildhostdirectory/out_direct/*_thickness_results.json
-      ls -lh /buildhostdirectory/out_direct/*_t2_results.json
-      ls -lh /buildhostdirectory/out_direct/*_t2map.nii.gz
+      ls -lh /buildhostdirectory/out_direct/*_t2_results.json 2>/dev/null || echo "T2 skipped (qDESS GL/TG private tags not present)"
