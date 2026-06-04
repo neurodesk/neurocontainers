@@ -232,7 +232,12 @@ def test_run_fulltest_release_uses_release_image_basename(
                 "test_results": [{"name": "deploy", "status": "passed"}],
             }
 
+    monkeypatch.setattr("workflows.release_test_runner.ContainerTester", FakeTester)
+
+    run_commands: list[list[str]] = []
+
     def fake_run(command, **kwargs) -> SimpleNamespace:
+        run_commands.append(command)
         raw_path = Path(command[command.index("-o") + 1])
         log_path = Path(command[command.index("--log") + 1])
         jsonl_path = Path(command[command.index("--jsonl") + 1])
@@ -253,7 +258,6 @@ def test_run_fulltest_release_uses_release_image_basename(
         jsonl_path.write_text("", encoding="utf-8")
         return SimpleNamespace(returncode=0)
 
-    monkeypatch.setattr("workflows.release_test_runner.ContainerTester", FakeTester)
     monkeypatch.setattr("workflows.release_test_runner.subprocess.run", fake_run)
 
     status = run_fulltest_release(
@@ -289,6 +293,24 @@ def test_run_fulltest_release_uses_release_image_basename(
             encoding="utf-8"
         )
     )
+    assert run_commands == [
+        [
+            "uv",
+            "run",
+            "builder/run_tests.py",
+            str(output_dir / "fulltest-suite-neurodesktop.yaml"),
+            "-c",
+            str(output_dir / "fulltest-containers"),
+            "-o",
+            str(output_dir / "fulltest-raw-neurodesktop.json"),
+            "--log",
+            str(output_dir / "fulltest-neurodesktop.log"),
+            "--jsonl",
+            str(output_dir / "fulltest-neurodesktop.jsonl"),
+            "--work-dir",
+            str(output_dir / "fulltest-work-neurodesktop"),
+        ]
+    ]
 
 
 def test_build_report_includes_fulltest_summary_and_artifacts() -> None:

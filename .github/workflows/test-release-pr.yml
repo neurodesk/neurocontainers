@@ -30,6 +30,18 @@ jobs:
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          clean: false
+
+      - name: Prepare release test workspace
+        run: |
+          rm -rf \
+            builder/test-results-* \
+            builder/test-report-* \
+            builder/comment-* \
+            builder/status-* \
+            builder/fulltest-* \
+            builder/fulltest-containers || true
+          mkdir -p builder
 
       - name: Detect release and test-only changes
         id: detect
@@ -218,6 +230,7 @@ jobs:
     steps:
       - name: Download all test results
         uses: actions/download-artifact@v8
+        continue-on-error: true
         with:
           pattern: test-results-*
           merge-multiple: true
@@ -226,6 +239,7 @@ jobs:
       - name: Summarize test results
         id: summary
         run: |
+          mkdir -p test-results
           cd test-results
 
           TOTAL_RECIPES=0
@@ -246,6 +260,11 @@ jobs:
             fi
           done
 
+          if [ "$TOTAL_RECIPES" -eq 0 ]; then
+            FAILED_RECIPES=1
+            echo "No test result artifacts were produced"
+          fi
+
           echo "total=$TOTAL_RECIPES" >> $GITHUB_OUTPUT
           echo "passed=$PASSED_RECIPES" >> $GITHUB_OUTPUT
           echo "failed=$FAILED_RECIPES" >> $GITHUB_OUTPUT
@@ -261,13 +280,19 @@ jobs:
             const failed = parseInt('${{ steps.summary.outputs.failed }}');
 
             let summary = `## 🧪 Container Test Summary\n\n`;
-            summary += `**Results:** ${passed}/${total} recipes passed\n\n`;
-
-            if (failed > 0) {
-              summary += `❌ ${failed} recipe(s) failed testing\n`;
-              summary += `Please check the individual test results above for details.\n\n`;
+            if (total === 0) {
+              summary += `**Results:** no test result artifacts were produced\n\n`;
+              summary += `❌ Container testing did not reach the result upload step.\n`;
+              summary += `Please check the workflow logs for the infrastructure failure.\n\n`;
             } else {
-              summary += `✅ All modified containers passed testing!\n\n`;
+              summary += `**Results:** ${passed}/${total} recipes passed\n\n`;
+
+              if (failed > 0) {
+                summary += `❌ ${failed} recipe(s) failed testing\n`;
+                summary += `Please check the individual test results above for details.\n\n`;
+              } else {
+                summary += `✅ All modified containers passed testing!\n\n`;
+              }
             }
 
             summary += `*This comment will be updated as tests complete.*`;
@@ -302,5 +327,9 @@ jobs:
 
             // Fail the workflow if any tests failed
             if (failed > 0) {
-              core.setFailed(`${failed} out of ${total} container tests failed`);
+              if (total === 0) {
+                core.setFailed('No container test result artifacts were produced');
+              } else {
+                core.setFailed(`${failed} out of ${total} container tests failed`);
+              }
             }
