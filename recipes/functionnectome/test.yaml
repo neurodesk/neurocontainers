@@ -16,3 +16,142 @@ tests:
       import Functionnectome.functionnectome_GUI as gui
       assert gui.version
       PY
+  - name: Test Functionnectome priors registry uses writable runtime path
+    script: |
+      python - <<'PY'
+      import builtins
+      import errno
+      import json
+      import os
+      import tempfile
+      from pathlib import Path
+
+      import Functionnectome.functionnectome as fun
+      import Functionnectome.functionnectome_GUI as gui
+      import Functionnectome.quickDisco as qd
+      from Functionnectome import neurodesk_runtime
+
+      config_dir = Path(tempfile.mkdtemp())
+      priors_dir = Path(tempfile.mkdtemp())
+      os.environ["FUNCTIONNECTOME_CONFIG_DIR"] = str(config_dir)
+
+      package_json = Path(gui.__file__).resolve().parent / "priors_paths.json"
+      real_open = builtins.open
+
+      def guarded_open(path, mode="r", *args, **kwargs):
+          target = Path(path)
+          if target == package_json and any(flag in mode for flag in ("w", "a", "+")):
+              raise OSError(errno.EROFS, "Read-only file system", str(path))
+          return real_open(path, mode, *args, **kwargs)
+
+      class FakeVar:
+          def __init__(self, value=None):
+              self.value = value
+
+          def get(self):
+              return self.value
+
+          def set(self, value):
+              self.value = value
+
+      class FakeBooleanVar(FakeVar):
+          def __init__(self):
+              super().__init__(True)
+
+      class FakeWidget:
+          def __init__(self, *args, **kwargs):
+              self.command = kwargs.get("command")
+              self.text = kwargs.get("text")
+
+          def grid(self, *args, **kwargs):
+              if self.text == "Manual download" and self.command:
+                  self.command()
+
+          def config(self, *args, **kwargs):
+              pass
+
+          def configure(self, *args, **kwargs):
+              pass
+
+          def title(self, *args, **kwargs):
+              pass
+
+          def grab_set(self, *args, **kwargs):
+              pass
+
+          def update(self, *args, **kwargs):
+              pass
+
+          def destroy(self, *args, **kwargs):
+              pass
+
+          def after(self, delay, callback, *args):
+              callback(*args)
+
+          def start(self):
+              pass
+
+      class FakeResult:
+          def __init__(self, value):
+              self.value = value
+
+          def ready(self):
+              return True
+
+          def get(self):
+              return self.value
+
+      class FakePool:
+          def __init__(self, processes=1):
+              self.processes = processes
+
+          def apply_async(self, callback, args):
+              return FakeResult(callback(*args))
+
+          def close(self):
+              pass
+
+          def join(self):
+              pass
+
+      def fake_download(prior_dirpath_h5, priors_name):
+          prior_path = Path(prior_dirpath_h5) / "fake_priors.h5"
+          prior_path.write_text("fake", encoding="utf-8")
+          return str(prior_path)
+
+      builtins.open = guarded_open
+      gui.tk.Toplevel = FakeWidget
+      gui.tk.Label = FakeWidget
+      gui.tk.Radiobutton = FakeWidget
+      gui.tk.Checkbutton = FakeWidget
+      gui.tk.Button = FakeWidget
+      gui.tk.BooleanVar = FakeBooleanVar
+      gui.ttk.Progressbar = FakeWidget
+      gui.ttk.Label = FakeWidget
+      gui.filedialog.askdirectory = lambda *args, **kwargs: str(priors_dir)
+      gui.mp.Pool = FakePool
+      fun.Download_H5 = fake_download
+
+      app = object.__new__(gui.Functionnectome_GUI)
+      app.bg_color = "lightgrey"
+      app.cwd = str(priors_dir)
+      app.priorsFileList = [fun.PRIORS_H5[0]]
+      app.priorsChoice = FakeVar(fun.PRIORS_H5[0])
+      app.ana_type = FakeVar("voxel")
+      app.priors_paths = {"template": "", "regions": "", "region_pmap": "", "voxel_pmap": ""}
+      app.wait_window = lambda window: None
+
+      app.selectPriors()
+
+      registry_path = Path(neurodesk_runtime.priors_paths_json())
+      assert registry_path == config_dir / "priors_paths.json"
+      assert registry_path.exists()
+      assert package_json != registry_path
+      registry = json.loads(registry_path.read_text(encoding="utf-8"))
+      assert registry[fun.PRIORS_H5[0]] == str(priors_dir / "fake_priors.h5")
+
+      ok, text, labels, paths = qd.checkH5()
+      assert ok
+      assert labels[fun.PRIORS_H5[0].split(" - ")[0]] == fun.PRIORS_H5[0]
+      assert paths[fun.PRIORS_H5[0]] == str(priors_dir / "fake_priors.h5")
+      PY

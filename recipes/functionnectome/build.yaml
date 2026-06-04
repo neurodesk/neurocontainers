@@ -45,8 +45,8 @@ build:
         - python3 -m venv "${FUNCTIONNECTOME_VENV}"
         - . "${FUNCTIONNECTOME_VENV}/bin/activate" && python -m pip install --no-cache-dir --upgrade pip setuptools=={{ context.setuptools_version }} wheel
         - . "${FUNCTIONNECTOME_VENV}/bin/activate" && python -m pip install --no-cache-dir {{ get_file("functionnectome_source_tar_gz") }}
+        - . "${FUNCTIONNECTOME_VENV}/bin/activate" && python {{ get_file("neurodesk_runtime_patch") }} "${FUNCTIONNECTOME_VENV}"
         - chmod -R a+rX "${FUNCTIONNECTOME_VENV}"
-        - chmod -R a+rwX "${FUNCTIONNECTOME_VENV}"/lib/python*/site-packages/Functionnectome
         - rm -rf /root/.cache/pip /tmp/cache-functionnectome /tmp/matplotlib-functionnectome
 
 deploy:
@@ -75,6 +75,8 @@ categories:
 files:
   - name: functionnectome_source_tar_gz
     url: https://github.com/NotaCS/Functionnectome/archive/refs/tags/v{{ context.version }}.tar.gz
+  - name: neurodesk_runtime_patch
+    filename: neurodesk_runtime_patch.py
 
 readme: |
   ----------------------------------
