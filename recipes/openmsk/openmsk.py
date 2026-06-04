@@ -76,8 +76,8 @@ def process(connection, config, metadata):
 
         send_original = _config_bool(config, "sendoriginal", True)
         seg_model = _config_str(config, "segmodel", "acl_qdess_bone_july_2024")
-        run_nsm_requested = _config_bool(config, "run_nsm", False)
-        run_bscore = _config_bool(config, "run_bscore", False)
+        run_nsm_requested = _config_bool_any(config, ("runnsm", "run_nsm"), False)
+        run_bscore = _config_bool_any(config, ("runbscore", "run_bscore"), False)
         run_nsm = run_nsm_requested or run_bscore
         compute_thickness = _config_bool(config, "computethickness", True)
 
@@ -250,15 +250,49 @@ def _log_metadata(metadata):
         logging.info("Incoming metadata is not a parsed MRD header: %s", metadata)
 
 
-def _config_bool(config, key, default=False):
-    value = mrdhelper.get_json_config_param(config, key, default=default, type="bool")
+def _coerce_bool(value, default=False):
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):
         return bool(value)
     if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+        text = value.strip().lower()
+        if text in {"1", "true", "yes", "y", "on"}:
+            return True
+        if text in {"0", "false", "no", "n", "off"}:
+            return False
     return bool(default)
+
+
+def _config_bool(config, key, default=False):
+    value = mrdhelper.get_json_config_param(config, key, default=default, type="bool")
+    return _coerce_bool(value, default)
+
+
+def _config_value_any(config, keys):
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except json.JSONDecodeError:
+            return None
+
+    if not isinstance(config, dict):
+        return None
+
+    parameters = config.get("parameters")
+    for key in keys:
+        if key in config:
+            return config.get(key)
+        if isinstance(parameters, dict) and key in parameters:
+            return parameters.get(key)
+    return None
+
+
+def _config_bool_any(config, keys, default=False):
+    value = _config_value_any(config, keys)
+    if value is not None:
+        return _coerce_bool(value, default)
+    return default
 
 
 def _config_str(config, key, default=""):

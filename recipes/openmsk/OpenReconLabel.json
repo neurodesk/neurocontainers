@@ -78,14 +78,14 @@
       "information": { "en": "KneePipeline segmentation model name" }
     },
     {
-      "id": "run_nsm",
+      "id": "runnsm",
       "label": { "en": "Run NSM" },
       "type": "boolean",
       "information": { "en": "Run Neural Shape Model fitting when GPU and gated model weights are available" },
       "default": false
     },
     {
-      "id": "run_bscore",
+      "id": "runbscore",
       "label": { "en": "Run BScore" },
       "type": "boolean",
       "information": { "en": "Compute BScore OA severity after NSM fitting" },
