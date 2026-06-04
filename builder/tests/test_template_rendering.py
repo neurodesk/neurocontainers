@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from builder.ir import Env, Run
+from builder.dockerfile import render_dockerfile
 from builder.template import RenderContext, TemplateError, TemplateRenderer
 from builder.recipe import compile_recipe
 from builder.template_backend import apply_builtin_template
@@ -99,6 +100,14 @@ def test_miniconda_template_bootstraps_python_and_pip_for_pip_install() -> None:
     assert "if ! python -m pip --version >/dev/null 2>&1; then" in command
     assert "conda install -y" in command
     assert "--name testenv python pip" in command
+
+
+def test_miniconda_template_escapes_pip_packages_inside_bash_c() -> None:
+    compiled = compile_recipe(Path(__file__).resolve().parent / "fixtures" / "miniconda_pip_install")
+    dockerfile = render_dockerfile(compiled.definition)
+
+    assert '\\"examplepkg==1.2.3\\"' in dockerfile
+    assert '"examplepkg==1.2.3""' not in dockerfile
 
 
 def test_miniconda_template_guards_conda_tos_for_older_installers() -> None:

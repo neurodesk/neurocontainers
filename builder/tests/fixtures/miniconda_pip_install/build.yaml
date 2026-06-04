@@ -1,0 +1,15 @@
+name: miniconda-pip-install
+version: 1.0.0
+architectures:
+  - x86_64
+categories:
+  - other
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+  directives:
+    - template:
+        name: miniconda
+        version: py310_25.5.1-0
+        pip_install: examplepkg==1.2.3
