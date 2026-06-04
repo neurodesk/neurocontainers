@@ -379,8 +379,10 @@ def compile_recipe(
                     rendered = renderer.render_value(directive["run"], context)
                 finally:
                     context.current_cache_id = previous_cache_id
-                if not isinstance(rendered, list):
-                    raise ValueError("run directive must render to a list")
+                if isinstance(rendered, str):
+                    rendered = [rendered]
+                elif not isinstance(rendered, list):
+                    raise ValueError("run directive must render to a string or list")
                 commands = [str(item) for item in rendered if item is not None and str(item) != ""]
                 mounts: list[str] = []
                 if len(context.requested_files) > before_files:
