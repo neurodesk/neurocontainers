@@ -13,6 +13,7 @@ variables:
   julia_version: "1.10.4"
   freesurfer_version: "7.4.1"
   julia_minor_version: "1.10"
+  mrsi_pipeline_commit: 916b28dbb1828573173c5404dea2555389a610f6
   mcr_root: /opt/MATLAB_Runtime_R{{ context.matlab_version }}
   mcr_runtime: /opt/MATLAB_Runtime_R{{ context.matlab_version }}/v911
 
@@ -168,7 +169,7 @@ build:
             JULIA_DEPOT_PATH: /opt/julia_depot
         - run:
             - julia /opt/install_packages.jl
-            - chmod -R 755 /opt/julia_depot/packages/MRSI
+            - chmod -R 755 /opt/julia_depot
         - environment:
             JULIA_DEPOT_PATH: /opt/julia_depot
 
@@ -199,7 +200,7 @@ build:
         - run:
             - git clone https://github.com/korbinian90/mrsi_pipeline_neurodesk.git
             - cd mrsi_pipeline_neurodesk
-            - git checkout 02ed0178bf2d7be3ec0406fee92333ae86de377d
+            - git checkout {{ context.mrsi_pipeline_commit }}
         - environment:
             PATH: $PATH:/opt/mrsi_pipeline_neurodesk/Part1:/opt/mrsi_pipeline_neurodesk/Part2
         - copy:
