@@ -1,0 +1,189 @@
+name: relion
+version: 4.0.1.sm75
+
+copyright:
+  - license: GPL-2.0-only
+    url: https://github.com/3dem/relion/blob/{{ context.relion_version }}/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  relion_version: "{{ context.version.split('.sm')[0] }}"
+  compute_capability: "{{ context.version.split('.sm')[1] }}"
+  relion_commit: ec417f5b36ce847c003723a51267116dc0a0c7ee
+  ctffind_version: 4.1.14
+  motioncor2_version: 1.6.4
+  cuda_version: "11.8"
+  cuda_package: cuda-toolkit-11-8
+  cuda_repo_deb: cuda-repo-ubuntu2204-11-8-local_11.8.0-520.61.05-1_amd64.deb
+  go_version: 1.17.2
+  singularity_version: 3.9.3
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - run:
+        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
+        - chmod +x /usr/bin/ll
+        - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
+
+    - install:
+        - ca-certificates
+        - unzip
+        - cmake
+        - build-essential
+        - mpi-default-bin
+        - mpi-default-dev
+        - libfftw3-dev
+        - libtiff-dev
+        - libpng-dev
+        - ghostscript
+        - libxft-dev
+        - libwxgtk3.0-gtk3-dev
+        - lmod
+
+    - workdir: /tmp
+
+    - run:
+        - cp {{ get_file("cuda_pin") }} cuda-ubuntu2204.pin
+        - mv cuda-ubuntu2204.pin /etc/apt/preferences.d/cuda-repository-pin-600
+        - cp {{ get_file("cuda_repo_deb") }} {{ context.cuda_repo_deb }}
+        - dpkg -i {{ context.cuda_repo_deb }}
+        - cp /var/cuda-repo-ubuntu2204-11-8-local/cuda-*-keyring.gpg /usr/share/keyrings/
+        - apt-get update -qq
+        - apt-get install -y -q --no-install-recommends {{ context.cuda_package }}
+        - rm -f {{ context.cuda_repo_deb }}
+
+    - run:
+        - mkdir -p relion
+        - tar -xzf {{ get_file("relion_source") }} --strip-components=1 -C relion
+        - cd relion && mkdir build && cd build && cmake -DCUDA_ARCH={{ context.compute_capability }} -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-{{ context.cuda_version }} -DCMAKE_INSTALL_PREFIX=/opt/relion-{{ context.version }}/ -DFORCE_OWN_FLTK=ON .. && make && make install
+
+    - run:
+        - cp {{ get_file("ctffind_archive") }} ctffind-{{ context.ctffind_version }}.tar.gz
+        - tar -xf ctffind-{{ context.ctffind_version }}.tar.gz
+
+    - copy: ctffind.cpp /tmp/ctffind-{{ context.ctffind_version }}/src/programs/ctffind/ctffind.cpp
+
+    - run:
+        - cd ctffind-{{ context.ctffind_version }} && ./configure --disable-debugmode --enable-mkl --prefix=/opt/ctffind-{{ context.ctffind_version }}/ && make && make install
+
+    - run:
+        - cp {{ get_file("motioncor2_zip") }} MotionCor2_{{ context.motioncor2_version }}.zip
+        - mkdir -p /opt/motioncor2-{{ context.motioncor2_version }}/bin/
+        - unzip MotionCor2_{{ context.motioncor2_version }}.zip -d /opt/motioncor2-{{ context.motioncor2_version }}/bin/
+        - rm -f MotionCor2_{{ context.motioncor2_version }}.zip
+
+    - copy: load_topaz.sh /opt/relion-{{ context.version }}/load_topaz.sh
+
+    - run:
+        - chmod +x /opt/relion-{{ context.version }}/load_topaz.sh
+
+    - environment:
+        RELION_CTFFIND_EXECUTABLE: /opt/ctffind-{{ context.ctffind_version }}/bin/ctffind
+        RELION_MOTIONCOR2_EXECUTABLE: /opt/motioncor2-{{ context.motioncor2_version }}/bin/MotionCor2_{{ context.motioncor2_version }}_Cuda118_Mar312023
+        RELION_TOPAZ_EXECUTABLE: /opt/relion-{{ context.version }}/load_topaz.sh
+        PATH: $PATH:/opt/relion-{{ context.version }}/bin
+
+    - run:
+        - export GOPATH=/tmp/go && cp {{ get_file("go_archive") }} go{{ context.go_version }}.linux-amd64.tar.gz
+        - tar -C /usr/local -xzvf go{{ context.go_version }}.linux-amd64.tar.gz
+        - rm go{{ context.go_version }}.linux-amd64.tar.gz
+        - export GOPATH=/tmp/go && export PATH="$PATH:/usr/local/go/bin:$GOPATH/bin" && mkdir -p $GOPATH/src/github.com/sylabs
+        - export GOPATH=/tmp/go && cp {{ get_file("singularity_archive") }} $GOPATH/src/github.com/sylabs/singularity-ce-{{ context.singularity_version }}.tar.gz
+        - export GOPATH=/tmp/go && cd $GOPATH/src/github.com/sylabs && tar -xzvf singularity-ce-{{ context.singularity_version }}.tar.gz
+        - export GOPATH=/tmp/go && cd $GOPATH/src/github.com/sylabs/singularity-ce-{{ context.singularity_version }} && ./mconfig --without-suid --prefix=/usr/local/singularity
+        - export GOPATH=/tmp/go && cd $GOPATH/src/github.com/sylabs/singularity-ce-{{ context.singularity_version }} && make -C builddir
+        - export GOPATH=/tmp/go && cd $GOPATH/src/github.com/sylabs/singularity-ce-{{ context.singularity_version }} && make -C builddir install
+        - rm -rf /usr/local/go /tmp/go
+        - ln -sfn /usr/local/singularity/bin/singularity /bin/singularity
+
+    - copy: module.sh /usr/share/module.sh
+    - copy: README.md /README.md
+    - copy: license.txt /license.txt
+
+    - run:
+        - mkdir -p /neurodesk
+
+    - copy: ctffind.cpp /neurodesk/ctffind.cpp
+    - copy: load_topaz.sh /neurodesk/load_topaz.sh
+    - copy: module.sh /neurodesk/module.sh
+    - copy: license.txt /neurodesk/license.txt
+
+    - run:
+        - chmod +x /neurodesk/*.sh
+
+deploy:
+  path:
+    - /opt/relion-{{ context.version }}/bin/
+
+categories:
+  - cryo EM
+
+readme: |-
+  ----------------------------------
+  ## relion/{{ context.version }} ##
+  RELION (REgularised LIkelihood OptimisatioN) is a stand-alone program for Maximum A Posteriori refinement of 3D reconstructions and 2D class averages in cryo-electron microscopy.
+
+  This container builds RELION {{ context.relion_version }} from source for CUDA compute capability {{ context.compute_capability }} and includes helper integrations for CTFFIND, MotionCor2, and Topaz.
+
+  Example:
+  ```
+  relion
+  relion_refine --help
+  relion_motion_refine --help
+  ```
+
+  Installed tools and paths:
+  - relion - {{ context.version }} - /opt/relion-{{ context.version }}
+  - ctffind - {{ context.ctffind_version }} - /opt/ctffind-{{ context.ctffind_version }}
+  - motioncor2 - {{ context.motioncor2_version }} - /opt/motioncor2-{{ context.motioncor2_version }}
+  - cudatoolkit - {{ context.cuda_version }} - /usr/local/cuda-{{ context.cuda_version }}
+
+  Environment variables configured in the container:
+  - RELION_CTFFIND_EXECUTABLE=/opt/ctffind-{{ context.ctffind_version }}/bin/ctffind
+  - RELION_MOTIONCOR2_EXECUTABLE=/opt/motioncor2-{{ context.motioncor2_version }}/bin/MotionCor2_{{ context.motioncor2_version }}_Cuda118_Mar312023
+  - RELION_TOPAZ_EXECUTABLE=/opt/relion-{{ context.version }}/load_topaz.sh
+
+  More documentation:
+  - RELION documentation: https://relion.readthedocs.io/en/release-4.0/
+  - RELION source: https://github.com/3dem/relion/tree/{{ context.relion_version }}
+
+  To make the executables and scripts inside this container transparently available in Neurodesk environments, run:
+  ```
+  ml relion/{{ context.version }}
+  ```
+
+  Citation:
+  ```
+  Sjors H W Scheres. RELION: Implementation of a Bayesian approach to cryo-EM structure determination. Journal of Structural Biology, 180(3):519-530, December 2012. doi:10.1016/j.jsb.2012.09.006.
+  ```
+
+  License: GPL-2.0
+
+  ----------------------------------
+
+files:
+  - name: relion_source
+    url: https://github.com/3dem/relion/archive/{{ context.relion_commit }}.tar.gz
+  - name: cuda_pin
+    url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-ubuntu2204.pin
+  - name: cuda_repo_deb
+    url: https://developer.download.nvidia.com/compute/cuda/{{ context.cuda_version }}.0/local_installers/{{ context.cuda_repo_deb }}
+  - name: ctffind_archive
+    url: https://grigoriefflab.umassmed.edu/system/tdf?path=ctffind-{{ context.ctffind_version }}.tar.gz&file=1&type=node&id=26
+  - name: motioncor2_zip
+    url: https://drive.google.com/uc?export=download&id=1hskY_AbXVgrl_BUIjWokDNLZK0c1FLxF
+  - name: go_archive
+    url: https://dl.google.com/go/go{{ context.go_version }}.linux-amd64.tar.gz
+  - name: singularity_archive
+    url: https://github.com/sylabs/singularity/releases/download/v{{ context.singularity_version }}/singularity-ce-{{ context.singularity_version }}.tar.gz
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABzUlEQVR42u2bzW3DMAyFNUFmyAidpQt0sAzTCbJCr73l1nMCHwwohqk/PkpU9QzwUAM28z7R1A/ZcLl+PFe2QAAEQAAEQAAEQADD7fb7WBfAJn635QDE4kdAYAT0dPZ1/xFtEx///W8ApESXmnsAZ6GrFVL6vPazCRYJDD16Z+9DJc+AFL+bVdgec4ZbANY5Bek7oMWX/BBtwpsyAtDZfxoAmxDUJUWCu1ngOOpWAGIf3QHEjnPrAEsAWggQALl5G3Xl/HUDUCMeCcACghmA+F5pOP99f77ZdACk+zXfcwxCAlDjGw6gdvQlITk/tQBaIbgFIEWOWwCSeDSAlk+QADwC0CyGlgXQOgsRAAEQgN91QGpm2AFq/E8FIL4f7wlcAUDvBc4uSTw6/N3sBiUIWr+uzwNKtr659w4DgDgROgJIQbASrz4VTjnNnQmidoDa0+Fg2dDQAqD2AEVbH4AAyI1OywlvyTOIElnoURBNhXXKcqvB7gBSEVBb27OoDbZACF57AlpL5OYRUNoVYi1+SA7QdHRYva/7LIDu8UE93708rhFyTJzTd4m1treMEj0MwOi2WBetsp7ED+sV9iKe/zBBAARAAARAAASwNoAXABYn9VCGbpgAAAAASUVORK5CYII=
