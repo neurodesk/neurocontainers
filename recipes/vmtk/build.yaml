@@ -1,0 +1,82 @@
+name: vmtk
+version: 1.5.0
+
+copyright:
+  - license: BSD-3-Clause
+    url: https://github.com/vmtk/vmtk
+
+architectures:
+  - x86_64
+
+variables:
+  miniforge_version: 24.7.1-2
+  python_version: "3.10"
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - libgl1
+        - libglu1-mesa
+        - ca-certificates
+        - bzip2
+
+    - run:
+        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
+        - chmod +x /usr/bin/ll
+        - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
+
+    - run:
+        - cp {{ get_file("miniforge_installer") }} /tmp/Miniforge3-Linux-x86_64.sh
+        - bash /tmp/Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge3
+        - rm /tmp/Miniforge3-Linux-x86_64.sh
+        - /opt/miniforge3/bin/mamba install -y -c conda-forge vtk itk vmtk={{ context.version }} python={{ context.python_version }}
+        - /opt/miniforge3/bin/conda clean -afy
+
+    - environment:
+        PATH: /opt/miniforge3/bin:$PATH
+        CONDA_PATH: /opt/miniforge3
+
+deploy:
+  path:
+    - /opt/miniforge3/bin
+
+categories:
+  - image segmentation
+  - visualization
+  - shape analysis
+
+readme: |-
+  ----------------------------------
+  ## vmtk/{{ context.version }} ##
+
+  The Vascular Modeling Toolkit is a collection of libraries and tools for 3D reconstruction, geometric analysis, mesh generation, and surface data analysis for image-based modeling of blood vessels.
+
+  VMTK can be used through its command line tools, as Python/C++ libraries, or as part of 3D Slicer workflows. This container installs VMTK {{ context.version }} from conda-forge with VTK, ITK, and Python {{ context.python_version }}.
+
+  Homepage: http://www.vmtk.org/
+  Documentation: http://www.vmtk.org/documentation/
+
+  Example:
+  ```sh
+  vmtkcenterlines -ifile foo.vtp -ofile foo_centerlines.vtp
+  vmtksurfacereader -ifile foo.vtp --pipe vmtkcenterlines --pipe vmtkrenderer --pipe vmtksurfaceviewer -opacity 0.25 --pipe vmtksurfaceviewer -i @vmtkcenterlines.o -array MaximumInscribedSphereRadius
+  ```
+
+  To make VMTK commands available in Neurodesk environments, run:
+  ```sh
+  ml vmtk/{{ context.version }}
+  ```
+
+  License: BSD-3-Clause
+
+  ----------------------------------
+
+files:
+  - name: miniforge_installer
+    url: https://github.com/conda-forge/miniforge/releases/download/{{ context.miniforge_version }}/Miniforge3-Linux-x86_64.sh
+
+icon: data:image/png;base64,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
