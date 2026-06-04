@@ -55,8 +55,10 @@ jobs:
         with:
           fetch-depth: 0
           clean: false
+          path: source
 
       - name: Prepare release test workspace
+        working-directory: source
         run: |
           rm -rf \
             builder/test-results-* \
@@ -76,6 +78,7 @@ jobs:
         uses: astral-sh/setup-uv@v8.1.0
 
       - name: Install dependencies
+        working-directory: source
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -96,6 +99,7 @@ jobs:
           apptainer --version || singularity --version
 
       - name: Debug matrix values
+        working-directory: source
         run: |
           echo "Matrix release data:"
           echo "Name: ${{ matrix.release.name }}"
@@ -106,6 +110,7 @@ jobs:
 
       - name: Find test configuration
         id: find-tests
+        working-directory: source
         run: |
           # Look for test configuration in recipe directory
           RECIPE_DIR="recipes/${{ matrix.release.name }}"
@@ -129,6 +134,7 @@ jobs:
 
       - name: Run container tests
         id: test
+        working-directory: source
         env:
           RECIPE: ${{ matrix.release.name }}
           VERSION: ${{ matrix.release.version }}
@@ -160,14 +166,14 @@ jobs:
         with:
           name: test-results-${{ matrix.release.name }}
           path: |
-            builder/test-results-${{ matrix.release.name }}.json
-            builder/test-report-${{ matrix.release.name }}.md
-            builder/comment-${{ matrix.release.name }}.md
-            builder/status-${{ matrix.release.name }}.txt
-            builder/fulltest-raw-${{ matrix.release.name }}.json
-            builder/fulltest-${{ matrix.release.name }}.jsonl
-            builder/fulltest-${{ matrix.release.name }}.log
-            builder/fulltest-suite-${{ matrix.release.name }}.yaml
+            source/builder/test-results-${{ matrix.release.name }}.json
+            source/builder/test-report-${{ matrix.release.name }}.md
+            source/builder/comment-${{ matrix.release.name }}.md
+            source/builder/status-${{ matrix.release.name }}.txt
+            source/builder/fulltest-raw-${{ matrix.release.name }}.json
+            source/builder/fulltest-${{ matrix.release.name }}.jsonl
+            source/builder/fulltest-${{ matrix.release.name }}.log
+            source/builder/fulltest-suite-${{ matrix.release.name }}.yaml
 
       - name: Comment test results on PR
         if: always()
@@ -179,7 +185,7 @@ jobs:
 
             const releaseName = '${{ matrix.release.name }}';
             const releaseVersion = '${{ matrix.release.version }}';
-            const reportFile = `builder/test-report-${releaseName}.md`;
+            const reportFile = `source/builder/test-report-${releaseName}.md`;
 
             let reportContent = `## Test Results for ${releaseName}:${releaseVersion}\n\n`;
 
