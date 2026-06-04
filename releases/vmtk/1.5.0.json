@@ -1,11 +1,14 @@
 {
   "apps": {
     "vmtk 1.5.0": {
-      "version": "20241004",
-      "exec": ""
+      "version": "20260604",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
-    "image segmentation"
+    "image segmentation",
+    "visualization",
+    "shape analysis"
   ]
 }
