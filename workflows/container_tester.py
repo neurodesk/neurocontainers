@@ -400,6 +400,7 @@ class ReleaseContainerDownloader:
         version: str,
         build_date: Optional[str],
         *,
+        image_basename: Optional[str] = None,
         use_cache: bool = True,
     ) -> Optional[str]:
         """Download container using release build information"""
@@ -412,9 +413,12 @@ class ReleaseContainerDownloader:
 
         # The primary format for release containers includes the build date:
         # {base_url}/{name}_{version}_{build_date}.simg
-        filenames = [
-            f"{name}_{version}_{build_date}.simg",  # Primary format for releases
-        ]
+        filenames = []
+        image_basename = self.normalise_image_basename(image_basename)
+        if image_basename:
+            filenames.append(self.release_filename(image_basename, build_date))
+        filenames.append(f"{name}_{version}_{build_date}.simg")
+        filenames = list(dict.fromkeys(filenames))
 
         for filename in filenames:
             cache_path = os.path.join(self.cache_dir, filename)
@@ -450,6 +454,46 @@ class ReleaseContainerDownloader:
                     print(f"Failed to download from {source_name} ({url}): {e}")
                     continue
 
+        return None
+
+    @staticmethod
+    def normalise_image_basename(image: Optional[str]) -> Optional[str]:
+        """Return a safe SIF image basename from release metadata."""
+        if not image:
+            return None
+
+        image_text = str(image).strip()
+        parsed = urllib.parse.urlparse(image_text)
+        image_path = parsed.path if parsed.scheme and parsed.path else image_text
+        basename = image_path.replace("\\", "/").rsplit("/", 1)[-1]
+        if basename.endswith(".simg"):
+            basename = basename[:-5]
+        elif basename.endswith(".sif"):
+            basename = basename[:-4]
+        basename = basename.strip()
+        if not basename or basename in {".", ".."}:
+            return None
+        return basename
+
+    @staticmethod
+    def release_filename(image_basename: str, build_date: str) -> str:
+        """Return the release SIF filename for an image basename and build date."""
+        if image_basename.endswith(f"_{build_date}"):
+            return f"{image_basename}.simg"
+        return f"{image_basename}_{build_date}.simg"
+
+    def extract_image_basename_from_release(self, release_file: str) -> Optional[str]:
+        """Extract the release image basename from release JSON metadata."""
+        try:
+            with open(release_file, "r") as f:
+                release_data = json.load(f)
+
+            apps = release_data.get("apps", {})
+            if apps:
+                first_app = list(apps.values())[0]
+                return self.normalise_image_basename(first_app.get("image"))
+        except Exception:
+            pass
         return None
 
     def extract_build_date_from_release(self, release_file: str) -> Optional[str]:
@@ -753,13 +797,22 @@ class ContainerTester:
         if location == "auto" or location == "release":
             # Try to download using release information
             build_date = None
+            image_basename = None
             if release_file and os.path.exists(release_file):
                 build_date = self.release_downloader.extract_build_date_from_release(
                     release_file
                 )
+                image_basename = (
+                    self.release_downloader.extract_image_basename_from_release(
+                        release_file
+                    )
+                )
 
             downloaded_path = self.release_downloader.download_from_release(
-                name, version, build_date
+                name,
+                version,
+                build_date,
+                image_basename=image_basename,
             )
             if downloaded_path:
                 self.downloaded_container_path = downloaded_path  # Track for cleanup

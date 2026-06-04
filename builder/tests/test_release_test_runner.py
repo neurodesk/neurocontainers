@@ -11,6 +11,7 @@ from workflows.release_test_runner import (
     _normalise_run_tests_output,
     _release_build_date,
     main,
+    run_fulltest_release,
 )
 from workflows.reporting import build_report
 
@@ -178,6 +179,116 @@ def test_main_writes_failure_outputs_when_fulltest_adapter_errors(
     assert results_path.is_file()
     assert (tmp_path / "builder" / "test-report-niimath.md").is_file()
     assert "status=failed" in github_output.read_text(encoding="utf-8")
+
+
+def test_run_fulltest_release_uses_release_image_basename(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "cache" / "neurodesktop_20260428_arm64_20260519.simg"
+    source.parent.mkdir()
+    source.write_text("simg", encoding="utf-8")
+    release_file = tmp_path / "20260428-arm64.json"
+    release_file.write_text(
+        json.dumps(
+            {
+                "apps": {
+                    "neurodesktop 20260428 arm64": {
+                        "version": "20260519",
+                        "image": "neurodesktop_20260428_arm64",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    test_config = tmp_path / "fulltest.yaml"
+    test_config.write_text("tests: []\n", encoding="utf-8")
+    output_dir = tmp_path / "builder"
+
+    calls: list[dict[str, object]] = []
+
+    class FakeDownloader:
+        def extract_image_basename_from_release(self, release_file: str) -> str:
+            return "neurodesktop_20260428_arm64"
+
+        def download_from_release(self, *args, **kwargs) -> str:
+            calls.append({"args": args, "kwargs": kwargs})
+            return str(source)
+
+    class FakeTester:
+        def __init__(self) -> None:
+            self.release_downloader = FakeDownloader()
+
+        def select_runtime(self, runtime: str) -> SimpleNamespace:
+            return SimpleNamespace(name="apptainer")
+
+        def run_test_suite(self, *args, **kwargs) -> dict[str, object]:
+            return {
+                "total_tests": 1,
+                "passed": 1,
+                "failed": 0,
+                "skipped": 0,
+                "test_results": [{"name": "deploy", "status": "passed"}],
+            }
+
+    def fake_run(command, **kwargs) -> SimpleNamespace:
+        raw_path = Path(command[command.index("-o") + 1])
+        log_path = Path(command[command.index("--log") + 1])
+        jsonl_path = Path(command[command.index("--jsonl") + 1])
+        raw_path.write_text(
+            json.dumps(
+                {
+                    "summary": {
+                        "total_tests": 0,
+                        "tests_passed": 0,
+                        "tests_failed": 0,
+                    },
+                    "suites": [],
+                }
+            ),
+            encoding="utf-8",
+        )
+        log_path.write_text("", encoding="utf-8")
+        jsonl_path.write_text("", encoding="utf-8")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr("workflows.release_test_runner.ContainerTester", FakeTester)
+    monkeypatch.setattr("workflows.release_test_runner.subprocess.run", fake_run)
+
+    status = run_fulltest_release(
+        SimpleNamespace(
+            recipe="neurodesktop",
+            version="20260428-arm64",
+            release_file=str(release_file),
+            test_config=str(test_config),
+            output_dir=str(output_dir),
+            results_path=str(output_dir / "results.json"),
+            runtime="apptainer",
+            docker_to_simg=False,
+            docker_registry="neurodesk",
+            docker_save_to_simg="builder/docker-save-to-simg.go",
+            verbose=False,
+            repo_root=str(tmp_path),
+        )
+    )
+
+    assert status == "passed"
+    assert calls == [
+        {
+            "args": ("neurodesktop", "20260428-arm64", "20260519"),
+            "kwargs": {
+                "image_basename": "neurodesktop_20260428_arm64",
+                "use_cache": False,
+            },
+        }
+    ]
+    assert (
+        "container: neurodesktop_20260428_arm64_20260519.simg"
+        in (output_dir / "fulltest-suite-neurodesktop.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
 
 
 def test_build_report_includes_fulltest_summary_and_artifacts() -> None:
