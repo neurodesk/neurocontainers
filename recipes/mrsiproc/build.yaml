@@ -1,0 +1,306 @@
+name: mrsiproc
+version: 0.2.0
+
+architectures:
+  - x86_64
+
+variables:
+  matlab_version: "2021b"
+  matlab_update_version: "6"
+  minc_version: "1.9.15"
+  lcmodel_version: "6.3"
+  dcm2niix_version: "003f0d19f1e57b0129c9dcf3e653f51ca3559028"
+  julia_version: "1.10.4"
+  freesurfer_version: "7.4.1"
+  julia_minor_version: "1.10"
+  mcr_root: /opt/MATLAB_Runtime_R{{ context.matlab_version }}
+  mcr_runtime: /opt/MATLAB_Runtime_R{{ context.matlab_version }}/v911
+
+build:
+  kind: neurodocker
+  base-image: vnmd/fsl_6.0.7.1
+  pkg-manager: apt
+  directives:
+    - install:
+        - wget
+        - curl
+        - git
+        - ca-certificates
+        - ltrace
+        - strace
+        - libxml2
+        - gcc
+        - build-essential
+        - gzip
+        - tar
+        - unzip
+        - datalad
+        - libfftw3-3
+        - software-properties-common
+        - bc
+
+    - template:
+        name: dcm2niix
+        method: source
+        version: "{{ context.dcm2niix_version }}"
+
+    - template:
+        name: minc
+        method: binaries
+        version: "{{ context.minc_version }}"
+
+    - run:
+        - apt-get update
+        - DEBIAN_FRONTEND=noninteractive apt-get remove -y libjpeg62 || true
+        - cp {{ get_file("libjpeg62_turbo_deb") }} /tmp/libjpeg62-turbo.deb
+        - dpkg -i /tmp/libjpeg62-turbo.deb
+        - rm -f /tmp/libjpeg62-turbo.deb
+        - rm -rf /var/lib/apt/lists/*
+
+    - template:
+        name: miniconda
+        method: binaries
+        version: latest
+
+    - group:
+        - workdir: /opt
+        - run:
+            - git clone https://github.com/MIC-DKFZ/HD-BET
+        - workdir: /opt/HD-BET
+        - run:
+            - echo 'import os' > /opt/HD-BET/HD_BET/paths.py
+            - echo 'folder_with_parameter_files = "/opt/HD-BET/hd-bet_params"' >> /opt/HD-BET/HD_BET/paths.py
+            - mkdir -p /opt/HD-BET/hd-bet_params
+            - cp {{ get_file("hdbet_0_model") }} /opt/HD-BET/hd-bet_params/0.model
+            - cp {{ get_file("hdbet_1_model") }} /opt/HD-BET/hd-bet_params/1.model
+            - cp {{ get_file("hdbet_2_model") }} /opt/HD-BET/hd-bet_params/2.model
+            - cp {{ get_file("hdbet_3_model") }} /opt/HD-BET/hd-bet_params/3.model
+            - cp {{ get_file("hdbet_4_model") }} /opt/HD-BET/hd-bet_params/4.model
+            - pip install -e .
+
+    - group:
+        - workdir: /opt/lcmodel-{{ context.lcmodel_version }}/
+        - install:
+            - curl
+            - ca-certificates
+            - libxft2
+            - libxss1
+            - libnet-ifconfig-wrapper-perl
+            - vim
+            - nano
+            - unzip
+            - gv
+            - unrar
+        - run:
+            - cp {{ get_file("lcm_64_tar") }} /opt/lcm-64.tar
+            - tar xf /opt/lcm-64.tar
+            - rm -f /opt/lcm-64.tar
+            - gunzip -c lcm-core.tar.gz | tar xf -
+            - rm -f lcm-core.tar.gz
+        - workdir: /opt/lcmodel-{{ context.lcmodel_version }}/.lcmodel/basis-sets
+        - run:
+            - cp {{ get_file("lcmodel_3t_zip") }} 3t.zip
+            - unzip 3t.zip
+            - rm -f 3t.zip
+            - cp {{ get_file("lcmodel_1_5t_zip") }} 1.5t.zip
+            - unzip 1.5t.zip
+            - rm -f 1.5t.zip
+            - cp {{ get_file("lcmodel_7t_zip") }} 7t.zip
+            - unzip 7t.zip
+            - rm -f 7t.zip
+            - cp {{ get_file("lcmodel_9_4t_zip") }} 9.4t.zip
+            - unzip 9.4t.zip
+            - rm -f 9.4t.zip
+            - cp {{ get_file("basisset_lcmodel_zip") }} basisset_LCModel.zip
+            - unzip basisset_LCModel.zip
+            - rm -f basisset_LCModel.zip
+        - workdir: /opt/datasets
+        - run:
+            - cp {{ get_file("lcmodel_manual_pdf") }} /opt/lcmodel-{{ context.lcmodel_version }}/manual.pdf
+        - copy:
+            - setup_lcmodel.sh
+            - /opt/lcmodel-{{ context.lcmodel_version }}/.lcmodel/bin/setup_lcmodel.sh
+        - workdir: /opt/lcmodel-{{ context.lcmodel_version }}/.lcmodel/profiles/1/control-defaults
+        - copy:
+            - controlfiledefault
+            - /opt/lcmodel-{{ context.lcmodel_version }}/.lcmodel/profiles/1/control-defaults/controlfiledefault
+        - copy:
+            - gui-defaults
+            - /opt/lcmodel-{{ context.lcmodel_version }}/.lcmodel/profiles/1/gui-defaults
+        - run:
+            - chmod a+rwx /opt/lcmodel-{{ context.lcmodel_version }} -R
+        - environment:
+            PATH: $PATH:/opt/lcmodel-{{ context.lcmodel_version }}/.lcmodel/bin:/opt/lcmodel-{{ context.lcmodel_version }}/.lcmodel
+
+    - group:
+        - install:
+            - bc
+            - curl
+            - libncurses5
+            - libxext6
+            - libxmu6
+            - libxpm-dev
+            - libxt6
+            - unzip
+            - openjdk-8-jre
+            - dbus-x11
+        - workdir: /opt
+        - run:
+            - cp {{ get_file("matlab_runtime_zip") }} MATLAB_Runtime_R{{ context.matlab_version }}_Update_{{ context.matlab_update_version }}_glnxa64.zip
+            - unzip MATLAB_Runtime_R{{ context.matlab_version }}_Update_{{ context.matlab_update_version }}_glnxa64.zip -d mcrtmp
+            - mcrtmp/install -mode silent -destinationFolder {{ context.mcr_root }} -agreeToLicense yes
+            - rm -rf mcrtmp MATLAB_Runtime_R{{ context.matlab_version }}_Update_{{ context.matlab_update_version }}_glnxa64.zip
+        - environment:
+            LD_LIBRARY_PATH: $LD_LIBRARY_PATH:{{ context.mcr_runtime }}/runtime/glnxa64:{{ context.mcr_runtime }}/bin/glnxa64:{{ context.mcr_runtime }}/sys/os/glnxa64:{{ context.mcr_runtime }}/sys/opengl/lib/glnxa64:{{ context.mcr_runtime }}/extern/bin/glnxa64
+
+    - group:
+        - workdir: /opt
+        - run:
+            - cp {{ get_file("julia_tar_gz") }} julia-{{ context.julia_version }}-linux-x86_64.tar.gz
+            - tar zxf julia-{{ context.julia_version }}-linux-x86_64.tar.gz
+            - rm -f julia-{{ context.julia_version }}-linux-x86_64.tar.gz
+        - environment:
+            PATH: $PATH:/opt/julia-{{ context.julia_version }}/bin
+        - copy:
+            - install_packages.jl
+            - /opt/install_packages.jl
+        - environment:
+            JULIA_DEPOT_PATH: /opt/julia_depot
+        - run:
+            - julia /opt/install_packages.jl
+            - chmod -R 755 /opt/julia_depot/packages/MRSI
+        - environment:
+            JULIA_DEPOT_PATH: /opt/julia_depot
+
+    - group:
+        - workdir: /opt
+        - install:
+            - language-pack-en
+            - gettext
+            - xterm
+            - x11-apps
+            - csh
+            - tcsh
+            - xorg
+            - xorg-dev
+            - xserver-xorg-video-intel
+            - libwayland-cursor0
+        - run:
+            - cp {{ get_file("freesurfer_deb") }} freesurfer_ubuntu20-{{ context.freesurfer_version }}_amd64.deb
+            - dpkg -i freesurfer_ubuntu20-{{ context.freesurfer_version }}_amd64.deb
+            - rm -f freesurfer_ubuntu20-{{ context.freesurfer_version }}_amd64.deb
+        - environment:
+            PATH: $PATH:/usr/local/freesurfer/{{ context.freesurfer_version }}-1
+
+    - group:
+        - workdir: /opt
+        - install:
+            - parallel
+        - run:
+            - git clone https://github.com/korbinian90/mrsi_pipeline_neurodesk.git
+            - cd mrsi_pipeline_neurodesk
+            - git checkout 02ed0178bf2d7be3ec0406fee92333ae86de377d
+        - environment:
+            PATH: $PATH:/opt/mrsi_pipeline_neurodesk/Part1:/opt/mrsi_pipeline_neurodesk/Part2
+        - copy:
+            - update_mrsi.sh
+            - /opt/mrsi_pipeline_neurodesk/update_mrsi.sh
+        - run:
+            - chmod a+x /opt/mrsi_pipeline_neurodesk/update_mrsi.sh
+        - environment:
+            PATH: /neurodesktop-storage/mrsi_pipeline_neurodesk/Part1:/neurodesktop-storage/mrsi_pipeline_neurodesk/Part2:/opt/mrsi_pipeline_neurodesk:$PATH
+
+deploy:
+  path:
+    - /opt/lcmodel-{{ context.lcmodel_version }}/.lcmodel/bin/
+    - /opt/lcmodel-{{ context.lcmodel_version }}/.lcmodel/
+    - /opt/mrsi_pipeline_neurodesk/Part1
+    - /opt/mrsi_pipeline_neurodesk/Part2
+  bins:
+    - julia
+    - python
+    - bc
+    - dcm2niix
+    - nii2mnc
+    - dcm2mnc
+    - rawtominc
+    - mincresample
+    - mincmath
+    - minctoraw
+    - mnc2nii
+    - bet
+    - hd-bet
+    - mri_synthseg
+    - lcmodel
+    - parallel
+    - fsl
+    - fslmaths
+    - Part1_ProcessMRSI.sh
+    - Part2_EvaluateMRSI.sh
+    - update_mrsi.sh
+    - fid_1.300000ms.basis
+    - LCModel_Control_Template.m
+    - LCModel_Control_Volunteers_WatRef.m
+
+categories:
+  - spectroscopy
+  - workflows
+
+readme: |
+  ----------------------------------
+  ## mrsiproc/{{ context.version }} ##
+
+  This container provides the MR Spectroscopy Imaging Processing Pipeline for reconstructing and analyzing MRSI data, with LCModel, FSL, MINC, HD-BET, Julia, FreeSurfer, dcm2niix, and MATLAB Runtime components.
+
+  Example:
+  ```bash
+  Part1_ProcessMRSI.sh \
+    -c /neurodesktop-storage/data/meas_test.dat \
+    -t /neurodesktop-storage/data/T1/ \
+    -a /neurodesktop-storage/data/INV1/ \
+    -b fid_1.300000ms.basis \
+    -o /neurodesktop-storage/mrsi_proc/ProcessResults/test_files \
+    -j LCModel_Control_Template.m \
+    -m "dreid"
+
+  Part2_EvaluateMRSI.sh
+  ```
+
+  To run container outside of this environment: ml mrsiproc/{{ context.version }}
+  ----------------------------------
+
+files:
+  - name: libjpeg62_turbo_deb
+    url: http://ftp.br.debian.org/debian/pool/main/libj/libjpeg-turbo/libjpeg62-turbo_2.0.6-4_amd64.deb
+  - name: hdbet_0_model
+    url: https://zenodo.org/record/2540695/files/0.model?download=1
+  - name: hdbet_1_model
+    url: https://zenodo.org/record/2540695/files/1.model?download=1
+  - name: hdbet_2_model
+    url: https://zenodo.org/record/2540695/files/2.model?download=1
+  - name: hdbet_3_model
+    url: https://zenodo.org/record/2540695/files/3.model?download=1
+  - name: hdbet_4_model
+    url: https://zenodo.org/record/2540695/files/4.model?download=1
+  - name: lcm_64_tar
+    url: http://www.s-provencher.com/pub/LCModel/programs/lcm-64.tar
+  - name: lcmodel_3t_zip
+    url: http://www.s-provencher.com/pub/LCModel/3t.zip
+  - name: lcmodel_1_5t_zip
+    url: http://www.s-provencher.com/pub/LCModel/1.5t.zip
+  - name: lcmodel_7t_zip
+    url: http://www.s-provencher.com/pub/LCModel/7t.zip
+  - name: lcmodel_9_4t_zip
+    url: http://www.s-provencher.com/pub/LCModel/9.4t.zip
+  - name: basisset_lcmodel_zip
+    url: https://www.ismrm.org/workshops/Spectroscopy16/mrs_fitting_challenge/basisset_LCModel.zip
+  - name: lcmodel_manual_pdf
+    url: http://www.lcmodel.com/pub/LCModel/manual/manual.pdf
+  - name: matlab_runtime_zip
+    url: https://ssd.mathworks.com/supportfiles/downloads/R{{ context.matlab_version }}/Release/{{ context.matlab_update_version }}/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R{{ context.matlab_version }}_Update_{{ context.matlab_update_version }}_glnxa64.zip
+  - name: julia_tar_gz
+    url: https://julialang-s3.julialang.org/bin/linux/x64/{{ context.julia_minor_version }}/julia-{{ context.julia_version }}-linux-x86_64.tar.gz
+  - name: freesurfer_deb
+    url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.freesurfer_version }}/freesurfer_ubuntu20-{{ context.freesurfer_version }}_amd64.deb
+
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiMxMDJhNDMiLz48cGF0aCBkPSJNOSAzOGM2LTIwIDEzLTIwIDE5IDBzMTMgMjAgMTkgMCA3LTIwIDggMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNmVlN2I3IiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxwYXRoIGQ9Ik0xMiAzMGg0MCIgc3Ryb2tlPSIjOTRhM2I4IiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgb3BhY2l0eT0iLjU1Ii8+PGNpcmNsZSBjeD0iMzIiIGN5PSIyNCIgcj0iOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZjhmYWZjIiBzdHJva2Utd2lkdGg9IjMiLz48cGF0aCBkPSJNMjYgNDdoMTJsNi05IiBmaWxsPSJub25lIiBzdHJva2U9IiNmNTllMGIiIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+
