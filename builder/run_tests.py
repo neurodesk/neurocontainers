@@ -973,6 +973,12 @@ def main():
         help="Directory containing container files (default: containers)",
     )
     parser.add_argument(
+        "--work-dir",
+        type=Path,
+        default=Path("work"),
+        help="Directory for test scratch space and cached data (default: work)",
+    )
+    parser.add_argument(
         "-f", "--filter",
         type=str,
         help="Filter tests by name pattern (regex)",
@@ -1037,11 +1043,11 @@ def main():
 
     base_dir = Path.cwd()
     tests_dir = base_dir / "tests"
-    work_dir = base_dir / "work"
+    work_dir = args.work_dir.resolve()
     containers_dir = args.containers_dir.resolve()
 
     # Ensure work directory exists
-    work_dir.mkdir(exist_ok=True)
+    work_dir.mkdir(parents=True, exist_ok=True)
 
     # Parse --retry JSONL to build map of suite -> failed test names
     retry_map: dict[str, set[str]] | None = None

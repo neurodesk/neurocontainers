@@ -188,7 +188,9 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
     fulltest_log_path = output_dir / f"fulltest-{args.recipe}.log"
     fulltest_jsonl_path = output_dir / f"fulltest-{args.recipe}.jsonl"
     suite_path = output_dir / f"fulltest-suite-{args.recipe}.yaml"
+    fulltest_work_dir = output_dir / f"fulltest-work-{args.recipe}"
     containers_dir.mkdir(parents=True, exist_ok=True)
+    fulltest_work_dir.mkdir(parents=True, exist_ok=True)
 
     build_date = _release_build_date(release_file)
     tester = ContainerTester()
@@ -251,6 +253,8 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
         str(fulltest_log_path),
         "--jsonl",
         str(fulltest_jsonl_path),
+        "--work-dir",
+        str(fulltest_work_dir),
     ]
     proc = subprocess.run(command, cwd=args.repo_root, text=True, check=False)
     if proc.returncode != 0 and not raw_results_path.is_file():
