@@ -47,13 +47,13 @@ binaries:
             curl -fsSL -o "$conda_installer" {{ self.urls["*"] }}
             bash "$conda_installer" -b -p {{ self.install_path }}
             rm -f "$conda_installer"
-            if conda tos --help >/dev/null 2>&1; then conda tos accept; fi
+            if conda tos --help >/dev/null 2>&1; then conda tos accept; fi;
             {% if self.version == "latest" -%}
-            && conda update -yq -nbase conda
+            conda update -yq -nbase conda
             {% endif -%}
             {% if self.mamba == "true" -%}
-            && conda install -yq -nbase conda-libmamba-solver
-            && conda config --set solver libmamba
+            conda install -yq -nbase conda-libmamba-solver
+            conda config --set solver libmamba
             {% endif -%}
             # Prefer packages in conda-forge
             conda config --system --prepend channels conda-forge
