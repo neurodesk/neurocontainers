@@ -1,5 +1,5 @@
 # RELION container test suite
-# Tests for RELION v4.0.1 - REgularised LIkelihood OptimisatioN for cryo-EM
+# Tests for RELION v4.0.1.sm75 - REgularised LIkelihood OptimisatioN for cryo-EM
 #
 # RELION is a stand-alone computer program for Maximum A Posteriori (MAP)
 # refinement of (multiple) 3D reconstructions or 2D class averages in
@@ -11,8 +11,8 @@
 #   - CUDA Toolkit 11.8
 
 name: relion
-version: 4.0.1
-container: relion_4.0.1.sm61_20240528.simg
+version: 4.0.1.sm75
+container: relion_4.0.1.sm75_*.simg
 
 tests:
   # ==========================================================================
