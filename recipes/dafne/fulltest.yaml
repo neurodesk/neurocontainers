@@ -5,7 +5,9 @@
 
 name: dafne
 version: 1.8a4
-container: dafne_1.8a4_20260602.simg
+# Reference pattern for direct local runs; release PR testing replaces this
+# with the release JSON build artifact before invoking builder/run_tests.py.
+container: dafne_1.8a4_*.simg
 
 default_timeout: 120
 
