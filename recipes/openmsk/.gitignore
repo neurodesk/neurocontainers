@@ -1,0 +1,7 @@
+# Local-only build artifacts (large models, test data, outputs) — never commit
+models_cache/
+dicom_data/
+*.h5
+*.log
+output*/
+__pycache__/

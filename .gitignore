@@ -49,3 +49,6 @@ vesselboost_openrecon_parameter_matrix_outputs
 openrecon_test_*
 bug_*
 httpcache/
+recipes/openmsk/nnunet_cache/
+recipes/openmsk/out_seg
+recipes/openmsk/out_direct

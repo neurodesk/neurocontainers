@@ -1,0 +1,225 @@
+name: openmsk
+version: 0.1.0
+architectures:
+  - x86_64
+
+variables:
+  kneepipeline_commit: "61144f23d9001950a70f77cb70d628e1883da86d"
+  dosma_model_url: "https://huggingface.co/aagatti/dosma_bones/resolve/main/Goyal_Bone_Cart_July_2024_best_model.h5"
+
+files:
+  - name: openmsk.py
+    filename: openmsk.py
+  - name: OpenReconLabel.json
+    filename: OpenReconLabel.json
+  - name: OpenReconREADME.md
+    filename: OpenReconREADME.md
+  - name: dosma_qdess_model
+    url: "{{ context.dosma_model_url }}"
+  - name: openmsk
+    contents: |-
+      #!/usr/bin/env bash
+      printf 'openmsk {{ context.version }}\n'
+  - name: openmsk_config
+    contents: |-
+      {
+        "perform_bone_only_nsm": false,
+        "perform_bone_and_cart_nsm": false,
+        "clip_femur_top": true,
+        "default_seg_model": "acl_qdess_bone_july_2024",
+        "batch_size": 32,
+        "models": {
+          "acl_qdess_bone_july_2024": "/opt/DOSMA_WEIGHTS/Goyal_Bone_Cart_July_2024_best_model.h5",
+          "goyal_sagittal": "/opt/DOSMA_WEIGHTS/sagittal_best_model.h5",
+          "goyal_coronal": "/opt/DOSMA_WEIGHTS/coronal_best_model.h5",
+          "goyal_axial": "/opt/DOSMA_WEIGHTS/axial_best_model.h5"
+        },
+        "nnunet": {
+          "type": "fullres",
+          "model_name": "Dataset500_KneeMRI"
+        },
+        "nsm": {
+          "path_model_config": "/opt/NSM_MODELS/647_nsm_femur_cartilage_v0.0.1/model_config.json",
+          "path_model_state": "/opt/NSM_MODELS/647_nsm_femur_cartilage_v0.0.1/model/2000.pth"
+        },
+        "bscore": {
+          "path_model_folder": "/opt/KneePipeline/BSCORE_MODELS/NSM_Orig_BScore_Bone_Cartilage_April_17_2025"
+        },
+        "nsm_bone_only": {
+          "path_model_config": "/opt/NSM_MODELS/551_nsm_femur_bone_v0.0.1/model_params_config.json",
+          "path_model_state": "/opt/NSM_MODELS/551_nsm_femur_bone_v0.0.1/model/1150.pth"
+        },
+        "bscore_bone_only": {
+          "path_model_folder": "/opt/KneePipeline/BSCORE_MODELS/NSM_Orig_BScore_Bone_Only_April_18_2025"
+        },
+        "regions": {
+          "cart": {
+            "1": "pat_cart",
+            "2": "fem_cart",
+            "3": "med_tib_cart",
+            "4": "lat_tib_cart",
+            "11": "ant_fem_cart",
+            "12": "med_wb_fem_cart",
+            "13": "lat_wb_fem_cart",
+            "14": "med_post_fem_cart",
+            "15": "lat_post_fem_cart"
+          },
+          "bone": {
+            "7": "femur",
+            "8": "tibia",
+            "9": "patella"
+          }
+        },
+        "bones": {
+          "patella": {
+            "tissue_idx": 9,
+            "list_cart_labels": [1],
+            "n_points": 10000,
+            "crop_percent": null
+          },
+          "femur": {
+            "tissue_idx": 7,
+            "list_cart_labels": [2],
+            "n_points": 20000,
+            "crop_percent": 0.8
+          },
+          "tibia": {
+            "tissue_idx": 8,
+            "list_cart_labels": [3, 4],
+            "n_points": 20000,
+            "crop_percent": 0.8
+          }
+        }
+      }
+
+build:
+  kind: neurodocker
+  # Python 3.10 + CUDA 11.8. 3.10 is the sweet spot: the OpenRecon macro pins
+  # pydicom==3.0.1 (needs Python >=3.10) and KneePipeline needs TensorFlow 2.11
+  # (needs Python <=3.10). This base ships torch 2.2.2+cu118, which we use
+  # directly with no separate conda env (matching the vesselboost recipe) and
+  # hold pinned so none of the dependency installs below can change it.
+  base-image: pytorch/pytorch:2.2.2-cuda11.8-cudnn8-runtime
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+    - install:
+        - bzip2
+        - ca-certificates
+        - git
+        - libgl1
+        - libglib2.0-0
+        - libgomp1
+        - libsm6
+        - libxext6
+        - libxrender1
+        - unzip
+
+    - include: macros/openrecon/neurodocker.yaml
+
+    # Pin the baseline torch stack so none of the KneePipeline dependency
+    # installs below can upgrade or replace it (keeps the CUDA 11.8 torch the
+    # base image already provides). This is the vesselboost approach.
+    - run:
+        - python -c "import torch, torchvision, pathlib; pathlib.Path('/opt/pip-constraints.txt').write_text('torch==%s\ntorchvision==%s\n' % (torch.__version__, torchvision.__version__))"
+        - cat /opt/pip-constraints.txt
+    - environment:
+        PIP_CONSTRAINT: /opt/pip-constraints.txt
+
+    - workdir: /opt
+    - run:
+        # TensorFlow first so DOSMA's `tensorflow>=2.0.0` extra is satisfied.
+        - pip install --no-cache-dir tensorflow==2.11.0 keras==2.11.0
+        - pip install --no-cache-dir huggingface-hub==0.24.7
+        # NSM: drop the unpinned torch* lines and install against baseline torch.
+        - git clone https://github.com/gattia/nsm /opt/nsm
+        - cd /opt/nsm
+        - sed -i -E '/^[[:space:]]*(torch|torchvision|torchaudio)[[:space:]]*$/d' requirements.txt
+        - pip install --no-cache-dir -r requirements.txt
+        - pip install --no-cache-dir --no-deps .
+        # DOSMA bone_seg branch (qDESS bone/cartilage segmentation).
+        - git clone https://github.com/gattia/DOSMA /opt/DOSMA
+        - cd /opt/DOSMA
+        - git checkout bone_seg
+        - pip install --no-cache-dir '.[ai]'
+        # pymeshfix pinned to 0.16.2: pymskt's fix_mesh() calls
+        # MeshFix.repair(verbose=...), a kwarg removed in pymeshfix >=0.17.
+        - pip install --no-cache-dir mskt nnunetv2==2.4.2 SimpleITK==2.3.1 pandas==2.0.3 pymeshfix==0.16.2
+        # KneePipeline's TF 2.11 / nnU-Net numpy compromise (resolved last).
+        - pip install --no-cache-dir "numpy==1.24.3"
+    - run:
+        - git clone --recurse-submodules https://github.com/gattia/KneePipeline /opt/KneePipeline
+        - cd /opt/KneePipeline
+        - git checkout {{ context.kneepipeline_commit }}
+        - git submodule update --init --recursive
+        - mkdir -p /opt/DOSMA_WEIGHTS /opt/NSM_MODELS
+        - cp {{ get_file("dosma_qdess_model") }} /opt/DOSMA_WEIGHTS/Goyal_Bone_Cart_July_2024_best_model.h5
+        - cp {{ get_file("openmsk_config") }} /opt/KneePipeline/config.json
+        - if [ -n "${HF_TOKEN:-}" ]; then python -c "import os; from huggingface_hub import snapshot_download; snapshot_download(repo_id='aagatti/ShapeMedKnee', local_dir='/opt/NSM_MODELS', token=os.environ.get('HF_TOKEN'))"; else echo "HF_TOKEN not set; skipping optional gated ShapeMedKnee NSM weights"; fi
+        - find /opt/KneePipeline -name .git -type d -prune -exec rm -rf {} +
+        - find /opt/nsm -name .git -type d -prune -exec rm -rf {} +
+        - find /opt/DOSMA -name .git -type d -prune -exec rm -rf {} +
+        - pip cache purge || true
+        - install -m 0755 {{ get_file("openmsk") }} /usr/local/bin/openmsk
+        - mkdir -p /tmp/share/debug
+        - chmod 1777 /tmp/share /tmp/share/debug
+    # Runtime environment. CUDA libs from the base image + conda lib let
+    # TensorFlow/torch load on a GPU host; harmless on CPU-only hosts.
+    - environment:
+        OPENMSK_VERSION: "{{ context.version }}"
+        KNEEPIPELINE_HOME: /opt/KneePipeline
+        KNEEPIPELINE_CONFIG: /opt/KneePipeline/config.json
+        LD_LIBRARY_PATH: /usr/local/cuda/lib64:/opt/conda/lib:$LD_LIBRARY_PATH
+        # The DOSMA qDESS TF models are saved channels-first (NCHW). On a GPU
+        # that runs natively; on CPU-only hosts oneDNN is required for NCHW
+        # Conv2D, so enable it (harmless on GPU).
+        TF_ENABLE_ONEDNN_OPTS: "1"
+    - copy: openmsk.py /opt/code/python-ismrmrd-server/openmsk.py
+    - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
+    - copy: OpenReconREADME.md /opt/code/python-ismrmrd-server/OpenReconREADME.md
+    - copy: enhanceddicom2mrd.py /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py
+    - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
+
+deploy:
+  bins:
+    - python
+    - openmsk
+
+readme: |-
+  ----------------------------------
+  ## openmsk/{{ context.version }} ##
+
+  OpenMSK packages the KneePipeline knee MRI toolbox as a Siemens OpenRecon
+  image-to-image module for qDESS knee MRI. The OpenRecon path receives MRD
+  images from the scanner, reconstructs an echo-1 NIfTI, runs KneePipeline, and
+  returns bone/cartilage segmentation with geometry copied from the source
+  images. Cartilage thickness metrics are written by KneePipeline and included
+  in returned image comments when available.
+
+  Direct DICOM usage keeps the qDESS GL/TG private tags and can produce the
+  full output set including T2:
+
+  ```bash
+  ml openmsk/{{ context.version }}
+  python /opt/KneePipeline/run_pipeline.py /path/to/qDESS/dicom_dir /path/to/out --config /opt/KneePipeline/config.json
+  ```
+
+  NSM/BScore require a GPU and optional gated ShapeMedKnee weights in
+  `/opt/NSM_MODELS`. Provide `HF_TOKEN` during the build to download those
+  weights; without it, the image still builds and segmentation/thickness run.
+
+  ----------------------------------
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiByeD0iNCIgZmlsbD0iIzBmMTcyYSIvPjxwYXRoIGQ9Ik05LjIgMy41YzIuMiAwIDMuOCAxLjYgMy44IDMuNyAwIDEuMy0uNiAyLjQtMS41IDMuMWwtLjkuN2MtLjUuNC0uOC45LS44IDEuNSAwIC43LjUgMS4yIDEuMiAxLjJoMi4yYzEuNyAwIDMgMS40IDMgMy4xIDAgMi4xLTEuNyAzLjctMy44IDMuNyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZTJlOGYwIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxwYXRoIGQ9Ik0xNC44IDMuNWMtMi4yIDAtMy44IDEuNi0zLjggMy43IDAgMS4zLjYgMi40IDEuNSAzLjFsLjkuN2MuNS40LjguOS44IDEuNSAwIC43LS41IDEuMi0xLjIgMS4yaC0yLjJjLTEuNyAwLTMgMS40LTMgMy4xIDAgMi4xIDEuNyAzLjcgMy44IDMuNyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMjJjNTVlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjIuMiIgZmlsbD0iIzM4YmRmOCIgZmlsbC1vcGFjaXR5PSIuODUiLz48L3N2Zz4=
+categories:
+  - image segmentation
+  - quantitative imaging
+copyright:
+  # Upstream license files were not present in the checked-out sources.
+  - license: NOASSERTION
+    url: https://github.com/gattia/KneePipeline
+  - license: NOASSERTION
+    url: https://github.com/gattia/DOSMA
+  - license: NOASSERTION
+    url: https://github.com/gattia/nsm

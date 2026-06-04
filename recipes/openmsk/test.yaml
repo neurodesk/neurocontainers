@@ -1,0 +1,43 @@
+tests:
+  - name: Test openmsk
+    manual: true
+    script: |
+      # Build/login. The large model files are expected to be available in the
+      # recipe cache or local build context for offline mode.
+      source env/bin/activate
+      sf-login openmsk --architecture x86_64 --offline-mode
+
+      # CUDA must be 11.x for the Siemens MARS scanner environment.
+      python -c "import torch; print(torch.version.cuda)"
+
+      # Convert qDESS Enhanced DICOM to MRD for the OpenRecon path.
+      rm -f /buildhostdirectory/input.h5
+      python /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py \
+        -o /buildhostdirectory/input.h5 \
+        /buildhostdirectory/dicom_data/qDESS
+
+      # Start the OpenRecon server and run the client with config=openmsk.
+      python /opt/code/python-ismrmrd-server/main.py \
+        -v -r -H=0.0.0.0 -p=9002 -s -S=/tmp/share/saved_data &
+      sleep 2
+
+      rm -f /buildhostdirectory/output.h5
+      python /opt/code/python-ismrmrd-server/client.py \
+        -G dataset \
+        -o /buildhostdirectory/output.h5 \
+        /buildhostdirectory/input.h5 \
+        -c openmsk
+
+      # Also run the full KneePipeline directly on qDESS DICOM. This path keeps
+      # the qDESS private tags and should produce segmentation, thickness, and T2.
+      rm -rf /buildhostdirectory/out_direct
+      python /opt/KneePipeline/run_pipeline.py \
+        /buildhostdirectory/dicom_data/qDESS \
+        /buildhostdirectory/out_direct \
+        --config /opt/KneePipeline/config.json
+
+      find /buildhostdirectory/out_direct -maxdepth 1 -type f | sort
+      ls -lh /buildhostdirectory/out_direct/*_all-labels.nii.gz
+      ls -lh /buildhostdirectory/out_direct/*_thickness_results.json
+      ls -lh /buildhostdirectory/out_direct/*_t2_results.json
+      ls -lh /buildhostdirectory/out_direct/*_t2map.nii.gz
