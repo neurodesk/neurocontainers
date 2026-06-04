@@ -12,8 +12,9 @@ variables:
   dcm2niix_version: "003f0d19f1e57b0129c9dcf3e653f51ca3559028"
   julia_version: "1.10.4"
   freesurfer_version: "7.4.1"
-  mcr_root: /opt/MATLAB_Runtime_R2021b
-  mcr_runtime: /opt/MATLAB_Runtime_R2021b/v911
+  julia_minor_version: "1.10"
+  mcr_root: /opt/MATLAB_Runtime_R{{ context.matlab_version }}
+  mcr_runtime: /opt/MATLAB_Runtime_R{{ context.matlab_version }}/v911
 
 build:
   kind: neurodocker
@@ -51,7 +52,7 @@ build:
     - run:
         - apt-get update
         - DEBIAN_FRONTEND=noninteractive apt-get remove -y libjpeg62 || true
-        - curl -fsSL -o /tmp/libjpeg62-turbo.deb http://ftp.br.debian.org/debian/pool/main/libj/libjpeg-turbo/libjpeg62-turbo_2.0.6-4_amd64.deb
+        - cp {{ get_file("libjpeg62_turbo_deb") }} /tmp/libjpeg62-turbo.deb
         - dpkg -i /tmp/libjpeg62-turbo.deb
         - rm -f /tmp/libjpeg62-turbo.deb
         - rm -rf /var/lib/apt/lists/*
@@ -169,7 +170,7 @@ build:
             - julia /opt/install_packages.jl
             - chmod -R 755 /opt/julia_depot/packages/MRSI
         - environment:
-            JULIA_DEPOT_PATH: ~/.julia:/opt/julia_depot
+            JULIA_DEPOT_PATH: /opt/julia_depot
 
     - group:
         - workdir: /opt
@@ -208,10 +209,6 @@ build:
             - chmod a+x /opt/mrsi_pipeline_neurodesk/update_mrsi.sh
         - environment:
             PATH: /neurodesktop-storage/mrsi_pipeline_neurodesk/Part1:/neurodesktop-storage/mrsi_pipeline_neurodesk/Part2:/opt/mrsi_pipeline_neurodesk:$PATH
-
-    - copy:
-        - README.md
-        - /README.md
 
 deploy:
   path:
@@ -253,16 +250,28 @@ readme: |
   ----------------------------------
   ## mrsiproc/{{ context.version }} ##
 
-  This container provides the MR Spectroscopy Imaging Processing Pipeline with LCModel, FSL, MINC, HD-BET, Julia, FreeSurfer, dcm2niix, and MATLAB Runtime components.
+  This container provides the MR Spectroscopy Imaging Processing Pipeline for reconstructing and analyzing MRSI data, with LCModel, FSL, MINC, HD-BET, Julia, FreeSurfer, dcm2niix, and MATLAB Runtime components.
 
   Example:
-    bash Part1_ProcessMRSI.sh
-    bash Part2_EvaluateMRSI.sh
+  ```bash
+  Part1_ProcessMRSI.sh \
+    -c /neurodesktop-storage/data/meas_test.dat \
+    -t /neurodesktop-storage/data/T1/ \
+    -a /neurodesktop-storage/data/INV1/ \
+    -b fid_1.300000ms.basis \
+    -o /neurodesktop-storage/mrsi_proc/ProcessResults/test_files \
+    -j LCModel_Control_Template.m \
+    -m "dreid"
+
+  Part2_EvaluateMRSI.sh
+  ```
 
   To run container outside of this environment: ml mrsiproc/{{ context.version }}
   ----------------------------------
 
 files:
+  - name: libjpeg62_turbo_deb
+    url: http://ftp.br.debian.org/debian/pool/main/libj/libjpeg-turbo/libjpeg62-turbo_2.0.6-4_amd64.deb
   - name: hdbet_0_model
     url: https://zenodo.org/record/2540695/files/0.model?download=1
   - name: hdbet_1_model
@@ -288,8 +297,10 @@ files:
   - name: lcmodel_manual_pdf
     url: http://www.lcmodel.com/pub/LCModel/manual/manual.pdf
   - name: matlab_runtime_zip
-    url: https://ssd.mathworks.com/supportfiles/downloads/R2021b/Release/6/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R2021b_Update_6_glnxa64.zip
+    url: https://ssd.mathworks.com/supportfiles/downloads/R{{ context.matlab_version }}/Release/{{ context.matlab_update_version }}/deployment_files/installer/complete/glnxa64/MATLAB_Runtime_R{{ context.matlab_version }}_Update_{{ context.matlab_update_version }}_glnxa64.zip
   - name: julia_tar_gz
-    url: https://julialang-s3.julialang.org/bin/linux/x64/1.10/julia-1.10.4-linux-x86_64.tar.gz
+    url: https://julialang-s3.julialang.org/bin/linux/x64/{{ context.julia_minor_version }}/julia-{{ context.julia_version }}-linux-x86_64.tar.gz
   - name: freesurfer_deb
-    url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/7.4.1/freesurfer_ubuntu20-7.4.1_amd64.deb
+    url: https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/{{ context.freesurfer_version }}/freesurfer_ubuntu20-{{ context.freesurfer_version }}_amd64.deb
+
+icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTAiIGZpbGw9IiMxMDJhNDMiLz48cGF0aCBkPSJNOSAzOGM2LTIwIDEzLTIwIDE5IDBzMTMgMjAgMTkgMCA3LTIwIDggMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNmVlN2I3IiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxwYXRoIGQ9Ik0xMiAzMGg0MCIgc3Ryb2tlPSIjOTRhM2I4IiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgb3BhY2l0eT0iLjU1Ii8+PGNpcmNsZSBjeD0iMzIiIGN5PSIyNCIgcj0iOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZjhmYWZjIiBzdHJva2Utd2lkdGg9IjMiLz48cGF0aCBkPSJNMjYgNDdoMTJsNi05IiBmaWxsPSJub25lIiBzdHJva2U9IiNmNTllMGIiIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+
