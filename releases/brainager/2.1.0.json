@@ -1,7 +1,7 @@
 {
   "apps": {
     "brainager 2.1.0": {
-      "version": "20251220",
+      "version": "20260515",
       "exec": "",
       "apptainer_args": []
     }
