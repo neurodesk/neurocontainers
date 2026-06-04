@@ -695,7 +695,15 @@ jobs:
         run: |
           docker tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ${DOCKERHUB_ORG}/${IMAGENAME}:${BUILDDATE}
           docker tag ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE} ${DOCKERHUB_ORG}/${IMAGENAME}:latest
-          docker push --all-tags ${DOCKERHUB_ORG}/${IMAGENAME}
+          for attempt in 1 2 3; do
+            if docker push --all-tags ${DOCKERHUB_ORG}/${IMAGENAME}; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 30))
+          done
 
   push-nectar-registry:
     needs: [config, build-image]
