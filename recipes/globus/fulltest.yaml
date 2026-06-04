@@ -1,15 +1,16 @@
 # Globus Connect Personal container test suite
-# Tests for Globus Connect Personal v3.2.2 - secure data transfer endpoint software
+# Tests for Globus Connect Personal - secure data transfer endpoint software
 #
 # Globus Connect Personal allows users to create personal endpoints for
 # transferring files between local systems and Globus-connected endpoints.
 # It includes the GridFTP server for high-performance data transfer.
 
 name: globus
-version: "3.2.8"
-container: globus_3.2.8_20260514.simg
+globus_version: "3.2.8"
+version: "${globus_version}"
+container: globus_${globus_version}_*.simg
 
-globus_dir: /opt/globusconnectpersonal-3.2.8
+globus_dir: /opt/globusconnectpersonal-${globus_version}
 
 tests:
   # ==========================================================================
@@ -255,7 +256,7 @@ tests:
   - name: Version file exists
     description: Verify VERSION file exists and contains version
     command: "bash -lc 'cat ${globus_dir}/VERSION 2>&1'"
-    expected_output_contains: "3.2.8"
+    expected_output_contains: "${globus_version}"
 
   - name: README file exists
     description: Verify README file exists

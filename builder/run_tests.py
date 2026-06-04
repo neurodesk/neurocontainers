@@ -123,11 +123,43 @@ def substitute_variables(text: str, variables: dict[str, str]) -> str:
         return text
 
     result = text
-    for key, value in variables.items():
-        result = result.replace(f"${{{key}}}", str(value))
-        result = result.replace(f"${key}", str(value))
+    for _ in range(10):
+        previous = result
+        for key, value in variables.items():
+            result = result.replace(f"${{{key}}}", str(value))
+            result = result.replace(f"${key}", str(value))
+        if result == previous:
+            break
 
     return result
+
+
+def collect_top_level_variables(config: dict[str, Any]) -> dict[str, str]:
+    """Extract top-level scalar values available for fulltest substitution."""
+    reserved_keys = {
+        "name",
+        "version",
+        "container",
+        "test_data",
+        "setup",
+        "cleanup",
+        "tests",
+        "env_setup",
+        "default_timeout",
+        "matlab_runtime",
+        "script_runner",
+        "script_ext",
+        "required_files",
+    }
+    variables = {
+        key: str(value)
+        for key, value in config.items()
+        if key not in reserved_keys and isinstance(value, (str, int, float))
+    }
+    return {
+        key: substitute_variables(value, variables)
+        for key, value in variables.items()
+    }
 
 
 def check_file_exists(path: str) -> bool:
@@ -404,6 +436,7 @@ def run_single_test(
                 expected_list = expected_output
 
             for expected in expected_list:
+                expected = substitute_variables(str(expected), variables)
                 if expected and expected not in combined_output:
                     return TestResult(
                         name=name,
@@ -597,8 +630,12 @@ def run_test_suite(
         config = yaml.safe_load(f)
 
     suite_name = config.get("name", yaml_path.stem)
-    container_name = config.get("container", "")
     default_timeout = config.get("default_timeout", 120)  # Default 2 minutes
+    top_level_variables = collect_top_level_variables(config)
+    container_name = substitute_variables(
+        str(config.get("container", "")),
+        top_level_variables,
+    )
 
     # Find container
     container_path = find_container(container_name, containers_dir)
@@ -653,13 +690,9 @@ def run_test_suite(
             variables[key] = str(path)
 
     # Extract top-level simple values as variables (e.g. mitk_path)
-    reserved_keys = {"name", "version", "container", "test_data", "setup", "cleanup",
-                     "tests", "env_setup", "default_timeout", "matlab_runtime",
-                     "script_runner", "script_ext", "required_files"}
-    for key, value in config.items():
-        if key not in reserved_keys and isinstance(value, (str, int, float)):
-            if key not in variables:
-                variables[key] = str(value)
+    for key, value in top_level_variables.items():
+        if key not in variables:
+            variables[key] = value
 
     # Extract script runner config for script: directive support
     script_runner = config.get("script_runner")
