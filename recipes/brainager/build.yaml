@@ -83,6 +83,7 @@ build:
         - osf -p azwmg fetch pca_scale.rds
 
     - copy: dependencies.R /opt
+    - copy: brainager_segment.py /opt/brainageR/brainager_segment.py
     - copy: predict_age_patched.py /opt/brainageR/predict_age.py
 
     - run:

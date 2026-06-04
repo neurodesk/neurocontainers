@@ -89,9 +89,14 @@ def main():
     print(f"[INFO] Working directory: {workdir}")
     print(f"[INFO] Running SPM12 with T1: {t1_dst}")
 
-    # Run spm12 standalone
-    cmd = ["run_spm12.sh", "/opt/mcr/v97", "script", batch_copy]
-    subprocess.run(cmd, check=True, cwd=workdir)
+    # Run spm12 standalone. The deployed SPM12 build in this recipe uses the
+    # R2017b MCR; preloading system FreeType avoids the MCR-bundled library
+    # shadowing Ubuntu's fontconfig at runtime.
+    spm_env = os.environ.copy()
+    spm_env["LD_PRELOAD"] = "/usr/lib/x86_64-linux-gnu/libfreetype.so.6"
+    mcr_root = os.environ.get("MCRROOT", "/opt/mcr/v93")
+    cmd = ["run_spm12.sh", mcr_root, "script", batch_copy]
+    subprocess.run(cmd, check=True, cwd=workdir, env=spm_env)
 
     print(f"[INFO] SPM12 finished, now running prediction")
 
