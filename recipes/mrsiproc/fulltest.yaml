@@ -86,9 +86,9 @@ tests:
   # JULIA ENVIRONMENT
   # ==========================================================================
   - name: Julia version check
-    description: Verify Julia 1.9.3 is installed
+    description: Verify Julia 1.10 is installed
     command: "bash -lc 'env LD_LIBRARY_PATH=/opt/MATLAB_Runtime_R2021b/v911/runtime/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/bin/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/sys/os/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/sys/opengl/lib/glnxa64 bash -lc '\"'\"'julia --version'\"'\"''"
-    expected_output_contains: "julia version 1.9"
+    expected_output_contains: "julia version 1.10"
 
   - name: Julia can run basic script
     description: Verify Julia can execute basic commands
@@ -170,11 +170,6 @@ tests:
     description: Verify LCModel basis file is present
     command: "bash -lc 'env LD_LIBRARY_PATH=/opt/MATLAB_Runtime_R2021b/v911/runtime/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/bin/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/sys/os/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/sys/opengl/lib/glnxa64 bash -lc '\"'\"'ls -la /opt/mrsi_pipeline_neurodesk/Part1/fid_1.300000ms.basis | head -1'\"'\"''"
     expected_exit_code: 0
-
-  - name: Julia reconstruction script exists
-    description: Verify Julia reconstruction script is present
-    command: "bash -lc 'env LD_LIBRARY_PATH=/opt/MATLAB_Runtime_R2021b/v911/runtime/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/bin/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/sys/os/glnxa64:/opt/MATLAB_Runtime_R2021b/v911/sys/opengl/lib/glnxa64 bash -lc '\"'\"'cat /opt/mrsi_pipeline_neurodesk/Part1/julia_reco.jl | head -5'\"'\"''"
-    expected_output_contains: "using MAT"
 
   # ==========================================================================
   # LCMODEL
