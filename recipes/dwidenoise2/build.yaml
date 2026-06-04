@@ -29,23 +29,14 @@ build:
         LD_LIBRARY_PATH: "{{ context.install_path }}/cpp/core/"
 
     - install:
-        - build-essential
-        - ca-certificates
-        - cmake
-        - git
         - less
-        - libfftw3-dev
         - libfftw3-double3
         - libfftw3-single3
-        - libpng-dev
         - libpng16-16
-        - libtiff-dev
-        - ninja-build
-        - pkg-config
-        - tar
-        - zlib1g-dev
 
     - run:
+        - apt-get update -qq
+        - apt-get install -y --no-install-recommends build-essential cmake libfftw3-dev libpng-dev libtiff-dev ninja-build pkg-config zlib1g-dev
         - mkdir -p "{{ context.dwidenoise2_source_dir }}" "{{ context.mrtrix3_source_dir }}"
         - tar -xzf {{ get_file("dwidenoise2_source_tar_gz") }} -C "{{ context.dwidenoise2_source_dir }}" --strip-components=1
         - tar -xzf {{ get_file("mrtrix3_source_tar_gz") }} -C "{{ context.mrtrix3_source_dir }}" --strip-components=1
@@ -59,7 +50,7 @@ build:
         - cp -a build/. "{{ context.install_path }}/"
         - chmod -R a+rX "{{ context.install_path }}"
         - rm -rf "{{ context.dwidenoise2_source_dir }}" "{{ context.mrtrix3_source_dir }}"
-        - apt-get purge -y --auto-remove build-essential cmake git libfftw3-dev libpng-dev libtiff-dev ninja-build pkg-config zlib1g-dev
+        - apt-get purge -y --auto-remove build-essential cmake libfftw3-dev libpng-dev libtiff-dev ninja-build pkg-config zlib1g-dev
         - rm -rf /var/lib/apt/lists/*
 
 deploy:

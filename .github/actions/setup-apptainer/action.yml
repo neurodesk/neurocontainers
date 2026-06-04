@@ -48,7 +48,15 @@ runs:
         else
           if [[ ! -s "$deb_path" ]]; then
             url="https://github.com/apptainer/apptainer/releases/download/v${version}/apptainer_${version}_${arch}.deb"
-            curl -fsSL "$url" -o "$deb_path"
+            curl \
+              --fail \
+              --show-error \
+              --location \
+              --retry 5 \
+              --retry-delay 5 \
+              --retry-all-errors \
+              "$url" \
+              -o "$deb_path"
           fi
 
           sudo apt-get install -y "$deb_path"
