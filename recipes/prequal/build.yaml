@@ -118,7 +118,7 @@ build:
         install_path: /APPS/gradtensor/conda
         env_name: gradvenv
         env_exists: "false"
-        conda_install: python=3.8 pip=23.3.2 dipy=1.5.0 fpdf imageio pypng freetype-py
+        conda_install: python=3.8 pip=23.3.2 dipy=1.5.0 fpdf fury=0.7.1 imageio pypng freetype-py
         mamba: "true"
     - run:
         - . /APPS/gradtensor/conda/etc/profile.d/conda.sh
