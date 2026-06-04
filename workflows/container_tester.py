@@ -45,6 +45,7 @@ class ContainerRuntime:
         volumes: List[Dict[str, str]] = None,
         gpu: bool = False,
         working_dir: str = "/test",
+        clean_env: bool = False,
     ) -> subprocess.CompletedProcess:
         """Run a test script in the container"""
         raise NotImplementedError
@@ -73,6 +74,7 @@ class DockerRuntime(ContainerRuntime):
         volumes: List[Dict[str, str]] = None,
         gpu: bool = False,
         working_dir: str = "/test",
+        clean_env: bool = False,
     ) -> subprocess.CompletedProcess:
         cmd = ["docker", "run", "--rm"]
 
@@ -150,8 +152,12 @@ class ApptainerRuntime(ContainerRuntime):
         volumes: List[Dict[str, str]] = None,
         gpu: bool = False,
         working_dir: str = "/test",
+        clean_env: bool = False,
     ) -> subprocess.CompletedProcess:
         cmd = [self._get_command(), "exec"]
+
+        if clean_env:
+            cmd.append("--cleanenv")
 
         # Add volumes (bind mounts)
         if volumes:
@@ -1084,7 +1090,7 @@ class ContainerTester:
 
         try:
             proc_result = self.selected_runtime.run_test(
-                container_ref, script_content, [], gpu
+                container_ref, script_content, [], gpu, clean_env=True
             )
 
             return {
