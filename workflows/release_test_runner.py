@@ -192,6 +192,9 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
 
     build_date = _release_build_date(release_file)
     tester = ContainerTester()
+    image_basename = tester.release_downloader.extract_image_basename_from_release(
+        str(release_file)
+    )
     runtime = tester.select_runtime(args.runtime)
     if runtime.name != "apptainer":
         raise RuntimeError("fulltest.yaml release tests currently require Apptainer/Singularity")
@@ -210,6 +213,7 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
             args.recipe,
             args.version,
             build_date,
+            image_basename=image_basename,
             use_cache=False,
         )
         if not container_ref:
