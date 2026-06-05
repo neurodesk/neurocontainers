@@ -84,6 +84,17 @@ def test_simg_upload_jobs_are_skipped_when_simg_build_is_skipped() -> None:
     assert "inputs.skip_simg_build != 'true'" in upload_s3_header
 
 
+def test_build_simg_uses_selected_runner_pool() -> None:
+    workflow = Path(".github/workflows/build-app.yml").read_text()
+    build_simg_job = workflow.split("  build-simg:", 1)[1].split("  upload-nectar:", 1)[0]
+
+    assert "runs-on: ${{ fromJSON(inputs.runner) }}" in build_simg_job
+    assert (
+        "contains(inputs.runner, 'arm') && 'blacksmith-8vcpu-ubuntu-2404-arm' || 'ubuntu-22.04'"
+        not in build_simg_job
+    )
+
+
 def test_nectar_registry_username_is_explicit() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     push_nectar_job = workflow.split("  push-nectar-registry:", 1)[1].split("  build-simg:", 1)[0]

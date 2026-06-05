@@ -766,7 +766,7 @@ jobs:
   build-simg:
     needs: [config, build-image]
     if: ${{ inputs.skip_simg_build != 'true' && (needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_upload_nectar == 'true' || inputs.force_upload_s3 == 'true' || inputs.skip_simg_build == 'false') }}
-    runs-on: ${{ contains(inputs.runner, 'arm') && 'blacksmith-8vcpu-ubuntu-2404-arm' || 'ubuntu-22.04' }}
+    runs-on: ${{ fromJSON(inputs.runner) }}
     permissions:
       packages: write
     env:
