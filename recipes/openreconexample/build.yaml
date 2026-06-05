@@ -37,8 +37,9 @@ build:
               PATH: ${PATH}:/opt/code/FSL-BET2/bin
 
         #openrecon application
-        - copy: openreconexample.py /opt/code/python-ismrmrd-server/openreconexample.py
-        - copy: dicom2mrd.py /opt/code/python-ismrmrd-server/dicom2mrd.py
+        - run:
+              - cp {{ get_file("openreconexample.py") }} /opt/code/python-ismrmrd-server/openreconexample.py
+              - cp {{ get_file("dicom2mrd.py") }} /opt/code/python-ismrmrd-server/dicom2mrd.py
 
 deploy:
     path:
