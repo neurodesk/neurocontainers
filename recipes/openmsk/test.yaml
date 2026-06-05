@@ -7,8 +7,19 @@ tests:
       source env/bin/activate
       sf-login openmsk --architecture x86_64 --offline-mode
 
-      # CUDA must be 11.x for the Siemens MARS scanner environment.
-      python -c "import torch; print(torch.version.cuda)"
+      # TensorFlow and PyTorch must both use CUDA 11.8 for the Siemens MARS
+      # scanner environment.
+      python - <<'PY'
+      import torch
+      from tensorflow.python.platform import build_info
+
+      tf_cuda = build_info.build_info["cuda_version"]
+      torch_cuda = torch.version.cuda
+      print(f"TensorFlow CUDA: {tf_cuda}")
+      print(f"PyTorch CUDA: {torch_cuda}")
+      assert tf_cuda == "11.8"
+      assert torch_cuda == "11.8"
+      PY
 
       # Convert qDESS Enhanced DICOM to MRD for the OpenRecon path.
       rm -f /buildhostdirectory/input.h5

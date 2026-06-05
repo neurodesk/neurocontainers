@@ -1,5 +1,5 @@
 name: openmsk
-version: 0.1.1
+version: 0.1.2
 architectures:
   - x86_64
 
@@ -94,12 +94,10 @@ files:
 
 build:
   kind: neurodocker
-  # Python 3.10 + CUDA 11.8. 3.10 is the sweet spot: the OpenRecon macro pins
-  # pydicom==3.0.1 (needs Python >=3.10) and KneePipeline needs TensorFlow 2.11
-  # (needs Python <=3.10). This base ships torch 2.2.2+cu118, which we use
-  # directly with no separate conda env (matching the vesselboost recipe) and
-  # hold pinned so none of the dependency installs below can change it.
-  base-image: pytorch/pytorch:2.2.2-cuda11.8-cudnn8-runtime
+  # Official TensorFlow GPU base with Python 3.11, Ubuntu 22.04, and TensorFlow
+  # built for CUDA 11.8/cuDNN 8. Keep TensorFlow and PyTorch on matching CUDA
+  # 11.8 stacks so DOSMA segmentation can run on scanner GPUs.
+  base-image: tensorflow/tensorflow:2.14.0-gpu
   pkg-manager: apt
 
   directives:
@@ -117,21 +115,31 @@ build:
         - libxrender1
         - unzip
 
-    - include: macros/openrecon/neurodocker.yaml
-
-    # Pin the baseline torch stack so none of the KneePipeline dependency
-    # installs below can upgrade or replace it (keeps the CUDA 11.8 torch the
-    # base image already provides). This is the vesselboost approach.
+    # The TensorFlow image keeps pip in its Python 3.11 environment, but the
+    # OpenRecon macro's apt layer restores /usr/bin/python3 to Ubuntu's 3.10
+    # interpreter. pip/pip3 ship with a /usr/bin/python3 shebang, so point them
+    # at /usr/bin/python before that apt layer runs.
     - run:
-        - python -c "import torch, torchvision, pathlib; pathlib.Path('/opt/pip-constraints.txt').write_text('torch==%s\ntorchvision==%s\n' % (torch.__version__, torchvision.__version__))"
+        - python -m pip --version
+        - sed -i '1s|.*|#!/usr/bin/python|' /usr/local/bin/pip /usr/local/bin/pip3
+        - python -c "import tensorflow as tf, keras, pathlib; pathlib.Path('/opt/pip-constraints.txt').write_text('tensorflow==%s\nkeras==%s\nnumpy==1.24.3\n' % (tf.__version__, keras.__version__))"
         - cat /opt/pip-constraints.txt
+        - pip3 --version
     - environment:
         PIP_CONSTRAINT: /opt/pip-constraints.txt
 
+    - include: macros/openrecon/neurodocker.yaml
+
+    # Add the CUDA 11.8 PyTorch stack used by optional NSM / nnU-Net paths, then
+    # pin both deep-learning stacks so later dependency installs cannot replace
+    # the TensorFlow base or the matching PyTorch wheels.
+    - run:
+        - pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cu118 torch==2.2.2+cu118 torchvision==0.17.2+cu118
+        - python -c "import torch, torchvision, pathlib; path = pathlib.Path('/opt/pip-constraints.txt'); path.write_text(path.read_text() + 'torch==%s\ntorchvision==%s\n' % (torch.__version__, torchvision.__version__))"
+        - cat /opt/pip-constraints.txt
+
     - workdir: /opt
     - run:
-        # TensorFlow first so DOSMA's `tensorflow>=2.0.0` extra is satisfied.
-        - pip install --no-cache-dir tensorflow==2.11.0 keras==2.11.0
         - pip install --no-cache-dir huggingface-hub==0.24.7
         # NSM: drop the unpinned torch* lines and install against baseline torch.
         - git clone https://github.com/gattia/nsm /opt/nsm
@@ -165,13 +173,14 @@ build:
         - install -m 0755 {{ get_file("openmsk") }} /usr/local/bin/openmsk
         - mkdir -p /tmp/share/debug
         - chmod 1777 /tmp/share /tmp/share/debug
-    # Runtime environment. CUDA libs from the base image + conda lib let
-    # TensorFlow/torch load on a GPU host; harmless on CPU-only hosts.
+    # Runtime environment. CUDA libs from the TensorFlow base image plus the
+    # NVIDIA runtime mounts let TensorFlow/torch load on a GPU host; harmless on
+    # CPU-only hosts.
     - environment:
         OPENMSK_VERSION: "{{ context.version }}"
         KNEEPIPELINE_HOME: /opt/KneePipeline
         KNEEPIPELINE_CONFIG: /opt/KneePipeline/config.json
-        LD_LIBRARY_PATH: /usr/local/cuda/lib64:/opt/conda/lib:$LD_LIBRARY_PATH
+        LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:$LD_LIBRARY_PATH
         # The DOSMA qDESS TF models are saved channels-first (NCHW). On a GPU
         # that runs natively; on CPU-only hosts oneDNN is required for NCHW
         # Conv2D, so enable it (harmless on GPU).
