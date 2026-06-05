@@ -31,15 +31,11 @@ build:
         - unzip
         - wine
         - xvfb
-    - environment:
-        WINEPREFIX: /opt/wine
     - run:
-        - mkdir -p /opt/cartool-{{ context.version }} /opt/cartool-{{ context.version }}/bin /opt/wine
+        - mkdir -p /opt/cartool-{{ context.version }} /opt/cartool-{{ context.version }}/bin
         - 7z x -y -o/opt/cartool-{{ context.version }} {{ get_file("cartool_installer") }}
-        - sh -c 'Xvfb :99 -screen 0 1024x768x16 & xvfb_pid=$!; DISPLAY=:99 wineboot --init; status=$?; kill "$xvfb_pid"; exit "$status"'
-        - printf '#!/usr/bin/env bash\nexport WINEPREFIX=/opt/wine\nexec wine /opt/cartool-{{ context.version }}/Cartool64.exe "$@"\n' > /opt/cartool-{{ context.version }}/bin/cartool
+        - printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' '' 'export WINEPREFIX="${CARTOOL_WINEPREFIX:-${TMPDIR:-/tmp}/cartool-wine-$(id -u)}"' 'mkdir -p "$WINEPREFIX"' 'exec wine /opt/cartool-{{ context.version }}/Cartool64.exe "$@"' > /opt/cartool-{{ context.version }}/bin/cartool
         - chmod -R a+rX /opt/cartool-{{ context.version }}
-        - chmod -R a+rwX /opt/wine
         - chmod a+x /opt/cartool-{{ context.version }}/bin/cartool
         - dpkg --add-architecture i386
     - install:
@@ -60,6 +56,8 @@ readme: |-
   
   Example:
   ```
+  cartool
+  CARTOOL_WINEPREFIX=/neurodesktop-storage/cartool-wine cartool
   ```
   
   More documentation can be found here: https://sites.google.com/site/cartoolcommunity/about-cartool?authuser=0
