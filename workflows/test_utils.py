@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Optional, Tuple
+
+BUILD_DATE_PATTERN = re.compile(r"^\d{8}$")
 
 
 def resolve_path(candidate: str | Path, *, repo_root: Path, cwd: Path | None = None) -> Path:
@@ -54,6 +57,8 @@ def find_latest_release_file(
                 build_date = str(first_value.get("version", "")).strip()
         except Exception:
             build_date = ""
+        if not BUILD_DATE_PATTERN.match(build_date):
+            continue
 
         if latest_path is None:
             latest_path = entry
