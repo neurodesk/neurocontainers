@@ -762,6 +762,7 @@ def _build_derived_series_identity(
     *,
     series_description,
     sequence_description=None,
+    sequence_description_additional=None,
     grouping_suffix=None,
     series_grouping=None,
     derived_series_index=None,
@@ -769,6 +770,10 @@ def _build_derived_series_identity(
 ):
     series_description = _first_non_empty_text(series_description)
     sequence_description = _first_non_empty_text(sequence_description, series_description)
+    sequence_description_additional = _first_non_empty_text(
+        sequence_description_additional,
+        "openrecon",
+    )
     grouping_token = _first_non_empty_text(grouping_suffix, series_description, sequence_description)
 
     if not series_grouping:
@@ -780,6 +785,7 @@ def _build_derived_series_identity(
     return {
         "series_description": series_description,
         "sequence_description": sequence_description,
+        "sequence_description_additional": sequence_description_additional,
         "grouping": series_grouping,
         "series_instance_uid": _build_derived_series_instance_uid(
             source_series_instance_uid=source_identity.get("series_instance_uid"),
@@ -1276,6 +1282,7 @@ def _replace_or_append_minihead_raw_string_param(minihead_text, name, value):
 def _patch_segment_postprocessing_ice_minihead(
     minihead_text,
     sequence_description,
+    sequence_description_additional,
     series_description,
     series_grouping,
     series_instance_uid,
@@ -1295,6 +1302,7 @@ def _patch_segment_postprocessing_ice_minihead(
         ("SeriesDescription", series_description),
         ("SequenceDescription", sequence_description),
         ("ProtocolName", sequence_description),
+        ("SequenceDescriptionAdditional", sequence_description_additional),
         ("SeriesNumberRangeNameUID", series_grouping),
         ("SeriesInstanceUID", series_instance_uid),
         ("SOPInstanceUID", sop_instance_uid),
@@ -1464,6 +1472,10 @@ def _output_meta(
     series_description = output_identity["series_description"]
     series_instance_uid = output_identity["series_instance_uid"]
     series_grouping = output_identity["grouping"]
+    sequence_description_additional = _first_non_empty_text(
+        output_identity.get("sequence_description_additional"),
+        "openrecon",
+    )
     display_token = _first_non_empty_text(
         output_identity.get("display_token"),
         type_token,
@@ -1508,7 +1520,7 @@ def _output_meta(
     meta_obj["ComplexImageComponent"] = "MAGNITUDE"
     meta_obj["ImageComments"] = image_comment
     meta_obj["ImageComment"] = image_comment
-    meta_obj["SequenceDescriptionAdditional"] = "openrecon"
+    meta_obj["SequenceDescriptionAdditional"] = sequence_description_additional
     meta_obj["Keep_image_geometry"] = 1
     _set_output_storage_meta(meta_obj, output_index)
     if source_geometry_segment:
@@ -1538,6 +1550,7 @@ def _output_meta(
                 _patch_segment_postprocessing_ice_minihead(
                     minihead_text,
                     sequence_description,
+                    sequence_description_additional,
                     series_description,
                     series_grouping,
                     series_instance_uid,
@@ -1642,7 +1655,25 @@ def _format_dixon_image_label(image_type_value):
 
 
 def _build_segmentation_image_label(source_image_type_value):
+    source_label = _format_dixon_image_label(source_image_type_value)
+    if source_label:
+        return f"{muscleMapDisplayLabel}_{source_label}"
     return muscleMapDisplayLabel
+
+
+def _resolve_source_dixon_image_type_token(meta_obj, minihead_text=None):
+    if minihead_text is None:
+        minihead_text = _decode_ice_minihead(meta_obj)
+    candidates = [
+        _get_dicom_image_type_value(meta_obj, 3),
+        _get_meta_text(meta_obj, "ImageTypeValue4"),
+        _extract_minihead_array_tokens(minihead_text, "ImageTypeValue4"),
+    ]
+    for candidate in candidates:
+        for text in reversed(_meta_text_values(candidate)):
+            if _canonical_dixon_image_type(text):
+                return text
+    return _resolve_dixon_image_type(meta_obj)
 
 
 def _decode_ice_minihead(meta_obj):
@@ -2239,6 +2270,7 @@ def _sample_indices(count, edge_count=6):
 def _meta_identity(meta_obj):
     return {
         "SequenceDescription": _get_meta_text(meta_obj, "SequenceDescription") or "N/A",
+        "SequenceDescriptionAdditional": _get_meta_text(meta_obj, "SequenceDescriptionAdditional") or "N/A",
         "SeriesDescription": _get_meta_text(meta_obj, "SeriesDescription") or "N/A",
         "SeriesNumberRangeNameUID": _get_meta_text(meta_obj, "SeriesNumberRangeNameUID") or "N/A",
         "SeriesInstanceUID": _get_meta_text(meta_obj, "SeriesInstanceUID") or "N/A",
@@ -2260,6 +2292,7 @@ def _meta_identity(meta_obj):
 def _minihead_identity(minihead_text):
     return {
         "SequenceDescription": _extract_minihead_string_value(minihead_text, "SequenceDescription") or "N/A",
+        "SequenceDescriptionAdditional": _extract_minihead_string_value(minihead_text, "SequenceDescriptionAdditional") or "N/A",
         "SeriesNumberRangeNameUID": _extract_minihead_string_value(minihead_text, "SeriesNumberRangeNameUID") or "N/A",
         "SeriesInstanceUID": _extract_minihead_string_value(minihead_text, "SeriesInstanceUID") or "N/A",
         "ImageType": _extract_minihead_string_value(minihead_text, "ImageType") or "N/A",
@@ -3277,6 +3310,27 @@ def _format_metrics_minihead_value(metrics_result, max_chars=3500):
     return _sanitize_minihead_param_value(text[:max_chars])
 
 
+def _transform_musclemap_label_values(labels):
+    labels = np.asarray(labels, dtype=np.int64)
+    return 3 * (labels // 10) + (labels % 10)
+
+
+def _restore_musclemap_label_values(labels):
+    labels = np.asarray(labels, dtype=np.int64)
+    return 10 * (labels // 3) + (labels % 3)
+
+
+def _metrics_segmentation_labels_for_lookup(segmentation_labels, label_transform):
+    labels = np.asarray(segmentation_labels, dtype=np.int64)
+    if label_transform:
+        return _restore_musclemap_label_values(labels)
+    return np.array(labels, copy=True)
+
+
+def _metrics_label_scale_name(label_transform):
+    return "original" if label_transform else "native"
+
+
 def _join_image_comment(prefix, metrics_comment, max_chars=1200):
     prefix = _first_non_empty_text(prefix)
     metrics_comment = _first_non_empty_text(metrics_comment)
@@ -3759,19 +3813,23 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
     # Determine the source image type (e.g. "Water", "Fat", "In_Phase", …)
     # from the first image's metadata so the segmentation output is named accordingly.
     _first_meta = ismrmrd.Meta.deserialize(imgGroup[0].attribute_string)
-    _source_type_value = _get_dicom_image_type_value(_first_meta, 3)  # value4
-    source_image_label = muscleMapDisplayLabel
-    source_image_type_value4 = muscleMapDisplayLabel
-    source_dicom_image_type_value4 = muscleMapImageTypeToken
     source_volume_key = _build_image_volume_key(imgGroup[0])
     source_minihead = _decode_ice_minihead(_first_meta)
+    _source_type_value = _resolve_source_dixon_image_type_token(_first_meta, source_minihead)
+    source_contrast_label = _format_dixon_image_label(_source_type_value)
+    source_image_label = _build_segmentation_image_label(_source_type_value)
     if not source_minihead:
         logging.info(
             "Source images carry no IceMiniHead; minihead patching and "
             "metricsinminihead injection will be no-ops for this volume"
         )
     source_series_identity = _resolve_source_series_identity(_first_meta, source_minihead)
-    logging.info("Source image type for segmentation naming: %s -> %s", _source_type_value, source_image_label)
+    logging.info(
+        "Source image type for segmentation naming: raw=%s contrast_label=%s display_label=%s",
+        _source_type_value or "N/A",
+        source_contrast_label or "N/A",
+        source_image_label,
+    )
     logging.info(
         "Source segmentation parent identity: volume_key=%s series_description=%s -> %s sequence=%s -> %s grouping=%s -> %s source_series_uid=%s",
         source_volume_key,
@@ -4062,25 +4120,24 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
 
     if label_transform:
         logging.info("Applying label transformation: 3 * (label_in // 10) + (label_in % 10)")
-        data = 3 * (data // 10) + (data % 10)
+        data = _transform_musclemap_label_values(data)
         logging.info(f"Label transformation complete. New data range: [{data.min()}, {data.max()}]")
 
     if compute_metrics and (metrics_burn_series or metrics_in_comments or metrics_in_minihead):
         try:
-            metrics_segmentation_path = _save_metrics_segmentation_nifti(
+            metrics_segmentation_labels = _metrics_segmentation_labels_for_lookup(
                 data,
+                label_transform,
+            )
+            metrics_segmentation_path = _save_metrics_segmentation_nifti(
+                metrics_segmentation_labels,
                 new_img,
                 mmMetricsSegmentationPath,
             )
-            metrics_region_for_run = "" if label_transform else metrics_region
-            if label_transform and metrics_region:
-                logging.info(
-                    "Skipping MuscleMap metrics region label-name mapping for transformed labels; "
-                    "metrics labels will match the returned overlay values"
-                )
+            metrics_region_for_run = metrics_region
             logging.info(
                 "Running MuscleMap metrics on %s labels saved to %s",
-                "transformed" if label_transform else "untransformed",
+                _metrics_label_scale_name(label_transform),
                 metrics_segmentation_path,
             )
             metrics_result = _run_mm_extract_metrics(
@@ -4092,7 +4149,8 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
                 output_dir=mmMetricsOutputDir,
             )
             metrics_result["region"] = metrics_region
-            metrics_result["label_scale"] = "transformed" if label_transform else "untransformed"
+            metrics_result["label_scale"] = _metrics_label_scale_name(label_transform)
+            metrics_result["output_label_scale"] = "transformed" if label_transform else "native"
             metrics_comment = _format_metrics_comment(metrics_result)
             metrics_minihead_text = _format_metrics_minihead_value(metrics_result)
         except subprocess.CalledProcessError as exc:
@@ -4169,7 +4227,8 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
         source_series_identity,
         series_description=muscleMapDisplayLabel,
         sequence_description=muscleMapDisplayLabel,
-        grouping_suffix=muscleMapDisplayLabel,
+        sequence_description_additional=source_contrast_label,
+        grouping_suffix=source_image_label,
         derived_series_index=segmentation_series_index,
         derived_kind="segmentation",
     )

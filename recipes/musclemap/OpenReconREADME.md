@@ -49,7 +49,8 @@ the same source-native passthrough handling.
 
 MuscleMap segmentation images are sent after the source passthrough stream as
 source-geometry 2D masks with fresh series identity, fresh SOP identity,
-`SequenceDescriptionAdditional = openrecon`, `Keep_image_geometry = 1`,
+`SequenceDescriptionAdditional` set to the segmented source Dixon contrast,
+`Keep_image_geometry = 1`,
 `DataRole = Segmentation`, and `SegmentSourceGeometry = 1`. This matches the
 `openreconi2iexample` 2D + detach + after-originals path when
 `segmentpostprocessingstamp` is disabled. Optional metrics report output follows
@@ -70,6 +71,10 @@ For running this in Open Recon we need a reversible int16-safe mapping:
 `original = 10 * (mapped // 3) + (mapped % 3)`
 
 This transform is valid for labels ending in `0`, `1`, or `2`
+
+Metrics extraction uses the original unscaled labels so MuscleMap can map label
+IDs to anatomy names, even when the returned segmentation overlay is scaled for
+DICOM.
 
 | Region | Anatomy | Side | Value | Int16 Mapped |
 | :--- | :--- | :--- | ---: | ---: |

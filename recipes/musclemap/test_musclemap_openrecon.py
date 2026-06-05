@@ -128,6 +128,7 @@ def _encoded_minihead(
     series_name="source_W",
     series_uid="1.2.3",
     series_group="source_group",
+    image_type_value4="WATER",
 ):
     minihead = f"""
 <ParamMap."DICOM">
@@ -138,11 +139,11 @@ def _encoded_minihead(
   <ParamString."SeriesNumberRangeNameUID"> {{ "{series_group}" }}
   <ParamString."SeriesInstanceUID"> {{ "{series_uid}" }}
   <ParamString."SOPInstanceUID"> {{ "{series_uid}.5.8" }}
-  <ParamString."ImageType"> {{ "ORIGINAL\\PRIMARY\\DIXON\\WATER" }}
+  <ParamString."ImageType"> {{ "ORIGINAL\\PRIMARY\\DIXON\\{image_type_value4}" }}
   <ParamString."ImageTypeValue3"> {{ "DIXON" }}
   <ParamArray."ImageTypeValue4">
   {{
-    {{ "WATER" }}
+    {{ "{image_type_value4}" }}
   }}
   <ParamLong."Actual3DImagePartNumber"> {{ 8 }}
   <ParamLong."AnatomicalPartitionNo"> {{ 8 }}
@@ -255,6 +256,52 @@ def test_metrics_output_choice_maps_to_runtime_outputs_and_preserves_legacy_conf
     assert legacy_outputs["metrics_in_minihead"] is False
 
 
+def test_metrics_label_transform_restores_original_ids_for_anatomy_lookup():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_metrics_label_scale_name",
+            "_metrics_segmentation_labels_for_lookup",
+            "_restore_musclemap_label_values",
+            "_transform_musclemap_label_values",
+        ],
+    )
+
+    original_labels = np.array(
+        [
+            [0, 1101, 1102],
+            [1120, 1121, 1122],
+        ],
+        dtype=np.int64,
+    )
+
+    transformed_labels = helpers["_transform_musclemap_label_values"](original_labels)
+    np.testing.assert_array_equal(
+        transformed_labels,
+        np.array(
+            [
+                [0, 331, 332],
+                [336, 337, 338],
+            ],
+            dtype=np.int64,
+        ),
+    )
+
+    np.testing.assert_array_equal(
+        helpers["_restore_musclemap_label_values"](transformed_labels),
+        original_labels,
+    )
+    np.testing.assert_array_equal(
+        helpers["_metrics_segmentation_labels_for_lookup"](transformed_labels, True),
+        original_labels,
+    )
+    np.testing.assert_array_equal(
+        helpers["_metrics_segmentation_labels_for_lookup"](original_labels, False),
+        original_labels,
+    )
+    assert helpers["_metrics_label_scale_name"](True) == "original"
+    assert helpers["_metrics_label_scale_name"](False) == "native"
+
+
 def test_dixon_segmentation_selection_defaults_to_opposed_phase_and_supports_multi_select():
     helpers = _load_runtime_helpers_for_test(
         [
@@ -323,6 +370,57 @@ def test_dixon_image_type_resolution_handles_siemens_opposed_phase_aliases():
     assert helpers["_is_dixon_scan"]("DIXON", "OPPOSED_PHASE") is True
 
 
+def test_segmentation_display_label_uses_source_dixon_contrast_from_minihead():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_build_segmentation_image_label",
+            "_canonical_dixon_image_type",
+            "_decode_ice_minihead",
+            "_extract_dicom_image_type_values",
+            "_extract_minihead_array_tokens",
+            "_first_non_empty_text",
+            "_format_dixon_image_label",
+            "_get_dicom_image_type_value",
+            "_get_meta_text",
+            "_meta_text_values",
+            "_resolve_dixon_image_type",
+            "_resolve_source_dixon_image_type_token",
+        ],
+        assignments=[
+            "dixonImageTypeAliases",
+            "muscleMapDisplayLabel",
+        ],
+    )
+
+    water_meta = helpers["FakeMeta"](
+        {
+            "IceMiniHead": _encoded_minihead(image_type_value4="WATER"),
+        }
+    )
+    opposed_meta = helpers["FakeMeta"](
+        {
+            "IceMiniHead": _encoded_minihead(
+                series_name="source_OPP",
+                series_group="source_group",
+                image_type_value4="OUT_PHASE",
+            ),
+        }
+    )
+
+    water_token = helpers["_resolve_source_dixon_image_type_token"](water_meta)
+    opposed_token = helpers["_resolve_source_dixon_image_type_token"](opposed_meta)
+
+    assert water_token == "WATER"
+    assert helpers["_format_dixon_image_label"](water_token) == "Water"
+    assert helpers["_build_segmentation_image_label"](water_token) == "Musclemap_Water"
+    assert opposed_token == "OUT_PHASE"
+    assert helpers["_format_dixon_image_label"](opposed_token) == "Opposed_Phase"
+    assert (
+        helpers["_build_segmentation_image_label"](opposed_token)
+        == "Musclemap_Opposed_Phase"
+    )
+
+
 def test_segmentation_input_decision_uses_selected_dixon_checkboxes():
     helpers = _load_runtime_helpers_for_test(
         [
@@ -382,7 +480,7 @@ def test_segmentation_input_decision_uses_selected_dixon_checkboxes():
     water_selected_decision = helpers["_resolve_segmentation_input_decision"](
         image,
         water_meta,
-        {"WATER", "OPPOSED_PHASE"},
+        {"WATER"},
     )
 
     assert water_selected_decision["should_process"] is True
@@ -747,7 +845,8 @@ def test_segmentation_stamp_uses_2d_source_geometry_identity():
     output_identity = {
         "series_description": "Musclemap",
         "sequence_description": "Musclemap",
-        "grouping": "source_group_Musclemap",
+        "sequence_description_additional": "Water",
+        "grouping": "source_group_Musclemap_Water",
         "series_instance_uid": "2.25.42",
     }
 
@@ -760,7 +859,7 @@ def test_segmentation_stamp_uses_2d_source_geometry_identity():
         0,
         helpers["muscleMapImageTypeToken"],
         ["OPENRECON", "MUSCLEMAP", "SEGMENT_SOURCE_GEOMETRY"],
-        image_comment="Musclemap",
+        image_comment="Musclemap_Water",
         source_type_token="WATER",
         extra_meta={"Keep_image_geometry": "1"},
         source_geometry_segment=True,
@@ -779,6 +878,10 @@ def test_segmentation_stamp_uses_2d_source_geometry_identity():
     assert output.getHead().repetition == 0
     assert output.getHead().set == 0
     assert meta["DataRole"] == "Segmentation"
+    assert meta["SeriesDescription"] == "Musclemap"
+    assert meta["SequenceDescription"] == "Musclemap"
+    assert meta["SequenceDescriptionAdditional"] == "Water"
+    assert meta["SeriesNumberRangeNameUID"] == "source_group_Musclemap_Water"
     assert meta["ImageType"] == helpers["segmentSourceGeometryImageType"]
     assert meta["DicomImageType"] == helpers["segmentSourceGeometryImageType"]
     assert "ImageTypeValue3" not in meta
@@ -794,6 +897,14 @@ def test_segmentation_stamp_uses_2d_source_geometry_identity():
         minihead,
         "ImageType",
     ) == helpers["segmentSourceGeometryImageType"]
+    assert helpers["_extract_minihead_string_value"](
+        minihead,
+        "SequenceDescriptionAdditional",
+    ) == "Water"
+    assert helpers["_extract_minihead_string_value"](
+        minihead,
+        "SeriesNumberRangeNameUID",
+    ) == "source_group_Musclemap_Water"
     assert '<ParamString."ImageTypeValue3">' not in minihead
     assert helpers["_extract_minihead_array_tokens"](minihead, "ImageTypeValue3") == []
     assert helpers["_extract_minihead_array_tokens"](
