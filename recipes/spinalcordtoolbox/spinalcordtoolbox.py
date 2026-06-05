@@ -2080,6 +2080,7 @@ def _patch_ice_minihead(
     target_type_token,
     target_display_token=None,
     output_index=0,
+    output_image_index=None,
     preserve_image_type_value3=False,
     is_last_in_series=False,
 ):
@@ -2131,14 +2132,20 @@ def _patch_ice_minihead(
     )
     changed = changed or did_change
 
+    output_slice = int(output_index)
+    output_image_index = (
+        int(output_image_index)
+        if output_image_index is not None
+        else output_slice + 1
+    )
     for long_param_name, long_param_value in (
         ("Actual3DImagePartNumber", SCANNER_PARTITION_INDEX),
         ("AnatomicalPartitionNo", SCANNER_PARTITION_INDEX),
-        ("AnatomicalSliceNo", output_index),
-        ("ChronSliceNo", output_index),
-        ("NumberInSeries", output_index + 1),
-        ("ProtocolSliceNumber", output_index),
-        ("SliceNo", output_index),
+        ("AnatomicalSliceNo", output_slice),
+        ("ChronSliceNo", max(output_image_index, 1) - 1),
+        ("NumberInSeries", max(output_image_index, 1)),
+        ("ProtocolSliceNumber", output_slice),
+        ("SliceNo", output_slice),
     ):
         current_text, did_change = _replace_or_append_minihead_long_param(
             current_text,
@@ -2339,10 +2346,17 @@ def _restamp_passthrough_images(images, role, output_series_index):
     output_count = len(image_list)
     for iImg, image in enumerate(image_list):
         output_image = _clone_mrd_image(image)
+        role_is_original = _first_non_empty_text(role).upper() == "ORIGINAL"
+        output_header_image_index = iImg + 1
+        output_header_slice = iImg
+        if role_is_original:
+            output_header_image_index = _source_geometry_header_image_index(image, iImg)
+            output_header_slice = _source_geometry_header_slice(image, iImg)
+
         oldHeader = copy.deepcopy(output_image.getHead())
         oldHeader.image_series_index = output_series_index
-        oldHeader.image_index = iImg + 1
-        oldHeader.slice = iImg
+        oldHeader.image_index = output_header_image_index
+        oldHeader.slice = output_header_slice
         oldHeader.contrast = 0
         oldHeader.image_type = ismrmrd.IMTYPE_MAGNITUDE
         output_image.setHead(oldHeader)
@@ -2379,7 +2393,11 @@ def _restamp_passthrough_images(images, role, output_series_index):
         tmpMeta["ImageComment"] = output_identity["image_comment"]
         tmpMeta["SequenceDescriptionAdditional"] = "or"
         tmpMeta["Keep_image_geometry"] = "1"
-        _set_output_position_meta(tmpMeta, iImg)
+        _set_output_position_meta(
+            tmpMeta,
+            output_header_slice,
+            image_index=output_header_image_index,
+        )
         if is_original_output:
             # Explicit per-slice geometry is vesselboost's originals-only
             # differentiator. _restamp_passthrough_images is also the PASSTHROUGH
@@ -2401,7 +2419,8 @@ def _restamp_passthrough_images(images, role, output_series_index):
                 output_identity["source_type_token"],
                 output_identity["type_token"],
                 target_display_token=output_identity["display_token"],
-                output_index=iImg,
+                output_index=output_header_slice,
+                output_image_index=output_header_image_index,
                 preserve_image_type_value3=is_original_output,
                 is_last_in_series=(iImg == output_count - 1),
             )

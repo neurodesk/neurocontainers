@@ -389,6 +389,7 @@ def test_passthrough_restamp_uses_fresh_series_identity():
             "_json_log_default",
             "_log_json_event",
             "_meta_vector",
+            "_minihead_long_value",
             "_patch_ice_minihead",
             "_remove_minihead_array_param",
             "_remove_minihead_string_param",
@@ -401,6 +402,8 @@ def test_passthrough_restamp_uses_fresh_series_identity():
             "_sanitize_minihead_param_value",
             "_set_meta_scalar",
             "_set_output_position_meta",
+            "_source_geometry_header_image_index",
+            "_source_geometry_header_slice",
             "_strip_source_parent_refs",
         ],
         assignments=[
@@ -443,8 +446,8 @@ def test_passthrough_restamp_uses_fresh_series_identity():
     output = restamped[0]
     output_meta = helpers["FakeMeta"].deserialize(output.attribute_string)
     assert output.getHead().image_series_index == 2
-    assert output.getHead().image_index == 1
-    assert output.getHead().slice == 0
+    assert output.getHead().image_index == 9
+    assert output.getHead().slice == 8
     assert output_meta["SeriesInstanceUID"] != "1.2.3"
     assert output_meta["SOPInstanceUID"].startswith("2.25.")
     assert output_meta["SOPInstanceUID"] != "1.2.3.4.5"
@@ -453,7 +456,12 @@ def test_passthrough_restamp_uses_fresh_series_identity():
     assert output_meta["SequenceDescriptionAdditional"] == "or"
     assert output_meta["Actual3DImagePartNumber"] == "0"
     assert output_meta["AnatomicalPartitionNo"] == "0"
-    assert output_meta["SliceNo"] == "0"
+    assert output_meta["AnatomicalSliceNo"] == "8"
+    assert output_meta["ChronSliceNo"] == "8"
+    assert output_meta["NumberInSeries"] == "9"
+    assert output_meta["ProtocolSliceNumber"] == "8"
+    assert output_meta["SliceNo"] == "8"
+    assert output_meta["IsmrmrdSliceNo"] == "8"
     assert "CONTROL.PSMultiFrameSOPInstanceUID" not in output_meta
     # Explicit per-slice geometry is stamped on originals (matches vesselboost),
     # so the scanner converter/DicomWriter can assemble the multi-frame ("concat")
@@ -480,6 +488,11 @@ def test_passthrough_restamp_uses_fresh_series_identity():
         helpers["_extract_minihead_string_value"](out_minihead, "SeriesInstanceUID")
         == output_meta["SeriesInstanceUID"]
     )
+    assert helpers["_minihead_long_value"](out_minihead, "AnatomicalSliceNo") == 8
+    assert helpers["_minihead_long_value"](out_minihead, "ChronSliceNo") == 8
+    assert helpers["_minihead_long_value"](out_minihead, "NumberInSeries") == 9
+    assert helpers["_minihead_long_value"](out_minihead, "ProtocolSliceNumber") == 8
+    assert helpers["_minihead_long_value"](out_minihead, "SliceNo") == 8
 
 
 def test_passthrough_non_original_role_skips_explicit_geometry():
