@@ -1,4 +1,0 @@
-tests:
-  - name: test datalad version
-    script: |
-      datalad --version

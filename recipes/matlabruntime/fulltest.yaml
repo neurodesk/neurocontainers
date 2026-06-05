@@ -1,0 +1,21 @@
+name: matlabruntime
+version: 2025b
+container: matlabruntime_2025b_20260521.simg
+default_timeout: 120
+tests:
+- name: Test MATLAB Runtime environment
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    test -n "${MCRROOT}"
+    test -d "${MCRROOT}/runtime/glnxa64"
+    test -d "${MCRROOT}/bin/glnxa64"
+    test -d "${MCRROOT}/toolbox/matlab"
+- name: Test MATLAB Runtime info command
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    matlabruntime-info | grep "MATLAB Runtime"
+    matlabruntime-info | grep "${MCRROOT}"
+- name: Test MATLAB Runtime license agreement environment
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    test "${AGREE_TO_MATLAB_RUNTIME_LICENSE}" = "yes"

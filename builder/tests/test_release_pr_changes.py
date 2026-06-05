@@ -66,22 +66,16 @@ def test_test_config_change_prefers_x86_release_over_arm64_metadata(
     ]
 
 
-def test_existing_recipe_legacy_test_yaml_still_uses_latest_release_metadata(
+def test_existing_recipe_legacy_test_yaml_is_ignored(
     tmp_path: Path,
 ) -> None:
-    latest_release = write_release(tmp_path, "cat12", "26.0.rc3", build_date="20260521")
+    write_release(tmp_path, "cat12", "26.0.rc3", build_date="20260521")
 
     result = detect_release_pr_changes(["recipes/cat12/test.yaml"], repo_root=tmp_path)
 
     assert result.skipped_new_recipe_tests == ()
-    assert result.has_changes is True
-    assert result.matrix() == [
-        {
-            "name": "cat12",
-            "version": "26.0.rc3",
-            "file": latest_release.relative_to(tmp_path).as_posix(),
-        }
-    ]
+    assert result.has_changes is False
+    assert result.matrix() == []
 
 
 def test_release_metadata_can_be_paired_with_fulltest_yaml(tmp_path: Path) -> None:

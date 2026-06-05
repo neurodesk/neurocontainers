@@ -1,0 +1,29 @@
+name: petprep
+version: 0.0.5
+container: petprep_0.0.5_20260519.simg
+default_timeout: 120
+tests:
+- name: PETPrep wrapper uses CLI FreeSurfer subjects dir
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    set -eu
+    fs_dir="${PWD}/petprep-freesurfer-dir"
+    rm -rf "$fs_dir"
+    export SUBJECTS_DIR=/home/jovyan/freesurfer-subjects-dir
+    output="$(PETPREP_NEURODESK_WRAPPER_TEST=1 petprep --fs-subjects-dir "$fs_dir" --version)"
+    echo "$output"
+    test -d "$fs_dir"
+    echo "$output" | grep -F "SUBJECTS_DIR=$fs_dir"
+    echo "$output" | grep -F "PETPREP_REAL="
+- name: PETPrep wrapper reports invalid FreeSurfer subjects dir
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    set -eu
+    export SUBJECTS_DIR="${PWD}/missing-freesurfer-subjects-dir"
+    if PETPREP_NEURODESK_WRAPPER_TEST=1 petprep /data /out participant > wrapper.log 2>&1; then
+      cat wrapper.log
+      exit 1
+    fi
+    cat wrapper.log
+    grep -F "SUBJECTS_DIR points to a missing directory" wrapper.log
+    grep -- "--fs-subjects-dir" wrapper.log

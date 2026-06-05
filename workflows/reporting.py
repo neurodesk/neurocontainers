@@ -84,6 +84,8 @@ def determine_status(data: Dict) -> str:
         return "failed"
     if total == 0:
         return "skipped" if skipped or data else "failed"
+    if skipped >= total:
+        return "skipped"
     return "passed"
 
 

@@ -16,7 +16,6 @@ import yaml
 from workflows.container_tester import ContainerTester
 from workflows.reporting import build_comment, build_report, determine_status, write_text
 from workflows.summarize_deploy_results import summarise_results_file
-from workflows.test_runner import ContainerTestRunner, TestRequest
 
 
 def _release_build_date(release_file: Path) -> str:
@@ -178,6 +177,33 @@ def _failure_results(
     }
 
 
+def _skipped_results(
+    *,
+    recipe: str,
+    version: str,
+    message: str,
+) -> dict[str, Any]:
+    return {
+        "container": f"{recipe}:{version}",
+        "runtime": "apptainer",
+        "recipe": recipe,
+        "version": version,
+        "total_tests": 1,
+        "passed": 0,
+        "failed": 0,
+        "skipped": 1,
+        "test_results": [
+            {
+                "name": "fulltest discovery",
+                "status": "skipped",
+                "stdout": "",
+                "stderr": message,
+                "return_code": 0,
+            }
+        ],
+    }
+
+
 def run_fulltest_release(args: argparse.Namespace) -> str:
     release_file = Path(args.release_file)
     test_config = Path(args.test_config)
@@ -287,29 +313,6 @@ def run_fulltest_release(args: argparse.Namespace) -> str:
     return status
 
 
-def run_legacy_release(args: argparse.Namespace) -> str:
-    runner = ContainerTestRunner(repo_root=Path(args.repo_root))
-    request = TestRequest(
-        recipe=args.recipe,
-        version=args.version,
-        release_file=args.release_file,
-        test_config=args.test_config,
-        runtime=args.runtime,
-        location=args.location,
-        cleanup=True,
-        auto_cleanup=False,
-        docker_to_simg=args.docker_to_simg,
-        docker_registry=args.docker_registry,
-        docker_save_to_simg=args.docker_save_to_simg,
-        verbose=args.verbose,
-        allow_missing_tests=True,
-        output_dir=Path(args.output_dir),
-        results_path=Path(args.results_path),
-    )
-    outcome = runner.run(request)
-    return outcome.status
-
-
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--recipe", required=True)
@@ -334,10 +337,25 @@ def main(argv: list[str] | None = None) -> int:
     test_config = Path(args.test_config)
 
     try:
-        if test_config.name == "fulltest.yaml":
-            status = run_fulltest_release(args)
+        if not args.test_config or not test_config.is_file():
+            message = "No fulltest.yaml test configuration available"
+            status = _write_integration_outputs(
+                recipe=args.recipe,
+                version=args.version,
+                results=_skipped_results(
+                    recipe=args.recipe,
+                    version=args.version,
+                    message=message,
+                ),
+                results_path=Path(args.results_path),
+                output_dir=Path(args.output_dir),
+            )
+        elif test_config.name != "fulltest.yaml":
+            raise RuntimeError(
+                f"Unsupported test configuration {test_config}; only fulltest.yaml is supported"
+            )
         else:
-            status = run_legacy_release(args)
+            status = run_fulltest_release(args)
     except Exception as exc:
         message = str(exc)
         print(message, file=sys.stderr)

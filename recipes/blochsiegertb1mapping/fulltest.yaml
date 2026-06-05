@@ -1,0 +1,229 @@
+name: blochsiegertb1mapping
+version: 1.0.0
+container: blochsiegertb1mapping_1.0.0.simg
+default_timeout: 120
+tests:
+- name: Bloch-Siegert OpenRecon workflow unit smoke test
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    python3 - <<'PY'
+    import importlib.util
+    import math
+    import sys
+    from pathlib import Path
+
+    import ismrmrd
+    import numpy as np
+
+    wrapper_path = Path("/opt/code/python-ismrmrd-server/blochsiegertb1mapping.py")
+    if not wrapper_path.exists():
+        wrapper_path = Path("blochsiegertb1mapping.py")
+    spec = importlib.util.spec_from_file_location("blochsiegertb1mapping", wrapper_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["blochsiegertb1mapping"] = module
+    spec.loader.exec_module(module)
+
+    def first(value):
+        return value[0] if isinstance(value, list) else value
+
+    def raw_phase(radians):
+        return (float(radians) + math.pi) * module.PHASE_WRAP / (2.0 * math.pi)
+
+    def make_image(
+        frame_index,
+        kind,
+        value,
+        slice_index=0,
+        series_name="bss_source",
+        series_uid="1.2.826.0.1.3680043.10.543.1",
+    ):
+        data = np.full((1, 1, 8, 8), value, dtype=np.float32)
+        if kind == "magnitude":
+            data[:, :, 2:6, 2:6] += 100.0 + frame_index
+        image = ismrmrd.Image.from_array(data, transpose=False)
+        header = image.getHead()
+        header.image_type = (
+            ismrmrd.IMTYPE_MAGNITUDE if kind == "magnitude" else ismrmrd.IMTYPE_PHASE
+        )
+        header.image_series_index = 1 if kind == "magnitude" else 2
+        header.image_index = frame_index + 1
+        header.slice = slice_index
+        header.position = (0.0, 0.0, float(slice_index * 5.0))
+        header.slice_dir = (0.0, 0.0, 1.0)
+        header.field_of_view = (8.0, 8.0, 5.0)
+        image.setHead(header)
+
+        meta = ismrmrd.Meta()
+        meta["DataRole"] = "Image"
+        meta["SeriesDescription"] = series_name
+        meta["SequenceDescription"] = series_name
+        meta["ProtocolName"] = series_name
+        meta["SeriesNumberRangeNameUID"] = f"{series_name}_{kind}"
+        meta["SeriesInstanceUID"] = f"{series_uid}.{1 if kind == 'magnitude' else 2}"
+        meta["SOPInstanceUID"] = f"{series_uid}.{1 if kind == 'magnitude' else 2}.{frame_index + 1}"
+        meta["ComplexImageComponent"] = "MAGNITUDE" if kind == "magnitude" else "PHASE"
+        meta["ImageType"] = (
+            "ORIGINAL\\PRIMARY\\M" if kind == "magnitude" else "ORIGINAL\\PRIMARY\\P"
+        )
+        image.attribute_string = meta.serialize()
+        return image
+
+    def make_dataset(phase_radians, series_name="bss_source"):
+        magnitude = [
+            make_image(index, "magnitude", 10.0 + index, series_name=series_name)
+            for index in range(len(phase_radians))
+        ]
+        phase = [
+            make_image(index, "phase", raw_phase(radian), series_name=series_name)
+            for index, radian in enumerate(phase_radians)
+        ]
+        return magnitude + phase
+
+    one_tx_phase = [0.1, 0.5, 0.2, 0.3, -0.7]
+    one_tx_images = make_dataset(one_tx_phase)
+    settings = module._settings_from_config({"parameters": {}})
+    one_tx = module.compute_bloch_siegert_maps(one_tx_images, settings)
+    assert one_tx["nframe"] == 5
+    assert one_tx["ntx"] == 1
+    assert one_tx["slice_count"] == 1
+    assert one_tx["b1"].shape == (1, 1, 8, 8)
+    assert one_tx["bsp"].shape == (1, 1, 8, 8)
+    assert one_tx["phsc"].shape == (1, 1, 8, 8)
+    assert one_tx["b0"].shape == (1, 8, 8)
+    assert np.allclose(one_tx["bsp"][0, 0], 0.3, atol=1e-5)
+    expected_b1 = math.sqrt(0.3 / (0.044 * 10.0 / 6.0))
+    assert np.allclose(one_tx["b1"][0, 0], expected_b1, atol=1e-5)
+    assert np.allclose(one_tx["phsc"][0, 0], -0.7, atol=1e-5)
+    assert np.allclose(one_tx["b0"][0], 0.2 * 1000.0 / (2.0 * math.pi), atol=1e-5)
+    assert int(one_tx["mask"][0, 3, 3]) == 1
+    assert int(one_tx["mask"][0, 0, 0]) == 0
+
+    converted_dicom_like_images = []
+    for image in one_tx_images:
+        copied = ismrmrd.Image.from_array(np.asarray(image.data).copy(), transpose=False)
+        header = image.getHead()
+        header.image_type = ismrmrd.IMTYPE_MAGNITUDE
+        copied.setHead(header)
+        copied.attribute_string = image.attribute_string
+        converted_dicom_like_images.append(copied)
+    fallback_magnitude, fallback_phase = module._split_magnitude_phase_images(
+        converted_dicom_like_images
+    )
+    assert len(fallback_magnitude) == 5
+    assert len(fallback_phase) == 5
+    fallback_result = module.compute_bloch_siegert_maps(
+        converted_dicom_like_images,
+        settings,
+    )
+    assert np.allclose(fallback_result["b1"], one_tx["b1"], atol=1e-5)
+
+    volume_frame_images = []
+    for image in one_tx_images:
+        base = np.asarray(image.data)[0, 0]
+        volume_data = np.stack([base, base + 1.0, base + 2.0], axis=0)
+        copied = ismrmrd.Image.from_array(volume_data, transpose=False)
+        source_header = image.getHead()
+        header = copied.getHead()
+        header.image_type = source_header.image_type
+        header.image_series_index = source_header.image_series_index
+        header.image_index = source_header.image_index
+        header.slice = source_header.slice
+        header.position = source_header.position
+        header.slice_dir = source_header.slice_dir
+        header.field_of_view = (8.0, 8.0, 12.0)
+        copied.setHead(header)
+        copied.attribute_string = image.attribute_string
+        volume_frame_images.append(copied)
+    volume_result = module.compute_bloch_siegert_maps(volume_frame_images, settings)
+    assert volume_result["b1"].shape == (1, 3, 8, 8)
+    assert volume_result["b0"].shape == (3, 8, 8)
+    volume_outputs = module.build_output_images(volume_result, settings, volume_frame_images)
+    assert np.asarray(volume_outputs[0].data).shape == (1, 3, 8, 8)
+    assert list(volume_outputs[0].getHead().matrix_size) == [8, 8, 3]
+    module._validate_output_images(volume_outputs, volume_frame_images)
+
+    outputs = module.build_output_images(one_tx, settings, one_tx_images)
+    assert [int(image.image_series_index) for image in outputs] == [101, 120, 140, 160]
+    module._validate_output_images(outputs, one_tx_images)
+    first_meta = ismrmrd.Meta.deserialize(outputs[0].attribute_string)
+    assert first(first_meta.get("SeriesDescription")) == "bss_source-b1"
+    assert first(first_meta.get("BlochSiegertOutput")) == "BlochSiegertB1Map"
+    assert first(first_meta.get("BlochSiegertUnits")) == "uT"
+    assert int(first(first_meta.get("Keep_image_geometry"))) == 0
+    assert first(first_meta.get("SequenceDescriptionAdditional")) == "openrecon"
+    assert first(first_meta.get("IceMiniHead")) is None
+    assert first(first_meta.get("ImageTypeValue3")) is None
+
+    eight_tx_phase = [0.1] * 26
+    for tx_index in range(8):
+        eight_tx_phase[1 + 2 * tx_index] = 0.25 + 0.01 * tx_index
+        eight_tx_phase[2 + 2 * tx_index] = 0.05
+        eight_tx_phase[18 + tx_index] = -0.2 + 0.01 * tx_index
+    eight_tx_phase[17] = 0.3
+    eight_tx_images = make_dataset(eight_tx_phase, series_name="bss_8tx")
+    eight_tx = module.compute_bloch_siegert_maps(eight_tx_images, settings)
+    assert eight_tx["nframe"] == 26
+    assert eight_tx["ntx"] == 8
+    assert eight_tx["b1"].shape == (8, 1, 8, 8)
+    assert eight_tx["bsp"].shape == (8, 1, 8, 8)
+    assert eight_tx["phsc"].shape == (8, 1, 8, 8)
+    assert np.allclose(eight_tx["bsp"][:, 0, 0, 0], [0.20 + 0.01 * i for i in range(8)], atol=1e-5)
+    assert np.allclose(eight_tx["phsc"][:, 0, 0, 0], [-0.2 + 0.01 * i for i in range(8)], atol=1e-5)
+    b1_only = module.build_output_images(
+        eight_tx,
+        {"sendb1": True, "sendbsp": False, "sendphsc": False, "sendb0": False},
+        eight_tx_images,
+    )
+    assert len(b1_only) == 8
+    assert [int(image.image_series_index) for image in b1_only] == list(range(101, 109))
+    assert first(ismrmrd.Meta.deserialize(b1_only[-1].attribute_string).get("SeriesDescription")) == "bss_8tx-b1-tx08"
+    module._validate_output_images(b1_only, eight_tx_images)
+
+    class FakeConnection:
+        def __init__(self, items):
+            self.items = iter(items)
+            self.sent_images = []
+            self.logging = []
+            self.closed = False
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            return next(self.items)
+
+        def send_image(self, images_to_send):
+            self.sent_images.append(list(images_to_send))
+
+        def send_logging(self, level, message):
+            self.logging.append((level, message))
+
+        def send_close(self):
+            self.closed = True
+
+    connection = FakeConnection(one_tx_images + [None])
+    module.process(connection, {"parameters": {"sendmask": True}}, None)
+    sent = [image for batch in connection.sent_images for image in batch]
+    assert connection.logging == []
+    assert connection.closed is True
+    assert [int(image.image_series_index) for image in sent] == [101, 120, 140, 160, 161]
+
+    no_output_connection = FakeConnection(one_tx_images + [None])
+    module.process(
+        no_output_connection,
+        {
+            "parameters": {
+                "sendb1": False,
+                "sendbsp": False,
+                "sendphsc": False,
+                "sendb0": False,
+                "sendmask": False,
+            }
+        },
+        None,
+    )
+    assert no_output_connection.sent_images == []
+    assert no_output_connection.closed is True
+
+    print("Bloch-Siegert OpenRecon workflow tests passed")
+    PY

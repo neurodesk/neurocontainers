@@ -44,7 +44,7 @@ class DetectionResult:
 
 
 RELEASE_PATTERN = re.compile(r"^releases/([^/]+)/([^/]+)\.json$")
-TEST_CONFIG_PATTERN = re.compile(r"^recipes/([^/]+)/(?:fulltest|test)\.yaml$")
+TEST_CONFIG_PATTERN = re.compile(r"^recipes/([^/]+)/fulltest\.yaml$")
 
 
 def _relative_posix(path: Path, repo_root: Path) -> str:
@@ -125,8 +125,7 @@ def detect_release_pr_changes(
 
     A new recipe can add ``recipes/<name>/fulltest.yaml`` before release
     metadata exists. That should not fail this workflow because there is no
-    published container for the release-test job to download yet. Legacy
-    ``test.yaml`` files are still accepted during the migration to fulltests.
+    published container for the release-test job to download yet.
     """
 
     root = Path(repo_root)
@@ -216,7 +215,7 @@ def _escape_notice(text: str) -> str:
 def print_skipped_notices(result: DetectionResult) -> None:
     for recipe in result.skipped_new_recipe_tests:
         message = (
-            f"recipes/{recipe}/fulltest.yaml or test.yaml changed, but "
+            f"recipes/{recipe}/fulltest.yaml changed, but "
             f"releases/{recipe}/*.json does not exist. "
             "Skipping release-container tests for this new or unreleased recipe; "
             "this workflow only retests already released containers. "

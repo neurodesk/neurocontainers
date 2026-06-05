@@ -1,5 +1,0 @@
-tests:
-  - name: Test dcm2niix
-    script: |
-      python3 -c 'import hnn_core'
-      python3 -c 'import neuron'

@@ -1,0 +1,17 @@
+name: hcpasl
+version: 0.2.0
+container: hcpasl_0.2.0_20260519.simg
+default_timeout: 120
+tests:
+- name: Test HCP-ASL entry points
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    python - <<'PY'
+    import hcpasl
+    print(hcpasl.__version__)
+    PY
+    process_hcp_asl --help
+    get_sebased_bias_asl --help
+    mt_estimation_asl --help
+    command -v results_to_mni_asl
+    command -v VolumetoSurfaceASL.sh

@@ -1,0 +1,17 @@
+name: dwidenoise2
+version: '20260603'
+container: dwidenoise2_20260603_20260604.simg
+default_timeout: 120
+tests:
+- name: dwidenoise2 help
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    dwidenoise2 -help
+- name: dwi2noise help
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    dwi2noise -help
+- name: bundled MRtrix3 helper help
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    mrconvert -help

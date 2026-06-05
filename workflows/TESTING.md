@@ -4,8 +4,9 @@ This document describes how container tests are defined, executed locally, and a
 
 ## Test Definitions and Tooling
 
-- **Test sources** live beside each recipe. The default location is `recipes/<name>/test.yaml`; when that file is absent, the tooling falls back to the `tests` block embedded in `recipes/<name>/build.yaml`. Each test entry generally specifies a shell script snippet and optional mounts or GPU requirements.
-- **`workflows/test_runner.py`** provides the high-level `ContainerTestRunner` used by local commands, the full-matrix script, and GitHub Actions. Internally it relies on `workflows/container_tester.py`, which handles runtime selection, container discovery, and test execution. Key flags you will see in CI:
+- **Test sources** live beside each recipe in `recipes/<name>/fulltest.yaml`. `test.yaml`, `test.sh`, and embedded `build.yaml` tests are no longer supported recipe test formats.
+- **`builder/run_tests.py`** is the fulltest executor. Release PR testing invokes it through `workflows/release_test_runner.py`, which also runs the builtin deploy bins/path check.
+- **`workflows/container_tester.py`** still provides runtime selection, release container downloads, Docker-to-SIF conversion, and the builtin deploy check. It is not the fulltest YAML executor. Key flags you will see in CI:
   - `--runtime apptainer` forces the Apptainer/Singularity backend.
   - `--location auto` searches CVMFS first, then local `./sifs`, then downloads via release metadata. Release downloads try Nectar Object Storage first and fall back to the AWS S3 mirror. Docker tags are only used as the final fallback when the selected runtime is Docker.
   - `--docker-to-simg` bypasses the normal SIF lookup, pulls `ghcr.io/<registry>/<name>_<version>:<build_date>`, converts `docker save` output with `docker-save-to-simg`, and tests the generated `.simg` with Apptainer.
@@ -13,7 +14,7 @@ This document describes how container tests are defined, executed locally, and a
   - `--cleanup` deletes any downloaded artifacts after tests finish; `--output` writes a JSON summary used for reporting.
 - **`workflows/generate_test_report.py`** turns the JSON summary into a PR-friendly Markdown report. GitHub Actions uploads both the JSON and Markdown outputs as artifacts and uses the Markdown for inline comments.
 - **`workflows/format_test_results.py`** converts a single container’s JSON results into Markdown suitable for GitHub issue comments.
-- **`workflows/pr_test_runner.py`** provides a higher-level interface that scans git diff to find updated recipes. It is useful for local validation (`test-containers.sh test-pr`) but is not wired into the current Actions workflows; instead, the workflows invoke `container_tester.py` directly.
+- **`workflows/pr_test_runner.py`** provides a higher-level interface that scans git diff to find updated recipes. It is useful for local validation (`test-containers.sh test-pr`) but is not wired into the current Actions workflows.
 
 ## GitHub Actions Entry Points
 
@@ -25,8 +26,8 @@ This workflow runs automatically when a pull request targeting `master` or `main
 2. **`test-containers` job** (self-hosted runner) fans out across the matrix when `has-changes` is true. Each matrix leg:
    - Checks out the repo and installs Python requirements.
    - Verifies container runtimes (`docker`, `apptainer` or `singularity`) so the self-hosted machine has the necessary binaries.
-   - Locates the test definition by preferring `recipes/<name>/test.yaml` and falling back to `recipes/<name>/build.yaml` (`find-tests` step).
-   - Runs the shared runner with `cleanup` enabled so downloaded artifacts are removed once tests finish. The `continue-on-error` flag lets subsequent steps gather logs even when tests fail.
+   - Locates `recipes/<name>/fulltest.yaml`. Recipes without fulltests produce a skipped report instead of falling back to legacy test formats.
+   - Runs `workflows/release_test_runner.py`, which downloads or converts the release container, runs the deploy bins/path check, and executes `fulltest.yaml` through `builder/run_tests.py`. The `continue-on-error` flag lets subsequent steps gather logs even when tests fail.
    - Generates Markdown via `workflows/generate_test_report.py` and uploads both the JSON and Markdown artifacts as `test-results-<name>`.
    - Uses `actions/github-script` to post (or update) a PR comment containing the Markdown report for that specific container.
 3. **`summarize-results` job** (Ubuntu runner) aggregates every `test-results-*.json` artifact, prints a count of passed/failed recipes, and updates a single “Container Test Summary” PR comment. If any container failed, this job calls `core.setFailed`, which fails the workflow and surfaces red status in the PR checks.
@@ -37,7 +38,7 @@ This manually triggered workflow validates every recipe that has a published rel
 
 1. **`prepare-matrix` job** builds a catalog of recipes, pairing each with the newest `releases/<recipe>/<version>.json` by comparing the embedded build date. Recipes without a release are kept in the matrix and marked for skip reporting. If the optional `recipes` filter is provided, the catalog is trimmed to those names; missing entries are called out in the tracking issue for visibility.
 2. **`create-issue` job** opens a tracking GitHub Issue summarising how many recipes will run versus skip and captures the runner architecture from the dispatch input.
-3. **`test-containers` job** fans out across the matrix. When a release exists, it downloads the published SIF via `container_tester.py --release-file … --cleanup`, executes the recipe’s tests, converts the JSON output to Markdown with `format_test_results.py`, and posts the result as a comment on the tracking issue. If the dispatch input `docker_to_simg` is enabled, the job builds `builder/docker-save-to-simg.go`, pulls the matching GHCR Docker image, converts it to `.simg`, and tests that file. Recipes without tests or without releases generate skipped-result comments instead.
+3. **`test-containers` job** fans out across the matrix. When a release exists, it downloads the published SIF and executes the recipe’s `fulltest.yaml` through `builder/run_tests.py`; Docker-to-SIF conversion is available for matching GHCR images. Recipes without fulltests or without releases generate skipped-result comments instead.
 4. **`finalize` job** gathers every JSON artifact, posts an aggregated summary comment, and updates the issue body with pass/fail/skipped totals.
 
 ### On-Demand Recipe Matrix – `.github/workflows/recipes-ci.yml`
@@ -72,7 +73,7 @@ While not a runtime test, this workflow protects the builder tooling whenever bu
      --location auto \
      --cleanup
    ```
-   This mirrors the invocation inside `test-release-pr.yml` and produces the same artifacts.
+   This mirrors the release-container lookup path. Release PR fulltests are executed through `workflows/release_test_runner.py`.
    To exercise the Docker-to-SIMG conversion path locally, add:
    ```bash
    python workflows/full_container_test.py \

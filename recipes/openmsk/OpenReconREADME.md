@@ -38,7 +38,6 @@ python3 builder/validation.py recipes/openmsk/build.yaml
 python -m builder generate openmsk --recreate --architecture x86_64
 ```
 
-Manual OpenRecon test procedure is in `recipes/openmsk/test.yaml`. To enable
-NSM/BScore at build time, provide a Hugging Face token in `HF_TOKEN` so the
-optional `aagatti/ShapeMedKnee` snapshot can be downloaded into
+To enable NSM/BScore at build time, provide a Hugging Face token in `HF_TOKEN`
+so the optional `aagatti/ShapeMedKnee` snapshot can be downloaded into
 `/opt/NSM_MODELS`.

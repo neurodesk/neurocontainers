@@ -1,0 +1,12 @@
+name: startrack
+version: '20250920'
+container: startrack_20250920_20260526.simg
+default_timeout: 120
+tests:
+- name: StarTrack installation smoke test
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    command -v startrack
+    test -x /usr/local/bin/startrack
+    test -d "${MCRROOT}/runtime/glnxa64"
+    find /opt -maxdepth 2 -type f -name StarTrack -perm -111 -print -quit | grep -q StarTrack

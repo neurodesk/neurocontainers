@@ -305,14 +305,9 @@ class TestDefinitionExtractor:
             return None
 
     def _extract_tests_from_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract test definitions from build configuration"""
+        """Extract test definitions from a fulltest-style configuration."""
         tests = []
 
-        # Extract tests from build directives
-        if "build" in config and "directives" in config["build"]:
-            tests.extend(self._walk_directives(config["build"]["directives"]))
-
-        # Look for separate test definitions
         if "tests" in config:
             tests.extend(config["tests"])
 
@@ -324,59 +319,21 @@ class TestDefinitionExtractor:
             "tests": tests,
         }
 
-    def _read_script_contents(self, script_path: Path) -> Optional[str]:
-        """Load legacy shell script contents if available."""
-
-        try:
-            return script_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            return None
-
     def default_test_config(
         self,
         name: str = "unknown",
         version: str = "unknown",
-        *,
-        legacy_script: Optional[Path] = None,
     ) -> Dict[str, Any]:
-        """Return a minimal test configuration when none is defined.
-
-        Optionally registers a legacy ``test.sh`` script as a container test.
-        """
+        """Return the minimal builtin deploy test configuration."""
 
         tests: List[Dict[str, Any]] = []
         self._ensure_builtin_tests(tests)
-
-        if legacy_script is not None:
-            script_content = self._read_script_contents(legacy_script)
-            if script_content is not None:
-                tests.append(
-                    {
-                        "name": f"Legacy script test ({legacy_script.name})",
-                        "script": script_content,
-                    }
-                )
 
         return {
             "name": name,
             "version": version,
             "tests": tests,
         }
-
-    def _walk_directives(
-        self, directives: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Walk through build directives to find test definitions"""
-        tests = []
-
-        for directive in directives:
-            if "test" in directive:
-                tests.append(directive["test"])
-            elif "group" in directive:
-                tests.extend(self._walk_directives(directive["group"]))
-
-        return tests
-
 
 class ReleaseContainerDownloader:
     """Download containers from release PR URLs"""

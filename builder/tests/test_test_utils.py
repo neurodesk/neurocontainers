@@ -16,10 +16,10 @@ def test_discover_test_config_prefers_fulltest_yaml(tmp_path: Path) -> None:
     assert discover_test_config(recipe_dir) == fulltest_yaml
 
 
-def test_discover_test_config_keeps_legacy_test_yaml_fallback(tmp_path: Path) -> None:
+def test_discover_test_config_ignores_legacy_test_yaml(tmp_path: Path) -> None:
     recipe_dir = tmp_path / "recipes" / "cat12"
     recipe_dir.mkdir(parents=True)
     test_yaml = recipe_dir / "test.yaml"
     test_yaml.write_text("tests: []\n", encoding="utf-8")
 
-    assert discover_test_config(recipe_dir) == test_yaml
+    assert discover_test_config(recipe_dir) is None
