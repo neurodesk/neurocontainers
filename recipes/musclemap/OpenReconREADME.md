@@ -2,7 +2,7 @@
 
 This OpenRecon tool is based on the MuscleMap Toolbox (https://github.com/MuscleMap/MuscleMap) - A free and open-source software toolbox for whole-body muscle segmentation and analysis.
 
-It runs on Water images of a Dixon sequence and generates muscle segmentations.
+It runs on the selected image type from a Dixon sequence and generates muscle segmentations. Opposed Phase is selected by default.
 
 We are currently developing the standardized acquisition protocol for whole-body quantitative MRI of muscle. You can access the Google doc here: https://docs.google.com/document/d/1q7AAnPEr7Rj5gb9d_mLrRnAiav1f32J-RPswvOPk5xE/edit?usp=sharing. To collaborate on the standardized acquisition protocol, please contact us: neuromuscularinsightlab@stanford.edu.
 
@@ -25,7 +25,12 @@ https://doi.org/10.3390/jimaging10110262
 | ID | Label | Type | Default | Description |
 | :--- | :--- | :--- | :--- | :--- |
 | `sendoriginal` | Send original images | boolean | `true` | Return source-native 2D original images before the MuscleMap-derived outputs, with fresh scanner storage identity |
+| `segmentwater` | Segment Water | boolean | `false` | Run MuscleMap segmentation on the Dixon water image |
+| `segmentinphase` | Segment Inphase | boolean | `false` | Run MuscleMap segmentation on the Dixon in-phase image |
+| `segmentopposedphase` | Segment Opposed Phase | boolean | `true` | Run MuscleMap segmentation on the Dixon opposed-phase image |
+| `segmentfat` | Segment Fat | boolean | `false` | Run MuscleMap segmentation on the Dixon fat image |
 | `labeltransform` | Scale labels to lower integer range for DICOM 12BIT | boolean | `true` | Applying label transformation: 3 * (label_in // 10) + (label_in % 10) |
+| `metricsoutput` | Metrics output | choice | `all` | Select where MuscleMap average metrics are returned |
 | `bodyregion` | Body Region | choice | `wholebody, abdomen, pelvis, thigh, leg` | Select the body region for segmentation |
 | `chunksize` | Chunk Size | string | `100` | Chunk size between 5 and 200 - change for memory optimization on GPU |
 | `spatialoverlap` | Spatial Overlap | int | `50` | Spatial overlap percentage |

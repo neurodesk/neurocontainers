@@ -99,32 +99,37 @@
       "default": false
     },
     {
-      "id": "computemetrics",
-      "label": { "en": "Compute metrics" },
-      "type": "boolean",
-      "information": { "en": "Run MuscleMap average metrics on the generated segmentation and source image." },
-      "default": true
-    },
-    {
-      "id": "metricsburnseries",
-      "label": { "en": "Metrics in DICOM" },
-      "type": "boolean",
-      "information": { "en": "Return a separate burned-in image series containing the metrics table." },
-      "default": true
-    },
-    {
-      "id": "metricsincomments",
-      "label": { "en": "Metrics in image comments" },
-      "type": "boolean",
-      "information": { "en": "Add a compact MuscleMap metrics summary to ImageComments." },
-      "default": true
-    },
-    {
-      "id": "metricsinminihead",
-      "label": { "en": "Metrics in IceMiniHead" },
-      "type": "boolean",
-      "information": { "en": "Add a compact MuscleMapMetrics entry to the Siemens IceMiniHead when present." },
-      "default": true
+      "id": "metricsoutput",
+      "label": { "en": "Metrics output" },
+      "type": "choice",
+      "values": [
+        {
+          "id": "all",
+          "name": { "en": "DICOM + comments + IceMiniHead" }
+        },
+        {
+          "id": "dicom",
+          "name": { "en": "DICOM only" }
+        },
+        {
+          "id": "comments",
+          "name": { "en": "Image comments only" }
+        },
+        {
+          "id": "minihead",
+          "name": { "en": "IceMiniHead only" }
+        },
+        {
+          "id": "metadata",
+          "name": { "en": "Comments + IceMiniHead" }
+        },
+        {
+          "id": "none",
+          "name": { "en": "None" }
+        }
+      ],
+      "default": "all",
+      "information": { "en": "Select where MuscleMap average metrics are returned." }
     },
     {
       "id": "bodyregion",

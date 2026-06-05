@@ -106,6 +106,34 @@ dixonImageTypeAliases = {
     "OUTPHASE": "OPPOSED_PHASE",
     "OUT_PHASE": "OPPOSED_PHASE",
 }
+metricsOutputModeDefault = "all"
+metricsOutputModeAliases = {
+    "": metricsOutputModeDefault,
+    "ALL": "all",
+    "DICOM": "dicom",
+    "DICOM_SERIES": "dicom",
+    "BURN_SERIES": "dicom",
+    "BURNSERIES": "dicom",
+    "COMMENTS": "comments",
+    "IMAGE_COMMENTS": "comments",
+    "IMAGECOMMENTS": "comments",
+    "MINIHEAD": "minihead",
+    "ICE_MINIHEAD": "minihead",
+    "ICEMINIHEAD": "minihead",
+    "METADATA": "metadata",
+    "NONE": "none",
+    "NO": "none",
+    "OFF": "none",
+    "DISABLED": "none",
+}
+metricsOutputModeFlags = {
+    "all": (True, True, True, True),
+    "dicom": (True, True, False, False),
+    "comments": (True, False, True, False),
+    "minihead": (True, False, False, True),
+    "metadata": (True, False, True, True),
+    "none": (False, False, False, False),
+}
 
 
 def process(connection, config, metadata):
@@ -531,6 +559,60 @@ def _format_selected_dixon_image_types(selected_image_types):
         if image_type in selected_image_types
     ]
     return ", ".join(labels) if labels else "none"
+
+
+def _normalize_metrics_output_mode(value):
+    raw_value = _first_non_empty_text(value)
+    normalized = re.sub(r"[\s-]+", "_", raw_value.strip().upper())
+    normalized = re.sub(r"_+", "_", normalized).strip("_")
+    mode = metricsOutputModeAliases.get(normalized)
+    if mode:
+        return mode
+    logging.warning(
+        "Unknown MuscleMap metrics output mode %s; using default %s",
+        raw_value,
+        metricsOutputModeDefault,
+    )
+    return metricsOutputModeDefault
+
+
+def _resolve_metrics_output_config(config):
+    parameters = _config_parameters(config)
+    if "metricsoutput" in parameters:
+        mode = _normalize_metrics_output_mode(parameters.get("metricsoutput"))
+        (
+            compute_metrics,
+            metrics_burn_series,
+            metrics_in_comments,
+            metrics_in_minihead,
+        ) = metricsOutputModeFlags[mode]
+        return {
+            "mode": mode,
+            "compute_metrics": compute_metrics,
+            "metrics_burn_series": metrics_burn_series,
+            "metrics_in_comments": metrics_in_comments,
+            "metrics_in_minihead": metrics_in_minihead,
+            "legacy_compute_metrics_flag": None,
+        }
+
+    legacy_compute_metrics_flag = _get_config_bool(config, "computemetrics", True)
+    metrics_burn_series = _get_config_bool(config, "metricsburnseries", True)
+    metrics_in_comments = _get_config_bool(config, "metricsincomments", True)
+    metrics_in_minihead = _get_config_bool(config, "metricsinminihead", True)
+    compute_metrics = (
+        legacy_compute_metrics_flag
+        or metrics_burn_series
+        or metrics_in_comments
+        or metrics_in_minihead
+    )
+    return {
+        "mode": "legacy",
+        "compute_metrics": compute_metrics,
+        "metrics_burn_series": metrics_burn_series,
+        "metrics_in_comments": metrics_in_comments,
+        "metrics_in_minihead": metrics_in_minihead,
+        "legacy_compute_metrics_flag": legacy_compute_metrics_flag,
+    }
 
 
 def _canonical_dixon_image_type(value):
@@ -3658,28 +3740,16 @@ def process_image(imgGroup, connection, config, metadata, derived_series_allocat
         mrdhelper.get_json_config_param(config, 'segmentationcolormap', default=False, type='bool')
     )
     logging.info("segmentationcolormap resolved to %s", segmentation_colormap)
-    compute_metrics_flag = _as_config_bool(
-        mrdhelper.get_json_config_param(config, 'computemetrics', default=True, type='bool')
-    )
-    metrics_burn_series = _as_config_bool(
-        mrdhelper.get_json_config_param(config, 'metricsburnseries', default=True, type='bool')
-    )
-    metrics_in_comments = _as_config_bool(
-        mrdhelper.get_json_config_param(config, 'metricsincomments', default=True, type='bool')
-    )
-    metrics_in_minihead = _as_config_bool(
-        mrdhelper.get_json_config_param(config, 'metricsinminihead', default=True, type='bool')
-    )
-    # Treat the master "computemetrics" toggle as advisory: if the operator has
-    # ticked any specific output (burned series, ImageComments, IceMiniHead),
-    # we must compute the metrics regardless. This avoids the foot-gun where
-    # the master checkbox is unchecked on the UI but an output is requested,
-    # which would otherwise silently produce no metrics.
-    compute_metrics = compute_metrics_flag or metrics_burn_series or metrics_in_comments or metrics_in_minihead
+    metrics_output_config = _resolve_metrics_output_config(config)
+    compute_metrics = metrics_output_config["compute_metrics"]
+    metrics_burn_series = metrics_output_config["metrics_burn_series"]
+    metrics_in_comments = metrics_output_config["metrics_in_comments"]
+    metrics_in_minihead = metrics_output_config["metrics_in_minihead"]
     logging.info(
-        "MuscleMap metrics config: computemetrics=%s (flag=%s) burnseries=%s comments=%s minihead=%s method=%s",
+        "MuscleMap metrics config: mode=%s computemetrics=%s legacy_flag=%s burnseries=%s comments=%s minihead=%s method=%s",
+        metrics_output_config["mode"],
         compute_metrics,
-        compute_metrics_flag,
+        metrics_output_config["legacy_compute_metrics_flag"],
         metrics_burn_series,
         metrics_in_comments,
         metrics_in_minihead,

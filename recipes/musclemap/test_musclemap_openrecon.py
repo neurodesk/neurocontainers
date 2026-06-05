@@ -161,6 +161,8 @@ def test_openrecon_label_exposes_dixon_segmentation_checkboxes_with_opposed_defa
     label = json.loads(OPENRECON_LABEL_PATH.read_text())
     parameters = {parameter["id"]: parameter for parameter in label["parameters"]}
 
+    assert len(label["parameters"]) <= 14
+
     expected_defaults = {
         "segmentwater": False,
         "segmentinphase": False,
@@ -171,6 +173,86 @@ def test_openrecon_label_exposes_dixon_segmentation_checkboxes_with_opposed_defa
     for parameter_id, default in expected_defaults.items():
         assert parameters[parameter_id]["type"] == "boolean"
         assert parameters[parameter_id]["default"] is default
+
+
+def test_openrecon_label_collapses_metrics_outputs_into_one_choice():
+    label = json.loads(OPENRECON_LABEL_PATH.read_text())
+    parameters = {parameter["id"]: parameter for parameter in label["parameters"]}
+
+    assert "computemetrics" not in parameters
+    assert "metricsburnseries" not in parameters
+    assert "metricsincomments" not in parameters
+    assert "metricsinminihead" not in parameters
+
+    metrics_output = parameters["metricsoutput"]
+    assert metrics_output["type"] == "choice"
+    assert metrics_output["default"] == "all"
+    assert [value["id"] for value in metrics_output["values"]] == [
+        "all",
+        "dicom",
+        "comments",
+        "minihead",
+        "metadata",
+        "none",
+    ]
+
+
+def test_metrics_output_choice_maps_to_runtime_outputs_and_preserves_legacy_configs():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_as_config_bool",
+            "_config_parameters",
+            "_first_non_empty_text",
+            "_get_config_bool",
+            "_normalize_metrics_output_mode",
+            "_resolve_metrics_output_config",
+        ],
+        assignments=[
+            "metricsOutputModeAliases",
+            "metricsOutputModeDefault",
+            "metricsOutputModeFlags",
+        ],
+    )
+
+    all_outputs = helpers["_resolve_metrics_output_config"](
+        {"parameters": {"metricsoutput": "all"}}
+    )
+    assert all_outputs["compute_metrics"] is True
+    assert all_outputs["metrics_burn_series"] is True
+    assert all_outputs["metrics_in_comments"] is True
+    assert all_outputs["metrics_in_minihead"] is True
+
+    metadata_only = helpers["_resolve_metrics_output_config"](
+        {"parameters": {"metricsoutput": "metadata"}}
+    )
+    assert metadata_only["compute_metrics"] is True
+    assert metadata_only["metrics_burn_series"] is False
+    assert metadata_only["metrics_in_comments"] is True
+    assert metadata_only["metrics_in_minihead"] is True
+
+    no_outputs = helpers["_resolve_metrics_output_config"](
+        {"parameters": {"metricsoutput": "none"}}
+    )
+    assert no_outputs["compute_metrics"] is False
+    assert no_outputs["metrics_burn_series"] is False
+    assert no_outputs["metrics_in_comments"] is False
+    assert no_outputs["metrics_in_minihead"] is False
+
+    legacy_outputs = helpers["_resolve_metrics_output_config"](
+        {
+            "parameters": {
+                "computemetrics": False,
+                "metricsburnseries": False,
+                "metricsincomments": True,
+                "metricsinminihead": False,
+            }
+        }
+    )
+    assert legacy_outputs["mode"] == "legacy"
+    assert legacy_outputs["compute_metrics"] is True
+    assert legacy_outputs["metrics_burn_series"] is False
+    assert legacy_outputs["metrics_in_comments"] is True
+    assert legacy_outputs["metrics_in_minihead"] is False
 
 
 def test_dixon_segmentation_selection_defaults_to_opposed_phase_and_supports_multi_select():
