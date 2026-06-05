@@ -1,9 +1,9 @@
 # hdbet container test suite
-# Minimal no-rebuild verification for the shipped HD-BET project payload.
+# Minimal verification for the shipped HD-BET project payload.
 
 name: hdbet
-version: 1.0.0
-container: hdbet_1.0.0_20210318.simg
+version: 2.0.1
+container: hdbet_2.0.1_20260605.simg
 
 test_data:
   output_dir: test_output
@@ -17,29 +17,35 @@ setup:
 tests:
   - name: Python runtime available
     description: Verify the shipped HD-BET conda runtime matches the image
-    command: /opt/miniconda-latest/bin/python --version
-    expected_output_contains: "Python 3.6.13"
+    command: /opt/miniconda-latest/envs/hdbet/bin/python --version
+    expected_output_contains: "Python 3.10"
 
   - name: HD_BET import path
     description: Verify the HD_BET module imports from the shipped conda environment
     command: >-
-      /opt/miniconda-latest/bin/python -c "import HD_BET; print(HD_BET.__file__)"
+      /opt/miniconda-latest/envs/hdbet/bin/python -c "import HD_BET; print(HD_BET.__file__)"
     expected_output_contains: "/opt/HD-BET/HD_BET/__init__.py"
 
   - name: HD_BET package metadata version
     description: Verify the editable package metadata reports the shipped HD_BET version
     command: >-
-      grep -n "^Version: 1.0$" /opt/HD-BET/HD_BET.egg-info/PKG-INFO
-    expected_output_contains: "Version: 1.0"
+      /opt/miniconda-latest/envs/hdbet/bin/python -m pip show HD_BET
+    expected_output_contains: "Version: 2.0.1"
+
+  - name: HD-BET model checkpoint bundled
+    description: Verify the matching HD-BET 2.x model checkpoint is bundled in the configured path
+    command: >-
+      test -f /opt/HD-BET/hd-bet_params/release_2.0.0/fold_all/checkpoint_final.pth && echo checkpoint-ok
+    expected_output_contains: "checkpoint-ok"
 
   - name: HD-BET console entrypoint
     description: Verify the hd-bet console script is available on PATH
     command: >-
       which hd-bet
-    expected_output_contains: "/opt/miniconda-latest/bin/hd-bet"
+    expected_output_contains: "/opt/miniconda-latest/envs/hdbet/bin/hd-bet"
 
   - name: HD-BET help display
     description: Verify the shipped hd-bet command displays usage text
     command: >-
       hd-bet --help 2>&1 | head -20
-    expected_output_contains: "usage: hd-bet"
+    expected_output_contains: "usage:"
