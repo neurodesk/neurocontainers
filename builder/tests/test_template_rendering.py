@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from builder.ir import Env, Run
-from builder.dockerfile import render_dockerfile
+from builder.dockerfile import render_directive, render_dockerfile
 from builder.template import RenderContext, TemplateError, TemplateRenderer
 from builder.recipe import compile_recipe
 from builder.template_backend import apply_builtin_template
@@ -122,8 +122,49 @@ def test_miniconda_template_guards_conda_tos_for_older_installers() -> None:
         directives.append,
     )
     command = "\n".join(item.command for item in directives if isinstance(item, Run))
-    assert "if conda tos --help >/dev/null 2>&1; then conda tos accept; fi" in command
+    assert "if conda tos --help >/dev/null 2>&1; then conda tos accept; fi;" in command
     assert "\nconda tos accept\n" not in command
+
+
+def test_miniconda_template_latest_chains_update_after_tos_guard() -> None:
+    directives: list[Run] = []
+    apply_builtin_template(
+        "miniconda",
+        {
+            "version": "latest",
+            "arch": "x86_64",
+        },
+        "apt",
+        directives.append,
+    )
+    command = "\n".join(item.command for item in directives if isinstance(item, Run))
+    assert "if conda tos --help >/dev/null 2>&1; then conda tos accept; fi;" in command
+    assert "\nconda update -yq -nbase conda" in command
+    assert "\n&& conda update -yq -nbase conda" not in command
+    dockerfile_run = "\n".join(render_directive(next(item for item in directives if isinstance(item, Run))))
+    assert "then conda tos accept; fi; \\\n       conda update" in dockerfile_run
+
+
+def test_miniconda_template_mamba_chains_after_tos_guard() -> None:
+    directives: list[Run] = []
+    apply_builtin_template(
+        "miniconda",
+        {
+            "version": "py39_24.7.1-0",
+            "mamba": "true",
+            "arch": "x86_64",
+        },
+        "apt",
+        directives.append,
+    )
+    command = "\n".join(item.command for item in directives if isinstance(item, Run))
+    assert "\nconda install -yq -nbase conda-libmamba-solver" in command
+    assert "\nconda config --set solver libmamba" in command
+    assert "\n&& conda install -yq -nbase conda-libmamba-solver" not in command
+    assert "\n&& conda config --set solver libmamba" not in command
+    dockerfile_run = "\n".join(render_directive(next(item for item in directives if isinstance(item, Run))))
+    assert "then conda tos accept; fi; \\\n       conda install" in dockerfile_run
+    assert "\n    && conda config --set solver libmamba" in dockerfile_run
 
 
 def test_matlabmcr_template_uses_release_named_runtime_dirs_for_r2023b() -> None:
