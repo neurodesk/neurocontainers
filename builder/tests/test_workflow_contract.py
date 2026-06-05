@@ -95,6 +95,19 @@ def test_build_simg_uses_selected_runner_pool() -> None:
     )
 
 
+def test_setup_apptainer_updates_apt_before_local_deb_install() -> None:
+    action = Path(".github/actions/setup-apptainer/action.yml").read_text()
+    amd64_branch = action.split('else\n          if [[ ! -s "$deb_path" ]]', 1)[1].split(
+        "        fi\n\n        echo",
+        1,
+    )[0]
+
+    assert "sudo apt-get update" in amd64_branch
+    assert amd64_branch.index("sudo apt-get update") < amd64_branch.index(
+        'sudo apt-get install -y --no-install-recommends "$deb_path"'
+    )
+
+
 def test_nectar_registry_username_is_explicit() -> None:
     workflow = Path(".github/workflows/build-app.yml").read_text()
     push_nectar_job = workflow.split("  push-nectar-registry:", 1)[1].split("  build-simg:", 1)[0]
