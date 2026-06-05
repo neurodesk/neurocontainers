@@ -14,6 +14,14 @@ variables:
 files:
     - name: musclemap.py
       filename: musclemap.py
+    - name: nifti2mrd.py
+      filename: nifti2mrd.py
+    - name: enhanceddicom2mrd.py
+      filename: enhanceddicom2mrd.py
+    - name: OpenReconLabel.json
+      filename: OpenReconLabel.json
+    - name: OpenReconREADME.md
+      filename: OpenReconREADME.md
     - name: musclemap_zip
       url: "{{ context.musclemap_archive_url }}"
     - name: spinalcordtoolbox_tar
@@ -78,9 +86,12 @@ build:
         - environment:
               MKL_THREADING_LAYER: GNU
 
-        - copy: musclemap.py /opt/code/python-ismrmrd-server/musclemap.py
-        - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
-        - copy: enhanceddicom2mrd.py /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py
+        - run:
+            - cp {{ get_file("musclemap.py") }} /opt/code/python-ismrmrd-server/musclemap.py
+            - cp {{ get_file("nifti2mrd.py") }} /opt/code/python-ismrmrd-server/nifti2mrd.py
+            - cp {{ get_file("enhanceddicom2mrd.py") }} /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py
+            - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+            - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
             
 deploy:
     bins:
