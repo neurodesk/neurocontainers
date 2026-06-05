@@ -1,0 +1,44 @@
+# openreconi2iexample container test suite
+# Focused verification for the wrapper, OpenRecon runtime, and declared assets.
+
+name: openreconi2iexample
+version: 1.0.89
+container: openreconi2iexample_1.0.89.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: CLI wrapper version
+    description: Verify the deployed wrapper reports the recipe version
+    script: |
+      openreconi2iexample | grep -x 'openreconi2iexample 1.0.89'
+
+  - name: OpenRecon server help
+    description: Verify the python-ismrmrd server entrypoint starts correctly
+    script: |
+      python /opt/code/python-ismrmrd-server/main.py -h 2>&1 | sed -n '1,20p' | grep 'Example server for MRD streaming format'
+
+  - name: OpenRecon label is installed
+    description: Verify the scanner label JSON is copied into the runtime server directory
+    script: |
+      python - <<'PY'
+      import json
+      from pathlib import Path
+
+      label = Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json")
+      data = json.loads(label.read_text())
+      assert data
+      print(label)
+      PY
+
+  - name: openreconi2iexample module imports
+    description: Verify the reconstruction module imports with server-side helpers
+    script: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import openreconi2iexample, ismrmrd, numpy; print(openreconi2iexample.__file__)" | grep -x '/opt/code/python-ismrmrd-server/openreconi2iexample.py'
