@@ -10,6 +10,7 @@ import numpy as np
 
 RECIPE_DIR = Path(__file__).resolve().parent
 WRAPPER_PATH = RECIPE_DIR / "musclemap.py"
+OPENRECON_LABEL_PATH = RECIPE_DIR / "OpenReconLabel.json"
 
 
 def _load_runtime_helpers_for_test(function_names, assignments=()):
@@ -154,6 +155,155 @@ def _encoded_minihead(
 </ParamMap>
 """
     return base64.b64encode(minihead.encode("utf-8")).decode("ascii")
+
+
+def test_openrecon_label_exposes_dixon_segmentation_checkboxes_with_opposed_default():
+    label = json.loads(OPENRECON_LABEL_PATH.read_text())
+    parameters = {parameter["id"]: parameter for parameter in label["parameters"]}
+
+    expected_defaults = {
+        "segmentwater": False,
+        "segmentinphase": False,
+        "segmentopposedphase": True,
+        "segmentfat": False,
+    }
+
+    for parameter_id, default in expected_defaults.items():
+        assert parameters[parameter_id]["type"] == "boolean"
+        assert parameters[parameter_id]["default"] is default
+
+
+def test_dixon_segmentation_selection_defaults_to_opposed_phase_and_supports_multi_select():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_as_config_bool",
+            "_config_parameters",
+            "_first_non_empty_text",
+            "_format_selected_dixon_image_types",
+            "_get_config_bool",
+            "_resolve_selected_dixon_image_types",
+        ],
+        assignments=[
+            "dixonImageTypeDefaultSelections",
+            "dixonImageTypeDisplayOrder",
+            "dixonImageTypeParameterIds",
+        ],
+    )
+
+    assert helpers["_resolve_selected_dixon_image_types"]({}) == {"OPPOSED_PHASE"}
+    assert helpers["_format_selected_dixon_image_types"]({"OPPOSED_PHASE"}) == "OPPOSED_PHASE"
+
+    selected = helpers["_resolve_selected_dixon_image_types"](
+        {
+            "parameters": {
+                "segmentwater": True,
+                "segmentinphase": False,
+                "segmentopposedphase": True,
+                "segmentfat": True,
+            }
+        }
+    )
+
+    assert selected == {"WATER", "OPPOSED_PHASE", "FAT"}
+
+
+def test_dixon_image_type_resolution_handles_siemens_opposed_phase_aliases():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_canonical_dixon_image_type",
+            "_decode_ice_minihead",
+            "_extract_dicom_image_type_values",
+            "_extract_minihead_array_tokens",
+            "_first_non_empty_text",
+            "_get_dicom_image_type_value",
+            "_get_meta_text",
+            "_is_dixon_scan",
+            "_meta_text_values",
+            "_resolve_dixon_image_type",
+        ],
+        assignments=[
+            "dixonImageTypeAliases",
+        ],
+    )
+
+    for raw_value in ("OUT_PHASE", "OPP_PHASE", "Opposed Phase", "opposed-phase"):
+        assert helpers["_canonical_dixon_image_type"](raw_value) == "OPPOSED_PHASE"
+    assert helpers["_canonical_dixon_image_type"](["NORM", "DIS2D", "OUT_PHASE"]) == "OPPOSED_PHASE"
+
+    meta = helpers["FakeMeta"](
+        {
+            "ImageTypeValue3": "DIXON",
+            "ImageTypeValue4": "OUT_PHASE",
+        }
+    )
+
+    assert helpers["_resolve_dixon_image_type"](meta) == "OPPOSED_PHASE"
+    assert helpers["_is_dixon_scan"]("DIXON", "OPPOSED_PHASE") is True
+
+
+def test_segmentation_input_decision_uses_selected_dixon_checkboxes():
+    helpers = _load_runtime_helpers_for_test(
+        [
+            "_canonical_dixon_image_type",
+            "_decode_ice_minihead",
+            "_extract_dicom_image_type_values",
+            "_extract_minihead_array_tokens",
+            "_first_non_empty_text",
+            "_get_dicom_image_type_value",
+            "_get_meta_text",
+            "_is_dixon_scan",
+            "_is_magnitude_image",
+            "_meta_text_values",
+            "_resolve_dixon_image_type",
+            "_resolve_segmentation_input_decision",
+        ],
+        assignments=[
+            "dixonImageTypeAliases",
+        ],
+    )
+
+    image = helpers["FakeImage"](np.zeros((1, 2, 2), dtype=np.int16))
+    image.image_type = helpers["ismrmrd"].IMTYPE_MAGNITUDE
+
+    water_meta = helpers["FakeMeta"](
+        {
+            "DicomImageType": "ORIGINAL\\PRIMARY\\DIXON\\WATER",
+            "ImageTypeValue3": "DIXON",
+            "ImageTypeValue4": "WATER",
+        }
+    )
+    opposed_meta = helpers["FakeMeta"](
+        {
+            "DicomImageType": "ORIGINAL\\PRIMARY\\DIXON\\OUT_PHASE",
+            "ImageTypeValue3": "DIXON",
+            "ImageTypeValue4": "OUT_PHASE",
+        }
+    )
+
+    default_selection = {"OPPOSED_PHASE"}
+    water_decision = helpers["_resolve_segmentation_input_decision"](
+        image,
+        water_meta,
+        default_selection,
+    )
+    opposed_decision = helpers["_resolve_segmentation_input_decision"](
+        image,
+        opposed_meta,
+        default_selection,
+    )
+
+    assert water_decision["dixon_image_type"] == "WATER"
+    assert water_decision["should_process"] is False
+    assert opposed_decision["dixon_image_type"] == "OPPOSED_PHASE"
+    assert opposed_decision["should_process"] is True
+
+    water_selected_decision = helpers["_resolve_segmentation_input_decision"](
+        image,
+        water_meta,
+        {"WATER", "OPPOSED_PHASE"},
+    )
+
+    assert water_selected_decision["should_process"] is True
 
 
 def test_minihead_string_parser_prefers_literal_value_over_mrdhelper_artifact():

@@ -57,6 +57,34 @@
       "default": true
     },
     {
+      "id": "segmentwater",
+      "label": { "en": "Segment Water" },
+      "type": "boolean",
+      "information": { "en": "Run MuscleMap segmentation on the Dixon water image." },
+      "default": false
+    },
+    {
+      "id": "segmentinphase",
+      "label": { "en": "Segment Inphase" },
+      "type": "boolean",
+      "information": { "en": "Run MuscleMap segmentation on the Dixon in-phase image." },
+      "default": false
+    },
+    {
+      "id": "segmentopposedphase",
+      "label": { "en": "Segment Opposed Phase" },
+      "type": "boolean",
+      "information": { "en": "Run MuscleMap segmentation on the Dixon opposed-phase image." },
+      "default": true
+    },
+    {
+      "id": "segmentfat",
+      "label": { "en": "Segment Fat" },
+      "type": "boolean",
+      "information": { "en": "Run MuscleMap segmentation on the Dixon fat image." },
+      "default": false
+    },
+    {
       "id": "labeltransform",
       "label": { "en": "Label Transform" },
       "type": "boolean",

@@ -72,10 +72,49 @@ sourceParentReferenceMetaPrefixes = (
     "ReferencedGSPS",
     "ReferencedImageSequence",
 )
+dixonImageTypeDisplayOrder = (
+    "WATER",
+    "IN_PHASE",
+    "OPPOSED_PHASE",
+    "FAT",
+)
+dixonImageTypeParameterIds = {
+    "WATER": "segmentwater",
+    "IN_PHASE": "segmentinphase",
+    "OPPOSED_PHASE": "segmentopposedphase",
+    "FAT": "segmentfat",
+}
+dixonImageTypeDefaultSelections = {
+    "WATER": False,
+    "IN_PHASE": False,
+    "OPPOSED_PHASE": True,
+    "FAT": False,
+}
+dixonImageTypeAliases = {
+    "W": "WATER",
+    "WATER": "WATER",
+    "F": "FAT",
+    "FAT": "FAT",
+    "IN": "IN_PHASE",
+    "INPHASE": "IN_PHASE",
+    "IN_PHASE": "IN_PHASE",
+    "OPP": "OPPOSED_PHASE",
+    "OPP_PHASE": "OPPOSED_PHASE",
+    "OPPOSED": "OPPOSED_PHASE",
+    "OPPOSED_PHASE": "OPPOSED_PHASE",
+    "OUT": "OPPOSED_PHASE",
+    "OUTPHASE": "OPPOSED_PHASE",
+    "OUT_PHASE": "OPPOSED_PHASE",
+}
 
 
 def process(connection, config, metadata):
     logging.info("Config: \n%s", config)
+    selectedDixonImageTypes = _resolve_selected_dixon_image_types(config)
+    logging.info(
+        "MuscleMap Dixon segmentation input selection: %s",
+        _format_selected_dixon_image_types(selectedDixonImageTypes),
+    )
 
     # Metadata should be MRD formatted header, but may be a string
     # if it failed conversion earlier
@@ -134,38 +173,45 @@ def process(connection, config, metadata):
             # Image data messages
             # ----------------------------------------------------------
             elif isinstance(item, ismrmrd.Image):
-                itemVolumeKey = _build_image_volume_key(item)
                 inputImagesForSeriesRegistry.append(item)
 
-                # Only process magnitude Water images -- send phase images and non-Water images back without modification
+                # Only process the selected magnitude Dixon image type(s).
+                # Phase/complex images and unselected Dixon contrasts are returned
+                # as source-native original/passthrough images.
                 tmpMeta = ismrmrd.Meta.deserialize(item.attribute_string)
-                dicomImageType = _extract_dicom_image_type_values(tmpMeta)
-                imageTypeValue3 = _get_dicom_image_type_value(tmpMeta, 2)
-                imageTypeValue4 = _get_dicom_image_type_value(tmpMeta, 3)
-                
-                # Check metadata for Water/Fat and DIXON information
-                isDixonScan = (imageTypeValue3 == "DIXON") or (imageTypeValue4 in {"WATER", "FAT", "IN_PHASE", "OUT_PHASE"})
-                isWaterImage = imageTypeValue4 == "WATER"
+                inputDecision = _resolve_segmentation_input_decision(
+                    item,
+                    tmpMeta,
+                    selectedDixonImageTypes,
+                )
+                dicomImageType = inputDecision["dicom_image_type"]
+                imageTypeValue3 = inputDecision["image_type_value3"]
+                imageTypeValue4 = inputDecision["image_type_value4"]
+                dixonImageType = inputDecision["dixon_image_type"]
+                itemVolumeKey = _build_image_volume_key(item)
+                itemProcessGroupKey = itemVolumeKey + (dixonImageType or "NON_DIXON",)
                 
                 # Check ISMRMRD image type for magnitude vs phase/complex (data representation).
                 # image_type=0 is not standard, but some generators leave it unset.
-                isMagnitude = item.image_type == ismrmrd.IMTYPE_MAGNITUDE
                 if item.image_type == 0:
                     logging.warning(
                         "Received non-standard MRD image_type=0 for volume key %s; treating it as magnitude",
                         itemVolumeKey,
                     )
-                    isMagnitude = True
                 
-                # Process magnitude images, but for DIXON scans only process WATER images
-                shouldProcess = isMagnitude and (not isDixonScan or isWaterImage)
+                shouldProcess = inputDecision["should_process"]
                 logging.info(
-                    "Resolved image typing: volume_key=%s, dicom_type=%s, value3=%s, value4=%s, image_type=%s, should_process=%s",
+                    "Resolved image typing: volume_key=%s, process_group_key=%s, dicom_type=%s, value3=%s, value4=%s, dixon_type=%s, selected_dixon_types=%s, image_type=%s, is_magnitude=%s, is_dixon=%s, should_process=%s",
                     itemVolumeKey,
+                    itemProcessGroupKey,
                     dicomImageType,
                     imageTypeValue3 or "N/A",
                     imageTypeValue4 or "N/A",
+                    dixonImageType or "N/A",
+                    sorted(selectedDixonImageTypes),
                     item.image_type,
+                    inputDecision["is_magnitude"],
+                    inputDecision["is_dixon"],
                     shouldProcess,
                 )
                 _record_input_volume_summary(
@@ -176,10 +222,13 @@ def process(connection, config, metadata):
                     imageTypeValue3,
                     imageTypeValue4,
                     shouldProcess,
+                    dixon_image_type=dixonImageType,
+                    selected_dixon_image_types=selectedDixonImageTypes,
+                    summary_key=itemProcessGroupKey,
                 )
                 
                 if shouldProcess:
-                    processableImageGroups.setdefault(itemVolumeKey, []).append(item)
+                    processableImageGroups.setdefault(itemProcessGroupKey, []).append(item)
                 else:
                     tmpMeta["Keep_image_geometry"] = 1
                     item.attribute_string = tmpMeta.serialize()
@@ -441,6 +490,110 @@ def _as_config_bool(value):
     if isinstance(value, str):
         return value.strip().lower() in ("1", "true", "yes", "on")
     return bool(value)
+
+
+def _config_parameters(config):
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except Exception:
+            return {}
+
+    if not isinstance(config, dict):
+        return {}
+
+    parameters = config.get("parameters")
+    if isinstance(parameters, dict):
+        return parameters
+    return config
+
+
+def _get_config_bool(config, key, default=False):
+    parameters = _config_parameters(config)
+    return _as_config_bool(parameters.get(key, default))
+
+
+def _resolve_selected_dixon_image_types(config):
+    selected = set()
+    for image_type in dixonImageTypeDisplayOrder:
+        parameter_id = dixonImageTypeParameterIds[image_type]
+        default = dixonImageTypeDefaultSelections[image_type]
+        if _get_config_bool(config, parameter_id, default):
+            selected.add(image_type)
+    return selected
+
+
+def _format_selected_dixon_image_types(selected_image_types):
+    selected_image_types = set(selected_image_types or [])
+    labels = [
+        image_type
+        for image_type in dixonImageTypeDisplayOrder
+        if image_type in selected_image_types
+    ]
+    return ", ".join(labels) if labels else "none"
+
+
+def _canonical_dixon_image_type(value):
+    for text in reversed(_meta_text_values(value)):
+        normalized = re.sub(r"[\s-]+", "_", text.strip().upper())
+        normalized = re.sub(r"_+", "_", normalized).strip("_")
+        canonical = dixonImageTypeAliases.get(normalized)
+        if canonical:
+            return canonical
+    return ""
+
+
+def _resolve_dixon_image_type(meta_obj):
+    minihead_text = _decode_ice_minihead(meta_obj)
+    candidates = [
+        _get_dicom_image_type_value(meta_obj, 3),
+        _get_meta_text(meta_obj, "ImageTypeValue4"),
+        _extract_minihead_array_tokens(minihead_text, "ImageTypeValue4"),
+    ]
+    for candidate in candidates:
+        canonical = _canonical_dixon_image_type(candidate)
+        if canonical:
+            return canonical
+    return ""
+
+
+def _is_dixon_scan(image_type_value3, dixon_image_type):
+    return (
+        _first_non_empty_text(image_type_value3).upper() == "DIXON"
+        or _canonical_dixon_image_type(dixon_image_type) != ""
+    )
+
+
+def _is_magnitude_image(image):
+    return int(getattr(image, "image_type", 0)) in (
+        ismrmrd.IMTYPE_MAGNITUDE,
+        0,
+    )
+
+
+def _resolve_segmentation_input_decision(image, meta_obj, selected_dixon_image_types):
+    dicom_image_type = _extract_dicom_image_type_values(meta_obj)
+    image_type_value3 = _get_dicom_image_type_value(meta_obj, 2)
+    image_type_value4 = _first_non_empty_text(
+        _get_dicom_image_type_value(meta_obj, 3),
+        _get_meta_text(meta_obj, "ImageTypeValue4"),
+    )
+    dixon_image_type = _resolve_dixon_image_type(meta_obj)
+    is_magnitude = _is_magnitude_image(image)
+    is_dixon = _is_dixon_scan(image_type_value3, dixon_image_type)
+    is_selected_dixon = dixon_image_type in set(selected_dixon_image_types or [])
+    should_process = is_magnitude and (is_selected_dixon if is_dixon else True)
+
+    return {
+        "dicom_image_type": dicom_image_type,
+        "image_type_value3": image_type_value3,
+        "image_type_value4": image_type_value4,
+        "dixon_image_type": dixon_image_type,
+        "is_magnitude": is_magnitude,
+        "is_dixon": is_dixon,
+        "is_selected_dixon": is_selected_dixon,
+        "should_process": should_process,
+    }
 
 
 def _strip_dixon_series_suffix(series_name):
@@ -2106,7 +2259,16 @@ def _identity_changed_fields(before, after):
     ]
 
 
-def _new_input_volume_summary_entry(image, meta_obj, dicom_type, value3, value4, should_process):
+def _new_input_volume_summary_entry(
+    image,
+    meta_obj,
+    dicom_type,
+    value3,
+    value4,
+    should_process,
+    dixon_image_type=None,
+    selected_dixon_image_types=None,
+):
     header = image.getHead()
     minihead_text = _decode_ice_minihead(meta_obj)
     return {
@@ -2116,6 +2278,12 @@ def _new_input_volume_summary_entry(image, meta_obj, dicom_type, value3, value4,
         "dicom_type": dicom_type,
         "resolved_ImageTypeValue3": value3 or "N/A",
         "resolved_ImageTypeValue4": value4 or "N/A",
+        "resolved_DixonImageType": dixon_image_type or "N/A",
+        "selected_DixonImageTypes": [
+            image_type
+            for image_type in dixonImageTypeDisplayOrder
+            if image_type in set(selected_dixon_image_types or [])
+        ],
         "measurement_uid": int(getattr(header, "measurement_uid", 0)),
         "image_series_index": int(getattr(header, "image_series_index", 0)),
         "average": int(getattr(header, "average", 0)),
@@ -2129,8 +2297,19 @@ def _new_input_volume_summary_entry(image, meta_obj, dicom_type, value3, value4,
     }
 
 
-def _record_input_volume_summary(summary_map, image, meta_obj, dicom_type, value3, value4, should_process):
-    volume_key = _build_image_volume_key(image)
+def _record_input_volume_summary(
+    summary_map,
+    image,
+    meta_obj,
+    dicom_type,
+    value3,
+    value4,
+    should_process,
+    dixon_image_type=None,
+    selected_dixon_image_types=None,
+    summary_key=None,
+):
+    volume_key = summary_key if summary_key is not None else _build_image_volume_key(image)
     entry = summary_map.get(volume_key)
     if entry is None:
         entry = _new_input_volume_summary_entry(
@@ -2140,6 +2319,8 @@ def _record_input_volume_summary(summary_map, image, meta_obj, dicom_type, value
             value3,
             value4,
             should_process,
+            dixon_image_type=dixon_image_type,
+            selected_dixon_image_types=selected_dixon_image_types,
         )
         summary_map[volume_key] = entry
 
