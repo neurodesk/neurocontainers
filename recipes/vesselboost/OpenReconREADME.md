@@ -11,7 +11,9 @@ Use this reconstruction pipeline on 3D TOF-MRA image data.
 The main derived output is named `<source>_vesselboost`, where `<source>` is the
 incoming source `SeriesDescription` or, when that is absent, the incoming
 `SequenceDescription`. If neither source name is available, the fallback name is
-`vesselboost`. Returned scanner series use `OR` as the short OpenRecon suffix.
+`vesselboost`. Most returned scanner series use `OR` as the short OpenRecon suffix.
+When `vbsegmentationmips` is enabled, the source-geometry segmentation stream
+uses the `openrecon` suffix to mirror `openreconi2iexample`.
 By default, OpenRecon returns restamped original MRA images first as
 `<source>_original`, then sends one source-image-header 2D VesselBoost
 segmentation image per source image. Optional sagittal and coronal reformat
@@ -70,13 +72,14 @@ attached to the original stream.
 When `vbsegmentationmips` is enabled, VesselBoost instead mirrors the
 `openreconi2iexample` `2d_segment_header` path: the segmentation is sent as a 2D
 source-geometry segmentation-header stream with `DataRole = Segmentation`,
-`SegmentSourceGeometry = 1`, `SegmentOutputGeometry = 2d`, no
-`SegmentSourceImageHeader`, scanner post-processing child-role metadata matching
-the segmentation `image_series_index`, and no `ImageTypeValue3`. This lets
-scanner-created segmentation MIPs appear as their own post-processed segmentation
-series instead of being folded into original MIP side products. Reformatted
-sagittal and coronal outputs remain explicit packed 3D MRD volumes without
-source-image-header stamping.
+`SegmentSourceGeometry = 1`, `SegmentOutputGeometry = 2d`,
+`SequenceDescriptionAdditional = openrecon`, no `SegmentSourceImageHeader`,
+scanner post-processing child-role metadata matching the segmentation
+`image_series_index`, and no `ImageTypeValue3`. This lets scanner-created
+segmentation MIPs appear as their own post-processed segmentation series instead
+of being folded into original MIP side products. Reformatted sagittal and
+coronal outputs remain explicit packed 3D MRD volumes without source-image-header
+stamping.
 
 ## Citation
 

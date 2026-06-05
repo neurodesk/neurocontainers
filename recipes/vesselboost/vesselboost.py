@@ -31,6 +31,7 @@ OPENRECON_OUTPUT_NAME_PARAM = "vboutputname"
 OPENRECON_MODULE_DEFAULT = "prediction"
 OPENRECON_MODULE_VALUES = (OPENRECON_MODULE_DEFAULT,)
 OPENRECON_SERIES_SUFFIX = "OR"
+OPENRECON_SEGMENT_SOURCE_GEOMETRY_SERIES_SUFFIX = "openrecon"
 VESSELBOOST_OUTPUT_GEOMETRY_2D = "2d"
 VESSELBOOST_SEGMENT_SEND_ORDER = "after_originals"
 VESSELBOOST_SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
@@ -1163,6 +1164,7 @@ def _patch_source_image_header_ice_minihead(
     slice_index,
     image_index,
     image_type_value3=None,
+    sequence_description_additional=None,
 ):
     if not minihead_text:
         return minihead_text, False
@@ -1178,6 +1180,7 @@ def _patch_source_image_header_ice_minihead(
         ("SOPInstanceUID", sop_uid),
         ("ImageType", image_type),
         ("ComplexImageComponent", "MAGNITUDE"),
+        ("SequenceDescriptionAdditional", sequence_description_additional),
     ):
         if not param_value:
             continue
@@ -1606,7 +1609,12 @@ def _stamp_vesselboost_output_image(
     tmp_meta["ImageComment"] = (
         series_name if source_geometry_identity else output_identity["image_comment"]
     )
-    tmp_meta["SequenceDescriptionAdditional"] = OPENRECON_SERIES_SUFFIX
+    sequence_description_additional = (
+        OPENRECON_SEGMENT_SOURCE_GEOMETRY_SERIES_SUFFIX
+        if segment_source_geometry_identity
+        else OPENRECON_SERIES_SUFFIX
+    )
+    tmp_meta["SequenceDescriptionAdditional"] = sequence_description_additional
     tmp_meta["Keep_image_geometry"] = str(int(keep_image_geometry))
     _set_output_position_meta(
         tmp_meta,
@@ -1630,6 +1638,10 @@ def _stamp_vesselboost_output_image(
         for key, value in extra_meta.items():
             if value is not None:
                 tmp_meta[key] = value
+    sequence_description_additional = _get_meta_text(
+        tmp_meta,
+        "SequenceDescriptionAdditional",
+    )
     if inherit_source_image_type or segment_source_geometry_identity:
         _strip_scanner_write_unsafe_meta(tmp_meta)
     if source_image_header_image_type_value3:
@@ -1661,6 +1673,7 @@ def _stamp_vesselboost_output_image(
                     int(header.slice),
                     int(header.image_index),
                     image_type_value3=source_image_header_image_type_value3,
+                    sequence_description_additional=sequence_description_additional,
                 )
             )
         elif original_passthrough_identity:
@@ -1924,11 +1937,19 @@ def _validate_vesselboost_output_contract(
                 f"image {index}: ComplexImageComponent={identity['ComplexImageComponent']}, "
                 "expected MAGNITUDE"
             )
-        if identity["SequenceDescriptionAdditional"] != OPENRECON_SERIES_SUFFIX:
+        expected_sequence_description_additional = (
+            OPENRECON_SEGMENT_SOURCE_GEOMETRY_SERIES_SUFFIX
+            if _is_vesselboost_source_geometry_output(meta_obj)
+            else OPENRECON_SERIES_SUFFIX
+        )
+        if (
+            identity["SequenceDescriptionAdditional"]
+            != expected_sequence_description_additional
+        ):
             errors.append(
                 f"image {index}: SequenceDescriptionAdditional="
                 f"{identity['SequenceDescriptionAdditional']!r}, expected "
-                f"{OPENRECON_SERIES_SUFFIX!r}"
+                f"{expected_sequence_description_additional!r}"
             )
 
         keep_image_geometry = _get_meta_int(meta_obj, "Keep_image_geometry")
@@ -2157,6 +2178,23 @@ def _validate_vesselboost_output_contract(
                     errors.append(
                         f"image {index}: source-geometry segment IceMiniHead "
                         f"ImageType={minihead_image_type}, expected {image_type}"
+                    )
+                minihead_sequence_description_additional = (
+                    _extract_minihead_string_value(
+                        minihead_text,
+                        "SequenceDescriptionAdditional",
+                    )
+                )
+                if (
+                    minihead_sequence_description_additional
+                    != OPENRECON_SEGMENT_SOURCE_GEOMETRY_SERIES_SUFFIX
+                ):
+                    errors.append(
+                        "image "
+                        f"{index}: source-geometry segment IceMiniHead "
+                        "SequenceDescriptionAdditional="
+                        f"{minihead_sequence_description_additional}, expected "
+                        f"{OPENRECON_SEGMENT_SOURCE_GEOMETRY_SERIES_SUFFIX}"
                     )
                 minihead_image_type_value4 = _extract_minihead_array_tokens(
                     minihead_text,
