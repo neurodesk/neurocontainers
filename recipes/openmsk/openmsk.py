@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import copy
 import json
 import logging
 import os
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import traceback
@@ -24,6 +26,7 @@ KNEEPIPELINE_DIR = Path(os.environ.get("KNEEPIPELINE_HOME", "/opt/KneePipeline")
 KNEEPIPELINE_CONFIG = Path(
     os.environ.get("KNEEPIPELINE_CONFIG", str(KNEEPIPELINE_DIR / "config.json"))
 )
+OPENMSK_PIPELINE_TIMEOUT = int(os.environ.get("OPENMSK_PIPELINE_TIMEOUT", "5400"))
 
 ORIGINAL_SERIES_INDEX = 100
 SEGMENT_SERIES_INDEX = 101
@@ -32,6 +35,8 @@ SEGMENT_SERIES_NAME = "openmsk_segmentation"
 T2MAP_SERIES_NAME = "openmsk_t2map"
 SEGMENT_IMAGE_TYPE = f"DERIVED\\PRIMARY\\SEGMENTATION\\{SEGMENT_SERIES_NAME}"
 T2MAP_IMAGE_TYPE = f"DERIVED\\PRIMARY\\M\\{T2MAP_SERIES_NAME}"
+SCANNER_PARTITION_INDEX = 0
+SCANNER_WRITE_UNSAFE_META_KEYS = ("ImageTypeValue3",)
 SOURCE_PARENT_REFERENCE_META_KEYS = {
     "DicomEngineDimString",
     "MFInstanceNumber",
@@ -79,7 +84,7 @@ def process(connection, config, metadata):
         run_nsm_requested = _config_bool_any(config, ("runnsm", "run_nsm"), False)
         run_bscore = _config_bool_any(config, ("runbscore", "run_bscore"), False)
         run_nsm = run_nsm_requested or run_bscore
-        compute_thickness = _config_bool(config, "computethickness", True)
+        compute_thickness = _config_bool(config, "computethickness", False)
 
         logging.info(
             "OpenMSK options: sendoriginal=%s segmodel=%s run_nsm=%s "
@@ -139,21 +144,57 @@ def process(connection, config, metadata):
                 run_bscore,
             )
 
-            main_ok = _run_kneepipeline_main(
+            segmentation_ok = _run_kneepipeline_segmentation(
                 input_path,
                 output_dir,
                 seg_model,
                 run_config_path,
-                compute_thickness,
             )
-            if not main_ok:
+            if not segmentation_ok:
                 logging.warning(
-                    "KneePipeline main process reported an error; attempting to "
-                    "return any outputs already written to %s",
+                    "KneePipeline segmentation process reported an error; attempting "
+                    "to return any labels already written to %s",
                     output_dir,
                 )
 
-            if run_nsm:
+            segment_path = _find_single_output(output_dir, "*_all-labels.nii.gz")
+            if segment_path is None:
+                raise FileNotFoundError(f"KneePipeline did not write *_all-labels.nii.gz in {output_dir}")
+
+            segment_images = _nifti_to_mrd_images(
+                segment_path,
+                ordered_sources,
+                SEGMENT_SERIES_INDEX,
+                SEGMENT_SERIES_NAME,
+                SEGMENT_IMAGE_TYPE,
+                data_role="Segmentation",
+                dtype=np.int16,
+                comment="OpenMSK segmentation",
+                source_geometry_segment=True,
+            )
+            _send_images(connection, segment_images, "openmsk_segmentation")
+            sent_images.extend(segment_images)
+
+            postprocessing_ok = True
+            if compute_thickness or run_nsm:
+                postprocessing_ok = _run_kneepipeline_postprocessing(
+                    output_dir,
+                    run_config_path,
+                    compute_thickness,
+                )
+                if not postprocessing_ok:
+                    logging.warning(
+                        "KneePipeline post-processing reported an error after "
+                        "segmentation was already sent"
+                    )
+            else:
+                logging.info("Skipping OpenMSK mesh/thickness post-processing")
+
+            metrics_comment = _collect_metrics_comment(output_dir)
+            if metrics_comment:
+                logging.info("OpenMSK metrics: %s", metrics_comment)
+
+            if run_nsm and postprocessing_ok:
                 nsm_type = _nsm_type_for_config(run_config_path)
                 _run_optional_gpu_step(
                     [
@@ -182,26 +223,8 @@ def process(connection, config, metadata):
                         ],
                         "BScore",
                     )
-            elif run_bscore:
-                logging.warning("run_bscore=true was requested without run_nsm=true; skipping BScore")
-            metrics_comment = _collect_metrics_comment(output_dir)
-            segment_path = _find_single_output(output_dir, "*_all-labels.nii.gz")
-            if segment_path is None:
-                raise FileNotFoundError(f"KneePipeline did not write *_all-labels.nii.gz in {output_dir}")
-
-            segment_images = _nifti_to_mrd_images(
-                segment_path,
-                ordered_sources,
-                SEGMENT_SERIES_INDEX,
-                SEGMENT_SERIES_NAME,
-                SEGMENT_IMAGE_TYPE,
-                data_role="Segmentation",
-                dtype=np.int16,
-                comment=metrics_comment or "OpenMSK segmentation",
-                source_geometry_segment=True,
-            )
-            _send_images(connection, segment_images, "openmsk_segmentation")
-            sent_images.extend(segment_images)
+            elif run_nsm:
+                logging.warning("Skipping NSM/BScore because mesh post-processing failed")
 
             t2_path = _find_single_output(output_dir, "*_t2map.nii.gz")
             if t2_path is not None:
@@ -631,13 +654,12 @@ def _nsm_type_for_config(config_path):
     return "bone_only"
 
 
-def _run_kneepipeline_main(input_path, output_dir, seg_model, config_path, compute_thickness):
+def _run_kneepipeline_segmentation(input_path, output_dir, seg_model, config_path):
     script = r"""
 import json
 from pathlib import Path
 import shutil
 import sys
-import traceback
 
 pipeline_dir = Path("/opt/KneePipeline")
 sys.path.insert(0, str(pipeline_dir))
@@ -675,7 +697,6 @@ input_path = Path(sys.argv[1])
 working_dir = Path(sys.argv[2])
 seg_model = sys.argv[3]
 config_path = Path(sys.argv[4])
-compute_thickness = json.loads(sys.argv[5])
 
 config = load_config(str(config_path))
 working_dir.mkdir(parents=True, exist_ok=True)
@@ -688,7 +709,6 @@ if not link_path.exists():
 
 summary = {
     "segmodel": seg_model,
-    "compute_thickness": compute_thickness,
     "errors": {},
 }
 
@@ -705,30 +725,6 @@ if remap_table:
     label_remap(working_dir, options={"remap_table": remap_table}, config=config)
 summary["label_remap"] = bool(remap_table)
 
-mesh_ok = False
-try:
-    from steps.generate_meshes import run as generate_meshes
-    summary["generate_meshes"] = generate_meshes(
-        working_dir,
-        options={"compute_thickness": compute_thickness},
-        config=config,
-    )
-    mesh_ok = True
-except Exception:
-    summary["errors"]["generate_meshes"] = traceback.format_exc()
-
-if seg_result.get("is_qdess") and mesh_ok:
-    try:
-        from steps.t2_mapping import run as t2_mapping
-        summary["t2_mapping"] = t2_mapping(working_dir, config=config)
-    except Exception:
-        summary["errors"]["t2_mapping"] = traceback.format_exc()
-else:
-    summary["t2_mapping"] = {
-        "skipped": True,
-        "reason": "input was not qDESS DICOM or mesh generation failed",
-    }
-
 print(json.dumps(summary, default=str))
 """
     cmd = [
@@ -739,6 +735,65 @@ print(json.dumps(summary, default=str))
         str(output_dir),
         seg_model,
         str(config_path),
+    ]
+    result = subprocess.run(
+        cmd,
+        cwd=str(KNEEPIPELINE_DIR),
+        capture_output=True,
+        text=True,
+        timeout=OPENMSK_PIPELINE_TIMEOUT,
+    )
+    _log_subprocess_result("KneePipeline segmentation", result)
+    return result.returncode == 0
+
+
+def _run_kneepipeline_postprocessing(output_dir, config_path, compute_thickness):
+    script = r"""
+import json
+from pathlib import Path
+import sys
+import traceback
+
+pipeline_dir = Path("/opt/KneePipeline")
+sys.path.insert(0, str(pipeline_dir))
+
+from steps._common import load_config
+
+working_dir = Path(sys.argv[1])
+config_path = Path(sys.argv[2])
+compute_thickness = json.loads(sys.argv[3])
+
+config = load_config(str(config_path))
+summary = {
+    "compute_thickness": compute_thickness,
+    "errors": {},
+}
+
+try:
+    from steps.generate_meshes import run as generate_meshes
+    summary["generate_meshes"] = generate_meshes(
+        working_dir,
+        options={"compute_thickness": compute_thickness},
+        config=config,
+    )
+except Exception:
+    summary["errors"]["generate_meshes"] = traceback.format_exc()
+
+summary["t2_mapping"] = {
+    "skipped": True,
+    "reason": "OpenRecon MRD path uses reconstructed NIfTI input without qDESS private tags",
+}
+
+print(json.dumps(summary, default=str))
+if summary["errors"]:
+    sys.exit(1)
+"""
+    cmd = [
+        "python",
+        "-c",
+        script,
+        str(output_dir),
+        str(config_path),
         json.dumps(bool(compute_thickness)),
     ]
     result = subprocess.run(
@@ -746,9 +801,9 @@ print(json.dumps(summary, default=str))
         cwd=str(KNEEPIPELINE_DIR),
         capture_output=True,
         text=True,
-        timeout=1800,
+        timeout=OPENMSK_PIPELINE_TIMEOUT,
     )
-    _log_subprocess_result("KneePipeline", result)
+    _log_subprocess_result("KneePipeline post-processing", result)
     return result.returncode == 0
 
 
@@ -972,19 +1027,222 @@ def _derived_meta(
     meta["slice_count"] = str(slice_count)
     meta["NumberOfSlices"] = str(slice_count)
     meta["ImagesInAcquisition"] = str(slice_count)
-    meta["NumberInSeries"] = str(output_index + 1)
-    meta["SliceNo"] = str(output_index + 1)
-    meta["ChronSliceNo"] = str(output_index + 1)
-    meta["IsmrmrdSliceNo"] = str(output_index + 1)
+    _set_output_storage_meta(meta, output_index)
     if source_geometry_segment:
         meta["SegmentSourceGeometry"] = "1"
         meta["SegmentOutputGeometry"] = "2d"
         meta["LUTFileName"] = "MicroDeltaHotMetal.pal"
-        if "ImageTypeValue3" in meta:
-            del meta["ImageTypeValue3"]
+        _strip_scanner_write_unsafe_meta(meta)
     else:
         meta["ImageTypeValue3"] = "M"
+    minihead = _decode_ice_minihead(meta)
+    if minihead:
+        patched_minihead, changed = _patch_derived_ice_minihead(
+            minihead,
+            series_name,
+            f"{series_name}_{series_index}",
+            series_uid,
+            sop_uid,
+            image_type,
+            source_geometry_segment=source_geometry_segment,
+            output_index=output_index,
+        )
+        if changed:
+            meta["IceMiniHead"] = _encode_ice_minihead(patched_minihead)
     return meta
+
+
+def _set_output_storage_meta(meta, output_index):
+    for key, value in (
+        ("Actual3DImagePartNumber", SCANNER_PARTITION_INDEX),
+        ("AnatomicalPartitionNo", SCANNER_PARTITION_INDEX),
+        ("AnatomicalSliceNo", output_index),
+        ("ChronSliceNo", output_index),
+        ("NumberInSeries", output_index + 1),
+        ("ProtocolSliceNumber", output_index),
+        ("SliceNo", output_index),
+        ("IsmrmrdSliceNo", output_index),
+    ):
+        meta[key] = str(int(value))
+
+
+def _strip_scanner_write_unsafe_meta(meta):
+    for key in SCANNER_WRITE_UNSAFE_META_KEYS:
+        if key in meta:
+            del meta[key]
+
+
+def _decode_ice_minihead(meta):
+    encoded = _meta_text(meta, "IceMiniHead")
+    if not encoded:
+        return ""
+    try:
+        return base64.b64decode(encoded).decode("utf-8")
+    except Exception:
+        return ""
+
+
+def _encode_ice_minihead(minihead_text):
+    return base64.b64encode(minihead_text.encode("utf-8")).decode("ascii")
+
+
+def _patch_derived_ice_minihead(
+    minihead_text,
+    series_name,
+    series_grouping,
+    series_uid,
+    sop_uid,
+    image_type,
+    *,
+    source_geometry_segment,
+    output_index,
+):
+    current_text = minihead_text
+    changed = False
+    for name, value in (
+        ("SeriesDescription", series_name),
+        ("SequenceDescription", series_name),
+        ("ProtocolName", series_name),
+        ("SeriesNumberRangeNameUID", series_grouping),
+        ("SeriesInstanceUID", series_uid),
+        ("SOPInstanceUID", sop_uid),
+        ("ImageType", image_type),
+        ("ComplexImageComponent", "MAGNITUDE"),
+    ):
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            name,
+            value,
+        )
+        changed = changed or did_change
+
+    current_text, did_change = _replace_or_append_minihead_array_tokens(
+        current_text,
+        "ImageTypeValue4",
+        [series_name],
+    )
+    changed = changed or did_change
+
+    if source_geometry_segment:
+        current_text, did_change = _strip_scanner_write_unsafe_minihead(current_text)
+    else:
+        current_text, did_change = _replace_or_append_minihead_string_param(
+            current_text,
+            "ImageTypeValue3",
+            "M",
+        )
+    changed = changed or did_change
+
+    for name, value in (
+        ("Actual3DImagePartNumber", SCANNER_PARTITION_INDEX),
+        ("AnatomicalPartitionNo", SCANNER_PARTITION_INDEX),
+        ("AnatomicalSliceNo", output_index),
+        ("ChronSliceNo", output_index),
+        ("NumberInSeries", output_index + 1),
+        ("ProtocolSliceNumber", output_index),
+        ("SliceNo", output_index),
+    ):
+        current_text, did_change = _replace_or_append_minihead_long_param(
+            current_text,
+            name,
+            value,
+        )
+        changed = changed or did_change
+
+    return current_text, changed
+
+
+def _strip_scanner_write_unsafe_minihead(minihead_text):
+    current_text = minihead_text
+    changed = False
+    for key in SCANNER_WRITE_UNSAFE_META_KEYS:
+        current_text, did_change = _remove_minihead_string_param(current_text, key)
+        changed = changed or did_change
+        current_text, did_change = _remove_minihead_array_param(current_text, key)
+        changed = changed or did_change
+    return current_text, changed
+
+
+def _remove_minihead_string_param(minihead_text, name):
+    pattern = re.compile(
+        rf'^\s*<ParamString\."{re.escape(name)}">\s*\{{\s*"[^"]*"\s*\}}\s*\n?',
+        flags=re.MULTILINE,
+    )
+    updated_text, count = pattern.subn("", minihead_text)
+    return updated_text, bool(count)
+
+
+def _remove_minihead_array_param(minihead_text, name):
+    pattern = re.compile(
+        rf'^\s*<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}\s*\n?',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    updated_text, count = pattern.subn("", minihead_text)
+    return updated_text, bool(count)
+
+
+def _replace_or_append_minihead_string_param(minihead_text, name, value):
+    value = str(value).replace('"', "'")
+    pattern = re.compile(
+        rf'(<ParamString\."{re.escape(name)}">\s*\{{\s*")([^"]*)("\s*\}})'
+    )
+    matches = list(pattern.finditer(minihead_text))
+    if matches:
+        if all(match.group(2) == value for match in matches):
+            return minihead_text, False
+        return (
+            pattern.sub(
+                lambda match: f"{match.group(1)}{value}{match.group(3)}",
+                minihead_text,
+            ),
+            True,
+        )
+
+    return minihead_text.rstrip() + f'\n<ParamString."{name}">\t{{ "{value}" }}\n', True
+
+
+def _replace_or_append_minihead_long_param(minihead_text, name, value):
+    value = str(int(value))
+    pattern = re.compile(
+        rf'(<ParamLong\."{re.escape(name)}">\s*\{{\s*)(-?\d+)(\s*\}})'
+    )
+    matches = list(pattern.finditer(minihead_text))
+    if matches:
+        if all(match.group(2) == value for match in matches):
+            return minihead_text, False
+        return (
+            pattern.sub(
+                lambda match: f"{match.group(1)}{value}{match.group(3)}",
+                minihead_text,
+            ),
+            True,
+        )
+
+    return minihead_text.rstrip() + f'\n<ParamLong."{name}">\t{{ {value} }}\n', True
+
+
+def _replace_or_append_minihead_array_tokens(minihead_text, name, values):
+    values = [str(value).replace('"', "'") for value in values if str(value)]
+    if not values:
+        return minihead_text, False
+
+    array_text = (
+        f'<ParamArray."{name}">\n'
+        "{\n"
+        + "".join(f'    "{value}"\n' for value in values)
+        + "}\n"
+    )
+    pattern = re.compile(
+        rf'^\s*<ParamArray\."{re.escape(name)}">\s*\{{.*?^\s*\}}\s*\n?',
+        flags=re.DOTALL | re.MULTILINE,
+    )
+    matches = list(pattern.finditer(minihead_text))
+    if matches:
+        if all(match.group(0).strip() == array_text.strip() for match in matches):
+            return minihead_text, False
+        return pattern.sub(array_text, minihead_text), True
+
+    return minihead_text.rstrip() + "\n" + array_text, True
 
 
 def _copy_meta(meta_obj):

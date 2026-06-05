@@ -7,8 +7,8 @@ images arriving as MRD image messages from the scanner.
 ## Outputs
 
 - Bone and cartilage segmentation as source-geometry derived MRD images.
-- Cartilage mesh and thickness outputs in the KneePipeline working directory;
-  compact metrics are copied into returned image comments when available.
+- Optional cartilage mesh and thickness outputs in the KneePipeline working
+  directory when `computethickness` is enabled.
 - T2 map MRD images only when the pipeline produced `*_t2map.nii.gz`.
 - Optional NSM reconstruction and BScore JSON files when GPU execution and the
   gated ShapeMedKnee weights are available.
@@ -27,7 +27,8 @@ still contains the GL/TG private tags.
 - `segmodel`: KneePipeline model name (`acl_qdess_bone_july_2024` by default).
 - `runnsm`: run GPU-only Neural Shape Model fitting if weights are present.
 - `runbscore`: compute BScore after NSM fitting.
-- `computethickness`: request cartilage thickness computation.
+- `computethickness`: run slower mesh/thickness analysis after the segmentation
+  has been sent.
 
 ## Build And Validate
 

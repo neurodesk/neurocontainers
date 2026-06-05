@@ -1,5 +1,5 @@
 name: openmsk
-version: 0.1.0
+version: 0.1.1
 architectures:
   - x86_64
 
@@ -199,8 +199,8 @@ readme: |-
   image-to-image module for qDESS knee MRI. The OpenRecon path receives MRD
   images from the scanner, reconstructs an echo-1 NIfTI, runs KneePipeline, and
   returns bone/cartilage segmentation with geometry copied from the source
-  images. Cartilage thickness metrics are written by KneePipeline and included
-  in returned image comments when available.
+  images. Optional mesh/thickness analysis can run after segmentation when the
+  `computethickness` OpenRecon option is enabled.
 
   Direct DICOM usage keeps the qDESS GL/TG private tags and can produce the
   full output set including T2:
@@ -212,7 +212,7 @@ readme: |-
 
   NSM/BScore require a GPU and optional gated ShapeMedKnee weights in
   `/opt/NSM_MODELS`. Provide `HF_TOKEN` during the build to download those
-  weights; without it, the image still builds and segmentation/thickness run.
+  weights; without it, the image still builds and segmentation runs.
 
   ----------------------------------
 icon: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHJlY3Qgd2lkdGg9IjI0IiBoZWlnaHQ9IjI0IiByeD0iNCIgZmlsbD0iIzBmMTcyYSIvPjxwYXRoIGQ9Ik05LjIgMy41YzIuMiAwIDMuOCAxLjYgMy44IDMuNyAwIDEuMy0uNiAyLjQtMS41IDMuMWwtLjkuN2MtLjUuNC0uOC45LS44IDEuNSAwIC43LjUgMS4yIDEuMiAxLjJoMi4yYzEuNyAwIDMgMS40IDMgMy4xIDAgMi4xLTEuNyAzLjctMy44IDMuNyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZTJlOGYwIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxwYXRoIGQ9Ik0xNC44IDMuNWMtMi4yIDAtMy44IDEuNi0zLjggMy43IDAgMS4zLjYgMi40IDEuNSAzLjFsLjkuN2MuNS40LjguOS44IDEuNSAwIC43LS41IDEuMi0xLjIgMS4yaC0yLjJjLTEuNyAwLTMgMS40LTMgMy4xIDAgMi4xIDEuNyAzLjcgMy44IDMuNyIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMjJjNTVlIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjIuMiIgZmlsbD0iIzM4YmRmOCIgZmlsbC1vcGFjaXR5PSIuODUiLz48L3N2Zz4=

@@ -24,7 +24,7 @@ The main derived output is named `<source>_vesselboost`, where `<source>` is the
 | Brain masking | `vbbrainextraction` | boolean | `true` | Enable SynthStrip brain extraction during preprocessing. This is used only when N4 bias field correction or denoising is enabled. |
 | Reslice sagittal | `vbreslicesagittal` | boolean | `false` | Emit an additional sagittal reformat series of the segmentation. |
 | Reslice coronal | `vbreslicecoronal` | boolean | `false` | Emit an additional coronal reformat series of the segmentation. |
-| Segmentation MIPs | `vbsegmentationmips` | boolean | `false` | Use the `openreconi2iexample` 2D segmentation-header/originals-postprocessed delivery mode. |
+| Segmentation MIPs | `vbsegmentationmips` | boolean | `false` | Use the `openreconi2iexample` 2D segmentation-header delivery mode so scanner post-processing targets the segmentation stream. |
 
 ## Preprocessing Combinations
 
@@ -49,7 +49,7 @@ The OpenRecon label declares GPU support and requests at least 1 GPU, 10048 MB G
 
 Returned images are always emitted as new scanner-visible series. Restamped originals are sent first with `Keep_image_geometry = 1` and a patched source `IceMiniHead`, so scanner-side processing and scanner-created MIPs stay attached to the original MRA geometry. By default, the VesselBoost segmentation follows as a separate source-image-header 2D stream with `Keep_image_geometry = 1`, `DataRole = Image`, `SegmentSourceGeometry = 1`, `SegmentSourceImageHeader = 1`, `SegmentOutputGeometry = 2d`, the scanner post-processing child role, and the source `ImageType`, `DicomImageType`, and `ImageTypeValue4` identity. In normal mode, the segment stream strips `ImageTypeValue3` from MRD metadata and `IceMiniHead` so Siemens MIP functors that select `ImageTypeValue3 = M` stay attached to the original stream.
 
-When `vbsegmentationmips` is enabled, VesselBoost instead mirrors the `openreconi2iexample` `2d_segment_header_originals` path: the originals remain the scanner post-processing target, then the segmentation is sent as a 2D source-geometry segmentation-header stream with `DataRole = Segmentation`, `SegmentSourceGeometry = 1`, `SegmentOutputGeometry = 2d`, no `SegmentSourceImageHeader`, no scanner post-processing child role, no `ExamDataRole`, and no `ImageTypeValue3`. Reformatted sagittal and coronal outputs remain explicit packed 3D MRD volumes without source-image-header stamping.
+When `vbsegmentationmips` is enabled, VesselBoost instead mirrors the `openreconi2iexample` `2d_segment_header` path: the segmentation is sent as a 2D source-geometry segmentation-header stream with `DataRole = Segmentation`, `SegmentSourceGeometry = 1`, `SegmentOutputGeometry = 2d`, no `SegmentSourceImageHeader`, scanner post-processing child-role metadata matching the segmentation `image_series_index`, and no `ImageTypeValue3`. This lets scanner-created segmentation MIPs appear as their own post-processed segmentation series instead of being folded into original MIP side products. Reformatted sagittal and coronal outputs remain explicit packed 3D MRD volumes without source-image-header stamping.
 
 ## Citation
 

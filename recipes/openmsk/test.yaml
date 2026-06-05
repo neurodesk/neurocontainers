@@ -27,6 +27,32 @@ tests:
         -o /buildhostdirectory/output.h5 \
         /buildhostdirectory/input.h5 \
         -c openmsk
+      python - /buildhostdirectory/output.h5 <<'PY'
+      import h5py
+      import numpy as np
+      import xml.etree.ElementTree as ET
+
+      output_h5 = "/buildhostdirectory/output.h5"
+      with h5py.File(output_h5, "r") as dataset:
+          assert "image_101" in dataset["dataset"], "missing OpenMSK segmentation series"
+          segment = dataset["dataset/image_101"]
+          data = segment["data"][:]
+          assert np.count_nonzero(data) > 0, "OpenMSK segmentation is empty"
+          meta = {}
+          root = ET.fromstring(segment["attributes"][0].decode("utf-8"))
+          for item in root.findall("meta"):
+              name = item.findtext("name")
+              meta[name] = [value.text or "" for value in item.findall("value")]
+
+          def first(key):
+              values = meta.get(key, [])
+              return values[0] if values else None
+
+          assert first("DataRole") == "Segmentation"
+          assert first("SeriesDescription") == "openmsk_segmentation"
+          assert first("SegmentSourceGeometry") == "1"
+          assert first("ImageTypeValue3") is None
+      PY
 
       # Also run the full KneePipeline directly on the qDESS DICOM. Siemens qDESS
       # exports as Enhanced multi-frame DICOM, which DOSMA's QDess.from_dicom

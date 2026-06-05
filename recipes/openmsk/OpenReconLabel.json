@@ -95,8 +95,8 @@
       "id": "computethickness",
       "label": { "en": "Compute thickness" },
       "type": "boolean",
-      "information": { "en": "Compute cartilage thickness metrics during KneePipeline analysis" },
-      "default": true
+      "information": { "en": "Run slower mesh/thickness analysis after sending the segmentation" },
+      "default": false
     }
   ]
 }

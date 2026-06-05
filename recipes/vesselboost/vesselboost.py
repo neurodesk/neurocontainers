@@ -1543,8 +1543,8 @@ def _stamp_vesselboost_output_image(
     minihead_text = _decode_ice_minihead(source_meta)
     # Originals and 2D source-image-header segments inherit the source's native
     # ImageType identity (e.g. ORIGINAL\PRIMARY\M\TOF). The source-geometry
-    # segmentation-header path intentionally does not; it mirrors
-    # openreconi2iexample's 2d_segment_header_originals mode.
+    # segmentation-header path intentionally does not; it mirrors the
+    # openreconi2iexample 2d_segment_header family.
     inherit_source_image_type = (
         source_image_header_identity or original_passthrough_identity
     )
@@ -2095,10 +2095,34 @@ def _validate_vesselboost_output_contract(
                     f"{image_type_value4}, expected "
                     f"{VESSELBOOST_SOURCE_GEOMETRY_IMAGE_TYPE_VALUE4}"
                 )
-            for field in (
-                "ExamDataRole",
-                VESSELBOOST_SEGMENT_POSTPROCESSING_META_KEY,
+            child_role = _get_meta_int(
+                meta_obj,
                 VESSELBOOST_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY,
+            )
+            exam_data_role = _get_meta_text(meta_obj, "ExamDataRole")
+            if child_role is None:
+                if exam_data_role:
+                    errors.append(
+                        f"image {index}: source-geometry segment carries ExamDataRole "
+                        "without a scanner postprocessing child role"
+                    )
+            else:
+                if child_role != series_index:
+                    errors.append(
+                        f"image {index}: source-geometry segment "
+                        f"SegmentPostProcessingChildRole={child_role}, expected "
+                        f"{series_index}"
+                    )
+                expected_exam_data_role = _format_exam_data_role_sequential_number(
+                    series_index
+                )
+                if exam_data_role != expected_exam_data_role:
+                    errors.append(
+                        f"image {index}: source-geometry segment ExamDataRole "
+                        f"does not match image_series_index {series_index}"
+                    )
+            for field in (
+                VESSELBOOST_SEGMENT_POSTPROCESSING_META_KEY,
                 VESSELBOOST_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY,
                 "ImageTypeValue3",
             ):
@@ -2108,11 +2132,23 @@ def _validate_vesselboost_output_contract(
                     )
             if minihead_text:
                 dicom_map = _minihead_param_map_text(minihead_text, "DICOM")
-                if '<ParamString."ExamDataRole">' in dicom_map:
+                if child_role is None and '<ParamString."ExamDataRole">' in dicom_map:
                     errors.append(
                         f"image {index}: source-geometry segment IceMiniHead still "
                         "carries ExamDataRole"
                     )
+                elif child_role is not None:
+                    if '<ParamString."ExamDataRole">' not in dicom_map:
+                        errors.append(
+                            f"image {index}: source-geometry segment IceMiniHead is "
+                            "missing ExamDataRole inside the DICOM ParamMap"
+                        )
+                    expected_entry = f"<CategoryEntry>{series_index}</CategoryEntry>"
+                    if expected_entry not in dicom_map:
+                        errors.append(
+                            f"image {index}: source-geometry segment IceMiniHead DICOM "
+                            f"ExamDataRole is missing {expected_entry}"
+                        )
                 minihead_image_type = _extract_minihead_string_value(
                     minihead_text,
                     "ImageType",
@@ -2721,9 +2757,9 @@ def _build_vesselboost_segmentation_images(
     """Build one 2D MRD segmentation image per source image.
 
     ``segmentation_mips`` switches to the openreconi2iexample
-    ``2d_segment_header_originals`` contract: source-geometry segmentation
-    headers, no source-image-header marker, and no scanner post-processing
-    child metadata on the segment stream.
+    ``2d_segment_header`` contract: source-geometry segmentation headers, no
+    source-image-header marker, and scanner post-processing targeted at the
+    segment stream.
     """
     if volume_yxz.ndim != 3:
         raise ValueError(
@@ -2739,9 +2775,7 @@ def _build_vesselboost_segmentation_images(
         )
 
     use_source_geometry_identity = bool(segmentation_mips)
-    segment_scanner_postprocessing = (
-        bool(scanner_postprocessing) and not use_source_geometry_identity
-    )
+    segment_scanner_postprocessing = bool(scanner_postprocessing)
     processing_history = (
         ["PYTHON", "VESSELBOOST", "SEGMENT_SOURCE_GEOMETRY_2D"]
         if use_source_geometry_identity
@@ -3878,7 +3912,7 @@ def process_image(images, connection, config, metadata):
         output_identity=segmentation_identity,
         series_index=segmentation_series_index,
         max_val=maxVal,
-        scanner_postprocessing=not segmentation_mips,
+        scanner_postprocessing=True,
         segmentation_mips=segmentation_mips,
     )
     imagesOut.extend(segmentation_images)
@@ -3960,12 +3994,8 @@ def process_image(images, connection, config, metadata):
         reformat_images = []
 
     if segmentation_mips:
-        segment_header_geometry = "2d_segment_header_originals"
-        postprocessing_target = (
-            "originals"
-            if original_series_index is not None
-            else "none_segment_not_postprocessed"
-        )
+        segment_header_geometry = "2d_segment_header"
+        postprocessing_target = "segment_2d_source_geometry"
     else:
         segment_header_geometry = "2d_source_image_header"
         postprocessing_target = (

@@ -119,7 +119,7 @@
       "label": { "en": "Segmentation MIPs" },
       "type": "boolean",
       "default": false,
-      "information": { "en": "Use the openreconi2iexample 2D segmentation-header/originals-postprocessed delivery mode: originals stay the scanner post-processing target, then the segmentation is sent without source-image-header or child-role metadata." }
+      "information": { "en": "Use the openreconi2iexample 2D segmentation-header delivery mode: the segmentation is sent without source-image-header metadata and becomes the scanner post-processing target for separate segmentation MIPs." }
     }
   ]
 }
