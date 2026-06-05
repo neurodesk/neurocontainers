@@ -1,12 +1,12 @@
 name: spinalcordtoolbox
-version: "7.1.21"
+version: "7.3.0"
 copyright:
   - license: LGPL-3.0
     url: https://github.com/spinalcordtoolbox/spinalcordtoolbox/blob/master/LICENSE
 architectures:
   - x86_64
 variables:
-  upstream_version: "7.1"
+  upstream_version: "7.3"
 build:
   kind: neurodocker
   base-image: pytorch/pytorch:2.4.1-cuda11.8-cudnn9-runtime
@@ -55,7 +55,7 @@ build:
         - sct_deepseg tumor_t2 -install 
         - sct_deepseg rootlets -install
         - sct_deepseg sc_canal_t2 -install
-        - sct_deepseg totalspineseg -install
+        - sct_deepseg spine -install
     - run:
         - sct_check_dependencies
     - user: root

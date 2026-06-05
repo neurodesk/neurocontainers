@@ -44,7 +44,7 @@ SCT_DEEPSEG_TASKS = (
     "tumor_t2",
     "rootlets",
     "sc_canal_t2",
-    "totalspineseg",
+    "spine",
 )
 
 SCT_ANALYSIS_REGISTRY = {
@@ -114,26 +114,14 @@ SCT_ANALYSIS_OUTPUTS = {
             "series_suffix": "sct_deepseg_lesion_sci_t2_sc_seg",
         },
     ),
-    "sct_deepseg_totalspineseg": (
+    "sct_deepseg_spine": (
         {
-            "filename": "output_step1_canal.nii.gz",
-            "series_suffix": "sct_deepseg_totalspineseg_step1_canal",
+            "filename": "output_totalspineseg_discs.nii.gz",
+            "series_suffix": "sct_deepseg_spine_totalspineseg_discs",
         },
         {
-            "filename": "output_step1_cord.nii.gz",
-            "series_suffix": "sct_deepseg_totalspineseg_step1_cord",
-        },
-        {
-            "filename": "output_step1_levels.nii.gz",
-            "series_suffix": "sct_deepseg_totalspineseg_step1_levels",
-        },
-        {
-            "filename": "output_step1_output.nii.gz",
-            "series_suffix": "sct_deepseg_totalspineseg_step1_output",
-        },
-        {
-            "filename": "output_step2_output.nii.gz",
-            "series_suffix": "sct_deepseg_totalspineseg_step2_output",
+            "filename": "output_totalspineseg_all.nii.gz",
+            "series_suffix": "sct_deepseg_spine_totalspineseg_all",
         },
     ),
 }
@@ -143,7 +131,7 @@ SCT_ANALYSIS_BUNDLES = {
         "sct_deepseg_spinalcord",
         "sct_label_vertebrae",
         "sct_deepseg_sc_canal_t2",
-        "sct_deepseg_totalspineseg",
+        "sct_deepseg_spine",
     ),
     "sct_bundle_t2_ms": (
         "sct_deepseg_spinalcord",

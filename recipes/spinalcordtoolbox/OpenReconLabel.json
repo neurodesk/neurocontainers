@@ -136,8 +136,8 @@
           "name": { "en": "sct_deepseg_sc_canal_t2" }
         },
         {
-          "id": "sct_deepseg_totalspineseg",
-          "name": { "en": "sct_deepseg_totalspineseg" }
+          "id": "sct_deepseg_spine",
+          "name": { "en": "sct_deepseg_spine" }
         },
         {
           "id": "sct_bundle_t2_anatomy",

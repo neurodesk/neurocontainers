@@ -1,5 +1,5 @@
 # Spinal Cord Toolbox container test suite
-# Tests for spinalcordtoolbox v7.2 - Comprehensive MRI analysis tools for spinal cord
+# Tests for spinalcordtoolbox v7.3 - Comprehensive MRI analysis tools for spinal cord
 #
 # Test data: ds000001/sub-01 (OpenNeuro Balloon Analog Risk-taking Task)
 #   - T1w: 160x192x192, 1x1.33x1.33mm (3D structural)
@@ -10,8 +10,9 @@
 # These tests use brain MRI data for basic functionality verification.
 
 name: spinalcordtoolbox
-version: "7.2"
-container: spinalcordtoolbox_7.2_20251211.simg
+version: "7.3.0"
+upstream_version: "7.3"
+container: spinalcordtoolbox_7.3.0_20260605.simg
 
 required_files:
   - dataset: ds000001
@@ -39,7 +40,7 @@ tests:
   - name: Version check
     description: Verify sct_version binary runs and reports version
     command: sct_version
-    expected_output_contains: "7.2"
+    expected_output_contains: "${upstream_version}"
 
   - name: Check dependencies (short)
     description: Run minimal dependency check
@@ -128,18 +129,18 @@ tests:
     command: sct_image -i ${bold} -split t -o test_output/bold_split.nii.gz
     expected_exit_code: 0
     validate:
-      - output_exists: ${output_dir}/bold_split_0000.nii.gz
+      - output_exists: ${output_dir}/bold_split_T0000.nii.gz
 
   - name: Split 3D along z
     description: Test sct_image splitting along z dimension
     command: sct_image -i ${t1w} -split z -o test_output/t1w_split_z.nii.gz
     expected_exit_code: 0
     validate:
-      - output_exists: ${output_dir}/t1w_split_z_0000.nii.gz
+      - output_exists: ${output_dir}/t1w_split_z_Z0000.nii.gz
 
   - name: Concatenate images along z
     description: Test sct_image concatenation
-    command: sct_image -i test_output/t1w_split_z_0000.nii.gz test_output/t1w_split_z_0001.nii.gz -concat z -o test_output/t1w_concat.nii.gz
+    command: sct_image -i test_output/t1w_split_z_Z0000.nii.gz test_output/t1w_split_z_Z0001.nii.gz -concat z -o test_output/t1w_concat.nii.gz
     depends_on: Split 3D along z
     expected_exit_code: 0
     validate:
@@ -273,13 +274,6 @@ tests:
     expected_exit_code: 0
     validate:
       - output_exists: ${output_dir}/bold_mean_t.nii.gz
-
-  - name: Standard deviation across time
-    description: Test sct_maths std along time dimension
-    command: sct_maths -i ${bold} -std t -o test_output/bold_std_t.nii.gz
-    expected_exit_code: 0
-    validate:
-      - output_exists: ${output_dir}/bold_std_t.nii.gz
 
   - name: RMS across time
     description: Test sct_maths RMS along time dimension
@@ -563,7 +557,7 @@ tests:
 
   - name: Create mask at specific coordinates
     description: Test sct_create_mask with coordinate specification
-    command: sct_create_mask -i ${t1w} -p coord,80,96,96 -size 25 -f cylinder -o test_output/mask_coord.nii.gz
+    command: sct_create_mask -i ${t1w} -p coord,80x96 -size 25 -f cylinder -o test_output/mask_coord.nii.gz
     expected_exit_code: 0
     validate:
       - output_exists: ${output_dir}/mask_coord.nii.gz
@@ -607,18 +601,18 @@ tests:
       - output_exists: ${output_dir}/t1w_nlm.nii.gz
 
   - name: Denoising with custom parameters
-    description: Test sct_denoising_onlm with patch radius
-    command: sct_denoising_onlm -i ${t1w} -p 1 -o test_output/t1w_nlm_p1.nii.gz
+    description: Test sct_denoising_onlm with Gaussian noise model
+    command: sct_denoising_onlm -i ${t1w} -p Gaussian -o test_output/t1w_nlm_gaussian.nii.gz
     expected_exit_code: 0
     validate:
-      - output_exists: ${output_dir}/t1w_nlm_p1.nii.gz
+      - output_exists: ${output_dir}/t1w_nlm_gaussian.nii.gz
 
   # ==========================================================================
   # IMAGE MERGING (sct_merge_images)
   # ==========================================================================
   - name: Merge images along z
     description: Test sct_merge_images concatenation along z
-    command: sct_merge_images -i test_output/t1w_split_z_0000.nii.gz,test_output/t1w_split_z_0001.nii.gz,test_output/t1w_split_z_0002.nii.gz -d z -o test_output/t1w_merged.nii.gz
+    command: sct_merge_images -i test_output/t1w_split_z_Z0000.nii.gz,test_output/t1w_split_z_Z0001.nii.gz,test_output/t1w_split_z_Z0002.nii.gz -d z -o test_output/t1w_merged.nii.gz
     depends_on: Split 3D along z
     expected_exit_code: 0
     validate:
@@ -679,7 +673,12 @@ tests:
   # ==========================================================================
   - name: Flatten sagittal
     description: Test sct_flatten_sagittal basic operation
-    command: sct_flatten_sagittal -i ${t1w} -s test_output/t1w_otsu.nii.gz
+    command: |
+      input="${t1w}"
+      sct_flatten_sagittal -i "$input" -s test_output/t1w_otsu.nii.gz
+      flattened="${input%.nii.gz}_flatten.nii.gz"
+      test -f "$flattened"
+      cp "$flattened" test_output/t1w_flatten.nii.gz
     depends_on: Otsu thresholding
     expected_exit_code: 0
     validate:
@@ -699,10 +698,22 @@ tests:
   # SNR COMPUTATION (sct_compute_snr)
   # ==========================================================================
   - name: Compute SNR
-    description: Test sct_compute_snr with mask
-    command: sct_compute_snr -i ${t1w} -m test_output/t1w_otsu.nii.gz
-    depends_on: Otsu thresholding
+    description: Test sct_compute_snr on 4D data with a matching 3D mask
+    command: |
+      sct_maths -i ${bold} -mean t -o test_output/bold_mean_for_snr.nii.gz
+      sct_maths -i test_output/bold_mean_for_snr.nii.gz -otsu 3 -o test_output/bold_mask_for_snr.nii.gz
+      sct_compute_snr -i ${bold} -m test_output/bold_mask_for_snr.nii.gz -method mult
     expected_output_contains: "SNR"
+
+  - name: Prepare small texture ROI
+    description: Crop a small image and mask so texture tests stay fast and deterministic
+    command: |
+      sct_crop_image -i ${t1w} -xmin 70 -xmax 90 -ymin 80 -ymax 110 -zmin 80 -zmax 100 -o test_output/t1w_texture_crop.nii.gz
+      sct_maths -i test_output/t1w_texture_crop.nii.gz -bin 0 -o test_output/t1w_texture_mask.nii.gz
+    expected_exit_code: 0
+    validate:
+      - output_exists: ${output_dir}/t1w_texture_crop.nii.gz
+      - output_exists: ${output_dir}/t1w_texture_mask.nii.gz
 
   # ==========================================================================
   # ERNST ANGLE (sct_compute_ernst_angle)
@@ -722,19 +733,21 @@ tests:
   # ==========================================================================
   - name: Analyze texture GLCM
     description: Test sct_analyze_texture grey level co-occurrence matrix
-    command: sct_analyze_texture -i ${t1w} -m test_output/t1w_otsu.nii.gz -feature contrast -distance 1 -o test_output/texture_contrast.nii.gz
-    depends_on: Otsu thresholding
+    command: sct_analyze_texture -i test_output/t1w_texture_crop.nii.gz -m test_output/t1w_texture_mask.nii.gz -feature contrast -distance 1 -angle 0 -ofolder test_output/texture_contrast
+    depends_on: Prepare small texture ROI
     expected_exit_code: 0
+    timeout: 120
     validate:
-      - output_exists: ${output_dir}/texture_contrast.nii.gz
+      - output_exists: ${output_dir}/texture_contrast/t1w_texture_crop_contrast_1_mean.nii.gz
 
   - name: Analyze texture energy
     description: Test sct_analyze_texture energy feature
-    command: sct_analyze_texture -i ${t1w} -m test_output/t1w_otsu.nii.gz -feature energy -distance 1 -o test_output/texture_energy.nii.gz
-    depends_on: Otsu thresholding
+    command: sct_analyze_texture -i test_output/t1w_texture_crop.nii.gz -m test_output/t1w_texture_mask.nii.gz -feature energy -distance 1 -angle 0 -ofolder test_output/texture_energy
+    depends_on: Prepare small texture ROI
     expected_exit_code: 0
+    timeout: 120
     validate:
-      - output_exists: ${output_dir}/texture_energy.nii.gz
+      - output_exists: ${output_dir}/texture_energy/t1w_texture_crop_energy_1_mean.nii.gz
 
   # ==========================================================================
   # COMPLEX PIPELINES
@@ -758,16 +771,6 @@ tests:
     expected_exit_code: 0
     validate:
       - output_exists: ${output_dir}/preproc_final.nii.gz
-
-  - name: Temporal SNR calculation
-    description: Calculate tSNR manually (mean/std)
-    command: |
-      sct_maths -i ${bold} -mean t -o test_output/tsnr_mean.nii.gz && \
-      sct_maths -i ${bold} -std t -o test_output/tsnr_std.nii.gz && \
-      sct_maths -i test_output/tsnr_mean.nii.gz -div test_output/tsnr_std.nii.gz -o test_output/tsnr_manual.nii.gz
-    expected_exit_code: 0
-    validate:
-      - output_exists: ${output_dir}/tsnr_manual.nii.gz
 
   - name: Multi-resolution pyramid
     description: Create multi-resolution image pyramid

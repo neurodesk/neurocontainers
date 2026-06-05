@@ -39,7 +39,7 @@ Reference: Jan Valošek, Julien Cohen-Adad, Reproducible Spinal Cord Quantitativ
 | `sct_deepseg_tumor_t2` | `sct_deepseg tumor_t2` | T2-weighted spinal cord MRI with tumor. |
 | `sct_deepseg_rootlets` | `sct_deepseg rootlets` | T2w or MP2RAGE-derived images for spinal nerve rootlet segmentation. |
 | `sct_deepseg_sc_canal_t2` | `sct_deepseg sc_canal_t2` | T2-weighted image for spinal canal segmentation. |
-| `sct_deepseg_totalspineseg` | `sct_deepseg totalspineseg` | Spine MRI suitable for intervertebral disc labeling and vertebrae segmentation. |
+| `sct_deepseg_spine` | `sct_deepseg spine` | Spine MRI suitable for intervertebral disc labeling and vertebrae segmentation. |
 | `sct_label_vertebrae` | `sct_deepseg spinalcord`, then `sct_label_vertebrae -c t2` | T2-weighted anatomical image. The wrapper first creates a spinal cord segmentation, then labels vertebral levels using SCT's T2 contrast mode. |
 
 ## Combined Analyses
@@ -48,7 +48,7 @@ Combined modes run several SCT analyses on the same input NIfTI and return one d
 
 | Analysis id | Runs | Required input data |
 | --- | --- | --- |
-| `sct_bundle_t2_anatomy` | `sct_deepseg_spinalcord`, `sct_label_vertebrae`, `sct_deepseg_sc_canal_t2`, `sct_deepseg_totalspineseg` | T2-weighted anatomical spine image. |
+| `sct_bundle_t2_anatomy` | `sct_deepseg_spinalcord`, `sct_label_vertebrae`, `sct_deepseg_sc_canal_t2`, `sct_deepseg_spine` | T2-weighted anatomical spine image. |
 | `sct_bundle_t2_ms` | `sct_deepseg_spinalcord`, `sct_deepseg_lesion_ms`, `sct_deepseg_lesion_ms_axial_t2` | T2-weighted spinal cord image with suspected MS lesions. The axial T2 lesion model is most appropriate for axial T2 chunks. |
 | `sct_bundle_t2s_gm` | `sct_deepseg_spinalcord`, `sct_deepseg_graymatter` | T2*-like spinal cord image suitable for gray matter segmentation. |
 | `sct_bundle_mouse_t1` | `sct_deepseg_sc_mouse_t1`, `sct_deepseg_gm_mouse_t1` | Mouse T1-weighted spinal cord image. |
