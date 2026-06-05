@@ -95,6 +95,23 @@ def test_build_simg_uses_selected_runner_pool() -> None:
     )
 
 
+def test_build_simg_sets_apptainer_paths_for_non_github_runners() -> None:
+    workflow = Path(".github/workflows/build-app.yml").read_text()
+    build_simg_job = workflow.split("  build-simg:", 1)[1].split("  upload-nectar:", 1)[0]
+    common_setup = build_simg_job.split("      - name: Set runner base path", 1)[1].split(
+        "      - name: Configure GitHub-hosted runner",
+        1,
+    )[0]
+
+    assert "elif [ -d /home/runner/_work ]; then" in common_setup
+    assert 'BASE_PATH=/home/runner/_work' in common_setup
+    assert '"$BASE_PATH/apptainer/cache" "$BASE_PATH/apptainer/tmp"' in common_setup
+    assert 'APPTAINER_CACHEDIR="$BASE_PATH/apptainer/cache"' in common_setup
+    assert 'APPTAINER_TMPDIR="$BASE_PATH/apptainer/tmp"' in common_setup
+    assert 'SINGULARITY_CACHEDIR="$BASE_PATH/apptainer/cache"' in common_setup
+    assert 'SINGULARITY_TMPDIR="$BASE_PATH/apptainer/tmp"' in common_setup
+
+
 def test_setup_apptainer_updates_apt_before_local_deb_install() -> None:
     action = Path(".github/actions/setup-apptainer/action.yml").read_text()
     amd64_branch = action.split('else\n          if [[ ! -s "$deb_path" ]]', 1)[1].split(

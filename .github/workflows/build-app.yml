@@ -782,11 +782,22 @@ jobs:
           BASE_PATH=/mnt
           if [ -d /storage ]; then
             BASE_PATH=/storage
+          elif [ -d /home/runner/_work ]; then
+            BASE_PATH=/home/runner/_work
           fi
-          sudo mkdir -p "$BASE_PATH/tmp"
-          sudo chown "$USER" "$BASE_PATH/tmp"
+          sudo mkdir -p "$BASE_PATH/tmp" "$BASE_PATH/apptainer/cache" "$BASE_PATH/apptainer/tmp"
+          sudo chown "$USER" "$BASE_PATH/tmp" "$BASE_PATH/apptainer/cache" "$BASE_PATH/apptainer/tmp"
           echo "BASE_PATH=$BASE_PATH" >> "$GITHUB_ENV"
           echo "base_path=$BASE_PATH" >> "$GITHUB_OUTPUT"
+          APPTAINER_CACHEDIR="$BASE_PATH/apptainer/cache"
+          echo "APPTAINER_CACHEDIR=$APPTAINER_CACHEDIR" >> "$GITHUB_ENV"
+          APPTAINER_TMPDIR="$BASE_PATH/apptainer/tmp"
+          echo "APPTAINER_TMPDIR=$APPTAINER_TMPDIR" >> "$GITHUB_ENV"
+
+          SINGULARITY_CACHEDIR="$BASE_PATH/apptainer/cache"
+          echo "SINGULARITY_CACHEDIR=$SINGULARITY_CACHEDIR" >> "$GITHUB_ENV"
+          SINGULARITY_TMPDIR="$BASE_PATH/apptainer/tmp"
+          echo "SINGULARITY_TMPDIR=$SINGULARITY_TMPDIR" >> "$GITHUB_ENV"
 
       - name: Configure GitHub-hosted runner
         if: ${{ runner.environment == 'github-hosted' }}
