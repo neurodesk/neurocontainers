@@ -2,7 +2,7 @@ tests:
   - name: Test spinalcordtoolbox
     manual: true
     script: |
-      bash /opt/spinalcordtoolbox-7.1/batch_processing.sh
+      bash "$SCT_DIR/batch_processing.sh"
   - name: Test spinalcordtoolbox for OpenRecon
     manual: true
     script: |
