@@ -266,6 +266,11 @@ def _load_runtime_helpers_for_test(function_names, assignments=()):
             self.contrast = 0
             self.image_type = 1
             self.matrix_size = [1, 1, 1]
+            self.field_of_view = [1.0, 1.0, 1.0]
+            self.position = [0.0, 0.0, 0.0]
+            self.read_dir = [1.0, 0.0, 0.0]
+            self.phase_dir = [0.0, 1.0, 0.0]
+            self.slice_dir = [0.0, 0.0, 1.0]
 
     class FakeImage:
         def __init__(self, data):
@@ -562,17 +567,22 @@ def test_sct_segment_outputs_source_geometry_2d_slices():
             "_as_image_list",
             "_build_derived_series_instance_uid",
             "_build_derived_sop_instance_uid",
+            "_build_slice_geometry_records",
             "_build_sct_output_identity",
             "_collect_non_empty_texts",
             "_copy_meta",
             "_decode_ice_minihead",
             "_encode_ice_minihead",
+            "_estimate_slice_spacing",
             "_extract_minihead_array_tokens",
             "_extract_minihead_string_value",
             "_first_non_empty_text",
             "_format_exam_data_role_sequential_number",
             "_get_meta_values",
             "_get_meta_text",
+            "_header_vector",
+            "_infer_slice_axis",
+            "_normalize_vector",
             "_patch_ice_minihead",
             "_patch_source_image_header_ice_minihead",
             "_remove_minihead_array_param",
@@ -589,13 +599,19 @@ def test_sct_segment_outputs_source_geometry_2d_slices():
             "_source_geometry_header_image_index",
             "_source_geometry_header_slice",
             "_source_postprocessing_image_type_identity",
+            "_set_header_sequence_field",
             "_set_meta_scalar",
             "_set_output_position_meta",
+            "_strip_scanner_write_unsafe_meta",
             "_strip_source_parent_refs",
         ],
         assignments=[
             "SCANNER_PARTITION_INDEX",
+            "SCANNER_WRITE_UNSAFE_META_KEYS",
+            "SCT_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY",
             "SCT_SEGMENT_POSTPROCESSING_META_KEY",
+            "SCT_SEGMENT_SOURCE_GEOMETRY_META_KEY",
+            "SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY",
             "SOURCE_PARENT_REFERENCE_META_KEYS",
             "SOURCE_PARENT_REFERENCE_META_PREFIXES",
         ],
@@ -615,6 +631,12 @@ def test_sct_segment_outputs_source_geometry_2d_slices():
         )
         for slice_index in range(3)
     ]
+    for slice_index, image in enumerate(source_images):
+        head = image.getHead()
+        head.matrix_size = [2, 2, 3]
+        head.field_of_view = [2.0, 2.0, 9.9]
+        head.slice_dir = [1.0, 0.0, 0.0]
+        head.position = [slice_index * 3.3, 0.0, 0.0]
     data = np.zeros((2, 2, 3), dtype=np.int16)
     data[:, :, 1] = 1
 
@@ -636,16 +658,20 @@ def test_sct_segment_outputs_source_geometry_2d_slices():
         assert head.image_series_index == 2
         assert head.image_index == index + 1
         assert head.slice == index
-        assert meta["DataRole"] == "Image"
+        assert list(head.matrix_size) == [2, 2, 1]
+        np.testing.assert_allclose(list(head.field_of_view), [2.0, 2.0, 3.3])
+        assert meta["DataRole"] == "Segmentation"
         assert meta["Keep_image_geometry"] == "1"
         assert meta["SegmentSourceGeometry"] == "1"
-        assert meta["SegmentSourceImageHeader"] == "1"
+        assert "SegmentSourceImageHeader" not in meta
         assert "SegmentPostProcessing" not in meta
         assert meta["SegmentPostProcessingChildRole"] == "2"
         assert meta["ExamDataRole"] == helpers["_format_exam_data_role_sequential_number"](2)
         assert meta["LUTFileName"] == "MicroDeltaHotMetal.pal"
-        assert meta["ImageTypeValue4"] == ["NORM"]
-        assert meta["ImageTypeValue3"] == "M"
+        assert meta["ImageType"] == "DERIVED\\PRIMARY\\SEGMENTATION\\SCT_DEEPSEG_SPINALCORD"
+        assert meta["DicomImageType"] == "DERIVED\\PRIMARY\\SEGMENTATION\\SCT_DEEPSEG_SPINALCORD"
+        assert meta["ImageTypeValue4"] == ["SCT_DEEPSEG_SPINALCORD"]
+        assert "ImageTypeValue3" not in meta
         assert meta["ImageComment"] == "source_sct_deepseg_spinalcord"
         assert meta["ImageComments"] == "source_sct_deepseg_spinalcord"
         assert meta["SOPInstanceUID"].startswith("2.25.")
@@ -654,20 +680,26 @@ def test_sct_segment_outputs_source_geometry_2d_slices():
         minihead = base64.b64decode(meta["IceMiniHead"]).decode("utf-8")
         assert "SequentialNumber" in minihead
         assert "sct_deepseg_spinalcord" in minihead
-        assert helpers["_extract_minihead_array_tokens"](minihead, "ImageTypeValue4") == ["NORM"]
+        assert helpers["_extract_minihead_array_tokens"](minihead, "ImageTypeValue4") == [
+            "SCT_DEEPSEG_SPINALCORD"
+        ]
+        assert helpers["_extract_minihead_string_value"](minihead, "ImageTypeValue3") == ""
+        assert helpers["_extract_minihead_array_tokens"](minihead, "ImageTypeValue3") == []
 
 
-def test_sct_segment_source_header_outputs_allow_interleaved_source_slice_order():
+def test_sct_segment_source_geometry_outputs_allow_interleaved_source_slice_order():
     helpers = _load_runtime_helpers_for_test(
         [
             "_as_image_list",
             "_build_derived_series_instance_uid",
             "_build_derived_sop_instance_uid",
+            "_build_slice_geometry_records",
             "_build_sct_output_identity",
             "_collect_non_empty_texts",
             "_copy_meta",
             "_decode_ice_minihead",
             "_encode_ice_minihead",
+            "_estimate_slice_spacing",
             "_extract_minihead_array_tokens",
             "_extract_minihead_string_value",
             "_first_non_empty_text",
@@ -675,11 +707,14 @@ def test_sct_segment_source_header_outputs_allow_interleaved_source_slice_order(
             "_get_image_series_index",
             "_get_meta_values",
             "_get_meta_text",
+            "_header_vector",
             "_identity_values",
             "_image_minihead",
+            "_infer_slice_axis",
             "_meta_from_image",
             "_meta_int",
             "_minihead_long_value",
+            "_normalize_vector",
             "_patch_ice_minihead",
             "_patch_source_image_header_ice_minihead",
             "_remove_minihead_array_param",
@@ -698,8 +733,10 @@ def test_sct_segment_source_header_outputs_allow_interleaved_source_slice_order(
             "_source_geometry_header_image_index",
             "_source_geometry_header_slice",
             "_source_postprocessing_image_type_identity",
+            "_set_header_sequence_field",
             "_set_meta_scalar",
             "_set_output_position_meta",
+            "_strip_scanner_write_unsafe_meta",
             "_strip_source_parent_refs",
             "_validate_identity_fields",
             "_validate_output_images",
@@ -707,7 +744,10 @@ def test_sct_segment_source_header_outputs_allow_interleaved_source_slice_order(
         ],
         assignments=[
             "SCANNER_PARTITION_INDEX",
+            "SCANNER_WRITE_UNSAFE_META_KEYS",
+            "SCT_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY",
             "SCT_SEGMENT_POSTPROCESSING_META_KEY",
+            "SCT_SEGMENT_SOURCE_GEOMETRY_META_KEY",
             "SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY",
             "SOURCE_PARENT_REFERENCE_META_KEYS",
             "SOURCE_PARENT_REFERENCE_META_PREFIXES",
@@ -1540,6 +1580,8 @@ def test_patch_source_image_header_minihead_marks_only_last_frame_as_series_end(
             "_first_non_empty_text",
             "_format_exam_data_role_sequential_number",
             "_patch_source_image_header_ice_minihead",
+            "_remove_minihead_array_param",
+            "_remove_minihead_string_param",
             "_replace_minihead_array_token",
             "_replace_or_append_minihead_array_token",
             "_replace_or_append_minihead_array_tokens",

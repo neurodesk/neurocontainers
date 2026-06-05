@@ -171,9 +171,11 @@ OPENRECON_DEFAULTS = {
 OPENRECON_SEND_IMAGE_CHUNK_SIZE = 96
 RESERVED_SCANNER_SERIES_INDICES = {99}
 # Returned originals stay 2D. SCT segmentations are returned as source-geometry
-# source-image-header 2D slices after originals, without detached/explicit-volume output.
+# 2D slices after originals, without detached/explicit-volume output.
 SCANNER_PARTITION_INDEX = 0
 SCT_SEGMENT_POSTPROCESSING_META_KEY = "SegmentPostProcessing"
+SCT_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY = "SegmentPostProcessingChildRole"
+SCT_SEGMENT_SOURCE_GEOMETRY_META_KEY = "SegmentSourceGeometry"
 SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY = "SegmentSourceImageHeader"
 
 SOURCE_PARENT_REFERENCE_META_KEYS = {
@@ -2006,6 +2008,10 @@ def _patch_source_image_header_ice_minihead(
 
     changed = False
     current_text = minihead_text
+    for remover in (_remove_minihead_string_param, _remove_minihead_array_param):
+        current_text, did_change = remover(current_text, "ImageTypeValue3")
+        changed = changed or did_change
+
     for param_name, param_value in (
         ("SeriesDescription", series_description),
         ("SequenceDescription", series_description),
@@ -2704,6 +2710,12 @@ def _sct_output_to_source_geometry_images(
         series_suffix=series_suffix,
     )
     outputs = []
+    source_headers = [source_image.getHead() for source_image in source_images]
+    source_slice_axis = _infer_slice_axis(source_headers)
+    source_slice_spacing = _estimate_slice_spacing(
+        source_headers,
+        slice_axis=source_slice_axis,
+    )
     for iImg, source_image in enumerate(source_images):
         slice_yx = np.ascontiguousarray(data[:, :, iImg])
         output_image = ismrmrd.Image.from_array(
@@ -2712,6 +2724,36 @@ def _sct_output_to_source_geometry_images(
         )
         oldHeader = copy.deepcopy(source_image.getHead())
         oldHeader.data_type = output_image.data_type
+        output_slice_spacing = source_slice_spacing
+        if output_slice_spacing is None:
+            try:
+                output_slice_spacing = float(oldHeader.field_of_view[2])
+            except Exception:
+                output_slice_spacing = 1.0
+        _set_header_sequence_field(
+            oldHeader,
+            "matrix_size",
+            [
+                int(oldHeader.matrix_size[0]),
+                int(oldHeader.matrix_size[1]),
+                1,
+            ],
+        )
+        _set_header_sequence_field(
+            oldHeader,
+            "field_of_view",
+            [
+                float(oldHeader.field_of_view[0]),
+                float(oldHeader.field_of_view[1]),
+                float(output_slice_spacing),
+            ],
+        )
+        if np.linalg.norm(_header_vector(oldHeader, "slice_dir")) < 1e-6:
+            _set_header_sequence_field(
+                oldHeader,
+                "slice_dir",
+                [float(value) for value in source_slice_axis],
+            )
         if (output_image.data_type == ismrmrd.DATATYPE_CXFLOAT) or (output_image.data_type == ismrmrd.DATATYPE_CXDOUBLE):
             oldHeader.image_type = ismrmrd.IMTYPE_COMPLEX
         else:
@@ -2726,7 +2768,6 @@ def _sct_output_to_source_geometry_images(
         output_header_image_index = int(oldHeader.image_index)
 
         source_meta = ismrmrd.Meta.deserialize(source_image.attribute_string)
-        source_minihead = _decode_ice_minihead(source_meta)
         tmpMeta = _copy_meta(source_meta)
         _strip_source_parent_refs(tmpMeta)
         sop_instance_uid = _build_derived_sop_instance_uid(
@@ -2736,26 +2777,15 @@ def _sct_output_to_source_geometry_images(
             iImg,
             output_identity["series_instance_uid"],
         )
-        (
-            source_image_type,
-            source_dicom_image_type,
-            source_image_type_value4,
-        ) = _source_postprocessing_image_type_identity(
-            source_meta,
-            source_minihead,
-            output_identity["display_token"],
-        )
-        source_image_type_value3 = _first_non_empty_text(
-            _get_meta_text(source_meta, "ImageTypeValue3"),
-            _extract_minihead_string_value(source_minihead, "ImageTypeValue3"),
-            "M",
-        )
+        output_type_token = output_identity["type_token"]
+        output_image_type = f"DERIVED\\PRIMARY\\SEGMENTATION\\{output_type_token}"
+        output_image_type_value4 = [output_type_token]
         exam_data_role = _format_exam_data_role_sequential_number(output_series_index)
-        tmpMeta["DataRole"] = "Image"
+        tmpMeta["DataRole"] = "Segmentation"
         tmpMeta["ImageProcessingHistory"] = [
             "PYTHON",
             "SPINALCORDTOOLBOX",
-            "SOURCE_IMAGE_HEADER_2D",
+            "SEGMENT_SOURCE_GEOMETRY",
             output_identity["type_token"],
         ]
         tmpMeta["WindowCenter"] = str((maxVal + 1) / 2)
@@ -2766,21 +2796,22 @@ def _sct_output_to_source_geometry_images(
         tmpMeta["SeriesNumberRangeNameUID"] = output_identity["grouping"]
         tmpMeta["SeriesInstanceUID"] = output_identity["series_instance_uid"]
         tmpMeta["SOPInstanceUID"] = sop_instance_uid
-        tmpMeta["ImageType"] = source_image_type
-        tmpMeta["ImageTypeValue3"] = source_image_type_value3
-        tmpMeta["ImageTypeValue4"] = source_image_type_value4
-        tmpMeta["DicomImageType"] = source_dicom_image_type
+        tmpMeta["ImageType"] = output_image_type
+        tmpMeta["ImageTypeValue4"] = output_image_type_value4
+        tmpMeta["DicomImageType"] = output_image_type
         tmpMeta["ComplexImageComponent"] = "MAGNITUDE"
         tmpMeta["ImageComments"] = output_identity["series_description"]
         tmpMeta["ImageComment"] = output_identity["series_description"]
         tmpMeta["SequenceDescriptionAdditional"] = "or"
         tmpMeta["Keep_image_geometry"] = "1"
-        tmpMeta["SegmentSourceGeometry"] = "1"
-        tmpMeta["SegmentSourceImageHeader"] = "1"
-        tmpMeta["SegmentPostProcessingChildRole"] = str(int(output_series_index))
+        tmpMeta[SCT_SEGMENT_SOURCE_GEOMETRY_META_KEY] = "1"
+        tmpMeta[SCT_SEGMENT_POSTPROCESSING_CHILD_ROLE_META_KEY] = str(int(output_series_index))
         tmpMeta["ExamDataRole"] = exam_data_role
+        _strip_scanner_write_unsafe_meta(tmpMeta)
         if SCT_SEGMENT_POSTPROCESSING_META_KEY in tmpMeta:
             del tmpMeta[SCT_SEGMENT_POSTPROCESSING_META_KEY]
+        if SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY in tmpMeta:
+            del tmpMeta[SCT_SEGMENT_SOURCE_IMAGE_HEADER_META_KEY]
         _set_output_position_meta(
             tmpMeta,
             output_header_slice,
@@ -2798,8 +2829,8 @@ def _sct_output_to_source_geometry_images(
                 output_identity["grouping"],
                 output_identity["series_instance_uid"],
                 sop_instance_uid,
-                source_image_type,
-                source_image_type_value4,
+                output_image_type,
+                output_image_type_value4,
                 exam_data_role,
                 output_header_slice,
                 output_header_image_index,
@@ -2812,7 +2843,7 @@ def _sct_output_to_source_geometry_images(
         outputs.append(output_image)
 
     logging.info(
-        "Converted SCT output into %d source-image-header segmentation image(s) "
+        "Converted SCT output into %d source-geometry segmentation image(s) "
         "for scanner send path: series_index=%d segmentationcolormap=%s",
         len(outputs),
         output_series_index,
