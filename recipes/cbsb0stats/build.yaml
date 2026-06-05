@@ -38,9 +38,8 @@ build:
               PATH: ${PATH}:/opt/code/FSL-BET2/bin
 
         #Copy Over cbsb0stats.py program
-        - copy:
-            - cbsb0stats.py
-            - /opt/code/python-ismrmrd-server/cbsb0stats.py
+        - run:
+              - cp {{ get_file("cbsb0stats.py") }} /opt/code/python-ismrmrd-server/cbsb0stats.py
 
 deploy:
     path:
