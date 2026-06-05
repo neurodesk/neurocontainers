@@ -45,18 +45,12 @@ build:
     - run:
         - pip3 install --no-cache-dir sigpy==0.1.27 twixtools
     - workdir: /opt/sodiumnufft
-    - copy:
-        - sodiumnufft.py
-        - /opt/code/python-ismrmrd-server/sodiumnufft.py
-    - copy:
-        - twix2mrd.py
-        - /opt/code/python-ismrmrd-server/twix2mrd.py
-    - copy:
-        - siemens_twix2mrd.py
-        - /opt/code/python-ismrmrd-server/siemens_twix2mrd.py
-    - copy:
-        - mrd2nifti.py
-        - /opt/code/python-ismrmrd-server/mrd2nifti.py
+    - run:
+        - cp {{ get_file("sodiumnufft.py") }} /opt/code/python-ismrmrd-server/sodiumnufft.py
+        - cp {{ get_file("twix2mrd.py") }} /opt/code/python-ismrmrd-server/twix2mrd.py
+        - cp {{ get_file("siemens_twix2mrd.py") }} /opt/code/python-ismrmrd-server/siemens_twix2mrd.py
+        - cp {{ get_file("mrd2nifti.py") }} /opt/code/python-ismrmrd-server/mrd2nifti.py
+        - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
     - run:
         - cp {{ get_file("sodium_trajectory") }} /opt/sodiumnufft/23NA_n50_trajectory.h5
 

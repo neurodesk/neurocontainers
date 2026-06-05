@@ -1,0 +1,51 @@
+# sodiumnufft container test suite
+# Focused verification for OpenRecon runtime assets and sodium NUFFT imports.
+
+name: sodiumnufft
+version: 0.1.0
+container: sodiumnufft_0.1.0.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: OpenRecon server help
+    description: Verify the python-ismrmrd server entrypoint starts correctly
+    script: |
+      python /opt/code/python-ismrmrd-server/main.py -h 2>&1 | sed -n '1,20p' | grep 'Example server for MRD streaming format'
+
+  - name: Sodium trajectory and label assets
+    description: Verify the packaged trajectory and OpenRecon label are present and readable
+    script: |
+      python - <<'PY'
+      import json
+      from pathlib import Path
+      import h5py
+
+      trajectory = Path("/opt/sodiumnufft/23NA_n50_trajectory.h5")
+      label = Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json")
+      with h5py.File(trajectory, "r") as handle:
+          assert "k" in handle, list(handle.keys())
+          print("trajectory", handle["k"].shape)
+      data = json.loads(label.read_text())
+      assert data
+      print(label)
+      PY
+
+  - name: Sodium NUFFT module imports
+    description: Verify the reconstruction module imports with its runtime dependencies
+    script: |
+      PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import sodiumnufft, ismrmrd, h5py, scipy, sigpy, twixtools; print(sodiumnufft.__file__)" | grep -x '/opt/code/python-ismrmrd-server/sodiumnufft.py'
+
+  - name: Helper scripts render help
+    description: Verify conversion helper scripts start and expose command line help
+    script: |
+      python /opt/code/python-ismrmrd-server/twix2mrd.py -h 2>&1 | grep 'usage:'
+      python /opt/code/python-ismrmrd-server/siemens_twix2mrd.py -h 2>&1 | grep 'usage:'
+      python /opt/code/python-ismrmrd-server/mrd2nifti.py -h 2>&1 | grep 'usage:'
