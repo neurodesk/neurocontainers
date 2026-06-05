@@ -1,0 +1,221 @@
+# Cartool container test suite
+# Cartool is a Windows EEG analysis application distributed as a standalone
+# executable. The container runs it through Wine, so these tests focus on the
+# installed wrapper, Wine runtime, command-line entry points, and per-user Wine
+# prefix behavior that is required for Apptainer/Singularity runtime users.
+
+name: cartool
+version: 5.06.04
+container: cartool_${cartool_version}_20260601.simg
+
+cartool_version: 5.06.04
+cartool_dir: /opt/cartool-${cartool_version}
+cartool_exe: ${cartool_dir}/Cartool64.exe
+output_dir: test_output
+
+default_timeout: 120
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    rm -rf test_output
+    mkdir -p test_output/prefixes test_output/tmp
+
+tests:
+  - name: Cartool wrapper is on PATH
+    description: Verify the NeuroDesk entrypoint is installed and executable
+    command: |
+      set -euo pipefail
+      command -v cartool
+      test -x "$(command -v cartool)"
+    expected_output_contains: "cartool"
+
+  - name: Cartool executable is installed
+    description: Verify the extracted Windows executable is present
+    command: |
+      set -euo pipefail
+      test -f "${cartool_exe}"
+      test -r "${cartool_exe}"
+      ls -l "${cartool_exe}"
+    expected_output_contains: "Cartool64.exe"
+
+  - name: Cartool install tree has runtime files
+    description: Verify the installer extraction included the application payload
+    command: |
+      set -euo pipefail
+      test -d "${cartool_dir}"
+      find "${cartool_dir}" -maxdepth 2 -type f | sed "s#${cartool_dir}/##" | sort | head -40
+    expected_output_contains:
+      - "Cartool64.exe"
+      - "bin/cartool"
+
+  - name: Wine runtime is available
+    description: Verify both the Wine launcher and prefix initializer are installed
+    command: |
+      set -euo pipefail
+      command -v wine
+      command -v wineboot
+      wine --version
+    expected_output_contains: "wine"
+
+  - name: Xvfb runtime is available
+    description: Verify headless GUI startup support is installed
+    command: |
+      set -euo pipefail
+      command -v xvfb-run
+      command -v Xvfb
+      echo "xvfb-runtime-ok"
+    expected_output_contains: "xvfb-runtime-ok"
+
+  - name: README documents Cartool
+    description: Verify the generated README is present in the container
+    command: cat /README.md
+    expected_output_contains:
+      - "cartool/${cartool_version}"
+      - "Cartool EEG Analysis software"
+
+  - name: No global shared Wine prefix is forced
+    description: Verify the container environment does not force runtime users into /opt/wine
+    command: |
+      set -euo pipefail
+      if [ "${WINEPREFIX:-}" = "/opt/wine" ]; then
+        echo "WINEPREFIX is forced to /opt/wine"
+        exit 1
+      fi
+      env | grep '^WINEPREFIX=' || true
+      echo "wineprefix-env-ok"
+    expected_output_contains: "wineprefix-env-ok"
+
+  - name: Shared root-owned Wine prefix is absent
+    description: Verify the image does not ship a live /opt/wine prefix for runtime use
+    command: |
+      set -euo pipefail
+      if [ -e /opt/wine ]; then
+        ls -ld /opt/wine
+        echo "/opt/wine should not be used as the live Wine prefix"
+        exit 1
+      fi
+      echo "no-shared-opt-wine-prefix"
+    expected_output_contains: "no-shared-opt-wine-prefix"
+
+  - name: Wrapper uses Cartool-specific runtime prefix
+    description: Verify the wrapper supports CARTOOL_WINEPREFIX and does not hardcode /opt/wine
+    command: |
+      set -euo pipefail
+      wrapper="$(command -v cartool)"
+      grep -F 'CARTOOL_WINEPREFIX' "$wrapper"
+      grep -F 'cartool-wine-$(id -u)' "$wrapper"
+      if grep -F '/opt/wine' "$wrapper"; then
+        echo "wrapper still hardcodes /opt/wine"
+        exit 1
+      fi
+      echo "wrapper-prefix-ok"
+    expected_output_contains: "wrapper-prefix-ok"
+
+  - name: Cartool version command under Xvfb
+    description: Verify Cartool starts through Wine and reports its version
+    command: |
+      set -euo pipefail
+      prefix="${PWD}/${output_dir}/prefixes/version"
+      rm -rf "$prefix"
+      mkdir -p "$prefix"
+      CARTOOL_WINEPREFIX="$prefix" timeout 90s xvfb-run -a cartool --version 2>&1 | tee "${output_dir}/cartool-version.log"
+      grep -F "${cartool_version}" "${output_dir}/cartool-version.log"
+    expected_output_contains: "${cartool_version}"
+    timeout: 120
+
+  - name: Cartool help command under Xvfb
+    description: Verify Cartool command-line help is accessible through the wrapper
+    command: |
+      set -euo pipefail
+      prefix="${PWD}/${output_dir}/prefixes/help"
+      rm -rf "$prefix"
+      mkdir -p "$prefix"
+      CARTOOL_WINEPREFIX="$prefix" timeout 90s xvfb-run -a cartool --help 2>&1 | tee "${output_dir}/cartool-help.log"
+      grep -Eiq 'help|version|input-dir|output-dir|reprocesstracks' "${output_dir}/cartool-help.log"
+      echo "cartool-help-ok"
+    expected_output_contains: "cartool-help-ok"
+    timeout: 120
+
+  - name: Cartool subcommand help under Xvfb
+    description: Verify at least one documented Cartool CLI subcommand is available
+    command: |
+      set -euo pipefail
+      prefix="${PWD}/${output_dir}/prefixes/subcommand-help"
+      rm -rf "$prefix"
+      mkdir -p "$prefix"
+      CARTOOL_WINEPREFIX="$prefix" timeout 90s xvfb-run -a cartool reprocesstracks --help 2>&1 | tee "${output_dir}/cartool-reprocesstracks-help.log"
+      grep -Eiq 'reprocesstracks|input-dir|xyzfile|overwrite|help' "${output_dir}/cartool-reprocesstracks-help.log"
+      echo "cartool-subcommand-help-ok"
+    expected_output_contains: "cartool-subcommand-help-ok"
+    timeout: 120
+
+  - name: Default Wine prefix is per-user and writable
+    description: Verify the wrapper creates a runtime-user-owned prefix under TMPDIR
+    command: |
+      set -euo pipefail
+      unset CARTOOL_WINEPREFIX
+      export TMPDIR="${PWD}/${output_dir}/tmp"
+      rm -rf "${TMPDIR}/cartool-wine-$(id -u)"
+      timeout 90s xvfb-run -a cartool --version >/tmp/cartool-default-prefix.log 2>&1
+      prefix="${TMPDIR}/cartool-wine-$(id -u)"
+      test -d "$prefix"
+      test -w "$prefix"
+      [ "$(stat -c '%u' "$prefix")" = "$(id -u)" ]
+      grep -F "${cartool_version}" /tmp/cartool-default-prefix.log
+      echo "cartool-default-prefix-ok"
+    expected_output_contains: "cartool-default-prefix-ok"
+    timeout: 120
+
+  - name: Ambient WINEPREFIX does not override wrapper policy
+    description: Verify host or image WINEPREFIX leakage cannot force Cartool back to /opt/wine
+    command: |
+      set -euo pipefail
+      export WINEPREFIX=/opt/wine
+      prefix="${PWD}/${output_dir}/prefixes/ambient-ignored"
+      rm -rf "$prefix"
+      mkdir -p "$prefix"
+      CARTOOL_WINEPREFIX="$prefix" timeout 90s xvfb-run -a cartool --version >/tmp/cartool-ambient-prefix.log 2>&1
+      test -d "$prefix"
+      test -w "$prefix"
+      [ "$(stat -c '%u' "$prefix")" = "$(id -u)" ]
+      if grep -F "not owned by you" /tmp/cartool-ambient-prefix.log; then
+        cat /tmp/cartool-ambient-prefix.log
+        exit 1
+      fi
+      grep -F "${cartool_version}" /tmp/cartool-ambient-prefix.log
+      echo "cartool-ambient-prefix-ignored"
+    expected_output_contains: "cartool-ambient-prefix-ignored"
+    timeout: 120
+
+  - name: Cartool GUI startup smoke test
+    description: Verify the GUI process can start under Xvfb without Wine prefix failures
+    command: |
+      set -euo pipefail
+      prefix="${PWD}/${output_dir}/prefixes/gui-smoke"
+      rm -rf "$prefix"
+      mkdir -p "$prefix"
+      log="${output_dir}/cartool-gui-startup.log"
+
+      set +e
+      CARTOOL_WINEPREFIX="$prefix" timeout 25s xvfb-run -a cartool --nosplash --mainwindow=minimized >"$log" 2>&1
+      status=$?
+      set -e
+
+      if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then
+        cat "$log"
+        exit "$status"
+      fi
+      if grep -E "not owned by you|wineserver tmpdir|error removing wineserver tmpdir|could not load|Traceback" "$log"; then
+        cat "$log"
+        exit 1
+      fi
+      echo "cartool-gui-startup-status-$status"
+    expected_output_contains: "cartool-gui-startup-status"
+    timeout: 60
+
+cleanup:
+  script: |
+    #!/usr/bin/env bash
+    echo "Cartool test outputs preserved in test_output/"
