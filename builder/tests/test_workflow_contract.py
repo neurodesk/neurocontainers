@@ -106,6 +106,8 @@ def test_build_simg_sets_apptainer_paths_for_non_github_runners() -> None:
     assert "elif [ -d /home/runner/_work ]; then" in common_setup
     assert 'BASE_PATH=/home/runner/_work' in common_setup
     assert '"$BASE_PATH/apptainer/cache" "$BASE_PATH/apptainer/tmp"' in common_setup
+    assert 'sudo chown -R "$(id -u):$(id -g)" "$BASE_PATH/tmp" "$BASE_PATH/apptainer"' in common_setup
+    assert 'sudo chmod -R u+rwX "$BASE_PATH/tmp" "$BASE_PATH/apptainer"' in common_setup
     assert 'APPTAINER_CACHEDIR="$BASE_PATH/apptainer/cache"' in common_setup
     assert 'APPTAINER_TMPDIR="$BASE_PATH/apptainer/tmp"' in common_setup
     assert 'SINGULARITY_CACHEDIR="$BASE_PATH/apptainer/cache"' in common_setup

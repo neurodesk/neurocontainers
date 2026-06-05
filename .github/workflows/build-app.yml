@@ -786,7 +786,8 @@ jobs:
             BASE_PATH=/home/runner/_work
           fi
           sudo mkdir -p "$BASE_PATH/tmp" "$BASE_PATH/apptainer/cache" "$BASE_PATH/apptainer/tmp"
-          sudo chown "$USER" "$BASE_PATH/tmp" "$BASE_PATH/apptainer/cache" "$BASE_PATH/apptainer/tmp"
+          sudo chown -R "$(id -u):$(id -g)" "$BASE_PATH/tmp" "$BASE_PATH/apptainer"
+          sudo chmod -R u+rwX "$BASE_PATH/tmp" "$BASE_PATH/apptainer"
           echo "BASE_PATH=$BASE_PATH" >> "$GITHUB_ENV"
           echo "base_path=$BASE_PATH" >> "$GITHUB_OUTPUT"
           APPTAINER_CACHEDIR="$BASE_PATH/apptainer/cache"
