@@ -476,8 +476,6 @@ jobs:
         env:
           GH_REGISTRY: ${{ secrets.GH_REGISTRY }}
           DIVE_IMAGE: wagoodman/dive:v0.13.1
-          DIVE_LOWEST_EFFICIENCY: "0.90"
-          DIVE_HIGHEST_USER_WASTED_PERCENT: "0.10"
         run: |
           set +e
           IMAGE="ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${BUILDDATE}"
@@ -486,10 +484,10 @@ jobs:
 
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${PWD}/.github/.dive-ci.yml:/tmp/.dive-ci.yml:ro" \
             "${DIVE_IMAGE}" \
             --ci \
-            --lowestEfficiency "${DIVE_LOWEST_EFFICIENCY}" \
-            --highestUserWastedPercent "${DIVE_HIGHEST_USER_WASTED_PERCENT}" \
+            --ci-config /tmp/.dive-ci.yml \
             "${IMAGE}" > "${RAW_REPORT}" 2>&1
           DIVE_STATUS=$?
 
@@ -508,7 +506,7 @@ jobs:
             echo "- Image: \`${IMAGE}\`"
             echo "- Dive image: \`${DIVE_IMAGE}\`"
             echo "- Exit code: \`${DIVE_STATUS}\`"
-            echo "- Thresholds: lowest efficiency \`${DIVE_LOWEST_EFFICIENCY}\`, highest user wasted percent \`${DIVE_HIGHEST_USER_WASTED_PERCENT}\`"
+            echo "- Config: \`.github/.dive-ci.yml\`"
             echo ""
             echo '```text'
             cat "${REPORT}"
@@ -549,7 +547,7 @@ jobs:
             echo "- Commit: \`${GITHUB_SHA}\`"
             echo "- Workflow run: ${WORKFLOW_URL}"
             echo "- Dive exit code: \`${DIVE_EXIT_CODE}\`"
-            echo "- Thresholds: lowest efficiency \`0.90\`, highest user wasted percent \`0.10\`"
+            echo "- Config: \`.github/.dive-ci.yml\`"
             echo ""
             echo "## Dive Output"
             echo ""
