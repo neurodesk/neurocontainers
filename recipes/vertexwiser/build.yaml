@@ -60,22 +60,6 @@ categories:
   - structural imaging
   - workflows
 
-structured_readme:
-  description: |-
-    VertexWiseR is an R package for extracting, manipulating, analysing, and visualising cortical surface and hippocampal vertex-wise data. It supports workflows using FreeSurfer, fMRIPrep, XCP-D, HCP, CAT12, HippUnfold, and SubCortexMesh outputs.
-  example: |-
-    ```bash
-    R --slave -e "library(VertexWiseR); packageVersion('VertexWiseR')"
-    R
-    ```
-  documentation: |-
-    This container installs VertexWiseR from CRAN with a dedicated Python virtual environment for the reticulate-backed BrainStat stack.
-
-    Upstream documentation: https://cogbrainhealthlab.github.io/VertexWiseR/
-    Upstream source: https://github.com/CogBrainHealthLab/VertexWiseR
-  citation: |-
-    Please cite the VertexWiseR authors and the relevant upstream neuroimaging tools used in your workflow.
-
 readme: |-
   ----------------------------------
   ## vertexwiser/{{ context.version }} ##
