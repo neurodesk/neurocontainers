@@ -160,6 +160,17 @@ jobs:
             --verbose
         continue-on-error: true
 
+      - name: Normalize test workspace permissions
+        if: always()
+        working-directory: source
+        run: |
+          for path in builder work; do
+            if [ -e "$path" ]; then
+              sudo chown -R "$(id -u):$(id -g)" "$path" || true
+              chmod -R u+rwX "$path" || true
+            fi
+          done
+
       - name: Upload test results
         uses: actions/upload-artifact@v7
         if: always()
