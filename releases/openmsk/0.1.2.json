@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "openmsk 0.1.2": {
+      "version": "20260605",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image segmentation",
+    "quantitative imaging"
+  ]
+}
