@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "openreconi2iexample 1.0.89": {
+      "version": "20260605",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "image reconstruction"
+  ]
+}
