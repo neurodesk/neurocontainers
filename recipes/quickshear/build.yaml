@@ -63,9 +63,12 @@ build:
               - cd siemens_to_ismrmrd
               - mkdir build
               - cd build
-              - cmake ..
+              - cmake -DBUILD_DYNAMIC=ON ..
               - make -j $(nproc)
               - make install
+
+        - run:
+              - ldconfig
 
         - run:
               - pip3 install h5py ismrmrd matplotlib pydicom pynetdicom nibabel
@@ -80,7 +83,8 @@ build:
               - find /opt/code/python-ismrmrd-server -name "*.sh" -exec chmod +x {} \;
               - find /opt/code/python-ismrmrd-server -name "*.sh" | xargs dos2unix
 
-        - copy: invertcontrast.py /opt/code/python-ismrmrd-server/invertcontrast.py
+        - run:
+              - cp {{ get_file("invertcontrast.py") }} /opt/code/python-ismrmrd-server/invertcontrast.py
 
         - entrypoint: bash
 
