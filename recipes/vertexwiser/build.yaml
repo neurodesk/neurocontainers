@@ -1,5 +1,6 @@
 name: vertexwiser
 version: 1.5.1
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABnUlEQVR42u3awQ3CMAwFUI/BJCzBDly5sgo7sAajsAETcAIJKapoan87butYkXIjSv4LIbRJ6HA8dV1oAAZgANzaOj/ueAkEUOV2l9CO0V0YtHv0RgbFSW8zUJzoNgYFTK8yUMz0uIHCpgcNFDk9YqDg6UVDakCQ9LyBukjPGJICVs3xutzmxWyQAebO8PTTZnkeBMA7c0wvliXDIgBvcYP00x4hgHZUmPJ+Xl3Slx4FwK8SnxIxfHPPi2HCVHsUAMgAM9Wq0acFmV1MHRSAz2lV+rkBn5/lIx9A1aAF8GvoUo9ugL8EYPpiqPYlzmEUYDC4AJAlhAOAi0w7QBxmpoICgBtU6YsB/NfTAQxfgsEgttwEsBl8AUwGCGAwaH/E2senJgA4YI7pmQwoQGVQLUQtj7E6AGiYVvBNX83QBACfJb2iqwHthur7gOObtOKV0mDYYDfACFjjJdNmaNpW2Te9cVvFcVdnO8DYWgwA6H53ehxwxAB0f0aW4ZQywzlxhpP6DHclMtxWSXJfKMONrSR35pLcWhwXXwega8AHSnUxYkLqLnsAAAAASUVORK5CYII=
 
 copyright:
   - license: GPL-3.0
@@ -48,21 +49,6 @@ build:
         - "{{ context.python_env }}/bin/pip install --no-cache-dir --upgrade pip setuptools wheel"
         - "{{ context.python_env }}/bin/pip install --no-cache-dir brainstat==0.4.2 vtk==9.3.1 numpy==1.26.4 nilearn==0.12.0 netneurotools==0.2.5"
         - R --slave -e "options(repos = c(CRAN = 'https://cloud.r-project.org'), Ncpus = max(1L, parallel::detectCores() - 1L)); install.packages('VertexWiseR', dependencies = c('Depends', 'Imports', 'LinkingTo'))"
-    - test:
-        name: verify_vertexwiser_installation
-        script: |
-          R --slave -e "library(VertexWiseR); cat('VertexWiseR', as.character(packageVersion('VertexWiseR')), '\n')"
-          python - <<'PY'
-          import brainstat
-          import nibabel
-          import nilearn
-          import numpy
-          import vtk
-          print("BrainStat", getattr(brainstat, "__version__", "installed"))
-          print("NumPy", numpy.__version__)
-          print("Nilearn", nilearn.__version__)
-          print("VTK", vtk.vtkVersion.GetVTKVersion())
-          PY
 
 deploy:
   bins:

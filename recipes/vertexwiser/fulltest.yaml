@@ -1,0 +1,39 @@
+name: vertexwiser
+version: 1.5.1
+container: vertexwiser_${version}_REFERENCE.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: VertexWiseR package loads
+    description: Verify the R package is installed and loadable
+    command: R --slave -e "library(VertexWiseR); cat('VertexWiseR', as.character(packageVersion('VertexWiseR')), '\n')"
+    expected_output_contains: VertexWiseR
+
+  - name: Reticulate uses bundled Python
+    description: Verify reticulate is configured to use the container Python environment
+    command: R --slave -e "library(reticulate); cat(py_config()[['python']], '\n')"
+    expected_output_contains: /opt/vertexwiser-python/bin/python
+
+  - name: BrainStat stack imports
+    description: Verify the Python dependencies used by VertexWiseR are importable
+    command: |
+      python - <<'PY'
+      import brainstat
+      import nibabel
+      import nilearn
+      import numpy
+      import vtk
+      print("brainstat", getattr(brainstat, "__version__", "installed"))
+      print("nibabel", nibabel.__version__)
+      print("nilearn", nilearn.__version__)
+      print("numpy", numpy.__version__)
+      print("vtk", vtk.vtkVersion.GetVTKVersion())
+      PY
+    expected_output_contains: vtk
