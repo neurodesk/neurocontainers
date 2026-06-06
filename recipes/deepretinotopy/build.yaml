@@ -30,7 +30,7 @@ build:
     - run:
         - pip install --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
         - pip install --no-cache-dir pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -f https://data.pyg.org/whl/torch-2.5.1+cu124.html
-        - pip install --no-cache-dir torch_geometric
+        - pip install --no-cache-dir torch_geometric==2.6.1
         - python -c "import torch" 2>/dev/null || { echo "Failed to import module"; exit 1; }
         - python -c "import torch_geometric; print('PyG working')"
 
@@ -40,7 +40,7 @@ build:
         - git clone https://github.com/felenitaribeiro/deepRetinotopy_TheToolbox.git
         - cd deepRetinotopy_TheToolbox
         - git checkout fd8382bfa168727feb53946fdab4fe838908e5f2
-        - for file in osfstorage/new_models/deepRetinotopy_polarAngle_LH_model5.pt osfstorage/new_models/deepRetinotopy_eccentricity_LH_model2.pt osfstorage/new_models/deepRetinotopy_pRFsize_LH_model5.pt osfstorage/new_models/deepRetinotopy_polarAngle_RH_model4.pt osfstorage/new_models/deepRetinotopy_eccentricity_RH_model2.pt osfstorage/new_models/deepRetinotopy_pRFsize_RH_model5.pt; do path="${file#osfstorage/}"; mkdir -p "${path%/*}"; chmod 777 "${path%/*}"; osf -p ermbz fetch "$file" "$path"; echo "$file"; new_path=$(echo "$path" | sed -E 's/model[0-9]+/model/'); mv "$path" "$new_path"; echo "Renamed $path to $new_path"; done
+        - for file in osfstorage/new_models/deepRetinotopy_polarAngle_LH_model5.pt osfstorage/new_models/deepRetinotopy_eccentricity_LH_model2.pt osfstorage/new_models/deepRetinotopy_pRFsize_LH_model5.pt osfstorage/new_models/deepRetinotopy_polarAngle_RH_model4.pt osfstorage/new_models/deepRetinotopy_eccentricity_RH_model2.pt osfstorage/new_models/deepRetinotopy_pRFsize_RH_model5.pt; do path="${file#osfstorage/new_}"; mkdir -p "${path%/*}"; chmod 777 "${path%/*}"; osf -p ermbz fetch "$file" "$path"; echo "$file"; new_path=$(echo "$path" | sed -E 's/model[0-9]+/model/'); mv "$path" "$new_path"; echo "Renamed $path to $new_path"; done
 
     - run:
         - yum clean all
