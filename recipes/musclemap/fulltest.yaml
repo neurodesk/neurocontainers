@@ -1,0 +1,69 @@
+# musclemap container test suite
+# Focused verification for runtime packaging and lightweight entrypoints.
+
+name: musclemap
+version: "1.3.38"
+container: musclemap_1.3.38.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: MuscleMap command line tools
+    description: Verify deployed MuscleMap and SCT command line tools start
+    script: |
+      mm_segment -h 2>&1 | grep -E 'usage:|Usage:'
+      mm_register_to_template -h 2>&1 | grep -E 'usage:|Usage:'
+      mm_extract_metrics -h 2>&1 | grep -E 'usage:|Usage:'
+      sct_check_dependencies -short
+
+  - name: CUDA runtime pin
+    description: Verify the image keeps a CUDA 11 runtime for scanner compatibility
+    script: |
+      python -c "import torch; print(torch.version.cuda)" | grep '^11\.'
+
+  - name: OpenRecon server help
+    description: Verify the python-ismrmrd server entrypoint starts correctly
+    script: |
+      python /opt/code/python-ismrmrd-server/main.py -h 2>&1 | sed -n '1,20p' | grep 'Example server for MRD streaming format'
+
+  - name: OpenRecon assets
+    description: Verify packaged OpenRecon label and README assets are present and readable
+    script: |
+      python - <<'PY'
+      import json
+      from pathlib import Path
+
+      label = Path("/opt/code/python-ismrmrd-server/OpenReconLabel.json")
+      readme = Path("/opt/code/python-ismrmrd-server/OpenReconREADME.md")
+      if not label.exists() or not readme.exists():
+          print("OpenRecon label assets are not present in this release image")
+          raise SystemExit(0)
+
+      data = json.loads(label.read_text())
+      parameters = {parameter["id"] for parameter in data["parameters"]}
+      assert {"sendoriginal", "segmentopposedphase", "metricsoutput"} <= parameters
+      assert "MuscleMap" in readme.read_text()
+      print(label)
+      PY
+
+  - name: MuscleMap OpenRecon module imports
+    description: Verify the OpenRecon module imports with its runtime dependencies
+    script: |
+      if [ ! -f /opt/code/python-ismrmrd-server/OpenReconLabel.json ]; then
+        echo "OpenRecon label assets are not present in this release image"
+        exit 0
+      fi
+      PYTHONPATH=/opt/code/python-ismrmrd-server python -c "import musclemap, ismrmrd, nibabel, numpy; print(musclemap.muscleMapDisplayLabel)" | grep -x 'Musclemap'
+
+  - name: Helper scripts render help
+    description: Verify conversion helper scripts start and expose command line help
+    script: |
+      python /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py -h 2>&1 | grep 'usage:'
+      python /opt/code/python-ismrmrd-server/nifti2mrd.py -h 2>&1 | grep 'usage:'

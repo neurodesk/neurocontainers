@@ -14,13 +14,23 @@ from workflows.release_test_runner import (
     main,
     run_fulltest_release,
 )
-from workflows.reporting import build_report
+from workflows.reporting import build_comment, build_report
 
 
 def test_release_build_date_reads_first_app_version(tmp_path: Path) -> None:
     release_file = tmp_path / "release.json"
     release_file.write_text(
         json.dumps({"apps": {"sample": {"version": "20260603"}}}),
+        encoding="utf-8",
+    )
+
+    assert _release_build_date(release_file) == "20260603"
+
+
+def test_release_build_date_accepts_scalar_app_version(tmp_path: Path) -> None:
+    release_file = tmp_path / "release.json"
+    release_file.write_text(
+        json.dumps({"apps": {"sample": 20260603.0}}),
         encoding="utf-8",
     )
 
@@ -386,3 +396,28 @@ def test_build_report_includes_fulltest_summary_and_artifacts() -> None:
     assert "### Fulltest Summary" in report
     assert "- Suites: 1/1 passed" in report
     assert "- raw_json: `builder/fulltest-raw-sample.json`" in report
+
+
+def test_build_comment_treats_json_scalar_stdout_as_plain_output() -> None:
+    comment, status = build_comment(
+        {
+            "total_tests": 1,
+            "passed": 1,
+            "failed": 0,
+            "skipped": 0,
+            "test_results": [
+                {
+                    "name": "CUDA runtime pin",
+                    "status": "passed",
+                    "stdout": "11.8\n",
+                    "stderr": "",
+                    "return_code": 0,
+                }
+            ],
+        },
+        "musclemap",
+        "1.3.10",
+    )
+
+    assert status == "passed"
+    assert "11.8" in comment

@@ -24,7 +24,13 @@ def _release_build_date(release_file: Path) -> str:
     if not isinstance(apps, dict) or not apps:
         raise RuntimeError(f"No app entry in release file: {release_file}")
     first_value = next(iter(apps.values()))
-    build_date = str(first_value.get("version", "")).strip()
+    if isinstance(first_value, dict):
+        raw_build_date = first_value.get("version", "")
+    else:
+        raw_build_date = first_value
+    if isinstance(raw_build_date, float) and raw_build_date.is_integer():
+        raw_build_date = int(raw_build_date)
+    build_date = str(raw_build_date).strip()
     if not build_date:
         raise RuntimeError(f"Build date missing in release file: {release_file}")
     return build_date

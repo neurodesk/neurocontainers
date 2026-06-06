@@ -52,6 +52,9 @@ def _format_builtin(stdout: str, lines: List[str], indent: str) -> None:
     except json.JSONDecodeError:
         _emit_code_block(lines, stdout, indent=indent, limit_lines=LOG_TAIL_LINES)
         return
+    if not isinstance(payload, dict):
+        _emit_code_block(lines, stdout, indent=indent, limit_lines=LOG_TAIL_LINES)
+        return
 
     total = payload.get("total", len(payload.get("tests", [])))
     passed = payload.get("passed", 0)
@@ -64,6 +67,9 @@ def _format_builtin(stdout: str, lines: List[str], indent: str) -> None:
     )
 
     for test in payload.get("tests", []):
+        if not isinstance(test, dict):
+            continue
+
         status = test.get("status", "unknown")
         emoji = STATUS_EMOJI.get(status, STATUS_EMOJI["unknown"])
         name = test.get("name", "unnamed")
