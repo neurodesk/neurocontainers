@@ -16,6 +16,8 @@ build:
   kind: neurodocker
   base-image: containers.mathworks.com/matlab-runtime:r{{ context.version }}
   pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
   directives:
     - environment:
         AGREE_TO_MATLAB_RUNTIME_LICENSE: "yes"
@@ -23,7 +25,7 @@ build:
         MATLABCMD: "{{ context.matlab_runtime_root }}/toolbox/matlab"
         XAPPLRESDIR: "{{ context.matlab_runtime_root }}/x11/app-defaults"
         LD_LIBRARY_PATH: >-
-          $LD_LIBRARY_PATH:{{ context.matlab_runtime_root }}/runtime/glnxa64:{{ context.matlab_runtime_root }}/bin/glnxa64:{{ context.matlab_runtime_root }}/sys/os/glnxa64:{{ context.matlab_runtime_root }}/sys/opengl/lib/glnxa64:{{ context.matlab_runtime_root }}/extern/bin/glnxa64
+          {{ context.matlab_runtime_root }}/runtime/glnxa64:{{ context.matlab_runtime_root }}/bin/glnxa64:{{ context.matlab_runtime_root }}/sys/os/glnxa64:{{ context.matlab_runtime_root }}/sys/opengl/lib/glnxa64:{{ context.matlab_runtime_root }}/extern/bin/glnxa64
         PATH: "{{ context.matlab_runtime_root }}/bin/glnxa64:$PATH"
 
     - copy:

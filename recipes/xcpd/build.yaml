@@ -16,6 +16,8 @@ build:
   kind: neurodocker
   base-image: pennlinc/xcp_d:0.10.7
   pkg-manager: apt
+  add-default-template: false
+  add-tzdata: false
   directives:
     - run:
         - |
