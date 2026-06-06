@@ -1,0 +1,74 @@
+name: synthstrip
+version: 7.4.1
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=
+
+copyright:
+  - license: FreeSurfer Software License Agreement
+    url: https://surfer.nmr.mgh.harvard.edu/fswiki/FreeSurferSoftwareLicense
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:22.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - build-essential
+        - python3-pip
+        - python3-packaging
+        - python3-dev
+        - python3
+        - ca-certificates
+
+    - run:
+        - python3 -m pip install --no-cache-dir 'numpy<2' surfa
+        - python3 -m pip install --no-cache-dir torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
+
+    - run:
+        - mkdir -p /freesurfer/models
+        - cp {{ get_file("mri_synthstrip") }} /usr/bin/mri_synthstrip
+        - cp {{ get_file("synthstrip_model") }} /freesurfer/models/synthstrip.1.pt
+        - cp {{ get_file("synthstrip_nocsf_model") }} /freesurfer/models/synthstrip.nocsf.1.pt
+        - chmod +x /usr/bin/mri_synthstrip
+
+    - run:
+        - printf '#!/bin/bash\nls -la' > /usr/bin/ll
+        - chmod +x /usr/bin/ll
+        - mkdir -p /neurodesktop-storage /neurodesktop-home /neurodesktop-share /neurodesktop-trash
+        - ln -sf /usr/bin/python3 /usr/bin/python
+
+    - environment:
+        FREESURFER_HOME: /freesurfer
+
+    - entrypoint: /bin/bash
+
+deploy:
+  bins:
+    - mri_synthstrip
+
+categories:
+  - image segmentation
+  - structural imaging
+
+readme: |-
+  ----------------------------------
+  ## synthstrip/{{ context.version }} ##
+
+  SynthStrip is a skull-stripping tool that extracts brain voxels from a landscape of image types, modalities, resolutions, and subject populations.
+
+  Homepage: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/
+  Example: `mri_synthstrip`
+  License: FreeSurfer Software License Agreement
+
+  ----------------------------------
+
+files:
+  - name: mri_synthstrip
+    url: https://raw.githubusercontent.com/freesurfer/freesurfer/v7.4.1/mri_synthstrip/mri_synthstrip
+  - name: synthstrip_model
+    url: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.1.pt
+  - name: synthstrip_nocsf_model
+    url: https://surfer.nmr.mgh.harvard.edu/docs/synthstrip/requirements/synthstrip.nocsf.1.pt
