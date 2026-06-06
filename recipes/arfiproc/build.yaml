@@ -7,6 +7,8 @@ architectures:
 files:
     - name: arfiproc.py
       filename: arfiproc.py
+    - name: OpenReconLabel.json
+      filename: OpenReconLabel.json
 
 build:
     kind: neurodocker
@@ -22,7 +24,9 @@ build:
         - include: macros/openrecon/neurodocker.yaml
 
         #openrecon application
-        - copy: arfiproc.py /opt/code/python-ismrmrd-server/arfiproc.py
+        - run:
+              - cp {{ get_file("arfiproc.py") }} /opt/code/python-ismrmrd-server/arfiproc.py
+              - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
 
 deploy:
     bins:
