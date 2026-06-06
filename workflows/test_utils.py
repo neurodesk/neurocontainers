@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Optional, Tuple
 
-import yaml
+BUILD_DATE_PATTERN = re.compile(r"^\d{8}$")
 
 
 def resolve_path(candidate: str | Path, *, repo_root: Path, cwd: Path | None = None) -> Path:
@@ -56,6 +57,8 @@ def find_latest_release_file(
                 build_date = str(first_value.get("version", "")).strip()
         except Exception:
             build_date = ""
+        if not BUILD_DATE_PATTERN.match(build_date):
+            continue
 
         if latest_path is None:
             latest_path = entry
@@ -84,40 +87,5 @@ def discover_test_config(recipe_dir: str | Path) -> Optional[Path]:
     fulltest_yaml = recipe_path / "fulltest.yaml"
     if fulltest_yaml.is_file():
         return fulltest_yaml
-
-    test_yaml = recipe_path / "test.yaml"
-    if test_yaml.is_file():
-        return test_yaml
-
-    build_yaml = recipe_path / "build.yaml"
-    if not build_yaml.is_file():
-        return None
-
-    try:
-        data = yaml.safe_load(build_yaml.read_text(encoding="utf-8")) or {}
-    except Exception:
-        data = {}
-
-    if data.get("tests"):
-        return build_yaml
-
-    directives = (data.get("build") or {}).get("directives")
-
-    def contains_test(entry) -> bool:
-        if isinstance(entry, dict):
-            if "test" in entry:
-                return True
-            for key in ("group", "directives"):
-                if key in entry and contains_test(entry[key]):
-                    return True
-            for value in entry.values():
-                if contains_test(value):
-                    return True
-        elif isinstance(entry, list):
-            return any(contains_test(item) for item in entry)
-        return False
-
-    if contains_test(directives):
-        return build_yaml
 
     return None

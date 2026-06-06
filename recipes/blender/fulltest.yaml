@@ -1,0 +1,13 @@
+name: blender
+version: 5.0.1
+container: blender_5.0.1_20260304.simg
+default_timeout: 120
+tests:
+- name: Check blender version
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    blender --version
+- name: Run blender in background
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    blender --background --factory-startup --python-expr "import bpy; print(bpy.app.version_string)"

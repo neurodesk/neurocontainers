@@ -65,7 +65,7 @@ Use the comprehensive testing system:
 
 # Direct testing (more control)
 sf-test-remote <name> --version <version> --runtime docker --location local --cleanup
-sf-test-remote <name> --version <version> --test-config recipes/<name>/test.yaml --cleanup
+uv run builder/run_tests.py recipes/<name>/fulltest.yaml -c sifs
 ```
 
 ### Validation and Linting
@@ -127,7 +127,7 @@ tools/              # Additional utilities
 ### Recipe Structure
 Each recipe contains:
 - `build.yaml` - Container definition (required)
-- `test.yaml` - Test configuration (optional)
+- `fulltest.yaml` - Fulltest configuration (optional)
 - `README.md` - Documentation (optional)
 - Additional files (scripts, configs, etc.)
 
@@ -443,7 +443,7 @@ deploy:
 
 ### Testing Problems
 1. **Network access**: Some tests download from CVMFS or remote repositories
-2. **Missing test configs**: Not all recipes have test.yaml files
+2. **Missing test configs**: Not all recipes have fulltest.yaml files
 3. **Runtime selection**: Tests auto-select Docker > Apptainer > Singularity
 
 ### Known Repository Issues

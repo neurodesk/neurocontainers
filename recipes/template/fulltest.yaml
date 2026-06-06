@@ -1,0 +1,9 @@
+name: template
+version: 1.1.5
+container: template_1.1.5.simg
+default_timeout: 120
+tests:
+- name: test datalad version
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    datalad --version

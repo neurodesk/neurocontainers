@@ -22,6 +22,29 @@ def write_release(root: Path, recipe: str, version: str, build_date: str = "2026
     return release_file
 
 
+def test_existing_recipe_fulltest_yaml_ignores_placeholder_latest_metadata(
+    tmp_path: Path,
+) -> None:
+    latest_release = write_release(
+        tmp_path,
+        "mrtrix3",
+        "3.0.8",
+        build_date="20260107",
+    )
+    write_release(tmp_path, "mrtrix3", "latest", build_date="latest")
+
+    result = detect_release_pr_changes(["recipes/mrtrix3/fulltest.yaml"], repo_root=tmp_path)
+
+    assert result.skipped_new_recipe_tests == ()
+    assert result.matrix() == [
+        {
+            "name": "mrtrix3",
+            "version": "3.0.8",
+            "file": latest_release.relative_to(tmp_path).as_posix(),
+        }
+    ]
+
+
 def test_existing_recipe_fulltest_yaml_uses_latest_release_metadata(tmp_path: Path) -> None:
     write_release(tmp_path, "cat12", "26.0.rc2", build_date="20260520")
     latest_release = write_release(tmp_path, "cat12", "26.0.rc3", build_date="20260521")
@@ -66,22 +89,16 @@ def test_test_config_change_prefers_x86_release_over_arm64_metadata(
     ]
 
 
-def test_existing_recipe_legacy_test_yaml_still_uses_latest_release_metadata(
+def test_existing_recipe_legacy_test_yaml_is_ignored(
     tmp_path: Path,
 ) -> None:
-    latest_release = write_release(tmp_path, "cat12", "26.0.rc3", build_date="20260521")
+    write_release(tmp_path, "cat12", "26.0.rc3", build_date="20260521")
 
     result = detect_release_pr_changes(["recipes/cat12/test.yaml"], repo_root=tmp_path)
 
     assert result.skipped_new_recipe_tests == ()
-    assert result.has_changes is True
-    assert result.matrix() == [
-        {
-            "name": "cat12",
-            "version": "26.0.rc3",
-            "file": latest_release.relative_to(tmp_path).as_posix(),
-        }
-    ]
+    assert result.has_changes is False
+    assert result.matrix() == []
 
 
 def test_release_metadata_can_be_paired_with_fulltest_yaml(tmp_path: Path) -> None:

@@ -340,9 +340,6 @@ class PRTestRunner:
         name = recipe["name"]
         version = recipe["version"]
         recipe_dir = recipe["recipe_dir"]
-        legacy_script_path = Path(recipe_dir) / "test.sh"
-        if not legacy_script_path.is_file():
-            legacy_script_path = None
         
         if verbose:
             print(f"\nTesting recipe: {name}:{version}")
@@ -367,22 +364,20 @@ class PRTestRunner:
             
             result["container_path"] = container_path
             
-            # Load test configuration
-            build_file_path = os.path.join(self.repo_path, recipe["build_file"])
-            test_config = self.tester.test_extractor.extract_from_file(build_file_path)
-            
-            if not test_config or not test_config.get("tests"):
-                # Try to extract from container
-                test_config = self.tester.test_extractor.extract_from_container(container_path)
-            
+            # Load fulltest configuration when present. Otherwise run only the
+            # builtin deploy check; legacy test.yaml/test.sh/build.yaml tests
+            # are no longer supported.
+            fulltest_path = Path(recipe_dir) / "fulltest.yaml"
+            test_config = None
+            if fulltest_path.is_file():
+                test_config = self.tester.test_extractor.extract_from_file(
+                    str(fulltest_path)
+                )
+
             if not test_config or not test_config.get("tests"):
                 if verbose:
-                    print("  No test configuration found; using builtin defaults")
-                test_config = self.tester.test_extractor.default_test_config(
-                    name,
-                    version,
-                    legacy_script=legacy_script_path,
-                )
+                    print("  No fulltest.yaml found; using builtin deploy check")
+                test_config = self.tester.test_extractor.default_test_config(name, version)
 
             # Run tests
             test_results = self.tester.run_test_suite(

@@ -1,0 +1,9 @@
+name: mrtrix3
+version: 3.0.8
+container: mrtrix3_3.0.8_20260107.simg
+default_timeout: 120
+tests:
+- name: Basic test
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    dwifslpreproc

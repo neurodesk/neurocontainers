@@ -10,6 +10,7 @@ from workflows.release_test_runner import (
     _load_jsonl_records,
     _normalise_run_tests_output,
     _release_build_date,
+    _skipped_results,
     main,
     run_fulltest_release,
 )
@@ -136,6 +137,52 @@ def test_failure_results_are_reportable() -> None:
     assert result["failed"] == 1
     assert result["test_results"][0]["name"] == "release_test_runner"
     assert "Unable to download" in result["test_results"][0]["stderr"]
+
+
+def test_skipped_results_are_reportable() -> None:
+    result = _skipped_results(
+        recipe="niimath",
+        version="1.0",
+        message="No fulltest.yaml test configuration available",
+    )
+
+    assert result["failed"] == 0
+    assert result["skipped"] == 1
+    assert result["test_results"][0]["name"] == "fulltest discovery"
+
+
+def test_main_writes_skipped_outputs_when_fulltest_is_missing(
+    tmp_path: Path,
+) -> None:
+    release_file = tmp_path / "release.json"
+    release_file.write_text("{}", encoding="utf-8")
+    github_output = tmp_path / "github-output.txt"
+    results_path = tmp_path / "builder" / "test-results-niimath.json"
+
+    status = main(
+        [
+            "--recipe",
+            "niimath",
+            "--version",
+            "1.0",
+            "--release-file",
+            str(release_file),
+            "--test-config",
+            "",
+            "--results-path",
+            str(results_path),
+            "--output-dir",
+            str(tmp_path / "builder"),
+            "--github-output",
+            str(github_output),
+        ]
+    )
+
+    assert status == 0
+    assert results_path.is_file()
+    results = json.loads(results_path.read_text(encoding="utf-8"))
+    assert results["skipped"] == 1
+    assert "status=skipped" in github_output.read_text(encoding="utf-8")
 
 
 def test_main_writes_failure_outputs_when_fulltest_adapter_errors(

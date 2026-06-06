@@ -6,7 +6,6 @@ on:
     paths:
       - "releases/*/**.json"
       - "recipes/**/fulltest.yaml"
-      - "recipes/**/test.yaml"
     branches:
       - master
       - main
@@ -80,10 +79,17 @@ jobs:
       - name: Install dependencies
         working-directory: source
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          uv pip install --system datalad datalad-installer
-          datalad-installer --sudo ok git-annex -m datalad/packages
+          # Matrix jobs can share the same self-hosted machine and system Python.
+          # Serialize dependency installation to avoid pip/apt/git-annex races.
+          (
+            flock 9
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+            uv pip install --system datalad datalad-installer
+            if ! command -v git-annex >/dev/null 2>&1; then
+              datalad-installer --sudo ok git-annex -m datalad/packages
+            fi
+          ) 9>/tmp/neurocontainers-release-test-deps.lock
           git-annex version
           datalad --version
 
@@ -112,21 +118,15 @@ jobs:
         id: find-tests
         working-directory: source
         run: |
-          # Look for test configuration in recipe directory
+          # Look for the fulltest configuration in the recipe directory
           RECIPE_DIR="recipes/${{ matrix.release.name }}"
           TEST_CONFIG=""
 
           if [ -f "$RECIPE_DIR/fulltest.yaml" ]; then
             TEST_CONFIG="$RECIPE_DIR/fulltest.yaml"
             echo "Found fulltest.yaml"
-          elif [ -f "$RECIPE_DIR/test.yaml" ]; then
-            TEST_CONFIG="$RECIPE_DIR/test.yaml"
-            echo "Found test.yaml"
-          elif [ -f "$RECIPE_DIR/build.yaml" ]; then
-            TEST_CONFIG="$RECIPE_DIR/build.yaml"
-            echo "Found build.yaml (will extract tests from build directives)"
           else
-            echo "No test configuration found in $RECIPE_DIR"
+            echo "No fulltest.yaml found in $RECIPE_DIR"
             ls -la "$RECIPE_DIR" || echo "Recipe directory not found"
           fi
 

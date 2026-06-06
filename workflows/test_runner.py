@@ -99,16 +99,9 @@ class ContainerTestRunner:
             )
             return self._finalise(request, results, version or "", release_file, release_reason)
 
-        legacy_script_path = self._discover_legacy_script(recipe_dir)
-
         test_config_path, test_reason = self._resolve_test_config(recipe_dir, request)
-        using_implicit_tests = False
 
-        if not request.test_config and test_config_path is None:
-            using_implicit_tests = True
-            test_reason = None  # We can synthesise a default test config
-
-        if test_reason and request.allow_missing_tests and not using_implicit_tests:
+        if test_reason and request.allow_missing_tests:
             results = self._build_stub_result(
                 request.recipe,
                 version or request.version or "",
@@ -117,7 +110,7 @@ class ContainerTestRunner:
             )
             return self._finalise(request, results, version or "", release_file, test_reason)
 
-        if test_config_path is None and not using_implicit_tests:
+        if test_config_path is None:
             raise FileNotFoundError("Test configuration could not be resolved")
         if version is None:
             raise RuntimeError("Container version could not be determined")
@@ -188,39 +181,29 @@ class ContainerTestRunner:
         if request.verbose:
             print(f"Resolved container reference: {container_ref}")
 
-        target_version = version or request.version or "unknown"
-
-        if using_implicit_tests:
-            if request.verbose:
-                print("No explicit test configuration; using builtin defaults")
-            test_config = self.tester.test_extractor.default_test_config(
-                request.recipe,
-                target_version,
-                legacy_script=legacy_script_path,
+        try:
+            test_config = self.tester.test_extractor.extract_from_file(
+                str(test_config_path)
             )
-        else:
-            try:
-                test_config = self.tester.test_extractor.extract_from_file(
-                    str(test_config_path)
-                )
-            except Exception as exc:  # pragma: no cover - defensive
-                message = f"Error loading test configuration: {exc}"
-                results = self._build_stub_result(
-                    request.recipe,
-                    version,
-                    status="failed",
-                    message=message,
-                )
-                return self._finalise(request, results, version, release_file, message)
+        except Exception as exc:  # pragma: no cover - defensive
+            message = f"Error loading test configuration: {exc}"
+            results = self._build_stub_result(
+                request.recipe,
+                version,
+                status="failed",
+                message=message,
+            )
+            return self._finalise(request, results, version, release_file, message)
 
-            if not test_config or not test_config.get("tests"):
-                if request.verbose:
-                    print("Test configuration empty; falling back to builtin defaults")
-                test_config = self.tester.test_extractor.default_test_config(
-                    request.recipe,
-                    target_version,
-                    legacy_script=legacy_script_path,
-                )
+        if not test_config or not test_config.get("tests"):
+            message = "No fulltest tests configured"
+            results = self._build_stub_result(
+                request.recipe,
+                version,
+                status="skipped",
+                message=message,
+            )
+            return self._finalise(request, results, version, release_file, message)
 
         try:
             results = self.tester.run_test_suite(
@@ -297,14 +280,6 @@ class ContainerTestRunner:
         if discovered:
             return discovered, None
         return None, "No test configuration available"
-
-    def _discover_legacy_script(self, recipe_dir: Path) -> Optional[Path]:
-        """Locate legacy test.sh scripts used by shell-based recipes."""
-
-        candidate = recipe_dir / "test.sh"
-        if candidate.is_file():
-            return candidate
-        return None
 
     def _build_stub_result(
         self,

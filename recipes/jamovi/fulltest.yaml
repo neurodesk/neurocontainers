@@ -1,0 +1,38 @@
+name: jamovi
+version: 2.7.4
+container: jamovi_2.7.4_20260527.simg
+default_timeout: 120
+tests:
+- name: Test jamovi version
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    jamovi --version
+- name: Test jamovi server starts
+  description: Verify the container runtime smoke test for this tool.
+  command: |
+    export JAMOVI_PORT=42037
+    jamovi start >/tmp/jamovi-test.log 2>&1 &
+    pid="$!"
+    trap 'kill "${pid}" 2>/dev/null || true' EXIT
+
+    started=0
+    for _ in $(seq 1 60); do
+      if curl -fsS "http://localhost:${JAMOVI_PORT}/version"; then
+        started=1
+        break
+      fi
+      sleep 1
+    done
+
+    kill "${pid}" 2>/dev/null || true
+    wait "${pid}" 2>/dev/null || true
+
+    if [ "${started}" -ne 1 ]; then
+      cat /tmp/jamovi-test.log
+      exit 1
+    fi
+
+    if grep -q "settings.json" /tmp/jamovi-test.log; then
+      cat /tmp/jamovi-test.log
+      exit 1
+    fi

@@ -1,4 +1,0 @@
-tests:
-  - name: Test dcm2bids
-    script: |
-      dcm2bids --help

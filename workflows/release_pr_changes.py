@@ -44,7 +44,8 @@ class DetectionResult:
 
 
 RELEASE_PATTERN = re.compile(r"^releases/([^/]+)/([^/]+)\.json$")
-TEST_CONFIG_PATTERN = re.compile(r"^recipes/([^/]+)/(?:fulltest|test)\.yaml$")
+TEST_CONFIG_PATTERN = re.compile(r"^recipes/([^/]+)/fulltest\.yaml$")
+BUILD_DATE_PATTERN = re.compile(r"^\d{8}$")
 
 
 def _relative_posix(path: Path, repo_root: Path) -> str:
@@ -59,6 +60,18 @@ def _release_sort_key(version: str, build_date: str, *, prefer_x86_64: bool) -> 
     if prefer_x86_64 and version.endswith("-arm64"):
         architecture_priority = 0
     return architecture_priority, build_date, version
+
+
+def _release_build_date(release_file: Path) -> str:
+    try:
+        data = json.loads(release_file.read_text(encoding="utf-8"))
+        apps = data.get("apps", {}) or {}
+        if apps:
+            first_value = next(iter(apps.values()))
+            return str(first_value.get("version", "")).strip()
+    except Exception:
+        pass
+    return ""
 
 
 def find_latest_release_file(
@@ -79,16 +92,9 @@ def find_latest_release_file(
             continue
 
         candidate_version = entry.stem
-        build_date = ""
-
-        try:
-            data = json.loads(entry.read_text(encoding="utf-8"))
-            apps = data.get("apps", {}) or {}
-            if apps:
-                first_value = next(iter(apps.values()))
-                build_date = str(first_value.get("version", "")).strip()
-        except Exception:
-            build_date = ""
+        build_date = _release_build_date(entry)
+        if not BUILD_DATE_PATTERN.match(build_date):
+            continue
 
         if latest_path is None:
             latest_path = entry
@@ -125,8 +131,7 @@ def detect_release_pr_changes(
 
     A new recipe can add ``recipes/<name>/fulltest.yaml`` before release
     metadata exists. That should not fail this workflow because there is no
-    published container for the release-test job to download yet. Legacy
-    ``test.yaml`` files are still accepted during the migration to fulltests.
+    published container for the release-test job to download yet.
     """
 
     root = Path(repo_root)
@@ -216,7 +221,7 @@ def _escape_notice(text: str) -> str:
 def print_skipped_notices(result: DetectionResult) -> None:
     for recipe in result.skipped_new_recipe_tests:
         message = (
-            f"recipes/{recipe}/fulltest.yaml or test.yaml changed, but "
+            f"recipes/{recipe}/fulltest.yaml changed, but "
             f"releases/{recipe}/*.json does not exist. "
             "Skipping release-container tests for this new or unreleased recipe; "
             "this workflow only retests already released containers. "

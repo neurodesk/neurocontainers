@@ -81,7 +81,7 @@ for dir in recipes/*/; do
     fi
 
     if file_exists $dir "test.sh"; then
-        warn "${name} contains test.sh, should be migrated to test.yaml"
+        warn "${name} contains legacy test.sh, should be migrated to fulltest.yaml"
 
         # if the file is empty then print a warning
         if [[ ! -s "${dir}test.sh" ]]; then
@@ -96,8 +96,8 @@ for dir in recipes/*/; do
 
     # Look for other files in the directory
     for file in "$dir"*; do
-        # Check if the file is not build.yaml, test.sh, or README.md
-        if [[ "$file" != *"build.yaml" && "$file" != *"test.yaml" && "$file" != *"LICENSE" ]]; then
+        # Check if the file is not build.yaml, fulltest.yaml, or LICENSE
+        if [[ "$file" != *"build.yaml" && "$file" != *"fulltest.yaml" && "$file" != *"LICENSE" ]]; then
             warn "${name} contains ${file##*/}"
         fi
     done

@@ -12,7 +12,6 @@ on:
     paths:
       - recipes/**
       - "!recipes/**/fulltest.yaml"
-      - "!recipes/**/test.yaml"
     branches:
       - main
 
