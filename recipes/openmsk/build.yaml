@@ -14,6 +14,12 @@ files:
     filename: OpenReconLabel.json
   - name: OpenReconREADME.md
     filename: OpenReconREADME.md
+  - name: enhanceddicom2mrd.py
+    filename: enhanceddicom2mrd.py
+  - name: nifti2mrd.py
+    filename: nifti2mrd.py
+  - name: enhanced2singleframe.py
+    filename: enhanced2singleframe.py
   - name: dosma_qdess_model
     url: "{{ context.dosma_model_url }}"
   - name: openmsk
@@ -185,15 +191,16 @@ build:
         # that runs natively; on CPU-only hosts oneDNN is required for NCHW
         # Conv2D, so enable it (harmless on GPU).
         TF_ENABLE_ONEDNN_OPTS: "1"
-    - copy: openmsk.py /opt/code/python-ismrmrd-server/openmsk.py
-    - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
-    - copy: OpenReconREADME.md /opt/code/python-ismrmrd-server/OpenReconREADME.md
-    - copy: enhanceddicom2mrd.py /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py
-    - copy: nifti2mrd.py /opt/code/python-ismrmrd-server/nifti2mrd.py
+    - run:
+        - cp {{ get_file("openmsk.py") }} /opt/code/python-ismrmrd-server/openmsk.py
+        - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
+        - cp {{ get_file("OpenReconREADME.md") }} /opt/code/python-ismrmrd-server/OpenReconREADME.md
+        - cp {{ get_file("enhanceddicom2mrd.py") }} /opt/code/python-ismrmrd-server/enhanceddicom2mrd.py
+        - cp {{ get_file("nifti2mrd.py") }} /opt/code/python-ismrmrd-server/nifti2mrd.py
+        - cp {{ get_file("enhanced2singleframe.py") }} /opt/code/python-ismrmrd-server/enhanced2singleframe.py
     # Utility: expand Siemens qDESS Enhanced (multi-frame) DICOM into classic
     # single-frame DICOM so the direct `run_pipeline.py <dicom_dir>` path (DOSMA
     # QDess.from_dicom: qDESS RSS segmentation + T2) can read it.
-    - copy: enhanced2singleframe.py /opt/code/python-ismrmrd-server/enhanced2singleframe.py
 
 deploy:
   bins:
