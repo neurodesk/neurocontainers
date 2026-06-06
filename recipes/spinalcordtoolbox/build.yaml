@@ -69,7 +69,7 @@ build:
 readme: |-
   ----------------------------------
   ## spinalcordtoolbox/{{ context.version }} ##
-  This NeuroContainers/OpenRecon build packages upstream SCT {{ context.upstream_version }}.
+  This packages upstream SCT {{ context.upstream_version }}.
 
   SCT tools process MRI data (NIfTI files) and can do fully automatic tasks such as:
   - Segmentation of the spinal cord and gray matter
