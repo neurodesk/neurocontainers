@@ -28,6 +28,9 @@ test_data:
   box_7t: /OSHy/templates/7T_box.nii.gz
   output_dir: test_output
 
+env_setup: |
+  export PATH=/opt/miniconda-latest/bin:/opt/ants-2.3.1:$PATH
+
 setup:
   script: |
     #!/usr/bin/env bash
