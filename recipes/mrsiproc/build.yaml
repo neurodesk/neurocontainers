@@ -151,8 +151,6 @@ build:
             - unzip MATLAB_Runtime_R{{ context.matlab_version }}_Update_{{ context.matlab_update_version }}_glnxa64.zip -d mcrtmp
             - mcrtmp/install -mode silent -destinationFolder {{ context.mcr_root }} -agreeToLicense yes
             - rm -rf mcrtmp MATLAB_Runtime_R{{ context.matlab_version }}_Update_{{ context.matlab_update_version }}_glnxa64.zip
-        - environment:
-            LD_LIBRARY_PATH: $LD_LIBRARY_PATH:{{ context.mcr_runtime }}/runtime/glnxa64:{{ context.mcr_runtime }}/bin/glnxa64:{{ context.mcr_runtime }}/sys/os/glnxa64:{{ context.mcr_runtime }}/sys/opengl/lib/glnxa64:{{ context.mcr_runtime }}/extern/bin/glnxa64
 
     - group:
         - workdir: /opt
@@ -210,6 +208,9 @@ build:
             - chmod a+x /opt/mrsi_pipeline_neurodesk/update_mrsi.sh
         - environment:
             PATH: /neurodesktop-storage/mrsi_pipeline_neurodesk/Part1:/neurodesktop-storage/mrsi_pipeline_neurodesk/Part2:/opt/mrsi_pipeline_neurodesk:$PATH
+
+    - environment:
+        LD_LIBRARY_PATH: $LD_LIBRARY_PATH:{{ context.mcr_runtime }}/runtime/glnxa64:{{ context.mcr_runtime }}/bin/glnxa64:{{ context.mcr_runtime }}/sys/os/glnxa64:{{ context.mcr_runtime }}/sys/opengl/lib/glnxa64:{{ context.mcr_runtime }}/extern/bin/glnxa64
 
 deploy:
   path:
