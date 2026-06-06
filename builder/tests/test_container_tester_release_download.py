@@ -15,7 +15,7 @@ def test_release_downloader_falls_back_to_s3_when_nectar_fails(
     downloader = ReleaseContainerDownloader(cache_dir=str(tmp_path))
     calls: list[str] = []
 
-    def fake_urlretrieve(url: str, filename: str) -> tuple[str, None]:
+    def fake_urlretrieve(url: str, filename: str, **kwargs) -> tuple[str, None]:
         calls.append(url)
         if "object-store.rc.nectar.org.au" in url:
             raise HTTPError(url, 404, "Not Found", hdrs=None, fp=None)
@@ -44,7 +44,7 @@ def test_release_downloader_can_refresh_existing_cache(
     cache_path.write_text("stale", encoding="utf-8")
     calls: list[str] = []
 
-    def fake_urlretrieve(url: str, filename: str) -> tuple[str, None]:
+    def fake_urlretrieve(url: str, filename: str, **kwargs) -> tuple[str, None]:
         calls.append(url)
         Path(filename).write_text("fresh", encoding="utf-8")
         return filename, None
@@ -73,7 +73,7 @@ def test_release_downloader_prefers_image_basename_from_release_metadata(
     downloader = ReleaseContainerDownloader(cache_dir=str(tmp_path))
     calls: list[str] = []
 
-    def fake_urlretrieve(url: str, filename: str) -> tuple[str, None]:
+    def fake_urlretrieve(url: str, filename: str, **kwargs) -> tuple[str, None]:
         calls.append(url)
         if "neurodesktop_20260428_arm64_20260519.simg" not in url:
             raise HTTPError(url, 404, "Not Found", hdrs=None, fp=None)
@@ -104,7 +104,7 @@ def test_release_downloader_falls_back_to_computed_filename(
     downloader = ReleaseContainerDownloader(cache_dir=str(tmp_path))
     calls: list[str] = []
 
-    def fake_urlretrieve(url: str, filename: str) -> tuple[str, None]:
+    def fake_urlretrieve(url: str, filename: str, **kwargs) -> tuple[str, None]:
         calls.append(url)
         if "custom_globus_20260514.simg" in url:
             raise HTTPError(url, 404, "Not Found", hdrs=None, fp=None)
@@ -162,7 +162,7 @@ def test_release_downloader_accepts_image_basename_with_build_date(
     downloader = ReleaseContainerDownloader(cache_dir=str(tmp_path))
     calls: list[str] = []
 
-    def fake_urlretrieve(url: str, filename: str) -> tuple[str, None]:
+    def fake_urlretrieve(url: str, filename: str, **kwargs) -> tuple[str, None]:
         calls.append(url)
         Path(filename).write_text("simg", encoding="utf-8")
         return filename, None
@@ -182,6 +182,32 @@ def test_release_downloader_accepts_image_basename_with_build_date(
     assert calls == [
         "https://object-store.rc.nectar.org.au/v1/AUTH_dead991e1fa847e3afcca2d3a7041f5d/neurodesk/neurodesktop_20260428_arm64_20260519.simg",
     ]
+
+
+def test_release_downloader_reports_download_progress(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    downloader = ReleaseContainerDownloader(cache_dir=str(tmp_path))
+
+    def fake_urlretrieve(url: str, filename: str, **kwargs) -> tuple[str, None]:
+        reporthook = kwargs["reporthook"]
+        reporthook(0, 1024, 10 * 1024 * 1024)
+        reporthook(5120, 1024, 10 * 1024 * 1024)
+        reporthook(10240, 1024, 10 * 1024 * 1024)
+        Path(filename).write_text("simg", encoding="utf-8")
+        return filename, None
+
+    monkeypatch.setattr(
+        container_tester.urllib.request, "urlretrieve", fake_urlretrieve
+    )
+
+    path = downloader.download_from_release("globus", "3.2.8", "20260514")
+
+    assert path == str(tmp_path / "globus_3.2.8_20260514.simg")
+    output = capsys.readouterr().out
+    assert "Download size for globus_3.2.8_20260514.simg: 10.0 MB" in output
+    assert "Download progress for globus_3.2.8_20260514.simg: 50%" in output
+    assert "Download progress for globus_3.2.8_20260514.simg: 100%" in output
 
 
 def test_auto_location_passes_release_image_basename(
