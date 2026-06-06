@@ -1,5 +1,5 @@
 name: hdbet
-version: 1.0.0
+version: 2.0.1
 
 architectures:
   - x86_64
@@ -14,6 +14,7 @@ build:
     - install:
         - git
         - curl
+        - unzip
 
     - template:
         name: miniconda
@@ -25,22 +26,24 @@ build:
     - workdir: /opt
 
     - run:
-        - git clone https://github.com/MIC-DKFZ/HD-BET
+        - git clone --depth 1 --branch v{{ context.version }} https://github.com/MIC-DKFZ/HD-BET
 
     - workdir: /opt/HD-BET
 
     - run:
         - echo 'import os' > /opt/HD-BET/HD_BET/paths.py
-        - echo 'folder_with_parameter_files = "/opt/HD-BET/hd-bet_params"' >> /opt/HD-BET/HD_BET/paths.py
+        - echo 'folder_with_parameter_files = "/opt/HD-BET/hd-bet_params/release_2.0.0"' >> /opt/HD-BET/HD_BET/paths.py
+        - echo 'ZENODO_DOWNLOAD_URL = "https://zenodo.org/records/14445620/files/release_v1.5.0.zip?download=1"' >> /opt/HD-BET/HD_BET/paths.py
         - mkdir -p /opt/HD-BET/hd-bet_params
-        - cp {{ get_file("0_model") }} /opt/HD-BET/hd-bet_params/0.model
-        - cp {{ get_file("1_model") }} /opt/HD-BET/hd-bet_params/1.model
-        - cp {{ get_file("2_model") }} /opt/HD-BET/hd-bet_params/2.model
-        - cp {{ get_file("3_model") }} /opt/HD-BET/hd-bet_params/3.model
-        - cp {{ get_file("4_model") }} /opt/HD-BET/hd-bet_params/4.model
+        - unzip -q {{ get_file("release_v1_5_0_zip") }} -d /opt/HD-BET/hd-bet_params/release_2.0.0
         - /opt/miniconda-latest/envs/hdbet/bin/python -m pip install -e .
 
+    - environment:
+        PATH: /opt/miniconda-latest/envs/hdbet/bin:$PATH
+
 deploy:
+  path:
+    - /opt/miniconda-latest/envs/hdbet/bin
   bins:
     - hd-bet
 
@@ -56,13 +59,13 @@ readme: |
   Example:
   ```
   # Single file (CPU, fast mode):
-  hd-bet -i INPUT_FILENAME -device cpu -mode fast -tta 0
+  hd-bet -i INPUT_FILENAME -o OUTPUT_FILENAME -device cpu --disable_tta
 
   # Directory processing:
-  hd-bet -i INPUT_FOLDER -o OUTPUT_FOLDER -device cpu -mode fast -tta 0
+  hd-bet -i INPUT_FOLDER -o OUTPUT_FOLDER -device cpu --disable_tta
 
   # With GPU:
-  hd-bet -i INPUT_FILENAME
+  hd-bet -i INPUT_FILENAME -o OUTPUT_FILENAME
   ```
 
   More documentation can be found here: https://github.com/MIC-DKFZ/HD-BET
@@ -71,17 +74,5 @@ readme: |
   ----------------------------------
 
 files:
-  - name: 0_model
-    url: https://zenodo.org/record/2540695/files/0.model?download=1
-
-  - name: 1_model
-    url: https://zenodo.org/record/2540695/files/1.model?download=1
-
-  - name: 2_model
-    url: https://zenodo.org/record/2540695/files/2.model?download=1
-
-  - name: 3_model
-    url: https://zenodo.org/record/2540695/files/3.model?download=1
-
-  - name: 4_model
-    url: https://zenodo.org/record/2540695/files/4.model?download=1
+  - name: release_v1_5_0_zip
+    url: https://zenodo.org/records/14445620/files/release_v1.5.0.zip?download=1
