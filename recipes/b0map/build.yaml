@@ -7,6 +7,8 @@ architectures:
 files:
     - name: b0map.py
       filename: b0map.py
+    - name: OpenReconLabel.json
+      filename: OpenReconLabel.json
 
 build:
     kind: neurodocker
@@ -38,7 +40,9 @@ build:
               PATH: ${PATH}:/opt/code/FSL-BET2/bin
 
         #openrecon application
-        - copy: b0map.py /opt/code/python-ismrmrd-server/b0map.py
+        - run:
+              - cp {{ get_file("b0map.py") }} /opt/code/python-ismrmrd-server/b0map.py
+              - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
 
 deploy:
     path:
