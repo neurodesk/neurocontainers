@@ -48,6 +48,7 @@ build:
         - libxft-dev
         - libwxgtk3.0-gtk3-dev
         - lmod
+        - tcsh
 
     - workdir: /tmp
 
