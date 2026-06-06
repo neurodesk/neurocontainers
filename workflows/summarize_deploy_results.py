@@ -137,6 +137,9 @@ def _summarise_builtin(payload: Dict) -> Tuple[Dict, bool]:
     access_failures: List[str] = []
 
     for entry in tests:
+        if not isinstance(entry, dict):
+            continue
+
         name = entry.get("name", "")
         status = entry.get("status", "unknown")
         message = entry.get("message", "") or ""
@@ -256,6 +259,9 @@ def summarise_results_file(path: Path) -> bool:
 
     changed = False
     for test in data.get("test_results", []):
+        if not isinstance(test, dict):
+            continue
+
         stdout = test.get("stdout")
         if not stdout:
             continue

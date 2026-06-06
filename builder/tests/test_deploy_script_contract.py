@@ -108,3 +108,32 @@ def test_deploy_summary_ignores_json_scalar_stdout(tmp_path: Path) -> None:
 
     assert summarise_results_file(results_path) is False
     assert json.loads(results_path.read_text(encoding="utf-8")) == results
+
+
+def test_deploy_summary_ignores_scalar_test_entries() -> None:
+    payload = {
+        "total": 2,
+        "passed": 1,
+        "failed": 1,
+        "skipped": 0,
+        "tests": [
+            66.1212,
+            {
+                "name": "deploy_bin:tool",
+                "status": "passed",
+                "message": "Binary tool found at /usr/local/bin/tool.",
+            },
+        ],
+    }
+
+    summary, changed = _summarise_builtin(payload)
+
+    assert changed is True
+    assert summary["failed"] == 0
+    assert summary["tests"] == [
+        {
+            "name": "tool",
+            "status": "passed",
+            "message": "Found at /usr/local/bin/tool",
+        }
+    ]

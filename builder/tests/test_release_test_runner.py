@@ -27,6 +27,16 @@ def test_release_build_date_reads_first_app_version(tmp_path: Path) -> None:
     assert _release_build_date(release_file) == "20260603"
 
 
+def test_release_build_date_accepts_scalar_app_version(tmp_path: Path) -> None:
+    release_file = tmp_path / "release.json"
+    release_file.write_text(
+        json.dumps({"apps": {"sample": 20260603.0}}),
+        encoding="utf-8",
+    )
+
+    assert _release_build_date(release_file) == "20260603"
+
+
 def test_normalise_run_tests_output_matches_github_reporting_schema() -> None:
     raw = {
         "summary": {
