@@ -33,8 +33,9 @@ build:
 
     - include: macros/openrecon/neurodocker.yaml
 
-    - copy: openreconi2iexample.py /opt/code/python-ismrmrd-server/openreconi2iexample.py
-    - copy: OpenReconLabel.json /opt/code/python-ismrmrd-server/OpenReconLabel.json
+    - run:
+        - cp {{ get_file("openreconi2iexample.py") }} /opt/code/python-ismrmrd-server/openreconi2iexample.py
+        - cp {{ get_file("OpenReconLabel.json") }} /opt/code/python-ismrmrd-server/OpenReconLabel.json
     - environment:
         OPENRECONI2IEXAMPLE_VERSION: "{{ context.version }}"
     - run:
