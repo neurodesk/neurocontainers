@@ -1,0 +1,80 @@
+name: vertexwiser
+version: 1.5.1
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAABnUlEQVR42u3awQ3CMAwFUI/BJCzBDly5sgo7sAajsAETcAIJKapoan87butYkXIjSv4LIbRJ6HA8dV1oAAZgANzaOj/ueAkEUOV2l9CO0V0YtHv0RgbFSW8zUJzoNgYFTK8yUMz0uIHCpgcNFDk9YqDg6UVDakCQ9LyBukjPGJICVs3xutzmxWyQAebO8PTTZnkeBMA7c0wvliXDIgBvcYP00x4hgHZUmPJ+Xl3Slx4FwK8SnxIxfHPPi2HCVHsUAMgAM9Wq0acFmV1MHRSAz2lV+rkBn5/lIx9A1aAF8GvoUo9ugL8EYPpiqPYlzmEUYDC4AJAlhAOAi0w7QBxmpoICgBtU6YsB/NfTAQxfgsEgttwEsBl8AUwGCGAwaH/E2senJgA4YI7pmQwoQGVQLUQtj7E6AGiYVvBNX83QBACfJb2iqwHthur7gOObtOKV0mDYYDfACFjjJdNmaNpW2Te9cVvFcVdnO8DYWgwA6H53ehxwxAB0f0aW4ZQywzlxhpP6DHclMtxWSXJfKMONrSR35pLcWhwXXwega8AHSnUxYkLqLnsAAAAASUVORK5CYII=
+
+copyright:
+  - license: GPL-3.0
+    url: https://github.com/CogBrainHealthLab/VertexWiseR/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+variables:
+  python_env: /opt/vertexwiser-python
+
+build:
+  kind: neurodocker
+
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - install:
+        - ca-certificates
+        - curl
+        - gfortran
+        - libcurl4-openssl-dev
+        - libfontconfig1-dev
+        - libfreetype6-dev
+        - libfribidi-dev
+        - libharfbuzz-dev
+        - libjpeg-dev
+        - libpng-dev
+        - libssl-dev
+        - libtiff5-dev
+        - libxml2-dev
+        - make
+        - pandoc
+        - python3
+        - python3-pip
+        - python3-venv
+        - r-base
+        - r-base-dev
+    - environment:
+        RETICULATE_PYTHON: "{{ context.python_env }}/bin/python"
+        VIRTUAL_ENV: "{{ context.python_env }}"
+        PATH: "{{ context.python_env }}/bin:$PATH"
+    - run:
+        - python3 -m venv "{{ context.python_env }}"
+        - "{{ context.python_env }}/bin/pip install --no-cache-dir --upgrade pip setuptools wheel"
+        - "{{ context.python_env }}/bin/pip install --no-cache-dir brainstat==0.4.2 vtk==9.3.1 numpy==1.26.4 nilearn==0.12.0 netneurotools==0.2.5"
+        - R --slave -e "options(repos = c(CRAN = 'https://cloud.r-project.org'), Ncpus = max(1L, parallel::detectCores() - 1L)); install.packages('VertexWiseR', dependencies = c('Depends', 'Imports', 'LinkingTo'))"
+
+deploy:
+  bins:
+    - R
+    - Rscript
+    - python
+
+categories:
+  - structural imaging
+  - workflows
+
+readme: |-
+  ----------------------------------
+  ## vertexwiser/{{ context.version }} ##
+
+  VertexWiseR is an R package for extracting, manipulating, analysing, and visualising cortical surface and hippocampal vertex-wise data.
+
+  Example:
+  ```
+  R --slave -e "library(VertexWiseR); packageVersion('VertexWiseR')"
+  ```
+
+  This container includes a Python virtual environment at `{{ context.python_env }}` and sets `RETICULATE_PYTHON` so VertexWiseR can use BrainStat through reticulate.
+
+  More documentation can be found here: https://cogbrainhealthlab.github.io/VertexWiseR/
+
+  To run the container outside of this environment: ml vertexwiser/{{ context.version }}
+
+  ----------------------------------
