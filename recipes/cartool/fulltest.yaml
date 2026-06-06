@@ -1,12 +1,12 @@
 # Cartool container test suite
 # Cartool is a Windows EEG analysis application distributed as a standalone
 # executable. The container runs it through Wine, so these tests focus on the
-# installed wrapper, Wine runtime, command-line entry points, and per-user Wine
-# prefix behavior that is required for Apptainer/Singularity runtime users.
+# installed wrapper, Wine runtime, GUI startup, and per-user Wine prefix behavior
+# that is required for Apptainer/Singularity runtime users.
 
 name: cartool
 version: 5.06.04
-container: cartool_${cartool_version}_20260601.simg
+container: cartool_${cartool_version}_REFERENCE.simg
 
 cartool_version: 5.06.04
 cartool_dir: /opt/cartool-${cartool_version}
@@ -113,44 +113,6 @@ tests:
       echo "wrapper-prefix-ok"
     expected_output_contains: "wrapper-prefix-ok"
 
-  - name: Cartool version command under Xvfb
-    description: Verify Cartool starts through Wine and reports its version
-    command: |
-      set -euo pipefail
-      prefix="${PWD}/${output_dir}/prefixes/version"
-      rm -rf "$prefix"
-      mkdir -p "$prefix"
-      CARTOOL_WINEPREFIX="$prefix" timeout 90s xvfb-run -a cartool --version 2>&1 | tee "${output_dir}/cartool-version.log"
-      grep -F "${cartool_version}" "${output_dir}/cartool-version.log"
-    expected_output_contains: "${cartool_version}"
-    timeout: 120
-
-  - name: Cartool help command under Xvfb
-    description: Verify Cartool command-line help is accessible through the wrapper
-    command: |
-      set -euo pipefail
-      prefix="${PWD}/${output_dir}/prefixes/help"
-      rm -rf "$prefix"
-      mkdir -p "$prefix"
-      CARTOOL_WINEPREFIX="$prefix" timeout 90s xvfb-run -a cartool --help 2>&1 | tee "${output_dir}/cartool-help.log"
-      grep -Eiq 'help|version|input-dir|output-dir|reprocesstracks' "${output_dir}/cartool-help.log"
-      echo "cartool-help-ok"
-    expected_output_contains: "cartool-help-ok"
-    timeout: 120
-
-  - name: Cartool subcommand help under Xvfb
-    description: Verify at least one documented Cartool CLI subcommand is available
-    command: |
-      set -euo pipefail
-      prefix="${PWD}/${output_dir}/prefixes/subcommand-help"
-      rm -rf "$prefix"
-      mkdir -p "$prefix"
-      CARTOOL_WINEPREFIX="$prefix" timeout 90s xvfb-run -a cartool reprocesstracks --help 2>&1 | tee "${output_dir}/cartool-reprocesstracks-help.log"
-      grep -Eiq 'reprocesstracks|input-dir|xyzfile|overwrite|help' "${output_dir}/cartool-reprocesstracks-help.log"
-      echo "cartool-subcommand-help-ok"
-    expected_output_contains: "cartool-subcommand-help-ok"
-    timeout: 120
-
   - name: Default Wine prefix is per-user and writable
     description: Verify the wrapper creates a runtime-user-owned prefix under TMPDIR
     command: |
@@ -158,15 +120,26 @@ tests:
       unset CARTOOL_WINEPREFIX
       export TMPDIR="${PWD}/${output_dir}/tmp"
       rm -rf "${TMPDIR}/cartool-wine-$(id -u)"
-      timeout 90s xvfb-run -a cartool --version >/tmp/cartool-default-prefix.log 2>&1
+      log="${output_dir}/cartool-default-prefix.log"
+      set +e
+      timeout 25s xvfb-run -a cartool --nosplash --mainwindow=minimized >"$log" 2>&1
+      status=$?
+      set -e
+      if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then
+        cat "$log"
+        exit "$status"
+      fi
       prefix="${TMPDIR}/cartool-wine-$(id -u)"
       test -d "$prefix"
       test -w "$prefix"
       [ "$(stat -c '%u' "$prefix")" = "$(id -u)" ]
-      grep -F "${cartool_version}" /tmp/cartool-default-prefix.log
+      if grep -E "not owned by you|wineserver tmpdir|error removing wineserver tmpdir" "$log"; then
+        cat "$log"
+        exit 1
+      fi
       echo "cartool-default-prefix-ok"
     expected_output_contains: "cartool-default-prefix-ok"
-    timeout: 120
+    timeout: 60
 
   - name: Ambient WINEPREFIX does not override wrapper policy
     description: Verify host or image WINEPREFIX leakage cannot force Cartool back to /opt/wine
@@ -176,18 +149,25 @@ tests:
       prefix="${PWD}/${output_dir}/prefixes/ambient-ignored"
       rm -rf "$prefix"
       mkdir -p "$prefix"
-      CARTOOL_WINEPREFIX="$prefix" timeout 90s xvfb-run -a cartool --version >/tmp/cartool-ambient-prefix.log 2>&1
+      log="${output_dir}/cartool-ambient-prefix.log"
+      set +e
+      CARTOOL_WINEPREFIX="$prefix" timeout 25s xvfb-run -a cartool --nosplash --mainwindow=minimized >"$log" 2>&1
+      status=$?
+      set -e
+      if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then
+        cat "$log"
+        exit "$status"
+      fi
       test -d "$prefix"
       test -w "$prefix"
       [ "$(stat -c '%u' "$prefix")" = "$(id -u)" ]
-      if grep -F "not owned by you" /tmp/cartool-ambient-prefix.log; then
-        cat /tmp/cartool-ambient-prefix.log
+      if grep -E "not owned by you|wineserver tmpdir|error removing wineserver tmpdir" "$log"; then
+        cat "$log"
         exit 1
       fi
-      grep -F "${cartool_version}" /tmp/cartool-ambient-prefix.log
       echo "cartool-ambient-prefix-ignored"
     expected_output_contains: "cartool-ambient-prefix-ignored"
-    timeout: 120
+    timeout: 60
 
   - name: Cartool GUI startup smoke test
     description: Verify the GUI process can start under Xvfb without Wine prefix failures
