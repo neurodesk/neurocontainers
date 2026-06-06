@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -165,6 +166,31 @@ def test_miniconda_template_mamba_chains_after_tos_guard() -> None:
     dockerfile_run = "\n".join(render_directive(next(item for item in directives if isinstance(item, Run))))
     assert "then conda tos accept; fi; \\\n       conda install" in dockerfile_run
     assert "\n    && conda config --set solver libmamba" in dockerfile_run
+
+
+def test_miniconda_template_pinned_default_chains_after_tos_guard() -> None:
+    directives: list[Run] = []
+    apply_builtin_template(
+        "miniconda",
+        {
+            "version": "py313_26.3.2-2",
+            "conda_install": "python=3.12",
+            "arch": "x86_64",
+        },
+        "apt",
+        directives.append,
+    )
+    dockerfile_run = "\n".join(render_directive(next(item for item in directives if isinstance(item, Run))))
+    assert not any(line.strip().startswith("#") for line in dockerfile_run.splitlines())
+
+    shell_command = dockerfile_run.removeprefix("RUN ").replace("\\\n", " ")
+    result = subprocess.run(
+        ["/bin/sh", "-n", "-c", shell_command],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_matlabmcr_template_uses_release_named_runtime_dirs_for_r2023b() -> None:
