@@ -1,8 +1,9 @@
 {
   "apps": {
     "oshyx 0.4": {
-      "version": "20220620",
-      "exec": ""
+      "version": "20260526",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
