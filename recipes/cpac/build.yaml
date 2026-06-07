@@ -19,7 +19,7 @@ build:
     - run:
         - chmod +x /usr/local/bin/cpac-run
         - pip install --no-cache-dir "setuptools<81"
-        - rm -rf /root/.cache/pip
+        - rm -rf /root/.cache/pip /var/lib/apt/lists/* /var/cache/apt/* /var/log/dpkg.log /var/log/apt
   add-default-template: false
   add-tzdata: false
 

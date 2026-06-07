@@ -26,7 +26,7 @@ build:
           dpkg-deb -x {{ get_file("libpng12_deb") }} /tmp/libpng12
           rm -f /usr/lib/x86_64-linux-gnu/libpng12.so.0
           cp -a /tmp/libpng12/lib/x86_64-linux-gnu/libpng12.so.0* /usr/lib/x86_64-linux-gnu/
-          rm -rf /tmp/libpng12
+          rm -rf /tmp/libpng12 /root/.cache/pip /home/xcp_d/.cache/pip /usr/local/miniconda/pkgs/* /var/lib/apt/lists/* /var/cache/apt/* /var/log/dpkg.log /var/log/apt
     - deploy:
         path: []
         bins:
