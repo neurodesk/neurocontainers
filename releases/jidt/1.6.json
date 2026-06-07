@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "jidt 1.6": {
+      "version": "20260605",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "statistics",
+    "programming"
+  ]
+}
