@@ -1,7 +1,7 @@
 {
   "apps": {
     "cpac 1.8.7": {
-      "version": "20260521",
+      "version": "20260608",
       "exec": "",
       "apptainer_args": []
     }
