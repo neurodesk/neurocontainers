@@ -52,6 +52,8 @@ build:
     - run:
         - tar -xzf {{ get_file("aidamri_tar") }} -C /opt
         - mv AIDAmri-{{ context.version }} aidamri-{{ context.version }}
+        - find /opt/aidamri-{{ context.version }} -name '.DS_Store' -delete
+        - find /opt/aidamri-{{ context.version }} -name '.~lock.*' -delete
         - echo /opt/aidamri-{{ context.version }}/bin/dsi_studio_ubuntu_1804/dsi-studio/dsi_studio > /opt/aidamri-{{ context.version }}/bin/3.2_DTIConnectivity/dsi_studioPath.txt
 
     - workdir: /opt/niftyreg-builder
@@ -70,6 +72,7 @@ build:
         - mkdir -p /opt/fsl-{{ context.fsl_version }}
         - tar -xzf {{ get_file("fsl_tar") }} -C /opt/fsl-{{ context.fsl_version }} --strip-components 1 --exclude='data'
         - bash /opt/fsl-{{ context.fsl_version }}/etc/fslconf/fslpython_install.sh -f /opt/fsl-{{ context.fsl_version }}
+        - rm -f /opt/fsl-{{ context.fsl_version }}/bin/fslpython
 
     - template:
         name: miniconda

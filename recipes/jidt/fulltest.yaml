@@ -1,0 +1,40 @@
+name: jidt
+version: "1.6"
+container: jidt_${version}_REFERENCE.simg
+
+test_data:
+  output_dir: test_output
+
+setup:
+  script: |
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: JIDT distribution exists
+    description: Verify the JIDT distribution was unpacked under /opt
+    command: test -f /opt/jidt-1.6/infodynamics-dist-1.6/infodynamics.jar
+    expected_exit_code: 0
+
+  - name: Python demo runs
+    description: Exercise the JIDT Python bridge demo
+    command: >-
+      bash -lc 'cd /opt/jidt-1.6/infodynamics-dist-1.6/demos/python && python3 example2TeMultidimBinaryData.py'
+    expected_exit_code: 0
+
+  - name: rJava loads
+    description: Verify R can load the Java bridge used by JIDT examples
+    command: Rscript -e "library(rJava); cat('rJava loaded\n')"
+    expected_output_contains: "rJava loaded"
+
+  - name: R demo runs
+    description: Exercise the JIDT R demo through rJava
+    command: >-
+      bash -lc 'cd /opt/jidt-1.6/infodynamics-dist-1.6/demos/r && Rscript example1TeBinaryData.r'
+    expected_exit_code: 0
+
+  - name: Java runtime can load JIDT jar
+    description: Verify the Java runtime can load a JIDT class from the distribution jar
+    command: >-
+      javap -classpath /opt/jidt-1.6/infodynamics-dist-1.6/infodynamics.jar infodynamics.measures.discrete.TransferEntropyCalculatorDiscrete
+    expected_output_contains: "TransferEntropyCalculatorDiscrete"

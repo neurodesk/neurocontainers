@@ -120,7 +120,6 @@ build:
         - Rscript /opt/dependencies.R
 
     - environment:
-        DEPLOY_PATH: /opt/jidt-{{ context.version }}
         LC_ALL: en_AU.UTF-8
         LANGUAGE: en_AU.UTF-8
 
