@@ -23,7 +23,7 @@ import tempfile
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 import yaml
 
@@ -407,7 +407,11 @@ class ReleaseContainerDownloader:
                 try:
                     if os.path.exists(temp_path):
                         os.remove(temp_path)
-                    urllib.request.urlretrieve(url, temp_path)
+                    urllib.request.urlretrieve(
+                        url,
+                        temp_path,
+                        reporthook=self._download_progress_reporter(filename),
+                    )
                     os.replace(temp_path, cache_path)
                     print(f"Successfully downloaded: {cache_path}")
                     return cache_path
@@ -418,6 +422,46 @@ class ReleaseContainerDownloader:
                     continue
 
         return None
+
+    def _download_progress_reporter(
+        self, filename: str
+    ) -> Callable[[int, int, int], None]:
+        """Return a urlretrieve hook that reports coarse download progress."""
+        state = {"total_size": None, "next_percent": 10}
+
+        def report(block_count: int, block_size: int, total_size: int) -> None:
+            if total_size > 0 and state["total_size"] is None:
+                state["total_size"] = total_size
+                print(
+                    f"Download size for {filename}: "
+                    f"{self._format_size(total_size)}"
+                )
+
+            if total_size <= 0 or block_count <= 0:
+                return
+
+            downloaded = min(block_count * block_size, total_size)
+            percent = int(downloaded * 100 / total_size)
+            if percent < state["next_percent"] and downloaded < total_size:
+                return
+
+            print(
+                f"Download progress for {filename}: {percent}% "
+                f"({self._format_size(downloaded)} / {self._format_size(total_size)})"
+            )
+            while state["next_percent"] <= percent:
+                state["next_percent"] += 10
+
+        return report
+
+    @staticmethod
+    def _format_size(size_bytes: int) -> str:
+        size = float(size_bytes)
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if size < 1024 or unit == "TB":
+                return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+            size /= 1024
+        return f"{size_bytes} B"
 
     @staticmethod
     def normalise_image_basename(image: Optional[str]) -> Optional[str]:
