@@ -399,7 +399,7 @@ jobs:
               echo "Cache image ${CACHE_REF} is unavailable; building without --cache-from"
             fi
             if [ "${DISABLE_AUTO_UPLOAD}" != "true" ]; then
-              CACHE_TO_ARGS+=(--cache-to "type=registry,ref=${CACHE_REF},mode=max")
+              CACHE_TO_ARGS+=(--cache-to "type=registry,ref=${CACHE_REF},mode=max,ignore-error=true")
             else
               echo "Auto-upload is disabled. Skipping registry cache export."
             fi
@@ -637,6 +637,10 @@ jobs:
   push-dockerhub:
     needs: [config, build-image]
     if: ${{ needs.build-image.outputs.IMGDIFFERS == 'true' || inputs.force_push_dockerhub == 'true' }}
+    # Docker Hub is a public mirror. GHCR, SIF generation, and object storage are
+    # the release-critical outputs, so transient Docker Hub failures should not
+    # block release PR creation.
+    continue-on-error: true
     runs-on: ubuntu-22.04
     permissions:
       packages: write
