@@ -1,7 +1,7 @@
 {
   "apps": {
     "matlabruntime 2025b": {
-      "version": "20260521",
+      "version": "20260606",
       "exec": "",
       "apptainer_args": []
     }
