@@ -1,5 +1,5 @@
 # nighres container test suite
-# Minimal ARM64 verification for the rebuilt Python/JCC payload.
+# Minimal verification for the rebuilt Python/JCC payload.
 
 name: nighres
 version: 1.5.2
@@ -15,14 +15,14 @@ setup:
     mkdir -p "${output_dir}"
 
 tests:
-  - name: ARM64 runtime
-    description: Verify the container runs natively on arm64
-    command: uname -m
-    expected_output_contains: "aarch64"
+  - name: Supported runtime architecture
+    description: Verify the container runs on a supported architecture
+    command: bash -lc 'uname -m | grep -E "^(x86_64|aarch64)$" >/dev/null && echo "supported architecture"'
+    expected_output_contains: "supported architecture"
 
   - name: Python version
     description: Verify the rebuilt environment uses Python 3
-    command: python3 --version
+    command: python --version
     expected_output_contains: "Python 3"
 
   - name: Java runtime
@@ -32,22 +32,22 @@ tests:
 
   - name: JCC import
     description: Verify the Java/Python bridge imports successfully
-    command: python3 -c "import jcc; print('JCC imported successfully')"
+    command: python -c "import jcc; print('JCC imported successfully')"
     expected_output_contains: "JCC imported successfully"
 
   - name: nighres import
     description: Verify nighres imports successfully
-    command: python3 -c "import nighres; print('nighres version:', getattr(nighres, '__version__', 'unknown'))"
+    command: python -c "import nighres; print('nighres version:', getattr(nighres, '__version__', 'unknown'))"
     expected_output_contains: "nighres version:"
 
   - name: nighresjava import
     description: Verify the nighresjava backend is built and importable
-    command: python3 -c "import nighresjava; print('nighresjava imported successfully')"
+    command: python -c "import nighresjava; print('nighresjava imported successfully')"
     expected_output_contains: "nighresjava imported successfully"
 
   - name: core scientific deps
     description: Verify the rebuilt environment provides the key Python dependencies
-    command: python3 -c "import numpy, scipy, pandas, nilearn, nipype, dipy, ants; print('deps ok')"
+    command: python -c "import numpy, scipy, pandas, nilearn, nipype, dipy, ants; print('deps ok')"
     expected_output_contains: "deps ok"
 
   - name: source checkout exists

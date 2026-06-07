@@ -68,6 +68,7 @@ build:
         - "git checkout release-{{ context.version }}"
         - ./build.sh
         - pip install --no-deps .
+        - python -c "import nighres, nighresjava"
 
 deploy:
   bins:
