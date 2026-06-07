@@ -1,45 +1,39 @@
-# hdbet container test suite
-# Minimal no-rebuild verification for the shipped HD-BET project payload.
-
 name: hdbet
-version: 1.0.0
-container: hdbet_1.0.0_20210318.simg
+version: 2.0.1
+container: hdbet_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output
 
 setup:
   script: |
-    #!/usr/bin/env bash
     set -e
     mkdir -p ${output_dir}
 
 tests:
-  - name: Python runtime available
-    description: Verify the shipped HD-BET conda runtime matches the image
-    command: /opt/miniconda-latest/bin/python --version
-    expected_output_contains: "Python 3.6.13"
+  - name: HD-BET conda Python is available
+    description: Verify the shipped HD-BET conda environment is usable
+    command: /opt/miniconda-latest/envs/hdbet/bin/python --version
+    expected_output_contains: "Python 3.10"
 
-  - name: HD_BET import path
-    description: Verify the HD_BET module imports from the shipped conda environment
+  - name: HD_BET package imports from project
+    description: Verify the editable HD-BET package imports from the installed source tree
     command: >-
-      /opt/miniconda-latest/bin/python -c "import HD_BET; print(HD_BET.__file__)"
+      /opt/miniconda-latest/envs/hdbet/bin/python -c "import HD_BET; print(HD_BET.__file__)"
     expected_output_contains: "/opt/HD-BET/HD_BET/__init__.py"
 
-  - name: HD_BET package metadata version
-    description: Verify the editable package metadata reports the shipped HD_BET version
+  - name: HD-BET parameter metadata exists
+    description: Verify the patched paths metadata and bundled parameter files are present
     command: >-
-      grep -n "^Version: 1.0$" /opt/HD-BET/HD_BET.egg-info/PKG-INFO
-    expected_output_contains: "Version: 1.0"
+      /opt/miniconda-latest/envs/hdbet/bin/python -c "from HD_BET import paths; import os; print(paths.folder_with_parameter_files); print(paths.ZENODO_DOWNLOAD_URL); print(os.path.isdir(paths.folder_with_parameter_files))"
+    expected_output_contains: "True"
 
-  - name: HD-BET console entrypoint
-    description: Verify the hd-bet console script is available on PATH
-    command: >-
-      which hd-bet
-    expected_output_contains: "/opt/miniconda-latest/bin/hd-bet"
+  - name: HD-BET console entrypoint is on PATH
+    description: Verify the deployed hd-bet command resolves to the conda environment
+    command: which hd-bet
+    expected_output_contains: "/opt/miniconda-latest/envs/hdbet/bin/hd-bet"
 
-  - name: HD-BET help display
-    description: Verify the shipped hd-bet command displays usage text
-    command: >-
-      hd-bet --help 2>&1 | head -20
+  - name: HD-BET help displays usage
+    description: Verify the command starts without importing errors
+    command: hd-bet --help 2>&1 | head -20
     expected_output_contains: "usage: hd-bet"

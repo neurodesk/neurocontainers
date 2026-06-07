@@ -23,6 +23,8 @@ build:
         - ca-certificates
         - curl
         - gfortran
+        - libgl1
+        - libglx-mesa0
         - libcurl4-openssl-dev
         - libfontconfig1-dev
         - libfreetype6-dev
@@ -49,6 +51,8 @@ build:
         - "{{ context.python_env }}/bin/pip install --no-cache-dir --upgrade pip setuptools wheel"
         - "{{ context.python_env }}/bin/pip install --no-cache-dir brainstat==0.4.2 vtk==9.3.1 numpy==1.26.4 nilearn==0.12.0 netneurotools==0.2.5"
         - R --slave -e "options(repos = c(CRAN = 'https://cloud.r-project.org'), Ncpus = max(1L, parallel::detectCores() - 1L)); install.packages('VertexWiseR', dependencies = c('Depends', 'Imports', 'LinkingTo'))"
+        - R --slave -e "library(VertexWiseR); stopifnot(as.character(packageVersion('VertexWiseR')) == '{{ context.version }}'); library(reticulate); stopifnot(grepl('{{ context.python_env }}/bin/python', py_config()[['python']], fixed = TRUE))"
+        - "{{ context.python_env }}/bin/python -c \"import brainstat, nilearn, nibabel, vtk; print(vtk.vtkVersion.GetVTKVersion())\""
 
 deploy:
   bins:

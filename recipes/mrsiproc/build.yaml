@@ -71,6 +71,7 @@ build:
         - run:
             - echo 'import os' > /opt/HD-BET/HD_BET/paths.py
             - echo 'folder_with_parameter_files = "/opt/HD-BET/hd-bet_params"' >> /opt/HD-BET/HD_BET/paths.py
+            - echo 'ZENODO_DOWNLOAD_URL = "https://zenodo.org/record/2540695/files/"' >> /opt/HD-BET/HD_BET/paths.py
             - mkdir -p /opt/HD-BET/hd-bet_params
             - cp {{ get_file("hdbet_0_model") }} /opt/HD-BET/hd-bet_params/0.model
             - cp {{ get_file("hdbet_1_model") }} /opt/HD-BET/hd-bet_params/1.model
@@ -232,7 +233,6 @@ deploy:
     - mnc2nii
     - bet
     - hd-bet
-    - mri_synthseg
     - lcmodel
     - parallel
     - fsl
