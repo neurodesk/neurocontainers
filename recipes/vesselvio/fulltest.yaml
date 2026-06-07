@@ -10,7 +10,7 @@
 
 name: vesselvio
 version: 1.1.2
-container: vesselvio_1.1.2.simg
+container: vesselvio_1.1.2_20230428.simg
 
 test_data:
   sample_vertices: /opt/vesselvio-1.1.2/sample_data/demo_csv/vertices.csv
