@@ -1,0 +1,13 @@
+{
+  "apps": {
+    "mrsiproc 0.2.0": {
+      "version": "20260608",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "spectroscopy",
+    "workflows"
+  ]
+}
