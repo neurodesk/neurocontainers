@@ -1,24 +1,57 @@
 name: vertexwiser
 version: 1.5.1
 container: vertexwiser_${version}_REFERENCE.simg
+default_timeout: 180
 
 test_data:
   output_dir: test_output
+  cache_dir: test_output/vertexwiser-home
 
 setup:
   script: |
     set -e
     mkdir -p ${output_dir}
+    mkdir -p ${cache_dir}
 
 tests:
+  - name: Deploy executables are available
+    description: Verify the exposed R, Rscript, and Python commands resolve to expected paths
+    command: |
+      set -e
+      which R
+      which Rscript
+      which python
+      python - <<'PY'
+      import sys
+      assert sys.executable == "/opt/vertexwiser-python/bin/python", sys.executable
+      print("python executable", sys.executable)
+      PY
+    expected_output_contains:
+      - /usr/bin/R
+      - /usr/bin/Rscript
+      - /opt/vertexwiser-python/bin/python
+
   - name: VertexWiseR package loads
     description: Verify the R package is installed and loadable
-    command: R --slave -e "library(VertexWiseR); cat('VertexWiseR', as.character(packageVersion('VertexWiseR')), '\n')"
-    expected_output_contains: VertexWiseR
+    command: |
+      R --slave - <<'RS'
+      library(VertexWiseR)
+      stopifnot(as.character(packageVersion("VertexWiseR")) == "1.5.1")
+      exports <- getNamespaceExports("VertexWiseR")
+      stopifnot(all(c("smooth_surf", "plot_surf3d", "RFT_vertex_analysis") %in% exports))
+      cat("VertexWiseR", as.character(packageVersion("VertexWiseR")), "\n")
+      RS
+    expected_output_contains: VertexWiseR 1.5.1
 
   - name: Reticulate uses bundled Python
     description: Verify reticulate is configured to use the container Python environment
-    command: R --slave -e "library(reticulate); cat(py_config()[['python']], '\n')"
+    command: |
+      R --slave - <<'RS'
+      library(reticulate)
+      cfg <- py_config()
+      stopifnot(cfg[["python"]] == "/opt/vertexwiser-python/bin/python")
+      cat(cfg[["python"]], "\n")
+      RS
     expected_output_contains: /opt/vertexwiser-python/bin/python
 
   - name: BrainStat stack imports
@@ -37,3 +70,119 @@ tests:
       print("vtk", vtk.vtkVersion.GetVTKVersion())
       PY
     expected_output_contains: vtk
+
+  - name: Reticulate imports bundled Python stack
+    description: Verify R can import the Python dependencies through reticulate
+    command: |
+      R --slave - <<'RS'
+      library(reticulate)
+      brainstat <- import("brainstat")
+      nilearn <- import("nilearn")
+      vtk <- import("vtk")
+      stopifnot(py_config()[["python"]] == "/opt/vertexwiser-python/bin/python")
+      cat("brainstat", py_to_r(py_get_attr(brainstat, "__version__", silent = TRUE)), "\n")
+      cat("nilearn", py_to_r(nilearn$`__version__`), "\n")
+      cat("vtk", py_to_r(vtk$vtkVersion$GetVTKVersion()), "\n")
+      RS
+    expected_output_contains:
+      - nilearn
+      - vtk
+
+  - name: Bundled demo data loads
+    description: Verify packaged VertexWiseR demo and hippocampal template data are present and readable
+    command: |
+      R --slave - <<'RS'
+      library(VertexWiseR)
+      demo <- readRDS(system.file("demo_data/SPRENG_behdata_site1.rds", package = "VertexWiseR"))
+      fink <- readRDS(system.file("demo_data/FINK_behdata_ses13.rds", package = "VertexWiseR"))
+      hip <- readRDS(system.file("extdata/hip_points_cells.rds", package = "VertexWiseR"))
+      stopifnot(nrow(demo) > 100, ncol(demo) > 10)
+      stopifnot(nrow(fink) > 0, ncol(fink) > 0)
+      stopifnot(!is.null(hip))
+      cat("SPRENG", nrow(demo), ncol(demo), "\n")
+      cat("FINK", nrow(fink), ncol(fink), "\n")
+      cat("hip data loaded\n")
+      RS
+    expected_output_contains:
+      - SPRENG
+      - FINK
+      - hip data loaded
+
+  - name: BrainStat template setup and surface smoothing
+    description: Exercise first-run BrainStat template download/cache and smooth a fsaverage5 matrix
+    timeout: 300
+    command: |
+      export HOME="$PWD/${cache_dir}"
+      R --slave - <<'RS'
+      set.seed(42)
+      library(VertexWiseR)
+      surf <- matrix(rnorm(3 * 20484), nrow = 3)
+      smoothed <- smooth_surf(surf, FWHM = 2, VWR_check = TRUE)
+      stopifnot(is.matrix(smoothed))
+      stopifnot(identical(dim(smoothed), c(3L, 20484L)))
+      stopifnot(all(is.finite(smoothed)))
+      stopifnot(file.exists(file.path(Sys.getenv("HOME"), "brainstat_data")))
+      saveRDS(smoothed, "${output_dir}/vertexwiser_smoothed.rds")
+      cat("smooth dim", paste(dim(smoothed), collapse = "x"), "\n")
+      RS
+    expected_output_contains: smooth dim 3x20484
+    validate:
+      - output_exists: ${output_dir}/vertexwiser_smoothed.rds
+
+  - name: Surface plotting returns plotly widget
+    description: Verify VertexWiseR can construct a fsaverage5 surface plot object in non-interactive mode
+    depends_on: BrainStat template setup and surface smoothing
+    timeout: 300
+    command: |
+      export HOME="$PWD/${cache_dir}"
+      R --slave - <<'RS'
+      set.seed(43)
+      library(VertexWiseR)
+      p <- plot_surf3d(
+        surf_data = runif(20484),
+        hemi = "l",
+        orientation_labels = FALSE,
+        plot_grid = FALSE,
+        VWR_check = TRUE
+      )
+      stopifnot(!is.null(p))
+      stopifnot(all(c("plotly", "htmlwidget") %in% class(p)))
+      cat("plot class", paste(class(p), collapse = ","), "\n")
+      RS
+    expected_output_contains: plot class plotly,htmlwidget
+
+  - name: RFT vertex analysis returns finite t-stat map
+    description: Run a small synthetic fsaverage5 model through VertexWiseR and BrainStat
+    depends_on: BrainStat template setup and surface smoothing
+    timeout: 300
+    command: |
+      export HOME="$PWD/${cache_dir}"
+      R --slave - <<'RS'
+      set.seed(44)
+      library(VertexWiseR)
+      n <- 12
+      age <- seq(20, 75, length.out = n)
+      sex <- rep(c(0, 1), length.out = n)
+      model <- data.frame(age = age, sex = sex)
+      surf <- matrix(rnorm(n * 20484), nrow = n)
+      surf[, 1:50] <- surf[, 1:50] + scale(age)[, 1] * 0.4
+      smoothed <- smooth_surf(surf, FWHM = 2, VWR_check = TRUE)
+      fit <- RFT_vertex_analysis(
+        model = model,
+        contrast = model$age,
+        surf_data = smoothed,
+        atlas = 1,
+        p = 0.05,
+        smooth_FWHM = NULL,
+        VWR_check = TRUE
+      )
+      stopifnot(is.list(fit))
+      stopifnot(all(c("cluster_level_results", "tstat_map", "fdr_pmap") %in% names(fit)))
+      stopifnot(length(fit$tstat_map) == 20484)
+      stopifnot(all(is.finite(fit$tstat_map)))
+      saveRDS(fit, "${output_dir}/vertexwiser_rft_result.rds")
+      cat("rft vertices", length(fit$tstat_map), "\n")
+      RS
+    expected_output_contains: rft vertices 20484
+    validate:
+      - output_exists: ${output_dir}/vertexwiser_rft_result.rds
