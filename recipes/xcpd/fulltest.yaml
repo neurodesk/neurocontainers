@@ -1,6 +1,6 @@
 name: xcpd
 version: 0.10.7
-container: xcpd_0.10.7.simg
+container: xcpd_0.10.7_20260608.simg
 default_timeout: 120
 tests:
 - name: Test xcpd

@@ -18,7 +18,7 @@
 
 name: tgvqsm
 version: 1.0.0
-container: tgvqsm_1.0.0_20210629.simg
+container: tgvqsm_1.0.0_20260601.simg
 
 required_files:
   - dataset: ds000001
@@ -266,53 +266,53 @@ tests:
   # ==========================================================================
   - name: dcm2niix help
     description: Verify dcm2niix binary runs and displays help
-    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
+    command: bash -lc '/opt/dcm2niix-latest/dcm2niix -h 2>&1'
     expected_output_contains: "dcm2niiX"
 
   - name: dcm2niix version
     description: Check dcm2niix version information
-    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
+    command: bash -lc '/opt/dcm2niix-latest/dcm2niix -h 2>&1'
     expected_output_contains: "Chris Rorden"
 
   - name: dcm2niix usage info
     description: Verify dcm2niix shows usage syntax
-    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
+    command: bash -lc '/opt/dcm2niix-latest/dcm2niix -h 2>&1'
     expected_output_contains: "dcm2niix [options] <in_folder>"
 
   - name: dcm2niix output options
     description: Verify dcm2niix shows output directory option
-    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
+    command: bash -lc '/opt/dcm2niix-latest/dcm2niix -h 2>&1'
     expected_output_contains: "-o : output directory"
 
   - name: dcm2niix filename format
     description: Verify dcm2niix shows filename format option
-    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
+    command: bash -lc '/opt/dcm2niix-latest/dcm2niix -h 2>&1'
     expected_output_contains: "-f : filename"
 
   - name: dcm2niix compression option
     description: Verify dcm2niix shows compression option
-    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
-    expected_output_contains: "-z : gz compress"
+    command: bash -lc '/opt/dcm2niix-latest/dcm2niix -h 2>&1'
+    expected_output_contains: "-z : compress images"
 
   - name: dcm2niix BIDS option
     description: Verify dcm2niix shows BIDS sidecar option
-    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
+    command: bash -lc '/opt/dcm2niix-latest/dcm2niix -h 2>&1'
     expected_output_contains: "-b : BIDS sidecar"
 
   - name: dcm2niix verbose option
     description: Verify dcm2niix shows verbose option
-    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix -h 2>&1'
+    command: bash -lc '/opt/dcm2niix-latest/dcm2niix -h 2>&1'
     expected_output_contains: "-v : verbose"
 
   - name: dcm2niix version check
     description: Get dcm2niix version number
-    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix --version 2>&1'
+    command: bash -lc '/opt/dcm2niix-latest/dcm2niix --version 2>&1'
     ignore_exit_code: true
-    expected_output_contains: "v1.0.20210317"
+    expected_output_contains: "v1.0.20260416"
 
   - name: dcm2niix xml features
     description: Check dcm2niix XML output mode
-    command: bash -lc '/opt/dcm2niix-latest/bin/dcm2niix --xml 2>&1'
+    command: bash -lc '/opt/dcm2niix-latest/dcm2niix --xml 2>&1'
     expected_output_contains: "dcm2niix"
 
   # ==========================================================================
@@ -702,7 +702,7 @@ tests:
 
   - name: dcm2niix empty directory
     description: Test dcm2niix on directory with no DICOMs
-    command: bash -lc 'mkdir -p test_output/empty_dir && /opt/dcm2niix-latest/bin/dcm2niix -o test_output test_output/empty_dir 2>&1 || true'
+    command: bash -lc 'mkdir -p test_output/empty_dir && /opt/dcm2niix-latest/dcm2niix -o test_output test_output/empty_dir 2>&1 || true'
     expected_output_contains: "Unable to find"
 
   # ==========================================================================

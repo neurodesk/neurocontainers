@@ -1,6 +1,6 @@
 name: cpac
 version: 1.8.7
-container: cpac_1.8.7_20260521.simg
+container: cpac_1.8.7_20260608.simg
 default_timeout: 120
 tests:
 - name: Test C-PAC CLI version

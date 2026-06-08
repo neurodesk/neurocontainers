@@ -1,6 +1,6 @@
 name: matlabruntime
 version: 2025b
-container: matlabruntime_2025b_20260521.simg
+container: matlabruntime_2025b_20260606.simg
 default_timeout: 120
 tests:
 - name: Test MATLAB Runtime environment
