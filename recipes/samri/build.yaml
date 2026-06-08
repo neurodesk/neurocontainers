@@ -43,7 +43,7 @@ files:
   - name: ants_archive
     url: https://zenodo.org/api/records/15230173/files/ants-Linux-centos6_x86_64-v{{ context.ants_version }}.tar.gz/content
   - name: mouse_brain_atlases_generator_source
-    url: https://github.com/IBT-FMI/mouse-brain-atlases_generator/archive/{{ context.mouse_brain_atlases_generator_commit }}.tar.gz
+    url: https://codeload.github.com/IBT-FMI/mouse-brain-atlases_generator/tar.gz/{{ context.mouse_brain_atlases_generator_commit }}
 
 build:
   kind: neurodocker
