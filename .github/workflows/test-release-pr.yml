@@ -315,32 +315,36 @@ jobs:
 
             summary += `*This comment will be updated as tests complete.*`;
 
-            // Find existing summary comment
-            const comments = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-
-            const summaryComment = comments.data.find(comment => 
-              comment.user.type === 'Bot' && 
-              comment.body.includes('Container Test Summary')
-            );
-
-            if (summaryComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: summaryComment.id,
-                body: summary
-              });
-            } else {
-              await github.rest.issues.createComment({
+            try {
+              // Find existing summary comment
+              const comments = await github.rest.issues.listComments({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                body: summary
               });
+
+              const summaryComment = comments.data.find(comment =>
+                comment.user.type === 'Bot' &&
+                comment.body.includes('Container Test Summary')
+              );
+
+              if (summaryComment) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: summaryComment.id,
+                  body: summary
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: summary
+                });
+              }
+            } catch (error) {
+              core.warning(`Unable to write container test summary comment: ${error.message}`);
             }
 
             // Fail the workflow if any tests failed

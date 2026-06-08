@@ -17,7 +17,7 @@
 
 name: dcm2bids
 version: 3.2.0
-container: dcm2bids_3.2.0_20250402.simg
+container: dcm2bids_3.2.0_20260527.simg
 
 required_files:
   - dataset: ds000001

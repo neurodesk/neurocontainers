@@ -1,7 +1,7 @@
 # segmentator container test suite
 name: segmentator
 version: 1.6.1
-container: segmentator_1.6.1.simg
+container: segmentator_1.6.1_20260519.simg
 
 test_data:
   output_dir: test_output
