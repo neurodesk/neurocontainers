@@ -18,7 +18,7 @@ build:
         install_path: /opt/miniconda
         conda_install: python jupyterlab mne mne-bids mne-connectivity hdf5storage ipympl nb_conda_kernels pydicom seaborn openpyxl pip
         pip_install: tabulate pyyaml easydict
-        conda_opts: "-C conda-forge"
+        conda_opts: "-c conda-forge"
         installed: false
     - install: git
     - run:
