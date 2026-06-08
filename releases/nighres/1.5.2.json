@@ -1,8 +1,9 @@
 {
   "apps": {
     "nighres 1.5.2": {
-      "version": "20250203",
-      "exec": ""
+      "version": "20260608",
+      "exec": "",
+      "apptainer_args": []
     }
   },
   "categories": [
