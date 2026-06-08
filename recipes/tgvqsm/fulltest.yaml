@@ -33,11 +33,28 @@ test_data:
   bold: ds000001/sub-01/func/sub-01_task-balloonanalogrisktask_run-01_bold.nii.gz
   output_dir: test_output
 
+env:
+  PYTHON_EGG_CACHE: ${output_dir}/python-eggs
+
 setup:
   script: |
     #!/usr/bin/env bash
     set -e
     mkdir -p test_output
+    mkdir -p ${output_dir}/python-eggs
+    export PYTHON_EGG_CACHE=${output_dir}/python-eggs
+    python2 -c "
+    import nibabel as nib
+    import numpy as np
+    img = nib.load('${t1w}')
+    data = img.get_data().astype(np.float32)
+    data = (data - data.min()) / (data.max() - data.min()) * 2 * np.pi - np.pi
+    nib.Nifti1Image(data, img.affine, img.header).to_filename('test_output/synthetic_phase.nii.gz')
+    mask = np.zeros(data.shape, dtype=np.uint8)
+    sx, sy, sz = data.shape
+    mask[sx//4:3*sx//4, sy//4:3*sy//4, sz//4:3*sz//4] = 1
+    nib.Nifti1Image(mask, img.affine, img.header).to_filename('test_output/t1w_brain_mask_mask.nii.gz')
+    "
 
 tests:
   # ==========================================================================
