@@ -133,3 +133,13 @@ def test_nectar_registry_username_is_explicit() -> None:
 
     assert "username: s.bollmann@uq.edu.au" in push_nectar_job
     assert "REGISTRY_RC_NECTAR_ORG_AU_USERNAME" not in workflow
+
+
+def test_update_apps_json_syncs_neurocommand_icons() -> None:
+    workflow = Path(".github/workflows/update-apps-json.yml").read_text()
+
+    assert "python -m pip install cairosvg" in workflow
+    assert "python .github/workflows/scripts/sync_neurocontainer_icons.py" in workflow
+    assert "--neurocontainers-path .." in workflow
+    assert "git diff --quiet neurodesk/apps.json neurodesk/icons" in workflow
+    assert "git add neurodesk/apps.json neurodesk/icons" in workflow

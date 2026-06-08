@@ -31,6 +31,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install icon conversion dependencies
+        run: python -m pip install cairosvg
+
       - name: Generate apps.json
         run: |
           python3 tools/generate_apps_json.py --output apps.json
@@ -55,13 +58,17 @@ jobs:
 
           # Copy the generated apps.json
           cp ../apps.json neurodesk/apps.json
+          python .github/workflows/scripts/sync_neurocontainer_icons.py \
+            --neurocontainers-path .. \
+            --apps-json neurodesk/apps.json \
+            --icons-dir neurodesk/icons
 
           # Check if there are any changes
-          if ! git diff --quiet neurodesk/apps.json; then
+          if ! git diff --quiet neurodesk/apps.json neurodesk/icons; then
             echo "Changes detected in apps.json"
             
             # Add and commit changes
-            git add neurodesk/apps.json
+            git add neurodesk/apps.json neurodesk/icons
             git commit -m "Update apps.json from neurocontainers releases
             
             Auto-generated from release files in neurocontainers repo.
@@ -82,6 +89,7 @@ jobs:
           ## Changes
 
           - Updated apps.json with latest container releases
+          - Synced any missing icons from neurocontainers recipe metadata
           - Generated automatically from individual release files
 
           ## Test Plan
