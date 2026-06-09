@@ -1,0 +1,12 @@
+{
+  "apps": {
+    "megnet 1.0.1": {
+      "version": "20260608",
+      "exec": "",
+      "apptainer_args": []
+    }
+  },
+  "categories": [
+    "electrophysiology"
+  ]
+}
