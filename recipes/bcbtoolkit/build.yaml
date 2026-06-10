@@ -100,7 +100,7 @@ build:
   base-image: ubuntu:18.04
   pkg-manager: apt
   directives:
-    - install: libxt6 libglu1-mesa libgl1-mesa-glx curl ca-certificates unzip
+    - install: libxt6 libxrender1 libxtst6 libxi6 libglu1-mesa libgl1-mesa-glx curl ca-certificates unzip
 
     # ---------------------------------------------------------------------
     # Bundled-FSL environment.
@@ -217,6 +217,18 @@ build:
           test -x /opt/BCBToolKit/Tools/binaries/bin/fslmaths
           test -x /opt/BCBToolKit/jre/bin/java
           test -r /opt/BCBToolKit/sources.jar
+
+          # The Java GUI loads libawt_xawt.so, which needs system X11
+          # libraries such as libXrender.so.1.
+          awt_ldd="$(
+              LD_LIBRARY_PATH="/opt/BCBToolKit/jre/lib/amd64:/opt/BCBToolKit/jre/lib/amd64/server:${LD_LIBRARY_PATH:-}" \
+                  ldd /opt/BCBToolKit/jre/lib/amd64/libawt_xawt.so
+          )"
+          if echo "${awt_ldd}" | grep -q "not found"; then
+              echo "${awt_ldd}"
+              exit 1
+          fi
+
           BCBTOOLKIT_ROOT=/opt/BCBToolKit run_disco.sh -l /tmp/nope -o /tmp/out 2>&1 |
               grep -q "neither an existing file nor directory"
           EOF
