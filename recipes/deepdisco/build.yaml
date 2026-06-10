@@ -97,11 +97,22 @@ build:
     - run:
         - chmod 0755 /usr/local/bin/deepdisco
         - ln -s /usr/local/bin/deepdisco /usr/local/bin/DeepDisco
+    - copy:
+      - deepdisco_cli_py
+      - "{{ context.install_path }}/cli.py"
+    - copy:
+      - deepdisco_cli_wrapper
+      - /usr/local/bin/deepdisco-cli
+    - run:
+      - chmod 0644 "{{ context.install_path }}/cli.py"
+      - chmod 0755 /usr/local/bin/deepdisco-cli
 
 deploy:
   bins:
     - deepdisco
     - DeepDisco
+    - deepdisco-cli
+
   path:
     - /usr/local/bin
 
@@ -130,12 +141,159 @@ files:
 
       cd "${DEEPDISCO_HOME}"
       exec "${DEEPDISCO_VENV}/bin/python" part.py "$@"
+  - name: deepdisco_cli_py
+    contents: |
+      #!/usr/bin/env python3
+      """
+      deepdisco_cli.py — headless command-line interface for DeepDisco.
 
+      DeepDisco (https://github.com/annamatsulevits/DeepDisco, Neurodesk module
+      `deepdisco/20251008`) ships only a PySide6 GUI. This wrapper reuses DeepDisco's
+      OWN inference functions from `part.py` (load_model, preprocess_input,
+      detect_lesion_side, run_inference, apply_hemisphere_mask, save_output), so the
+      output is identical to the desktop app — but it needs no display and is fully
+      scriptable.
+
+      Importing `part` is display-free: Qt is only instantiated under part.py's
+      `__main__`, which we never trigger.
+
+      Usage
+      -----
+          deepdisco_cli.py --input lesion.nii.gz --model PRO --output disco_PRO.nii.gz
+          deepdisco_cli.py --input lesion.nii.gz --all --outdir results/
+
+      Models:  ASS = association, PRO = projection, COM = commissural, WHO = whole brain
+               (full GUI names also accepted, e.g. "PROJECTION FIBERS").
+
+      Input must be a BINARY lesion mask in MNI152 2 mm space (91x109x91), matching
+      DeepDisco's bundled templates and hemisphere masks. Run it with DeepDisco's own
+      Python so torch/nibabel/torchio are present, e.g. inside Neurodesk:
+
+          ml deepdisco/20251008
+          "$DEEPDISCO_VENV/bin/python" deepdisco_cli.py --input mask.nii.gz --model WHO -o out.nii.gz
+      """
+      import argparse
+      import os
+      import sys
+
+      _CODES = {
+          "ASS": "ASSOCIATION FIBERS",
+          "PRO": "PROJECTION FIBERS",
+          "COM": "COMMISSURAL FIBERS",
+          "WHO": "WHOLE BRAIN",
+      }
+
+
+      def _resolve_name(code: str) -> str:
+          """Accept short codes (PRO) or full GUI names (PROJECTION FIBERS)."""
+          up = code.upper()
+          if up in _CODES:
+              return _CODES[up]
+          if up in _CODES.values():
+              return up
+          sys.exit(f"Unknown model {code!r}; choose from {list(_CODES)} "
+                   f"or {list(_CODES.values())}")
+
+
+      def main(argv=None):
+          ap = argparse.ArgumentParser(
+              description="Headless DeepDisco disconnectome generator "
+                          "(reuses the GUI's exact inference path).")
+          ap.add_argument("--input", "-i", required=True,
+                          help="binary lesion mask, MNI152 2 mm (91x109x91)")
+          grp = ap.add_mutually_exclusive_group(required=True)
+          grp.add_argument("--model", "-m",
+                           help="ASS | PRO | COM | WHO (or full GUI name)")
+          grp.add_argument("--all", action="store_true", help="run all four models")
+          ap.add_argument("--output", "-o",
+                          help="output file (single-model mode)")
+          ap.add_argument("--outdir", "-d",
+                          help="output directory (default: input's directory)")
+          ap.add_argument("--home",
+                          default=os.environ.get("DEEPDISCO_HOME", "/opt/deepdisco-20251008"),
+                          help="DeepDisco install dir (default: $DEEPDISCO_HOME)")
+          args = ap.parse_args(argv)
+
+          if not os.path.exists(args.input):
+              sys.exit(f"Input not found: {args.input}")
+
+          home = os.path.abspath(args.home)
+          if not os.path.isdir(home):
+              sys.exit(f"DeepDisco install not found at {home} "
+                       f"(set --home or $DEEPDISCO_HOME).")
+          # part.py does `from models...` relative to cwd, and resolves resources
+          # relative to its own file — so add home to the path and chdir into it.
+          if home not in sys.path:
+              sys.path.insert(0, home)
+          os.chdir(home)
+
+          import torch                       # noqa: F401  (ensures torch import errors surface early)
+          import nibabel as nib
+          import torchio as tio
+          import part                        # DeepDisco's own module — reused verbatim
+
+          def _run(code: str) -> str:
+              name = _resolve_name(code)
+              model_path = os.path.join(part.RESOURCE_DIR, part.MODELS[name]["model"])
+              model = part.load_model(model_path, part.device)
+              if model is None:
+                  sys.exit(f"Failed to load model for {name} ({model_path})")
+              template = torch.from_numpy(
+                  nib.load(os.path.join(part.RESOURCE_DIR,
+                                        part.MODELS[name]["average"])).get_fdata()
+              ).unsqueeze(0).float()
+              lesion = part.preprocess_input(args.input)
+              side = part.detect_lesion_side(lesion)
+              out = part.run_inference(model, lesion, template,
+                                       tio.Resize(target_shape=(91, 109, 91)), part.device)
+              if out is None:
+                  sys.exit(f"Inference failed for {name}")
+              # Hemisphere-mask intra-hemispheric models exactly as the GUI does.
+              if name in ("ASSOCIATION FIBERS", "PROJECTION FIBERS"):
+                  out = part.apply_hemisphere_mask(out, side)
+
+              if args.output and not args.all:
+                  out_path = args.output
+              else:
+                  base = os.path.basename(args.input)
+                  for ext in (".nii.gz", ".nii"):
+                      if base.endswith(ext):
+                          base = base[:-len(ext)]; break
+                  outdir = args.outdir or os.path.dirname(os.path.abspath(args.input))
+                  os.makedirs(outdir, exist_ok=True)
+                  out_path = os.path.join(
+                      outdir, f"{base}_deep_disco_{name.replace(' ', '_')}.nii.gz")
+              os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+              part.save_output(out, out_path)
+              print(f"[deepdisco-cli] {name} (lesion side: {side}) -> {out_path}")
+              return out_path
+
+          codes = list(_CODES) if args.all else [args.model]
+          for c in codes:
+              _run(c)
+
+
+      if __name__ == "__main__":
+          main()
+
+  - name: deepdisco_cli_wrapper
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      export DEEPDISCO_HOME="${DEEPDISCO_HOME:-{{ context.install_path }}}"
+      export DEEPDISCO_VENV="${DEEPDISCO_VENV:-{{ context.venv_path }}}"
+      export PYTHONNOUSERSITE=1
+      export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/deepdisco-cache}"
+      mkdir -p "${XDG_CACHE_HOME}"
+      cd "${DEEPDISCO_HOME}"
+      exec "${DEEPDISCO_VENV}/bin/python" "${DEEPDISCO_HOME}/cli.py" "$@"
+      
 structured_readme:
   description: >-
-    DeepDisco is a graphical deep learning tool for generating rapid brain
-    connectivity and disconnectome maps from binary lesion or region masks.
-  example: deepdisco
+  DeepDisco generates rapid brain connectivity and disconnectome maps from
+  binary lesion or region masks using bundled trained 3D U-Net models. It runs
+  as a graphical app (deepdisco) or headless on the command line (deepdisco-cli).
+  example: deepdisco-cli --input lesion_MNI152_2mm.nii.gz --model WHO --output disco.nii.gz
   documentation: https://github.com/annamatsulevits/DeepDisco
   citation: >-
     Matsulevits A, Tourdias T, Thiebaut de Schotten M. DeepDisco: A Deep
@@ -146,14 +304,32 @@ readme: |-
   ----------------------------------
   ## deepdisco/{{ context.version }} ##
 
-  DeepDisco is a graphical deep learning tool for generating brain connectivity
-  and disconnectome maps from binary lesion or region masks using bundled
-  trained 3D U-Net models.
+  DeepDisco is a deep learning tool for generating brain connectivity and
+  disconnectome maps from binary lesion or region masks using bundled trained
+  3D U-Net models. It is available both as a graphical app and as a headless,
+  scriptable command-line tool.
+
+  Input must be a binary lesion/region mask in MNI152 2 mm space (91x109x91).
 
   Example:
+  Graphical app:
   ```bash
   deepdisco
   ```
+
+  Command line (headless):
+  ```bash
+  # one model
+  deepdisco-cli --input lesion.nii.gz --model WHO --output disco_WHO.nii.gz
+  # all four models into a directory
+  deepdisco-cli --input lesion.nii.gz --all --outdir results/
+  ```
+
+  Models (fibre classes):
+    ASS  ASSOCIATION FIBERS   cortico-cortical, within a hemisphere
+    PRO  PROJECTION FIBERS    cortical-subcortical
+    COM  COMMISSURAL FIBERS   interhemispheric
+    WHO  WHOLE BRAIN          all fibre classes combined
 
   This recipe pins upstream commit {{ context.upstream_commit }} because the
   upstream repository does not currently publish versioned releases or tags.
@@ -165,12 +341,12 @@ readme: |-
 
   To run container outside of this environment: ml deepdisco/{{ context.version }}
 
-  Citation:
+ Citation:
   Matsulevits A, Tourdias T, Thiebaut de Schotten M. DeepDisco: A Deep
   Learning Tool for Rapid Brain Connectivity Estimation. bioRxiv.
   https://doi.org/10.1101/2025.07.10.663897
 
-  License: upstream repository does not declare a software license.
+ License: upstream repository does not declare a software license.
   ----------------------------------
 
 icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABKCAYAAAAL8lK4AAAACXBIWXMAAAsTAAALEwEAmpwYAAAFF2lUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4gPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iQWRvYmUgWE1QIENvcmUgNy4xLWMwMDAgNzkuN2E3YTIzNiwgMjAyMS8wOC8xMi0wMDoyNToyMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczpkYz0iaHR0cDovL3B1cmwub3JnL2RjL2VsZW1lbnRzLzEuMS8iIHhtbG5zOnBob3Rvc2hvcD0iaHR0cDovL25zLmFkb2JlLmNvbS9waG90b3Nob3AvMS4wLyIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0RXZ0PSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VFdmVudCMiIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIDIyLjUgKFdpbmRvd3MpIiB4bXA6Q3JlYXRlRGF0ZT0iMjAyMS0wOS0xNVQyMDozNDozMCsxMDowMCIgeG1wOk1vZGlmeURhdGU9IjIwMjEtMDktMjlUMDg6MzA6NDIrMTA6MDAiIHhtcDpNZXRhZGF0YURhdGU9IjIwMjEtMDktMjlUMDg6MzA6NDIrMTA6MDAiIGRjOmZvcm1hdD0iaW1hZ2UvcG5nIiBwaG90b3Nob3A6Q29sb3JNb2RlPSIzIiBwaG90b3Nob3A6SUNDUHJvZmlsZT0ic1JHQiBJRUM2MTk2Ni0yLjEiIHhtcE1NOkluc3RhbmNlSUQ9InhtcC5paWQ6ZGM2MWFhMTUtNDI3MS03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
