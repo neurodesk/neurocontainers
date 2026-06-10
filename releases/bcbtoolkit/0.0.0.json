@@ -1,7 +1,7 @@
 {
   "apps": {
     "bcbtoolkit 0.0.0": {
-      "version": "20260519",
+      "version": "20260610",
       "exec": "",
       "apptainer_args": []
     }
