@@ -14,12 +14,10 @@ build:
     - file:
         name: Miniforge3_Linux_x86_64_sh
         url: https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
-
     # --- FLAMeS nnU-Netv2 model weights (Dataset004_WML) ---
     - file:
         name: flames_model_zip
         url: https://huggingface.co/FrancescoLR/FLAMeS-model/resolve/main/Dataset004_WML.zip
-
     # --- HD-BET pretrained parameters (used for optional skull-stripping) ---
     - file:
         name: 0_model
@@ -36,7 +34,6 @@ build:
     - file:
         name: 4_model
         url: https://zenodo.org/record/2540695/files/4.model?download=1
-
     - deploy:
         path:
           - /opt/miniforge3/envs/flames/bin
@@ -45,35 +42,28 @@ build:
           - flames
           - nnUNetv2_predict
           - hd-bet
-
     - install: wget python3-pip git python3 unzip
-
     - workdir: /opt
-
     # --- conda env ---
     - run:
         - cp {{ get_file("Miniforge3_Linux_x86_64_sh") }} Miniforge3-Linux-x86_64.sh
         - bash Miniforge3-Linux-x86_64.sh -b -p /opt/miniforge3
         - /opt/miniforge3/bin/conda create -y -n flames python=3.11
-
     - environment:
         PATH: /opt/miniforge3/envs/flames/bin:/opt/flames/bin:${PATH}
         nnUNet_results: /opt/flames/model
         nnUNet_raw: /tmp/nnunet_raw
         nnUNet_preprocessed: /tmp/nnunet_preprocessed
-
     # --- python deps: CPU torch + nnU-Netv2 + IO libs ---
     - run:
         - pip install --timeout 600 torch torchvision --index-url https://download.pytorch.org/whl/cpu
         - pip install --timeout 600 nnunetv2 nibabel "scipy>=1.9.0" matplotlib "numpy<2"
-
     # --- install model weights ---
     - run:
         - mkdir -p /opt/flames/model
         - cp {{ get_file("flames_model_zip") }} /opt/flames/Dataset004_WML.zip
         - unzip -o /opt/flames/Dataset004_WML.zip -d /opt/flames/model
         - rm /opt/flames/Dataset004_WML.zip
-
     # --- HD-BET (pinned commit; params baked in so no runtime download) ---
     - run:
         - git clone https://github.com/MIC-DKFZ/HD-BET /opt/hdbet
@@ -88,12 +78,12 @@ build:
         - cp {{ get_file("4_model") }} /opt/hd-bet_params/4.model
         - sed -i "s|os.path.join(os.path.expanduser('~'), 'hd-bet_params')|'/opt/hd-bet_params'|" /opt/hdbet/HD_BET/paths.py
         - pip install -e /opt/hdbet
-
     # --- FLAMeS wrapper CLI ---
-    - run:
-        - mkdir -p /opt/flames/bin
-        - |
-          cat > /opt/flames/bin/flames <<'EOF'
+    # Staged as a file (NOT a heredoc) because Neurodocker joins run-directive
+    # lines with ` && `, which corrupts heredoc bodies -> "unterminated heredoc".
+    - file:
+        name: flames_cli
+        contents: |
           #!/usr/bin/env bash
           # FLAMeS - MS lesion segmentation from a FLAIR image (nnU-Netv2)
           set -e
@@ -139,51 +129,42 @@ build:
             echo "[flames] WARNING: expected output case.nii.gz not found; check $OUT"
           fi
           rm -rf "$TMP"
-          EOF
+    - run:
+        - mkdir -p /opt/flames/bin
+        - cp {{ get_file("flames_cli") }} /opt/flames/bin/flames
         - chmod +x /opt/flames/bin/flames
-
     - test:
         name: Simple Deploy Bins/Path Test
         builtin: test_deploy.sh
-
 categories:
   - image segmentation
   - machine learning
-
 readme: |-
   ----------------------------------
   ## flames/{{ context.version }} ##
-
   FLAMeS: a robust deep-learning (nnU-Netv2) model for automated multiple
   sclerosis lesion segmentation from a single FLAIR image.
-
   Example:
   ```
   ml flames/{{ context.version }}
   flames -i sub-01_FLAIR.nii.gz -o ./flames_out --device cpu
   # add --skull-strip if your FLAIR still has the skull
   ```
-
   Output: `<input>_LesionMask.nii.gz` (binary MS lesion mask in the input space).
-
   Model trained on 668 FLAIR scans (Siemens/GE/Philips, 1.5T & 3T).
   More documentation: https://huggingface.co/spaces/FrancescoLR/FLAMeS
-
   Citation:
   ```
   Dereskewicz E, La Rosa F, dos Santos Silva J, Sizer E, Kohli A, Wynen M, et al.
   A Novel Convolutional Neural Network for Automated Multiple Sclerosis Brain
   Lesion Segmentation. Journal of Neuroimaging 35.5 (2025): e70085.
   doi:10.1111/jon.70085
-
   Isensee F, Jaeger PF, Kohl SAA, Petersen J, Maier-Hein KH. nnU-Net: a
   self-configuring method for deep learning-based biomedical image
   segmentation. Nature Methods 18, 203-211 (2021). doi:10.1038/s41592-020-01008-z
   ```
-
   To run the container outside this environment: ml flames/{{ context.version }}
   ----------------------------------
-
 structured_readme:
   description: "FLAMeS: a deep-learning (nnU-Netv2) model for automated MS lesion segmentation from a single FLAIR image."
   example: |-
@@ -192,5 +173,5 @@ structured_readme:
   documentation: https://huggingface.co/spaces/FrancescoLR/FLAMeS
   citation: |-
     Dereskewicz E, La Rosa F, dos Santos Silva J, Sizer E, Kohli A, Wynen M, et al. A Novel Convolutional Neural Network for Automated Multiple Sclerosis Brain Lesion Segmentation. Journal of Neuroimaging 35.5 (2025): e70085. doi:10.1111/jon.70085
-
     Isensee F, Jaeger PF, Kohl SAA, Petersen J, Maier-Hein KH. nnU-Net: a self-configuring method for deep learning-based biomedical image segmentation. Nature Methods 18, 203-211 (2021). doi:10.1038/s41592-020-01008-z
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAABmElEQVR42u2a60ZAURCFT/f7vadLEkkkkUSSSCKJJJJEEkkkkSSSSCKJXmi1XqHZt5lpL76fM3vW4vw4e0/TVFVVVVVVVVUVEn7G4d/k9xik2DX9RQORsWH8cxSp0Wv+gwNmQpfxdw5ViPLm30ZQmnLmXzmAEvKbfxmGNvKZf+aBSklv/okHKSed+cchWCFNAA9sboT45u/Z2BjxzN8NwipxArhlM6OEm78ZgHXCArhmE+OEBXDFJsaRm7/shxdkAVyw2AmyAM774AVZAGcsdoIsgFMWO0EWwEkvvCAL4JjFTvi7+SMWOuPvIRz2wAuyT+CAxU6QBbDfDS/IAthjsRNkAeyy2AmyAHa64AVZANssdoL8l3irE9YJuxDZZBPjhAWwwSbGCb8YXe+AVeJci6+xmVHiPY6ssqEx4j+PrbTDCmkeR5fZ3AjpnsiX2qCd9EsSizxIKfnWZBZ4oDLyL0rNt0IL5Vbl5jhAYcovS862oBS6VmZnOFQm9C5MT3PAxNhYm59qEJvGqjBJA0Ia78LEPzBZVaVXvz8sqJKht8VsAAAAAElFTkSuQmCC
