@@ -1,15 +1,14 @@
 name: deepdisco
 version: "20251008"
-
 description: DeepDisco predicts brain connectivity maps from binary lesion or region masks using trained 3D U-Net models.
-
+ 
 copyright:
   - name: LicenseRef-DeepDisco
     url: https://github.com/annamatsulevits/DeepDisco
-
+ 
 architectures:
   - x86_64
-
+ 
 variables:
   upstream_commit: ab3a7944a6824f7147d5621af79d637c1ff241c1
   install_path: /opt/deepdisco-{{ context.version }}
@@ -24,12 +23,11 @@ variables:
   pillow_version: 12.2.0
   pyside6_version: 6.11.1
   torchio_version: 1.2.0
-
+ 
 build:
   kind: neurodocker
   base-image: ubuntu:24.04
   pkg-manager: apt
-
   directives:
     - environment:
         DEBIAN_FRONTEND: noninteractive
@@ -39,7 +37,7 @@ build:
         XDG_CACHE_HOME: /tmp/deepdisco-cache
         QT_XCB_GL_INTEGRATION: none
         PATH: "{{ context.venv_path }}/bin:$PATH"
-
+ 
     - install:
         - ca-certificates
         - libdbus-1-3
@@ -76,7 +74,7 @@ build:
         - python3-pip
         - python3-venv
         - tar
-
+ 
     - run:
         - mkdir -p "{{ context.install_path }}" /tmp/deepdisco-src
         - tar -xzf {{ get_file("deepdisco_source_tar_gz") }} -C /tmp/deepdisco-src --strip-components=1
@@ -89,87 +87,270 @@ build:
         - chmod -R a+rX "{{ context.install_path }}"
         - find "{{ context.install_path }}" -type d -name __pycache__ -prune -exec rm -rf {} +
         - rm -rf /tmp/deepdisco-src /root/.cache/pip /tmp/deepdisco-cache
-
+ 
     - copy:
         - deepdisco_wrapper
         - /usr/local/bin/deepdisco
-
+ 
     - run:
         - chmod 0755 /usr/local/bin/deepdisco
         - ln -s /usr/local/bin/deepdisco /usr/local/bin/DeepDisco
-
+ 
+    - copy:
+        - deepdisco_cli_py
+        - "{{ context.install_path }}/cli.py"
+ 
+    - copy:
+        - deepdisco_cli_wrapper
+        - /usr/local/bin/deepdisco-cli
+ 
+    - run:
+        - chmod 0644 "{{ context.install_path }}/cli.py"
+        - chmod 0755 /usr/local/bin/deepdisco-cli
+ 
 deploy:
   bins:
     - deepdisco
     - DeepDisco
+    - deepdisco-cli
   path:
     - /usr/local/bin
-
+ 
 gui_apps:
   - name: DeepDisco
     exec: deepdisco
-
+ 
 categories:
   - machine learning
   - diffusion imaging
-
+ 
 files:
   - name: deepdisco_source_tar_gz
     url: https://github.com/annamatsulevits/DeepDisco/archive/{{ context.upstream_commit }}.tar.gz
+ 
   - name: deepdisco_wrapper
     contents: |
       #!/usr/bin/env bash
       set -euo pipefail
-
       export DEEPDISCO_HOME="${DEEPDISCO_HOME:-{{ context.install_path }}}"
       export DEEPDISCO_VENV="${DEEPDISCO_VENV:-{{ context.venv_path }}}"
       export PYTHONNOUSERSITE=1
       export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/deepdisco-cache}"
       export QT_XCB_GL_INTEGRATION="${QT_XCB_GL_INTEGRATION:-none}"
       mkdir -p "${XDG_CACHE_HOME}"
-
       cd "${DEEPDISCO_HOME}"
       exec "${DEEPDISCO_VENV}/bin/python" part.py "$@"
-
+ 
+  - name: deepdisco_cli_py
+    contents: |
+      #!/usr/bin/env python3
+      """
+      deepdisco_cli.py — headless command-line interface for DeepDisco.
+ 
+      DeepDisco (https://github.com/annamatsulevits/DeepDisco, Neurodesk module
+      `deepdisco/20251008`) ships only a PySide6 GUI. This wrapper reuses
+      DeepDisco's OWN inference functions from `part.py` (load_model,
+      preprocess_input, detect_lesion_side, run_inference, apply_hemisphere_mask,
+      save_output), so the output is identical to the desktop app — but it needs
+      no display and is fully scriptable.
+ 
+      Importing `part` is display-free: Qt is only instantiated under part.py's
+      `__main__`, which we never trigger.
+ 
+      Usage:
+ 
+          deepdisco_cli.py --input lesion.nii.gz --model PRO --output disco_PRO.nii.gz
+          deepdisco_cli.py --input lesion.nii.gz --all --outdir results/
+ 
+      Models: ASS = association, PRO = projection, COM = commissural,
+      WHO = whole brain (full GUI names also accepted, e.g. "PROJECTION FIBERS").
+      Input must be a BINARY lesion mask in MNI152 2 mm space (91x109x91),
+      matching DeepDisco's bundled templates and hemisphere masks.
+ 
+      Run it with DeepDisco's own Python so torch/nibabel/torchio are present,
+      e.g. inside Neurodesk:
+ 
+          ml deepdisco/20251008
+          "$DEEPDISCO_VENV/bin/python" deepdisco_cli.py --input mask.nii.gz --model WHO -o out.nii.gz
+      """
+      import argparse
+      import os
+      import sys
+ 
+      _CODES = {
+          "ASS": "ASSOCIATION FIBERS",
+          "PRO": "PROJECTION FIBERS",
+          "COM": "COMMISSURAL FIBERS",
+          "WHO": "WHOLE BRAIN",
+      }
+ 
+ 
+      def _resolve_name(code: str) -> str:
+          """Accept short codes (PRO) or full GUI names (PROJECTION FIBERS)."""
+          up = code.upper()
+          if up in _CODES:
+              return _CODES[up]
+          if up in _CODES.values():
+              return up
+          sys.exit(f"Unknown model {code!r}; choose from {list(_CODES)} "
+                   f"or {list(_CODES.values())}")
+ 
+ 
+      def main(argv=None):
+          ap = argparse.ArgumentParser(
+              description="Headless DeepDisco disconnectome generator "
+                          "(reuses the GUI's exact inference path).")
+          ap.add_argument("--input", "-i", required=True,
+                          help="binary lesion mask, MNI152 2 mm (91x109x91)")
+          grp = ap.add_mutually_exclusive_group(required=True)
+          grp.add_argument("--model", "-m",
+                           help="ASS | PRO | COM | WHO (or full GUI name)")
+          grp.add_argument("--all", action="store_true",
+                           help="run all four models")
+          ap.add_argument("--output", "-o",
+                          help="output file (single-model mode)")
+          ap.add_argument("--outdir", "-d",
+                          help="output directory (default: input's directory)")
+          ap.add_argument("--home",
+                          default=os.environ.get("DEEPDISCO_HOME", "/opt/deepdisco-20251008"),
+                          help="DeepDisco install dir (default: $DEEPDISCO_HOME)")
+          args = ap.parse_args(argv)
+ 
+          if not os.path.exists(args.input):
+              sys.exit(f"Input not found: {args.input}")
+          home = os.path.abspath(args.home)
+          if not os.path.isdir(home):
+              sys.exit(f"DeepDisco install not found at {home} "
+                       f"(set --home or $DEEPDISCO_HOME).")
+ 
+          # part.py does `from models...` relative to cwd, and resolves resources
+          # relative to its own file — so add home to the path and chdir into it.
+          if home not in sys.path:
+              sys.path.insert(0, home)
+          os.chdir(home)
+ 
+          import torch  # noqa: F401 (ensures torch import errors surface early)
+          import nibabel as nib
+          import torchio as tio
+          import part  # DeepDisco's own module — reused verbatim
+ 
+          def _run(code: str) -> str:
+              name = _resolve_name(code)
+              model_path = os.path.join(part.RESOURCE_DIR, part.MODELS[name]["model"])
+              model = part.load_model(model_path, part.device)
+              if model is None:
+                  sys.exit(f"Failed to load model for {name} ({model_path})")
+              template = torch.from_numpy(
+                  nib.load(os.path.join(part.RESOURCE_DIR, part.MODELS[name]["average"])).get_fdata()
+              ).unsqueeze(0).float()
+              lesion = part.preprocess_input(args.input)
+              side = part.detect_lesion_side(lesion)
+              out = part.run_inference(model, lesion, template,
+                                       tio.Resize(target_shape=(91, 109, 91)), part.device)
+              if out is None:
+                  sys.exit(f"Inference failed for {name}")
+              # Hemisphere-mask intra-hemispheric models exactly as the GUI does.
+              if name in ("ASSOCIATION FIBERS", "PROJECTION FIBERS"):
+                  out = part.apply_hemisphere_mask(out, side)
+              if args.output and not args.all:
+                  out_path = args.output
+              else:
+                  base = os.path.basename(args.input)
+                  for ext in (".nii.gz", ".nii"):
+                      if base.endswith(ext):
+                          base = base[:-len(ext)]
+                          break
+                  outdir = args.outdir or os.path.dirname(os.path.abspath(args.input))
+                  os.makedirs(outdir, exist_ok=True)
+                  out_path = os.path.join(
+                      outdir, f"{base}_deep_disco_{name.replace(' ', '_')}.nii.gz")
+              os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+              part.save_output(out, out_path)
+              print(f"[deepdisco-cli] {name} (lesion side: {side}) -> {out_path}")
+              return out_path
+ 
+          codes = list(_CODES) if args.all else [args.model]
+          for c in codes:
+              _run(c)
+ 
+ 
+      if __name__ == "__main__":
+          main()
+ 
+  - name: deepdisco_cli_wrapper
+    contents: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      export DEEPDISCO_HOME="${DEEPDISCO_HOME:-{{ context.install_path }}}"
+      export DEEPDISCO_VENV="${DEEPDISCO_VENV:-{{ context.venv_path }}}"
+      export PYTHONNOUSERSITE=1
+      export XDG_CACHE_HOME="${XDG_CACHE_HOME:-/tmp/deepdisco-cache}"
+      mkdir -p "${XDG_CACHE_HOME}"
+      cd "${DEEPDISCO_HOME}"
+      exec "${DEEPDISCO_VENV}/bin/python" "${DEEPDISCO_HOME}/cli.py" "$@"
+ 
 structured_readme:
   description: >-
-    DeepDisco is a graphical deep learning tool for generating rapid brain
-    connectivity and disconnectome maps from binary lesion or region masks.
-  example: deepdisco
+    DeepDisco generates rapid brain connectivity and disconnectome maps from
+    binary lesion or region masks using bundled trained 3D U-Net models. It runs
+    as a graphical app (deepdisco) or headless on the command line (deepdisco-cli).
+  example: deepdisco-cli --input lesion_MNI152_2mm.nii.gz --model WHO --output disco.nii.gz
   documentation: https://github.com/annamatsulevits/DeepDisco
   citation: >-
-    Matsulevits A, Tourdias T, Thiebaut de Schotten M. DeepDisco: A Deep
-    Learning Tool for Rapid Brain Connectivity Estimation. bioRxiv.
+    Matsulevits A, Tourdias T, Thiebaut de Schotten M. DeepDisco: A Deep Learning
+    Tool for Rapid Brain Connectivity Estimation. bioRxiv.
     https://doi.org/10.1101/2025.07.10.663897
-
+ 
 readme: |-
-  ----------------------------------
-  ## deepdisco/{{ context.version }} ##
-
-  DeepDisco is a graphical deep learning tool for generating brain connectivity
-  and disconnectome maps from binary lesion or region masks using bundled
-  trained 3D U-Net models.
-
+  # deepdisco/{{ context.version }}
+ 
+  DeepDisco is a deep learning tool for generating brain connectivity and
+  disconnectome maps from binary lesion or region masks using bundled trained
+  3D U-Net models. It is available both as a graphical app and as a headless,
+  scriptable command-line tool. Input must be a binary lesion/region mask in
+  MNI152 2 mm space (91x109x91).
+ 
   Example:
+ 
+  Graphical app:
+ 
   ```bash
   deepdisco
   ```
-
+ 
+  Command line (headless):
+ 
+  ```bash
+  # one model
+  deepdisco-cli --input lesion.nii.gz --model WHO --output disco_WHO.nii.gz
+  # all four models into a directory
+  deepdisco-cli --input lesion.nii.gz --all --outdir results/
+  ```
+ 
+  Models (fibre classes):
+ 
+    ASS  ASSOCIATION FIBERS  cortico-cortical, within a hemisphere
+    PRO  PROJECTION FIBERS   cortical-subcortical
+    COM  COMMISSURAL FIBERS  interhemispheric
+    WHO  WHOLE BRAIN         all fibre classes combined
+ 
   This recipe pins upstream commit {{ context.upstream_commit }} because the
-  upstream repository does not currently publish versioned releases or tags.
-  The application and model resources are installed under {{ context.install_path }}.
+  upstream repository does not currently publish versioned releases or tags. The
+  application and model resources are installed under {{ context.install_path }}.
   Runtime caches are written under `/tmp/deepdisco-cache` by default.
-
-  More documentation:
-  https://github.com/annamatsulevits/DeepDisco
-
-  To run container outside of this environment: ml deepdisco/{{ context.version }}
-
-  Citation:
-  Matsulevits A, Tourdias T, Thiebaut de Schotten M. DeepDisco: A Deep
+ 
+  More documentation: https://github.com/annamatsulevits/DeepDisco
+ 
+  To run container outside of this environment:
+ 
+  ```bash
+  ml deepdisco/{{ context.version }}
+  ```
+ 
+  Citation: Matsulevits A, Tourdias T, Thiebaut de Schotten M. DeepDisco: A Deep
   Learning Tool for Rapid Brain Connectivity Estimation. bioRxiv.
   https://doi.org/10.1101/2025.07.10.663897
-
+ 
   License: upstream repository does not declare a software license.
   ----------------------------------
 
