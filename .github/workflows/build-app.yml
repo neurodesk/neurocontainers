@@ -875,8 +875,26 @@ jobs:
         run: |
           echo "[DEBUG] building singularity image from docker image:"
           SIMG_PATH="$BASE_PATH/tmp/${IMAGENAME}_${BUILDDATE}.simg"
-          IMAGE_REF="docker://ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${IMAGETAG}"
-          time singularity build "$SIMG_PATH" "$IMAGE_REF"
+          DOCKER_IMAGE_REF="ghcr.io/${GH_REGISTRY}/${IMAGENAME}:${IMAGETAG}"
+          IMAGE_REF="docker://${DOCKER_IMAGE_REF}"
+          ARCHIVE_PATH="$BASE_PATH/tmp/${IMAGENAME}_${BUILDDATE}.docker.tar"
+
+          cleanup_archive() {
+            rm -f "$ARCHIVE_PATH"
+          }
+          trap cleanup_archive EXIT
+
+          if time singularity build "$SIMG_PATH" "$IMAGE_REF"; then
+            echo "[DEBUG] direct singularity build from docker image succeeded"
+          else
+            DIRECT_BUILD_STATUS=$?
+            echo "::warning::Direct singularity build from ${IMAGE_REF} failed with exit code ${DIRECT_BUILD_STATUS}; falling back to docker-archive conversion"
+            rm -f "$SIMG_PATH" "$ARCHIVE_PATH"
+            docker pull "$DOCKER_IMAGE_REF"
+            docker save "$DOCKER_IMAGE_REF" -o "$ARCHIVE_PATH"
+            time singularity build "$SIMG_PATH" "docker-archive://${ARCHIVE_PATH}"
+          fi
+
           echo "[DEBUG] done building singularity image from docker image!"
           # Verify the image was created successfully
           if [ ! -f "$SIMG_PATH" ]; then
