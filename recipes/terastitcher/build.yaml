@@ -21,6 +21,8 @@ build:
 
     - run:
         - tar -xz -C /opt/terastitcher-{{ context.version }} --strip-components 1 -f {{ get_file("TeraStitcher_portable_1_11_10_Linux_tar_gz") }}
+        - chmod a+rx /opt
+        - chmod -R a+rX /opt/terastitcher-{{ context.version }}
 
     - environment:
         PATH: $PATH:/opt/terastitcher-{{ context.version }}
