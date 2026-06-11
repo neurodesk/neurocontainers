@@ -58,12 +58,17 @@ tests:
     description: Verify the BrainChop CLI and TinyGrad compiler dependency are available
     command: |
       set -e
+      test "$HOME" = "/tmp/soopct-home"
+      test "$XDG_CACHE_HOME" = "/tmp/soopct-cache"
+      test "$MPLCONFIGDIR" = "/tmp/soopct-matplotlib"
+      mkdir -p "$HOME" "$XDG_CACHE_HOME" "$MPLCONFIGDIR"
       command -v clang
-      brainchop --help 2>&1 | sed -n '1,40p'
-    expected_output_contains:
-      - "/usr/bin/clang"
-      - "--border MM"
-      - "--no-optimize"
+      command -v brainchop
+      brainchop --help > "${output_dir}/brainchop-help.txt" 2>&1
+      grep -F -- "--border" "${output_dir}/brainchop-help.txt"
+      grep -F -- "--no-optimize" "${output_dir}/brainchop-help.txt"
+      echo "brainchop runtime dependencies ok"
+    expected_output_contains: "brainchop runtime dependencies ok"
 
   - name: SOOP-CT BrainChop command matches current CLI
     description: Verify 3best2anon.py calls BrainChop using the current positional-input CLI without running model inference
