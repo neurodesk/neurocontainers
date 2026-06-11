@@ -1,0 +1,22 @@
+tests:
+  - name: BrainSuite BIDS App runner is available
+    script: |
+      set -eu
+      command -v run.py
+      test -x /BrainSuite/run.py
+      run.py --help 2>&1 | grep "BrainSuite23a BIDS-App"
+
+  - name: BrainSuite tool directories are present
+    script: |
+      set -eu
+      test -d /opt/BrainSuite23a/bin
+      test -d /opt/BrainSuite23a/svreg/bin
+      test -d /opt/BrainSuite23a/bdp
+      test -d /opt/BrainSuite23a/bfp
+
+  - name: BrainSuite BIDS App assets are present
+    script: |
+      set -eu
+      grep -x "23a" /BrainSuite/version
+      test -f /config.ini
+      test -f /bfp_config_stats.ini

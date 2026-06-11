@@ -1,0 +1,104 @@
+name: brainvisa
+version: 6.0.36
+
+copyright:
+  - license: CECILL-B
+    url: https://brainvisa.info/web/download.html#licences
+  - license: CECILL-2.0
+    url: https://brainvisa.info/web/download.html#licences
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: ubuntu:24.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - dbus-x11
+        - libegl1
+        - libgl1
+        - libsm6
+        - libxext6
+        - libxkbcommon-x11-0
+        - libxrender1
+        - libxcb-cursor0
+
+    - template:
+        name: miniconda
+        version: py312_25.5.1-0
+        install_path: /opt/miniconda
+        env_name: brainvisa
+        env_exists: "false"
+        mamba: "true"
+        conda_opts: "-q --override-channels -c https://brainvisa.info/neuro-forge -c conda-forge"
+        conda_install: "brainvisa={{ context.version }}"
+
+    - run:
+        - conda run -n brainvisa brainvisa -b --setup
+
+    - environment:
+        PATH: /opt/miniconda/envs/brainvisa/bin:$PATH
+        QT_QPA_PLATFORM: xcb
+
+deploy:
+  bins:
+    - anatomist
+    - brainvisa
+    - morphologist
+  path:
+    - /opt/miniconda/envs/brainvisa/bin
+
+gui_apps:
+  - name: brainvisaGUI
+    exec: brainvisa
+  - name: anatomistGUI
+    exec: anatomist
+
+categories:
+  - structural imaging
+  - image segmentation
+  - image registration
+  - visualization
+  - workflows
+
+structured_readme:
+  description: |
+    BrainVISA is a modular neuroimaging software platform that provides a common graphical interface, workflow management, databases, and toolboxes such as Anatomist and Morphologist.
+  example: |
+    brainvisa
+
+    brainvisa -b --setup
+
+    anatomist
+  documentation: https://brainvisa.info/web/download.html
+  citation: |
+    See the BrainVISA publications page for project-specific references: https://brainvisa.info/web/publications.html
+
+readme: |
+  ----------------------------------
+  ## brainvisa/{{ context.version }} ##
+
+  BrainVISA is a modular neuroimaging software platform that provides a common graphical interface, workflow management, databases, and toolboxes such as Anatomist and Morphologist.
+
+  Example:
+  ```
+  brainvisa
+  brainvisa -b --setup
+  anatomist
+  ```
+
+  More documentation can be found here: https://brainvisa.info/web/download.html
+
+  BrainVISA has mixed licensing across subpackages. Core components include CeCILL-B and CeCILL-v2 software; some toolboxes include closed-source code free for non-profit use. See the upstream license page for details.
+
+  To run container outside of this environment: ml brainvisa/{{ context.version }}
+
+  ----------------------------------
+
+icon: data:image/png;base64,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

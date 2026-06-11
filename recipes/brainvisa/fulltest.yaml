@@ -1,0 +1,23 @@
+tests:
+  - name: BrainVISA launchers are available
+    script: |
+      set -eu
+      command -v brainvisa
+      command -v anatomist
+      command -v morphologist
+
+  - name: BrainVISA Python modules import
+    script: |
+      set -eu
+      python - <<'PY'
+      import brainvisa.axon
+      from soma import aims
+
+      print("BrainVISA imports OK")
+      print(aims.__name__)
+      PY
+
+  - name: BrainVISA batch help starts
+    script: |
+      set -eu
+      brainvisa -b --help 2>&1 | grep -i "brainvisa"

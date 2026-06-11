@@ -1,0 +1,75 @@
+name: brainsuite
+version: 23a
+
+copyright:
+  - license: GPL-2.0-only
+    url: https://github.com/bids-apps/BrainSuite/blob/master/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: bids/brainsuite:v{{ context.version }}
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+        PATH: /BrainSuite:/opt/BrainSuite{{ context.version }}/bin:/opt/BrainSuite{{ context.version }}/svreg/bin:/opt/BrainSuite{{ context.version }}/bdp:/opt/BrainSuite{{ context.version }}/bfp:/BrainSuite/QC:$PATH
+
+    - entrypoint: bash
+
+deploy:
+  bins:
+    - run.py
+  path:
+    - /BrainSuite
+    - /BrainSuite/QC
+    - /opt/BrainSuite{{ context.version }}/bin
+    - /opt/BrainSuite{{ context.version }}/svreg/bin
+    - /opt/BrainSuite{{ context.version }}/bdp
+    - /opt/BrainSuite{{ context.version }}/bfp
+
+categories:
+  - bids apps
+  - structural imaging
+  - diffusion imaging
+  - functional imaging
+  - quality control
+
+structured_readme:
+  description: |
+    BrainSuite BIDS App packages BrainSuite workflows for anatomical, diffusion, and functional MRI processing in the BIDS App framework. This recipe uses the public BrainSuite v{{ context.version }} BIDS App image.
+  example: |
+    run.py /path/to/bids /path/to/output participant --stages CSE
+
+    run.py /path/to/bids /path/to/output participant --stages DASHBOARD --localWebserver --port 9095
+  documentation: https://brainsuite.org/BIDS/
+  citation: |
+    Kim Y, Joshi AA, Choi S, Joshi SH, Bhushan C, Varadarajan D, Haldar JP, Leahy RM, Shattuck DW. BrainSuite BIDS App: Containerized Workflows for MRI Analysis. bioRxiv 2023.03.14.532686.
+
+readme: |
+  ----------------------------------
+  ## brainsuite/{{ context.version }} ##
+
+  BrainSuite BIDS App packages BrainSuite workflows for anatomical, diffusion, and functional MRI processing in the BIDS App framework. This recipe uses the public BrainSuite v{{ context.version }} BIDS App image.
+
+  Example:
+  ```
+  run.py /path/to/bids /path/to/output participant --stages CSE
+  run.py /path/to/bids /path/to/output participant --stages DASHBOARD --localWebserver --port 9095
+  ```
+
+  More documentation can be found here: https://brainsuite.org/BIDS/
+
+  Citation:
+  ```
+  Kim Y, Joshi AA, Choi S, Joshi SH, Bhushan C, Varadarajan D, Haldar JP, Leahy RM, Shattuck DW. BrainSuite BIDS App: Containerized Workflows for MRI Analysis. bioRxiv 2023.03.14.532686.
+  ```
+
+  To run container outside of this environment: ml brainsuite/{{ context.version }}
+
+  ----------------------------------
+
+icon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAKQUlEQVRYhZ2XaWxc13mGn7vMzJ19SM6QFEkNxUUyLcoyrS2MXbcSFEuV6sJIqhpxkDZtigIBmqSBg1QJDOdHg6B1URgpKjlo1AUJYCROkzapHdWOQ8uuJFeWZYlaTFJcRI24z77P3U9/DCU7cVu5PX/OuRcX53m/e855v+9IfMh29dpUxHGcR3VD32cY5g7HkJPClmOuK3Axi66i37Jse9w0zTHbsU9+8sgnih9mXuluH0xdn9vS0BtHSyvOp8xMWJONKKoZBteDa4NrgWuD7dg43iqOP4fTtqibau4HjUbjmc9+5tNT/y8Bs3OpgG4Y31idMb6o32hXI74Eik/CtcFZh96Gu84v90ZN4ATzMPCuXfPcOtZo6E99/nN/XP/QAmbnUoPFQuVfb46Ft7V4egi0yLgud4e/f2xBvSRQNi5gbT43kS9nP/7kF/5k+q4CZudSI+mFyiupl7rbewZjeDRwnF+GG6bLOdOhoNfJqH6CHee51/ExcGsXriMh3PfE6BVwvBWk0bFsupw6ePTLX7r4PwqYnUsNphcqZ+d+mGzftD2M6uNO5GW9zpu1Cd4oncau55m3NtHTUUfy+XlXPUjjsU/zxOX9HPnPrzfhLojbS1IFW2og//q/Z5eLcw89/dU/m/6AgNm5VKBYqL515e+6tg3c34xcSM0JUtVpTk1+Fm/3OTYkXC6+JtjSC1IFYv2wWorxs62CtY4hHjhzkoO2h/5yCNb/hm2AWQcRqGCO/nhqLbe888+ffqoOIN8WoBvGNyZ/HNq2IRlDVt+Dz+ZO8/Piw/h/5yyez7is7YPkX8LBDvjKP4JxBs7fKjF47q+Je0NsjlxgYvPr5Ib+janhUzjCRVZAksEphgnO7xvSNO0vbnMVaB61pUn9e+ULA3JiUEJSQLhgmiYvXP0Nup5Y4dXq/fxs++d5234AZ6aDx/50ijFdZdX6ElbwScyWCL6Jj+KqLkJolCyVG115VoYvYFgybfl2hCNRX4gSu6e0c+uegX8+8x9vZGWAht44On+yXe24R8Z1msocS/Cy9/fRPrfKy72HmOp9GGFZiPYODn4/RawEwfjjlMJ/hMjspWsxTn3xQaTr2/FNbkBf7MSfCeIWg8z03MCJX0WSXDw+CWnyI2ooFH4KQL56bSqSX3Q+RSGBN3AbDgv2WdLJs5y1D3HtVBDHMOHKAsgOL2sKZ7Tf5pZrkw604xWCYqmPhO5g2QqKpRBfc2j4C0SuddBVFFR9EpIsIUlQnWuhzdN35MmjX2tVHcd5NP1OWItuaJqM4mmu/YTvNCL4HW7xImz1Qn8clrMws8jFI/dz5p0v0+nPEMxa6HEFU1HpqNrUoxbRikB1GiRXYdf1ErpUIiCWMVvDiNVNKKqELzOswYVHZd3Q95VmowRampELF6pGlplgmJnsdcyED6bXwOuCJWCpxN5XH0T+vReYcfqxHB+6pRCM6AhXwqcY2J05+kome15qRc2CvBJBMI8bmwcEsgLuSjeRcGS/ahjmDnMtjHfovXM7lR8nOrqdojQPagoyZbiyCGNzqEsWHykbKOcOI5sWpaCL4yjIIQt/q4k5MENcyeK5L4tua/iKPkS9jawvSaDY0zz7MtSXgkR3xkZksyInZcnTdLt1ATf0RbKzs3j8/ubL0X7I6mhDg/T2HSA01EFFb0EYGkHHRi1LSAUJZVOK8J4zbK7NIzamsCRBX2mGkeIFBibTRFdBWrce15KRzVBStRpyTFab3g2wWl+iNBrE7/eSmZxGchYQv7sNYh6UBYltpU7SZ4cpJwVSTSeYltGEjl8v4jtwkk2FBk7CQhJxRNhlJZCkv5QnalSoxAUgmv4nAZY3ogpXgGhGDrCcm8XcYnDDmeWS/xL4/VA1YGwWEUwwUmxF1OrohDHbTcKWTrQjRfCeq7RWb3FpwCaf3MDh14t4c0EMp4Uf7hyhU3QRWfMhDBeEcsf+VclrFh2L+B0BS9dxTZVClwFmGPzAYhF5ezdPhDUGK28xUfITXzWpaILBLRMUgg0asTKJao3HTq/xk8FBLu8w2RSSaZ3IsSUtIUkjuKIbxLr5ChCKUZUlTb8lJBtnPdtF945gyhZLuWlYzMDGMJxZANdl10wXK9UNTB95k+7kNdq8N7GEy9Ckw57lJep2C+HJ7RyYmCVQl1jsb/BW71ZWetuxfR4ELkKAECB7XGy1dFO2bHtc66xi1JoCZqfP4x/uwer0QdQHby/DUIJ7dGjLXEd1a2zIttAZWGVu+yUqPoPxRC/GxQdRFjo537KbjGeQWt9Ncm018rtvkBpwsYUPbLUZuYBAV41cIT8um6Y5FtiUQy81N3ywGOK1F74NV9ZAd6AnCpka22VImfey2rmE4l0mFJtjU1TDGy2xk9c4ta2dzI1d2N1p7EKSalQn154mWk5gO1GE5W3uP5ocOhbJF/Jjsu3YJ7XNi3qjJHAdcMoe8loZAhp0xSAUQIkHiV9cwBMpsOYdoNtTpxZrELAtGr1wds8OhqXrrNzXAKuNpfvrpLwJ9MWH6HpnlG2XHsBj+HHddQG2oNoybrqu+5L8ySOfKFre3A+0jXmsBoz4R4hcLcFcFhwXVio4WgC3s49Yewc9pxVib5pUN7h01E0efnuJQ6+nab2xl86Zw1zpi1CXNczqRoZf309oqZdINoHkys1KyYVgf4GV2uSPThw/lm9mw0bjmeDud+1aQdASGebB3E58jgwTaajWQVgYP9/KzN8kUcUSjY/WSLfXkG2FuqeVfE8EK9YAO4wkQezabj72nS/QPb8RydSa6+6+l2Ub/W/YuXz+m3fqgZ/+5F+yh47sb9VoGbUyUQa9I6TL4yzuVgh2ahxIrHL4nIkx00PgkMJajyAw/THk7AhyOYyu91Ep7aXWUiRQ1YikhvGXo8i2B4SEEOulnQOB4RTT9ovPHf/Ws9+7IwDgwG8ePu3tynzcWUgmvFI7O32/hb42z77KP/CH4Wtc9C4TWv4iIWuU1vED+HQVKTuIUxwBx8F1YsimRijdjeTKSO56WUVz1wsH1NYKq8nnpzP5tccvvn3e/EBR+uzfHt/SonWdtU8djMuWH48G09XvcrX+VwwN/AFDha+AEAgh4YTSSOUE0nqEYt1ceP94He7aIAUalB94Pj+zdPmhE8eP3bmsfKAsf+bZb+2IBza+wluPxEU5jKpx5+ze7m+P7zzfBa62Vijc+0J+ZunyoRPHj51/P0/hV9ovXnl5Zfev7fqppz/1SEBtiesrUWSlmcP+r3DHFmhDKVZ6np+eX5565MTxY5d/lfcBAQCnfvFqbtfonn+qR2bC4YHSTo/ZJlsFDUmW7goXAoQr0HoK6Pe9Yk+bLz6Xya89fuL4seX/jnXXy+lXn/76UCgUfqrN23ckWBrWlFw3RiaIY74vqax7uy9Rw2ldpBgaN1eqkz/K5fPf/Pvnjk/8b/PfVcDt9uTRr7WCeDQSjuyPRmMjih1KSrY3ggBXMaqWXLqZK+TH84X8mOu6L504fiz/Yeb9Lwpni5lBILlpAAAAAElFTkSuQmCC
