@@ -19,13 +19,13 @@ on:
         required: true
         type: choice
         options:
-        - "neurodesk-arcrunner-neurocontainers"
         - "neurodesk-syd-arcrunner-neurocontainers"
+        - "neurodesk-arcrunner-neurocontainers"
         - "blacksmith-8vcpu-ubuntu-2404"
         - "blacksmith-8vcpu-ubuntu-2404-arm"
         - "ubuntu-22.04"
         - "self-hosted"
-        default: "neurodesk-arcrunner-neurocontainers"
+        default: "neurodesk-syd-arcrunner-neurocontainers"
       disable_auto_upload:
         description: 'Disable auto upload to registries'
         required: false
