@@ -26,6 +26,38 @@ tests:
     command: test -f /usr/local/mipav/about.txt && test -f /usr/local/mipav/MipavMain.class && grep -i "Visualization (MIPAV)" /usr/local/mipav/about.txt
     expected_output_contains: "Visualization (MIPAV)"
 
+  - name: Xvfb runtime available
+    description: Verify headless display support is installed for GUI startup testing
+    command: |
+      command -v xvfb-run
+      command -v Xvfb
+      command -v xauth
+      echo "xvfb-runtime-ok"
+    expected_output_contains: "xvfb-runtime-ok"
+
+  - name: MIPAV launches under headless display
+    description: Verify Swing GUI startup reaches the event loop without Java font or display failures
+    command: |
+      export HOME="${output_dir}/gui-home"
+      export _JAVA_OPTIONS="-Duser.home=${output_dir}/gui-home"
+      mkdir -p "$HOME"
+      log="${output_dir}/mipav-xvfb.log"
+      set +e
+      timeout 25s xvfb-run -a mipav >"$log" 2>&1
+      status=$?
+      set -e
+      if [ "$status" -ne 0 ] && [ "$status" -ne 124 ]; then
+        cat "$log"
+        exit "$status"
+      fi
+      if grep -Ei "Exception|UnsatisfiedLinkError|NoClassDefFoundError|Could not initialize|AWTError|Cannot open display|segmentation fault" "$log"; then
+        cat "$log"
+        exit 1
+      fi
+      echo "mipav-xvfb-startup-ok"
+    expected_output_contains: "mipav-xvfb-startup-ok"
+    timeout: 40
+
   - name: MIPAV starts with writable user home
     description: Verify startup reaches MIPAV code and extracts native libraries outside the host home
     command: |

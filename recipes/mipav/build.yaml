@@ -10,11 +10,15 @@ build:
   directives:
     - workdir: /opt
     - install:
+        - fontconfig
+        - fonts-dejavu-core
         - libfreetype6
         - libgl1-mesa-glx
         - libxrender1
         - libxtst6
         - libxi6
+        - xauth
+        - xvfb
     - file:
         name: installer
         url: >-
@@ -23,6 +27,9 @@ build:
       - sh {{ get_file("installer") }} -q
     - environment:
         PATH: /usr/local/mipav:${PATH}
+deploy:
+  bins:
+    - mipav
 copyright:
   - name: Medical Image Processing, Analysis and Visualization
     url: https://mipav.cit.nih.gov/clickwrap.php
