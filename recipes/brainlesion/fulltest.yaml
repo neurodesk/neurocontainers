@@ -1,0 +1,49 @@
+name: brainlesion
+version: 1.0.0
+container: brainlesion_${version}_REFERENCE.simg
+
+test_data:
+  output_dir: test_output/brainlesion
+
+setup:
+  script: |
+    set -e
+    mkdir -p ${output_dir}
+
+tests:
+  - name: Python runtime available
+    description: Verify the BrainLesion Suite runtime uses the expected Python series
+    command: python --version
+    expected_output_contains: "Python 3.10."
+
+  - name: BrainLesion packages installed
+    description: Verify the BrainLesion Suite packages are present in package metadata
+    command: python -m pip list | grep -Ei "^(brainles_aurora|brainles-preprocessing|brats|gliomoda|petu|panoptica)"
+    expected_output_contains:
+      - "brainles_aurora"
+      - "brainles-preprocessing"
+      - "brats"
+      - "gliomoda"
+      - "petu"
+      - "panoptica"
+
+  - name: BrainLesion Python modules import
+    description: Verify the installed suite modules import without loading model weights
+    command: |
+      python - <<'PY'
+      import importlib
+      modules = [
+          "brainles_aurora",
+          "brainles_preprocessing",
+          "brats",
+          "deep_quality_estimation",
+          "gliomoda",
+          "loguru",
+          "panoptica",
+          "petu",
+      ]
+      for module in modules:
+          importlib.import_module(module)
+      print("brainlesion imports ok")
+      PY
+    expected_output_contains: "brainlesion imports ok"

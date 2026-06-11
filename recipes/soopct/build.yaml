@@ -51,17 +51,21 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
-    - install: git unzip
+    - install:
+        - clang
+        - dcm2niix
+        - git
+        - unzip
     - template:
         name: miniconda
-        version: latest
-        conda_install: python=3.13
+        version: py313_25.5.1-0
         pip_install: antspyx>=0.5.4 nibabel>=5.3.2 numpy>=2.3.0 scipy>=1.15.2 brainchop>=0.1.8
         install_path: /opt/miniconda
     - run:
         - git clone https://github.com/rordenlab/soop-ct.git
         - cd soop-ct
         - unzip DICOM.zip
+        - python -c 'from pathlib import Path; script = Path("3best2anon.py"); text = script.read_text(); text = text.replace("cmd = [\"brainchop\", \"-m\", model, \"-i\", input_path, \"-o\", out_path]", "cmd = [\"brainchop\", input_path, \"-m\", model, \"--no-optimize\", \"-o\", out_path]"); text = text.replace("cmd += [\"-b\", str(border)]", "cmd += [\"--border\", str(border)]"); script.write_text(text)'
     - deploy:
         bins:
           - python
