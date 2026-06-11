@@ -51,6 +51,10 @@ build:
   base-image: ubuntu:24.04
   pkg-manager: apt
   directives:
+    - environment:
+        HOME: /tmp/soopct-home
+        MPLCONFIGDIR: /tmp/soopct-matplotlib
+        XDG_CACHE_HOME: /tmp/soopct-cache
     - install:
         - clang
         - dcm2niix
