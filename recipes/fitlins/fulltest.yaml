@@ -3,7 +3,7 @@
 
 name: fitlins
 version: 0.11.0
-container: fitlins_0.11.0.simg
+container: fitlins_${version}_REFERENCE.simg
 
 test_data:
   output_dir: test_output
@@ -23,7 +23,7 @@ tests:
   - name: FitLins package import
     description: Verify the main fitlins module imports successfully
     command: python -c "import fitlins; print(fitlins.__version__)"
-    expected_output_contains: "0.11.0"
+    expected_output_contains: "${version}"
 
   - name: FitLins CLI on PATH
     description: Verify the fitlins launcher renders its shipped help text
@@ -34,6 +34,22 @@ tests:
     description: Verify pip metadata reports the installed fitlins package
     command: python -m pip show fitlins 2>&1 | sed -n '1,12p'
     expected_output_contains: "Author: Christopher J. Markiewicz"
+
+  - name: PyTables HDF5 writer available
+    description: Verify the pandas/PyTables stack required by FitLins model loading works
+    command: |
+      python - <<'PY'
+      import pandas as pd
+      from pathlib import Path
+
+      path = Path("${output_dir}") / "fitlins_hdf_probe.h5"
+      frame = pd.DataFrame({"signal": [0.0, 1.0, 2.0]})
+      frame.to_hdf(path, key="dense")
+      loaded = pd.read_hdf(path, key="dense")
+      assert loaded.equals(frame)
+      print("pytables hdf roundtrip ok")
+      PY
+    expected_output_contains: "pytables hdf roundtrip ok"
 
   - name: FitLins install location
     description: Verify the module is installed under the Miniconda site-packages tree
