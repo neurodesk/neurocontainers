@@ -29,7 +29,6 @@ deploy:
     - /opt/BrainSuite{{ context.version }}/bin
     - /opt/BrainSuite{{ context.version }}/svreg/bin
     - /opt/BrainSuite{{ context.version }}/bdp
-    - /opt/BrainSuite{{ context.version }}/bfp
 
 categories:
   - bids apps

@@ -9,14 +9,15 @@ tests:
   - name: BrainSuite tool directories are present
     script: |
       set -eu
-      test -d /opt/BrainSuite23a/bin
-      test -d /opt/BrainSuite23a/svreg/bin
-      test -d /opt/BrainSuite23a/bdp
-      test -d /opt/BrainSuite23a/bfp
+      test -n "${BrainSuiteVersion:?}"
+      test -d "/opt/BrainSuite${BrainSuiteVersion}/bin"
+      test -d "/opt/BrainSuite${BrainSuiteVersion}/svreg/bin"
+      test -d "/opt/BrainSuite${BrainSuiteVersion}/bdp"
+      test -d "/opt/BrainSuite${BrainSuiteVersion}/bfp"
 
-  - name: BrainSuite BIDS App assets are present
+  - name: BrainSuite BFP runtime entrypoint is present
     script: |
       set -eu
-      grep -x "23a" /BrainSuite/version
-      test -f /config.ini
-      test -f /bfp_config_stats.ini
+      test -n "${BrainSuiteVersion:?}"
+      grep -x "${BrainSuiteVersion}" /BrainSuite/version
+      test -x "/opt/BrainSuite${BrainSuiteVersion}/bfp/bfp.sh"
